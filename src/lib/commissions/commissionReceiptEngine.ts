@@ -11,6 +11,7 @@ import {
 import {
   allocateProportional,
   computeCommissionAmount,
+  resolveReceivableCommissionPrincipal,
   roundMoney,
 } from "./commission-money.js";
 import {
@@ -223,6 +224,14 @@ export type CommissionReceiptPreviewLine = {
   dueDate: string | null;
   receivableAmount: number;
   receivedAmount: number;
+  /** Alias auditável do recebido bruto (pode incluir juros/multa). */
+  receivedGrossAmount?: number;
+  /** Principal comissionável = min(recebido, original do CR). */
+  commissionPrincipalAmount?: number;
+  /** max(0, recebido − original) — encargos ignorados. */
+  ignoredFinancialChargesAmount?: number;
+  /** Flags de auditoria (ex.: RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL). */
+  auditFlags?: string[];
   receivedSharePercent: number | null;
   customerExternalId: number | null;
   customerId: string | null;
@@ -526,6 +535,10 @@ export function releaseCommissionFromMaterializedSchedule(input: {
   commissionableBaseAmount: number;
   expectedCommissionAmount: number;
   effectiveRatePercent: number;
+  receivedGrossAmount: number;
+  commissionPrincipalAmount: number;
+  ignoredFinancialChargesAmount: number;
+  auditFlags: string[];
 } {
   const nominal = roundMoney(
     input.schedule.receivableNominalAmount > 0
@@ -533,17 +546,26 @@ export function releaseCommissionFromMaterializedSchedule(input: {
       : input.receivable.amountReceivable
   );
   const received = roundMoney(input.receivable.amountReceived);
-  const share = nominal > 0 ? Math.min(1, received / nominal) : 0;
+  const principal = resolveReceivableCommissionPrincipal({
+    receivableOriginalAmount: nominal,
+    receivedAmount: received,
+    openBalance: resolveOpenReceivableBalance(input.receivable),
+  });
   const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
-  const released = normalizeCommissionLedgerMoney(scheduled * share);
+  const released = normalizeCommissionLedgerMoney(scheduled * principal.releaseRatio);
   const effectiveRatePercent =
     nominal > 0 ? roundMoney((scheduled / nominal) * 100) : 0;
 
   return {
-    receivedSharePercent: roundMoney(share * 100),
-    commissionableBaseAmount: received,
+    receivedSharePercent: roundMoney(principal.releaseRatio * 100),
+    // Base comissionável = principal do título, NÃO o recebido bruto com juros.
+    commissionableBaseAmount: principal.commissionPrincipalAmount,
     expectedCommissionAmount: released,
     effectiveRatePercent,
+    receivedGrossAmount: principal.receivedGrossAmount,
+    commissionPrincipalAmount: principal.commissionPrincipalAmount,
+    ignoredFinancialChargesAmount: principal.ignoredFinancialChargesAmount,
+    auditFlags: principal.auditFlags,
   };
 }
 
@@ -563,7 +585,9 @@ export function forecastCommissionFromMaterializedSchedule(input: {
       : input.receivable.amountReceivable
   );
   const openBalance = resolveOpenReceivableBalance(input.receivable);
-  const share = nominal > 0 ? Math.min(1, openBalance / nominal) : 0;
+  // Saldo em aberto nunca pode ultrapassar o original do CR na base prevista.
+  const openPrincipal = roundMoney(Math.min(openBalance, nominal > 0 ? nominal : openBalance));
+  const share = nominal > 0 ? Math.min(1, openPrincipal / nominal) : 0;
   const scheduled = normalizeCommissionLedgerMoney(input.schedule.scheduledCommissionAmount);
   const forecast = normalizeCommissionLedgerMoney(scheduled * share);
   const effectiveRatePercent =
@@ -571,7 +595,7 @@ export function forecastCommissionFromMaterializedSchedule(input: {
 
   return {
     openSharePercent: roundMoney(share * 100),
-    commissionableBaseAmount: openBalance,
+    commissionableBaseAmount: openPrincipal,
     forecastCommissionAmount: forecast,
     effectiveRatePercent,
   };
@@ -729,9 +753,18 @@ function buildCustomerExcludedReceiptLine(input: {
     order: input.order,
     identityCtx: input.identityCtx,
   });
+  const principal = resolveReceivableCommissionPrincipal({
+    receivableOriginalAmount: input.receivable.amountReceivable,
+    receivedAmount: input.receivable.amountReceived,
+    openBalance: resolveOpenReceivableBalance(input.receivable),
+  });
   return {
     ...line,
-    commissionableBaseAmount: normalizeCommissionLedgerMoney(input.receivable.amountReceived),
+    commissionableBaseAmount: principal.commissionPrincipalAmount,
+    receivedGrossAmount: principal.receivedGrossAmount,
+    commissionPrincipalAmount: principal.commissionPrincipalAmount,
+    ignoredFinancialChargesAmount: principal.ignoredFinancialChargesAmount,
+    auditFlags: principal.auditFlags,
     expectedCommissionAmount: 0,
     releasedCommissionAmount: 0,
     grossCommissionAmount: 0,
@@ -849,24 +882,39 @@ function previewLineFromMaterializedSchedule(
 ): CommissionReceiptPreviewLine {
   const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
   const isForecast = commissionMode === "forecast";
-  const release = isForecast
+  const forecastRelease = isForecast
     ? forecastCommissionFromMaterializedSchedule({ schedule, receivable })
-    : releaseCommissionFromMaterializedSchedule({ schedule, receivable });
+    : null;
+  const settledRelease = !isForecast
+    ? releaseCommissionFromMaterializedSchedule({ schedule, receivable })
+    : null;
+  const release = forecastRelease ?? settledRelease!;
   const openBalance = resolveOpenReceivableBalance(receivable);
   const receivedAmount = isForecast ? openBalance : roundMoney(receivable.amountReceived);
-  const commissionableBase = isForecast
-    ? release.commissionableBaseAmount
-    : release.commissionableBaseAmount;
+  const commissionableBase = release.commissionableBaseAmount;
   const expectedCommission = isForecast
-    ? release.forecastCommissionAmount
+    ? forecastRelease!.forecastCommissionAmount
     : status === "COMMISSIONABLE"
-      ? release.expectedCommissionAmount
+      ? settledRelease!.expectedCommissionAmount
       : 0;
   const released =
-    !isForecast && status === "COMMISSIONABLE" ? release.expectedCommissionAmount : 0;
+    !isForecast && status === "COMMISSIONABLE" ? settledRelease!.expectedCommissionAmount : 0;
   const receivedSharePercent = isForecast
-    ? release.openSharePercent
-    : release.receivedSharePercent;
+    ? forecastRelease!.openSharePercent
+    : settledRelease!.receivedSharePercent;
+  const principalAudit = settledRelease
+    ? {
+        receivedGrossAmount: settledRelease.receivedGrossAmount,
+        commissionPrincipalAmount: settledRelease.commissionPrincipalAmount,
+        ignoredFinancialChargesAmount: settledRelease.ignoredFinancialChargesAmount,
+        auditFlags: settledRelease.auditFlags,
+      }
+    : {
+        receivedGrossAmount: normalizeCommissionLedgerMoney(receivedAmount),
+        commissionPrincipalAmount: commissionableBase,
+        ignoredFinancialChargesAmount: 0,
+        auditFlags: [] as string[],
+      };
   const grossCommissionAmount =
     schedule.scheduleStatus === "CUSTOMER_EXCLUDED"
       ? roundMoney(
@@ -920,6 +968,10 @@ function previewLineFromMaterializedSchedule(
       schedule.receivableNominalAmount || receivable.amountReceivable
     ),
     receivedAmount: normalizeCommissionLedgerMoney(receivedAmount),
+    receivedGrossAmount: principalAudit.receivedGrossAmount,
+    commissionPrincipalAmount: principalAudit.commissionPrincipalAmount,
+    ignoredFinancialChargesAmount: principalAudit.ignoredFinancialChargesAmount,
+    auditFlags: principalAudit.auditFlags,
     receivedSharePercent,
     customerExternalId: receivable.customerExternalId ?? null,
     customerId: schedule.customerId ?? receivable.customerId ?? null,
@@ -1119,6 +1171,11 @@ function buildExceptionLine(input: {
     identityCtx: input.identityCtx,
     preResolved: input.preResolvedSeller,
   });
+  const principal = resolveReceivableCommissionPrincipal({
+    receivableOriginalAmount: receivable.amountReceivable,
+    receivedAmount: receivable.amountReceived,
+    openBalance: resolveOpenReceivableBalance(receivable),
+  });
   return {
     ledgerLineKey: buildCommissionReceiptLedgerLineKey({
       year,
@@ -1138,11 +1195,12 @@ function buildExceptionLine(input: {
     settlementDate: isoDate(receivable.settlementDate) ?? "",
     dueDate: isoDate(receivable.dueDate),
     receivableAmount: normalizeCommissionLedgerMoney(receivable.amountReceivable),
-    receivedAmount: normalizeCommissionLedgerMoney(receivable.amountReceived),
-    receivedSharePercent:
-      receivable.amountReceivable > 0
-        ? roundMoney((receivable.amountReceived / receivable.amountReceivable) * 100)
-        : null,
+    receivedAmount: principal.receivedGrossAmount,
+    receivedGrossAmount: principal.receivedGrossAmount,
+    commissionPrincipalAmount: principal.commissionPrincipalAmount,
+    ignoredFinancialChargesAmount: principal.ignoredFinancialChargesAmount,
+    auditFlags: principal.auditFlags,
+    receivedSharePercent: roundMoney(principal.releaseRatio * 100),
     customerExternalId:
       receivable.customerExternalId ?? order?.customerExternalId ?? null,
     customerId: receivable.customerId ?? order?.localOrderId ?? null,
@@ -1166,7 +1224,7 @@ function buildExceptionLine(input: {
     ruleId: null,
     ruleName: null,
     ratePercent: 0,
-    commissionableBaseAmount: normalizeCommissionLedgerMoney(receivable.amountReceived),
+    commissionableBaseAmount: principal.commissionPrincipalAmount,
     expectedCommissionAmount: 0,
     releasedCommissionAmount: 0,
     grossCommissionAmount: 0,
@@ -1334,7 +1392,14 @@ function calculatePreviewLinesForReceivable(input: {
   const orderItemsTotal = roundMoney(
     order.items.reduce((sum, item) => sum + item.itemNetAmount, 0)
   );
-  const receivedAmount = roundMoney(receivable.amountReceived);
+  const receivedGross = roundMoney(receivable.amountReceived);
+  const principal = resolveReceivableCommissionPrincipal({
+    receivableOriginalAmount: receivable.amountReceivable,
+    receivedAmount: receivedGross,
+    openBalance: resolveOpenReceivableBalance(receivable),
+  });
+  // Fallback perigosamente usava recebido bruto como base — agora rateia só o principal.
+  const receivedAmount = principal.commissionPrincipalAmount;
   const allocations = allocateProportional(
     receivedAmount,
     order.items.map((item) => ({
@@ -1410,7 +1475,11 @@ function calculatePreviewLinesForReceivable(input: {
       settlementDate: isoDate(receivable.settlementDate) ?? "",
       dueDate: isoDate(receivable.dueDate),
       receivableAmount: normalizeCommissionLedgerMoney(receivable.amountReceivable),
-      receivedAmount,
+      receivedAmount: principal.receivedGrossAmount,
+      receivedGrossAmount: principal.receivedGrossAmount,
+      commissionPrincipalAmount: principal.commissionPrincipalAmount,
+      ignoredFinancialChargesAmount: principal.ignoredFinancialChargesAmount,
+      auditFlags: principal.auditFlags,
       receivedSharePercent:
         orderItemsTotal > 0 ? roundMoney((receivedBase / orderItemsTotal) * 100) : null,
       customerExternalId: receivable.customerExternalId ?? order.customerExternalId,

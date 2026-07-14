@@ -184,7 +184,10 @@ function DetailTable({
             <th className="px-2 py-2">Cliente</th>
             <th className="px-2 py-2">Vendedor raw</th>
             <th className="px-2 py-2">Vendedor canônico</th>
-            <th className="px-2 py-2 text-right">Recebido</th>
+            <th className="px-2 py-2 text-right">Original CR</th>
+            <th className="px-2 py-2 text-right">Recebido bruto</th>
+            <th className="px-2 py-2 text-right">Base comissão</th>
+            <th className="px-2 py-2 text-right">Juros/multa ignorados</th>
             <th className="px-2 py-2 text-right">Schedule comissão</th>
             <th className="px-2 py-2 text-right">Comissão liberada</th>
             <th className="px-2 py-2">Status</th>
@@ -192,7 +195,12 @@ function DetailTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const ignored = row.ignoredFinancialChargesAmount ?? 0;
+            const original = row.receivableOriginalAmount ?? null;
+            const base =
+              row.commissionPrincipalAmount ?? row.commissionableBaseAmount;
+            return (
             <tr key={row.lineKey} className="border-b">
               <td className="px-2 py-2">{row.receivableNumber ?? row.nomusReceivableId ?? "—"}</td>
               <td className="px-2 py-2">{row.nfeNumber ?? "—"}</td>
@@ -201,9 +209,23 @@ function DetailTable({
               <td className="px-2 py-2">{formatReceiptClosingRawSellerDisplay(row)}</td>
               <td className="px-2 py-2">{formatReceiptClosingCanonicalSellerDisplay(row)}</td>
               <td className="px-2 py-2 text-right">
+                {original != null ? formatFinanceCurrency(original) : "—"}
+              </td>
+              <td className="px-2 py-2 text-right">
                 {row.uniqueReceivedAmount > 0
                   ? formatFinanceCurrency(row.uniqueReceivedAmount)
                   : "—"}
+              </td>
+              <td className="px-2 py-2 text-right">{formatFinanceCurrency(base)}</td>
+              <td
+                className={`px-2 py-2 text-right ${ignored > 0 ? "text-amber-800 font-medium" : "text-muted-foreground"}`}
+                title={
+                  ignored > 0
+                    ? "Recebido acima do original do CR — juros/multa/acréscimos não entram na comissão"
+                    : undefined
+                }
+              >
+                {ignored > 0 ? formatFinanceCurrency(ignored) : "—"}
               </td>
               <td className="px-2 py-2 text-right">
                 {row.scheduledCommissionAmount != null
@@ -222,14 +244,18 @@ function DetailTable({
               </td>
               <td className="px-2 py-2 text-muted-foreground">{row.statusReason ?? "—"}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
         <tfoot>
           <tr className="border-t-2 bg-muted/20 font-semibold" data-testid="commissions-receipt-closing-detail-totals">
             <td className="px-2 py-2" colSpan={6}>
               Totais ({totals.lineCount} linha{totals.lineCount === 1 ? "" : "s"})
             </td>
+            <td className="px-2 py-2 text-right">—</td>
             <td className="px-2 py-2 text-right">{formatFinanceCurrency(totals.receivedAmount)}</td>
+            <td className="px-2 py-2 text-right">—</td>
+            <td className="px-2 py-2 text-right">—</td>
             <td className="px-2 py-2 text-right">
               {formatFinanceCurrency(totals.scheduledCommissionAmount)}
             </td>

@@ -1,5 +1,8 @@
 import type { CommissionReleaseRule } from "@prisma/client";
-import { roundMoney } from "./commission-money.js";
+import {
+  computeCommissionReleasedFromReceivablePrincipal,
+  roundMoney,
+} from "./commission-money.js";
 import type {
   CommissionPaymentScheduleDraft,
   CommissionReceivableSource,
@@ -90,9 +93,12 @@ export function computeScheduleReleaseTarget(input: {
   switch (input.releaseRule) {
     case "EACH_RECEIVABLE_PAID":
       if (receivableAmount <= 0 || receivedAmount <= 0) return 0;
-      return roundMoney(
-        Math.min(cap, roundMoney(cap * (receivedAmount / receivableAmount)))
-      );
+      // Base = valor original do CR; recebido só regula proporção (cap em original).
+      return computeCommissionReleasedFromReceivablePrincipal({
+        commissionExpectedAmount: cap,
+        receivableOriginalAmount: receivableAmount,
+        receivedAmount,
+      });
     case "FIRST_RECEIVABLE_PAID":
       if (input.isFirstReceivablePaidInOrder && receivedAmount > 0) return cap;
       return 0;

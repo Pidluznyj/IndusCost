@@ -82,7 +82,97 @@ export function allocateProportional(
   return results;
 }
 
-/** Liberação proporcional ao recebido sobre o título. */
+/**
+ * Auditoria: recebimento bruto > valor original do CR (juros/multa/acréscimos).
+ * Não entram na base comissionável.
+ */
+export const RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL =
+  "RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL";
+
+/**
+ * Auditoria: título quitado (saldo ~0) com recebido < original — possível desconto/abatimento.
+ * Não infere juros negativo; apenas sinaliza.
+ */
+export const RECEIVABLE_DISCOUNT_DETECTED = "RECEIVABLE_DISCOUNT_DETECTED";
+
+export type ReceivableCommissionPrincipalBreakdown = {
+  /** Valor original do título (`amountReceivable` / `receivableNominalAmount`). */
+  receivableOriginalAmount: number;
+  /** Valor recebido bruto (pode incluir juros/multa). */
+  receivedGrossAmount: number;
+  /** Principal comissionável = min(recebido, original). */
+  commissionPrincipalAmount: number;
+  /** max(0, recebido − original) — encargos ignorados na comissão. */
+  ignoredFinancialChargesAmount: number;
+  /** principal / original, capped em 1. */
+  releaseRatio: number;
+  auditFlags: string[];
+};
+
+/**
+ * Resolve a base comissionável do título CR.
+ * Recebido é gatilho/proporção; nunca aumenta a base além do valor original.
+ */
+export function resolveReceivableCommissionPrincipal(input: {
+  receivableOriginalAmount: number;
+  receivedAmount: number;
+  /** Saldo em aberto opcional — usado só para flag de desconto. */
+  openBalance?: number | null;
+}): ReceivableCommissionPrincipalBreakdown {
+  const original = roundMoney(Math.max(0, input.receivableOriginalAmount));
+  const received = roundMoney(Math.max(0, input.receivedAmount));
+  const principal = roundMoney(Math.min(received, original > 0 ? original : received));
+  const ignored = original > 0 ? roundMoney(Math.max(0, received - original)) : 0;
+  const releaseRatio = original > 0 ? Math.min(1, principal / original) : 0;
+  const flags: string[] = [];
+  if (ignored > 0.009) {
+    flags.push(RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL);
+  }
+  const open =
+    input.openBalance === undefined || input.openBalance === null
+      ? null
+      : roundMoney(Math.max(0, input.openBalance));
+  if (
+    open != null &&
+    open <= 0.009 &&
+    received > 0 &&
+    original > 0 &&
+    received + 0.009 < original
+  ) {
+    flags.push(RECEIVABLE_DISCOUNT_DETECTED);
+  }
+  return {
+    receivableOriginalAmount: original,
+    receivedGrossAmount: received,
+    commissionPrincipalAmount: principal,
+    ignoredFinancialChargesAmount: ignored,
+    releaseRatio,
+    auditFlags: flags,
+  };
+}
+
+/**
+ * Comissão liberada = expected × (principal / original), nunca acima do expected.
+ * Usa min(recebido, original) como numerador da proporção.
+ */
+export function computeCommissionReleasedFromReceivablePrincipal(input: {
+  commissionExpectedAmount: number;
+  receivableOriginalAmount: number;
+  receivedAmount: number;
+}): number {
+  const expected = roundMoney(input.commissionExpectedAmount);
+  if (expected <= 0) return 0;
+  const breakdown = resolveReceivableCommissionPrincipal({
+    receivableOriginalAmount: input.receivableOriginalAmount,
+    receivedAmount: input.receivedAmount,
+  });
+  return roundMoney(Math.min(expected, expected * breakdown.releaseRatio));
+}
+
+/**
+ * Liberação proporcional ao principal do título (não ao recebido bruto com juros).
+ * Retorna o *delta* incremental desde `alreadyReleased`.
+ */
 export function computeReleasedAmountForReceivable(input: {
   commissionAmount: number;
   alreadyReleased: number;
@@ -91,11 +181,13 @@ export function computeReleasedAmountForReceivable(input: {
 }): number {
   const commission = roundMoney(input.commissionAmount);
   const already = roundMoney(input.alreadyReleased);
-  const receivable = roundMoney(input.receivableAmount);
-  const received = roundMoney(input.receivedAmount);
-  if (commission <= 0 || receivable <= 0 || received <= 0) return 0;
+  if (commission <= 0) return 0;
 
-  const targetReleased = roundMoney(commission * (received / receivable));
+  const targetReleased = computeCommissionReleasedFromReceivablePrincipal({
+    commissionExpectedAmount: commission,
+    receivableOriginalAmount: input.receivableAmount,
+    receivedAmount: input.receivedAmount,
+  });
   const delta = roundMoney(targetReleased - already);
   if (delta <= 0) return 0;
   const maxRemaining = roundMoney(commission - already);

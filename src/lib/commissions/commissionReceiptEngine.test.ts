@@ -8,6 +8,7 @@ import {
   COMMISSION_RECEIPT_NO_SCHEDULE_REASON,
   filterSettledReceivablesForPreview,
   mapSnapshotItemStatusesToLedgerDiagnosis,
+  releaseCommissionFromMaterializedSchedule,
   type CommissionReceiptReceivableInput,
 } from "./commissionReceiptEngine.js";
 import type {
@@ -523,6 +524,62 @@ describe("commissionReceiptEngine", () => {
 
     assert.equal(result.lines[0]?.expectedCommissionAmount, 50);
     assert.equal(result.lines[0]?.releasedCommissionAmount, 50);
+  });
+
+  it("recebido com juros/multa: base = original do CR (não R$ 10.350)", () => {
+    // CR 10.000 / previsto 500 (5%) / recebido 10.350 → comissão 500, base 10.000,
+    // encargos ignorados 350 (nunca 517,50).
+    const sched = materializedSchedule({
+      receivableId: 503,
+      scheduledCommissionAmount: 500,
+      receivableNominalAmount: 10000,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 503,
+          amountReceivable: 10000,
+          amountReceived: 10350,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[503, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+
+    const line = result.lines[0]!;
+    assert.equal(line.commissionableBaseAmount, 10000);
+    assert.equal(line.commissionPrincipalAmount, 10000);
+    assert.equal(line.ignoredFinancialChargesAmount, 350);
+    assert.equal(line.releasedCommissionAmount, 500);
+    assert.equal(line.expectedCommissionAmount, 500);
+    assert.ok(line.auditFlags?.includes("RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL"));
+    assert.notEqual(line.releasedCommissionAmount, 517.5);
+  });
+
+  it("parcial abaixo do original: usa recebido como principal (sem campo de juros separado)", () => {
+    // Sem interestAmount no recebimento Nomus, não dá para isolar R$ 100 de juros
+    // dentro de um parcial R$ 5.100. Política oficial: min(recebido, original).
+    const sched = materializedSchedule({
+      receivableId: 504,
+      scheduledCommissionAmount: 500,
+      receivableNominalAmount: 10000,
+    });
+    const released = releaseCommissionFromMaterializedSchedule({
+      schedule: sched,
+      receivable: receivable({
+        nomusReceivableId: 504,
+        amountReceivable: 10000,
+        amountReceived: 5100,
+      }),
+    });
+    assert.equal(released.commissionPrincipalAmount, 5100);
+    assert.equal(released.ignoredFinancialChargesAmount, 0);
+    assert.equal(released.expectedCommissionAmount, 255);
   });
 
   it("título sem schedule e sem pedido vira NO_SALES_LINK", () => {

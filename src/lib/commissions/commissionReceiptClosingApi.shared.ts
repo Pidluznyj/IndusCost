@@ -149,6 +149,13 @@ export type ReceiptClosingApiLine = {
   receivedAmount: number;
   /** Valor recebido exibido na linha — zero em linhas duplicadas do mesmo título. */
   uniqueReceivedAmount: number;
+  /** Valor original do CR (`amountReceivable` / nominal). */
+  receivableOriginalAmount?: number;
+  /** Principal comissionável = min(recebido, original). */
+  commissionPrincipalAmount?: number;
+  /** Encargos financeiros ignorados (recebido − original, se > 0). */
+  ignoredFinancialChargesAmount?: number;
+  auditFlags?: string[];
   commissionableBaseAmount: number;
   ratePercent: number;
   expectedCommissionAmount: number;

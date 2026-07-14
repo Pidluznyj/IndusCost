@@ -1165,6 +1165,13 @@ export type CommissionsReceiptClosingLine = {
   sellerResolutionStatus: string | null;
   receivedAmount: number;
   uniqueReceivedAmount: number;
+  /** Valor original do título CR. */
+  receivableOriginalAmount?: number;
+  /** Principal comissionável (sem juros/multa). */
+  commissionPrincipalAmount?: number;
+  /** Juros/multa/acréscimos ignorados na base. */
+  ignoredFinancialChargesAmount?: number;
+  auditFlags?: string[];
   commissionableBaseAmount: number;
   ratePercent: number;
   expectedCommissionAmount: number;

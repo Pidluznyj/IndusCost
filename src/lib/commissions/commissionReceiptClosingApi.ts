@@ -648,6 +648,11 @@ export function mapPreviewLineToApiLine(line: CommissionReceiptPreviewLine): Rec
     sellerResolutionStatus: line.sellerResolutionStatus,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
+    receivableOriginalAmount: line.receivableAmount,
+    commissionPrincipalAmount:
+      line.commissionPrincipalAmount ?? line.commissionableBaseAmount,
+    ignoredFinancialChargesAmount: line.ignoredFinancialChargesAmount ?? 0,
+    auditFlags: line.auditFlags ?? [],
     commissionableBaseAmount: line.commissionableBaseAmount,
     ratePercent: line.ratePercent,
     expectedCommissionAmount: line.expectedCommissionAmount,
@@ -710,6 +715,16 @@ export function mapLedgerLineToApiLine(
     sellerResolutionStatus: null,
     receivedAmount: line.receivedAmount,
     uniqueReceivedAmount: line.receivedAmount,
+    // Ledger snapshot: allocatedCommercialBase já é o principal (pós-correção).
+    receivableOriginalAmount: undefined,
+    commissionPrincipalAmount: line.allocatedCommercialBase,
+    ignoredFinancialChargesAmount: roundMoney(
+      Math.max(0, line.receivedAmount - line.allocatedCommercialBase)
+    ),
+    auditFlags:
+      line.receivedAmount > line.allocatedCommercialBase + 0.009
+        ? ["RECEIPT_AMOUNT_GREATER_THAN_RECEIVABLE_ORIGINAL"]
+        : [],
     commissionableBaseAmount: line.allocatedCommercialBase,
     ratePercent: line.commissionRatePercent,
     expectedCommissionAmount: line.expectedCommissionAmount,

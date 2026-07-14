@@ -520,7 +520,9 @@ Registro em `App.tsx`:
 - `commissionInstallmentService` — espelha `NomusAccountsReceivable`
 - Job pós-sync AR
 - Tela Liberação por Recebimento
-- Regras: liberar proportionalmente a `amountReceived / amountReceivable`
+- Regras: liberar proporcionalmente ao **principal**
+  `min(amountReceived, amountReceivable) / amountReceivable`
+  (juros/multa no recebido não aumentam comissão — ver `commission-receivable-base-rule.md`)
 
 ### Fase 5 — Pagamentos e auditoria
 
