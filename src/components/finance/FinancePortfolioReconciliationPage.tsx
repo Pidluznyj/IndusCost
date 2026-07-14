@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, RefreshCw, Scale } from "lucide-react";
+import { RefreshCw, Scale } from "lucide-react";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -11,11 +11,12 @@ import {
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
 import {
+  isPortfolioReconciliationVisibleTabId,
   PERMISSION_DENIED_TAB_MESSAGE,
   PERMISSION_EMPTY_TABS_MESSAGE,
   PORTFOLIO_RECONCILIATION_UI_TABS,
   ResourceKeys,
-  type PortfolioReconciliationUiTabId,
+  type PortfolioReconciliationVisibleTabId,
 } from "@/src/lib/permissionsClient";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { PermissionGate } from "@/src/components/security/PermissionGate";
@@ -23,10 +24,8 @@ import { ProtectedTab } from "@/src/components/security/ProtectedTab";
 import {
   buildPortfolioReconciliationListQuery,
   createDefaultPortfolioReconciliationUiFilters,
-  PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER,
   PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE,
   PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE,
-  type PortfolioBusinessAnswerFilterHint,
   type PortfolioReconciliationListPayload,
   type PortfolioReconciliationRunsPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
@@ -35,18 +34,9 @@ import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
-import {
-  FinanceModuleEmptyState,
-  FinanceModuleErrorBanner,
-  FinanceModuleLoadingBlock,
-} from "@/src/components/finance/shared/FinanceModuleStates";
-import { PortfolioReconciliationSummaryCardsView } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationSummaryCards";
-import { PortfolioReconciliationComparisonPanel } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationComparisonPanel";
-import { PortfolioIntelligenceSection } from "@/src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection";
+import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
 import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
-import { PortfolioReconciliationOrdersTable } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrdersTable";
-import { PortfolioReconciliationOrderDrawer } from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationOrderDrawer";
 import {
   formatPortfolioForecastSourceLabel,
   formatPortfolioStatusLabel,
@@ -71,8 +61,15 @@ export function FinancePortfolioReconciliationPage() {
   const canViewConciliation = permissions.canView(
     ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO
   );
-  const visibleTabs = useMemo(
-    () => permissions.listAllowedPortfolioReconciliationTabs(),
+  /**
+   * Abas visíveis na UI (2026-07 em diante): somente Status Pedidos e
+   * Auditoria Pedido → Caixa, filtradas por permissão. Ver
+   * `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS` em `permissionsClient.ts`.
+   * As abas Conciliação/Inteligência da Carteira foram ocultadas, mas os
+   * services permanecem para reaproveitamento interno.
+   */
+  const visibleTabs = useMemo<PortfolioReconciliationVisibleTabId[]>(
+    () => permissions.listVisiblePortfolioReconciliationTabs(),
     // Recalcula quando o usuário efetivo muda (reload/refetch de /api/auth/me).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -90,14 +87,19 @@ export function FinancePortfolioReconciliationPage() {
   const [runs, setRuns] = useState<PortfolioReconciliationRunsPayload["runs"]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<PortfolioReconciliationUiTabId>(
-    () => visibleTabs[0] ?? "conciliation"
+  /**
+   * Aba ativa. Default: Status Pedidos (primeira aba visível permitida).
+   * Aceita apenas ids da whitelist visível — qualquer estado antigo
+   * (`conciliation`, `intelligence`, `portfolio`, `carteira`, `reconciliation`)
+   * cai no fallback e vira `order-status-pedidos`.
+   */
+  const [activeView, setActiveView] = useState<PortfolioReconciliationVisibleTabId>(
+    () => visibleTabs[0] ?? "order-status-pedidos"
   );
 
   useEffect(() => {
     if (visibleTabs.length === 0) return;
-    if (!visibleTabs.includes(activeView)) {
+    if (!isPortfolioReconciliationVisibleTabId(activeView) || !visibleTabs.includes(activeView)) {
       setActiveView(visibleTabs[0]!);
     }
   }, [activeView, visibleTabs]);
@@ -206,16 +208,6 @@ export function FinancePortfolioReconciliationPage() {
     setAppliedFilters(next);
   };
 
-  const onPageChange = (page: number) => {
-    setAppliedFilters((prev) => ({ ...prev, page }));
-    setDraftFilters((prev) => ({ ...prev, page }));
-  };
-
-  const openOrder = (salesOrderId: string) => {
-    if (!salesOrderId.trim()) return;
-    setDetailOrderId(salesOrderId);
-  };
-
   if (!canView) {
     return (
       <PermissionDenied
@@ -236,32 +228,17 @@ export function FinancePortfolioReconciliationPage() {
     );
   }
 
+  // `payload.availableFilters` alimenta os selects do painel superior. Os
+  // campos `payload.rows` / `businessAnswers` / `comparison` deixaram de ser
+  // exibidos aqui — Status Pedidos e Auditoria Pedido → Caixa renderizam suas
+  // próprias grids. `canViewConciliation` continua governando `load()` para
+  // não chamar `/api/finance/portfolio-reconciliation` quando o usuário não
+  // tem permissão para o endpoint da conciliação.
   const available = payload?.availableFilters;
   const yearOptions =
     available?.years?.length
       ? available.years
       : Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i);
-
-  const noRun = payload != null && payload.ok === false;
-  const hasRows = (payload?.rows.length ?? 0) > 0;
-  const hasAlerts = (payload?.businessAnswers?.precisaRevisar.ordersCount ??
-    payload?.summary?.pedidosComAlerta ??
-    0) > 0;
-
-  const applyBusinessAnswerFilter = useCallback((hint: PortfolioBusinessAnswerFilterHint) => {
-    setDraftFilters((prev) => ({
-      ...prev,
-      forecastSource: hint.forecastSource ?? "",
-      onlyIssues: hint.onlyIssues === true,
-      page: 1,
-    }));
-    setAppliedFilters((prev) => ({
-      ...prev,
-      forecastSource: hint.forecastSource ?? "",
-      onlyIssues: hint.onlyIssues === true,
-      page: 1,
-    }));
-  }, []);
 
   return (
     <div data-testid="finance-portfolio-reconciliation-page">
@@ -509,33 +486,33 @@ export function FinancePortfolioReconciliationPage() {
           aria-label="Visões da conciliação"
           data-testid="portfolio-reconciliation-view-tabs"
         >
-          {PORTFOLIO_RECONCILIATION_UI_TABS.map((tab) => (
-            <PermissionGate key={tab.id} resourceKey={tab.resourceKey} mode="hide">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={activeView === tab.id}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
-                  activeView === tab.id
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setActiveView(tab.id)}
-                data-testid={
-                  tab.id === "conciliation"
-                    ? "portfolio-tab-conciliation"
-                    : tab.id === "intelligence"
-                      ? "portfolio-tab-intelligence"
-                      : tab.id === "order-status-pedidos"
-                        ? "portfolio-tab-order-status-pedidos"
-                        : "portfolio-tab-order-to-cash-audit"
-                }
-              >
-                {tab.label}
-              </button>
-            </PermissionGate>
-          ))}
+          {visibleTabs.map((tabId) => {
+            const tab = PORTFOLIO_RECONCILIATION_UI_TABS.find((t) => t.id === tabId);
+            if (!tab) return null;
+            const testId =
+              tab.id === "order-status-pedidos"
+                ? "portfolio-tab-order-status-pedidos"
+                : "portfolio-tab-order-to-cash-audit";
+            return (
+              <PermissionGate key={tab.id} resourceKey={tab.resourceKey} mode="hide">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={activeView === tab.id}
+                  className={cn(
+                    "rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+                    activeView === tab.id
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setActiveView(tab.id)}
+                  data-testid={testId}
+                >
+                  {tab.label}
+                </button>
+              </PermissionGate>
+            );
+          })}
         </div>
 
         <ProtectedTab
@@ -557,115 +534,6 @@ export function FinancePortfolioReconciliationPage() {
             <OrderToCashAuditTab />
           </div>
         </ProtectedTab>
-
-        <ProtectedTab
-          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA}
-          active={activeView === "intelligence"}
-          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
-        >
-          <div className="mb-6">
-            <PortfolioIntelligenceSection
-              enabled={canView}
-              runId=""
-              customerExternalId={appliedFilters.customerExternalId}
-              customers={available?.customers ?? []}
-            />
-          </div>
-        </ProtectedTab>
-
-        <ProtectedTab
-          resourceKey={ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO}
-          active={activeView === "conciliation"}
-          deniedMessage={PERMISSION_DENIED_TAB_MESSAGE}
-        >
-          <>
-        {activeView === "conciliation" && canViewConciliation && loading && !payload ? (
-          <FinanceModuleLoadingBlock label="Carregando conciliação de carteira…" />
-        ) : null}
-
-        {activeView === "conciliation" && canViewConciliation && noRun ? (
-          <FinanceModuleEmptyState
-            title="Sem run materializada"
-            description={PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE}
-            icon={<AlertTriangle className="h-5 w-5" />}
-          />
-        ) : null}
-
-        {activeView === "conciliation" &&
-        canViewConciliation &&
-        !noRun &&
-        payload?.businessAnswers ? (
-          <div className="mb-4 space-y-3">
-            <div
-              className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
-              data-testid="portfolio-reconciliation-business-banner"
-            >
-              <p>{PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER}</p>
-            </div>
-            <PortfolioReconciliationSummaryCardsView
-              answers={payload.businessAnswers}
-              onFilterHint={applyBusinessAnswerFilter}
-            />
-            {payload.comparison ? (
-              <PortfolioReconciliationComparisonPanel comparison={payload.comparison} />
-            ) : null}
-          </div>
-        ) : null}
-
-        {activeView === "conciliation" &&
-        canViewConciliation &&
-        !loading &&
-        !noRun &&
-        !error &&
-        payload &&
-        !hasRows ? (
-          <FinanceModuleEmptyState
-            title="Nenhum resultado"
-            description="Não há pedidos para os filtros aplicados nesta conciliação materializada."
-          />
-        ) : null}
-
-        {activeView === "conciliation" &&
-        canViewConciliation &&
-        !noRun &&
-        hasRows &&
-        payload ? (
-          <>
-            {hasAlerts ? (
-              <div
-                className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-                data-testid="portfolio-reconciliation-alerts-banner"
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>
-                  Há {payload.businessAnswers?.precisaRevisar.ordersCount ??
-                    payload.summary?.pedidosComAlerta ??
-                    0}{" "}
-                  pedido(s) com alerta nesta visão.
-                  Use “Apenas divergências” ou o card Precisa revisar para focar a auditoria.
-                </p>
-              </div>
-            ) : null}
-            <PortfolioReconciliationOrdersTable
-              rows={payload.rows}
-              page={payload.pagination.page}
-              pageSize={payload.pagination.pageSize}
-              totalRows={payload.pagination.totalRows}
-              totalPages={payload.pagination.totalPages}
-              onPageChange={onPageChange}
-              onOpenOrder={openOrder}
-            />
-          </>
-        ) : null}
-          </>
-        </ProtectedTab>
-
-        <PortfolioReconciliationOrderDrawer
-          open={Boolean(detailOrderId)}
-          salesOrderId={detailOrderId}
-          listFilters={appliedFilters}
-          onClose={() => setDetailOrderId(null)}
-        />
       </FinanceBiDashboardShell>
     </div>
   );

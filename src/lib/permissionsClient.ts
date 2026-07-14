@@ -108,6 +108,43 @@ export const PORTFOLIO_RECONCILIATION_UI_TABS: ReadonlyArray<{
   },
 ] as const;
 
+/**
+ * Whitelist de abas que devem aparecer NA NAVEGAÇÃO VISUAL do módulo
+ * Financeiro > Conciliação de Carteira (2026-07 em diante).
+ *
+ * A tela foi simplificada para exibir apenas:
+ *   1. Status Pedidos (visão consolidada por pedido)
+ *   2. Auditoria Pedido → Caixa (visão detalhada item/evidência)
+ *
+ * As abas "Conciliação" e "Inteligência da Carteira" foram OCULTADAS da UI,
+ * mas seguem em `PORTFOLIO_RECONCILIATION_UI_TABS` porque:
+ *   - suas rotas de permissão (FINANCEIRO_CONCILIACAO_TAB_*) continuam
+ *     ativas para seeds/audits/backwards-compat;
+ *   - services/endpoints/models permanecem em uso interno por
+ *     Auditoria 360º, cards de resumo, scripts de rebuild, etc.
+ *
+ * Ordem da tupla = ordem de exibição na barra de abas.
+ */
+export const PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS = [
+  "order-status-pedidos",
+  "order-to-cash-audit",
+] as const satisfies ReadonlyArray<PortfolioReconciliationUiTabId>;
+
+export type PortfolioReconciliationVisibleTabId =
+  (typeof PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS)[number];
+
+/**
+ * `true` se o id de aba (vindo de estado antigo, query param, localStorage,
+ * deep-link, etc.) ainda está visível na UI atual. Caso `false`, o consumidor
+ * deve cair no fallback = primeira aba visível permitida (Status Pedidos).
+ */
+export function isPortfolioReconciliationVisibleTabId(
+  id: string | null | undefined
+): id is PortfolioReconciliationVisibleTabId {
+  if (!id) return false;
+  return (PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS as readonly string[]).includes(id);
+}
+
 const V: PermissionFlags = { canView: true, canExecute: false, canManage: false };
 const VE: PermissionFlags = { canView: true, canExecute: true, canManage: false };
 const VM: PermissionFlags = { canView: true, canExecute: false, canManage: true };
@@ -677,6 +714,12 @@ export type PermissionsApi = {
   canManage: (resourceKey: string) => boolean;
   getAllowedTabs: (parentResourceKey: string) => FrontendPermissionResource[];
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
+  /**
+   * Retorna somente as abas da Conciliação de Carteira que ainda são
+   * mostradas na UI (Status Pedidos + Auditoria Pedido → Caixa) filtradas
+   * por permissão do usuário. Preserva a ordem de `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS`.
+   */
+  listVisiblePortfolioReconciliationTabs: () => PortfolioReconciliationVisibleTabId[];
   listAllowedCrmTabs: () => Array<"general" | "seller" | "portfolio">;
   listAllowedCommissionsLiveTabs: () => Array<
     "monthlyClosing" | "customerExclusions" | "reports" | "reprocess"
@@ -707,6 +750,14 @@ export function createPermissionsApi(user: AuthUser | null | undefined): Permiss
       return PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) => canView(t.resourceKey)).map(
         (t) => t.id
       );
+    },
+    listVisiblePortfolioReconciliationTabs() {
+      // Intersecção: (whitelist visível) ∩ (permissões efetivas). Preserva a
+      // ordem canônica de PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS.
+      return PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS.filter((id) => {
+        const tab = PORTFOLIO_RECONCILIATION_UI_TABS.find((t) => t.id === id);
+        return tab ? canView(tab.resourceKey) : false;
+      });
     },
     listAllowedCrmTabs() {
       return CRM_UI_TABS.filter((t) => canView(t.resourceKey)).map((t) => t.id);

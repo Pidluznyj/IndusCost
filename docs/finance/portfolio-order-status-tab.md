@@ -138,3 +138,89 @@ Item com status `FULFILLED_WITH_CUT` encerra o saldo cortado — separado de can
 - Clique no pedido abre itens sem sair da aba
 - Mensagens em português claro (sem JSON / `undefined` / `null` / `NaN`)
 - Sem regressão nas abas Conciliação, Inteligência e Auditoria
+
+---
+
+## Simplificação das abas da Conciliação de Carteira (2026-07)
+
+A tela **Financeiro → Conciliação de Carteira** foi simplificada. A partir
+desta versão, a navegação visual mostra **somente duas abas**:
+
+1. **Status Pedidos** — visão consolidada **por pedido** (esta doc).
+2. **Auditoria Pedido → Caixa** — visão detalhada **item/evidência**.
+
+As abas **Conciliação** e **Inteligência da Carteira** foram **ocultadas** da
+UI. Elas continuam **cadastradas** em `PORTFOLIO_RECONCILIATION_UI_TABS`
+(`src/lib/permissionsClient.ts`), com suas permissões
+(`FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO`,
+`FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA`) e endpoints ativos, porque os
+services são reaproveitados por:
+
+- Auditoria 360º do Pedido (modal)
+- Cards de resumo executivo
+- Scripts de rebuild / diagnóstico (`rebuildPortfolioReconciliationFacts`,
+  auditorias)
+- Trilhas de dados vindas do módulo Comercial (dashboards CRM, portfolio
+  intelligence de terceiros)
+
+### Whitelist canônica de abas visíveis
+
+Fonte da verdade: `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS` em
+`src/lib/permissionsClient.ts` — tupla `readonly` com a ordem canônica:
+
+```ts
+export const PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS = [
+  "order-status-pedidos",
+  "order-to-cash-audit",
+] as const;
+```
+
+O helper `isPortfolioReconciliationVisibleTabId(id)` recebe qualquer string
+(state antigo, query param, deep-link, localStorage) e retorna `true`
+apenas se estiver na whitelist. A UI consulta esse helper no `useEffect` de
+sincronização e força o fallback → primeira aba visível permitida.
+
+### Fallback de estado antigo
+
+Qualquer valor de `activeView` fora da whitelist é redirecionado para a
+primeira aba visível permitida (default: `order-status-pedidos`). Ids
+tratados como estado legado incluem:
+
+- `conciliation` (aba removida)
+- `intelligence` (aba removida)
+- `portfolio`, `carteira`, `reconciliation`, `old-tab` (nomes históricos
+  vindos de scripts/QA antigos, deep-links de e-mails, bookmarks)
+
+Como o `useState` inicial já resolve para `visibleTabs[0]` e o `useEffect`
+força correção sempre que `visibleTabs` muda, o pior caso é **um render
+inicial com o valor errado, seguido de correção automática no mesmo tick**
+— nenhuma aba oculta é montada nem tem chance de disparar `fetch`.
+
+### Endpoints e services (não removidos)
+
+Nenhum endpoint, service ou modelo Prisma foi removido:
+
+- `/api/finance/portfolio-reconciliation` (JSON — usado pelo painel de
+  filtros para popular customers/runs/statuses/confidenceLevels)
+- `/api/finance/portfolio-reconciliation/runs` (lista de runs)
+- `/api/finance/portfolio-intelligence/*` (Inteligência da Carteira — usado
+  por dashboards externos ao módulo, mas não mais renderizado aqui)
+- `PortfolioReconciliationRun` / `PortfolioReconciliationFact`
+  (materialização) — usados por scripts de rebuild e pela Auditoria 360º
+
+### QA
+
+Rode `npx tsx scripts/qaPortfolioReconciliationTabs.ts` para validar as
+9 asserções obrigatórias:
+
+1. Whitelist canônica declarada em `permissionsClient.ts` (só Status Pedidos + Auditoria Pedido → Caixa)
+2. Aba default é Status Pedidos
+3. Estado antigo `conciliation` cai no fallback
+4. Estado antigo `intelligence` cai no fallback
+5. `OrderStatusTab` continua sendo montado
+6. `OrderToCashAuditTab` continua sendo montado
+7. Painel superior de filtros continua renderizado
+8. Nenhum JSX residual das abas ocultas (`<PortfolioIntelligenceSection>`, `<PortfolioReconciliationOrdersTable>`, `activeView === "conciliation"`, etc.)
+9. Frontend não importa `@prisma/client`
+
+Sair com `exit code 0` = liberação para deploy.
