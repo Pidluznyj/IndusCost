@@ -229,16 +229,16 @@ export function SalesOrderReportPrintDocument({
                         </span>
                       ) : null}
                     </td>
-                    <td className={moneyClassForRow("original")}>
+                    <td className={`col-money ${moneyClassForRow("original")}`}>
                       {formatFinanceCurrency(row.originalValue)}
                     </td>
-                    <td className={moneyClassForRow("active")}>
+                    <td className={`col-money ${moneyClassForRow("active")}`}>
                       {formatFinanceCurrency(row.activeValue)}
                     </td>
-                    <td className={moneyClassForRow("invoiced")}>
+                    <td className={`col-money ${moneyClassForRow("invoiced")}`}>
                       {formatFinanceCurrency(row.invoicedValue)}
                     </td>
-                    <td className={moneyClassForRow("pending")}>
+                    <td className={`col-money ${moneyClassForRow("pending")}`}>
                       {formatFinanceCurrency(row.pendingBalance)}
                     </td>
                   </tr>
@@ -252,16 +252,16 @@ export function SalesOrderReportPrintDocument({
                   <td className="col-num">
                     {formatFinanceInteger(summary.totalItemsCount)}
                   </td>
-                  <td className={moneyClassForRow("original") + " sales-orders-print-money--total"}>
+                  <td className={`col-money ${moneyClassForRow("original")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.originalValue)}
                   </td>
-                  <td className={moneyClassForRow("active") + " sales-orders-print-money--total"}>
+                  <td className={`col-money ${moneyClassForRow("active")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.activeValue)}
                   </td>
-                  <td className={moneyClassForRow("invoiced") + " sales-orders-print-money--total"}>
+                  <td className={`col-money ${moneyClassForRow("invoiced")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.invoicedValue)}
                   </td>
-                  <td className={moneyClassForRow("pending") + " sales-orders-print-money--total"}>
+                  <td className={`col-money ${moneyClassForRow("pending")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.pendingBalance)}
                   </td>
                 </tr>

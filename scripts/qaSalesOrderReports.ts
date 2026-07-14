@@ -281,10 +281,38 @@ function checkPrintComponents() {
       "overflow-wrap: anywhere removido das células do PDF"
     );
   }
-  if (css.includes("-webkit-line-clamp: 2") || css.includes("sales-orders-print-client-text")) {
-    ok("css:client-clamp", "Cliente com truncamento controlado (2 linhas)");
+  if (css.includes("sales-orders-print-client-text") && css.includes("max-height: 2.6em")) {
+    ok("css:client-clamp", "Cliente com truncamento controlado (max-height)");
   } else {
     fail("css:client-clamp", "Cliente sem truncamento controlado no CSS");
+  }
+  // Regressão: `#sales-orders-print-root * { overflow: visible !important }`
+  // fazia datas vazarem (ex.: "14/07/202621/07/2026GISLENE").
+  if (
+    /#sales-orders-print-root \*\s*\{[^}]*overflow:\s*visible\s*!important/.test(css)
+  ) {
+    fail(
+      "css:no-global-overflow-visible",
+      "regra global overflow:visible nos descendentes ainda presente — colunas vazam"
+    );
+  } else if (
+    css.includes(".sales-orders-print-data-table td") &&
+    css.includes("overflow: hidden !important")
+  ) {
+    ok(
+      "css:no-global-overflow-visible",
+      "células da tabela analítica com overflow:hidden (sem overflow:visible global)"
+    );
+  } else {
+    fail(
+      "css:no-global-overflow-visible",
+      "proteção de overflow das células da tabela analítica ausente"
+    );
+  }
+  if (css.includes("width: 7.5%") && css.includes(".col-date")) {
+    ok("css:date-width", "colunas Emissão/Entrega com largura suficiente (7.5%)");
+  } else {
+    fail("css:date-width", "colunas de data sem largura mínima adequada");
   }
 
   const billing = read("src/lib/sales/salesOrderListBillingStatus.ts");

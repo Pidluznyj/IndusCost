@@ -70,11 +70,22 @@
     border-radius: 0 !important;
   }
 
-  #sales-orders-print-root * {
+  /*
+   * NÃO forçar overflow:visible em todos os descendentes — isso anulava
+   * overflow:hidden das células e fazia Emissão/Entrega/Vendedor vazarem
+   * uns sobre os outros (ex.: "14/07/202621/07/2026GISLENE").
+   */
+  #sales-orders-print-root,
+  #sales-orders-print-root .sales-orders-print-document,
+  #sales-orders-print-root .sales-orders-print-section,
+  #sales-orders-print-root .sales-orders-print-cover,
+  #sales-orders-print-root .sales-orders-print-summary-grid {
     overflow: visible !important;
     max-height: none !important;
+  }
+
+  #sales-orders-print-root * {
     box-shadow: none !important;
-    border-radius: 0 !important;
   }
 
   #sales-orders-print-root .sales-orders-print-document {
@@ -187,6 +198,13 @@
     vertical-align: top;
     word-wrap: break-word;
     overflow-wrap: break-word;
+    box-sizing: border-box;
+  }
+
+  /* table-layout:fixed — cada coluna respeita a % e corta estouro */
+  #sales-orders-print-root .sales-orders-print-data-table th,
+  #sales-orders-print-root .sales-orders-print-data-table td {
+    overflow: hidden !important;
   }
 
   #sales-orders-print-root .sales-orders-print-filter-band {
@@ -371,15 +389,13 @@
   }
 
   /*
-   * Larguras da tabela analítica (2026-07 layout fix):
-   * - Pedido só mostra "PD XXXXX" → coluna estreita;
-   * - Faturamento com labels compactas → largura fixa;
-   * - Valores monetários com nowrap → precisam de largura estável;
-   * - Cliente truncado (até 2 linhas) para não empurrar valores.
-   * `.col-company` permanece definido para retrocompatibilidade.
+   * Larguras da tabela analítica (A4 paisagem).
+   * Datas precisam caber "DD/MM/YYYY" inteiro sem invadir Vendedor.
+   * Valores monetários com nowrap precisam de largura estável.
+   * `.col-company` permanece para retrocompatibilidade.
    */
   #sales-orders-print-root .col-client {
-    width: 15%;
+    width: 13%;
   }
 
   #sales-orders-print-root .col-company {
@@ -389,23 +405,24 @@
   }
 
   #sales-orders-print-root .col-order {
-    width: 7%;
+    width: 8%;
     white-space: nowrap;
-    overflow: hidden;
   }
 
   #sales-orders-print-root .col-date {
-    width: 5.5%;
-    white-space: nowrap;
+    width: 7.5%;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
   }
 
   #sales-orders-print-root .col-seller {
-    width: 9%;
+    width: 10%;
   }
 
   #sales-orders-print-root .col-status {
     width: 8%;
-    overflow: hidden;
     text-align: center;
   }
 
@@ -415,17 +432,26 @@
   }
 
   #sales-orders-print-root .col-money {
-    width: 11.5%;
+    width: 10.5%;
   }
 
   #sales-orders-print-root .sales-orders-print-client-text,
   #sales-orders-print-root .sales-orders-print-seller-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
-    line-height: 1.25;
-    max-height: 2.5em;
+    display: block;
+    overflow: hidden !important;
+    max-height: 2.6em !important;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+
+  #sales-orders-print-root .sales-orders-print-data-table thead th.col-money,
+  #sales-orders-print-root .sales-orders-print-data-table thead th.col-date,
+  #sales-orders-print-root .sales-orders-print-data-table thead th.col-status,
+  #sales-orders-print-root .sales-orders-print-data-table thead th.col-num,
+  #sales-orders-print-root .sales-orders-print-data-table thead th.col-order {
+    white-space: nowrap;
+    overflow: hidden !important;
+    text-overflow: clip;
   }
 
   #sales-orders-print-root .sales-orders-print-order-code {
@@ -503,6 +529,8 @@
     font-size: 7px;
     color: #64748b;
     text-align: center;
+    page-break-before: avoid;
+    break-before: avoid;
   }
 
   #sales-orders-print-root .sales-orders-print-footer p {

@@ -86,6 +86,7 @@ Prioridade: legibilidade da tabela **DETALHAMENTO ANALÍTICO** em A4 paisagem.
 | ID Nomus / texto auxiliar | **Não** aparece na tabela analítica (`· Nomus PD …` removido). ID Nomus permanece no XLSX técnico e na tela. |
 | Coluna **Faturamento** | Labels **compactas**: `Faturado` · `Não faturado` · `Parcial` · `Cancelado`. `PARTIALLY_INVOICED` renderiza como **Parcial** (não “Parcialmente faturado”). Badge com fonte menor, `max-width: 100%` e ellipsis se necessário. |
 | Valores monetários | `white-space: nowrap` + sem `overflow-wrap: anywhere` — nunca quebrar `R$ 117.000,00` no meio (`R$ 117.000,` / `00`). Alinhados à direita. |
+| Overflow das células | **Não** usar `#sales-orders-print-root * { overflow: visible }` — isso faz Emissão/Entrega/Vendedor vazarem (ex.: `14/07/202621/07/2026GISLENE`). Células da tabela usam `overflow: hidden` + larguras % fixas. |
 | Coluna **Cliente** | Truncamento controlado (até 2 linhas) para não empurrar as colunas de valor. |
 | Totalizadores | Linha `Total` com `colSpan={6}` + totais em Itens / Valor pedido / Valor ativo / Faturado / Saldo, sem quebra da linha. |
 | Cabeçalho / filtros / KPIs / rodapé | **Não** alterados nesta correção de layout. |
