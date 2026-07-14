@@ -761,6 +761,10 @@ export type OrderFullAuditCommissionItem = {
   isCanceled: boolean;
   isCut: boolean;
   isStale: boolean;
+  /** Quantidade da linha no pedido. */
+  quantity: number | null;
+  /** Valor unitário negociado da linha. */
+  unitPrice: number | null;
   activeQuantity: number | null;
   commissionBase: number | null;
   marginPercent: number | null;

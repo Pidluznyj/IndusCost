@@ -901,6 +901,10 @@ export type OrderFullAuditCommissionItem = {
   isCanceled: boolean;
   isCut: boolean;
   isStale: boolean;
+  /** Quantidade da linha no pedido (`SalesOrderItem.quantity`). */
+  quantity: number | null;
+  /** Preço unitário negociado da linha (`SalesOrderItem.negotiatedPrice`). */
+  unitPrice: number | null;
   activeQuantity: number | null;
   /** Base de comissão oficial (`CommissionOrderItemSnapshot.soldAmount`). */
   commissionBase: number | null;
@@ -4649,6 +4653,8 @@ async function loadCommissionBlock(input: {
         isCanceled,
         isCut,
         isStale,
+        quantity: oi?.quantity ?? null,
+        unitPrice: oi?.unitPrice ?? null,
         activeQuantity: oi?.activeQuantity ?? null,
         commissionBase: decimalToNumber(si.soldAmount),
         marginPercent: decimalToNumber(si.marginPercent),
