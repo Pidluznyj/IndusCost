@@ -171,7 +171,38 @@ npx tsx tmp-audits/inspect-order-full-audit-pd02339.ts
 npx tsx tmp-audits/inspect-order-full-audit-pd02534.ts
 npx tsx tmp-audits/inspect-order-full-audit-pd02207.ts
 npx tsx tmp-audits/inspect-order-full-audit-official-engines.ts
+
+# Auditoria de escala em massa — flagra pedidos onde planejado ≠ ativo
+# em ordens de magnitude (0.001×, 0.01×, 100×, 1000×).
+npx tsx tmp-audits/inspect-order-full-audit-value-scale.ts
+npx tsx tmp-audits/inspect-order-full-audit-value-scale.ts --take=200
+npx tsx tmp-audits/inspect-order-full-audit-value-scale.ts --orders=PD02740,PD02339
 ```
+
+## Escala de valores monetários — regra oficial (2026-07)
+
+- **Backend trafega valores em REAIS** (`number` decimal, ex.: `175600` =
+  R$ 175.600,00). Nunca em milhares nem em centavos.
+- **Nunca `Number(str.replace(",", "."))` ingênuo** em valores vindos do
+  Nomus/CSV/JSON externo — `"175.600,00"` → `"175.600.00"` → `NaN → 0`. Usar
+  `toNumber` do `salesOrderListPaymentSchedule.ts`, que reconhece:
+  - `175600` (number) → 175600
+  - `"175.600,00"` (pt-BR) → 175600
+  - `"175600.00"` (US) → 175600
+  - `"175,60"` (só vírgula decimal) → 175.60
+  - `"1,234,567.89"` (US com milhar) → 1234567.89
+- **Formatação BRL só na camada de apresentação** (`formatFinanceCurrency`,
+  `Intl.NumberFormat("pt-BR", { style: "currency" })`) — nunca dentro de
+  cálculo/serviço.
+- **Sanity check de forecast** (`extractSalesOrderForecastInstallments`):
+  se a soma das parcelas vindas do `nomusRawResponse` divergir do
+  `totalNetValue` do pedido em mais de 10× (para cima ou para baixo), a
+  estrutura (nº de parcelas + datas) é preservada mas os valores são
+  **reescalados proporcionalmente** para bater com o valor ativo oficial
+  do pedido. A última parcela recebe o residual para eliminar drift.
+- **CR real prevalece sobre planejado**: se `receivables.length > 0`, o
+  motor devolve os CR reais direto — o forecast só entra em cena quando
+  não há CR real materializado (pedido ainda sem NF).
 
 ## Documentos relacionados
 
