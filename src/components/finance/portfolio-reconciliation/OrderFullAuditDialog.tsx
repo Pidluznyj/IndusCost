@@ -5857,11 +5857,17 @@ function CommissionsTab({
                 </p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="min-w-[600px] w-full text-left text-[11px]">
+                  <table className="min-w-[680px] w-full text-left text-[11px]">
                     <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
                       <tr>
                         <th className="py-1 pr-2 font-semibold">CR</th>
                         <th className="py-1 pr-2 font-semibold">Parcela</th>
+                        <th
+                          className="py-1 pr-2 font-semibold whitespace-nowrap"
+                          title="Data de vencimento da parcela do Contas a Receber."
+                        >
+                          Vencimento CR
+                        </th>
                         <th className="py-1 pr-2 font-semibold text-right">Nominal</th>
                         <th className="py-1 pr-2 font-semibold text-right">Share %</th>
                         <th className="py-1 pr-2 font-semibold text-right">Comissão prev.</th>
@@ -5879,6 +5885,12 @@ function CommissionsTab({
                           </td>
                           <td className="py-1 pr-2 tabular-nums">
                             {s.installmentNumber ?? "—"}
+                          </td>
+                          <td
+                            className="py-1 pr-2 whitespace-nowrap tabular-nums"
+                            title="Data de vencimento da parcela do Contas a Receber."
+                          >
+                            {s.receivableDueDateFormatted ?? "—"}
                           </td>
                           <td className="py-1 pr-2 text-right tabular-nums">
                             {formatMoneyOrDash(s.receivableNominalAmount)}

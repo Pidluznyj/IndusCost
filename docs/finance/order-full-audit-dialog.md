@@ -281,6 +281,22 @@ tabela oficial; um alerta informativo `PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR`
   `COMMISSION_BASE_GREATER_THAN_RECEIVED_VALUE`,
   `RESPONSIBLE_COMMERCIAL_USED_AS_COMMISSION_SELLER`.
 
+#### Aba Comissões — Cronograma × baixas
+
+- **Cronograma (`CommissionReceivableSchedule`)**: parcelas previstas de CR
+  usadas para ratear/liberar comissão.
+- Coluna **Vencimento CR** = vencimento oficial da parcela/título em
+  Contas a Receber (`NomusAccountsReceivable.dueDate`), resolvido via
+  `receivableId` do cronograma.
+- Formato de exibição: **YYYY/MM/DD** (ex.: `2026/06/18`). Sem data → `—`.
+- **Não** representa data de pagamento da comissão, competência, emissão do
+  pedido, NF, baixa do CR nem recebimento.
+- **Baixas (`CommissionReceiptLedgerLine`)**: continuam mostrando
+  **Data baixa** / **Data pgto** quando existirem; não misturar com
+  Vencimento CR.
+- A aba permanece **read-only** e **não altera** comissão paga nem o
+  cálculo oficial.
+
 ### 2.11 Divergências e Alertas
 
 - **Central de auditoria**. Consolida os alertas de todas as outras 11 abas.

@@ -745,9 +745,14 @@ export type OrderFullAuditCommissionScheduleEntry = {
   receivableExternalId: number | null;
   receivableCode: string | null;
   installmentNumber: number | null;
+  /** Vencimento oficial da parcela CR — YYYY-MM-DD. */
+  receivableDueDate: string | null;
+  /** Vencimento oficial formatado YYYY/MM/DD. */
+  receivableDueDateFormatted: string | null;
   receivableNominalAmount: number | null;
   receivableSharePercent: number | null;
   scheduledCommissionAmount: number | null;
+  /** @deprecated Preferir `receivableDueDate`. */
   scheduleDate: string | null;
   status: string | null;
 };

@@ -32,8 +32,17 @@ import {
   normalizeNfeStatus,
   type NormalizedNfeStatus,
 } from "./nfeStatus.js";
+import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 
 const MONEY_TOLERANCE = 0.01;
+
+/** Vencimento CR no cronograma de comissão — YYYY/MM/DD (dia civil). */
+function formatReceivableDueDateSlash(
+  value: Date | string | null | undefined
+): string | null {
+  const key = toCivilDateKey(value);
+  return key ? key.replace(/-/g, "/") : null;
+}
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -902,9 +911,14 @@ export type OrderFullAuditCommissionScheduleEntry = {
   receivableExternalId: number | null;
   receivableCode: string | null;
   installmentNumber: number | null;
+  /** Vencimento oficial da parcela CR (`NomusAccountsReceivable.dueDate`) — YYYY-MM-DD. */
+  receivableDueDate: string | null;
+  /** Mesmo vencimento formatado YYYY/MM/DD para a UI. */
+  receivableDueDateFormatted: string | null;
   receivableNominalAmount: number | null;
   receivableSharePercent: number | null;
   scheduledCommissionAmount: number | null;
+  /** @deprecated Preferir `receivableDueDate`. Mantido por compatibilidade. */
   scheduleDate: string | null;
   status: string | null;
 };
@@ -4573,19 +4587,57 @@ async function loadCommissionBlock(input: {
       };
     });
 
+    // Vencimento oficial da parcela CR (NomusAccountsReceivable.dueDate).
+    // CommissionReceivableSchedule não persiste dueDate — resolve via CR do pedido.
+    const dueByReceivableExternalId = new Map<number, string | null>();
+    for (const r of input.receivables) {
+      dueByReceivableExternalId.set(r.receivableExternalId, r.dueDate);
+    }
+    const missingDueIds = Array.from(
+      new Set(
+        snapshot.receivableSchedules
+          .map((s) => s.receivableId)
+          .filter(
+            (id): id is number =>
+              typeof id === "number" &&
+              id > 0 &&
+              !dueByReceivableExternalId.has(id)
+          )
+      )
+    );
+    if (missingDueIds.length > 0) {
+      const missingRows = await prisma.nomusAccountsReceivable
+        .findMany({
+          where: { externalId: { in: missingDueIds } },
+          select: { externalId: true, dueDate: true },
+        })
+        .catch(() => []);
+      for (const row of missingRows) {
+        dueByReceivableExternalId.set(row.externalId, toIso(row.dueDate));
+      }
+    }
+
     const receivableSchedule: OrderFullAuditCommissionScheduleEntry[] =
-      snapshot.receivableSchedules.map((s) => ({
-        receivableExternalId: s.receivableId,
-        receivableCode: s.receivableCode,
-        installmentNumber: s.installmentNumber,
-        receivableNominalAmount: decimalToNumber(s.receivableNominalAmount),
-        receivableSharePercent: decimalToNumber(s.receivableSharePercent),
-        scheduledCommissionAmount: decimalToNumber(
-          s.scheduledCommissionAmount
-        ),
-        scheduleDate: null,
-        status: s.status,
-      }));
+      snapshot.receivableSchedules.map((s) => {
+        const dueRaw = dueByReceivableExternalId.get(s.receivableId) ?? null;
+        const receivableDueDate = toCivilDateKey(dueRaw);
+        const receivableDueDateFormatted =
+          formatReceivableDueDateSlash(dueRaw);
+        return {
+          receivableExternalId: s.receivableId,
+          receivableCode: s.receivableCode,
+          installmentNumber: s.installmentNumber,
+          receivableDueDate,
+          receivableDueDateFormatted,
+          receivableNominalAmount: decimalToNumber(s.receivableNominalAmount),
+          receivableSharePercent: decimalToNumber(s.receivableSharePercent),
+          scheduledCommissionAmount: decimalToNumber(
+            s.scheduledCommissionAmount
+          ),
+          scheduleDate: receivableDueDate,
+          status: s.status,
+        };
+      });
 
     const receipts: OrderFullAuditCommissionReceipt[] = ledgerLines.map((l) => ({
       ledgerLineKey: l.ledgerLineKey,
