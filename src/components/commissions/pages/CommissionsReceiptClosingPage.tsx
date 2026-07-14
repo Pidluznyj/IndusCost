@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Loader2, Lock, Printer, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
@@ -52,16 +53,6 @@ import {
 } from "@/src/lib/commissions/commissionReceiptSeller";
 
 const inputClass = COMMISSIONS_FILTER_FIELD_CLASS;
-
-function runCommissionClosingPrint() {
-  document.body.classList.add("sales-orders-print-route");
-  window.setTimeout(() => {
-    window.print();
-    window.setTimeout(() => {
-      document.body.classList.remove("sales-orders-print-route");
-    }, 300);
-  }, 120);
-}
 
 function currentYearMonth(): { year: string; month: string } {
   const now = new Date();
@@ -308,12 +299,42 @@ export function CommissionsReceiptClosingPage() {
   const [sellerFilterKey, setSellerFilterKey] = useState<string | null>(null);
   const [showGroupCompanyAudit, setShowGroupCompanyAudit] = useState(false);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const [printingPdf, setPrintingPdf] = useState(false);
 
   useEffect(() => {
     void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
       .then(setBranding)
       .catch(() => setBranding(DEFAULT_BRANDING));
   }, []);
+
+  useEffect(() => {
+    if (printRequestId === 0 || !data || data.mode !== "CLOSED") return;
+
+    document.body.classList.add("sales-orders-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      setPrintRequestId(0);
+      setPrintingPdf(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, data]);
+
+  function requestCommissionClosingPrint() {
+    if (!data || data.mode !== "CLOSED") return;
+    setPrintingPdf(true);
+    setPrintRequestId((n) => n + 1);
+  }
 
   function clearSellerFilter() {
     setSellerFilterKey(null);
@@ -759,10 +780,15 @@ export function CommissionsReceiptClosingPage() {
           <button
             type="button"
             className={`${financeBiButtonOutlineClass} inline-flex items-center`}
-            onClick={() => runCommissionClosingPrint()}
+            onClick={() => requestCommissionClosingPrint()}
+            disabled={printingPdf}
             data-testid="commissions-receipt-closing-print-pdf"
           >
-            <Printer className="mr-2 h-4 w-4" />
+            {printingPdf ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="mr-2 h-4 w-4" />
+            )}
             Imprimir / PDF
           </button>
         ) : null}
@@ -1084,9 +1110,12 @@ export function CommissionsReceiptClosingPage() {
         </div>
       ) : null}
 
-      {isClosed && data ? (
-        <CommissionClosingReportPrintDocument payload={data} branding={branding} />
-      ) : null}
+      {printRequestId > 0 && data?.mode === "CLOSED"
+        ? createPortal(
+            <CommissionClosingReportPrintDocument payload={data} branding={branding} />,
+            document.body
+          )
+        : null}
     </div>
   );
 }

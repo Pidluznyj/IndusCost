@@ -41,7 +41,12 @@ section("1–7. PDF do fechamento");
   assert.match(printDoc, /col-money/);
   assert.match(printDoc, /sales-order-report-print\.css/);
   assert.match(page, /Imprimir \/ PDF/);
-  assert.match(page, /runCommissionClosingPrint|window\.print/);
+  assert.match(page, /createPortal/);
+  assert.match(page, /sales-orders-print-route/);
+  assert.match(page, /requestCommissionClosingPrint|window\.print/);
+  assert.match(printDoc, /id=\"sales-orders-print-root\"/);
+  assert.match(printDoc, /PrintHeader/);
+  assert.match(printDoc, /sales-orders-print-cover/);
   ok("PDF: título, resumo, tabelas, money no-wrap, padrão Pedidos");
 }
 
