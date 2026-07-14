@@ -1,0 +1,879 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  Loader2,
+  Printer,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
+import { fetchJsonOk } from "@/src/lib/http";
+import {
+  formatFinanceCurrency,
+  formatFinanceDateTime,
+} from "@/src/lib/financeAccountsReceivableFormat";
+import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
+import {
+  COMMISSIONS_FILTER_FIELD_CLASS,
+  COMMISSIONS_FILTER_LABEL_CLASS,
+  buildCommissionsYearOptions,
+} from "@/src/lib/commissionsPeriodFilter";
+import {
+  CommissionsEmptyState,
+  CommissionsErrorBanner,
+  CommissionsKpiSection,
+  CommissionsLoading,
+  CommissionsSectionIntro,
+  CommissionsTableScroll,
+  formatCommissionsApiError,
+} from "@/src/components/commissions/commissionsUi";
+import {
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
+import type {
+  CommissionClosingDetailPayload,
+  CommissionClosingListItem,
+  CommissionClosingSellerReport,
+} from "@/src/lib/commissions/commissionClosings.shared";
+import { isCanonicalSellerDisplayName } from "@/src/lib/commissions/commissionClosings.shared";
+import { CommissionClosingSellerReportPrintDocument } from "@/src/components/commissions/CommissionClosingSellerReportPrintDocument";
+import { CommissionClosingReportPrintDocument } from "@/src/components/commissions/CommissionClosingReportPrintDocument";
+import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
+import { cn } from "@/src/lib/utils";
+
+const MONTH_OPTIONS = [
+  { value: "", label: "Todos" },
+  { value: "1", label: "Janeiro" },
+  { value: "2", label: "Fevereiro" },
+  { value: "3", label: "Março" },
+  { value: "4", label: "Abril" },
+  { value: "5", label: "Maio" },
+  { value: "6", label: "Junho" },
+  { value: "7", label: "Julho" },
+  { value: "8", label: "Agosto" },
+  { value: "9", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+];
+
+type ViewMode = "list" | "detail" | "seller";
+
+export function CommissionsClosingsPage() {
+  const now = new Date();
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const [month, setMonth] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [items, setItems] = useState<CommissionClosingListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ViewMode>("list");
+  const [detail, setDetail] = useState<CommissionClosingDetailPayload | null>(null);
+  const [sellerReport, setSellerReport] = useState<CommissionClosingSellerReport | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState("");
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const [printMode, setPrintMode] = useState<"seller" | "closing" | null>(null);
+  const [closingPrintPayload, setClosingPrintPayload] = useState<ReceiptClosingPagePayload | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const yearOptions = useMemo(
+    () => buildCommissionsYearOptions(Number.parseInt(year, 10) || now.getFullYear()),
+    [year, now]
+  );
+
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const qs = new URLSearchParams();
+      qs.set("year", year);
+      if (month) qs.set("month", month);
+      qs.set("status", "CLOSED");
+      if (search.trim()) qs.set("search", search.trim());
+      const data = await fetchJsonOk<{ items: CommissionClosingListItem[] }>(
+        `/api/commissions/closings?${qs.toString()}`
+      );
+      setItems(data.items ?? []);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível carregar os fechamentos."));
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [year, month, search]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  useEffect(() => {
+    if (printRequestId === 0 || !printMode) return;
+    document.body.classList.add("sales-orders-print-route");
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      setPrintRequestId(0);
+      setPrintMode(null);
+      setClosingPrintPayload(null);
+    };
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    const timer = window.setTimeout(() => window.print(), 350);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, printMode]);
+
+  async function openClosing(item: CommissionClosingListItem) {
+    setDetailLoading(true);
+    setError(null);
+    try {
+      const data = await fetchJsonOk<CommissionClosingDetailPayload>(
+        `/api/commissions/closings/${item.closingId}`
+      );
+      setDetail(data);
+      setView("detail");
+      setSellerReport(null);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível abrir o fechamento."));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function openSeller(sellerGroupKey: string) {
+    if (!detail) return;
+    setDetailLoading(true);
+    setError(null);
+    try {
+      const key = encodeURIComponent(sellerGroupKey);
+      const qs = sellerSearch.trim() ? `?search=${encodeURIComponent(sellerSearch.trim())}` : "";
+      const data = await fetchJsonOk<CommissionClosingSellerReport>(
+        `/api/commissions/closings/${detail.closing.closingId}/sellers/${key}${qs}`
+      );
+      setSellerReport(data);
+      setView("seller");
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível abrir o relatório do vendedor."));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function exportSellerXlsx() {
+    if (!detail || !sellerReport) return;
+    setExporting(true);
+    try {
+      const key = encodeURIComponent(sellerReport.seller.groupKey);
+      const res = await fetch(
+        `/api/commissions/closings/${detail.closing.closingId}/sellers/${key}/xlsx`
+      );
+      if (!res.ok) throw new Error("Falha ao exportar XLSX.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `comissao-${sellerReport.closing.year}-${sellerReport.closing.month}-${sellerReport.seller.displayName}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível exportar o XLSX."));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportClosingXlsx(item: CommissionClosingListItem) {
+    setExporting(true);
+    try {
+      const res = await fetch(
+        `/api/commissions/receipt-closing/${item.year}/${item.month}/report.xlsx`
+      );
+      if (!res.ok) throw new Error("Falha ao exportar XLSX geral.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `comissao-fechamento-${item.year}-${String(item.month).padStart(2, "0")}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível exportar o XLSX geral."));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function printClosingGeneral(item: CommissionClosingListItem) {
+    try {
+      const payload = await fetchJsonOk<ReceiptClosingPagePayload>(
+        `/api/commissions/receipt-closing/${item.year}/${item.month}/report`
+      );
+      setClosingPrintPayload(payload);
+      setPrintMode("closing");
+      setPrintRequestId((n) => n + 1);
+    } catch (e: unknown) {
+      setError(formatCommissionsApiError(e, "Não foi possível gerar o PDF geral."));
+    }
+  }
+
+  function printSellerPdf() {
+    if (!sellerReport) return;
+    setPrintMode("seller");
+    setPrintRequestId((n) => n + 1);
+  }
+
+  async function copySellerSummary() {
+    if (!sellerReport) return;
+    const text = [
+      `Relatório de Comissão — ${sellerReport.seller.displayName}`,
+      `Fechamento ${sellerReport.closing.periodLabel}`,
+      `Comissão final: ${formatFinanceCurrency(sellerReport.summary.finalCommissionAmount)}`,
+      `Base: ${formatFinanceCurrency(sellerReport.summary.commissionBaseAmount)}`,
+      `Recebido: ${formatFinanceCurrency(sellerReport.summary.totalReceivedAmount)}`,
+      `Títulos: ${sellerReport.summary.titleCount}`,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      setError("Não foi possível copiar o resumo.");
+    }
+  }
+
+  const filteredSellerRows = useMemo(() => {
+    if (!sellerReport) return [];
+    if (!sellerSearch.trim()) return sellerReport.rows;
+    const needle = sellerSearch.trim().toLowerCase();
+    return sellerReport.rows.filter((r) =>
+      [r.orderCode, r.customerName, r.nfeNumber, r.receivableNumber].some(
+        (v) => v != null && String(v).toLowerCase().includes(needle)
+      )
+    );
+  }, [sellerReport, sellerSearch]);
+
+  return (
+    <div className="space-y-5" data-testid="commissions-closings-page">
+      <CommissionsSectionIntro
+        title="Fechamentos de Comissão"
+        description="Consulte relatórios oficiais já fechados, por mês e por vendedor. A fonte é o ledger oficial — sem recálculo."
+        testId="commissions-closings-intro"
+      />
+
+      {error ? (
+        <CommissionsErrorBanner
+          message={error}
+          onRetry={() => void reload()}
+          onDismiss={() => setError(null)}
+        />
+      ) : null}
+
+      {view === "list" ? (
+        <>
+          <div
+            className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
+            data-testid="commissions-closings-filters"
+          >
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="space-y-1">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Ano</span>
+                <select
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                >
+                  {yearOptions.map((y) => (
+                    <option key={y} value={String(y)}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Mês</span>
+                <select
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value || "all"} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1 sm:col-span-2">
+                <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Busca</span>
+                <input
+                  className={COMMISSIONS_FILTER_FIELD_CLASS}
+                  placeholder="Pedido, cliente, NF, CR, vendedor…"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      setSearch(searchInput);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => setSearch(searchInput)}
+              >
+                <Search className="mr-2 h-4 w-4" />
+                Buscar
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => {
+                  setMonth("");
+                  setSearchInput("");
+                  setSearch("");
+                }}
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => void reload()}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Atualizar
+              </button>
+            </div>
+          </div>
+
+          {loading ? <CommissionsLoading label="Carregando fechamentos…" /> : null}
+
+          {!loading && items.length === 0 ? (
+            <CommissionsEmptyState
+              title="Nenhum fechamento oficial encontrado"
+              description="Feche um mês em Fechamento do mês para consultá-lo aqui."
+            />
+          ) : null}
+
+          {items.length > 0 ? (
+            <CommissionsTableScroll testId="commissions-closings-table">
+              <thead className="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2">Período</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Fechado em</th>
+                  <th className="px-3 py-2">Fechado por</th>
+                  <th className="px-3 py-2">Recebido</th>
+                  <th className="px-3 py-2">Base</th>
+                  <th className="px-3 py-2">Comissão final</th>
+                  <th className="px-3 py-2">Vendedores</th>
+                  <th className="px-3 py-2">Títulos</th>
+                  <th className="px-3 py-2">Divergências</th>
+                  <th className="px-3 py-2">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map((item) => (
+                  <tr key={item.closingId} data-testid="commissions-closings-row">
+                    <td className="px-3 py-2 font-medium">{item.periodLabel}</td>
+                    <td className="px-3 py-2">
+                      <span className="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">
+                        {item.statusLabel}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-sm">
+                      {item.closedAt ? formatFinanceDateTime(item.closedAt) : "—"}
+                    </td>
+                    <td className="px-3 py-2">{item.closedByName ?? "—"}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(item.totalReceivedAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(item.commissionBaseAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                      {formatFinanceCurrency(item.finalCommissionAmount)}
+                    </td>
+                    <td className="px-3 py-2">{item.sellerCount}</td>
+                    <td className="px-3 py-2">{item.lineCount}</td>
+                    <td className="px-3 py-2">{item.criticalDivergence ? "Sim" : "Não"}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs font-medium hover:bg-accent"
+                          onClick={() => void openClosing(item)}
+                          data-testid="commissions-closings-open"
+                        >
+                          Ver
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs hover:bg-accent"
+                          onClick={() => void printClosingGeneral(item)}
+                        >
+                          PDF
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-1 text-xs hover:bg-accent"
+                          disabled={exporting}
+                          onClick={() => void exportClosingXlsx(item)}
+                        >
+                          XLSX
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </CommissionsTableScroll>
+          ) : null}
+        </>
+      ) : null}
+
+      {view === "detail" && detail ? (
+        <div className="space-y-4" data-testid="commissions-closings-detail">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <button
+                type="button"
+                className="mb-2 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setView("list");
+                  setDetail(null);
+                }}
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
+              </button>
+              <h2 className="text-lg font-semibold">
+                Fechamento de Comissão — {detail.closing.periodLabel}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Fechado em{" "}
+                {detail.closing.closedAt
+                  ? formatFinanceDateTime(detail.closing.closedAt)
+                  : "—"}{" "}
+                por {detail.closing.closedByName ?? "—"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => void printClosingGeneral(detail.closing)}
+              >
+                <Printer className="mr-2 h-4 w-4" /> PDF geral
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                disabled={exporting}
+                onClick={() => void exportClosingXlsx(detail.closing)}
+              >
+                <Download className="mr-2 h-4 w-4" /> XLSX geral
+              </button>
+            </div>
+          </div>
+
+          <CommissionsKpiSection title="Resumo" testId="commissions-closings-detail-cards">
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Total recebido"
+              amount={detail.cards.totalReceivedAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Base comissionável"
+              amount={detail.cards.commissionBaseAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão bruta"
+              amount={detail.cards.grossCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão excluída"
+              amount={detail.cards.excludedCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão final a pagar"
+              amount={detail.cards.finalCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Vendedores"
+              amount={detail.cards.sellerCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Títulos"
+              amount={detail.cards.titleCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Divergências críticas"
+              value={detail.cards.criticalDivergence ? "Sim" : "Não"}
+            />
+          </CommissionsKpiSection>
+
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold">Por vendedor</h3>
+            <CommissionsTableScroll testId="commissions-closings-sellers-table">
+              <thead className="bg-sky-50 text-left text-xs uppercase tracking-wide text-sky-900">
+                <tr>
+                  <th className="px-3 py-2">Vendedor</th>
+                  <th className="px-3 py-2">Títulos</th>
+                  <th className="px-3 py-2">Pedidos</th>
+                  <th className="px-3 py-2">Clientes</th>
+                  <th className="px-3 py-2">Recebido</th>
+                  <th className="px-3 py-2">Base</th>
+                  <th className="px-3 py-2">Bruta</th>
+                  <th className="px-3 py-2">Excluída</th>
+                  <th className="px-3 py-2">Final</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {detail.sellers.map((row) => (
+                  <tr key={row.sellerGroupKey} data-testid="commissions-closings-seller-row">
+                    <td className="px-3 py-2 font-medium">
+                      {row.sellerName}
+                      {!isCanonicalSellerDisplayName(row.sellerName) ? (
+                        <span className="ml-2 text-[10px] text-amber-700">verificar nome</span>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-2">{row.titleCount}</td>
+                    <td className="px-3 py-2">{row.orderCount}</td>
+                    <td className="px-3 py-2">{row.customerCount}</td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(row.totalReceivedAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(row.commissionBaseAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(row.grossCommissionAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2">
+                      {formatFinanceCurrency(row.excludedCommissionAmount)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 font-semibold">
+                      {formatFinanceCurrency(row.finalCommissionAmount)}
+                    </td>
+                    <td className="px-3 py-2 text-xs">{row.primaryStatusLabel}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs font-medium hover:bg-accent"
+                        onClick={() => void openSeller(row.sellerGroupKey)}
+                        data-testid="commissions-closings-open-seller"
+                      >
+                        Ver relatório
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </CommissionsTableScroll>
+          </section>
+        </div>
+      ) : null}
+
+      {view === "seller" && sellerReport ? (
+        <div className="space-y-4" data-testid="commissions-closings-seller-report">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <button
+                type="button"
+                className="mb-2 inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+                onClick={() => setView("detail")}
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" /> Voltar ao fechamento
+              </button>
+              <h2 className="text-xl font-semibold tracking-tight">
+                Relatório de Comissão — {sellerReport.seller.displayName}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Fechamento {sellerReport.closing.periodLabel} · {sellerReport.closing.statusLabel} ·
+                Ledger oficial
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => printSellerPdf()}
+                data-testid="commissions-closings-seller-pdf"
+              >
+                <Printer className="mr-2 h-4 w-4" /> PDF
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                disabled={exporting}
+                onClick={() => void exportSellerXlsx()}
+                data-testid="commissions-closings-seller-xlsx"
+              >
+                {exporting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                XLSX
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => void copySellerSummary()}
+              >
+                <Copy className="mr-2 h-4 w-4" /> Copiar resumo
+              </button>
+              <button
+                type="button"
+                className={`${financeBiButtonOutlineClass} inline-flex items-center`}
+                onClick={() => {
+                  setView("list");
+                  setDetail(null);
+                  setSellerReport(null);
+                }}
+              >
+                <X className="mr-2 h-4 w-4" /> Fechar
+              </button>
+            </div>
+          </div>
+
+          <CommissionsKpiSection title="Resumo" testId="commissions-closings-seller-cards">
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Total recebido"
+              amount={sellerReport.summary.totalReceivedAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Base comissionável"
+              amount={sellerReport.summary.commissionBaseAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão bruta"
+              amount={sellerReport.summary.grossCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão excluída"
+              amount={sellerReport.summary.excludedCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Comissão final a pagar"
+              amount={sellerReport.summary.finalCommissionAmount}
+              amountFormat="currency"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Títulos"
+              amount={sellerReport.summary.titleCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Pedidos"
+              amount={sellerReport.summary.orderCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Clientes"
+              amount={sellerReport.summary.customerCount}
+              amountFormat="number"
+            />
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Percentual médio"
+              value={
+                sellerReport.summary.averageRate != null
+                  ? `${sellerReport.summary.averageRate.toFixed(2)}%`
+                  : "—"
+              }
+            />
+          </CommissionsKpiSection>
+
+          <div className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            <input
+              className={cn(COMMISSIONS_FILTER_FIELD_CLASS, "max-w-md")}
+              placeholder="Buscar pedido, cliente, NF ou CR…"
+              value={sellerSearch}
+              onChange={(e) => setSellerSearch(e.target.value)}
+            />
+          </div>
+
+          <CommissionsTableScroll
+            testId="commissions-closings-seller-grid"
+            tableClassName="min-w-[1400px]"
+          >
+            <thead className="bg-sky-50 text-left text-xs uppercase tracking-wide text-sky-900">
+              <tr>
+                <th className="px-3 py-2">Pedido</th>
+                <th className="px-3 py-2">Cliente</th>
+                <th className="px-3 py-2">NF</th>
+                <th className="px-3 py-2">CR</th>
+                <th className="px-3 py-2">Parc.</th>
+                <th className="px-3 py-2">Venc. CR</th>
+                <th className="px-3 py-2">Baixa</th>
+                <th className="px-3 py-2 text-right">Original CR</th>
+                <th className="px-3 py-2 text-right">Recebido</th>
+                <th className="px-3 py-2 text-right">Pago a mais</th>
+                <th className="px-3 py-2 text-right">Base</th>
+                <th className="px-3 py-2 text-right">%</th>
+                <th className="px-3 py-2 text-right">Comissão</th>
+                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Motivo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border text-sm">
+              {filteredSellerRows.map((row) => (
+                <tr key={row.lineKey}>
+                  <td className="whitespace-nowrap px-3 py-2 font-medium">{row.orderCode ?? "—"}</td>
+                  <td className="max-w-[12rem] px-3 py-2">
+                    <span className="line-clamp-2">{row.customerName ?? "—"}</span>
+                  </td>
+                  <td className="px-3 py-2">{row.nfeNumber ?? "—"}</td>
+                  <td className="px-3 py-2">{row.receivableNumber ?? "—"}</td>
+                  <td className="px-3 py-2">{row.installment ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    {row.receivableDueDate
+                      ? new Date(row.receivableDueDate).toLocaleDateString("pt-BR")
+                      : "—"}
+                  </td>
+                  <td className="px-3 py-2">
+                    {row.settlementDate
+                      ? new Date(row.settlementDate).toLocaleDateString("pt-BR")
+                      : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {row.originalReceivableAmount != null
+                      ? formatFinanceCurrency(row.originalReceivableAmount)
+                      : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {formatFinanceCurrency(row.receivedGrossAmount)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {row.overpaidAmount > 0 ? formatFinanceCurrency(row.overpaidAmount) : "—"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {formatFinanceCurrency(row.commissionBaseAmount)}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {row.commissionRate.toFixed(2)}%
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold">
+                    {formatFinanceCurrency(row.commissionAmount)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">
+                      {row.statusLabel}
+                    </span>
+                  </td>
+                  <td className="max-w-[14rem] px-3 py-2 text-xs text-muted-foreground">
+                    <span className="line-clamp-2">{row.reasonLabel ?? "—"}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-muted/40 font-semibold">
+                <td className="px-3 py-2" colSpan={8}>
+                  Totais ({filteredSellerRows.length} linha(s))
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  {formatFinanceCurrency(sellerReport.totals.totalReceivedAmount)}
+                </td>
+                <td />
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  {formatFinanceCurrency(sellerReport.totals.commissionBaseAmount)}
+                </td>
+                <td />
+                <td className="whitespace-nowrap px-3 py-2 text-right">
+                  {formatFinanceCurrency(sellerReport.totals.finalCommissionAmount)}
+                </td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
+          </CommissionsTableScroll>
+
+          <details className="rounded-lg border border-border p-3 text-sm">
+            <summary className="cursor-pointer font-medium">Auditoria técnica</summary>
+            <dl className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+              <div>
+                <dt>ID do fechamento</dt>
+                <dd className="font-mono text-foreground">{sellerReport.closing.id}</dd>
+              </div>
+              <div>
+                <dt>Chave do vendedor</dt>
+                <dd className="font-mono text-foreground">{sellerReport.seller.groupKey}</dd>
+              </div>
+              <div>
+                <dt>ID canônico</dt>
+                <dd className="font-mono text-foreground">{sellerReport.seller.id ?? "—"}</dd>
+              </div>
+            </dl>
+          </details>
+        </div>
+      ) : null}
+
+      {detailLoading ? <CommissionsLoading label="Carregando…" /> : null}
+
+      {printRequestId > 0 && printMode === "seller" && sellerReport
+        ? createPortal(
+            <CommissionClosingSellerReportPrintDocument
+              report={sellerReport}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
+      {printRequestId > 0 && printMode === "closing" && closingPrintPayload
+        ? createPortal(
+            <CommissionClosingReportPrintDocument
+              payload={closingPrintPayload}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
+    </div>
+  );
+}

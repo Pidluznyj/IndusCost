@@ -162,6 +162,13 @@ import {
   getCommissionReportsPage,
 } from "@/src/lib/commissions/commissionReports.server.js";
 import {
+  buildCommissionClosingSellerXlsx,
+  buildCommissionClosingSellerXlsxFilename,
+  getCommissionClosingDetail,
+  getCommissionClosingSellerReport,
+  listCommissionClosings,
+} from "@/src/lib/commissions/commissionClosings.server.js";
+import {
   ReceiptClosingDuplicateError,
   ReceiptClosingValidationError,
 } from "@/src/lib/commissions/commissionReceiptClosing.js";
@@ -332,6 +339,7 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
   );
 
   const reportsGuard = resourceOrAny("comissoes.tab.relatorios", COMMISSIONS_VIEW_PERMISSIONS);
+  const closingsGuard = resourceOrAny("comissoes.tab.fechamentos", COMMISSIONS_VIEW_PERMISSIONS);
 
   const recalculateGuard = [
     requireAppAuth,
@@ -509,6 +517,133 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       }
     }
   });
+
+  app.get("/api/commissions/closings", ...closingsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const q = req.query as Record<string, unknown>;
+      const yearRaw = q.year != null ? Number(q.year) : null;
+      const monthRaw = q.month != null ? Number(q.month) : null;
+      const payload = await listCommissionClosings(
+        {
+          year: yearRaw != null && Number.isFinite(yearRaw) ? yearRaw : null,
+          month:
+            monthRaw != null && Number.isFinite(monthRaw) && monthRaw >= 1 && monthRaw <= 12
+              ? monthRaw
+              : null,
+          sellerId: typeof q.sellerId === "string" && q.sellerId.trim() ? q.sellerId.trim() : "all",
+          status: typeof q.status === "string" && q.status.trim() ? q.status.trim() : "CLOSED",
+          search: typeof q.search === "string" && q.search.trim() ? q.search.trim() : null,
+        },
+        ctx.scope
+      );
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/closings", error);
+      return res.status(500).json({ error: "Erro ao listar fechamentos de comissão." });
+    }
+  });
+
+  app.get("/api/commissions/closings/:closingId", ...closingsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommissionClosingDetail(String(req.params.closingId), ctx.scope);
+      if (!payload) {
+        return res.status(404).json({ error: "Fechamento não encontrado.", code: "CLOSING_NOT_FOUND" });
+      }
+      res.setHeader("Cache-Control", "no-store");
+      return res.json(payload);
+    } catch (error) {
+      console.error("GET /api/commissions/closings/:closingId", error);
+      return res.status(500).json({ error: "Erro ao carregar fechamento." });
+    }
+  });
+
+  app.get("/api/commissions/closings/:closingId/sellers", ...closingsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommissionClosingDetail(String(req.params.closingId), ctx.scope);
+      if (!payload) {
+        return res.status(404).json({ error: "Fechamento não encontrado.", code: "CLOSING_NOT_FOUND" });
+      }
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ sellers: payload.sellers, closing: payload.closing });
+    } catch (error) {
+      console.error("GET /api/commissions/closings/:closingId/sellers", error);
+      return res.status(500).json({ error: "Erro ao listar vendedores do fechamento." });
+    }
+  });
+
+  app.get(
+    "/api/commissions/closings/:closingId/sellers/:sellerKey",
+    ...closingsGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const search =
+          typeof req.query.search === "string" && req.query.search.trim()
+            ? req.query.search.trim()
+            : null;
+        const payload = await getCommissionClosingSellerReport(
+          String(req.params.closingId),
+          String(req.params.sellerKey),
+          ctx.scope,
+          search
+        );
+        if (!payload) {
+          return res.status(404).json({
+            error: "Relatório do vendedor não encontrado neste fechamento.",
+            code: "SELLER_REPORT_NOT_FOUND",
+          });
+        }
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(payload);
+      } catch (error) {
+        console.error("GET /api/commissions/closings/:closingId/sellers/:sellerKey", error);
+        return res.status(500).json({ error: "Erro ao carregar relatório do vendedor." });
+      }
+    }
+  );
+
+  app.get(
+    "/api/commissions/closings/:closingId/sellers/:sellerKey/xlsx",
+    ...closingsGuard,
+    async (req, res) => {
+      try {
+        const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+        if (!ctx) return;
+        const report = await getCommissionClosingSellerReport(
+          String(req.params.closingId),
+          String(req.params.sellerKey),
+          ctx.scope,
+          null
+        );
+        if (!report) {
+          return res.status(404).json({
+            error: "Relatório do vendedor não encontrado neste fechamento.",
+            code: "SELLER_REPORT_NOT_FOUND",
+          });
+        }
+        const buffer = buildCommissionClosingSellerXlsx(report);
+        const filename = buildCommissionClosingSellerXlsxFilename(report);
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        res.setHeader("Cache-Control", "no-store");
+        return res.send(buffer);
+      } catch (error) {
+        console.error("GET /api/commissions/closings/:closingId/sellers/:sellerKey/xlsx", error);
+        return res.status(500).json({ error: "Erro ao exportar XLSX do vendedor." });
+      }
+    }
+  );
 
   app.get("/api/commissions/receipt-closing/preview", ...fechamentoGuard, async (req, res) => {
     try {

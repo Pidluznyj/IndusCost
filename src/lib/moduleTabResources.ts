@@ -8,6 +8,7 @@ export const TabResourceKeys = {
   CRM_CARTEIRA: "comercial.crm.tab.carteira_clientes",
   CRM_CLIENTE_360: "comercial.crm.tab.cliente_360",
   COMISSOES_FECHAMENTO: "comissoes.tab.fechamento_mes",
+  COMISSOES_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_EXCECOES: "comissoes.tab.excecoes_cliente",
   COMISSOES_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_REPROCESSAR: "comissoes.tab.reprocessar",
@@ -56,6 +57,7 @@ export const CRM_UI_TABS: ReadonlyArray<{
 
 export type CommissionsLiveTabId =
   | "monthlyClosing"
+  | "closings"
   | "customerExclusions"
   | "reports"
   | "reprocess";
@@ -69,6 +71,11 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
     id: "monthlyClosing",
     resourceKey: TabResourceKeys.COMISSOES_FECHAMENTO,
     label: "Fechamento do mês",
+  },
+  {
+    id: "closings",
+    resourceKey: TabResourceKeys.COMISSOES_FECHAMENTOS,
+    label: "Fechamentos",
   },
   {
     id: "customerExclusions",

@@ -12,6 +12,11 @@ Endpoints:
 - `GET /api/commissions/receipt-closing/:year/:month`
 - `GET /api/commissions/receipt-closing/:year/:month/report` (somente CLOSED)
 
+## Fechamentos (histórico)
+
+Para consultar vários meses já fechados e o relatório **por vendedor**, use a aba
+**Fechamentos** (`/commissions/fechamentos`). Ver `commission-closings-by-seller.md`.
+
 ## PDF
 
 - Título: **COMERCIAL: RELATÓRIO DE COMISSÕES**

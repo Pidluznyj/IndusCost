@@ -26,6 +26,7 @@ import {
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
+import { CommissionsClosingsPage } from "@/src/components/commissions/pages/CommissionsClosingsPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
 import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
@@ -144,6 +145,7 @@ export function CommissionsModule() {
         <Route index element={guard("monthlyClosing", <CommissionsReceiptClosingPage />)} />
         <Route path="previsao" element={<CommissionsDeprecatedTabRedirect />} />
         <Route path="auditoria" element={<CommissionsDeprecatedTabRedirect />} />
+        <Route path="fechamentos" element={guard("closings", <CommissionsClosingsPage />)} />
         <Route
           path="exclusoes-cliente"
           element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}

@@ -4,9 +4,10 @@
 
 1. **Prévia** — `GET /api/commissions/receipt-closing/preview` calcula linhas sem gravar.
 2. **Fechar** — `POST /api/commissions/receipt-closing/apply` com confirmação `FECHAR COMISSAO`.
-3. **Consultar** — `GET /api/commissions/receipt-closing/:year/:month` ou botão **Carregar fechamento**.
-4. **PDF** — na tela, **Imprimir / PDF** (`window.print` + documento institucional).
-5. **XLSX** — `export-detail.xlsx` / `report.xlsx` (abas Resumo, Por vendedor, Analítico).
+3. **Consultar (operação)** — `GET /api/commissions/receipt-closing/:year/:month` ou botão **Carregar fechamento**.
+4. **Consultar (histórico)** — aba **Fechamentos** (`/commissions/fechamentos`) lista CLOSED e abre relatório por vendedor. Ver `commission-closings-by-seller.md`.
+5. **PDF** — na tela, **Imprimir / PDF** (`window.print` + documento institucional).
+6. **XLSX** — `export-detail.xlsx` / `report.xlsx` (abas Resumo, Por vendedor, Analítico).
 
 ## Divergência crítica
 

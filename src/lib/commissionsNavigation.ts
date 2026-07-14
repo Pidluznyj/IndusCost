@@ -11,6 +11,7 @@ export const COMMISSIONS_BASE_PATH = "/commissions" as const;
 /** Abas visíveis na UI do módulo Comissões. */
 export const COMMISSIONS_UI_SECTION_IDS = [
   "monthlyClosing",
+  "closings",
   "customerExclusions",
   "reports",
   "reprocess",
@@ -74,6 +75,7 @@ export const COMMISSIONS_LEGACY_PATH_REDIRECTS: Record<string, string> = {
 
 export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   monthlyClosing: "/commissions",
+  closings: "/commissions/fechamentos",
   receivableForecast: "/commissions/previsao",
   visualAudit: "/commissions/auditoria",
   customerExclusions: "/commissions/exclusoes-cliente",
@@ -97,6 +99,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.monthlyClosing,
     description:
       "Comissão oficial a pagar com base nos títulos baixados/recebidos no mês (settlementDate)",
+  },
+  {
+    id: "closings",
+    label: "Fechamentos",
+    path: COMMISSIONS_SECTION_PATHS.closings,
+    description:
+      "Consulta dos fechamentos oficiais já gravados, com relatório por vendedor",
   },
   {
     id: "customerExclusions",
@@ -149,6 +158,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (!firstSegment) return true;
   if (firstSegment === "auditoria") return true;
   if (firstSegment === "previsao") return true;
+  if (firstSegment === "fechamentos") return true;
   if (firstSegment === "exclusoes-cliente") return true;
   if (firstSegment === "relatorios") return true;
   if (firstSegment === "reprocessar") return true;
@@ -166,6 +176,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   const next = segments[idx + 1];
   if (!next) return "monthlyClosing";
   if (next === "auditoria" || next === "previsao") return "monthlyClosing";
+  if (next === "fechamentos") return "closings";
   if (next === "exclusoes-cliente") return "customerExclusions";
   if (next === "relatorios") return "reports";
   if (next === "reprocessar") return "reprocess";

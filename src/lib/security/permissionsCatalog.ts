@@ -38,6 +38,7 @@ export const PermissionResourceKeys = {
   COMERCIAL_CRM_TAB_CLIENTE_360: "comercial.crm.tab.cliente_360",
   COMISSOES: "comissoes",
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
+  COMISSOES_TAB_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_TAB_EXCECOES_CLIENTE: "comissoes.tab.excecoes_cliente",
   COMISSOES_TAB_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_TAB_REPROCESSAR: "comissoes.tab.reprocessar",
