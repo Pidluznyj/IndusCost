@@ -1,12 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, Scale } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import {
-  buildFinanceModuleEyebrow,
-  FINANCE_HEADER_ACTION_REFRESH,
-} from "@/src/lib/financeModuleUiStandards";
+import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
 import {
   isPortfolioReconciliationVisibleTabId,
   PERMISSION_DENIED_TAB_MESSAGE,
@@ -23,22 +20,12 @@ import {
   type PortfolioReconciliationRunDto,
   type PortfolioReconciliationRunsPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
-import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
 import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
 import { cn } from "@/src/lib/utils";
-
-function isOrderToCashAuditRun(run: PortfolioReconciliationRunDto): boolean {
-  return (
-    !!run.filters &&
-    typeof run.filters === "object" &&
-    !Array.isArray(run.filters) &&
-    (run.filters as { source?: unknown }).source === "order_to_cash_audit"
-  );
-}
 
 /** Preferências: último SUCCESS; senão o mais recente da lista. */
 function pickDisplayRun(
@@ -132,7 +119,7 @@ export function FinancePortfolioReconciliationPage() {
   }, [loadRuns]);
 
   const displayRun = useMemo(() => pickDisplayRun(runs), [runs]);
-  const displayRunIsO2c = displayRun ? isOrderToCashAuditRun(displayRun) : false;
+  const updatedAt = displayRun?.finishedAt ?? displayRun?.createdAt ?? null;
 
   if (!canView) {
     return (
@@ -158,9 +145,11 @@ export function FinancePortfolioReconciliationPage() {
     <div data-testid="finance-portfolio-reconciliation-page">
       <FinanceBiDashboardShell>
         <FinanceExecutivePageHeader
-          eyebrow={buildFinanceModuleEyebrow("portfolio-reconciliation")}
+          compact
           title="Conciliação de Carteira"
-          subtitle="Comparativo paralelo de pedidos, documentos de saída e contas a receber materializados."
+          subtitle="Acompanhe pedidos, faturamento e cobrança em um só lugar. Somente leitura — não altera o fluxo de caixa."
+          updatedAt={updatedAt}
+          updatedAtLabel="Atualizado em"
           actions={[
             {
               id: "refresh",
@@ -171,13 +160,21 @@ export function FinancePortfolioReconciliationPage() {
           ]}
         />
 
-        <div
-          className="mb-4 flex items-start gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
-          data-testid="portfolio-reconciliation-parallel-notice"
-        >
-          <Scale className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE}</p>
-        </div>
+        {/* Aviso contratual discreto (testes + leitores de tela); sem banner azul. */}
+        <p className="sr-only" data-testid="portfolio-reconciliation-parallel-notice">
+          {PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE}
+        </p>
+        {displayRun ? (
+          <span
+            className="sr-only"
+            data-testid="portfolio-reconciliation-run-meta"
+            data-run-id={displayRun.id}
+            data-run-status={displayRun.status}
+          >
+            Run {displayRun.id} · {displayRun.status}
+            {displayRun.mode ? ` · ${displayRun.mode}` : ""}
+          </span>
+        ) : null}
 
         {error ? (
           <FinanceModuleErrorBanner
@@ -187,27 +184,8 @@ export function FinancePortfolioReconciliationPage() {
           />
         ) : null}
 
-        {displayRun ? (
-          <div className="mb-3 space-y-1" data-testid="portfolio-reconciliation-run-meta">
-            <p className="text-xs text-muted-foreground">
-              Run {displayRun.id.slice(0, 8)}… · {displayRun.status} · última run{" "}
-              {formatFinanceDateTime(displayRun.finishedAt ?? displayRun.createdAt)}
-              {displayRun.mode ? ` · modo ${displayRun.mode}` : ""}
-            </p>
-            {displayRunIsO2c ? (
-              <p
-                className="text-xs text-sky-800"
-                data-testid="portfolio-reconciliation-o2c-source"
-              >
-                Fonte: OrderToCashAudit (Pedido → Caixa). Pedido ≠ caixa; CR não é somado por
-                linha de alocação.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-
         <div
-          className="mb-4 flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
+          className="mb-5 flex flex-wrap gap-1 rounded-lg border border-border bg-muted/30 p-1"
           role="tablist"
           aria-label="Visões da conciliação"
           data-testid="portfolio-reconciliation-view-tabs"

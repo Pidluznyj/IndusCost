@@ -286,11 +286,14 @@
   }
 
   #sales-orders-print-root .sales-orders-print-summary-card-value {
-    font-size: 8.5px;
+    font-size: 10px;
     font-weight: 700;
     color: #0f172a;
     margin: 0;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
   }
 
   #sales-orders-print-root .sales-orders-print-summary-card--positive {
@@ -332,7 +335,7 @@
   #sales-orders-print-root .sales-orders-print-data-table thead th {
     background: #dbeafe;
     font-weight: 700;
-    font-size: 7px;
+    font-size: 7.5px;
     color: #1e3a8a;
     text-align: left;
   }
@@ -360,7 +363,12 @@
     word-break: keep-all !important;
     overflow-wrap: normal !important;
     word-wrap: normal !important;
-    font-size: 6.5px;
+    /* ~corpo do documento: valores devem ocupar a célula, sem quebrar linha */
+    font-size: 8px;
+    letter-spacing: -0.015em;
+    padding-left: 2px !important;
+    padding-right: 3px !important;
+    overflow: hidden !important;
   }
 
   #sales-orders-print-root .sales-orders-print-money--risk {
@@ -385,17 +393,17 @@
 
   #sales-orders-print-root .sales-orders-print-money--total {
     font-weight: 700;
-    font-size: 7.5px;
+    font-size: 8.5px;
   }
 
   /*
    * Larguras da tabela analítica (A4 paisagem).
    * Datas precisam caber "DD/MM/YYYY" inteiro sem invadir Vendedor.
-   * Valores monetários com nowrap precisam de largura estável.
+   * Monetários com nowrap + fonte ~8px: um pouco mais de largura.
    * `.col-company` permanece para retrocompatibilidade.
    */
   #sales-orders-print-root .col-client {
-    width: 13%;
+    width: 10.5%;
   }
 
   #sales-orders-print-root .col-company {
@@ -405,12 +413,12 @@
   }
 
   #sales-orders-print-root .col-order {
-    width: 8%;
+    width: 7.5%;
     white-space: nowrap;
   }
 
   #sales-orders-print-root .col-date {
-    width: 7.5%;
+    width: 7%;
     white-space: nowrap !important;
     overflow: hidden !important;
     font-variant-numeric: tabular-nums;
@@ -418,21 +426,22 @@
   }
 
   #sales-orders-print-root .col-seller {
-    width: 10%;
+    width: 9%;
   }
 
   #sales-orders-print-root .col-status {
-    width: 8%;
+    width: 7%;
     text-align: center;
   }
 
   #sales-orders-print-root .col-num {
-    width: 4%;
+    width: 3.5%;
     white-space: nowrap;
   }
 
+  /* 4×12% = 48% — cabe "R$ 1.237.111,00" em 8–8.5px sem wrap */
   #sales-orders-print-root .col-money {
-    width: 10.5%;
+    width: 12%;
   }
 
   #sales-orders-print-root .sales-orders-print-client-text,

@@ -155,24 +155,14 @@ export function OrderToCashAuditTab() {
   const hasRows = Boolean(payload?.rows?.length);
 
   return (
-    <div className="min-w-0 max-w-full" data-testid="order-to-cash-audit-tab">
-      <header className="mb-4 space-y-3">
-        <div>
-          <h2
-            className="text-[20px] font-bold leading-tight text-[#101828] sm:text-[22px]"
-            data-testid="order-to-cash-audit-title"
-          >
-            {ORDER_TO_CASH_AUDIT_TAB_TITLE}
-          </h2>
-          <p className="mt-1 text-[14px] text-[#475467]">{ORDER_TO_CASH_AUDIT_TAB_SUBTITLE}</p>
-        </div>
-        <div
-          className="rounded-xl border border-[#FEDF89] bg-[#FFFAEB] px-4 py-3 text-sm text-[#B54708]"
-          data-testid="order-to-cash-audit-heavy-warning"
-        >
-          {ORDER_TO_CASH_AUDIT_HEAVY_WARNING}
-        </div>
-      </header>
+    <div className="min-w-0 max-w-full space-y-5" data-testid="order-to-cash-audit-tab">
+      <h2 className="sr-only" data-testid="order-to-cash-audit-title">
+        {ORDER_TO_CASH_AUDIT_TAB_TITLE}
+      </h2>
+      <p className="sr-only">{ORDER_TO_CASH_AUDIT_TAB_SUBTITLE}</p>
+      <p className="sr-only" data-testid="order-to-cash-audit-heavy-warning">
+        {ORDER_TO_CASH_AUDIT_HEAVY_WARNING}
+      </p>
 
       <OrderToCashAuditFilters
         draft={draft}
