@@ -117,9 +117,10 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
     dataScope = "global";
     commercialManagerUsesTeamFallback = true;
   } else if (canViewOwnSellerData) {
-    if (sellerLinked) {
-      dataScope = "own";
-    } else {
+    // Carteira própria: com ou sem vínculo. Sem vínculo → carteira vazia
+    // (nunca 500; UI trata mensagem amigável via blockedReason).
+    dataScope = "own";
+    if (!sellerLinked) {
       blockedReason = "SELLER_NOT_LINKED";
       blockedMessage = CRM_SELLER_NOT_LINKED_MESSAGE;
     }
@@ -256,13 +257,17 @@ export function resolveCrmSellerDashboardQueryScope(
     };
   }
 
+  // Sem vínculo / sem carteira: liberar payload vazio (scope own sem match).
+  // O service NÃO pode consultar o universo global quando o filtro fica vazio.
   if (!base.sellerLinked) {
     return {
-      ok: false,
-      status: 403,
-      body: {
-        error: "SELLER_NOT_LINKED",
-        message: base.blockedMessage ?? CRM_SELLER_NOT_LINKED_MESSAGE,
+      ok: true,
+      scope: base,
+      sellerScope: {
+        scopeMode: "own",
+        externalSellerId: null,
+        responsible: null,
+        sellerIdentityKey: null,
       },
     };
   }

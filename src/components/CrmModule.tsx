@@ -36,7 +36,7 @@ import {
   Package,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchJsonOk, HttpError } from "@/src/lib/http";
 import { buildCustomerIntelligencePath } from "@/src/lib/customerIntelligenceNavigation";
 import type {
   ManagementBreakdownItem,
@@ -494,6 +494,23 @@ function formatCommercialStatusLabel(raw: string | null | undefined): string {
     ERROR: "Erro",
   };
   return proposalLabels[u] ?? orderLabels[u] ?? displayLine(u.replace(/_/g, " "));
+}
+
+/** Mensagem amigável para 403 / sem carteira — não derruba as outras abas. */
+function mapCrmDashboardError(e: unknown, fallback: string): string {
+  if (e instanceof HttpError) {
+    if (
+      e.status === 403 ||
+      e.code === "FORBIDDEN" ||
+      e.code === "SELLER_NOT_LINKED"
+    ) {
+      const msg = e.message?.trim();
+      return msg && msg.length > 0 ? msg : "Você não tem acesso a esta visão.";
+    }
+    return e.message?.trim() || fallback;
+  }
+  if (e instanceof Error && e.message.trim()) return e.message;
+  return fallback;
 }
 
 function clampMessage(msg: string, max = 220): string {
@@ -1514,9 +1531,10 @@ export const CrmModule = () => {
       setManagementDashboard(null);
       setManagementDashboardError(
         clampMessage(
-          e instanceof Error
-            ? e.message
-            : "Não foi possível carregar o dashboard gerencial comercial."
+          mapCrmDashboardError(
+            e,
+            "Não foi possível carregar o dashboard gerencial comercial."
+          )
         )
       );
     } finally {
@@ -1526,6 +1544,7 @@ export const CrmModule = () => {
 
   const loadSellerDashboard = useCallback(async (params?: SellerDashboardLoadParams) => {
     if (sellerNotLinked) {
+      // Sem vínculo: não chama API; UI mostra carteira vazia / mensagem amigável.
       setSellerDashboard(null);
       setSellerDashboardLoading(false);
       setSellerDashboardError(null);
@@ -1570,9 +1589,7 @@ export const CrmModule = () => {
       setSellerDashboard(null);
       setSellerDashboardError(
         clampMessage(
-          e instanceof Error
-            ? e.message
-            : "Não foi possível carregar a gestão por vendedor."
+          mapCrmDashboardError(e, "Não foi possível carregar a gestão por vendedor.")
         )
       );
     } finally {

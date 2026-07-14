@@ -117,10 +117,11 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(result.sellerScope.responsible, null);
   });
 
-  it("vendedor sem vínculo comercial recebe SELLER_NOT_LINKED", () => {
+  it("vendedor sem vínculo comercial: carteira vazia (own), não 403/500", () => {
     const auth = mockAuth({ permissions: ["crm.seller.own"] });
     const scope = resolveCrmCommercialAccessScope(auth);
-    assert.equal(scope.dataScope, "none");
+    // Escopo own + sinalização SELLER_NOT_LINKED — dashboards retornam vazio.
+    assert.equal(scope.dataScope, "own");
     assert.equal(scope.blockedReason, "SELLER_NOT_LINKED");
     assert.match(scope.blockedMessage ?? "", /responsável comercial/);
 
@@ -131,9 +132,11 @@ describe("crmCommercialAccessScope", () => {
       () => null,
       () => null
     );
-    assert.equal(dash.ok, false);
-    if (dash.ok) throw new Error("expected blocked");
-    assert.equal(dash.body.error, "SELLER_NOT_LINKED");
+    assert.equal(dash.ok, true);
+    if (!dash.ok || !dash.sellerScope) throw new Error("expected empty own scope");
+    assert.equal(dash.sellerScope.scopeMode, "own");
+    assert.equal(dash.sellerScope.sellerIdentityKey, null);
+    assert.equal(dash.sellerScope.externalSellerId, null);
   });
 
   it("usuário só com crm.view não recebe escopo de dados comerciais", () => {

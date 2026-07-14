@@ -501,6 +501,87 @@ async function runLiveChecks(): Promise<void> {
   await prisma.$disconnect().catch(() => {});
 }
 
+function checkCanonicalScopeDto(): void {
+  const src = read("src/lib/commercial/commercialAccessScopeService.ts");
+  const hasType = /export type CommercialCrmScopeDto/.test(src);
+  const hasFields =
+    /canViewAll:\s*boolean/.test(src) &&
+    /allowedCustomerIds:\s*string\[\]/.test(src) &&
+    /allowedResponsibleIds:\s*string\[\]/.test(src) &&
+    /denied:\s*boolean/.test(src);
+  const hasResolve = /export function resolveCommercialCrmScopeDto/.test(src);
+  const hasLoad = /export async function loadCommercialCrmScope/.test(src);
+  if (hasType && hasFields && hasResolve && hasLoad) {
+    ok(
+      "check-11-canonical-scope-dto",
+      "DTO { canViewAll, allowedCustomerIds, allowedResponsibleIds, denied, reason? } presente."
+    );
+  } else {
+    fail(
+      "check-11-canonical-scope-dto",
+      `DTO canônico incompleto (type=${hasType} fields=${hasFields} resolve=${hasResolve} load=${hasLoad}).`
+    );
+  }
+}
+
+function checkSellerEmptyOwnGuard(): void {
+  const src = read("src/lib/crmSellerDashboardService.ts");
+  const hasOwnEmptyGuard =
+    /sellerScopeMode === "own"/.test(src) &&
+    /!hasOwnerFilter \|\| commercialOwnerCustomerIds\.length === 0/.test(src);
+  const scopeSrc = read("src/lib/crmCommercialAccessScope.ts");
+  const unlinkedReturnsEmptyOwn =
+    /Sem vínculo \/ sem carteira: liberar payload vazio/.test(scopeSrc) ||
+    (/sellerLinked/.test(scopeSrc) &&
+      /scopeMode: "own"/.test(scopeSrc) &&
+      /SELLER_NOT_LINKED/.test(scopeSrc));
+  if (hasOwnEmptyGuard && unlinkedReturnsEmptyOwn) {
+    ok(
+      "check-12-seller-empty-no-leak",
+      "seller-dashboard force empty em scope=own sem carteira (sem vazamento global)."
+    );
+  } else {
+    fail(
+      "check-12-seller-empty-no-leak",
+      `Guard own-vazio ausente (ownGuard=${hasOwnEmptyGuard} unlinkedOwn=${unlinkedReturnsEmptyOwn}).`
+    );
+  }
+}
+
+function checkFrontendFriendly403(): void {
+  const src = read("src/components/CrmModule.tsx");
+  if (
+    /mapCrmDashboardError/.test(src) &&
+    /Você não tem acesso a esta visão/.test(src) &&
+    /HttpError/.test(src)
+  ) {
+    ok(
+      "check-13-frontend-friendly-403",
+      "CrmModule trata 403/FORBIDDEN com mensagem amigável por aba."
+    );
+  } else {
+    fail(
+      "check-13-frontend-friendly-403",
+      "CrmModule sem mapCrmDashboardError / mensagem de acesso."
+    );
+  }
+}
+
+function checkAdminBypassInScope(): void {
+  const src = read("src/lib/crmCommercialAccessScope.ts");
+  if (
+    /role === "SUPER_ADMIN" \|\| auth\.role === "ADMIN"/.test(src) ||
+    /SUPER_ADMIN.*ADMIN/.test(src)
+  ) {
+    ok(
+      "check-14-admin-bypass",
+      "SUPER_ADMIN/ADMIN têm bypass de escopo (dataScope global)."
+    );
+  } else {
+    fail("check-14-admin-bypass", "Bypass SUPER_ADMIN/ADMIN ausente no resolver de escopo.");
+  }
+}
+
 async function main(): Promise<void> {
   section("Static — asserções sobre o código-fonte");
   checkNoIllegalSalesOrderInclude();
@@ -509,6 +590,10 @@ async function main(): Promise<void> {
   checkProposalIsNotOrderSource();
   checkSalesOrderIsSource();
   checkFrontendDoesNotImportPrisma();
+  checkCanonicalScopeDto();
+  checkSellerEmptyOwnGuard();
+  checkFrontendFriendly403();
+  checkAdminBypassInScope();
 
   await runLiveChecks();
 

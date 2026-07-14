@@ -13,6 +13,7 @@ import {
   canViewAllCommercialCrm,
   getAllowedResponsibleIds,
   getCommercialAccessScope,
+  resolveCommercialCrmScopeDto,
   resolveRequestedResponsibleFilter,
 } from "@/src/lib/commercial/commercialAccessScopeService.js";
 
@@ -122,6 +123,25 @@ describe("commercialAccessScopeService", () => {
       resolveCrmCommercialAccessScope(auth).blockedMessage ?? "",
       /carteira comercial vinculada/
     );
+    const dto = resolveCommercialCrmScopeDto(auth);
+    assert.equal(dto.denied, true);
+    assert.equal(dto.canViewAll, false);
+    assert.ok(dto.reason);
+  });
+
+  it("DTO canônico: SUPER_ADMIN canViewAll; SELLER sem carteira denied=false vazio", () => {
+    const adminDto = resolveCommercialCrmScopeDto(mockAuth({ role: "SUPER_ADMIN" }));
+    assert.equal(adminDto.canViewAll, true);
+    assert.equal(adminDto.denied, false);
+    assert.deepEqual(adminDto.allowedCustomerIds, []);
+
+    const sellerEmpty = resolveCommercialCrmScopeDto(
+      mockAuth({ role: "SELLER", permissions: ["crm.seller.own"] })
+    );
+    assert.equal(sellerEmpty.canViewAll, false);
+    assert.equal(sellerEmpty.denied, false);
+    assert.deepEqual(sellerEmpty.allowedCustomerIds, []);
+    assert.match(sellerEmpty.reason ?? "", /responsável comercial/);
   });
 
   it("arquivos de escopo não acoplam Proposal nem motor de comissão", () => {

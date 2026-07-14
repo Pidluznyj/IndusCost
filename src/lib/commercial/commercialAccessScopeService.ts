@@ -33,6 +33,18 @@ export {
 
 export type CommercialAccessScopeMode = "unrestricted" | "own_portfolio" | "none";
 
+/**
+ * DTO canônico de escopo comercial (sempre definido — nunca `undefined`).
+ * Consumido por rotas, QA e diagnósticos.
+ */
+export type CommercialCrmScopeDto = {
+  canViewAll: boolean;
+  allowedCustomerIds: string[];
+  allowedResponsibleIds: string[];
+  denied: boolean;
+  reason?: string;
+};
+
 export type CommercialAccessScope = {
   mode: CommercialAccessScopeMode;
   dataScope: CrmCommercialAccessScope["dataScope"];
@@ -51,6 +63,59 @@ export type CommercialAccessScope = {
   hierarchyTodo: string | null;
   legacy: CrmCommercialAccessScope;
 };
+
+/**
+ * Monta o DTO canônico de forma síncrona (IDs de cliente ficam vazios até
+ * `loadCommercialCrmScope` preencher com a carteira).
+ * Nunca retorna `undefined`.
+ */
+export function resolveCommercialCrmScopeDto(user: AppAuthContext): CommercialCrmScopeDto {
+  const scope = getCommercialAccessScope(user);
+  if (scope.mode === "unrestricted") {
+    return {
+      canViewAll: true,
+      allowedCustomerIds: [],
+      allowedResponsibleIds: [],
+      denied: false,
+    };
+  }
+  if (scope.mode === "none") {
+    return {
+      canViewAll: false,
+      allowedCustomerIds: [],
+      allowedResponsibleIds: [],
+      denied: true,
+      reason: scope.blockedMessage ?? CRM_NO_COMMERCIAL_ACCESS_MESSAGE,
+    };
+  }
+  // own_portfolio — com ou sem vínculo/carteira (denied=false; vazio é OK)
+  const responsibles = getAllowedResponsibleIds(user);
+  return {
+    canViewAll: false,
+    allowedCustomerIds: [],
+    allowedResponsibleIds: [
+      ...responsibles.sellerIdentityKeys,
+      ...responsibles.externalSellerIds.map(String),
+    ],
+    denied: false,
+    reason: scope.blockedReason === "SELLER_NOT_LINKED"
+      ? scope.blockedMessage ?? CRM_SELLER_NOT_LINKED_MESSAGE
+      : undefined,
+  };
+}
+
+/** DTO canônico assíncrono com `allowedCustomerIds` da carteira. */
+export async function loadCommercialCrmScope(
+  user: AppAuthContext
+): Promise<CommercialCrmScopeDto> {
+  const dto = resolveCommercialCrmScopeDto(user);
+  if (dto.canViewAll || dto.denied) return dto;
+  const customers = await getAllowedCustomerIds(user);
+  return {
+    ...dto,
+    allowedCustomerIds: customers.customerIds,
+  };
+}
 
 export function getCommercialAccessScope(user: AppAuthContext): CommercialAccessScope {
   const legacy = resolveCrmCommercialAccessScope(user);

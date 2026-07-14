@@ -341,6 +341,25 @@ export async function buildCrmSellerDashboardResponse(
       : consolidatedOptions;
   const sellerOptions = scopedConsolidated.map(consolidatedOptionToSellerOption);
 
+  // Escopo `own` nunca pode cair em where aberto: sem filtro / IDs vazios
+  // → dashboard vazio (vendedor sem carteira ou sem vínculo). Evita 500 e vazamento.
+  if (
+    sellerScopeMode === "own" &&
+    (!hasOwnerFilter || commercialOwnerCustomerIds.length === 0)
+  ) {
+    return emptyMetricsPayload({
+      now,
+      filterExternalSellerId,
+      filterResponsible,
+      filterSellerIdentityKey,
+      filterDateFrom,
+      filterDateTo,
+      sellerOptions,
+      customerCount: 0,
+      emptyStateReason: "NO_CUSTOMERS_FOR_COMMERCIAL_OWNER",
+    });
+  }
+
   if (hasOwnerFilter && commercialOwnerCustomerIds.length === 0) {
     return emptyMetricsPayload({
       now,
@@ -358,6 +377,9 @@ export async function buildCrmSellerDashboardResponse(
   const orderWhere: Record<string, unknown> = {};
   if (hasOwnerFilter) {
     orderWhere.customerId = { in: commercialOwnerCustomerIds };
+  } else if (sellerScopeMode === "own") {
+    // Cinto de segurança: own sem IDs nunca consulta o universo.
+    orderWhere.customerId = { in: [] as string[] };
   }
   if (periodDateFromStart || periodDateToEnd) {
     orderWhere.issueDate = {
