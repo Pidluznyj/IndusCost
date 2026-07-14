@@ -1,0 +1,85 @@
+/**
+ * Impressão / PDF do Detalhe do Pedido (modal SalesOrderDetailDialog).
+ * Necessário porque reports-print.css usa `body * { visibility: hidden }`
+ * e só libera roots explícitos — sem este CSS a folha sai em branco.
+ */
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.sales-order-detail-print-route #root {
+    display: none !important;
+  }
+
+  body.sales-order-detail-print-route .so-detail-dialog-shell,
+  body.sales-order-detail-print-route .so-detail-dialog-shell *,
+  body.sales-order-detail-print-route .so-detail-dialog-panel,
+  body.sales-order-detail-print-route .so-detail-dialog-body {
+    visibility: visible !important;
+  }
+
+  body.sales-order-detail-print-route .so-detail-dialog-shell,
+  body.sales-order-detail-print-route .so-detail-dialog-panel,
+  body.sales-order-detail-print-route .so-detail-dialog-body {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  body.sales-order-detail-print-route .so-detail-no-print,
+  body.sales-order-detail-print-route .print-no-print {
+    display: none !important;
+  }
+
+  #sales-order-detail-print-root,
+  #sales-order-detail-print-root * {
+    visibility: visible !important;
+  }
+
+  #sales-order-detail-print-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    background: #fff !important;
+    color: #111 !important;
+    overflow: visible !important;
+  }
+
+  #sales-order-detail-print-root .so-detail-view {
+    max-width: none !important;
+  }
+
+  #sales-order-detail-print-root .so-detail-scroll {
+    overflow: visible !important;
+  }
+
+  #sales-order-detail-print-root .so-detail-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

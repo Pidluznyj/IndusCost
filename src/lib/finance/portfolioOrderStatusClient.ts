@@ -207,6 +207,8 @@ export type OrderStatusUiFilters = {
   customerId: string;
   customerExternalId: string;
   customerName: string;
+  /** Busca inteligente: cliente, pedido, NF ou documento de saída. */
+  search: string;
   year: string;
   periodPreset: OrderStatusPeriodPreset;
   from: string;
@@ -311,6 +313,7 @@ export function createDefaultOrderStatusUiFilters(): OrderStatusUiFilters {
     customerId: "",
     customerExternalId: "",
     customerName: "",
+    search: "",
     year: String(new Date().getFullYear()),
     periodPreset: "",
     from: "",
@@ -348,6 +351,7 @@ export function buildOrderStatusListQuery(filters: OrderStatusUiFilters): string
   }
   if (filters.customerId.trim()) params.set("customerId", filters.customerId.trim());
   if (filters.customerName.trim()) params.set("customerName", filters.customerName.trim());
+  if (filters.search.trim()) params.set("search", filters.search.trim());
   if (filters.year.trim()) params.set("year", filters.year.trim());
   if (filters.from.trim()) params.set("from", filters.from.trim());
   if (filters.to.trim()) params.set("to", filters.to.trim());
@@ -446,6 +450,13 @@ export function buildOrderStatusFilterChips(
 ): FinanceBiFilterChip[] {
   const chips: FinanceBiFilterChip[] = [];
 
+  if (filters.search.trim()) {
+    chips.push({
+      id: "search",
+      label: `Busca: ${filters.search.trim()}`,
+      onRemove: () => onRemove("search"),
+    });
+  }
   if (filters.customerName.trim() || filters.customerExternalId.trim()) {
     chips.push({
       id: "customer",

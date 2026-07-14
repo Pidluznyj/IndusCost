@@ -357,7 +357,18 @@ export function OrderStatusTable({
                   data-testid={`order-status-row-${row.orderKey}`}
                 >
                   <td className="whitespace-nowrap px-3 py-2.5 font-medium text-[#101828]">
-                    {orderStatusDash(row.orderCode)}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span>{orderStatusDash(row.orderCode)}</span>
+                      {row.searchMatchedBy && row.searchMatchedText ? (
+                        <span
+                          className="rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-900"
+                          title={`Encontrado por ${row.searchMatchedBy}`}
+                          data-testid={`order-status-search-match-${row.orderKey}`}
+                        >
+                          {row.searchMatchedText}
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="whitespace-nowrap px-3 py-2.5 tabular-nums text-[#667085]">
                     {formatDateCell(row.orderIssueDate)}

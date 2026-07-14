@@ -131,10 +131,17 @@ modal quanto no PDF (via `window.print()`). O CSS
 Relatório Comercial > Pedidos de Venda (`sales-order-report-print.css`) —
 Lazarios Koppetel.
 
-Botão **"Imprimir / PDF"** dentro da modal chama `window.print()` — o CSS
-de mídia print está no roadmap para adicionar quebra de página automática
-e cabeçalho institucional (feature futura). Hoje o botão gera uma
-impressão limpa do modal.
+Botão **"Imprimir / PDF"** na modal:
+1. adiciona `body.sales-order-detail-print-route`;
+2. imprime apenas `#sales-order-detail-print-root` (conteúdo do detalhe);
+3. esconde `#root` e a barra de ações do modal (`so-detail-no-print`).
+
+Isso é obrigatório porque `reports-print.css` usa `body * { visibility: hidden }`
+e só libera roots explícitos — sem o root/whitelist a folha sai em branco.
+CSS dedicado: `src/components/sales/sales-order-detail-print.css`.
+
+(A rota `/sales-orders/:id/print` continua sendo o documento cliente A4
+separado — `SalesOrderPrintView` / `SalesOrderClientDocument`.)
 
 ## 8. Como o botão Detalhe passou a funcionar
 

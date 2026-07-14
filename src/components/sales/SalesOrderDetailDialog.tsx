@@ -1,14 +1,19 @@
+import "./sales-order-detail-print.css";
+
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, ExternalLink, Loader2, Printer, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
+import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
 import {
   getSalesOrderDetailUrl,
   type SalesOrderDetailPayload,
   type SalesOrderDetailResponse,
 } from "@/src/lib/sales-orders/salesOrderDetailClient";
 import { SalesOrderDetailView } from "./SalesOrderDetailView";
+
+const DETAIL_PRINT_BODY_CLASS = "sales-order-detail-print-route";
 
 type Props = {
   open: boolean;
@@ -99,8 +104,19 @@ export function SalesOrderDetailDialog({
   }, [payload?.orderCode, orderCode]);
 
   const handlePrint = useCallback(() => {
-    window.print();
-  }, []);
+    if (!payload) return;
+    document.body.classList.add(DETAIL_PRINT_BODY_CLASS);
+    let fallbackTimer: number | null = null;
+    const cleanup = () => {
+      document.body.classList.remove(DETAIL_PRINT_BODY_CLASS);
+      window.removeEventListener("afterprint", cleanup);
+      if (fallbackTimer != null) window.clearTimeout(fallbackTimer);
+    };
+    window.addEventListener("afterprint", cleanup);
+    // Fallback se afterprint não disparar (alguns WebViews).
+    fallbackTimer = window.setTimeout(cleanup, 60_000);
+    triggerBrowserPrint(120);
+  }, [payload]);
 
   const handleOpenAudit = useCallback(() => {
     if (!payload) return;
@@ -113,7 +129,7 @@ export function SalesOrderDetailDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[70] flex items-stretch justify-center bg-black/40 p-2 sm:p-4"
+      className="so-detail-dialog-shell fixed inset-0 z-[70] flex items-stretch justify-center bg-black/40 p-2 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Detalhe do Pedido de Venda"
@@ -124,12 +140,12 @@ export function SalesOrderDetailDialog({
     >
       <div
         className={cn(
-          "flex w-full max-w-[1400px] max-h-[95vh] flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl",
+          "so-detail-dialog-panel flex w-full max-w-[1400px] max-h-[95vh] flex-col overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-2xl",
           "sm:max-h-[92vh]"
         )}
       >
-        {/* Header fixo */}
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-4 py-3">
+        {/* Header fixo — oculto na impressão */}
+        <header className="so-detail-no-print print-no-print flex flex-wrap items-center justify-between gap-2 border-b border-[#E5E7EB] bg-white px-4 py-3">
           <div>
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1e3a8a]">
               Comercial · Pedidos de Venda
@@ -153,7 +169,8 @@ export function SalesOrderDetailDialog({
             <button
               type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB]"
+              disabled={!payload}
+              className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-50"
               data-testid="sales-order-detail-print"
               title="Imprimir / Gerar PDF"
             >
@@ -200,11 +217,11 @@ export function SalesOrderDetailDialog({
           </div>
         </header>
 
-        {/* Body com scroll interno */}
-        <div className="flex-1 overflow-y-auto bg-[#f8fafc] px-4 py-4">
+        {/* Body com scroll interno — conteúdo liberado no @media print */}
+        <div className="so-detail-dialog-body flex-1 overflow-y-auto bg-[#f8fafc] px-4 py-4">
           {loading ? (
             <div
-              className="flex items-center justify-center py-12 text-[#6b7280]"
+              className="so-detail-no-print flex items-center justify-center py-12 text-[#6b7280]"
               data-testid="sales-order-detail-loading"
             >
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -212,15 +229,19 @@ export function SalesOrderDetailDialog({
             </div>
           ) : error ? (
             <div
-              className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
+              className="so-detail-no-print rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"
               data-testid="sales-order-detail-error"
             >
               {error}
             </div>
           ) : payload ? (
-            <SalesOrderDetailView payload={payload} />
+            <div id="sales-order-detail-print-root">
+              <SalesOrderDetailView payload={payload} />
+            </div>
           ) : (
-            <div className="text-[12px] text-[#6b7280]">Nenhum pedido selecionado.</div>
+            <div className="so-detail-no-print text-[12px] text-[#6b7280]">
+              Nenhum pedido selecionado.
+            </div>
           )}
         </div>
       </div>

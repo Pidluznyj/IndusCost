@@ -124,11 +124,29 @@ export function OrderStatusFilters({
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="sm:col-span-2 lg:col-span-3 xl:col-span-3">
+            <Field label="Busca inteligente">
+              <input
+                className={financeModuleFilterFieldClass()}
+                value={draft.search}
+                placeholder="Buscar por cliente, pedido, NF ou documento de saída…"
+                onChange={(e) => patch({ search: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && canApply) onApply();
+                }}
+                data-testid="order-status-search"
+              />
+            </Field>
+            <p className="mt-1 text-[10px] text-[#6B7280]">
+              Ex.: PD 02586, NF 7135, DOC 8457 ou nome do cliente.
+            </p>
+          </div>
+
           <div className="sm:col-span-2 lg:col-span-2">
             <CustomerAutocompleteFilter
               label="Cliente"
               value={customerSelection}
-              placeholder="Buscar por nome…"
+              placeholder="Filtrar cliente específico…"
               allowFreeText
               onChange={(sel) => {
                 onCustomerChange(sel);

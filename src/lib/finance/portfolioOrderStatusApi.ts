@@ -78,6 +78,8 @@ export type PortfolioOrderStatusApiFilters = {
   customerExternalId: number | null;
   customerId: string | null;
   customerName: string | null;
+  /** Busca inteligente: cliente, pedido, NF ou documento de saída. */
+  search: string | null;
   year: number | null;
   from: string | null;
   to: string | null;
@@ -281,6 +283,7 @@ export function parsePortfolioOrderStatusFilters(
     customerExternalId: asPositiveInt(query.customerExternalId, "customerExternalId"),
     customerId: asString(query.customerId),
     customerName: asString(query.customerName),
+    search: asString(query.search),
     year: asYear(query.year),
     from: asString(query.from),
     to: asString(query.to),
@@ -312,6 +315,7 @@ export function toServiceFilters(
   return {
     customerExternalId: filters.customerExternalId,
     customerName: filters.customerName,
+    search: filters.search,
     sellerName: filters.sellerName,
     responsibleName: filters.responsibleName,
     productOrSku: filters.productOrSku,

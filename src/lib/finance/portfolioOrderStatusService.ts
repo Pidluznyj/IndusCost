@@ -15,6 +15,10 @@ import {
   type OrderToCashAuditFactRecord,
 } from "./orderToCashAuditApi.js";
 import { isCanceledOrderItemFact } from "./orderItemFulfillmentStatus.js";
+import {
+  normalizeOrderStatusSearch,
+  matchOrderStatusSearch,
+} from "./portfolioOrderStatusSearch.js";
 
 /** Fact de entrada — FactRecord + campos opcionais ainda não no select padrão. */
 export type PortfolioOrderStatusFact = OrderToCashAuditFactRecord & {
@@ -168,6 +172,8 @@ export type PortfolioOrderStatusRow = {
   /** Tokens de produto/SKU do pedido (para filtro, sem expor facts). */
   productTokens: string[];
   nfeNumbers: string[];
+  /** ExternalIds de documentos de saída vinculados (para busca inteligente). */
+  stockDocumentExternalIds: number[];
   nfeHeaderMaxValue: number;
   validInvoiceCount: number;
   canceledInvoiceCount: number;
@@ -175,6 +181,18 @@ export type PortfolioOrderStatusRow = {
   hasCanceledInvoice: boolean;
   /** Status fiscal consolidado (ex.: NFE_AUTHORIZED, NFE_CANCELLED). */
   billingStatus: string;
+  /**
+   * Preenchido quando `filters.search` casa com a linha.
+   * Null/ausente quando não há busca inteligente aplicada.
+   */
+  searchMatchedBy?:
+    | "CUSTOMER"
+    | "SALES_ORDER"
+    | "NFE"
+    | "STOCK_DOCUMENT"
+    | "PRODUCT"
+    | null;
+  searchMatchedText?: string | null;
 };
 
 export type PortfolioOrderStatusPrimaryCard = {
@@ -251,6 +269,11 @@ export type PortfolioOrderStatusFilters = {
   sellerName?: string | null;
   responsibleName?: string | null;
   productOrSku?: string | null;
+  /**
+   * Busca inteligente: cliente, pedido (PD), NF ou documento de saída.
+   * Combina com os demais filtros; resultado permanece 1 linha/pedido.
+   */
+  search?: string | null;
   consolidatedStatus?: PortfolioOrderStatusConsolidated | null;
   operationalStatus?: string | null;
   financialStatus?: string | null;
@@ -773,6 +796,7 @@ export function aggregateOrderFactsToRow(
   let receivableReceived = 0;
   let nfeHeaderMax = 0;
   const nfeNumbers = new Set<string>();
+  const stockDocumentExternalIds = new Set<number>();
   const productTokens = new Set<string>();
   const seenCanceledItems = new Set<string>();
   const seenCutItems = new Set<string>();
@@ -780,6 +804,12 @@ export function aggregateOrderFactsToRow(
   const seenFulfilledItems = new Set<string>();
 
   for (const fact of orderFacts) {
+    // Coleta busca (NF / doc) em todas as linhas — inclusive canceladas/pendentes.
+    if (fact.nfeNumber?.trim()) nfeNumbers.add(fact.nfeNumber.trim());
+    if (fact.stockDocumentExternalId != null) {
+      stockDocumentExternalIds.add(fact.stockDocumentExternalId);
+    }
+
     if (!salesOrderId && fact.salesOrderId) salesOrderId = fact.salesOrderId;
     if (!orderCode && fact.orderCode) orderCode = fact.orderCode;
     if (!orderIssueDate && fact.orderIssueDate) orderIssueDate = fact.orderIssueDate;
@@ -877,7 +907,6 @@ export function aggregateOrderFactsToRow(
     receivableOpen = Math.max(receivableOpen, fact.receivableOpenValue ?? 0);
     receivableReceived = Math.max(receivableReceived, fact.receivableReceivedValue ?? 0);
     nfeHeaderMax = Math.max(nfeHeaderMax, fact.nfeHeaderValue ?? 0);
-    if (fact.nfeNumber?.trim()) nfeNumbers.add(fact.nfeNumber.trim());
 
     if (isAllocatedLine(fact)) {
       if (!seenFulfilledItems.has(itemKey)) {
@@ -1032,12 +1061,15 @@ export function aggregateOrderFactsToRow(
     hasMissingCommercialResponsible,
     productTokens: [...productTokens].sort(),
     nfeNumbers: [...nfeNumbers].sort(),
+    stockDocumentExternalIds: [...stockDocumentExternalIds].sort((a, b) => a - b),
     nfeHeaderMaxValue: round6(nfeHeaderMax),
     validInvoiceCount,
     canceledInvoiceCount,
     hasValidInvoice,
     hasCanceledInvoice,
     billingStatus: classified.fiscalStatus,
+    searchMatchedBy: null,
+    searchMatchedText: null,
   };
 }
 
@@ -1778,49 +1810,63 @@ export function applyOrderStatusFilters(
 ): PortfolioOrderStatusRow[] {
   if (!filters) return [...rows];
 
-  return rows.filter((row) => {
+  const searchNorm = normalizeOrderStatusSearch(filters.search);
+
+  return rows.flatMap((row) => {
     if (
       filters.customerExternalId != null &&
       row.externalCustomerId !== filters.customerExternalId
     ) {
-      return false;
+      return [];
     }
     if (filters.customerName?.trim()) {
       const name = (row.customerName ?? "").toLowerCase();
-      if (!name.includes(filters.customerName.trim().toLowerCase())) return false;
+      if (!name.includes(filters.customerName.trim().toLowerCase())) return [];
     }
+
+    let searchMatchedBy: PortfolioOrderStatusRow["searchMatchedBy"] =
+      row.searchMatchedBy ?? null;
+    let searchMatchedText: string | null = row.searchMatchedText ?? null;
+    if (searchNorm) {
+      if (!searchNorm.usable) return [];
+      const hit = matchOrderStatusSearch(row, searchNorm);
+      if (!hit) return [];
+      searchMatchedBy = hit.matchedBy;
+      searchMatchedText = hit.matchedText;
+    }
+
     if (filters.sellerName?.trim()) {
       const seller = (row.orderSellerName ?? "").toLowerCase();
-      if (!seller.includes(filters.sellerName.trim().toLowerCase())) return false;
+      if (!seller.includes(filters.sellerName.trim().toLowerCase())) return [];
     }
     if (filters.responsibleName?.trim()) {
       const resp = (row.commercialResponsibleName ?? "").toLowerCase();
-      if (!resp.includes(filters.responsibleName.trim().toLowerCase())) return false;
+      if (!resp.includes(filters.responsibleName.trim().toLowerCase())) return [];
     }
     if (filters.productOrSku?.trim()) {
       const needle = filters.productOrSku.trim().toLowerCase();
       const hit = row.productTokens.some(
         (t) => t.includes(needle) || needle.includes(t)
       );
-      if (!hit) return false;
+      if (!hit) return [];
     }
     if (
       filters.consolidatedStatus &&
       row.consolidatedOrderStatus !== filters.consolidatedStatus
     ) {
-      return false;
+      return [];
     }
     if (
       filters.operationalStatus?.trim() &&
       row.operationalStatus !== filters.operationalStatus.trim()
     ) {
-      return false;
+      return [];
     }
     if (
       filters.financialStatus?.trim() &&
       row.financialStatus !== filters.financialStatus.trim()
     ) {
-      return false;
+      return [];
     }
     if (filters.temperature?.trim()) {
       const wanted = filters.temperature.trim().toUpperCase();
@@ -1833,43 +1879,49 @@ export function applyOrderStatusFilters(
             : rowTemp === "VERMELHO" || rowTemp === "RED"
               ? "QUENTE"
               : rowTemp;
-      if (normalizedRow !== wanted && rowTemp !== wanted) return false;
+      if (normalizedRow !== wanted && rowTemp !== wanted) return [];
     }
     if (filters.alert?.trim() && !row.alerts.includes(filters.alert.trim())) {
-      return false;
+      return [];
     }
-    if (filters.onlyWithDivergences && !row.hasDivergences) return false;
-    if (filters.onlyWithOpenCr && !row.hasOpenCr) return false;
+    if (filters.onlyWithDivergences && !row.hasDivergences) return [];
+    if (filters.onlyWithOpenCr && !row.hasOpenCr) return [];
     if (filters.onlyWithPendingBalance && row.pendingOrderValue <= MONEY_EPS) {
-      return false;
+      return [];
     }
 
     if (filters.year != null && row.orderIssueDate) {
       const y = new Date(row.orderIssueDate).getFullYear();
-      if (y !== filters.year) return false;
+      if (y !== filters.year) return [];
     }
     if (filters.from) {
       const from = toDate(filters.from);
       const issue = toDate(row.orderIssueDate);
-      if (from && issue && issue.getTime() < from.getTime()) return false;
+      if (from && issue && issue.getTime() < from.getTime()) return [];
     }
     if (filters.to) {
       const to = toDate(filters.to);
       const issue = toDate(row.orderIssueDate);
-      if (to && issue && issue.getTime() > to.getTime()) return false;
+      if (to && issue && issue.getTime() > to.getTime()) return [];
     }
 
     if (filters.selectedCard && !matchesSelectedCard(row, filters.selectedCard)) {
-      return false;
+      return [];
     }
     if (
       filters.selectedDrilldown &&
       !matchesSelectedDrilldown(row, filters.selectedDrilldown)
     ) {
-      return false;
+      return [];
     }
 
-    return true;
+    return [
+      {
+        ...row,
+        searchMatchedBy,
+        searchMatchedText,
+      },
+    ];
   });
 }
 

@@ -11,7 +11,8 @@
   body.np-report-printing #root,
   body.material-demand-printing #root,
   body.cnpj-intelligence-printing #root,
-  body.ar-titles-print-route #root {
+  body.ar-titles-print-route #root,
+  body.sales-order-detail-print-route #root {
     display: none !important;
   }
   body * {
@@ -32,7 +33,9 @@
   #cnpj-intelligence-print-root,
   #cnpj-intelligence-print-root *,
   #ar-titles-print-root,
-  #ar-titles-print-root * {
+  #ar-titles-print-root *,
+  #sales-order-detail-print-root,
+  #sales-order-detail-print-root * {
     visibility: visible !important;
   }
   /* Aba Relatórios: único bloco absoluto na página */

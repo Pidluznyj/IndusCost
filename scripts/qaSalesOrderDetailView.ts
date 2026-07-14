@@ -37,6 +37,7 @@ function checkFilesPresent() {
     "src/components/sales/SalesOrderDetailView.tsx",
     "src/components/sales/SalesOrderDetailDialog.tsx",
     "src/components/sales/sales-order-detail-view.css",
+    "src/components/sales/sales-order-detail-print.css",
     "docs/sales/sales-order-detail-view.md",
     "tmp-audits/inspect-sales-order-detail-view.ts",
   ]) {
@@ -218,6 +219,41 @@ function checkUiComponents() {
     ok("ui:dialog:portal", "modal portalizado (preserva filtros da lista)");
   } else {
     fail("ui:dialog:portal", "modal não usa createPortal(document.body)");
+  }
+
+  // Print: root + body class (evita PDF em branco por reports-print.css).
+  if (dialog.includes('id="sales-order-detail-print-root"')) {
+    ok("ui:dialog:print-root", "print root presente");
+  } else {
+    fail("ui:dialog:print-root", "id sales-order-detail-print-root ausente");
+  }
+  if (dialog.includes("sales-order-detail-print-route")) {
+    ok("ui:dialog:print-body-class", "body class de print presente");
+  } else {
+    fail("ui:dialog:print-body-class", "sales-order-detail-print-route ausente");
+  }
+  if (dialog.includes("sales-order-detail-print.css")) {
+    ok("ui:dialog:print-css-import", "CSS de print importado");
+  } else {
+    fail("ui:dialog:print-css-import", "sales-order-detail-print.css não importado");
+  }
+  const printCss = read("src/components/sales/sales-order-detail-print.css");
+  if (
+    printCss.includes("@media print") &&
+    printCss.includes("#sales-order-detail-print-root")
+  ) {
+    ok("ui:print-css:media", "@media print libera print root");
+  } else {
+    fail("ui:print-css:media", "CSS de print incompleto");
+  }
+  const reportsPrint = read("src/reports-print.css");
+  if (reportsPrint.includes("#sales-order-detail-print-root")) {
+    ok("ui:reports-print:whitelist", "print root na whitelist do reports-print");
+  } else {
+    fail(
+      "ui:reports-print:whitelist",
+      "#sales-order-detail-print-root ausente em reports-print.css"
+    );
   }
 
   // Frontend não pode importar Prisma.
