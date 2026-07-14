@@ -4002,16 +4002,38 @@ model FinancialSupplier {
   @@index([displayName])
 }
 
-/// Encerramento gerencial/contratual de prestação de serviço (não é rescisão CLT).
+/// Encerramento / distrato civil de prestação de serviço PJ (não é rescisão CLT).
 enum SupplierServiceTerminationStatus {
   DRAFT
-  FINALIZED
+  AWAITING_SIGNATURE
+  SIGNED_AWAITING_PAYMENT
+  PAID_AND_SETTLED
   CANCELED
+  /// Legado — migrado para PAID_AND_SETTLED / SIGNED_AWAITING_PAYMENT.
+  FINALIZED
 }
 
 enum SupplierServiceTerminationCalcMode {
   WORKED_MONTHS
   WORKED_DAYS
+}
+
+enum SupplierServiceTerminationModality {
+  MUTUAL_AGREEMENT
+  CONTRACTOR_INITIATIVE
+  CONTRACTED_INITIATIVE
+}
+
+enum SupplierServiceTerminationCommissionTreatment {
+  NONE_PENDING
+  HAS_PENDING
+  NEGOTIATED_INCLUDED
+}
+
+enum SupplierServiceTerminationNoticeOrigin {
+  CONTRACT_CLAUSE
+  AGREEMENT
+  OTHER
 }
 
 model SupplierServiceTermination {
@@ -4023,9 +4045,9 @@ model SupplierServiceTermination {
   contractStartDate       DateTime                            @db.Date
   contractEndDate         DateTime                            @db.Date
   monthlyServiceAmount    Decimal                             @db.Decimal(20, 2)
-  /// Dias médios trabalhados por mês (base do valor-dia).
+  /// Dias médios considerados no mês (parâmetro interno de cálculo).
   averageWorkedDaysPerMonth Decimal                           @default(30) @db.Decimal(8, 2)
-  /// Horas por dia (fator do valor-hora / horas mês).
+  /// Horas por dia (parâmetro interno — não impresso no distrato).
   hoursPerDay             Decimal                             @default(8) @db.Decimal(8, 2)
   monthlyHours            Decimal                             @db.Decimal(12, 2)
   hourlyServiceAmount     Decimal                             @db.Decimal(20, 4)
@@ -4036,10 +4058,10 @@ model SupplierServiceTermination {
   workedDays              Int                                 @default(0)
   proportionalRestDays    Decimal                             @db.Decimal(12, 4)
   proportionalRestAmount  Decimal                             @db.Decimal(20, 2)
-  /// Dias trabalhados além dos meses completos (ex.: 7 dias no mês do encerramento).
+  /// Dias/serviços adicionais no período do encerramento (cálculo interno).
   extraWorkedDays         Int                                 @default(0)
   extraWorkedAmount       Decimal                             @default(0) @db.Decimal(20, 2)
-  /// Multa contratual por encerramento sem aviso de 30 dias.
+  /// Compensação/valor negociado de encerramento (cálculo interno).
   noticePenaltyAmount     Decimal                             @default(0) @db.Decimal(20, 2)
   commissionReportId      String?
   commissionReportTotal   Decimal                             @default(0) @db.Decimal(20, 2)
@@ -4057,6 +4079,56 @@ model SupplierServiceTermination {
   createdAt               DateTime                            @default(now()) @db.Timestamptz(6)
   updatedAt               DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
 
+  /// Dados do termo de distrato / quitação
+  documentCode            String?
+  documentVersion         Int                                 @default(1)
+  supersedesId            String?                             @db.Uuid
+  originalContractDate    DateTime?                           @db.Date
+  originalContractReference String?
+  contractingPartyName    String?
+  contractingPartyDocument String?
+  contractingPartyRepName String?
+  contractingPartyRepRole String?
+  contractingPartyRepDocument String?
+  contractedPartyName     String?
+  contractedPartyDocument String?
+  contractedPartyRepName  String?
+  contractedPartyRepDocument String?
+  contractedServiceDescription String?
+  signaturePlace          String?
+  terminationModality     SupplierServiceTerminationModality?
+  terminationReason       String?
+  paymentDueDate          DateTime?                           @db.Date
+  paymentMethod           String?
+  paymentTransactionId    String?
+  paymentEffectiveDate    DateTime?                           @db.Date
+  paymentConfirmedAmount  Decimal?                            @db.Decimal(20, 2)
+  paymentProofStorageKey  String?
+  paymentProofFileName    String?
+  paymentProofWaiverReason String?
+  commissionTreatment     SupplierServiceTerminationCommissionTreatment?
+  commissionPendingNotes  String?
+  commissionNegotiatedAmount Decimal?                         @db.Decimal(20, 2)
+  commissionNegotiatedOrders String?
+  commissionNegotiatedJustification String?
+  commissionNegotiatedApprover String?
+  noticePenaltyOrigin     SupplierServiceTerminationNoticeOrigin?
+  noticePenaltyClauseNumber String?
+  noticePenaltyClauseDescription String?
+  proportionalCompensationJustification String?
+  extraServicesDescription String?
+  otherDiscountsDescription String?
+  contractualNotes        String?
+  pendingObligationsNotes String?
+  hasPendingObligations   Boolean                             @default(false)
+  witness1Name            String?
+  witness1Document        String?
+  witness2Name            String?
+  witness2Document        String?
+  integrityCode           String?
+  settledSnapshotJson     Json?
+  contractTypeConfirmedPj Boolean                             @default(false)
+
   supplier        FinancialSupplier                          @relation(fields: [supplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   commissionLinks SupplierServiceTerminationCommissionLink[]
 
@@ -4065,6 +4137,8 @@ model SupplierServiceTermination {
   @@index([personName])
   @@index([contractEndDate])
   @@index([createdAt])
+  @@index([documentCode])
+  @@index([supersedesId])
 }
 
 model SupplierServiceTerminationCommissionLink {

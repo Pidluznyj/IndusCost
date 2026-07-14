@@ -4,6 +4,7 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import {
   cancelSupplierServiceTermination,
+  createNewVersionFromCanceledTermination,
   createSupplierServiceTermination,
   exportSupplierServiceTerminationPdf,
   exportSupplierServiceTerminationXlsx,
@@ -13,9 +14,13 @@ import {
   previewSupplierServiceTermination,
   searchCommissionReportsForSupplierTermination,
   SupplierServiceTerminationError,
+  transitionSupplierServiceTerminationStatus,
   updateSupplierServiceTermination,
 } from "./supplierServiceTermination.server.js";
-import type { ServiceTerminationPreviewInput } from "./supplierServiceTerminationTypes.js";
+import type {
+  ServiceTerminationPreviewInput,
+  ServiceTerminationStatusDto,
+} from "./supplierServiceTerminationTypes.js";
 import {
   SERVICE_TERMINATION_AUDIT_ACTIONS,
 } from "./supplierServiceTerminationTypes.js";
@@ -82,6 +87,12 @@ function handleError(res: express.Response, error: unknown) {
     .json(financeApiErrorJson("Erro no encerramento de prestação de serviço.", error));
 }
 
+function optString(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s ? s : null;
+}
+
 function parseBody(raw: unknown): ServiceTerminationPreviewInput {
   const b = (raw ?? {}) as Record<string, unknown>;
   return {
@@ -112,6 +123,71 @@ function parseBody(raw: unknown): ServiceTerminationPreviewInput {
     commissionLinks: Array.isArray(b.commissionLinks)
       ? (b.commissionLinks as ServiceTerminationPreviewInput["commissionLinks"])
       : [],
+    documentCode: optString(b.documentCode),
+    documentVersion: b.documentVersion != null ? Number(b.documentVersion) : 1,
+    supersedesId: optString(b.supersedesId),
+    originalContractDate: optString(b.originalContractDate),
+    originalContractReference: optString(b.originalContractReference),
+    contractingPartyName: optString(b.contractingPartyName),
+    contractingPartyDocument: optString(b.contractingPartyDocument),
+    contractingPartyRepName: optString(b.contractingPartyRepName),
+    contractingPartyRepRole: optString(b.contractingPartyRepRole),
+    contractingPartyRepDocument: optString(b.contractingPartyRepDocument),
+    contractedPartyName: optString(b.contractedPartyName),
+    contractedPartyDocument: optString(b.contractedPartyDocument),
+    contractedPartyRepName: optString(b.contractedPartyRepName),
+    contractedPartyRepDocument: optString(b.contractedPartyRepDocument),
+    contractedServiceDescription: optString(b.contractedServiceDescription),
+    signaturePlace: optString(b.signaturePlace),
+    terminationModality:
+      b.terminationModality === "MUTUAL_AGREEMENT" ||
+      b.terminationModality === "CONTRACTOR_INITIATIVE" ||
+      b.terminationModality === "CONTRACTED_INITIATIVE"
+        ? b.terminationModality
+        : null,
+    terminationReason: optString(b.terminationReason),
+    paymentDueDate: optString(b.paymentDueDate),
+    paymentMethod: optString(b.paymentMethod),
+    paymentTransactionId: optString(b.paymentTransactionId),
+    paymentEffectiveDate: optString(b.paymentEffectiveDate),
+    paymentConfirmedAmount:
+      b.paymentConfirmedAmount != null ? Number(b.paymentConfirmedAmount) : null,
+    paymentProofStorageKey: optString(b.paymentProofStorageKey),
+    paymentProofFileName: optString(b.paymentProofFileName),
+    paymentProofWaiverReason: optString(b.paymentProofWaiverReason),
+    commissionTreatment:
+      b.commissionTreatment === "NONE_PENDING" ||
+      b.commissionTreatment === "HAS_PENDING" ||
+      b.commissionTreatment === "NEGOTIATED_INCLUDED"
+        ? b.commissionTreatment
+        : null,
+    commissionPendingNotes: optString(b.commissionPendingNotes),
+    commissionNegotiatedAmount:
+      b.commissionNegotiatedAmount != null ? Number(b.commissionNegotiatedAmount) : null,
+    commissionNegotiatedOrders: optString(b.commissionNegotiatedOrders),
+    commissionNegotiatedJustification: optString(b.commissionNegotiatedJustification),
+    commissionNegotiatedApprover: optString(b.commissionNegotiatedApprover),
+    noticePenaltyOrigin:
+      b.noticePenaltyOrigin === "CONTRACT_CLAUSE" ||
+      b.noticePenaltyOrigin === "AGREEMENT" ||
+      b.noticePenaltyOrigin === "OTHER"
+        ? b.noticePenaltyOrigin
+        : null,
+    noticePenaltyClauseNumber: optString(b.noticePenaltyClauseNumber),
+    noticePenaltyClauseDescription: optString(b.noticePenaltyClauseDescription),
+    proportionalCompensationJustification: optString(
+      b.proportionalCompensationJustification
+    ),
+    extraServicesDescription: optString(b.extraServicesDescription),
+    otherDiscountsDescription: optString(b.otherDiscountsDescription),
+    contractualNotes: optString(b.contractualNotes),
+    pendingObligationsNotes: optString(b.pendingObligationsNotes),
+    hasPendingObligations: Boolean(b.hasPendingObligations),
+    witness1Name: optString(b.witness1Name),
+    witness1Document: optString(b.witness1Document),
+    witness2Name: optString(b.witness2Name),
+    witness2Document: optString(b.witness2Document),
+    contractTypeConfirmedPj: Boolean(b.contractTypeConfirmedPj),
   };
 }
 
@@ -309,6 +385,62 @@ export function registerSupplierServiceTerminationRoutes(
           userName: user?.name,
         });
         res.json({ ok: true, item });
+      } catch (error) {
+        handleError(res, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/suppliers/:supplierId/service-terminations/:id/status",
+    ...finalizeGuard,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.supplierId) || !isUuid(req.params.id)) {
+          return res.status(400).json({ error: "IDs inválidos." });
+        }
+        const target = String((req.body as { status?: string })?.status ?? "");
+        const allowed: ServiceTerminationStatusDto[] = [
+          "DRAFT",
+          "AWAITING_SIGNATURE",
+          "SIGNED_AWAITING_PAYMENT",
+          "PAID_AND_SETTLED",
+          "CANCELED",
+        ];
+        if (!allowed.includes(target as ServiceTerminationStatusDto)) {
+          return res.status(400).json({ error: "Status alvo inválido." });
+        }
+        const user = await getCurrentAppUser(req);
+        const item = await transitionSupplierServiceTerminationStatus({
+          supplierId: req.params.supplierId,
+          id: req.params.id,
+          targetStatus: target as ServiceTerminationStatusDto,
+          userId: user?.id,
+          userName: user?.name,
+        });
+        res.json({ ok: true, item });
+      } catch (error) {
+        handleError(res, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/suppliers/:supplierId/service-terminations/:id/new-version",
+    ...createGuard,
+    async (req, res) => {
+      try {
+        if (!isUuid(req.params.supplierId) || !isUuid(req.params.id)) {
+          return res.status(400).json({ error: "IDs inválidos." });
+        }
+        const user = await getCurrentAppUser(req);
+        const item = await createNewVersionFromCanceledTermination({
+          supplierId: req.params.supplierId,
+          id: req.params.id,
+          userId: user?.id,
+          userName: user?.name,
+        });
+        res.status(201).json({ ok: true, item });
       } catch (error) {
         handleError(res, error);
       }

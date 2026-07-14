@@ -29,6 +29,10 @@ import {
   formatProportionalRestDaysLabel,
 } from "@/src/lib/suppliers/supplierServiceTerminationCalc";
 import { buildServiceTerminationPrintPath } from "@/src/lib/suppliers/supplierServiceTerminationPrint";
+import {
+  formatDistratoStatusLabel,
+  isServiceTerminationLockedStatus,
+} from "@/src/lib/suppliers/supplierServiceTerminationDistrato";
 import type {
   ServiceTerminationCalcModeDto,
   ServiceTerminationCommissionLinkDto,
@@ -36,7 +40,13 @@ import type {
   ServiceTerminationCommissionSearchResult,
   ServiceTerminationCommissionSellerOption,
   ServiceTerminationDto,
+  ServiceTerminationStatusDto,
 } from "@/src/lib/suppliers/supplierServiceTerminationTypes";
+import {
+  EMPTY_DISTRATO_FORM,
+  SupplierServiceTerminationDistratoFields,
+  type DistratoFormState,
+} from "@/src/components/finance/cost-centers/SupplierServiceTerminationDistratoFields";
 
 type Props = {
   open: boolean;
@@ -128,10 +138,14 @@ export function SupplierServiceTerminationDialog({
   );
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>("DRAFT");
+  const [status, setStatus] = useState<ServiceTerminationStatusDto>("DRAFT");
+  const [documentCode, setDocumentCode] = useState<string | null>(null);
+  const [documentVersion, setDocumentVersion] = useState(1);
+  const [distrato, setDistrato] = useState<DistratoFormState>(EMPTY_DISTRATO_FORM);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<ServiceTerminationDto[]>([]);
+  const locked = isServiceTerminationLockedStatus(status);
 
   const officialLinks = useMemo(
     () => links.filter((l) => (l.source ?? "").toUpperCase() !== "MANUAL"),
@@ -235,6 +249,111 @@ export function SupplierServiceTerminationDialog({
     void loadHistory();
   }, [open, loadHistory]);
 
+  const applyDtoToForm = (item: ServiceTerminationDto) => {
+    setSavedId(item.id);
+    setStatus(item.status);
+    setDocumentCode(item.documentCode);
+    setDocumentVersion(item.documentVersion ?? 1);
+    setPersonName(item.personName ?? "");
+    setPersonDocument(item.personDocument ?? "");
+    setServiceRole(item.serviceRole ?? "");
+    setContractStartDate(item.contractStartDate ?? "");
+    setContractEndDate(item.contractEndDate ?? "");
+    setMonthlyServiceAmount(String(item.monthlyServiceAmount ?? 0));
+    setAverageWorkedDaysPerMonth(String(item.averageWorkedDaysPerMonth ?? 30));
+    setHoursPerDay(String(item.hoursPerDay ?? 8));
+    setMonthlyHours(String(item.monthlyHours ?? 240));
+    setMonthlyHoursManual(true);
+    setRestDaysPerYear(String(item.restDaysPerYear ?? 20));
+    setCalculationMode(item.calculationMode ?? "WORKED_MONTHS");
+    setWorkedMonths(
+      item.workedMonths != null && item.workedMonths !== 0
+        ? String(item.workedMonths)
+        : ""
+    );
+    setWorkedDays(
+      item.workedDays != null && item.workedDays !== 0 ? String(item.workedDays) : ""
+    );
+    setExtraWorkedDays(
+      item.extraWorkedDays != null ? String(item.extraWorkedDays) : ""
+    );
+    setNoticePenaltyAmount(String(item.noticePenaltyAmount ?? 0));
+    setOtherCredits(String(item.otherCredits ?? 0));
+    setOtherDiscounts(String(item.otherDiscounts ?? 0));
+    setAdjustmentNotes(item.adjustmentNotes ?? "");
+    setNotes(item.notes ?? "");
+
+    const itemLinks = item.commissionLinks ?? [];
+    const official = itemLinks.filter(
+      (l) => (l.source ?? "").toUpperCase() !== "MANUAL"
+    );
+    const manual = itemLinks.filter(
+      (l) => (l.source ?? "").toUpperCase() === "MANUAL"
+    );
+    setLinks(official);
+    setManualCommissionLines(
+      manual.length
+        ? manual.map((l) => ({
+            key: l.commissionReportKey.replace(/^manual:/, "") || newManualLine().key,
+            orderCode: l.orderCode ?? "",
+            commissionAmount: String(l.commissionAmount ?? 0),
+          }))
+        : [newManualLine()]
+    );
+
+    setDistrato({
+      originalContractDate: item.originalContractDate ?? "",
+      originalContractReference: item.originalContractReference ?? "",
+      contractingPartyName:
+        item.contractingPartyName ?? EMPTY_DISTRATO_FORM.contractingPartyName,
+      contractingPartyDocument:
+        item.contractingPartyDocument ?? EMPTY_DISTRATO_FORM.contractingPartyDocument,
+      contractingPartyRepName: item.contractingPartyRepName ?? "",
+      contractingPartyRepRole: item.contractingPartyRepRole ?? "",
+      contractingPartyRepDocument: item.contractingPartyRepDocument ?? "",
+      contractedPartyName: item.contractedPartyName ?? "",
+      contractedPartyDocument: item.contractedPartyDocument ?? "",
+      contractedPartyRepName: item.contractedPartyRepName ?? "",
+      contractedPartyRepDocument: item.contractedPartyRepDocument ?? "",
+      contractedServiceDescription: item.contractedServiceDescription ?? "",
+      signaturePlace: item.signaturePlace ?? EMPTY_DISTRATO_FORM.signaturePlace,
+      terminationModality: item.terminationModality ?? "",
+      terminationReason: item.terminationReason ?? "",
+      paymentDueDate: item.paymentDueDate ?? "",
+      paymentMethod: item.paymentMethod ?? "",
+      paymentTransactionId: item.paymentTransactionId ?? "",
+      paymentEffectiveDate: item.paymentEffectiveDate ?? "",
+      paymentConfirmedAmount:
+        item.paymentConfirmedAmount != null ? String(item.paymentConfirmedAmount) : "",
+      paymentProofWaiverReason: item.paymentProofWaiverReason ?? "",
+      paymentProofFileName: item.paymentProofFileName ?? "",
+      commissionTreatment: item.commissionTreatment ?? "",
+      commissionPendingNotes: item.commissionPendingNotes ?? "",
+      commissionNegotiatedAmount:
+        item.commissionNegotiatedAmount != null
+          ? String(item.commissionNegotiatedAmount)
+          : "",
+      commissionNegotiatedOrders: item.commissionNegotiatedOrders ?? "",
+      commissionNegotiatedJustification: item.commissionNegotiatedJustification ?? "",
+      commissionNegotiatedApprover: item.commissionNegotiatedApprover ?? "",
+      noticePenaltyOrigin: item.noticePenaltyOrigin ?? "",
+      noticePenaltyClauseNumber: item.noticePenaltyClauseNumber ?? "",
+      noticePenaltyClauseDescription: item.noticePenaltyClauseDescription ?? "",
+      proportionalCompensationJustification:
+        item.proportionalCompensationJustification ?? "",
+      extraServicesDescription: item.extraServicesDescription ?? "",
+      otherDiscountsDescription: item.otherDiscountsDescription ?? "",
+      contractualNotes: item.contractualNotes ?? "",
+      pendingObligationsNotes: item.pendingObligationsNotes ?? "",
+      hasPendingObligations: Boolean(item.hasPendingObligations),
+      witness1Name: item.witness1Name ?? "",
+      witness1Document: item.witness1Document ?? "",
+      witness2Name: item.witness2Name ?? "",
+      witness2Document: item.witness2Document ?? "",
+      contractTypeConfirmedPj: Boolean(item.contractTypeConfirmedPj),
+    });
+  };
+
   const buildBody = () => ({
     personName,
     personDocument: personDocument || null,
@@ -257,6 +376,57 @@ export function SupplierServiceTerminationDialog({
     notes: notes || null,
     adjustmentNotes: adjustmentNotes || null,
     commissionLinks: allCommissionLinks,
+    originalContractDate: distrato.originalContractDate || null,
+    originalContractReference: distrato.originalContractReference || null,
+    contractingPartyName: distrato.contractingPartyName || null,
+    contractingPartyDocument: distrato.contractingPartyDocument || null,
+    contractingPartyRepName: distrato.contractingPartyRepName || null,
+    contractingPartyRepRole: distrato.contractingPartyRepRole || null,
+    contractingPartyRepDocument: distrato.contractingPartyRepDocument || null,
+    contractedPartyName: distrato.contractedPartyName || null,
+    contractedPartyDocument: distrato.contractedPartyDocument || null,
+    contractedPartyRepName: distrato.contractedPartyRepName || null,
+    contractedPartyRepDocument: distrato.contractedPartyRepDocument || null,
+    contractedServiceDescription: distrato.contractedServiceDescription || null,
+    signaturePlace: distrato.signaturePlace || null,
+    terminationModality: distrato.terminationModality || null,
+    terminationReason: distrato.terminationReason || null,
+    paymentDueDate: distrato.paymentDueDate || null,
+    paymentMethod: distrato.paymentMethod || null,
+    paymentTransactionId: distrato.paymentTransactionId || null,
+    paymentEffectiveDate: distrato.paymentEffectiveDate || null,
+    paymentConfirmedAmount: distrato.paymentConfirmedAmount.trim()
+      ? Number(distrato.paymentConfirmedAmount)
+      : null,
+    paymentProofStorageKey: distrato.paymentProofFileName
+      ? `manual:${distrato.paymentProofFileName}`
+      : null,
+    paymentProofFileName: distrato.paymentProofFileName || null,
+    paymentProofWaiverReason: distrato.paymentProofWaiverReason || null,
+    commissionTreatment: distrato.commissionTreatment || null,
+    commissionPendingNotes: distrato.commissionPendingNotes || null,
+    commissionNegotiatedAmount: distrato.commissionNegotiatedAmount.trim()
+      ? Number(distrato.commissionNegotiatedAmount)
+      : null,
+    commissionNegotiatedOrders: distrato.commissionNegotiatedOrders || null,
+    commissionNegotiatedJustification:
+      distrato.commissionNegotiatedJustification || null,
+    commissionNegotiatedApprover: distrato.commissionNegotiatedApprover || null,
+    noticePenaltyOrigin: distrato.noticePenaltyOrigin || null,
+    noticePenaltyClauseNumber: distrato.noticePenaltyClauseNumber || null,
+    noticePenaltyClauseDescription: distrato.noticePenaltyClauseDescription || null,
+    proportionalCompensationJustification:
+      distrato.proportionalCompensationJustification || null,
+    extraServicesDescription: distrato.extraServicesDescription || null,
+    otherDiscountsDescription: distrato.otherDiscountsDescription || null,
+    contractualNotes: distrato.contractualNotes || null,
+    pendingObligationsNotes: distrato.pendingObligationsNotes || null,
+    hasPendingObligations: distrato.hasPendingObligations,
+    witness1Name: distrato.witness1Name || null,
+    witness1Document: distrato.witness1Document || null,
+    witness2Name: distrato.witness2Name || null,
+    witness2Document: distrato.witness2Document || null,
+    contractTypeConfirmedPj: distrato.contractTypeConfirmedPj,
   });
 
   const buildCommissionQuery = useCallback(
@@ -421,7 +591,7 @@ export function SupplierServiceTerminationDialog({
             body: JSON.stringify(buildBody()),
           }
         );
-        setStatus(data.item.status);
+        applyDtoToForm(data.item);
         setMessage("Encerramento atualizado.");
       } else {
         const data = await fetchJsonOk<{ ok: boolean; item: ServiceTerminationDto }>(
@@ -432,8 +602,7 @@ export function SupplierServiceTerminationDialog({
             body: JSON.stringify(buildBody()),
           }
         );
-        setSavedId(data.item.id);
-        setStatus(data.item.status);
+        applyDtoToForm(data.item);
         setMessage("Prévia salva.");
       }
       void loadHistory();
@@ -444,27 +613,35 @@ export function SupplierServiceTerminationDialog({
     }
   };
 
-  const finalize = async () => {
+  const transitionStatus = async (targetStatus: ServiceTerminationStatusDto) => {
     if (!canFinalize || !savedId) {
-      setError("Salve a prévia antes de finalizar.");
+      setError("Salve a prévia antes de alterar o status.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
+      await fetchJsonOk<{ ok: boolean; item: ServiceTerminationDto }>(
+        `/api/suppliers/${supplierId}/service-terminations/${savedId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildBody()),
+        }
+      );
       const data = await fetchJsonOk<{ ok: boolean; item: ServiceTerminationDto }>(
-        `/api/suppliers/${supplierId}/service-terminations/${savedId}/finalize`,
+        `/api/suppliers/${supplierId}/service-terminations/${savedId}/status`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ status: targetStatus }),
         }
       );
-      setStatus(data.item.status);
-      setMessage("Encerramento finalizado (valores travados).");
+      applyDtoToForm(data.item);
+      setMessage(`Status atualizado: ${formatDistratoStatusLabel(data.item.status)}.`);
       void loadHistory();
     } catch (e) {
-      setError(e instanceof HttpError ? e.message : "Falha ao finalizar.");
+      setError(e instanceof HttpError ? e.message : "Falha ao atualizar status.");
     } finally {
       setSaving(false);
     }
@@ -513,11 +690,13 @@ export function SupplierServiceTerminationDialog({
       `Encerramento de Prestação de Serviço — ${supplierName}`,
       `Prestador: ${personName}`,
       `Período: ${contractStartDate} a ${contractEndDate}`,
-      `Descanso proporcional: ${formatProportionalRestDaysLabel(calc.proportionalRestDays)} dias · ${money(calc.proportionalRestAmount)}`,
-      `Dias a mais: ${calc.extraWorkedDays} · ${money(calc.extraWorkedAmount)}`,
-      `Multa sem aviso 30 dias: ${money(calc.noticePenaltyAmount)}`,
-      `Comissão total: ${money(calc.commissionReportTotal)}`,
-      `Total a pagar: ${money(calc.totalTerminationAmount)}`,
+      `Compensação contratual proporcional: ${formatProportionalRestDaysLabel(calc.proportionalRestDays)} dias · ${money(calc.proportionalRestAmount)}`,
+      `Saldo adicional de serviços: ${calc.extraWorkedDays} · ${money(calc.extraWorkedAmount)}`,
+      `Compensação / valor de encerramento: ${money(calc.noticePenaltyAmount)}`,
+      `Comissões comerciais: ${money(calc.commissionReportTotal)}`,
+      `Outros valores devidos: ${money(calc.otherCredits)}`,
+      `Deduções autorizadas: ${money(calc.otherDiscounts)}`,
+      `Valor líquido do acerto: ${money(calc.totalTerminationAmount)}`,
     ].join("\n");
     try {
       await navigator.clipboard.writeText(text);
@@ -579,7 +758,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={personName}
                   onChange={(e) => setPersonName(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-person-name"
                 />
               </label>
@@ -589,7 +768,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={personDocument}
                   onChange={(e) => setPersonDocument(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1">
@@ -598,7 +777,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={serviceRole}
                   onChange={(e) => setServiceRole(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1">
@@ -608,7 +787,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={contractStartDate}
                   onChange={(e) => setContractStartDate(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-start-date"
                 />
               </label>
@@ -619,7 +798,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={contractEndDate}
                   onChange={(e) => setContractEndDate(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-end-date"
                 />
               </label>
@@ -630,19 +809,23 @@ export function SupplierServiceTerminationDialog({
                   rows={2}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
             </div>
           </section>
 
-          <section className="space-y-3">
+          <section
+            className="space-y-3"
+            data-testid="service-termination-internal-params"
+          >
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-              2. Dados financeiros
+              2. Parâmetros internos de cálculo — não impressos no distrato
             </h3>
             <p className="text-xs text-muted-foreground">
-              Valor dia = mensal ÷ dias médios/mês · Valor hora = mensal ÷ horas/mês (horas/mês =
-              dias médios × horas/dia, ou informe manualmente).
+              Estes parâmetros alimentam apenas o cálculo interno gerencial. Não são impressos no
+              PDF do distrato. Valor dia = mensal ÷ dias médios/mês · Valor hora = mensal ÷
+              horas/mês (horas/mês = dias médios × horas/dia, ou informe manualmente).
             </p>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="space-y-1">
@@ -652,7 +835,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={monthlyServiceAmount}
                   onChange={(e) => setMonthlyServiceAmount(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-monthly-amount"
                 />
               </label>
@@ -673,7 +856,7 @@ export function SupplierServiceTerminationDialog({
                       syncMonthlyHoursFromFactors(next, hoursPerDay);
                     }
                   }}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-avg-days-month"
                 />
               </label>
@@ -694,7 +877,7 @@ export function SupplierServiceTerminationDialog({
                       syncMonthlyHoursFromFactors(averageWorkedDaysPerMonth, next);
                     }
                   }}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-hours-per-day"
                 />
               </label>
@@ -713,7 +896,7 @@ export function SupplierServiceTerminationDialog({
                     setMonthlyHoursManual(true);
                     setMonthlyHours(e.target.value);
                   }}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   data-testid="sst-monthly-hours"
                 />
               </label>
@@ -726,7 +909,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={restDaysPerYear}
                   onChange={(e) => setRestDaysPerYear(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1">
@@ -737,7 +920,7 @@ export function SupplierServiceTerminationDialog({
                   onChange={(e) =>
                     setCalculationMode(e.target.value as ServiceTerminationCalcModeDto)
                   }
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 >
                   <option value="WORKED_MONTHS">Por meses trabalhados</option>
                   <option value="WORKED_DAYS">Por dias corridos</option>
@@ -753,7 +936,7 @@ export function SupplierServiceTerminationDialog({
                   value={workedMonths}
                   onChange={(e) => setWorkedMonths(e.target.value)}
                   placeholder="Auto pelas datas"
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1">
@@ -766,14 +949,14 @@ export function SupplierServiceTerminationDialog({
                   value={workedDays}
                   onChange={(e) => setWorkedDays(e.target.value)}
                   placeholder="Auto pelas datas"
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <div className="flex items-end">
                 <button
                   type="button"
                   className="w-full rounded-lg border px-3 py-2 text-xs font-semibold"
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   onClick={() =>
                     syncMonthlyHoursFromFactors(averageWorkedDaysPerMonth, hoursPerDay)
                   }
@@ -834,7 +1017,7 @@ export function SupplierServiceTerminationDialog({
                   value={extraWorkedDays}
                   onChange={(e) => setExtraWorkedDays(e.target.value)}
                   placeholder="Ex.: 7"
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <Stat label="Valor do dia" value={money(calc.dailyServiceAmount)} />
@@ -860,7 +1043,7 @@ export function SupplierServiceTerminationDialog({
                 <select
                   className={COMMISSIONS_FILTER_FIELD_CLASS}
                   value={commissionYear}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   onChange={(e) => setCommissionYear(e.target.value)}
                   aria-label="Ano das comissões"
                 >
@@ -873,7 +1056,7 @@ export function SupplierServiceTerminationDialog({
               </label>
               <CommissionsMonthsMultiSelect
                 value={commissionMonths}
-                disabled={status === "FINALIZED"}
+                disabled={locked}
                 onChange={setCommissionMonths}
               />
               <label className="space-y-1 sm:col-span-2 lg:col-span-1">
@@ -881,7 +1064,7 @@ export function SupplierServiceTerminationDialog({
                 <select
                   className={COMMISSIONS_FILTER_FIELD_CLASS}
                   value={commissionSellerId}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                   onChange={(e) => setCommissionSellerId(e.target.value)}
                   aria-label="Vendedor"
                   data-testid="service-termination-commission-seller"
@@ -900,7 +1083,7 @@ export function SupplierServiceTerminationDialog({
                   placeholder="Cliente, pedido, NF-e…"
                   value={commissionSearch}
                   onChange={(e) => setCommissionSearch(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
             </div>
@@ -909,7 +1092,7 @@ export function SupplierServiceTerminationDialog({
                 type="button"
                 className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold"
                 onClick={() => void searchCommissions()}
-                disabled={searchingCommission || status === "FINALIZED"}
+                disabled={searchingCommission || locked}
                 data-testid="service-termination-commission-search"
               >
                 {searchingCommission ? (
@@ -925,7 +1108,7 @@ export function SupplierServiceTerminationDialog({
                     type="button"
                     className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold text-primary"
                     onClick={linkSelectedRecords}
-                    disabled={status === "FINALIZED" || selectedLineKeys.size === 0}
+                    disabled={locked || selectedLineKeys.size === 0}
                   >
                     <Link2 className="h-3.5 w-3.5" />
                     Vincular selecionadas ({selectedLineKeys.size})
@@ -934,7 +1117,7 @@ export function SupplierServiceTerminationDialog({
                     type="button"
                     className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"
                     onClick={linkAllListed}
-                    disabled={status === "FINALIZED"}
+                    disabled={locked}
                   >
                     Vincular todas listadas
                   </button>
@@ -977,7 +1160,7 @@ export function SupplierServiceTerminationDialog({
                             <input
                               type="checkbox"
                               checked={selectedLineKeys.has(row.lineKey)}
-                              disabled={status === "FINALIZED" || linked}
+                              disabled={locked || linked}
                               onChange={(e) => {
                                 setSelectedLineKeys((prev) => {
                                   const next = new Set(prev);
@@ -1020,7 +1203,7 @@ export function SupplierServiceTerminationDialog({
                               type="button"
                               className="inline-flex items-center gap-1 text-xs font-semibold text-primary disabled:opacity-40"
                               onClick={() => linkFromRecord(row)}
-                              disabled={status === "FINALIZED" || linked}
+                              disabled={locked || linked}
                             >
                               <Link2 className="h-3 w-3" />
                               {linked ? "Vinculada" : "Vincular"}
@@ -1047,7 +1230,7 @@ export function SupplierServiceTerminationDialog({
                     <button
                       type="button"
                       className="text-xs text-red-700"
-                      disabled={status === "FINALIZED"}
+                      disabled={locked}
                       onClick={() =>
                         setLinks((prev) =>
                           prev.filter((x) => x.commissionReportKey !== l.commissionReportKey)
@@ -1083,7 +1266,7 @@ export function SupplierServiceTerminationDialog({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={line.orderCode}
                       placeholder="Ex.: PD 02523"
-                      disabled={status === "FINALIZED"}
+                      disabled={locked}
                       onChange={(e) => {
                         const value = e.target.value;
                         setManualCommissionLines((prev) =>
@@ -1105,7 +1288,7 @@ export function SupplierServiceTerminationDialog({
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={line.commissionAmount}
                       placeholder="0,00"
-                      disabled={status === "FINALIZED"}
+                      disabled={locked}
                       onChange={(e) => {
                         const value = e.target.value;
                         setManualCommissionLines((prev) =>
@@ -1121,7 +1304,7 @@ export function SupplierServiceTerminationDialog({
                   <button
                     type="button"
                     className="inline-flex h-9 items-center justify-center rounded-lg border px-3 text-red-700 disabled:opacity-40"
-                    disabled={status === "FINALIZED" || manualCommissionLines.length <= 1}
+                    disabled={locked || manualCommissionLines.length <= 1}
                     onClick={() =>
                       setManualCommissionLines((prev) =>
                         prev.filter((row) => row.key !== line.key)
@@ -1138,7 +1321,7 @@ export function SupplierServiceTerminationDialog({
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold"
-                disabled={status === "FINALIZED"}
+                disabled={locked}
                 onClick={() =>
                   setManualCommissionLines((prev) => [...prev, newManualLine()])
                 }
@@ -1172,12 +1355,12 @@ export function SupplierServiceTerminationDialog({
                     className="min-w-[180px] flex-1 rounded-lg border px-3 py-2 text-sm"
                     value={noticePenaltyAmount}
                     onChange={(e) => setNoticePenaltyAmount(e.target.value)}
-                    disabled={status === "FINALIZED"}
+                    disabled={locked}
                   />
                   <button
                     type="button"
                     className="rounded-lg border px-3 py-2 text-xs font-semibold"
-                    disabled={status === "FINALIZED"}
+                    disabled={locked}
                     onClick={() =>
                       setNoticePenaltyAmount(
                         String(Number(monthlyServiceAmount) || 0)
@@ -1200,7 +1383,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={otherCredits}
                   onChange={(e) => setOtherCredits(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1">
@@ -1210,7 +1393,7 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={otherDiscounts}
                   onChange={(e) => setOtherDiscounts(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
               <label className="space-y-1 sm:col-span-2">
@@ -1221,26 +1404,46 @@ export function SupplierServiceTerminationDialog({
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                   value={adjustmentNotes}
                   onChange={(e) => setAdjustmentNotes(e.target.value)}
-                  disabled={status === "FINALIZED"}
+                  disabled={locked}
                 />
               </label>
             </div>
           </section>
+
+          <SupplierServiceTerminationDistratoFields
+            value={distrato}
+            onChange={(patch) => setDistrato((prev) => ({ ...prev, ...patch }))}
+            disabled={locked}
+            documentCode={documentCode}
+            documentVersion={documentVersion}
+          />
 
           <section className="space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               6. Resumo final
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <Stat label="Descanso proporcional" value={money(calc.proportionalRestAmount)} />
-              <Stat label="Dias a mais" value={money(calc.extraWorkedAmount)} />
-              <Stat label="Multa sem aviso 30 dias" value={money(calc.noticePenaltyAmount)} />
-              <Stat label="Comissão total" value={money(calc.commissionReportTotal)} />
-              <Stat label="Outros créditos" value={money(calc.otherCredits)} />
-              <Stat label="Outros descontos" value={money(calc.otherDiscounts)} />
-              <Stat label="Status" value={status} />
               <Stat
-                label="Total a pagar"
+                label="Compensação contratual proporcional"
+                value={money(calc.proportionalRestAmount)}
+              />
+              <Stat
+                label="Saldo adicional de serviços"
+                value={money(calc.extraWorkedAmount)}
+              />
+              <Stat
+                label="Compensação / valor de encerramento"
+                value={money(calc.noticePenaltyAmount)}
+              />
+              <Stat
+                label="Comissões comerciais"
+                value={money(calc.commissionReportTotal)}
+              />
+              <Stat label="Outros valores devidos" value={money(calc.otherCredits)} />
+              <Stat label="Deduções autorizadas" value={money(calc.otherDiscounts)} />
+              <Stat label="Status" value={formatDistratoStatusLabel(status)} />
+              <Stat
+                label="Valor líquido do acerto"
                 value={money(calc.totalTerminationAmount)}
                 emphasize
               />
@@ -1254,13 +1457,20 @@ export function SupplierServiceTerminationDialog({
               </h3>
               <ul className="text-xs space-y-1">
                 {history.slice(0, 8).map((h) => (
-                  <li key={h.id} className="flex justify-between gap-2 border-b py-1">
-                    <span>
-                      {h.personName} · {h.contractStartDate}→{h.contractEndDate} · {h.status}
-                    </span>
-                    <span className="tabular-nums font-semibold">
-                      {money(h.totalTerminationAmount)}
-                    </span>
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      className="flex w-full justify-between gap-2 border-b py-1 text-left hover:bg-muted/40"
+                      onClick={() => applyDtoToForm(h)}
+                    >
+                      <span>
+                        {h.personName} · {h.documentCode || "—"} ·{" "}
+                        {formatDistratoStatusLabel(h.status)}
+                      </span>
+                      <span className="tabular-nums font-semibold">
+                        {money(h.totalTerminationAmount)}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -1304,7 +1514,7 @@ export function SupplierServiceTerminationDialog({
               </button>
             </>
           ) : null}
-          {canCreate && status !== "FINALIZED" ? (
+          {canCreate && !locked ? (
             <button
               type="button"
               data-testid="sst-save-draft"
@@ -1315,15 +1525,36 @@ export function SupplierServiceTerminationDialog({
               {saving ? "Salvando…" : "Salvar prévia"}
             </button>
           ) : null}
-          {canFinalize && status !== "FINALIZED" ? (
+          {canFinalize && status === "DRAFT" ? (
             <button
               type="button"
               data-testid="sst-finalize"
               className="rounded-lg border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
               disabled={saving || !savedId}
-              onClick={() => void finalize()}
+              onClick={() => void transitionStatus("AWAITING_SIGNATURE")}
             >
-              Finalizar encerramento
+              Enviar para assinatura
+            </button>
+          ) : null}
+          {canFinalize && status === "AWAITING_SIGNATURE" ? (
+            <button
+              type="button"
+              className="rounded-lg border border-amber-600 px-3 py-2 text-sm font-semibold text-amber-900 disabled:opacity-50"
+              disabled={saving || !savedId}
+              onClick={() => void transitionStatus("SIGNED_AWAITING_PAYMENT")}
+            >
+              Registrar assinatura
+            </button>
+          ) : null}
+          {canFinalize && status === "SIGNED_AWAITING_PAYMENT" ? (
+            <button
+              type="button"
+              data-testid="sst-mark-paid"
+              className="rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold text-emerald-900 disabled:opacity-50"
+              disabled={saving || !savedId}
+              onClick={() => void transitionStatus("PAID_AND_SETTLED")}
+            >
+              Confirmar pagamento e quitar
             </button>
           ) : null}
         </footer>

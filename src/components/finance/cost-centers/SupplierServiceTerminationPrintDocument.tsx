@@ -4,29 +4,39 @@ import { PrintHeader } from "@/src/components/print/PrintHeader";
 import { PrintSection } from "@/src/components/print/PrintSection";
 import { PrintDocumentShell } from "@/src/components/print/PrintDocumentShell";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
-import {
-  SERVICE_TERMINATION_PRINT_DOCUMENT_TITLE,
-  SERVICE_TERMINATION_PRINT_FOOTER_NOTE,
-  SERVICE_TERMINATION_PRINT_SUBTITLE,
-  type ServiceTerminationPrintModel,
-} from "@/src/lib/suppliers/supplierServiceTerminationPrint";
+import type { ServiceTerminationPrintModel } from "@/src/lib/suppliers/supplierServiceTerminationPrint";
 
 function money(n: number): string {
   return formatFinanceCurrency(n);
 }
 
-function Kv({ label, value }: { label: string; value: string }) {
+function SignatureBlock({
+  title,
+  lines,
+}: {
+  title: string;
+  lines: Array<{ label: string; value: string }>;
+}) {
   return (
-    <p>
-      <span className="font-semibold text-slate-600">{label}: </span>
-      {value}
-    </p>
+    <div className="rounded border border-slate-300 p-3 text-[11px]">
+      <p className="font-bold uppercase tracking-wide text-slate-700">{title}</p>
+      <div className="mt-2 space-y-1">
+        {lines.map((l) => (
+          <p key={l.label}>
+            <span className="font-semibold text-slate-600">{l.label}: </span>
+            {l.value}
+          </p>
+        ))}
+      </div>
+      <div className="mt-8 border-t border-slate-400 pt-1 text-center text-[10px] text-slate-500">
+        Assinatura / Data
+      </div>
+    </div>
   );
 }
 
 /**
- * Relatório profissional de verbas de encerramento — layout no padrão do Pedido de Venda
- * (PrintHeader institucional + seções + tabelas + totais).
+ * Termo de Distrato — layout contratual no padrão PrintHeader do IndusCost.
  */
 export function SupplierServiceTerminationPrintDocument({
   model,
@@ -42,265 +52,278 @@ export function SupplierServiceTerminationPrintDocument({
   return (
     <PrintDocumentShell
       rootId="supplier-service-termination-print-root"
-      className="service-termination-print-document sales-order-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[210mm] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none"
+      className="service-termination-print-document sales-order-print-document proposal-compact-document proposal-print-sheet relative mx-auto w-full max-w-[210mm] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none"
     >
-      <div className="proposal-print-document-inner p-4 text-xs leading-snug md:p-5 md:text-[13px] print:p-3">
-        <h1 className="sr-only">
-          Encerramento de prestação de serviço — {model.personName}
-        </h1>
+      {model.watermarkText ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden"
+        >
+          <p className="rotate-[-28deg] text-center text-3xl font-black uppercase tracking-wider text-slate-300/70 md:text-4xl print:text-slate-400/60">
+            {model.watermarkText}
+          </p>
+        </div>
+      ) : null}
+
+      <div className="proposal-print-document-inner relative z-10 p-4 text-xs leading-snug md:p-5 md:text-[13px] print:p-3">
+        <h1 className="sr-only">{model.documentTitle}</h1>
 
         <PrintHeader
           branding={branding}
-          documentTitle={SERVICE_TERMINATION_PRINT_DOCUMENT_TITLE}
+          documentTitle="TERMO DE DISTRATO"
           documentHighlight={model.documentHighlight}
-          subtitle={SERVICE_TERMINATION_PRINT_SUBTITLE}
+          subtitle="Acerto financeiro e quitação de contrato de prestação de serviços"
           metaLines={[
-            { label: "Emitido em", value: issuedAt },
-            { label: "Emitido por", value: emitterName?.trim() || "—" },
-            { label: "Fornecedor", value: model.supplierName },
+            { label: "Nº documento", value: model.documentCode },
+            { label: "Versão", value: String(model.documentVersion) },
             { label: "Status", value: model.statusLabel },
+            { label: "Emitido em", value: issuedAt },
+            { label: "Emitido por", value: emitterName?.trim() || model.issuedBy },
+            { label: "Local", value: model.signaturePlace },
           ]}
           className="proposal-compact-header proposal-print-section"
         />
 
+        <p className="mt-4 text-center text-sm font-bold uppercase leading-tight tracking-wide text-slate-900">
+          Termo de Distrato, Acerto Financeiro e Quitação
+          <br />
+          de Contrato de Prestação de Serviços
+        </p>
+
         <PrintSection
-          title="1. Identificação"
+          title="Identificação das partes"
           className="proposal-compact-section proposal-print-section mt-4"
         >
-          <div className="mt-2 grid gap-1 border-y border-slate-200 py-2 text-[11px] sm:grid-cols-2 sm:text-xs">
-            <Kv label="Fornecedor" value={model.supplierName} />
-            <Kv label="Prestador" value={model.personName} />
-            <Kv label="Documento" value={model.personDocument} />
-            <Kv label="Função / serviço" value={model.serviceRole} />
-            <Kv label="Período do contrato" value={model.periodLabel} />
-            <Kv label="Status do encerramento" value={model.statusLabel} />
+          <div className="mt-2 space-y-3 border-y border-slate-200 py-2 text-[11px] sm:text-xs">
+            <p>
+              <span className="font-bold">CONTRATANTE: </span>
+              {model.contractingPartyName}, inscrita no CNPJ sob nº{" "}
+              {model.contractingPartyDocument}, neste ato representada por{" "}
+              {model.contractingPartyRepName}, {model.contractingPartyRepRole}.
+            </p>
+            <p>
+              <span className="font-bold">CONTRATADA: </span>
+              {model.contractedPartyName}, inscrita no CNPJ sob nº{" "}
+              {model.contractedPartyDocument}, neste ato representada por{" "}
+              {model.contractedPartyRepName}, CPF nº {model.contractedPartyRepDocument}.
+            </p>
           </div>
         </PrintSection>
 
         <PrintSection
-          title="2. Base de cálculo"
-          className="proposal-compact-section proposal-print-section mt-4"
+          title="Cláusula 1 — Do encerramento"
+          className="proposal-compact-section proposal-print-section mt-3"
         >
-          <table className="mt-2 w-full border-collapse text-[11px] sm:text-xs">
-            <tbody>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Valor mensal</th>
-                <td className="py-1 text-right font-mono">{money(model.monthlyServiceAmount)}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Dias médios trabalhados/mês
-                </th>
-                <td className="py-1 text-right font-mono">{model.averageWorkedDaysPerMonth}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Horas por dia</th>
-                <td className="py-1 text-right font-mono">{model.hoursPerDay}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Horas por mês</th>
-                <td className="py-1 text-right font-mono">{model.monthlyHours}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Valor hora</th>
-                <td className="py-1 text-right font-mono">{money(model.hourlyServiceAmount)}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Valor dia</th>
-                <td className="py-1 text-right font-mono">{money(model.dailyServiceAmount)}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Descanso anual contratado
-                </th>
-                <td className="py-1 text-right font-mono">{model.restDaysPerYear} dias</td>
-              </tr>
-              <tr>
-                <th className="py-1 text-left font-semibold text-slate-600">Modo de cálculo</th>
-                <td className="py-1 text-right">{model.calcModeLabel}</td>
-              </tr>
-            </tbody>
-          </table>
+          <p className="mt-2 text-[11px] sm:text-xs">
+            As partes resolvem encerrar, na modalidade {model.modalityLabel}, com efeitos a
+            partir de {model.periodLabel.split(" a ")[1] || "—"}, o Contrato de Prestação de
+            Serviços {model.originalContractReference}, firmado em{" "}
+            {model.originalContractDateLabel}, cujo objeto consistia na prestação dos serviços
+            de {model.contractedServiceDescription}. Período abrangido: {model.periodLabel}.
+            {model.terminationReason
+              ? ` Motivo: ${model.terminationReason}.`
+              : ""}
+          </p>
         </PrintSection>
 
         <PrintSection
-          title="3. Cálculo proporcional e dias a mais"
-          className="proposal-compact-section proposal-print-section mt-4"
+          title="Cláusula 2 — Do acerto financeiro"
+          className="proposal-compact-section proposal-print-section mt-3 print-section--flow"
         >
-          <table className="mt-2 w-full border-collapse text-[11px] sm:text-xs">
-            <tbody>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Meses trabalhados</th>
-                <td className="py-1 text-right font-mono">{model.workedMonths}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Dias trabalhados</th>
-                <td className="py-1 text-right font-mono">{model.workedDays}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Dias proporcionais de descanso
-                </th>
-                <td className="py-1 text-right font-mono">
-                  {model.proportionalRestDaysLabel} dias
-                </td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Valor descanso proporcional
-                </th>
-                <td className="py-1 text-right font-mono font-semibold">
-                  {money(model.proportionalRestAmount)}
-                </td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Dias a mais</th>
-                <td className="py-1 text-right font-mono">{model.extraWorkedDays}</td>
-              </tr>
-              <tr>
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Valor dias a mais
-                </th>
-                <td className="py-1 text-right font-mono font-semibold">
-                  {money(model.extraWorkedAmount)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </PrintSection>
-
-        <PrintSection
-          title="4. Comissões vinculadas e lançamentos manuais"
-          flow
-          className="proposal-print-items-section proposal-compact-section proposal-print-section mt-5"
-        >
-          {model.commissionRows.length === 0 ? (
-            <p className="mt-2 text-[11px] text-slate-600 sm:text-xs">
-              Nenhuma comissão vinculada ou lançada.
+          <p className="mt-2 text-[11px] sm:text-xs">
+            Em razão do encerramento contratual, as partes reconhecem os valores discriminados
+            no quadro abaixo, calculados conforme os critérios contratuais e negociais
+            registrados no sistema.
+          </p>
+          {model.proportionalCompensationJustification ? (
+            <p className="mt-1 text-[10px] text-slate-600">
+              Base da compensação contratual proporcional:{" "}
+              {model.proportionalCompensationJustification}
             </p>
-          ) : (
-            <div className="proposal-print-table-wrap mt-2 overflow-visible">
-              <table className="proposal-compact-table w-full border-collapse border border-slate-300 text-[10px] sm:text-[11px]">
-                <thead>
-                  <tr className="bg-slate-100 text-[9px] uppercase tracking-wide text-slate-700 sm:text-[10px]">
-                    <th className="border border-slate-300 px-1 py-1">Pedido</th>
-                    <th className="border border-slate-300 px-1 py-1">Referência</th>
-                    <th className="border border-slate-300 px-1 py-1">Pessoa</th>
-                    <th className="border border-slate-300 px-1 py-1">Fonte</th>
-                    <th className="border border-slate-300 px-1 py-1 text-right">
-                      Comissão
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {model.commissionRows.map((row, idx) => (
-                    <tr key={`${row.orderCode}-${idx}`} className="border-b border-slate-200">
-                      <td className="px-1.5 py-1 font-mono">{row.orderCode}</td>
-                      <td className="px-1.5 py-1">{row.description}</td>
-                      <td className="px-1.5 py-1">{row.personName}</td>
-                      <td className="px-1.5 py-1">{row.source}</td>
-                      <td className="px-1.5 py-1 text-right font-mono font-semibold">
-                        {money(row.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-50 font-semibold">
-                    <td className="border border-slate-300 px-1.5 py-1" colSpan={4}>
-                      Total comissões
-                    </td>
-                    <td className="border border-slate-300 px-1.5 py-1 text-right font-mono">
-                      {money(model.commissionReportTotal)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </PrintSection>
-
-        <PrintSection
-          title="5. Multa e ajustes"
-          className="proposal-compact-section proposal-print-section mt-4"
-        >
-          <table className="mt-2 w-full border-collapse text-[11px] sm:text-xs">
+          ) : null}
+          {model.extraServicesDescription ? (
+            <p className="mt-1 text-[10px] text-slate-600">
+              Saldo adicional: {model.extraServicesDescription}
+            </p>
+          ) : null}
+          <table className="print-table mt-2 w-full border-collapse text-[11px]">
+            <thead>
+              <tr className="bg-slate-100">
+                <th className="border border-slate-300 px-2 py-1 text-left">Verba</th>
+                <th className="border border-slate-300 px-2 py-1 text-right">Valor</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">
-                  Multa sem aviso de 30 dias
-                </th>
-                <td className="py-1 text-right font-mono">
-                  {money(model.noticePenaltyAmount)}
-                </td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Outros créditos</th>
-                <td className="py-1 text-right font-mono">{money(model.otherCredits)}</td>
-              </tr>
-              <tr className="border-b border-slate-100">
-                <th className="py-1 text-left font-semibold text-slate-600">Outros descontos</th>
-                <td className="py-1 text-right font-mono">{money(model.otherDiscounts)}</td>
-              </tr>
-              {model.adjustmentNotes ? (
-                <tr>
-                  <th className="py-1 text-left font-semibold text-slate-600">
-                    Obs. do ajuste
-                  </th>
-                  <td className="py-1 text-right">{model.adjustmentNotes}</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </PrintSection>
-
-        <PrintSection
-          title="6. Totalização"
-          className="proposal-compact-section proposal-print-section mt-4"
-        >
-          <table className="mt-2 w-full border-collapse border border-slate-300 text-[11px] sm:text-xs">
-            <tbody>
-              {model.totalizationRows.map((row) => (
-                <tr
-                  key={row.label}
-                  className={
-                    row.emphasize
-                      ? "bg-slate-100 font-bold text-slate-900"
-                      : "border-b border-slate-100"
-                  }
-                >
-                  <th className="border border-slate-200 px-2 py-1.5 text-left font-semibold">
-                    {row.label}
-                  </th>
-                  <td
-                    className={`border border-slate-200 px-2 py-1.5 text-right font-mono ${
-                      row.emphasize ? "text-base" : ""
-                    }`}
-                  >
+              {model.settlementRows.map((row) => (
+                <tr key={row.label} className={row.emphasize ? "font-bold" : undefined}>
+                  <td className="border border-slate-300 px-2 py-1">{row.label}</td>
+                  <td className="border border-slate-300 px-2 py-1 text-right tabular-nums">
                     {money(row.value)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="mt-2 text-sm font-bold">
+            VALOR LÍQUIDO DO ACERTO CONTRATUAL: {money(model.totalTerminationAmount)}
+          </p>
+          {model.isPaidAndSettled ? (
+            <p className="mt-1 text-sm font-bold uppercase text-emerald-800">PAGO E QUITADO</p>
+          ) : null}
         </PrintSection>
 
-        {model.notes ? (
-          <PrintSection
-            title="Observações"
-            className="proposal-compact-section proposal-print-section mt-5"
-          >
-            <p className="mt-2 whitespace-pre-wrap text-[11px] text-slate-700 sm:text-xs">
-              {model.notes}
-            </p>
-          </PrintSection>
-        ) : null}
+        <PrintSection
+          title="Cláusula 3 — Das comissões"
+          className="proposal-compact-section proposal-print-section mt-3"
+        >
+          <p className="mt-2 text-[11px] sm:text-xs">{model.commissionClause}</p>
+        </PrintSection>
 
-        <div className="proposal-compact-footer proposal-print-section mt-6 flex flex-col justify-between gap-1 border-t border-slate-300 pt-2 text-[10px] text-slate-600 sm:flex-row sm:text-[11px]">
-          <p>{branding.companyName}</p>
-          <p>{SERVICE_TERMINATION_PRINT_FOOTER_NOTE}</p>
-          <p>{issuedAt}</p>
-        </div>
+        <PrintSection
+          title="Anexo I — Comissões comerciais apuradas"
+          className="proposal-compact-section proposal-print-section mt-3 print-section--flow"
+        >
+          {model.commissionRows.length === 0 ? (
+            <p className="mt-2 text-[11px] text-slate-600">
+              Nenhuma comissão discriminada neste instrumento.
+            </p>
+          ) : (
+            <table className="print-table mt-2 w-full border-collapse text-[10px]">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-300 px-1 py-1 text-left">Pedido</th>
+                  <th className="border border-slate-300 px-1 py-1 text-left">
+                    Cliente / referência
+                  </th>
+                  <th className="border border-slate-300 px-1 py-1 text-left">Pessoa</th>
+                  <th className="border border-slate-300 px-1 py-1 text-left">Origem</th>
+                  <th className="border border-slate-300 px-1 py-1 text-left">Situação</th>
+                  <th className="border border-slate-300 px-1 py-1 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.commissionRows.map((row, idx) => (
+                  <tr key={`${row.orderCode}-${idx}`}>
+                    <td className="border border-slate-300 px-1 py-1">{row.orderCode}</td>
+                    <td className="border border-slate-300 px-1 py-1">{row.description}</td>
+                    <td className="border border-slate-300 px-1 py-1">{row.personName}</td>
+                    <td className="border border-slate-300 px-1 py-1">{row.source}</td>
+                    <td className="border border-slate-300 px-1 py-1">{row.statusLabel}</td>
+                    <td className="border border-slate-300 px-1 py-1 text-right tabular-nums">
+                      {money(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </PrintSection>
+
+        <PrintSection
+          title="Cláusula 4 — Do pagamento"
+          className="proposal-compact-section proposal-print-section mt-3"
+        >
+          <p className="mt-2 text-[11px] sm:text-xs">{model.paymentClause}</p>
+          <div className="mt-2 grid gap-1 text-[11px] sm:grid-cols-2">
+            <p>
+              <span className="font-semibold">Data prevista: </span>
+              {model.paymentDueDateLabel}
+            </p>
+            <p>
+              <span className="font-semibold">Data efetiva: </span>
+              {model.paymentEffectiveDateLabel}
+            </p>
+            <p>
+              <span className="font-semibold">Forma: </span>
+              {model.paymentMethod}
+            </p>
+            <p>
+              <span className="font-semibold">Identificação: </span>
+              {model.paymentTransactionId}
+            </p>
+          </div>
+        </PrintSection>
+
+        <PrintSection
+          title="Cláusula 5 — Da quitação"
+          className="proposal-compact-section proposal-print-section mt-3"
+        >
+          <p className="mt-2 text-[11px] sm:text-xs">
+            {model.quitacaoClause ||
+              "A quitação financeira somente será válida após confirmação integral do pagamento e assinatura das partes."}
+          </p>
+        </PrintSection>
+
+        <PrintSection
+          title="Cláusula 6 — Das obrigações pendentes"
+          className="proposal-compact-section proposal-print-section mt-3"
+        >
+          <p className="mt-2 text-[11px] sm:text-xs">{model.pendingObligationsClause}</p>
+        </PrintSection>
+
+        <PrintSection
+          title="Cláusula 7 — Da livre manifestação"
+          className="proposal-compact-section proposal-print-section mt-3"
+        >
+          <p className="mt-2 text-[11px] sm:text-xs">{model.freeManifestationClause}</p>
+          <p className="mt-2 text-[11px] sm:text-xs">
+            E, por estarem de acordo, as partes assinam o presente instrumento em conjunto com
+            duas testemunhas.
+          </p>
+          {model.contractualNotes ? (
+            <p className="mt-2 text-[10px] text-slate-600">
+              Observações contratuais: {model.contractualNotes}
+            </p>
+          ) : null}
+        </PrintSection>
+
+        <PrintSection
+          title="Assinaturas"
+          className="proposal-compact-section proposal-print-section mt-4 print-section--flow"
+        >
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <SignatureBlock
+              title="CONTRATANTE"
+              lines={[
+                { label: "Razão social", value: model.contractingPartyName },
+                { label: "Representante", value: model.contractingPartyRepName },
+                { label: "CPF", value: model.contractingPartyRepDocument },
+                { label: "Cargo", value: model.contractingPartyRepRole },
+              ]}
+            />
+            <SignatureBlock
+              title="CONTRATADA"
+              lines={[
+                { label: "Razão social", value: model.contractedPartyName },
+                { label: "Representante", value: model.contractedPartyRepName },
+                { label: "CPF", value: model.contractedPartyRepDocument },
+              ]}
+            />
+            <SignatureBlock
+              title="TESTEMUNHA 1"
+              lines={[
+                { label: "Nome", value: model.witness1Name },
+                { label: "CPF", value: model.witness1Document },
+              ]}
+            />
+            <SignatureBlock
+              title="TESTEMUNHA 2"
+              lines={[
+                { label: "Nome", value: model.witness2Name },
+                { label: "CPF", value: model.witness2Document },
+              ]}
+            />
+          </div>
+        </PrintSection>
+
+        <footer className="mt-6 border-t border-slate-300 pt-2 text-[10px] leading-snug text-slate-600">
+          <p>{model.footerNote}</p>
+          <p className="mt-1">
+            Código: {model.documentCode} · Versão: {model.documentVersion} · Integridade:{" "}
+            {model.integrityCode} · Emissão: {issuedAt} · Emissor:{" "}
+            {emitterName?.trim() || model.issuedBy}
+          </p>
+        </footer>
       </div>
     </PrintDocumentShell>
   );

@@ -88,12 +88,16 @@ section("4. Comissão soma no total sem recalcular");
   ok("comissão via relatório oficial (vendedor/período/grid); sem recalc");
 }
 
-section("5. Finalização trava (código)");
+section("5. Quitação trava edição (código)");
 {
   const serverSrc = read("src/lib/suppliers/supplierServiceTermination.server.ts");
-  assert.match(serverSrc, /FINALIZED_LOCKED/);
-  assert.match(serverSrc, /status === "FINALIZED"/);
-  ok("encerramento FINALIZED bloqueia update/cancel automático");
+  assert.match(serverSrc, /assertCanEditTermination|DOCUMENT_LOCKED|PAID_LOCKED/);
+  assert.match(serverSrc, /PAID_AND_SETTLED/);
+  const distratoServer = read(
+    "src/lib/suppliers/supplierServiceTerminationDistrato.server.ts"
+  );
+  assert.match(distratoServer, /DOCUMENT_LOCKED|isServiceTerminationLockedStatus/);
+  ok("documento pago/cancelado bloqueia edição direta");
 }
 
 section("6. Permissões nas rotas (403 sem permissão)");
@@ -107,25 +111,35 @@ section("6. Permissões nas rotas (403 sem permissão)");
   ok("guards requireAnyPermission nos endpoints");
 }
 
-section("7. PDF/XLSX com identificação, cálculo, comissão e total");
+section("7. PDF/XLSX termo de distrato (retrato, sem CLT)");
 {
   const serverSrc = read("src/lib/suppliers/supplierServiceTermination.server.ts");
   assert.match(serverSrc, /buildServiceTerminationPdfDocumentLines/);
   assert.match(serverSrc, /buildFormattedPortraitPdf/);
   assert.match(serverSrc, /buildServiceTerminationPrintModel/);
-  assert.match(serverSrc, /TOTAL A PAGAR|Totalizacao|Totaliza/);
-  assert.match(serverSrc, /gerencial\/contratual|gerencial\/contratual/i);
+  assert.match(serverSrc, /VALOR LIQUIDO DO ACERTO CONTRATUAL|TERMO DE DISTRATO/);
   assert.match(serverSrc, /exportSupplierServiceTerminationXlsx/);
+  assert.match(serverSrc, /transitionSupplierServiceTerminationStatus/);
   const printDoc = read(
     "src/components/finance/cost-centers/SupplierServiceTerminationPrintDocument.tsx"
   );
   assert.match(printDoc, /PrintHeader/);
   assert.match(printDoc, /PrintDocumentShell/);
+  assert.match(printDoc, /TERMO DE DISTRATO|Termo de Distrato/);
+  assert.doesNotMatch(printDoc, /Descanso remunerado|rescisão trabalhista CLT/i);
   const printModel = read("src/lib/suppliers/supplierServiceTerminationPrint.ts");
-  assert.match(printModel, /TOTAL A PAGAR/);
+  assert.match(printModel, /MINUTA — SEM EFEITO DE QUITAÇÃO|DISTRATO_FOOTER_MINUTA/);
+  const distratoLabels = read("src/lib/suppliers/supplierServiceTerminationDistrato.ts");
+  assert.match(distratoLabels, /VALOR LÍQUIDO DO ACERTO CONTRATUAL/);
+  assert.match(distratoLabels, /Compensação contratual proporcional/);
+  const dialog = read(
+    "src/components/finance/cost-centers/SupplierServiceTerminationDialog.tsx"
+  );
+  assert.match(dialog, /service-termination-internal-params|Parâmetros internos de cálculo/);
+  assert.match(dialog, /SupplierServiceTerminationDistratoFields/);
   const app = read("src/App.tsx");
   assert.match(app, /service-terminations\/:id\/print/);
-  ok("PDF profissional (layout pedido) + XLSX");
+  ok("PDF distrato civil + XLSX + UI parâmetros internos");
 }
 
 section("8. Frontend não importa Prisma");
@@ -161,8 +175,8 @@ section("10. Dias a mais + multa sem aviso");
   const dialog = read("src/components/finance/cost-centers/SupplierServiceTerminationDialog.tsx");
   assert.match(dialog, /service-termination-extra-days/);
   assert.match(dialog, /service-termination-manual-commissions/);
-  assert.match(dialog, /Multa por encerramento sem aviso/);
-  ok("dias a mais, multa e UI de lançamento manual");
+  assert.match(dialog, /noticePenaltyAmount|Compensação|encerramento/);
+  ok("dias a mais, compensação e UI de lançamento manual");
 }
 
 console.log("\nQA supplier service termination: OK\n");

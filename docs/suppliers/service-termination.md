@@ -1,137 +1,79 @@
-# Encerramento de Prestação de Serviço
+# Encerramento / Termo de Distrato — Prestação de Serviços PJ
 
 ## Objetivo
 
-Módulo gerencial/contratual interno para calcular o valor a pagar no **encerramento de prestação de serviço** de um prestador vinculado a um fornecedor.
+Módulo **civil/contratual** para calcular o acerto e emitir o
 
-Não é rescisão CLT nem cálculo trabalhista. Termos oficiais:
+**TERMO DE DISTRATO, ACERTO FINANCEIRO E QUITAÇÃO DE CONTRATO DE PRESTAÇÃO DE SERVIÇOS**.
 
-- encerramento de prestação de serviço
-- prestador / fornecedor
-- descanso remunerado contratual
-- valor proporcional de encerramento
+Não é rescisão CLT. Destinado exclusivamente a prestadores PJ.
 
-**Local na UI:** Financeiro → Fornecedores → botão **Encerramento de prestação** (listagem e detalhe do fornecedor).
+**Local na UI:** Financeiro → Fornecedores → **Encerramento de prestação**.
 
-## Cálculo do descanso proporcional
+## Separação tela × documento
 
-Padrão: `restDaysPerYear = 20`.
+| Camada | Conteúdo |
+|--------|----------|
+| Tela — parâmetros internos | Valor mensal, dias médios/mês, horas/dia, horas/mês, valor hora/dia, proporção, dias adicionais — **não impressos** |
+| Documento impresso / PDF | Partes, cláusulas, quadro com nomes civis, comissões, pagamento, quitação, assinaturas |
 
-### Modo por meses trabalhados (padrão)
+## Fórmulas (preservadas)
 
-```
-proportionalRestDays = (restDaysPerYear / 12) * workedMonths
-```
-
-Exemplo (4 meses, descanso anual 20):
-
-- dias proporcionais = `20 / 12 * 4` = **6,6667** (exibição: **6,67 dias**)
-- valor dia = `monthlyServiceAmount / 30`
-- valor descanso = `dailyServiceAmount * proportionalRestDays` (usa o valor cru dos dias antes do arredondamento de exibição)
-
-Com mensal **R$ 6.000,00**:
-
-- valor dia = **R$ 200,00**
-- valor descanso proporcional = **R$ 1.333,33**
-
-### Modo por dias corridos
+Padrão: `restDaysPerYear = 20`, `averageWorkedDaysPerMonth = 30`, `hoursPerDay = 8`.
 
 ```
-proportionalRestDays = restDaysPerYear * workedDays / 365
+proportionalRestDays = (restDaysPerYear / 12) * workedMonths   # ou * workedDays/365
+dailyServiceAmount = monthly / averageWorkedDaysPerMonth
+hourlyServiceAmount = monthly / monthlyHours
+proportionalRestAmount = daily * proportionalRestDays
+extraWorkedAmount = daily * extraWorkedDays
+total = rest + extra + noticePenalty + commission + credits - discounts
 ```
 
-### Valor dia e valor hora (fatores editáveis)
+A comissão **nunca** é recalculada neste módulo (apenas vínculo/leitura + lançamento manual).
 
-```
-averageWorkedDaysPerMonth = (informado; padrão 30)
-hoursPerDay = (informado; padrão 8)
-monthlyHours = averageWorkedDaysPerMonth × hoursPerDay   (ou informado manualmente)
+## Nomes impressos
 
-dailyServiceAmount = monthlyServiceAmount / averageWorkedDaysPerMonth
-hourlyServiceAmount = monthlyServiceAmount / monthlyHours
-```
-
-Todos os fatores podem ser informados na seção Dados financeiros.
-
-## Dias a mais trabalhados
-
-Quando o prestador trabalha dias no mês parcial do encerramento (ex.: 7 dias):
-
-```
-extraWorkedAmount = dailyServiceAmount * extraWorkedDays
-```
-
-## Multa por encerramento sem aviso de 30 dias
-
-Campo livre (`noticePenaltyAmount`) que entra na soma. A UI oferece “Aplicar 1 mês” (= valor mensal) como sugestão contratual.
-
-## Lançamento manual de comissão
-
-Além do vínculo ao relatório oficial, é possível lançar linhas manuais com **nº do pedido** + **valor da comissão** (quantas quiser). Fonte `MANUAL` — não altera o módulo de Comissões.
-
-## Total do encerramento
-
-```
-totalTerminationAmount =
-  proportionalRestAmount
-  + extraWorkedAmount
-  + noticePenaltyAmount
-  + commissionReportTotal
-  + otherCredits
-  - otherDiscounts
-```
-
-Comissão e descanso remunerado são blocos separados. A comissão **nunca** é recalculada neste módulo.
-
-## Vínculo com relatório de comissão
-
-O encerramento apenas **consulta e vincula** o relatório oficial de **Comissões → Relatórios** (mesma fonte materializada), via:
-
-`GET /api/suppliers/service-terminations/commission-reports/search?year=&months=&sellerId=`
-
-Na UI: selecionar **vendedor** (lista igual à de Relatórios), **ano/meses**, buscar o **grid de pedidos e comissões devidas**, e vincular linhas ou o conjunto listado.
-
-Não altera cálculo de comissão, comissão paga, fechamento, base comissionável nem liberação por recebimento.
+| Interno | Impresso |
+|---------|----------|
+| Descanso remunerado proporcional | Compensação contratual proporcional |
+| Dias a mais trabalhados | Saldo adicional de serviços prestados |
+| Multa sem aviso 30 dias | Compensação contratual pelo encerramento sem antecedência **ou** Valor negociado para encerramento contratual |
+| Comissões | Comissões comerciais apuradas |
+| Outros créditos | Outros valores devidos ao prestador |
+| Outros descontos | Compensações e deduções contratualmente autorizadas |
+| Total a pagar | VALOR LÍQUIDO DO ACERTO CONTRATUAL |
 
 ## Status
 
-| Status     | Significado                                      |
-|------------|--------------------------------------------------|
-| `DRAFT`    | Prévia editável                                  |
-| `FINALIZED`| Snapshot travado (não recalcula automaticamente) |
-| `CANCELED` | Cancelado                                        |
+| Status | Significado |
+|--------|-------------|
+| `DRAFT` | Prévia / minuta (marca d’água) |
+| `AWAITING_SIGNATURE` | Aguardando assinatura |
+| `SIGNED_AWAITING_PAYMENT` | Assinado — quitação pendente de pagamento |
+| `PAID_AND_SETTLED` | Pago e quitado (snapshot imutável) |
+| `CANCELED` | Cancelado (histórico preservado; pode gerar nova versão) |
 
-## Permissões
+`FINALIZED` legado é migrado para `SIGNED_AWAITING_PAYMENT` (sem quitação automática).
 
-Chaves canônicas e aliases:
+## APIs
 
-- `finance.suppliers.service_termination.view` / `suppliers.serviceTermination.view`
-- `...create` / `...update` / `...finalize` / `...export` / `...cancel`
+- CRUD + preview existentes
+- `POST .../:id/status` — transição com validações
+- `POST .../:id/finalize` — alias → `AWAITING_SIGNATURE`
+- `POST .../:id/new-version` — nova DRAFT a partir de cancelado/quitado
+- `GET .../:id/pdf` | `xlsx` | rota print HTML
 
-`SUPER_ADMIN` / `ADMIN` e quem tem `finance.suppliers.manage` têm acesso operacional amplo. O backend valida permissão (403); o frontend só esconde ações.
+## Migrations
 
-## Relatório final
+- `20260722160000_supplier_service_termination_distrato_enums`
+- `20260722161000_supplier_service_termination_distrato_fields`
 
-Layout profissional no padrão do **Pedido de Venda** (`PrintHeader` + seções + tabelas):
+Aplicar no servidor pelo fluxo normal do projeto (não fazem parte do commit de código do agente de deploy).
 
-- **Imprimir / Salvar PDF** — rota  
-  `/finance/suppliers/:supplierId/service-terminations/:id/print`
-- **Baixar PDF** (arquivo formatado) — `GET /api/suppliers/:supplierId/service-terminations/:id/pdf`
-- **XLSX** — `GET /api/suppliers/:supplierId/service-terminations/:id/xlsx`
+## Testes
 
-Seções: identificação, base de cálculo, proporcional/dias a mais, comissões, multa/ajustes, totalização.
-
-Rodapé: documento IndusCost; cálculo gerencial/contratual de encerramento de prestação de serviço.
-
-## APIs principais
-
-- `GET/POST /api/suppliers/:supplierId/service-terminations`
-- `GET/PUT .../:id`
-- `POST .../preview` — calcula sem persistir definitivo
-- `POST .../:id/finalize` — trava snapshot
-- `POST .../:id/cancel`
-- `GET .../commission-reports/search`
-
-## Observação
-
-Este documento descreve um **cálculo gerencial/contratual** de encerramento de prestação de serviço. Não substitui assessoria jurídica trabalhista nem folha de pagamento CLT.
+```
+npx tsx --test src/lib/suppliers/supplierServiceTerminationDistrato.test.ts
+npx tsx scripts/qaSupplierServiceTermination.ts
+```

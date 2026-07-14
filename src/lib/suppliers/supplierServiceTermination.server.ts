@@ -1,5 +1,5 @@
 /**
- * Encerramento de Prestação de Serviço — persistência, preview, comissão (read-only) e export.
+ * Encerramento / Distrato de Prestação de Serviço PJ — persistência, preview, comissão (read-only) e export.
  */
 import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
@@ -7,7 +7,6 @@ import { prisma } from "@/src/lib/prisma.js";
 import {
   buildFormattedPortraitPdf,
   formatPdfMoneyBr,
-  formatPdfNumberBr,
   type PdfLine,
 } from "@/src/lib/proposalInternalManagementPdfLayout.js";
 import {
@@ -16,9 +15,26 @@ import {
   type ServiceTerminationCalculationMode,
 } from "./supplierServiceTerminationCalc.js";
 import {
-  SERVICE_TERMINATION_PRINT_FOOTER_NOTE,
   buildServiceTerminationPrintModel,
+  buildServiceTerminationPrintPlainText,
 } from "./supplierServiceTerminationPrint.js";
+import {
+  collectForbiddenPrintTerms,
+  normalizeServiceTerminationStatus,
+} from "./supplierServiceTerminationDistrato.js";
+import {
+  SupplierServiceTerminationError,
+  assertCanEditTermination,
+  assertDistratoValidForTarget,
+  assertStatusTransitionAllowed,
+  buildIntegrityCode,
+  buildSettledSnapshot,
+  distratoFieldsToPrismaData,
+  extractDistratoFieldsFromBody,
+  generateDocumentCode,
+  mapDistratoRowFields,
+  redactSensitiveDistratoFields,
+} from "./supplierServiceTerminationDistrato.server.js";
 import type { CommissionAccessScope } from "@/src/lib/commissions/commissionAccessScope.js";
 import { getCommissionReportsPage } from "@/src/lib/commissions/commissionReports.server.js";
 import type {
@@ -32,7 +48,10 @@ import {
   type ServiceTerminationCommissionSearchResult,
   type ServiceTerminationDto,
   type ServiceTerminationPreviewInput,
+  type ServiceTerminationStatusDto,
 } from "./supplierServiceTerminationTypes.js";
+
+export { SupplierServiceTerminationError };
 
 /** Escopo global somente-leitura para o vínculo no encerramento (não altera comissão). */
 const TERMINATION_COMMISSION_READ_SCOPE: CommissionAccessScope = {
@@ -43,17 +62,6 @@ const TERMINATION_COMMISSION_READ_SCOPE: CommissionAccessScope = {
   blockedReason: null,
   blockedMessage: null,
 };
-
-export class SupplierServiceTerminationError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public httpStatus = 400
-  ) {
-    super(message);
-    this.name = "SupplierServiceTerminationError";
-  }
-}
 
 function dec(n: Prisma.Decimal | number | null | undefined): number {
   if (n == null) return 0;
@@ -134,60 +142,59 @@ function parseMonthsFilter(raw: string | null | undefined): CommissionReportsMon
   return [...new Set(parts)].sort((a, b) => a - b);
 }
 
-function mapRowToDto(
-  row: {
+function mapRowToDto(row: Record<string, unknown> & {
+  id: string;
+  supplierId: string;
+  personName: string;
+  personDocument: string | null;
+  serviceRole: string | null;
+  contractStartDate: Date;
+  contractEndDate: Date;
+  monthlyServiceAmount: Prisma.Decimal;
+  averageWorkedDaysPerMonth?: Prisma.Decimal | null;
+  hoursPerDay?: Prisma.Decimal | null;
+  monthlyHours: Prisma.Decimal;
+  hourlyServiceAmount: Prisma.Decimal;
+  dailyServiceAmount: Prisma.Decimal;
+  restDaysPerYear: Prisma.Decimal;
+  calculationMode: string;
+  workedMonths: Prisma.Decimal;
+  workedDays: number;
+  proportionalRestDays: Prisma.Decimal;
+  proportionalRestAmount: Prisma.Decimal;
+  extraWorkedDays?: number | null;
+  extraWorkedAmount?: Prisma.Decimal | null;
+  noticePenaltyAmount?: Prisma.Decimal | null;
+  commissionReportId: string | null;
+  commissionReportTotal: Prisma.Decimal;
+  otherCredits: Prisma.Decimal;
+  otherDiscounts: Prisma.Decimal;
+  totalTerminationAmount: Prisma.Decimal;
+  status: string;
+  notes: string | null;
+  adjustmentNotes: string | null;
+  createdByName: string | null;
+  finalizedByName: string | null;
+  finalizedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  supplier?: { displayName: string } | null;
+  commissionLinks?: Array<{
     id: string;
-    supplierId: string;
-    personName: string;
-    personDocument: string | null;
-    serviceRole: string | null;
-    contractStartDate: Date;
-    contractEndDate: Date;
-    monthlyServiceAmount: Prisma.Decimal;
-    averageWorkedDaysPerMonth?: Prisma.Decimal | null;
-    hoursPerDay?: Prisma.Decimal | null;
-    monthlyHours: Prisma.Decimal;
-    hourlyServiceAmount: Prisma.Decimal;
-    dailyServiceAmount: Prisma.Decimal;
-    restDaysPerYear: Prisma.Decimal;
-    calculationMode: string;
-    workedMonths: Prisma.Decimal;
-    workedDays: number;
-    proportionalRestDays: Prisma.Decimal;
-    proportionalRestAmount: Prisma.Decimal;
-    extraWorkedDays?: number | null;
-    extraWorkedAmount?: Prisma.Decimal | null;
-    noticePenaltyAmount?: Prisma.Decimal | null;
-    commissionReportId: string | null;
-    commissionReportTotal: Prisma.Decimal;
-    otherCredits: Prisma.Decimal;
-    otherDiscounts: Prisma.Decimal;
-    totalTerminationAmount: Prisma.Decimal;
-    status: string;
-    notes: string | null;
-    adjustmentNotes: string | null;
-    createdByName: string | null;
-    finalizedByName: string | null;
-    finalizedAt: Date | null;
-    createdAt: Date;
-    updatedAt: Date;
-    supplier?: { displayName: string } | null;
-    commissionLinks?: Array<{
-      id: string;
-      commissionReportKey: string;
-      commissionPersonId: string | null;
-      commissionPersonName: string | null;
-      periodLabel: string | null;
-      orderCode?: string | null;
-      commissionAmount: Prisma.Decimal;
-      source: string | null;
-      statusLabel: string | null;
-    }>;
-  }
-): ServiceTerminationDto {
+    commissionReportKey: string;
+    commissionPersonId: string | null;
+    commissionPersonName: string | null;
+    periodLabel: string | null;
+    orderCode?: string | null;
+    commissionAmount: Prisma.Decimal;
+    source: string | null;
+    statusLabel: string | null;
+  }>;
+}): ServiceTerminationDto {
   const otherCredits = dec(row.otherCredits);
   const otherDiscounts = dec(row.otherDiscounts);
   const year = row.contractEndDate.getUTCFullYear();
+  const distrato = mapDistratoRowFields(row as Record<string, unknown>);
   return {
     id: row.id,
     supplierId: row.supplierId,
@@ -218,7 +225,7 @@ function mapRowToDto(
     otherDiscounts,
     otherAdjustments: Math.round((otherCredits - otherDiscounts) * 100) / 100,
     totalTerminationAmount: dec(row.totalTerminationAmount),
-    status: row.status as ServiceTerminationDto["status"],
+    status: normalizeServiceTerminationStatus(row.status),
     notes: row.notes,
     adjustmentNotes: row.adjustmentNotes,
     createdByName: row.createdByName,
@@ -243,6 +250,7 @@ function mapRowToDto(
         search: l.commissionPersonName ?? row.personName,
       }),
     })),
+    ...distrato,
   };
 }
 
@@ -357,6 +365,10 @@ export async function createSupplierServiceTermination(input: {
   const supplier = await assertSupplierExists(input.supplierId);
   const { calc } = previewSupplierServiceTermination(input.body);
   const links = input.body.commissionLinks ?? [];
+  const distrato = extractDistratoFieldsFromBody(input.body);
+
+  const distratoData = distratoFieldsToPrismaData(distrato);
+  delete distratoData.documentCode;
 
   const created = await prisma.supplierServiceTermination.create({
     data: {
@@ -391,21 +403,32 @@ export async function createSupplierServiceTermination(input: {
       adjustmentNotes: input.body.adjustmentNotes?.trim() || null,
       createdById: input.userId ?? null,
       createdByName: input.userName ?? null,
+      documentVersion: distrato.supersedesId ? Math.max(2, distrato.documentVersion) : 1,
+      supersedesId: distrato.supersedesId,
+      ...distratoData,
       commissionLinks: {
         create: links.map(mapCommissionLinkCreate),
       },
-    },
+    } as never,
     include: {
       supplier: { select: { displayName: true } },
       commissionLinks: true,
     },
   });
 
+  await prisma.supplierServiceTermination.update({
+    where: { id: created.id },
+    data: { documentCode: generateDocumentCode(created.id) },
+  });
+
   const dto = await getSupplierServiceTermination(input.supplierId, created.id);
   await writeTerminationAudit({
     entityId: created.id,
     action: SERVICE_TERMINATION_AUDIT_ACTIONS.CREATE,
-    afterJson: { ...dto, supplierName: supplier.displayName },
+    afterJson: redactSensitiveDistratoFields({
+      ...dto,
+      supplierName: supplier.displayName,
+    } as Record<string, unknown>),
     userId: input.userId,
     userName: input.userName,
   });
@@ -420,23 +443,11 @@ export async function updateSupplierServiceTermination(input: {
   userName?: string | null;
 }): Promise<ServiceTerminationDto> {
   const before = await getSupplierServiceTermination(input.supplierId, input.id);
-  if (before.status === "FINALIZED") {
-    throw new SupplierServiceTerminationError(
-      "Encerramento finalizado não pode ser alterado.",
-      "FINALIZED_LOCKED",
-      409
-    );
-  }
-  if (before.status === "CANCELED") {
-    throw new SupplierServiceTerminationError(
-      "Encerramento cancelado não pode ser alterado.",
-      "CANCELED",
-      409
-    );
-  }
+  assertCanEditTermination(before.status);
 
   const { calc } = previewSupplierServiceTermination(input.body);
   const links = input.body.commissionLinks ?? [];
+  const distrato = extractDistratoFieldsFromBody(input.body);
 
   await prisma.$transaction(async (tx) => {
     await tx.supplierServiceTerminationCommissionLink.deleteMany({
@@ -472,10 +483,11 @@ export async function updateSupplierServiceTermination(input: {
         totalTerminationAmount: calc.totalTerminationAmount,
         notes: input.body.notes?.trim() || null,
         adjustmentNotes: input.body.adjustmentNotes?.trim() || null,
+        ...distratoFieldsToPrismaData(distrato),
         commissionLinks: {
           create: links.map(mapCommissionLinkCreate),
         },
-      },
+      } as never,
     });
   });
 
@@ -483,44 +495,64 @@ export async function updateSupplierServiceTermination(input: {
   await writeTerminationAudit({
     entityId: input.id,
     action: SERVICE_TERMINATION_AUDIT_ACTIONS.UPDATE,
-    beforeJson: before,
-    afterJson: after,
+    beforeJson: redactSensitiveDistratoFields(before as unknown as Record<string, unknown>),
+    afterJson: redactSensitiveDistratoFields(after as unknown as Record<string, unknown>),
     userId: input.userId,
     userName: input.userName,
   });
   return after;
 }
 
+/** Envia prévia para assinatura (substitui o antigo "finalize" genérico). */
 export async function finalizeSupplierServiceTermination(input: {
   supplierId: string;
   id: string;
   userId?: string | null;
   userName?: string | null;
 }): Promise<ServiceTerminationDto> {
+  return transitionSupplierServiceTerminationStatus({
+    ...input,
+    targetStatus: "AWAITING_SIGNATURE",
+  });
+}
+
+export async function transitionSupplierServiceTerminationStatus(input: {
+  supplierId: string;
+  id: string;
+  targetStatus: ServiceTerminationStatusDto;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
   const before = await getSupplierServiceTermination(input.supplierId, input.id);
-  if (before.status === "FINALIZED") return before;
-  if (before.status === "CANCELED") {
-    throw new SupplierServiceTerminationError(
-      "Não é possível finalizar um encerramento cancelado.",
-      "CANCELED",
-      409
-    );
+  assertStatusTransitionAllowed(before.status, input.targetStatus);
+  assertDistratoValidForTarget(before, input.targetStatus);
+
+  const data: Record<string, unknown> = { status: input.targetStatus };
+  if (input.targetStatus === "PAID_AND_SETTLED") {
+    const snapshot = buildSettledSnapshot(before);
+    data.settledSnapshotJson = snapshot;
+    data.integrityCode = buildIntegrityCode(snapshot);
+    data.finalizedAt = new Date();
+    data.finalizedById = input.userId ?? null;
+    data.finalizedByName = input.userName ?? null;
   }
+
   await prisma.supplierServiceTermination.update({
     where: { id: input.id },
-    data: {
-      status: "FINALIZED",
-      finalizedAt: new Date(),
-      finalizedById: input.userId ?? null,
-      finalizedByName: input.userName ?? null,
-    },
+    data: data as never,
   });
+
   const after = await getSupplierServiceTermination(input.supplierId, input.id);
   await writeTerminationAudit({
     entityId: input.id,
-    action: SERVICE_TERMINATION_AUDIT_ACTIONS.FINALIZE,
-    beforeJson: before,
-    afterJson: after,
+    action:
+      input.targetStatus === "PAID_AND_SETTLED"
+        ? SERVICE_TERMINATION_AUDIT_ACTIONS.PAYMENT_CONFIRM
+        : input.targetStatus === "AWAITING_SIGNATURE"
+          ? SERVICE_TERMINATION_AUDIT_ACTIONS.FINALIZE
+          : SERVICE_TERMINATION_AUDIT_ACTIONS.STATUS_CHANGE,
+    beforeJson: redactSensitiveDistratoFields(before as unknown as Record<string, unknown>),
+    afterJson: redactSensitiveDistratoFields(after as unknown as Record<string, unknown>),
     userId: input.userId,
     userName: input.userName,
   });
@@ -534,12 +566,11 @@ export async function cancelSupplierServiceTermination(input: {
   userName?: string | null;
 }): Promise<ServiceTerminationDto> {
   const before = await getSupplierServiceTermination(input.supplierId, input.id);
-  if (before.status === "FINALIZED") {
-    throw new SupplierServiceTerminationError(
-      "Encerramento finalizado não pode ser cancelado por esta API.",
-      "FINALIZED_LOCKED",
-      409
-    );
+  if (before.status === "PAID_AND_SETTLED") {
+    // Quitado: cancela versão e permite nova versão depois
+    assertStatusTransitionAllowed(before.status, "CANCELED");
+  } else {
+    assertStatusTransitionAllowed(before.status, "CANCELED");
   }
   await prisma.supplierServiceTermination.update({
     where: { id: input.id },
@@ -549,12 +580,60 @@ export async function cancelSupplierServiceTermination(input: {
   await writeTerminationAudit({
     entityId: input.id,
     action: SERVICE_TERMINATION_AUDIT_ACTIONS.CANCEL,
-    beforeJson: before,
-    afterJson: after,
+    beforeJson: redactSensitiveDistratoFields(before as unknown as Record<string, unknown>),
+    afterJson: redactSensitiveDistratoFields(after as unknown as Record<string, unknown>),
     userId: input.userId,
     userName: input.userName,
   });
   return after;
+}
+
+/**
+ * Após cancelar documento quitado (ou assinado), cria nova versão DRAFT preservando histórico.
+ */
+export async function createNewVersionFromCanceledTermination(input: {
+  supplierId: string;
+  id: string;
+  userId?: string | null;
+  userName?: string | null;
+}): Promise<ServiceTerminationDto> {
+  const before = await getSupplierServiceTermination(input.supplierId, input.id);
+  if (before.status !== "CANCELED" && before.status !== "PAID_AND_SETTLED") {
+    throw new SupplierServiceTerminationError(
+      "Nova versão só a partir de documento cancelado ou para correção de quitado (cancele antes).",
+      "VERSION_NOT_ALLOWED",
+      409
+    );
+  }
+  if (before.status === "PAID_AND_SETTLED") {
+    await cancelSupplierServiceTermination(input);
+  }
+  const body: ServiceTerminationPreviewInput = {
+    ...before,
+    supersedesId: before.id,
+    documentVersion: (before.documentVersion || 1) + 1,
+    paymentEffectiveDate: null,
+    paymentConfirmedAmount: null,
+    paymentProofStorageKey: null,
+    paymentProofFileName: null,
+    settledSnapshotJson: null,
+    integrityCode: null,
+  };
+  const created = await createSupplierServiceTermination({
+    supplierId: input.supplierId,
+    body,
+    userId: input.userId,
+    userName: input.userName,
+  });
+  await writeTerminationAudit({
+    entityId: created.id,
+    action: SERVICE_TERMINATION_AUDIT_ACTIONS.VERSION_CREATE,
+    beforeJson: { supersedesId: before.id, previousVersion: before.documentVersion },
+    afterJson: { id: created.id, documentVersion: created.documentVersion },
+    userId: input.userId,
+    userName: input.userName,
+  });
+  return created;
 }
 
 /**
@@ -652,115 +731,126 @@ export async function searchCommissionReportsForSupplierTermination(input: {
   };
 }
 
-/** Linhas formatadas do PDF executivo (mesmo conteúdo do relatório de impressão). */
+/** Linhas do PDF — termo de distrato (sem parâmetros internos trabalhistas). */
 export function buildServiceTerminationPdfDocumentLines(
   dto: ServiceTerminationDto
 ): PdfLine[] {
   const model = buildServiceTerminationPrintModel(dto);
   const lines: PdfLine[] = [
-    { type: "title", text: "Encerramento de Prestacao de Servico" },
-    { type: "subtitle", text: "Verbas de encerramento — calculo gerencial/contratual" },
+    { type: "title", text: "TERMO DE DISTRATO, ACERTO FINANCEIRO E QUITACAO" },
+    { type: "subtitle", text: "Contrato de Prestacao de Servicos (PJ)" },
     {
       type: "banner",
-      text: `Fornecedor: ${model.supplierName}  |  Prestador: ${model.personName}  |  Status: ${model.statusLabel}`,
+      text: `Doc ${model.documentCode} | Versao ${model.documentVersion} | Status: ${model.statusLabel}`,
     },
-    { type: "spacer" },
-    { type: "subtitle", text: "1. Identificacao" },
-    { type: "kv", label: "Fornecedor", value: model.supplierName },
-    { type: "kv", label: "Prestador", value: model.personName },
-    { type: "kv", label: "Documento", value: model.personDocument },
-    { type: "kv", label: "Funcao/servico", value: model.serviceRole },
-    { type: "kv", label: "Periodo do contrato", value: model.periodLabel },
-    { type: "spacer" },
-    { type: "subtitle", text: "2. Base de calculo" },
-    {
-      type: "table",
-      headers: ["Campo", "Valor"],
-      // A4 retrato: contentW ≈ 523 pt
-      colWidths: [300, 223],
-      rows: [
-        ["Valor mensal", formatPdfMoneyBr(model.monthlyServiceAmount)],
-        ["Dias medios trabalhados/mes", formatPdfNumberBr(model.averageWorkedDaysPerMonth, 2)],
-        ["Horas por dia", formatPdfNumberBr(model.hoursPerDay, 2)],
-        ["Horas por mes", formatPdfNumberBr(model.monthlyHours, 2)],
-        ["Valor hora", formatPdfMoneyBr(model.hourlyServiceAmount)],
-        ["Valor dia", formatPdfMoneyBr(model.dailyServiceAmount)],
-        ["Descanso anual contratado", `${formatPdfNumberBr(model.restDaysPerYear, 0)} dias`],
-        ["Modo de calculo", model.calcModeLabel],
-      ],
-    },
-    { type: "spacer" },
-    { type: "subtitle", text: "3. Calculo proporcional e dias a mais" },
-    {
-      type: "table",
-      headers: ["Campo", "Valor"],
-      colWidths: [300, 223],
-      rows: [
-        ["Meses trabalhados", formatPdfNumberBr(model.workedMonths, 2)],
-        ["Dias trabalhados", formatPdfNumberBr(model.workedDays, 0)],
-        ["Dias proporcionais de descanso", `${model.proportionalRestDaysLabel} dias`],
-        ["Valor descanso proporcional", formatPdfMoneyBr(model.proportionalRestAmount)],
-        ["Dias a mais", formatPdfNumberBr(model.extraWorkedDays, 0)],
-        ["Valor dias a mais", formatPdfMoneyBr(model.extraWorkedAmount)],
-      ],
-    },
-    { type: "spacer" },
-    { type: "subtitle", text: "4. Comissoes (oficial / lancamento manual)" },
   ];
-
+  if (model.watermarkText) {
+    lines.push({ type: "banner", text: model.watermarkText });
+  }
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Identificacao das partes" });
+  lines.push({
+    type: "text",
+    text: `CONTRATANTE: ${model.contractingPartyName}, CNPJ ${model.contractingPartyDocument}, representada por ${model.contractingPartyRepName}, ${model.contractingPartyRepRole}.`,
+  });
+  lines.push({
+    type: "text",
+    text: `CONTRATADA: ${model.contractedPartyName}, CNPJ ${model.contractedPartyDocument}, representada por ${model.contractedPartyRepName}, CPF ${model.contractedPartyRepDocument}.`,
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Clausula 1 - Do encerramento" });
+  lines.push({
+    type: "text",
+    text: `As partes encerram, na modalidade ${model.modalityLabel}, o contrato ${model.originalContractReference}, firmado em ${model.originalContractDateLabel}, objeto: ${model.contractedServiceDescription}. Periodo: ${model.periodLabel}.`,
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Clausula 2 - Do acerto financeiro" });
+  lines.push({
+    type: "table",
+    headers: ["Verba", "Valor"],
+    colWidths: [360, 163],
+    rows: model.settlementRows.map((r) => [r.label, formatPdfMoneyBr(r.value)]),
+  });
+  lines.push({
+    type: "banner",
+    text: `VALOR LIQUIDO DO ACERTO CONTRATUAL: ${formatPdfMoneyBr(model.totalTerminationAmount)}`,
+  });
+  if (model.isPaidAndSettled) {
+    lines.push({ type: "banner", text: "PAGO E QUITADO" });
+  }
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Clausula 3 - Das comissoes" });
+  lines.push({ type: "text", text: model.commissionClause });
+  lines.push({ type: "subtitle", text: "Anexo I - Comissoes comerciais apuradas" });
   if (model.commissionRows.length === 0) {
-    lines.push({ type: "text", text: "Nenhuma comissao vinculada ou lancada." });
+    lines.push({ type: "text", text: "Nenhuma comissao discriminada neste instrumento." });
   } else {
     lines.push({
       type: "table",
-      headers: ["Pedido", "Referencia", "Pessoa", "Fonte", "Comissao"],
-      colWidths: [72, 140, 110, 80, 121],
+      headers: ["Pedido", "Referencia", "Pessoa", "Origem", "Situacao", "Valor"],
+      colWidths: [60, 120, 90, 70, 80, 103],
       rows: model.commissionRows.map((r) => [
         r.orderCode,
         r.description,
         r.personName,
         r.source,
+        r.statusLabel,
         formatPdfMoneyBr(r.amount),
       ]),
     });
   }
-  lines.push({
-    type: "kv",
-    label: "Total comissoes",
-    value: formatPdfMoneyBr(model.commissionReportTotal),
-  });
   lines.push({ type: "spacer" });
-  lines.push({ type: "subtitle", text: "5. Multa e ajustes" });
-  lines.push({
-    type: "table",
-    headers: ["Campo", "Valor"],
-    colWidths: [300, 223],
-    rows: [
-      ["Multa sem aviso de 30 dias", formatPdfMoneyBr(model.noticePenaltyAmount)],
-      ["Outros creditos", formatPdfMoneyBr(model.otherCredits)],
-      ["Outros descontos", formatPdfMoneyBr(model.otherDiscounts)],
-      ["Obs. do ajuste", model.adjustmentNotes ?? "—"],
-    ],
-  });
+  lines.push({ type: "subtitle", text: "Clausula 4 - Do pagamento" });
+  lines.push({ type: "text", text: model.paymentClause });
   lines.push({ type: "spacer" });
-  lines.push({ type: "subtitle", text: "6. Totalizacao" });
-  lines.push({
-    type: "table",
-    headers: ["Verba", "Valor"],
-    colWidths: [300, 223],
-    rows: model.totalizationRows.map((r) => [r.label, formatPdfMoneyBr(r.value)]),
-  });
-  lines.push({ type: "spacer" });
-  if (model.notes) {
-    lines.push({ type: "subtitle", text: "Observacoes" });
-    lines.push({ type: "text", text: model.notes });
-    lines.push({ type: "spacer" });
-  }
-  lines.push({ type: "banner", text: SERVICE_TERMINATION_PRINT_FOOTER_NOTE });
+  lines.push({ type: "subtitle", text: "Clausula 5 - Da quitacao" });
   lines.push({
     type: "text",
-    text: "Documento gerado pelo IndusCost. Layout executivo alinhado ao padrao do Pedido de Venda.",
+    text:
+      model.quitacaoClause ||
+      "A quitacao financeira somente sera valida apos confirmacao integral do pagamento e assinatura das partes.",
   });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Clausula 6 - Das obrigacoes pendentes" });
+  lines.push({ type: "text", text: model.pendingObligationsClause });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Clausula 7 - Da livre manifestacao" });
+  lines.push({ type: "text", text: model.freeManifestationClause });
+  lines.push({
+    type: "text",
+    text: "E, por estarem de acordo, as partes assinam o presente instrumento com duas testemunhas.",
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "subtitle", text: "Assinaturas" });
+  lines.push({
+    type: "text",
+    text: `CONTRATANTE: ${model.contractingPartyName} / ${model.contractingPartyRepName} (${model.contractingPartyRepRole})`,
+  });
+  lines.push({
+    type: "text",
+    text: `CONTRATADA: ${model.contractedPartyName} / ${model.contractedPartyRepName}`,
+  });
+  lines.push({
+    type: "text",
+    text: `TESTEMUNHA 1: ${model.witness1Name} | TESTEMUNHA 2: ${model.witness2Name}`,
+  });
+  lines.push({ type: "spacer" });
+  lines.push({ type: "banner", text: model.footerNote });
+  lines.push({
+    type: "text",
+    text: `Codigo ${model.documentCode} | Versao ${model.documentVersion} | Integridade ${model.integrityCode}`,
+  });
+
+  const plain = buildServiceTerminationPrintPlainText(dto);
+  const forbidden = collectForbiddenPrintTerms(plain);
+  if (forbidden.length) {
+    // Fail-safe: não silenciosamente emitir conteúdo trabalhista indevido.
+    throw new SupplierServiceTerminationError(
+      `PDF contém termos proibidos: ${forbidden.join(", ")}`,
+      "FORBIDDEN_PRINT_TERMS",
+      500
+    );
+  }
   return lines;
 }
 
@@ -802,7 +892,7 @@ export async function exportSupplierServiceTerminationPdf(input: {
   });
   return {
     buffer,
-    filename: `encerramento-prestacao-${dto.personName.replace(/\s+/g, "-").slice(0, 40)}.pdf`,
+    filename: `termo-distrato-${(dto.documentCode || dto.personName).replace(/\s+/g, "-").slice(0, 40)}.pdf`,
   };
 }
 
