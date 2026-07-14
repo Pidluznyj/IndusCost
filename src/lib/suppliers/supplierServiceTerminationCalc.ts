@@ -19,6 +19,10 @@ export type ServiceTerminationCalcInput = {
   workedDays?: number | null;
   contractStartDate?: string | Date | null;
   contractEndDate?: string | Date | null;
+  /** Dias no mês parcial do encerramento (ex.: 7). */
+  extraWorkedDays?: number | null;
+  /** Multa por encerramento sem aviso de 30 dias. */
+  noticePenaltyAmount?: number | null;
   commissionReportTotal?: number | null;
   otherCredits?: number | null;
   otherDiscounts?: number | null;
@@ -33,6 +37,9 @@ export type ServiceTerminationCalcResult = {
   dailyServiceAmount: number;
   hourlyServiceAmount: number;
   proportionalRestAmount: number;
+  extraWorkedDays: number;
+  extraWorkedAmount: number;
+  noticePenaltyAmount: number;
   commissionReportTotal: number;
   otherCredits: number;
   otherDiscounts: number;
@@ -134,12 +141,20 @@ export function calculateServiceTermination(
   // Usa dias crus para bater 6,666… → R$ 1.333,33 (não 6,6667 arredondado * 200).
   const proportionalRestAmount = round2(dailyServiceAmount * rawProportionalRestDays);
 
+  const extraWorkedDays = Math.max(0, Math.round(asFinite(input.extraWorkedDays)));
+  const extraWorkedAmount = round2(dailyServiceAmount * extraWorkedDays);
+  const noticePenaltyAmount = Math.max(0, asFinite(input.noticePenaltyAmount));
+
   const commissionReportTotal = Math.max(0, asFinite(input.commissionReportTotal));
   const otherCredits = Math.max(0, asFinite(input.otherCredits));
   const otherDiscounts = Math.max(0, asFinite(input.otherDiscounts));
   const otherAdjustments = round2(otherCredits - otherDiscounts);
   const totalTerminationAmount = round2(
-    proportionalRestAmount + commissionReportTotal + otherAdjustments
+    proportionalRestAmount +
+      extraWorkedAmount +
+      noticePenaltyAmount +
+      commissionReportTotal +
+      otherAdjustments
   );
 
   return {
@@ -151,6 +166,9 @@ export function calculateServiceTermination(
     dailyServiceAmount,
     hourlyServiceAmount,
     proportionalRestAmount,
+    extraWorkedDays,
+    extraWorkedAmount,
+    noticePenaltyAmount: round2(noticePenaltyAmount),
     commissionReportTotal: round2(commissionReportTotal),
     otherCredits: round2(otherCredits),
     otherDiscounts: round2(otherDiscounts),

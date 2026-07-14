@@ -144,6 +144,9 @@ function mapRowToDto(
     workedDays: number;
     proportionalRestDays: Prisma.Decimal;
     proportionalRestAmount: Prisma.Decimal;
+    extraWorkedDays?: number | null;
+    extraWorkedAmount?: Prisma.Decimal | null;
+    noticePenaltyAmount?: Prisma.Decimal | null;
     commissionReportId: string | null;
     commissionReportTotal: Prisma.Decimal;
     otherCredits: Prisma.Decimal;
@@ -164,6 +167,7 @@ function mapRowToDto(
       commissionPersonId: string | null;
       commissionPersonName: string | null;
       periodLabel: string | null;
+      orderCode?: string | null;
       commissionAmount: Prisma.Decimal;
       source: string | null;
       statusLabel: string | null;
@@ -192,6 +196,9 @@ function mapRowToDto(
     workedDays: row.workedDays,
     proportionalRestDays: dec(row.proportionalRestDays),
     proportionalRestAmount: dec(row.proportionalRestAmount),
+    extraWorkedDays: row.extraWorkedDays ?? 0,
+    extraWorkedAmount: dec(row.extraWorkedAmount),
+    noticePenaltyAmount: dec(row.noticePenaltyAmount),
     commissionReportId: row.commissionReportId,
     commissionReportTotal: dec(row.commissionReportTotal),
     otherCredits,
@@ -212,6 +219,7 @@ function mapRowToDto(
       commissionPersonId: l.commissionPersonId,
       commissionPersonName: l.commissionPersonName,
       periodLabel: l.periodLabel,
+      orderCode: l.orderCode ?? null,
       commissionAmount: dec(l.commissionAmount),
       source: l.source,
       statusLabel: l.statusLabel,
@@ -243,10 +251,25 @@ function buildCalcFromInput(input: ServiceTerminationPreviewInput) {
     workedDays: input.workedDays,
     contractStartDate: input.contractStartDate,
     contractEndDate: input.contractEndDate,
+    extraWorkedDays: input.extraWorkedDays,
+    noticePenaltyAmount: input.noticePenaltyAmount,
     commissionReportTotal,
     otherCredits: input.otherCredits,
     otherDiscounts: input.otherDiscounts,
   });
+}
+
+function mapCommissionLinkCreate(l: ServiceTerminationCommissionLinkDto) {
+  return {
+    commissionReportKey: l.commissionReportKey,
+    commissionPersonId: l.commissionPersonId,
+    commissionPersonName: l.commissionPersonName,
+    periodLabel: l.periodLabel,
+    orderCode: l.orderCode?.trim() || null,
+    commissionAmount: l.commissionAmount,
+    source: l.source,
+    statusLabel: l.statusLabel,
+  };
 }
 
 export function previewSupplierServiceTermination(
@@ -338,6 +361,9 @@ export async function createSupplierServiceTermination(input: {
       workedDays: calc.workedDays,
       proportionalRestDays: calc.proportionalRestDays,
       proportionalRestAmount: calc.proportionalRestAmount,
+      extraWorkedDays: calc.extraWorkedDays,
+      extraWorkedAmount: calc.extraWorkedAmount,
+      noticePenaltyAmount: calc.noticePenaltyAmount,
       commissionReportId: links[0]?.commissionReportKey ?? null,
       commissionReportTotal: calc.commissionReportTotal,
       otherCredits: calc.otherCredits,
@@ -349,15 +375,7 @@ export async function createSupplierServiceTermination(input: {
       createdById: input.userId ?? null,
       createdByName: input.userName ?? null,
       commissionLinks: {
-        create: links.map((l) => ({
-          commissionReportKey: l.commissionReportKey,
-          commissionPersonId: l.commissionPersonId,
-          commissionPersonName: l.commissionPersonName,
-          periodLabel: l.periodLabel,
-          commissionAmount: l.commissionAmount,
-          source: l.source,
-          statusLabel: l.statusLabel,
-        })),
+        create: links.map(mapCommissionLinkCreate),
       },
     },
     include: {
@@ -425,6 +443,9 @@ export async function updateSupplierServiceTermination(input: {
         workedDays: calc.workedDays,
         proportionalRestDays: calc.proportionalRestDays,
         proportionalRestAmount: calc.proportionalRestAmount,
+        extraWorkedDays: calc.extraWorkedDays,
+        extraWorkedAmount: calc.extraWorkedAmount,
+        noticePenaltyAmount: calc.noticePenaltyAmount,
         commissionReportId: links[0]?.commissionReportKey ?? null,
         commissionReportTotal: calc.commissionReportTotal,
         otherCredits: calc.otherCredits,
@@ -433,15 +454,7 @@ export async function updateSupplierServiceTermination(input: {
         notes: input.body.notes?.trim() || null,
         adjustmentNotes: input.body.adjustmentNotes?.trim() || null,
         commissionLinks: {
-          create: links.map((l) => ({
-            commissionReportKey: l.commissionReportKey,
-            commissionPersonId: l.commissionPersonId,
-            commissionPersonName: l.commissionPersonName,
-            periodLabel: l.periodLabel,
-            commissionAmount: l.commissionAmount,
-            source: l.source,
-            statusLabel: l.statusLabel,
-          })),
+          create: links.map(mapCommissionLinkCreate),
         },
       },
     });
@@ -645,14 +658,21 @@ export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): str
     `Dias proporcionais: ${formatProportionalRestDaysLabel(dto.proportionalRestDays)}`,
     `Valor descanso proporcional: ${money(dto.proportionalRestAmount)}`,
     "",
-    "— Comissões vinculadas (fonte oficial; não recalculadas) —",
+    "— Dias adicionais trabalhados —",
+    `Dias a mais: ${dto.extraWorkedDays}`,
+    `Valor dias a mais: ${money(dto.extraWorkedAmount)}`,
+    "",
+    "— Multa por encerramento sem aviso de 30 dias —",
+    `Valor multa: ${money(dto.noticePenaltyAmount)}`,
+    "",
+    "— Comissões (oficial / lançamento manual) —",
     ...(dto.commissionLinks.length
       ? dto.commissionLinks.map(
           (l) =>
-            `${l.periodLabel ?? "—"} · ${l.commissionPersonName ?? "—"} · ${money(l.commissionAmount)} · ${l.source ?? "—"}`
+            `${l.orderCode ? `Pedido ${l.orderCode} · ` : ""}${l.periodLabel ?? "—"} · ${l.commissionPersonName ?? "—"} · ${money(l.commissionAmount)} · ${l.source ?? "—"}`
         )
-      : ["Nenhum relatório vinculado."]),
-    `Total comissão vinculada: ${money(dto.commissionReportTotal)}`,
+      : ["Nenhuma comissão vinculada/lançada."]),
+    `Total comissão: ${money(dto.commissionReportTotal)}`,
     "",
     "— Ajustes —",
     `Outros créditos: ${money(dto.otherCredits)}`,
@@ -661,6 +681,8 @@ export function buildServiceTerminationPdfLines(dto: ServiceTerminationDto): str
     "",
     "— Totalização —",
     `Total descanso proporcional: ${money(dto.proportionalRestAmount)}`,
+    `Total dias a mais: ${money(dto.extraWorkedAmount)}`,
+    `Total multa sem aviso: ${money(dto.noticePenaltyAmount)}`,
     `Total comissão: ${money(dto.commissionReportTotal)}`,
     `Total ajustes: ${money(dto.otherAdjustments)}`,
     `TOTAL FINAL A PAGAR: ${money(dto.totalTerminationAmount)}`,
@@ -718,6 +740,9 @@ export async function exportSupplierServiceTerminationXlsx(input: {
     ["Dias trabalhados", dto.workedDays],
     ["Dias proporcionais", dto.proportionalRestDays],
     ["Valor descanso proporcional", dto.proportionalRestAmount],
+    ["Dias a mais trabalhados", dto.extraWorkedDays],
+    ["Valor dias a mais", dto.extraWorkedAmount],
+    ["Multa sem aviso 30 dias", dto.noticePenaltyAmount],
     ["Total comissão vinculada", dto.commissionReportTotal],
     ["Outros créditos", dto.otherCredits],
     ["Outros descontos", dto.otherDiscounts],

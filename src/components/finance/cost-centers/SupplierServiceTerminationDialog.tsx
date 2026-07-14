@@ -5,6 +5,7 @@ import {
   FileDown,
   Link2,
   Loader2,
+  Plus,
   Search,
   Trash2,
   X,
@@ -49,6 +50,23 @@ function money(n: number): string {
   return formatFinanceCurrency(n);
 }
 
+type ManualCommissionLine = {
+  key: string;
+  orderCode: string;
+  commissionAmount: string;
+};
+
+function newManualLine(): ManualCommissionLine {
+  return {
+    key:
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    orderCode: "",
+    commissionAmount: "",
+  };
+}
+
 export function SupplierServiceTerminationDialog({
   open,
   supplierId,
@@ -71,11 +89,16 @@ export function SupplierServiceTerminationDialog({
     useState<ServiceTerminationCalcModeDto>("WORKED_MONTHS");
   const [workedMonths, setWorkedMonths] = useState("");
   const [workedDays, setWorkedDays] = useState("");
+  const [extraWorkedDays, setExtraWorkedDays] = useState("");
+  const [noticePenaltyAmount, setNoticePenaltyAmount] = useState("0");
   const [otherCredits, setOtherCredits] = useState("0");
   const [otherDiscounts, setOtherDiscounts] = useState("0");
   const [adjustmentNotes, setAdjustmentNotes] = useState("");
   const [notes, setNotes] = useState("");
   const [links, setLinks] = useState<ServiceTerminationCommissionLinkDto[]>([]);
+  const [manualCommissionLines, setManualCommissionLines] = useState<
+    ManualCommissionLine[]
+  >([newManualLine()]);
   const now = useMemo(() => new Date(), []);
   const [commissionYear, setCommissionYear] = useState(String(now.getFullYear()));
   const [commissionMonths, setCommissionMonths] =
@@ -105,6 +128,42 @@ export function SupplierServiceTerminationDialog({
   const [message, setMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<ServiceTerminationDto[]>([]);
 
+  const officialLinks = useMemo(
+    () => links.filter((l) => (l.source ?? "").toUpperCase() !== "MANUAL"),
+    [links]
+  );
+
+  const manualCommissionTotal = useMemo(
+    () =>
+      manualCommissionLines.reduce(
+        (s, line) => s + (Number(line.commissionAmount) || 0),
+        0
+      ),
+    [manualCommissionLines]
+  );
+
+  const allCommissionLinks = useMemo((): ServiceTerminationCommissionLinkDto[] => {
+    const manualMapped = manualCommissionLines
+      .filter(
+        (line) =>
+          line.orderCode.trim() || Number(line.commissionAmount) > 0
+      )
+      .map((line) => ({
+        commissionReportKey: `manual:${line.key}`,
+        commissionPersonId: null,
+        commissionPersonName: personName.trim() || supplierName,
+        periodLabel: line.orderCode.trim()
+          ? `Pedido ${line.orderCode.trim()}`
+          : "Lançamento manual",
+        orderCode: line.orderCode.trim() || null,
+        commissionAmount: Number(line.commissionAmount) || 0,
+        source: "MANUAL",
+        statusLabel: "MANUAL",
+        commissionsHref: null,
+      }));
+    return [...officialLinks, ...manualMapped];
+  }, [officialLinks, manualCommissionLines, personName, supplierName]);
+
   const calc = useMemo(() => {
     return calculateServiceTermination({
       monthlyServiceAmount: Number(monthlyServiceAmount) || 0,
@@ -115,7 +174,11 @@ export function SupplierServiceTerminationDialog({
       workedDays: workedDays.trim() ? Number(workedDays) : null,
       contractStartDate: contractStartDate || null,
       contractEndDate: contractEndDate || null,
-      commissionReportTotal: links.reduce((s, l) => s + (l.commissionAmount || 0), 0),
+      extraWorkedDays: extraWorkedDays.trim() ? Number(extraWorkedDays) : 0,
+      noticePenaltyAmount: Number(noticePenaltyAmount) || 0,
+      commissionReportTotal:
+        officialLinks.reduce((s, l) => s + (l.commissionAmount || 0), 0) +
+        manualCommissionTotal,
       otherCredits: Number(otherCredits) || 0,
       otherDiscounts: Number(otherDiscounts) || 0,
     });
@@ -128,7 +191,10 @@ export function SupplierServiceTerminationDialog({
     workedDays,
     contractStartDate,
     contractEndDate,
-    links,
+    extraWorkedDays,
+    noticePenaltyAmount,
+    officialLinks,
+    manualCommissionTotal,
     otherCredits,
     otherDiscounts,
   ]);
@@ -163,12 +229,14 @@ export function SupplierServiceTerminationDialog({
     calculationMode,
     workedMonths: workedMonths.trim() ? Number(workedMonths) : null,
     workedDays: workedDays.trim() ? Number(workedDays) : null,
+    extraWorkedDays: extraWorkedDays.trim() ? Number(extraWorkedDays) : 0,
+    noticePenaltyAmount: Number(noticePenaltyAmount) || 0,
     commissionReportTotal: calc.commissionReportTotal,
     otherCredits: Number(otherCredits) || 0,
     otherDiscounts: Number(otherDiscounts) || 0,
     notes: notes || null,
     adjustmentNotes: adjustmentNotes || null,
-    commissionLinks: links,
+    commissionLinks: allCommissionLinks,
   });
 
   const buildCommissionQuery = useCallback(
@@ -273,6 +341,7 @@ export function SupplierServiceTerminationDialog({
     commissionPersonId: row.sellerId,
     commissionPersonName: row.sellerName,
     periodLabel: `${row.orderCode ? formatSalesOrderDisplayCode(row.orderCode) : "Sem pedido"} · ${String(row.month).padStart(2, "0")}/${row.year}`,
+    orderCode: row.orderCode,
     commissionAmount: row.finalCommissionAmount,
     source: row.source || "COMMISSION_REPORTS",
     statusLabel: row.lineStatus,
@@ -281,28 +350,39 @@ export function SupplierServiceTerminationDialog({
 
   const linkFromRecord = (row: ServiceTerminationCommissionOrderRow) => {
     setLinks((prev) => {
-      if (prev.some((l) => l.commissionReportKey === row.lineKey)) return prev;
-      return [...prev, toLinkDto(row)];
+      const withoutManual = prev.filter(
+        (l) => (l.source ?? "").toUpperCase() !== "MANUAL"
+      );
+      if (withoutManual.some((l) => l.commissionReportKey === row.lineKey)) {
+        return withoutManual;
+      }
+      return [...withoutManual, toLinkDto(row)];
     });
   };
 
   const linkSelectedRecords = () => {
     const rows = commissionRecords.filter((r) => selectedLineKeys.has(r.lineKey));
     setLinks((prev) => {
-      const existing = new Set(prev.map((l) => l.commissionReportKey));
+      const withoutManual = prev.filter(
+        (l) => (l.source ?? "").toUpperCase() !== "MANUAL"
+      );
+      const existing = new Set(withoutManual.map((l) => l.commissionReportKey));
       const add = rows.filter((r) => !existing.has(r.lineKey)).map(toLinkDto);
-      return add.length ? [...prev, ...add] : prev;
+      return [...withoutManual, ...add];
     });
     setSelectedLineKeys(new Set());
   };
 
   const linkAllListed = () => {
     setLinks((prev) => {
-      const existing = new Set(prev.map((l) => l.commissionReportKey));
+      const withoutManual = prev.filter(
+        (l) => (l.source ?? "").toUpperCase() !== "MANUAL"
+      );
+      const existing = new Set(withoutManual.map((l) => l.commissionReportKey));
       const add = commissionRecords
         .filter((r) => !existing.has(r.lineKey))
         .map(toLinkDto);
-      return add.length ? [...prev, ...add] : prev;
+      return [...withoutManual, ...add];
     });
     setSelectedLineKeys(new Set());
   };
@@ -402,7 +482,9 @@ export function SupplierServiceTerminationDialog({
       `Prestador: ${personName}`,
       `Período: ${contractStartDate} a ${contractEndDate}`,
       `Descanso proporcional: ${formatProportionalRestDaysLabel(calc.proportionalRestDays)} dias · ${money(calc.proportionalRestAmount)}`,
-      `Comissão vinculada: ${money(calc.commissionReportTotal)}`,
+      `Dias a mais: ${calc.extraWorkedDays} · ${money(calc.extraWorkedAmount)}`,
+      `Multa sem aviso 30 dias: ${money(calc.noticePenaltyAmount)}`,
+      `Comissão total: ${money(calc.commissionReportTotal)}`,
       `Total a pagar: ${money(calc.totalTerminationAmount)}`,
     ].join("\n");
     try {
@@ -633,6 +715,37 @@ export function SupplierServiceTerminationDialog({
             </div>
           </section>
 
+          <section className="space-y-3" data-testid="service-termination-extra-days">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              3b. Dias a mais trabalhados
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Ex.: trabalhou 7 dias no mês do encerramento — paga-se valor dia × dias a mais.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Dias a mais
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={extraWorkedDays}
+                  onChange={(e) => setExtraWorkedDays(e.target.value)}
+                  placeholder="Ex.: 7"
+                  disabled={status === "FINALIZED"}
+                />
+              </label>
+              <Stat label="Valor do dia" value={money(calc.dailyServiceAmount)} />
+              <Stat
+                label="Valor dias a mais"
+                value={money(calc.extraWorkedAmount)}
+                emphasize
+              />
+            </div>
+          </section>
+
           <section className="space-y-3" data-testid="service-termination-commissions">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               4. Comissões vinculadas (somente leitura)
@@ -755,7 +868,7 @@ export function SupplierServiceTerminationDialog({
                   </thead>
                   <tbody className="divide-y divide-border">
                     {commissionRecords.map((row) => {
-                      const linked = links.some(
+                      const linked = officialLinks.some(
                         (l) => l.commissionReportKey === row.lineKey
                       );
                       return (
@@ -820,14 +933,15 @@ export function SupplierServiceTerminationDialog({
                 </table>
               </div>
             ) : null}
-            {links.length > 0 ? (
+            {officialLinks.length > 0 ? (
               <ul className="space-y-1 text-sm">
-                {links.map((l) => (
+                {officialLinks.map((l) => (
                   <li
                     key={l.commissionReportKey}
                     className="flex items-center justify-between gap-2 rounded border px-2 py-1"
                   >
                     <span>
+                      {l.orderCode ? `${l.orderCode} · ` : ""}
                       {l.periodLabel} · {l.commissionPersonName} · {money(l.commissionAmount)}
                     </span>
                     <button
@@ -848,11 +962,137 @@ export function SupplierServiceTerminationDialog({
             ) : null}
           </section>
 
+          <section className="space-y-3" data-testid="service-termination-manual-commissions">
+            <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              4b. Lançamento manual de comissão devida
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Informe o número do pedido e o valor da comissão. Adicione quantas linhas precisar.
+            </p>
+            <div className="space-y-2">
+              {manualCommissionLines.map((line, idx) => (
+                <div
+                  key={line.key}
+                  className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-end rounded-lg border px-2 py-2"
+                >
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Nº do pedido
+                    </span>
+                    <input
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={line.orderCode}
+                      placeholder="Ex.: PD 02523"
+                      disabled={status === "FINALIZED"}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setManualCommissionLines((prev) =>
+                          prev.map((row) =>
+                            row.key === line.key ? { ...row, orderCode: value } : row
+                          )
+                        );
+                      }}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground">
+                      Valor da comissão
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      value={line.commissionAmount}
+                      placeholder="0,00"
+                      disabled={status === "FINALIZED"}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setManualCommissionLines((prev) =>
+                          prev.map((row) =>
+                            row.key === line.key
+                              ? { ...row, commissionAmount: value }
+                              : row
+                          )
+                        );
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center justify-center rounded-lg border px-3 text-red-700 disabled:opacity-40"
+                    disabled={status === "FINALIZED" || manualCommissionLines.length <= 1}
+                    onClick={() =>
+                      setManualCommissionLines((prev) =>
+                        prev.filter((row) => row.key !== line.key)
+                      )
+                    }
+                    aria-label={`Remover linha ${idx + 1}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold"
+                disabled={status === "FINALIZED"}
+                onClick={() =>
+                  setManualCommissionLines((prev) => [...prev, newManualLine()])
+                }
+              >
+                <Plus className="h-4 w-4" />
+                Adicionar linha
+              </button>
+              <span className="text-xs text-muted-foreground">
+                Total manual:{" "}
+                <strong className="tabular-nums text-foreground">
+                  {money(manualCommissionTotal)}
+                </strong>
+              </span>
+            </div>
+          </section>
+
           <section className="space-y-3">
             <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
               5. Ajustes manuais
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 sm:col-span-2">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  Multa por encerramento sem aviso de 30 dias
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="min-w-[180px] flex-1 rounded-lg border px-3 py-2 text-sm"
+                    value={noticePenaltyAmount}
+                    onChange={(e) => setNoticePenaltyAmount(e.target.value)}
+                    disabled={status === "FINALIZED"}
+                  />
+                  <button
+                    type="button"
+                    className="rounded-lg border px-3 py-2 text-xs font-semibold"
+                    disabled={status === "FINALIZED"}
+                    onClick={() =>
+                      setNoticePenaltyAmount(
+                        String(Number(monthlyServiceAmount) || 0)
+                      )
+                    }
+                    title="Preenche com 1 valor mensal (referência de 30 dias)"
+                  >
+                    Aplicar 1 mês
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Valor entra na soma do total a pagar. Use “Aplicar 1 mês” para sugerir o valor
+                  mensal.
+                </p>
+              </label>
               <label className="space-y-1">
                 <span className="text-xs font-semibold text-muted-foreground">Outros créditos</span>
                 <input
@@ -893,7 +1133,9 @@ export function SupplierServiceTerminationDialog({
             </h3>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <Stat label="Descanso proporcional" value={money(calc.proportionalRestAmount)} />
-              <Stat label="Comissão vinculada" value={money(calc.commissionReportTotal)} />
+              <Stat label="Dias a mais" value={money(calc.extraWorkedAmount)} />
+              <Stat label="Multa sem aviso 30 dias" value={money(calc.noticePenaltyAmount)} />
+              <Stat label="Comissão total" value={money(calc.commissionReportTotal)} />
               <Stat label="Outros créditos" value={money(calc.otherCredits)} />
               <Stat label="Outros descontos" value={money(calc.otherDiscounts)} />
               <Stat label="Status" value={status} />

@@ -4032,6 +4032,11 @@ model SupplierServiceTermination {
   workedDays              Int                                 @default(0)
   proportionalRestDays    Decimal                             @db.Decimal(12, 4)
   proportionalRestAmount  Decimal                             @db.Decimal(20, 2)
+  /// Dias trabalhados além dos meses completos (ex.: 7 dias no mês do encerramento).
+  extraWorkedDays         Int                                 @default(0)
+  extraWorkedAmount       Decimal                             @default(0) @db.Decimal(20, 2)
+  /// Multa contratual por encerramento sem aviso de 30 dias.
+  noticePenaltyAmount     Decimal                             @default(0) @db.Decimal(20, 2)
   commissionReportId      String?
   commissionReportTotal   Decimal                             @default(0) @db.Decimal(20, 2)
   otherCredits            Decimal                             @default(0) @db.Decimal(20, 2)
@@ -4065,6 +4070,7 @@ model SupplierServiceTerminationCommissionLink {
   commissionPersonId   String?
   commissionPersonName String?
   periodLabel          String?
+  orderCode            String?
   commissionAmount     Decimal  @db.Decimal(20, 2)
   source               String?
   statusLabel          String?

@@ -48,11 +48,29 @@ hourlyServiceAmount = monthlyServiceAmount / monthlyHours
 
 Aparece na tela e no relatório; **não** entra sozinho no total.
 
+## Dias a mais trabalhados
+
+Quando o prestador trabalha dias no mês parcial do encerramento (ex.: 7 dias):
+
+```
+extraWorkedAmount = dailyServiceAmount * extraWorkedDays
+```
+
+## Multa por encerramento sem aviso de 30 dias
+
+Campo livre (`noticePenaltyAmount`) que entra na soma. A UI oferece “Aplicar 1 mês” (= valor mensal) como sugestão contratual.
+
+## Lançamento manual de comissão
+
+Além do vínculo ao relatório oficial, é possível lançar linhas manuais com **nº do pedido** + **valor da comissão** (quantas quiser). Fonte `MANUAL` — não altera o módulo de Comissões.
+
 ## Total do encerramento
 
 ```
 totalTerminationAmount =
   proportionalRestAmount
+  + extraWorkedAmount
+  + noticePenaltyAmount
   + commissionReportTotal
   + otherCredits
   - otherDiscounts

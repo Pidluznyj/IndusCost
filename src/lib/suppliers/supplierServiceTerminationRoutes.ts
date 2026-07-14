@@ -97,6 +97,9 @@ function parseBody(raw: unknown): ServiceTerminationPreviewInput {
       b.calculationMode === "WORKED_DAYS" ? "WORKED_DAYS" : "WORKED_MONTHS",
     workedMonths: b.workedMonths != null ? Number(b.workedMonths) : null,
     workedDays: b.workedDays != null ? Number(b.workedDays) : null,
+    extraWorkedDays: b.extraWorkedDays != null ? Number(b.extraWorkedDays) : 0,
+    noticePenaltyAmount:
+      b.noticePenaltyAmount != null ? Number(b.noticePenaltyAmount) : 0,
     commissionReportTotal:
       b.commissionReportTotal != null ? Number(b.commissionReportTotal) : null,
     otherCredits: b.otherCredits != null ? Number(b.otherCredits) : 0,

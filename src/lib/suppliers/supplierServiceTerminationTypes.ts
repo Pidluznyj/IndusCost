@@ -9,6 +9,8 @@ export type ServiceTerminationCommissionLinkDto = {
   commissionPersonId: string | null;
   commissionPersonName: string | null;
   periodLabel: string | null;
+  /** Nº do pedido (relatório oficial ou lançamento manual). */
+  orderCode: string | null;
   commissionAmount: number;
   source: string | null;
   statusLabel: string | null;
@@ -35,6 +37,9 @@ export type ServiceTerminationDto = {
   workedDays: number;
   proportionalRestDays: number;
   proportionalRestAmount: number;
+  extraWorkedDays: number;
+  extraWorkedAmount: number;
+  noticePenaltyAmount: number;
   commissionReportId: string | null;
   commissionReportTotal: number;
   otherCredits: number;
@@ -64,6 +69,8 @@ export type ServiceTerminationPreviewInput = {
   calculationMode?: ServiceTerminationCalcModeDto;
   workedMonths?: number | null;
   workedDays?: number | null;
+  extraWorkedDays?: number | null;
+  noticePenaltyAmount?: number | null;
   commissionReportTotal?: number | null;
   otherCredits?: number | null;
   otherDiscounts?: number | null;

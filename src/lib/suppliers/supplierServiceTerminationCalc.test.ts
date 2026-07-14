@@ -65,4 +65,21 @@ describe("supplierServiceTerminationCalc", () => {
     assert.equal(r.proportionalRestDays, 20);
     assert.equal(r.proportionalRestAmount, 4000);
   });
+
+  it("7 dias extras + multa avisam somam no total", () => {
+    const r = calculateServiceTermination({
+      monthlyServiceAmount: 6000,
+      monthlyHours: 160,
+      calculationMode: "WORKED_MONTHS",
+      workedMonths: 4,
+      extraWorkedDays: 7,
+      noticePenaltyAmount: 6000,
+      commissionReportTotal: 100,
+    });
+    assert.equal(r.dailyServiceAmount, 200);
+    assert.equal(r.extraWorkedDays, 7);
+    assert.equal(r.extraWorkedAmount, 1400);
+    assert.equal(r.noticePenaltyAmount, 6000);
+    assert.equal(r.totalTerminationAmount, 1333.33 + 1400 + 6000 + 100);
+  });
 });

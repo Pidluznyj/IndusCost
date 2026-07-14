@@ -113,7 +113,9 @@ section("7. PDF/XLSX com identificação, cálculo, comissão e total");
   assert.match(serverSrc, /buildServiceTerminationPdfLines/);
   assert.match(serverSrc, /Encerramento de Prestação de Serviço/);
   assert.match(serverSrc, /Descanso remunerado proporcional/);
-  assert.match(serverSrc, /Comissões vinculadas/);
+  assert.match(serverSrc, /Comissões \(oficial \/ lançamento manual\)/);
+  assert.match(serverSrc, /Dias adicionais trabalhados/);
+  assert.match(serverSrc, /Multa por encerramento sem aviso/);
   assert.match(serverSrc, /TOTAL FINAL A PAGAR/);
   assert.match(serverSrc, /gerencial\/contratual/);
   assert.match(serverSrc, /exportSupplierServiceTerminationXlsx/);
@@ -136,6 +138,26 @@ section("9. Período Mar–Jun 2026 = 4 meses");
 {
   assert.equal(countWorkedMonthsBetween("2026-03-01", "2026-06-30"), 4);
   ok("countWorkedMonthsBetween");
+}
+
+section("10. Dias a mais + multa sem aviso");
+{
+  const r = calculateServiceTermination({
+    monthlyServiceAmount: 6000,
+    monthlyHours: 160,
+    calculationMode: "WORKED_MONTHS",
+    workedMonths: 4,
+    extraWorkedDays: 7,
+    noticePenaltyAmount: 6000,
+  });
+  assert.equal(r.extraWorkedAmount, 1400);
+  assert.equal(r.noticePenaltyAmount, 6000);
+  assert.equal(r.totalTerminationAmount, 1333.33 + 1400 + 6000);
+  const dialog = read("src/components/finance/cost-centers/SupplierServiceTerminationDialog.tsx");
+  assert.match(dialog, /service-termination-extra-days/);
+  assert.match(dialog, /service-termination-manual-commissions/);
+  assert.match(dialog, /Multa por encerramento sem aviso/);
+  ok("dias a mais, multa e UI de lançamento manual");
 }
 
 console.log("\nQA supplier service termination: OK\n");
