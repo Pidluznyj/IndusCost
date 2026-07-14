@@ -622,10 +622,36 @@ async function ensureSchedulesForReceivableRefList(
   const receivableIds = receivables.map((row) => row.receivableId);
   const activeSchedules = await db.commissionReceivableSchedule.findMany({
     where: { receivableId: { in: receivableIds }, status: "ACTIVE" },
-    select: { receivableId: true },
+    select: {
+      receivableId: true,
+      scheduledCommissionAmount: true,
+      orderSnapshot: { select: { totalFinalCommissionAmount: true, status: true } },
+    },
   });
-  const scheduled = new Set(activeSchedules.map((row) => row.receivableId));
-  const missing = receivables.filter((row) => !scheduled.has(row.receivableId));
+  /** ACTIVE com comissão zerada mas snapshot oficial > 0 → precisa rebuild (não só "ensure missing"). */
+  const staleZeroAgainstSnapshot = new Set(
+    activeSchedules
+      .filter((row) => {
+        const scheduled = Number(row.scheduledCommissionAmount);
+        const snapFinal = Number(row.orderSnapshot.totalFinalCommissionAmount);
+        return (
+          row.orderSnapshot.status === "ACTIVE" &&
+          Number.isFinite(scheduled) &&
+          scheduled <= 0 &&
+          Number.isFinite(snapFinal) &&
+          snapFinal > 0
+        );
+      })
+      .map((row) => row.receivableId)
+  );
+  const scheduledOk = new Set(
+    activeSchedules
+      .filter((row) => !staleZeroAgainstSnapshot.has(row.receivableId))
+      .map((row) => row.receivableId)
+  );
+  const missing = receivables.filter(
+    (row) => !scheduledOk.has(row.receivableId) || staleZeroAgainstSnapshot.has(row.receivableId)
+  );
 
   let schedulesEnsured = 0;
   let unlinkedReceivables = 0;

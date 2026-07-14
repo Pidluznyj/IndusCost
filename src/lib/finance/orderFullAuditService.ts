@@ -4467,9 +4467,12 @@ async function loadCommissionBlock(input: {
   empty.commercialResponsibleName = input.commercialResponsibleName;
 
   try {
-    // Snapshot ACTIVE do pedido — fonte oficial de comissão.
+    // Snapshot ACTIVE do pedido — fonte oficial de comissão (read-only).
+    // Preferir o mais recente; se houver NF no pedido, o motor de materialização
+    // também escopa por nfeId — findFirst sem orderBy era não-determinístico.
     const snapshot = await prisma.commissionOrderSnapshot.findFirst({
       where: { salesOrderId: input.order.id, status: "ACTIVE" },
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       include: {
         items: {
           include: {

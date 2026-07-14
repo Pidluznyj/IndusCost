@@ -1,5 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Loader2, RefreshCw, Search, X } from "lucide-react";
+import {
+  AlertCircle,
+  Download,
+  Loader2,
+  RefreshCw,
+  Search,
+  X,
+} from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { financeBiButtonOutlineClass } from "@/src/lib/financeBiDashboardTheme";
@@ -60,12 +67,136 @@ const STATUS_OPTIONS = [
   { value: "GROUP_COMPANY_EXCLUDED", label: "Empresa do grupo" },
   { value: "SELLER_UNRESOLVED", label: "Vendedor não resolvido" },
   { value: "NO_SELLER", label: "Sem vendedor" },
+  { value: "NO_SALES_LINK", label: "Sem vínculo com pedido" },
+  { value: "NO_SCHEDULE", label: "Sem programação de comissão" },
+  { value: "NO_RULE", label: "Sem regra de comissão" },
+  { value: "NO_MARGIN", label: "Sem margem/tabela" },
+  { value: "COMMISSION_SOURCE_MISMATCH", label: "Divergente do snapshot" },
+  { value: "STALE_SCHEDULE", label: "Programação desatualizada" },
   { value: "ZERO_AMOUNT", label: "Comissão zerada" },
+  { value: "ERROR", label: "Erro no cálculo" },
 ] as const;
+
+/** Motivos técnicos → texto acionável para o usuário arrumar o cadastro. */
+const REASON_LABELS: Record<string, string> = {
+  CLIENTE_EXCLUIDO_POR_REGRA:
+    "Cliente excluído de comissionamento — revise exclusões de cliente.",
+  EMPRESA_GRUPO_EXCLUIDA:
+    "Empresa do grupo econômico — não gera comissão.",
+  VENDEDOR_NOMUS_NAO_INFORMADO:
+    "Pedido sem vendedor Nomus — informe o vendedor no pedido.",
+  NO_SALES_LINK: "Título sem vínculo com pedido de venda — revise NF × pedido.",
+  NO_SCHEDULE:
+    "Sem programação de comissão materializada — rode o fechamento/reprocesso.",
+  NO_RULE: "Sem regra ou percentual de comissão aplicável ao pedido/vendedor.",
+  NO_MARGIN:
+    "Margem ou tabela comercial indisponível na data — publique a tabela.",
+  COMMISSION_SOURCE_MISMATCH:
+    "Comissão divergente do snapshot oficial do pedido — reprocessar/materializar (não altera comissão paga).",
+  COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT:
+    "Comissão divergente do snapshot oficial do pedido — reprocessar/materializar.",
+  STALE_SCHEDULE: "Programação de comissão desatualizada — reprocessar fechamento.",
+  ZERO_AMOUNT: "Base/comissão programada zerada — confira valor do CR e rateio.",
+  "Base recebida zerada":
+    "Base recebida zerada — o título não gerou base comissionável.",
+  "Base comissionável zerada":
+    "Base comissionável zerada — confira itens/regra e valor do CR.",
+  "Comissão programada zerada":
+    "Comissão programada zerada — percentual ou base sem valor.",
+  "Percentual de comissão zerado":
+    "Percentual de comissão zerado na regra — ajuste a regra do vendedor.",
+  "Título recebido sem schedule de comissão materializado":
+    "Sem programação de comissão — materialize/reprocesse o fechamento.",
+  "Título recebido sem vínculo com pedido de venda":
+    "CR sem vínculo com pedido — associe NF/pedido corretamente.",
+  "Nenhuma regra de comissão aplicável ao pedido/NF":
+    "Nenhuma regra de comissão aplicável — cadastre regra para o vendedor.",
+  "Vendedor não resolvido no snapshot materializado":
+    "Vendedor não resolvido — corrija o vendedor Nomus do pedido.",
+};
 
 function formatLineStatus(status: string): string {
   const found = STATUS_OPTIONS.find((o) => o.value === status);
   return found?.label ?? status;
+}
+
+function resolveCommissionBlockReason(row: CommissionReportRecord): string | null {
+  if (row.lineStatus === "COMMISSIONABLE" && row.finalCommissionAmount > 0.009) {
+    return null;
+  }
+  const raw =
+    row.statusReason?.trim() ||
+    row.exclusionReason?.trim() ||
+    row.lineStatus ||
+    "";
+  if (!raw) {
+    return "Comissão não gerada — abra o Detalhe para investigar.";
+  }
+  const byCode = REASON_LABELS[raw];
+  if (byCode) return byCode;
+  const byStatus = REASON_LABELS[row.lineStatus];
+  if (byStatus && (raw === row.lineStatus || !row.statusReason)) return byStatus;
+  // Motivo livre já legível (ex.: exclusão com texto do usuário)
+  if (/[a-záàâãéêíóôõúç\s]/i.test(raw) && raw.length > 8 && !/^[A-Z0-9_]+$/.test(raw)) {
+    return raw;
+  }
+  return `${formatLineStatus(row.lineStatus)}: ${raw}`;
+}
+
+function CommissionAmountCell({ row }: { row: CommissionReportRecord }): JSX.Element {
+  const blockReason = resolveCommissionBlockReason(row);
+  const showHint =
+    Boolean(blockReason) &&
+    (row.finalCommissionAmount <= 0.009 || row.lineStatus !== "COMMISSIONABLE");
+
+  return (
+    <td
+      className="px-3 py-2 font-medium"
+      data-testid="commissions-reports-commission-cell"
+    >
+      <span className="inline-flex max-w-[16rem] items-center gap-1.5">
+        <span
+          className={cn(showHint && "text-amber-900/90")}
+          title={showHint ? blockReason ?? undefined : undefined}
+        >
+          {formatFinanceCurrency(row.finalCommissionAmount)}
+        </span>
+        {showHint ? (
+          <span
+            className="inline-flex max-w-[11rem] cursor-help items-center gap-0.5 rounded border border-amber-200/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold leading-tight text-amber-900"
+            title={blockReason ?? undefined}
+            aria-label={`Motivo sem comissão: ${blockReason}`}
+            data-testid="commissions-reports-commission-reason-hint"
+          >
+            <AlertCircle className="h-3 w-3 shrink-0 opacity-80" aria-hidden />
+            <span className="truncate">{blockReason}</span>
+          </span>
+        ) : null}
+        {row.isZeroCommission && !showHint ? (
+          <span className="text-[10px] text-muted-foreground">zerada</span>
+        ) : null}
+        {row.isPayable ? (
+          <span className="text-[10px] text-emerald-700">a pagar</span>
+        ) : null}
+        {row.divergesFromOrderSnapshot ? (
+          <span
+            className="rounded border border-amber-300/80 bg-amber-50 px-1 py-0.5 text-[10px] font-semibold text-amber-950"
+            title="Comissão divergente do snapshot oficial do pedido"
+            data-testid="commissions-reports-snapshot-mismatch-badge"
+          >
+            Divergente do snapshot
+          </span>
+        ) : row.source === "ORDER_SNAPSHOT" || row.source === "MATERIALIZED_SCHEDULE" ? (
+          <span
+            className="text-[10px] text-muted-foreground"
+            title="Valor alinhado à materialização oficial"
+          >
+            Snapshot oficial
+          </span>
+        ) : null}
+      </span>
+    </td>
+  );
 }
 
 function formatPeriodStatus(status: string): string {
@@ -595,18 +726,21 @@ export function CommissionsReportsPage() {
                     {formatFinanceCurrency(row.commissionableBaseAmount)}
                   </td>
                   <td className="px-3 py-2">{row.ratePercent.toFixed(2)}%</td>
-                  <td className="px-3 py-2 font-medium">
-                    {formatFinanceCurrency(row.finalCommissionAmount)}
-                    {row.isZeroCommission ? (
-                      <span className="ml-1 text-[10px] text-muted-foreground">zerada</span>
-                    ) : null}
-                    {row.isPayable ? (
-                      <span className="ml-1 text-[10px] text-emerald-700">a pagar</span>
-                    ) : null}
-                  </td>
+                  <CommissionAmountCell row={row} />
                   <td className="px-3 py-2">{formatLineStatus(row.lineStatus)}</td>
-                  <td className="max-w-[180px] truncate px-3 py-2 text-xs text-muted-foreground">
-                    {row.statusReason ?? row.exclusionReason ?? "—"}
+                  <td
+                    className="max-w-[220px] truncate px-3 py-2 text-xs text-muted-foreground"
+                    title={
+                      resolveCommissionBlockReason(row) ??
+                      row.statusReason ??
+                      row.exclusionReason ??
+                      undefined
+                    }
+                  >
+                    {resolveCommissionBlockReason(row) ||
+                      row.statusReason ||
+                      row.exclusionReason ||
+                      "—"}
                   </td>
                   <td className="px-3 py-2">
                     <button
@@ -714,6 +848,15 @@ export function CommissionsReportsPage() {
                 <dt className="text-xs text-muted-foreground">Origem</dt>
                 <dd>{detail.source}</dd>
               </div>
+              {detail.divergesFromOrderSnapshot ? (
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">Divergência</dt>
+                  <dd className="text-amber-950">
+                    Comissão divergente do snapshot oficial do pedido. Ação sugerida:
+                    reprocessar/materializar comissão (comissão já paga não é alterada).
+                  </dd>
+                </div>
+              ) : null}
             </dl>
           </div>
         </div>

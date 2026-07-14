@@ -14,6 +14,15 @@ import {
   type CommissionMonthlyClosingStatus,
   type CommissionReceiptLedgerLineStatus,
 } from "./commissionReceiptLedger.js";
+
+/** Status de prévia sem valor no enum Prisma → persistência segura no ledger. */
+function toPersistedLedgerLineStatus(
+  status: CommissionReceiptLedgerLineStatus
+): CommissionReceiptLedgerLineStatus {
+  if (status === "COMMISSION_SOURCE_MISMATCH") return "STALE_SCHEDULE";
+  if (status === "NO_MARGIN") return "ZERO_AMOUNT";
+  return status;
+}
 import type {
   CommissionMonthlyPayableDetailLine,
   CommissionMonthlyPayableQuery,
@@ -170,6 +179,7 @@ const RECEIPT_CLOSING_NON_BLOCKING_STATUSES = new Set<CommissionReceiptLedgerLin
 const RECEIPT_CLOSING_SCHEDULE_BLOCKING_STATUSES = new Set<CommissionReceiptLedgerLineStatus>([
   "NO_SCHEDULE",
   "STALE_SCHEDULE",
+  "COMMISSION_SOURCE_MISMATCH",
 ]);
 
 export function assessReceiptClosingApplyReadiness(
@@ -336,6 +346,14 @@ export function mapPreviewLineToLedgerCreateData(
         : null;
 
   const isException = COMMISSION_RECEIPT_EXCEPTION_STATUSES.includes(line.status);
+  const persistedStatus = toPersistedLedgerLineStatus(line.status);
+  const exceptionReason = isException
+    ? line.statusReason
+    : null;
+  const exceptionWithOriginalStatus =
+    persistedStatus !== line.status
+      ? [line.status, exceptionReason].filter(Boolean).join(": ")
+      : exceptionReason;
 
   return {
     closingId,
@@ -375,8 +393,8 @@ export function mapPreviewLineToLedgerCreateData(
     ruleSnapshotJson: ruleSnapshotJson ?? undefined,
     customerExclusionRuleId: line.exclusionRuleId,
     exclusionReason: line.exclusionReason,
-    status: line.status,
-    exceptionReason: isException ? line.statusReason : null,
+    status: persistedStatus,
+    exceptionReason: exceptionWithOriginalStatus,
     calculationHash: line.ledgerLineKey,
   };
 }

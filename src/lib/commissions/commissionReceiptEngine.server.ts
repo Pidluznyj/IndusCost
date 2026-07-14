@@ -81,15 +81,19 @@ export async function loadMaterializedSchedulesByReceivableId(
     include: {
       orderSnapshot: {
         select: {
+          status: true,
           rawSellerId: true,
           rawSellerName: true,
           canonicalSellerName: true,
           sellerResolutionStatus: true,
+          totalFinalCommissionAmount: true,
+          totalGrossCommissionAmount: true,
           items: {
             select: {
               exclusionReason: true,
               status: true,
               ruleSnapshotJson: true,
+              finalCommissionAmount: true,
             },
           },
         },
@@ -130,6 +134,10 @@ export async function loadMaterializedSchedulesByReceivableId(
           ? "Cliente excluído de comissão"
           : null),
       itemSnapshotStatuses: row.orderSnapshot.items.map((item) => item.status),
+      orderSnapshotFinalCommissionAmount: decimalToNumber(
+        row.orderSnapshot.totalFinalCommissionAmount
+      ),
+      orderSnapshotStatus: row.orderSnapshot.status,
     });
     map.set(row.receivableId, list);
   }
@@ -255,6 +263,7 @@ export async function loadCommissionReceiptPreview(
           where: { nfeId: { in: nfeIds }, status: "ACTIVE" },
           select: {
             nfeId: true,
+            totalFinalCommissionAmount: true,
             items: { select: { status: true } },
           },
         })
@@ -288,6 +297,7 @@ export async function loadCommissionReceiptPreview(
         {
           exists: true,
           itemStatuses: row.items.map((item) => item.status),
+          totalFinalCommissionAmount: decimalToNumber(row.totalFinalCommissionAmount),
         },
       ])
   );
@@ -509,6 +519,7 @@ export async function loadCommissionReceivableForecastPreview(
             where: { nfeId: { in: nfeIds }, status: "ACTIVE" },
             select: {
               nfeId: true,
+              totalFinalCommissionAmount: true,
               items: { select: { status: true } },
             },
           })
@@ -537,6 +548,7 @@ export async function loadCommissionReceivableForecastPreview(
         {
           exists: true,
           itemStatuses: row.items.map((item) => item.status),
+          totalFinalCommissionAmount: decimalToNumber(row.totalFinalCommissionAmount),
         },
       ])
   );

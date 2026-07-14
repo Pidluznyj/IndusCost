@@ -189,6 +189,24 @@ describe("commissionReports.shared", () => {
     assert.equal(matchesCommissionReportSearch(record, "inexistente"), false);
   });
 
+  it("COMMISSION_SOURCE_MISMATCH exibe prevista do snapshot e marca divergência", () => {
+    const record = mapSourceLineToReportRecord(
+      line({
+        lineKey: "mismatch",
+        status: "COMMISSION_SOURCE_MISMATCH",
+        statusReason: "COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT",
+        expectedCommissionAmount: 250,
+        releasedCommissionAmount: 0,
+        grossCommissionAmount: 250,
+        source: "ORDER_SNAPSHOT",
+      })
+    );
+    assert.equal(record.finalCommissionAmount, 250);
+    assert.equal(record.isPayable, false);
+    assert.equal(record.divergesFromOrderSnapshot, true);
+    assert.equal(record.lineStatus, "COMMISSION_SOURCE_MISMATCH");
+  });
+
   it("resumo por vendedor soma comissão final de múltiplos meses", () => {
     const payload = assembleCommissionReportsPayload(
       [
@@ -502,6 +520,15 @@ describe("commissionReports UI months multiselect", () => {
     assert.match(server, /loadPreviewMonthSourceLines/);
     assert.match(server, /months\.filter\(\(m\) => !closedMonths\.has\(m\)\)/);
     assert.match(server, /month:\s*\{\s*in:\s*input\.months\s*\}/);
+  });
+
+  it("comissão zerada exibe alerta suave com motivo (tooltip)", () => {
+    const page = read("src/components/commissions/pages/CommissionsReportsPage.tsx");
+    assert.match(page, /CommissionAmountCell/);
+    assert.match(page, /commissions-reports-commission-reason-hint/);
+    assert.match(page, /resolveCommissionBlockReason/);
+    assert.match(page, /REASON_LABELS/);
+    assert.match(page, /AlertCircle/);
   });
 
   it("coluna Pedido é clicável e abre drawer de margem do SalesOrder", () => {

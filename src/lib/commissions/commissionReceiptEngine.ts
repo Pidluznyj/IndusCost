@@ -61,10 +61,15 @@ export const COMMISSION_RECEIPT_EXCEPTION_STATUSES: CommissionReceiptLedgerLineS
   "SELLER_UNRESOLVED",
   "NO_RULE",
   "NO_MARGIN",
+  "COMMISSION_SOURCE_MISMATCH",
   "STALE_SCHEDULE",
   "ZERO_AMOUNT",
   "ERROR",
 ];
+
+/** Alerta quando a listagem principal diverge do snapshot oficial do pedido. */
+export const COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT =
+  "COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT";
 
 /** Motivo padrão quando CR recebido não possui CommissionReceivableSchedule materializado. */
 export const COMMISSION_RECEIPT_NO_SCHEDULE_REASON =
@@ -81,6 +86,8 @@ export const COMMISSION_RECEIPT_CUSTOMER_EXCLUDED_BY_RULE_REASON =
 export type CommissionOrderSnapshotDiagnosis = {
   exists: boolean;
   itemStatuses: string[];
+  /** totalFinalCommissionAmount do CommissionOrderSnapshot ACTIVE (quando conhecido). */
+  totalFinalCommissionAmount?: number;
 };
 
 export type MaterializedReceivableScheduleInput = {
@@ -108,6 +115,9 @@ export type MaterializedReceivableScheduleInput = {
   exclusionReason: string | null;
   /** Status dos itens no snapshot (diagnóstico quando comissão zerada). */
   itemSnapshotStatuses?: string[];
+  /** Comissão final do CommissionOrderSnapshot ligado ao schedule (fonte oficial da Auditoria 360º). */
+  orderSnapshotFinalCommissionAmount?: number;
+  orderSnapshotStatus?: string | null;
 };
 
 export function resolveMaterializedItemExclusionMeta(
@@ -267,7 +277,19 @@ export type CommissionReceiptPreviewLine = {
   statusReason: string | null;
   exclusionRuleId: string | null;
   exclusionReason: string | null;
-  source: "MATERIALIZED_SCHEDULE" | "PERSISTED_SCHEDULE" | "CALCULATED" | "EXCEPTION";
+  source:
+    | "MATERIALIZED_SCHEDULE"
+    | "PERSISTED_SCHEDULE"
+    | "CALCULATED"
+    | "EXCEPTION"
+    | "ORDER_SNAPSHOT"
+    | "RECEIVABLE_SCHEDULE"
+    | "RECEIPT_LEDGER"
+    | "LEGACY_FALLBACK";
+  /** Comissão do schedule materializado (pode ser 0 em mismatch). */
+  scheduleCommissionAmount?: number | null;
+  /** Comissão do snapshot oficial do pedido (Auditoria 360º). */
+  orderSnapshotCommissionAmount?: number | null;
 };
 
 export type CommissionReceiptPreviewBucket = {
@@ -443,10 +465,45 @@ function emptyStatusCounts(): Record<CommissionReceiptLedgerLineStatus, number> 
     SELLER_UNRESOLVED: 0,
     NO_RULE: 0,
     NO_MARGIN: 0,
+    COMMISSION_SOURCE_MISMATCH: 0,
     STALE_SCHEDULE: 0,
     ZERO_AMOUNT: 0,
     ERROR: 0,
   };
+}
+
+/** Comissão programada efetiva: schedule materializado, ou rateio do snapshot oficial se o schedule estiver zerado. */
+export function resolveEffectiveScheduledCommissionAmount(
+  schedule: Pick<
+    MaterializedReceivableScheduleInput,
+    | "scheduledCommissionAmount"
+    | "receivableSharePercent"
+    | "orderSnapshotFinalCommissionAmount"
+  >
+): number {
+  const scheduled = normalizeCommissionLedgerMoney(schedule.scheduledCommissionAmount);
+  if (scheduled > 0) return scheduled;
+  const snapFinal = normalizeCommissionLedgerMoney(
+    schedule.orderSnapshotFinalCommissionAmount ?? 0
+  );
+  if (snapFinal <= 0) return 0;
+  const share =
+    schedule.receivableSharePercent > 0 ? schedule.receivableSharePercent / 100 : 1;
+  return normalizeCommissionLedgerMoney(snapFinal * Math.min(1, share));
+}
+
+export function scheduleDivergesFromOrderSnapshot(
+  schedule: Pick<
+    MaterializedReceivableScheduleInput,
+    "scheduledCommissionAmount" | "orderSnapshotFinalCommissionAmount" | "scheduleStatus"
+  >
+): boolean {
+  if (schedule.scheduleStatus !== "ACTIVE") return false;
+  const scheduled = normalizeCommissionLedgerMoney(schedule.scheduledCommissionAmount);
+  const snapFinal = normalizeCommissionLedgerMoney(
+    schedule.orderSnapshotFinalCommissionAmount ?? 0
+  );
+  return scheduled <= 0 && snapFinal > 0;
 }
 
 function resolveItemRatePercent(input: {
@@ -649,6 +706,13 @@ export function mapMaterializedScheduleToLedgerStatus(
     return { status: "NO_SELLER", reason: "Schedule sem vendedor" };
   }
   if (schedule.scheduledCommissionAmount <= 0 && schedule.scheduleStatus === "ACTIVE") {
+    // Snapshot oficial com comissão → nunca mascarar como NO_MARGIN silencioso.
+    if (scheduleDivergesFromOrderSnapshot(schedule)) {
+      return {
+        status: "COMMISSION_SOURCE_MISMATCH",
+        reason: COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT,
+      };
+    }
     const snapshotDiagnosis = mapSnapshotItemStatusesToLedgerDiagnosis(
       schedule.itemSnapshotStatuses ?? []
     );
@@ -844,6 +908,14 @@ export function diagnoseReceivableWithoutMaterializedSchedule(input: {
   }
 
   if (snap?.exists) {
+    const snapFinal = normalizeCommissionLedgerMoney(snap.totalFinalCommissionAmount ?? 0);
+    if (snapFinal > 0) {
+      return {
+        status: "COMMISSION_SOURCE_MISMATCH",
+        statusReason: COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT,
+      };
+    }
+
     const snapshotDiagnosis = mapSnapshotItemStatusesToLedgerDiagnosis(snap.itemStatuses);
     if (snapshotDiagnosis) return snapshotDiagnosis;
 
@@ -881,22 +953,36 @@ function previewLineFromMaterializedSchedule(
   commissionMode: "released" | "forecast" = "released"
 ): CommissionReceiptPreviewLine {
   const { status, reason } = mapMaterializedScheduleToLedgerStatus(schedule);
+  const divergesFromSnapshot = scheduleDivergesFromOrderSnapshot(schedule);
+  const effectiveScheduled = resolveEffectiveScheduledCommissionAmount(schedule);
+  const scheduleForRelease: MaterializedReceivableScheduleInput = divergesFromSnapshot
+    ? { ...schedule, scheduledCommissionAmount: effectiveScheduled }
+    : schedule;
   const isForecast = commissionMode === "forecast";
   const forecastRelease = isForecast
-    ? forecastCommissionFromMaterializedSchedule({ schedule, receivable })
+    ? forecastCommissionFromMaterializedSchedule({
+        schedule: scheduleForRelease,
+        receivable,
+      })
     : null;
   const settledRelease = !isForecast
-    ? releaseCommissionFromMaterializedSchedule({ schedule, receivable })
+    ? releaseCommissionFromMaterializedSchedule({
+        schedule: scheduleForRelease,
+        receivable,
+      })
     : null;
   const release = forecastRelease ?? settledRelease!;
   const openBalance = resolveOpenReceivableBalance(receivable);
   const receivedAmount = isForecast ? openBalance : roundMoney(receivable.amountReceived);
   const commissionableBase = release.commissionableBaseAmount;
+  const showsSnapshotAmounts =
+    status === "COMMISSIONABLE" || status === "COMMISSION_SOURCE_MISMATCH";
   const expectedCommission = isForecast
     ? forecastRelease!.forecastCommissionAmount
-    : status === "COMMISSIONABLE"
+    : showsSnapshotAmounts
       ? settledRelease!.expectedCommissionAmount
       : 0;
+  // Mismatch: mostra prevista do snapshot, mas não libera para pagamento até reorder/materializar.
   const released =
     !isForecast && status === "COMMISSIONABLE" ? settledRelease!.expectedCommissionAmount : 0;
   const receivedSharePercent = isForecast
@@ -907,13 +993,18 @@ function previewLineFromMaterializedSchedule(
         receivedGrossAmount: settledRelease.receivedGrossAmount,
         commissionPrincipalAmount: settledRelease.commissionPrincipalAmount,
         ignoredFinancialChargesAmount: settledRelease.ignoredFinancialChargesAmount,
-        auditFlags: settledRelease.auditFlags,
+        auditFlags: [
+          ...settledRelease.auditFlags,
+          ...(divergesFromSnapshot ? [COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT] : []),
+        ],
       }
     : {
         receivedGrossAmount: normalizeCommissionLedgerMoney(receivedAmount),
         commissionPrincipalAmount: commissionableBase,
         ignoredFinancialChargesAmount: 0,
-        auditFlags: [] as string[],
+        auditFlags: divergesFromSnapshot
+          ? [COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT]
+          : ([] as string[]),
       };
   const grossCommissionAmount =
     schedule.scheduleStatus === "CUSTOMER_EXCLUDED"
@@ -1004,7 +1095,11 @@ function previewLineFromMaterializedSchedule(
     statusReason: reason,
     exclusionRuleId,
     exclusionReason: schedule.exclusionReason,
-    source: "MATERIALIZED_SCHEDULE",
+    source: divergesFromSnapshot ? "ORDER_SNAPSHOT" : "MATERIALIZED_SCHEDULE",
+    scheduleCommissionAmount: normalizeCommissionLedgerMoney(schedule.scheduledCommissionAmount),
+    orderSnapshotCommissionAmount: normalizeCommissionLedgerMoney(
+      schedule.orderSnapshotFinalCommissionAmount ?? 0
+    ),
   };
 }
 
@@ -1294,18 +1389,47 @@ function buildLinesForReceivableWithMaterializedSchedule(input: {
       identityCtx: input.identityCtx,
       exclusionRules: input.exclusionRules,
     });
-    return [
-      buildExceptionLine({
-        receivable: input.receivable,
-        year: input.year,
-        month: input.month,
-        status: diagnosis.status,
-        statusReason: diagnosis.statusReason,
-        order: input.order,
-        identityCtx: input.identityCtx,
-        commissionRecord: input.commissionRecord,
-      }),
-    ];
+    const exceptionLine = buildExceptionLine({
+      receivable: input.receivable,
+      year: input.year,
+      month: input.month,
+      status: diagnosis.status,
+      statusReason: diagnosis.statusReason,
+      order: input.order,
+      identityCtx: input.identityCtx,
+      commissionRecord: input.commissionRecord,
+    });
+    if (diagnosis.status === "COMMISSION_SOURCE_MISMATCH") {
+      const snapFinal = normalizeCommissionLedgerMoney(
+        input.orderSnapshotDiagnosis?.totalFinalCommissionAmount ?? 0
+      );
+      const principalShare = resolveReceivableCommissionPrincipal({
+        receivableOriginalAmount: input.receivable.amountReceivable,
+        receivedAmount: input.receivable.amountReceived,
+        openBalance: resolveOpenReceivableBalance(input.receivable),
+      });
+      const expected = normalizeCommissionLedgerMoney(snapFinal * principalShare.releaseRatio);
+      return [
+        {
+          ...exceptionLine,
+          expectedCommissionAmount: expected,
+          grossCommissionAmount: expected,
+          releasedCommissionAmount: 0,
+          ratePercent:
+            input.receivable.amountReceivable > 0
+              ? roundMoney((snapFinal / input.receivable.amountReceivable) * 100)
+              : 0,
+          source: "ORDER_SNAPSHOT",
+          scheduleCommissionAmount: 0,
+          orderSnapshotCommissionAmount: snapFinal,
+          auditFlags: [
+            ...(exceptionLine.auditFlags ?? []),
+            COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT,
+          ],
+        },
+      ];
+    }
+    return [exceptionLine];
   }
   return [
     previewLineFromMaterializedSchedule(

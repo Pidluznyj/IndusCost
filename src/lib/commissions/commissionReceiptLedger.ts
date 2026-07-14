@@ -30,9 +30,20 @@ export const COMMISSION_RECEIPT_LEDGER_LINE_STATUSES = [
   "SELLER_UNRESOLVED",
   "NO_RULE",
   "NO_MARGIN",
+  /** Schedule materializado diverge do CommissionOrderSnapshot oficial (ex.: zerado com snapshot > 0). */
+  "COMMISSION_SOURCE_MISMATCH",
   "STALE_SCHEDULE",
   "ZERO_AMOUNT",
   "ERROR",
+] as const;
+
+/**
+ * Status de preview/relatório que ainda não existem no enum Prisma
+ * `CommissionReceiptLedgerLineStatus` — normalizar antes de persistir no ledger.
+ */
+export const COMMISSION_RECEIPT_LEDGER_PREVIEW_ONLY_STATUSES = [
+  "NO_MARGIN",
+  "COMMISSION_SOURCE_MISMATCH",
 ] as const;
 
 export type CommissionReceiptLedgerLineStatus =

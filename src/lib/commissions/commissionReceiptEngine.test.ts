@@ -908,6 +908,39 @@ describe("commissionReceiptEngine", () => {
     assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
   });
 
+  it("schedule zerado com snapshot oficial > 0 vira COMMISSION_SOURCE_MISMATCH (não NO_MARGIN)", () => {
+    const sched = materializedSchedule({
+      receivableId: 611,
+      scheduledCommissionAmount: 0,
+      receivableSharePercent: 100,
+      itemSnapshotStatuses: ["NO_COMMERCIAL_PRICE_TABLE"],
+      orderSnapshotFinalCommissionAmount: 250,
+    });
+    const result = buildCommissionReceiptPreview({
+      year: 2026,
+      month: 6,
+      receivables: [
+        receivable({
+          nomusReceivableId: 611,
+          amountReceivable: 10000,
+          amountReceived: 10000,
+        }),
+      ],
+      ordersByNfeId: new Map(),
+      materializedSchedulesByReceivableId: new Map([[611, [sched]]]),
+      rules: [],
+      exclusionRules: [],
+      identityCtx: OK_IDENTITY,
+    });
+    assert.equal(result.lines[0]?.status, "COMMISSION_SOURCE_MISMATCH");
+    assert.equal(result.lines[0]?.expectedCommissionAmount, 250);
+    assert.equal(result.lines[0]?.releasedCommissionAmount, 0);
+    assert.equal(result.lines[0]?.source, "ORDER_SNAPSHOT");
+    assert.ok(
+      result.lines[0]?.auditFlags?.includes("COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT")
+    );
+  });
+
   it("sem schedule mas snapshot com NO_RULE diagnostica NO_RULE em vez de NO_SCHEDULE", () => {
     const order = makeOrderBundle([item("i1", 5000)]);
     const result = buildCommissionReceiptPreview({

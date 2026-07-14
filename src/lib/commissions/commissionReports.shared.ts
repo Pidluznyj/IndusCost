@@ -133,6 +133,8 @@ export type CommissionReportRecord = {
   isNoSeller: boolean;
   isZeroCommission: boolean;
   isPayable: boolean;
+  /** Linha diverge do CommissionOrderSnapshot oficial (schedule zerado / desatualizado). */
+  divergesFromOrderSnapshot: boolean;
   source: string;
 };
 
@@ -209,6 +211,22 @@ function round2(n: number): number {
 function lineGross(line: ReceiptClosingApiLine): number {
   if (line.grossCommissionAmount > 0) return round2(line.grossCommissionAmount);
   if (line.status === "COMMISSIONABLE") return round2(line.releasedCommissionAmount);
+  if (line.status === "COMMISSION_SOURCE_MISMATCH") {
+    return round2(line.expectedCommissionAmount);
+  }
+  return 0;
+}
+
+function lineFinalCommission(line: ReceiptClosingApiLine): number {
+  if (line.status === "COMMISSIONABLE") return round2(line.releasedCommissionAmount);
+  // Divergência schedule×snapshot: exibe prevista do snapshot (não libera pagamento).
+  if (line.status === "COMMISSION_SOURCE_MISMATCH") {
+    return round2(
+      line.expectedCommissionAmount > 0
+        ? line.expectedCommissionAmount
+        : line.grossCommissionAmount
+    );
+  }
   return 0;
 }
 
@@ -246,7 +264,11 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     line.status === "NO_SELLER" || line.sellerResolutionStatus === "NO_SELLER";
   const gross = lineGross(line);
   const excluded = isCustomerExcluded || isGroupCompany ? gross : 0;
-  const final = line.status === "COMMISSIONABLE" ? round2(line.releasedCommissionAmount) : 0;
+  const final = lineFinalCommission(line);
+  const divergesFromOrderSnapshot =
+    line.status === "COMMISSION_SOURCE_MISMATCH" ||
+    line.source === "ORDER_SNAPSHOT" ||
+    (line.statusReason ?? "").includes("COMMISSION_MAIN_VIEW_DIFFERS_FROM_ORDER_SNAPSHOT");
 
   return {
     lineKey: line.lineKey,
@@ -283,6 +305,7 @@ export function mapSourceLineToReportRecord(line: CommissionReportSourceLine): C
     isNoSeller,
     isZeroCommission: final === 0 && gross === 0,
     isPayable: line.status === "COMMISSIONABLE" && final > 0,
+    divergesFromOrderSnapshot,
     source: line.source,
   };
 }
