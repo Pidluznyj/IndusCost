@@ -1,0 +1,80 @@
+/**
+ * Encerramento de prestação — impressão A4 retrato (folha de pé).
+ * Importado na rota de print para sobrescrever @page landscape
+ * de outros CSS globais (ex.: relatório executivo).
+ */
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  .proposal-print-no-print,
+  .print-no-print {
+    display: none !important;
+  }
+
+  body.service-termination-print-route {
+    background: white !important;
+    overflow: visible !important;
+  }
+
+  body.service-termination-print-route,
+  body.service-termination-print-route * {
+    visibility: visible !important;
+  }
+
+  body.service-termination-print-route .print-doc-header,
+  body.service-termination-print-route .print-doc-header * {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  body.service-termination-print-route .print-doc-header-grid {
+    display: grid !important;
+    visibility: visible !important;
+  }
+
+  body.service-termination-print-route .print-doc-logo-wrap,
+  body.service-termination-print-route .print-doc-company-text,
+  body.service-termination-print-route .print-doc-meta {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .service-termination-print-page,
+  .service-termination-print-route-page,
+  body.service-termination-print-route .proposal-print-scroll {
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.service-termination-print-route .service-termination-print-document,
+  body.service-termination-print-route .proposal-print-document {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 auto !important;
+    overflow: visible !important;
+    background: white !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

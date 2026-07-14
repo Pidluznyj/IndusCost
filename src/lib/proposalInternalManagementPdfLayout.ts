@@ -53,10 +53,44 @@ type PdfLine =
   | { type: "kv"; label: string; value: string }
   | { type: "table"; headers: string[]; rows: string[][]; colWidths?: number[] };
 
-const PAGE_W = 842; // landscape A4
-const PAGE_H = 595;
-const MARGIN = 36;
-const CONTENT_W = PAGE_W - MARGIN * 2;
+export type PdfPageOrientation = "portrait" | "landscape";
+
+type PageGeometry = {
+  pageW: number;
+  pageH: number;
+  margin: number;
+  contentW: number;
+  textMaxChars: number;
+  pageBudget: number;
+};
+
+function geometryFor(orientation: PdfPageOrientation): PageGeometry {
+  const margin = 36;
+  if (orientation === "portrait") {
+    // A4 portrait (de pé): 595 x 842 pt
+    const pageW = 595;
+    const pageH = 842;
+    return {
+      pageW,
+      pageH,
+      margin,
+      contentW: pageW - margin * 2,
+      textMaxChars: 78,
+      pageBudget: 52,
+    };
+  }
+  // A4 landscape (deitada): 842 x 595 pt
+  const pageW = 842;
+  const pageH = 595;
+  return {
+    pageW,
+    pageH,
+    margin,
+    contentW: pageW - margin * 2,
+    textMaxChars: 120,
+    pageBudget: 38,
+  };
+}
 
 function wrapText(text: string, maxChars: number): string[] {
   const raw = text.replace(/\s+/g, " ").trim();
@@ -78,13 +112,19 @@ function wrapText(text: string, maxChars: number): string[] {
   return lines.length ? lines : [""];
 }
 
-function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number): string {
+function buildPageContent(
+  lines: PdfLine[],
+  pageIndex: number,
+  pageCount: number,
+  geo: PageGeometry
+): string {
+  const { pageW, pageH, margin, contentW, textMaxChars } = geo;
   const ops: string[] = ["BT"];
-  let y = PAGE_H - MARGIN;
+  let y = pageH - margin;
   const lineH = 12;
 
   const ensureSpace = (need: number) => {
-    if (y - need < MARGIN + 20) {
+    if (y - need < margin + 20) {
       return false;
     }
     return true;
@@ -107,7 +147,7 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
     if (line.type === "rule") {
       ops.push("ET");
       ops.push("0.7 w");
-      ops.push(`${MARGIN} ${y} m ${PAGE_W - MARGIN} ${y} l S`);
+      ops.push(`${margin} ${y} m ${pageW - margin} ${y} l S`);
       ops.push("BT");
       y -= 10;
       continue;
@@ -116,33 +156,33 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
       if (!ensureSpace(28)) break;
       ops.push("ET");
       ops.push("0.85 0.88 0.92 rg");
-      ops.push(`${MARGIN} ${y - 18} ${CONTENT_W} 22 re f`);
+      ops.push(`${margin} ${y - 18} ${contentW} 22 re f`);
       ops.push("0 0 0 rg");
       ops.push("BT");
-      moveTo(MARGIN + 8, y - 12);
+      moveTo(margin + 8, y - 12);
       show(line.text, 10);
       y -= 28;
       continue;
     }
     if (line.type === "title") {
       if (!ensureSpace(22)) break;
-      moveTo(MARGIN, y);
+      moveTo(margin, y);
       show(line.text, 16);
       y -= 20;
       continue;
     }
     if (line.type === "subtitle") {
       if (!ensureSpace(16)) break;
-      moveTo(MARGIN, y);
+      moveTo(margin, y);
       show(line.text, 11);
       y -= 14;
       continue;
     }
     if (line.type === "text") {
-      const wrapped = wrapText(line.text, 120);
+      const wrapped = wrapText(line.text, textMaxChars);
       for (const w of wrapped) {
         if (!ensureSpace(lineH)) break;
-        moveTo(MARGIN, y);
+        moveTo(margin, y);
         show(w, 9);
         y -= lineH;
       }
@@ -150,7 +190,7 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
     }
     if (line.type === "kv") {
       if (!ensureSpace(lineH)) break;
-      moveTo(MARGIN, y);
+      moveTo(margin, y);
       show(`${line.label}: ${line.value}`, 9);
       y -= lineH;
       continue;
@@ -160,19 +200,19 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
       const widths =
         line.colWidths && line.colWidths.length === cols
           ? line.colWidths
-          : Array.from({ length: cols }, () => CONTENT_W / cols);
+          : Array.from({ length: cols }, () => contentW / cols);
       const rowH = 14;
       const drawRow = (cells: string[], header: boolean) => {
         if (!ensureSpace(rowH + 2)) return false;
         ops.push("ET");
         if (header) {
           ops.push("0.82 0.86 0.92 rg");
-          ops.push(`${MARGIN} ${y - rowH + 3} ${CONTENT_W} ${rowH} re f`);
+          ops.push(`${margin} ${y - rowH + 3} ${contentW} ${rowH} re f`);
           ops.push("0 0 0 rg");
         }
         ops.push("0.6 w");
-        ops.push(`${MARGIN} ${y - rowH + 3} ${CONTENT_W} ${rowH} re S`);
-        let x = MARGIN;
+        ops.push(`${margin} ${y - rowH + 3} ${contentW} ${rowH} re S`);
+        let x = margin;
         for (let i = 0; i < cols; i += 1) {
           if (i > 0) {
             ops.push(`${x} ${y - rowH + 3} m ${x} ${y + 3} l S`);
@@ -180,7 +220,7 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
           x += widths[i]!;
         }
         ops.push("BT");
-        x = MARGIN;
+        x = margin;
         for (let i = 0; i < cols; i += 1) {
           const cell = String(cells[i] ?? "").slice(0, Math.max(4, Math.floor(widths[i]! / 5.2)));
           moveTo(x + 3, y - 7);
@@ -198,22 +238,22 @@ function buildPageContent(lines: PdfLine[], pageIndex: number, pageCount: number
     }
   }
 
-  moveTo(MARGIN, MARGIN - 8);
+  moveTo(margin, margin - 8);
   show(`Pagina ${pageIndex + 1} de ${pageCount}`, 8);
   ops.push("ET");
   return ops.join("\n");
 }
 
-function paginate(lines: PdfLine[]): PdfLine[][] {
+function paginate(lines: PdfLine[], pageBudget: number): PdfLine[][] {
   // Heurística simples: quebra por blocos table/title para não estourar uma página.
   const pages: PdfLine[][] = [];
   let current: PdfLine[] = [];
-  let budget = 38;
+  let budget = pageBudget;
 
   const flush = () => {
     if (current.length) pages.push(current);
     current = [];
-    budget = 38;
+    budget = pageBudget;
   };
 
   for (const line of lines) {
@@ -229,28 +269,28 @@ function paginate(lines: PdfLine[]): PdfLine[][] {
   return pages.length ? pages : [[]];
 }
 
-export function buildFormattedLandscapePdf(input: {
+function buildFormattedPdf(input: {
   title: string;
   lines: PdfLine[];
+  orientation: PdfPageOrientation;
 }): Buffer {
-  const pages = paginate(input.lines);
+  const geo = geometryFor(input.orientation);
+  const pages = paginate(input.lines, geo.pageBudget);
   const contentStreams = pages.map((pageLines, idx) =>
-    buildPageContent(pageLines, idx, pages.length)
+    buildPageContent(pageLines, idx, pages.length, geo)
   );
 
   const objects: string[] = [];
   objects.push("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
 
   const kids: string[] = [];
-  const pageObjectNumbers: number[] = [];
   let nextObj = 3;
   // We'll assign: 2=Pages, then for each page: pageObj, contentObj, and shared font at end
 
   const fontObjNum = 3 + pages.length * 2;
   for (let i = 0; i < pages.length; i += 1) {
     const pageObj = nextObj++;
-    const contentObj = nextObj++;
-    pageObjectNumbers.push(pageObj, contentObj);
+    nextObj++;
     kids.push(`${pageObj} 0 R`);
   }
 
@@ -264,7 +304,7 @@ export function buildFormattedLandscapePdf(input: {
     const stream = contentStreams[i]!;
     const streamLength = Buffer.byteLength(stream, "latin1");
     objects.push(
-      `${pageObj} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${contentObj} 0 R /Resources << /Font << /F1 ${fontObjNum} 0 R >> >> >>\nendobj\n`
+      `${pageObj} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${geo.pageW} ${geo.pageH}] /Contents ${contentObj} 0 R /Resources << /Font << /F1 ${fontObjNum} 0 R >> >> >>\nendobj\n`
     );
     objects.push(
       `${contentObj} 0 obj\n<< /Length ${streamLength} >>\nstream\n${stream}\nendstream\nendobj\n`
@@ -290,6 +330,22 @@ export function buildFormattedLandscapePdf(input: {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
   pdf += `startxref\n${xrefStart}\n%%EOF`;
   return Buffer.from(pdf, "latin1");
+}
+
+/** A4 paisagem (842 x 595) — uso legado (relatório gerencial interno). */
+export function buildFormattedLandscapePdf(input: {
+  title: string;
+  lines: PdfLine[];
+}): Buffer {
+  return buildFormattedPdf({ ...input, orientation: "landscape" });
+}
+
+/** A4 retrato (595 x 842) — folha de pé. */
+export function buildFormattedPortraitPdf(input: {
+  title: string;
+  lines: PdfLine[];
+}): Buffer {
+  return buildFormattedPdf({ ...input, orientation: "portrait" });
 }
 
 export type { PdfLine };

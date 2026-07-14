@@ -42,7 +42,7 @@ export function SupplierServiceTerminationPrintDocument({
   return (
     <PrintDocumentShell
       rootId="supplier-service-termination-print-root"
-      className="sales-order-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[1180px] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none"
+      className="service-termination-print-document sales-order-print-document proposal-compact-document proposal-print-sheet mx-auto w-full max-w-[210mm] border border-slate-300 bg-white text-slate-800 shadow-sm print:max-w-none print:border-0 print:shadow-none"
     >
       <div className="proposal-print-document-inner p-4 text-xs leading-snug md:p-5 md:text-[13px] print:p-3">
         <h1 className="sr-only">

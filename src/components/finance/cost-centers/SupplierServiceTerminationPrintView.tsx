@@ -12,8 +12,10 @@ import {
 import { SupplierServiceTerminationPrintDocument } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintDocument";
 import { getFinanceSectionPath } from "@/src/lib/financeNavigation";
 import "@/src/sales-order-print.css";
+import "@/src/components/finance/cost-centers/supplier-service-termination-print.css";
 
-const ROUTE_BODY_CLASS = "sales-order-print-route";
+/** Classe própria — CSS da rota força @page A4 portrait sobre CSS global landscape. */
+const ROUTE_BODY_CLASS = "service-termination-print-route";
 
 export function SupplierServiceTerminationPrintView() {
   const { supplierId, id } = useParams<{ supplierId: string; id: string }>();
@@ -24,6 +26,17 @@ export function SupplierServiceTerminationPrintView() {
   const [error, setError] = useState<string | null>(null);
 
   usePrintRouteBodyClass(ROUTE_BODY_CLASS);
+
+  // Garante A4 retrato nesta rota mesmo com @page landscape de outros CSS globais.
+  useEffect(() => {
+    const style = document.createElement("style");
+    style.setAttribute("data-service-termination-print-page", "1");
+    style.textContent = "@page { size: A4 portrait; margin: 8mm; }";
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, []);
 
   const model = useMemo(
     () => (dto ? buildServiceTerminationPrintModel(dto) : null),
@@ -91,8 +104,8 @@ export function SupplierServiceTerminationPrintView() {
   const emitterName = dto?.finalizedByName || dto?.createdByName || null;
 
   return (
-    <div className="sales-order-print-route-page sales-order-print-page proposal-print-page min-h-screen bg-slate-100 px-4 py-4 md:px-6 md:py-6 print:bg-white print:p-0">
-      <div className="proposal-print-no-print print-no-print mx-auto mb-4 flex w-full max-w-[1180px] flex-wrap items-center justify-between gap-3">
+    <div className="service-termination-print-route-page service-termination-print-page sales-order-print-route-page sales-order-print-page proposal-print-page min-h-screen bg-slate-100 px-4 py-4 md:px-6 md:py-6 print:bg-white print:p-0">
+      <div className="proposal-print-no-print print-no-print mx-auto mb-4 flex w-full max-w-[210mm] flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => navigate(getFinanceSectionPath("suppliers"))}
@@ -113,7 +126,7 @@ export function SupplierServiceTerminationPrintView() {
         </button>
       </div>
 
-      <div className="proposal-print-scroll mx-auto w-full max-w-[1180px] overflow-x-hidden print:overflow-visible">
+      <div className="proposal-print-scroll mx-auto w-full max-w-[210mm] overflow-x-hidden print:overflow-visible">
         {loading ? (
           <div className="flex min-h-[40vh] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white py-24">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />

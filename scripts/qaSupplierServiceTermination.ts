@@ -111,7 +111,7 @@ section("7. PDF/XLSX com identificação, cálculo, comissão e total");
 {
   const serverSrc = read("src/lib/suppliers/supplierServiceTermination.server.ts");
   assert.match(serverSrc, /buildServiceTerminationPdfDocumentLines/);
-  assert.match(serverSrc, /buildFormattedLandscapePdf/);
+  assert.match(serverSrc, /buildFormattedPortraitPdf/);
   assert.match(serverSrc, /buildServiceTerminationPrintModel/);
   assert.match(serverSrc, /TOTAL A PAGAR|Totalizacao|Totaliza/);
   assert.match(serverSrc, /gerencial\/contratual|gerencial\/contratual/i);

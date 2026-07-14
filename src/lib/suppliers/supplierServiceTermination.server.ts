@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  buildFormattedLandscapePdf,
+  buildFormattedPortraitPdf,
   formatPdfMoneyBr,
   formatPdfNumberBr,
   type PdfLine,
@@ -676,7 +676,8 @@ export function buildServiceTerminationPdfDocumentLines(
     {
       type: "table",
       headers: ["Campo", "Valor"],
-      colWidths: [420, 350],
+      // A4 retrato: contentW ≈ 523 pt
+      colWidths: [300, 223],
       rows: [
         ["Valor mensal", formatPdfMoneyBr(model.monthlyServiceAmount)],
         ["Dias medios trabalhados/mes", formatPdfNumberBr(model.averageWorkedDaysPerMonth, 2)],
@@ -693,7 +694,7 @@ export function buildServiceTerminationPdfDocumentLines(
     {
       type: "table",
       headers: ["Campo", "Valor"],
-      colWidths: [420, 350],
+      colWidths: [300, 223],
       rows: [
         ["Meses trabalhados", formatPdfNumberBr(model.workedMonths, 2)],
         ["Dias trabalhados", formatPdfNumberBr(model.workedDays, 0)],
@@ -713,7 +714,7 @@ export function buildServiceTerminationPdfDocumentLines(
     lines.push({
       type: "table",
       headers: ["Pedido", "Referencia", "Pessoa", "Fonte", "Comissao"],
-      colWidths: [110, 220, 180, 120, 140],
+      colWidths: [72, 140, 110, 80, 121],
       rows: model.commissionRows.map((r) => [
         r.orderCode,
         r.description,
@@ -733,7 +734,7 @@ export function buildServiceTerminationPdfDocumentLines(
   lines.push({
     type: "table",
     headers: ["Campo", "Valor"],
-    colWidths: [420, 350],
+    colWidths: [300, 223],
     rows: [
       ["Multa sem aviso de 30 dias", formatPdfMoneyBr(model.noticePenaltyAmount)],
       ["Outros creditos", formatPdfMoneyBr(model.otherCredits)],
@@ -746,7 +747,7 @@ export function buildServiceTerminationPdfDocumentLines(
   lines.push({
     type: "table",
     headers: ["Verba", "Valor"],
-    colWidths: [420, 350],
+    colWidths: [300, 223],
     rows: model.totalizationRows.map((r) => [r.label, formatPdfMoneyBr(r.value)]),
   });
   lines.push({ type: "spacer" });
@@ -788,7 +789,7 @@ export async function exportSupplierServiceTerminationPdf(input: {
   userName?: string | null;
 }): Promise<{ buffer: Buffer; filename: string }> {
   const dto = await getSupplierServiceTermination(input.supplierId, input.id);
-  const buffer = buildFormattedLandscapePdf({
+  const buffer = buildFormattedPortraitPdf({
     title: "Encerramento de Prestacao de Servico",
     lines: buildServiceTerminationPdfDocumentLines(dto),
   });
