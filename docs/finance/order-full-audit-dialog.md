@@ -123,22 +123,78 @@ Ordem de exibição na barra de tabs (`ORDER_FULL_AUDIT_TABS`):
   `NFE_WITHOUT_CR`, `NFE_EXTRA_ITEM`, `NFE_PRICE_MISMATCH`,
   `NFE_ALLOCATED_BY_HEADER_ONLY`.
 
-### 2.7 Financeiro (Títulos e Baixas)
+### 2.7 Financeiro (Títulos, Baixas e Recebíveis Planejados)
 
-- **9 top cards** (Total em títulos, Total aberto, Vencido, Recebido, Parcial
-  recebido, Qtd títulos, Próximo vencimento, Maior título, Dias em atraso max).
-- **Tabela de títulos** (23 colunas) + **tabela de baixas** (11 colunas com
-  juros/desconto/multa/histórico/usuário).
+Duas seções lado a lado, com o **CR real prevalecendo sempre sobre o
+planejado**:
+
+**A. Títulos reais de Contas a Receber** (origem: `NomusAccountsReceivable`)
+- **Tabela** — 24 colunas (Tipo · Referência · IDs · NF · Parcela · Emissão ·
+  Vencimento · Competência · Valores · Status · Dias vencidos · Condição/Forma
+  · Cliente/Empresa · Observação · Origem vínculo · Ações).
 - **Botão Copiar referência + Abrir no Contas a Receber** — deep-link para
-  `/finance/accounts-receivable?search=<ref>` (o
-  `FinanceAccountsReceivableTitlesTab` lê `?search=` via `useSearchParams`).
-- **10 divergências oficiais**: `RECEIVABLE_OPEN`, `RECEIVABLE_OVERDUE`,
-  `RECEIVABLE_GREATER_THAN_ACTIVE_ORDER`,
-  `RECEIVABLE_LESS_THAN_DOCUMENTED_VALUE`,
-  `RECEIVABLE_DUPLICATED_BY_ITEM_FACTS`, `RECEIVABLE_WITHOUT_NFE`,
-  `RECEIVABLE_WITHOUT_DUE_DATE`, `PAYMENT_TERM_MISSING`,
-  `RECEIPT_GREATER_THAN_RECEIVABLE`,
-  `PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE`.
+  `/finance/accounts-receivable?search=<ref>`.
+- **Empty state** aponta para a seção de planejados quando existirem parcelas
+  previstas: "Nenhum título real … Existe(m) recebível(is) planejado(s) pelo
+  Pedido de Venda — ver seção abaixo".
+
+**B. Recebíveis planejados pelo pedido** (fallback quando não há CR real)
+- Origem: motor único `resolveSalesOrderListPaymentSummary`
+  (`salesOrderListPaymentSchedule.ts`) — o mesmo usado pela tela Comercial >
+  Pedidos de venda e pelo Fluxo de Caixa para exibir "Pedido PD XXXXX -
+  Parcela N".
+- **KPIs** (Total planejado, Aberto planejado, Vencido planejado, Parcelas,
+  Próximo vencimento).
+- **Tabela** — 15 colunas (Tipo · Referência · Documento/NF · Parcela ·
+  Vencimento · Valor previsto · Aberto previsto · Recebido · Status ·
+  Condição · Forma · NF emitida · Origem · Observação · Ação).
+- Para cada linha: `NF emitida = Não`, `Recebido = R$ 0,00`, `Origem =
+  "Pedido de Venda / Condição de pagamento"`, ação abre `/finance/accounts-receivable?search=<orderCode>`.
+
+**Cards do topo (padrão executivo IndusCost, mesmo design system aplicado ao
+relatório Comercial de Pedidos):**
+Total financeiro · CR real · Planejado pelo pedido · Aberto (real +
+planejado) · Total vencido (CR) · Total recebido · Parcial recebido · Próximo
+vencimento · Títulos/parcelas.
+
+**Deduplicação:** ao emitir o payload, cada parcela planejada é comparada com
+os CRs reais por (dueDate ± 3 dias) + (valor ± R$ 0,01). Quando um CR real
+cobre a parcela, o planejado é marcado `replacedByRealCr=true` e sai da
+tabela oficial; um alerta informativo `PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR`
+é emitido para auditoria do dedup.
+
+**13 divergências oficiais**: as 10 anteriores (`RECEIVABLE_*`, `RECEIPT_*`,
+`PAYMENT_TERM_MISSING`) mais três novas:
+- `PLANNED_RECEIVABLE_WITHOUT_REAL_CR` (warning) — pedido tem previsão pela
+  condição de pagamento mas ainda não gerou NF/CR real.
+- `PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR` (critical) — parcela planejada
+  já venceu e continua sem CR real emitido.
+- `PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR` (info) — informativo do dedup.
+
+**Regras oficiais preservadas:**
+1. CR real do Nomus é fonte única de verdade financeira.
+2. Planejado nunca altera `NomusAccountsReceivable`.
+3. `receivableTotalValue` no summary continua contando **só CR real**.
+4. Pedido cancelado + planejado é descartado antes de emitir alerta.
+5. Alertas de planejado sempre marcam `linkedTab="financial"`.
+
+### 2.7.1 Financeiro: CR real × Recebíveis planejados
+
+- **CR real** vem de Contas a Receber/Nomus (tabela `NomusAccountsReceivable`
+  vinculada por `sourceInvoiceId` → NF-e do pedido).
+- **Recebível planejado** vem do Pedido de Venda + condição de pagamento
+  (`resolveSalesOrderListPaymentSummary`).
+- **CR real prevalece.** Quando existe CR real para a mesma parcela (mesmo
+  valor + vencimento próximo), o planejado é ocultado da tabela oficial e
+  aparece apenas na Auditoria Técnica (para consulta de auditoria).
+- **Planejado não altera Contas a Receber oficial.** É apenas leitura /
+  auditoria — nunca é gravado.
+- **Pedido sem NF pode ter financeiro planejado.** É o caso do PD 02740: o
+  Fluxo de Caixa já mostra "Pedido PD 02740 - Parcela 1 - 20/10/2026 - R$
+  175.600,00" a partir da condição de pagamento; a aba Financeiro passa a
+  espelhar esse mesmo forecast.
+- **A aba mostra ambos separados**, com badge "Tipo" (`CR real` vs
+  `Planejado pelo pedido`) e KPIs cruzados.
 
 ### 2.8 Entrega / Produção / Frete
 

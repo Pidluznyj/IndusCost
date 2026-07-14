@@ -1290,15 +1290,15 @@ function main(): boolean {
   );
 
   for (const kpi of [
-    "Total em títulos",
-    "Total aberto",
-    "Total vencido",
+    "Total financeiro",
+    "CR real",
+    "Planejado pelo pedido",
+    "Aberto (real + planejado)",
+    "Total vencido (CR)",
     "Total recebido",
     "Parcial recebido",
-    "Quantidade de títulos",
     "Próximo vencimento",
-    "Maior título",
-    "Dias em atraso (max)",
+    "Títulos/parcelas",
   ]) {
     if (!dlg.includes(kpi)) {
       return fail("financial:cards", `Card obrigatório ausente: "${kpi}"`);
@@ -1306,10 +1306,36 @@ function main(): boolean {
   }
   ok(
     "financial:cards",
-    "9 cards do topo (total × aberto × vencido × recebido × parcial × qtd × próximo × maior × dias)"
+    "9 cards do topo (total financeiro · CR real · planejado · aberto · vencido · recebido · parcial · próximo · qtd)"
+  );
+
+  // Nova seção "Recebíveis planejados pelo pedido" + KPIs + coluna Tipo.
+  for (const marker of [
+    "order-full-audit-financial-section-planned",
+    "order-full-audit-financial-planned-table",
+    "Recebíveis planejados pelo pedido",
+    "Total planejado",
+    "Aberto planejado",
+    "Vencido planejado",
+    'type="PLANNED"',
+    'type="REAL_CR"',
+    "Planejado pelo pedido",
+    "CR real",
+  ]) {
+    if (!dlg.includes(marker)) {
+      return fail(
+        "financial:planned-section",
+        `Marca da seção de recebíveis planejados ausente: "${marker}"`
+      );
+    }
+  }
+  ok(
+    "financial:planned-section",
+    "seção Recebíveis planejados pelo pedido + KPIs + coluna Tipo + badges"
   );
 
   const requiredTitleCols = [
+    "Tipo",
     "Referência",
     "ID interno",
     "ID externo",
@@ -1344,7 +1370,7 @@ function main(): boolean {
   }
   ok(
     "financial:title-cols",
-    `tabela de títulos com ${requiredTitleCols.length} colunas oficiais`
+    `tabela de títulos com ${requiredTitleCols.length} colunas oficiais (com coluna Tipo)`
   );
 
   const requiredReceiptCols = [
@@ -1384,6 +1410,9 @@ function main(): boolean {
     "PAYMENT_TERM_MISSING",
     "RECEIPT_GREATER_THAN_RECEIVABLE",
     "PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE",
+    "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
+    "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
+    "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
   ];
   for (const code of requiredFinAlertCodes) {
     if (!svc.includes(code)) {
@@ -1401,7 +1430,7 @@ function main(): boolean {
   }
   ok(
     "financial:alert-codes",
-    "10 códigos oficiais da aba Financeiro emitidos no service + UI"
+    "13 códigos oficiais da aba Financeiro emitidos no service + UI (inclui PLANNED_RECEIVABLE_*)"
   );
 
   // Legado CR_VENCIDO renomeado.
@@ -2447,7 +2476,7 @@ function main(): boolean {
 /*  Só rodam se o Prisma estiver conectável no ambiente.                */
 /* ------------------------------------------------------------------ */
 
-const DYNAMIC_ORDERS = ["PD 02339", "PD 02207", "PD 02534"] as const;
+const DYNAMIC_ORDERS = ["PD 02339", "PD 02207", "PD 02534", "PD 02740"] as const;
 
 async function runDynamicChecks(): Promise<void> {
   console.log("\n=== dynamic (best-effort) ===");
@@ -2608,6 +2637,92 @@ async function runDynamicChecks(): Promise<void> {
         }
         break;
       }
+      case "PD 02740": {
+        // Sem NF/CR real: aba Financeiro deve listar recebíveis PLANEJADOS.
+        if (payload.receivables.length === 0) {
+          if (payload.plannedReceivables.length > 0) {
+            dyOk(
+              `dynamic:${orderCode}:planned-listed`,
+              `sem CR real → ${payload.plannedReceivables.length} recebível(is) planejado(s) listado(s)`
+            );
+          } else {
+            dyFail(
+              `dynamic:${orderCode}:planned-listed`,
+              "PD 02740 sem CR real e sem parcelas planejadas — aba Financeiro ficaria zerada"
+            );
+          }
+        } else {
+          dyWarn(
+            `dynamic:${orderCode}:planned-listed`,
+            `PD 02740 já possui CR real (${payload.receivables.length}) — cenário planned-only não confirmado`
+          );
+        }
+
+        // Verifica que o valor total planejado casa com o total ativo do pedido
+        // (ou pelo menos é > 0). Aceita tolerância de 1% para arredondamentos.
+        const expectedActive = s.activeOrderValue;
+        const totalPlanned = payload.plannedReceivablesTotal.totalExpected;
+        if (totalPlanned > 0.009) {
+          const diff = Math.abs(expectedActive - totalPlanned);
+          if (diff <= Math.max(1, expectedActive * 0.02)) {
+            dyOk(
+              `dynamic:${orderCode}:planned-amount`,
+              `total planejado (${totalPlanned.toFixed(2)}) ≈ valor ativo (${expectedActive.toFixed(2)})`
+            );
+          } else {
+            dyWarn(
+              `dynamic:${orderCode}:planned-amount`,
+              `total planejado ${totalPlanned.toFixed(2)} vs ativo ${expectedActive.toFixed(2)} — divergência ${diff.toFixed(2)}`
+            );
+          }
+        }
+
+        // Confere emissão do alerta oficial quando ficar planejado.
+        const hasPlannedAlert = payload.alerts.some(
+          (a) =>
+            a.code === "PLANNED_RECEIVABLE_WITHOUT_REAL_CR" ||
+            a.code === "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR"
+        );
+        if (payload.receivables.length === 0 && payload.plannedReceivables.length > 0) {
+          if (hasPlannedAlert) {
+            dyOk(
+              `dynamic:${orderCode}:planned-alert`,
+              "alerta PLANNED_RECEIVABLE_WITHOUT_REAL_CR emitido"
+            );
+          } else {
+            dyFail(
+              `dynamic:${orderCode}:planned-alert`,
+              "sem alerta PLANNED_RECEIVABLE_WITHOUT_REAL_CR"
+            );
+          }
+        }
+        break;
+      }
+    }
+
+    /* --- Contrato geral do bloco financeiro: planned ⊥ real (dedup) --- */
+    const realDueSet = new Set(
+      payload.receivables
+        .filter((r) => r.amountReceivable > 0.009)
+        .map((r) => `${(r.dueDate ?? "").slice(0, 10)}:${r.amountReceivable.toFixed(2)}`)
+    );
+    const overlapPlanned = payload.plannedReceivables.filter(
+      (p) =>
+        !p.replacedByRealCr &&
+        realDueSet.has(
+          `${(p.dueDate ?? "").slice(0, 10)}:${p.expectedAmount.toFixed(2)}`
+        )
+    );
+    if (overlapPlanned.length === 0) {
+      dyOk(
+        `dynamic:${orderCode}:planned-vs-real-dedup`,
+        "sem overlap entre planejados e CR real (dedup ok)"
+      );
+    } else {
+      dyFail(
+        `dynamic:${orderCode}:planned-vs-real-dedup`,
+        `${overlapPlanned.length} parcelas planejadas deveriam ter sido dedup'd por CR real`
+      );
     }
 
     /* --- Contratos gerais válidos p/ toda ordem --- */

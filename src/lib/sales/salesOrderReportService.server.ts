@@ -110,7 +110,9 @@ type OrderRow = {
         id: string;
         companyName: string;
         tradeName: string | null;
-        cnpj: string | null;
+        // Customer.taxId no schema Prisma é o CNPJ/CPF do cliente. Não existe
+        // coluna `cnpj` no model — usar `taxId` aqui evita 500 no findMany.
+        taxId: string | null;
       }
     | null;
 };
@@ -157,7 +159,10 @@ export async function loadSalesOrderReportPayload(
       paymentMethod: true,
       nomusRawResponse: true,
       Customer: {
-        select: { id: true, companyName: true, tradeName: true, cnpj: true },
+        // Model `Customer` expõe o CNPJ como `taxId` (schema.prisma). Selecionar
+        // `cnpj` aqui gerava `Invalid prisma.salesOrder.findMany()` → 500 no
+        // endpoint /api/sales-orders/report.
+        select: { id: true, companyName: true, tradeName: true, taxId: true },
       },
     },
   })) as OrderRow[];

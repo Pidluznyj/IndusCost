@@ -518,6 +518,45 @@ export type OrderFullAuditReceipt = {
   userOrSystem: string | null;
 };
 
+/**
+ * Recebível **planejado** do Pedido de Venda (forecast pela condição de pagamento).
+ * CR real sempre prevalece — quando `replacedByRealCr === true`, a linha é
+ * mantida na aba Auditoria Técnica mas oculta da tabela oficial de planejados.
+ */
+export type OrderFullAuditPlannedReceivable = {
+  key: string;
+  orderCode: string;
+  salesOrderId: string;
+  installmentNumber: number;
+  totalInstallments: number;
+  reference: string;
+  dueDate: string | null;
+  expectedAmount: number;
+  openAmount: number;
+  statusLabel: "A vencer" | "Vence hoje" | "Vencido" | "Não informado";
+  paymentConditionLabel: string;
+  paymentMethodLabel: string | null;
+  origin: string;
+  note: string;
+  replacedByRealCr: boolean;
+  replacedByReceivableExternalId: number | null;
+};
+
+export type OrderFullAuditPlannedReceivablesTotal = {
+  totalCount: number;
+  totalExpected: number;
+  openExpected: number;
+  overdueExpected: number;
+  overdueCount: number;
+  dueTodayExpected: number;
+  dueTodayCount: number;
+  upcomingCount: number;
+  nextDueDate: string | null;
+  replacedCount: number;
+  replacedAmount: number;
+  netPlannedOpen: number;
+};
+
 export type OrderFullAuditFreightBlock = {
   freightCondition: string | null;
   freightAmount: number | null;
@@ -897,6 +936,9 @@ export type OrderFullAuditPayload = {
     maxAmount: number;
     totalCount: number;
   };
+  /** Recebíveis planejados pela condição de pagamento (fallback quando não há CR real). */
+  plannedReceivables: OrderFullAuditPlannedReceivable[];
+  plannedReceivablesTotal: OrderFullAuditPlannedReceivablesTotal;
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
   nfeItems: OrderFullAuditNfeItem[];

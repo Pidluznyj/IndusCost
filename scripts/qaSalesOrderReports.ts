@@ -263,6 +263,50 @@ function checkBackendService() {
   } else {
     ok("svc:no-proposal", "Proposal não é fonte oficial (correto)");
   }
+
+  // Regressão histórica (14/07/2026): o `select` do model `Customer` pedia
+  // `cnpj: true` — coluna que NÃO existe no schema (é `taxId`). Isso gerava
+  // "Invalid prisma.salesOrder.findMany()" → 500 no endpoint /report.
+  // Este check estático impede reintrodução da regressão.
+  const svcNoComments = svc
+    // remove comentários de bloco e linha ANTES de aplicar regex — assim aceita
+    // notas explicativas dentro do objeto sem falso negativo.
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const customerSelectMatches = [
+    ...svcNoComments.matchAll(/Customer\s*:\s*\{\s*select\s*:\s*\{([^}]+)\}/g),
+  ];
+  if (customerSelectMatches.length === 0) {
+    fail("svc:customer-select", "não achei nenhum Customer.select — layout mudou?");
+  } else {
+    const offenders = customerSelectMatches
+      .map((match) => match[1] ?? "")
+      .filter((body) => /\bcnpj\s*:/.test(body));
+    if (offenders.length > 0) {
+      fail(
+        "svc:no-cnpj-select-on-customer",
+        `Customer.select ainda pede 'cnpj' (campo inexistente no schema — usar 'taxId'): ${offenders
+          .map((body) => body.trim().slice(0, 60))
+          .join(" | ")}`
+      );
+    } else {
+      ok(
+        "svc:no-cnpj-select-on-customer",
+        "Customer.select não pede 'cnpj' (usa 'taxId' — regressão histórica bloqueada)"
+      );
+    }
+    const usesTaxId = customerSelectMatches.some((match) =>
+      /\btaxId\s*:\s*true/.test(match[1] ?? "")
+    );
+    if (usesTaxId) {
+      ok("svc:taxId-selected", "Customer.select expõe 'taxId' (CNPJ/CPF oficial)");
+    } else {
+      fail(
+        "svc:taxId-selected",
+        "Customer.select não expõe 'taxId' — CNPJ ficará vazio nas rows"
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

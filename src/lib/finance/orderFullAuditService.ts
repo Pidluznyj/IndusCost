@@ -25,6 +25,8 @@ import {
 } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
 import { loadManualCommercialOwnersForCustomers } from "@/src/lib/crmCustomerCommercialOwner.js";
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
+import type { SalesOrderListReceivableInput } from "@/src/lib/salesOrderListPaymentSchedule.js";
+import { buildSalesOrderPlannedReceivables } from "./salesOrderPlannedReceivables.js";
 
 const MONEY_TOLERANCE = 0.01;
 
@@ -600,6 +602,47 @@ export type OrderFullAuditReceipt = {
   userOrSystem: string | null;
 };
 
+/**
+ * Recebível **planejado** do Pedido de Venda — surge quando o pedido ainda não
+ * tem NF/CR real, mas a condição de pagamento define parcelas previstas.
+ *
+ * CR real sempre prevalece: quando `replacedByRealCr === true`, a linha é
+ * exibida na aba Auditoria Técnica / oculta na tabela oficial de planejados.
+ */
+export type OrderFullAuditPlannedReceivable = {
+  key: string;
+  orderCode: string;
+  salesOrderId: string;
+  installmentNumber: number;
+  totalInstallments: number;
+  reference: string;
+  dueDate: string | null;
+  expectedAmount: number;
+  openAmount: number;
+  statusLabel: "A vencer" | "Vence hoje" | "Vencido" | "Não informado";
+  paymentConditionLabel: string;
+  paymentMethodLabel: string | null;
+  origin: string;
+  note: string;
+  replacedByRealCr: boolean;
+  replacedByReceivableExternalId: number | null;
+};
+
+export type OrderFullAuditPlannedReceivablesTotal = {
+  totalCount: number;
+  totalExpected: number;
+  openExpected: number;
+  overdueExpected: number;
+  overdueCount: number;
+  dueTodayExpected: number;
+  dueTodayCount: number;
+  upcomingCount: number;
+  nextDueDate: string | null;
+  replacedCount: number;
+  replacedAmount: number;
+  netPlannedOpen: number;
+};
+
 export type OrderFullAuditFreightBlock = {
   freightCondition: string | null;
   freightAmount: number | null;
@@ -1096,6 +1139,9 @@ export type OrderFullAuditPayload = {
     maxAmount: number;
     totalCount: number;
   };
+  /** Recebíveis planejados pela condição de pagamento (fallback quando não há CR real). */
+  plannedReceivables: OrderFullAuditPlannedReceivable[];
+  plannedReceivablesTotal: OrderFullAuditPlannedReceivablesTotal;
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
   nfes: OrderFullAuditNfe[];
@@ -2445,6 +2491,39 @@ export async function loadOrderFullAudit(
 
   const receivablesTotal = summarizeReceivables(dedupReceivables);
 
+  /* -------------------------------------------------------------------- */
+  /*  Bloco 8b — Recebíveis planejados (forecast pela condição de pagto)  */
+  /*  Regra oficial: CR real prevalece; forecast só complementa/apoia.     */
+  /* -------------------------------------------------------------------- */
+  const realReceivablesForForecast: SalesOrderListReceivableInput[] =
+    dedupReceivables.map((r) => ({
+      externalId: r.receivableExternalId,
+      sourceInvoiceId: r.sourceInvoiceId,
+      sourceInvoiceNumber: r.sourceInvoiceNumber,
+      dueDate: r.dueDate ? new Date(r.dueDate) : null,
+      amountReceivable: r.amountReceivable ?? 0,
+      amountReceived: r.amountReceived ?? 0,
+      balanceReceivable: r.balanceReceivable ?? 0,
+      settlementDate: r.settlementDate ? new Date(r.settlementDate) : null,
+    }));
+
+  const plannedForecast = buildSalesOrderPlannedReceivables({
+    salesOrderId,
+    orderCode: order.orderCode ?? "SO",
+    issueDate: order.issueDate,
+    totalActiveValue:
+      decimalToNumber(order.totalNetValue) ?? decimalToNumber(order.totalGrossValue) ?? 0,
+    paymentTerms: order.paymentTerms,
+    paymentMethod: order.paymentMethod,
+    nomusRawResponse: order.nomusRawResponse,
+    realReceivables: realReceivablesForForecast,
+    nfeDocuments: [...nfeMap.values()]
+      .map((nfe) => nfe.numero)
+      .filter((num): num is string => Boolean(num?.trim())),
+  });
+  const plannedReceivables = plannedForecast.planned;
+  const plannedReceivablesTotal = plannedForecast.totals;
+
   // Summary base (alertCount preenchido logo abaixo após buildAlerts).
   const summary = buildSummary({
     order,
@@ -2534,6 +2613,7 @@ export async function loadOrderFullAudit(
     facts,
     summary,
     receivables: dedupReceivables,
+    plannedReceivables,
     stockDocuments: [...stockMap.values()],
     stockDocumentItems,
     nfes: [...nfeMap.values()],
@@ -2685,6 +2765,8 @@ export async function loadOrderFullAudit(
     itemFacts: facts,
     receivables: dedupReceivables,
     receivablesTotal,
+    plannedReceivables,
+    plannedReceivablesTotal,
     stockDocuments: [...stockMap.values()].sort(
       (a, b) =>
         (a.dataDocumento ?? "").localeCompare(b.dataDocumento ?? "") ||
@@ -4912,6 +4994,7 @@ function buildAlerts(input: {
   facts: OrderToCashAuditFactRecord[];
   summary: OrderFullAuditPayload["summary"];
   receivables: OrderFullAuditReceivable[];
+  plannedReceivables: OrderFullAuditPlannedReceivable[];
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
   nfes: OrderFullAuditNfe[];
@@ -5340,6 +5423,61 @@ function buildAlerts(input: {
       });
     }
   }
+  // -------------------------------------------------------------------
+  // Divergências oficiais dos Recebíveis Planejados (forecast)
+  // Só emitidas quando não existe CR real para a mesma parcela — a linha
+  // "replacedByRealCr" é mantida no payload para auditoria mas não gera alerta.
+  // -------------------------------------------------------------------
+  const hasAnyRealCr = input.receivables.length > 0;
+  const pendingPlannedForAlerts = input.plannedReceivables.filter(
+    (p) => !p.replacedByRealCr
+  );
+  for (const planned of pendingPlannedForAlerts) {
+    const dueLabel = planned.dueDate ?? "sem vencimento";
+    if (planned.statusLabel === "Vencido") {
+      push({
+        code: "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
+        severity: "critical",
+        title: "Parcela planejada vencida sem CR real",
+        description: `${planned.reference} venceu em ${dueLabel} sem NF/CR real emitida (${formatMoneyShort(
+          planned.openAmount
+        )}).`,
+        origin: "Pedido de Venda / Condição de pagamento",
+        action:
+          "Confirmar emissão da NF e sync do Contas a Receber para regularizar o CR real.",
+        financialImpact: round2(planned.openAmount),
+      });
+    } else {
+      push({
+        code: "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
+        severity: "warning",
+        title: "Recebível planejado sem CR real",
+        description: `${planned.reference} previsto para ${dueLabel} — ainda sem NF/CR real (${formatMoneyShort(
+          planned.openAmount
+        )}).`,
+        origin: "Pedido de Venda / Condição de pagamento",
+        action:
+          "Emitir NF-e ou aguardar sincronismo do Contas a Receber para gerar CR real.",
+        financialImpact: round2(planned.openAmount),
+      });
+    }
+  }
+  // Substituição por CR real — informativo, ajuda a auditar dedup.
+  const replacedPlanned = input.plannedReceivables.filter(
+    (p) => p.replacedByRealCr
+  );
+  if (replacedPlanned.length > 0 && hasAnyRealCr) {
+    push({
+      code: "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
+      severity: "info",
+      title: "Recebível planejado substituído por CR real",
+      description: `${replacedPlanned.length} parcela(s) planejada(s) foram substituída(s) pelo CR real (dedup automático por valor/vencimento).`,
+      origin: "Auditoria 360º / dedup",
+      action: "Nenhuma ação — CR real prevalece.",
+      financialImpact: null,
+    });
+  }
+
   // -------------------------------------------------------------------
   // Divergências oficiais da aba Itens do Pedido
   // (códigos renomeados dos legados ITEM_CANCELADO/ITEM_COM_CORTE/etc.)
@@ -6419,6 +6557,21 @@ function getAlertMetadata(code: string): AlertMetadata | null {
     PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE: {
       category: "RECEIPT",
       severity: "medium",
+      linkedTab: "financial",
+    },
+    PLANNED_RECEIVABLE_WITHOUT_REAL_CR: {
+      category: "RECEIVABLE",
+      severity: "medium",
+      linkedTab: "financial",
+    },
+    PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR: {
+      category: "RECEIVABLE",
+      severity: "critical",
+      linkedTab: "financial",
+    },
+    PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR: {
+      category: "RECEIVABLE",
+      severity: "info",
       linkedTab: "financial",
     },
     // Entrega / Frete

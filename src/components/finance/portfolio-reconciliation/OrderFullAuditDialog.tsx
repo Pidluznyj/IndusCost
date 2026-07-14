@@ -21,6 +21,8 @@ import {
   type OrderFullAuditPayload,
   type OrderFullAuditProposalBlock,
   type OrderFullAuditProposalOrderComparison,
+  type OrderFullAuditPlannedReceivable,
+  type OrderFullAuditPlannedReceivablesTotal,
   type OrderFullAuditReceipt,
   type OrderFullAuditReceivable,
   type OrderFullAuditSalesOrderBlock,
@@ -310,8 +312,11 @@ export function OrderFullAuditDialog({
                 <FinancialTab
                   receivables={payload.receivables}
                   totals={payload.receivablesTotal}
+                  plannedReceivables={payload.plannedReceivables}
+                  plannedTotals={payload.plannedReceivablesTotal}
                   receipts={payload.receipts}
                   alerts={payload.alerts}
+                  orderCode={payload.orderCode}
                 />
               )}
               {activeTab === "delivery" && (
@@ -1508,7 +1513,62 @@ const RECEIVABLE_ALERT_CODES = new Set([
   "PAYMENT_TERM_MISSING",
   "RECEIPT_GREATER_THAN_RECEIVABLE",
   "PARTIAL_RECEIPT_WITH_INCONSISTENT_BALANCE",
+  "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
+  "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
+  "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
 ]);
+
+/**
+ * Badge visual (padrão executivo) para status de recebível planejado.
+ * Reaproveita a paleta do `ReceivableStatusBadge` para consistência.
+ */
+function PlannedReceivableStatusBadge({
+  status,
+}: {
+  status: OrderFullAuditPlannedReceivable["statusLabel"];
+}): JSX.Element {
+  const cls =
+    status === "Vencido"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : status === "Vence hoje"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : status === "A vencer"
+          ? "border-sky-200 bg-sky-50 text-sky-800"
+          : "border-[#E5E7EB] bg-[#F9FAFB] text-[#6B7280]";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        cls
+      )}
+    >
+      {status}
+    </span>
+  );
+}
+
+/**
+ * Badge "Tipo" — indica CR real x Planejado pelo pedido nas tabelas.
+ * Design pareado com o padrão executivo IndusCost (branded como AR titles).
+ */
+function ReceivableTypeBadge({
+  type,
+}: {
+  type: "REAL_CR" | "PLANNED";
+}): JSX.Element {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        type === "REAL_CR"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-indigo-200 bg-indigo-50 text-indigo-800"
+      )}
+    >
+      {type === "REAL_CR" ? "CR real" : "Planejado pelo pedido"}
+    </span>
+  );
+}
 
 /**
  * Rota oficial do Contas a Receber com filtro por referência (deep-link).
@@ -1522,13 +1582,19 @@ function buildAccountsReceivableSearchUrl(reference: string): string {
 function FinancialTab({
   receivables,
   totals,
+  plannedReceivables = [],
+  plannedTotals,
   receipts = [],
   alerts = [],
+  orderCode,
 }: {
   receivables: OrderFullAuditReceivable[];
   totals: OrderFullAuditPayload["receivablesTotal"];
+  plannedReceivables?: OrderFullAuditPlannedReceivable[];
+  plannedTotals?: OrderFullAuditPlannedReceivablesTotal;
   receipts?: OrderFullAuditReceipt[];
   alerts?: OrderFullAuditAlert[];
+  orderCode?: string | null;
 }): JSX.Element {
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -1561,30 +1627,71 @@ function FinancialTab({
   );
   const cardDiff = Math.abs(sumAmountReceivable - round2Local(totals.totalAmount));
 
+  // Snapshot de recebíveis planejados (fallback quando não há CR real).
+  const plannedTotalsSafe: OrderFullAuditPlannedReceivablesTotal = plannedTotals ?? {
+    totalCount: 0,
+    totalExpected: 0,
+    openExpected: 0,
+    overdueExpected: 0,
+    overdueCount: 0,
+    dueTodayExpected: 0,
+    dueTodayCount: 0,
+    upcomingCount: 0,
+    nextDueDate: null,
+    replacedCount: 0,
+    replacedAmount: 0,
+    netPlannedOpen: 0,
+  };
+  const activePlanned = plannedReceivables.filter((p) => !p.replacedByRealCr);
+  const hasPlanned = activePlanned.length > 0;
+  const hasRealCr = receivables.length > 0;
+  const hasAnyFinancialRow = hasRealCr || hasPlanned;
+  const totalFinancialValue =
+    round2Local(totals.totalAmount) + round2Local(plannedTotalsSafe.totalExpected);
+  const totalFinancialOpen =
+    round2Local(totals.openAmount) + round2Local(plannedTotalsSafe.openExpected);
+  const nextDueCandidates = [totals.nextDueDate, plannedTotalsSafe.nextDueDate]
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  const nextDueDateAny = nextDueCandidates[0] ?? null;
+
   return (
     <div className="space-y-4" data-testid="order-full-audit-financial-tab">
-      {/* Top cards */}
+      {/* Top cards — Resumo executivo (CR real + planejado) */}
       <section
         className="rounded-[14px] border border-[#E5E7EB] bg-white p-3"
         data-testid="order-full-audit-financial-cards"
       >
         <SectionHeader
           title="Resumo financeiro do pedido"
-          subtitle="Títulos deduplicados por externalId. CR real prevalece sobre forecast."
+          subtitle="CR real (Contas a Receber oficial) + Recebíveis planejados pelo pedido. CR real prevalece."
         />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-9">
           <Kpi
-            label="Total em títulos"
-            value={formatFinanceCurrency(totals.totalAmount)}
+            label="Total financeiro"
+            value={formatFinanceCurrency(totalFinancialValue)}
             tone="highlight"
+            help="Soma de CR real + planejado pelo pedido, sem duplicar parcelas cobertas."
           />
           <Kpi
-            label="Total aberto"
-            value={formatFinanceCurrency(totals.openAmount)}
-            tone={totals.openAmount > 0.009 ? "info" : "muted"}
+            label="CR real"
+            value={formatFinanceCurrency(totals.totalAmount)}
+            tone={totals.totalAmount > 0.009 ? "success" : "muted"}
+            help="NomusAccountsReceivable — origem oficial. Prevalece sobre forecast."
           />
           <Kpi
-            label="Total vencido"
+            label="Planejado pelo pedido"
+            value={formatFinanceCurrency(plannedTotalsSafe.totalExpected)}
+            tone={plannedTotalsSafe.totalExpected > 0.009 ? "info" : "muted"}
+            help="Parcelas previstas pela condição de pagamento (fallback quando não há CR real)."
+          />
+          <Kpi
+            label="Aberto (real + planejado)"
+            value={formatFinanceCurrency(totalFinancialOpen)}
+            tone={totalFinancialOpen > 0.009 ? "info" : "muted"}
+          />
+          <Kpi
+            label="Total vencido (CR)"
             value={formatFinanceCurrency(totalOverdueAmount)}
             tone={totalOverdueAmount > 0.009 ? "danger" : "muted"}
           />
@@ -1598,19 +1705,14 @@ function FinancialTab({
             value={formatFinanceCurrency(totalPartialAmount)}
             tone={totalPartialAmount > 0.009 ? "info" : "muted"}
           />
-          <Kpi label="Quantidade de títulos" value={String(totals.totalCount)} />
           <Kpi
             label="Próximo vencimento"
-            value={totals.nextDueDate ? formatFinanceDate(totals.nextDueDate) : "—"}
+            value={nextDueDateAny ? formatFinanceDate(nextDueDateAny) : "—"}
           />
           <Kpi
-            label="Maior título"
-            value={formatFinanceCurrency(totals.maxAmount)}
-          />
-          <Kpi
-            label="Dias em atraso (max)"
-            value={maxDaysOverdue > 0 ? String(maxDaysOverdue) : "—"}
-            tone={maxDaysOverdue > 60 ? "danger" : maxDaysOverdue > 0 ? "warning" : "muted"}
+            label="Títulos/parcelas"
+            value={`${totals.totalCount} real / ${plannedTotalsSafe.totalCount} planej.`}
+            help="Quantidade de títulos reais vs parcelas planejadas."
           />
         </div>
         {cardDiff > 0.01 ? (
@@ -1619,7 +1721,15 @@ function FinancialTab({
             data-testid="order-full-audit-financial-card-mismatch"
           >
             ⚠ Soma dos títulos ({formatFinanceCurrency(sumAmountReceivable)}) diverge
-            do card "Total em títulos" ({formatFinanceCurrency(totals.totalAmount)}).
+            do card "CR real" ({formatFinanceCurrency(totals.totalAmount)}).
+          </p>
+        ) : null}
+        {!hasAnyFinancialRow ? (
+          <p
+            className="mt-2 rounded-[8px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-2 py-1 text-[11px] text-[#6B7280]"
+            data-testid="order-full-audit-financial-empty-all"
+          >
+            Nenhum CR real e nenhum recebível planejado disponível para este pedido.
           </p>
         ) : null}
       </section>
@@ -1639,21 +1749,30 @@ function FinancialTab({
         data-testid="order-full-audit-financial-section-titles"
       >
         <SectionHeader
-          title="Títulos de Contas a Receber"
-          subtitle="CR real prevalece — não altera valores oficiais."
+          title="Títulos reais de Contas a Receber"
+          subtitle="CR real prevalece — origem oficial (NomusAccountsReceivable). Não altera valores oficiais."
         />
         {receivables.length === 0 ? (
-          <p className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280]">
-            Nenhum título de Contas a Receber vinculado ao pedido.
-          </p>
+          <div
+            className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280] space-y-1"
+            data-testid="order-full-audit-financial-real-empty"
+          >
+            <p>Nenhum título real de Contas a Receber vinculado ao pedido.</p>
+            {plannedReceivables.filter((p) => !p.replacedByRealCr).length > 0 ? (
+              <p className="text-[11px] text-indigo-700">
+                Existe(m) recebível(is) planejado(s) pelo Pedido de Venda — ver seção abaixo.
+              </p>
+            ) : null}
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table
-              className="min-w-[2400px] w-full text-left text-[11px]"
+              className="min-w-[2480px] w-full text-left text-[11px]"
               data-testid="order-full-audit-financial-titles-table"
             >
               <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
                 <tr>
+                  <th className="py-1.5 pr-2 font-semibold">Tipo</th>
                   <th className="py-1.5 pr-2 font-semibold">Referência</th>
                   <th className="py-1.5 pr-2 font-semibold">ID interno</th>
                   <th className="py-1.5 pr-2 font-semibold">ID externo</th>
@@ -1699,6 +1818,9 @@ function FinancialTab({
                       )}
                       data-testid={`order-full-audit-financial-row-${r.receivableExternalId}`}
                     >
+                      <td className="py-1.5 pr-2">
+                        <ReceivableTypeBadge type="REAL_CR" />
+                      </td>
                       <td className="py-1.5 pr-2 font-semibold text-[#111827]">
                         {r.searchReference}
                       </td>
@@ -1863,6 +1985,181 @@ function FinancialTab({
           </div>
         )}
       </section>
+
+      {/* Recebíveis planejados pelo pedido (forecast) */}
+      {hasPlanned ? (
+        <section
+          className="rounded-[14px] border border-indigo-200 bg-indigo-50/40 p-3"
+          data-testid="order-full-audit-financial-section-planned"
+        >
+          <SectionHeader
+            title={`Recebíveis planejados pelo pedido (${activePlanned.length})`}
+            subtitle="Parcelas previstas pela condição de pagamento do pedido. Aparecem quando ainda não há NF/CR real. CR real sempre prevalece."
+          />
+          <div className="mt-2 mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            <Kpi
+              label="Total planejado"
+              value={formatFinanceCurrency(plannedTotalsSafe.totalExpected)}
+              tone="info"
+            />
+            <Kpi
+              label="Aberto planejado"
+              value={formatFinanceCurrency(plannedTotalsSafe.openExpected)}
+              tone={plannedTotalsSafe.openExpected > 0.009 ? "info" : "muted"}
+            />
+            <Kpi
+              label="Vencido planejado"
+              value={formatFinanceCurrency(plannedTotalsSafe.overdueExpected)}
+              tone={plannedTotalsSafe.overdueExpected > 0.009 ? "danger" : "muted"}
+            />
+            <Kpi
+              label="Parcelas"
+              value={String(activePlanned.length)}
+              help="Parcelas planejadas ativas (excluindo as já cobertas por CR real)."
+            />
+            <Kpi
+              label="Próximo vencimento"
+              value={
+                plannedTotalsSafe.nextDueDate
+                  ? formatFinanceDate(plannedTotalsSafe.nextDueDate)
+                  : "—"
+              }
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table
+              className="min-w-[1400px] w-full text-left text-[11px]"
+              data-testid="order-full-audit-financial-planned-table"
+            >
+              <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-indigo-200">
+                <tr>
+                  <th className="py-1.5 pr-2 font-semibold">Tipo</th>
+                  <th className="py-1.5 pr-2 font-semibold">Referência</th>
+                  <th className="py-1.5 pr-2 font-semibold">Documento/NF</th>
+                  <th className="py-1.5 pr-2 font-semibold">Parcela</th>
+                  <th className="py-1.5 pr-2 font-semibold">Vencimento</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Valor previsto</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Aberto previsto</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Recebido</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold">Condição</th>
+                  <th className="py-1.5 pr-2 font-semibold">Forma</th>
+                  <th className="py-1.5 pr-2 font-semibold">NF emitida</th>
+                  <th className="py-1.5 pr-2 font-semibold">Origem</th>
+                  <th className="py-1.5 pr-2 font-semibold">Observação</th>
+                  <th className="py-1.5 pr-2 font-semibold">Ação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activePlanned.map((p) => (
+                  <tr
+                    key={p.key}
+                    className={cn(
+                      "border-b border-indigo-100/70",
+                      p.statusLabel === "Vencido" && "bg-red-50/40"
+                    )}
+                    data-testid={`order-full-audit-financial-planned-row-${p.installmentNumber}`}
+                  >
+                    <td className="py-1.5 pr-2">
+                      <ReceivableTypeBadge type="PLANNED" />
+                    </td>
+                    <td className="py-1.5 pr-2 font-semibold text-[#111827]">
+                      {p.reference}
+                    </td>
+                    <td className="py-1.5 pr-2 text-[#9CA3AF]">—</td>
+                    <td className="py-1.5 pr-2 tabular-nums">
+                      {p.installmentNumber}/{p.totalInstallments}
+                    </td>
+                    <td className="py-1.5 pr-2 whitespace-nowrap font-semibold">
+                      {p.dueDate ? formatFinanceDate(p.dueDate) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums font-semibold">
+                      {formatFinanceCurrency(p.expectedAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums text-indigo-800">
+                      {formatFinanceCurrency(p.openAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums text-[#9CA3AF]">
+                      {formatFinanceCurrency(0)}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <PlannedReceivableStatusBadge status={p.statusLabel} />
+                    </td>
+                    <td
+                      className="py-1.5 pr-2 max-w-[180px] truncate"
+                      title={p.paymentConditionLabel}
+                    >
+                      {p.paymentConditionLabel}
+                    </td>
+                    <td
+                      className="py-1.5 pr-2 max-w-[140px] truncate"
+                      title={p.paymentMethodLabel ?? undefined}
+                    >
+                      {p.paymentMethodLabel ?? "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <span className="inline-flex items-center rounded border border-[#E5E7EB] bg-white px-1.5 py-0.5 text-[9px] uppercase tracking-wide font-semibold text-[#6B7280]">
+                        Não
+                      </span>
+                    </td>
+                    <td
+                      className="py-1.5 pr-2 max-w-[180px] truncate"
+                      title={p.origin}
+                    >
+                      {p.origin}
+                    </td>
+                    <td
+                      className="py-1.5 pr-2 max-w-[220px] truncate"
+                      title={p.note}
+                    >
+                      {p.note}
+                    </td>
+                    <td className="py-1.5 pr-2 whitespace-nowrap">
+                      <a
+                        href={buildAccountsReceivableSearchUrl(
+                          orderCode ?? p.orderCode
+                        )}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-indigo-800 hover:bg-indigo-50"
+                        title={`Localizar "${p.reference}" no Contas a Receber`}
+                        aria-label="Abrir Contas a Receber pelo pedido"
+                        data-testid={`order-full-audit-financial-planned-open-${p.installmentNumber}`}
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-indigo-200 bg-indigo-100/40 text-[11px] font-semibold">
+                  <td colSpan={5} className="py-1.5 pr-2">
+                    Total planejado (aberto)
+                  </td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums">
+                    {formatFinanceCurrency(plannedTotalsSafe.totalExpected)}
+                  </td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums">
+                    {formatFinanceCurrency(plannedTotalsSafe.openExpected)}
+                  </td>
+                  <td colSpan={8} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {plannedTotalsSafe.replacedCount > 0 ? (
+            <p
+              className="mt-2 rounded-[8px] border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-900"
+              data-testid="order-full-audit-financial-planned-replaced"
+            >
+              ✓ {plannedTotalsSafe.replacedCount} parcela(s) planejada(s) já
+              coberta(s) por CR real ({formatFinanceCurrency(plannedTotalsSafe.replacedAmount)})
+              — ocultadas para evitar duplicidade.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {/* Tabela de baixas/recebimentos */}
       {receipts.length > 0 ? (
