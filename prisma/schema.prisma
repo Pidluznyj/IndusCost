@@ -497,9 +497,21 @@ enum CommoditySnapshotStatus {
 }
 
 /// Snapshot de cotação de commodity (ex.: Brent) — append-only; cada coleta cria nova linha.
+///
+/// Slots agendados (America/Sao_Paulo):
+///   - MORNING_EARLY    → 07:00 (nova agenda 2026-07)
+///   - MORNING_LATE     → 11:00 (nova agenda 2026-07)
+///   - AFTERNOON_EARLY  → 14:00 (nova agenda 2026-07)
+///   - AFTERNOON_LATE   → 16:00 (nova agenda 2026-07)
+///   - MORNING          → 09:00 (legado 2026-07; mantido para linhas históricas)
+///   - AFTERNOON        → 15:30 (legado 2026-07; mantido para linhas históricas)
 enum CommodityCollectionSlot {
   MORNING
   AFTERNOON
+  MORNING_EARLY
+  MORNING_LATE
+  AFTERNOON_EARLY
+  AFTERNOON_LATE
 }
 
 enum CommodityCollectionTrigger {
