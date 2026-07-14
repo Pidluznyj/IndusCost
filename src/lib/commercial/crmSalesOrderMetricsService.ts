@@ -24,6 +24,10 @@ import {
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 import { isSalesOrderItemActiveForCommercialValue } from "@/src/lib/sales/nomusSalesOrderItemStatus.js";
+import {
+  resolveCommercialResponsibleMap,
+  type CommercialResponsibleMap,
+} from "@/src/lib/commercial/crmCommercialResponsibleResolver.js";
 
 export const CRM_SALES_ORDER_METRICS_SOURCE = "crm-sales-order-metrics-via-official-so-rules" as const;
 
@@ -558,6 +562,17 @@ export function buildCrmSalesOrderMetrics(args: {
   };
 }
 
+/**
+ * Select do Prisma para SalesOrder + Customer (SEM CrmCustomerCommercialOwner).
+ *
+ * IMPORTANTE — Responsável Comercial NÃO vai aqui.
+ *
+ * O Responsável Comercial vem do cadastro do cliente (`CrmCustomerCommercialOwner`),
+ * mas é resolvido em BATCH via `resolveCommercialResponsibleMap` fora do
+ * `findMany`, e injetado no shape do `CrmMetricsOrderInput` depois. Isso protege
+ * o dashboard contra Prisma Client desatualizado em produção e mantém o eixo
+ * "carteira do cliente" explícito no código.
+ */
 export const CRM_SALES_ORDER_METRICS_PRISMA_SELECT = {
   ...SALES_ORDER_RULES_PRISMA_SELECT,
   externalCustomerId: true,
@@ -568,15 +583,6 @@ export const CRM_SALES_ORDER_METRICS_PRISMA_SELECT = {
       tradeName: true,
       taxId: true,
       externalCustomerId: true,
-      CrmCustomerCommercialOwner: {
-        select: {
-          sellerCanonicalName: true,
-          sellerResponsibleName: true,
-          sellerIdentityKey: true,
-          sellerExternalId: true,
-          isActive: true,
-        },
-      },
     },
   },
   items: {
@@ -591,6 +597,24 @@ export const CRM_SALES_ORDER_METRICS_PRISMA_SELECT = {
     },
   },
 } as const;
+
+/**
+ * Injeta em cada pedido o Responsável Comercial resolvido em batch.
+ * Chamar SEMPRE após buscar pedidos com `CRM_SALES_ORDER_METRICS_PRISMA_SELECT`
+ * e antes de passar para `buildCrmSalesOrderMetrics`.
+ */
+export function injectCommercialResponsibleIntoOrders(
+  orders: CrmMetricsOrderInput[],
+  map: CommercialResponsibleMap
+): CrmMetricsOrderInput[] {
+  for (const order of orders) {
+    if (!order.Customer) continue;
+    const customerId = order.customerId?.trim();
+    const injection = customerId ? map.get(customerId) ?? null : null;
+    order.Customer.CrmCustomerCommercialOwner = injection;
+  }
+  return orders;
+}
 
 /**
  * Carrega pedidos oficiais e calcula métricas CRM.
@@ -659,7 +683,9 @@ export async function loadCrmSalesOrderMetrics(
           tradeName: row.Customer.tradeName,
           taxId: row.Customer.taxId,
           externalCustomerId: row.Customer.externalCustomerId,
-          CrmCustomerCommercialOwner: row.Customer.CrmCustomerCommercialOwner,
+          // CrmCustomerCommercialOwner é injetado depois via resolver batch
+          // (ver `resolveCommercialResponsibleMap`). Nunca vem do findMany.
+          CrmCustomerCommercialOwner: null,
         }
       : null,
     items: (row.items ?? []).map((item: any) => ({
@@ -673,6 +699,13 @@ export async function loadCrmSalesOrderMetrics(
       nomusItemStatusNormalized: item.nomusItemStatusNormalized ?? null,
     })),
   }));
+
+  // Resolve Responsável Comercial em BATCH (customerId → owner) e injeta.
+  const customerIds = orders
+    .map((o) => o.customerId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const commercialResponsibleMap = await resolveCommercialResponsibleMap(prisma, customerIds);
+  injectCommercialResponsibleIntoOrders(orders, commercialResponsibleMap);
 
   const filtered = filterCrmSalesOrderMetricsUniverse(orders, filters);
   const linkedMap = await loadSalesOrderLinkedNfeContextMap(

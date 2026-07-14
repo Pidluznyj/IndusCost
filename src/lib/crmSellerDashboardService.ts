@@ -19,8 +19,10 @@ import {
 import {
   buildCrmSalesOrderMetrics,
   CRM_SALES_ORDER_METRICS_PRISMA_SELECT,
+  injectCommercialResponsibleIntoOrders,
   type CrmMetricsOrderInput,
 } from "@/src/lib/commercial/crmSalesOrderMetricsService.js";
+import { resolveCommercialResponsibleMap } from "@/src/lib/commercial/crmCommercialResponsibleResolver.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
 import {
   buildCrmCommercialOwnerOnlyOrderScopeSql,
@@ -102,7 +104,8 @@ function mapRowToMetricsOrder(row: any): CrmMetricsOrderInput {
           tradeName: row.Customer.tradeName,
           taxId: row.Customer.taxId,
           externalCustomerId: row.Customer.externalCustomerId,
-          CrmCustomerCommercialOwner: row.Customer.CrmCustomerCommercialOwner,
+          // Injetado depois por resolveCommercialResponsibleMap.
+          CrmCustomerCommercialOwner: null,
         }
       : null,
     items: (row.items ?? []).map((item: any) => ({
@@ -590,6 +593,19 @@ export async function buildCrmSellerDashboardResponse(
   ]);
 
   const orders = (metricsRows as any[]).map(mapRowToMetricsOrder);
+
+  // Responsável Comercial vem do cadastro do cliente (CrmCustomerCommercialOwner),
+  // NÃO do SalesOrder. Resolvido em batch para evitar N+1 e para não depender
+  // do Prisma Client estar em sync com a migration em produção.
+  const customerIds = orders
+    .map((o) => o.customerId)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  const commercialResponsibleMap = await resolveCommercialResponsibleMap(
+    prisma,
+    customerIds
+  );
+  injectCommercialResponsibleIntoOrders(orders, commercialResponsibleMap);
+
   const linkedMap = await loadSalesOrderLinkedNfeContextMap(
     orders.map((order) => ({
       id: order.id,

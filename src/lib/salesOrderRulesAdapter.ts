@@ -969,18 +969,17 @@ export const SALES_ORDER_RULES_PRISMA_SELECT = {
   nomusRawResponse: true,
   companyIssuer: true,
   externalSalesOrderId: true,
+  // Nota (2026-07): NÃO incluir `CrmCustomerCommercialOwner` aqui. O motor de
+  // regras de pedido não consome esse campo, e mantê-lo no select central
+  // acopla TODOS os consumidores ao Prisma Client estar em sync com a migration
+  // — em produção, um `prisma generate` desatualizado quebrava dashboards com
+  // 500. Responsável Comercial deve ser resolvido em batch via
+  // `resolveCommercialResponsibleMap` (docs/commercial/crm-commercial-official-rules.md).
   Customer: {
     select: {
       companyName: true,
       tradeName: true,
       taxId: true,
-      CrmCustomerCommercialOwner: {
-        select: {
-          sellerCanonicalName: true,
-          sellerResponsibleName: true,
-          isActive: true,
-        },
-      },
     },
   },
   items: {
