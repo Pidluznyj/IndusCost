@@ -18,6 +18,7 @@ import {
 } from "@/src/components/sales/SalesOrderQuickSummaryDrawer";
 import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
 import { SalesOrderReportPrintDocument } from "@/src/components/sales/SalesOrderReportPrintDocument";
+import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
@@ -188,6 +189,22 @@ function SalesOrderList() {
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [summaryRow, setSummaryRow] = useState<SalesOrderRow | null>(null);
+  // Modal Detalhe do Pedido — abre in-place (preserva filtros/paginação).
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null);
+  const [detailOrderCode, setDetailOrderCode] = useState<string | null>(null);
+
+  const openDetail = useCallback((orderId: string, orderCode?: string | null) => {
+    setDetailOrderId(orderId);
+    setDetailOrderCode(orderCode ?? null);
+    setDetailOpen(true);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
+    setDetailOrderId(null);
+    setDetailOrderCode(null);
+  }, []);
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
@@ -670,7 +687,10 @@ function SalesOrderList() {
           setSummaryRow(row);
           setSummaryDrawerOpen(true);
         }}
-        onOpenDetail={(orderId) => navigate(`/sales-orders/${orderId}`)}
+        onOpenDetail={(orderId) => {
+          const row = rows.find((r) => r.id === orderId);
+          openDetail(orderId, row?.orderCode ?? null);
+        }}
       />
 
       <SalesOrderQuickSummaryDrawer
@@ -682,8 +702,20 @@ function SalesOrderList() {
           setSummaryRow(null);
         }}
         onOpenDetail={(orderId) => {
+          const code = summaryRow?.orderCode ?? null;
           setSummaryDrawerOpen(false);
-          navigate(`/sales-orders/${orderId}`);
+          openDetail(orderId, code);
+        }}
+      />
+
+      <SalesOrderDetailDialog
+        open={detailOpen}
+        salesOrderId={detailOrderId}
+        orderCode={detailOrderCode}
+        onClose={closeDetail}
+        onOpenFullAudit={(id) => {
+          closeDetail();
+          navigate(`/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(id)}`);
         }}
       />
 

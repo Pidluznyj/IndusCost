@@ -1,0 +1,326 @@
+/**
+ * SalesOrderDetailView — CSS compartilhado entre tela (modal) e print.
+ * Segue o padrão IndusCost (Lazarios Koppetel) já usado pelo relatório
+ * Comercial > Pedidos de Venda: paleta neutra, tipografia condensada,
+ * cards com border-left colorido para hierarquia visual.
+ */
+
+.so-detail-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: #0f172a;
+  font-size: 12px;
+}
+
+.so-detail-view h2,
+.so-detail-view h3 {
+  margin: 0;
+}
+
+.so-detail-view .so-detail-section {
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px 14px;
+}
+
+.so-detail-view .so-detail-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1e3a8a;
+  margin: 0 0 8px;
+}
+
+.so-detail-view .so-detail-section-subtitle {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 0 0 10px;
+}
+
+.so-detail-view .so-detail-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .so-detail-view .so-detail-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .so-detail-view .so-detail-kpi-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.so-detail-view .so-detail-kpi {
+  border: 1px solid #E5E7EB;
+  border-left: 3px solid #94a3b8;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px 10px;
+}
+
+.so-detail-view .so-detail-kpi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin: 0 0 2px;
+}
+
+.so-detail-view .so-detail-kpi-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.so-detail-view .so-detail-kpi--positive {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+.so-detail-view .so-detail-kpi--positive .so-detail-kpi-value {
+  color: #166534;
+}
+
+.so-detail-view .so-detail-kpi--warning {
+  border-left-color: #d97706;
+  background: #fffbeb;
+}
+.so-detail-view .so-detail-kpi--warning .so-detail-kpi-value {
+  color: #92400e;
+}
+
+.so-detail-view .so-detail-kpi--risk {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+}
+.so-detail-view .so-detail-kpi--risk .so-detail-kpi-value {
+  color: #991b1b;
+}
+
+.so-detail-view .so-detail-kpi--info {
+  border-left-color: #2563eb;
+  background: #eff6ff;
+}
+.so-detail-view .so-detail-kpi--info .so-detail-kpi-value {
+  color: #1e3a8a;
+}
+
+.so-detail-view .so-detail-header-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+@media (min-width: 768px) {
+  .so-detail-view .so-detail-header-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.so-detail-view .so-detail-header-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.so-detail-view .so-detail-header-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin: 0;
+}
+
+.so-detail-view .so-detail-header-value {
+  font-size: 12px;
+  color: #0f172a;
+  margin: 0;
+  font-weight: 500;
+}
+
+.so-detail-view .so-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.so-detail-view .so-detail-badge--invoiced {
+  background: #d1fae5;
+  color: #047857;
+  border-color: #6ee7b7;
+}
+.so-detail-view .so-detail-badge--partial {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+.so-detail-view .so-detail-badge--not-invoiced {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.so-detail-view .so-detail-badge--canceled {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+.so-detail-view .so-detail-badge--info {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #93c5fd;
+}
+.so-detail-view .so-detail-badge--muted {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+.so-detail-view .so-detail-badge--warning {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+.so-detail-view .so-detail-badge--risk {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+}
+
+.so-detail-view .so-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.so-detail-view .so-detail-table thead th {
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 700;
+  padding: 6px 8px;
+  text-align: left;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.so-detail-view .so-detail-table tbody td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: top;
+}
+
+.so-detail-view .so-detail-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.so-detail-view .so-detail-table tfoot td {
+  background: #eff6ff !important;
+  font-weight: 700;
+  border-top: 2px solid #1d4ed8;
+  padding: 6px 8px;
+}
+
+.so-detail-view .so-detail-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.so-detail-view .so-detail-money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.so-detail-view .so-detail-money--risk {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.so-detail-view .so-detail-money--positive {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.so-detail-view .so-detail-alert-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .so-detail-view .so-detail-alert-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.so-detail-view .so-detail-alert {
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.so-detail-view .so-detail-alert--critical {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+.so-detail-view .so-detail-alert--warning {
+  border-color: #fcd34d;
+  background: #fffbeb;
+}
+.so-detail-view .so-detail-alert--info {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.so-detail-view .so-detail-alert-code {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.so-detail-view .so-detail-alert-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 2px 0 4px;
+}
+
+.so-detail-view .so-detail-alert-description {
+  font-size: 11px;
+  color: #334155;
+  margin: 0 0 4px;
+}
+
+.so-detail-view .so-detail-empty {
+  border: 1px dashed #E5E7EB;
+  background: #F9FAFB;
+  padding: 12px;
+  border-radius: 8px;
+  color: #6B7280;
+  font-size: 12px;
+  text-align: center;
+}
+
+.so-detail-view .so-detail-scroll {
+  overflow-x: auto;
+}

@@ -336,6 +336,7 @@ import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
 import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
+import { registerSalesOrderDetailRoutes } from "./src/lib/salesOrderDetailRoutes.js";
 import {
   buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
@@ -13699,6 +13700,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
       const user = await getCurrentAppUser(req);
       return user?.name?.trim() || null;
     },
+  });
+
+  // IMPORTANT: registrar ANTES do handler inline `/api/sales-orders/:id`
+  // para que a rota mais específica `/detail` seja prioritária.
+  registerSalesOrderDetailRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
   });
 
   app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {
