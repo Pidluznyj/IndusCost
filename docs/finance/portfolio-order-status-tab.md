@@ -79,6 +79,28 @@ Checklist de QA em [`order-full-audit-dialog-qa.md`](./order-full-audit-dialog-q
 - CR total título: coluna com label claro; **não** é valor do item.
 - Caso **PD 02534 / 309.86AA**: cinco linhas do mesmo SKU, cada uma com status próprio (por linha, não por SKU).
 
+### Busca inteligente
+
+Campo **Busca inteligente** (parâmetro de query `search`) localiza pedidos por:
+
+| Tipo | Exemplos | Casamento |
+|------|----------|-----------|
+| Pedido | `PD 02586`, `02586` | `orderCode` (com/sem prefixo PD) |
+| NF-e | `NF 7135`, `7135` | `nfeNumbers` da linha consolidada |
+| Documento de saída | `DOC 8457`, `Documento 8457`, `8457` | `stockDocumentExternalIds` |
+| Cliente | `Britania` | `customerName` (acentos ignorados) |
+| Produto/SKU | código já tokenizado | `productTokens` (também há filtro dedicado) |
+
+Regras:
+
+- Resultado continua **uma linha por pedido** (mesmo com várias NFs/documentos).
+- Combina com Ano, período, status, temperatura, alertas, responsável, vendedor, toggles (CR aberto / divergências / saldo pendente).
+- Prefixo `PD` / `NF` / `DOC` direciona a prioridade do match; dígitos com menos de 3 caracteres não disparam busca numérica.
+- DTO opcional: `searchMatchedBy` + `searchMatchedText` (ex.: `NFE` / `NF 7135`).
+- Implementação: `src/lib/finance/portfolioOrderStatusSearch.ts`.
+
+Filtro **Cliente** (autocomplete) permanece disponível para filtrar um cliente específico.
+
 ### NF-e cancelada (Status Pedidos)
 
 - Fonte: `NomusNfe.status = 7` via Order-to-Cash (`nfeStatus.ts`).

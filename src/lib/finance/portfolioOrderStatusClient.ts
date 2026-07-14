@@ -32,7 +32,7 @@ export const ORDER_STATUS_INFO_BANNER =
   "Cada card conta pedidos distintos. Para o detalhe item a item, use a aba Auditoria Pedido → Caixa.";
 
 export const ORDER_STATUS_SELECT_MESSAGE =
-  "Informe o ano e clique em Aplicar. Cliente é opcional.";
+  "Informe o ano e clique em Aplicar. Use a busca inteligente (pedido, NF, documento ou cliente) ou o filtro de Cliente.";
 
 export const ORDER_STATUS_LOADING_MESSAGE = "Carregando status dos pedidos…";
 
