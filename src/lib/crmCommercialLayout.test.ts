@@ -49,13 +49,15 @@ describe("crmCommercialLayout", () => {
     const auth = checkerFromPermissions(["crm.general.view", "crm.seller.all"]);
     assert.equal(canAccessCrmGeneral(auth), true);
     assert.equal(getDefaultCrmManagementTab(auth), "general");
-    const tabs = readFileSync(
+    const tabsUi = readFileSync(
       join(process.cwd(), "src/components/CrmCommercialManagementTabs.tsx"),
       "utf8"
     );
-    assert.match(tabs, /id:\s*["']general["']/);
-    assert.match(tabs, /Gestão Geral/);
-    assert.match(tabs, /canAccessCrmGeneral/);
+    const tabDefs = readFileSync(join(process.cwd(), "src/lib/moduleTabResources.ts"), "utf8");
+    assert.match(tabsUi, /CRM_UI_TABS/);
+    assert.match(tabDefs, /id: "general"/);
+    assert.match(tabDefs, /label: "Gestão Geral"/);
+    assert.match(tabsUi, /canAccessCrmGeneral|crm\.general\.view/);
   });
 
   it("vendedor não vê Gestão Geral e entra em Meu Dashboard", () => {
