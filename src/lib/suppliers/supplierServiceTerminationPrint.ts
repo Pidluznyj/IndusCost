@@ -171,7 +171,8 @@ export function buildServiceTerminationPrintModel(
     isMinuta,
     isPaidAndSettled: paid,
     showQuitacaoClause: paid,
-    watermarkText: isMinuta ? DISTRATO_FOOTER_MINUTA : null,
+    // Sem marca d'água diagonal; aviso de minuta permanece só no rodapé, se aplicável.
+    watermarkText: null,
     footerNote,
     contractingPartyName: dto.contractingPartyName?.trim() || "—",
     contractingPartyDocument: dto.contractingPartyDocument?.trim() || "—",

@@ -8,7 +8,10 @@ import {
   sumDistratoSettlementParts,
   validateDistratoForStatusTransition,
 } from "./supplierServiceTerminationDistrato.js";
-import { buildServiceTerminationPrintPlainText } from "./supplierServiceTerminationPrint.js";
+import {
+  buildServiceTerminationPrintModel,
+  buildServiceTerminationPrintPlainText,
+} from "./supplierServiceTerminationPrint.js";
 import type { ServiceTerminationDto } from "./supplierServiceTerminationTypes.js";
 
 function fixtureDto(overrides: Partial<ServiceTerminationDto> = {}): ServiceTerminationDto {
@@ -191,9 +194,11 @@ describe("supplierServiceTerminationDistrato", () => {
     );
   });
 
-  it("PDF preliminar contém minuta e não imprime fatores internos/trabalhistas", () => {
+  it("PDF preliminar sem marca d'água e não imprime fatores internos/trabalhistas", () => {
+    const model = buildServiceTerminationPrintModel(fixtureDto({ status: "DRAFT" }));
     const plain = buildServiceTerminationPrintPlainText(fixtureDto({ status: "DRAFT" }));
-    assert.match(plain, /MINUTA — SEM EFEITO DE QUITAÇÃO/);
+    assert.equal(model.watermarkText, null);
+    assert.match(plain, /MINUTA — SEM EFEITO DE QUITAÇÃO/); // rodapé apenas
     assert.match(plain, /TERMO DE DISTRATO/);
     assert.match(plain, /PD 02705/);
     assert.match(plain, /PD 02601/);
@@ -205,9 +210,13 @@ describe("supplierServiceTerminationDistrato", () => {
   });
 
   it("PDF pago e quitado sem marca d'água e com cláusula de quitação", () => {
+    const model = buildServiceTerminationPrintModel(
+      fixtureDto({ status: "PAID_AND_SETTLED" })
+    );
     const plain = buildServiceTerminationPrintPlainText(
       fixtureDto({ status: "PAID_AND_SETTLED" })
     );
+    assert.equal(model.watermarkText, null);
     assert.doesNotMatch(plain, /MINUTA — SEM EFEITO DE QUITAÇÃO/);
     assert.match(plain, /quitação específica|quitacao especifica/i);
     assert.equal(collectForbiddenPrintTerms(plain).length, 0);
