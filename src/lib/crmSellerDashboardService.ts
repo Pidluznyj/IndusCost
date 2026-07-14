@@ -103,7 +103,8 @@ function mapRowToMetricsOrder(row: any): CrmMetricsOrderInput {
           companyName: row.Customer.companyName,
           tradeName: row.Customer.tradeName,
           taxId: row.Customer.taxId,
-          externalCustomerId: row.Customer.externalCustomerId,
+          // Customer não tem externalCustomerId — espelha o do pedido.
+          externalCustomerId: row.externalCustomerId ?? null,
           // Injetado depois por resolveCommercialResponsibleMap.
           CrmCustomerCommercialOwner: null,
         }

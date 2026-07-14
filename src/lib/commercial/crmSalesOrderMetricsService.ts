@@ -575,6 +575,7 @@ export function buildCrmSalesOrderMetrics(args: {
  */
 export const CRM_SALES_ORDER_METRICS_PRISMA_SELECT = {
   ...SALES_ORDER_RULES_PRISMA_SELECT,
+  /** ID Nomus do cliente fica no pedido — Customer não tem esse campo. */
   externalCustomerId: true,
   Customer: {
     select: {
@@ -582,7 +583,6 @@ export const CRM_SALES_ORDER_METRICS_PRISMA_SELECT = {
       companyName: true,
       tradeName: true,
       taxId: true,
-      externalCustomerId: true,
     },
   },
   items: {
@@ -646,10 +646,7 @@ export async function loadCrmSalesOrderMetrics(
     where.companyIssuer = filters.companyIssuer.trim();
   }
   if (filters.customerExternalId != null) {
-    where.OR = [
-      { externalCustomerId: filters.customerExternalId },
-      { Customer: { externalCustomerId: filters.customerExternalId } },
-    ];
+    where.externalCustomerId = filters.customerExternalId;
   }
 
   const rows = await prisma.salesOrder.findMany({
@@ -682,7 +679,8 @@ export async function loadCrmSalesOrderMetrics(
           companyName: row.Customer.companyName,
           tradeName: row.Customer.tradeName,
           taxId: row.Customer.taxId,
-          externalCustomerId: row.Customer.externalCustomerId,
+          // Espelha o ID Nomus do pedido (Customer não tem externalCustomerId).
+          externalCustomerId: row.externalCustomerId ?? null,
           // CrmCustomerCommercialOwner é injetado depois via resolver batch
           // (ver `resolveCommercialResponsibleMap`). Nunca vem do findMany.
           CrmCustomerCommercialOwner: null,
