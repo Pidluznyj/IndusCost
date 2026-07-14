@@ -48,12 +48,32 @@ const LABELS: Record<SalesOrderBillingStatus, string> = {
   CANCELED: "Cancelado",
 };
 
-/** Rótulo em português para exibição em tabela, filtros, PDF, XLSX. */
+/** Rótulo em português para exibição em tabela, filtros, XLSX e tooltips. */
 export function salesOrderBillingStatusLabel(
   status: SalesOrderBillingStatus | null | undefined
 ): string {
   if (!status) return "—";
   return LABELS[status] ?? "—";
+}
+
+/**
+ * Rótulos compactos para a coluna "Faturamento" do PDF analítico.
+ * Preferência: caber na célula sem estouro / sem empurrar valores.
+ * `PARTIALLY_INVOICED` → "Parcial" (em vez de "Parcialmente faturado").
+ */
+const LABELS_PDF_COMPACT: Record<SalesOrderBillingStatus, string> = {
+  INVOICED: "Faturado",
+  PARTIALLY_INVOICED: "Parcial",
+  NOT_INVOICED: "Não faturado",
+  CANCELED: "Cancelado",
+};
+
+/** Rótulo curto exclusivo do PDF (tabela DETALHAMENTO ANALÍTICO). */
+export function salesOrderBillingStatusLabelCompactForPdf(
+  status: SalesOrderBillingStatus | null | undefined
+): string {
+  if (!status) return "—";
+  return LABELS_PDF_COMPACT[status] ?? "—";
 }
 
 /**

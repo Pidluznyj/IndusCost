@@ -186,7 +186,7 @@
     padding: 2px 3px;
     vertical-align: top;
     word-wrap: break-word;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
 
   #sales-orders-print-root .sales-orders-print-filter-band {
@@ -334,9 +334,15 @@
     text-align: center !important;
   }
 
-  #sales-orders-print-root .sales-orders-print-money {
+  #sales-orders-print-root .sales-orders-print-money,
+  #sales-orders-print-root .col-money {
     text-align: right !important;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    word-wrap: normal !important;
+    font-size: 6.5px;
   }
 
   #sales-orders-print-root .sales-orders-print-money--risk {
@@ -365,14 +371,15 @@
   }
 
   /*
-   * Larguras da tabela analítica (2026-07). A coluna "Empresa" (antes 8%)
-   * foi removida — os 8% liberados foram redistribuídos entre Cliente
-   * (+5%, ganha protagonismo) e Pedido (+3%, aumenta legibilidade).
-   * `.col-company` permanece definido para retrocompatibilidade com
-   * fixtures/snapshots antigos, mas não é mais renderizado pela UI.
+   * Larguras da tabela analítica (2026-07 layout fix):
+   * - Pedido só mostra "PD XXXXX" → coluna estreita;
+   * - Faturamento com labels compactas → largura fixa;
+   * - Valores monetários com nowrap → precisam de largura estável;
+   * - Cliente truncado (até 2 linhas) para não empurrar valores.
+   * `.col-company` permanece definido para retrocompatibilidade.
    */
   #sales-orders-print-root .col-client {
-    width: 19%;
+    width: 15%;
   }
 
   #sales-orders-print-root .col-company {
@@ -382,41 +389,75 @@
   }
 
   #sales-orders-print-root .col-order {
-    width: 12%;
+    width: 7%;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  #sales-orders-print-root .col-date {
+    width: 5.5%;
+    white-space: nowrap;
   }
 
   #sales-orders-print-root .col-seller {
-    width: 11%;
+    width: 9%;
   }
 
   #sales-orders-print-root .col-status {
-    width: 7%;
+    width: 8%;
+    overflow: hidden;
+    text-align: center;
+  }
+
+  #sales-orders-print-root .col-num {
+    width: 4%;
+    white-space: nowrap;
+  }
+
+  #sales-orders-print-root .col-money {
+    width: 11.5%;
+  }
+
+  #sales-orders-print-root .sales-orders-print-client-text,
+  #sales-orders-print-root .sales-orders-print-seller-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    line-height: 1.25;
+    max-height: 2.5em;
   }
 
   #sales-orders-print-root .sales-orders-print-order-code {
     font-weight: 700;
+    white-space: nowrap;
   }
 
+  /* Classe legada — ID Nomus não é mais renderizado na tabela analítica. */
   #sales-orders-print-root .sales-orders-print-order-external {
-    color: #64748b;
-    font-size: 6.5px;
+    display: none;
   }
 
   #sales-orders-print-root .sales-orders-print-canceled-count {
     color: #b91c1c;
-    font-size: 6.5px;
+    font-size: 6px;
   }
 
-  /* Status badges */
+  /* Status / Faturamento badges — compactos, sem estourar a célula */
   #sales-orders-print-root .sales-orders-print-status {
     display: inline-block;
-    padding: 1px 4px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 1px 3px;
     border-radius: 3px;
-    font-size: 6.5px;
+    font-size: 6px;
     font-weight: 700;
-    line-height: 1.3;
+    line-height: 1.2;
     border: 1px solid transparent;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: top;
   }
 
   #sales-orders-print-root .sales-orders-print-status--danger {

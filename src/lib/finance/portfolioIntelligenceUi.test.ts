@@ -345,11 +345,17 @@ describe("portfolio intelligence UI", () => {
     assert.doesNotMatch(table, /vendedor comission/i);
   });
 
-  it("página registra aba Inteligência da Carteira", () => {
+  it("aba Inteligência da Carteira oculta na UI (services permanecem)", () => {
+    // 2026-07: Conciliação de Carteira exibe só Status Pedidos + Auditoria
+    // Pedido → Caixa. Componentes de Inteligência seguem no repo para reuso.
     const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
-    assert.match(page, /portfolio-tab-intelligence/);
-    assert.match(page, /PortfolioIntelligenceSection/);
+    const section = read(
+      "src/components/finance/portfolio-reconciliation/PortfolioIntelligenceSection.tsx"
+    );
+    assert.doesNotMatch(page, /portfolio-tab-intelligence/);
+    assert.doesNotMatch(page, /<PortfolioIntelligenceSection\b/);
     assert.match(page, /activeView/);
+    assert.match(section, /PortfolioIntelligence/);
   });
 
   it("contrato Britânia: cards, sanfonas, drawer PD 02159 e tooltip", () => {

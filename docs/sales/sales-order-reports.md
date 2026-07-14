@@ -66,8 +66,8 @@ Ambos exigem a permissão `sales_orders.view` (mesma da tela).
 4. **Resumo Executivo** (KPI cards): Pedidos · Valor original · Valor ativo ·
    Valor cancelado · Valor faturado · Saldo pendente · Ticket médio · Itens
    (ativos / cancelados) · Pedidos com NF · Pedidos sem NF.
-5. **Detalhamento analítico** — tabela executiva (12 colunas):
-   `Cliente · Empresa · Pedido · Emissão · Entrega · Vendedor · Status · Itens · Valor pedido · Valor ativo · Faturado · Saldo`
+5. **Detalhamento analítico** — tabela executiva (11 colunas):
+   `Cliente · Pedido · Emissão · Entrega · Vendedor · Faturamento · Itens · Valor pedido · Valor ativo · Faturado · Saldo`
    com linha `tfoot` de totais.
 6. **Rodapé**: "Documento gerado pelo IndusCost · Origem: Nomus Pedidos de
    Venda" + data/hora de emissão.
@@ -75,6 +75,24 @@ Ambos exigem a permissão `sales_orders.view` (mesma da tela).
 CSS de impressão em `src/components/sales/sales-order-report-print.css`
 (A4 paisagem, 8mm margem, tipografia consistente com AR, evita página em
 branco graças a `page-break-inside: auto` nas seções).
+
+### Ajustes de layout do PDF
+
+Prioridade: legibilidade da tabela **DETALHAMENTO ANALÍTICO** em A4 paisagem.
+
+| Tema | Comportamento no PDF |
+| --- | --- |
+| Coluna **Pedido** | Mostra **apenas** o código do pedido (ex.: `PD 02739`). |
+| ID Nomus / texto auxiliar | **Não** aparece na tabela analítica (`· Nomus PD …` removido). ID Nomus permanece no XLSX técnico e na tela. |
+| Coluna **Faturamento** | Labels **compactas**: `Faturado` · `Não faturado` · `Parcial` · `Cancelado`. `PARTIALLY_INVOICED` renderiza como **Parcial** (não “Parcialmente faturado”). Badge com fonte menor, `max-width: 100%` e ellipsis se necessário. |
+| Valores monetários | `white-space: nowrap` + sem `overflow-wrap: anywhere` — nunca quebrar `R$ 117.000,00` no meio (`R$ 117.000,` / `00`). Alinhados à direita. |
+| Coluna **Cliente** | Truncamento controlado (até 2 linhas) para não empurrar as colunas de valor. |
+| Totalizadores | Linha `Total` com `colSpan={6}` + totais em Itens / Valor pedido / Valor ativo / Faturado / Saldo, sem quebra da linha. |
+| Cabeçalho / filtros / KPIs / rodapé | **Não** alterados nesta correção de layout. |
+
+Helper: `salesOrderBillingStatusLabelCompactForPdf` em
+`src/lib/sales/salesOrderListBillingStatus.ts` (UI e XLSX continuam com o
+rótulo longo via `salesOrderBillingStatusLabel`).
 
 ## 5. Estrutura do XLSX (mais completa que o PDF)
 
@@ -161,6 +179,11 @@ Exemplos:
   `npx tsx tmp-audits/inspect-sales-order-report-britania.ts`
   Roda o loader real contra o banco quando `DATABASE_URL` está definido; do
   contrário, imprime dados de fixture equivalentes.
+- **Layout PDF (Britânia / estático)**:
+  `npx tsx tmp-audits/inspect-sales-order-report-pdf-layout.ts`
+  Confirma coluna Pedido só com `PD XXXXX`, labels compactas de Faturamento,
+  nowrap monetário e totalizadores — filtro de referência Cliente Britânia +
+  Ano 2026 (quando há banco; senão só auditoria estática do markup/CSS).
 - **Validações padrão**:
   ```powershell
   npm run check:server-imports
@@ -168,6 +191,8 @@ Exemplos:
   npm run check:browser-bundle
   npm test
   npm run build
+  npx tsx tmp-audits/inspect-sales-order-report-pdf-layout.ts
+  npx tsx scripts/qaSalesOrderReports.ts
   ```
 
 ## 12. Documentos relacionados

@@ -46,6 +46,7 @@ function checkFilesPresent() {
     "src/components/sales/sales-order-report-print.css",
     "docs/sales/sales-order-reports.md",
     "tmp-audits/inspect-sales-order-report-britania.ts",
+    "tmp-audits/inspect-sales-order-report-pdf-layout.ts",
   ]) {
     if (exists(rel)) ok(`files:${rel}`, "presente");
     else fail(`files:${rel}`, "ausente");
@@ -213,6 +214,116 @@ function checkPrintComponents() {
     ok("doc:footer", "rodapé usa footer institucional");
   } else {
     fail("doc:footer", "rodapé não usa footer institucional");
+  }
+
+  // Layout PDF (2026-07): coluna Pedido só com orderCode — sem sufixo Nomus.
+  if (doc.includes("· Nomus") || doc.includes("Nomus {row.externalSalesOrderCode}")) {
+    fail(
+      "doc:pedido-no-nomus",
+      "tabela analítica ainda renderiza sufixo '· Nomus' na coluna Pedido."
+    );
+  } else if (doc.includes("sales-orders-print-order-external")) {
+    fail(
+      "doc:pedido-no-nomus",
+      "classe sales-orders-print-order-external ainda usada no JSX do PDF."
+    );
+  } else {
+    ok("doc:pedido-no-nomus", "coluna Pedido sem '· Nomus' / ID Nomus auxiliar");
+  }
+  if (
+    /sales-orders-print-order-code">\{row\.orderCode\}/.test(doc) ||
+    doc.includes("{row.orderCode}")
+  ) {
+    ok("doc:pedido-code-only", "coluna Pedido renderiza apenas row.orderCode");
+  } else {
+    fail("doc:pedido-code-only", "coluna Pedido não usa row.orderCode");
+  }
+  if (doc.includes("salesOrderBillingStatusLabelCompactForPdf")) {
+    ok(
+      "doc:faturamento-compact",
+      "PDF usa rótulo compacto de faturamento (Parcial etc.)"
+    );
+  } else {
+    fail(
+      "doc:faturamento-compact",
+      "PDF não importa salesOrderBillingStatusLabelCompactForPdf"
+    );
+  }
+  if (doc.includes("{row.billingStatusLabel}") && !doc.includes("title={row.billingStatusLabel}")) {
+    fail(
+      "doc:faturamento-no-long-label",
+      "PDF ainda exibe billingStatusLabel longo como texto da célula"
+    );
+  } else {
+    ok(
+      "doc:faturamento-no-long-label",
+      "label longo de faturamento não é o texto visível da célula"
+    );
+  }
+
+  const css = read("src/components/sales/sales-order-report-print.css");
+  if (
+    /sales-orders-print-money[\s\S]*?white-space:\s*nowrap/.test(css) ||
+    (css.includes(".sales-orders-print-money") && css.includes("white-space: nowrap"))
+  ) {
+    ok("css:money-nowrap", "valores monetários com white-space: nowrap");
+  } else {
+    fail("css:money-nowrap", "CSS sem nowrap nos valores monetários");
+  }
+  if (css.includes("overflow-wrap: anywhere")) {
+    fail(
+      "css:no-overflow-anywhere",
+      "overflow-wrap: anywhere nas células pode quebrar 'R$ 117.000,00' no meio"
+    );
+  } else {
+    ok(
+      "css:no-overflow-anywhere",
+      "overflow-wrap: anywhere removido das células do PDF"
+    );
+  }
+  if (css.includes("-webkit-line-clamp: 2") || css.includes("sales-orders-print-client-text")) {
+    ok("css:client-clamp", "Cliente com truncamento controlado (2 linhas)");
+  } else {
+    fail("css:client-clamp", "Cliente sem truncamento controlado no CSS");
+  }
+
+  const billing = read("src/lib/sales/salesOrderListBillingStatus.ts");
+  if (
+    billing.includes("salesOrderBillingStatusLabelCompactForPdf") &&
+    billing.includes('PARTIALLY_INVOICED: "Parcial"')
+  ) {
+    ok("billing:pdf-parcial", "label compacta PDF: PARTIALLY_INVOICED → Parcial");
+  } else {
+    fail("billing:pdf-parcial", "LABELS_PDF_COMPACT sem Parcial para PARTIALLY_INVOICED");
+  }
+}
+
+function checkAccountsReceivableTitlesUntouched() {
+  const arDoc = "src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx";
+  if (!exists(arDoc)) {
+    fail("ar:titles-present", `${arDoc} ausente — possível regressão de escopo`);
+    return;
+  }
+  const src = read(arDoc);
+  if (
+    src.includes("salesOrderBillingStatusLabelCompactForPdf") ||
+    src.includes("SalesOrderReportPrintDocument") ||
+    src.includes("sales-orders-print-")
+  ) {
+    fail(
+      "ar:titles-isolation",
+      "Relatório AR > Títulos parece ter sido acoplado ao PDF de Pedidos de Venda"
+    );
+  } else {
+    ok(
+      "ar:titles-isolation",
+      "Relatório Contas a Receber > Títulos não acoplado ao PDF de Pedidos"
+    );
+  }
+  if (src.includes("PrintHeader") || src.includes("finance-ar-titles") || src.length > 200) {
+    ok("ar:titles-present", "documento de impressão AR Títulos intacto (estrutura básica)");
+  } else {
+    fail("ar:titles-present", "documento AR Títulos parece esvaziado");
   }
 }
 
@@ -625,6 +736,7 @@ async function main() {
   checkXlsxExport();
   checkUiHelpers();
   checkFilenameConvention();
+  checkAccountsReceivableTitlesUntouched();
   await checkAggregationFixture();
 
   console.log("");

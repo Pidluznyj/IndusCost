@@ -16,7 +16,10 @@ import type {
   SalesOrderReportPayload,
   SalesOrderReportRow,
 } from "@/src/lib/sales/salesOrderReport";
-import type { SalesOrderBillingStatus } from "@/src/lib/sales/salesOrderListBillingStatus";
+import {
+  salesOrderBillingStatusLabelCompactForPdf,
+  type SalesOrderBillingStatus,
+} from "@/src/lib/sales/salesOrderListBillingStatus";
 
 type SummaryCardTone =
   | "neutral"
@@ -193,25 +196,28 @@ export function SalesOrderReportPrintDocument({
               <tbody>
                 {rows.map((row) => (
                   <tr key={row.orderId}>
-                    <td className="col-client">{displayFinanceText(row.customerName)}</td>
+                    <td className="col-client">
+                      <span className="sales-orders-print-client-text">
+                        {displayFinanceText(row.customerName)}
+                      </span>
+                    </td>
                     <td className="col-order">
+                      {/* PDF analítico: somente o código do pedido (ex.: PD 02739). */}
                       <span className="sales-orders-print-order-code">{row.orderCode}</span>
-                      {row.externalSalesOrderCode ? (
-                        <span className="sales-orders-print-order-external">
-                          {" "}
-                          · Nomus {row.externalSalesOrderCode}
-                        </span>
-                      ) : null}
                     </td>
                     <td className="col-date">{formatFinanceDate(row.issueDate)}</td>
                     <td className="col-date">{formatFinanceDate(row.expectedDeliveryDate)}</td>
-                    <td className="col-seller">{displayFinanceText(row.sellerName)}</td>
+                    <td className="col-seller">
+                      <span className="sales-orders-print-seller-text">
+                        {displayFinanceText(row.sellerName)}
+                      </span>
+                    </td>
                     <td className="col-status">
                       <span
                         className={billingStatusToneClass(row.billingStatus)}
-                        title={row.statusLabel}
+                        title={row.billingStatusLabel}
                       >
-                        {row.billingStatusLabel}
+                        {salesOrderBillingStatusLabelCompactForPdf(row.billingStatus)}
                       </span>
                     </td>
                     <td className="col-num">
