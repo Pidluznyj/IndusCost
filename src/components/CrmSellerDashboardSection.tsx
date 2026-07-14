@@ -35,6 +35,9 @@ export type CrmSellerDashboardSectionProps = {
   sellerOptions: SellerOption[];
   selectedSellerKey: string;
   onSellerChange: (key: string) => void;
+  orderSellerOptions?: SellerOption[];
+  selectedOrderSellerKey?: string;
+  onOrderSellerChange?: (key: string) => void;
   periodPreset: SellerPeriodPreset;
   onPeriodPresetChange: (preset: SellerPeriodPreset) => void;
   dateFrom: string;
@@ -61,6 +64,9 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
   sellerOptions,
   selectedSellerKey,
   onSellerChange,
+  orderSellerOptions = [],
+  selectedOrderSellerKey = SELLER_KEY_ALL,
+  onOrderSellerChange,
   periodPreset,
   onPeriodPresetChange,
   dateFrom,
@@ -201,13 +207,13 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
             )}
           >
             {showSellerFilter ? (
-              <div className="sm:col-span-2 xl:col-span-2">
+              <div>
                 <label
                   htmlFor="crm-seller-filter"
                   className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                   title={CRM_UI_TOOLTIPS.commercialOwner}
                 >
-                  Responsável comercial da carteira
+                  Responsável da carteira
                 </label>
                 <select
                   id="crm-seller-filter"
@@ -224,6 +230,38 @@ export const CrmSellerDashboardSection: React.FC<CrmSellerDashboardSectionProps>
                     const label = formatSellerOptionLabel(opt);
                     return (
                       <option key={key} value={key} title={detail ?? undefined}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            ) : null}
+
+            {onOrderSellerChange ? (
+              <div>
+                <label
+                  htmlFor="crm-order-seller-filter"
+                  className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                  title={CRM_UI_TOOLTIPS.orderSeller}
+                >
+                  Vendedor do pedido
+                </label>
+                <select
+                  id="crm-order-seller-filter"
+                  value={selectedOrderSellerKey}
+                  onChange={(e) => onOrderSellerChange(e.target.value)}
+                  disabled={loading}
+                  className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/25"
+                  title={CRM_UI_TOOLTIPS.orderSeller}
+                >
+                  <option value={SELLER_KEY_ALL}>Todos os vendedores do pedido</option>
+                  {orderSellerOptions.map((opt) => {
+                    const key = buildSellerOptionKey(opt);
+                    const detail = formatSellerOptionDetail(opt);
+                    const label = formatSellerOptionLabel(opt);
+                    return (
+                      <option key={`os-${key}`} value={key} title={detail ?? undefined}>
                         {label}
                       </option>
                     );

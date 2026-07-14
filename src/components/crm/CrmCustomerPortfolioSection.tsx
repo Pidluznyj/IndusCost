@@ -226,7 +226,7 @@ export const CrmCustomerPortfolioSection: React.FC<CrmCustomerPortfolioSectionPr
                   className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                   title={CRM_UI_TOOLTIPS.commercialOwner}
                 >
-                  Responsável comercial da carteira
+                  Responsável da carteira
                 </label>
                 <select
                   id="crm-portfolio-seller-filter"

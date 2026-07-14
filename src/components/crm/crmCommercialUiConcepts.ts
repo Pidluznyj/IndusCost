@@ -5,11 +5,13 @@
 
 export const CRM_UI_TOOLTIPS = {
   commercialOwner:
-    "Pessoa responsável pela gestão do relacionamento e follow-up do cliente.",
+    "Filtra os clientes conforme o responsável comercial cadastrado na carteira.",
   orderSeller:
-    "Vendedor informado no Pedido de Venda/Nomus. Usado para auditoria e comissionamento.",
+    "Filtra pedidos pelo vendedor informado no Pedido de Venda do Nomus.",
   orderValue:
     "Calculado a partir da fonte oficial de Pedidos de Venda.",
+  ownerDiffersFromOrderSeller:
+    "Vendedor do pedido diferente do responsável da carteira.",
 } as const;
 
 export const CRM_SELLER_TAB_SUBTITLE =

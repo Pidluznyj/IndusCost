@@ -34,7 +34,9 @@ function OrderAuditFooter({ row }: { row: SellerDashboardOrder }) {
       {nomus ? (
         <p className="text-[10px] text-muted-foreground" title={CRM_UI_TOOLTIPS.orderSeller}>
           Vendedor do pedido: {nomus}
-          {row.ownerDiffersFromNomusSeller ? " · divergente" : ""}
+          {row.ownerDiffersFromNomusSeller
+            ? ` · ${CRM_UI_TOOLTIPS.ownerDiffersFromOrderSeller}`
+            : ""}
         </p>
       ) : (
         <p className="text-[10px] text-muted-foreground" title={CRM_UI_TOOLTIPS.orderSeller}>

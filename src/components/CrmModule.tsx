@@ -121,6 +121,9 @@ type SellerDashboardLoadParams = {
   externalSellerId?: number;
   responsible?: string;
   sellerIdentityKey?: string;
+  orderSellerExternalId?: number;
+  orderSellerResponsible?: string;
+  orderSellerIdentityKey?: string;
   dateFrom?: string;
   dateTo?: string;
 };
@@ -1488,8 +1491,10 @@ export const CrmModule = () => {
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
   const [sellerDashboardError, setSellerDashboardError] = useState<string | null>(null);
   const [selectedSellerKey, setSelectedSellerKey] = useState(SELLER_KEY_ALL);
+  const [selectedOrderSellerKey, setSelectedOrderSellerKey] = useState(SELLER_KEY_ALL);
   const [portfolioSellerKey, setPortfolioSellerKey] = useState(SELLER_KEY_ALL);
   const [sellerOptions, setSellerOptions] = useState<SellerOption[]>([]);
+  const [orderSellerOptions, setOrderSellerOptions] = useState<SellerOption[]>([]);
   const [sellerPeriodPreset, setSellerPeriodPreset] = useState<SellerPeriodPreset>("all");
   const [sellerDateFrom, setSellerDateFrom] = useState("");
   const [sellerDateTo, setSellerDateTo] = useState("");
@@ -1563,6 +1568,16 @@ export const CrmModule = () => {
           searchParams.set("responsible", params.responsible.trim());
         }
       }
+      if (params?.orderSellerIdentityKey?.trim()) {
+        searchParams.set("orderSellerIdentityKey", params.orderSellerIdentityKey.trim());
+      } else if (
+        params?.orderSellerExternalId !== null &&
+        params?.orderSellerExternalId !== undefined
+      ) {
+        searchParams.set("orderSellerExternalId", String(params.orderSellerExternalId));
+      } else if (params?.orderSellerResponsible?.trim()) {
+        searchParams.set("orderSellerResponsible", params.orderSellerResponsible.trim());
+      }
       if (params?.dateFrom?.trim()) {
         searchParams.set("dateFrom", params.dateFrom.trim());
       }
@@ -1574,6 +1589,9 @@ export const CrmModule = () => {
         `/api/crm/seller-dashboard${qs ? `?${qs}` : ""}`
       );
       setSellerDashboard(data);
+      if (Array.isArray(data.orderSellerOptions)) {
+        setOrderSellerOptions(data.orderSellerOptions);
+      }
       const isUnfiltered =
         params?.externalSellerId === undefined &&
         !params?.responsible?.trim() &&
@@ -1600,11 +1618,13 @@ export const CrmModule = () => {
   const buildSellerDashboardParams = useCallback(
     (overrides?: {
       sellerKey?: string;
+      orderSellerKey?: string;
       periodPreset?: SellerPeriodPreset;
       dateFrom?: string;
       dateTo?: string;
     }): SellerDashboardLoadParams | null => {
       const sellerKey = overrides?.sellerKey ?? selectedSellerKey;
+      const orderSellerKey = overrides?.orderSellerKey ?? selectedOrderSellerKey;
       const preset = overrides?.periodPreset ?? sellerPeriodPreset;
       const customFrom = overrides?.dateFrom ?? sellerDateFrom;
       const customTo = overrides?.dateTo ?? sellerDateTo;
@@ -1622,6 +1642,17 @@ export const CrmModule = () => {
         }
       }
 
+      if (orderSellerKey !== SELLER_KEY_ALL) {
+        const opt = orderSellerOptions.find((o) => buildSellerOptionKey(o) === orderSellerKey);
+        if (opt?.sellerIdentityKey?.trim()) {
+          params.orderSellerIdentityKey = opt.sellerIdentityKey.trim();
+        } else if (opt?.externalSellerId !== null && opt?.externalSellerId !== undefined) {
+          params.orderSellerExternalId = opt.externalSellerId;
+        } else if (opt?.responsible?.trim()) {
+          params.orderSellerResponsible = opt.responsible.trim();
+        }
+      }
+
       const range = resolveSellerPeriodRange(preset, customFrom, customTo);
       if (range === null) return null;
       if (range.dateFrom) params.dateFrom = range.dateFrom;
@@ -1632,7 +1663,9 @@ export const CrmModule = () => {
     [
       isOwnSellerOnly,
       selectedSellerKey,
+      selectedOrderSellerKey,
       sellerOptions,
+      orderSellerOptions,
       sellerPeriodPreset,
       sellerDateFrom,
       sellerDateTo,
@@ -1649,6 +1682,16 @@ export const CrmModule = () => {
     (key: string) => {
       setSelectedSellerKey(key);
       const params = buildSellerDashboardParams({ sellerKey: key });
+      if (params === null) return;
+      void loadSellerDashboard(params);
+    },
+    [buildSellerDashboardParams, loadSellerDashboard]
+  );
+
+  const handleOrderSellerChange = useCallback(
+    (key: string) => {
+      setSelectedOrderSellerKey(key);
+      const params = buildSellerDashboardParams({ orderSellerKey: key });
       if (params === null) return;
       void loadSellerDashboard(params);
     },
@@ -2275,6 +2318,9 @@ export const CrmModule = () => {
             sellerOptions={sellerOptions}
             selectedSellerKey={selectedSellerKey}
             onSellerChange={handleSellerChange}
+            orderSellerOptions={orderSellerOptions}
+            selectedOrderSellerKey={selectedOrderSellerKey}
+            onOrderSellerChange={handleOrderSellerChange}
             periodPreset={sellerPeriodPreset}
             onPeriodPresetChange={handleSellerPeriodPresetChange}
             dateFrom={sellerDateFrom}

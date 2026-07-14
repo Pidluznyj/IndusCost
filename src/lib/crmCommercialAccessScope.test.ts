@@ -230,6 +230,7 @@ describe("crmCommercialAccessScope", () => {
     assert.match(section, /showSellerFilter/);
     assert.match(section, /Todos os responsáveis \(visão geral\)/);
     assert.match(section, /ownScopeOnly/);
-    assert.match(section, /Responsável comercial da carteira/);
+    assert.match(section, /Responsável da carteira/);
+    assert.match(section, /Vendedor do pedido/);
   });
 });

@@ -3,9 +3,14 @@
  */
 
 export type SellerDashboardFilters = {
+  /** Filtro de Responsável da carteira (CrmCustomerCommercialOwner). */
   externalSellerId: number | null;
   responsible: string | null;
   sellerIdentityKey?: string | null;
+  /** Filtro de Vendedor do pedido (SalesOrder Nomus). */
+  orderSellerExternalId?: number | null;
+  orderSellerResponsible?: string | null;
+  orderSellerIdentityKey?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
 };
@@ -138,7 +143,10 @@ export type SellerDashboardResponse = {
     customerCount: number;
   };
   period: { dateFrom: string | null; dateTo: string | null };
+  /** Opções do filtro Responsável da carteira. */
   sellerOptions: SellerOption[];
+  /** Opções do filtro Vendedor do pedido (Nomus/SalesOrder). */
+  orderSellerOptions: SellerOption[];
   summary: SellerDashboardSummary;
   /** Aliases top-level pedidos (mesmos do summary). */
   totalOrders: number;

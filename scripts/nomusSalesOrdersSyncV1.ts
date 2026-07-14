@@ -21,6 +21,7 @@ import {
 import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrderItemStatus.ts";
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
+import { autoAssignCommercialOwnersAfterNomusSync } from "../src/lib/commercial/crmCommercialOwnerAutoAssign.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 import {
   formatSalesOrdersPaginationNote,
@@ -1742,6 +1743,22 @@ async function main(): Promise<void> {
         salesOrderIds: applied.affectedSalesOrderIds,
       })
     );
+
+    // Carteira vazia: preenche Responsável Comercial a partir do vendedor do pedido (não substitui).
+    try {
+      const ownerAssign = await autoAssignCommercialOwnersAfterNomusSync(
+        prisma,
+        applied.affectedSalesOrderIds
+      );
+      console.log(
+        `[nomusSalesOrdersSyncV1] auto-assign comercial: assigned=${ownerAssign.assigned} skippedOwned=${ownerAssign.skippedAlreadyOwned} unmapped=${ownerAssign.skippedUnmapped} errors=${ownerAssign.errors}`
+      );
+    } catch (err) {
+      console.error(
+        "[nomusSalesOrdersSyncV1] auto-assign comercial falhou (sync segue):",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 }
 

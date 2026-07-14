@@ -12447,11 +12447,23 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         return res.status(sellerScope.status).json(sellerScope.body);
       }
 
+      const orderSellerIdentityKey =
+        typeof req.query.orderSellerIdentityKey === "string"
+          ? req.query.orderSellerIdentityKey.trim() || null
+          : null;
+      const orderSellerResponsible = parseResponsibleQuery(req.query.orderSellerResponsible);
+      const orderSellerExternalId = parseExternalSellerIdQuery(
+        req.query.orderSellerExternalId
+      );
+
       const payload = await buildCrmSellerDashboardResponse({
         scopeMode: sellerScope.scopeMode,
         externalSellerId: sellerScope.externalSellerId,
         responsible: sellerScope.responsible,
         sellerIdentityKey: sellerScope.sellerIdentityKey,
+        orderSellerExternalId,
+        orderSellerResponsible,
+        orderSellerIdentityKey,
         dateFrom: typeof req.query.dateFrom === "string" ? req.query.dateFrom : null,
         dateTo: typeof req.query.dateTo === "string" ? req.query.dateTo : null,
         linkedUser:

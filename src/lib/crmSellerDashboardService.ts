@@ -27,7 +27,9 @@ import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe
 import {
   buildCrmCommercialOwnerOnlyOrderScopeSql,
   buildCrmOrderSellerNameSql,
+  buildCrmSellerFilterSql,
   hasCrmSellerMatchFilter,
+  type CrmSellerMatchFilter,
 } from "@/src/lib/crmSellerMatchSql";
 import { fetchCrmManualOwnerCustomerIds } from "@/src/lib/crmCustomersList";
 import { crmOrderWithoutFollowUpNotExistsSql } from "@/src/lib/crmOrderPortfolioSql";
@@ -43,9 +45,14 @@ const DATE_YMD_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type SellerDashboardRequest = {
   scopeMode: "all" | "own";
+  /** Responsável da carteira */
   externalSellerId: number | null;
   responsible: string | null;
   sellerIdentityKey: string | null;
+  /** Vendedor do pedido (Nomus) — opcional, AND sobre o escopo de carteira */
+  orderSellerExternalId?: number | null;
+  orderSellerResponsible?: string | null;
+  orderSellerIdentityKey?: string | null;
   dateFrom: string | null;
   dateTo: string | null;
   linkedUser?: {
@@ -53,6 +60,34 @@ export type SellerDashboardRequest = {
     sellerResponsibleName: string | null;
   } | null;
 };
+
+function salesOrderMatchesOrderSellerFilter(
+  order: {
+    externalSellerId?: number | null;
+    nomusSellerName?: string | null;
+    responsible?: string | null;
+  },
+  filter: CrmSellerMatchFilter
+): boolean {
+  if (!hasCrmSellerMatchFilter(filter)) return true;
+  const name = (order.nomusSellerName?.trim() || order.responsible?.trim() || "") || null;
+  const norm = name ? normalizeSellerIdentityName(name) : "";
+  const key = filter.sellerIdentityKey?.trim();
+  if (key) {
+    if (key.startsWith("__ID_ONLY__:")) {
+      const id = Number.parseInt(key.slice("__ID_ONLY__:".length), 10);
+      return Number.isFinite(id) && order.externalSellerId === id;
+    }
+    return norm === normalizeSellerIdentityName(key);
+  }
+  if (filter.externalSellerId != null) {
+    return order.externalSellerId === filter.externalSellerId;
+  }
+  if (filter.responsible?.trim()) {
+    return norm === normalizeSellerIdentityName(filter.responsible);
+  }
+  return true;
+}
 
 export class SellerDashboardBadRequest extends Error {
   constructor(message: string) {
@@ -124,9 +159,13 @@ function emptyMetricsPayload(args: {
   filterExternalSellerId: number | null;
   filterResponsible: string | null;
   filterSellerIdentityKey: string | null;
+  filterOrderSellerExternalId?: number | null;
+  filterOrderSellerResponsible?: string | null;
+  filterOrderSellerIdentityKey?: string | null;
   filterDateFrom: string | null;
   filterDateTo: string | null;
   sellerOptions: SellerDashboardResponse["sellerOptions"];
+  orderSellerOptions?: SellerDashboardResponse["orderSellerOptions"];
   customerCount: number;
   emptyStateReason: SellerDashboardResponse["emptyStateReason"];
 }): SellerDashboardResponse {
@@ -144,6 +183,9 @@ function emptyMetricsPayload(args: {
       externalSellerId: args.filterExternalSellerId,
       responsible: args.filterResponsible,
       sellerIdentityKey: args.filterSellerIdentityKey,
+      orderSellerExternalId: args.filterOrderSellerExternalId ?? null,
+      orderSellerResponsible: args.filterOrderSellerResponsible ?? null,
+      orderSellerIdentityKey: args.filterOrderSellerIdentityKey ?? null,
       dateFrom: args.filterDateFrom,
       dateTo: args.filterDateTo,
     },
@@ -159,6 +201,7 @@ function emptyMetricsPayload(args: {
     },
     period: { dateFrom: args.filterDateFrom, dateTo: args.filterDateTo },
     sellerOptions: args.sellerOptions,
+    orderSellerOptions: args.orderSellerOptions ?? [],
     summary,
     totalOrders: 0,
     totalOrderValue: 0,
@@ -221,13 +264,28 @@ export async function buildCrmSellerDashboardResponse(
     responsible: filterResponsible,
     sellerIdentityKey: filterSellerIdentityKey,
   };
+  const orderSellerFilter: CrmSellerMatchFilter = {
+    externalSellerId: input.orderSellerExternalId ?? null,
+    responsible: input.orderSellerResponsible?.trim() || null,
+    sellerIdentityKey:
+      input.orderSellerIdentityKey?.trim() ||
+      (input.orderSellerResponsible?.trim()
+        ? normalizeSellerIdentityName(input.orderSellerResponsible)
+        : null),
+  };
   const hasOwnerFilter = hasCrmSellerMatchFilter(sellerFilter);
+  const hasOrderSellerFilter = hasCrmSellerMatchFilter(orderSellerFilter);
   const commercialOwnerCustomerIds = await fetchCrmManualOwnerCustomerIds(prisma, sellerFilter);
   const soOwnerScope = buildCrmCommercialOwnerOnlyOrderScopeSql(
     "so",
     sellerFilter,
     commercialOwnerCustomerIds
   );
+  const soOrderSellerScope = hasOrderSellerFilter
+    ? buildCrmSellerFilterSql("so", orderSellerFilter)
+    : Prisma.sql`TRUE`;
+  /** Carteira (owner) AND vendedor do pedido (opcional). */
+  const soOrdersAxisScope = Prisma.sql`(${soOwnerScope}) AND (${soOrderSellerScope})`;
 
   const orderSellerNameSql = buildCrmOrderSellerNameSql("so");
   const customerNameSql = Prisma.sql`
@@ -341,6 +399,38 @@ export async function buildCrmSellerDashboardResponse(
       : consolidatedOptions;
   const sellerOptions = scopedConsolidated.map(consolidatedOptionToSellerOption);
 
+  // Opções do filtro Vendedor do pedido = vendedores Nomus em SalesOrder (não owners).
+  const orderSellerOptionRows = await prisma.$queryRaw<
+    {
+      external_seller_id: number | null;
+      responsible: string | null;
+      orders_count: number;
+    }[]
+  >(Prisma.sql`
+    SELECT
+      so."externalSellerId" AS external_seller_id,
+      ${orderSellerNameSql} AS responsible,
+      COUNT(*)::int AS orders_count
+    FROM "SalesOrder" so
+    WHERE so.status::text NOT IN ('CANCELLED', 'ERROR')
+      AND (
+        so."externalSellerId" IS NOT NULL
+        OR (so."nomusSellerName" IS NOT NULL AND TRIM(so."nomusSellerName") <> '')
+        OR (so."responsible" IS NOT NULL AND TRIM(so."responsible") <> '')
+      )
+      AND (${soOwnerScope})
+    GROUP BY so."externalSellerId", ${orderSellerNameSql}
+    ORDER BY orders_count DESC, responsible ASC NULLS LAST
+    LIMIT 200
+  `);
+  const orderSellerOptions = consolidateSellerRowFragments(
+    orderSellerOptionRows.map((row) => ({
+      external_seller_id: row.external_seller_id,
+      responsible: row.responsible,
+      orders_count: row.orders_count,
+    }))
+  ).map(consolidatedOptionToSellerOption);
+
   // Escopo `own` nunca pode cair em where aberto: sem filtro / IDs vazios
   // → dashboard vazio (vendedor sem carteira ou sem vínculo). Evita 500 e vazamento.
   if (
@@ -352,9 +442,13 @@ export async function buildCrmSellerDashboardResponse(
       filterExternalSellerId,
       filterResponsible,
       filterSellerIdentityKey,
+      filterOrderSellerExternalId: orderSellerFilter.externalSellerId,
+      filterOrderSellerResponsible: orderSellerFilter.responsible,
+      filterOrderSellerIdentityKey: orderSellerFilter.sellerIdentityKey,
       filterDateFrom,
       filterDateTo,
       sellerOptions,
+      orderSellerOptions,
       customerCount: 0,
       emptyStateReason: "NO_CUSTOMERS_FOR_COMMERCIAL_OWNER",
     });
@@ -366,9 +460,13 @@ export async function buildCrmSellerDashboardResponse(
       filterExternalSellerId,
       filterResponsible,
       filterSellerIdentityKey,
+      filterOrderSellerExternalId: orderSellerFilter.externalSellerId,
+      filterOrderSellerResponsible: orderSellerFilter.responsible,
+      filterOrderSellerIdentityKey: orderSellerFilter.sellerIdentityKey,
       filterDateFrom,
       filterDateTo,
       sellerOptions,
+      orderSellerOptions,
       customerCount: 0,
       emptyStateReason: "NO_CUSTOMERS_FOR_COMMERCIAL_OWNER",
     });
@@ -436,7 +534,7 @@ export async function buildCrmSellerDashboardResponse(
       INNER JOIN "Customer" c ON c.id = so."customerId"
       LEFT JOIN "CrmCustomerCommercialOwner" own
         ON own."customerId" = so."customerId" AND own."isActive" = true
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soOpenPortfolioScopeSql}
       ORDER BY so."issueDate" DESC
       LIMIT ${LIST_LIMIT}
@@ -501,7 +599,7 @@ export async function buildCrmSellerDashboardResponse(
         ORDER BY invoice_sort_date DESC NULLS LAST, nfe->>'dataProcessamento' DESC
         LIMIT 1
       ) inv ON TRUE
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soInvoicedMetricSql}
       ORDER BY inv.invoice_sort_date DESC NULLS LAST, so."issueDate" DESC
       LIMIT ${LIST_LIMIT}
@@ -541,7 +639,7 @@ export async function buildCrmSellerDashboardResponse(
       INNER JOIN "Customer" c ON c.id = so."customerId"
       LEFT JOIN "CrmCustomerCommercialOwner" own
         ON own."customerId" = so."customerId" AND own."isActive" = true
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soIssueDateInPeriodSql()}
       ORDER BY so."issueDate" DESC
       LIMIT ${LIST_LIMIT}
@@ -567,7 +665,7 @@ export async function buildCrmSellerDashboardResponse(
         so."updatedAt" AS updated_at
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soOpenPortfolioScopeSql}
         AND ${orderNoFollowUpSql}
       ORDER BY so."updatedAt" ASC
@@ -600,7 +698,7 @@ export async function buildCrmSellerDashboardResponse(
         ${orderIsInvoicedSql("so")} AS is_invoiced
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soIssueDateInPeriodSql()}
         AND so."proposalId" IS NULL
       ORDER BY so."issueDate" DESC
@@ -609,13 +707,15 @@ export async function buildCrmSellerDashboardResponse(
     prisma.$queryRaw<{ c: number }[]>(Prisma.sql`
       SELECT COUNT(*)::int AS c
       FROM "SalesOrder" so
-      WHERE ${soOwnerScope}
+      WHERE ${soOrdersAxisScope}
         AND ${soValidOrdersScopeSql}
         AND so."proposalId" IS NULL
     `),
   ]);
 
-  const orders = (metricsRows as any[]).map(mapRowToMetricsOrder);
+  const orders = (metricsRows as any[])
+    .map(mapRowToMetricsOrder)
+    .filter((order) => salesOrderMatchesOrderSellerFilter(order, orderSellerFilter));
 
   // Responsável Comercial vem do cadastro do cliente (CrmCustomerCommercialOwner),
   // NÃO do SalesOrder. Resolvido em batch para evitar N+1 e para não depender
@@ -761,7 +861,7 @@ export async function buildCrmSellerDashboardResponse(
       COUNT(*) FILTER (WHERE ${soOpenPortfolioScopeSql})::int AS open_orders_count,
       COALESCE(SUM(so."totalNetValue") FILTER (WHERE ${soOpenPortfolioScopeSql}), 0) AS open_orders_value
     FROM "SalesOrder" so
-    WHERE ${soOwnerScope}
+    WHERE ${soOrdersAxisScope}
     GROUP BY so."externalSellerId", ${orderSellerNameSql}
     ORDER BY orders_count DESC
     LIMIT 50
@@ -787,6 +887,9 @@ export async function buildCrmSellerDashboardResponse(
       externalSellerId: filterExternalSellerId,
       responsible: filterResponsible,
       sellerIdentityKey: filterSellerIdentityKey,
+      orderSellerExternalId: orderSellerFilter.externalSellerId,
+      orderSellerResponsible: orderSellerFilter.responsible,
+      orderSellerIdentityKey: orderSellerFilter.sellerIdentityKey,
       dateFrom: filterDateFrom,
       dateTo: filterDateTo,
     },
@@ -802,6 +905,7 @@ export async function buildCrmSellerDashboardResponse(
     },
     period: { dateFrom: filterDateFrom, dateTo: filterDateTo },
     sellerOptions,
+    orderSellerOptions,
     summary,
     totalOrders: metrics.totalOrders,
     totalOrderValue: metrics.totalOrderValue,
