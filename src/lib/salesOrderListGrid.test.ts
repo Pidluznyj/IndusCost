@@ -150,8 +150,11 @@ describe("salesOrderListGrid components", () => {
     assert.match(tableSrc, />Cliente</);
     assert.match(tableSrc, />Vendedor</);
     assert.match(tableSrc, />Emissão</);
-    assert.match(tableSrc, />Situação</);
-    assert.match(tableSrc, />Faturado</);
+    // 2026-07: "Situação" foi substituída por "Faturamento" (billingStatus
+    // baseado em NF vinculada); "Faturado" (Sim/Não) foi substituída por
+    // "NF" (número da última NF-e vinculada).
+    assert.match(tableSrc, />Faturamento</);
+    assert.match(tableSrc, />NF</);
     assert.match(tableSrc, />Valor líquido</);
     assert.match(tableSrc, />Margem</);
     assert.match(tableSrc, />Itens</);

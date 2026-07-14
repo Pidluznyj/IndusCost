@@ -222,4 +222,85 @@ describe("salesOrderListPaymentSchedule", () => {
     assert.equal(installments.length, 1);
     assert.equal(installments[0]?.expectedAmount, 1500);
   });
+
+  // ---------------------------------------------------------------------
+  // Sanity check de escala (2026-07 — PD 02740)
+  // ---------------------------------------------------------------------
+  it("PD 02740: parcela com valor 1000× menor é reescalada para bater com totalNetValue", () => {
+    // Cenário real: pedido com valor ativo R$ 175.600,00 mas o Nomus retornou
+    // `parcelas[0].valor = 175.6` (1000× menor). O motor deve preservar a data
+    // de vencimento oficial e reescalar o valor para o total ativo do pedido.
+    const installments = extractSalesOrderForecastInstallments(
+      {
+        parcelas: [{ numeroParcela: 1, dataVencimento: "20/10/2026", valor: 175.6 }],
+      },
+      175600,
+      issueDate
+    );
+    assert.equal(installments.length, 1);
+    assert.equal(installments[0]?.expectedAmount, 175600);
+    assert.ok(installments[0]?.dueDate instanceof Date);
+  });
+
+  it("parcelas com escala correta (bate com totalNetValue) são preservadas", () => {
+    const installments = extractSalesOrderForecastInstallments(
+      {
+        parcelas: [
+          { numeroParcela: 1, dataVencimento: "08/08/2026", valor: 10000 },
+          { numeroParcela: 2, dataVencimento: "08/09/2026", valor: 10000 },
+        ],
+      },
+      20000,
+      issueDate
+    );
+    assert.equal(installments.length, 2);
+    assert.equal(installments[0]?.expectedAmount, 10000);
+    assert.equal(installments[1]?.expectedAmount, 10000);
+  });
+
+  it("string pt-BR '175.600,00' é parseada corretamente para 175600 (não vira 0 nem 175.6)", () => {
+    const installments = extractSalesOrderForecastInstallments(
+      {
+        parcelas: [
+          { numeroParcela: 1, dataVencimento: "20/10/2026", valor: "175.600,00" },
+        ],
+      },
+      175600,
+      issueDate
+    );
+    assert.equal(installments.length, 1);
+    assert.equal(installments[0]?.expectedAmount, 175600);
+  });
+
+  it("parcelas em escala corrompida com múltiplas parcelas redistribuem orderTotal com residual na última", () => {
+    // 3 parcelas com valor 100 cada (soma 300) contra pedido de R$ 1.000,03.
+    // Ratio 0.3 está fora da faixa [0.1, 10], então redistribui: 333,34 · 333,34 · 333,35.
+    const installments = extractSalesOrderForecastInstallments(
+      {
+        parcelas: [
+          { numeroParcela: 1, dataVencimento: "01/08/2026", valor: 0.1 },
+          { numeroParcela: 2, dataVencimento: "01/09/2026", valor: 0.1 },
+          { numeroParcela: 3, dataVencimento: "01/10/2026", valor: 0.1 },
+        ],
+      },
+      1000.03,
+      issueDate
+    );
+    assert.equal(installments.length, 3);
+    const sum = installments.reduce((acc, i) => acc + i.expectedAmount, 0);
+    assert.ok(Math.abs(sum - 1000.03) < 0.01, `esperado soma ≈ 1000.03, veio ${sum}`);
+  });
+
+  it("orderTotal zero ou inválido não aplica sanity check (evita divisão por zero)", () => {
+    const installments = extractSalesOrderForecastInstallments(
+      {
+        parcelas: [{ numeroParcela: 1, dataVencimento: "01/08/2026", valor: 175.6 }],
+      },
+      0,
+      issueDate
+    );
+    assert.equal(installments.length, 1);
+    // Sem sanity check → preserva o valor original.
+    assert.equal(installments[0]?.expectedAmount, 175.6);
+  });
 });

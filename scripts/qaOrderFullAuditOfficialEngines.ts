@@ -379,6 +379,91 @@ async function checkRuntimeFixture() {
   });
   if (!mixed) ok("runtime:planned-only:mixed", "não confunde com CR real presente");
   else fail("runtime:planned-only:mixed", "reportou planejado-only com CR real presente");
+
+  // --------------------------------------------------------------------
+  // Bug PD 02740 (2026-07): parcelas do nomusRawResponse com escala 1000×
+  // menor que o `totalNetValue` do pedido eram usadas cegamente, gerando
+  // planned R$ 175,60 em vez de R$ 175.600,00. O motor agora reescala
+  // preservando a estrutura de parcelas (contagem + datas).
+  // --------------------------------------------------------------------
+  const { extractSalesOrderForecastInstallments } = await import(
+    "../src/lib/salesOrderListPaymentSchedule.js"
+  );
+  const rescaled = extractSalesOrderForecastInstallments(
+    {
+      parcelas: [
+        { numeroParcela: 1, dataVencimento: "20/10/2026", valor: 175.6 },
+      ],
+    },
+    175_600,
+    new Date("2026-07-14")
+  );
+  if (
+    rescaled.length === 1 &&
+    Math.abs((rescaled[0]?.expectedAmount ?? 0) - 175_600) < 0.01
+  ) {
+    ok(
+      "runtime:pd02740:rescale",
+      "parcela 1000× menor é reescalada para R$ 175.600 (batida com totalNetValue)"
+    );
+  } else {
+    fail(
+      "runtime:pd02740:rescale",
+      `esperado 175600, veio ${rescaled[0]?.expectedAmount}`
+    );
+  }
+
+  // Parseamento de string pt-BR "175.600,00" → 175600.
+  const parsedBrString = extractSalesOrderForecastInstallments(
+    {
+      parcelas: [
+        { numeroParcela: 1, dataVencimento: "20/10/2026", valor: "175.600,00" },
+      ],
+    },
+    175_600,
+    new Date("2026-07-14")
+  );
+  if (
+    parsedBrString.length === 1 &&
+    parsedBrString[0]?.expectedAmount === 175_600
+  ) {
+    ok(
+      "runtime:pd02740:pt-br-string",
+      "toNumber trata '175.600,00' como 175600 (não 0 nem 175.6)"
+    );
+  } else {
+    fail(
+      "runtime:pd02740:pt-br-string",
+      `esperado 175600, veio ${parsedBrString[0]?.expectedAmount}`
+    );
+  }
+
+  // Parcelas com escala correta continuam sendo preservadas.
+  const preserved = extractSalesOrderForecastInstallments(
+    {
+      parcelas: [
+        { numeroParcela: 1, dataVencimento: "08/08/2026", valor: 10_000 },
+        { numeroParcela: 2, dataVencimento: "08/09/2026", valor: 10_000 },
+      ],
+    },
+    20_000,
+    new Date("2026-07-14")
+  );
+  if (
+    preserved.length === 2 &&
+    preserved[0]?.expectedAmount === 10_000 &&
+    preserved[1]?.expectedAmount === 10_000
+  ) {
+    ok(
+      "runtime:scale:preserve-correct",
+      "parcelas com escala correta são preservadas (não reescala falsamente)"
+    );
+  } else {
+    fail(
+      "runtime:scale:preserve-correct",
+      `esperado 10000+10000, veio ${preserved.map((p) => p.expectedAmount).join(",")}`
+    );
+  }
 }
 
 async function main() {

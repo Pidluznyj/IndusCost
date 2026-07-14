@@ -367,6 +367,7 @@ function SalesOrderList() {
     if (month) params.set("month", month);
     if (search) params.set("q", search);
     const q = params.toString();
+    // Rota consumida: GET /api/sales-orders/seller-filter-options (via helper).
     void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
       getSalesOrderSellerFilterOptionsUrl(q),
       { signal: ac.signal }

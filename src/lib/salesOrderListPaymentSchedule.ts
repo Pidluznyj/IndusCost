@@ -87,13 +87,56 @@ function toInt(value: unknown): number | null {
   return null;
 }
 
+/**
+ * Converte um valor bruto (número, string US ou pt-BR) para `number` em reais.
+ *
+ * Regras (2026-07 — defesa contra Nomus enviando string pt-BR mal formatada):
+ *   - number finito → retorna direto.
+ *   - `"175.600,00"` (ponto de milhar + vírgula decimal) → 175600.
+ *   - `"175,60"` (só vírgula decimal) → 175.60.
+ *   - `"175.60"` / `"175600.00"` (padrão US, sem vírgula) → parse direto.
+ *   - `"1,234,567.89"` (US com vírgula de milhar) → 1234567.89.
+ *   - qualquer outra coisa → 0.
+ *
+ * IMPORTANTE: nunca use `Number(str.replace(",", "."))` diretamente —
+ * `"175.600,00".replace(",", ".")` vira `"175.600.00"` e cai para `NaN → 0`,
+ * fazendo o forecast usar zero. Este helper é a fonte única de conversão.
+ */
 function toNumber(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const n = Number(value.replace(",", "."));
-    return Number.isFinite(n) ? n : 0;
+  if (typeof value !== "string") return 0;
+  const trimmed = value.trim();
+  if (!trimmed) return 0;
+
+  const hasComma = trimmed.includes(",");
+  const hasDot = trimmed.includes(".");
+
+  let normalized: string;
+  if (hasComma && hasDot) {
+    // Formato misto: quem estiver por último é o decimal; o outro é separador
+    // de milhar e deve ser removido.
+    const lastComma = trimmed.lastIndexOf(",");
+    const lastDot = trimmed.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      // pt-BR: "175.600,00" → remove pontos, troca vírgula por ponto
+      normalized = trimmed.replace(/\./g, "").replace(",", ".");
+    } else {
+      // US: "1,234,567.89" → remove vírgulas
+      normalized = trimmed.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    // Só vírgula: assumimos decimal pt-BR ("175,60" → "175.60"). Se aparecerem
+    // várias vírgulas ("1,234,567" — US milhar sem decimal), removemos todas.
+    const commaCount = (trimmed.match(/,/g) ?? []).length;
+    normalized =
+      commaCount > 1 ? trimmed.replace(/,/g, "") : trimmed.replace(",", ".");
+  } else {
+    // Só ponto ou nada: já é decimal US válido para Number().
+    normalized = trimmed;
   }
-  return 0;
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function roundMoney(value: number): number {
@@ -132,9 +175,25 @@ function formatMoneyBr(value: number): string {
   });
 }
 
+/**
+ * Tolerância de escala entre a soma das parcelas planejadas e o total ativo
+ * do pedido. Se a soma extraída do `nomusRawResponse` estiver fora da faixa
+ * `[orderTotal / FORECAST_SCALE_MAX_RATIO, orderTotal * FORECAST_SCALE_MAX_RATIO]`,
+ * consideramos que houve corrupção de escala (Nomus enviou em milhares/
+ * centavos/string mal formatada) e **descartamos** as parcelas — o motor
+ * cai no fallback `totalNetValue` do pedido (parcela única).
+ *
+ * Ratio 10 cobre erros comuns: divisão/multiplicação por 100 (centavos ↔
+ * reais) e por 1000 (milhares). Não é apertado o suficiente para falsear
+ * pedidos legítimos com ajuste fiscal pequeno (frete, taxa).
+ */
+const FORECAST_SCALE_MAX_RATIO = 10;
+
+const FORECAST_MIN_ORDER_TOTAL_FOR_SANITY_CHECK = 1; // R$ 1,00
+
 export function extractSalesOrderForecastInstallments(
   raw: unknown,
-  _orderTotal: number,
+  orderTotal: number,
   _issueDate: Date
 ): SalesOrderListForecastInstallment[] {
   const obj = asObject(raw);
@@ -160,7 +219,41 @@ export function extractSalesOrderForecastInstallments(
         expectedAmount: amount,
       });
     }
-    if (installments.length > 0) return installments;
+    if (installments.length === 0) continue;
+
+    // Sanity check de escala (2026-07). Alguns registros do Nomus retornam
+    // `parcelas[].valor` numa escala diferente do `totalPedido` (ex.: PD 02740
+    // com valor ativo R$ 175.600,00 e parcelas[0].valor = 175.6 — 1000× menor).
+    // Nesses casos preservamos a estrutura oficial (nº de parcelas + datas)
+    // vinda do Nomus mas REDISTRIBUÍMOS o `orderTotal` proporcionalmente para
+    // que a soma das parcelas bata com o valor ativo oficial do pedido.
+    // A última parcela recebe o residual para eliminar drift de arredondamento.
+    if (
+      Number.isFinite(orderTotal) &&
+      orderTotal >= FORECAST_MIN_ORDER_TOTAL_FOR_SANITY_CHECK
+    ) {
+      const installmentsSum = installments.reduce(
+        (acc, inst) => acc + inst.expectedAmount,
+        0
+      );
+      if (installmentsSum > 0) {
+        const ratio = installmentsSum / orderTotal;
+        const outOfRange =
+          ratio < 1 / FORECAST_SCALE_MAX_RATIO || ratio > FORECAST_SCALE_MAX_RATIO;
+        if (outOfRange) {
+          const count = installments.length;
+          const baseAmount = roundMoney(orderTotal / count);
+          for (let i = 0; i < count; i += 1) {
+            installments[i]!.expectedAmount =
+              i === count - 1
+                ? roundMoney(orderTotal - baseAmount * (count - 1))
+                : baseAmount;
+          }
+        }
+      }
+    }
+
+    return installments;
   }
 
   return [];
