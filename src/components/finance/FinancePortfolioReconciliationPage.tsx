@@ -1,14 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Scale } from "lucide-react";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { fetchJsonOk, HttpError } from "@/src/lib/http";
+import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceModuleEyebrow,
-  FINANCE_FILTER_PANEL_TITLE,
   FINANCE_HEADER_ACTION_REFRESH,
-  financeModuleFilterFieldClass,
-  financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards";
 import {
   isPortfolioReconciliationVisibleTabId,
@@ -22,45 +19,47 @@ import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { PermissionGate } from "@/src/components/security/PermissionGate";
 import { ProtectedTab } from "@/src/components/security/ProtectedTab";
 import {
-  buildPortfolioReconciliationListQuery,
-  createDefaultPortfolioReconciliationUiFilters,
-  PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE,
   PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE,
-  type PortfolioReconciliationListPayload,
+  type PortfolioReconciliationRunDto,
   type PortfolioReconciliationRunsPayload,
 } from "@/src/lib/financePortfolioReconciliationClient";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
-import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceBiFilterPanel } from "@/src/components/finance/bi/FinanceBiFilterPanel";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
 import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
-import {
-  formatPortfolioForecastSourceLabel,
-  formatPortfolioStatusLabel,
-} from "@/src/components/finance/portfolio-reconciliation/PortfolioReconciliationBadges";
 import { cn } from "@/src/lib/utils";
 
-const MONTH_OPTIONS = [
-  { value: "", label: "Todos" },
-  ...Array.from({ length: 12 }, (_, i) => ({
-    value: String(i + 1),
-    label: String(i + 1).padStart(2, "0"),
-  })),
-];
+function isOrderToCashAuditRun(run: PortfolioReconciliationRunDto): boolean {
+  return (
+    !!run.filters &&
+    typeof run.filters === "object" &&
+    !Array.isArray(run.filters) &&
+    (run.filters as { source?: unknown }).source === "order_to_cash_audit"
+  );
+}
+
+/** Preferências: último SUCCESS; senão o mais recente da lista. */
+function pickDisplayRun(
+  runs: PortfolioReconciliationRunDto[]
+): PortfolioReconciliationRunDto | null {
+  if (!runs.length) return null;
+  const success = runs.find((r) => String(r.status).toUpperCase() === "SUCCESS");
+  return success ?? runs[0] ?? null;
+}
 
 /**
  * Financeiro > Conciliação de Carteira — auditoria paralela (read-only).
  * Não altera Fluxo de Caixa, Contas a Receber, Faturamento nem Comissões.
+ *
+ * Filtros globais legados foram removidos da UI (2026-07): cada aba
+ * (Status Pedidos / Auditoria Pedido → Caixa) mantém seus próprios filtros.
+ * Backend/list/runs permanecem disponíveis para as abas e Auditoria 360º.
  */
 export function FinancePortfolioReconciliationPage() {
   const permissions = usePermissions();
   const canView = permissions.canViewPortfolioModule();
-  const canViewConciliation = permissions.canView(
-    ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO
-  );
   /**
    * Abas visíveis na UI (2026-07 em diante): somente Status Pedidos e
    * Auditoria Pedido → Caixa, filtradas por permissão. Ver
@@ -80,12 +79,8 @@ export function FinancePortfolioReconciliationPage() {
   );
   const abortRef = useRef<AbortController | null>(null);
 
-  const [draftFilters, setDraftFilters] = useState(createDefaultPortfolioReconciliationUiFilters);
-  const [appliedFilters, setAppliedFilters] = useState(createDefaultPortfolioReconciliationUiFilters);
-  const [filtersExpanded, setFiltersExpanded] = useState(true);
-  const [payload, setPayload] = useState<PortfolioReconciliationListPayload | null>(null);
   const [runs, setRuns] = useState<PortfolioReconciliationRunsPayload["runs"]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingRuns, setLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
    * Aba ativa. Default: Status Pedidos (primeira aba visível permitida).
@@ -104,109 +99,40 @@ export function FinancePortfolioReconciliationPage() {
     }
   }, [activeView, visibleTabs]);
 
-  const queryString = useMemo(
-    () => buildPortfolioReconciliationListQuery(appliedFilters),
-    [appliedFilters]
-  );
-
-  const filtersActive = Boolean(
-    appliedFilters.runId ||
-      appliedFilters.customerExternalId ||
-      appliedFilters.year ||
-      appliedFilters.month ||
-      appliedFilters.orderCode ||
-      appliedFilters.status ||
-      appliedFilters.confidenceLevel ||
-      appliedFilters.forecastSource ||
-      appliedFilters.onlyIssues
-  );
-  const hasPendingFilters =
-    JSON.stringify({ ...draftFilters, page: 1, pageSize: draftFilters.pageSize }) !==
-    JSON.stringify({ ...appliedFilters, page: 1, pageSize: appliedFilters.pageSize });
-  const filterStatus = resolveFinanceBiFilterStatus(filtersActive, hasPendingFilters);
-
-  const loadRuns = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const data = await fetchJsonOk<PortfolioReconciliationRunsPayload>(
-        "/api/finance/portfolio-reconciliation/runs",
-        { signal, credentials: "include" }
-      );
-      setRuns(data.runs ?? []);
-    } catch {
-      setRuns([]);
-    }
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!canView || !canViewConciliation) {
-      setLoading(false);
-      if (!canViewConciliation) setPayload(null);
+  const loadRuns = useCallback(async () => {
+    if (!canView) {
+      setLoadingRuns(false);
       return;
     }
     abortRef.current?.abort();
     const ac = new AbortController();
     abortRef.current = ac;
-    setLoading(true);
+    setLoadingRuns(true);
     setError(null);
     try {
-      await loadRuns(ac.signal);
-      const data = await fetchJsonOk<PortfolioReconciliationListPayload>(
-        `/api/finance/portfolio-reconciliation?${queryString}`,
+      const data = await fetchJsonOk<PortfolioReconciliationRunsPayload>(
+        "/api/finance/portfolio-reconciliation/runs",
         { signal: ac.signal, credentials: "include" }
       );
-      setPayload(data);
+      setRuns(data.runs ?? []);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      if (
-        e instanceof HttpError &&
-        (e.status === 404 || /run materializada|conciliação materializada|rebuild|OrderToCashAudit/i.test(e.message))
-      ) {
-        setPayload({
-          ok: false,
-          message: PORTFOLIO_RECONCILIATION_NO_RUN_UI_MESSAGE,
-          run: null,
-          summary: null,
-          businessAnswers: null,
-          comparison: null,
-          rows: [],
-          pagination: { page: 1, pageSize: 50, totalRows: 0, totalPages: 0 },
-          filters: null,
-          availableFilters: {
-            statuses: [],
-            confidenceLevels: [],
-            forecastSources: [],
-            customers: [],
-            years: [],
-            months: [],
-          },
-          dataSource: null,
-        });
-        setError(null);
-      } else {
-        setError(
-          buildFinanceTabLoadError("Não foi possível carregar a conciliação de carteira.", e)
-        );
-        setPayload(null);
-      }
+      setRuns([]);
+      setError(
+        buildFinanceTabLoadError("Não foi possível carregar a última run de conciliação.", e)
+      );
     } finally {
-      if (!ac.signal.aborted) setLoading(false);
+      if (!ac.signal.aborted) setLoadingRuns(false);
     }
-  }, [canView, canViewConciliation, loadRuns, queryString]);
+  }, [canView]);
 
   useEffect(() => {
-    void load();
+    void loadRuns();
     return () => abortRef.current?.abort();
-  }, [load]);
+  }, [loadRuns]);
 
-  const applyFilters = () => {
-    setAppliedFilters({ ...draftFilters, page: 1 });
-  };
-
-  const clearFilters = () => {
-    const next = createDefaultPortfolioReconciliationUiFilters();
-    setDraftFilters(next);
-    setAppliedFilters(next);
-  };
+  const displayRun = useMemo(() => pickDisplayRun(runs), [runs]);
+  const displayRunIsO2c = displayRun ? isOrderToCashAuditRun(displayRun) : false;
 
   if (!canView) {
     return (
@@ -228,18 +154,6 @@ export function FinancePortfolioReconciliationPage() {
     );
   }
 
-  // `payload.availableFilters` alimenta os selects do painel superior. Os
-  // campos `payload.rows` / `businessAnswers` / `comparison` deixaram de ser
-  // exibidos aqui — Status Pedidos e Auditoria Pedido → Caixa renderizam suas
-  // próprias grids. `canViewConciliation` continua governando `load()` para
-  // não chamar `/api/finance/portfolio-reconciliation` quando o usuário não
-  // tem permissão para o endpoint da conciliação.
-  const available = payload?.availableFilters;
-  const yearOptions =
-    available?.years?.length
-      ? available.years
-      : Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i);
-
   return (
     <div data-testid="finance-portfolio-reconciliation-page">
       <FinanceBiDashboardShell>
@@ -251,8 +165,8 @@ export function FinancePortfolioReconciliationPage() {
             {
               id: "refresh",
               label: FINANCE_HEADER_ACTION_REFRESH,
-              onClick: () => void load(),
-              icon: <RefreshCw className="h-4 w-4" />,
+              onClick: () => void loadRuns(),
+              icon: <RefreshCw className={cn("h-4 w-4", loadingRuns && "animate-spin")} />,
             },
           ]}
         />
@@ -268,207 +182,19 @@ export function FinancePortfolioReconciliationPage() {
         {error ? (
           <FinanceModuleErrorBanner
             message={error}
-            onRetry={() => void load()}
+            onRetry={() => void loadRuns()}
             onDismiss={() => setError(null)}
           />
         ) : null}
 
-        <FinanceBiFilterPanel
-          title={FINANCE_FILTER_PANEL_TITLE}
-          expanded={filtersExpanded}
-          onToggle={() => setFiltersExpanded((v) => !v)}
-          filterStatus={filterStatus}
-          onApply={applyFilters}
-          onClear={clearFilters}
-          compact
-        >
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            <FilterField label="Cliente">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.customerExternalId}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    customerExternalId: e.target.value,
-                  }))
-                }
-                data-testid="portfolio-filter-customer"
-              >
-                <option value="">Todos</option>
-                {(available?.customers ?? []).map((c) => (
-                  <option key={c.customerExternalId} value={String(c.customerExternalId)}>
-                    {c.customerName
-                      ? `${c.customerName} (${c.customerExternalId})`
-                      : `Cliente ${c.customerExternalId}`}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Ano">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.year}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({ ...prev, year: e.target.value }))
-                }
-              >
-                <option value="">Todos</option>
-                {yearOptions.map((y) => (
-                  <option key={y} value={String(y)}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Mês">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.month}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({ ...prev, month: e.target.value }))
-                }
-              >
-                {MONTH_OPTIONS.map((m) => (
-                  <option key={m.value || "all"} value={m.value}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Pedido">
-              <input
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.orderCode}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({ ...prev, orderCode: e.target.value }))
-                }
-                placeholder="Ex.: PD 02339"
-                data-testid="portfolio-filter-order"
-              />
-            </FilterField>
-
-            <FilterField label="Status">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.status}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({ ...prev, status: e.target.value }))
-                }
-              >
-                <option value="">Todos</option>
-                {(available?.statuses ?? []).map((status) => (
-                  <option key={status} value={status}>
-                    {formatPortfolioStatusLabel(status)}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Confiança">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.confidenceLevel}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    confidenceLevel: e.target.value,
-                  }))
-                }
-              >
-                <option value="">Todas</option>
-                {(available?.confidenceLevels?.length
-                  ? available.confidenceLevels
-                  : ["HIGH", "MEDIUM", "LOW", "BLOCKED"]
-                ).map((level) => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Fonte da previsão">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.forecastSource}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    forecastSource: e.target.value,
-                  }))
-                }
-              >
-                <option value="">Todas</option>
-                {(available?.forecastSources?.length
-                  ? available.forecastSources
-                  : ["RECEIVABLE", "NFE", "ORDER", "UNRESOLVED"]
-                ).map((source) => (
-                  <option key={source} value={source}>
-                    {formatPortfolioForecastSourceLabel(source)}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Run de conciliação">
-              <select
-                className={financeModuleFilterFieldClass()}
-                value={draftFilters.runId}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({ ...prev, runId: e.target.value }))
-                }
-                data-testid="portfolio-filter-run"
-              >
-                <option value="">Último run com sucesso</option>
-                {runs.map((run) => {
-                  const source =
-                    run.filters &&
-                    typeof run.filters === "object" &&
-                    !Array.isArray(run.filters) &&
-                    (run.filters as { source?: unknown }).source === "order_to_cash_audit"
-                      ? "O2C"
-                      : "Portfolio";
-                  return (
-                    <option key={run.id} value={run.id}>
-                      {source} · {run.status} ·{" "}
-                      {formatFinanceDateTime(run.finishedAt ?? run.createdAt)} ·{" "}
-                      {run.id.slice(0, 8)}
-                    </option>
-                  );
-                })}
-              </select>
-            </FilterField>
-
-            <label className="flex items-end gap-2 pb-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-border"
-                checked={draftFilters.onlyIssues}
-                onChange={(e) =>
-                  setDraftFilters((prev) => ({
-                    ...prev,
-                    onlyIssues: e.target.checked,
-                  }))
-                }
-                data-testid="portfolio-filter-only-issues"
-              />
-              <span>Apenas divergências / alertas</span>
-            </label>
-          </div>
-        </FinanceBiFilterPanel>
-
-        {payload?.run ? (
+        {displayRun ? (
           <div className="mb-3 space-y-1" data-testid="portfolio-reconciliation-run-meta">
             <p className="text-xs text-muted-foreground">
-              Run {payload.run.id.slice(0, 8)}… · {payload.run.status} · última run{" "}
-              {formatFinanceDateTime(payload.run.finishedAt ?? payload.run.createdAt)}
-              {payload.run.mode ? ` · modo ${payload.run.mode}` : ""}
+              Run {displayRun.id.slice(0, 8)}… · {displayRun.status} · última run{" "}
+              {formatFinanceDateTime(displayRun.finishedAt ?? displayRun.createdAt)}
+              {displayRun.mode ? ` · modo ${displayRun.mode}` : ""}
             </p>
-            {payload.dataSource === "order_to_cash_audit" ? (
+            {displayRunIsO2c ? (
               <p
                 className="text-xs text-sky-800"
                 data-testid="portfolio-reconciliation-o2c-source"
@@ -536,20 +262,5 @@ export function FinancePortfolioReconciliationPage() {
         </ProtectedTab>
       </FinanceBiDashboardShell>
     </div>
-  );
-}
-
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block space-y-1">
-      <span className={financeModuleFilterLabelClass()}>{label}</span>
-      {children}
-    </label>
   );
 }

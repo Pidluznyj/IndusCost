@@ -124,14 +124,19 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.doesNotMatch(page, /<PortfolioReconciliationSummaryCardsView\b/);
     assert.doesNotMatch(page, /<PortfolioReconciliationComparisonPanel\b/);
     assert.doesNotMatch(page, /PORTFOLIO_RECONCILIATION_BUSINESS_ANSWERS_BANNER/);
+    // Filtro global legado removido — filtros ficam nas abas.
+    assert.doesNotMatch(page, /FinanceBiFilterPanel/);
+    assert.doesNotMatch(page, /Fonte da previsão/);
+    assert.doesNotMatch(page, /Run de conciliação/);
+    assert.doesNotMatch(page, /Apenas divergências \/ alertas/);
+    assert.match(page, /portfolio-reconciliation-run-meta/);
     // Permissões continuam declaradas em `PORTFOLIO_RECONCILIATION_UI_TABS` (não removemos backend).
     const clientPerms = read("src/lib/permissionsClient.ts");
     assert.match(clientPerms, /Inteligência da Carteira/);
     assert.match(clientPerms, /Auditoria Pedido → Caixa/);
     assert.match(clientPerms, /PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS/);
     assert.match(client, new RegExp(PORTFOLIO_RECONCILIATION_PARALLEL_NOTICE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    // Endpoints usados pela página (filtros + status pedidos + auditoria).
-    assert.match(page, /\/api\/finance\/portfolio-reconciliation/);
+    // Página carrega meta da run; listagem global não é mais filtrada no shell.
     assert.match(page, /\/api\/finance\/portfolio-reconciliation\/runs/);
     assert.match(page, /usePermissions/);
     assert.match(page, /PermissionGate/);

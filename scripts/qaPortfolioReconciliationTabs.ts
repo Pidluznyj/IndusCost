@@ -206,22 +206,90 @@ function checkTabsMounted(): void {
 }
 
 // ---------------------------------------------------------------------------
-// 7) Painel de filtros continua renderizado
+// 7) Filtro global legado removido; filtros ficam nas abas
 // ---------------------------------------------------------------------------
 function checkFiltersPanel(): void {
   const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
   const hasPanel = /<FinanceBiFilterPanel\b/.test(page);
-  const hasApply = /onApply=\{applyFilters\}/.test(page);
-  const hasClear = /onClear=\{clearFilters\}/.test(page);
-  if (hasPanel && hasApply && hasClear) {
+  const hasGlobalFonte = /Fonte da previsão/.test(page);
+  const hasGlobalRunFilter = /Run de conciliação/.test(page);
+  const hasGlobalOnlyIssues = /Apenas divergências \/ alertas/.test(page);
+  const hasApply = /function applyFilters|const applyFilters/.test(page);
+  const hasClear = /function clearFilters|const clearFilters/.test(page);
+  const orderStatus = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusTab.tsx"
+  );
+  const orderStatusFilters = read(
+    "src/components/finance/portfolio-reconciliation/OrderStatusFilters.tsx"
+  );
+  const o2c = read(
+    "src/components/finance/portfolio-reconciliation/OrderToCashAuditTab.tsx"
+  );
+  const o2cFilters = read(
+    "src/components/finance/portfolio-reconciliation/OrderToCashAuditFilters.tsx"
+  );
+
+  if (
+    !hasPanel &&
+    !hasGlobalFonte &&
+    !hasGlobalRunFilter &&
+    !hasGlobalOnlyIssues &&
+    !hasApply &&
+    !hasClear
+  ) {
     ok(
-      "check-7-filters-panel",
-      "FinanceBiFilterPanel + applyFilters + clearFilters presentes."
+      "check-7-global-filters-removed",
+      "Card global FinanceBiFilterPanel / Fonte da previsão / Run de conciliação removidos da página."
     );
   } else {
     fail(
-      "check-7-filters-panel",
-      `Painel de filtros incompleto. panel=${hasPanel} apply=${hasApply} clear=${hasClear}`
+      "check-7-global-filters-removed",
+      `Resíduo do filtro global. panel=${hasPanel} fonte=${hasGlobalFonte} run=${hasGlobalRunFilter} issues=${hasGlobalOnlyIssues}`
+    );
+  }
+
+  if (
+    /OrderStatusFilters/.test(orderStatus) &&
+    /onApply/.test(orderStatusFilters)
+  ) {
+    ok(
+      "check-7b-order-status-own-filters",
+      "Aba Status Pedidos mantém filtros próprios (OrderStatusFilters)."
+    );
+  } else {
+    fail(
+      "check-7b-order-status-own-filters",
+      "OrderStatusFilters ausente da aba Status Pedidos."
+    );
+  }
+
+  if (
+    /OrderToCashAuditFilters/.test(o2c) &&
+    /onApply|Pesquisar|Aplicar/.test(o2cFilters)
+  ) {
+    ok(
+      "check-7c-o2c-own-filters",
+      "Aba Auditoria Pedido → Caixa mantém filtros próprios."
+    );
+  } else {
+    fail(
+      "check-7c-o2c-own-filters",
+      "OrderToCashAuditFilters ausente da aba Auditoria."
+    );
+  }
+
+  if (
+    /portfolio-reconciliation-run-meta/.test(page) &&
+    /FINANCE_HEADER_ACTION_REFRESH/.test(page)
+  ) {
+    ok(
+      "check-7d-run-meta-and-refresh",
+      "Meta da run + botão Atualizar continuam na página."
+    );
+  } else {
+    fail(
+      "check-7d-run-meta-and-refresh",
+      "Run meta ou botão Atualizar ausentes."
     );
   }
 }
