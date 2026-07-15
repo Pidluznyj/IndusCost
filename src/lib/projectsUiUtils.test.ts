@@ -25,9 +25,21 @@ describe("projectsUiUtils", () => {
     assert.equal(parseProjectsNumberInput("1,234.56"), 1234.56);
   });
 
-  it("formatProjectsNumberInput + parse mantém percentuais com decimal", () => {
+  it("parseProjectsNumberInput trata milhar BR em quantidade (10.000 ≠ 10)", () => {
+    assert.equal(parseProjectsNumberInput("10.000"), 10_000);
+    assert.equal(parseProjectsNumberInput("1.250"), 1_250);
+    assert.equal(parseProjectsNumberInput("1.250.000"), 1_250_000);
+    assert.equal(parseProjectsNumberInput("10.25"), 10.25);
+    assert.equal(parseProjectsNumberInput("10,25"), 10.25);
+  });
+
+  it("formatProjectsNumberInput + parse mantém percentuais e quantidades", () => {
     assert.equal(formatProjectsNumberInput(37.5), "37,5");
     assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(37.5)!), 37.5);
+    assert.equal(formatProjectsNumberInput(10_000), "10.000");
+    assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(10_000)!), 10_000);
+    assert.equal(formatProjectsNumberInput(1_250_000), "1.250.000");
+    assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(1_250_000)!), 1_250_000);
     assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(100)!), 100);
     // Regressão do modal: String(37.5) era "37.5" e o parse antigo virava 375 → soma 775%.
     assert.equal(parseProjectsNumberInput(String(37.5)), 37.5);

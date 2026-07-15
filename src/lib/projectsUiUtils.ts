@@ -13,11 +13,12 @@ import type {
  * Converte texto de input numérico (pt-BR e en-US simples) em number.
  * Casos:
  * - "1.234,56" / "10,5" → BR
- * - "37.5" / "1234.56" → ponto decimal (não trata como milhar)
+ * - "37.5" / "10.25" → ponto decimal (1–2 casas)
+ * - "10.000" / "1.250" → milhar BR (3 dígitos após o ponto)
  * - "1.234.567" → milhares BR sem decimais
  */
 export function parseProjectsNumberInput(value: string): number | null {
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(/\s/g, "");
   if (!trimmed) return null;
 
   const hasComma = trimmed.includes(",");
@@ -32,12 +33,18 @@ export function parseProjectsNumberInput(value: string): number | null {
       normalized = trimmed.replace(/,/g, "");
     }
   } else if (hasComma) {
-    normalized = trimmed.replace(",", ".");
+    normalized = trimmed.replace(/\./g, "").replace(",", ".");
   } else if (hasDot) {
     const parts = trimmed.split(".");
-    // Um único ponto → decimal ("37.5"), não milhar.
-    // Vários pontos → milhares BR ("1.234.567").
-    normalized = parts.length === 2 ? trimmed : trimmed.replace(/\./g, "");
+    if (parts.length > 2) {
+      // 1.234.567 → milhares BR
+      normalized = trimmed.replace(/\./g, "");
+    } else {
+      const frac = parts[1] ?? "";
+      // Um único ponto com exatamente 3 dígitos = milhar BR ("10.000" → 10000).
+      // 1–2 dígitos = decimal ("37.5", "10.25").
+      normalized = frac.length === 3 ? `${parts[0]}${frac}` : trimmed;
+    }
   } else {
     normalized = trimmed;
   }
@@ -48,8 +55,13 @@ export function parseProjectsNumberInput(value: string): number | null {
 
 export function formatProjectsNumberInput(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
-  // Usa vírgula decimal para round-trip seguro com parseProjectsNumberInput.
-  return String(value).replace(".", ",");
+  if (Number.isInteger(value)) {
+    return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+  }
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 6,
+  });
 }
 
 export function suggestAmortizedCostPerUnit(

@@ -117,7 +117,9 @@ export function ProjectCostAmortizationModal({
         };
       })
     );
-  }, [open, initialPassThroughPercent, initialAllocations, targets]);
+    // Só reinicializa ao abrir o modal — evita resetar edições de qtde/% enquanto digita.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only hydrate
+  }, [open]);
 
   const passThroughPct = parseProjectsNumberInput(passThroughPercent) ?? 0;
   const { passThroughAmount, absorbedAmount } = calculatePassThroughAmounts(

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Gerado em | 2026-07-15T12:10:30.359Z |
+| Gerado em | 2026-07-15T12:12:33.694Z |
 | Modo | strict |
 | OK (modo) | sim |
 | Catálogo | 175 |
