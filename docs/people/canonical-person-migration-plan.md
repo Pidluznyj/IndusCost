@@ -78,3 +78,14 @@ Não apagar linhas `Person`. Revert de migration só se ainda não houver depend
 | `people.search` | busca (+ aliases employees.view) |
 | `people.link.manage` | vincular/desvincular (+ employees.edit) |
 | `people.pii.view` | e-mail/CPF sem máscara |
+| Facetas `employees.*` / `admin.employees.*` | ver `canonical-person-links.md` |
+
+## Preflight (CI / local, sem apply)
+
+```bash
+npx tsx scripts/canonical-person-migration-preflight.ts
+# Banco isolado (homolog):
+# DATABASE_URL_TEST=postgresql://... npx tsx scripts/canonical-person-migration-preflight.ts --db-validate
+```
+
+Checklist completo: [`canonical-person-homologation-checklist.md`](./canonical-person-homologation-checklist.md).

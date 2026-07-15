@@ -8,12 +8,12 @@
 - FleetDriver ↔ Person
 - Customer ↔ Person (apenas PF)
 
-## Relacionamento (sem personId)
+## Relacionamento (sem personId de identidade da empresa)
 
 - Gestor: `Employee.managerId`
 - Responsável carteira: `CrmCustomerCommercialOwner`
 - Vendedor pedido: `SalesOrder.externalSellerId` + aliases
-- Contato cadastral cliente: campos denormalizados
+- Contato cadastral: snapshot + opcional `Customer.contactPersonId` → Person (não é PJ)
 
 ## Login
 
@@ -65,3 +65,7 @@ Leitura executiva agregada (sem regras paralelas de comissão/carteira):
 | Vínculos | `admin.employees.links` | view/manage | ver acima |
 | User link | `admin.employees.user_link` | manage | `employees.user_link.manage`, `employees.edit`, `users.manage` |
 | EPI | `admin.employees.epi` | manage | `employees.epi.manage`, `employees.edit` |
+
+## Homologação
+
+Roteiro por persona + deploy/rollback: [`canonical-person-homologation-checklist.md`](./canonical-person-homologation-checklist.md).

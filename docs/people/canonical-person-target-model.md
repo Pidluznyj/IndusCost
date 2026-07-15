@@ -27,4 +27,11 @@ Server-side, debounce FE, limite 20–40, máscara de e-mail/CPF sem `people.pii
 
 ## Duplicidade
 
-Auto-vínculo **somente** e-mail ou CPF exato (dry-run). Nome nunca é evidência suficiente.
+Auto-vínculo **somente** e-mail ou CPF exato (dry-run / apply inequívoco). Nome nunca é evidência suficiente. Telefone isolado nunca.
+
+## Homologação / estado
+
+- Modelo e FKs entregues; UI RH + Clientes + agregador de vínculos.
+- Checklist: [`canonical-person-homologation-checklist.md`](./canonical-person-homologation-checklist.md)
+- Migrations: ver [`canonical-person-migration-plan.md`](./canonical-person-migration-plan.md)
+- Contato PJ: `Customer.contactPersonId` (não confundir com identidade PF).

@@ -38,6 +38,13 @@
 - Departamento permanece texto até existir cadastro oficial.
 - EPI permanece preferência de tamanho (não almoxarifado).
 - Classificação = mão de obra Direto/Indireto/Apoio.
+
+## Estado de entrega (hardening)
+
+- Lookups oficiais: CC (`FinancialCostCenter`), gestor (`Employee`), cargo (`Role`), e-mail corporativo.
+- Pessoa canônica opcional no create/edit; vínculo AppUser explícito.
+- Redação GET por facetas (`personal_data` / `sensitive_data` / `administrative_data`) com OR legado `employees.edit`.
+- Homologação: [`../people/canonical-person-homologation-checklist.md`](../people/canonical-person-homologation-checklist.md).
 - Gestores = colaboradores ativos (sem filtro de “liderança” — fonte inexistente).
 - Auditoria de vínculo: log estruturado `employee.link_user` + timestamps Prisma.
 
