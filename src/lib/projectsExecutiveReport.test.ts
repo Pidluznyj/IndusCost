@@ -552,6 +552,8 @@ describe("projectsExecutiveReport — UI/rota", () => {
       React.createElement(ProjectExecutiveReport, { report })
     );
     assert.match(html, /Relatório Gerencial de Projeto/);
+    assert.match(html, /USO INTERNO/);
+    assert.match(html, /Não enviar para o cliente/);
     assert.match(html, /Resumo executivo financeiro/);
     assert.match(html, /Decisão solicitada/);
     assert.match(html, /Itens do projeto/);
@@ -604,10 +606,14 @@ describe("projectsExecutiveReport — UI/rota", () => {
     assert.match(css, /size:\s*A4 portrait/);
     assert.match(css, /project-executive-report-kpi-grid/);
     assert.match(css, /grid-template-columns:\s*repeat\(3/);
+    assert.match(css, /project-executive-report-print-footer/);
+    assert.match(css, /position:\s*fixed/);
     assert.match(page, /data-project-executive-report-print-page/);
     assert.match(page, /A4 portrait/);
     assert.match(reportUi, /project-executive-report-kpi-grid/);
     assert.match(reportUi, /project-executive-report-card/);
+    assert.match(reportUi, /PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER/);
+    assert.match(reportUi, /project-executive-report-print-footer/);
   });
 
   it("relatório não mostra matéria-prima como item principal", () => {

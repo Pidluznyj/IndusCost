@@ -3,6 +3,7 @@ import {
   formatExecutiveReportDate,
   formatExecutiveReportMoney,
   formatExecutiveReportPercent,
+  PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER,
   PROJECT_EXECUTIVE_REPORT_NOT_INFORMED,
   PROJECT_EXECUTIVE_REPORT_TITLE,
   type ProjectExecutiveReportPayload,
@@ -101,6 +102,12 @@ export function ProjectExecutiveReport({ report }: Props) {
       <header className="project-executive-report-header border-b border-slate-200 px-6 py-5 print:px-0">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">IndusCost</p>
         <h1 className="mt-1 text-2xl font-bold">{PROJECT_EXECUTIVE_REPORT_TITLE}</h1>
+        <div
+          className="project-executive-report-disclaimer-banner mt-3 border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950"
+          role="note"
+        >
+          {PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER}
+        </div>
         <table className="mt-4 w-full text-sm">
           <tbody>
             <tr>
@@ -579,6 +586,14 @@ export function ProjectExecutiveReport({ report }: Props) {
           </div>
           <p className="mt-4 text-xs text-slate-500">{report.technicalAnnex.message}</p>
         </Section>
+      </div>
+
+      {/* Rodapé fixo no print — Chrome/Edge repetem position:fixed em cada folha. */}
+      <div
+        className="project-executive-report-print-footer"
+        aria-hidden="true"
+      >
+        {PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER}
       </div>
     </div>
   );

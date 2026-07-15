@@ -89,7 +89,7 @@ export function ProjectExecutiveReportPage() {
     // Força A4 retrato: finance-executive-report-print.css define landscape global.
     const style = document.createElement("style");
     style.setAttribute("data-project-executive-report-print-page", "1");
-    style.textContent = "@page { size: A4 portrait; margin: 10mm; }";
+    style.textContent = "@page { size: A4 portrait; margin: 10mm 10mm 16mm 10mm; }";
     document.head.appendChild(style);
 
     const cleanup = () => {

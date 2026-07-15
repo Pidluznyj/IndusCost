@@ -8,13 +8,13 @@
 
 @page {
   size: A4 portrait;
-  margin: 10mm;
+  margin: 10mm 10mm 16mm 10mm;
 }
 
 @media print {
   @page {
     size: A4 portrait;
-    margin: 10mm;
+    margin: 10mm 10mm 16mm 10mm;
   }
 
   html,
@@ -259,4 +259,42 @@
   body.project-executive-report-route .overflow-x-auto {
     overflow: visible !important;
   }
+
+  /*
+   * Disclaimer em cada folha: position:fixed no print é repetido
+   * pelo motor do Chrome/Edge em todas as páginas.
+   */
+  body.project-executive-report-route .project-executive-report-print-footer {
+    display: block !important;
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    z-index: 9999 !important;
+    margin: 0 !important;
+    padding: 1.5mm 2mm !important;
+    border-top: 0.4mm solid #b45309 !important;
+    background: #fffbeb !important;
+    color: #78350f !important;
+    font-size: 7.5pt !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em !important;
+    text-align: center !important;
+    line-height: 1.25 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-disclaimer-banner {
+    border: 1px solid #f59e0b !important;
+    background: #fffbeb !important;
+    color: #78350f !important;
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
+    padding: 2mm 2.5mm !important;
+    margin: 2mm 0 3mm !important;
+  }
+}
+
+/* Fora do @media print: esconde o rodapé fixo na tela (o banner do header basta). */
+.project-executive-report-print-footer {
+  display: none;
 }

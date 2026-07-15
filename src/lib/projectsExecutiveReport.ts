@@ -26,6 +26,9 @@ import type { ProjectDetail, ProjectStatus, ProjectType } from "@/src/types/proj
 export const PROJECT_EXECUTIVE_REPORT_VERSION = "1.0";
 export const PROJECT_EXECUTIVE_REPORT_TITLE = "Relatório Gerencial de Projeto";
 export const PROJECT_EXECUTIVE_REPORT_BUTTON_LABEL = "Gerar relatório gerencial";
+/** Rodapé / aviso em cada folha (tela e PDF). */
+export const PROJECT_EXECUTIVE_REPORT_INTERNAL_DISCLAIMER =
+  "USO INTERNO — Relatório confidencial. Não compartilhar sem autorização. Não enviar para o cliente.";
 export const PROJECT_EXECUTIVE_REPORT_ROUTE_SUFFIX = "report";
 export const PROJECT_EXECUTIVE_REPORT_DEFAULT_SCOPE =
   "Projeto técnico/comercial para estimativa de custos, investimentos, amortização e viabilidade de fornecimento.";
