@@ -1,0 +1,38 @@
+# Cadastro de Colaborador — estado atual (auditoria)
+
+| | |
+|---|---|
+| Data | 2026-07-15 |
+| Escopo | Pessoas / RH — Novo/Editar Colaborador |
+
+## Arquitetura encontrada
+
+- UI: `EmployeeModule.tsx` + `EmployeeFichaTabNav` + `employeeHrUi.ts`
+- API: CRUD em `server.ts` (`/api/employees`)
+- Modelo: `Employee` (Prisma) + `Role` (FK) + `AppUser.employeeId` (1:1 opcional)
+- Sem serviço Zod dedicado anteriormente — validação imperativa fraca
+
+## Gaps principais (pré-evolução)
+
+| Gap | Detalhe |
+|-----|---------|
+| Sem e-mail corporativo | Só `personalEmail`; login via Admin → Usuários |
+| Centro de custo texto | Não usava `FinancialCostCenter` |
+| Gestor texto | `managerName` livre |
+| Departamento texto | Sem cadastro oficial |
+| Contrato/EPI | Enums no frontend apenas |
+| Roles API | Exigia `settings.*` (RH às vezes sem cargos) |
+| Dados sensíveis | Máscara UI com `employees.edit`; API ainda retorna completo no GET |
+
+## Fontes oficiais reutilizáveis
+
+| Domínio | Fonte |
+|---------|--------|
+| Cargo | `Role` + `/api/employees/lookups/roles` |
+| Centro de custo | `FinancialCostCenter` + lookup RH |
+| Gestor | `Employee` ACTIVE + lookup RH |
+| Login | `AppUser.employeeId` + e-mail |
+| Contrato | constantes `CONTRACT_TYPE_OPTIONS` |
+| Classificação | DIRETO / INDIRETO / APOIO (mão de obra) |
+| EPI | tamanhos em `employeeHrUi` (sem estoque) |
+| Departamento | **sem cadastro** — permanece texto livre |

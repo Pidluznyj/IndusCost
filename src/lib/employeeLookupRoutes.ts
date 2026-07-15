@@ -93,10 +93,16 @@ export function registerEmployeeLookupRoutes(
           AND: [
             excludeId ? { id: { not: excludeId } } : {},
             selectedId
-              ? { OR: [{ status: "ACTIVE" }, { id: selectedId }] }
+              ? {
+                  OR: [
+                    { status: "ACTIVE" },
+                    { status: null },
+                    { id: selectedId },
+                  ],
+                }
               : includeInactive
                 ? {}
-                : { status: "ACTIVE" },
+                : { OR: [{ status: "ACTIVE" }, { status: null }] },
           ],
         },
         select: {
@@ -113,6 +119,7 @@ export function registerEmployeeLookupRoutes(
       const mapped = rows
         .map((r) => {
           const displayName = formatManagerDisplayName(r);
+          const inactive = (r.status ?? "ACTIVE").toUpperCase() === "INACTIVE";
           return {
             id: r.id,
             name: r.name,
@@ -120,7 +127,7 @@ export function registerEmployeeLookupRoutes(
             department: r.department,
             status: r.status,
             displayName,
-            label: `${displayName}${r.status !== "ACTIVE" ? " (inativo)" : ""}`,
+            label: `${displayName}${inactive ? " (inativo)" : ""}`,
             searchText: [displayName, r.name, r.socialName ?? "", r.department]
               .join(" ")
               .toLowerCase(),
@@ -261,6 +268,14 @@ export function registerEmployeeLookupRoutes(
           data: { employeeId: id },
           select: { id: true, email: true, isActive: true, role: true },
         });
+        console.info(
+          JSON.stringify({
+            audit: "employee.link_user",
+            employeeId: id,
+            appUserId: updated.id,
+            at: new Date().toISOString(),
+          })
+        );
         res.json({ ok: true, appUser: updated });
       } catch (error) {
         console.error("POST /api/employees/:id/link-user", error);

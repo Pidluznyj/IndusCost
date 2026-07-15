@@ -74,10 +74,19 @@ describe("adminUserEmployeeLink", () => {
     assert.equal(ok.id, EMP_A.id);
   });
 
-  it("resolveLoginEmailForNewUser usa e-mail pessoal quando o pedido vem vazio", () => {
+  it("resolveLoginEmailForNewUser prioriza e-mail corporativo sobre pessoal", () => {
     assert.equal(
       resolveLoginEmailForNewUser({
         requestedEmail: "  ",
+        corporateEmail: " Corp@Empresa.com ",
+        personalEmail: "ana@empresa.com",
+      }),
+      "corp@empresa.com"
+    );
+    assert.equal(
+      resolveLoginEmailForNewUser({
+        requestedEmail: "  ",
+        corporateEmail: null,
         personalEmail: "ana@empresa.com",
       }),
       "ana@empresa.com"
@@ -85,6 +94,7 @@ describe("adminUserEmployeeLink", () => {
     assert.equal(
       resolveLoginEmailForNewUser({
         requestedEmail: "login@empresa.com",
+        corporateEmail: "corp@empresa.com",
         personalEmail: "ana@empresa.com",
       }),
       "login@empresa.com"

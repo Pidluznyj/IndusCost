@@ -104,13 +104,11 @@ export function assertClassification(value: string): EmployeeClassification {
 export function assertContractType(value: string | null): string | null {
   if (value == null || !value.trim()) return null;
   const upper = value.trim().toUpperCase();
-  if (!(EMPLOYEE_CONTRACT_TYPES as readonly string[]).includes(upper)) {
-    throw new EmployeeRegistrationError(
-      "INVALID_CONTRACT_TYPE",
-      "Tipo de contrato inválido."
-    );
+  if ((EMPLOYEE_CONTRACT_TYPES as readonly string[]).includes(upper)) {
+    return upper;
   }
-  return upper;
+  // Preserva valores legados fora do enum (não inventa catálogo paralelo).
+  return value.trim();
 }
 
 export type UserLinkStatus =
@@ -205,6 +203,8 @@ export async function assertManagerAssignable(
   input: {
     employeeId?: string | null;
     managerId: string | null;
+    /** Mantém gestor inativo já vinculado (histórico) sem forçar troca. */
+    preserveManagerId?: string | null;
     requireActive?: boolean;
   }
 ): Promise<{ id: string; name: string; socialName: string | null; status: string | null } | null> {
@@ -225,8 +225,10 @@ export async function assertManagerAssignable(
   if (!manager) {
     throw new EmployeeRegistrationError("MANAGER_NOT_FOUND", "Gestor não encontrado.");
   }
+  const preservingHistorical =
+    Boolean(input.preserveManagerId) && input.preserveManagerId === input.managerId;
   const active = (manager.status ?? "ACTIVE").toUpperCase() === "ACTIVE";
-  if (input.requireActive !== false && !active) {
+  if (input.requireActive !== false && !active && !preservingHistorical) {
     throw new EmployeeRegistrationError(
       "MANAGER_INACTIVE",
       "Selecione um gestor ativo. Gestores inativos só permanecem em cadastros históricos."
@@ -275,7 +277,7 @@ export function formatManagerDisplayName(manager: {
 export async function prepareEmployeePersistedFields(
   prisma: PrismaClient,
   body: Record<string, unknown>,
-  options?: { employeeId?: string | null }
+  options?: { employeeId?: string | null; preserveManagerId?: string | null }
 ): Promise<{
   corporateEmail: string | null;
   costCenterId: string | null;
@@ -314,6 +316,7 @@ export async function prepareEmployeePersistedFields(
   const manager = await assertManagerAssignable(prisma, {
     employeeId: options?.employeeId,
     managerId: managerIdRaw,
+    preserveManagerId: options?.preserveManagerId,
     requireActive: true,
   });
   const managerName = manager

@@ -143,7 +143,9 @@ export const EmployeeModule = () => {
     { value: string; label: string; searchTerms?: string }[]
   >([]);
   const [savingEmployee, setSavingEmployee] = useState(false);
+  const [linkingUser, setLinkingUser] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formBaseline, setFormBaseline] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
@@ -260,7 +262,9 @@ export const EmployeeModule = () => {
     setFormError(null);
     if (employee) {
       setEditingEmployee(employee);
-      setFormData(employeeToFormData(employee));
+      const next = employeeToFormData(employee);
+      setFormData(next);
+      setFormBaseline(JSON.stringify(next));
       void loadProfessionalLookups({
         excludeManagerId: employee.id,
         selectedCostCenterId: employee.costCenterId ?? employee.financialCostCenter?.id,
@@ -268,10 +272,39 @@ export const EmployeeModule = () => {
       });
     } else {
       setEditingEmployee(null);
-      setFormData(createEmptyEmployeeForm(roles[0]?.id || ""));
+      const next = createEmptyEmployeeForm(roles[0]?.id || "");
+      setFormData(next);
+      setFormBaseline(JSON.stringify(next));
       void loadProfessionalLookups();
     }
     setIsModalOpen(true);
+  };
+
+  const closeEmployeeModal = () => {
+    if (savingEmployee) return;
+    const dirty = JSON.stringify(formData) !== formBaseline;
+    if (dirty && !window.confirm("Há alterações não salvas. Deseja fechar mesmo assim?")) {
+      return;
+    }
+    setIsModalOpen(false);
+  };
+
+  const linkSystemUser = async (employee: Employee) => {
+    if (linkingUser) return;
+    setLinkingUser(true);
+    try {
+      const result = await fetchJsonOk<{ ok: boolean; appUser: Employee["appUser"] }>(
+        `/api/employees/${employee.id}/link-user`,
+        { method: "POST" }
+      );
+      const updated = { ...employee, appUser: result.appUser ?? employee.appUser };
+      setViewingEmployee(updated);
+      setEmployees((prev) => prev.map((e) => (e.id === employee.id ? { ...e, appUser: updated.appUser } : e)));
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Não foi possível vincular o usuário.");
+    } finally {
+      setLinkingUser(false);
+    }
   };
 
   const openEmployeeView = (employee: Employee) => {
@@ -645,7 +678,7 @@ export const EmployeeModule = () => {
           >
             <div className="p-5 sm:p-6 border-b border-border flex items-center justify-between bg-accent/30 shrink-0">
               <h3 className="text-xl font-bold">{editingEmployee ? "Editar Colaborador" : "Novo Colaborador"}</h3>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-accent rounded-full transition-colors">
+              <button type="button" onClick={closeEmployeeModal} className="p-2 hover:bg-accent rounded-full transition-colors">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -756,7 +789,7 @@ export const EmployeeModule = () => {
                               Centro de custo *
                             </label>
                             <SearchableSelect
-                              required
+                              required={!(formData.costCenterId || formData.costCenter)}
                               placeholder="Buscar centro de custo..."
                               options={costCenterOptions}
                               value={formData.costCenterId ?? ""}
@@ -1013,13 +1046,30 @@ export const EmployeeModule = () => {
                 </div>
               </div>
 
-              <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 flex items-center justify-end gap-3">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm">
-                  Cancelar
-                </button>
-                <button type="submit" className="px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm">
-                  {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
-                </button>
+              <div className="shrink-0 border-t border-border bg-card px-5 sm:px-6 py-4 space-y-3">
+                {formError ? (
+                  <p className="text-sm text-red-600" role="alert">
+                    {formError}
+                  </p>
+                ) : null}
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={closeEmployeeModal}
+                    className="px-6 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
+                    disabled={savingEmployee}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEmployee}
+                    className="inline-flex items-center gap-2 px-8 py-2 rounded-lg font-bold bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm disabled:opacity-60"
+                  >
+                    {savingEmployee ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {editingEmployee ? "Salvar alterações" : "Cadastrar colaborador"}
+                  </button>
+                </div>
               </div>
             </form>
           </motion.div>
@@ -1142,14 +1192,33 @@ export const EmployeeModule = () => {
                 {viewFichaTab === "professional" && (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                     <DetailField label="Nome social / apelido" value={displayText(viewingEmployee.socialName)} />
+                    <DetailField
+                      label="E-mail corporativo"
+                      value={displayText(viewingEmployee.corporateEmail)}
+                    />
                     <DetailField label="Cargo" value={displayText(viewingEmployee.Role.name)} />
                     <DetailField label="Departamento" value={displayText(viewingEmployee.department)} />
-                    <DetailField label="Centro de custo" value={displayText(viewingEmployee.costCenter)} />
+                    <DetailField
+                      label="Centro de custo"
+                      value={
+                        viewingEmployee.financialCostCenter
+                          ? `${viewingEmployee.financialCostCenter.code} — ${viewingEmployee.financialCostCenter.name}`
+                          : displayText(viewingEmployee.costCenter)
+                      }
+                    />
                     <DetailField label="Classificação" value={displayText(viewingEmployee.classification)} />
                     <DetailField label="Tipo de contrato" value={formatContractType(viewingEmployee.contractType)} />
                     <DetailField label="Admissão" value={formatEmployeeDate(viewingEmployee.admissionDate)} />
                     <DetailField label="Desligamento" value={formatEmployeeDate(viewingEmployee.terminationDate)} />
-                    <DetailField label="Gestor responsável" value={displayText(viewingEmployee.managerName)} />
+                    <DetailField
+                      label="Gestor responsável"
+                      value={
+                        viewingEmployee.manager
+                          ? viewingEmployee.manager.socialName?.trim() ||
+                            viewingEmployee.manager.name
+                          : displayText(viewingEmployee.managerName)
+                      }
+                    />
                     <div>
                       <p className="text-muted-foreground text-xs">Status</p>
                       <div className={cn(
@@ -1159,16 +1228,33 @@ export const EmployeeModule = () => {
                         {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </div>
                     </div>
-                    <DetailField
-                      label="Usuário do sistema"
-                      value={
-                        viewingEmployee.appUser
-                          ? `${viewingEmployee.appUser.email}${
-                              viewingEmployee.appUser.isActive ? "" : " (inativo)"
-                            }`
-                          : "Sem conta — criar em Configurações → Usuários"
-                      }
-                    />
+                    <div className="col-span-2 md:col-span-3 space-y-2">
+                      <DetailField
+                        label="Usuário do sistema"
+                        value={
+                          viewingEmployee.appUser
+                            ? `${viewingEmployee.appUser.email}${
+                                viewingEmployee.appUser.isActive ? "" : " (inativo)"
+                              }`
+                            : viewingEmployee.corporateEmail
+                              ? "Sem vínculo — usuário pode existir com o mesmo e-mail corporativo"
+                              : "Sem conta — criar em Configurações → Usuários"
+                        }
+                      />
+                      {!viewingEmployee.appUser &&
+                        Boolean(viewingEmployee.corporateEmail?.trim()) &&
+                        (canEdit || auth.hasPermission("users.manage")) && (
+                          <button
+                            type="button"
+                            disabled={linkingUser}
+                            onClick={() => void linkSystemUser(viewingEmployee)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium disabled:opacity-60"
+                          >
+                            {linkingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                            Vincular usuário existente pelo e-mail corporativo
+                          </button>
+                        )}
+                    </div>
                   </div>
                 )}
 

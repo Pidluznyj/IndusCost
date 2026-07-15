@@ -1992,6 +1992,7 @@ async function startServer() {
               name: true,
               socialName: true,
               personalEmail: true,
+              corporateEmail: true,
               department: true,
               status: true,
             },
@@ -2026,6 +2027,7 @@ async function startServer() {
       const email = normalizeEmail(
         resolveLoginEmailForNewUser({
           requestedEmail: emailRaw,
+          corporateEmail: employee.corporateEmail,
           personalEmail: employee.personalEmail,
         })
       );
@@ -2948,6 +2950,14 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       return res.status(400).json({ error: "ID de funcionário inválido." });
     }
 
+    const existingEmployee = await prisma.employee.findUnique({
+      where: { id },
+      select: { managerId: true },
+    });
+    if (!existingEmployee) {
+      return res.status(404).json({ error: "Funcionário não encontrado." });
+    }
+
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
     const cleanComponentIds = sanitizeUuidArray(componentIds);
@@ -2974,7 +2984,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         admissionDate: hrProfileBody.admissionDate,
         terminationDate: hrProfileBody.terminationDate,
       } as Record<string, unknown>,
-      { employeeId: id }
+      { employeeId: id, preserveManagerId: existingEmployee.managerId }
     );
 
     const hrProfile = buildEmployeeHrProfileData({

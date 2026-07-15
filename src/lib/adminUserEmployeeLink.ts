@@ -15,6 +15,7 @@ export type EligibleEmployeeRow = {
   name: string;
   socialName: string | null;
   personalEmail: string | null;
+  corporateEmail?: string | null;
   department: string;
   status: string | null;
 };
@@ -49,6 +50,7 @@ export function toEligibleEmployeeForUserDto(
   const parts = [
     displayName,
     employee.department,
+    employee.corporateEmail ?? "",
     employee.personalEmail ?? "",
     employee.name,
     employee.socialName ?? "",
@@ -114,8 +116,11 @@ export function assertEmployeeEligibleForUserLink(input: {
 export function resolveLoginEmailForNewUser(input: {
   requestedEmail: string;
   personalEmail: string | null | undefined;
+  corporateEmail?: string | null | undefined;
 }): string {
   const requested = input.requestedEmail.trim();
   if (requested) return requested;
+  const corporate = (input.corporateEmail ?? "").trim();
+  if (corporate) return corporate.toLowerCase();
   return (input.personalEmail ?? "").trim();
 }
