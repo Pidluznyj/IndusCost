@@ -1,3 +1,8 @@
+/**
+ * Legado visual — não montar em AdminUsersModule.
+ * Edição de overrides do usuário: PermissionMatrix + userPermissionsMatrix (Prompt 10).
+ * Mantido para referência / possíveis imports internos; não usar em novas UIs.
+ */
 import React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/src/lib/utils";

@@ -22,7 +22,7 @@ import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
 import { countActiveSuperAdmins } from "@/src/lib/adminUsersPagination";
 import { RolePermissionMatrixPanel } from "@/src/components/admin/RolePermissionMatrixPanel";
-import { UserPermissionTree } from "@/src/components/admin/UserPermissionTree";
+import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
 import {
   applyUserPermissionPreset,
   clearUserPermissionOverrides,
@@ -39,17 +39,25 @@ import {
   type UserPermissionsPayload,
 } from "@/src/lib/userPermissionsAdminClient";
 import {
-  collectTreeKeys,
-  draftFromPayloadTree,
   filterAdminUsersList,
-  filterTreeBySearch,
   flattenPermissionTreeLabels,
   formatPermissionFlagsHuman,
-  isPermissionDraftDirty,
-  overridesPayloadFromDraft,
-  setModuleFlags,
-  type DraftOverrideMap,
 } from "@/src/lib/userPermissionsAdminUi";
+import {
+  buildSaveOverridesFromMatrix,
+  buildUserEffectivePreview,
+  buildUserPermissionMatrixModel,
+  hasCriticalPermissionChanges,
+  liberateFirstMenuInMatrixDraft,
+  resetMatrixDraftToBaseline,
+  USER_PERMISSION_PRECEDENCE_NOTICE,
+  userMatrixImpact,
+  wouldMatrixRemoveOwnUsersManage,
+} from "@/src/lib/userPermissionsMatrix";
+import type { PermissionMatrixDraft } from "@/src/lib/security/permissionMatrixUi/index.ts";
+import {
+  isMatrixDraftDirty,
+} from "@/src/lib/security/permissionMatrixUi/index.ts";
 import {
   canViewFullPermissionAudit,
   permissionAuditActionLabel,
@@ -112,9 +120,13 @@ export const AdminUsersModule: React.FC = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [innerTab, setInnerTab] = useState<"permissions" | "summary" | "audit">("permissions");
-  const [draft, setDraft] = useState<DraftOverrideMap>({});
-  const [treeSearch, setTreeSearch] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [matrixDraft, setMatrixDraft] = useState<PermissionMatrixDraft>({});
+  /** Baseline da role (allow/deny/baseline). */
+  const [roleBaseline, setRoleBaseline] = useState<PermissionMatrixDraft>({});
+  /** Snapshot efetivo no load (dirty / cancelar). */
+  const [loadedSnapshot, setLoadedSnapshot] = useState<PermissionMatrixDraft>({});
+  const [confirmCriticalOpen, setConfirmCriticalOpen] = useState(false);
+  const [showEffectivePreview, setShowEffectivePreview] = useState(true);
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [matrix, setMatrix] = useState<RoleMatrixRowDto[]>([]);
@@ -181,11 +193,14 @@ export const AdminUsersModule: React.FC = () => {
   const loadDetail = useCallback(async (userId: string) => {
     setDetailLoading(true);
     setDetailError(null);
+    setConfirmCriticalOpen(false);
     try {
       const payload = await fetchUserPermissions(userId);
       setDetail(payload);
-      setDraft(draftFromPayloadTree(payload.tree));
-      setExpanded(new Set(collectTreeKeys(payload.tree)));
+      const model = buildUserPermissionMatrixModel(payload.tree);
+      setRoleBaseline(model.baseline);
+      setLoadedSnapshot(model.draft);
+      setMatrixDraft(model.draft);
       setInnerTab("permissions");
     } catch (e) {
       setDetail(null);
@@ -235,40 +250,85 @@ export const AdminUsersModule: React.FC = () => {
 
   const activeSuperAdminCount = useMemo(() => countActiveSuperAdmins(users), [users]);
   const pending = useMemo(() => {
-    if (!detail) return false;
-    return isPermissionDraftDirty(draft, detail.roleDefaults, detail.overrides);
-  }, [detail, draft]);
+    return isMatrixDraftDirty(matrixDraft, loadedSnapshot);
+  }, [matrixDraft, loadedSnapshot]);
 
-  const filteredTree = useMemo(() => {
+  const matrixModelRows = useMemo(() => {
     if (!detail) return [];
-    return filterTreeBySearch(detail.tree, treeSearch);
-  }, [detail, treeSearch]);
+    return buildUserPermissionMatrixModel(detail.tree).rows;
+  }, [detail]);
+
+  const effectivePreview = useMemo(() => {
+    if (!detail) return null;
+    return buildUserEffectivePreview(detail.tree, matrixDraft, roleBaseline);
+  }, [detail, matrixDraft, roleBaseline]);
+
+  const impact = useMemo(() => {
+    if (!detail || matrixModelRows.length === 0) return null;
+    return userMatrixImpact(matrixModelRows, matrixDraft, loadedSnapshot);
+  }, [detail, matrixModelRows, matrixDraft, loadedSnapshot]);
+
+  const selectedListUser = useMemo(
+    () => users.find((u) => u.id === selectedId) ?? null,
+    [users, selectedId]
+  );
 
   const treeLabels = useMemo(
     () => (detail ? flattenPermissionTreeLabels(detail.tree) : new Map<string, string>()),
     [detail]
   );
 
+  const hydrateMatrixFromPayload = (payload: UserPermissionsPayload) => {
+    const model = buildUserPermissionMatrixModel(payload.tree);
+    setRoleBaseline(model.baseline);
+    setLoadedSnapshot(model.draft);
+    setMatrixDraft(model.draft);
+  };
+
   const confirmClearIfNeeded = (hasCustom: boolean, message: string): boolean => {
     if (!hasCustom) return true;
     return window.confirm(message);
   };
 
-  const handleSaveOverrides = async () => {
+  const persistOverrides = async () => {
     if (!detail || !selectedId) return;
     setSaving(true);
     setDetailError(null);
     try {
-      const overrides = overridesPayloadFromDraft(draft, detail.roleDefaults);
+      if (
+        wouldMatrixRemoveOwnUsersManage({
+          isEditingSelf: selectedId === currentUserId,
+          existingRole: detail.user.role,
+          matrixDraft,
+          roleDefaults: detail.roleDefaults,
+        })
+      ) {
+        setDetailError(
+          "Você não pode remover a própria permissão de gerenciar usuários (auto-lockout)."
+        );
+        setSaving(false);
+        return;
+      }
+      const overrides = buildSaveOverridesFromMatrix(matrixDraft, detail.roleDefaults);
       const payload = await saveUserPermissionOverrides(selectedId, overrides);
       setDetail(payload);
-      setDraft(draftFromPayloadTree(payload.tree));
+      hydrateMatrixFromPayload(payload);
+      setConfirmCriticalOpen(false);
       await loadUsers();
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveOverrides = async () => {
+    if (!detail || !selectedId) return;
+    if (hasCriticalPermissionChanges(matrixDraft, roleBaseline) && !confirmCriticalOpen) {
+      setConfirmCriticalOpen(true);
+      return;
+    }
+    await persistOverrides();
   };
 
   const handleRestoreDefault = async () => {
@@ -285,7 +345,7 @@ export const AdminUsersModule: React.FC = () => {
     try {
       const payload = await restoreUserRoleDefault(selectedId, true);
       setDetail(payload);
-      setDraft(draftFromPayloadTree(payload.tree));
+      hydrateMatrixFromPayload(payload);
       await loadUsers();
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Não foi possível restaurar o padrão.");
@@ -308,7 +368,7 @@ export const AdminUsersModule: React.FC = () => {
     try {
       const payload = await clearUserPermissionOverrides(selectedId, true);
       setDetail(payload);
-      setDraft(draftFromPayloadTree(payload.tree));
+      hydrateMatrixFromPayload(payload);
       await loadUsers();
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Não foi possível limpar as personalizações.");
@@ -338,7 +398,7 @@ export const AdminUsersModule: React.FC = () => {
         confirmClearOverrides: true,
       });
       setDetail(payload);
-      setDraft(draftFromPayloadTree(payload.tree));
+      hydrateMatrixFromPayload(payload);
       await loadUsers();
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Falha ao alterar perfil.");
@@ -743,44 +803,36 @@ export const AdminUsersModule: React.FC = () => {
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {innerTab === "permissions" ? (
                     <>
+                      <div
+                        className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px] space-y-1"
+                        data-testid="user-permission-context"
+                      >
+                        <p>
+                          <strong>Baseline (role):</strong>{" "}
+                          {formatRoleLabel(detail.user.role)}
+                        </p>
+                        <p>
+                          <strong>Snapshot de perfil de acesso:</strong>{" "}
+                          {selectedListUser?.accessProfileName
+                            ? selectedListUser.accessProfileName
+                            : "Nenhum vinculado (só role / overrides)"}
+                        </p>
+                        <p>
+                          <strong>Permissões diretas:</strong>{" "}
+                          {detail.user.permissions.length} chave(s) legadas materializadas
+                        </p>
+                        <p className="text-muted-foreground">{USER_PERMISSION_PRECEDENCE_NOTICE}</p>
+                      </div>
+
                       <div className="flex flex-wrap gap-2">
-                        <div className="relative flex-1 min-w-[160px] basis-full sm:basis-auto">
-                          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-                          <input
-                            value={treeSearch}
-                            onChange={(e) => setTreeSearch(e.target.value)}
-                            placeholder="Buscar menu, aba ou ação…"
-                            className="w-full rounded-lg border border-border bg-background pl-8 pr-3 py-2 text-xs"
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                          onClick={() => setExpanded(new Set(collectTreeKeys(detail.tree)))}
-                        >
-                          Expandir tudo
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                          onClick={() => setExpanded(new Set())}
-                        >
-                          Recolher tudo
-                        </button>
                         <button
                           type="button"
                           disabled={detail.treeReadOnly}
-                          title="Marca Ver, Executar e Gerenciar no primeiro menu da lista e nos itens abaixo"
+                          title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
                           className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                           onClick={() => {
-                            const root = detail.tree[0];
-                            if (!root) return;
-                            setDraft(
-                              setModuleFlags(draft, detail.tree, root.key, {
-                                canView: true,
-                                canExecute: true,
-                                canManage: true,
-                              })
+                            setMatrixDraft(
+                              liberateFirstMenuInMatrixDraft(detail.tree, matrixDraft)
                             );
                           }}
                         >
@@ -802,28 +854,87 @@ export const AdminUsersModule: React.FC = () => {
                         >
                           Restaurar padrão do perfil
                         </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                          onClick={() => setShowEffectivePreview((v) => !v)}
+                        >
+                          {showEffectivePreview ? "Ocultar preview" : "Preview efetivo"}
+                        </button>
                       </div>
-                      <UserPermissionTree
-                        tree={filteredTree}
-                        draft={draft}
-                        expanded={expanded}
+
+                      {showEffectivePreview && effectivePreview ? (
+                        <div
+                          className="rounded-xl border border-border bg-card px-3 py-2 text-[11px]"
+                          data-testid="user-permission-effective-preview"
+                        >
+                          <p className="font-semibold">Como este usuário verá o sistema</p>
+                          <p className="mt-1 text-muted-foreground">
+                            Allow: {effectivePreview.allowCount} · Deny:{" "}
+                            {effectivePreview.denyCount} · Só baseline:{" "}
+                            {effectivePreview.baselineOnlyCount}
+                            {impact
+                              ? ` · ${impact.dirtyResourceCount} recurso(s) alterado(s)`
+                              : ""}
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                            <div>
+                              <p className="font-medium">Menus liberados</p>
+                              <p className="text-muted-foreground">
+                                {effectivePreview.menusAllowed.slice(0, 8).join(", ") || "—"}
+                                {effectivePreview.menusAllowed.length > 8
+                                  ? ` (+${effectivePreview.menusAllowed.length - 8})`
+                                  : ""}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="font-medium">Abas bloqueadas</p>
+                              <p className="text-muted-foreground">
+                                {effectivePreview.tabsBlocked.slice(0, 8).join(", ") || "—"}
+                                {effectivePreview.tabsBlocked.length > 8
+                                  ? ` (+${effectivePreview.tabsBlocked.length - 8})`
+                                  : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {confirmCriticalOpen ? (
+                        <div
+                          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950 space-y-2"
+                          data-testid="user-permission-critical-confirm"
+                        >
+                          <p className="font-semibold">
+                            Confirmar alteração em permissões administrativas críticas?
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+                              onClick={() => setConfirmCriticalOpen(false)}
+                            >
+                              Voltar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                              onClick={() => void persistOverrides()}
+                            >
+                              Confirmar e salvar
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <PermissionMatrix
+                        rows={matrixModelRows}
+                        draft={matrixDraft}
+                        baseline={loadedSnapshot}
+                        onDraftChange={setMatrixDraft}
                         readOnly={detail.treeReadOnly}
-                        emptyMessage={
-                          treeSearch.trim()
-                            ? "Nenhuma área corresponde à busca."
-                            : "Nenhuma área de acesso disponível."
-                        }
-                        onToggleExpand={(key) => {
-                          setExpanded((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(key)) next.delete(key);
-                            else next.add(key);
-                            return next;
-                          });
-                        }}
-                        onDraftChange={(key, flags) =>
-                          setDraft((d) => ({ ...d, [key]: flags }))
-                        }
+                        emptyMessage="Nenhuma área de acesso disponível."
                       />
                     </>
                   ) : null}
@@ -952,7 +1063,8 @@ export const AdminUsersModule: React.FC = () => {
                         disabled={!pending || saving}
                         onClick={() => {
                           if (!detail) return;
-                          setDraft(draftFromPayloadTree(detail.tree));
+                          setMatrixDraft(resetMatrixDraftToBaseline(loadedSnapshot));
+                          setConfirmCriticalOpen(false);
                         }}
                         className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
                       >

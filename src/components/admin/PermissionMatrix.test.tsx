@@ -79,7 +79,7 @@ describe("PermissionMatrix component", () => {
     );
     assert.ok(html.includes("permission-matrix-parent-blocked"));
     assert.ok(html.includes("Alterações não salvas") || html.includes("permission-matrix-dirty"));
-    assert.ok(html.includes("Herdado") || html.includes("Negado") || html.includes("Concedido"));
+    assert.ok(html.includes("Baseline") || html.includes("Deny") || html.includes("Allow") || html.includes("Herdado"));
   });
 
   it("árvore grande visível só com pais (performance smoke)", () => {

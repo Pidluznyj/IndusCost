@@ -60,21 +60,21 @@ function SourceBadge({
   if (source === "granted") {
     return (
       <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-900">
-        Concedido
+        Allow
       </span>
     );
   }
   if (source === "denied") {
     return (
       <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-900">
-        Negado
+        Deny
       </span>
     );
   }
   if (source === "inherited") {
     return (
       <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-700">
-        Herdado
+        Baseline
       </span>
     );
   }
@@ -491,11 +491,9 @@ export function PermissionMatrix({
                           />
                           <SourceBadge
                             source={(() => {
-                              const base =
-                                baseline[row.resourceKey]?.[action] ??
-                                row.inherited[action] ??
-                                false;
-                              if (allowed === Boolean(base)) return "inherited";
+                              // Origem vs role (row.inherited), não vs snapshot de dirty.
+                              const roleBase = row.inherited[action] ?? false;
+                              if (allowed === Boolean(roleBase)) return "inherited";
                               return allowed ? "granted" : "denied";
                             })()}
                           />
