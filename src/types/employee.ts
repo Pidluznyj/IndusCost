@@ -53,6 +53,10 @@ export interface Employee extends EmployeeHrProfileFields {
   emergencyContactRedacted?: boolean;
   hasPersonalPii?: boolean;
   hasEmergencyContact?: boolean;
+  compensationRedacted?: boolean;
+  adminNotesRedacted?: boolean;
+  hasAdminNotes?: boolean;
+  hasCompensation?: boolean;
   classification: string;
   salary: number;
   monthlyHours: number;

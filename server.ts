@@ -219,6 +219,14 @@ import {
   prepareEmployeePersonalHrFields,
   redactEmployeePersonalEmergencyForApi,
 } from "./src/lib/employeePersonalHr.js";
+import {
+  assertPayrollComponentIds,
+  auditEpiAdminNotesSummary,
+  prepareEmployeeAdminReferenceFields,
+  prepareEmployeeEpiFields,
+  prepareEmployeeNotesFields,
+  redactEmployeeAdminForApi,
+} from "./src/lib/employeeAdminHr.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -2750,7 +2758,7 @@ async function startServer() {
 // --- API: Employees (Funcionários) ---
 app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), async (req, res) => {
   const authUser = await getCurrentAppUser(req);
-  const revealPersonal =
+  const revealSensitive =
     Boolean(authUser) && hasPermission(authUser!, "employees.edit");
 
   const employees = await prisma.employee.findMany({
@@ -2820,10 +2828,11 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
       }
     };
 
-    return redactEmployeePersonalEmergencyForApi(
+    const personalSafe = redactEmployeePersonalEmergencyForApi(
       enriched as unknown as Record<string, unknown>,
-      { reveal: revealPersonal }
+      { reveal: revealSensitive }
     );
+    return redactEmployeeAdminForApi(personalSafe, { reveal: revealSensitive });
   });
 
   res.json(employeesWithCosts);
@@ -2890,12 +2899,25 @@ function buildEmployeeHrProfileData(
       personalEmail?: string | null;
     } | null;
     allowLegacyPersonal?: boolean;
+    previousEpi?: {
+      shirtSize?: string | null;
+      pantsSize?: string | null;
+      jacketSize?: string | null;
+      gloveSize?: string | null;
+      shoeSize?: string | null;
+    } | null;
+    allowLegacyEpi?: boolean;
   }
 ) {
   const personal = prepareEmployeePersonalHrFields(body, {
     previous: opts?.previousPersonal,
     allowLegacy: opts?.allowLegacyPersonal === true,
   });
+  const epi = prepareEmployeeEpiFields(body, {
+    previous: opts?.previousEpi,
+    allowLegacy: opts?.allowLegacyEpi === true,
+  });
+  const notes = prepareEmployeeNotesFields(body);
   return {
     data: {
       socialName: normalizeOptionalText(body.socialName),
@@ -2912,16 +2934,18 @@ function buildEmployeeHrProfileData(
       terminationDate: normalizeOptionalDate(body.terminationDate),
       contractType: normalizeOptionalText(body.contractType),
       managerName: normalizeOptionalText(body.managerName),
-      professionalNotes: normalizeOptionalText(body.professionalNotes),
-      adminNotes: normalizeOptionalText(body.adminNotes),
-      shirtSize: normalizeOptionalText(body.shirtSize),
-      pantsSize: normalizeOptionalText(body.pantsSize),
-      jacketSize: normalizeOptionalText(body.jacketSize),
-      gloveSize: normalizeOptionalText(body.gloveSize),
-      shoeSize: normalizeOptionalText(body.shoeSize),
-      epiNotes: normalizeOptionalText(body.epiNotes),
+      professionalNotes: notes.professionalNotes,
+      adminNotes: notes.adminNotes,
+      shirtSize: epi.shirtSize,
+      pantsSize: epi.pantsSize,
+      jacketSize: epi.jacketSize,
+      gloveSize: epi.gloveSize,
+      shoeSize: epi.shoeSize,
+      epiNotes: epi.epiNotes,
     },
     personalAudit: auditPersonalHrSummary(personal),
+    epi,
+    notes,
   };
 }
 
@@ -2972,7 +2996,15 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
 
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
-    const cleanComponentIds = sanitizeUuidArray(componentIds);
+    const cleanComponentIds = await assertPayrollComponentIds(
+      prisma,
+      sanitizeUuidArray(componentIds)
+    );
+    const adminRef = prepareEmployeeAdminReferenceFields({
+      salary,
+      monthlyHours,
+      productivity,
+    });
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
@@ -3038,9 +3070,9 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
         costCenter: persisted.costCenterLabel,
         costCenterId: persisted.costCenterId,
         classification: persisted.classification,
-        salary: toNumber(salary, 0),
-        monthlyHours: toNumber(monthlyHours, 0),
-        productivity: toNumber(productivity, 0),
+        salary: adminRef.salary,
+        monthlyHours: adminRef.monthlyHours,
+        productivity: adminRef.productivity,
         status: persisted.status,
         corporateEmail: persisted.corporateEmail,
         managerId: persisted.managerId,
@@ -3090,6 +3122,20 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
         audit: "employee.personal_hr.set",
         employeeId: employee.id,
         ...hrBuilt.personalAudit,
+        at: new Date().toISOString(),
+      })
+    );
+
+    console.info(
+      JSON.stringify({
+        audit: "employee.admin_epi_notes.set",
+        employeeId: employee.id,
+        ...auditEpiAdminNotesSummary({
+          epi: hrBuilt.epi,
+          notes: hrBuilt.notes,
+          admin: adminRef,
+          payrollComponentCount: cleanComponentIds.length,
+        }),
         at: new Date().toISOString(),
       })
     );
@@ -3147,6 +3193,11 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         phone: true,
         personalEmail: true,
         emergencyContactPhone: true,
+        shirtSize: true,
+        pantsSize: true,
+        jacketSize: true,
+        gloveSize: true,
+        shoeSize: true,
       },
     });
     if (!existingEmployee) {
@@ -3155,7 +3206,15 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
-    const cleanComponentIds = sanitizeUuidArray(componentIds);
+    const cleanComponentIds = await assertPayrollComponentIds(
+      prisma,
+      sanitizeUuidArray(componentIds)
+    );
+    const adminRef = prepareEmployeeAdminReferenceFields({
+      salary,
+      monthlyHours,
+      productivity,
+    });
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
@@ -3224,6 +3283,14 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
           personalEmail: existingEmployee.personalEmail,
           emergencyContactPhone: existingEmployee.emergencyContactPhone,
         },
+        allowLegacyEpi: true,
+        previousEpi: {
+          shirtSize: existingEmployee.shirtSize,
+          pantsSize: existingEmployee.pantsSize,
+          jacketSize: existingEmployee.jacketSize,
+          gloveSize: existingEmployee.gloveSize,
+          shoeSize: existingEmployee.shoeSize,
+        },
       }
     );
     const hrProfile = hrBuilt.data;
@@ -3249,9 +3316,9 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         costCenter: persisted.costCenterLabel,
         costCenterId: persisted.costCenterId,
         classification: persisted.classification,
-        salary: toNumber(salary, 0),
-        monthlyHours: toNumber(monthlyHours, 0),
-        productivity: toNumber(productivity, 0),
+        salary: adminRef.salary,
+        monthlyHours: adminRef.monthlyHours,
+        productivity: adminRef.productivity,
         status: persisted.status,
         corporateEmail: persisted.corporateEmail,
         managerId: persisted.managerId,
@@ -3295,6 +3362,20 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         audit: "employee.personal_hr.update",
         employeeId: id,
         ...hrBuilt.personalAudit,
+        at: new Date().toISOString(),
+      })
+    );
+
+    console.info(
+      JSON.stringify({
+        audit: "employee.admin_epi_notes.update",
+        employeeId: id,
+        ...auditEpiAdminNotesSummary({
+          epi: hrBuilt.epi,
+          notes: hrBuilt.notes,
+          admin: adminRef,
+          payrollComponentCount: cleanComponentIds.length,
+        }),
         at: new Date().toISOString(),
       })
     );
