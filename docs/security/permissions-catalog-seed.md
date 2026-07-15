@@ -50,7 +50,7 @@ Relatório: `docs/generated/permission-catalog-seed-report.md`
 
 ## Aliases
 
-Não há coluna de alias no Prisma. Aliases ficam no **plano** (`legacyAliasKeys`) e embutidos na `description` para auditoria. Runtime de materialização legado (dual-write admin) continua no seed PT antigo.
+Não há coluna de alias no Prisma. Aliases ficam no **plano** (`legacyAliasKeys`) e embutidos na `description` para auditoria. Runtime de materialização legado (dual-write) vive em `src/lib/security/permissionDualWrite/` (Prompt 06); o admin grava via esse materializador.
 
 ## Seed antigo
 

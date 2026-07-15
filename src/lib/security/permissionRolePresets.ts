@@ -15,6 +15,7 @@ import type {
   PermissionFlags,
   UserPermissionOverrideGrant,
 } from "@/src/lib/security/permissionTypes.js";
+import { materializeStructuredToLegacy } from "@/src/lib/security/permissionDualWrite/materialize.ts";
 
 export type MatrixCellStatus = "allowed" | "blocked" | "partial";
 
@@ -217,42 +218,19 @@ export function diffUserAgainstRolePreset(args: {
   return items;
 }
 
-function isManageAlias(key: string): boolean {
-  return (
-    key === "users.manage" ||
-    key === "accessProfiles.manage" ||
-    /\.(manage|admin)$/.test(key)
-  );
-}
-
-function isExecuteAlias(key: string): boolean {
-  return /\.(execute|export|sync|create|apply)$/.test(key);
-}
-
 /**
  * Materializa AppUser.permissions[] a partir das flags efetivas (dual-write).
- * Idempotente para o mesmo mapa de flags.
+ * Idempotente para o mesmo mapa de flags. Preserva chaves de catálogo sem alias
+ * estrutural presentes em `previousLegacyPermissions` (modo compatível).
  */
 export function materializeLegacyPermissionsFromFlags(
-  effectiveByKey: Record<string, PermissionFlags>
+  effectiveByKey: Record<string, PermissionFlags>,
+  previousLegacyPermissions: readonly string[] = []
 ): string[] {
-  const keys = new Set<string>();
-  for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    const flags = effectiveByKey[seed.key];
-    if (!flags) continue;
-    for (const alias of seed.legacyAliasKeys) {
-      if (isManageAlias(alias)) {
-        if (flags.canManage) keys.add(alias);
-        continue;
-      }
-      if (isExecuteAlias(alias)) {
-        if (flags.canExecute || flags.canManage) keys.add(alias);
-        continue;
-      }
-      if (flags.canView || flags.canExecute || flags.canManage) keys.add(alias);
-    }
-  }
-  return [...keys].sort();
+  return materializeStructuredToLegacy({
+    effectiveByResourceKey: effectiveByKey,
+    previousLegacyPermissions,
+  }).legacyPermissions;
 }
 
 export type ApplyPresetPlan = {
@@ -280,7 +258,10 @@ export function planApplyRolePreset(args: {
   }
 
   const effective = buildEffectiveFlagsMap(args.role, []);
-  const legacyPermissions = materializeLegacyPermissionsFromFlags(effective);
+  const legacyPermissions = materializeLegacyPermissionsFromFlags(
+    effective,
+    args.currentLegacyPermissions
+  );
   const clearOverrideKeys = args.currentOverrides.map((o) => o.resourceKey);
 
   const legacySame =

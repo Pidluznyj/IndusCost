@@ -454,7 +454,7 @@ export async function saveUserPermissionOverrides(
 
   const effective = buildEffectiveFlagsMap(user.role, normalized);
   const legacyPermissions = filterKnownPermissions(
-    materializeLegacyPermissionsFromFlags(effective)
+    materializeLegacyPermissionsFromFlags(effective, user.permissions)
   );
 
   assertSelfUsersManageLock({

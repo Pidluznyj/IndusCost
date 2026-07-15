@@ -211,6 +211,8 @@
     "permissions:seed:contract:dry": "tsx scripts/seedPermissionCatalogFromContract.ts --dry-run",
     "permissions:seed:contract:apply": "tsx scripts/seedPermissionCatalogFromContract.ts --apply",
     "test:permission-catalog-seed": "tsx --test src/lib/security/permissionCatalogSeed/permissionCatalogSeed.test.ts",
+    "permissions:dual-write:report": "tsx scripts/permissionDualWriteReport.ts",
+    "test:permission-dual-write": "tsx --test src/lib/security/permissionDualWrite/permissionDualWrite.test.ts",
     "permissions:validate": "tsx scripts/validatePermissionsSetup.ts --catalog-only",
     "permissions:audit": "tsx scripts/validatePermissionsSetup.ts --audit",
     "permissions:qa": "tsx scripts/qaPermissions.ts",
