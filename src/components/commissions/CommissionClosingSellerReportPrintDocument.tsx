@@ -27,6 +27,35 @@ function SummaryKpiCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function StackLine({
+  primary,
+  secondary,
+  align = "left",
+}: {
+  primary: string;
+  secondary?: string | null;
+  align?: "left" | "right";
+}) {
+  return (
+    <div
+      className={
+        align === "right"
+          ? "comm-closing-print-stack comm-closing-print-stack--right"
+          : "comm-closing-print-stack"
+      }
+    >
+      <span className="comm-closing-print-stack-primary">{primary}</span>
+      {secondary ? (
+        <span className="comm-closing-print-stack-secondary">{secondary}</span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Relatório PDF por vendedor — grid analítico em colunas compostas (2 linhas)
+ * para caber em A4 paisagem sem esmagar 14 colunas.
+ */
 export function CommissionClosingSellerReportPrintDocument({
   report,
   branding,
@@ -72,89 +101,124 @@ export function CommissionClosingSellerReportPrintDocument({
           </div>
         </div>
 
-        <section className="sales-orders-print-section">
+        <section className="sales-orders-print-section sales-orders-print-section--summary">
           <h2 className="sales-orders-print-section-title">Resumo executivo</h2>
-          <div className="sales-orders-print-summary-grid">
-            <SummaryKpiCard label="Total recebido" value={formatFinanceCurrency(summary.totalReceivedAmount)} />
-            <SummaryKpiCard label="Base comissionável" value={formatFinanceCurrency(summary.commissionBaseAmount)} />
-            <SummaryKpiCard label="Comissão bruta" value={formatFinanceCurrency(summary.grossCommissionAmount)} />
-            <SummaryKpiCard label="Comissão excluída" value={formatFinanceCurrency(summary.excludedCommissionAmount)} />
-            <SummaryKpiCard label="Comissão final" value={formatFinanceCurrency(summary.finalCommissionAmount)} />
+          <div className="sales-orders-print-summary-grid sales-orders-print-summary-grid--6">
+            <SummaryKpiCard
+              label="Total recebido"
+              value={formatFinanceCurrency(summary.totalReceivedAmount)}
+            />
+            <SummaryKpiCard
+              label="Base comissionável"
+              value={formatFinanceCurrency(summary.commissionBaseAmount)}
+            />
+            <SummaryKpiCard
+              label="Comissão final"
+              value={formatFinanceCurrency(summary.finalCommissionAmount)}
+            />
             <SummaryKpiCard label="Títulos" value={formatFinanceInteger(summary.titleCount)} />
             <SummaryKpiCard label="Pedidos" value={formatFinanceInteger(summary.orderCount)} />
-            <SummaryKpiCard label="Clientes" value={formatFinanceInteger(summary.customerCount)} />
             <SummaryKpiCard
-              label="Percentual médio"
-              value={summary.averageRate != null ? `${summary.averageRate.toFixed(2)}%` : "—"}
+              label="% médio"
+              value={
+                summary.averageRate != null ? `${summary.averageRate.toFixed(2)}%` : "—"
+              }
             />
           </div>
         </section>
 
-        <section className="sales-orders-print-section">
+        <section className="sales-orders-print-section sales-orders-print-section--detail">
           <h2 className="sales-orders-print-section-title">Analítico</h2>
-          <table className="sales-orders-print-table">
+          <p className="sales-orders-print-disclaimer">
+            Cada linha agrupa documentos, datas e valores em blocos de duas linhas para leitura
+            executiva em A4 paisagem.
+          </p>
+          <table className="sales-orders-print-table sales-orders-print-data-table comm-closing-print-table">
             <thead>
               <tr>
-                <th>Pedido</th>
-                <th>Cliente</th>
-                <th>NF</th>
-                <th>CR</th>
-                <th>Parc.</th>
-                <th>Venc. CR</th>
-                <th>Baixa</th>
-                <th className="col-money">Original CR</th>
-                <th className="col-money">Recebido</th>
-                <th className="col-money">Pago a mais</th>
-                <th className="col-money">Base</th>
-                <th className="col-money">%</th>
-                <th className="col-money">Comissão</th>
-                <th>Status</th>
+                <th className="comm-closing-col-order">Pedido / Cliente</th>
+                <th className="comm-closing-col-docs">Documentos</th>
+                <th className="comm-closing-col-dates">Datas</th>
+                <th className="comm-closing-col-amounts">Valores CR</th>
+                <th className="comm-closing-col-base">Base / %</th>
+                <th className="comm-closing-col-commission col-money">Comissão</th>
+                <th className="comm-closing-col-status">Status</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.lineKey}>
-                  <td>{displayFinanceText(row.orderCode)}</td>
-                  <td>{displayFinanceText(row.customerName)}</td>
-                  <td>{displayFinanceText(row.nfeNumber)}</td>
-                  <td>{displayFinanceText(row.receivableNumber)}</td>
-                  <td>{row.installment ?? "—"}</td>
-                  <td>{row.receivableDueDate ? formatFinanceDate(row.receivableDueDate) : "—"}</td>
-                  <td>{row.settlementDate ? formatFinanceDate(row.settlementDate) : "—"}</td>
-                  <td className="sales-orders-print-money col-money">
-                    {row.originalReceivableAmount != null
-                      ? formatFinanceCurrency(row.originalReceivableAmount)
-                      : "—"}
-                  </td>
-                  <td className="sales-orders-print-money col-money">
-                    {formatFinanceCurrency(row.receivedGrossAmount)}
-                  </td>
-                  <td className="sales-orders-print-money col-money">
-                    {row.overpaidAmount > 0 ? formatFinanceCurrency(row.overpaidAmount) : "—"}
-                  </td>
-                  <td className="sales-orders-print-money col-money">
-                    {formatFinanceCurrency(row.commissionBaseAmount)}
-                  </td>
-                  <td className="col-money">{row.commissionRate.toFixed(2)}%</td>
-                  <td className="sales-orders-print-money col-money">
-                    {formatFinanceCurrency(row.commissionAmount)}
-                  </td>
-                  <td>{row.statusLabel}</td>
-                </tr>
-              ))}
+              {rows.map((row) => {
+                const due = row.receivableDueDate
+                  ? formatFinanceDate(row.receivableDueDate)
+                  : "—";
+                const settled = row.settlementDate
+                  ? formatFinanceDate(row.settlementDate)
+                  : "—";
+                const original =
+                  row.originalReceivableAmount != null
+                    ? formatFinanceCurrency(row.originalReceivableAmount)
+                    : "—";
+                const received = formatFinanceCurrency(row.receivedGrossAmount);
+                const overpaid =
+                  row.overpaidAmount > 0
+                    ? `+ ${formatFinanceCurrency(row.overpaidAmount)}`
+                    : null;
+                return (
+                  <tr key={row.lineKey}>
+                    <td className="comm-closing-col-order">
+                      <StackLine
+                        primary={displayFinanceText(row.orderCode)}
+                        secondary={displayFinanceText(row.customerName)}
+                      />
+                    </td>
+                    <td className="comm-closing-col-docs">
+                      <StackLine
+                        primary={`NF ${displayFinanceText(row.nfeNumber)}`}
+                        secondary={`CR ${displayFinanceText(row.receivableNumber)} · Parc. ${
+                          row.installment ?? "—"
+                        }`}
+                      />
+                    </td>
+                    <td className="comm-closing-col-dates">
+                      <StackLine primary={`Venc. ${due}`} secondary={`Baixa ${settled}`} />
+                    </td>
+                    <td className="comm-closing-col-amounts">
+                      <StackLine
+                        primary={`Orig. ${original}`}
+                        secondary={
+                          overpaid ? `Rec. ${received} · ${overpaid}` : `Rec. ${received}`
+                        }
+                        align="right"
+                      />
+                    </td>
+                    <td className="comm-closing-col-base">
+                      <StackLine
+                        primary={formatFinanceCurrency(row.commissionBaseAmount)}
+                        secondary={`${row.commissionRate.toFixed(2)}%`}
+                        align="right"
+                      />
+                    </td>
+                    <td className="sales-orders-print-money col-money comm-closing-col-commission">
+                      <span className="comm-closing-print-commission">
+                        {formatFinanceCurrency(row.commissionAmount)}
+                      </span>
+                    </td>
+                    <td className="comm-closing-col-status">
+                      <span className="comm-closing-print-status">{row.statusLabel}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
             <tfoot>
-              <tr>
-                <td colSpan={8}>Totais</td>
+              <tr className="sales-orders-print-total-row">
+                <td colSpan={3}>Totais ({formatFinanceInteger(rows.length)} linha(s))</td>
                 <td className="sales-orders-print-money col-money">
                   {formatFinanceCurrency(totals.totalReceivedAmount)}
                 </td>
-                <td />
                 <td className="sales-orders-print-money col-money">
                   {formatFinanceCurrency(totals.commissionBaseAmount)}
                 </td>
-                <td />
-                <td className="sales-orders-print-money col-money">
+                <td className="sales-orders-print-money col-money sales-orders-print-money--total">
                   {formatFinanceCurrency(totals.finalCommissionAmount)}
                 </td>
                 <td />
@@ -164,7 +228,8 @@ export function CommissionClosingSellerReportPrintDocument({
         </section>
 
         <p className="sales-orders-print-footer-note">
-          {COMMISSION_CLOSING_SELLER_REPORT_PRINT_FOOTER} · {formatFinanceDateTime(new Date().toISOString())}
+          {COMMISSION_CLOSING_SELLER_REPORT_PRINT_FOOTER} ·{" "}
+          {formatFinanceDateTime(new Date().toISOString())}
         </p>
       </div>
     </div>

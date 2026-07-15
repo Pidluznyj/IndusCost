@@ -52,9 +52,12 @@ section("7–10. PDF/XLSX e endpoints");
   assert.match(shared, /COMERCIAL: RELATÓRIO DE COMISSÕES/);
   assert.match(print, /COMMISSION_CLOSING_SELLER_REPORT_PRINT_TITLE/);
   assert.match(print, /sales-orders-print-root/);
+  assert.match(print, /comm-closing-print-table/);
+  assert.match(print, /Pedido \/ Cliente/);
+  assert.match(print, /comm-closing-print-stack/);
   assert.match(server, /buildCommissionClosingSellerXlsx/);
   assert.match(server, /listCommissionClosings/);
-  ok("Endpoints, PDF padrão Pedidos e XLSX por vendedor");
+  ok("Endpoints, PDF 2 linhas e XLSX por vendedor");
 }
 
 section("11–15. Agrupamento canônico e labels");

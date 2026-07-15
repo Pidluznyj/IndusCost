@@ -741,95 +741,108 @@ export function CommissionsClosingsPage() {
 
           <CommissionsTableScroll
             testId="commissions-closings-seller-grid"
-            tableClassName="min-w-[1400px]"
+            tableClassName="min-w-[920px]"
           >
             <thead className="bg-sky-50 text-left text-xs uppercase tracking-wide text-sky-900">
               <tr>
-                <th className="px-3 py-2">Pedido</th>
-                <th className="px-3 py-2">Cliente</th>
-                <th className="px-3 py-2">NF</th>
-                <th className="px-3 py-2">CR</th>
-                <th className="px-3 py-2">Parc.</th>
-                <th className="px-3 py-2">Venc. CR</th>
-                <th className="px-3 py-2">Baixa</th>
-                <th className="px-3 py-2 text-right">Original CR</th>
-                <th className="px-3 py-2 text-right">Recebido</th>
-                <th className="px-3 py-2 text-right">Pago a mais</th>
-                <th className="px-3 py-2 text-right">Base</th>
-                <th className="px-3 py-2 text-right">%</th>
+                <th className="px-3 py-2">Pedido / Cliente</th>
+                <th className="px-3 py-2">Documentos</th>
+                <th className="px-3 py-2">Datas</th>
+                <th className="px-3 py-2 text-right">Valores CR</th>
+                <th className="px-3 py-2 text-right">Base / %</th>
                 <th className="px-3 py-2 text-right">Comissão</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Motivo</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
               {filteredSellerRows.map((row) => (
                 <tr key={row.lineKey}>
-                  <td className="whitespace-nowrap px-3 py-2 font-medium">{row.orderCode ?? "—"}</td>
-                  <td className="max-w-[12rem] px-3 py-2">
-                    <span className="line-clamp-2">{row.customerName ?? "—"}</span>
+                  <td className="px-3 py-2 align-top">
+                    <p className="font-semibold leading-snug">{row.orderCode ?? "—"}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                      {row.customerName ?? "—"}
+                    </p>
                   </td>
-                  <td className="px-3 py-2">{row.nfeNumber ?? "—"}</td>
-                  <td className="px-3 py-2">{row.receivableNumber ?? "—"}</td>
-                  <td className="px-3 py-2">{row.installment ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {row.receivableDueDate
-                      ? new Date(row.receivableDueDate).toLocaleDateString("pt-BR")
-                      : "—"}
+                  <td className="px-3 py-2 align-top text-xs leading-snug">
+                    <p>
+                      <span className="text-muted-foreground">NF </span>
+                      {row.nfeNumber ?? "—"}
+                    </p>
+                    <p className="mt-0.5">
+                      <span className="text-muted-foreground">CR </span>
+                      {row.receivableNumber ?? "—"}
+                      <span className="text-muted-foreground"> · Parc. </span>
+                      {row.installment ?? "—"}
+                    </p>
                   </td>
-                  <td className="px-3 py-2">
-                    {row.settlementDate
-                      ? new Date(row.settlementDate).toLocaleDateString("pt-BR")
-                      : "—"}
+                  <td className="px-3 py-2 align-top text-xs leading-snug tabular-nums">
+                    <p>
+                      <span className="text-muted-foreground">Venc. </span>
+                      {row.receivableDueDate
+                        ? new Date(row.receivableDueDate).toLocaleDateString("pt-BR")
+                        : "—"}
+                    </p>
+                    <p className="mt-0.5">
+                      <span className="text-muted-foreground">Baixa </span>
+                      {row.settlementDate
+                        ? new Date(row.settlementDate).toLocaleDateString("pt-BR")
+                        : "—"}
+                    </p>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {row.originalReceivableAmount != null
-                      ? formatFinanceCurrency(row.originalReceivableAmount)
-                      : "—"}
+                  <td className="px-3 py-2 align-top text-right text-xs leading-snug tabular-nums">
+                    <p>
+                      <span className="text-muted-foreground">Orig. </span>
+                      {row.originalReceivableAmount != null
+                        ? formatFinanceCurrency(row.originalReceivableAmount)
+                        : "—"}
+                    </p>
+                    <p className="mt-0.5">
+                      <span className="text-muted-foreground">Rec. </span>
+                      {formatFinanceCurrency(row.receivedGrossAmount)}
+                      {row.overpaidAmount > 0
+                        ? ` · +${formatFinanceCurrency(row.overpaidAmount)}`
+                        : ""}
+                    </p>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {formatFinanceCurrency(row.receivedGrossAmount)}
+                  <td className="px-3 py-2 align-top text-right text-xs leading-snug tabular-nums">
+                    <p className="font-medium">
+                      {formatFinanceCurrency(row.commissionBaseAmount)}
+                    </p>
+                    <p className="mt-0.5 text-muted-foreground">
+                      {row.commissionRate.toFixed(2)}%
+                    </p>
                   </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {row.overpaidAmount > 0 ? formatFinanceCurrency(row.overpaidAmount) : "—"}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {formatFinanceCurrency(row.commissionBaseAmount)}
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right">
-                    {row.commissionRate.toFixed(2)}%
-                  </td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right font-semibold">
+                  <td className="whitespace-nowrap px-3 py-2 align-top text-right font-semibold tabular-nums text-sky-950">
                     {formatFinanceCurrency(row.commissionAmount)}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 align-top">
                     <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">
                       {row.statusLabel}
                     </span>
-                  </td>
-                  <td className="max-w-[14rem] px-3 py-2 text-xs text-muted-foreground">
-                    <span className="line-clamp-2">{row.reasonLabel ?? "—"}</span>
+                    {row.reasonLabel ? (
+                      <p className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                        {row.reasonLabel}
+                      </p>
+                    ) : null}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
               <tr className="bg-muted/40 font-semibold">
-                <td className="px-3 py-2" colSpan={8}>
+                <td className="px-3 py-2" colSpan={3}>
                   Totais ({filteredSellerRows.length} linha(s))
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-right">
                   {formatFinanceCurrency(sellerReport.totals.totalReceivedAmount)}
                 </td>
-                <td />
                 <td className="whitespace-nowrap px-3 py-2 text-right">
                   {formatFinanceCurrency(sellerReport.totals.commissionBaseAmount)}
                 </td>
-                <td />
                 <td className="whitespace-nowrap px-3 py-2 text-right">
                   {formatFinanceCurrency(sellerReport.totals.finalCommissionAmount)}
                 </td>
-                <td colSpan={2} />
+                <td />
               </tr>
             </tfoot>
           </CommissionsTableScroll>

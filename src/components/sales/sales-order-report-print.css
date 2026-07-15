@@ -545,4 +545,109 @@
   #sales-orders-print-root .sales-orders-print-footer p {
     margin: 0 0 1px;
   }
+
+  /* —— Fechamento de comissão (vendedor): grid composto 2 linhas —— */
+  #sales-orders-print-root .sales-orders-print-summary-grid--6 {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  #sales-orders-print-root .comm-closing-print-table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  #sales-orders-print-root .comm-closing-print-table th,
+  #sales-orders-print-root .comm-closing-print-table td {
+    vertical-align: top;
+    padding: 2.5px 3px !important;
+    border: 1px solid #cbd5e1;
+  }
+
+  #sales-orders-print-root .comm-closing-col-order {
+    width: 22%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-docs {
+    width: 18%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-dates {
+    width: 12%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-amounts {
+    width: 18%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-base {
+    width: 12%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-commission {
+    width: 10%;
+  }
+
+  #sales-orders-print-root .comm-closing-col-status {
+    width: 8%;
+  }
+
+  #sales-orders-print-root .comm-closing-print-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  #sales-orders-print-root .comm-closing-print-stack--right {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  #sales-orders-print-root .comm-closing-print-stack-primary {
+    display: block;
+    font-size: 8px;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.25;
+    overflow: hidden;
+    max-height: 2.5em;
+    word-break: break-word;
+  }
+
+  #sales-orders-print-root .comm-closing-print-stack-secondary {
+    display: block;
+    font-size: 7px;
+    font-weight: 500;
+    color: #475569;
+    line-height: 1.25;
+    overflow: hidden;
+    max-height: 2.5em;
+    word-break: break-word;
+  }
+
+  #sales-orders-print-root .comm-closing-print-commission {
+    display: block;
+    font-size: 9px;
+    font-weight: 800;
+    color: #1e3a8a;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  #sales-orders-print-root .comm-closing-print-status {
+    display: inline-block;
+    max-width: 100%;
+    padding: 1px 3px;
+    border-radius: 3px;
+    font-size: 6.5px;
+    font-weight: 700;
+    line-height: 1.2;
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
