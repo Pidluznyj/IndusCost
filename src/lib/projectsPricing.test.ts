@@ -442,6 +442,7 @@ describe("projectsPricing — integração", () => {
     assert.match(section, /suggestedPriceWithoutAmortization/);
     assert.match(section, /suggestedPriceWithAmortization/);
     assert.match(section, /Preço acordado cliente/);
+    assert.match(section, /Margem no acordado %/);
     assert.match(section, /reverseMarginFromAgreedPrice/);
     assert.match(section, /amortizationPriceAddOnUnit|Repasse no preço/);
   });
@@ -555,6 +556,8 @@ describe("projectsPricing — integração", () => {
     assert.match(section, /buildItemMarginDrafts/);
     assert.match(section, /hydrateDraftsFromView/);
     assert.match(section, /item\.targetMarginPercent/);
+    assert.match(section, /type="number"/);
+    assert.match(section, /Margem no acordado %/);
     assert.match(section, /reverseMarginFromAgreedPrice/);
     assert.match(section, /calculateMarginPercentFromAgreedCustomerPrice/);
     assert.doesNotMatch(section, /Composição/);

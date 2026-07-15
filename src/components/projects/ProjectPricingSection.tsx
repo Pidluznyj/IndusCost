@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Calculator, Loader2, Save } from "lucide-react";
-import {
-  calculateMarginPercentFromAgreedCustomerPrice,
-  calculateSalePriceFromCost,
-} from "@/src/lib/pricingCalculations";
+import { calculateMarginPercentFromAgreedCustomerPrice } from "@/src/lib/pricingCalculations";
 import {
   buildProjectCommercialPricingSummary,
   computeLiveProjectPricingView,
@@ -94,22 +91,6 @@ function reverseMarginFromAgreedPrice(
     priceAddOnUnit: item.amortizationPriceAddOnUnit ?? 0,
   });
   return result.ok ? result.targetMarginPercent : null;
-}
-
-function forwardAgreedFromMargin(
-  item: Pick<
-    ProjectPricingItemView,
-    "finalUnitCost" | "taxPercent" | "amortizationPriceAddOnUnit"
-  >,
-  marginPercent: number
-): number | null {
-  const result = calculateSalePriceFromCost({
-    cost: item.finalUnitCost,
-    taxPercent: item.taxPercent,
-    targetMarginPercent: marginPercent,
-  });
-  if (!result.ok) return null;
-  return result.suggestedPrice + (item.amortizationPriceAddOnUnit ?? 0);
 }
 
 function buildItemMarginDrafts(
@@ -291,28 +272,18 @@ export function ProjectPricingSection({
     const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
     const nextMargins: Record<string, string> = {};
     const nextRules: Record<string, string> = {};
-    const nextAgreed: Record<string, string> = {};
     for (const item of computedItems) {
       nextRules[item.targetItemId] = fiscalRuleId;
       if (marginDefault != null && Number.isFinite(marginDefault)) {
         nextMargins[item.targetItemId] = String(marginDefault);
-        const agreed = forwardAgreedFromMargin(item, marginDefault);
-        if (agreed != null) {
-          nextAgreed[item.targetItemId] = formatProjectsNumberInput(agreed);
-        }
       }
     }
     setItemFiscalRules(nextRules);
     if (Object.keys(nextMargins).length > 0) setItemMargins(nextMargins);
-    if (Object.keys(nextAgreed).length > 0) setItemAgreedPrices(nextAgreed);
   };
 
   const handleAgreedPriceChange = (item: ProjectPricingItemView, raw: string) => {
     setItemAgreedPrices((prev) => ({ ...prev, [item.targetItemId]: raw }));
-    const margin = reverseMarginFromAgreedPrice(item, raw);
-    if (margin != null) {
-      setItemMargins((prev) => ({ ...prev, [item.targetItemId]: String(margin) }));
-    }
   };
 
   const handleSave = async () => {
@@ -372,9 +343,10 @@ export function ProjectPricingSection({
       <div>
         <h5 className="font-medium">Precificação comercial</h5>
         <p className="mt-1 text-sm text-muted-foreground">
-          Informe o <strong>Preço acordado cliente</strong> — a margem é calculada automaticamente
-          (engenharia reversa da mesma fórmula da Calculadora de Preço de Venda) e o valor acordado
-          alimenta a proposta cliente.
+          A <strong>Margem %</strong> continua editável e recalcula os preços sugeridos. Informe o{" "}
+          <strong>Preço acordado cliente</strong> para a proposta — a coluna{" "}
+          <strong>Margem no acordado %</strong> mostra a margem implícita (mesma fórmula da
+          Calculadora de Preço de Venda, em engenharia reversa).
         </p>
       </div>
 
@@ -454,7 +426,7 @@ export function ProjectPricingSection({
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">
-          <table className="min-w-[1100px] w-full text-sm">
+          <table className="min-w-[1200px] w-full text-sm">
             <thead className="border-b bg-muted/40 text-left">
               <tr>
                 <th className="px-3 py-2">Item</th>
@@ -468,6 +440,7 @@ export function ProjectPricingSection({
                 <th className="px-3 py-2">Preço s/ amortização</th>
                 <th className="px-3 py-2">Preço c/ amortização</th>
                 <th className="px-3 py-2">Preço acordado cliente</th>
+                <th className="px-3 py-2">Margem no acordado %</th>
               </tr>
             </thead>
             <tbody>
@@ -486,26 +459,12 @@ export function ProjectPricingSection({
                             item.fiscalRuleId ??
                             fiscalRuleId
                           }
-                          onChange={(e) => {
-                            const nextRuleId = e.target.value;
+                          onChange={(e) =>
                             setItemFiscalRules((prev) => ({
                               ...prev,
-                              [item.targetItemId]: nextRuleId,
-                            }));
-                            const taxPercent =
-                              taxRules.find((rule) => rule.id === nextRuleId)?.taxPercent ??
-                              item.taxPercent;
-                            const margin = reverseMarginFromAgreedPrice(
-                              { ...item, taxPercent },
-                              resolveAgreedPriceDraft(item)
-                            );
-                            if (margin != null) {
-                              setItemMargins((prev) => ({
-                                ...prev,
-                                [item.targetItemId]: String(margin),
-                              }));
-                            }
-                          }}
+                              [item.targetItemId]: e.target.value,
+                            }))
+                          }
                           className="w-full min-w-[140px] rounded border border-border bg-background px-2 py-1 text-xs"
                         >
                           <option value="">—</option>
@@ -521,20 +480,26 @@ export function ProjectPricingSection({
                     </td>
                     <td className="px-3 py-2">{formatPercent(item.taxPercent)}</td>
                     <td className="px-3 py-2">
-                      <span
-                        className="inline-block min-w-[3.5rem] rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs font-medium"
-                        title="Margem calculada a partir do preço acordado com o cliente"
-                      >
-                        {formatPercent(
-                          itemMargins[item.targetItemId] != null &&
-                            itemMargins[item.targetItemId] !== ""
-                            ? Number(itemMargins[item.targetItemId])
-                            : reverseMarginFromAgreedPrice(
-                                item,
-                                resolveAgreedPriceDraft(item)
-                              ) ?? item.targetMarginPercent
-                        )}
-                      </span>
+                      {canManage ? (
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          value={
+                            itemMargins[item.targetItemId] ?? String(item.targetMarginPercent)
+                          }
+                          onChange={(e) =>
+                            setItemMargins((prev) => ({
+                              ...prev,
+                              [item.targetItemId]: e.target.value,
+                            }))
+                          }
+                          className="w-20 rounded border border-border bg-background px-2 py-1 text-xs"
+                          title="Margem desejada — recalcula os preços sugeridos"
+                        />
+                      ) : (
+                        formatPercent(item.targetMarginPercent)
+                      )}
                     </td>
                     <td className="px-3 py-2 font-medium">
                       {formatMoney(item.suggestedPriceWithoutAmortization, 4)}
@@ -550,7 +515,7 @@ export function ProjectPricingSection({
                         <input
                           type="text"
                           inputMode="decimal"
-                          title="Preço unitário acordado com o cliente — define a margem e a proposta"
+                          title="Preço unitário acordado com o cliente — alimenta a proposta"
                           value={resolveAgreedPriceDraft(item)}
                           onChange={(e) => handleAgreedPriceChange(item, e.target.value)}
                           className="w-28 rounded border border-border bg-background px-2 py-1 text-xs font-semibold"
@@ -564,6 +529,17 @@ export function ProjectPricingSection({
                           )}
                         </span>
                       )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className="inline-block min-w-[3.5rem] rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs font-medium"
+                        title="Margem implícita no preço acordado (engenharia reversa)"
+                        data-testid={`agreed-margin-${item.targetItemId}`}
+                      >
+                        {formatPercent(
+                          reverseMarginFromAgreedPrice(item, resolveAgreedPriceDraft(item))
+                        )}
+                      </span>
                     </td>
                   </tr>
               ))}
