@@ -3037,7 +3037,22 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       );
     }
 
-    res.json(employee);
+    if (persisted.corporateEmail) {
+      console.info(
+        JSON.stringify({
+          audit: "employee.corporate_email.set",
+          employeeId: employee.id,
+          corporateEmail: persisted.corporateEmail,
+          appUserHint: persisted.appUserEmailHint,
+          at: new Date().toISOString(),
+        })
+      );
+    }
+
+    res.json({
+      ...employee,
+      corporateEmailHint: persisted.appUserEmailHint,
+    });
   } catch (error) {
     if (error instanceof EmployeeRegistrationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
@@ -3076,7 +3091,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
     const existingEmployee = await prisma.employee.findUnique({
       where: { id },
-      select: { managerId: true, personId: true },
+      select: { managerId: true, personId: true, corporateEmail: true },
     });
     if (!existingEmployee) {
       return res.status(404).json({ error: "Funcionário não encontrado." });
@@ -3182,7 +3197,27 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       include: employeeApiInclude,
     });
 
-    res.json(employee);
+    const prevCorporate = existingEmployee.corporateEmail
+      ? String(existingEmployee.corporateEmail).trim().toLowerCase()
+      : null;
+    if (prevCorporate !== persisted.corporateEmail) {
+      console.info(
+        JSON.stringify({
+          audit: "employee.corporate_email.change",
+          employeeId: id,
+          from: prevCorporate,
+          to: persisted.corporateEmail,
+          note: "AppUser.email não é alterado automaticamente",
+          appUserHint: persisted.appUserEmailHint,
+          at: new Date().toISOString(),
+        })
+      );
+    }
+
+    res.json({
+      ...employee,
+      corporateEmailHint: persisted.appUserEmailHint,
+    });
   } catch (error) {
     if (error instanceof EmployeeRegistrationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });

@@ -23,6 +23,7 @@
     "sync:nomus:customers:apply": "tsx scripts/nomusCustomersSyncV1.ts --apply",
     "sync:nomus:products:dry": "tsx scripts/nomusProductsSyncV1.ts",
     "sync:nomus:products:apply": "tsx scripts/nomusProductsSyncV1.ts --apply",
+    "diagnose:employee-corporate-email": "tsx scripts/diagnoseEmployeeCorporateEmailDuplicates.ts",
     "diagnose:nomus-product-sync": "tsx scripts/diagnose-nomus-product-sync.ts",
     "sync:nomus:bom-components:dry": "tsx scripts/nomusBomComponentsSyncV1.ts",
     "sync:nomus:bom-components:apply": "tsx scripts/nomusBomComponentsSyncV1.ts --apply",

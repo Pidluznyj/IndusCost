@@ -94,7 +94,10 @@ model Employee {
   productivity                 Decimal?                   @default(100.00) @db.Decimal(10, 6)
   status                       String?                    @default("ACTIVE")
   socialName                   String?
-  /// E-mail corporativo — referência de vínculo com AppUser.email (opcional, unique CI).
+  /// E-mail corporativo do vínculo profissional (opcional).
+  /// Normalizado: trim + lowercase. Unicidade CI via índice SQL
+  /// `Employee_corporateEmail_lower_uidx` (partial WHERE NOT NULL).
+  /// Não é o e-mail de login (`AppUser.email`); vínculo de usuário é explícito.
   corporateEmail               String?
   cpf                          String?
   rg                           String?

@@ -4,21 +4,41 @@ import {
   assertAdmissionBeforeTermination,
   assertClassification,
   assertContractType,
+  assertCorporateEmailAppUserConflict,
   assertCorporateEmailFormat,
+  assertCorporateEmailUnique,
   assertStatusTerminationConsistency,
+  describeCorporateEmailAppUserHint,
   EmployeeRegistrationError,
   formatManagerDisplayName,
   normalizeCorporateEmail,
   resolveUserLinkStatus,
 } from "./employeeRegistration.ts";
+import {
+  assertCorporateEmailFormat as assertFormatPure,
+  CorporateEmailError,
+  isValidCorporateEmailInput,
+} from "./employeeCorporateEmail.ts";
 
-describe("employeeRegistration — e-mail corporativo", () => {
+describe("employeeCorporateEmail — puro", () => {
   it("trim + lowercase", () => {
     assert.equal(normalizeCorporateEmail("  Foo.Bar@Empresa.COM "), "foo.bar@empresa.com");
     assert.equal(normalizeCorporateEmail("   "), null);
   });
 
-  it("formato inválido", () => {
+  it("formato", () => {
+    assert.throws(
+      () => assertFormatPure("nao-email"),
+      (e: unknown) => e instanceof CorporateEmailError && e.code === "INVALID_CORPORATE_EMAIL"
+    );
+    assert.equal(isValidCorporateEmailInput("a@b.co"), true);
+    assert.equal(isValidCorporateEmailInput("x"), false);
+    assert.equal(isValidCorporateEmailInput(""), true);
+  });
+});
+
+describe("employeeRegistration — e-mail corporativo", () => {
+  it("formato inválido vira EmployeeRegistrationError", () => {
     assert.throws(
       () => assertCorporateEmailFormat("nao-email"),
       (e: unknown) => e instanceof EmployeeRegistrationError && e.code === "INVALID_CORPORATE_EMAIL"
@@ -28,6 +48,89 @@ describe("employeeRegistration — e-mail corporativo", () => {
   it("formato válido passa", () => {
     assert.doesNotThrow(() => assertCorporateEmailFormat("a@b.co"));
     assert.doesNotThrow(() => assertCorporateEmailFormat(null));
+  });
+
+  it("unicidade case-insensitive", async () => {
+    const prisma = {
+      employee: {
+        findFirst: async () => ({ id: "e2", name: "Outro" }),
+      },
+    } as never;
+    await assert.rejects(
+      () => assertCorporateEmailUnique(prisma, "A@B.COM", "e1"),
+      (e: unknown) =>
+        e instanceof EmployeeRegistrationError && e.code === "DUPLICATE_CORPORATE_EMAIL"
+    );
+  });
+
+  it("unicidade libera quando é o próprio colaborador", async () => {
+    const prisma = {
+      employee: {
+        findFirst: async () => null,
+      },
+    } as never;
+    await assert.doesNotReject(() => assertCorporateEmailUnique(prisma, "a@b.com", "e1"));
+  });
+
+  it("AppUser vinculado a outro colaborador bloqueia", async () => {
+    const prisma = {
+      appUser: {
+        findFirst: async () => ({
+          id: "u1",
+          email: "a@b.com",
+          employeeId: "other",
+        }),
+      },
+    } as never;
+    await assert.rejects(
+      () => assertCorporateEmailAppUserConflict(prisma, "a@b.com", "e1"),
+      (e: unknown) =>
+        e instanceof EmployeeRegistrationError && e.code === "CORPORATE_EMAIL_APPUSER_CONFLICT"
+    );
+  });
+
+  it("AppUser livre gera available_match (não bloqueia)", async () => {
+    const prisma = {
+      appUser: {
+        findFirst: async () => ({
+          id: "u1",
+          email: "a@b.com",
+          employeeId: null,
+        }),
+      },
+    } as never;
+    const r = await assertCorporateEmailAppUserConflict(prisma, "a@b.com", null);
+    assert.equal(r.status, "available_match");
+    assert.ok(describeCorporateEmailAppUserHint(r)?.includes("usuário"));
+  });
+
+  it("AppUser já deste colaborador = linked_here", async () => {
+    const prisma = {
+      appUser: {
+        findFirst: async () => ({
+          id: "u1",
+          email: "a@b.com",
+          employeeId: "e1",
+        }),
+      },
+    } as never;
+    const r = await assertCorporateEmailAppUserConflict(prisma, "a@b.com", "e1");
+    assert.equal(r.status, "linked_here");
+  });
+
+  it("null email não consulta AppUser", async () => {
+    let called = false;
+    const prisma = {
+      appUser: {
+        findFirst: async () => {
+          called = true;
+          return null;
+        },
+      },
+    } as never;
+    const r = await assertCorporateEmailAppUserConflict(prisma, null, "e1");
+    assert.equal(r.status, "none");
+    assert.equal(called, false);
   });
 });
 

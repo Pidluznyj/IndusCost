@@ -9,8 +9,14 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  assertCorporateEmailAppUserConflict,
+  assertCorporateEmailFormat,
+  assertCorporateEmailUnique,
+  describeCorporateEmailAppUserHint,
+  EmployeeRegistrationError,
   formatManagerDisplayName,
   isEmployeeUuid,
+  normalizeCorporateEmail,
 } from "@/src/lib/employeeRegistration.js";
 
 type AuthGuards = {
@@ -27,6 +33,68 @@ export function registerEmployeeLookupRoutes(
 ): void {
   const { requireAppAuth, requireAnyPermission } = guards;
   const lookupGuard = [requireAppAuth, requireAnyPermission([...RH_LOOKUP])];
+
+  /**
+   * Pré-checagem de e-mail corporativo (formato, unicidade Employee, conflito AppUser).
+   * Não cria login nem altera AppUser.
+   */
+  app.get("/api/employees/lookups/corporate-email", ...lookupGuard, async (req, res) => {
+    try {
+      const raw = typeof req.query.email === "string" ? req.query.email : "";
+      const excludeEmployeeId =
+        typeof req.query.excludeEmployeeId === "string" &&
+        isEmployeeUuid(req.query.excludeEmployeeId)
+          ? req.query.excludeEmployeeId.trim()
+          : null;
+      const email = normalizeCorporateEmail(raw);
+      if (!email) {
+        return res.json({
+          email: null,
+          valid: true,
+          ok: true,
+          code: null,
+          message: null,
+          appUserStatus: "none",
+          hint: null,
+        });
+      }
+      try {
+        assertCorporateEmailFormat(email);
+        await assertCorporateEmailUnique(prisma, email, excludeEmployeeId);
+        const app = await assertCorporateEmailAppUserConflict(
+          prisma,
+          email,
+          excludeEmployeeId
+        );
+        res.json({
+          email,
+          valid: true,
+          ok: true,
+          code: null,
+          message: null,
+          appUserStatus: app.status,
+          hint: describeCorporateEmailAppUserHint(app),
+        });
+      } catch (err) {
+        if (err instanceof EmployeeRegistrationError) {
+          return res.status(err.status).json({
+            email,
+            valid: err.code !== "INVALID_CORPORATE_EMAIL",
+            ok: false,
+            code: err.code,
+            message: err.message,
+            appUserStatus:
+              err.code === "CORPORATE_EMAIL_APPUSER_CONFLICT" ? "conflict" : null,
+            hint: err.message,
+          });
+        }
+        throw err;
+      }
+    } catch (error) {
+      console.error("GET /api/employees/lookups/corporate-email", error);
+      res.status(500).json({ error: "Erro ao validar e-mail corporativo." });
+    }
+  });
 
   app.get("/api/employees/lookups/cost-centers", ...lookupGuard, async (req, res) => {
     try {

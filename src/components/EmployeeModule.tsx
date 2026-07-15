@@ -31,6 +31,11 @@ import {
   formatEmployeeDate,
   type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
+import {
+  assertCorporateEmailFormat,
+  CorporateEmailError,
+  normalizeCorporateEmail,
+} from "@/src/lib/employeeCorporateEmail";
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { motion } from "motion/react";
@@ -147,6 +152,8 @@ export const EmployeeModule = () => {
   const [personConflicts, setPersonConflicts] = useState<
     { field: string; formValue: string | null; personValue: string | null }[]
   >([]);
+  const [corporateEmailHint, setCorporateEmailHint] = useState<string | null>(null);
+  const [corporateEmailError, setCorporateEmailError] = useState<string | null>(null);
   const [systemLinks, setSystemLinks] = useState<{
     person: { id: string; displayName: string } | null;
     links: Record<string, unknown[]>;
@@ -278,10 +285,53 @@ export const EmployeeModule = () => {
     }
   };
 
+  const validateCorporateEmailField = async (raw: string) => {
+    const normalized = normalizeCorporateEmail(raw);
+    setFormData((prev) => ({ ...prev, corporateEmail: normalized ?? "" }));
+    setCorporateEmailHint(null);
+    setCorporateEmailError(null);
+    if (!normalized) return true;
+    try {
+      assertCorporateEmailFormat(normalized);
+    } catch (e) {
+      const msg =
+        e instanceof CorporateEmailError
+          ? e.message
+          : "Informe um e-mail corporativo válido.";
+      setCorporateEmailError(msg);
+      return false;
+    }
+    try {
+      const qs = new URLSearchParams({ email: normalized });
+      if (editingEmployee?.id) qs.set("excludeEmployeeId", editingEmployee.id);
+      const data = await fetchJsonOk<{
+        ok: boolean;
+        message: string | null;
+        hint: string | null;
+        code: string | null;
+      }>(`/api/employees/lookups/corporate-email?${qs.toString()}`);
+      if (!data.ok) {
+        setCorporateEmailError(data.message || "E-mail corporativo inválido.");
+        return false;
+      }
+      setCorporateEmailHint(data.hint);
+      return true;
+    } catch (e) {
+      if (e instanceof HttpError) {
+        setCorporateEmailError(e.message);
+        return false;
+      }
+      console.error(e);
+      return true;
+    }
+  };
+
   const handleOpenModal = (employee?: Employee) => {
     setEmployeeFichaTab("professional");
     setFormError(null);
     setPersonConflicts([]);
+    setCorporateEmailHint(null);
+    setCorporateEmailError(null);
     if (employee) {
       setEditingEmployee(employee);
       const next = employeeToFormData(employee);
@@ -342,6 +392,12 @@ export const EmployeeModule = () => {
     e.preventDefault();
     if (savingEmployee) return;
     setFormError(null);
+    const emailOk = await validateCorporateEmailField(formData.corporateEmail ?? "");
+    if (!emailOk) {
+      setEmployeeFichaTab("professional");
+      setFormError("Corrija o e-mail corporativo antes de salvar.");
+      return;
+    }
     const method = editingEmployee ? "PUT" : "POST";
     const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees";
 
@@ -354,7 +410,7 @@ export const EmployeeModule = () => {
           ...formData,
           costCenterId: formData.costCenterId || null,
           managerId: formData.managerId || null,
-          corporateEmail: formData.corporateEmail || null,
+          corporateEmail: normalizeCorporateEmail(formData.corporateEmail) || null,
           personId:
             formData.personId && !String(formData.personId).includes(":")
               ? formData.personId
@@ -374,6 +430,15 @@ export const EmployeeModule = () => {
       const msg =
         error instanceof Error ? error.message : "Não foi possível salvar o colaborador.";
       setFormError(msg);
+      if (
+        error instanceof HttpError &&
+        (error.code === "DUPLICATE_CORPORATE_EMAIL" ||
+          error.code === "CORPORATE_EMAIL_APPUSER_CONFLICT" ||
+          error.code === "INVALID_CORPORATE_EMAIL")
+      ) {
+        setCorporateEmailError(msg);
+        setEmployeeFichaTab("professional");
+      }
       if (error instanceof HttpError && error.conflicts?.length) {
         setPersonConflicts(error.conflicts);
         setEmployeeFichaTab("professional");
@@ -459,6 +524,7 @@ export const EmployeeModule = () => {
       return (
         (emp.name ?? "").toLowerCase().includes(q) ||
         (emp.socialName ?? "").toLowerCase().includes(q) ||
+        (emp.corporateEmail ?? "").toLowerCase().includes(q) ||
         (emp.Role?.name ?? "").toLowerCase().includes(q) ||
         (emp.department ?? "").toLowerCase().includes(q)
       );
@@ -649,6 +715,9 @@ export const EmployeeModule = () => {
                             <p className="text-xs text-muted-foreground">Apelido: {emp.socialName}</p>
                           )}
                           <p className="text-xs text-muted-foreground">{emp.costCenter}</p>
+                          {emp.corporateEmail ? (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">{emp.corporateEmail}</p>
+                          ) : null}
                           {emp.appUser ? (
                             <p className="text-[10px] text-emerald-700 mt-0.5">
                               Usuário: {emp.appUser.email}
@@ -850,14 +919,27 @@ export const EmployeeModule = () => {
                               className={INPUT_CLASS}
                               placeholder="nome.sobrenome@empresa.com"
                               value={formData.corporateEmail ?? ""}
-                              onChange={(e) =>
-                                setFormData({ ...formData, corporateEmail: e.target.value })
-                              }
+                              onChange={(e) => {
+                                setCorporateEmailError(null);
+                                setCorporateEmailHint(null);
+                                setFormData({ ...formData, corporateEmail: e.target.value });
+                              }}
+                              onBlur={() => {
+                                void validateCorporateEmailField(formData.corporateEmail ?? "");
+                              }}
                             />
                             <p className="text-[11px] text-muted-foreground">
-                              Referência para vínculo com o login do sistema (Configurações → Usuários).
-                              Não cria acesso automaticamente.
+                              Fonte do vínculo profissional. Opcional em colaboradores antigos.
+                              Não cria nem altera o login do sistema automaticamente.
                             </p>
+                            {corporateEmailError && (
+                              <p className="text-xs text-destructive">{corporateEmailError}</p>
+                            )}
+                            {!corporateEmailError && corporateEmailHint && (
+                              <p className="text-xs text-amber-900 rounded-md border border-amber-200 bg-amber-50/80 px-2 py-1.5">
+                                {corporateEmailHint}
+                              </p>
+                            )}
                           </div>
                         </div>
                       </div>

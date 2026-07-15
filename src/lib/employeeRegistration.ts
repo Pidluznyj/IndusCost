@@ -4,6 +4,13 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import {
+  assertCorporateEmailFormat as assertCorporateEmailFormatPure,
+  CorporateEmailError,
+  normalizeCorporateEmail,
+} from "@/src/lib/employeeCorporateEmail.js";
+
+export { normalizeCorporateEmail } from "@/src/lib/employeeCorporateEmail.js";
 
 export const EMPLOYEE_CLASSIFICATIONS = ["DIRETO", "INDIRETO", "APOIO"] as const;
 export type EmployeeClassification = (typeof EMPLOYEE_CLASSIFICATIONS)[number];
@@ -18,7 +25,6 @@ export const EMPLOYEE_CONTRACT_TYPES = [
 ] as const;
 export type EmployeeContractType = (typeof EMPLOYEE_CONTRACT_TYPES)[number];
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -34,25 +40,24 @@ export class EmployeeRegistrationError extends Error {
   }
 }
 
+function rethrowCorporateEmail(err: unknown): never {
+  if (err instanceof CorporateEmailError) {
+    throw new EmployeeRegistrationError(err.code, err.message, err.status);
+  }
+  throw err;
+}
+
+/** Formato válido; falha como EmployeeRegistrationError (compat API RH). */
+export function assertCorporateEmailFormat(email: string | null): void {
+  try {
+    assertCorporateEmailFormatPure(email);
+  } catch (err) {
+    rethrowCorporateEmail(err);
+  }
+}
+
 export function isEmployeeUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_RE.test(value.trim());
-}
-
-/** Trim + lowercase; vazio → null. */
-export function normalizeCorporateEmail(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim().toLowerCase();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-export function assertCorporateEmailFormat(email: string | null): void {
-  if (email == null) return;
-  if (!EMAIL_RE.test(email)) {
-    throw new EmployeeRegistrationError(
-      "INVALID_CORPORATE_EMAIL",
-      "Informe um e-mail corporativo válido."
-    );
-  }
 }
 
 export function normalizeOptionalDateInput(value: unknown): Date | null {
@@ -165,15 +170,71 @@ export async function assertCorporateEmailUnique(
       corporateEmail: { equals: email, mode: "insensitive" },
       ...(excludeEmployeeId ? { id: { not: excludeEmployeeId } } : {}),
     },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   if (existing) {
     throw new EmployeeRegistrationError(
       "DUPLICATE_CORPORATE_EMAIL",
-      "Já existe um colaborador com este e-mail corporativo.",
+      `Já existe um colaborador com este e-mail corporativo${existing.name ? ` (“${existing.name}”)` : ""}.`,
       409
     );
   }
+}
+
+/**
+ * Conflito explícito com login existente:
+ * - AppUser com o mesmo e-mail já vinculado a OUTRO colaborador → bloqueia.
+ * - AppUser livre ou já vinculado a este colaborador → não bloqueia (não altera login).
+ * Nunca cria nem reescreve AppUser.email.
+ */
+export async function assertCorporateEmailAppUserConflict(
+  prisma: PrismaClient,
+  email: string | null,
+  employeeId?: string | null
+): Promise<{
+  status: "none" | "linked_here" | "available_match" | "conflict";
+  appUserId?: string;
+  appUserEmail?: string;
+}> {
+  if (!email) return { status: "none" };
+  const user = await prisma.appUser.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+    select: { id: true, email: true, employeeId: true },
+  });
+  if (!user) return { status: "none" };
+
+  if (employeeId && user.employeeId === employeeId) {
+    return { status: "linked_here", appUserId: user.id, appUserEmail: user.email };
+  }
+  if (user.employeeId && user.employeeId !== employeeId) {
+    throw new EmployeeRegistrationError(
+      "CORPORATE_EMAIL_APPUSER_CONFLICT",
+      "Este e-mail corporativo já é o login de um usuário vinculado a outro colaborador. Escolha outro e-mail ou resolva o vínculo em Configurações → Usuários. O login não é alterado automaticamente.",
+      409
+    );
+  }
+  return {
+    status: "available_match",
+    appUserId: user.id,
+    appUserEmail: user.email,
+  };
+}
+
+/** Pré-visualização (FE) sem lançar — não vincula automaticamente. */
+export function describeCorporateEmailAppUserHint(status: {
+  status: "none" | "linked_here" | "available_match" | "conflict";
+  appUserEmail?: string;
+}): string | null {
+  if (status.status === "available_match") {
+    return "Existe um usuário do sistema com este e-mail, ainda sem vínculo de colaborador. O cadastro não cria nem altera o login; o vínculo é manual na ficha.";
+  }
+  if (status.status === "linked_here") {
+    return "Este e-mail corresponde ao login já vinculado a este colaborador.";
+  }
+  if (status.status === "conflict") {
+    return "Este e-mail é login de um usuário já vinculado a outro colaborador.";
+  }
+  return null;
 }
 
 export async function resolveFinancialCostCenterLabel(
@@ -289,10 +350,16 @@ export async function prepareEmployeePersistedFields(
   admissionDate: Date | null;
   terminationDate: Date | null;
   status: string;
+  appUserEmailHint: string | null;
 }> {
   const corporateEmail = normalizeCorporateEmail(body.corporateEmail);
   assertCorporateEmailFormat(corporateEmail);
   await assertCorporateEmailUnique(prisma, corporateEmail, options?.employeeId);
+  const appUserHint = await assertCorporateEmailAppUserConflict(
+    prisma,
+    corporateEmail,
+    options?.employeeId
+  );
 
   const costCenterIdRaw =
     typeof body.costCenterId === "string" && body.costCenterId.trim()
@@ -354,5 +421,6 @@ export async function prepareEmployeePersistedFields(
     admissionDate,
     terminationDate,
     status,
+    appUserEmailHint: describeCorporateEmailAppUserHint(appUserHint),
   };
 }
