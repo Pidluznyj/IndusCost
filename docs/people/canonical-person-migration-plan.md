@@ -17,20 +17,59 @@ npx prisma generate
 # reiniciar Node
 ```
 
-## Backfill
+## Backfill (diagnóstico + apply seguro)
 
-Dry-run inequívoco:
+**Não executar apply em produção sem revisão do dry-run.**
+
+Motor: `src/lib/canonicalPersonBackfill.ts` (+ `.server.ts`).
+
+### Categorias
+
+| Categoria | Apply? | Regra |
+|-----------|--------|-------|
+| inequívoca | sim | CPF válido único ou e-mail único sem conflito |
+| provável | não | nome ou telefone isolados; contatos de cliente |
+| ambígua | não | múltiplas Persons no mesmo CPF/e-mail |
+| conflito | não | unique Employee/AppUser, CPF×e-mail divergentes, checksum inválido |
+| sem correspondência | não | órfão sem Person |
+
+Nome nunca gera merge automático. Telefone isolado nunca. Contato de cliente (`contactPersonId`) só relatório.
+
+### Comandos
 
 ```bash
+# Dry-run (padrão) — JSON/CSV mascarados em tmp/
+npx tsx scripts/canonical-person-backfill.ts --dry-run
+npx tsx scripts/canonical-person-backfill.ts --dry-run --out tmp/person-backfill --limit 500
+
+# Apply explícito — só unequivocos; exige confirmação
+npx tsx scripts/canonical-person-backfill.ts --apply --confirm-apply
+npx tsx scripts/canonical-person-backfill.ts --apply --confirm-apply --limit 100 --batch 50
+
+# Atalho legado
 npx tsx scripts/canonical-person-backfill-dry-run.ts
-# ou GET /api/people/diagnostics/unequivocal-matches (users.manage)
+
+# API (users.manage | people.link.manage)
+# GET /api/people/diagnostics/unequivocal-matches
 ```
 
-Só e-mail/CPF exato. Não auto-merge por nome.
+### Riscos
 
-## Rollback
+- Unique parcial: um Person só pode ter um Employee e um AppUser.
+- Apply **apenas** `UPDATE personId` — não cria/funde/apaga Person nem papéis.
+- Relatórios nunca trazem CPF/e-mail completos (máscara).
 
-Revert migration + redeploy commit anterior. Papéis legados sem personId continuam válidos.
+### Rollback (após apply)
+
+Papéis legados sem `personId` continuam válidos. Para desfazer vínculos do apply:
+
+```sql
+-- usar entityIds / personIds do JSON *-apply.json → linkedIds
+UPDATE "Employee" SET "personId" = NULL WHERE id = ANY(ARRAY[...]::uuid[]);
+-- idem AppUser / CommissionPerson / FleetDriver / Customer (identity)
+```
+
+Não apagar linhas `Person`. Revert de migration só se ainda não houver dependências novas.
 
 ## Permissões
 

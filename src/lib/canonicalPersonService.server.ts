@@ -9,7 +9,6 @@ import {
   classifyCustomerDocument,
   detectPersonFieldConflicts,
   isPersonUuid,
-  isUnequivocalMatchEvidence,
   maskCpf,
   maskEmail,
   normalizeCpfLoose,
@@ -380,63 +379,12 @@ export async function unlinkEmployeeFromPerson(
   );
 }
 
-/** Dry-run de correspondências inequívocas (e-mail/CPF). Não grava. */
+/** Dry-run de correspondências inequívocas — motor de backfill (não grava). */
 export async function diagnoseUnequivocalPersonMatches(prisma: PrismaClient) {
-  const report: Array<{
-    kind: string;
-    leftId: string;
-    rightId: string;
-    evidence: "email" | "cpf";
-    autoLinkSafe: boolean;
-  }> = [];
-
-  const employees = await prisma.employee.findMany({
-    where: { personId: null },
-    select: {
-      id: true,
-      corporateEmail: true,
-      personalEmail: true,
-      cpf: true,
-      name: true,
-    },
-    take: 2000,
-  });
-  const users = await prisma.appUser.findMany({
-    where: { personId: null },
-    select: { id: true, email: true, name: true },
-    take: 2000,
-  });
-
-  for (const e of employees) {
-    const emails = [e.corporateEmail, e.personalEmail]
-      .map(normalizeEmailLoose)
-      .filter(Boolean) as string[];
-    const cpf = normalizeCpfLoose(e.cpf);
-    for (const u of users) {
-      const uEmail = normalizeEmailLoose(u.email);
-      const emailExact = Boolean(uEmail && emails.includes(uEmail));
-      const cpfExact = false; // AppUser sem CPF
-      if (
-        isUnequivocalMatchEvidence({ emailExact, cpfExact, nameOnly: false }) &&
-        emailExact
-      ) {
-        report.push({
-          kind: "employee↔app_user",
-          leftId: e.id,
-          rightId: u.id,
-          evidence: "email",
-          autoLinkSafe: true,
-        });
-      }
-    }
-  }
-
-  return {
-    scannedEmployees: employees.length,
-    scannedUsers: users.length,
-    unequivocalMatches: report,
-    note: "Nome semelhante nunca é auto-link. CPF/e-mail exato apenas.",
-  };
+  const { diagnoseUnequivocalPersonMatchesViaBackfill } = await import(
+    "@/src/lib/canonicalPersonBackfill.server.js"
+  );
+  return diagnoseUnequivocalPersonMatchesViaBackfill(prisma);
 }
 
 export async function getCustomerPeopleLinks(
