@@ -11,7 +11,7 @@ import {
   type ProjectAmortizationTarget,
   type ProjectCostAmortizationSourceType,
 } from "@/src/lib/projectsCostAmortization";
-import { parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
+import { formatProjectsNumberInput, parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
 
 export type AmortizationModalSubmitPayload = {
   sourceType: ProjectCostAmortizationSourceType;
@@ -87,12 +87,14 @@ export function ProjectCostAmortizationModal({
   onClose,
   onSubmit,
 }: Props) {
-  const [passThroughPercent, setPassThroughPercent] = useState(String(initialPassThroughPercent));
+  const [passThroughPercent, setPassThroughPercent] = useState(
+    formatProjectsNumberInput(initialPassThroughPercent) || "0"
+  );
   const [rows, setRows] = useState<AllocationDraft[]>([]);
 
   useEffect(() => {
     if (!open) return;
-    setPassThroughPercent(String(initialPassThroughPercent));
+    setPassThroughPercent(formatProjectsNumberInput(initialPassThroughPercent) || "0");
     const byTarget = new Map((initialAllocations ?? []).map((a) => [a.targetItemId, a]));
     setRows(
       targets.map((target) => {
@@ -105,10 +107,12 @@ export function ProjectCostAmortizationModal({
           targetSnapshotRootProductId: target.snapshotRootProductId ?? null,
           displayName: target.displayName,
           baseUnitCost: target.baseUnitCost,
-          allocationPercent: saved ? String(saved.allocationPercent) : "0",
+          allocationPercent: saved
+            ? formatProjectsNumberInput(saved.allocationPercent) || "0"
+            : "0",
           amortizationQuantity: saved
-            ? String(saved.amortizationQuantity)
-            : String(target.suggestedQuantity),
+            ? formatProjectsNumberInput(saved.amortizationQuantity) || "0"
+            : formatProjectsNumberInput(target.suggestedQuantity) || "1",
           applicationMode: mode,
         };
       })

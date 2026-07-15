@@ -9,17 +9,47 @@ import type {
   ProjectStructureLineRow,
 } from "@/src/types/projects.js";
 
+/**
+ * Converte texto de input numérico (pt-BR e en-US simples) em number.
+ * Casos:
+ * - "1.234,56" / "10,5" → BR
+ * - "37.5" / "1234.56" → ponto decimal (não trata como milhar)
+ * - "1.234.567" → milhares BR sem decimais
+ */
 export function parseProjectsNumberInput(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
-  const normalized = trimmed.replace(/\./g, "").replace(",", ".");
+
+  const hasComma = trimmed.includes(",");
+  const hasDot = trimmed.includes(".");
+
+  let normalized: string;
+  if (hasComma && hasDot) {
+    // Separador decimal = o que aparece por último.
+    if (trimmed.lastIndexOf(",") > trimmed.lastIndexOf(".")) {
+      normalized = trimmed.replace(/\./g, "").replace(",", ".");
+    } else {
+      normalized = trimmed.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    normalized = trimmed.replace(",", ".");
+  } else if (hasDot) {
+    const parts = trimmed.split(".");
+    // Um único ponto → decimal ("37.5"), não milhar.
+    // Vários pontos → milhares BR ("1.234.567").
+    normalized = parts.length === 2 ? trimmed : trimmed.replace(/\./g, "");
+  } else {
+    normalized = trimmed;
+  }
+
   const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
 }
 
 export function formatProjectsNumberInput(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
-  return String(value);
+  // Usa vírgula decimal para round-trip seguro com parseProjectsNumberInput.
+  return String(value).replace(".", ",");
 }
 
 export function suggestAmortizedCostPerUnit(

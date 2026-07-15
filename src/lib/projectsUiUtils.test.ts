@@ -4,6 +4,7 @@ import {
   buildLaborLinePayload,
   buildMoldPayloadFromForm,
   calculateLaborLineTotal,
+  formatProjectsNumberInput,
   parseProjectsNumberInput,
   suggestAmortizedCostPerUnit,
 } from "./projectsUiUtils.js";
@@ -13,6 +14,23 @@ describe("projectsUiUtils", () => {
     assert.equal(parseProjectsNumberInput("1.234,56"), 1234.56);
     assert.equal(parseProjectsNumberInput("10,5"), 10.5);
     assert.equal(parseProjectsNumberInput(""), null);
+  });
+
+  it("parseProjectsNumberInput não transforma 37.5 em 375 (ponto decimal)", () => {
+    assert.equal(parseProjectsNumberInput("37.5"), 37.5);
+    assert.equal(parseProjectsNumberInput("37,5"), 37.5);
+    assert.equal(parseProjectsNumberInput("25"), 25);
+    assert.equal(parseProjectsNumberInput("0"), 0);
+    assert.equal(parseProjectsNumberInput("1.234.567"), 1234567);
+    assert.equal(parseProjectsNumberInput("1,234.56"), 1234.56);
+  });
+
+  it("formatProjectsNumberInput + parse mantém percentuais com decimal", () => {
+    assert.equal(formatProjectsNumberInput(37.5), "37,5");
+    assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(37.5)!), 37.5);
+    assert.equal(parseProjectsNumberInput(formatProjectsNumberInput(100)!), 100);
+    // Regressão do modal: String(37.5) era "37.5" e o parse antigo virava 375 → soma 775%.
+    assert.equal(parseProjectsNumberInput(String(37.5)), 37.5);
   });
 
   it("cálculo de custo amortizado não gera NaN/Infinity", () => {
