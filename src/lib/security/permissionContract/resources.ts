@@ -1318,7 +1318,12 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       V(["employees.view", "costs.view"]),
       U(["employees.edit"]),
     ],
-    relatedEndpoints: ["/api/employees", "/api/people/search", "/api/people/:id/links"],
+    relatedEndpoints: [
+      "/api/employees",
+      "/api/people/search",
+      "/api/people/resolve",
+      "/api/people/:id/links",
+    ],
     sensitivity: "high",
     appearsInSidebar: true,
     isTab: false,

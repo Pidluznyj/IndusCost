@@ -8,7 +8,6 @@ import {
   CanonicalPersonError,
   classifyCustomerDocument,
   detectPersonFieldConflicts,
-  foldAscii,
   isPersonUuid,
   isUnequivocalMatchEvidence,
   maskCpf,
@@ -16,13 +15,16 @@ import {
   normalizeCpfLoose,
   normalizeEmailLoose,
   normalizePhone,
-  sourceKindLabel,
   type FieldConflict,
   type FieldResolutionChoice,
   type PersonFieldKey,
   type PersonIdentitySnapshot,
   type PersonLinkSourceKind,
 } from "@/src/lib/canonicalPerson.js";
+import {
+  mapResolveItemToLegacyHit,
+  resolvePeopleSearch,
+} from "@/src/lib/canonicalPersonSearch.server.js";
 
 export type PersonSearchHit = {
   key: string;
@@ -37,20 +39,14 @@ export type PersonSearchHit = {
   roles: string[];
   status: string;
   matchReason: "email" | "cpf" | "phone" | "name" | "person";
+  podeVincular?: boolean;
+  motivoBloqueio?: string | null;
+  linkStatus?: string;
 };
 
-function emailOf(snapshot: {
-  corporateEmail?: string | null;
-  personalEmail?: string | null;
-  email?: string | null;
-}): string | null {
-  return (
-    normalizeEmailLoose(snapshot.corporateEmail) ||
-    normalizeEmailLoose(snapshot.personalEmail) ||
-    normalizeEmailLoose(snapshot.email)
-  );
-}
-
+/**
+ * Compat FE legado — delega ao motor unificado `resolvePeopleSearch`.
+ */
 export async function searchCanonicalPeople(
   prisma: PrismaClient,
   input: {
@@ -60,279 +56,15 @@ export async function searchCanonicalPeople(
     excludeEmployeeId?: string | null;
   }
 ): Promise<PersonSearchHit[]> {
-  const q = input.q.trim();
-  if (q.length < 2) return [];
-  const limit = Math.min(Math.max(input.limit ?? 20, 1), 40);
-  const qFold = foldAscii(q);
-  const qEmail = normalizeEmailLoose(q);
-  const qCpf = normalizeCpfLoose(q);
-  const qPhone = normalizePhone(q);
-  const hits: PersonSearchHit[] = [];
-  const seenKeys = new Set<string>();
-
-  const push = (hit: PersonSearchHit) => {
-    if (seenKeys.has(hit.key)) return;
-    seenKeys.add(hit.key);
-    hits.push(hit);
-  };
-
-  const people = await prisma.person.findMany({
-    where: {
-      OR: [
-        { displayName: { contains: q, mode: "insensitive" } },
-        { socialName: { contains: q, mode: "insensitive" } },
-        ...(qEmail
-          ? [
-              { corporateEmail: { equals: qEmail, mode: "insensitive" as const } },
-              { personalEmail: { equals: qEmail, mode: "insensitive" as const } },
-            ]
-          : []),
-        ...(qCpf ? [{ cpfNormalized: qCpf }] : []),
-        ...(qPhone ? [{ phoneNormalized: { contains: qPhone } }] : []),
-      ],
-    },
-    take: limit,
-    include: {
-      employees: { select: { id: true, status: true }, take: 3 },
-      appUsers: { select: { id: true, isActive: true }, take: 3 },
-      commissionPeople: { select: { id: true, active: true }, take: 3 },
-      fleetDrivers: { select: { id: true, status: true }, take: 3 },
-      customers: { select: { id: true, companyName: true }, take: 3 },
-    },
-    orderBy: { displayName: "asc" },
+  const result = await resolvePeopleSearch(prisma, {
+    q: input.q,
+    page: 1,
+    limit: Math.min(Math.max(input.limit ?? 20, 1), 40),
+    canViewPii: input.canViewPii,
+    excludeEmployeeId: input.excludeEmployeeId,
+    includeInactive: false,
   });
-
-  for (const p of people) {
-    const roles: string[] = [];
-    if (p.employees.length) roles.push("Colaborador");
-    if (p.appUsers.length) roles.push("Usuário");
-    if (p.commissionPeople.length) roles.push("Pessoa comissionada");
-    if (p.fleetDrivers.length) roles.push("Motorista");
-    if (p.customers.length) roles.push("Cliente PF");
-    const email = emailOf(p);
-    push({
-      key: `person:${p.id}`,
-      personId: p.id,
-      sourceKind: "person",
-      sourceId: p.id,
-      displayName: p.displayName,
-      socialName: p.socialName,
-      emailMasked: input.canViewPii ? email : maskEmail(email),
-      email: input.canViewPii ? email : null,
-      originLabel: sourceKindLabel("person"),
-      roles,
-      status: p.status,
-      matchReason: qCpf ? "cpf" : qEmail ? "email" : qPhone ? "phone" : "person",
-    });
-  }
-
-  if (hits.length < limit) {
-    const employees = await prisma.employee.findMany({
-      where: {
-        personId: null,
-        ...(input.excludeEmployeeId ? { id: { not: input.excludeEmployeeId } } : {}),
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          { socialName: { contains: q, mode: "insensitive" } },
-          ...(qEmail
-            ? [
-                { corporateEmail: { equals: qEmail, mode: "insensitive" as const } },
-                { personalEmail: { equals: qEmail, mode: "insensitive" as const } },
-              ]
-            : []),
-          ...(qCpf ? [{ cpf: { contains: qCpf } }] : []),
-        ],
-      },
-      take: limit,
-      select: {
-        id: true,
-        name: true,
-        socialName: true,
-        corporateEmail: true,
-        personalEmail: true,
-        status: true,
-      },
-    });
-    for (const e of employees) {
-      const email = emailOf(e);
-      push({
-        key: `employee:${e.id}`,
-        personId: null,
-        sourceKind: "employee",
-        sourceId: e.id,
-        displayName: e.socialName?.trim() || e.name,
-        socialName: e.socialName,
-        emailMasked: input.canViewPii ? email : maskEmail(email),
-        email: input.canViewPii ? email : null,
-        originLabel: "Colaborador (sem pessoa canônica)",
-        roles: ["Colaborador"],
-        status: e.status ?? "ACTIVE",
-        matchReason: qEmail ? "email" : qCpf ? "cpf" : "name",
-      });
-    }
-  }
-
-  if (hits.length < limit) {
-    const users = await prisma.appUser.findMany({
-      where: {
-        personId: null,
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          ...(qEmail ? [{ email: { equals: qEmail, mode: "insensitive" as const } }] : []),
-        ],
-      },
-      take: limit,
-      select: { id: true, name: true, email: true, isActive: true },
-    });
-    for (const u of users) {
-      const email = normalizeEmailLoose(u.email);
-      push({
-        key: `app_user:${u.id}`,
-        personId: null,
-        sourceKind: "app_user",
-        sourceId: u.id,
-        displayName: u.name,
-        socialName: null,
-        emailMasked: input.canViewPii ? email : maskEmail(email),
-        email: input.canViewPii ? email : null,
-        originLabel: "Usuário do sistema",
-        roles: ["Usuário"],
-        status: u.isActive ? "ACTIVE" : "INACTIVE",
-        matchReason: qEmail ? "email" : "name",
-      });
-    }
-  }
-
-  if (hits.length < limit) {
-    const cps = await prisma.commissionPerson.findMany({
-      where: {
-        personId: null,
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          ...(qEmail ? [{ email: { equals: qEmail, mode: "insensitive" as const } }] : []),
-          ...(qCpf ? [{ document: { contains: qCpf } }] : []),
-        ],
-      },
-      take: limit,
-      select: { id: true, name: true, email: true, active: true, document: true },
-    });
-    for (const c of cps) {
-      const email = normalizeEmailLoose(c.email);
-      push({
-        key: `commission_person:${c.id}`,
-        personId: null,
-        sourceKind: "commission_person",
-        sourceId: c.id,
-        displayName: c.name,
-        socialName: null,
-        emailMasked: input.canViewPii ? email : maskEmail(email),
-        email: input.canViewPii ? email : null,
-        originLabel: "Pessoa comissionada",
-        roles: ["Pessoa comissionada"],
-        status: c.active ? "ACTIVE" : "INACTIVE",
-        matchReason: qEmail ? "email" : qCpf ? "cpf" : "name",
-      });
-    }
-  }
-
-  if (hits.length < limit) {
-    const drivers = await prisma.fleetDriver.findMany({
-      where: {
-        personId: null,
-        OR: [
-          { name: { contains: q, mode: "insensitive" } },
-          ...(qEmail ? [{ email: { equals: qEmail, mode: "insensitive" as const } }] : []),
-          ...(qCpf ? [{ cpf: { contains: qCpf } }] : []),
-        ],
-      },
-      take: limit,
-      select: { id: true, name: true, email: true, status: true, cpf: true },
-    });
-    for (const d of drivers) {
-      const email = normalizeEmailLoose(d.email);
-      push({
-        key: `fleet_driver:${d.id}`,
-        personId: null,
-        sourceKind: "fleet_driver",
-        sourceId: d.id,
-        displayName: d.name,
-        socialName: null,
-        emailMasked: input.canViewPii ? email : maskEmail(email),
-        email: input.canViewPii ? email : null,
-        originLabel: "Motorista",
-        roles: ["Motorista"],
-        status: String(d.status),
-        matchReason: qCpf ? "cpf" : qEmail ? "email" : "name",
-      });
-    }
-  }
-
-  if (hits.length < limit) {
-    const customers = await prisma.customer.findMany({
-      where: {
-        personId: null,
-        OR: [
-          { companyName: { contains: q, mode: "insensitive" } },
-          { contactName: { contains: q, mode: "insensitive" } },
-          { tradeName: { contains: q, mode: "insensitive" } },
-          ...(qEmail ? [{ email: { equals: qEmail, mode: "insensitive" as const } }] : []),
-          ...(qCpf ? [{ taxId: { contains: qCpf } }] : []),
-        ],
-      },
-      take: Math.min(limit, 30),
-      select: {
-        id: true,
-        companyName: true,
-        contactName: true,
-        taxId: true,
-        email: true,
-        status: true,
-      },
-    });
-    for (const c of customers) {
-      if (classifyCustomerDocument(c.taxId) !== "PF") continue;
-      const email = normalizeEmailLoose(c.email);
-      push({
-        key: `customer_pf:${c.id}`,
-        personId: null,
-        sourceKind: "customer_pf",
-        sourceId: c.id,
-        displayName: c.contactName?.trim() || c.companyName,
-        socialName: null,
-        emailMasked: input.canViewPii ? email : maskEmail(email),
-        email: input.canViewPii ? email : null,
-        originLabel: `Cliente PF: ${c.companyName}`,
-        roles: ["Cliente (pessoa física)"],
-        status: c.status,
-        matchReason: qCpf ? "cpf" : qEmail ? "email" : "name",
-      });
-    }
-  }
-
-  // Ordena: evidência inequívoca primeiro; descarta matching só por nome no topo se há melhores
-  hits.sort((a, b) => {
-    const score = (h: PersonSearchHit) =>
-      h.matchReason === "cpf" || h.matchReason === "email"
-        ? 0
-        : h.matchReason === "person"
-          ? 1
-          : h.matchReason === "phone"
-            ? 2
-            : 3;
-    return score(a) - score(b) || a.displayName.localeCompare(b.displayName, "pt-BR");
-  });
-
-  // Filtro soft por acento no cliente-side fold (além do contains SQL)
-  const filtered = hits.filter((h) => {
-    if (qEmail || qCpf || qPhone) return true;
-    return (
-      foldAscii(h.displayName).includes(qFold) ||
-      foldAscii(h.socialName ?? "").includes(qFold) ||
-      foldAscii(h.originLabel).includes(qFold)
-    );
-  });
-
-  return filtered.slice(0, limit);
+  return result.items.map(mapResolveItemToLegacyHit);
 }
 
 export async function ensurePersonFromSource(

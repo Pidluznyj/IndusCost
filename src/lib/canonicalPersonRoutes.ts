@@ -20,6 +20,7 @@ import {
   searchCanonicalPeople,
   unlinkEmployeeFromPerson,
 } from "@/src/lib/canonicalPersonService.server.js";
+import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -86,6 +87,39 @@ export function registerCanonicalPersonRoutes(
       } catch (error) {
         console.error("GET /api/people/search", error);
         res.status(500).json({ error: "Erro ao pesquisar pessoas." });
+      }
+    }
+  );
+
+  /**
+   * Motor unificado de resolução (Prompt 03).
+   * Query: q, page, limit, excludeEmployeeId, includeInactive=1
+   */
+  app.get(
+    "/api/people/resolve",
+    requireAppAuth,
+    requireAnyPermission([...SEARCH_PERMS]),
+    async (req, res) => {
+      try {
+        const q = typeof req.query.q === "string" ? req.query.q : "";
+        const excludeEmployeeId =
+          typeof req.query.excludeEmployeeId === "string"
+            ? req.query.excludeEmployeeId
+            : null;
+        const includeInactive =
+          req.query.includeInactive === "1" || req.query.includeInactive === "true";
+        const result = await resolvePeopleSearch(prisma, {
+          q,
+          page: Number(req.query.page) || 1,
+          limit: Number(req.query.limit) || 20,
+          excludeEmployeeId,
+          includeInactive,
+          canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
+        });
+        res.json(result);
+      } catch (error) {
+        console.error("GET /api/people/resolve", error);
+        res.status(500).json({ error: "Erro ao resolver pessoas." });
       }
     }
   );

@@ -112,6 +112,13 @@ export function maskCpf(cpf: string | null | undefined): string | null {
   return `***.***.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
+export function maskPhone(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const d = digitsOnly(phone);
+  if (d.length < 4) return "***";
+  return `${"*".repeat(Math.max(0, d.length - 4))}${d.slice(-4)}`;
+}
+
 export function classifyCustomerDocument(
   taxId: string | null | undefined
 ): "PF" | "PJ" | "UNKNOWN" {
