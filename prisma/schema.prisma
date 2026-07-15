@@ -46,12 +46,16 @@ model Employee {
   roleId                       String                     @db.Uuid
   department                   String
   costCenter                   String
+  /// FK opcional ao cadastro oficial financeiro (mantém `costCenter` como rótulo legado/cache).
+  costCenterId                 String?                    @db.Uuid
   classification               String
   salary                       Decimal                    @db.Decimal(20, 6)
   monthlyHours                 Int
   productivity                 Decimal?                   @default(100.00) @db.Decimal(10, 6)
   status                       String?                    @default("ACTIVE")
   socialName                   String?
+  /// E-mail corporativo — referência de vínculo com AppUser.email (opcional, unique CI).
+  corporateEmail               String?
   cpf                          String?
   rg                           String?
   birthDate                    DateTime?                  @db.Timestamptz(6)
@@ -64,6 +68,8 @@ model Employee {
   terminationDate              DateTime?                  @db.Timestamptz(6)
   contractType                 String?
   managerName                  String?
+  /// Gestor = outro Employee (ativos na seleção; histórico preserva inativos).
+  managerId                    String?                    @db.Uuid
   professionalNotes            String?
   address                      String?
   adminNotes                   String?
@@ -76,9 +82,15 @@ model Employee {
   createdAt                    DateTime?                  @default(now()) @db.Timestamptz(6)
   updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   Role                         Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  financialCostCenter          FinancialCostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  manager                      Employee?                  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  directReports                Employee[]                 @relation("EmployeeManager")
   EmployeePayrollComponent     EmployeePayrollComponent[]
   /// Conta de acesso do sistema (Configurações → Usuários), quando vinculada.
   appUser                      AppUser?
+
+  @@index([costCenterId])
+  @@index([managerId])
 }
 
 model PayrollComponent {
@@ -1883,6 +1895,8 @@ model AppUser {
   employeeId            String?        @unique @db.Uuid
   isActive              Boolean        @default(true)
   externalSellerId      Int?
+  /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
+  externalSellerIds     Int[]          @default([])
   sellerResponsibleName String?
   lastLoginAt           DateTime?      @db.Timestamptz(6)
   createdAt             DateTime       @default(now()) @db.Timestamptz(6)
@@ -4213,6 +4227,7 @@ model FinancialCostCenter {
   allocations                 AccountsPayableCostCenterAllocation[]
   reclassificationRulesTarget FinancialCostCenterReclassificationRule[]
   classificationRules         FinancialCostCenterClassificationRule[]
+  employees                   Employee[]
 
   @@index([status])
   @@index([parentId])

@@ -15,6 +15,7 @@ export interface PayrollComponent {
 
 export interface EmployeeHrProfileFields {
   socialName?: string | null;
+  corporateEmail?: string | null;
   cpf?: string | null;
   rg?: string | null;
   birthDate?: string | null;
@@ -27,6 +28,8 @@ export interface EmployeeHrProfileFields {
   terminationDate?: string | null;
   contractType?: string | null;
   managerName?: string | null;
+  managerId?: string | null;
+  costCenterId?: string | null;
   professionalNotes?: string | null;
   address?: string | null;
   adminNotes?: string | null;
@@ -51,6 +54,25 @@ export interface Employee extends EmployeeHrProfileFields {
   productivity: number;
   status: "ACTIVE" | "INACTIVE";
   EmployeePayrollComponent: { PayrollComponent: PayrollComponent }[];
+  financialCostCenter?: {
+    id: string;
+    code: string;
+    name: string;
+    status: string;
+  } | null;
+  manager?: {
+    id: string;
+    name: string;
+    socialName: string | null;
+    status: string | null;
+  } | null;
+  /** Conta de acesso vinculada (Configurações → Usuários), se houver. */
+  appUser?: {
+    id: string;
+    email: string;
+    isActive: boolean;
+    role: string;
+  } | null;
   costs?: {
     salary: number;
     totalBenefits: number;

@@ -136,6 +136,14 @@ export const EmployeeModule = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [payrollComponents, setPayrollComponents] = useState<PayrollComponent[]>([]);
+  const [costCenterOptions, setCostCenterOptions] = useState<
+    { value: string; label: string; searchTerms?: string }[]
+  >([]);
+  const [managerOptions, setManagerOptions] = useState<
+    { value: string; label: string; searchTerms?: string }[]
+  >([]);
+  const [savingEmployee, setSavingEmployee] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
@@ -162,19 +170,84 @@ export const EmployeeModule = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [empData, roleData, compData] = await Promise.all([
-        fetchJsonOk<Employee[]>("/api/employees"),
-        fetchJsonOk<Role[]>("/api/roles"),
-        fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
-      ]);
+      const empData = await fetchJsonOk<Employee[]>("/api/employees");
       setEmployees(Array.isArray(empData) ? empData : []);
-      setRoles(Array.isArray(roleData) ? roleData : []);
-      setPayrollComponents(Array.isArray(compData) ? compData : []);
+
+      try {
+        const roleLookup = await fetchJsonOk<{ rows: { id: string; name: string }[] }>(
+          "/api/employees/lookups/roles"
+        );
+        setRoles(
+          (roleLookup.rows ?? []).map((r) => ({
+            id: r.id,
+            name: r.name,
+            baseSalary: 0,
+            monthlyHours: 220,
+          }))
+        );
+      } catch {
+        if (canAccessOperationalSettings) {
+          const roleData = await fetchJsonOk<Role[]>("/api/roles");
+          setRoles(Array.isArray(roleData) ? roleData : []);
+        } else {
+          setRoles([]);
+        }
+      }
+
+      if (canAccessOperationalSettings || canEdit) {
+        try {
+          const compData = await fetchJsonOk<PayrollComponent[]>("/api/payroll-components");
+          setPayrollComponents(Array.isArray(compData) ? compData : []);
+        } catch {
+          setPayrollComponents([]);
+        }
+      }
     } catch (error) {
       console.error("Erro ao buscar dados:", error);
       alert(error instanceof Error ? error.message : "Não foi possível carregar colaboradores.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadProfessionalLookups = async (opts?: {
+    excludeManagerId?: string;
+    selectedCostCenterId?: string;
+    selectedManagerId?: string;
+  }) => {
+    try {
+      const ccQs = new URLSearchParams();
+      if (opts?.selectedCostCenterId) ccQs.set("selectedId", opts.selectedCostCenterId);
+      const mgrQs = new URLSearchParams();
+      if (opts?.excludeManagerId) mgrQs.set("excludeId", opts.excludeManagerId);
+      if (opts?.selectedManagerId) {
+        mgrQs.set("selectedId", opts.selectedManagerId);
+        mgrQs.set("includeInactive", "1");
+      }
+      const [cc, mgr] = await Promise.all([
+        fetchJsonOk<{ rows: { id: string; label: string; code: string; name: string }[] }>(
+          `/api/employees/lookups/cost-centers?${ccQs.toString()}`
+        ),
+        fetchJsonOk<{ rows: { id: string; label: string; displayName: string; department: string }[] }>(
+          `/api/employees/lookups/managers?${mgrQs.toString()}`
+        ),
+      ]);
+      setCostCenterOptions(
+        (cc.rows ?? []).map((r) => ({
+          value: r.id,
+          label: r.label,
+          searchTerms: `${r.code} ${r.name}`,
+        }))
+      );
+      setManagerOptions(
+        (mgr.rows ?? []).map((r) => ({
+          value: r.id,
+          label: r.label,
+          searchTerms: `${r.displayName} ${r.department}`,
+        }))
+      );
+    } catch (error) {
+      console.error("Erro ao carregar lookups RH:", error);
     }
   };
 
@@ -184,12 +257,19 @@ export const EmployeeModule = () => {
 
   const handleOpenModal = (employee?: Employee) => {
     setEmployeeFichaTab("professional");
+    setFormError(null);
     if (employee) {
       setEditingEmployee(employee);
       setFormData(employeeToFormData(employee));
+      void loadProfessionalLookups({
+        excludeManagerId: employee.id,
+        selectedCostCenterId: employee.costCenterId ?? employee.financialCostCenter?.id,
+        selectedManagerId: employee.managerId ?? employee.manager?.id,
+      });
     } else {
       setEditingEmployee(null);
       setFormData(createEmptyEmployeeForm(roles[0]?.id || ""));
+      void loadProfessionalLookups();
     }
     setIsModalOpen(true);
   };
@@ -201,20 +281,32 @@ export const EmployeeModule = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (savingEmployee) return;
+    setFormError(null);
     const method = editingEmployee ? "PUT" : "POST";
     const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : "/api/employees";
 
+    setSavingEmployee(true);
     try {
       await fetchJsonOk(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          costCenterId: formData.costCenterId || null,
+          managerId: formData.managerId || null,
+          corporateEmail: formData.corporateEmail || null,
+        }),
       });
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível salvar o colaborador.");
+      setFormError(
+        error instanceof Error ? error.message : "Não foi possível salvar o colaborador."
+      );
+    } finally {
+      setSavingEmployee(false);
     }
   };
 
@@ -457,6 +549,14 @@ export const EmployeeModule = () => {
                             <p className="text-xs text-muted-foreground">Apelido: {emp.socialName}</p>
                           )}
                           <p className="text-xs text-muted-foreground">{emp.costCenter}</p>
+                          {emp.appUser ? (
+                            <p className="text-[10px] text-emerald-700 mt-0.5">
+                              Usuário: {emp.appUser.email}
+                              {!emp.appUser.isActive ? " (inativo)" : ""}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Sem usuário de acesso</p>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -560,53 +660,226 @@ export const EmployeeModule = () => {
                   </p>
 
                   {employeeFichaTab === "professional" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome completo</label>
-                        <input required type="text" className={INPUT_CLASS} value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+                    <div className="space-y-6">
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-primary/80 mb-3">
+                          Identificação profissional
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Nome completo *
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              className={INPUT_CLASS}
+                              value={formData.name}
+                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            />
+                          </div>
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Nome social / apelido
+                            </label>
+                            <input
+                              type="text"
+                              className={INPUT_CLASS}
+                              value={formData.socialName ?? ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, socialName: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              E-mail corporativo
+                            </label>
+                            <input
+                              type="email"
+                              autoComplete="off"
+                              className={INPUT_CLASS}
+                              placeholder="nome.sobrenome@empresa.com"
+                              value={formData.corporateEmail ?? ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, corporateEmail: e.target.value })
+                              }
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Referência para vínculo com o login do sistema (Configurações → Usuários).
+                              Não cria acesso automaticamente.
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome social / apelido</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.socialName ?? ""} onChange={(e) => setFormData({ ...formData, socialName: e.target.value })} />
+
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-primary/80 mb-3">
+                          Estrutura
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Cargo *
+                            </label>
+                            <SearchableSelect
+                              required
+                              placeholder="Selecione o cargo..."
+                              options={roles.map((role) => ({
+                                value: role.id,
+                                label: role.name,
+                                searchTerms: role.name,
+                              }))}
+                              value={formData.roleId}
+                              onChange={(v) => setFormData({ ...formData, roleId: v })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Departamento / setor *
+                            </label>
+                            <input
+                              required
+                              type="text"
+                              className={INPUT_CLASS}
+                              value={formData.department}
+                              onChange={(e) =>
+                                setFormData({ ...formData, department: e.target.value })
+                              }
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Ainda não há cadastro oficial de departamentos — texto livre.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Centro de custo *
+                            </label>
+                            <SearchableSelect
+                              required
+                              placeholder="Buscar centro de custo..."
+                              options={costCenterOptions}
+                              value={formData.costCenterId ?? ""}
+                              onChange={(v) => {
+                                const opt = costCenterOptions.find((o) => o.value === v);
+                                setFormData({
+                                  ...formData,
+                                  costCenterId: v,
+                                  costCenter: opt?.label ?? formData.costCenter,
+                                });
+                              }}
+                              unknownSelectionLabel={
+                                formData.costCenter
+                                  ? `${formData.costCenter} (legado)`
+                                  : "Centro não listado"
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Gestor responsável
+                            </label>
+                            <SearchableSelect
+                              placeholder="Buscar colaborador ativo..."
+                              options={[
+                                { value: "", label: "— Sem gestor —", searchTerms: "sem" },
+                                ...managerOptions,
+                              ]}
+                              value={formData.managerId ?? ""}
+                              onChange={(v) => {
+                                const opt = managerOptions.find((o) => o.value === v);
+                                setFormData({
+                                  ...formData,
+                                  managerId: v,
+                                  managerName: opt?.label ?? "",
+                                });
+                              }}
+                              unknownSelectionLabel={
+                                formData.managerName
+                                  ? `${formData.managerName} (legado)`
+                                  : "Gestor não listado"
+                              }
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Cargo</label>
-                        <SearchableSelect required placeholder="Selecione o cargo..." options={roles.map((role) => ({ value: role.id, label: role.name, searchTerms: role.name }))} value={formData.roleId} onChange={(v) => setFormData({ ...formData, roleId: v })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / setor</label>
-                        <input required type="text" className={INPUT_CLASS} value={formData.department} onChange={(e) => setFormData({ ...formData, department: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Centro de custo</label>
-                        <input required type="text" className={INPUT_CLASS} value={formData.costCenter} onChange={(e) => setFormData({ ...formData, costCenter: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Classificação</label>
-                        <SearchableSelect required placeholder="Classificação..." options={EMPLOYEE_CLASSIFICATION_OPTIONS} value={formData.classification} onChange={(v) => setFormData({ ...formData, classification: v })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Tipo de contrato</label>
-                        <SearchableSelect placeholder="Tipo de contrato..." options={CONTRACT_TYPE_OPTIONS} value={formData.contractType ?? ""} onChange={(v) => setFormData({ ...formData, contractType: v })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de admissão</label>
-                        <input type="date" className={INPUT_CLASS} value={formData.admissionDate ?? ""} onChange={(e) => setFormData({ ...formData, admissionDate: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de desligamento</label>
-                        <input type="date" className={INPUT_CLASS} value={formData.terminationDate ?? ""} onChange={(e) => setFormData({ ...formData, terminationDate: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Gestor responsável</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.managerName ?? ""} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
-                        <select className={INPUT_CLASS} value={formData.status ?? "ACTIVE"} onChange={(e) => setFormData({ ...formData, status: e.target.value as CreateEmployeeInput["status"] })}>
-                          <option value="ACTIVE">Ativo</option>
-                          <option value="INACTIVE">Inativo</option>
-                        </select>
+
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-primary/80 mb-3">
+                          Vínculo
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Classificação *
+                            </label>
+                            <SearchableSelect
+                              required
+                              placeholder="Classificação..."
+                              options={EMPLOYEE_CLASSIFICATION_OPTIONS}
+                              value={formData.classification}
+                              onChange={(v) => setFormData({ ...formData, classification: v })}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Mão de obra: Direto / Indireto / Apoio.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Tipo de contrato
+                            </label>
+                            <SearchableSelect
+                              placeholder="Tipo de contrato..."
+                              options={CONTRACT_TYPE_OPTIONS}
+                              value={formData.contractType ?? ""}
+                              onChange={(v) => setFormData({ ...formData, contractType: v })}
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Data de admissão
+                            </label>
+                            <input
+                              type="date"
+                              className={INPUT_CLASS}
+                              value={formData.admissionDate ?? ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, admissionDate: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Data de desligamento
+                            </label>
+                            <input
+                              type="date"
+                              className={INPUT_CLASS}
+                              value={formData.terminationDate ?? ""}
+                              onChange={(e) =>
+                                setFormData({ ...formData, terminationDate: e.target.value })
+                              }
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Status
+                            </label>
+                            <select
+                              className={INPUT_CLASS}
+                              value={formData.status ?? "ACTIVE"}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  status: e.target.value as CreateEmployeeInput["status"],
+                                })
+                              }
+                            >
+                              <option value="ACTIVE">Ativo</option>
+                              <option value="INACTIVE">Inativo</option>
+                            </select>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -886,6 +1159,16 @@ export const EmployeeModule = () => {
                         {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </div>
                     </div>
+                    <DetailField
+                      label="Usuário do sistema"
+                      value={
+                        viewingEmployee.appUser
+                          ? `${viewingEmployee.appUser.email}${
+                              viewingEmployee.appUser.isActive ? "" : " (inativo)"
+                            }`
+                          : "Sem conta — criar em Configurações → Usuários"
+                      }
+                    />
                   </div>
                 )}
 

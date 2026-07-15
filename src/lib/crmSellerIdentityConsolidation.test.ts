@@ -113,7 +113,10 @@ describe("crmSellerIdentityConsolidation", () => {
     );
     assert.match(admin, /consolidateAdminSellerMetricsRows/);
     assert.match(picker, /formatAdminSellerOptionSublabel/);
-    assert.match(picker, /Consolida/);
+    assert.match(picker, /flattenAdminSellerOptionsToNomusPicks/);
+    assert.match(picker, /Responsável comercial/);
+    assert.match(picker, /Vendedores Nomus vinculados/);
+    assert.match(picker, /externalSellerIds/);
     assert.doesNotMatch(picker, /GISLENE|464|646|645/);
   });
 

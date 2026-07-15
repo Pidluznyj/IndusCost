@@ -34,6 +34,8 @@ export type SafeAppUser = {
   employeeDepartment: string | null;
   isActive: boolean;
   externalSellerId: number | null;
+  /** Todos os IDs Nomus vinculados ao login (vendedor). */
+  externalSellerIds: number[];
   sellerResponsibleName: string | null;
   lastLoginAt: string | null;
   createdAt: string;
@@ -155,6 +157,11 @@ export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): 
     employeeDepartment: options.employee?.department?.trim() || null,
     isActive: user.isActive,
     externalSellerId: user.externalSellerId,
+    externalSellerIds: Array.isArray(user.externalSellerIds)
+      ? user.externalSellerIds.filter((id) => Number.isFinite(id) && id > 0)
+      : user.externalSellerId != null
+        ? [user.externalSellerId]
+        : [],
     sellerResponsibleName: user.sellerResponsibleName,
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     createdAt: user.createdAt.toISOString(),

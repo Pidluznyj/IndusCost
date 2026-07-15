@@ -72,3 +72,46 @@ export function formatAdminSellerOptionSublabel(option: AdminSellerOption): stri
       : "";
   return `${idPart} · ${confidenceLabel} · ${counts}${mergeNote}`;
 }
+
+/** Uma linha por ID Nomus (para multi-seleção no cadastro de usuário). */
+export type NomusSellerPickOption = {
+  externalSellerId: number;
+  displayName: string;
+  sellerIdentityKey: string;
+  responsible: string | null;
+  ordersCount: number;
+  ordersValue: number;
+};
+
+export function flattenAdminSellerOptionsToNomusPicks(
+  options: readonly AdminSellerOption[]
+): NomusSellerPickOption[] {
+  const byId = new Map<number, NomusSellerPickOption>();
+  for (const option of options) {
+    const ids =
+      option.externalSellerIds.length > 0
+        ? option.externalSellerIds
+        : option.externalSellerId != null
+          ? [option.externalSellerId]
+          : [];
+    for (const id of ids) {
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const prev = byId.get(id);
+      if (!prev || option.ordersCount > prev.ordersCount) {
+        byId.set(id, {
+          externalSellerId: id,
+          displayName: option.displayName,
+          sellerIdentityKey: option.sellerIdentityKey,
+          responsible: option.responsible,
+          ordersCount: option.ordersCount,
+          ordersValue: option.ordersValue,
+        });
+      }
+    }
+  }
+  return [...byId.values()].sort((a, b) => {
+    const byName = a.displayName.localeCompare(b.displayName, "pt-BR");
+    if (byName !== 0) return byName;
+    return a.externalSellerId - b.externalSellerId;
+  });
+}

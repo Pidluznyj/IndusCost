@@ -203,6 +203,11 @@ import {
   parseCrmCustomerListSellerQuery,
 } from "./src/lib/crmCustomersList.js";
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
+import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
+import {
+  EmployeeRegistrationError,
+  prepareEmployeePersistedFields,
+} from "./src/lib/employeeRegistration.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -434,6 +439,7 @@ import {
   resolveEmployeeDisplayName,
   resolveLoginEmailForNewUser,
 } from "./src/lib/adminUserEmployeeLink.js";
+import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
 import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
 import {
   createAuthGuards,
@@ -1803,12 +1809,16 @@ async function startServer() {
 
       const refreshed = await prisma.appUser.findUniqueOrThrow({
         where: { id: user.id },
-        include: { accessProfile: { select: { name: true } } },
+        include: {
+          accessProfile: { select: { name: true } },
+          employee: { select: { id: true, name: true, socialName: true, department: true } },
+        },
       });
       setAppSessionCookie(res, token);
       return res.json({
         user: toSafeAppUser(refreshed, {
           accessProfileName: refreshed.accessProfile?.name ?? null,
+          employee: refreshed.employee,
         }),
       });
     } catch (error) {
@@ -1840,7 +1850,10 @@ async function startServer() {
       }
       const user = await prisma.appUser.findUnique({
         where: { id: auth.id },
-        include: { accessProfile: { select: { name: true } } },
+        include: {
+          accessProfile: { select: { name: true } },
+          employee: { select: { id: true, name: true, socialName: true, department: true } },
+        },
       });
       if (!user || !user.isActive) {
         clearAppSessionCookie(res);
@@ -1848,7 +1861,10 @@ async function startServer() {
       }
       return res.json({
         authenticated: true,
-        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+        user: toSafeAppUser(user, {
+          accessProfileName: user.accessProfile?.name ?? null,
+          employee: user.employee,
+        }),
       });
     } catch (error) {
       console.error("GET /api/auth/me", error);
@@ -1945,27 +1961,25 @@ async function startServer() {
           ? null
           : String(req.body.accessProfileId).trim() || null;
       const isActive = req.body?.isActive !== false;
-      const externalSellerId =
-        req.body?.externalSellerId === null || req.body?.externalSellerId === undefined
-          ? null
-          : Number.parseInt(String(req.body.externalSellerId), 10);
-      const sellerResponsibleName =
-        typeof req.body?.sellerResponsibleName === "string"
-          ? req.body.sellerResponsibleName.trim() || null
-          : null;
+      const sellerLink = resolveAppUserSellerLinkFromBody(req.body ?? {});
 
       const passwordError = validatePasswordMin(password);
       if (passwordError) {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
       }
-      if (
-        externalSellerId !== null &&
-        (!Number.isFinite(externalSellerId) || externalSellerId < 0)
-      ) {
-        return res.status(400).json({
-          error: "INVALID_EXTERNAL_SELLER_ID",
-          message: "externalSellerId inválido.",
-        });
+      if (role === AppUserRole.SELLER) {
+        if (!sellerLink.sellerResponsibleName) {
+          return res.status(400).json({
+            error: "SELLER_RESPONSIBLE_REQUIRED",
+            message: "Vendedor precisa de um responsável comercial.",
+          });
+        }
+        if (sellerLink.externalSellerIds.length === 0) {
+          return res.status(400).json({
+            error: "SELLER_NOMUS_IDS_REQUIRED",
+            message: "Vendedor precisa de ao menos um ID Nomus vinculado.",
+          });
+        }
       }
 
       const employeeId =
@@ -2051,8 +2065,9 @@ async function startServer() {
           accessProfileId,
           employeeId: employee.id,
           isActive,
-          externalSellerId: externalSellerId ?? null,
-          sellerResponsibleName,
+          externalSellerId: sellerLink.externalSellerId,
+          externalSellerIds: sellerLink.externalSellerIds,
+          sellerResponsibleName: sellerLink.sellerResponsibleName,
         },
         include: {
           accessProfile: { select: { name: true } },
@@ -2149,21 +2164,21 @@ async function startServer() {
       if (req.body?.isActive !== undefined) {
         data.isActive = Boolean(req.body.isActive);
       }
-      if (req.body?.externalSellerId !== undefined) {
-        if (req.body.externalSellerId === null) {
-          data.externalSellerId = null;
-        } else {
-          const externalSellerId = Number.parseInt(String(req.body.externalSellerId), 10);
-          if (!Number.isFinite(externalSellerId) || externalSellerId < 0) {
-            return res.status(400).json({
-              error: "INVALID_EXTERNAL_SELLER_ID",
-              message: "externalSellerId inválido.",
-            });
-          }
-          data.externalSellerId = externalSellerId;
+      if (req.body?.externalSellerId !== undefined || req.body?.externalSellerIds !== undefined) {
+        const sellerLink = resolveAppUserSellerLinkFromBody({
+          externalSellerId: req.body?.externalSellerId,
+          externalSellerIds: req.body?.externalSellerIds,
+          sellerResponsibleName:
+            req.body?.sellerResponsibleName !== undefined
+              ? req.body.sellerResponsibleName
+              : existing.sellerResponsibleName,
+        });
+        data.externalSellerId = sellerLink.externalSellerId;
+        data.externalSellerIds = sellerLink.externalSellerIds;
+        if (req.body?.sellerResponsibleName !== undefined) {
+          data.sellerResponsibleName = sellerLink.sellerResponsibleName;
         }
-      }
-      if (req.body?.sellerResponsibleName !== undefined) {
+      } else if (req.body?.sellerResponsibleName !== undefined) {
         data.sellerResponsibleName =
           typeof req.body.sellerResponsibleName === "string"
             ? req.body.sellerResponsibleName.trim() || null
@@ -2249,10 +2264,16 @@ async function startServer() {
       const user = await prisma.appUser.update({
         where: { id },
         data,
-        include: { accessProfile: { select: { name: true } } },
+        include: {
+          accessProfile: { select: { name: true } },
+          employee: { select: { id: true, name: true, socialName: true, department: true } },
+        },
       });
       return res.json({
-        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+        user: toSafeAppUser(user, {
+          accessProfileName: user.accessProfile?.name ?? null,
+          employee: user.employee,
+        }),
       });
     } catch (error) {
       if (error instanceof AccessProfileError) {
@@ -2652,7 +2673,16 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
       Role: true,
       EmployeePayrollComponent: {
         include: { PayrollComponent: true }
-      }
+      },
+      appUser: {
+        select: { id: true, email: true, isActive: true, role: true },
+      },
+      financialCostCenter: {
+        select: { id: true, code: true, name: true, status: true },
+      },
+      manager: {
+        select: { id: true, name: true, socialName: true, status: true },
+      },
     },
     orderBy: { name: "asc" },
   });
@@ -2778,6 +2808,22 @@ function buildEmployeeHrProfileData(body: Record<string, unknown>) {
   };
 }
 
+const employeeApiInclude = {
+  Role: true,
+  EmployeePayrollComponent: {
+    include: { PayrollComponent: true },
+  },
+  appUser: {
+    select: { id: true, email: true, isActive: true, role: true },
+  },
+  financialCostCenter: {
+    select: { id: true, code: true, name: true, status: true },
+  },
+  manager: {
+    select: { id: true, name: true, socialName: true, status: true },
+  },
+} as const;
+
 app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   try {
     const {
@@ -2785,62 +2831,94 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       roleId,
       department,
       costCenter,
+      costCenterId,
       classification,
       salary,
       monthlyHours,
       productivity,
       status,
       componentIds,
+      corporateEmail,
+      managerId,
+      managerName,
       ...hrProfileBody
     } = req.body;
 
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
     const cleanComponentIds = sanitizeUuidArray(componentIds);
-    const hrProfile = buildEmployeeHrProfileData(hrProfileBody as Record<string, unknown>);
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
     }
-
     if (!cleanRoleId) {
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
+
+    const persisted = await prepareEmployeePersistedFields(
+      prisma,
+      {
+        ...hrProfileBody,
+        corporateEmail,
+        costCenter,
+        costCenterId,
+        classification,
+        managerId,
+        managerName,
+        status,
+        contractType: hrProfileBody.contractType,
+        admissionDate: hrProfileBody.admissionDate,
+        terminationDate: hrProfileBody.terminationDate,
+      } as Record<string, unknown>
+    );
+
+    const hrProfile = buildEmployeeHrProfileData({
+      ...hrProfileBody,
+      admissionDate: undefined,
+      terminationDate: undefined,
+      contractType: undefined,
+      managerName: undefined,
+    } as Record<string, unknown>);
 
     const employee = await prisma.employee.create({
       data: {
         name: cleanName,
         roleId: cleanRoleId,
         department: normalizeRequiredText(department),
-        costCenter: normalizeRequiredText(costCenter),
-        classification: normalizeRequiredText(classification),
+        costCenter: persisted.costCenterLabel,
+        costCenterId: persisted.costCenterId,
+        classification: persisted.classification,
         salary: toNumber(salary, 0),
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
-        status: normalizeOptionalText(status) ?? "ACTIVE",
+        status: persisted.status,
+        corporateEmail: persisted.corporateEmail,
+        managerId: persisted.managerId,
+        managerName: persisted.managerName,
+        contractType: persisted.contractType,
+        admissionDate: persisted.admissionDate,
+        terminationDate: persisted.terminationDate,
         ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {
                 create: cleanComponentIds.map((id) => ({
-                  PayrollComponent: { connect: { id } }
-                }))
+                  PayrollComponent: { connect: { id } },
+                })),
               }
-            : undefined
+            : undefined,
       },
-      include: {
-        Role: true,
-        EmployeePayrollComponent: {
-          include: { PayrollComponent: true }
-        }
-      }
+      include: employeeApiInclude,
     });
 
     res.json(employee);
   } catch (error) {
+    if (error instanceof EmployeeRegistrationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error("Create employee error:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Erro ao criar funcionário"
+      error: error instanceof Error ? error.message : "Erro ao criar funcionário",
     });
   }
 });
@@ -2854,11 +2932,15 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       roleId,
       department,
       costCenter,
+      costCenterId,
       classification,
       salary,
       monthlyHours,
       productivity,
       status,
+      corporateEmail,
+      managerId,
+      managerName,
       ...hrProfileBody
     } = req.body;
 
@@ -2869,18 +2951,42 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
     const cleanName = normalizeRequiredText(name);
     const cleanRoleId = isUuid(roleId) ? roleId.trim() : null;
     const cleanComponentIds = sanitizeUuidArray(componentIds);
-    const hrProfile = buildEmployeeHrProfileData(hrProfileBody as Record<string, unknown>);
 
     if (!cleanName) {
       return res.status(400).json({ error: "Nome do funcionário é obrigatório." });
     }
-
     if (!cleanRoleId) {
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
 
+    const persisted = await prepareEmployeePersistedFields(
+      prisma,
+      {
+        ...hrProfileBody,
+        corporateEmail,
+        costCenter,
+        costCenterId,
+        classification,
+        managerId,
+        managerName,
+        status,
+        contractType: hrProfileBody.contractType,
+        admissionDate: hrProfileBody.admissionDate,
+        terminationDate: hrProfileBody.terminationDate,
+      } as Record<string, unknown>,
+      { employeeId: id }
+    );
+
+    const hrProfile = buildEmployeeHrProfileData({
+      ...hrProfileBody,
+      admissionDate: undefined,
+      terminationDate: undefined,
+      contractType: undefined,
+      managerName: undefined,
+    } as Record<string, unknown>);
+
     await prisma.employeePayrollComponent.deleteMany({
-      where: { employeeId: id }
+      where: { employeeId: id },
     });
 
     const employee = await prisma.employee.update({
@@ -2889,35 +2995,40 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         name: cleanName,
         roleId: cleanRoleId,
         department: normalizeRequiredText(department),
-        costCenter: normalizeRequiredText(costCenter),
-        classification: normalizeRequiredText(classification),
+        costCenter: persisted.costCenterLabel,
+        costCenterId: persisted.costCenterId,
+        classification: persisted.classification,
         salary: toNumber(salary, 0),
         monthlyHours: toNumber(monthlyHours, 0),
         productivity: toNumber(productivity, 0),
-        status: normalizeOptionalText(status) ?? "ACTIVE",
+        status: persisted.status,
+        corporateEmail: persisted.corporateEmail,
+        managerId: persisted.managerId,
+        managerName: persisted.managerName,
+        contractType: persisted.contractType,
+        admissionDate: persisted.admissionDate,
+        terminationDate: persisted.terminationDate,
         ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {
                 create: cleanComponentIds.map((compId) => ({
-                  PayrollComponent: { connect: { id: compId } }
-                }))
+                  PayrollComponent: { connect: { id: compId } },
+                })),
               }
-            : undefined
+            : undefined,
       },
-      include: {
-        Role: true,
-        EmployeePayrollComponent: {
-          include: { PayrollComponent: true }
-        }
-      }
+      include: employeeApiInclude,
     });
 
     res.json(employee);
   } catch (error) {
+    if (error instanceof EmployeeRegistrationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error("Update employee error:", error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Erro ao atualizar funcionário"
+      error: error instanceof Error ? error.message : "Erro ao atualizar funcionário",
     });
   }
 });
@@ -12593,8 +12704,14 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
         externalSellerId: sellerScope.externalSellerId,
         responsible: sellerScope.responsible,
         sellerIdentityKey: sellerScope.sellerIdentityKey,
-        orderSellerExternalId,
-        orderSellerExternalIds,
+        orderSellerExternalId:
+          orderSellerExternalId ??
+          (sellerScope.scopeMode === "own" ? sellerScope.externalSellerId : null),
+        orderSellerExternalIds:
+          orderSellerExternalIds ??
+          (sellerScope.scopeMode === "own" && sellerScope.externalSellerIds.length > 0
+            ? sellerScope.externalSellerIds
+            : null),
         orderSellerResponsible,
         orderSellerIdentityKey,
         dateFrom: typeof req.query.dateFrom === "string" ? req.query.dateFrom : null,
@@ -13099,6 +13216,12 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAnyPermission,
     requirePermission,
     getCurrentAppUser,
+  });
+
+  registerEmployeeLookupRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
   });
 
   app.post("/api/customers", requireAppAuth, requirePermission("customers.create"), async (req, res) => {

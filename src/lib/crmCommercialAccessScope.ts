@@ -49,9 +49,12 @@ export type CrmCommercialAccessScopeResult =
 
 export function isCrmSellerUserLinked(user: {
   externalSellerId: number | null;
+  externalSellerIds?: number[] | null;
   sellerResponsibleName: string | null;
 }): boolean {
-  return user.externalSellerId != null || Boolean(user.sellerResponsibleName?.trim());
+  if (user.externalSellerId != null) return true;
+  if ((user.externalSellerIds?.length ?? 0) > 0) return true;
+  return Boolean(user.sellerResponsibleName?.trim());
 }
 
 /**
@@ -224,6 +227,7 @@ export function requireCrmCommercialGeneralScope(
 export type SellerDashboardQueryScope = {
   scopeMode: "all" | "own";
   externalSellerId: number | null;
+  externalSellerIds: number[];
   responsible: string | null;
   sellerIdentityKey: string | null;
 };
@@ -267,6 +271,7 @@ export function resolveCrmSellerDashboardQueryScope(
       scope: base,
       sellerScope: {
         scopeMode: "all",
+        externalSellerIds: [],
         ...crmCommercialSellerMatchFilters(externalSellerId, responsible, sellerIdentityKey),
       },
     };
@@ -281,6 +286,7 @@ export function resolveCrmSellerDashboardQueryScope(
       sellerScope: {
         scopeMode: "own",
         externalSellerId: null,
+        externalSellerIds: [],
         responsible: null,
         sellerIdentityKey: null,
       },
@@ -294,12 +300,21 @@ export function resolveCrmSellerDashboardQueryScope(
     ownName,
     ownIdentityKey
   );
+  const ownIds = [
+    ...new Set(
+      [
+        ...(Array.isArray(auth.externalSellerIds) ? auth.externalSellerIds : []),
+        auth.externalSellerId,
+      ].filter((id): id is number => id != null && Number.isFinite(id) && id > 0)
+    ),
+  ].sort((a, b) => a - b);
 
   return {
     ok: true,
     scope: base,
     sellerScope: {
       scopeMode: "own",
+      externalSellerIds: ownIds,
       ...ownMatch,
     },
   };

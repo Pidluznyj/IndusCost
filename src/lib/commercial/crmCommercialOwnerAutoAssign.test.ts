@@ -22,8 +22,7 @@ describe("crmCommercialOwnerAutoAssign", () => {
       isMappableOrderSeller({
         nomusSellerName: "FINANCEIRO",
         responsible: null,
-        externalSellerId: null,
-      }),
+        externalSellerId: null,      }),
       false
     );
   });
@@ -33,8 +32,7 @@ describe("crmCommercialOwnerAutoAssign", () => {
       isMappableOrderSeller({
         nomusSellerName: null,
         responsible: null,
-        externalSellerId: null,
-      }),
+        externalSellerId: null,      }),
       false
     );
   });

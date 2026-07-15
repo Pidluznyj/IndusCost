@@ -21,6 +21,7 @@ export type AuthUser = {
   employeeDepartment: string | null;
   isActive: boolean;
   externalSellerId: number | null;
+  externalSellerIds: number[];
   sellerResponsibleName: string | null;
   lastLoginAt: string | null;
   createdAt: string;

@@ -77,6 +77,7 @@ type CreateForm = {
   isActive: boolean;
   password: string;
   externalSellerId: string;
+  externalSellerIds: number[];
   sellerResponsibleName: string;
 };
 
@@ -88,6 +89,7 @@ const EMPTY_CREATE: CreateForm = {
   isActive: true,
   password: "",
   externalSellerId: "",
+  externalSellerIds: [],
   sellerResponsibleName: "",
 };
 
@@ -455,13 +457,15 @@ export const AdminUsersModule: React.FC = () => {
       setCreateError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
       return;
     }
-    if (
-      createForm.role === "SELLER" &&
-      !createForm.externalSellerId.trim() &&
-      !createForm.sellerResponsibleName.trim()
-    ) {
-      setCreateError("Vendedor precisa de vínculo Nomus.");
-      return;
+    if (createForm.role === "SELLER") {
+      if (!createForm.sellerResponsibleName.trim()) {
+        setCreateError("Vendedor precisa de um responsável comercial.");
+        return;
+      }
+      if (createForm.externalSellerIds.length === 0) {
+        setCreateError("Selecione ao menos um ID Nomus para vincular a este login.");
+        return;
+      }
     }
     setSaving(true);
     setCreateError(null);
@@ -480,6 +484,7 @@ export const AdminUsersModule: React.FC = () => {
           externalSellerId: createForm.externalSellerId.trim()
             ? Number.parseInt(createForm.externalSellerId.trim(), 10)
             : null,
+          externalSellerIds: createForm.externalSellerIds,
           sellerResponsibleName: createForm.sellerResponsibleName.trim() || null,
         }),
       });
@@ -1235,14 +1240,17 @@ export const AdminUsersModule: React.FC = () => {
               {createForm.role === "SELLER" ? (
                 <SellerNomusPicker
                   sellers={sellerOptions}
+                  requireNomusIds
                   value={{
                     externalSellerId: createForm.externalSellerId,
+                    externalSellerIds: createForm.externalSellerIds,
                     sellerResponsibleName: createForm.sellerResponsibleName,
                   }}
                   onChange={(next) =>
                     setCreateForm((f) => ({
                       ...f,
                       externalSellerId: next.externalSellerId,
+                      externalSellerIds: next.externalSellerIds,
                       sellerResponsibleName: next.sellerResponsibleName,
                     }))
                   }

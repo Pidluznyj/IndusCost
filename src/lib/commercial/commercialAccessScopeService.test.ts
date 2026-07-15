@@ -38,8 +38,13 @@ function mockAuth(overrides: {
         : permissions,
     accessProfileId: null,
     accessProfileName: null,
+    employeeId: null,
+    employeeName: null,
+    employeeDepartment: null,
     isActive: true,
     externalSellerId: overrides.externalSellerId ?? null,
+    externalSellerIds:
+      overrides.externalSellerId != null ? [overrides.externalSellerId] : [],
     sellerResponsibleName: overrides.sellerResponsibleName ?? null,
     sellerIdentityKey: overrides.sellerIdentityKey ?? null,
     lastLoginAt: null,

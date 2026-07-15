@@ -121,6 +121,7 @@ export type SellerDashboardScopeResult =
       ok: true;
       scopeMode: SellerDashboardScopeMode;
       externalSellerId: number | null;
+      externalSellerIds: number[];
       responsible: string | null;
       sellerIdentityKey: string | null;
     }
@@ -172,6 +173,7 @@ export function resolveSellerDashboardScope(
     ok: true,
     scopeMode: result.sellerScope.scopeMode,
     externalSellerId: result.sellerScope.externalSellerId,
+    externalSellerIds: result.sellerScope.externalSellerIds ?? [],
     responsible: result.sellerScope.responsible,
     sellerIdentityKey: result.sellerScope.sellerIdentityKey,
   };

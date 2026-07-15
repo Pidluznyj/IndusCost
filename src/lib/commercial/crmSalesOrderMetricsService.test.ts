@@ -25,8 +25,7 @@ function order(partial: Partial<CrmMetricsOrderInput> & Pick<CrmMetricsOrderInpu
     totalItems: 1,
     customerId: "cust-1",
     nomusSellerName: null,
-    externalSellerId: null,
-    responsible: null,
+    externalSellerId: null,    responsible: null,
     nomusRawResponse: {},
     items: [],
     Customer: {
@@ -99,8 +98,7 @@ describe("crmSalesOrderMetricsService", () => {
         orderCode: "NS",
         totalNetValue: 3500,
         nomusSellerName: null,
-        externalSellerId: null,
-      }),
+        externalSellerId: null,      }),
     ];
     const metrics = buildCrmSalesOrderMetrics({
       orders,

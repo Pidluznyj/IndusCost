@@ -164,8 +164,7 @@ describe("crmSellerDashboard", () => {
           orderCode: "2",
           totalNetValue: 3000,
           nomusSellerName: null,
-          externalSellerId: null,
-        }),
+          externalSellerId: null,        }),
       ],
       filters: { responsibleCommercialName: "GISLENE LIMA" },
     });
@@ -227,8 +226,7 @@ describe("crmSellerDashboard", () => {
           orderCode: "1",
           totalNetValue: 1500,
           nomusSellerName: null,
-          externalSellerId: null,
-        }),
+          externalSellerId: null,        }),
       ],
       filters: { responsibleCommercialName: "GISLENE LIMA" },
     });

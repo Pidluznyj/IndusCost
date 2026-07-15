@@ -233,8 +233,7 @@ describe("crmCustomerCommercialOwner", () => {
   it("gestor filtrando por responsável comercial usa só CrmCustomerCommercialOwner", () => {
     const global: CrmCommercialAccessScope = {
       dataScope: "global",
-      externalSellerId: null,
-      responsible: null,
+      externalSellerId: null,      responsible: null,
       sellerIdentityKey: null,
       canViewCommercialGeneral: true,
       canViewAllSellers: true,
@@ -245,8 +244,7 @@ describe("crmCustomerCommercialOwner", () => {
       blockedMessage: null,
     };
     const where = buildCrmCustomerListScopeWhere(global, {
-      externalSellerId: null,
-      sellerIdentityKey: "gislene lima",
+      externalSellerId: null,      sellerIdentityKey: "gislene lima",
     });
     assert.ok(where?.CrmCustomerCommercialOwner);
     assert.equal(where?.OR, undefined);
