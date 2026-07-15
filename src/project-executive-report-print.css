@@ -163,7 +163,62 @@
   body.project-executive-report-route .project-executive-report-product-block {
     break-inside: avoid;
     page-break-inside: avoid;
-    margin-bottom: 4mm !important;
+    margin-bottom: 5mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-product-banner {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 1.5mm 3mm !important;
+    border-left: 1.4mm solid #1e293b !important;
+    background: #f1f5f9 !important;
+    padding: 2.5mm 3mm !important;
+    margin-bottom: 2.5mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-product-eyebrow {
+    width: 100% !important;
+    font-size: 7.5pt !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    color: #64748b !important;
+    margin: 0 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-product-name {
+    flex: 1 1 auto !important;
+    font-size: 14pt !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.01em !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    line-height: 1.15 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-product-qty {
+    border: 1px solid #cbd5e1 !important;
+    background: #fff !important;
+    padding: 1mm 2mm !important;
+    font-size: 9pt !important;
+    font-weight: 700 !important;
+    color: #334155 !important;
+    margin: 0 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-portfolio-banner {
+    border-left: 1.2mm solid #94a3b8 !important;
+    background: #f8fafc !important;
+    padding: 2mm 3mm !important;
+    margin-bottom: 2.5mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-portfolio-title {
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    margin: 0 !important;
   }
 
   .project-executive-report-table {

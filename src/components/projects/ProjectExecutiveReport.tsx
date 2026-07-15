@@ -355,14 +355,19 @@ export function ProjectExecutiveReport({ report }: Props) {
               {economicAnalysis.pricingItems.map((item) => (
                 <div
                   key={item.targetItemId}
-                  className="project-executive-report-product-block mb-5"
+                  className="project-executive-report-product-block mb-6"
                 >
-                  <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                    {item.displayName}
-                    <span className="ml-2 font-normal text-slate-500">
-                      · qtde {item.quantity.toLocaleString("pt-BR")}
-                    </span>
-                  </h3>
+                  <div className="project-executive-report-product-banner mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-l-4 border-slate-800 bg-slate-100 px-3 py-2.5">
+                    <p className="project-executive-report-product-eyebrow text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Produto
+                    </p>
+                    <h3 className="project-executive-report-product-name w-full text-xl font-bold tracking-tight text-slate-900 sm:w-auto sm:flex-1">
+                      {item.displayName}
+                    </h3>
+                    <p className="project-executive-report-product-qty rounded border border-slate-300 bg-white px-2.5 py-1 text-sm font-semibold text-slate-700">
+                      Qtde {item.quantity.toLocaleString("pt-BR")}
+                    </p>
+                  </div>
                   <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <SummaryCard
                       label="Custo final unitário"
@@ -419,10 +424,15 @@ export function ProjectExecutiveReport({ report }: Props) {
               ))}
 
               {economicAnalysis.portfolio.productCount > 0 ? (
-                <div className="mt-2">
-                  <h3 className="mb-2 text-sm font-semibold text-slate-900">
-                    Totais do portfólio
-                  </h3>
+                <div className="project-executive-report-portfolio-block mt-4 border-t border-slate-200 pt-4">
+                  <div className="project-executive-report-portfolio-banner mb-3 border-l-4 border-slate-400 bg-slate-50 px-3 py-2">
+                    <h3 className="project-executive-report-portfolio-title text-base font-bold text-slate-800">
+                      Totais do portfólio
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Soma dos produtos acima — não são médias
+                    </p>
+                  </div>
                   <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <SummaryCard
                       label="Receita total s/ amortização"
@@ -481,7 +491,7 @@ export function ProjectExecutiveReport({ report }: Props) {
                     <tbody>
                       {economicAnalysis.pricingItems.map((item) => (
                         <tr key={item.targetItemId} className="border-b border-slate-100">
-                          <td className="px-2 py-2">{item.displayName}</td>
+                          <td className="px-2 py-2 font-bold text-slate-900">{item.displayName}</td>
                           <td className="px-2 py-2">{item.quantity.toLocaleString("pt-BR")}</td>
                           <td className="px-2 py-2">
                             {formatExecutiveReportMoney(item.finalUnitCost)}
