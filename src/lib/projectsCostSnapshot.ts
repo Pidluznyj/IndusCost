@@ -36,9 +36,16 @@ export type ProjectCostSnapshot = {
 };
 
 export function resolveProjectCostFinalUnitPrice(
-  item: Pick<ProjectPricingItemView, "suggestedPrice" | "suggestedPriceWithAmortization" | "status">
+  item: Pick<
+    ProjectPricingItemView,
+    "suggestedPrice" | "suggestedPriceWithAmortization" | "agreedCustomerPrice" | "status"
+  >
 ): number | null {
   if (item.status !== "CALCULATED") return null;
+  const agreed = item.agreedCustomerPrice;
+  if (agreed != null && Number.isFinite(agreed) && agreed > 0) {
+    return roundProjectMoney(agreed);
+  }
   const raw = item.suggestedPriceWithAmortization ?? item.suggestedPrice;
   if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
   return roundProjectMoney(raw);

@@ -41,6 +41,8 @@ export type ProjectPricingItemView = {
   suggestedPrice: number | null;
   suggestedPriceWithoutAmortization: number | null;
   suggestedPriceWithAmortization: number | null;
+  /** Preço unitário acordado com o cliente. Null = usar sugerido c/ amortização. */
+  agreedCustomerPrice: number | null;
   /** Product price before FINAL_PRICE recovery add-on. */
   calculatedProductPrice: number | null;
   taxAmountWithoutAmortization: number | null;
@@ -83,6 +85,7 @@ export type SavedProjectPricingItem = {
   suggestedPrice: number | null;
   suggestedPriceWithoutAmortization: number | null;
   suggestedPriceWithAmortization: number | null;
+  agreedCustomerPrice?: number | null;
   taxAmountWithoutAmortization: number | null;
   marginAmountWithoutAmortization: number | null;
   taxAmount: number | null;
@@ -173,6 +176,7 @@ function emptyPricingAmounts() {
     suggestedPrice: null,
     suggestedPriceWithoutAmortization: null,
     suggestedPriceWithAmortization: null,
+    agreedCustomerPrice: null,
     calculatedProductPrice: null,
     taxAmountWithoutAmortization: null,
     marginAmountWithoutAmortization: null,
@@ -401,23 +405,29 @@ export function computeLiveProjectPricingView(
       }
     );
 
-    return computeProjectPricingItem(
-      {
-        targetItemId: item.targetItemId,
-        targetItemType: item.targetItemType,
-        displayName: item.displayName,
-        baseUnitCost: costs.costBaseUnit,
-        unitAmortizedCost: costs.amortizationUnitCost,
-        amortizationPriceAddOnUnit: costs.amortizationPriceAddOnUnit,
-        finalUnitCost: costs.pricingCost,
-      },
-      {
-        fiscalRuleId: fiscalRuleId || null,
-        fiscalRuleName: taxRule?.name ?? savedItem?.fiscalRuleName ?? null,
-        taxPercent: taxRule?.taxPercent ?? 0,
-        targetMarginPercent: margin,
-      }
-    );
+    return {
+      ...computeProjectPricingItem(
+        {
+          targetItemId: item.targetItemId,
+          targetItemType: item.targetItemType,
+          displayName: item.displayName,
+          baseUnitCost: costs.costBaseUnit,
+          unitAmortizedCost: costs.amortizationUnitCost,
+          amortizationPriceAddOnUnit: costs.amortizationPriceAddOnUnit,
+          finalUnitCost: costs.pricingCost,
+        },
+        {
+          fiscalRuleId: fiscalRuleId || null,
+          fiscalRuleName: taxRule?.name ?? savedItem?.fiscalRuleName ?? null,
+          taxPercent: taxRule?.taxPercent ?? 0,
+          targetMarginPercent: margin,
+        }
+      ),
+      agreedCustomerPrice:
+        savedItem?.agreedCustomerPrice != null && Number.isFinite(savedItem.agreedCustomerPrice)
+          ? savedItem.agreedCustomerPrice
+          : null,
+    };
   });
 
   const hasSavedPricing =
@@ -492,11 +502,21 @@ export function buildProjectPricingView(input: {
     ) {
       return {
         ...computed,
+        agreedCustomerPrice:
+          saved?.agreedCustomerPrice != null && Number.isFinite(saved.agreedCustomerPrice)
+            ? saved.agreedCustomerPrice
+            : null,
         statusLabel: PROJECT_PRICING_INCOMPLETE_AMORTIZATION_LABEL,
       };
     }
 
-    return computed;
+    return {
+      ...computed,
+      agreedCustomerPrice:
+        saved?.agreedCustomerPrice != null && Number.isFinite(saved.agreedCustomerPrice)
+          ? saved.agreedCustomerPrice
+          : null,
+    };
   });
 
   const hasSavedPricing = (input.savedItems ?? []).some(

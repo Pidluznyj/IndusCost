@@ -213,6 +213,7 @@
     "test:permission-catalog-seed": "tsx --test src/lib/security/permissionCatalogSeed/permissionCatalogSeed.test.ts",
     "permissions:dual-write:report": "tsx scripts/permissionDualWriteReport.ts",
     "test:permission-dual-write": "tsx --test src/lib/security/permissionDualWrite/permissionDualWrite.test.ts",
+    "test:permission-matrix": "tsx --test src/lib/security/permissionMatrixUi/permissionMatrixUi.test.ts src/components/admin/PermissionMatrix.test.tsx",
     "permissions:validate": "tsx scripts/validatePermissionsSetup.ts --catalog-only",
     "permissions:audit": "tsx scripts/validatePermissionsSetup.ts --audit",
     "permissions:qa": "tsx scripts/qaPermissions.ts",

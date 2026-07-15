@@ -6,6 +6,7 @@ import type {
 import { prisma } from "@/src/lib/prisma.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 import { loadProjectCostAmortizations } from "./projectsCostAmortizationService.js";
+import { roundProjectMoney } from "./projectsCostAmortization.js";
 import {
   buildProjectPricingView,
   computeProjectPricingItem,
@@ -48,6 +49,7 @@ function serializePricingItem(row: ProjectPricingItem): SavedProjectPricingItem 
     suggestedPrice: dec(row.suggestedPrice),
     suggestedPriceWithoutAmortization: dec(row.suggestedPriceWithoutAmortization),
     suggestedPriceWithAmortization: dec(row.suggestedPrice),
+    agreedCustomerPrice: dec(row.agreedCustomerPrice),
     taxAmountWithoutAmortization: dec(row.taxAmountWithoutAmortization),
     marginAmountWithoutAmortization: dec(row.marginAmountWithoutAmortization),
     taxAmount: dec(row.taxAmount),
@@ -106,6 +108,8 @@ export type UpsertProjectPricingPayload = {
     targetItemType: string;
     fiscalRuleId?: string | null;
     targetMarginPercent?: number | null;
+    /** Null = limpar e usar sugerido; número = preço acordado. */
+    agreedCustomerPrice?: number | null;
   }>;
 };
 
@@ -178,6 +182,13 @@ export async function upsertProjectPricing(
     await tx.projectPricingItem.deleteMany({ where: { projectId } });
 
     for (const item of computedItems) {
+      const override = itemOverrides.get(item.targetItemId);
+      const agreedRaw = override?.agreedCustomerPrice;
+      const agreedCustomerPrice =
+        agreedRaw != null && Number.isFinite(agreedRaw) && agreedRaw > 0
+          ? roundProjectMoney(agreedRaw)
+          : null;
+
       await tx.projectPricingItem.create({
         data: {
           projectId,
@@ -194,6 +205,7 @@ export async function upsertProjectPricing(
           targetMarginPercent: item.targetMarginPercent,
           suggestedPrice: item.suggestedPriceWithAmortization ?? item.suggestedPrice,
           suggestedPriceWithoutAmortization: item.suggestedPriceWithoutAmortization,
+          agreedCustomerPrice,
           taxAmountWithoutAmortization: item.taxAmountWithoutAmortization,
           marginAmountWithoutAmortization: item.marginAmountWithoutAmortization,
           taxAmount: item.taxAmount,

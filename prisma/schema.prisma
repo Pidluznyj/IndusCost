@@ -3681,6 +3681,8 @@ model ProjectPricingItem {
   targetMarginPercent          Decimal                           @default(0) @db.Decimal(10, 6)
   suggestedPrice               Decimal?                          @db.Decimal(20, 6)
   suggestedPriceWithoutAmortization Decimal?                     @db.Decimal(20, 6)
+  /// Preço unitário acordado com o cliente (proposta). Null = usar sugerido c/ amortização.
+  agreedCustomerPrice          Decimal?                          @db.Decimal(20, 6)
   taxAmountWithoutAmortization Decimal?                          @db.Decimal(20, 6)
   marginAmountWithoutAmortization Decimal?                       @db.Decimal(20, 6)
   taxAmount                    Decimal?                          @db.Decimal(20, 6)

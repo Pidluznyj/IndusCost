@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Calculator, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
-import { cn } from "@/src/lib/utils";
 import {
   buildProjectCommercialPricingSummary,
   computeLiveProjectPricingView,
   resolveProjectCommercialPricingWeights,
   type ProjectPricingItemView,
 } from "@/src/lib/projectsPricing";
+import { formatProjectsNumberInput, parseProjectsNumberInput } from "@/src/lib/projectsUiUtils";
 import { ProjectCommercialPricingSummaryCards } from "@/src/components/projects/ProjectCommercialPricingSummaryCards";
 import type { ProjectDetail, ProjectPricingView } from "@/src/types/projects";
 
@@ -183,6 +183,7 @@ export function ProjectPricingSection({
   );
   const [itemMargins, setItemMargins] = useState<Record<string, string>>({});
   const [itemFiscalRules, setItemFiscalRules] = useState<Record<string, string>>({});
+  const [itemAgreedPrices, setItemAgreedPrices] = useState<Record<string, string>>({});
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const loadPricing = useCallback(async () => {
@@ -201,6 +202,9 @@ export function ProjectPricingSection({
             ? String(detail.targetMarginPercent)
             : ""
       );
+      setItemAgreedPrices({});
+      setItemMargins({});
+      setItemFiscalRules({});
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar precificação.");
     } finally {
@@ -258,6 +262,14 @@ export function ProjectPricingSection({
     });
   }, [computedItems, detail, defaultMargin]);
 
+  const resolveAgreedPriceDraft = (item: ProjectPricingItemView): string => {
+    if (itemAgreedPrices[item.targetItemId] != null) {
+      return itemAgreedPrices[item.targetItemId]!;
+    }
+    const seed = item.agreedCustomerPrice ?? item.suggestedPriceWithAmortization;
+    return seed != null ? formatProjectsNumberInput(seed) : "";
+  };
+
   const hasUnsavedPricingChanges = useMemo(() => {
     const saved = detail.projectPricing;
     if (!saved || computedItems.length === 0) return false;
@@ -274,9 +286,27 @@ export function ProjectPricingSection({
       if (Math.abs(item.targetMarginPercent - savedItem.targetMarginPercent) > 0.0001) return true;
       const draftRule = itemFiscalRules[item.targetItemId] ?? fiscalRuleId ?? null;
       if ((savedItem.fiscalRuleId ?? null) !== (draftRule || null)) return true;
+
+      const draftAgreed = parseProjectsNumberInput(resolveAgreedPriceDraft(item));
+      const savedAgreed =
+        savedItem.agreedCustomerPrice != null && Number.isFinite(savedItem.agreedCustomerPrice)
+          ? savedItem.agreedCustomerPrice
+          : savedItem.suggestedPriceWithAmortization ??
+            savedItem.suggestedPrice ??
+            null;
+      if (draftAgreed == null && savedAgreed == null) continue;
+      if (draftAgreed == null || savedAgreed == null) return true;
+      if (Math.abs(draftAgreed - savedAgreed) > 0.0001) return true;
     }
     return false;
-  }, [computedItems, detail.projectPricing, defaultMargin, fiscalRuleId, itemFiscalRules]);
+  }, [
+    computedItems,
+    detail.projectPricing,
+    defaultMargin,
+    fiscalRuleId,
+    itemFiscalRules,
+    itemAgreedPrices,
+  ]);
 
   const applyToAll = () => {
     const next: Record<string, string> = {};
@@ -312,12 +342,14 @@ export function ProjectPricingSection({
                 itemMargins[item.targetItemId] != null && itemMargins[item.targetItemId] !== ""
                   ? Number(itemMargins[item.targetItemId])
                   : marginDefault,
+              agreedCustomerPrice: parseProjectsNumberInput(resolveAgreedPriceDraft(item)),
             })),
           }),
         }
       );
       onDetailRefresh(result.project);
       setPricingView(result.project.projectPricing ?? null);
+      setItemAgreedPrices({});
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao salvar precificação.");
     } finally {
@@ -409,8 +441,8 @@ export function ProjectPricingSection({
           className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
           data-testid="project-pricing-unsaved-warning"
         >
-          Há alterações de margem ou regra fiscal não salvas. Salve a precificação antes de emitir
-          relatórios para garantir que os valores coincidam com a aba Custos do Projeto.
+          Há alterações de margem, regra fiscal ou preço acordado não salvas. Salve a precificação
+          antes de emitir relatórios para garantir que os valores coincidam com a aba Custos do Projeto.
         </div>
       ) : null}
 
@@ -433,7 +465,7 @@ export function ProjectPricingSection({
                 <th className="px-3 py-2">Margem %</th>
                 <th className="px-3 py-2">Preço s/ amortização</th>
                 <th className="px-3 py-2">Preço c/ amortização</th>
-                <th className="px-3 py-2">Status</th>
+                <th className="px-3 py-2">Preço acordado cliente</th>
                 <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
@@ -499,17 +531,29 @@ export function ProjectPricingSection({
                       />
                     </td>
                     <td className="px-3 py-2">
-                      <span
-                        className={cn(
-                          "rounded px-2 py-0.5 text-xs",
-                          item.status === "CALCULATED" && "bg-emerald-100 text-emerald-800",
-                          item.status === "ERROR" && "bg-red-100 text-red-800",
-                          item.status === "NO_COST" && "bg-amber-100 text-amber-800",
-                          item.status === "PENDING" && "bg-slate-100 text-slate-700"
-                        )}
-                      >
-                        {item.statusLabel}
-                      </span>
+                      {canManage ? (
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          title="Preço unitário acordado com o cliente (usado na proposta cliente)"
+                          value={resolveAgreedPriceDraft(item)}
+                          onChange={(e) =>
+                            setItemAgreedPrices((prev) => ({
+                              ...prev,
+                              [item.targetItemId]: e.target.value,
+                            }))
+                          }
+                          className="w-28 rounded border border-border bg-background px-2 py-1 text-xs font-semibold"
+                          data-testid={`agreed-customer-price-${item.targetItemId}`}
+                        />
+                      ) : (
+                        <span className="font-semibold text-primary">
+                          {formatMoney(
+                            parseProjectsNumberInput(resolveAgreedPriceDraft(item)),
+                            4
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <button

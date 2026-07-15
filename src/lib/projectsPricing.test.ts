@@ -544,6 +544,17 @@ describe("projectsPricing — integração", () => {
     );
     assert.match(service, /projectPricingConfig\.upsert/);
     assert.match(service, /projectPricingItem\.create/);
+    assert.match(service, /agreedCustomerPrice/);
+  });
+
+  it("UI tem coluna Preço acordado cliente no lugar de Status", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /Preço acordado cliente/);
+    assert.match(section, /agreedCustomerPrice/);
+    assert.doesNotMatch(section, />Status</);
   });
 
   it("alterar margem recalcula preço", () => {
@@ -594,9 +605,16 @@ describe("projectsPricing — integração", () => {
     assert.ok(report.economicAnalysis.suggestedPrice != null);
     assert.equal(report.economicAnalysis.pricingItems.length, 1);
     assert.equal(report.economicAnalysis.pricingItems[0]?.finalUnitCost, rollup.finalUnitCost);
+    assert.ok(liveItem.suggestedPriceWithAmortization != null);
+    assert.ok(
+      Math.abs(
+        (report.economicAnalysis.pricingItems[0]?.suggestedPriceWithAmortization ?? 0) -
+          liveItem.suggestedPriceWithAmortization!
+      ) < 0.01
+    );
     assert.equal(
       report.economicAnalysis.suggestedPrice,
-      resolveProjectCostFinalUnitPrice(liveItem)
+      report.economicAnalysis.portfolio.totalRevenueWithAmortization
     );
   });
 

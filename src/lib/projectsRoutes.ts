@@ -1434,6 +1434,10 @@ export function registerProjectsRoutes(
               ? row.fiscalRuleId
               : undefined,
           targetMarginPercent: optNum(row.targetMarginPercent),
+          agreedCustomerPrice:
+            row.agreedCustomerPrice === null
+              ? null
+              : optNum(row.agreedCustomerPrice),
         })),
       });
 

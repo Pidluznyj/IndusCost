@@ -118,16 +118,24 @@ describe("projectsCostSnapshot", () => {
     assert.notEqual(snapshot.totals.finalSetPrice, detail.costBreakdown.suggestedPrice);
   });
 
-  it("relatório cliente usa os mesmos preços do snapshot/grid", () => {
-    const detail = buildPricedDetail([30, 30], [3.2, 4.8]);
-    const snapshot = buildProjectCostSnapshot(detail);
-    const report = buildProjectClientReport(detail);
+  it("relatório cliente usa preço acordado quando informado", () => {
+    const detail = buildPricedDetail([30], [3.2]);
+    const item = detail.projectPricing!.items[0]!;
+    item.agreedCustomerPrice = 9.99;
+    item.suggestedPriceWithAmortization = 3.2;
+    item.suggestedPrice = 3.2;
 
-    assert.equal(report.summary.finalSetPrice, snapshot.totals.finalSetPrice);
-    for (const item of snapshot.pricing.view.items) {
-      const product = report.products.find((row) => row.id === item.targetItemId);
-      assert.equal(product?.finalUnitPrice, resolveProjectCostFinalUnitPrice(item));
-    }
+    const report = buildProjectClientReport(detail);
+    const product = report.products.find((row) => row.id === item.targetItemId);
+    assert.equal(product?.finalUnitPrice, 9.99);
+    assert.equal(resolveProjectCostFinalUnitPrice(item), 9.99);
+  });
+
+  it("sem preço acordado, relatório cliente usa sugerido c/ amortização", () => {
+    const detail = buildPricedDetail([30], [3.2]);
+    const item = detail.projectPricing!.items[0]!;
+    item.agreedCustomerPrice = null;
+    assert.equal(resolveProjectCostFinalUnitPrice(item), 3.2);
   });
 
   it("relatório gerencial usa preços e quantidades por produto (não média do conjunto)", () => {

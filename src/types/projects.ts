@@ -317,6 +317,8 @@ export type ProjectPricingItemView = {
   suggestedPrice: number | null;
   suggestedPriceWithoutAmortization: number | null;
   suggestedPriceWithAmortization: number | null;
+  /** Preço unitário acordado com o cliente. Null = usar sugerido c/ amortização. */
+  agreedCustomerPrice?: number | null;
   calculatedProductPrice?: number | null;
   taxAmountWithoutAmortization: number | null;
   marginAmountWithoutAmortization: number | null;
