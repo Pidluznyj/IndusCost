@@ -2,6 +2,7 @@
 
 import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
+import { PRODUCT_TAB_RESOURCE_KEYS } from "@/src/lib/moduleTabResources.js";
 
 export type AppModuleId =
   | "dashboard"
@@ -351,9 +352,17 @@ export const PRODUCT_TAB_PERMISSIONS: Record<ProductTabId, string> = {
   history: "products.tab.info",
 };
 
-/** Abas visíveis no modal de produto — exige permissão tab explícita. */
-export function getVisibleProductTabs(check: PermissionChecker): ProductTabId[] {
-  return PRODUCT_TAB_IDS.filter((id) => check.hasPermission(PRODUCT_TAB_PERMISSIONS[id]));
+/** Abas visíveis no modal de produto — resourceKey (se informado) OU permissão tab legada. */
+export function getVisibleProductTabs(
+  check: PermissionChecker & { canViewResource?: (resourceKey: string) => boolean }
+): ProductTabId[] {
+  return PRODUCT_TAB_IDS.filter((id) => {
+    const resourceKey = PRODUCT_TAB_RESOURCE_KEYS[id];
+    if (resourceKey && typeof check.canViewResource === "function") {
+      if (check.canViewResource(resourceKey)) return true;
+    }
+    return check.hasPermission(PRODUCT_TAB_PERMISSIONS[id]);
+  });
 }
 
 export function canCreateProposal(check: PermissionChecker): boolean {

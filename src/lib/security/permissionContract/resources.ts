@@ -65,8 +65,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
-    notes: "Grupo accordion; sem resourceKey no seed atual.",
+    relationalResourceKeys: ["engineering"],
+    notes: "Grupo accordion; resourceKey FE Prompt 13.",
   },
   {
     resourceKey: "engineering.products",
@@ -88,7 +88,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products"],
     moduleId: "products",
   },
   {
@@ -105,7 +105,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.info"],
   },
   {
     resourceKey: "engineering.products.tab.bom",
@@ -121,7 +121,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.bom"],
   },
   {
     resourceKey: "engineering.products.tab.routing",
@@ -137,7 +137,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.routing"],
   },
   {
     resourceKey: "engineering.products.tab.tree",
@@ -153,7 +153,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.tree"],
   },
   {
     resourceKey: "engineering.products.tab.cost",
@@ -169,7 +169,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.cost"],
   },
   {
     resourceKey: "engineering.products.tab.composition",
@@ -185,7 +185,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.products.tab.composition"],
   },
   {
     resourceKey: "engineering.transformation_simulator",
@@ -203,7 +203,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.transformation_simulator"],
     moduleId: "transformation-simulator",
   },
   {
@@ -315,7 +315,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.simulations"],
     moduleId: "simulations",
   },
   {
@@ -335,7 +335,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["engineering.projects"],
     moduleId: "projects",
     notes: "Delete de projeto é SUPER_ADMIN inline — não modelado como delete de contrato.",
   },
@@ -509,7 +509,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["commercial.customers"],
     moduleId: "customers",
     notes: "Sem customers.delete no catálogo legado.",
   },
@@ -533,7 +533,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["commercial.proposals"],
     moduleId: "proposals",
   },
   {
@@ -550,7 +550,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["commercial.proposals.indicators"],
   },
   {
     resourceKey: "commercial.sales_orders",

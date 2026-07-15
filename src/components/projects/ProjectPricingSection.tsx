@@ -163,6 +163,27 @@ function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
   );
 }
 
+function buildItemMarginDrafts(
+  items: Array<{ targetItemId: string; targetMarginPercent: number }>
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const item of items) {
+    // type="number" — sem vírgula de locale
+    next[item.targetItemId] = String(item.targetMarginPercent);
+  }
+  return next;
+}
+
+function buildItemFiscalRuleDrafts(
+  items: Array<{ targetItemId: string; fiscalRuleId: string | null }>
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const item of items) {
+    if (item.fiscalRuleId) next[item.targetItemId] = item.fiscalRuleId;
+  }
+  return next;
+}
+
 export function ProjectPricingSection({
   detail,
   projectId,
@@ -181,10 +202,29 @@ export function ProjectPricingSection({
   const [defaultMargin, setDefaultMargin] = useState(
     String(detail.projectPricing?.config.defaultMarginPercent ?? detail.targetMarginPercent ?? "")
   );
-  const [itemMargins, setItemMargins] = useState<Record<string, string>>({});
-  const [itemFiscalRules, setItemFiscalRules] = useState<Record<string, string>>({});
+  const [itemMargins, setItemMargins] = useState<Record<string, string>>(() =>
+    buildItemMarginDrafts(detail.projectPricing?.items ?? [])
+  );
+  const [itemFiscalRules, setItemFiscalRules] = useState<Record<string, string>>(() =>
+    buildItemFiscalRuleDrafts(detail.projectPricing?.items ?? [])
+  );
   const [itemAgreedPrices, setItemAgreedPrices] = useState<Record<string, string>>({});
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+
+  const hydrateDraftsFromView = useCallback((view: ProjectPricingView) => {
+    setPricingView(view);
+    setFiscalRuleId(view.config.fiscalRuleId ?? "");
+    setDefaultMargin(
+      view.config.defaultMarginPercent != null
+        ? String(view.config.defaultMarginPercent)
+        : detail.targetMarginPercent != null
+          ? String(detail.targetMarginPercent)
+          : ""
+    );
+    setItemMargins(buildItemMarginDrafts(view.items));
+    setItemFiscalRules(buildItemFiscalRuleDrafts(view.items));
+    setItemAgreedPrices({});
+  }, [detail.targetMarginPercent]);
 
   const loadPricing = useCallback(async () => {
     setLoading(true);
@@ -193,30 +233,21 @@ export function ProjectPricingSection({
       const data = await fetchJsonOk<{ view: ProjectPricingView }>(
         `/api/projects/${projectId}/pricing`
       );
-      setPricingView(data.view);
-      setFiscalRuleId(data.view.config.fiscalRuleId ?? "");
-      setDefaultMargin(
-        data.view.config.defaultMarginPercent != null
-          ? String(data.view.config.defaultMarginPercent)
-          : detail.targetMarginPercent != null
-            ? String(detail.targetMarginPercent)
-            : ""
-      );
-      setItemAgreedPrices({});
-      setItemMargins({});
-      setItemFiscalRules({});
+      hydrateDraftsFromView(data.view);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao carregar precificação.");
     } finally {
       setLoading(false);
     }
-  }, [projectId, detail.targetMarginPercent]);
+  }, [projectId, hydrateDraftsFromView]);
 
   useEffect(() => {
     if (!detail.projectPricing) {
       void loadPricing();
+      return;
     }
-  }, [detail.projectPricing, loadPricing]);
+    hydrateDraftsFromView(detail.projectPricing);
+  }, [detail.projectPricing, loadPricing, hydrateDraftsFromView]);
 
   const taxRules = pricingView?.taxRules ?? [];
 
@@ -337,19 +368,26 @@ export function ProjectPricingSection({
             items: computedItems.map((item) => ({
               targetItemId: item.targetItemId,
               targetItemType: item.targetItemType,
-              fiscalRuleId: itemFiscalRules[item.targetItemId] || fiscalRuleId || null,
+              fiscalRuleId:
+                itemFiscalRules[item.targetItemId] ||
+                item.fiscalRuleId ||
+                fiscalRuleId ||
+                null,
               targetMarginPercent:
                 itemMargins[item.targetItemId] != null && itemMargins[item.targetItemId] !== ""
                   ? Number(itemMargins[item.targetItemId])
-                  : marginDefault,
+                  : item.targetMarginPercent,
               agreedCustomerPrice: parseProjectsNumberInput(resolveAgreedPriceDraft(item)),
             })),
           }),
         }
       );
       onDetailRefresh(result.project);
-      setPricingView(result.project.projectPricing ?? null);
-      setItemAgreedPrices({});
+      if (result.project.projectPricing) {
+        hydrateDraftsFromView(result.project.projectPricing);
+      } else {
+        setPricingView(null);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao salvar precificação.");
     } finally {
@@ -481,7 +519,11 @@ export function ProjectPricingSection({
                     <td className="px-3 py-2">
                       {canManage ? (
                         <select
-                          value={itemFiscalRules[item.targetItemId] ?? fiscalRuleId}
+                          value={
+                            itemFiscalRules[item.targetItemId] ??
+                            item.fiscalRuleId ??
+                            fiscalRuleId
+                          }
                           onChange={(e) =>
                             setItemFiscalRules((prev) => ({
                               ...prev,
@@ -508,7 +550,11 @@ export function ProjectPricingSection({
                           type="number"
                           step="0.01"
                           min={0}
-                          value={itemMargins[item.targetItemId] ?? defaultMargin}
+                          value={
+                            itemMargins[item.targetItemId] ??
+                            String(item.targetMarginPercent) ??
+                            defaultMargin
+                          }
                           onChange={(e) =>
                             setItemMargins((prev) => ({
                               ...prev,

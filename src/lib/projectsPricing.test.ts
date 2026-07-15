@@ -547,14 +547,15 @@ describe("projectsPricing — integração", () => {
     assert.match(service, /agreedCustomerPrice/);
   });
 
-  it("UI tem coluna Preço acordado cliente no lugar de Status", () => {
+  it("UI reidrata margem por item salva (não só a margem padrão)", () => {
     const section = readFileSync(
       join(process.cwd(), "src", "components", "projects", "ProjectPricingSection.tsx"),
       "utf8"
     );
-    assert.match(section, /Preço acordado cliente/);
-    assert.match(section, /agreedCustomerPrice/);
-    assert.doesNotMatch(section, />Status</);
+    assert.match(section, /buildItemMarginDrafts/);
+    assert.match(section, /hydrateDraftsFromView/);
+    assert.match(section, /item\.targetMarginPercent/);
+    assert.match(section, /itemMargins\[item\.targetItemId\] \?\?/);
   });
 
   it("alterar margem recalcula preço", () => {

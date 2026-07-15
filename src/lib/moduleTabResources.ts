@@ -132,3 +132,36 @@ export const MARKET_INTELLIGENCE_SECTION_KEYS = {
   alerts: TabResourceKeys.MI_ALERTAS,
   settings: TabResourceKeys.MI_CONFIG,
 } as const;
+
+/** Abas do modal de produto → resourceKey canônico (Prompt 13). */
+export const PRODUCT_TAB_RESOURCE_KEYS: Record<
+  "info" | "bom" | "routing" | "tree" | "cost" | "composition" | "history",
+  string
+> = {
+  info: "engineering.products.tab.info",
+  bom: "engineering.products.tab.bom",
+  routing: "engineering.products.tab.routing",
+  tree: "engineering.products.tab.tree",
+  cost: "engineering.products.tab.cost",
+  composition: "engineering.products.tab.composition",
+  history: "engineering.products.tab.info",
+};
+
+export const PRODUCT_UI_TABS: ReadonlyArray<{
+  id: "info" | "bom" | "routing" | "tree" | "cost" | "composition" | "history";
+  resourceKey: string;
+  label: string;
+}> = [
+  { id: "info", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.info, label: "Info" },
+  { id: "bom", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.bom, label: "BOM" },
+  { id: "routing", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.routing, label: "Roteiro" },
+  { id: "tree", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.tree, label: "Árvore" },
+  { id: "cost", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.cost, label: "Custo" },
+  {
+    id: "composition",
+    resourceKey: PRODUCT_TAB_RESOURCE_KEYS.composition,
+    label: "Composição",
+  },
+  { id: "history", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.history, label: "Histórico" },
+];
+

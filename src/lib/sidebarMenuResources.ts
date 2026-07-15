@@ -17,6 +17,13 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   commissions: ResourceKeys.COMISSOES,
   materials: ResourceKeys.SUPRIMENTOS,
   settings: ResourceKeys.CONFIGURACOES,
+  customers: ResourceKeys.COMERCIAL_CLIENTES,
+  proposals: ResourceKeys.COMERCIAL_PROPOSTAS,
+  pricing: ResourceKeys.COMERCIAL_FORMACAO_PRECO,
+  products: ResourceKeys.ENGENHARIA_PRODUTOS,
+  "transformation-simulator": ResourceKeys.ENGENHARIA_SIMULADOR_INJECAO,
+  simulations: ResourceKeys.ENGENHARIA_SIMULACOES,
+  projects: ResourceKeys.ENGENHARIA_PROJETOS,
 };
 
 /** Grupos accordion com resourceKey (visibilidade = filhos filtrados; chave documenta o pai). */
@@ -25,6 +32,7 @@ export const SIDEBAR_GROUP_RESOURCE_KEYS: Partial<Record<NavigationGroupId, stri
   financeiro: ResourceKeys.FINANCEIRO,
   comercial: ResourceKeys.COMERCIAL,
   administracao: ResourceKeys.ADMIN,
+  engenharia: ResourceKeys.ENGENHARIA,
 };
 
 export function resolveSidebarModuleResourceKey(
