@@ -1,37 +1,58 @@
-/* Impressão — Relatório Gerencial Executivo de Projetos (/projects/:projectId/report) */
+/**
+ * Relatório Gerencial de Projeto — impressão / PDF
+ * Cópia visual da tela em A4 retrato (folha na vertical).
+ *
+ * Nota: finance-executive-report-print.css define @page landscape globalmente.
+ * A página injeta @page portrait na hora do print para garantir retrato.
+ */
+
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
 
 @media print {
   @page {
     size: A4 portrait;
-    margin: 12mm;
+    margin: 10mm;
   }
 
   html,
   body {
     background: white !important;
     overflow: visible !important;
+    color: #0f172a !important;
   }
 
-  body.project-executive-report-route {
-    background: white !important;
-    overflow: visible !important;
-  }
-
+  /* Anula o visibility:hidden global de reports-print.css nesta rota. */
   body.project-executive-report-route,
   body.project-executive-report-route * {
     visibility: visible !important;
   }
 
   body.project-executive-report-route .project-executive-report-print-no-print,
-  .project-executive-report-print-no-print {
+  body.project-executive-report-route .no-print,
+  .project-executive-report-print-no-print,
+  .no-print {
     display: none !important;
   }
 
   body.project-executive-report-route #root > * > aside,
   body.project-executive-report-route #root > * > header,
   body.project-executive-report-route nav,
-  body.project-executive-report-route .project-executive-report-print-no-print {
+  body.project-executive-report-route .flex.h-screen > aside,
+  body.project-executive-report-route main > header {
     display: none !important;
+  }
+
+  body.project-executive-report-route .flex.h-screen,
+  body.project-executive-report-route .flex.h-screen > main,
+  body.project-executive-report-route main .flex-1.overflow-y-auto {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
   }
 
   .project-executive-report-route-page,
@@ -39,18 +60,137 @@
   .project-executive-report-document {
     position: static !important;
     width: 100% !important;
+    max-width: none !important;
     height: auto !important;
     min-height: auto !important;
     max-height: none !important;
     overflow: visible !important;
     background: white !important;
-    color: black !important;
+    color: #0f172a !important;
     padding: 0 !important;
     margin: 0 !important;
     box-shadow: none !important;
   }
 
+  .project-executive-report-document {
+    font-size: 9.5pt !important;
+    line-height: 1.35 !important;
+  }
+
+  .project-executive-report-header {
+    border-bottom: 1px solid #cbd5e1 !important;
+    padding: 0 0 3mm !important;
+    margin-bottom: 3mm !important;
+  }
+
+  .project-executive-report-header h1 {
+    font-size: 16pt !important;
+    margin: 1mm 0 0 !important;
+  }
+
+  /* Espaçamento entre seções — igual à coluna da tela */
+  .project-executive-report-document > div {
+    padding: 0 !important;
+  }
+
   .project-executive-report-section {
+    break-inside: auto;
+    page-break-inside: auto;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    padding: 3.5mm !important;
+    margin: 0 0 3.5mm !important;
+  }
+
+  .project-executive-report-section-title {
+    font-size: 11pt !important;
+    font-weight: 700 !important;
+    margin: 0 0 2.5mm !important;
+    color: #0f172a !important;
+  }
+
+  /* Cards KPI: 3 colunas como na tela (xl), cabíveis em 210mm. */
+  body.project-executive-report-route .project-executive-report-kpi-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 2.2mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-kpi-grid-2 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 2.2mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-kpi-grid-4 {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 2.2mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 2mm !important;
+    background: #f8fafc !important;
+    padding: 2.2mm 2.5mm !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-card-label {
+    font-size: 7pt !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    color: #64748b !important;
+    margin: 0 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-card-value {
+    margin-top: 1mm !important;
+    font-size: 10.5pt !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+    line-height: 1.2 !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-card-hint {
+    margin-top: 0.8mm !important;
+    font-size: 7pt !important;
+    color: #64748b !important;
+  }
+
+  body.project-executive-report-route .project-executive-report-product-block {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 4mm !important;
+  }
+
+  .project-executive-report-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 7.5pt !important;
+    table-layout: auto !important;
+  }
+
+  .project-executive-report-table th,
+  .project-executive-report-table td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 1.2mm 1mm !important;
+    vertical-align: top !important;
+    color: #0f172a !important;
+  }
+
+  .project-executive-report-table thead {
+    display: table-header-group !important;
+  }
+
+  .project-executive-report-table thead th {
+    background: #f8fafc !important;
+    font-weight: 600 !important;
+  }
+
+  .project-executive-report-table tr {
     break-inside: avoid;
     page-break-inside: avoid;
   }
@@ -60,25 +200,8 @@
     page-break-before: always;
   }
 
-  .project-executive-report-table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-    font-size: 8pt !important;
-  }
-
-  .project-executive-report-table th,
-  .project-executive-report-table td {
-    border: 1px solid #cbd5e1 !important;
-    padding: 1.5mm 1.2mm !important;
-    vertical-align: top !important;
-  }
-
-  .project-executive-report-table thead {
-    display: table-header-group !important;
-  }
-
-  .project-executive-report-table tr {
-    break-inside: avoid;
-    page-break-inside: avoid;
+  /* Evita overflow horizontal de tabelas largas — espreme no retrato. */
+  body.project-executive-report-route .overflow-x-auto {
+    overflow: visible !important;
   }
 }

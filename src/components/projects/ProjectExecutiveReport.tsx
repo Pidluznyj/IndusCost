@@ -35,10 +35,16 @@ function Section({
 
 function SummaryCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 print:border print:bg-white">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-lg font-semibold text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+    <div className="project-executive-report-card rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="project-executive-report-card-label text-xs uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className="project-executive-report-card-value mt-1 text-lg font-semibold text-slate-900">
+        {value}
+      </p>
+      {hint ? (
+        <p className="project-executive-report-card-hint mt-1 text-xs text-slate-500">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -142,7 +148,7 @@ export function ProjectExecutiveReport({ report }: Props) {
         </Section>
 
         <Section title="Resumo executivo financeiro">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             <SummaryCard
               label="Custo base dos itens"
               value={formatExecutiveReportMoney(executiveSummary.baseItemsCost)}
@@ -190,7 +196,7 @@ export function ProjectExecutiveReport({ report }: Props) {
               {warning}
             </p>
           ))}
-          <div className="mt-4 grid gap-2 md:grid-cols-2">
+          <div className="project-executive-report-kpi-grid-2 mt-4 grid gap-2 md:grid-cols-2">
             <CheckboxLine label="Aprovado" />
             <CheckboxLine label="Reprovado" />
             <CheckboxLine label="Revisar custos" />
@@ -319,7 +325,7 @@ export function ProjectExecutiveReport({ report }: Props) {
                   formatExecutiveReportMoney(row.unitAmortizedCost),
                 ])}
               />
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="project-executive-report-kpi-grid-4 mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <SummaryCard
                   label="Total repassado via amortização"
                   value={formatExecutiveReportMoney(executiveSummary.amortizedToCustomer)}
@@ -347,14 +353,17 @@ export function ProjectExecutiveReport({ report }: Props) {
           ) : (
             <>
               {economicAnalysis.pricingItems.map((item) => (
-                <div key={item.targetItemId} className="mb-5">
+                <div
+                  key={item.targetItemId}
+                  className="project-executive-report-product-block mb-5"
+                >
                   <h3 className="mb-2 text-sm font-semibold text-slate-900">
                     {item.displayName}
                     <span className="ml-2 font-normal text-slate-500">
                       · qtde {item.quantity.toLocaleString("pt-BR")}
                     </span>
                   </h3>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <SummaryCard
                       label="Custo final unitário"
                       value={formatExecutiveReportMoney(item.finalUnitCost)}
@@ -414,7 +423,7 @@ export function ProjectExecutiveReport({ report }: Props) {
                   <h3 className="mb-2 text-sm font-semibold text-slate-900">
                     Totais do portfólio
                   </h3>
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="project-executive-report-kpi-grid grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <SummaryCard
                       label="Receita total s/ amortização"
                       value={formatExecutiveReportMoney(
@@ -536,7 +545,7 @@ export function ProjectExecutiveReport({ report }: Props) {
         </Section>
 
         <Section title="Aprovação / assinaturas" className="page-break-before">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="project-executive-report-kpi-grid-2 grid gap-4 md:grid-cols-2">
             <p className="text-sm">
               <span className="font-medium">Elaborado por:</span> {report.approval.preparedBy}
             </p>
@@ -553,7 +562,7 @@ export function ProjectExecutiveReport({ report }: Props) {
           <p className="mt-4 text-sm">
             <span className="font-medium">Assinatura:</span> ________________________________________
           </p>
-          <div className="mt-4 grid gap-2 md:grid-cols-3">
+          <div className="project-executive-report-kpi-grid mt-4 grid gap-2 md:grid-cols-3">
             <CheckboxLine label="Aprovado" />
             <CheckboxLine label="Reprovado" />
             <CheckboxLine label="Revisar" />

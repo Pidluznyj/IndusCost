@@ -70,9 +70,9 @@ Os campos do resumo executivo financeiro do relatório correspondem diretamente 
 1. Abra `/projects/:projectId/report`
 2. Clique em **Imprimir / Salvar PDF**
 3. No diálogo do navegador, escolha destino **Salvar como PDF**
-4. Desative **Cabeçalhos e rodapés** nas opções de impressão para layout mais limpo
+4. Confirme orientação **Retrato** / Portrait e desative **Cabeçalhos e rodapés**
 
-A impressão usa CSS `@media print` em `src/project-executive-report-print.css`, ocultando botões de ação e aplicando layout A4.
+A impressão usa o **mesmo DOM da tela** (cards, seções e tabelas), com CSS em `src/project-executive-report-print.css` e `@page { size: A4 portrait }` injetado na hora do print (para sobrescrever regras landscape globais de outros módulos).
 
 ## Como validar os números
 

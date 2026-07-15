@@ -588,6 +588,28 @@ describe("projectsExecutiveReport — UI/rota", () => {
     assert.match(css, /body\.project-executive-report-route/);
   });
 
+  it("impressão usa A4 retrato e grade de cards como na tela", () => {
+    const css = readFileSync(
+      join(process.cwd(), "src", "project-executive-report-print.css"),
+      "utf8"
+    );
+    const page = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectExecutiveReportPage.tsx"),
+      "utf8"
+    );
+    const reportUi = readFileSync(
+      join(process.cwd(), "src", "components", "projects", "ProjectExecutiveReport.tsx"),
+      "utf8"
+    );
+    assert.match(css, /size:\s*A4 portrait/);
+    assert.match(css, /project-executive-report-kpi-grid/);
+    assert.match(css, /grid-template-columns:\s*repeat\(3/);
+    assert.match(page, /data-project-executive-report-print-page/);
+    assert.match(page, /A4 portrait/);
+    assert.match(reportUi, /project-executive-report-kpi-grid/);
+    assert.match(reportUi, /project-executive-report-card/);
+  });
+
   it("relatório não mostra matéria-prima como item principal", () => {
     const detail = buildDetailFixture();
     detail.simulatedItems.push({
