@@ -4,7 +4,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canAccessModule } from "@/src/lib/modulePermissions";
+import {
+  canViewInventory,
+  listVisibleInventoryTabIds,
+} from "@/src/lib/operationsAdminPermissions";
 import { InventoryDashboardTab } from "@/src/components/inventory/InventoryDashboardTab";
 import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab";
 import { InventoryWarehousesTab } from "@/src/components/inventory/InventoryWarehousesTab";
@@ -34,9 +39,12 @@ type Props = {
 
 export function InventoryModule({ initialTab }: Props = {}) {
   const auth = useAuth();
+  const permissions = usePermissions();
+  const resourceCheck = { ...auth, canViewResource: permissions.canView };
   const location = useLocation();
   const navigate = useNavigate();
-  const canView = canAccessModule("inventory", auth);
+  const canView =
+    canViewInventory(resourceCheck) || canAccessModule("inventory", auth);
   const [tab, setTab] = useState<InventoryTabId>(
     initialTab ?? resolveInventoryTabFromPath(location.pathname)
   );
@@ -95,8 +103,18 @@ export function InventoryModule({ initialTab }: Props = {}) {
     );
   }
 
-  const visibleTabs = getVisibleInventoryTabs();
+  const visibleTabs = getVisibleInventoryTabs().filter((t) =>
+    listVisibleInventoryTabIds([t.id], resourceCheck).includes(t.id)
+  );
   const activeTabDef = getInventoryTabDef(tab);
+
+  React.useEffect(() => {
+    if (visibleTabs.length === 0) return;
+    if (visibleTabs.some((t) => t.id === tab)) return;
+    const fallback = visibleTabs[0]!.id;
+    selectTab(fallback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reagimos a tab sem permissão
+  }, [tab, visibleTabs.map((t) => t.id).join("|")]);
 
   return (
     <div className="space-y-4" data-testid="inventory-module">

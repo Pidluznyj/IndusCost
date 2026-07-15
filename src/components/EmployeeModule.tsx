@@ -38,6 +38,10 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
 import { useAuth } from "@/src/contexts/AuthContext";
+import {
+  canViewEmployeeCompensation,
+  canViewEmployeeEmergencyContacts,
+} from "@/src/lib/operationsAdminPermissions";
 
 const EMPLOYEE_CLASSIFICATION_OPTIONS = [
   { value: "DIRETO", label: "Direto", searchTerms: "DIRETO direto" },
@@ -121,6 +125,8 @@ function DetailField({
 export const EmployeeModule = () => {
   const auth = useAuth();
   const canEdit = auth.hasPermission("employees.edit");
+  const canViewSensitiveHr =
+    canViewEmployeeCompensation(auth) && canViewEmployeeEmergencyContacts(auth);
   const canAccessOperationalSettings = auth.hasAnyPermission([
     "settings.operational.view",
     "settings.operational.manage",
@@ -273,7 +279,7 @@ export const EmployeeModule = () => {
     setListStatusFilter("");
   };
 
-  const tableColSpan = 6 + (showLegacyEstimates ? 3 : 0);
+  const tableColSpan = 6 + (showLegacyEstimates && canViewSensitiveHr ? 3 : 0);
 
   return (
     <div className="space-y-6" data-tour="employees-root">
@@ -367,6 +373,7 @@ export const EmployeeModule = () => {
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          {canViewSensitiveHr ? (
           <button
             type="button"
             onClick={() => setShowLegacyEstimates((v) => !v)}
@@ -376,6 +383,7 @@ export const EmployeeModule = () => {
             {showLegacyEstimates ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             {showLegacyEstimates ? "Ocultar estimativas" : "Mostrar estimativas"}
           </button>
+          ) : null}
           {canEdit && (
             <>
               <button 
@@ -410,7 +418,7 @@ export const EmployeeModule = () => {
                 <th className="p-4 font-semibold text-sm">Cargo / Setor</th>
                 <th className="p-4 font-semibold text-sm">Contrato</th>
                 <th className="p-4 font-semibold text-sm">Admissão</th>
-                {showLegacyEstimates && (
+                {showLegacyEstimates && canViewSensitiveHr && (
                   <>
                     <th className="p-4 font-semibold text-sm text-muted-foreground">Ref. salarial</th>
                     <th className="p-4 font-semibold text-sm text-muted-foreground">Estimativa mensal</th>
@@ -462,7 +470,7 @@ export const EmployeeModule = () => {
                     <td className="p-4">
                       <p className="text-sm">{formatEmployeeDate(emp.admissionDate)}</p>
                     </td>
-                    {showLegacyEstimates && (
+                    {showLegacyEstimates && canViewSensitiveHr && (
                       <>
                         <td className="p-4">
                           <p className="text-sm text-muted-foreground">{formatCurrency(emp.salary)}</p>
@@ -883,20 +891,46 @@ export const EmployeeModule = () => {
 
                 {viewFichaTab === "personal" && (
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                    <DetailField label="CPF" value={displayText(viewingEmployee.cpf)} />
-                    <DetailField label="RG" value={displayText(viewingEmployee.rg)} />
+                    <DetailField
+                      label="CPF"
+                      value={canViewSensitiveHr ? displayText(viewingEmployee.cpf) : "•••••••••••"}
+                    />
+                    <DetailField
+                      label="RG"
+                      value={canViewSensitiveHr ? displayText(viewingEmployee.rg) : "••••••"}
+                    />
                     <DetailField label="Nascimento" value={formatEmployeeDate(viewingEmployee.birthDate)} />
-                    <DetailField label="Telefone" value={displayText(viewingEmployee.phone)} />
-                    <DetailField label="E-mail pessoal" value={displayText(viewingEmployee.personalEmail)} className="col-span-2 md:col-span-3" />
-                    <DetailField label="Endereço" value={displayText(viewingEmployee.address)} className="col-span-2 md:col-span-3" multiline />
+                    <DetailField
+                      label="Telefone"
+                      value={canViewSensitiveHr ? displayText(viewingEmployee.phone) : "••••••••"}
+                    />
+                    <DetailField
+                      label="E-mail pessoal"
+                      value={canViewSensitiveHr ? displayText(viewingEmployee.personalEmail) : "••••••"}
+                      className="col-span-2 md:col-span-3"
+                    />
+                    <DetailField
+                      label="Endereço"
+                      value={canViewSensitiveHr ? displayText(viewingEmployee.address) : "••••••"}
+                      className="col-span-2 md:col-span-3"
+                      multiline
+                    />
                   </div>
                 )}
 
                 {viewFichaTab === "emergency" && (
                   <div className="grid grid-cols-2 gap-4 text-sm max-w-3xl">
-                    <DetailField label="Nome do contato" value={displayText(viewingEmployee.emergencyContactName)} className="col-span-2" />
-                    <DetailField label="Telefone" value={displayText(viewingEmployee.emergencyContactPhone)} />
-                    <DetailField label="Grau / relação" value={displayText(viewingEmployee.emergencyContactRelationship)} />
+                    {canViewSensitiveHr ? (
+                      <>
+                        <DetailField label="Nome do contato" value={displayText(viewingEmployee.emergencyContactName)} className="col-span-2" />
+                        <DetailField label="Telefone" value={displayText(viewingEmployee.emergencyContactPhone)} />
+                        <DetailField label="Grau / relação" value={displayText(viewingEmployee.emergencyContactRelationship)} />
+                      </>
+                    ) : (
+                      <p className="col-span-2 text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                        Contatos de emergência restritos. Solicite a permissão <span className="font-mono">employees.edit</span>.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -915,6 +949,12 @@ export const EmployeeModule = () => {
 
                 {viewFichaTab === "admin" && (
                   <div className="space-y-5">
+                    {!canViewSensitiveHr ? (
+                      <p className="text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                        Dados salariais e de custo restritos. Solicite a permissão <span className="font-mono">employees.edit</span>.
+                      </p>
+                    ) : (
+                    <>
                     <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
                       Valores exibidos apenas para referência administrativa. Não alteram automaticamente o custo industrial ou CIU.
                     </p>
@@ -951,6 +991,8 @@ export const EmployeeModule = () => {
                         </ul>
                       )}
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
 

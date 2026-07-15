@@ -10,6 +10,8 @@ import type {
   MaintenanceRequestRow,
   MaintenanceStatus,
 } from "@/src/types/maintenance";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canManageMaintenance } from "@/src/lib/operationsAdminPermissions";
 
 const STATUS_LABEL: Record<MaintenanceStatus, string> = {
   NOVA_SOLICITACAO: "Nova solicitação",
@@ -99,6 +101,8 @@ const EMPTY_FORM: FormState = {
 };
 
 export function MaintenanceModule() {
+  const auth = useAuth();
+  const allowManage = canManageMaintenance(auth);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [rows, setRows] = useState<MaintenanceRequestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -328,6 +332,7 @@ export function MaintenanceModule() {
             <KanbanSquare className="h-4 w-4" />
             Abrir Kanban
           </button>
+          {allowManage ? (
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -336,6 +341,7 @@ export function MaintenanceModule() {
             <Plus className="h-4 w-4" />
             Nova solicitação
           </button>
+          ) : null}
         </div>
       </div>
 

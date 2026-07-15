@@ -20,6 +20,8 @@ import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { MACHINE_TOUR_STEPS } from "@/src/tours/machineTourSteps";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canEditMachines } from "@/src/lib/operationsAdminPermissions";
 
 interface MachineCostComponent {
   id?: string;
@@ -38,6 +40,8 @@ interface Machine {
 }
 
 export const MachineModule = () => {
+  const auth = useAuth();
+  const allowEdit = canEditMachines(auth);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -167,6 +171,7 @@ export const MachineModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          {allowEdit ? (
           <button
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -174,6 +179,7 @@ export const MachineModule = () => {
             <Plus className="h-4 w-4" />
             Nova Máquina
           </button>
+          ) : null}
         </div>
       </div>
 
@@ -203,6 +209,7 @@ export const MachineModule = () => {
                     </div>
                   </div>
                   <div className="flex gap-2">
+                    {allowEdit ? (
                     <button 
                       onClick={() => handleOpenModal(machine)}
                       className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-primary transition-colors"
@@ -210,6 +217,8 @@ export const MachineModule = () => {
                     >
                       <Edit2 className="h-4 w-4" />
                     </button>
+                    ) : null}
+                    {allowEdit ? (
                     <button 
                       onClick={() => handleDelete(machine)}
                       className="p-2 rounded-lg hover:bg-background text-muted-foreground hover:text-red-500 transition-colors"
@@ -217,6 +226,7 @@ export const MachineModule = () => {
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
+                    ) : null}
                   </div>
                 </div>
                 

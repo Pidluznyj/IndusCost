@@ -24,6 +24,14 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "transformation-simulator": ResourceKeys.ENGENHARIA_SIMULADOR_INJECAO,
   simulations: ResourceKeys.ENGENHARIA_SIMULACOES,
   projects: ResourceKeys.ENGENHARIA_PROJETOS,
+  inventory: ResourceKeys.OPERACOES_ESTOQUE,
+  purchases: ResourceKeys.OPERACOES_COMPRAS,
+  machines: ResourceKeys.OPERACOES_MAQUINAS,
+  "operations-performance": ResourceKeys.OPERACOES_PERFORMANCE,
+  maintenance: ResourceKeys.OPERACOES_MANUTENCAO,
+  fleet: ResourceKeys.OPERACOES_FROTA,
+  employees: ResourceKeys.ADMIN_PESSOAS,
+  guide: ResourceKeys.ADMIN_GUIA,
 };
 
 /** Grupos accordion com resourceKey (visibilidade = filhos filtrados; chave documenta o pai). */
@@ -33,6 +41,7 @@ export const SIDEBAR_GROUP_RESOURCE_KEYS: Partial<Record<NavigationGroupId, stri
   comercial: ResourceKeys.COMERCIAL,
   administracao: ResourceKeys.ADMIN,
   engenharia: ResourceKeys.ENGENHARIA,
+  operacoes: ResourceKeys.OPERACOES,
 };
 
 export function resolveSidebarModuleResourceKey(

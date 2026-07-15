@@ -117,13 +117,22 @@ describe("resourceNavigationAccess — perfis", () => {
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "portfolio-reconciliation"));
   });
 
-  it("módulo sem resourceKey usa fallback legado (fleet)", () => {
+  it("módulo com resourceKey usa fonte resource (fleet); legado ainda cobre checks", () => {
     const withFleet = ctx("VIEWER", ["fleet.view"]);
     assert.equal(canViewModule("fleet", withFleet), true);
-    assert.equal(evaluatePathViewAccess("/fleet", withFleet).source, "legacy");
+    assert.equal(evaluatePathViewAccess("/fleet", withFleet).source, "resource");
 
     const noFleet = ctx("VIEWER", ["dashboard.view"]);
     assert.equal(canViewModule("fleet", noFleet), false);
+  });
+
+  it("módulo sem resourceKey no mapa residual usa fallback legado (opex)", () => {
+    const withOpex = ctx("VIEWER", ["opex.view"]);
+    assert.equal(canViewModule("opex", withOpex), true);
+    assert.equal(evaluatePathViewAccess("/opex", withOpex).source, "legacy");
+
+    const noOpex = ctx("VIEWER", ["dashboard.view"]);
+    assert.equal(canViewModule("opex", noOpex), false);
   });
 });
 
