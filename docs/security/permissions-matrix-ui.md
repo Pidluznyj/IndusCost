@@ -5,6 +5,7 @@
 | **Projeto** | IndusCost / My Industry |
 | **Data** | 2026-07-15 |
 | **Status** | Componente compartilhado — **ainda não** substitui telas finais |
+| **Entrega** | Presente em `main` (matriz + testes + docs); telas finais intactas |
 | **Código UI** | `src/components/admin/PermissionMatrix.tsx` |
 | **Lógica pura** | `src/lib/security/permissionMatrixUi/` |
 | **Exemplos** | `src/components/admin/PermissionMatrix.examples.tsx` |
