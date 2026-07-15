@@ -7,8 +7,8 @@
 | **Plano** | `docs/security/permissions-model-plan.md` |
 | **Inventário** | `docs/security/permissions-current-inventory.md` |
 | **Migration** | `prisma/migrations/20260723120000_permission_resource_rbac` |
-| **Seed** | `scripts/seedPermissionResources.ts` |
-| **Dados** | `src/lib/permissionResourceSeedData.ts` |
+| **Seed** | `scripts/seedPermissionResources.ts` (PT + roles) · **Prompt 05:** `scripts/seedPermissionCatalogFromContract.ts` (contrato → catálogo, sem grants) — ver `permissions-catalog-seed.md` |
+| **Dados** | `src/lib/permissionResourceSeedData.ts` · contrato `src/lib/security/permissionContract` |
 
 ---
 

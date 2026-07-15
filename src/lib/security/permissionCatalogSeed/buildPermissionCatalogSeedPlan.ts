@@ -158,11 +158,28 @@ export function buildPermissionCatalogSeedPlan(): CatalogSeedPlan {
   const canonicalKeys = new Set(rows.map((r) => r.key));
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
     if (canonicalKeys.has(seed.key)) {
-      // Key collision EN vs PT shouldn't happen; if it does, prefer canonical.
-      issues.push({
-        code: "KEY_COLLISION_CANONICAL_LEGACY",
-        message: `chave presente no contrato e no seed PT: ${seed.key}`,
+      // Mesma chave (ex.: dashboard, admin): enriquecer canônico com aliases PT, sem duplicar.
+      const canonical = rows.find((r) => r.key === seed.key)!;
+      const mergedAliases = [
+        ...new Set([...canonical.legacyAliasKeys, ...seed.legacyAliasKeys]),
+      ].sort();
+      canonical.legacyAliasKeys = mergedAliases;
+      canonical.relationalBridgeKeys = [
+        ...new Set([...canonical.relationalBridgeKeys, seed.key]),
+      ];
+      canonical.description = buildCanonicalDescription({
+        notes: `${canonical.description} | also_legacy_pt_seed`,
+        sensitivity: "merged",
+        legacyAliasKeys: mergedAliases,
+        relationalBridgeKeys: canonical.relationalBridgeKeys,
       });
+      for (const alias of seed.legacyAliasKeys) {
+        const owners = aliasIndex[alias] ?? [];
+        if (!owners.includes(seed.key) && !owners.includes(canonical.key)) {
+          owners.push(canonical.key);
+        }
+        aliasIndex[alias] = owners;
+      }
       continue;
     }
     const bridgedBy = bridgeByPt.get(seed.key) ?? [];
@@ -251,13 +268,9 @@ export function sortCatalogSeedRows(
 
 export function assertCatalogSeedPlanReady(plan: CatalogSeedPlan): void {
   const blocking = plan.issues.filter((i) =>
-    [
-      "MISSING_PARENT",
-      "PHANTOM_ACTION",
-      "KEY_COLLISION_CANONICAL_LEGACY",
-      "CONTRACT_DUPLICATE_RESOURCE_KEY",
-      "CONTRACT_CYCLE",
-    ].some((c) => i.code.startsWith(c) || i.code === c)
+    ["MISSING_PARENT", "PHANTOM_ACTION", "CONTRACT_DUPLICATE_RESOURCE_KEY", "CONTRACT_CYCLE"].some(
+      (c) => i.code === c || i.code.startsWith(c)
+    )
   );
   if (blocking.length > 0) {
     throw new Error(
