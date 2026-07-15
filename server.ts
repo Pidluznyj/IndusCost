@@ -13418,6 +13418,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requirePermission,
     requireAnyPermission,
+    getCurrentAppUser,
   });
 
   registerCanonicalPersonRoutes(app, {

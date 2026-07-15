@@ -23,6 +23,9 @@ type AuthGuards = {
   requireAppAuth: RequestHandler;
   requirePermission: (permission: string) => RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
+  getCurrentAppUser?: (
+    req: express.Request
+  ) => Promise<{ id?: string } | null> | { id?: string } | null;
 };
 
 const RH_LOOKUP = ["employees.view", "employees.edit"] as const;
@@ -31,8 +34,19 @@ export function registerEmployeeLookupRoutes(
   app: express.Application,
   guards: AuthGuards
 ): void {
-  const { requireAppAuth, requireAnyPermission } = guards;
+  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = guards;
   const lookupGuard = [requireAppAuth, requireAnyPermission([...RH_LOOKUP])];
+
+  async function resolveActorId(req: express.Request): Promise<string | null> {
+    try {
+      const raw = getCurrentAppUser?.(req);
+      const user = raw && typeof (raw as Promise<unknown>).then === "function" ? await raw : raw;
+      const id = (user as { id?: string } | null)?.id;
+      return typeof id === "string" ? id : null;
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Pré-checagem de e-mail corporativo (formato, unicidade Employee, conflito AppUser).
@@ -240,54 +254,43 @@ export function registerEmployeeLookupRoutes(
         if (!isEmployeeUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
-        const emp = await prisma.employee.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            corporateEmail: true,
-            personalEmail: true,
-            appUser: { select: { id: true, email: true, isActive: true, role: true } },
-          },
-        });
-        if (!emp) return res.status(404).json({ error: "Colaborador não encontrado." });
-
-        const email = (emp.corporateEmail || emp.personalEmail || "").trim().toLowerCase();
-        let matchingUser = null as {
-          id: string;
-          email: string;
-          employeeId: string | null;
-        } | null;
-        if (email && !emp.appUser) {
-          matchingUser = await prisma.appUser.findFirst({
-            where: { email: { equals: email, mode: "insensitive" } },
-            select: { id: true, email: true, employeeId: true },
-          });
-        }
-
-        const { resolveUserLinkStatus } = await import(
-          "@/src/lib/employeeRegistration.js"
+        const { getEmployeeUserLinkStatus } = await import(
+          "@/src/lib/employeeUserLink.server.js"
         );
-        const link = resolveUserLinkStatus({
-          linkedUser: emp.appUser,
-          matchingUserByEmail: matchingUser,
-        });
-
-        res.json({
-          employeeId: emp.id,
-          corporateEmail: emp.corporateEmail,
-          appUser: emp.appUser,
-          link,
-        });
+        const payload = await getEmployeeUserLinkStatus(prisma, id);
+        res.json(payload);
       } catch (error) {
+        if (error instanceof EmployeeRegistrationError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
         console.error("GET /api/employees/:id/user-link-status", error);
         res.status(500).json({ error: "Erro ao consultar vínculo de usuário." });
       }
     }
   );
 
+  /** Consulta AppUser por e-mail de login (sem criar / sem vincular). */
+  app.get(
+    "/api/employees/lookups/app-user-by-email",
+    ...lookupGuard,
+    async (req, res) => {
+      try {
+        const raw = typeof req.query.email === "string" ? req.query.email : "";
+        const { findAppUserByLoginEmail } = await import(
+          "@/src/lib/employeeUserLink.server.js"
+        );
+        const payload = await findAppUserByLoginEmail(prisma, raw);
+        res.json(payload);
+      } catch (error) {
+        console.error("GET /api/employees/lookups/app-user-by-email", error);
+        res.status(500).json({ error: "Erro ao consultar usuário por e-mail." });
+      }
+    }
+  );
+
   /**
-   * Vincula AppUser existente (mesmo e-mail) ao colaborador.
-   * Não cria conta nem altera senha.
+   * Vincula AppUser existente (mesmo e-mail corporativo) ao colaborador.
+   * Não cria conta nem altera senha / e-mail de login.
    */
   app.post(
     "/api/employees/:id/link-user",
@@ -299,55 +302,50 @@ export function registerEmployeeLookupRoutes(
         if (!isEmployeeUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
-        const emp = await prisma.employee.findUnique({
-          where: { id },
-          select: {
-            id: true,
-            corporateEmail: true,
-            appUser: { select: { id: true } },
-          },
-        });
-        if (!emp) return res.status(404).json({ error: "Colaborador não encontrado." });
-        if (emp.appUser) {
-          return res.status(409).json({ error: "Este colaborador já possui usuário vinculado." });
-        }
-        const email = (emp.corporateEmail ?? "").trim().toLowerCase();
-        if (!email) {
-          return res.status(400).json({
-            error: "Defina o e-mail corporativo antes de vincular o usuário.",
-          });
-        }
-        const user = await prisma.appUser.findFirst({
-          where: { email: { equals: email, mode: "insensitive" } },
-          select: { id: true, employeeId: true, email: true },
-        });
-        if (!user) {
-          return res.status(404).json({
-            error: "Nenhum usuário encontrado com este e-mail corporativo.",
-          });
-        }
-        if (user.employeeId && user.employeeId !== id) {
-          return res.status(409).json({
-            error: "Este usuário já está vinculado a outra pessoa.",
-          });
-        }
-        const updated = await prisma.appUser.update({
-          where: { id: user.id },
-          data: { employeeId: id },
-          select: { id: true, email: true, isActive: true, role: true },
-        });
-        console.info(
-          JSON.stringify({
-            audit: "employee.link_user",
-            employeeId: id,
-            appUserId: updated.id,
-            at: new Date().toISOString(),
-          })
+        const { linkEmployeeToAppUser } = await import(
+          "@/src/lib/employeeUserLink.server.js"
         );
-        res.json({ ok: true, appUser: updated });
+        const result = await linkEmployeeToAppUser(prisma, id, {
+          actorUserId: await resolveActorId(req),
+        });
+        res.json({ ok: true, appUser: result.appUser });
       } catch (error) {
+        if (error instanceof EmployeeRegistrationError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
         console.error("POST /api/employees/:id/link-user", error);
         res.status(500).json({ error: "Erro ao vincular usuário." });
+      }
+    }
+  );
+
+  /**
+   * Remove vínculo Employee ↔ AppUser.
+   * Não desativa o usuário nem altera o e-mail de login.
+   */
+  app.post(
+    "/api/employees/:id/unlink-user",
+    requireAppAuth,
+    requireAnyPermission(["employees.edit", "users.manage"]),
+    async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!isEmployeeUuid(id)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const { unlinkEmployeeFromAppUser } = await import(
+          "@/src/lib/employeeUserLink.server.js"
+        );
+        const result = await unlinkEmployeeFromAppUser(prisma, id, {
+          actorUserId: await resolveActorId(req),
+        });
+        res.json(result);
+      } catch (error) {
+        if (error instanceof EmployeeRegistrationError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
+        console.error("POST /api/employees/:id/unlink-user", error);
+        res.status(500).json({ error: "Erro ao desvincular usuário." });
       }
     }
   );

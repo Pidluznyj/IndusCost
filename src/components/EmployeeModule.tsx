@@ -38,6 +38,7 @@ import {
 } from "@/src/lib/employeeCorporateEmail";
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
+import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -159,7 +160,6 @@ export const EmployeeModule = () => {
     links: Record<string, unknown[]>;
   } | null>(null);
   const [savingEmployee, setSavingEmployee] = useState(false);
-  const [linkingUser, setLinkingUser] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formBaseline, setFormBaseline] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -359,24 +359,6 @@ export const EmployeeModule = () => {
       return;
     }
     setIsModalOpen(false);
-  };
-
-  const linkSystemUser = async (employee: Employee) => {
-    if (linkingUser) return;
-    setLinkingUser(true);
-    try {
-      const result = await fetchJsonOk<{ ok: boolean; appUser: Employee["appUser"] }>(
-        `/api/employees/${employee.id}/link-user`,
-        { method: "POST" }
-      );
-      const updated = { ...employee, appUser: result.appUser ?? employee.appUser };
-      setViewingEmployee(updated);
-      setEmployees((prev) => prev.map((e) => (e.id === employee.id ? { ...e, appUser: updated.appUser } : e)));
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Não foi possível vincular o usuário.");
-    } finally {
-      setLinkingUser(false);
-    }
   };
 
   const openEmployeeView = (employee: Employee) => {
@@ -930,7 +912,8 @@ export const EmployeeModule = () => {
                             />
                             <p className="text-[11px] text-muted-foreground">
                               Fonte do vínculo profissional. Opcional em colaboradores antigos.
-                              Não cria nem altera o login do sistema automaticamente.
+                              Não cria nem altera o login do sistema automaticamente. O vínculo com
+                              AppUser é feito depois, na ficha (Acesso ao sistema), com confirmação.
                             </p>
                             {corporateEmailError && (
                               <p className="text-xs text-destructive">{corporateEmailError}</p>
@@ -1426,32 +1409,33 @@ export const EmployeeModule = () => {
                         {viewingEmployee.status === "ACTIVE" ? "Ativo" : "Inativo"}
                       </div>
                     </div>
-                    <div className="col-span-2 md:col-span-3 space-y-2">
-                      <DetailField
-                        label="Usuário do sistema"
-                        value={
-                          viewingEmployee.appUser
-                            ? `${viewingEmployee.appUser.email}${
-                                viewingEmployee.appUser.isActive ? "" : " (inativo)"
-                              }`
-                            : viewingEmployee.corporateEmail
-                              ? "Sem vínculo — usuário pode existir com o mesmo e-mail corporativo"
-                              : "Sem conta — criar em Configurações → Usuários"
+                    <div className="col-span-2 md:col-span-3">
+                      <EmployeeSystemAccessCard
+                        employeeId={viewingEmployee.id}
+                        canManageLink={
+                          canEdit || auth.hasPermission("users.manage")
                         }
+                        canOpenUsersAdmin={auth.hasPermission("users.manage")}
+                        onLinked={(appUser) => {
+                          if (!appUser) return;
+                          const updated = { ...viewingEmployee, appUser };
+                          setViewingEmployee(updated);
+                          setEmployees((prev) =>
+                            prev.map((e) =>
+                              e.id === viewingEmployee.id ? { ...e, appUser } : e
+                            )
+                          );
+                        }}
+                        onUnlinked={() => {
+                          const updated = { ...viewingEmployee, appUser: null };
+                          setViewingEmployee(updated);
+                          setEmployees((prev) =>
+                            prev.map((e) =>
+                              e.id === viewingEmployee.id ? { ...e, appUser: null } : e
+                            )
+                          );
+                        }}
                       />
-                      {!viewingEmployee.appUser &&
-                        Boolean(viewingEmployee.corporateEmail?.trim()) &&
-                        (canEdit || auth.hasPermission("users.manage")) && (
-                          <button
-                            type="button"
-                            disabled={linkingUser}
-                            onClick={() => void linkSystemUser(viewingEmployee)}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-background hover:bg-accent text-sm font-medium disabled:opacity-60"
-                          >
-                            {linkingUser ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                            Vincular usuário existente pelo e-mail corporativo
-                          </button>
-                        )}
                     </div>
                   </div>
                 )}
@@ -1572,6 +1556,28 @@ export const EmployeeModule = () => {
 
                 {viewFichaTab === "links" && (
                   <div className="space-y-4 text-sm">
+                    <EmployeeSystemAccessCard
+                      employeeId={viewingEmployee.id}
+                      canManageLink={canEdit || auth.hasPermission("users.manage")}
+                      canOpenUsersAdmin={auth.hasPermission("users.manage")}
+                      onLinked={(appUser) => {
+                        if (!appUser) return;
+                        setViewingEmployee({ ...viewingEmployee, appUser });
+                        setEmployees((prev) =>
+                          prev.map((e) =>
+                            e.id === viewingEmployee.id ? { ...e, appUser } : e
+                          )
+                        );
+                      }}
+                      onUnlinked={() => {
+                        setViewingEmployee({ ...viewingEmployee, appUser: null });
+                        setEmployees((prev) =>
+                          prev.map((e) =>
+                            e.id === viewingEmployee.id ? { ...e, appUser: null } : e
+                          )
+                        );
+                      }}
+                    />
                     {!viewingEmployee.personId && !viewingEmployee.person ? (
                       <p className="text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
                         Este colaborador ainda não possui pessoa canônica vinculada (legado ou pendente).
