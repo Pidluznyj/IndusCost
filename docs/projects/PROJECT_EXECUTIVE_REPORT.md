@@ -53,7 +53,13 @@ Não há endpoint dedicado: o frontend carrega `GET /api/projects/:id` e monta o
 | Valor absorvido internamente | Soma dos `absorbedAmount` |
 | Custo final dos itens | Soma dos custos unitários finais com amortização alocada |
 | Custo total do projeto | `computeProjectGuidedCosts().totalProjectCost` (legado + investimentos, sem duplicar amortização nos moldes) |
-| Margem estimada | `((Preço de venda - Custo final) / Preço de venda) × 100` quando houver preço sugerido |
+| Resultado econômico por produto | Cards e totais usam o **preço/custo de cada produto**, nunca a média do portfólio |
+| Quantidade do produto | Preferência: quantidade de amortização do item; senão peso comercial / quantidade sugerida |
+| Receita s/ amortização | `qtde × preço sem amortização` |
+| Receita c/ amortização | `qtde × preço com amortização` |
+| Retorno da amortização | `(qtde × preço com) − (qtde × preço sem)` |
+| Lucro bruto estimado (produto) | `(qtde × preço com) − (qtde × custo final unitário)` |
+| Totais do portfólio | Soma dos valores por produto (receitas, retorno, custo, lucro) |
 
 ## Relação com a aba Custos do Projeto
 

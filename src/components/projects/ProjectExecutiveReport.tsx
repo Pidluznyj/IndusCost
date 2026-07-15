@@ -346,69 +346,150 @@ export function ProjectExecutiveReport({ report }: Props) {
             <p className="text-sm text-slate-700">{economicAnalysis.message}</p>
           ) : (
             <>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                <SummaryCard
-                  label="Custo final unitário"
-                  value={formatExecutiveReportMoney(economicAnalysis.finalUnitCost)}
-                />
-                <SummaryCard
-                  label="Preço sugerido"
-                  value={formatExecutiveReportMoney(economicAnalysis.suggestedPrice)}
-                />
-                <SummaryCard
-                  label="Regra fiscal"
-                  value={economicAnalysis.fiscalRuleName ?? "—"}
-                />
-                <SummaryCard
-                  label="Impostos %"
-                  value={formatExecutiveReportPercent(economicAnalysis.taxPercent)}
-                />
-                <SummaryCard
-                  label="Valor impostos"
-                  value={formatExecutiveReportMoney(economicAnalysis.taxAmount)}
-                />
-                <SummaryCard
-                  label="Margem desejada"
-                  value={formatExecutiveReportPercent(economicAnalysis.estimatedMarginPercent)}
-                />
-                <SummaryCard
-                  label="Valor margem"
-                  value={formatExecutiveReportMoney(economicAnalysis.marginAmount)}
-                />
-                <SummaryCard
-                  label="Receita estimada"
-                  value={formatExecutiveReportMoney(economicAnalysis.estimatedRevenue)}
-                />
-                <SummaryCard
-                  label="Lucro bruto estimado"
-                  value={formatExecutiveReportMoney(economicAnalysis.estimatedGrossProfit)}
-                />
-              </div>
+              {economicAnalysis.pricingItems.map((item) => (
+                <div key={item.targetItemId} className="mb-5">
+                  <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                    {item.displayName}
+                    <span className="ml-2 font-normal text-slate-500">
+                      · qtde {item.quantity.toLocaleString("pt-BR")}
+                    </span>
+                  </h3>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <SummaryCard
+                      label="Custo final unitário"
+                      value={formatExecutiveReportMoney(item.finalUnitCost)}
+                    />
+                    <SummaryCard
+                      label="Preço sem amortização"
+                      value={formatExecutiveReportMoney(item.suggestedPriceWithoutAmortization)}
+                    />
+                    <SummaryCard
+                      label="Preço com amortização"
+                      value={formatExecutiveReportMoney(
+                        item.suggestedPriceWithAmortization ?? item.suggestedPrice
+                      )}
+                    />
+                    <SummaryCard
+                      label="Regra fiscal"
+                      value={item.fiscalRuleName ?? "—"}
+                    />
+                    <SummaryCard
+                      label="Impostos %"
+                      value={formatExecutiveReportPercent(item.taxPercent)}
+                    />
+                    <SummaryCard
+                      label="Valor impostos (total)"
+                      value={formatExecutiveReportMoney(item.taxAmount)}
+                    />
+                    <SummaryCard
+                      label="Margem desejada"
+                      value={formatExecutiveReportPercent(item.targetMarginPercent)}
+                    />
+                    <SummaryCard
+                      label="Valor margem (total)"
+                      value={formatExecutiveReportMoney(item.marginAmount)}
+                    />
+                    <SummaryCard
+                      label="Receita s/ amortização"
+                      value={formatExecutiveReportMoney(item.revenueWithoutAmortization)}
+                    />
+                    <SummaryCard
+                      label="Receita c/ amortização"
+                      value={formatExecutiveReportMoney(item.revenueWithAmortization)}
+                    />
+                    <SummaryCard
+                      label="Retorno da amortização"
+                      value={formatExecutiveReportMoney(item.amortizationReturn)}
+                    />
+                    <SummaryCard
+                      label="Lucro bruto estimado"
+                      value={formatExecutiveReportMoney(item.estimatedGrossProfit)}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              {economicAnalysis.portfolio.productCount > 0 ? (
+                <div className="mt-2">
+                  <h3 className="mb-2 text-sm font-semibold text-slate-900">
+                    Totais do portfólio
+                  </h3>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    <SummaryCard
+                      label="Receita total s/ amortização"
+                      value={formatExecutiveReportMoney(
+                        economicAnalysis.portfolio.totalRevenueWithoutAmortization
+                      )}
+                    />
+                    <SummaryCard
+                      label="Receita total c/ amortização"
+                      value={formatExecutiveReportMoney(
+                        economicAnalysis.portfolio.totalRevenueWithAmortization
+                      )}
+                    />
+                    <SummaryCard
+                      label="Retorno total da amortização"
+                      value={formatExecutiveReportMoney(
+                        economicAnalysis.portfolio.totalAmortizationReturn
+                      )}
+                    />
+                    <SummaryCard
+                      label="Custo total dos produtos"
+                      value={formatExecutiveReportMoney(economicAnalysis.portfolio.totalCost)}
+                    />
+                    <SummaryCard
+                      label="Lucro bruto total estimado"
+                      value={formatExecutiveReportMoney(
+                        economicAnalysis.portfolio.totalEstimatedGrossProfit
+                      )}
+                    />
+                    <SummaryCard
+                      label="Quantidade total"
+                      value={
+                        economicAnalysis.portfolio.totalQuantity != null
+                          ? economicAnalysis.portfolio.totalQuantity.toLocaleString("pt-BR")
+                          : "—"
+                      }
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               {economicAnalysis.pricingItems.length > 0 ? (
                 <div className="mt-4 overflow-x-auto">
                   <table className="project-executive-report-table w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 bg-slate-50 text-left">
                         <th className="px-2 py-2">Item</th>
-                        <th className="px-2 py-2">Custo final</th>
-                        <th className="px-2 py-2">Preço sugerido</th>
-                        <th className="px-2 py-2">Impostos %</th>
-                        <th className="px-2 py-2">Margem %</th>
+                        <th className="px-2 py-2">Qtde</th>
+                        <th className="px-2 py-2">Custo unit.</th>
+                        <th className="px-2 py-2">Preço s/ amort.</th>
+                        <th className="px-2 py-2">Preço c/ amort.</th>
+                        <th className="px-2 py-2">Retorno amort.</th>
+                        <th className="px-2 py-2">Lucro bruto</th>
                       </tr>
                     </thead>
                     <tbody>
                       {economicAnalysis.pricingItems.map((item) => (
-                        <tr key={item.displayName} className="border-b border-slate-100">
+                        <tr key={item.targetItemId} className="border-b border-slate-100">
                           <td className="px-2 py-2">{item.displayName}</td>
+                          <td className="px-2 py-2">{item.quantity.toLocaleString("pt-BR")}</td>
                           <td className="px-2 py-2">
                             {formatExecutiveReportMoney(item.finalUnitCost)}
                           </td>
                           <td className="px-2 py-2">
-                            {formatExecutiveReportMoney(item.suggestedPrice)}
+                            {formatExecutiveReportMoney(item.suggestedPriceWithoutAmortization)}
                           </td>
-                          <td className="px-2 py-2">{formatExecutiveReportPercent(item.taxPercent)}</td>
                           <td className="px-2 py-2">
-                            {formatExecutiveReportPercent(item.targetMarginPercent)}
+                            {formatExecutiveReportMoney(
+                              item.suggestedPriceWithAmortization ?? item.suggestedPrice
+                            )}
+                          </td>
+                          <td className="px-2 py-2">
+                            {formatExecutiveReportMoney(item.amortizationReturn)}
+                          </td>
+                          <td className="px-2 py-2">
+                            {formatExecutiveReportMoney(item.estimatedGrossProfit)}
                           </td>
                         </tr>
                       ))}

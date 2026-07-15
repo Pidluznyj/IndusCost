@@ -10,6 +10,7 @@ import {
   computeProjectCostSetTotal,
   resolveProjectCostFinalUnitPrice,
 } from "./projectsCostSnapshot.js";
+import { roundProjectMoney } from "./projectsCostAmortization.js";
 import { computeLiveProjectPricingView } from "./projectsPricing.js";
 import type { ProjectDetail } from "@/src/types/projects.js";
 
@@ -129,13 +130,131 @@ describe("projectsCostSnapshot", () => {
     }
   });
 
-  it("relatório gerencial usa preço do conjunto do snapshot", () => {
+  it("relatório gerencial usa preços e quantidades por produto (não média do conjunto)", () => {
+    const ids = ["110000000000000000000000000000001", "220000000000000000000000000000002"];
     const detail = buildPricedDetail([30, 30], [3.2, 4.8]);
-    const snapshot = buildProjectCostSnapshot(detail);
+    // Força duas simulações com amortização no custo para diferenciar preço com/sem.
+    detail.simulatedItems = ids.map((id, index) => ({
+      ...detail.simulatedItems[index]!,
+      id,
+      notes: `guided-origin:SIMULATION\nguided-simulation-id:${id}`,
+      estimatedUnitCost: index === 0 ? 2.24 : 3.36,
+    }));
+    detail.molds = [
+      {
+        id: "mold-snap-1",
+        name: "Molde teste",
+        moldType: "Novo",
+        cavities: 1,
+        estimatedLifeCycles: null,
+        supplierName: null,
+        constructionCost: 10_000,
+        maintenanceCost: null,
+        changeCost: null,
+        leadTimeDays: null,
+        chargeMode: "CHARGED_SEPARATELY",
+        amortizationQuantity: null,
+        amortizedCostPerUnit: null,
+        ownership: "UNDEFINED",
+        notes: null,
+      },
+    ];
+    detail.costAmortizations = [
+      {
+        id: "amort-snap",
+        projectId: detail.id,
+        sourceType: "MOLD",
+        sourceId: "mold-snap-1",
+        sourceDescriptionSnapshot: "Molde teste",
+        sourceTotalCostSnapshot: 10_000,
+        passThroughPercent: 100,
+        passThroughAmount: 10_000,
+        absorbedAmount: 0,
+        status: "DISTRIBUTED",
+        distributionPercentTotal: 100,
+        distributionBalancePercent: 0,
+        allocatedAmountTotal: 10_000,
+        unallocatedAmount: 0,
+        allocations: [
+          {
+            targetItemId: ids[0]!,
+            targetItemType: "SIMULATION",
+            targetDescriptionSnapshot: "Item 1",
+            targetBaseUnitCostSnapshot: 2.24,
+            allocationPercent: 60,
+            amortizationQuantity: 1000,
+            allocatedAmount: 6_000,
+            unitAmortizedCost: 6,
+            finalUnitCost: 8.24,
+          },
+          {
+            targetItemId: ids[1]!,
+            targetItemType: "SIMULATION",
+            targetDescriptionSnapshot: "Item 2",
+            targetBaseUnitCostSnapshot: 3.36,
+            allocationPercent: 40,
+            amortizationQuantity: 1000,
+            allocatedAmount: 4_000,
+            unitAmortizedCost: 4,
+            finalUnitCost: 7.36,
+          },
+        ],
+      },
+    ];
+    detail.projectPricing = {
+      config: { fiscalRuleId: "tax-0", defaultMarginPercent: 30 },
+      taxRules: PRICING_TAX_RULES,
+      hasSavedPricing: true,
+      items: ids.map((targetItemId, index) => ({
+        targetItemId,
+        targetItemType: "SIMULATION" as const,
+        displayName: `Item ${index + 1}`,
+        costBaseUnit: index === 0 ? 2.24 : 3.36,
+        amortizationUnitCost: 0,
+        finalUnitCost: index === 0 ? 2.24 : 3.36,
+        fiscalRuleId: "tax-0",
+        fiscalRuleName: "Zerada",
+        taxPercent: 0,
+        targetMarginPercent: 30,
+        suggestedPrice: null,
+        suggestedPriceWithoutAmortization: null,
+        suggestedPriceWithAmortization: null,
+        taxAmount: null,
+        marginAmount: null,
+        status: "PENDING" as const,
+        statusLabel: "Pendente",
+        errorMessage: null,
+      })),
+    };
+
     const report = buildProjectExecutiveReport(detail);
 
-    assert.equal(report.economicAnalysis.suggestedPrice, snapshot.totals.finalSetPrice);
-    assert.equal(report.economicAnalysis.pricingItems.length, snapshot.pricing.view.items.length);
+    assert.equal(report.economicAnalysis.pricingItems.length, 2);
+    assert.equal(report.economicAnalysis.portfolio.productCount, 2);
+    assert.equal(report.economicAnalysis.finalUnitCost, null);
+
+    for (const row of report.economicAnalysis.pricingItems) {
+      assert.equal(row.quantity, 1000);
+      assert.ok((row.amortizationReturn ?? 0) > 0);
+      assert.equal(
+        row.amortizationReturn,
+        roundProjectMoney(
+          row.quantity *
+            ((row.suggestedPriceWithAmortization ?? 0) -
+              (row.suggestedPriceWithoutAmortization ?? 0))
+        )
+      );
+    }
+
+    assert.equal(
+      report.economicAnalysis.portfolio.totalRevenueWithAmortization,
+      roundProjectMoney(
+        report.economicAnalysis.pricingItems.reduce(
+          (acc, row) => acc + (row.revenueWithAmortization ?? 0),
+          0
+        )
+      )
+    );
   });
 
   it("margem alterada no grid reflete no relatório após atualizar projectPricing", () => {

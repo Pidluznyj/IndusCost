@@ -164,20 +164,44 @@ export type ProjectExecutiveReportPayload = {
   economicAnalysis: {
     pending: boolean;
     message: string;
+    /** @deprecated Preferir `pricingItems` / `portfolio` — mantido como agregados somados. */
     finalUnitCost: number | null;
+    /** Receita total c/ amortização (soma qty×preço com). */
     suggestedPrice: number | null;
     estimatedMarginPercent: number | null;
     estimatedRevenue: number | null;
     estimatedGrossProfit: number | null;
+    /** Soma das quantidades dos produtos com preço. */
     amortizationBaseQuantity: number | null;
+    /** Retorno da amortização no portfólio: Σ(qty×preçoCom − qty×preçoSem). */
+    amortizationReturn: number | null;
     fiscalRuleName: string | null;
     taxPercent: number | null;
     taxAmount: number | null;
     marginAmount: number | null;
+    portfolio: {
+      totalRevenueWithAmortization: number | null;
+      totalRevenueWithoutAmortization: number | null;
+      totalAmortizationReturn: number | null;
+      totalCost: number | null;
+      totalEstimatedGrossProfit: number | null;
+      totalQuantity: number | null;
+      productCount: number;
+    };
     pricingItems: Array<{
+      targetItemId: string;
       displayName: string;
+      quantity: number;
       finalUnitCost: number;
       suggestedPrice: number;
+      suggestedPriceWithoutAmortization: number | null;
+      suggestedPriceWithAmortization: number | null;
+      revenueWithoutAmortization: number | null;
+      revenueWithAmortization: number | null;
+      /** (qty × preço com amortização) − (qty × preço sem amortização). */
+      amortizationReturn: number | null;
+      totalCost: number;
+      estimatedGrossProfit: number | null;
       taxPercent: number;
       targetMarginPercent: number;
       taxAmount: number | null;
@@ -466,12 +490,24 @@ export function buildProjectExecutiveReport(
     });
   }
   const savedPricing = costSnapshot.pricing.view;
-  const commercialSummary = costSnapshot.pricing.commercialSummary;
   const hasSavedProjectPricing = savedPricing.hasSavedPricing === true;
   const calculatedPricingItems = savedPricing.items.filter(
     (item) => resolveProjectCostFinalUnitPrice(item) != null
   );
   const pricingPrimary = calculatedPricingItems[0] ?? null;
+  const quantityByTargetId = new Map(items.map((item) => [item.id, item.baseQuantity]));
+  const pricingWeights = costSnapshot.pricing.weights;
+  const amortizationQuantityByTargetId = new Map<string, number>();
+  for (const source of summary.amortizations) {
+    for (const alloc of source.allocations) {
+      if (!(alloc.amortizationQuantity > 0)) continue;
+      const current = amortizationQuantityByTargetId.get(alloc.targetItemId) ?? 0;
+      amortizationQuantityByTargetId.set(
+        alloc.targetItemId,
+        Math.max(current, alloc.amortizationQuantity)
+      );
+    }
+  }
 
   if (!hasSavedProjectPricing && calculatedPricingItems.length === 0) {
     alerts.push({
@@ -500,33 +536,89 @@ export function buildProjectExecutiveReport(
     summary.totalAbsorbedAmount
   )} absorvidos internamente pela empresa.`;
 
-  const finalUnitCost =
-    commercialSummary.averageFinalUnitCost ??
-    pricingPrimary?.finalUnitCost ??
-    summary.finalItemsUnitCostWithAmortization;
   const economicPending = costSnapshot.totals.pricingPending || !hasSavedProjectPricing;
-  const reportSuggestedPrice = costSnapshot.totals.finalSetPrice;
-  const estimatedMarginPercent =
-    commercialSummary.hasMultipleMargins
-      ? null
-      : pricingPrimary?.targetMarginPercent ??
-        savedPricing.config.defaultMarginPercent ??
-        null;
-  const amortizationBaseQuantity =
-    amortizationMemory.length > 0
-      ? Math.max(...amortizationMemory.map((row) => row.amortizationQuantity))
-      : null;
 
-  const pricingItems = calculatedPricingItems.map((item) => ({
-    displayName: item.displayName,
-    finalUnitCost: item.finalUnitCost,
-    suggestedPrice: resolveProjectCostFinalUnitPrice(item)!,
-    taxPercent: item.taxPercent,
-    targetMarginPercent: item.targetMarginPercent,
-    taxAmount: item.taxAmount,
-    marginAmount: item.marginAmount,
-    fiscalRuleName: item.fiscalRuleName,
-  }));
+  const pricingItems = calculatedPricingItems.map((item) => {
+    const quantity = Math.max(
+      1,
+      Number(amortizationQuantityByTargetId.get(item.targetItemId)) ||
+        Number(pricingWeights.get(item.targetItemId)) ||
+        Number(quantityByTargetId.get(item.targetItemId)) ||
+        1
+    );
+    const priceWith =
+      item.suggestedPriceWithAmortization ??
+      resolveProjectCostFinalUnitPrice(item) ??
+      item.suggestedPrice;
+    const priceWithout = item.suggestedPriceWithoutAmortization;
+    const suggestedPrice = priceWith!;
+    const revenueWith =
+      priceWith != null ? roundProjectMoney(quantity * priceWith) : null;
+    const revenueWithout =
+      priceWithout != null ? roundProjectMoney(quantity * priceWithout) : null;
+    const amortizationReturn =
+      revenueWith != null && revenueWithout != null
+        ? roundProjectMoney(revenueWith - revenueWithout)
+        : priceWith != null && priceWithout != null
+          ? roundProjectMoney(quantity * (priceWith - priceWithout))
+          : null;
+    const totalCost = roundProjectMoney(item.finalUnitCost * quantity);
+    const estimatedGrossProfit =
+      revenueWith != null ? roundProjectMoney(revenueWith - totalCost) : null;
+
+    return {
+      targetItemId: item.targetItemId,
+      displayName: item.displayName,
+      quantity,
+      finalUnitCost: item.finalUnitCost,
+      suggestedPrice,
+      suggestedPriceWithoutAmortization: priceWithout,
+      suggestedPriceWithAmortization: priceWith,
+      revenueWithoutAmortization: revenueWithout,
+      revenueWithAmortization: revenueWith,
+      amortizationReturn,
+      totalCost,
+      estimatedGrossProfit,
+      taxPercent: item.taxPercent,
+      targetMarginPercent: item.targetMarginPercent,
+      taxAmount:
+        item.taxAmount != null ? roundProjectMoney(item.taxAmount * quantity) : null,
+      marginAmount:
+        item.marginAmount != null ? roundProjectMoney(item.marginAmount * quantity) : null,
+      fiscalRuleName: item.fiscalRuleName,
+    };
+  });
+
+  const sumNullable = (values: Array<number | null | undefined>): number | null => {
+    const finite = values.filter((v): v is number => v != null && Number.isFinite(v));
+    if (finite.length === 0) return null;
+    return roundProjectMoney(finite.reduce((acc, v) => acc + v, 0));
+  };
+
+  const portfolio = {
+    totalRevenueWithAmortization: sumNullable(
+      pricingItems.map((row) => row.revenueWithAmortization)
+    ),
+    totalRevenueWithoutAmortization: sumNullable(
+      pricingItems.map((row) => row.revenueWithoutAmortization)
+    ),
+    totalAmortizationReturn: sumNullable(pricingItems.map((row) => row.amortizationReturn)),
+    totalCost: sumNullable(pricingItems.map((row) => row.totalCost)),
+    totalEstimatedGrossProfit: sumNullable(
+      pricingItems.map((row) => row.estimatedGrossProfit)
+    ),
+    totalQuantity:
+      pricingItems.length > 0
+        ? pricingItems.reduce((acc, row) => acc + row.quantity, 0)
+        : null,
+    productCount: pricingItems.length,
+  };
+
+  const uniqueMargins = [
+    ...new Set(pricingItems.map((row) => row.targetMarginPercent)),
+  ];
+  const estimatedMarginPercent =
+    uniqueMargins.length === 1 ? uniqueMargins[0]! : null;
 
   const versionLabel = detail.currentVersion
     ? `v${detail.currentVersion.versionNumber}`
@@ -580,24 +672,23 @@ export function buildProjectExecutiveReport(
     economicAnalysis: {
       pending: economicPending,
       message: "Análise comercial pendente de definição de preço e margem.",
-      finalUnitCost: Number.isFinite(finalUnitCost) ? finalUnitCost : null,
-      suggestedPrice: reportSuggestedPrice,
+      finalUnitCost:
+        pricingItems.length === 1 ? pricingItems[0]!.finalUnitCost : null,
+      suggestedPrice: portfolio.totalRevenueWithAmortization,
       estimatedMarginPercent,
-      estimatedRevenue:
-        reportSuggestedPrice != null && amortizationBaseQuantity
-          ? roundProjectMoney(reportSuggestedPrice * amortizationBaseQuantity)
-          : null,
-      estimatedGrossProfit:
-        reportSuggestedPrice != null &&
-        amortizationBaseQuantity &&
-        Number.isFinite(finalUnitCost)
-          ? roundProjectMoney((reportSuggestedPrice - finalUnitCost) * amortizationBaseQuantity)
-          : null,
-      amortizationBaseQuantity,
-      fiscalRuleName: pricingPrimary?.fiscalRuleName ?? null,
-      taxPercent: pricingPrimary?.taxPercent ?? null,
-      taxAmount: pricingPrimary?.taxAmount ?? null,
-      marginAmount: pricingPrimary?.marginAmount ?? null,
+      estimatedRevenue: portfolio.totalRevenueWithAmortization,
+      estimatedGrossProfit: portfolio.totalEstimatedGrossProfit,
+      amortizationBaseQuantity: portfolio.totalQuantity,
+      amortizationReturn: portfolio.totalAmortizationReturn,
+      fiscalRuleName:
+        pricingItems.length === 1
+          ? pricingItems[0]!.fiscalRuleName
+          : pricingPrimary?.fiscalRuleName ?? null,
+      taxPercent:
+        pricingItems.length === 1 ? pricingItems[0]!.taxPercent : null,
+      taxAmount: sumNullable(pricingItems.map((row) => row.taxAmount)),
+      marginAmount: sumNullable(pricingItems.map((row) => row.marginAmount)),
+      portfolio,
       pricingItems,
     },
     risks: {
@@ -629,6 +720,8 @@ export function executiveReportMetricsAreFinite(report: ProjectExecutiveReportPa
     totalPassThroughAmount: report.executiveSummary.amortizedToCustomer,
     totalAbsorbedAmount: report.executiveSummary.absorbedInternally,
     totalAmortizationAllocated: report.executiveSummary.totalAmortizationAllocated,
+    totalAllocatedToCost: report.executiveSummary.totalAmortizationAllocated,
+    totalAllocatedToFinalPrice: 0,
     finalItemsUnitCostWithAmortization: report.executiveSummary.finalItemsCost,
     itemRollups: report.items.map((item) => ({
       targetItemId: item.id,
@@ -648,6 +741,19 @@ export function executiveReportMetricsAreFinite(report: ProjectExecutiveReportPa
     report.executiveSummary.investmentTotal,
     report.executiveSummary.totalProjectCost,
     report.executiveSummary.totalUnallocatedAmortization,
+    ...(report.economicAnalysis.pricingItems.flatMap((row) => [
+      row.quantity,
+      row.finalUnitCost,
+      row.suggestedPrice,
+      row.totalCost,
+      row.amortizationReturn,
+      row.revenueWithAmortization,
+      row.revenueWithoutAmortization,
+      row.estimatedGrossProfit,
+    ])),
+    report.economicAnalysis.portfolio.totalRevenueWithAmortization,
+    report.economicAnalysis.portfolio.totalAmortizationReturn,
+    report.economicAnalysis.portfolio.totalEstimatedGrossProfit,
   ];
-  return nums.every((value) => Number.isFinite(value));
+  return nums.every((value) => value == null || Number.isFinite(value));
 }

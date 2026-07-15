@@ -16,6 +16,7 @@ import {
 } from "@/src/lib/commissions/commissionClosingReportPrintMeta";
 import type { ReceiptClosingPagePayload } from "@/src/lib/commissions/commissionReceiptClosingApi.shared";
 import "@/src/components/sales/sales-order-report-print.css";
+import "@/src/components/commissions/commission-closing-print.css";
 
 function SummaryKpiCard({
   label,

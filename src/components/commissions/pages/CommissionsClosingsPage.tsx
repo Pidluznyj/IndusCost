@@ -123,8 +123,16 @@ export function CommissionsClosingsPage() {
   useEffect(() => {
     if (printRequestId === 0 || !printMode) return;
     document.body.classList.add("sales-orders-print-route");
+
+    // Força A4 retrato mesmo com @page landscape de outros CSS globais.
+    const style = document.createElement("style");
+    style.setAttribute("data-commission-closing-print-page", "1");
+    style.textContent = "@page { size: A4 portrait; margin: 8mm; }";
+    document.head.appendChild(style);
+
     const onAfterPrint = () => {
       document.body.classList.remove("sales-orders-print-route");
+      style.remove();
       setPrintRequestId(0);
       setPrintMode(null);
       setClosingPrintPayload(null);
@@ -134,6 +142,7 @@ export function CommissionsClosingsPage() {
     return () => {
       window.clearTimeout(timer);
       window.removeEventListener("afterprint", onAfterPrint);
+      style.remove();
     };
   }, [printRequestId, printMode]);
 

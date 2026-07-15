@@ -1,0 +1,81 @@
+/**
+ * Relatório de comissões (fechamento) — A4 retrato (folha de pé).
+ * Importado nos documentos de print e reforçado via style inject na página
+ * para sobrescrever @page landscape de outros CSS globais.
+ */
+@page {
+  size: A4 portrait;
+  margin: 8mm;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  /* Retrato: KPIs em 3 colunas (mais respirável que 6 numa faixa estreita). */
+  #sales-orders-print-root.comm-closing-print-root .sales-orders-print-summary-grid--6 {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .sales-orders-print-summary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  /* Cabeçalho espaçado cabível em 210mm de largura útil. */
+  #sales-orders-print-root.comm-closing-print-root .print-doc-header-grid {
+    grid-template-columns: 36mm minmax(0, 1fr) 68mm !important;
+    column-gap: 4mm !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .print-doc-logo {
+    max-height: 28mm !important;
+    max-width: 36mm !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .print-doc-logo-wrap {
+    min-height: 26mm !important;
+  }
+
+  /* Colunas do analítico 2 linhas — proporções para retrato */
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-order {
+    width: 24% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-docs {
+    width: 18% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-dates {
+    width: 12% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-amounts {
+    width: 18% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-base {
+    width: 11% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-commission {
+    width: 10% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-col-status {
+    width: 7% !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-print-stack-primary {
+    font-size: 7.5px !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-print-stack-secondary {
+    font-size: 6.5px !important;
+  }
+
+  #sales-orders-print-root.comm-closing-print-root .comm-closing-print-commission {
+    font-size: 8px !important;
+  }
+}

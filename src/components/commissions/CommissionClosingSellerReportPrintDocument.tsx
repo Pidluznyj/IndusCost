@@ -17,6 +17,7 @@ import {
   COMMISSION_CLOSING_SELLER_REPORT_PRINT_TITLE,
 } from "@/src/lib/commissions/commissionClosings.shared";
 import "@/src/components/sales/sales-order-report-print.css";
+import "@/src/components/commissions/commission-closing-print.css";
 
 function SummaryKpiCard({ label, value }: { label: string; value: string }) {
   return (
@@ -131,7 +132,7 @@ export function CommissionClosingSellerReportPrintDocument({
           <h2 className="sales-orders-print-section-title">Analítico</h2>
           <p className="sales-orders-print-disclaimer">
             Cada linha agrupa documentos, datas e valores em blocos de duas linhas para leitura
-            executiva em A4 paisagem.
+            executiva em A4 retrato.
           </p>
           <table className="sales-orders-print-table sales-orders-print-data-table comm-closing-print-table">
             <thead>

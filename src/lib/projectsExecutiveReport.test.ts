@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildProjectCostAmortizationSummary,
   computeAmortizationConfig,
+  roundProjectMoney,
 } from "./projectsCostAmortization.js";
 import { buildOtherCostNotes } from "./projectsOtherCostGroups.js";
 import { canViewProjects } from "./projectsPermissions.js";
@@ -432,6 +433,73 @@ describe("projectsExecutiveReport — montagem", () => {
     const report = buildProjectExecutiveReport(buildDetailFixture());
     assert.equal(report.economicAnalysis.pending, true);
     assert.match(report.economicAnalysis.message, /pendente/i);
+  });
+
+  it("resultado econômico calcula retorno da amortização por produto", () => {
+    const detail = buildDetailFixture();
+    // Precificação comercial considera apenas SIMULATION.
+    detail.simulatedItems[1]!.notes =
+      "guided-origin:SIMULATION\nguided-simulation-id:22222222-2222-2222-2222-222222222222";
+    detail.costAmortizations = buildSavedAmortization(detail);
+    detail.projectPricing = {
+      config: { fiscalRuleId: "tax-0", defaultMarginPercent: 30 },
+      taxRules: [{ id: "tax-0", name: "Zerada", description: null, taxPercent: 0 }],
+      hasSavedPricing: true,
+      items: detail.simulatedItems.map((item) => ({
+        targetItemId: item.id,
+        targetItemType: "SIMULATION" as const,
+        displayName: item.description,
+        costBaseUnit: item.estimatedUnitCost,
+        amortizationUnitCost: 0,
+        finalUnitCost: item.estimatedUnitCost,
+        fiscalRuleId: "tax-0",
+        fiscalRuleName: "Zerada",
+        taxPercent: 0,
+        targetMarginPercent: 30,
+        suggestedPrice: null,
+        suggestedPriceWithoutAmortization: null,
+        suggestedPriceWithAmortization: null,
+        taxAmount: null,
+        marginAmount: null,
+        status: "PENDING",
+        statusLabel: "Pendente",
+        errorMessage: null,
+      })),
+    };
+
+    const report = buildProjectExecutiveReport(detail);
+    assert.equal(report.economicAnalysis.pending, false);
+    assert.equal(report.economicAnalysis.pricingItems.length, 2);
+
+    for (const row of report.economicAnalysis.pricingItems) {
+      assert.ok(row.quantity >= 1);
+      assert.ok(row.suggestedPriceWithAmortization != null);
+      assert.ok(row.suggestedPriceWithoutAmortization != null);
+      assert.equal(
+        row.amortizationReturn,
+        roundProjectMoney(
+          row.quantity *
+            ((row.suggestedPriceWithAmortization ?? 0) -
+              (row.suggestedPriceWithoutAmortization ?? 0))
+        )
+      );
+      assert.equal(
+        row.revenueWithAmortization,
+        roundProjectMoney(row.quantity * (row.suggestedPriceWithAmortization ?? 0))
+      );
+      assert.ok((row.amortizationReturn ?? 0) > 0);
+    }
+
+    assert.equal(
+      report.economicAnalysis.portfolio.totalAmortizationReturn,
+      roundProjectMoney(
+        report.economicAnalysis.pricingItems.reduce(
+          (acc, row) => acc + (row.amortizationReturn ?? 0),
+          0
+        )
+      )
+    );
+    assert.equal(report.economicAnalysis.finalUnitCost, null);
   });
 
   it("não retorna NaN/Infinity", () => {

@@ -56,9 +56,12 @@ section("7–10. PDF/XLSX e endpoints");
   assert.match(print, /Pedido \/ Cliente/);
   assert.match(print, /comm-closing-print-stack/);
   assert.match(print, /comm-closing-print-root/);
+  assert.match(print, /commission-closing-print\.css/);
   assert.match(server, /buildCommissionClosingSellerXlsx/);
+  const page = read("src/components/commissions/pages/CommissionsClosingsPage.tsx");
+  assert.match(page, /A4 portrait/);
   assert.match(server, /listCommissionClosings/);
-  ok("Endpoints, PDF 2 linhas e XLSX por vendedor");
+  ok("Endpoints, PDF 2 linhas retrato e XLSX por vendedor");
 }
 
 section("11–15. Agrupamento canônico e labels");
