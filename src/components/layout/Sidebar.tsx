@@ -40,7 +40,6 @@ import { cn } from "@/src/lib/utils";
 import { motion } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { createSidebarCanViewResource } from "@/src/lib/permissionsClient";
 import { useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
 import { formatRoleLabel } from "@/src/lib/appAuthClient";
 import { resolveSidebarAsideWidth } from "@/src/lib/sidebarLayout";
@@ -49,8 +48,8 @@ import {
   type AppModuleId,
 } from "@/src/lib/modulePermissions";
 import type { NavigationGroupId, NavigationGroupedItem } from "@/src/lib/navigationGroups";
+import { buildResourceAwareSidebarNavigation } from "@/src/lib/resourceNavigationAccess";
 import {
-  buildAccessibleSidebarNavigation,
   getSidebarGroupButtonId,
   getSidebarGroupPanelId,
   isNavigationGroupExpanded,
@@ -434,8 +433,9 @@ export const Sidebar = () => {
 
   const navigation = React.useMemo(
     () =>
-      buildAccessibleSidebarNavigation(auth, undefined, {
-        canViewResource: createSidebarCanViewResource(permissions.authUser),
+      buildResourceAwareSidebarNavigation({
+        user: permissions.authUser,
+        checker: auth,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [auth.hasPermission, auth.hasAnyPermission, permissionKey]

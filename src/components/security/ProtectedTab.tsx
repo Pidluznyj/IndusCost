@@ -4,6 +4,7 @@ import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import {
   PERMISSION_DENIED_TAB_MESSAGE,
 } from "@/src/lib/permissionsClient";
+import { canViewResource } from "@/src/lib/resourceNavigationAccess";
 
 type Props = {
   resourceKey: string;
@@ -23,11 +24,11 @@ export function ProtectedTab({
   children,
   deniedMessage = PERMISSION_DENIED_TAB_MESSAGE,
 }: Props) {
-  const { canView } = usePermissions();
+  const { authUser } = usePermissions();
 
   if (!active) return null;
 
-  if (!canView(resourceKey)) {
+  if (!canViewResource(authUser, resourceKey)) {
     return (
       <PermissionDenied
         title="Aba sem permissão"

@@ -231,7 +231,10 @@ describe("sidebarNavigation — ids de acessibilidade", () => {
 describe("Sidebar.tsx — renderização agrupada", () => {
   it("renderiza Dashboard como item direto e importa navigationGroups", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.ok(sidebar.includes("buildAccessibleSidebarNavigation"));
+    assert.ok(
+      sidebar.includes("buildResourceAwareSidebarNavigation") ||
+        sidebar.includes("buildAccessibleSidebarNavigation")
+    );
     assert.ok(sidebar.includes("navigation.directItems"));
     assert.ok(!sidebar.includes("ALL_MENU_ITEMS"));
   });

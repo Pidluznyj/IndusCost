@@ -5,6 +5,15 @@ import {
   type PermissionsApi,
   type PortfolioReconciliationUiTabId,
 } from "@/src/lib/permissionsClient";
+import {
+  canViewModule,
+  canViewResource,
+  evaluatePathViewAccess,
+  getSafeFirstAllowedPath,
+  pickAllowedTabId,
+  type PathViewDecision,
+} from "@/src/lib/resourceNavigationAccess";
+import type { AppModuleId } from "@/src/lib/modulePermissions";
 
 export type UsePermissionsResult = PermissionsApi & {
   authUser: ReturnType<typeof useAuth>["authUser"];
@@ -13,6 +22,12 @@ export type UsePermissionsResult = PermissionsApi & {
   /** Recarrega /api/auth/me — permissões refletem após refetch. */
   refetch: () => Promise<void>;
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
+  /** Prompt 11 — aliases oficiais de navegação. */
+  canViewResource: (resourceKey: string) => boolean;
+  canViewModule: (moduleId: AppModuleId) => boolean;
+  evaluatePathViewAccess: (pathname: string) => PathViewDecision;
+  getSafeFirstAllowedPath: () => string | null;
+  pickAllowedTabId: typeof pickAllowedTabId;
 };
 
 /**
@@ -34,8 +49,21 @@ export function usePermissions(): UsePermissionsResult {
     [permissionKey]
   );
 
+  const nav = useMemo(() => {
+    const ctx = { user: auth.authUser, checker: auth };
+    return {
+      canViewResource: (resourceKey: string) => canViewResource(auth.authUser, resourceKey),
+      canViewModule: (moduleId: AppModuleId) => canViewModule(moduleId, ctx),
+      evaluatePathViewAccess: (pathname: string) => evaluatePathViewAccess(pathname, ctx),
+      getSafeFirstAllowedPath: () => getSafeFirstAllowedPath(ctx),
+      pickAllowedTabId,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissionKey, auth.hasPermission, auth.hasAnyPermission]);
+
   return {
     ...api,
+    ...nav,
     authUser: auth.authUser,
     authLoading: auth.authLoading,
     authenticated: auth.authenticated,

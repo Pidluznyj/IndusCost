@@ -2,10 +2,10 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { ShieldOff } from "lucide-react";
 import {
-  getFirstAllowedModulePath,
   MODULE_LABELS,
   type AppModuleId,
 } from "@/src/lib/modulePermissions";
+import { getSafeFirstAllowedPath } from "@/src/lib/resourceNavigationAccess";
 import { useAuth } from "@/src/contexts/AuthContext";
 
 export type AccessDeniedProps = {
@@ -20,7 +20,10 @@ export const AccessDenied: React.FC<AccessDeniedProps> = ({
   description,
 }) => {
   const auth = useAuth();
-  const fallbackPath = getFirstAllowedModulePath(auth);
+  const fallbackPath = getSafeFirstAllowedPath({
+    user: auth.authUser,
+    checker: auth,
+  });
   const areaName = moduleId ? MODULE_LABELS[moduleId] : "esta área";
 
   return (

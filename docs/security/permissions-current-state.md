@@ -6,7 +6,7 @@
 | **Data da auditoria** | 2026-07-15 |
 | **Escopo** | Somente documentação — **sem** alteração de comportamento |
 | **Fonte** | Código em `main` (não apenas docs anteriores) |
-| **Relacionados** | `permissions-resource-inventory.md`, `permissions-endpoint-audit.md`, `permissions-model-plan.md`, `permissions-current-inventory.md`, **Prompt 02:** `permissions-key-naming.md`, `permissions-target-matrix.md`, `src/lib/security/permissionContract`, **Prompt 03:** `permissions-validator.md`, `src/lib/security/permissionAudit`, **Prompt 05:** `permissions-catalog-seed.md`, `src/lib/security/permissionCatalogSeed`, **Prompt 06:** `permissions-dual-write.md`, `src/lib/security/permissionDualWrite`, **Prompt 08:** `permissions-matrix-ui.md`, `src/components/admin/PermissionMatrix.tsx`, **Prompt 09:** `permissions-access-profiles-matrix.md`, `AccessProfilesModule`, **Prompt 10:** `permissions-user-matrix.md`, `AdminUsersModule` |
+| **Relacionados** | `permissions-resource-inventory.md`, `permissions-endpoint-audit.md`, `permissions-model-plan.md`, `permissions-current-inventory.md`, **Prompt 02:** `permissions-key-naming.md`, `permissions-target-matrix.md`, `src/lib/security/permissionContract`, **Prompt 03:** `permissions-validator.md`, `src/lib/security/permissionAudit`, **Prompt 05:** `permissions-catalog-seed.md`, `src/lib/security/permissionCatalogSeed`, **Prompt 06:** `permissions-dual-write.md`, `src/lib/security/permissionDualWrite`, **Prompt 08:** `permissions-matrix-ui.md`, `src/components/admin/PermissionMatrix.tsx`, **Prompt 09:** `permissions-access-profiles-matrix.md`, `AccessProfilesModule`, **Prompt 10:** `permissions-user-matrix.md`, `AdminUsersModule`, **Prompt 11:** `permissions-navigation-view.md`, `resourceNavigationAccess.ts` |
 
 ---
 
@@ -100,8 +100,8 @@ Conclusão de produto: **perfil = snapshot**, não herança viva.
 | Camada | Mecanismo | Observação |
 |--------|-----------|------------|
 | Sessão SPA | `RequireAuth` | Só autenticação — **sem** `RequirePermission` de rota |
-| Layout | `canAccessModule` | OR-sets legados por `AppModuleId` |
-| Sidebar | `buildAccessibleSidebarNavigation` | Se há `resourceKey` + `canViewResource`, catalog primeiro; senão legado |
+| Layout | `evaluatePathViewAccess` (`resourceNavigationAccess`) | resourceKey se mapeado; senão `canAccessModule` legado |
+| Sidebar | `buildResourceAwareSidebarNavigation` | Mesma regra que a rota (Prompt 11) |
 | Abas | mistura | CRM/portfolio/`ProtectedTab`; comissões híbrido; inventário sem per-tab; finance helpers OR largos |
 | Botões | `auth.hasPermission` | UX only; cobertura irregular (ex.: export de pedidos sem chave dedicada no client) |
 | Gates tipados | `PermissionGate` / `ProtectedTab` | Uso **esparso** (portfolio + CRM principalmente) |
@@ -165,7 +165,7 @@ Normalização de ação (não C/R/U/D verdadeiro no modelo relacional):
 
 ## 8. Principais inconsistências
 
-1. **Dual stack:** sidebar/resource vs Layout/`canAccessModule` podem divergir no mesmo URL.
+1. **Dual stack residual:** módulos **sem** `resourceKey` ainda usam só legado; com `resourceKey`, Layout e sidebar compartilham `resourceNavigationAccess` (Prompt 11).
 2. **`configuracoes` (FE) vs `admin` (seed BE)** para Configurações.
 3. **AccessProfile** e editor legado (`PermissionEditor` / checkbox) vs árvore Ver/Executar/Gerenciar no usuário — UIs paralelas.
 4. **RolePermission DB** seeded mas **não** lido pelos guards de produção.

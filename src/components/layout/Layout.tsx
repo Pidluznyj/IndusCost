@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
-import { canAccessModule, resolveModuleIdFromPath } from "@/src/lib/modulePermissions";
+import { evaluatePathViewAccess } from "@/src/lib/resourceNavigationAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { AppHeaderBar } from "@/src/components/layout/AppHeaderBar";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -46,9 +46,12 @@ function LayoutShell() {
   const [lastSyncAt, setLastSyncAt] = React.useState<string>("—");
   const [lastSyncStatus, setLastSyncStatus] = React.useState<HeaderSyncStatus>("—");
 
-  const currentModuleId = resolveModuleIdFromPath(location.pathname);
-  const moduleAccessAllowed =
-    currentModuleId === null || canAccessModule(currentModuleId, auth);
+  const pathView = evaluatePathViewAccess(location.pathname, {
+    user: authUser,
+    checker: auth,
+  });
+  const currentModuleId = pathView.moduleId;
+  const moduleAccessAllowed = pathView.allowed;
 
   React.useEffect(() => {
     let cancelled = false;
