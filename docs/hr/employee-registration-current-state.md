@@ -28,11 +28,13 @@
 
 | Domínio | Fonte |
 |---------|--------|
-| Cargo | `Role` + `/api/employees/lookups/roles` |
-| Centro de custo | `FinancialCostCenter` + lookup RH |
-| Gestor | `Employee` ACTIVE + lookup RH |
+| Cargo | `Role` + `/api/employees/lookups/roles` (ID obrigatório) |
+| Centro de custo | `FinancialCostCenter` + lookup RH (ID obrigatório em create) |
+| Gestor | `Employee` ACTIVE + lookup RH (`managerId`; inativo histórico ok) |
 | Login | `AppUser.employeeId` + e-mail |
-| Contrato | constantes `CONTRACT_TYPE_OPTIONS` |
+| Contrato | enum `EMPLOYEE_CONTRACT_TYPES` (legado inalterado ok) |
 | Classificação | DIRETO / INDIRETO / APOIO (mão de obra) |
 | EPI | tamanhos em `employeeHrUi` (sem estoque) |
-| Departamento | **sem cadastro** — permanece texto livre |
+| Departamento | **sem cadastro** — texto livre + sugestões `/lookups/departments` |
+
+Ver detalhe: [employee-professional-lookups.md](./employee-professional-lookups.md).

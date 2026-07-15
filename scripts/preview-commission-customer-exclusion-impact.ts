@@ -106,6 +106,7 @@ function printPreviewHuman(
 async function main(): Promise<void> {
   requireDatabaseUrl();
   warnCommissionLegacyMode("preview-commission-customer-exclusion-impact");
+  const customerFilter = parseExclusionReprocessCustomerFilter({
     customer: parseArg("customer"),
     customerExternalId: parseArg("customerExternalId"),
   });

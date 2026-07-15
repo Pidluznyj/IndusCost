@@ -106,14 +106,42 @@ export function assertClassification(value: string): EmployeeClassification {
   return upper as EmployeeClassification;
 }
 
-export function assertContractType(value: string | null): string | null {
+export function assertContractType(
+  value: string | null,
+  opts?: { allowLegacy?: boolean; previousValue?: string | null }
+): string | null {
   if (value == null || !value.trim()) return null;
-  const upper = value.trim().toUpperCase();
+  const trimmed = value.trim();
+  const upper = trimmed.toUpperCase();
   if ((EMPLOYEE_CONTRACT_TYPES as readonly string[]).includes(upper)) {
     return upper;
   }
-  // Preserva valores legados fora do enum (não inventa catálogo paralelo).
-  return value.trim();
+  // Preserva valor legado inalterado (sem inventar catálogo paralelo).
+  const previous = (opts?.previousValue ?? "").trim();
+  if (opts?.allowLegacy && previous && trimmed === previous) {
+    return trimmed;
+  }
+  throw new EmployeeRegistrationError(
+    "INVALID_CONTRACT_TYPE",
+    "Tipo de contrato inválido. Selecione uma das opções oficiais."
+  );
+}
+
+export async function assertRoleExists(
+  prisma: PrismaClient,
+  roleId: string | null | undefined
+): Promise<{ id: string; name: string }> {
+  if (!roleId || !isEmployeeUuid(roleId)) {
+    throw new EmployeeRegistrationError("INVALID_ROLE", "Selecione um cargo válido.");
+  }
+  const role = await prisma.role.findUnique({
+    where: { id: roleId.trim() },
+    select: { id: true, name: true },
+  });
+  if (!role) {
+    throw new EmployeeRegistrationError("ROLE_NOT_FOUND", "Cargo não encontrado.", 400);
+  }
+  return role;
 }
 
 export type UserLinkStatus =
@@ -239,7 +267,8 @@ export function describeCorporateEmailAppUserHint(status: {
 
 export async function resolveFinancialCostCenterLabel(
   prisma: PrismaClient,
-  costCenterId: string | null
+  costCenterId: string | null,
+  opts?: { requireActive?: boolean; preserveId?: string | null }
 ): Promise<{ id: string; code: string; name: string; label: string; status: string } | null> {
   if (!costCenterId || !isEmployeeUuid(costCenterId)) return null;
   const cc = await prisma.financialCostCenter.findUnique({
@@ -250,6 +279,14 @@ export async function resolveFinancialCostCenterLabel(
     throw new EmployeeRegistrationError(
       "COST_CENTER_NOT_FOUND",
       "Centro de custo inválido.",
+      400
+    );
+  }
+  const preserving = Boolean(opts?.preserveId) && opts?.preserveId === cc.id;
+  if (opts?.requireActive && !preserving && cc.status !== "ACTIVE") {
+    throw new EmployeeRegistrationError(
+      "COST_CENTER_INACTIVE",
+      "Selecione um centro de custo ativo do financeiro.",
       400
     );
   }
@@ -338,7 +375,17 @@ export function formatManagerDisplayName(manager: {
 export async function prepareEmployeePersistedFields(
   prisma: PrismaClient,
   body: Record<string, unknown>,
-  options?: { employeeId?: string | null; preserveManagerId?: string | null }
+  options?: {
+    employeeId?: string | null;
+    preserveManagerId?: string | null;
+    preserveCostCenterId?: string | null;
+    existingCostCenterLabel?: string | null;
+    existingContractType?: string | null;
+    /** Create: exige costCenterId oficial. Update legado pode manter rótulo sem ID. */
+    requireCostCenterId?: boolean;
+    /** Update: permite manter contractType legado inalterado. */
+    allowLegacyContractType?: boolean;
+  }
 ): Promise<{
   corporateEmail: string | null;
   costCenterId: string | null;
@@ -365,9 +412,37 @@ export async function prepareEmployeePersistedFields(
     typeof body.costCenterId === "string" && body.costCenterId.trim()
       ? body.costCenterId.trim()
       : null;
-  const cc = await resolveFinancialCostCenterLabel(prisma, costCenterIdRaw);
   const legacyCostCenterText =
     typeof body.costCenter === "string" ? body.costCenter.trim() : "";
+
+  if (options?.requireCostCenterId && !costCenterIdRaw) {
+    throw new EmployeeRegistrationError(
+      "COST_CENTER_ID_REQUIRED",
+      "Selecione um centro de custo oficial do financeiro."
+    );
+  }
+
+  const cc = await resolveFinancialCostCenterLabel(prisma, costCenterIdRaw, {
+    requireActive: true,
+    preserveId: options?.preserveCostCenterId,
+  });
+
+  // Sem ID: só permitido se for legado inalterado (rótulo igual ao persistido).
+  if (!cc) {
+    const existingLabel = (options?.existingCostCenterLabel ?? "").trim();
+    const sameLegacy =
+      Boolean(options?.employeeId) &&
+      !options?.preserveCostCenterId &&
+      Boolean(existingLabel) &&
+      legacyCostCenterText === existingLabel;
+    if (!sameLegacy) {
+      throw new EmployeeRegistrationError(
+        "COST_CENTER_ID_REQUIRED",
+        "Selecione um centro de custo oficial do financeiro. Texto arbitrário não é aceito."
+      );
+    }
+  }
+
   const costCenterLabel = cc?.label ?? legacyCostCenterText;
   if (!costCenterLabel) {
     throw new EmployeeRegistrationError(
@@ -386,17 +461,18 @@ export async function prepareEmployeePersistedFields(
     preserveManagerId: options?.preserveManagerId,
     requireActive: true,
   });
-  const managerName = manager
-    ? formatManagerDisplayName(manager)
-    : typeof body.managerName === "string"
-      ? body.managerName.trim() || null
-      : null;
+  // Nome do gestor só via cadastro oficial — não aceitar texto solto como gestor.
+  const managerName = manager ? formatManagerDisplayName(manager) : null;
 
   const classification = assertClassification(
     typeof body.classification === "string" ? body.classification : ""
   );
   const contractType = assertContractType(
-    typeof body.contractType === "string" ? body.contractType : null
+    typeof body.contractType === "string" ? body.contractType : null,
+    {
+      allowLegacy: options?.allowLegacyContractType === true,
+      previousValue: options?.existingContractType,
+    }
   );
 
   const admissionDate = normalizeOptionalDateInput(body.admissionDate);

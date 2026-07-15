@@ -210,6 +210,7 @@ import {
 } from "./src/lib/canonicalPersonRoutes.js";
 import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
 import {
+  assertRoleExists,
   EmployeeRegistrationError,
   prepareEmployeePersistedFields,
 } from "./src/lib/employeeRegistration.js";
@@ -2947,6 +2948,7 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
     if (!cleanRoleId) {
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
+    await assertRoleExists(prisma, cleanRoleId);
 
     let personResolve;
     try {
@@ -2976,7 +2978,8 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
         contractType: hrProfileBody.contractType,
         admissionDate: hrProfileBody.admissionDate,
         terminationDate: hrProfileBody.terminationDate,
-      } as Record<string, unknown>
+      } as Record<string, unknown>,
+      { requireCostCenterId: true, allowLegacyContractType: false }
     );
 
     const hrProfile = buildEmployeeHrProfileData({
@@ -3091,7 +3094,14 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
     const existingEmployee = await prisma.employee.findUnique({
       where: { id },
-      select: { managerId: true, personId: true, corporateEmail: true },
+      select: {
+        managerId: true,
+        personId: true,
+        corporateEmail: true,
+        costCenterId: true,
+        costCenter: true,
+        contractType: true,
+      },
     });
     if (!existingEmployee) {
       return res.status(404).json({ error: "Funcionário não encontrado." });
@@ -3107,6 +3117,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
     if (!cleanRoleId) {
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
+    await assertRoleExists(prisma, cleanRoleId);
 
     let personResolve;
     try {
@@ -3137,7 +3148,14 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         admissionDate: hrProfileBody.admissionDate,
         terminationDate: hrProfileBody.terminationDate,
       } as Record<string, unknown>,
-      { employeeId: id, preserveManagerId: existingEmployee.managerId }
+      {
+        employeeId: id,
+        preserveManagerId: existingEmployee.managerId,
+        preserveCostCenterId: existingEmployee.costCenterId,
+        existingCostCenterLabel: existingEmployee.costCenter,
+        existingContractType: existingEmployee.contractType,
+        allowLegacyContractType: true,
+      }
     );
 
     const hrProfile = buildEmployeeHrProfileData({

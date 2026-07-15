@@ -159,7 +159,7 @@ export function registerEmployeeLookupRoutes(
 
   app.get("/api/employees/lookups/managers", ...lookupGuard, async (req, res) => {
     try {
-      const q = typeof req.query.q === "string" ? req.query.q.trim().toLowerCase() : "";
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
       const excludeId =
         typeof req.query.excludeId === "string" && isEmployeeUuid(req.query.excludeId)
           ? req.query.excludeId.trim()
@@ -185,6 +185,16 @@ export function registerEmployeeLookupRoutes(
               : includeInactive
                 ? {}
                 : { OR: [{ status: "ACTIVE" }, { status: null }] },
+            q
+              ? {
+                  OR: [
+                    { name: { contains: q, mode: "insensitive" as const } },
+                    { socialName: { contains: q, mode: "insensitive" as const } },
+                    { department: { contains: q, mode: "insensitive" as const } },
+                    { corporateEmail: { contains: q, mode: "insensitive" as const } },
+                  ],
+                }
+              : {},
           ],
         },
         select: {
@@ -195,28 +205,22 @@ export function registerEmployeeLookupRoutes(
           status: true,
         },
         orderBy: { name: "asc" },
-        take: 200,
+        take: 80,
       });
 
-      const mapped = rows
-        .map((r) => {
-          const displayName = formatManagerDisplayName(r);
-          const inactive = (r.status ?? "ACTIVE").toUpperCase() === "INACTIVE";
-          return {
-            id: r.id,
-            name: r.name,
-            socialName: r.socialName,
-            department: r.department,
-            status: r.status,
-            displayName,
-            label: `${displayName}${inactive ? " (inativo)" : ""}`,
-            searchText: [displayName, r.name, r.socialName ?? "", r.department]
-              .join(" ")
-              .toLowerCase(),
-          };
-        })
-        .filter((r) => !q || r.searchText.includes(q))
-        .slice(0, 80);
+      const mapped = rows.map((r) => {
+        const displayName = formatManagerDisplayName(r);
+        const inactive = (r.status ?? "ACTIVE").toUpperCase() === "INACTIVE";
+        return {
+          id: r.id,
+          name: r.name,
+          socialName: r.socialName,
+          department: r.department,
+          status: r.status,
+          displayName,
+          label: `${displayName}${inactive ? " (inativo)" : ""}`,
+        };
+      });
 
       res.json({ rows: mapped });
     } catch (error) {
@@ -225,11 +229,16 @@ export function registerEmployeeLookupRoutes(
     }
   });
 
-  app.get("/api/employees/lookups/roles", ...lookupGuard, async (_req, res) => {
+  app.get("/api/employees/lookups/roles", ...lookupGuard, async (req, res) => {
     try {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
       const rows = await prisma.role.findMany({
+        where: q
+          ? { name: { contains: q, mode: "insensitive" as const } }
+          : undefined,
         select: { id: true, name: true },
         orderBy: { name: "asc" },
+        take: 80,
       });
       res.json({
         rows: rows.map((r) => ({
@@ -241,6 +250,44 @@ export function registerEmployeeLookupRoutes(
     } catch (error) {
       console.error("GET /api/employees/lookups/roles", error);
       res.status(500).json({ error: "Erro ao listar cargos." });
+    }
+  });
+
+  /**
+   * Sugestões de departamento/setor a partir de valores já usados em Employee.
+   * Não é cadastro oficial — não há tabela própria; só autocomplete de texto livre.
+   */
+  app.get("/api/employees/lookups/departments", ...lookupGuard, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      const rows = await prisma.employee.findMany({
+        where: {
+          AND: [
+            { department: { not: "" } },
+            q
+              ? { department: { contains: q, mode: "insensitive" as const } }
+              : {},
+          ],
+        },
+        select: { department: true },
+        distinct: ["department"],
+        orderBy: { department: "asc" },
+        take: 40,
+      });
+      const seen = new Set<string>();
+      const suggestions: { value: string; label: string }[] = [];
+      for (const r of rows) {
+        const value = (r.department ?? "").trim();
+        if (!value) continue;
+        const key = value.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        suggestions.push({ value, label: value });
+      }
+      res.json({ rows: suggestions });
+    } catch (error) {
+      console.error("GET /api/employees/lookups/departments", error);
+      res.status(500).json({ error: "Erro ao listar departamentos." });
     }
   });
 

@@ -30,6 +30,13 @@ interface SearchableSelectProps {
   pinOptionValues?: string[];
   /** Altura máxima (px) da área rolável da lista (abaixo da busca), padrão ~300 */
   listMaxHeight?: number;
+  /**
+   * Busca server-side: não filtra opções localmente; notifica o termo digitado
+   * (o pai deve carregar `options` via API com debounce).
+   */
+  remoteSearch?: boolean;
+  onSearchTermChange?: (term: string) => void;
+  searching?: boolean;
 }
 
 function optionSearchHaystack(opt: SelectOption): string {
@@ -49,6 +56,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   searchInputPlaceholder = "Pesquisar...",
   pinOptionValues,
   listMaxHeight = 300,
+  remoteSearch = false,
+  onSearchTermChange,
+  searching = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -89,6 +99,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   );
 
   const filteredOptions = useMemo(() => {
+    if (remoteSearch) {
+      return options;
+    }
     const pinSet = new Set(pinOptionValues ?? []);
     const pinned = pinSet.size > 0 ? options.filter((o) => pinSet.has(o.value)) : [];
     const unpinned = pinSet.size > 0 ? options.filter((o) => !pinSet.has(o.value)) : options;
@@ -105,7 +118,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     }
     const pinnedValues = new Set(pinned.map((p) => p.value));
     return [...pinned, ...matchedUnpinned.filter((m) => !pinnedValues.has(m.value))];
-  }, [options, searchTerm, pinOptionValues]);
+  }, [options, searchTerm, pinOptionValues, remoteSearch]);
 
   useLayoutEffect(() => {
     if (!isOpen) return;
@@ -144,8 +157,10 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   useEffect(() => {
     if (isOpen) {
       setSearchTerm("");
+      onSearchTermChange?.("");
       setTimeout(() => inputRef.current?.focus(), 50);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir
   }, [isOpen]);
 
   return (
@@ -215,13 +230,23 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     className="w-full bg-transparent border-none outline-none text-sm p-1.5"
                     placeholder={searchInputPlaceholder}
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setSearchTerm(next);
+                      onSearchTermChange?.(next);
+                    }}
                     onClick={(e) => e.stopPropagation()}
                   />
+                  {searching && (
+                    <span className="text-[10px] text-muted-foreground pr-1">…</span>
+                  )}
                   {searchTerm && (
                     <button
                       type="button"
-                      onClick={() => setSearchTerm("")}
+                      onClick={() => {
+                        setSearchTerm("");
+                        onSearchTermChange?.("");
+                      }}
                       className="p-1 hover:bg-accent rounded-full"
                     >
                       <X className="h-3 w-3" />
@@ -236,7 +261,7 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
                 >
                   {filteredOptions.length === 0 ? (
                     <div className="p-4 text-center text-xs text-muted-foreground italic">
-                      {emptyMessage}
+                      {searching ? "Buscando…" : emptyMessage}
                     </div>
                   ) : (
                     filteredOptions.map((option) => (

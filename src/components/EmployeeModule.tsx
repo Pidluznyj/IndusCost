@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { 
   Plus, 
@@ -150,6 +150,20 @@ export const EmployeeModule = () => {
   const [managerOptions, setManagerOptions] = useState<
     { value: string; label: string; searchTerms?: string }[]
   >([]);
+  const [roleLookupOptions, setRoleLookupOptions] = useState<
+    { value: string; label: string; searchTerms?: string }[]
+  >([]);
+  const [departmentSuggestions, setDepartmentSuggestions] = useState<string[]>([]);
+  const [searchingCostCenters, setSearchingCostCenters] = useState(false);
+  const [searchingManagers, setSearchingManagers] = useState(false);
+  const [searchingRoles, setSearchingRoles] = useState(false);
+  const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lookupContextRef = useRef<{
+    excludeManagerId?: string;
+    selectedCostCenterId?: string;
+    selectedManagerId?: string;
+    selectedRoleId?: string;
+  }>({});
   const [personConflicts, setPersonConflicts] = useState<
     { field: string; formValue: string | null; personValue: string | null }[]
   >([]);
@@ -232,22 +246,48 @@ export const EmployeeModule = () => {
     excludeManagerId?: string;
     selectedCostCenterId?: string;
     selectedManagerId?: string;
+    selectedRoleId?: string;
+    costCenterQ?: string;
+    managerQ?: string;
+    roleQ?: string;
+    departmentQ?: string;
   }) => {
+    const ctx = {
+      excludeManagerId: opts?.excludeManagerId ?? lookupContextRef.current.excludeManagerId,
+      selectedCostCenterId:
+        opts?.selectedCostCenterId ?? lookupContextRef.current.selectedCostCenterId,
+      selectedManagerId: opts?.selectedManagerId ?? lookupContextRef.current.selectedManagerId,
+      selectedRoleId: opts?.selectedRoleId ?? lookupContextRef.current.selectedRoleId,
+    };
+    lookupContextRef.current = ctx;
     try {
       const ccQs = new URLSearchParams();
-      if (opts?.selectedCostCenterId) ccQs.set("selectedId", opts.selectedCostCenterId);
+      if (opts?.costCenterQ) ccQs.set("q", opts.costCenterQ);
+      if (ctx.selectedCostCenterId) ccQs.set("selectedId", ctx.selectedCostCenterId);
       const mgrQs = new URLSearchParams();
-      if (opts?.excludeManagerId) mgrQs.set("excludeId", opts.excludeManagerId);
-      if (opts?.selectedManagerId) {
-        mgrQs.set("selectedId", opts.selectedManagerId);
+      if (opts?.managerQ) mgrQs.set("q", opts.managerQ);
+      if (ctx.excludeManagerId) mgrQs.set("excludeId", ctx.excludeManagerId);
+      if (ctx.selectedManagerId) {
+        mgrQs.set("selectedId", ctx.selectedManagerId);
         mgrQs.set("includeInactive", "1");
       }
-      const [cc, mgr] = await Promise.all([
+      const roleQs = new URLSearchParams();
+      if (opts?.roleQ) roleQs.set("q", opts.roleQ);
+      const deptQs = new URLSearchParams();
+      if (opts?.departmentQ) deptQs.set("q", opts.departmentQ);
+
+      const [cc, mgr, roleLookup, depts] = await Promise.all([
         fetchJsonOk<{ rows: { id: string; label: string; code: string; name: string }[] }>(
           `/api/employees/lookups/cost-centers?${ccQs.toString()}`
         ),
-        fetchJsonOk<{ rows: { id: string; label: string; displayName: string; department: string }[] }>(
-          `/api/employees/lookups/managers?${mgrQs.toString()}`
+        fetchJsonOk<{
+          rows: { id: string; label: string; displayName: string; department: string }[];
+        }>(`/api/employees/lookups/managers?${mgrQs.toString()}`),
+        fetchJsonOk<{ rows: { id: string; name: string; label: string }[] }>(
+          `/api/employees/lookups/roles?${roleQs.toString()}`
+        ),
+        fetchJsonOk<{ rows: { value: string; label: string }[] }>(
+          `/api/employees/lookups/departments?${deptQs.toString()}`
         ),
       ]);
       setCostCenterOptions(
@@ -264,13 +304,67 @@ export const EmployeeModule = () => {
           searchTerms: `${r.displayName} ${r.department}`,
         }))
       );
+      let roleOpts = (roleLookup.rows ?? []).map((r) => ({
+        value: r.id,
+        label: r.name,
+        searchTerms: r.name,
+      }));
+      if (
+        ctx.selectedRoleId &&
+        !roleOpts.some((o) => o.value === ctx.selectedRoleId) &&
+        roles.some((r) => r.id === ctx.selectedRoleId)
+      ) {
+        const pinned = roles.find((r) => r.id === ctx.selectedRoleId)!;
+        roleOpts = [
+          { value: pinned.id, label: pinned.name, searchTerms: pinned.name },
+          ...roleOpts,
+        ];
+      }
+      setRoleLookupOptions(roleOpts);
+      setDepartmentSuggestions((depts.rows ?? []).map((r) => r.value));
     } catch (error) {
       console.error("Erro ao carregar lookups RH:", error);
     }
   };
 
+  const scheduleLookupSearch = (
+    kind: "costCenter" | "manager" | "role" | "department",
+    term: string
+  ) => {
+    if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    const setSearching =
+      kind === "costCenter"
+        ? setSearchingCostCenters
+        : kind === "manager"
+          ? setSearchingManagers
+          : kind === "role"
+            ? setSearchingRoles
+            : null;
+    setSearching?.(true);
+    lookupDebounceRef.current = setTimeout(() => {
+      void (async () => {
+        try {
+          await loadProfessionalLookups({
+            costCenterQ: kind === "costCenter" ? term : undefined,
+            managerQ: kind === "manager" ? term : undefined,
+            roleQ: kind === "role" ? term : undefined,
+            departmentQ: kind === "department" ? term : undefined,
+          });
+        } finally {
+          setSearching?.(false);
+        }
+      })();
+    }, 300);
+  };
+
   useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
+    };
   }, []);
 
   const loadSystemLinks = async (personId: string) => {
@@ -341,13 +435,14 @@ export const EmployeeModule = () => {
         excludeManagerId: employee.id,
         selectedCostCenterId: employee.costCenterId ?? employee.financialCostCenter?.id,
         selectedManagerId: employee.managerId ?? employee.manager?.id,
+        selectedRoleId: employee.roleId,
       });
     } else {
       setEditingEmployee(null);
       const next = createEmptyEmployeeForm(roles[0]?.id || "");
       setFormData(next);
       setFormBaseline(JSON.stringify(next));
-      void loadProfessionalLookups();
+      void loadProfessionalLookups({ selectedRoleId: next.roleId || undefined });
     }
     setIsModalOpen(true);
   };
@@ -378,6 +473,16 @@ export const EmployeeModule = () => {
     if (!emailOk) {
       setEmployeeFichaTab("professional");
       setFormError("Corrija o e-mail corporativo antes de salvar.");
+      return;
+    }
+    if (!formData.roleId) {
+      setEmployeeFichaTab("professional");
+      setFormError("Selecione um cargo oficial.");
+      return;
+    }
+    if (!formData.costCenterId && (!editingEmployee || !formData.costCenter)) {
+      setEmployeeFichaTab("professional");
+      setFormError("Selecione um centro de custo oficial do financeiro.");
       return;
     }
     const method = editingEmployee ? "PUT" : "POST";
@@ -939,13 +1044,24 @@ export const EmployeeModule = () => {
                             <SearchableSelect
                               required
                               placeholder="Selecione o cargo..."
-                              options={roles.map((role) => ({
-                                value: role.id,
-                                label: role.name,
-                                searchTerms: role.name,
-                              }))}
+                              options={
+                                roleLookupOptions.length > 0
+                                  ? roleLookupOptions
+                                  : roles.map((role) => ({
+                                      value: role.id,
+                                      label: role.name,
+                                      searchTerms: role.name,
+                                    }))
+                              }
                               value={formData.roleId}
-                              onChange={(v) => setFormData({ ...formData, roleId: v })}
+                              onChange={(v) => {
+                                lookupContextRef.current.selectedRoleId = v || undefined;
+                                setFormData({ ...formData, roleId: v });
+                              }}
+                              remoteSearch
+                              searching={searchingRoles}
+                              onSearchTermChange={(term) => scheduleLookupSearch("role", term)}
+                              unknownSelectionLabel="Cargo não listado"
                             />
                           </div>
                           <div className="space-y-1.5">
@@ -955,14 +1071,25 @@ export const EmployeeModule = () => {
                             <input
                               required
                               type="text"
+                              list="employee-department-suggestions"
                               className={INPUT_CLASS}
                               value={formData.department}
-                              onChange={(e) =>
-                                setFormData({ ...formData, department: e.target.value })
-                              }
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setFormData({ ...formData, department: next });
+                                scheduleLookupSearch("department", next);
+                              }}
+                              onFocus={() => scheduleLookupSearch("department", formData.department)}
+                              autoComplete="off"
                             />
+                            <datalist id="employee-department-suggestions">
+                              {departmentSuggestions.map((d) => (
+                                <option key={d} value={d} />
+                              ))}
+                            </datalist>
                             <p className="text-[11px] text-muted-foreground">
-                              Ainda não há cadastro oficial de departamentos — texto livre.
+                              Sem cadastro oficial de departamentos — texto livre com sugestões já
+                              usadas.
                             </p>
                           </div>
                           <div className="space-y-1.5">
@@ -970,21 +1097,27 @@ export const EmployeeModule = () => {
                               Centro de custo *
                             </label>
                             <SearchableSelect
-                              required={!(formData.costCenterId || formData.costCenter)}
+                              required={!formData.costCenterId && !formData.costCenter}
                               placeholder="Buscar centro de custo..."
                               options={costCenterOptions}
                               value={formData.costCenterId ?? ""}
                               onChange={(v) => {
                                 const opt = costCenterOptions.find((o) => o.value === v);
+                                lookupContextRef.current.selectedCostCenterId = v || undefined;
                                 setFormData({
                                   ...formData,
                                   costCenterId: v,
                                   costCenter: opt?.label ?? formData.costCenter,
                                 });
                               }}
+                              remoteSearch
+                              searching={searchingCostCenters}
+                              onSearchTermChange={(term) =>
+                                scheduleLookupSearch("costCenter", term)
+                              }
                               unknownSelectionLabel={
                                 formData.costCenter
-                                  ? `${formData.costCenter} (legado)`
+                                  ? `${formData.costCenter} (legado — selecione o CC oficial)`
                                   : "Centro não listado"
                               }
                             />
@@ -1002,15 +1135,20 @@ export const EmployeeModule = () => {
                               value={formData.managerId ?? ""}
                               onChange={(v) => {
                                 const opt = managerOptions.find((o) => o.value === v);
+                                lookupContextRef.current.selectedManagerId = v || undefined;
                                 setFormData({
                                   ...formData,
                                   managerId: v,
                                   managerName: opt?.label ?? "",
                                 });
                               }}
+                              remoteSearch
+                              searching={searchingManagers}
+                              onSearchTermChange={(term) => scheduleLookupSearch("manager", term)}
+                              pinOptionValues={[""]}
                               unknownSelectionLabel={
                                 formData.managerName
-                                  ? `${formData.managerName} (legado)`
+                                  ? `${formData.managerName} (histórico)`
                                   : "Gestor não listado"
                               }
                             />
