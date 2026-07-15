@@ -42,16 +42,25 @@ model Role {
 
 /// Identidade canônica da pessoa física (hub fino).
 /// Papéis de domínio (Employee, AppUser, CommissionPerson, …) permanecem nas tabelas próprias.
+/// Unicidade de CPF/e-mail: índices de busca apenas; validação no service (sem UNIQUE no banco
+/// até diagnóstico de duplicidades históricas — ver migration 20260715200000).
 model Person {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Nome canônico exibido.
   displayName     String
   socialName      String?
+  /// E-mail principal / corporativo (normalizado lowercase).
   corporateEmail  String?
   personalEmail   String?
-  /// CPF somente dígitos (nullable; unique parcial na migration).
+  /// CPF somente dígitos (nullable). Sem UNIQUE de banco nesta etapa.
   cpfNormalized   String?
   phoneNormalized String?
   status          String   @default("ACTIVE")
+  /// Origem da criação: MANUAL | EMPLOYEE | APP_USER | COMMISSION | SYSTEM | BACKFILL
+  origin          String   @default("MANUAL")
+  /// Auditoria leve (opcional). Sem cascade: se o usuário sumir, mantém histórico.
+  createdByUserId String?  @db.Uuid
+  inactivatedAt   DateTime? @db.Timestamptz(6)
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
@@ -67,6 +76,8 @@ model Person {
   @@index([cpfNormalized])
   @@index([phoneNormalized])
   @@index([status])
+  @@index([origin])
+  @@index([createdByUserId])
 }
 
 model Employee {

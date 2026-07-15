@@ -368,6 +368,7 @@ export async function ensurePersonFromSource(
         cpfNormalized: normalizeCpfLoose(e.cpf),
         phoneNormalized: normalizePhone(e.phone),
         status: (e.status ?? "ACTIVE") === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+        origin: "EMPLOYEE",
       },
     });
     await prisma.employee.update({ where: { id: e.id }, data: { personId: created.id } });
@@ -386,6 +387,7 @@ export async function ensurePersonFromSource(
         displayName: u.name,
         corporateEmail: normalizeEmailLoose(u.email),
         status: u.isActive ? "ACTIVE" : "INACTIVE",
+        origin: "APP_USER",
       },
     });
     await prisma.appUser.update({ where: { id: u.id }, data: { personId: created.id } });
@@ -405,6 +407,7 @@ export async function ensurePersonFromSource(
         corporateEmail: normalizeEmailLoose(c.email),
         cpfNormalized: normalizeCpfLoose(c.document),
         status: c.active ? "ACTIVE" : "INACTIVE",
+        origin: "COMMISSION",
       },
     });
     await prisma.commissionPerson.update({ where: { id: c.id }, data: { personId: created.id } });
@@ -425,6 +428,7 @@ export async function ensurePersonFromSource(
         cpfNormalized: normalizeCpfLoose(d.cpf),
         phoneNormalized: normalizePhone(d.phone),
         status: "ACTIVE",
+        origin: "SYSTEM",
       },
     });
     await prisma.fleetDriver.update({ where: { id: d.id }, data: { personId: created.id } });
@@ -451,6 +455,7 @@ export async function ensurePersonFromSource(
         cpfNormalized: normalizeCpfLoose(c.taxId),
         phoneNormalized: normalizePhone(c.phone),
         status: c.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+        origin: "SYSTEM",
       },
     });
     await prisma.customer.update({ where: { id: c.id }, data: { personId: created.id } });
@@ -462,47 +467,19 @@ export async function ensurePersonFromSource(
 
 export async function createCanonicalPerson(
   prisma: PrismaClient,
-  snapshot: PersonIdentitySnapshot
+  snapshot: PersonIdentitySnapshot,
+  options?: { origin?: string; createdByUserId?: string | null }
 ): Promise<{ id: string; displayName: string }> {
-  const displayName = (snapshot.displayName ?? "").trim();
-  if (!displayName) {
-    throw new CanonicalPersonError("NAME_REQUIRED", "Informe o nome da pessoa.");
-  }
-  const corporateEmail = normalizeEmailLoose(snapshot.corporateEmail);
-  const personalEmail = normalizeEmailLoose(snapshot.personalEmail);
-  const cpfNormalized = normalizeCpfLoose(snapshot.cpfNormalized);
-  if (cpfNormalized) {
-    const dup = await prisma.person.findFirst({ where: { cpfNormalized } });
-    if (dup) {
-      throw new CanonicalPersonError(
-        "DUPLICATE_CPF",
-        "Já existe pessoa canônica com este CPF.",
-        409
-      );
-    }
-  }
-  if (corporateEmail) {
-    const dup = await prisma.person.findFirst({
-      where: { corporateEmail: { equals: corporateEmail, mode: "insensitive" } },
-    });
-    if (dup) {
-      throw new CanonicalPersonError(
-        "DUPLICATE_CORPORATE_EMAIL",
-        "Já existe pessoa canônica com este e-mail corporativo.",
-        409
-      );
-    }
-  }
-  const created = await prisma.person.create({
-    data: {
-      displayName,
-      socialName: snapshot.socialName?.trim() || null,
-      corporateEmail,
-      personalEmail,
-      cpfNormalized,
-      phoneNormalized: normalizePhone(snapshot.phoneNormalized),
-      status: "ACTIVE",
-    },
+  const { createPersonCore } = await import("@/src/lib/canonicalPersonCore.server.js");
+  const created = await createPersonCore(prisma, {
+    displayName: snapshot.displayName ?? "",
+    socialName: snapshot.socialName,
+    corporateEmail: snapshot.corporateEmail,
+    personalEmail: snapshot.personalEmail,
+    cpf: snapshot.cpfNormalized,
+    phone: snapshot.phoneNormalized,
+    origin: (options?.origin as "MANUAL" | "EMPLOYEE" | "APP_USER" | "COMMISSION" | "SYSTEM" | "BACKFILL") ?? "MANUAL",
+    createdByUserId: options?.createdByUserId ?? null,
   });
   return { id: created.id, displayName: created.displayName };
 }
