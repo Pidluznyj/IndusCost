@@ -36,6 +36,14 @@ import {
   CorporateEmailError,
   normalizeCorporateEmail,
 } from "@/src/lib/employeeCorporateEmail";
+import {
+  formatCpfForDisplay,
+  formatCpfMask,
+  formatPhoneBrMask,
+  formatPhoneForDisplay,
+  normalizePersonalEmail,
+  validateEmployeePersonalHrForm,
+} from "@/src/lib/employeePersonalHr";
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
@@ -427,6 +435,12 @@ export const EmployeeModule = () => {
     setCorporateEmailHint(null);
     setCorporateEmailError(null);
     if (employee) {
+      if (employee.personalPiiRedacted || employee.emergencyContactRedacted) {
+        alert(
+          "Sem permissão para editar dados pessoais/emergência. É necessário employees.edit."
+        );
+        return;
+      }
       setEditingEmployee(employee);
       const next = employeeToFormData(employee);
       setFormData(next);
@@ -483,6 +497,38 @@ export const EmployeeModule = () => {
     if (!formData.costCenterId && (!editingEmployee || !formData.costCenter)) {
       setEmployeeFichaTab("professional");
       setFormError("Selecione um centro de custo oficial do financeiro.");
+      return;
+    }
+    const personalErr = validateEmployeePersonalHrForm(
+      {
+        cpf: formData.cpf,
+        phone: formData.phone,
+        personalEmail: formData.personalEmail,
+        birthDate: formData.birthDate,
+        rg: formData.rg,
+        address: formData.address,
+        emergencyContactName: formData.emergencyContactName,
+        emergencyContactPhone: formData.emergencyContactPhone,
+        emergencyContactRelationship: formData.emergencyContactRelationship,
+      },
+      editingEmployee
+        ? {
+            allowLegacy: true,
+            previous: {
+              cpf: editingEmployee.cpf,
+              phone: editingEmployee.phone,
+              personalEmail: editingEmployee.personalEmail,
+              emergencyContactPhone: editingEmployee.emergencyContactPhone,
+            },
+          }
+        : { allowLegacy: false }
+    );
+    if (personalErr) {
+      // Heurística: emergência vs pessoal
+      const emergencyIssue =
+        /emergência/i.test(personalErr) || /contato de emergência/i.test(personalErr);
+      setEmployeeFichaTab(emergencyIssue ? "emergency" : "personal");
+      setFormError(personalErr);
       return;
     }
     const method = editingEmployee ? "PUT" : "POST";
@@ -1240,27 +1286,101 @@ export const EmployeeModule = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">CPF</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.cpf ?? ""} onChange={(e) => setFormData({ ...formData, cpf: e.target.value })} />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          className={INPUT_CLASS}
+                          placeholder="000.000.000-00"
+                          value={formData.cpf ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, cpf: formatCpfMask(e.target.value) })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase">RG</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.rg ?? ""} onChange={(e) => setFormData({ ...formData, rg: e.target.value })} />
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          className={INPUT_CLASS}
+                          maxLength={32}
+                          value={formData.rg ?? ""}
+                          onChange={(e) => setFormData({ ...formData, rg: e.target.value })}
+                        />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Data de nascimento</label>
-                        <input type="date" className={INPUT_CLASS} value={formData.birthDate ?? ""} onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Data de nascimento
+                        </label>
+                        <input
+                          type="date"
+                          className={INPUT_CLASS}
+                          value={formData.birthDate ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, birthDate: e.target.value })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
-                        <input type="tel" className={INPUT_CLASS} value={formData.phone ?? ""} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Telefone
+                        </label>
+                        <input
+                          type="tel"
+                          autoComplete="tel"
+                          className={INPUT_CLASS}
+                          placeholder="(00) 00000-0000"
+                          value={formData.phone ?? ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              phone: formatPhoneBrMask(e.target.value),
+                            })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">E-mail pessoal</label>
-                        <input type="email" className={INPUT_CLASS} value={formData.personalEmail ?? ""} onChange={(e) => setFormData({ ...formData, personalEmail: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          E-mail pessoal
+                        </label>
+                        <input
+                          type="email"
+                          autoComplete="email"
+                          className={INPUT_CLASS}
+                          value={formData.personalEmail ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, personalEmail: e.target.value })
+                          }
+                          onBlur={() => {
+                            try {
+                              const normalized = normalizePersonalEmail(formData.personalEmail);
+                              setFormData((prev) => ({
+                                ...prev,
+                                personalEmail: normalized ?? "",
+                              }));
+                            } catch {
+                              /* validação no save */
+                            }
+                          }}
+                        />
                       </div>
                       <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Endereço</label>
-                        <textarea className={TEXTAREA_CLASS} value={formData.address ?? ""} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Endereço
+                        </label>
+                        <textarea
+                          className={TEXTAREA_CLASS}
+                          maxLength={500}
+                          value={formData.address ?? ""}
+                          onChange={(e) =>
+                            setFormData({ ...formData, address: e.target.value })
+                          }
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Texto livre (sem consulta de CEP neste momento). Dados sensíveis —
+                          visíveis só com permissão de edição de RH.
+                        </p>
                       </div>
                     </div>
                   )}
@@ -1268,17 +1388,63 @@ export const EmployeeModule = () => {
                   {employeeFichaTab === "emergency" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
                       <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Nome do contato</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactName ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactName: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Nome do contato
+                        </label>
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          className={INPUT_CLASS}
+                          maxLength={120}
+                          value={formData.emergencyContactName ?? ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              emergencyContactName: e.target.value,
+                            })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Telefone</label>
-                        <input type="tel" className={INPUT_CLASS} value={formData.emergencyContactPhone ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactPhone: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Telefone
+                        </label>
+                        <input
+                          type="tel"
+                          autoComplete="off"
+                          className={INPUT_CLASS}
+                          placeholder="(00) 00000-0000"
+                          value={formData.emergencyContactPhone ?? ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              emergencyContactPhone: formatPhoneBrMask(e.target.value),
+                            })
+                          }
+                        />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-muted-foreground uppercase">Grau / relação</label>
-                        <input type="text" className={INPUT_CLASS} value={formData.emergencyContactRelationship ?? ""} onChange={(e) => setFormData({ ...formData, emergencyContactRelationship: e.target.value })} />
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Grau / relação
+                        </label>
+                        <input
+                          type="text"
+                          autoComplete="off"
+                          className={INPUT_CLASS}
+                          maxLength={80}
+                          value={formData.emergencyContactRelationship ?? ""}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              emergencyContactRelationship: e.target.value,
+                            })
+                          }
+                        />
                       </div>
+                      <p className="md:col-span-2 text-[11px] text-muted-foreground">
+                        Se preencher o contato, nome e telefone são obrigatórios. Permanecem só no
+                        colaborador (não na pessoa canônica).
+                      </p>
                     </div>
                   )}
 
@@ -1582,28 +1748,55 @@ export const EmployeeModule = () => {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                     <DetailField
                       label="CPF"
-                      value={canViewSensitiveHr ? displayText(viewingEmployee.cpf) : "•••••••••••"}
+                      value={
+                        canViewSensitiveHr
+                          ? formatCpfForDisplay(viewingEmployee.cpf)
+                          : "•••••••••••"
+                      }
                     />
                     <DetailField
                       label="RG"
                       value={canViewSensitiveHr ? displayText(viewingEmployee.rg) : "••••••"}
                     />
-                    <DetailField label="Nascimento" value={formatEmployeeDate(viewingEmployee.birthDate)} />
+                    <DetailField
+                      label="Nascimento"
+                      value={
+                        canViewSensitiveHr
+                          ? formatEmployeeDate(viewingEmployee.birthDate)
+                          : "••••••"
+                      }
+                    />
                     <DetailField
                       label="Telefone"
-                      value={canViewSensitiveHr ? displayText(viewingEmployee.phone) : "••••••••"}
+                      value={
+                        canViewSensitiveHr
+                          ? formatPhoneForDisplay(viewingEmployee.phone)
+                          : "••••••••"
+                      }
                     />
                     <DetailField
                       label="E-mail pessoal"
-                      value={canViewSensitiveHr ? displayText(viewingEmployee.personalEmail) : "••••••"}
+                      value={
+                        canViewSensitiveHr
+                          ? displayText(viewingEmployee.personalEmail)
+                          : "••••••"
+                      }
                       className="col-span-2 md:col-span-3"
                     />
                     <DetailField
                       label="Endereço"
-                      value={canViewSensitiveHr ? displayText(viewingEmployee.address) : "••••••"}
+                      value={
+                        canViewSensitiveHr ? displayText(viewingEmployee.address) : "••••••"
+                      }
                       className="col-span-2 md:col-span-3"
                       multiline
                     />
+                    {!canViewSensitiveHr && (
+                      <p className="col-span-2 md:col-span-3 text-xs text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
+                        Dados pessoais restritos. A API também omite CPF, endereço e contatos sem a
+                        permissão <span className="font-mono">employees.edit</span>.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1611,13 +1804,24 @@ export const EmployeeModule = () => {
                   <div className="grid grid-cols-2 gap-4 text-sm max-w-3xl">
                     {canViewSensitiveHr ? (
                       <>
-                        <DetailField label="Nome do contato" value={displayText(viewingEmployee.emergencyContactName)} className="col-span-2" />
-                        <DetailField label="Telefone" value={displayText(viewingEmployee.emergencyContactPhone)} />
-                        <DetailField label="Grau / relação" value={displayText(viewingEmployee.emergencyContactRelationship)} />
+                        <DetailField
+                          label="Nome do contato"
+                          value={displayText(viewingEmployee.emergencyContactName)}
+                          className="col-span-2"
+                        />
+                        <DetailField
+                          label="Telefone"
+                          value={formatPhoneForDisplay(viewingEmployee.emergencyContactPhone)}
+                        />
+                        <DetailField
+                          label="Grau / relação"
+                          value={displayText(viewingEmployee.emergencyContactRelationship)}
+                        />
                       </>
                     ) : (
                       <p className="col-span-2 text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Contatos de emergência restritos. Solicite a permissão <span className="font-mono">employees.edit</span>.
+                        Contatos de emergência restritos. Solicite a permissão{" "}
+                        <span className="font-mono">employees.edit</span>.
                       </p>
                     )}
                   </div>

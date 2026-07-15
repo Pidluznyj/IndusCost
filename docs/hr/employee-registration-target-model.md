@@ -44,5 +44,6 @@
 ## Pendências de negócio
 
 - Cadastro oficial de departamentos/setores.
-- Redação de campos sensíveis no GET listagem (fase futura).
+- ~~Redação de campos sensíveis no GET listagem~~ → feito (Pessoal/Emergência; ver `employee-personal-emergency.md`).
 - Inventário/entrega de EPI oficial.
+- Estrutura de endereço com CEP (sem API externa neste momento).

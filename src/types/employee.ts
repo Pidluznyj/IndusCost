@@ -48,6 +48,11 @@ export interface Employee extends EmployeeHrProfileFields {
   Role: Role;
   department: string;
   costCenter: string;
+  /** API omite PII pessoal quando o caller não tem employees.edit */
+  personalPiiRedacted?: boolean;
+  emergencyContactRedacted?: boolean;
+  hasPersonalPii?: boolean;
+  hasEmergencyContact?: boolean;
   classification: string;
   salary: number;
   monthlyHours: number;

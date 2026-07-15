@@ -1,4 +1,5 @@
 import { CreateEmployeeInput, Employee } from "@/src/types/employee";
+import { formatCpfMask, formatPhoneBrMask } from "@/src/lib/employeePersonalHr";
 
 export type EmployeeFichaTabId =
   | "professional"
@@ -131,14 +132,16 @@ export function employeeToFormData(employee: Employee): CreateEmployeeInput {
     createNewPerson: false,
     personFieldResolutions: undefined,
     status: employee.status,
-    cpf: employee.cpf ?? "",
+    cpf: employee.cpf ? formatCpfMask(employee.cpf) : "",
     rg: employee.rg ?? "",
     birthDate: toDateInputValue(employee.birthDate),
-    phone: employee.phone ?? "",
+    phone: employee.phone ? formatPhoneBrMask(employee.phone) : "",
     personalEmail: employee.personalEmail ?? "",
     address: employee.address ?? "",
     emergencyContactName: employee.emergencyContactName ?? "",
-    emergencyContactPhone: employee.emergencyContactPhone ?? "",
+    emergencyContactPhone: employee.emergencyContactPhone
+      ? formatPhoneBrMask(employee.emergencyContactPhone)
+      : "",
     emergencyContactRelationship: employee.emergencyContactRelationship ?? "",
     shirtSize: employee.shirtSize ?? "",
     pantsSize: employee.pantsSize ?? "",

@@ -22,7 +22,7 @@
 | Departamento texto | Sem cadastro oficial |
 | Contrato/EPI | Enums no frontend apenas |
 | Roles API | Exigia `settings.*` (RH às vezes sem cargos) |
-| Dados sensíveis | Máscara UI com `employees.edit`; API ainda retorna completo no GET |
+| Dados sensíveis | Máscara UI + **GET listagem redige** CPF/RG/nasc/tel/e-mail/endereço/emergência sem `employees.edit` |
 
 ## Fontes oficiais reutilizáveis
 

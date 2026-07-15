@@ -214,6 +214,11 @@ import {
   EmployeeRegistrationError,
   prepareEmployeePersistedFields,
 } from "./src/lib/employeeRegistration.js";
+import {
+  auditPersonalHrSummary,
+  prepareEmployeePersonalHrFields,
+  redactEmployeePersonalEmergencyForApi,
+} from "./src/lib/employeePersonalHr.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -2744,6 +2749,10 @@ async function startServer() {
   
 // --- API: Employees (Funcionários) ---
 app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), async (req, res) => {
+  const authUser = await getCurrentAppUser(req);
+  const revealPersonal =
+    Boolean(authUser) && hasPermission(authUser!, "employees.edit");
+
   const employees = await prisma.employee.findMany({
     include: {
       Role: true,
@@ -2797,7 +2806,7 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
     const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
     const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
 
-    return {
+    const enriched = {
       ...emp,
       costs: {
         salary,
@@ -2810,6 +2819,11 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
         productiveHours
       }
     };
+
+    return redactEmployeePersonalEmergencyForApi(
+      enriched as unknown as Record<string, unknown>,
+      { reveal: revealPersonal }
+    );
   });
 
   res.json(employeesWithCosts);
@@ -2866,30 +2880,48 @@ function normalizeOptionalDate(value: unknown): Date | null {
   return null;
 }
 
-function buildEmployeeHrProfileData(body: Record<string, unknown>) {
+function buildEmployeeHrProfileData(
+  body: Record<string, unknown>,
+  opts?: {
+    previousPersonal?: {
+      cpf?: string | null;
+      phone?: string | null;
+      emergencyContactPhone?: string | null;
+      personalEmail?: string | null;
+    } | null;
+    allowLegacyPersonal?: boolean;
+  }
+) {
+  const personal = prepareEmployeePersonalHrFields(body, {
+    previous: opts?.previousPersonal,
+    allowLegacy: opts?.allowLegacyPersonal === true,
+  });
   return {
-    socialName: normalizeOptionalText(body.socialName),
-    cpf: normalizeOptionalDigits(body.cpf),
-    rg: normalizeOptionalText(body.rg),
-    birthDate: normalizeOptionalDate(body.birthDate),
-    phone: normalizeOptionalDigits(body.phone),
-    personalEmail: normalizeOptionalText(body.personalEmail),
-    emergencyContactName: normalizeOptionalText(body.emergencyContactName),
-    emergencyContactPhone: normalizeOptionalDigits(body.emergencyContactPhone),
-    emergencyContactRelationship: normalizeOptionalText(body.emergencyContactRelationship),
-    admissionDate: normalizeOptionalDate(body.admissionDate),
-    terminationDate: normalizeOptionalDate(body.terminationDate),
-    contractType: normalizeOptionalText(body.contractType),
-    managerName: normalizeOptionalText(body.managerName),
-    professionalNotes: normalizeOptionalText(body.professionalNotes),
-    address: normalizeOptionalText(body.address),
-    adminNotes: normalizeOptionalText(body.adminNotes),
-    shirtSize: normalizeOptionalText(body.shirtSize),
-    pantsSize: normalizeOptionalText(body.pantsSize),
-    jacketSize: normalizeOptionalText(body.jacketSize),
-    gloveSize: normalizeOptionalText(body.gloveSize),
-    shoeSize: normalizeOptionalText(body.shoeSize),
-    epiNotes: normalizeOptionalText(body.epiNotes),
+    data: {
+      socialName: normalizeOptionalText(body.socialName),
+      cpf: personal.cpf,
+      rg: personal.rg,
+      birthDate: personal.birthDate,
+      phone: personal.phone,
+      personalEmail: personal.personalEmail,
+      emergencyContactName: personal.emergencyContactName,
+      emergencyContactPhone: personal.emergencyContactPhone,
+      emergencyContactRelationship: personal.emergencyContactRelationship,
+      address: personal.address,
+      admissionDate: normalizeOptionalDate(body.admissionDate),
+      terminationDate: normalizeOptionalDate(body.terminationDate),
+      contractType: normalizeOptionalText(body.contractType),
+      managerName: normalizeOptionalText(body.managerName),
+      professionalNotes: normalizeOptionalText(body.professionalNotes),
+      adminNotes: normalizeOptionalText(body.adminNotes),
+      shirtSize: normalizeOptionalText(body.shirtSize),
+      pantsSize: normalizeOptionalText(body.pantsSize),
+      jacketSize: normalizeOptionalText(body.jacketSize),
+      gloveSize: normalizeOptionalText(body.gloveSize),
+      shoeSize: normalizeOptionalText(body.shoeSize),
+      epiNotes: normalizeOptionalText(body.epiNotes),
+    },
+    personalAudit: auditPersonalHrSummary(personal),
   };
 }
 
@@ -2982,7 +3014,7 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       { requireCostCenterId: true, allowLegacyContractType: false }
     );
 
-    const hrProfile = buildEmployeeHrProfileData({
+    const hrBuilt = buildEmployeeHrProfileData({
       ...hrProfileBody,
       socialName: personResolve.appliedForm.socialName ?? hrProfileBody.socialName,
       personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
@@ -2993,6 +3025,7 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       contractType: undefined,
       managerName: undefined,
     } as Record<string, unknown>);
+    const hrProfile = hrBuilt.data;
 
     const resolvedName =
       (personResolve.appliedForm.displayName || "").trim() || cleanName;
@@ -3052,6 +3085,15 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       );
     }
 
+    console.info(
+      JSON.stringify({
+        audit: "employee.personal_hr.set",
+        employeeId: employee.id,
+        ...hrBuilt.personalAudit,
+        at: new Date().toISOString(),
+      })
+    );
+
     res.json({
       ...employee,
       corporateEmailHint: persisted.appUserEmailHint,
@@ -3101,6 +3143,10 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         costCenterId: true,
         costCenter: true,
         contractType: true,
+        cpf: true,
+        phone: true,
+        personalEmail: true,
+        emergencyContactPhone: true,
       },
     });
     if (!existingEmployee) {
@@ -3158,17 +3204,29 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       }
     );
 
-    const hrProfile = buildEmployeeHrProfileData({
-      ...hrProfileBody,
-      socialName: personResolve.appliedForm.socialName ?? hrProfileBody.socialName,
-      personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
-      cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
-      phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
-      admissionDate: undefined,
-      terminationDate: undefined,
-      contractType: undefined,
-      managerName: undefined,
-    } as Record<string, unknown>);
+    const hrBuilt = buildEmployeeHrProfileData(
+      {
+        ...hrProfileBody,
+        socialName: personResolve.appliedForm.socialName ?? hrProfileBody.socialName,
+        personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
+        cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
+        phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
+        admissionDate: undefined,
+        terminationDate: undefined,
+        contractType: undefined,
+        managerName: undefined,
+      } as Record<string, unknown>,
+      {
+        allowLegacyPersonal: true,
+        previousPersonal: {
+          cpf: existingEmployee.cpf,
+          phone: existingEmployee.phone,
+          personalEmail: existingEmployee.personalEmail,
+          emergencyContactPhone: existingEmployee.emergencyContactPhone,
+        },
+      }
+    );
+    const hrProfile = hrBuilt.data;
 
     await prisma.employeePayrollComponent.deleteMany({
       where: { employeeId: id },
@@ -3231,6 +3289,15 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         })
       );
     }
+
+    console.info(
+      JSON.stringify({
+        audit: "employee.personal_hr.update",
+        employeeId: id,
+        ...hrBuilt.personalAudit,
+        at: new Date().toISOString(),
+      })
+    );
 
     res.json({
       ...employee,
