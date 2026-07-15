@@ -1,6 +1,6 @@
 # Pessoa canônica — busca e resolução (Prompt 03)
 
-Motor backend unificado. **Não** altera o fluxo UI do Novo Colaborador neste prompt.
+Motor backend unificado. Integrado na UI do **Novo Colaborador** (aba Profissional) via `EmployeePersonLinkField` → `GET /api/people/resolve`.
 
 ## Endpoints
 

@@ -16,7 +16,7 @@ import {
   User
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
-import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { Employee, Role, CreateEmployeeInput, PayrollComponent } from "@/src/types/employee";
 import {
   CONTRACT_TYPE_OPTIONS,
@@ -32,6 +32,7 @@ import {
   type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
+import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -42,6 +43,7 @@ import {
   canViewEmployeeCompensation,
   canViewEmployeeEmergencyContacts,
 } from "@/src/lib/operationsAdminPermissions";
+import type { PersonFieldKey } from "@/src/lib/canonicalPerson";
 
 const EMPLOYEE_CLASSIFICATION_OPTIONS = [
   { value: "DIRETO", label: "Direto", searchTerms: "DIRETO direto" },
@@ -142,11 +144,6 @@ export const EmployeeModule = () => {
   const [managerOptions, setManagerOptions] = useState<
     { value: string; label: string; searchTerms?: string }[]
   >([]);
-  const [personOptions, setPersonOptions] = useState<
-    { value: string; label: string; searchTerms?: string; meta?: string }[]
-  >([]);
-  const [personQuery, setPersonQuery] = useState("");
-  const [personSearchBusy, setPersonSearchBusy] = useState(false);
   const [personConflicts, setPersonConflicts] = useState<
     { field: string; formValue: string | null; personValue: string | null }[]
   >([]);
@@ -269,50 +266,6 @@ export const EmployeeModule = () => {
     fetchData();
   }, []);
 
-  const searchPeople = async (q: string) => {
-    if (q.trim().length < 2) {
-      setPersonOptions([]);
-      return;
-    }
-    setPersonSearchBusy(true);
-    try {
-      const qs = new URLSearchParams({ q: q.trim(), limit: "20" });
-      if (editingEmployee?.id) qs.set("excludeEmployeeId", editingEmployee.id);
-      const data = await fetchJsonOk<{
-        rows: {
-          key: string;
-          personId: string | null;
-          sourceKind: string;
-          sourceId: string;
-          displayName: string;
-          emailMasked: string | null;
-          originLabel: string;
-          roles: string[];
-          status: string;
-        }[];
-      }>(`/api/people/search?${qs.toString()}`);
-      setPersonOptions(
-        (data.rows ?? []).map((r) => ({
-          value: r.personId ? `person:${r.personId}` : `${r.sourceKind}:${r.sourceId}`,
-          label: `${r.displayName}${r.emailMasked ? ` · ${r.emailMasked}` : ""}`,
-          searchTerms: `${r.displayName} ${r.originLabel} ${(r.roles ?? []).join(" ")}`,
-          meta: `${r.originLabel}${(r.roles ?? []).length ? ` · ${r.roles.join(", ")}` : ""}`,
-        }))
-      );
-    } catch (error) {
-      console.error("Erro ao buscar pessoas:", error);
-    } finally {
-      setPersonSearchBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    const handle = window.setTimeout(() => {
-      void searchPeople(personQuery);
-    }, 300);
-    return () => window.clearTimeout(handle);
-  }, [personQuery, editingEmployee?.id]);
-
   const loadSystemLinks = async (personId: string) => {
     try {
       const data = await fetchJsonOk<{
@@ -329,8 +282,6 @@ export const EmployeeModule = () => {
     setEmployeeFichaTab("professional");
     setFormError(null);
     setPersonConflicts([]);
-    setPersonQuery("");
-    setPersonOptions([]);
     if (employee) {
       setEditingEmployee(employee);
       const next = employeeToFormData(employee);
@@ -423,8 +374,13 @@ export const EmployeeModule = () => {
       const msg =
         error instanceof Error ? error.message : "Não foi possível salvar o colaborador.";
       setFormError(msg);
-      if (msg.toLowerCase().includes("conflito")) {
-        // tenta preview para listar conflitos
+      if (error instanceof HttpError && error.conflicts?.length) {
+        setPersonConflicts(error.conflicts);
+        setEmployeeFichaTab("professional");
+      } else if (
+        error instanceof HttpError &&
+        (error.code === "FIELD_CONFLICTS" || msg.toLowerCase().includes("conflito"))
+      ) {
         try {
           const preview = await fetchJsonOk<{
             conflicts: { field: string; formValue: string | null; personValue: string | null }[];
@@ -432,9 +388,7 @@ export const EmployeeModule = () => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              personId: formData.personId?.startsWith("person:")
-                ? formData.personId.slice(7)
-                : formData.personId || null,
+              personId: formData.personId || null,
               sourceKind: formData.personSourceKind,
               sourceId: formData.personSourceId,
               name: formData.name,
@@ -446,6 +400,7 @@ export const EmployeeModule = () => {
             }),
           });
           setPersonConflicts(preview.conflicts ?? []);
+          setEmployeeFichaTab("professional");
         } catch {
           /* ignore */
         }
@@ -811,130 +766,55 @@ export const EmployeeModule = () => {
                           Identificação profissional
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3 rounded-lg border border-border bg-muted/20 p-3">
-                            <label className="text-xs font-bold text-muted-foreground uppercase">
-                              Vincular pessoa existente
-                            </label>
-                            <input
-                              type="search"
-                              className={INPUT_CLASS}
-                              placeholder="Buscar por nome, e-mail ou CPF…"
-                              value={personQuery}
-                              onChange={(e) => setPersonQuery(e.target.value)}
-                              aria-busy={personSearchBusy}
-                            />
-                            <SearchableSelect
-                              placeholder={
-                                personSearchBusy
-                                  ? "Buscando…"
-                                  : "Selecione uma pessoa encontrada…"
-                              }
-                              options={[
-                                {
-                                  value: "",
-                                  label: "— Criar nova pessoa canônica —",
-                                  searchTerms: "criar nova",
-                                },
-                                ...personOptions.map((o) => ({
-                                  value: o.value,
-                                  label: o.label,
-                                  sublabel: o.meta,
-                                  searchTerms: o.searchTerms,
-                                })),
-                              ]}
-                              value={
-                                formData.personId
-                                  ? formData.personId.startsWith("person:") ||
-                                    formData.personId.includes(":")
-                                    ? formData.personId
-                                    : `person:${formData.personId}`
-                                  : formData.personSourceId
-                                    ? `${formData.personSourceKind}:${formData.personSourceId}`
-                                    : ""
-                              }
-                              onChange={(v) => {
-                                setPersonConflicts([]);
-                                if (!v) {
-                                  setFormData({
-                                    ...formData,
-                                    personId: "",
-                                    personSourceKind: null,
-                                    personSourceId: null,
-                                    createNewPerson: true,
-                                    personFieldResolutions: undefined,
-                                  });
-                                  return;
-                                }
-                                const [kind, ...rest] = v.split(":");
-                                const id = rest.join(":");
-                                if (kind === "person") {
-                                  setFormData({
-                                    ...formData,
-                                    personId: id,
-                                    personSourceKind: null,
-                                    personSourceId: null,
-                                    createNewPerson: false,
-                                  });
-                                } else {
-                                  setFormData({
-                                    ...formData,
-                                    personId: "",
-                                    personSourceKind: kind,
-                                    personSourceId: id,
-                                    createNewPerson: false,
-                                  });
-                                }
-                              }}
-                            />
-                            <p className="text-[11px] text-muted-foreground">
-                              Pesquisa colaboradores, usuários, comissionados, motoristas e clientes PF.
-                              Não faz merge automático por nome semelhante.
-                            </p>
-                            {personConflicts.length > 0 && (
-                              <div className="mt-2 space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3">
-                                <p className="text-xs font-semibold text-amber-900">
-                                  Conflitos de dados — escolha o valor a manter:
-                                </p>
-                                {personConflicts.map((c) => (
-                                  <div key={c.field} className="text-xs space-y-1">
-                                    <p className="font-medium">{c.field}</p>
-                                    <div className="flex flex-wrap gap-2">
-                                      <button
-                                        type="button"
-                                        className="px-2 py-1 rounded border border-border bg-background"
-                                        onClick={() =>
-                                          setFormData({
-                                            ...formData,
-                                            personFieldResolutions: {
-                                              ...(formData.personFieldResolutions ?? {}),
-                                              [c.field]: "form",
-                                            },
-                                          })
-                                        }
-                                      >
-                                        Manter do formulário: {c.formValue}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="px-2 py-1 rounded border border-border bg-background"
-                                        onClick={() =>
-                                          setFormData({
-                                            ...formData,
-                                            personFieldResolutions: {
-                                              ...(formData.personFieldResolutions ?? {}),
-                                              [c.field]: "person",
-                                            },
-                                          })
-                                        }
-                                      >
-                                        Usar da pessoa: {c.personValue}
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
+                          <EmployeePersonLinkField
+                            inputClassName={INPUT_CLASS}
+                            formSlice={{
+                              name: formData.name,
+                              socialName: formData.socialName,
+                              corporateEmail: formData.corporateEmail,
+                              personalEmail: formData.personalEmail,
+                              cpf: formData.cpf,
+                              phone: formData.phone,
+                            }}
+                            selection={{
+                              personId: formData.personId || null,
+                              personSourceKind: formData.personSourceKind || null,
+                              personSourceId: formData.personSourceId || null,
+                              createNewPerson: formData.createNewPerson !== false,
+                            }}
+                            fieldResolutions={formData.personFieldResolutions}
+                            externalConflicts={personConflicts as {
+                              field: PersonFieldKey | string;
+                              formValue: string | null;
+                              personValue: string | null;
+                            }[]}
+                            excludeEmployeeId={editingEmployee?.id}
+                            editingLegacyWithoutPerson={Boolean(
+                              editingEmployee && !editingEmployee.personId && !editingEmployee.person
                             )}
-                          </div>
+                            onSelectionChange={(next) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                personId: next.personId ?? "",
+                                personSourceKind: next.personSourceKind,
+                                personSourceId: next.personSourceId,
+                                createNewPerson: next.createNewPerson,
+                                personFieldResolutions: next.createNewPerson
+                                  ? undefined
+                                  : prev.personFieldResolutions,
+                              }))
+                            }
+                            onFormSliceChange={(patch) =>
+                              setFormData((prev) => ({ ...prev, ...patch }))
+                            }
+                            onResolutionsChange={(next) =>
+                              setFormData((prev) => ({
+                                ...prev,
+                                personFieldResolutions: next,
+                              }))
+                            }
+                            onConflictsChange={setPersonConflicts}
+                          />
                           <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
                             <label className="text-xs font-bold text-muted-foreground uppercase">
                               Nome completo *

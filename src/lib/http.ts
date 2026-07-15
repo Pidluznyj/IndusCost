@@ -16,12 +16,24 @@ export class HttpError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly existingSupplierId?: string;
-  constructor(status: number, message: string, code?: string, existingSupplierId?: string) {
+  readonly conflicts?: Array<{
+    field: string;
+    formValue: string | null;
+    personValue: string | null;
+  }>;
+  constructor(
+    status: number,
+    message: string,
+    code?: string,
+    existingSupplierId?: string,
+    conflicts?: Array<{ field: string; formValue: string | null; personValue: string | null }>
+  ) {
     super(message);
     this.name = "HttpError";
     this.status = status;
     this.code = code;
     this.existingSupplierId = existingSupplierId;
+    this.conflicts = conflicts;
   }
 }
 
@@ -48,6 +60,7 @@ export async function parseApiErrorPayload(res: Response): Promise<{
   message: string;
   code?: string;
   existingSupplierId?: string;
+  conflicts?: Array<{ field: string; formValue: string | null; personValue: string | null }>;
 }> {
   const fallback = `Erro HTTP ${res.status}`;
   try {
@@ -61,9 +74,16 @@ export async function parseApiErrorPayload(res: Response): Promise<{
         const code = typeof o.code === "string" ? o.code.trim() : undefined;
         const existingSupplierId =
           typeof o.existingSupplierId === "string" ? o.existingSupplierId : undefined;
+        const conflicts = Array.isArray(o.conflicts)
+          ? (o.conflicts as Array<{
+              field: string;
+              formValue: string | null;
+              personValue: string | null;
+            }>)
+          : undefined;
         // Preferir message: o backend costuma enviar error=CHILD_COST_FAILED e o detalhe útil em message.
         const message = msg || err || (typeof o.details === "string" && o.details.trim()) || fallback;
-        return { message, code, existingSupplierId };
+        return { message, code, existingSupplierId, conflicts };
       }
       return { message: fallback };
     }
@@ -105,7 +125,13 @@ export async function fetchJsonOk<T = unknown>(
   }
   if (!res.ok) {
     const payload = await parseApiErrorPayload(res);
-    throw new HttpError(res.status, payload.message, payload.code, payload.existingSupplierId);
+    throw new HttpError(
+      res.status,
+      payload.message,
+      payload.code,
+      payload.existingSupplierId,
+      payload.conflicts
+    );
   }
   const ct = res.headers.get("content-type");
   if (ct?.includes("application/json")) {
@@ -125,6 +151,12 @@ export async function fetchOk(
   }
   if (!res.ok) {
     const payload = await parseApiErrorPayload(res);
-    throw new HttpError(res.status, payload.message, payload.code, payload.existingSupplierId);
+    throw new HttpError(
+      res.status,
+      payload.message,
+      payload.code,
+      payload.existingSupplierId,
+      payload.conflicts
+    );
   }
 }

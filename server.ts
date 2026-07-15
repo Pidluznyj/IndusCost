@@ -2991,9 +2991,12 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       managerName: undefined,
     } as Record<string, unknown>);
 
+    const resolvedName =
+      (personResolve.appliedForm.displayName || "").trim() || cleanName;
+
     const employee = await prisma.employee.create({
       data: {
-        name: cleanName,
+        name: resolvedName,
         roleId: cleanRoleId,
         department: normalizeRequiredText(department),
         costCenter: persisted.costCenterLabel,
@@ -3143,10 +3146,13 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         ? personResolve.personId
         : existingEmployee.personId;
 
+    const resolvedName =
+      (personResolve.appliedForm.displayName || "").trim() || cleanName;
+
     const employee = await prisma.employee.update({
       where: { id },
       data: {
-        name: cleanName,
+        name: resolvedName,
         roleId: cleanRoleId,
         department: normalizeRequiredText(department),
         costCenter: persisted.costCenterLabel,
