@@ -465,8 +465,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     sortOrder: 314,
     actions: [
       C(["crm.activities.create"]),
-      U(["crm.activities.edit"]),
-      U(["crm.profile.edit"], "perfil comercial"),
+      U(["crm.activities.edit", "crm.profile.edit"], "atividades + perfil comercial"),
     ],
     relatedEndpoints: [],
     sensitivity: "medium",

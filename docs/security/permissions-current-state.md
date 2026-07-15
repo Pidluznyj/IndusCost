@@ -6,7 +6,7 @@
 | **Data da auditoria** | 2026-07-15 |
 | **Escopo** | Somente documentação — **sem** alteração de comportamento |
 | **Fonte** | Código em `main` (não apenas docs anteriores) |
-| **Relacionados** | `permissions-resource-inventory.md`, `permissions-endpoint-audit.md`, `permissions-model-plan.md`, `permissions-current-inventory.md` |
+| **Relacionados** | `permissions-resource-inventory.md`, `permissions-endpoint-audit.md`, `permissions-model-plan.md`, `permissions-current-inventory.md`, **Prompt 02:** `permissions-key-naming.md`, `permissions-target-matrix.md`, `src/lib/security/permissionContract` |
 
 ---
 

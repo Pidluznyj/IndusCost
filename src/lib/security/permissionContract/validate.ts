@@ -251,7 +251,7 @@ export function formatPermissionTargetMatrixMarkdown(
     "|---------|-------|-----|-------|--------|---------|----------|----------|-----------|-------------------|";
 
   const rows = [...resources]
-    .sort((a, b) => a.sortOrder - b.sortOrder || a.resourceKey.localeCompare(b.resourceKey))
+    .sort((a, b) => a.resourceKey.localeCompare(b.resourceKey))
     .map((r) => {
       const cells = MATRIX_ACTIONS.map((a) => cellFor(r, a)).join(" | ");
       return `| \`${r.resourceKey}\` | ${r.label} | ${cells} | ${specificActions(r)} |`;
@@ -264,7 +264,22 @@ export function formatPermissionTargetMatrixMarkdown(
     ".\n";
 
   void MATRIX_HEADERS_PT;
-  return `# Matriz alvo de permissões (contrato canônico)\n\n${header}\n${rows.join("\n")}${legend}`;
+  return [
+    "# Matriz alvo de permissões (contrato canônico)",
+    "",
+    "| | |",
+    "|---|---|",
+    "| **Projeto** | IndusCost / My Industry |",
+    "| **Data** | 2026-07-15 |",
+    "| **Fonte** | `src/lib/security/permissionContract` |",
+    "| **Status** | Contrato tipado — **não** conectado ao runtime de auth |",
+    "| **Pré-req** | Prompt 01 (`permissions-current-state.md`) |",
+    "",
+    "Regenerar: `npx tsx -e \"import { formatPermissionTargetMatrixMarkdown } from './src/lib/security/permissionContract/index.ts'; console.log(formatPermissionTargetMatrixMarkdown())\"`",
+    "",
+    header,
+    rows.join("\n") + legend,
+  ].join("\n");
 }
 
 export function summarizePermissionContract(
