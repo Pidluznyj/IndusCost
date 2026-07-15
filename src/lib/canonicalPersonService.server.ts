@@ -522,12 +522,85 @@ export async function getCustomerPeopleLinks(
     where: { id: customerId },
     include: {
       person: true,
+      contactPerson: true,
       CrmCustomerCommercialOwner: true,
     },
   });
   if (!customer) throw new CanonicalPersonError("CUSTOMER_NOT_FOUND", "Cliente não encontrado.", 404);
 
   const docKind = classifyCustomerDocument(customer.taxId);
+
+  const otherCustomersWithSamePerson = customer.personId
+    ? await prisma.customer.findMany({
+        where: { personId: customer.personId, id: { not: customer.id } },
+        select: { id: true, companyName: true, taxId: true },
+        take: 10,
+      })
+    : [];
+
+  const contactPersonOtherCustomers = customer.contactPersonId
+    ? await prisma.customer.findMany({
+        where: { contactPersonId: customer.contactPersonId, id: { not: customer.id } },
+        select: { id: true, companyName: true },
+        take: 10,
+      })
+    : [];
+
+  const orders = await prisma.salesOrder.findMany({
+    where: { customerId },
+    select: {
+      id: true,
+      orderCode: true,
+      externalSellerId: true,
+      nomusSellerName: true,
+      responsible: true,
+      issueDate: true,
+    },
+    orderBy: { issueDate: "desc" },
+    take: 200,
+  });
+
+  const sellerMap = new Map<
+    string,
+    {
+      type: "vendedor_pedido_nomus";
+      externalSellerId: number | null;
+      nomusSellerName: string | null;
+      displayName: string;
+      orderCount: number;
+      sampleOrderCodes: string[];
+      note: string;
+    }
+  >();
+  for (const o of orders) {
+    const name =
+      (o.nomusSellerName || "").trim() ||
+      (o.externalSellerId != null ? `Vendedor ID ${o.externalSellerId}` : "");
+    if (!name && o.externalSellerId == null) continue;
+    const key =
+      o.externalSellerId != null
+        ? `id:${o.externalSellerId}`
+        : `name:${name.toLowerCase()}`;
+    const existing = sellerMap.get(key);
+    if (existing) {
+      existing.orderCount += 1;
+      if (existing.sampleOrderCodes.length < 3 && o.orderCode) {
+        existing.sampleOrderCodes.push(o.orderCode);
+      }
+    } else {
+      sellerMap.set(key, {
+        type: "vendedor_pedido_nomus",
+        externalSellerId: o.externalSellerId,
+        nomusSellerName: o.nomusSellerName,
+        displayName: (o.nomusSellerName || "").trim() || name || "—",
+        orderCount: 1,
+        sampleOrderCodes: o.orderCode ? [o.orderCode] : [],
+        note:
+          "Vendedor do Pedido de Venda Nomus — relacionamento comercial, não identidade do cliente nem responsável da carteira.",
+      });
+    }
+  }
+
   return {
     customerId: customer.id,
     documentKind: docKind,
@@ -539,8 +612,22 @@ export async function getCustomerPeopleLinks(
             id: customer.person.id,
             displayName: customer.person.displayName,
             status: customer.person.status,
+            email: opts.canViewPii
+              ? customer.person.corporateEmail || customer.person.personalEmail
+              : maskEmail(
+                  customer.person.corporateEmail || customer.person.personalEmail
+                ),
+            cpfMasked: maskCpf(customer.person.cpfNormalized),
           }
         : null,
+      alsoLinkedCustomers: otherCustomersWithSamePerson.map((c) => ({
+        id: c.id,
+        companyName: c.companyName,
+      })),
+      note:
+        docKind === "PF"
+          ? "Identidade: o cliente PF é (ou pode ser) a mesma Pessoa Canônica."
+          : "Cliente PJ não possui identidade Person.",
     },
     relationshipLinks: {
       commercialOwner: customer.CrmCustomerCommercialOwner
@@ -550,7 +637,8 @@ export async function getCustomerPeopleLinks(
             sellerCanonicalName: customer.CrmCustomerCommercialOwner.sellerCanonicalName,
             sellerExternalId: customer.CrmCustomerCommercialOwner.sellerExternalId,
             isActive: customer.CrmCustomerCommercialOwner.isActive,
-            note: "Relacionamento comercial — não é identidade Person.",
+            note:
+              "Responsável da carteira (CRM) — relacionamento. Não é vendedor comissionável do pedido.",
           }
         : null,
       contactSnapshot: {
@@ -558,11 +646,277 @@ export async function getCustomerPeopleLinks(
         contactName: customer.contactName,
         email: opts.canViewPii ? customer.email : maskEmail(customer.email),
         phone: opts.canViewPii ? customer.phone : customer.phone ? "***" : null,
-        note: "Campo denormalizado do cliente — não existe CustomerContact.",
+        note: "Snapshot cadastral do cliente (campos denormalizados).",
       },
+      contactPerson: {
+        canLink: true,
+        personId: customer.contactPersonId,
+        person: customer.contactPerson
+          ? {
+              id: customer.contactPerson.id,
+              displayName: customer.contactPerson.displayName,
+              status: customer.contactPerson.status,
+              email: opts.canViewPii
+                ? customer.contactPerson.corporateEmail ||
+                  customer.contactPerson.personalEmail
+                : maskEmail(
+                    customer.contactPerson.corporateEmail ||
+                      customer.contactPerson.personalEmail
+                  ),
+              }
+          : null,
+        alsoContactOfCustomers: contactPersonOtherCustomers,
+        note:
+          "Contato externo apontando para Pessoa Canônica. Em PJ, não confunde com a empresa.",
+      },
+      orderSellers: [...sellerMap.values()],
       accountOwner: customer.accountOwner
-        ? { type: "account_owner_texto", value: customer.accountOwner }
+        ? {
+            type: "gestor_conta_texto",
+            value: customer.accountOwner,
+            note: "Texto legado accountOwner — não é Person nem carteira CRM.",
+          }
         : null,
     },
   };
+}
+
+async function resolvePersonTargetId(
+  prisma: PrismaClient,
+  input: {
+    personId?: string | null;
+    sourceKind?: PersonLinkSourceKind | null;
+    sourceId?: string | null;
+    createNewFromContact?: boolean;
+    customer: {
+      id: string;
+      contactName: string | null;
+      companyName: string;
+      email: string | null;
+      phone: string | null;
+      taxId: string;
+    };
+  }
+): Promise<string> {
+  if (input.personId) {
+    if (!isPersonUuid(input.personId)) {
+      throw new CanonicalPersonError("INVALID_PERSON", "Pessoa inválida.");
+    }
+    const p = await prisma.person.findUnique({ where: { id: input.personId } });
+    if (!p) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
+    return p.id;
+  }
+  if (input.sourceKind && input.sourceId) {
+    const ensured = await ensurePersonFromSource(prisma, {
+      sourceKind: input.sourceKind,
+      sourceId: input.sourceId,
+    });
+    return ensured.id;
+  }
+  if (input.createNewFromContact) {
+    const created = await createCanonicalPerson(
+      prisma,
+      {
+        displayName: input.customer.contactName?.trim() || input.customer.companyName,
+        personalEmail: normalizeEmailLoose(input.customer.email),
+        corporateEmail: null,
+        cpfNormalized:
+          classifyCustomerDocument(input.customer.taxId) === "PF"
+            ? normalizeCpfLoose(input.customer.taxId)
+            : null,
+        phoneNormalized: normalizePhone(input.customer.phone),
+      },
+      { origin: "SYSTEM" }
+    );
+    return created.id;
+  }
+  throw new CanonicalPersonError(
+    "PERSON_REQUIRED",
+    "Informe personId, origem da busca ou createNewFromContact."
+  );
+}
+
+/**
+ * Vincula identidade Person ↔ Customer (somente PF).
+ * Não altera responsável da carteira nem vendedor de pedido.
+ */
+export async function linkCustomerIdentityPerson(
+  prisma: PrismaClient,
+  customerId: string,
+  input: {
+    personId?: string | null;
+    sourceKind?: PersonLinkSourceKind | null;
+    sourceId?: string | null;
+    createNewFromContact?: boolean;
+    fieldResolutions?: Partial<Record<PersonFieldKey, FieldResolutionChoice>>;
+  }
+) {
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new CanonicalPersonError("CUSTOMER_NOT_FOUND", "Cliente não encontrado.", 404);
+  if (classifyCustomerDocument(customer.taxId) !== "PF") {
+    throw new CanonicalPersonError(
+      "CUSTOMER_NOT_PF",
+      "Somente cliente pessoa física pode vincular identidade a Person."
+    );
+  }
+
+  const personId = await resolvePersonTargetId(prisma, {
+    ...input,
+    customer,
+  });
+
+  const person = await prisma.person.findUniqueOrThrow({ where: { id: personId } });
+  const formSnap: PersonIdentitySnapshot = {
+    displayName: customer.contactName?.trim() || customer.companyName,
+    personalEmail: normalizeEmailLoose(customer.email),
+    corporateEmail: null,
+    cpfNormalized: normalizeCpfLoose(customer.taxId),
+    phoneNormalized: normalizePhone(customer.phone),
+  };
+  const personSnap: PersonIdentitySnapshot = {
+    displayName: person.displayName,
+    socialName: person.socialName,
+    corporateEmail: person.corporateEmail,
+    personalEmail: person.personalEmail,
+    cpfNormalized: person.cpfNormalized,
+    phoneNormalized: person.phoneNormalized,
+  };
+  const conflicts = detectPersonFieldConflicts(formSnap, personSnap);
+  if (conflicts.length > 0) {
+    const unresolved = conflicts.filter((c) => !input.fieldResolutions?.[c.field]);
+    if (unresolved.length > 0) {
+      throw new CanonicalPersonError(
+        "FIELD_CONFLICTS",
+        "Há conflitos entre o cadastro do cliente e a pessoa. Resolva campo a campo.",
+        409,
+        unresolved
+      );
+    }
+    // Resoluções informadas — apenas vincula; não reescreve Person nem snapshot neste endpoint.
+    void applyFieldResolutions(formSnap, personSnap, input.fieldResolutions ?? {});
+  }
+
+  const updated = await prisma.customer.update({
+    where: { id: customerId },
+    data: { personId },
+    select: { id: true, personId: true },
+  });
+
+  console.info(
+    JSON.stringify({
+      audit: "customer.person_identity.link",
+      customerId,
+      personId,
+      at: new Date().toISOString(),
+    })
+  );
+
+  return {
+    ok: true,
+    customerId: updated.id,
+    personId: updated.personId,
+    person: { id: person.id, displayName: person.displayName },
+  };
+}
+
+export async function unlinkCustomerIdentityPerson(
+  prisma: PrismaClient,
+  customerId: string
+) {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, personId: true },
+  });
+  if (!customer) throw new CanonicalPersonError("CUSTOMER_NOT_FOUND", "Cliente não encontrado.", 404);
+  if (!customer.personId) {
+    return { ok: true, customerId, personId: null };
+  }
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { personId: null },
+  });
+  console.info(
+    JSON.stringify({
+      audit: "customer.person_identity.unlink",
+      customerId,
+      previousPersonId: customer.personId,
+      at: new Date().toISOString(),
+      note: "Person não é apagada — histórico preservado.",
+    })
+  );
+  return { ok: true, customerId, personId: null };
+}
+
+/**
+ * Vincula contato cadastral → Person (PF ou PJ).
+ * Em PJ isto NÃO define identidade da empresa.
+ */
+export async function linkCustomerContactPerson(
+  prisma: PrismaClient,
+  customerId: string,
+  input: {
+    personId?: string | null;
+    sourceKind?: PersonLinkSourceKind | null;
+    sourceId?: string | null;
+    createNewFromContact?: boolean;
+  }
+) {
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) throw new CanonicalPersonError("CUSTOMER_NOT_FOUND", "Cliente não encontrado.", 404);
+
+  const personId = await resolvePersonTargetId(prisma, {
+    ...input,
+    customer,
+  });
+  const person = await prisma.person.findUniqueOrThrow({ where: { id: personId } });
+
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { contactPersonId: personId },
+  });
+
+  console.info(
+    JSON.stringify({
+      audit: "customer.contact_person.link",
+      customerId,
+      personId,
+      documentKind: classifyCustomerDocument(customer.taxId),
+      at: new Date().toISOString(),
+    })
+  );
+
+  return {
+    ok: true,
+    customerId,
+    contactPersonId: personId,
+    person: { id: person.id, displayName: person.displayName },
+  };
+}
+
+export async function unlinkCustomerContactPerson(
+  prisma: PrismaClient,
+  customerId: string
+) {
+  const customer = await prisma.customer.findUnique({
+    where: { id: customerId },
+    select: { id: true, contactPersonId: true },
+  });
+  if (!customer) throw new CanonicalPersonError("CUSTOMER_NOT_FOUND", "Cliente não encontrado.", 404);
+  if (!customer.contactPersonId) {
+    return { ok: true, customerId, contactPersonId: null };
+  }
+  await prisma.customer.update({
+    where: { id: customerId },
+    data: { contactPersonId: null },
+  });
+  console.info(
+    JSON.stringify({
+      audit: "customer.contact_person.unlink",
+      customerId,
+      previousContactPersonId: customer.contactPersonId,
+      at: new Date().toISOString(),
+      note: "Person não é apagada.",
+    })
+  );
+  return { ok: true, customerId, contactPersonId: null };
 }

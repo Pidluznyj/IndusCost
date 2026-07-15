@@ -68,7 +68,10 @@ model Person {
   appUsers          AppUser[]
   commissionPeople  CommissionPerson[]
   fleetDrivers      FleetDriver[]
-  customers         Customer[]
+  /// Clientes PF cuja identidade é esta pessoa.
+  customersAsIdentity Customer[] @relation("CustomerIdentityPerson")
+  /// Contatos cadastrais de clientes (tipicamente PJ) apontando para esta pessoa.
+  customersAsContact  Customer[] @relation("CustomerContactPerson")
 
   @@index([displayName])
   @@index([corporateEmail])
@@ -841,11 +844,14 @@ model Customer {
   accountOwner               String?
   /// Somente quando o cliente for pessoa física (taxId CPF). PJ não usa este vínculo de identidade.
   personId                   String?                     @db.Uuid
+  /// Pessoa canônica do contato cadastral (ex.: comprador de um PJ). Não é identidade da empresa.
+  contactPersonId            String?                     @db.Uuid
   CommercialActivity         CommercialActivity[]
   CrmCustomerProfile         CrmCustomerProfile?
   CrmCustomerCommercialOwner CrmCustomerCommercialOwner?
   CustomerCnpjLookup         CustomerCnpjLookup[]
-  person                     Person?                     @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  person                     Person?                     @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  contactPerson              Person?                     @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   proposals                         Proposal[]
   salesOrders                       SalesOrder[]
   commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
@@ -854,6 +860,7 @@ model Customer {
   commissionReceivableSchedules     CommissionReceivableSchedule[]
 
   @@index([personId])
+  @@index([contactPersonId])
 }
 
 model Proposal {

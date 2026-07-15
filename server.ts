@@ -13601,9 +13601,15 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   app.put("/api/customers/:id", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
     const { id } = req.params;
+    const body = { ...(req.body as Record<string, unknown>) };
+    // Vínculos Person só via endpoints dedicados (people-links), nunca pelo PUT bruto.
+    delete body.personId;
+    delete body.contactPersonId;
+    delete body.person;
+    delete body.contactPerson;
     const customer = await prisma.customer.update({
       where: { id },
-      data: req.body,
+      data: body,
     });
     res.json(customer);
   });

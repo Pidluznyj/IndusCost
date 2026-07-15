@@ -16,8 +16,12 @@ import {
   diagnoseUnequivocalPersonMatches,
   getCustomerPeopleLinks,
   getPersonSystemLinks,
+  linkCustomerContactPerson,
+  linkCustomerIdentityPerson,
   resolveEmployeePersonIdForPersist,
   searchCanonicalPeople,
+  unlinkCustomerContactPerson,
+  unlinkCustomerIdentityPerson,
   unlinkEmployeeFromPerson,
 } from "@/src/lib/canonicalPersonService.server.js";
 import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
@@ -64,7 +68,7 @@ export function registerCanonicalPersonRoutes(
     ) => Promise<{ permissions?: string[]; role?: string } | null>;
   }
 ): void {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = guards;
+  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = guards;
 
   app.get(
     "/api/people/search",
@@ -225,6 +229,98 @@ export function registerCanonicalPersonRoutes(
         }
         console.error("GET /api/customers/:id/people-links", error);
         res.status(500).json({ error: "Erro ao listar pessoas do cliente." });
+      }
+    }
+  );
+
+  app.put(
+    "/api/customers/:id/person-link",
+    requireAppAuth,
+    requirePermission("customers.edit"),
+    requireAnyPermission(["people.link.manage", "users.manage"]),
+    async (req, res) => {
+      try {
+        const body = req.body as Record<string, unknown>;
+        const result = await linkCustomerIdentityPerson(prisma, req.params.id, {
+          personId: typeof body.personId === "string" ? body.personId : null,
+          sourceKind: (body.sourceKind as PersonLinkSourceKind) ?? null,
+          sourceId: typeof body.sourceId === "string" ? body.sourceId : null,
+          createNewFromContact: body.createNewFromContact === true,
+          fieldResolutions: (body.fieldResolutions ??
+            {}) as Partial<Record<PersonFieldKey, FieldResolutionChoice>>,
+        });
+        res.json(result);
+      } catch (error) {
+        if (error instanceof CanonicalPersonError) {
+          return res
+            .status(error.status)
+            .json({ error: error.message, code: error.code, conflicts: error.conflicts });
+        }
+        console.error("PUT /api/customers/:id/person-link", error);
+        res.status(500).json({ error: "Erro ao vincular identidade do cliente." });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/customers/:id/person-link",
+    requireAppAuth,
+    requirePermission("customers.edit"),
+    requireAnyPermission(["people.link.manage", "users.manage"]),
+    async (req, res) => {
+      try {
+        const result = await unlinkCustomerIdentityPerson(prisma, req.params.id);
+        res.json(result);
+      } catch (error) {
+        if (error instanceof CanonicalPersonError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
+        console.error("DELETE /api/customers/:id/person-link", error);
+        res.status(500).json({ error: "Erro ao desvincular identidade do cliente." });
+      }
+    }
+  );
+
+  app.put(
+    "/api/customers/:id/contact-person-link",
+    requireAppAuth,
+    requirePermission("customers.edit"),
+    requireAnyPermission(["people.link.manage", "users.manage"]),
+    async (req, res) => {
+      try {
+        const body = req.body as Record<string, unknown>;
+        const result = await linkCustomerContactPerson(prisma, req.params.id, {
+          personId: typeof body.personId === "string" ? body.personId : null,
+          sourceKind: (body.sourceKind as PersonLinkSourceKind) ?? null,
+          sourceId: typeof body.sourceId === "string" ? body.sourceId : null,
+          createNewFromContact: body.createNewFromContact === true,
+        });
+        res.json(result);
+      } catch (error) {
+        if (error instanceof CanonicalPersonError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
+        console.error("PUT /api/customers/:id/contact-person-link", error);
+        res.status(500).json({ error: "Erro ao vincular contato à pessoa." });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/customers/:id/contact-person-link",
+    requireAppAuth,
+    requirePermission("customers.edit"),
+    requireAnyPermission(["people.link.manage", "users.manage"]),
+    async (req, res) => {
+      try {
+        const result = await unlinkCustomerContactPerson(prisma, req.params.id);
+        res.json(result);
+      } catch (error) {
+        if (error instanceof CanonicalPersonError) {
+          return res.status(error.status).json({ error: error.message, code: error.code });
+        }
+        console.error("DELETE /api/customers/:id/contact-person-link", error);
+        res.status(500).json({ error: "Erro ao desvincular contato." });
       }
     }
   );

@@ -608,7 +608,14 @@ export const CustomerModule = () => {
               </div>
             ) : formTab === "people-links" && editingCustomer ? (
               <div className="flex-1 overflow-y-auto p-6">
-                <CustomerPeopleLinksPanel customerId={editingCustomer.id} />
+                <CustomerPeopleLinksPanel
+                  customerId={editingCustomer.id}
+                  canManageLinks={
+                    auth.hasPermission("customers.edit") &&
+                    (auth.hasPermission("people.link.manage") ||
+                      auth.hasPermission("users.manage"))
+                  }
+                />
               </div>
             ) : (
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">

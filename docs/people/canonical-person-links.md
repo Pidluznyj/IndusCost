@@ -24,9 +24,14 @@
 ## Clientes
 
 Aba **Pessoas e vínculos**:
-- identidade PF (se houver)
-- responsável carteira (relacionamento)
-- contato cadastral (snapshot)
+- identidade PF (`Customer.personId` ↔ Person) — vincular / desvincular com confirmação
+- contato → Person (`Customer.contactPersonId`) — PJ ou PF; **não** é identidade da empresa
+- responsável carteira (`CrmCustomerCommercialOwner`) — relacionamento
+- vendedores dos pedidos Nomus (`SalesOrder`) — relacionamento, eixo comissionável
+- gestor da conta (texto `accountOwner`) — legado
+- PUT bruto `/api/customers/:id` **não** aceita `personId` / `contactPersonId`
+
+Permissões de escrita: `customers.edit` **e** (`people.link.manage` | `users.manage`).
 
 ## RH — Novo Colaborador
 
