@@ -4,12 +4,15 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import {
   AccessProfileError,
+  applyAccessProfileToUsers,
   createAccessProfile,
   deleteAccessProfile,
   duplicateAccessProfile,
   getAccessProfileById,
+  listAccessProfileLinkedUsers,
   listAccessProfiles,
   parseAccessProfileBody,
+  previewApplyAccessProfile,
   setAccessProfileStatus,
   updateAccessProfile,
 } from "@/src/lib/accessProfilesService.js";
@@ -28,11 +31,11 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
     const status =
       error.code === "NOT_FOUND"
         ? 404
-        : error.code === "NO_CHANGES"
+        : error.code === "NO_CHANGES" ||
+            error.code === "INVALID_NAME" ||
+            error.code === "CONFIRM_REQUIRED"
           ? 400
-          : error.code === "INVALID_NAME"
-            ? 400
-            : 409;
+          : 409;
     return res.status(status).json({ error: error.code, message: error.message });
   }
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -42,12 +45,14 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
     });
   }
   console.error("[access-profiles]", error);
-  return res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao processar perfil de acesso." });
+  return res.status(500).json({
+    error: "INTERNAL_ERROR",
+    message: "Erro ao processar perfil de acesso.",
+  });
 }
 
 export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDeps): void {
   const viewGuard = deps.requirePermission(PermissionResourceKeys.ADMIN_PERMISSOES, "view");
-  /** Equivale a admin.permissoes:admin — ação crítica de ACL. */
   const manageGuard = deps.requirePermission(
     PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
     "admin"
@@ -74,6 +79,57 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
         return res.status(404).json({ error: "NOT_FOUND", message: "Perfil não encontrado." });
       }
       return res.json({ profile });
+    } catch (error) {
+      return handleAccessProfileError(res, error);
+    }
+  });
+
+  app.get(
+    "/api/access-profiles/:id/linked-users",
+    deps.requireAppAuth,
+    viewGuard,
+    async (req, res) => {
+      try {
+        const id = String(req.params.id ?? "").trim();
+        const payload = await listAccessProfileLinkedUsers(prisma, id);
+        return res.json(payload);
+      } catch (error) {
+        return handleAccessProfileError(res, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/access-profiles/:id/apply-preview",
+    deps.requireAppAuth,
+    manageGuard,
+    async (req, res) => {
+      try {
+        const id = String(req.params.id ?? "").trim();
+        const userIds = Array.isArray(req.body?.userIds)
+          ? req.body.userIds.map((x: unknown) => String(x))
+          : null;
+        const preview = await previewApplyAccessProfile(prisma, id, userIds);
+        return res.json({ preview });
+      } catch (error) {
+        return handleAccessProfileError(res, error);
+      }
+    }
+  );
+
+  app.post("/api/access-profiles/:id/apply", deps.requireAppAuth, manageGuard, async (req, res) => {
+    try {
+      const id = String(req.params.id ?? "").trim();
+      const userIds = Array.isArray(req.body?.userIds)
+        ? req.body.userIds.map((x: unknown) => String(x))
+        : null;
+      const result = await applyAccessProfileToUsers(prisma, {
+        profileId: id,
+        userIds,
+        confirm: req.body?.confirm === true,
+        overwriteCustomized: req.body?.overwriteCustomized !== false,
+      });
+      return res.json({ result });
     } catch (error) {
       return handleAccessProfileError(res, error);
     }
@@ -109,27 +165,37 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
     }
   });
 
-  app.patch("/api/access-profiles/:id/status", deps.requireAppAuth, manageGuard, async (req, res) => {
-    try {
-      const id = String(req.params.id ?? "").trim();
-      const isActive = req.body?.isActive !== false;
-      const profile = await setAccessProfileStatus(prisma, id, isActive);
-      return res.json({ profile });
-    } catch (error) {
-      return handleAccessProfileError(res, error);
+  app.patch(
+    "/api/access-profiles/:id/status",
+    deps.requireAppAuth,
+    manageGuard,
+    async (req, res) => {
+      try {
+        const id = String(req.params.id ?? "").trim();
+        const isActive = req.body?.isActive !== false;
+        const profile = await setAccessProfileStatus(prisma, id, isActive);
+        return res.json({ profile });
+      } catch (error) {
+        return handleAccessProfileError(res, error);
+      }
     }
-  });
+  );
 
-  app.post("/api/access-profiles/:id/duplicate", deps.requireAppAuth, manageGuard, async (req, res) => {
-    try {
-      const id = String(req.params.id ?? "").trim();
-      const name = typeof req.body?.name === "string" ? req.body.name : undefined;
-      const profile = await duplicateAccessProfile(prisma, id, name);
-      return res.status(201).json({ profile });
-    } catch (error) {
-      return handleAccessProfileError(res, error);
+  app.post(
+    "/api/access-profiles/:id/duplicate",
+    deps.requireAppAuth,
+    manageGuard,
+    async (req, res) => {
+      try {
+        const id = String(req.params.id ?? "").trim();
+        const name = typeof req.body?.name === "string" ? req.body.name : undefined;
+        const profile = await duplicateAccessProfile(prisma, id, name);
+        return res.status(201).json({ profile });
+      } catch (error) {
+        return handleAccessProfileError(res, error);
+      }
     }
-  });
+  );
 
   app.delete("/api/access-profiles/:id", deps.requireAppAuth, manageGuard, async (req, res) => {
     try {

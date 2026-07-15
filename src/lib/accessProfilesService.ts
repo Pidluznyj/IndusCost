@@ -223,7 +223,9 @@ export async function updateAccessProfile(
   }
 
   if (Object.keys(data).length === 0) {
-    throw new AccessProfileError("NO_CHANGES", "Nenhum campo para atualizar.");
+    const current = await getAccessProfileById(prisma, id);
+    if (!current) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
+    return current;
   }
 
   const updated = await prisma.accessProfile.update({
@@ -318,6 +320,226 @@ export async function resolveAccessProfileForUser(
     throw new AccessProfileError("INACTIVE_PROFILE", "Perfil de acesso está inativo.");
   }
   return profile;
+}
+
+export type AccessProfileLinkedUserDto = {
+  id: string;
+  name: string;
+  email: string;
+  role: AppUserRole;
+  isActive: boolean;
+  permissions: string[];
+  matchesProfile: boolean;
+};
+
+/** Usuários com FK no perfil (não implica permissões iguais ao snapshot atual). */
+export async function listAccessProfileLinkedUsers(
+  prisma: PrismaClient,
+  profileId: string
+): Promise<{ profile: AccessProfileDto; users: AccessProfileLinkedUserDto[] }> {
+  const profile = await getAccessProfileById(prisma, profileId);
+  if (!profile) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
+
+  const users = await prisma.appUser.findMany({
+    where: { accessProfileId: profileId },
+    orderBy: [{ name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isActive: true,
+      permissions: true,
+    },
+  });
+
+  return {
+    profile,
+    users: users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      isActive: u.isActive,
+      permissions: filterKnownPermissions(u.permissions),
+      matchesProfile: permissionsMatchProfile(u.permissions, profile.permissions),
+    })),
+  };
+}
+
+export type AccessProfileApplyPreviewUser = {
+  id: string;
+  name: string;
+  email: string;
+  beforePermissions: string[];
+  afterPermissions: string[];
+  beforeRole: AppUserRole;
+  afterRole: AppUserRole;
+  willChange: boolean;
+  matchesProfileBefore: boolean;
+  gained: string[];
+  lost: string[];
+};
+
+export type AccessProfileApplyPreview = {
+  profileId: string;
+  profileName: string;
+  profilePermissions: string[];
+  users: AccessProfileApplyPreviewUser[];
+  changeCount: number;
+  customizedCount: number;
+};
+
+function computeApplyTarget(
+  profile: AccessProfile,
+  user: { role: AppUserRole; permissions: string[] }
+): {
+  afterRole: AppUserRole;
+  afterPermissions: string[];
+} {
+  const applied = applyAccessProfileToUserFields({
+    roleBase: profile.roleBase,
+    permissions: profile.permissions,
+  });
+  return {
+    afterRole: applied.role ?? user.role,
+    afterPermissions: filterKnownPermissions(applied.permissions).sort(),
+  };
+}
+
+export async function previewApplyAccessProfile(
+  prisma: PrismaClient,
+  profileId: string,
+  userIds?: string[] | null
+): Promise<AccessProfileApplyPreview> {
+  const profileRow = await prisma.accessProfile.findUnique({ where: { id: profileId } });
+  if (!profileRow) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
+
+  const where: Prisma.AppUserWhereInput = { accessProfileId: profileId };
+  if (userIds && userIds.length > 0) {
+    where.id = { in: userIds };
+  }
+
+  const users = await prisma.appUser.findMany({
+    where,
+    orderBy: [{ name: "asc" }],
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      permissions: true,
+    },
+  });
+
+  const profilePermissions = filterKnownPermissions(profileRow.permissions).sort();
+  const previewUsers: AccessProfileApplyPreviewUser[] = users.map((u) => {
+    const beforePermissions = filterKnownPermissions(u.permissions).sort();
+    const target = computeApplyTarget(profileRow, u);
+    const beforeSet = new Set(beforePermissions);
+    const afterSet = new Set(target.afterPermissions);
+    const gained = target.afterPermissions.filter((k) => !beforeSet.has(k));
+    const lost = beforePermissions.filter((k) => !afterSet.has(k));
+    const willChange =
+      u.role !== target.afterRole ||
+      gained.length > 0 ||
+      lost.length > 0;
+    return {
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      beforePermissions,
+      afterPermissions: target.afterPermissions,
+      beforeRole: u.role,
+      afterRole: target.afterRole,
+      willChange,
+      matchesProfileBefore: permissionsMatchProfile(u.permissions, profileRow.permissions),
+      gained,
+      lost,
+    };
+  });
+
+  return {
+    profileId: profileRow.id,
+    profileName: profileRow.name,
+    profilePermissions,
+    users: previewUsers,
+    changeCount: previewUsers.filter((u) => u.willChange).length,
+    customizedCount: previewUsers.filter((u) => !u.matchesProfileBefore).length,
+  };
+}
+
+export type ApplyAccessProfileResult = {
+  applied: number;
+  skipped: number;
+  results: Array<{
+    userId: string;
+    status: "applied" | "skipped_unchanged" | "skipped_customized";
+  }>;
+};
+
+/**
+ * Aplica snapshot do perfil aos usuários (manual).
+ * Não é chamado ao salvar o perfil — anti-cascade.
+ * Transacional; em erro faz rollback.
+ */
+export async function applyAccessProfileToUsers(
+  prisma: PrismaClient,
+  args: {
+    profileId: string;
+    userIds?: string[] | null;
+    confirm: boolean;
+    /** Se false, pula usuários que já customizaram permissões. Default true com confirm. */
+    overwriteCustomized?: boolean;
+  }
+): Promise<ApplyAccessProfileResult> {
+  if (!args.confirm) {
+    throw new AccessProfileError(
+      "CONFIRM_REQUIRED",
+      "Confirme a aplicação manual do perfil aos usuários selecionados."
+    );
+  }
+
+  const preview = await previewApplyAccessProfile(
+    prisma,
+    args.profileId,
+    args.userIds
+  );
+  const overwriteCustomized = args.overwriteCustomized !== false;
+
+  if (preview.customizedCount > 0 && !overwriteCustomized) {
+    // still allow apply for matching users only
+  }
+
+  const results: ApplyAccessProfileResult["results"] = [];
+  let applied = 0;
+  let skipped = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const u of preview.users) {
+      if (!u.willChange) {
+        results.push({ userId: u.id, status: "skipped_unchanged" });
+        skipped += 1;
+        continue;
+      }
+      if (!u.matchesProfileBefore && !overwriteCustomized) {
+        results.push({ userId: u.id, status: "skipped_customized" });
+        skipped += 1;
+        continue;
+      }
+      await tx.appUser.update({
+        where: { id: u.id },
+        data: {
+          role: u.afterRole,
+          permissions: u.afterPermissions,
+        },
+      });
+      results.push({ userId: u.id, status: "applied" });
+      applied += 1;
+    }
+  });
+
+  return { applied, skipped, results };
 }
 
 export function parseAccessProfileBody(body: unknown): {
