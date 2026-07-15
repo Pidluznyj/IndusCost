@@ -177,7 +177,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
 
   const billingSyncRunGuard = [
     requireAppAuth,
-    requireAnyPermission(["settings.nomus.sync", "settings.view"]),
+    requireAnyPermission(["settings.nomus.sync"]),
   ] as const;
 
   app.get("/api/finance/billing/sync-status", ...billingSyncViewGuard, async (_req, res) => {

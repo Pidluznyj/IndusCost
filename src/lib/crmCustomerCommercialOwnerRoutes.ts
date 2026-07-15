@@ -71,6 +71,7 @@ export function registerCrmCustomerCommercialOwnerRoutes(
   app.patch(
     "/api/crm/customers/:customerId/commercial-owner",
     requireAppAuth,
+    requirePermission(CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION),
     async (req, res) => {
       try {
         const auth = await getCurrentAppUser(req);

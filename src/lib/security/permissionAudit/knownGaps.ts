@@ -1,6 +1,9 @@
 /**
- * Gaps históricos conhecidos (Prompt 01/02) — reportados, mas não falham modo estrito.
- * Expandir com cuidado; preferir corrigir a causa em fases posteriores.
+ * Gaps históricos conhecidos — reportados, mas não falham modo estrito.
+ * Expandir com cuidado; preferir corrigir a causa.
+ *
+ * Prompt 16 RC: removidos gaps já fechados (executiveReport no catálogo,
+ * /api/test-db autenticado, Nomus sync alinhado FE/BE).
  */
 
 import type { PermissionAuditCode } from "./types.ts";
@@ -20,16 +23,6 @@ export type KnownGapRule = {
  */
 export const PERMISSION_AUDIT_KNOWN_GAPS: readonly KnownGapRule[] = [
   {
-    code: "USED_NOT_IN_CATALOG",
-    subject: "finance.executiveReport.view",
-    reason: "Chave referenciada no código mas ausente do PERMISSION_CATALOG (gap Prompt 01).",
-  },
-  {
-    code: "MUTATION_WITHOUT_PERMISSION_GUARD",
-    subjectPrefix: "GET /api/test-db",
-    reason: "Endpoint diagnóstico sem auth (Prompt 01 crítico).",
-  },
-  {
     code: "MUTATION_AUTH_ONLY",
     subjectPrefix: "DELETE /api/finance/suppliers",
     reason: "Guard inline SUPER_ADMIN (Prompt 01 médio).",
@@ -40,9 +33,14 @@ export const PERMISSION_AUDIT_KNOWN_GAPS: readonly KnownGapRule[] = [
     reason: "Guard inline SUPER_ADMIN (Prompt 01 médio).",
   },
   {
-    code: "FE_BE_GUARD_STYLE_MISMATCH",
-    subject: "settings.view|settings.nomus.sync",
-    reason: "Sync Nomus/billing: UI pedem sync; API OR settings.view (Prompt 01).",
+    code: "MUTATION_AUTH_ONLY",
+    subjectPrefix: "POST /api/fleet/admin/reservations-cleanup",
+    reason: "Guard inline SUPER_ADMIN via assertFleetReservationsCleanupSuperAdmin.",
+  },
+  {
+    code: "MUTATION_AUTH_ONLY",
+    subjectPrefix: "POST /api/admin/users/bootstrap-super-admin",
+    reason: "Bootstrap privilegiado via requireBootstrapAdmin (não é sessão comum).",
   },
   {
     code: "TAB_WITHOUT_CONTRACT",

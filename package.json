@@ -222,6 +222,8 @@
     "permissions:validate": "tsx scripts/validatePermissionsSetup.ts --catalog-only",
     "permissions:audit": "tsx scripts/validatePermissionsSetup.ts --audit",
     "permissions:qa": "tsx scripts/qaPermissions.ts",
+    "permissions:compare:legacy-vs-resource": "tsx scripts/compareLegacyVsResourceNavAccess.ts",
+    "test:permission-persona-matrix": "tsx --test src/lib/security/permissionPersonaMatrix.test.ts src/lib/security/permissionPersonaMatrix.compare.test.ts",
     "qa:portfolio-order-status": "tsx scripts/qaPortfolioOrderStatusTab.ts",
     "qa:sales-order-item-status": "tsx scripts/qaSalesOrderItemStatusRules.ts",
     "qa:cash-flow-cost-centers": "tsx scripts/qaCashFlowCostCenterDrilldown.ts",

@@ -14,15 +14,27 @@ import path from "node:path";
 import os from "node:os";
 
 describe("permissionAudit knownGaps", () => {
-  it("reconhece test-db e sync mismatch", () => {
+  it("reconhece gaps remanescentes documentados (RC Prompt 16)", () => {
+    assert.equal(
+      isKnownGap("MUTATION_AUTH_ONLY", "DELETE /api/finance/suppliers/x"),
+      true
+    );
+    assert.equal(
+      isKnownGap(
+        "MUTATION_AUTH_ONLY",
+        "POST /api/fleet/admin/reservations-cleanup"
+      ),
+      true
+    );
     assert.equal(
       isKnownGap("MUTATION_WITHOUT_PERMISSION_GUARD", "GET /api/test-db"),
-      true
+      false
     );
     assert.equal(
       isKnownGap("FE_BE_GUARD_STYLE_MISMATCH", "settings.view|settings.nomus.sync"),
-      true
+      false
     );
+    assert.equal(isKnownGap("USED_NOT_IN_CATALOG", "finance.executiveReport.view"), false);
     assert.equal(isKnownGap("USED_NOT_IN_CATALOG", "fantasma.x"), false);
   });
 

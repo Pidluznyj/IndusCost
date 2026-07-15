@@ -192,7 +192,7 @@ export function registerSettingsNomusSyncRoutes(
     }
   );
 
-  const nomusDailySyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+  const nomusDailySyncManagePermissions = ["settings.nomus.sync"] as const;
 
   app.get(
     "/api/settings/nomus-sync/daily-status",
@@ -232,7 +232,7 @@ export function registerSettingsNomusSyncRoutes(
   );
 
   const nomusArSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
-  const nomusArSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+  const nomusArSyncManagePermissions = ["settings.nomus.sync"] as const;
 
   app.get(
     "/api/settings/nomus-sync/accounts-receivable-status",
@@ -274,7 +274,7 @@ export function registerSettingsNomusSyncRoutes(
   );
 
   const nomusApSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
-  const nomusApSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+  const nomusApSyncManagePermissions = ["settings.nomus.sync"] as const;
 
   app.get(
     "/api/settings/nomus-sync/accounts-payable-status",
@@ -316,7 +316,7 @@ export function registerSettingsNomusSyncRoutes(
   );
 
   const nomusNfeSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
-  const nomusNfeSyncManagePermissions = ["settings.nomus.sync", "settings.view"] as const;
+  const nomusNfeSyncManagePermissions = ["settings.nomus.sync"] as const;
 
   app.get(
     "/api/settings/nomus-sync/nfes-status",

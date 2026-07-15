@@ -3,9 +3,10 @@
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Data** | 2026-07-13 |
+| **Data** | 2026-07-15 |
 | **Plano** | `docs/security/permissions-model-plan.md` |
 | **Inventário** | `docs/security/permissions-current-inventory.md` |
+| **RC / homologação** | `permissions-hardening-rc.md`, `permissions-hardening-runbook.md`, `permissions-homologation-script.md` |
 | **Migration** | `prisma/migrations/20260723120000_permission_resource_rbac` |
 | **Seed** | `scripts/seedPermissionResources.ts` (PT + roles) · **Prompt 05:** `scripts/seedPermissionCatalogFromContract.ts` (contrato → catálogo, sem grants) — ver `permissions-catalog-seed.md` |
 | **Dados** | `src/lib/permissionResourceSeedData.ts` · contrato `src/lib/security/permissionContract` |

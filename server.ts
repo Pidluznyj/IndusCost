@@ -2260,8 +2260,8 @@ async function startServer() {
     requireUsersView: requireUsersViewOrBootstrap,
   });
 
-  // --- API: Test DB Connection ---
-  app.get("/api/test-db", async (req, res) => {
+  // --- API: Test DB Connection (somente autenticado — RC Prompt 16) ---
+  app.get("/api/test-db", requireAppAuth, async (req, res) => {
     console.log("Testing database connection and schema...");
     try {
       const results = {

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Data (UTC)** | 2026-07-13T11:55:26.825Z |
+| **Data (UTC)** | 2026-07-15T17:40:58.688Z |
 | **Script** | `scripts/qaPermissions.ts` |
 | **Pass** | 19 |
 | **Fail** | 0 |
@@ -29,7 +29,7 @@
 - **Categoria:** Catálogo
 - **Status:** ✅ `pass`
 - **Evidências:**
-  - PERMISSION_RESOURCE_SEEDS.length=42
+  - PERMISSION_RESOURCE_SEEDS.length=45
 
 ### 2. Hierarquia válida
 
@@ -59,10 +59,12 @@
 - **Categoria:** Hierarquia
 - **Status:** ⚠️ `warn`
 - **Evidências:**
-  - tabs=25; 12 com parent SUBMENU
+  - tabs=28; 13 com parent SUBMENU
   - comissoes.tab.fechamento_mes → MENU comissoes
+  - comissoes.tab.fechamentos → MENU comissoes
   - comissoes.tab.excecoes_cliente → MENU comissoes
   - comissoes.tab.relatorios → MENU comissoes
+  - comissoes.tab.reprocessar → MENU comissoes
   - comissoes.tab.dashboard → MENU comissoes
   - comissoes.tab.previstas → MENU comissoes
   - comissoes.tab.confirmadas → MENU comissoes
@@ -88,7 +90,7 @@
 - **Categoria:** Roles
 - **Status:** ✅ `pass`
 - **Evidências:**
-  - Acesso total em 42 recursos × 3 ações
+  - Acesso total em 45 recursos × 3 ações
 
 ### 8. ADMIN tem permissões esperadas
 
@@ -187,7 +189,7 @@
 - **Categoria:** Frontend
 - **Status:** ✅ `pass`
 - **Evidências:**
-  - [check:frontend-server-imports] OK — 643 arquivo(s) frontend rastreado(s); nenhum caminho até Prisma/server.
+  - [check:frontend-server-imports] OK — 689 arquivo(s) frontend rastreado(s); nenhum caminho até Prisma/server.
 
 ### 19. Menu lateral não mostra recurso bloqueado
 

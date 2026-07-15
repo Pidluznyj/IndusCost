@@ -2,17 +2,17 @@
 
 | | |
 |---|---|
-| Gerado em | 2026-07-15T17:26:03.655Z |
-| Modo | report |
+| Gerado em | 2026-07-15T17:39:55.914Z |
+| Modo | strict |
 | OK (modo) | sim |
-| Catálogo | 175 |
+| Catálogo | 176 |
 | Contrato | 76 |
 | Seed relacional | 45 |
 | Uso FE (chaves) | 32 |
 | Uso BE (chaves) | 116 |
 | Rotas escaneadas | 719 |
-| Findings | error 2 · warn 10 · info 73 |
-| Known gaps | 82 |
+| Findings | error 0 · warn 9 · info 73 |
+| Known gaps | 81 |
 | Erros acionáveis | 0 |
 
 ## Limitações
@@ -23,7 +23,7 @@
 - CATALOG_NEVER_USED ignora uso indireto via arrays tipados sem literal no call site.
 
 ## Fantasmas (usado ∉ catálogo)
-- `finance.executiveReport.view`
+_Nenhum._
 
 ## Findings (agrupados)
 ### CATALOG_NEVER_USED (57)
@@ -73,26 +73,19 @@
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: operations.inventory.counts.approve
 
 ### FE_BE_GUARD_STYLE_MISMATCH (1)
-- **warn** _(known)_: Backend referencia settings.nomus.sync e settings.view (possível OR largo em sync).
+- **warn**: Backend referencia settings.nomus.sync e settings.view (possível OR largo em sync).
 
-### MUTATION_AUTH_ONLY (5)
-- **warn**: Mutação só com auth (sem permissão/resource no middleware): PATCH /api/crm/customers/:customerId/commercial-owner
+### MUTATION_AUTH_ONLY (4)
 - **warn** _(known)_: Mutação só com auth (sem permissão/resource no middleware): DELETE /api/finance/suppliers/:id
-- **warn**: Mutação só com auth (sem permissão/resource no middleware): POST /api/fleet/admin/reservations-cleanup
+- **warn** _(known)_: Mutação só com auth (sem permissão/resource no middleware): POST /api/fleet/admin/reservations-cleanup
 - **warn** _(known)_: Mutação só com auth (sem permissão/resource no middleware): DELETE /api/projects/:id
-- **warn**: Mutação só com auth (sem permissão/resource no middleware): POST /api/admin/users/bootstrap-super-admin
-
-### MUTATION_WITHOUT_PERMISSION_GUARD (1)
-- **error** _(known)_: Endpoint sensível sem guard: GET /api/test-db
+- **warn** _(known)_: Mutação só com auth (sem permissão/resource no middleware): POST /api/admin/users/bootstrap-super-admin
 
 ### TAB_WITHOUT_CONTRACT (4)
 - **warn** _(known)_: Aba de estoque sem recurso canônico dedicado: overview
 - **warn** _(known)_: Aba de estoque sem recurso canônico dedicado: balances
 - **warn** _(known)_: Aba de estoque sem recurso canônico dedicado: reservations
 - **warn** _(known)_: Aba de estoque sem recurso canônico dedicado: audit
-
-### USED_NOT_IN_CATALOG (1)
-- **error** _(known)_: Permissão usada e não cadastrada no PERMISSION_CATALOG: finance.executiveReport.view
 
 ## Catálogo sem uso literal (amostra)
 - `reports.material_demand.view`

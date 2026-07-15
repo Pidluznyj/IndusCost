@@ -276,6 +276,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     risk: "sensitive",
   }),
   perm({
+    key: "finance.executiveReport.view",
+    label: "Financeiro — Relatório Presidencial",
+    group: FIN,
+    module: "finance",
+    description: "Consultar o relatório executivo / presidencial financeiro.",
+    type: "section",
+    parentKey: "finance.view",
+    requires: ["finance.view"],
+    risk: "sensitive",
+  }),
+  perm({
     key: "finance.cost_center_rules.view",
     label: "Financeiro — Ver regras de classificação",
     group: FIN,

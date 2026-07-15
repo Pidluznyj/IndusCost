@@ -6,7 +6,7 @@
 | **Data da auditoria** | 2026-07-15 |
 | **Escopo** | Somente documentação — **sem** alteração de comportamento |
 | **Fonte** | Código em `main` (não apenas docs anteriores) |
-| **Relacionados** | `permissions-resource-inventory.md`, `permissions-endpoint-audit.md`, `permissions-model-plan.md`, `permissions-current-inventory.md`, **Prompt 02:** `permissions-key-naming.md`, `permissions-target-matrix.md`, `src/lib/security/permissionContract`, **Prompt 03:** `permissions-validator.md`, `src/lib/security/permissionAudit`, **Prompt 05:** `permissions-catalog-seed.md`, `src/lib/security/permissionCatalogSeed`, **Prompt 06:** `permissions-dual-write.md`, `src/lib/security/permissionDualWrite`, **Prompt 08:** `permissions-matrix-ui.md`, `src/components/admin/PermissionMatrix.tsx`, **Prompt 09:** `permissions-access-profiles-matrix.md`, `AccessProfilesModule`, **Prompt 10:** `permissions-user-matrix.md`, `AdminUsersModule`, **Prompt 11:** `permissions-navigation-view.md`, `resourceNavigationAccess.ts`, **Prompt 13:** `permissions-commercial-engineering.md`, `commercialEngineeringPermissions.ts`, **Prompt 15:** `permissions-operations-admin.md`, `operationsAdminPermissions.ts` |
+| **Relacionados** | … **Prompt 15:** `permissions-operations-admin.md`, **Prompt 16:** `permissions-hardening-rc.md`, `permissions-persona-matrix.md`, `permissions-hardening-runbook.md`, `permissions-homologation-script.md` |
 
 ---
 
