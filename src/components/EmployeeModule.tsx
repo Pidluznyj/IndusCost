@@ -53,6 +53,7 @@ import {
 import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabNav";
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
+import { EmployeeSystemLinksPanel } from "@/src/components/employee/EmployeeSystemLinksPanel";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -183,10 +184,6 @@ export const EmployeeModule = () => {
   >([]);
   const [corporateEmailHint, setCorporateEmailHint] = useState<string | null>(null);
   const [corporateEmailError, setCorporateEmailError] = useState<string | null>(null);
-  const [systemLinks, setSystemLinks] = useState<{
-    person: { id: string; displayName: string } | null;
-    links: Record<string, unknown[]>;
-  } | null>(null);
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formBaseline, setFormBaseline] = useState<string>("");
@@ -381,18 +378,6 @@ export const EmployeeModule = () => {
     };
   }, []);
 
-  const loadSystemLinks = async (personId: string) => {
-    try {
-      const data = await fetchJsonOk<{
-        person: { id: string; displayName: string };
-        links: Record<string, unknown[]>;
-      }>(`/api/people/${personId}/links`);
-      setSystemLinks({ person: data.person, links: data.links });
-    } catch {
-      setSystemLinks(null);
-    }
-  };
-
   const validateCorporateEmailField = async (raw: string) => {
     const normalized = normalizeCorporateEmail(raw);
     setFormData((prev) => ({ ...prev, corporateEmail: normalized ?? "" }));
@@ -483,10 +468,6 @@ export const EmployeeModule = () => {
   const openEmployeeView = (employee: Employee) => {
     setViewFichaTab("professional");
     setViewingEmployee(employee);
-    setSystemLinks(null);
-    if (employee.personId || employee.person?.id) {
-      void loadSystemLinks(employee.personId || employee.person!.id);
-    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1680,6 +1661,18 @@ export const EmployeeModule = () => {
                       </div>
                     </div>
                   )}
+
+                  {employeeFichaTab === "links" && (
+                    <div className="space-y-3">
+                      {editingEmployee ? (
+                        <EmployeeSystemLinksPanel employeeId={editingEmployee.id} />
+                      ) : (
+                        <p className="text-sm text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                          Salve o colaborador para consultar os vínculos no sistema.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -2135,84 +2128,18 @@ export const EmployeeModule = () => {
                         );
                       }}
                     />
-                    {!viewingEmployee.personId && !viewingEmployee.person ? (
-                      <p className="text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
-                        Este colaborador ainda não possui pessoa canônica vinculada (legado ou pendente).
-                      </p>
-                    ) : systemLinks ? (
-                      <>
-                        <DetailField
-                          label="Pessoa canônica"
-                          value={systemLinks.person?.displayName ?? "—"}
-                        />
-                        {(
-                          [
-                            ["employees", "Colaboradores"],
-                            ["appUsers", "Usuários"],
-                            ["commissionPeople", "Pessoas comissionadas"],
-                            ["fleetDrivers", "Motoristas"],
-                            ["customers", "Clientes PF"],
-                          ] as const
-                        ).map(([key, label]) => {
-                          const rows = (systemLinks.links[key] ?? []) as Array<Record<string, unknown>>;
-                          return (
-                            <div key={key} className="rounded-lg border border-border p-3">
-                              <p className="text-xs font-bold uppercase text-muted-foreground mb-2">
-                                {label}
-                              </p>
-                              {rows.length === 0 ? (
-                                <p className="text-muted-foreground text-xs">Nenhum vínculo</p>
-                              ) : (
-                                <ul className="space-y-1">
-                                  {rows.map((row) => (
-                                    <li key={String(row.id)}>
-                                      {String(row.name ?? row.displayName ?? row.companyName ?? row.email ?? row.id)}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          );
-                        })}
-                        {canEdit && (
-                          <button
-                            type="button"
-                            className="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 text-sm hover:bg-red-50"
-                            onClick={async () => {
-                              if (
-                                !window.confirm(
-                                  "Desvincular este colaborador da pessoa canônica? O histórico do papel RH não é apagado."
-                                )
-                              ) {
-                                return;
-                              }
-                              try {
-                                await fetchOk(`/api/employees/${viewingEmployee.id}/person-link`, {
-                                  method: "DELETE",
-                                });
-                                setViewingEmployee({
-                                  ...viewingEmployee,
-                                  personId: null,
-                                  person: null,
-                                });
-                                setSystemLinks(null);
-                                fetchData();
-                              } catch (error) {
-                                alert(
-                                  error instanceof Error
-                                    ? error.message
-                                    : "Não foi possível desvincular."
-                                );
-                              }
-                            }}
-                          >
-                            Desvincular pessoa canônica
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-muted-foreground">Carregando vínculos…</p>
-                    )}
+                    <EmployeeSystemLinksPanel
+                      employeeId={viewingEmployee.id}
+                      canUnlinkPerson={canEdit}
+                      onUnlinkedPerson={() => {
+                        setViewingEmployee({
+                          ...viewingEmployee,
+                          personId: null,
+                          person: null,
+                        });
+                        fetchData();
+                      }}
+                    />
                   </div>
                 )}
               </div>

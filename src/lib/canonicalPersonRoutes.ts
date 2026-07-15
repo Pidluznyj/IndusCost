@@ -25,6 +25,7 @@ import {
   unlinkEmployeeFromPerson,
 } from "@/src/lib/canonicalPersonService.server.js";
 import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
+import { buildSystemLinksViewerCaps } from "@/src/lib/employeeSystemLinks.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -41,22 +42,41 @@ const SEARCH_PERMS = [
 
 const LINK_PERMS = ["people.link.manage", "employees.edit", "users.manage"] as const;
 
+const RH_VIEW_PERMS = ["employees.view", "employees.edit"] as const;
+
+type AppUserBrief = { permissions?: string[]; role?: string };
+
+async function resolveAppUserBrief(
+  req: express.Request,
+  getCurrentAppUser?: (
+    req: express.Request
+  ) => Promise<AppUserBrief | null> | AppUserBrief | null
+): Promise<AppUserBrief | null> {
+  const raw = getCurrentAppUser?.(req);
+  const user = raw && typeof (raw as Promise<unknown>).then === "function" ? await raw : raw;
+  return (user as AppUserBrief | null) ?? null;
+}
+
 /** Melhor esforço: muitos endpoints usam getCurrentAppUser. */
 async function resolveCanViewPii(
   req: express.Request,
   getCurrentAppUser?: (
     req: express.Request
-  ) => Promise<{ permissions?: string[]; role?: string } | null> | { permissions?: string[]; role?: string } | null
+  ) => Promise<AppUserBrief | null> | AppUserBrief | null
 ): Promise<boolean> {
-  const raw = getCurrentAppUser?.(req);
-  const user = raw && typeof (raw as Promise<unknown>).then === "function" ? await raw : raw;
-  const u = user as { permissions?: string[]; role?: string } | null;
-  if (u?.role === "SUPER_ADMIN" || u?.role === "ADMIN") return true;
-  const perms = u?.permissions ?? [];
-  return (
-    perms.includes("employees.edit") ||
-    perms.includes("people.pii.view") ||
-    perms.includes("users.manage")
+  return buildSystemLinksViewerCaps(
+    (await resolveAppUserBrief(req, getCurrentAppUser)) ?? {}
+  ).canViewPii;
+}
+
+async function resolveSystemLinksCaps(
+  req: express.Request,
+  getCurrentAppUser?: (
+    req: express.Request
+  ) => Promise<AppUserBrief | null> | AppUserBrief | null
+) {
+  return buildSystemLinksViewerCaps(
+    (await resolveAppUserBrief(req, getCurrentAppUser)) ?? {}
   );
 }
 
@@ -138,9 +158,8 @@ export function registerCanonicalPersonRoutes(
         if (!isPersonUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
-        const payload = await getPersonSystemLinks(prisma, id, {
-          canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
-        });
+        const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
+        const payload = await getPersonSystemLinks(prisma, id, caps);
         res.json(payload);
       } catch (error) {
         if (error instanceof CanonicalPersonError) {
@@ -150,6 +169,38 @@ export function registerCanonicalPersonRoutes(
         }
         console.error("GET /api/people/:id/links", error);
         res.status(500).json({ error: "Erro ao listar vínculos." });
+      }
+    }
+  );
+
+  /**
+   * Agregador executivo da ficha do colaborador (“Vínculos no sistema”).
+   * IDs técnicos só em `audit` quando permitido.
+   */
+  app.get(
+    "/api/employees/:id/system-links",
+    requireAppAuth,
+    requireAnyPermission([...RH_VIEW_PERMS]),
+    async (req, res) => {
+      try {
+        const id = req.params.id;
+        if (!isPersonUuid(id)) {
+          return res.status(400).json({ error: "ID inválido." });
+        }
+        const { getEmployeeSystemLinks } = await import(
+          "@/src/lib/employeeSystemLinks.server.js"
+        );
+        const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
+        const { dto, audit } = await getEmployeeSystemLinks(prisma, id, caps);
+        res.json({ ...dto, audit });
+      } catch (error) {
+        if (error instanceof CanonicalPersonError) {
+          return res
+            .status(error.status)
+            .json({ error: error.message, code: error.code, conflicts: error.conflicts });
+        }
+        console.error("GET /api/employees/:id/system-links", error);
+        res.status(500).json({ error: "Erro ao listar vínculos do colaborador." });
       }
     }
   );

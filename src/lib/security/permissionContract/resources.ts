@@ -1320,6 +1320,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     ],
     relatedEndpoints: [
       "/api/employees",
+      "/api/employees/:id/system-links",
       "/api/people/search",
       "/api/people/resolve",
       "/api/people/:id/links",

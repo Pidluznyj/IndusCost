@@ -37,3 +37,15 @@ Permissões de escrita: `customers.edit` **e** (`people.link.manage` | `users.ma
 
 Campo **Vincular pessoa existente** + opção criar nova Person.
 Conflitos exigem resolução campo a campo.
+
+## RH — Vínculos no sistema (ficha do colaborador)
+
+Leitura executiva agregada (sem regras paralelas de comissão/carteira):
+
+- Endpoint: `GET /api/employees/:id/system-links` (`employees.view` | `employees.edit`)
+- DTO: tipo, entidade, status, origem, data, ação, alerta; IDs só em `audit` (se `people.link.manage` | `users.manage` | `employees.edit`)
+- Fontes: AppUser, hierarquia RH, CommissionPerson + aliases, Frota, Customer identidade/contato, carteira CRM via `sellerExternalId`
+- Permissões por módulo: `users.manage`/`settings.view`, `commissions.view`, `customers.view`, `fleet.view`
+- Fornecedor ↔ Person: **não existe** no schema (fora do agregador)
+- Vendedor de pedidos: aparece via **aliases / pessoa comissionada** (eixo oficial), não como pedido individual
+- Legado: `GET /api/people/:id/links` ainda devolve buckets + `executive`

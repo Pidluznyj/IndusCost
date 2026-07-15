@@ -19,4 +19,12 @@ describe("canonicalPersonRoutes — proteção do endpoint resolve", () => {
     const linksIdx = src.indexOf('"/api/people/:id/links"');
     assert.ok(resolveIdx > 0 && linksIdx > resolveIdx);
   });
+
+  it("registra /api/employees/:id/system-links com auth RH e agregador oficial", () => {
+    const src = readFileSync(join(here, "canonicalPersonRoutes.ts"), "utf8");
+    assert.ok(src.includes('"/api/employees/:id/system-links"'));
+    assert.ok(src.includes("requireAnyPermission([...RH_VIEW_PERMS])"));
+    assert.ok(src.includes("getEmployeeSystemLinks"));
+    assert.ok(src.includes("buildSystemLinksViewerCaps"));
+  });
 });

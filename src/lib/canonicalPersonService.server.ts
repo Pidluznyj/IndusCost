@@ -354,84 +354,10 @@ export async function getPersonSystemLinks(
   personId: string,
   opts: { canViewPii: boolean }
 ) {
-  if (!isPersonUuid(personId)) {
-    throw new CanonicalPersonError("INVALID_PERSON_ID", "ID de pessoa inválido.");
-  }
-  const person = await prisma.person.findUnique({
-    where: { id: personId },
-    include: {
-      employees: {
-        select: {
-          id: true,
-          name: true,
-          socialName: true,
-          status: true,
-          department: true,
-          corporateEmail: true,
-        },
-      },
-      appUsers: {
-        select: { id: true, name: true, email: true, isActive: true, role: true },
-      },
-      commissionPeople: {
-        select: { id: true, name: true, email: true, active: true, type: true },
-      },
-      fleetDrivers: {
-        select: { id: true, name: true, status: true, email: true, cpf: true },
-      },
-      customers: {
-        select: {
-          id: true,
-          companyName: true,
-          contactName: true,
-          taxId: true,
-          status: true,
-          email: true,
-        },
-      },
-    },
-  });
-  if (!person) throw new CanonicalPersonError("PERSON_NOT_FOUND", "Pessoa não encontrada.", 404);
-
-  return {
-    person: {
-      id: person.id,
-      displayName: person.displayName,
-      socialName: person.socialName,
-      corporateEmail: opts.canViewPii
-        ? person.corporateEmail
-        : maskEmail(person.corporateEmail),
-      personalEmail: opts.canViewPii
-        ? person.personalEmail
-        : maskEmail(person.personalEmail),
-      cpfNormalized: opts.canViewPii
-        ? person.cpfNormalized
-        : maskCpf(person.cpfNormalized),
-      status: person.status,
-    },
-    links: {
-      employees: person.employees,
-      appUsers: person.appUsers.map((u) => ({
-        ...u,
-        email: opts.canViewPii ? u.email : maskEmail(u.email),
-      })),
-      commissionPeople: person.commissionPeople.map((c) => ({
-        ...c,
-        email: opts.canViewPii ? c.email : maskEmail(c.email),
-      })),
-      fleetDrivers: person.fleetDrivers.map((d) => ({
-        ...d,
-        email: opts.canViewPii ? d.email : maskEmail(d.email),
-        cpf: opts.canViewPii ? d.cpf : maskCpf(d.cpf),
-      })),
-      customers: person.customers.map((c) => ({
-        ...c,
-        email: opts.canViewPii ? c.email : maskEmail(c.email),
-        taxId: opts.canViewPii ? c.taxId : maskCpf(c.taxId),
-        documentKind: classifyCustomerDocument(c.taxId),
-      })),
-    },
-  };
+  const { getPersonSystemLinks: getLinks } = await import(
+    "@/src/lib/employeeSystemLinks.server.js"
+  );
+  return getLinks(prisma, personId, opts);
 }
 
 export async function unlinkEmployeeFromPerson(
