@@ -102,8 +102,8 @@ export function CommissionClosingReportPrintDocument({
     .join(" · ");
 
   return (
-    <div id="sales-orders-print-root">
-      <div className="sales-orders-print-document">
+    <div id="sales-orders-print-root" className="comm-closing-print-root">
+      <div className="sales-orders-print-document comm-closing-print-document">
         <div className="sales-orders-print-cover">
           <PrintHeader
             branding={brand}

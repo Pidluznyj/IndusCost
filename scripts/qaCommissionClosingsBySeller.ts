@@ -55,6 +55,7 @@ section("7–10. PDF/XLSX e endpoints");
   assert.match(print, /comm-closing-print-table/);
   assert.match(print, /Pedido \/ Cliente/);
   assert.match(print, /comm-closing-print-stack/);
+  assert.match(print, /comm-closing-print-root/);
   assert.match(server, /buildCommissionClosingSellerXlsx/);
   assert.match(server, /listCommissionClosings/);
   ok("Endpoints, PDF 2 linhas e XLSX por vendedor");
