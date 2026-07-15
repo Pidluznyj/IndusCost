@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Calculator, ChevronDown, ChevronUp, Loader2, Save } from "lucide-react";
+import { Calculator, Loader2, Save } from "lucide-react";
+import {
+  calculateMarginPercentFromAgreedCustomerPrice,
+  calculateSalePriceFromCost,
+} from "@/src/lib/pricingCalculations";
 import {
   buildProjectCommercialPricingSummary,
   computeLiveProjectPricingView,
@@ -74,93 +78,38 @@ function PriceWithAmortCell({
   );
 }
 
-function CompositionPanel({ item }: { item: ProjectPricingItemView }) {
-  const delta = pricingPriceDelta(
-    item.suggestedPriceWithoutAmortization,
-    item.suggestedPriceWithAmortization
-  );
+function reverseMarginFromAgreedPrice(
+  item: Pick<
+    ProjectPricingItemView,
+    "finalUnitCost" | "taxPercent" | "amortizationPriceAddOnUnit"
+  >,
+  agreedRaw: string
+): number | null {
+  const agreed = parseProjectsNumberInput(agreedRaw);
+  if (agreed == null) return null;
+  const result = calculateMarginPercentFromAgreedCustomerPrice({
+    agreedCustomerPrice: agreed,
+    pricingCost: item.finalUnitCost,
+    taxPercent: item.taxPercent,
+    priceAddOnUnit: item.amortizationPriceAddOnUnit ?? 0,
+  });
+  return result.ok ? result.targetMarginPercent : null;
+}
 
-  return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3 text-sm space-y-4">
-      <p className="font-medium">Composição detalhada do preço — {item.displayName}</p>
-
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="rounded-md border border-border/70 bg-background/80 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Cenário sem amortização
-          </p>
-          <dl className="mt-2 grid gap-1">
-            <div>
-              <dt className="text-muted-foreground">Custo usado</dt>
-              <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Impostos ({formatPercent(item.taxPercent)})</dt>
-              <dd className="font-medium">{formatMoney(item.taxAmountWithoutAmortization)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Margem ({formatPercent(item.targetMarginPercent)})</dt>
-              <dd className="font-medium">{formatMoney(item.marginAmountWithoutAmortization)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Preço s/ amortização</dt>
-              <dd className="font-semibold">{formatMoney(item.suggestedPriceWithoutAmortization)}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div className="rounded-md border border-border/70 bg-background/80 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Cenário com amortização
-          </p>
-          <dl className="mt-2 grid gap-1">
-            <div>
-              <dt className="text-muted-foreground">Custo base unit.</dt>
-              <dd className="font-medium">{formatMoney(item.costBaseUnit)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Amortização no custo</dt>
-              <dd className="font-medium">{formatMoney(item.amortizationUnitCost)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Repasse no preço</dt>
-              <dd className="font-medium">{formatMoney(item.amortizationPriceAddOnUnit)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Custo final unit.</dt>
-              <dd className="font-medium">{formatMoney(item.finalUnitCost)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Impostos ({formatPercent(item.taxPercent)})</dt>
-              <dd className="font-medium">{formatMoney(item.taxAmount)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Margem do produto</dt>
-              <dd className="font-medium">{formatMoney(item.marginAmount)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Recuperação de projeto</dt>
-              <dd className="font-medium">{formatMoney(item.projectRecoveryValue)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Preço produto</dt>
-              <dd className="font-medium">{formatMoney(item.calculatedProductPrice)}</dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Preço final c/ amortização</dt>
-              <dd className="font-semibold text-primary">{formatMoney(item.suggestedPriceWithAmortization)}</dd>
-            </div>
-          </dl>
-        </div>
-      </div>
-
-      {delta != null && Math.abs(delta) > 0.000001 ? (
-        <p className="text-xs text-muted-foreground">
-          Diferença entre os cenários: {formatMoney(delta)}
-        </p>
-      ) : null}
-    </div>
-  );
+function forwardAgreedFromMargin(
+  item: Pick<
+    ProjectPricingItemView,
+    "finalUnitCost" | "taxPercent" | "amortizationPriceAddOnUnit"
+  >,
+  marginPercent: number
+): number | null {
+  const result = calculateSalePriceFromCost({
+    cost: item.finalUnitCost,
+    taxPercent: item.taxPercent,
+    targetMarginPercent: marginPercent,
+  });
+  if (!result.ok) return null;
+  return result.suggestedPrice + (item.amortizationPriceAddOnUnit ?? 0);
 }
 
 function buildItemMarginDrafts(
@@ -209,7 +158,6 @@ export function ProjectPricingSection({
     buildItemFiscalRuleDrafts(detail.projectPricing?.items ?? [])
   );
   const [itemAgreedPrices, setItemAgreedPrices] = useState<Record<string, string>>({});
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
 
   const hydrateDraftsFromView = useCallback((view: ProjectPricingView) => {
     setPricingView(view);
@@ -340,16 +288,31 @@ export function ProjectPricingSection({
   ]);
 
   const applyToAll = () => {
-    const next: Record<string, string> = {};
-    for (const item of computedItems) {
-      next[item.targetItemId] = defaultMargin;
-    }
-    setItemMargins(next);
+    const marginDefault = defaultMargin.trim() ? Number(defaultMargin) : null;
+    const nextMargins: Record<string, string> = {};
     const nextRules: Record<string, string> = {};
+    const nextAgreed: Record<string, string> = {};
     for (const item of computedItems) {
       nextRules[item.targetItemId] = fiscalRuleId;
+      if (marginDefault != null && Number.isFinite(marginDefault)) {
+        nextMargins[item.targetItemId] = String(marginDefault);
+        const agreed = forwardAgreedFromMargin(item, marginDefault);
+        if (agreed != null) {
+          nextAgreed[item.targetItemId] = formatProjectsNumberInput(agreed);
+        }
+      }
     }
     setItemFiscalRules(nextRules);
+    if (Object.keys(nextMargins).length > 0) setItemMargins(nextMargins);
+    if (Object.keys(nextAgreed).length > 0) setItemAgreedPrices(nextAgreed);
+  };
+
+  const handleAgreedPriceChange = (item: ProjectPricingItemView, raw: string) => {
+    setItemAgreedPrices((prev) => ({ ...prev, [item.targetItemId]: raw }));
+    const margin = reverseMarginFromAgreedPrice(item, raw);
+    if (margin != null) {
+      setItemMargins((prev) => ({ ...prev, [item.targetItemId]: String(margin) }));
+    }
   };
 
   const handleSave = async () => {
@@ -409,8 +372,9 @@ export function ProjectPricingSection({
       <div>
         <h5 className="font-medium">Precificação comercial</h5>
         <p className="mt-1 text-sm text-muted-foreground">
-          Compare o preço sugerido sem amortizar o projeto e com a amortização repassada ao produto,
-          usando a mesma regra da Calculadora de Preço de Venda.
+          Informe o <strong>Preço acordado cliente</strong> — a margem é calculada automaticamente
+          (engenharia reversa da mesma fórmula da Calculadora de Preço de Venda) e o valor acordado
+          alimenta a proposta cliente.
         </p>
       </div>
 
@@ -479,7 +443,7 @@ export function ProjectPricingSection({
           className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
           data-testid="project-pricing-unsaved-warning"
         >
-          Há alterações de margem, regra fiscal ou preço acordado não salvas. Salve a precificação
+          Há alterações de regra fiscal, margem ou preço acordado não salvas. Salve a precificação
           antes de emitir relatórios para garantir que os valores coincidam com a aba Custos do Projeto.
         </div>
       ) : null}
@@ -504,13 +468,11 @@ export function ProjectPricingSection({
                 <th className="px-3 py-2">Preço s/ amortização</th>
                 <th className="px-3 py-2">Preço c/ amortização</th>
                 <th className="px-3 py-2">Preço acordado cliente</th>
-                <th className="px-3 py-2">Ações</th>
               </tr>
             </thead>
             <tbody>
               {computedItems.map((item) => (
-                <React.Fragment key={item.targetItemId}>
-                  <tr className="border-b border-border/60">
+                  <tr key={item.targetItemId} className="border-b border-border/60">
                     <td className="px-3 py-2">{item.displayName}</td>
                     <td className="px-3 py-2">{formatMoney(item.costBaseUnit)}</td>
                     <td className="px-3 py-2">{formatMoney(item.amortizationUnitCost)}</td>
@@ -524,12 +486,26 @@ export function ProjectPricingSection({
                             item.fiscalRuleId ??
                             fiscalRuleId
                           }
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const nextRuleId = e.target.value;
                             setItemFiscalRules((prev) => ({
                               ...prev,
-                              [item.targetItemId]: e.target.value,
-                            }))
-                          }
+                              [item.targetItemId]: nextRuleId,
+                            }));
+                            const taxPercent =
+                              taxRules.find((rule) => rule.id === nextRuleId)?.taxPercent ??
+                              item.taxPercent;
+                            const margin = reverseMarginFromAgreedPrice(
+                              { ...item, taxPercent },
+                              resolveAgreedPriceDraft(item)
+                            );
+                            if (margin != null) {
+                              setItemMargins((prev) => ({
+                                ...prev,
+                                [item.targetItemId]: String(margin),
+                              }));
+                            }
+                          }}
                           className="w-full min-w-[140px] rounded border border-border bg-background px-2 py-1 text-xs"
                         >
                           <option value="">—</option>
@@ -545,27 +521,20 @@ export function ProjectPricingSection({
                     </td>
                     <td className="px-3 py-2">{formatPercent(item.taxPercent)}</td>
                     <td className="px-3 py-2">
-                      {canManage ? (
-                        <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          value={
-                            itemMargins[item.targetItemId] ??
-                            String(item.targetMarginPercent) ??
-                            defaultMargin
-                          }
-                          onChange={(e) =>
-                            setItemMargins((prev) => ({
-                              ...prev,
-                              [item.targetItemId]: e.target.value,
-                            }))
-                          }
-                          className="w-20 rounded border border-border bg-background px-2 py-1 text-xs"
-                        />
-                      ) : (
-                        formatPercent(item.targetMarginPercent)
-                      )}
+                      <span
+                        className="inline-block min-w-[3.5rem] rounded border border-border/60 bg-muted/40 px-2 py-1 text-xs font-medium"
+                        title="Margem calculada a partir do preço acordado com o cliente"
+                      >
+                        {formatPercent(
+                          itemMargins[item.targetItemId] != null &&
+                            itemMargins[item.targetItemId] !== ""
+                            ? Number(itemMargins[item.targetItemId])
+                            : reverseMarginFromAgreedPrice(
+                                item,
+                                resolveAgreedPriceDraft(item)
+                              ) ?? item.targetMarginPercent
+                        )}
+                      </span>
                     </td>
                     <td className="px-3 py-2 font-medium">
                       {formatMoney(item.suggestedPriceWithoutAmortization, 4)}
@@ -581,14 +550,9 @@ export function ProjectPricingSection({
                         <input
                           type="text"
                           inputMode="decimal"
-                          title="Preço unitário acordado com o cliente (usado na proposta cliente)"
+                          title="Preço unitário acordado com o cliente — define a margem e a proposta"
                           value={resolveAgreedPriceDraft(item)}
-                          onChange={(e) =>
-                            setItemAgreedPrices((prev) => ({
-                              ...prev,
-                              [item.targetItemId]: e.target.value,
-                            }))
-                          }
+                          onChange={(e) => handleAgreedPriceChange(item, e.target.value)}
                           className="w-28 rounded border border-border bg-background px-2 py-1 text-xs font-semibold"
                           data-testid={`agreed-customer-price-${item.targetItemId}`}
                         />
@@ -601,36 +565,7 @@ export function ProjectPricingSection({
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedItemId((current) =>
-                            current === item.targetItemId ? null : item.targetItemId
-                          )
-                        }
-                        className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-xs hover:bg-muted"
-                      >
-                        {expandedItemId === item.targetItemId ? (
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        )}
-                        Composição
-                      </button>
-                    </td>
                   </tr>
-                  {expandedItemId === item.targetItemId ? (
-                    <tr className="border-b border-border/60 bg-muted/20">
-                      <td colSpan={11} className="px-3 py-3">
-                        <CompositionPanel item={item} />
-                        {item.errorMessage ? (
-                          <p className="mt-2 text-xs text-red-600">{item.errorMessage}</p>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ) : null}
-                </React.Fragment>
               ))}
             </tbody>
           </table>

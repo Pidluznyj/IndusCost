@@ -29,6 +29,7 @@ import {
   type PricingSortKey,
 } from "@/src/lib/pricingListFilters";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { canDeletePricingPremises } from "@/src/lib/commercialEngineeringPermissions";
 import {
   DEFAULT_PRICING_BATCH_ITEM_SCOPE,
   filterProductsForPricingBatchScope,
@@ -193,6 +194,7 @@ export const PricingModule = () => {
   const allowSimulate = auth.hasPermission("pricing.simulate");
   const allowGenerateTables = auth.hasPermission("pricing.generate_tables");
   const allowPublishTables = auth.hasPermission("pricing.publish_tables");
+  const allowDeletePremises = canDeletePricingPremises(auth);
   const canViewProductionCostTables =
     auth.hasPermission("pricing.view") ||
     auth.hasPermission("costs.view") ||
@@ -563,6 +565,10 @@ export const PricingModule = () => {
   };
 
   const handleDeleteUnit = async (pricing: any) => {
+    if (!allowDeletePremises) {
+      alert("Sem permissão para excluir premissas de precificação.");
+      return;
+    }
     if (!window.confirm(`Tem certeza que deseja excluir esta premissa de precificação do produto ${pricing.Product?.name}?`)) return;
     
     try {
@@ -702,6 +708,10 @@ export const PricingModule = () => {
   };
 
   const handleBulkDelete = async () => {
+    if (!allowDeletePremises) {
+      alert("Sem permissão para excluir premissas de precificação.");
+      return;
+    }
     if (selectedPricings.length === 0) return;
     if (!window.confirm(`Confirma a exclusão Múltipla de ${selectedPricings.length} formações de preço?`)) return;
 
@@ -2381,7 +2391,7 @@ export const PricingModule = () => {
 
         {showPremissasPanel ? (
           <div className="border-t border-border p-4 space-y-4">
-            {selectedPricings.length > 0 ? (
+            {selectedPricings.length > 0 && allowDeletePremises ? (
               <div className="bg-red-50 text-red-900 border border-red-200 rounded-xl p-3 flex justify-between items-center">
                 <span className="text-sm font-bold">{selectedPricings.length} premissa(s) selecionada(s)</span>
                 <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
@@ -2496,6 +2506,7 @@ export const PricingModule = () => {
                             >
                               <Edit2 className="h-4 w-4" />
                             </button>
+                            {allowDeletePremises ? (
                             <button
                               title="Excluir premissa"
                               onClick={() => handleDeleteUnit(pricing)}
@@ -2503,6 +2514,7 @@ export const PricingModule = () => {
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>

@@ -28,6 +28,13 @@ import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
 import { CustomerCommercialOwnerTab } from "./customers/CustomerCommercialOwnerTab";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import {
+  canCreateCustomers,
+  canEditCustomers,
+  canImportCustomers,
+} from "@/src/lib/commercialEngineeringPermissions";
 import { CustomerCnpjIntelligencePanel } from "./customers/CustomerCnpjIntelligencePanel";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -50,6 +57,15 @@ const STICKY_ACTIONS =
 const STICKY_ACTIONS_HEAD = "sticky right-0 z-20 bg-accent/80 backdrop-blur-sm shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.08)]";
 
 export const CustomerModule = () => {
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const resourceCheck = {
+    ...auth,
+    canViewResource: permissions.canView,
+  };
+  const allowCreate = canCreateCustomers(resourceCheck);
+  const allowEdit = canEditCustomers(resourceCheck);
+  const allowImport = canImportCustomers(resourceCheck);
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,6 +269,7 @@ export const CustomerModule = () => {
             <SearchCheck className="h-4 w-4" />
             Consultar CNPJ
           </button>
+          {allowImport ? (
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -260,6 +277,8 @@ export const CustomerModule = () => {
             <Download className="h-4 w-4" />
             Importar
           </button>
+          ) : null}
+          {allowCreate ? (
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -267,6 +286,7 @@ export const CustomerModule = () => {
             <Plus className="h-4 w-4" />
             Novo Cliente
           </button>
+          ) : null}
         </div>
       </div>
 
@@ -426,6 +446,7 @@ export const CustomerModule = () => {
                         >
                           <BarChart3 className="h-3.5 w-3.5" />
                         </button>
+                        {allowEdit ? (
                         <button
                           type="button"
                           title="Editar cliente"
@@ -434,6 +455,8 @@ export const CustomerModule = () => {
                         >
                           <Edit2 className="h-3.5 w-3.5" />
                         </button>
+                        ) : null}
+                        {allowEdit ? (
                         <button
                           type="button"
                           title="Excluir cliente"
@@ -442,6 +465,7 @@ export const CustomerModule = () => {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>

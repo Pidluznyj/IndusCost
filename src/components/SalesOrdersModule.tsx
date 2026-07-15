@@ -23,6 +23,7 @@ import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js"
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
 import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
+import { canExportSalesOrders } from "@/src/lib/commercialEngineeringPermissions";
 import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
   SALES_ORDER_MONTH_OPTIONS,
@@ -157,6 +158,7 @@ function SalesOrderList() {
     () => canViewSalesOrderMarginEconomics(auth),
     [auth]
   );
+  const allowExport = canExportSalesOrders(auth);
   const [rows, setRows] = useState<SalesOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -588,6 +590,7 @@ function SalesOrderList() {
             Limpar filtros
           </button>
           <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
+          {allowExport ? (
           <button
             type="button"
             data-testid="sales-orders-export-report-xlsx"
@@ -648,6 +651,7 @@ function SalesOrderList() {
               </>
             )}
           </button>
+          ) : null}
         </div>
       </div>
 

@@ -441,8 +441,8 @@ describe("projectsPricing — integração", () => {
     assert.match(section, /Preço c\/ amortização/);
     assert.match(section, /suggestedPriceWithoutAmortization/);
     assert.match(section, /suggestedPriceWithAmortization/);
-    assert.match(section, /Cenário sem amortização/);
-    assert.match(section, /Cenário com amortização/);
+    assert.match(section, /Preço acordado cliente/);
+    assert.match(section, /reverseMarginFromAgreedPrice/);
     assert.match(section, /amortizationPriceAddOnUnit|Repasse no preço/);
   });
 
@@ -555,7 +555,10 @@ describe("projectsPricing — integração", () => {
     assert.match(section, /buildItemMarginDrafts/);
     assert.match(section, /hydrateDraftsFromView/);
     assert.match(section, /item\.targetMarginPercent/);
-    assert.match(section, /itemMargins\[item\.targetItemId\] \?\?/);
+    assert.match(section, /reverseMarginFromAgreedPrice/);
+    assert.match(section, /calculateMarginPercentFromAgreedCustomerPrice/);
+    assert.doesNotMatch(section, /Composição/);
+    assert.doesNotMatch(section, />Ações</);
   });
 
   it("alterar margem recalcula preço", () => {

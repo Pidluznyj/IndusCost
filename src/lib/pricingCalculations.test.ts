@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  calculateMarginPercentFromAgreedCustomerPrice,
+  calculateMarginPercentFromSalePrice,
   calculateSalePriceFromCost,
   pricingCalculationMetricsAreFinite,
   sumTaxRuleComponentPercents,
@@ -76,6 +78,50 @@ describe("pricingCalculations", () => {
       targetMarginPercent: 35,
     });
     assert.equal(pricingCalculationMetricsAreFinite(result), true);
+  });
+
+  it("engenharia reversa recupera a margem a partir do preço", () => {
+    const forward = calculateSalePriceFromCost({
+      cost: 1.369,
+      taxPercent: 28.75,
+      targetMarginPercent: 30,
+    });
+    assert.equal(forward.ok, true);
+    if (!forward.ok) return;
+    const reverse = calculateMarginPercentFromSalePrice({
+      salePrice: forward.suggestedPrice,
+      cost: 1.369,
+      taxPercent: 28.75,
+    });
+    assert.equal(reverse.ok, true);
+    if (reverse.ok) {
+      assert.ok(Math.abs(reverse.targetMarginPercent - 30) < 0.05);
+    }
+  });
+
+  it("margem a partir do preço acordado desconta repasse no preço", () => {
+    const pricingCost = 1.423;
+    const taxPercent = 28.75;
+    const priceAddOn = 0.5;
+    const productPrice = 3.1255;
+    const agreed = productPrice + priceAddOn;
+    const reverse = calculateMarginPercentFromAgreedCustomerPrice({
+      agreedCustomerPrice: agreed,
+      pricingCost,
+      taxPercent,
+      priceAddOnUnit: priceAddOn,
+    });
+    assert.equal(reverse.ok, true);
+    if (!reverse.ok) return;
+    const forward = calculateSalePriceFromCost({
+      cost: pricingCost,
+      taxPercent,
+      targetMarginPercent: reverse.targetMarginPercent,
+    });
+    assert.equal(forward.ok, true);
+    if (forward.ok) {
+      assert.ok(Math.abs(forward.suggestedPrice - productPrice) < 0.01);
+    }
   });
 
   it("soma percentuais de componentes da regra fiscal", () => {

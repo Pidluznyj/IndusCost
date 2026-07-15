@@ -9325,7 +9325,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     res.json(pricing);
   });
 
-  app.post("/api/pricing/bulk-delete", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
+  app.post("/api/pricing/bulk-delete", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "pricing.publish_tables"]), async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
        return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
@@ -9354,7 +9354,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     });
   });
 
-  app.delete("/api/pricing/:id", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
+  app.delete("/api/pricing/:id", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "pricing.publish_tables"]), async (req, res) => {
     try {
       const { id } = req.params;
       

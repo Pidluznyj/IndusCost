@@ -34,6 +34,8 @@ import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizer
 import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canCreateSimulations } from "@/src/lib/commercialEngineeringPermissions";
 import { SIMULATION_TOUR_STEPS } from "@/src/tours/simulationTourSteps";
 import {
   marginFromCostAndTargetPrice,
@@ -110,6 +112,8 @@ function parseProductCostAnalysisPayload(
 }
 
 export const SimulationModule = () => {
+  const auth = useAuth();
+  const allowCreateSimulation = canCreateSimulations(auth);
   const [searchParams, setSearchParams] = useSearchParams();
   const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">(() =>
     parseSimulationsWorkspaceTabParam(searchParams.get("tab"))
@@ -1151,7 +1155,7 @@ export const SimulationModule = () => {
             Ver projetos
           </Link>
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          {workspaceTab === "SCENARIOS" && (
+          {workspaceTab === "SCENARIOS" && allowCreateSimulation && (
             <button
               onClick={() => setIsModalOpen(true)}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"

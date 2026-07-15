@@ -625,10 +625,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["commercial.pricing"],
     moduleId: "pricing",
     notes:
-      "API hoje permite DELETE com pricing.view (gap Prompt 01). Contrato **não** inclui delete até houver chave/legado seguro.",
+      "Delete de premissa exige generate_tables|publish_tables (Prompt 13).",
   },
   {
     resourceKey: "commercial.commissions",

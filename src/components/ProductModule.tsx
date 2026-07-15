@@ -66,6 +66,7 @@ import {
 } from "@/src/components/product/OpenBookCompositionTab";
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { getVisibleProductTabs, type ProductTabId } from "@/src/lib/modulePermissions";
 import {
   GRID_CIU_COLUMN_LABEL,
@@ -181,6 +182,11 @@ const PRODUCTS_MAIN_TABS: { id: ProductsMainTab; label: string }[] = [
 
 export const ProductModule = () => {
   const auth = useAuth();
+  const permissions = usePermissions();
+  const productPermCheck = {
+    ...auth,
+    canViewResource: permissions.canView,
+  };
   const canCreateProduct = auth.hasPermission("products.create");
   const canEditProduct = auth.hasPermission("products.edit");
   const canDeleteProduct = auth.hasPermission("products.delete");
@@ -214,7 +220,7 @@ export const ProductModule = () => {
   const [activeProductsMainTab, setActiveProductsMainTab] = useState<ProductsMainTab>("products");
 
   const visibleFormTabs = useMemo(() => {
-    const allowed = new Set(getVisibleProductTabs(auth));
+    const allowed = new Set(getVisibleProductTabs(productPermCheck));
     return PRODUCT_FORM_TABS.filter((t) => allowed.has(t.id));
   }, [auth]);
 

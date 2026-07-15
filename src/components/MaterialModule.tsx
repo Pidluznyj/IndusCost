@@ -38,6 +38,8 @@ import { MaterialImportConfig } from "../lib/importer/MaterialConfig";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canEditMaterials } from "@/src/lib/commercialEngineeringPermissions";
 import { MATERIAL_TOUR_STEPS } from "@/src/tours/materialTourSteps";
 
 const MATERIAL_CATEGORY_OPTIONS = [
@@ -47,6 +49,8 @@ const MATERIAL_CATEGORY_OPTIONS = [
 ];
 
 export const MaterialModule = () => {
+  const auth = useAuth();
+  const allowEditMaterials = canEditMaterials(auth);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -354,6 +358,7 @@ export const MaterialModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
+          {allowEditMaterials ? (
           <button 
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-2 bg-accent text-accent-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -361,6 +366,8 @@ export const MaterialModule = () => {
             <Download className="h-4 w-4" />
             Importar
           </button>
+          ) : null}
+          {allowEditMaterials ? (
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
@@ -368,6 +375,7 @@ export const MaterialModule = () => {
             <Plus className="h-4 w-4" />
             Novo Material
           </button>
+          ) : null}
         </div>
       </div>
 
@@ -516,6 +524,7 @@ export const MaterialModule = () => {
                         >
                           <History className="h-4 w-4" />
                         </button>
+                        {allowEditMaterials ? (
                         <button 
                           onClick={() => handleOpenModal(mat)}
                           className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-primary transition-all"
@@ -523,6 +532,8 @@ export const MaterialModule = () => {
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
+                        ) : null}
+                        {allowEditMaterials ? (
                         <button 
                           onClick={() => toggleStatus(mat.id, mat.status)}
                           className={cn(
@@ -533,6 +544,7 @@ export const MaterialModule = () => {
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
