@@ -18,7 +18,12 @@ export const PROJECTS_LOOKUP_PERMISSIONS = [
   ...PROJECTS_MANAGE_PERMISSIONS,
 ] as const;
 
-export function canViewProjects(check: PermissionChecker): boolean {
+export function canViewProjects(
+  check: PermissionChecker & { canViewResource?: (key: string) => boolean }
+): boolean {
+  if (typeof check.canViewResource === "function") {
+    if (check.canViewResource("engineering.projects")) return true;
+  }
   return check.hasPermission("projects.view");
 }
 

@@ -57,9 +57,15 @@ describe("sidebar menu resourceKeys", () => {
     assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.commissions, ResourceKeys.COMISSOES);
     assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.materials, ResourceKeys.SUPRIMENTOS);
     assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.settings, ResourceKeys.CONFIGURACOES);
+    assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.customers, ResourceKeys.COMERCIAL_CLIENTES);
+    assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.proposals, ResourceKeys.COMERCIAL_PROPOSTAS);
+    assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.pricing, ResourceKeys.COMERCIAL_FORMACAO_PRECO);
+    assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.products, ResourceKeys.ENGENHARIA_PRODUTOS);
+    assert.equal(SIDEBAR_MODULE_RESOURCE_KEYS.projects, ResourceKeys.ENGENHARIA_PROJETOS);
     assert.equal(SIDEBAR_GROUP_RESOURCE_KEYS.financeiro, ResourceKeys.FINANCEIRO);
     assert.equal(SIDEBAR_GROUP_RESOURCE_KEYS.comercial, ResourceKeys.COMERCIAL);
     assert.equal(SIDEBAR_GROUP_RESOURCE_KEYS.administracao, ResourceKeys.ADMIN);
+    assert.equal(SIDEBAR_GROUP_RESOURCE_KEYS.engenharia, ResourceKeys.ENGENHARIA);
   });
 
   it("usuário sem financeiro não vê grupo Financeiro", () => {

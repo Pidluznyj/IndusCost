@@ -65,7 +65,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering"],
+    relationalResourceKeys: [],
     notes: "Grupo accordion; resourceKey FE Prompt 13.",
   },
   {
@@ -88,7 +88,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products"],
+    relationalResourceKeys: [],
     moduleId: "products",
   },
   {
@@ -105,7 +105,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.info"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.products.tab.bom",
@@ -121,7 +121,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.bom"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.products.tab.routing",
@@ -137,7 +137,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.routing"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.products.tab.tree",
@@ -153,7 +153,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.tree"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.products.tab.cost",
@@ -169,7 +169,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.cost"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.products.tab.composition",
@@ -185,7 +185,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.products.tab.composition"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "engineering.transformation_simulator",
@@ -203,7 +203,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.transformation_simulator"],
+    relationalResourceKeys: [],
     moduleId: "transformation-simulator",
   },
   {
@@ -315,7 +315,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.simulations"],
+    relationalResourceKeys: [],
     moduleId: "simulations",
   },
   {
@@ -335,7 +335,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["engineering.projects"],
+    relationalResourceKeys: [],
     moduleId: "projects",
     notes: "Delete de projeto é SUPER_ADMIN inline — não modelado como delete de contrato.",
   },
@@ -509,7 +509,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["commercial.customers"],
+    relationalResourceKeys: [],
     moduleId: "customers",
     notes: "Sem customers.delete no catálogo legado.",
   },
@@ -533,7 +533,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["commercial.proposals"],
+    relationalResourceKeys: [],
     moduleId: "proposals",
   },
   {
@@ -550,7 +550,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["commercial.proposals.indicators"],
+    relationalResourceKeys: [],
   },
   {
     resourceKey: "commercial.sales_orders",
@@ -625,7 +625,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["commercial.pricing"],
+    relationalResourceKeys: [],
     moduleId: "pricing",
     notes:
       "Delete de premissa exige generate_tables|publish_tables (Prompt 13).",

@@ -8,6 +8,7 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
 import {
   COMMISSIONS_LIVE_UI_TABS,
   CRM_UI_TABS,
+  PRODUCT_UI_TABS,
 } from "@/src/lib/moduleTabResources.js";
 import { FINANCE_SECTIONS } from "@/src/lib/financeNavigation.js";
 import { PORTFOLIO_RECONCILIATION_UI_TABS } from "@/src/lib/permissionsClient.js";
@@ -229,6 +230,11 @@ export function runPermissionAudit(options?: {
     })),
     ...PORTFOLIO_RECONCILIATION_UI_TABS.map((t) => ({
       id: `portfolio.${t.id}`,
+      resourceKey: t.resourceKey,
+      label: t.label,
+    })),
+    ...PRODUCT_UI_TABS.map((t) => ({
+      id: `products.${t.id}`,
       resourceKey: t.resourceKey,
       label: t.label,
     })),

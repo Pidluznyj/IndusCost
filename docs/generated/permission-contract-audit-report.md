@@ -2,17 +2,17 @@
 
 | | |
 |---|---|
-| Gerado em | 2026-07-15T12:12:33.694Z |
-| Modo | strict |
+| Gerado em | 2026-07-15T13:10:01.902Z |
+| Modo | report |
 | OK (modo) | sim |
 | Catálogo | 175 |
 | Contrato | 76 |
 | Seed relacional | 45 |
 | Uso FE (chaves) | 32 |
-| Uso BE (chaves) | 112 |
-| Rotas escaneadas | 716 |
-| Findings | error 2 · warn 10 · info 80 |
-| Known gaps | 89 |
+| Uso BE (chaves) | 114 |
+| Rotas escaneadas | 719 |
+| Findings | error 2 · warn 10 · info 76 |
+| Known gaps | 85 |
 | Erros acionáveis | 0 |
 
 ## Limitações
@@ -26,7 +26,7 @@
 - `finance.executiveReport.view`
 
 ## Findings (agrupados)
-### CATALOG_NEVER_USED (61)
+### CATALOG_NEVER_USED (59)
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: reports.material_demand.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: finance.suppliers.service_termination.update
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: finance.suppliers.service_termination.cancel
@@ -35,13 +35,11 @@
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: crm.seller.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: crm.customers.assign_seller
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: proposals.material_report.view
-- **info** _(known)_: Chave no catálogo sem uso literal detectado: sales_orders.invoice.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: products.tab.routing
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: purchases.indicators.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: operations.component-performance.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: operations.component-performance.edit
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: materials.market_quote.manual_exchange
-- **info** _(known)_: Chave no catálogo sem uso literal detectado: materials.market_quote.approve
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: settings.branding.edit
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.dashboard.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.reports.view
@@ -52,14 +50,14 @@
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.contracts.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.contracts.manage
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.documents.view
-- … +36 omitidos
+- **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.documents.manage
+- **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.drivers.view
+- … +34 omitidos
 
-### CONTRACT_ACTION_UNUSED (19)
+### CONTRACT_ACTION_UNUSED (17)
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: engineering.products.tab.routing.view
-- **info** _(known)_: Ação do contrato sem uso literal das legacy keys: engineering.materials.market_intelligence.quotes.approve
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: engineering.materials.market_intelligence.quotes.execute
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: commercial.crm.assign_seller.manage
-- **info** _(known)_: Ação do contrato sem uso literal das legacy keys: commercial.sales_orders.invoice.view
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: commercial.commissions.monthly_closing.close
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: commercial.commissions.monthly_closing.manage
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: commercial.commissions.customer_exclusions.manage
@@ -106,13 +104,11 @@
 - `crm.seller.view`
 - `crm.customers.assign_seller`
 - `proposals.material_report.view`
-- `sales_orders.invoice.view`
 - `products.tab.routing`
 - `purchases.indicators.view`
 - `operations.component-performance.view`
 - `operations.component-performance.edit`
 - `materials.market_quote.manual_exchange`
-- `materials.market_quote.approve`
 - `settings.branding.edit`
 - `fleet.dashboard.view`
 - `fleet.reports.view`
@@ -138,6 +134,8 @@
 - `fleet.costs.manage`
 - `fleet.financial.view`
 - `fleet.settings.manage`
-- … +21
+- `inventory.manage`
+- `inventory.item.manage`
+- … +19
 
 _Sem dados sensíveis (sem emails, tokens ou conteúdo de produção)._

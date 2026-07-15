@@ -591,6 +591,7 @@ function SalesOrderList() {
           </button>
           <div className="mx-1 h-4 w-px bg-border" aria-hidden="true" />
           {allowExport ? (
+            <>
           <button
             type="button"
             data-testid="sales-orders-export-report-xlsx"
@@ -651,6 +652,7 @@ function SalesOrderList() {
               </>
             )}
           </button>
+            </>
           ) : null}
         </div>
       </div>
