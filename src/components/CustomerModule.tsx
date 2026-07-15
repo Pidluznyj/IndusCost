@@ -28,6 +28,7 @@ import { DataImportDialog } from "./shared/DataImportDialog";
 import { CustomerImportConfig } from "../lib/importer/CustomerConfig";
 import { CustomerCommercial360 } from "./customers/CustomerCommercial360";
 import { CustomerCommercialOwnerTab } from "./customers/CustomerCommercialOwnerTab";
+import { CustomerPeopleLinksPanel } from "./customers/CustomerPeopleLinksPanel";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -50,7 +51,7 @@ type CustomerListMeta = {
 
 const CUSTOMER_PAGE_SIZE = 20;
 
-type CustomerFormTab = "cadastro" | "commercial-owner";
+type CustomerFormTab = "cadastro" | "commercial-owner" | "people-links";
 
 const STICKY_ACTIONS =
   "sticky right-0 z-10 bg-card group-hover:bg-accent/30 shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.12)]";
@@ -586,12 +587,28 @@ export const CustomerModule = () => {
                 >
                   Responsável Comercial
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setFormTab("people-links")}
+                  className={cn(
+                    "px-4 py-2 text-sm font-medium rounded-t-lg border border-b-0 transition-colors",
+                    formTab === "people-links"
+                      ? "bg-card border-border text-foreground"
+                      : "bg-transparent border-transparent text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Pessoas e vínculos
+                </button>
               </div>
             ) : null}
             
             {formTab === "commercial-owner" && editingCustomer ? (
               <div className="flex-1 overflow-y-auto p-6">
                 <CustomerCommercialOwnerTab customerId={editingCustomer.id} />
+              </div>
+            ) : formTab === "people-links" && editingCustomer ? (
+              <div className="flex-1 overflow-y-auto p-6">
+                <CustomerPeopleLinksPanel customerId={editingCustomer.id} />
               </div>
             ) : (
             <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8">
