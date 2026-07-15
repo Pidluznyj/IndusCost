@@ -28,6 +28,10 @@ export type SafeAppUser = {
   effectivePermissions: string[];
   accessProfileId: string | null;
   accessProfileName: string | null;
+  /** Vínculo com Pessoas / RH (`Employee.id`). */
+  employeeId: string | null;
+  employeeName: string | null;
+  employeeDepartment: string | null;
   isActive: boolean;
   externalSellerId: number | null;
   sellerResponsibleName: string | null;
@@ -124,10 +128,19 @@ export function createOpaqueSessionToken(): string {
 
 export type SafeAppUserOptions = {
   accessProfileName?: string | null;
+  employee?: {
+    id: string;
+    name: string;
+    socialName?: string | null;
+    department?: string | null;
+  } | null;
 };
 
 export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): SafeAppUser {
   const permissions = filterKnownPermissions(user.permissions);
+  const employeeName = options.employee
+    ? (options.employee.socialName?.trim() || options.employee.name.trim() || null)
+    : null;
   return {
     id: user.id,
     name: user.name,
@@ -137,6 +150,9 @@ export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): 
     effectivePermissions: getEffectivePermissions({ role: user.role, permissions }),
     accessProfileId: user.accessProfileId ?? null,
     accessProfileName: options.accessProfileName ?? null,
+    employeeId: user.employeeId ?? null,
+    employeeName,
+    employeeDepartment: options.employee?.department?.trim() || null,
     isActive: user.isActive,
     externalSellerId: user.externalSellerId,
     sellerResponsibleName: user.sellerResponsibleName,

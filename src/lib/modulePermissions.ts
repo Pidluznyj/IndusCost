@@ -36,7 +36,10 @@ export type AppModuleId =
 export type PermissionChecker = {
   hasPermission: (permission: string) => boolean;
   hasAnyPermission: (permissions: string[]) => boolean;
-  authUser?: { effectivePermissions?: string[] } | null;
+  authUser?: {
+    effectivePermissions?: string[];
+    role?: import("@prisma/client").AppUserRole;
+  } | null;
 };
 
 /** Ordem do menu lateral (Sidebar). */
@@ -192,13 +195,25 @@ export function canAccessCrmPortfolio(check: PermissionChecker): boolean {
   return canAccessCrmGeneral(check) || canAccessCrmSeller(check);
 }
 
-/** Pode filtrar qualquer vendedor na gestão comercial (gestor). */
+/** Pode filtrar qualquer vendedor na gestão comercial (gestor). Role SELLER nunca. */
 export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
+  if (check.authUser?.role === "SELLER") return false;
   return check.hasPermission("crm.seller.all");
 }
 
-/** Apenas dados do vendedor vinculado ao usuário (sem troca de filtro). */
+/**
+ * Apenas dados do vendedor vinculado ao usuário (sem troca de filtro).
+ * Role SELLER é sempre own — mesmo se a bag tiver crm.seller.all por engano.
+ */
 export function isCrmOwnSellerOnly(check: PermissionChecker): boolean {
+  if (check.authUser?.role === "SELLER") {
+    return (
+      check.hasPermission("crm.seller.own") ||
+      check.hasPermission("crm.seller.all") ||
+      check.hasPermission("crm.seller.view") ||
+      check.hasPermission("crm.view")
+    );
+  }
   return check.hasPermission("crm.seller.own") && !check.hasPermission("crm.seller.all");
 }
 

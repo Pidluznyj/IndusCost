@@ -69,6 +69,46 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(getDefaultCrmManagementTab(checkerFromPermissions(auth.permissions)), "general");
   });
 
+  it("SELLER com crm.seller.all/general na bag ainda fica locked na própria carteira", () => {
+    const auth = mockAuth({
+      role: "SELLER",
+      permissions: [
+        "crm.view",
+        "crm.seller.view",
+        "crm.seller.own",
+        "crm.seller.all",
+        "crm.general.view",
+      ],
+      externalSellerId: 464,
+      sellerResponsibleName: "GISLENE LIMA",
+    });
+    const scope = resolveCrmCommercialAccessScope(auth);
+    assert.equal(scope.dataScope, "own");
+    assert.equal(scope.sellerLocked, true);
+    assert.equal(scope.canViewAllSellers, false);
+    assert.equal(scope.canViewCommercialGeneral, false);
+
+    const checker = {
+      ...checkerFromPermissions(auth.permissions),
+      authUser: { role: "SELLER" as const, effectivePermissions: auth.permissions },
+    };
+    assert.equal(canFilterAllCrmSellers(checker), false);
+    assert.equal(isCrmOwnSellerOnly(checker), true);
+
+    const dash = resolveCrmSellerDashboardQueryScope(
+      auth,
+      "999",
+      "OUTRO VENDEDOR",
+      (raw) => Number.parseInt(String(raw), 10),
+      (raw) => (typeof raw === "string" ? raw : null),
+      "outro"
+    );
+    assert.equal(dash.ok, true);
+    if (!dash.ok || !dash.sellerScope) throw new Error("expected ok");
+    assert.equal(dash.sellerScope.scopeMode, "own");
+    assert.equal(dash.sellerScope.sellerIdentityKey, "gislene lima");
+  });
+
   it("admin com crm.seller.all enxerga todos os vendedores no dashboard", () => {
     const auth = mockAuth({
       role: "ADMIN",

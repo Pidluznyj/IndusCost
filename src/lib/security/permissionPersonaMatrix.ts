@@ -72,7 +72,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     role: "SELLER",
     permissions: ["crm.view", "sales_orders.view", "dashboard.view", "customers.view"],
     expectViewModules: ["dashboard", "crm-commercial", "sales-orders", "customers"],
-    expectDenyModules: ["finance", "settings", "employees", "inventory"],
+    expectDenyModules: ["finance", "settings", "employees", "inventory", "products"],
     expectDenyPaths: ["/finance", "/settings"],
   },
   {
@@ -86,8 +86,8 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
       "suppliers.view",
     ],
     expectViewModules: ["dashboard", "finance", "portfolio-reconciliation", "suppliers"],
-    expectDenyModules: ["settings", "employees", "crm-commercial"],
-    notes: "VIEWER matrix nega CRM; bag libera financeiro via aliases.",
+    expectDenyModules: ["settings", "employees", "crm-commercial", "products", "proposals"],
+    notes: "Bag não vazia: só aliases (sem overlay ROLE_MATRIX).",
   },
   {
     id: "financeiro_operacional",
@@ -102,7 +102,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
       "suppliers.view",
     ],
     expectViewModules: ["dashboard", "finance", "suppliers"],
-    expectDenyModules: ["settings", "employees"],
+    expectDenyModules: ["settings", "employees", "products", "sales-orders"],
   },
   {
     id: "engenharia",
@@ -116,7 +116,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
       "pricing.view",
     ],
     expectViewModules: ["dashboard", "products", "simulations", "projects", "pricing"],
-    expectDenyModules: ["finance", "settings", "employees"],
+    expectDenyModules: ["finance", "settings", "employees", "sales-orders", "crm-commercial"],
   },
   {
     id: "RH",
@@ -124,7 +124,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     role: "VIEWER",
     permissions: ["dashboard.view", "employees.view", "guide.view"],
     expectViewModules: ["dashboard", "employees", "guide"],
-    expectDenyModules: ["finance", "settings", "crm-commercial"],
+    expectDenyModules: ["finance", "settings", "crm-commercial", "products", "sales-orders"],
     notes: "Dados sensíveis de ficha exigem employees.edit (máscara Prompt 15).",
   },
   {
@@ -141,9 +141,9 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     role: "VIEWER",
     permissions: ["dashboard.view", "sales_orders.view"],
     expectViewModules: ["dashboard", "sales-orders"],
-    expectDenyModules: ["finance", "crm-commercial", "settings"],
+    expectDenyModules: ["finance", "crm-commercial", "settings", "products", "customers"],
     expectDenyPaths: ["/finance", "/crm-commercial", "/settings"],
-    notes: "Sem aliases financeiro/CRM → view recurso negada (efeito deny implícito).",
+    notes: "Bag não vazia → sem ROLE_MATRIX; só aliases explicitadas.",
   },
   {
     id: "legado_sem_grants_estruturados",
@@ -157,7 +157,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
       "materials.view",
     ],
     expectViewModules: ["dashboard", "opex", "taxes", "reports", "materials"],
-    expectDenyModules: ["settings"],
-    notes: "opex/taxes/reports sem resourceKey → fallback canAccessModule.",
+    expectDenyModules: ["settings", "products", "sales-orders"],
+    notes: "opex/taxes/reports sem resourceKey → fallback canAccessModule; bag ≠ vazia evita ROLE_MATRIX.",
   },
 ];

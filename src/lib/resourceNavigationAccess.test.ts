@@ -134,6 +134,27 @@ describe("resourceNavigationAccess — perfis", () => {
     const noOpex = ctx("VIEWER", ["dashboard.view"]);
     assert.equal(canViewModule("opex", noOpex), false);
   });
+  it("bag parcial (só AP): não libera menus de ROLE_MATRIX do VIEWER", () => {
+    const c = ctx("VIEWER", [
+      "dashboard.view",
+      "finance.view",
+      "finance.accountsPayable.view",
+    ]);
+    assert.equal(canViewModule("finance", c), true);
+    assert.equal(canViewModule("products", c), false);
+    assert.equal(canViewModule("sales-orders", c), false);
+    assert.equal(canViewModule("customers", c), false);
+    assert.equal(canViewModule("crm-commercial", c), false);
+    assert.equal(canViewModule("settings", c), false);
+    assert.equal(canAccessPath("/products", c), false);
+    assert.equal(canAccessPath("/finance", c), true);
+  });
+
+  it("VIEWER com bag vazia ainda usa ROLE_MATRIX (defaults do papel)", () => {
+    const c = ctx("VIEWER", []);
+    assert.equal(canViewModule("sales-orders", c), true);
+    assert.equal(canViewModule("products", c), true);
+  });
 });
 
 describe("resourceNavigationAccess — rota e navegação segura", () => {

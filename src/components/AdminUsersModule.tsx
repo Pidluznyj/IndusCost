@@ -19,7 +19,9 @@ import {
   formatRoleLabel,
 } from "@/src/lib/appAuthClient";
 import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
+import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
+import type { EligibleEmployeeForUserDto } from "@/src/lib/adminUserEmployeeLink";
 import { countActiveSuperAdmins } from "@/src/lib/adminUsersPagination";
 import { RolePermissionMatrixPanel } from "@/src/components/admin/RolePermissionMatrixPanel";
 import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
@@ -68,6 +70,7 @@ import { ResourceKeys } from "@/src/lib/permissionsClient";
 import { HttpError } from "@/src/lib/http";
 
 type CreateForm = {
+  employeeId: string;
   name: string;
   email: string;
   role: AppUserRole;
@@ -78,6 +81,7 @@ type CreateForm = {
 };
 
 const EMPTY_CREATE: CreateForm = {
+  employeeId: "",
   name: "",
   email: "",
   role: "VIEWER",
@@ -105,6 +109,8 @@ export const AdminUsersModule: React.FC = () => {
 
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
   const [sellerOptions, setSellerOptions] = useState<AdminSellerOption[]>([]);
+  const [eligibleEmployees, setEligibleEmployees] = useState<EligibleEmployeeForUserDto[]>([]);
+  const [eligibleEmployeesLoading, setEligibleEmployeesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -140,6 +146,20 @@ export const AdminUsersModule: React.FC = () => {
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
+
+  const loadEligibleEmployees = useCallback(async () => {
+    setEligibleEmployeesLoading(true);
+    try {
+      const res = await fetchJsonOk<{ employees: EligibleEmployeeForUserDto[] }>(
+        "/api/admin/eligible-employees"
+      );
+      setEligibleEmployees(Array.isArray(res.employees) ? res.employees : []);
+    } catch {
+      setEligibleEmployees([]);
+    } finally {
+      setEligibleEmployeesLoading(false);
+    }
+  }, []);
 
   const loadUsers = useCallback(async () => {
     if (!canManage) {
@@ -423,8 +443,12 @@ export const AdminUsersModule: React.FC = () => {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!createForm.employeeId.trim()) {
+      setCreateError("Selecione uma pessoa cadastrada em Pessoas / RH.");
+      return;
+    }
     if (!createForm.name.trim() || !createForm.email.includes("@")) {
-      setCreateError("Informe nome e e-mail válidos.");
+      setCreateError("Informe nome e e-mail de acesso válidos.");
       return;
     }
     if (createForm.password.length < APP_PASSWORD_MIN_LENGTH) {
@@ -446,6 +470,7 @@ export const AdminUsersModule: React.FC = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          employeeId: createForm.employeeId.trim(),
           name: createForm.name.trim(),
           email: createForm.email.trim(),
           password: createForm.password,
@@ -518,7 +543,8 @@ export const AdminUsersModule: React.FC = () => {
             Usuários e Permissões
           </h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
-            Controle o acesso por menu, submenu, abas e ações do sistema.
+            Controle o acesso por menu, submenu, abas e ações. Novos usuários nascem apenas a partir
+            do cadastro de Pessoas / RH.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -537,6 +563,7 @@ export const AdminUsersModule: React.FC = () => {
               setCreateForm(EMPTY_CREATE);
               setCreateError(null);
               setCreateOpen(true);
+              void loadEligibleEmployees();
             }}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90"
           >
@@ -656,6 +683,16 @@ export const AdminUsersModule: React.FC = () => {
                               <p className="text-[11px] text-muted-foreground truncate">
                                 {user.email}
                               </p>
+                              {user.employeeName ? (
+                                <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                                  RH: {user.employeeName}
+                                  {user.employeeDepartment ? ` · ${user.employeeDepartment}` : ""}
+                                </p>
+                              ) : (
+                                <p className="text-[10px] text-amber-800/90 truncate mt-0.5">
+                                  Sem vínculo Pessoas / RH
+                                </p>
+                              )}
                             </div>
                             <span
                               className={cn(
@@ -715,6 +752,21 @@ export const AdminUsersModule: React.FC = () => {
                       <p className="text-[11px] text-muted-foreground mt-1">
                         Último acesso: {formatDateTimePt(detail.user.lastLoginAt)}
                       </p>
+                      {selectedListUser?.employeeName ? (
+                        <p className="text-[11px] text-muted-foreground mt-1">
+                          Pessoas / RH:{" "}
+                          <span className="font-medium text-foreground">
+                            {selectedListUser.employeeName}
+                          </span>
+                          {selectedListUser.employeeDepartment
+                            ? ` · ${selectedListUser.employeeDepartment}`
+                            : ""}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-amber-800 mt-1">
+                          Usuário legado sem vínculo com Pessoas / RH.
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -1123,21 +1175,42 @@ export const AdminUsersModule: React.FC = () => {
                   {createError}
                 </div>
               ) : null}
-              <input
-                required
-                placeholder="Nome"
-                value={createForm.name}
-                onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+              <EmployeeUserPicker
+                employees={eligibleEmployees}
+                value={createForm.employeeId}
+                loading={eligibleEmployeesLoading}
+                onChange={(employeeId, employee) => {
+                  setCreateForm((f) => ({
+                    ...f,
+                    employeeId,
+                    name: employee?.displayName ?? "",
+                    email: employee?.personalEmail?.trim() || f.email,
+                  }));
+                }}
               />
-              <input
-                required
-                type="email"
-                placeholder="E-mail"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              />
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">Nome</span>
+                <input
+                  required
+                  placeholder="Nome (vindo do RH)"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  E-mail de acesso
+                </span>
+                <input
+                  required
+                  type="email"
+                  placeholder="E-mail de login"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, email: e.target.value }))}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                />
+              </label>
               <input
                 required
                 type="password"
@@ -1185,7 +1258,7 @@ export const AdminUsersModule: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || !createForm.employeeId}
                   className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
                 >
                   Criar

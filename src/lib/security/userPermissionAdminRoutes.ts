@@ -306,13 +306,17 @@ export async function listAdminUsersWithPermissionMeta() {
       orderBy: [{ name: "asc" }, { email: "asc" }],
       include: {
         accessProfile: { select: { name: true } },
+        employee: { select: { id: true, name: true, socialName: true, department: true } },
         _count: { select: { permissionOverrides: true } },
       },
     });
 
     return users.map((u) => {
       const overrideCount = u._count?.permissionOverrides ?? 0;
-      const safe = toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null });
+      const safe = toSafeAppUser(u, {
+        accessProfileName: u.accessProfile?.name ?? null,
+        employee: u.employee,
+      });
       return {
         ...safe,
         hasCustomPermissions: overrideCount > 0,
@@ -328,10 +332,14 @@ export async function listAdminUsersWithPermissionMeta() {
       orderBy: [{ name: "asc" }, { email: "asc" }],
       include: {
         accessProfile: { select: { name: true } },
+        employee: { select: { id: true, name: true, socialName: true, department: true } },
       },
     });
     return users.map((u) => {
-      const safe = toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null });
+      const safe = toSafeAppUser(u, {
+        accessProfileName: u.accessProfile?.name ?? null,
+        employee: u.employee,
+      });
       return {
         ...safe,
         hasCustomPermissions: false,

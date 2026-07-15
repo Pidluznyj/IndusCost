@@ -31,7 +31,9 @@ export function filterAdminUsersList(
     return (
       u.name.toLowerCase().includes(q) ||
       u.email.toLowerCase().includes(q) ||
-      u.role.toLowerCase().includes(q)
+      u.role.toLowerCase().includes(q) ||
+      (u.employeeName?.toLowerCase().includes(q) ?? false) ||
+      (u.employeeDepartment?.toLowerCase().includes(q) ?? false)
     );
   });
 }

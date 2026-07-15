@@ -95,6 +95,16 @@ describe("commercialAccessScopeService", () => {
     assert.equal(filtered.sellerScope.sellerIdentityKey, "gislene lima");
   });
 
+  it("SELLER com crm.seller.all indevido não abre visão unrestricted", () => {
+    const auth = mockAuth({
+      role: "SELLER",
+      permissions: ["crm.seller.own", "crm.seller.all", "crm.general.view"],
+      sellerResponsibleName: "GISLENE LIMA",
+    });
+    assert.equal(getCommercialAccessScope(auth).mode, "own_portfolio");
+    assert.equal(canViewAllCommercialCrm(auth), false);
+  });
+
   it("SELLER vê pedido do cliente sob responsabilidade mesmo com Nomus diferente (escopo own)", () => {
     const auth = mockAuth({
       permissions: ["crm.seller.own"],

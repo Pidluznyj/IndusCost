@@ -913,18 +913,27 @@ function mergeFlags(base: PermissionFlags, overlay: Partial<PermissionFlags>): P
   };
 }
 
+/**
+ * Flags brutas por recurso.
+ *
+ * Fonte de verdade das APIs = `effectivePermissions` (bag).
+ * ROLE_MATRIX só entra quando a bag está vazia (defaults do papel, sem grants
+ * customizados) — evita menus "fantasma" (VIEWER + 2 chaves ainda via matriz
+ * ampla) que abrem páginas vazias/403 porque o backend não usa ROLE_MATRIX.
+ */
 function resolveRawFlags(user: AuthUser, resourceKey: string): PermissionFlags {
   if (user.role === "SUPER_ADMIN") return { ...ALL };
 
-  let flags: PermissionFlags =
-    user.role === "SUPER_ADMIN"
-      ? { ...ALL }
-      : { ...(ROLE_MATRIX[user.role]?.[resourceKey] ?? NONE) };
+  const effective = user.effectivePermissions ?? user.permissions ?? [];
+  const useRoleMatrixDefaults = effective.length === 0;
+
+  let flags: PermissionFlags = useRoleMatrixDefaults
+    ? { ...(ROLE_MATRIX[user.role]?.[resourceKey] ?? NONE) }
+    : { ...NONE };
 
   const resource = byKey.get(resourceKey);
   if (!resource) return flags;
 
-  const effective = user.effectivePermissions ?? user.permissions ?? [];
   const hits = resource.legacyAliasKeys.filter((k) => effective.includes(k));
   if (hits.length === 0) return flags;
 

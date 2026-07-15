@@ -77,6 +77,8 @@ model Employee {
   updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   Role                         Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   EmployeePayrollComponent     EmployeePayrollComponent[]
+  /// Conta de acesso do sistema (Configurações → Usuários), quando vinculada.
+  appUser                      AppUser?
 }
 
 model PayrollComponent {
@@ -1877,6 +1879,8 @@ model AppUser {
   role                  AppUserRole    @default(VIEWER)
   permissions           String[]       @default([])
   accessProfileId       String?        @db.Uuid
+  /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
+  employeeId            String?        @unique @db.Uuid
   isActive              Boolean        @default(true)
   externalSellerId      Int?
   sellerResponsibleName String?
@@ -1884,6 +1888,7 @@ model AppUser {
   createdAt             DateTime       @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
   accessProfile         AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee              Employee?      @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   sessions              AppSession[]
   permissionOverrides   UserPermissionOverride[]
   permissionAuditsAsActor  PermissionAuditLog[] @relation("PermissionAuditActor")
@@ -1893,6 +1898,7 @@ model AppUser {
   @@index([isActive])
   @@index([externalSellerId])
   @@index([accessProfileId])
+  @@index([employeeId])
 }
 
 model AppSession {

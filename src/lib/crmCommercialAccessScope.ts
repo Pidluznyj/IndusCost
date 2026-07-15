@@ -97,8 +97,15 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   const canViewCommercialGeneralPerm = hasPermission(auth, "crm.general.view");
   const canViewAllSellersPerm = hasPermission(auth, "crm.seller.all");
   const canViewOwnSellerData = hasPermission(auth, "crm.seller.own");
+  const canViewSellerTab =
+    canViewOwnSellerData ||
+    canViewAllSellersPerm ||
+    hasPermission(auth, "crm.seller.view") ||
+    hasPermission(auth, "crm.view");
 
   const roleUnrestricted = auth.role === "SUPER_ADMIN" || auth.role === "ADMIN";
+  /** Papel Vendedor: nunca visão global — mesmo com crm.seller.all/general na bag (grant indevido). */
+  const forceOwnForSellerRole = auth.role === "SELLER";
   const commercialManagerFallback = auth.role === "COMMERCIAL_MANAGER";
 
   const externalSellerId = auth.externalSellerId;
@@ -110,7 +117,15 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   let blockedMessage: string | null = null;
   let commercialManagerUsesTeamFallback = false;
 
-  if (roleUnrestricted || canViewAllSellersPerm || canViewCommercialGeneralPerm) {
+  if (roleUnrestricted) {
+    dataScope = "global";
+  } else if (forceOwnForSellerRole && canViewSellerTab) {
+    dataScope = "own";
+    if (!sellerLinked) {
+      blockedReason = "SELLER_NOT_LINKED";
+      blockedMessage = CRM_SELLER_NOT_LINKED_MESSAGE;
+    }
+  } else if (canViewAllSellersPerm || canViewCommercialGeneralPerm) {
     dataScope = "global";
   } else if (commercialManagerFallback) {
     // Fallback documentado: sem hierarquia formal, gestor vê todos os responsáveis.

@@ -427,6 +427,13 @@ import {
   verifyPassword,
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
+import {
+  assertEmployeeEligibleForUserLink,
+  EmployeeUserLinkError,
+  filterEligibleEmployeesForUserLink,
+  resolveEmployeeDisplayName,
+  resolveLoginEmailForNewUser,
+} from "./src/lib/adminUserEmployeeLink.js";
 import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
 import {
   createAuthGuards,
@@ -1873,11 +1880,17 @@ async function startServer() {
       try {
         const users = await prisma.appUser.findMany({
           orderBy: [{ name: "asc" }, { email: "asc" }],
-          include: { accessProfile: { select: { name: true } } },
+          include: {
+            accessProfile: { select: { name: true } },
+            employee: { select: { id: true, name: true, socialName: true, department: true } },
+          },
         });
         return res.json({
           users: users.map((u) => ({
-            ...toSafeAppUser(u, { accessProfileName: u.accessProfile?.name ?? null }),
+            ...toSafeAppUser(u, {
+              accessProfileName: u.accessProfile?.name ?? null,
+              employee: u.employee,
+            }),
             hasCustomPermissions: false,
             overrideCount: 0,
           })),
@@ -1889,10 +1902,41 @@ async function startServer() {
     }
   });
 
+  app.get("/api/admin/eligible-employees", requireUsersManageOrBootstrap, async (_req, res) => {
+    try {
+      const [employees, linked] = await Promise.all([
+        prisma.employee.findMany({
+          select: {
+            id: true,
+            name: true,
+            socialName: true,
+            personalEmail: true,
+            department: true,
+            status: true,
+          },
+          orderBy: { name: "asc" },
+        }),
+        prisma.appUser.findMany({
+          where: { employeeId: { not: null } },
+          select: { employeeId: true },
+        }),
+      ]);
+      const linkedIds = new Set(
+        linked.map((row) => row.employeeId).filter((id): id is string => Boolean(id))
+      );
+      return res.json({
+        employees: filterEligibleEmployeesForUserLink(employees, linkedIds),
+      });
+    } catch (error) {
+      console.error("GET /api/admin/eligible-employees", error);
+      return res.status(500).json({ error: "Erro ao listar pessoas elegíveis." });
+    }
+  });
+
   app.post("/api/admin/users", requireUsersManageOrBootstrap, async (req, res) => {
     try {
-      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-      const email = normalizeEmail(typeof req.body?.email === "string" ? req.body.email : "");
+      const employeeIdRaw = req.body?.employeeId;
+      const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
       let role = parseAppUserRole(req.body?.role) ?? AppUserRole.VIEWER;
       let permissions = filterKnownPermissions(req.body?.permissions);
@@ -1910,12 +1954,6 @@ async function startServer() {
           ? req.body.sellerResponsibleName.trim() || null
           : null;
 
-      if (!name) {
-        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
-      }
-      if (!isValidEmail(email)) {
-        return res.status(400).json({ error: "INVALID_EMAIL", message: "E-mail inválido." });
-      }
       const passwordError = validatePasswordMin(password);
       if (passwordError) {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
@@ -1927,6 +1965,65 @@ async function startServer() {
         return res.status(400).json({
           error: "INVALID_EXTERNAL_SELLER_ID",
           message: "externalSellerId inválido.",
+        });
+      }
+
+      const employeeId =
+        typeof employeeIdRaw === "string" ? employeeIdRaw.trim() : String(employeeIdRaw ?? "").trim();
+      const employeeRow = employeeId
+        ? await prisma.employee.findUnique({
+            where: { id: employeeId },
+            select: {
+              id: true,
+              name: true,
+              socialName: true,
+              personalEmail: true,
+              department: true,
+              status: true,
+            },
+          })
+        : null;
+      const linkedUser = employeeId
+        ? await prisma.appUser.findUnique({
+            where: { employeeId },
+            select: { id: true },
+          })
+        : null;
+
+      let employee;
+      try {
+        employee = assertEmployeeEligibleForUserLink({
+          employeeId,
+          employee: employeeRow,
+          alreadyLinkedUserId: linkedUser?.id ?? null,
+        });
+      } catch (linkError) {
+        if (linkError instanceof EmployeeUserLinkError) {
+          const status = linkError.code === "EMPLOYEE_ALREADY_LINKED" ? 409 : 400;
+          return res.status(status).json({ error: linkError.code, message: linkError.message });
+        }
+        throw linkError;
+      }
+
+      const name =
+        typeof req.body?.name === "string" && req.body.name.trim()
+          ? req.body.name.trim()
+          : resolveEmployeeDisplayName(employee);
+      const email = normalizeEmail(
+        resolveLoginEmailForNewUser({
+          requestedEmail: emailRaw,
+          personalEmail: employee.personalEmail,
+        })
+      );
+
+      if (!name) {
+        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome." });
+      }
+      if (!isValidEmail(email)) {
+        return res.status(400).json({
+          error: "INVALID_EMAIL",
+          message:
+            "Informe um e-mail de acesso válido (pode usar o e-mail pessoal cadastrado em Pessoas / RH).",
         });
       }
 
@@ -1952,20 +2049,36 @@ async function startServer() {
           role,
           permissions,
           accessProfileId,
+          employeeId: employee.id,
           isActive,
           externalSellerId: externalSellerId ?? null,
           sellerResponsibleName,
         },
-        include: { accessProfile: { select: { name: true } } },
+        include: {
+          accessProfile: { select: { name: true } },
+          employee: { select: { id: true, name: true, socialName: true, department: true } },
+        },
       });
       return res.status(201).json({
-        user: toSafeAppUser(user, { accessProfileName: user.accessProfile?.name ?? null }),
+        user: toSafeAppUser(user, {
+          accessProfileName: user.accessProfile?.name ?? null,
+          employee: user.employee,
+        }),
       });
     } catch (error) {
       if (error instanceof AccessProfileError) {
         return res.status(409).json({ error: error.code, message: error.message });
       }
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.join(",")
+          : String(error.meta?.target ?? "");
+        if (target.includes("employeeId")) {
+          return res.status(409).json({
+            error: "EMPLOYEE_ALREADY_LINKED",
+            message: "Esta pessoa já possui usuário de acesso no sistema.",
+          });
+        }
         return res.status(409).json({ error: "EMAIL_ALREADY_EXISTS", message: "E-mail já cadastrado." });
       }
       console.error("POST /api/admin/users", error);

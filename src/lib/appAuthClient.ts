@@ -16,6 +16,9 @@ export type AuthUser = {
   effectivePermissions: string[];
   accessProfileId: string | null;
   accessProfileName: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+  employeeDepartment: string | null;
   isActive: boolean;
   externalSellerId: number | null;
   sellerResponsibleName: string | null;

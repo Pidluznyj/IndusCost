@@ -59,6 +59,8 @@ import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView"
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
+import { AccessDenied } from "@/src/components/AccessDenied";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
 import { AlertCircle, BarChart3, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
@@ -98,6 +100,7 @@ function ModulePageShell({
 }
 
 function BootstrapAdminSettingsRoute() {
+  const auth = useAuth();
   const [status, setStatus] = useState<BootstrapAdminStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [pendingLogin, setPendingLogin] = useState(false);
@@ -105,6 +108,20 @@ function BootstrapAdminSettingsRoute() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
+  /** Hub settings: sessão App OU bootstrap autenticado — nunca os dois mal alinhados. */
+  const appCanOpenSettings =
+    auth.hasPermission("settings.view") ||
+    auth.hasPermission("users.manage") ||
+    auth.hasAnyPermission([
+      "settings.global_params.view",
+      "settings.branding.view",
+      "settings.operational.view",
+      "settings.nomus.view",
+      "settings.price_tables.view",
+      "accessProfiles.view",
+      "accessProfiles.manage",
+    ]);
 
   const refreshStatus = async () => {
     setLoadingStatus(true);
@@ -167,6 +184,46 @@ function BootstrapAdminSettingsRoute() {
         </div>
       </ModulePageShell>
     );
+  }
+
+  const bootstrapAuthenticated = Boolean(status?.enabled && status?.authenticated);
+
+  // Sessão bootstrap ativa sem grants App de settings: força logout bootstrap (não abre hub no contexto do VIEWER).
+  if (bootstrapAuthenticated && !appCanOpenSettings) {
+    return (
+      <ModulePageShell
+        title="Configurações do Sistema"
+        description="Sessão bootstrap incompatível com as permissões deste usuário."
+        headerActions={
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={pendingLogout}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold hover:bg-accent disabled:opacity-60"
+          >
+            {pendingLogout ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldOff className="h-4 w-4" />}
+            Logout Admin (Bootstrap)
+          </button>
+        }
+      >
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 space-y-2">
+          <p>
+            Há uma sessão administrativa temporária ativa para{" "}
+            <strong>{status?.username ?? "bootstrap"}</strong>, mas o usuário logado no IndusCost
+            não tem permissão de Configurações.
+          </p>
+          <p>
+            Use <strong>Logout Admin (Bootstrap)</strong> e continue apenas com o login principal
+            (ex.: Contas a Pagar). O bootstrap é só para recuperação / SUPER_ADMIN.
+          </p>
+        </div>
+        <AccessDenied moduleId="settings" />
+      </ModulePageShell>
+    );
+  }
+
+  if (!appCanOpenSettings) {
+    return <AccessDenied moduleId="settings" />;
   }
 
   if (status?.enabled && !status.authenticated) {
