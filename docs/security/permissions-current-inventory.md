@@ -4,6 +4,7 @@
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Data** | 2026-07-13 |
+| **Atualização** | 2026-07-15 — auditoria consolidada em `permissions-current-state.md`, inventário nav em `permissions-resource-inventory.md`, endpoints em `permissions-endpoint-audit.md` (preferir esses três para o estado atual revalidado no código) |
 | **Escopo** | Somente inventário — **sem** implementação de permissionamento novo |
 | **Script read-only** | `scripts/inspectPermissionsCurrentState.ts` (espelho sugerido: `tmp-audits/inspect-permissions-current-state.ts`) |
 | **Docs relacionados** | `docs/induscost-permissions-current-state.md`, `docs/induscost-permissions-action-plan.md`, `docs/induscost-permissions-portfolio-reconciliation-step1.md` |
