@@ -142,6 +142,18 @@ export const EmployeeModule = () => {
   const [managerOptions, setManagerOptions] = useState<
     { value: string; label: string; searchTerms?: string }[]
   >([]);
+  const [personOptions, setPersonOptions] = useState<
+    { value: string; label: string; searchTerms?: string; meta?: string }[]
+  >([]);
+  const [personQuery, setPersonQuery] = useState("");
+  const [personSearchBusy, setPersonSearchBusy] = useState(false);
+  const [personConflicts, setPersonConflicts] = useState<
+    { field: string; formValue: string | null; personValue: string | null }[]
+  >([]);
+  const [systemLinks, setSystemLinks] = useState<{
+    person: { id: string; displayName: string } | null;
+    links: Record<string, unknown[]>;
+  } | null>(null);
   const [savingEmployee, setSavingEmployee] = useState(false);
   const [linkingUser, setLinkingUser] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -257,9 +269,68 @@ export const EmployeeModule = () => {
     fetchData();
   }, []);
 
+  const searchPeople = async (q: string) => {
+    if (q.trim().length < 2) {
+      setPersonOptions([]);
+      return;
+    }
+    setPersonSearchBusy(true);
+    try {
+      const qs = new URLSearchParams({ q: q.trim(), limit: "20" });
+      if (editingEmployee?.id) qs.set("excludeEmployeeId", editingEmployee.id);
+      const data = await fetchJsonOk<{
+        rows: {
+          key: string;
+          personId: string | null;
+          sourceKind: string;
+          sourceId: string;
+          displayName: string;
+          emailMasked: string | null;
+          originLabel: string;
+          roles: string[];
+          status: string;
+        }[];
+      }>(`/api/people/search?${qs.toString()}`);
+      setPersonOptions(
+        (data.rows ?? []).map((r) => ({
+          value: r.personId ? `person:${r.personId}` : `${r.sourceKind}:${r.sourceId}`,
+          label: `${r.displayName}${r.emailMasked ? ` · ${r.emailMasked}` : ""}`,
+          searchTerms: `${r.displayName} ${r.originLabel} ${(r.roles ?? []).join(" ")}`,
+          meta: `${r.originLabel}${(r.roles ?? []).length ? ` · ${r.roles.join(", ")}` : ""}`,
+        }))
+      );
+    } catch (error) {
+      console.error("Erro ao buscar pessoas:", error);
+    } finally {
+      setPersonSearchBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void searchPeople(personQuery);
+    }, 300);
+    return () => window.clearTimeout(handle);
+  }, [personQuery, editingEmployee?.id]);
+
+  const loadSystemLinks = async (personId: string) => {
+    try {
+      const data = await fetchJsonOk<{
+        person: { id: string; displayName: string };
+        links: Record<string, unknown[]>;
+      }>(`/api/people/${personId}/links`);
+      setSystemLinks({ person: data.person, links: data.links });
+    } catch {
+      setSystemLinks(null);
+    }
+  };
+
   const handleOpenModal = (employee?: Employee) => {
     setEmployeeFichaTab("professional");
     setFormError(null);
+    setPersonConflicts([]);
+    setPersonQuery("");
+    setPersonOptions([]);
     if (employee) {
       setEditingEmployee(employee);
       const next = employeeToFormData(employee);
@@ -310,6 +381,10 @@ export const EmployeeModule = () => {
   const openEmployeeView = (employee: Employee) => {
     setViewFichaTab("professional");
     setViewingEmployee(employee);
+    setSystemLinks(null);
+    if (employee.personId || employee.person?.id) {
+      void loadSystemLinks(employee.personId || employee.person!.id);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -329,15 +404,52 @@ export const EmployeeModule = () => {
           costCenterId: formData.costCenterId || null,
           managerId: formData.managerId || null,
           corporateEmail: formData.corporateEmail || null,
+          personId:
+            formData.personId && !String(formData.personId).includes(":")
+              ? formData.personId
+              : formData.personId?.startsWith("person:")
+                ? formData.personId.slice("person:".length)
+                : null,
+          personSourceKind: formData.personSourceKind || null,
+          personSourceId: formData.personSourceId || null,
+          createNewPerson: formData.createNewPerson !== false && !formData.personId && !formData.personSourceId,
+          personFieldResolutions: formData.personFieldResolutions || undefined,
         }),
       });
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
       console.error("Erro ao salvar:", error);
-      setFormError(
-        error instanceof Error ? error.message : "Não foi possível salvar o colaborador."
-      );
+      const msg =
+        error instanceof Error ? error.message : "Não foi possível salvar o colaborador.";
+      setFormError(msg);
+      if (msg.toLowerCase().includes("conflito")) {
+        // tenta preview para listar conflitos
+        try {
+          const preview = await fetchJsonOk<{
+            conflicts: { field: string; formValue: string | null; personValue: string | null }[];
+          }>("/api/people/preview-employee-link", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              personId: formData.personId?.startsWith("person:")
+                ? formData.personId.slice(7)
+                : formData.personId || null,
+              sourceKind: formData.personSourceKind,
+              sourceId: formData.personSourceId,
+              name: formData.name,
+              socialName: formData.socialName,
+              corporateEmail: formData.corporateEmail,
+              personalEmail: formData.personalEmail,
+              cpf: formData.cpf,
+              phone: formData.phone,
+            }),
+          });
+          setPersonConflicts(preview.conflicts ?? []);
+        } catch {
+          /* ignore */
+        }
+      }
     } finally {
       setSavingEmployee(false);
     }
@@ -699,6 +811,130 @@ export const EmployeeModule = () => {
                           Identificação profissional
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                          <div className="space-y-1.5 md:col-span-2 xl:col-span-3 rounded-lg border border-border bg-muted/20 p-3">
+                            <label className="text-xs font-bold text-muted-foreground uppercase">
+                              Vincular pessoa existente
+                            </label>
+                            <input
+                              type="search"
+                              className={INPUT_CLASS}
+                              placeholder="Buscar por nome, e-mail ou CPF…"
+                              value={personQuery}
+                              onChange={(e) => setPersonQuery(e.target.value)}
+                              aria-busy={personSearchBusy}
+                            />
+                            <SearchableSelect
+                              placeholder={
+                                personSearchBusy
+                                  ? "Buscando…"
+                                  : "Selecione uma pessoa encontrada…"
+                              }
+                              options={[
+                                {
+                                  value: "",
+                                  label: "— Criar nova pessoa canônica —",
+                                  searchTerms: "criar nova",
+                                },
+                                ...personOptions.map((o) => ({
+                                  value: o.value,
+                                  label: o.label,
+                                  sublabel: o.meta,
+                                  searchTerms: o.searchTerms,
+                                })),
+                              ]}
+                              value={
+                                formData.personId
+                                  ? formData.personId.startsWith("person:") ||
+                                    formData.personId.includes(":")
+                                    ? formData.personId
+                                    : `person:${formData.personId}`
+                                  : formData.personSourceId
+                                    ? `${formData.personSourceKind}:${formData.personSourceId}`
+                                    : ""
+                              }
+                              onChange={(v) => {
+                                setPersonConflicts([]);
+                                if (!v) {
+                                  setFormData({
+                                    ...formData,
+                                    personId: "",
+                                    personSourceKind: null,
+                                    personSourceId: null,
+                                    createNewPerson: true,
+                                    personFieldResolutions: undefined,
+                                  });
+                                  return;
+                                }
+                                const [kind, ...rest] = v.split(":");
+                                const id = rest.join(":");
+                                if (kind === "person") {
+                                  setFormData({
+                                    ...formData,
+                                    personId: id,
+                                    personSourceKind: null,
+                                    personSourceId: null,
+                                    createNewPerson: false,
+                                  });
+                                } else {
+                                  setFormData({
+                                    ...formData,
+                                    personId: "",
+                                    personSourceKind: kind,
+                                    personSourceId: id,
+                                    createNewPerson: false,
+                                  });
+                                }
+                              }}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Pesquisa colaboradores, usuários, comissionados, motoristas e clientes PF.
+                              Não faz merge automático por nome semelhante.
+                            </p>
+                            {personConflicts.length > 0 && (
+                              <div className="mt-2 space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 p-3">
+                                <p className="text-xs font-semibold text-amber-900">
+                                  Conflitos de dados — escolha o valor a manter:
+                                </p>
+                                {personConflicts.map((c) => (
+                                  <div key={c.field} className="text-xs space-y-1">
+                                    <p className="font-medium">{c.field}</p>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded border border-border bg-background"
+                                        onClick={() =>
+                                          setFormData({
+                                            ...formData,
+                                            personFieldResolutions: {
+                                              ...(formData.personFieldResolutions ?? {}),
+                                              [c.field]: "form",
+                                            },
+                                          })
+                                        }
+                                      >
+                                        Manter do formulário: {c.formValue}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="px-2 py-1 rounded border border-border bg-background"
+                                        onClick={() =>
+                                          setFormData({
+                                            ...formData,
+                                            personFieldResolutions: {
+                                              ...(formData.personFieldResolutions ?? {}),
+                                              [c.field]: "person",
+                                            },
+                                          })
+                                        }
+                                      >
+                                        Usar da pessoa: {c.personValue}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                           <div className="space-y-1.5 md:col-span-2 xl:col-span-3">
                             <label className="text-xs font-bold text-muted-foreground uppercase">
                               Nome completo *
@@ -1369,6 +1605,89 @@ export const EmployeeModule = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                     <DetailField label="Observações profissionais" value={displayText(viewingEmployee.professionalNotes)} multiline />
                     <DetailField label="Observações administrativas" value={displayText(viewingEmployee.adminNotes)} multiline />
+                  </div>
+                )}
+
+                {viewFichaTab === "links" && (
+                  <div className="space-y-4 text-sm">
+                    {!viewingEmployee.personId && !viewingEmployee.person ? (
+                      <p className="text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2">
+                        Este colaborador ainda não possui pessoa canônica vinculada (legado ou pendente).
+                      </p>
+                    ) : systemLinks ? (
+                      <>
+                        <DetailField
+                          label="Pessoa canônica"
+                          value={systemLinks.person?.displayName ?? "—"}
+                        />
+                        {(
+                          [
+                            ["employees", "Colaboradores"],
+                            ["appUsers", "Usuários"],
+                            ["commissionPeople", "Pessoas comissionadas"],
+                            ["fleetDrivers", "Motoristas"],
+                            ["customers", "Clientes PF"],
+                          ] as const
+                        ).map(([key, label]) => {
+                          const rows = (systemLinks.links[key] ?? []) as Array<Record<string, unknown>>;
+                          return (
+                            <div key={key} className="rounded-lg border border-border p-3">
+                              <p className="text-xs font-bold uppercase text-muted-foreground mb-2">
+                                {label}
+                              </p>
+                              {rows.length === 0 ? (
+                                <p className="text-muted-foreground text-xs">Nenhum vínculo</p>
+                              ) : (
+                                <ul className="space-y-1">
+                                  {rows.map((row) => (
+                                    <li key={String(row.id)}>
+                                      {String(row.name ?? row.displayName ?? row.companyName ?? row.email ?? row.id)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 rounded-lg border border-red-200 text-red-700 text-sm hover:bg-red-50"
+                            onClick={async () => {
+                              if (
+                                !window.confirm(
+                                  "Desvincular este colaborador da pessoa canônica? O histórico do papel RH não é apagado."
+                                )
+                              ) {
+                                return;
+                              }
+                              try {
+                                await fetchOk(`/api/employees/${viewingEmployee.id}/person-link`, {
+                                  method: "DELETE",
+                                });
+                                setViewingEmployee({
+                                  ...viewingEmployee,
+                                  personId: null,
+                                  person: null,
+                                });
+                                setSystemLinks(null);
+                                fetchData();
+                              } catch (error) {
+                                alert(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Não foi possível desvincular."
+                                );
+                              }
+                            }}
+                          >
+                            Desvincular pessoa canônica
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground">Carregando vínculos…</p>
+                    )}
                   </div>
                 )}
               </div>

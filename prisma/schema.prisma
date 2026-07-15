@@ -40,6 +40,35 @@ model Role {
   ProductRouting ProductRouting[]
 }
 
+/// Identidade canônica da pessoa física (hub fino).
+/// Papéis de domínio (Employee, AppUser, CommissionPerson, …) permanecem nas tabelas próprias.
+model Person {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  displayName     String
+  socialName      String?
+  corporateEmail  String?
+  personalEmail   String?
+  /// CPF somente dígitos (nullable; unique parcial na migration).
+  cpfNormalized   String?
+  phoneNormalized String?
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  employees         Employee[]
+  appUsers          AppUser[]
+  commissionPeople  CommissionPerson[]
+  fleetDrivers      FleetDriver[]
+  customers         Customer[]
+
+  @@index([displayName])
+  @@index([corporateEmail])
+  @@index([personalEmail])
+  @@index([cpfNormalized])
+  @@index([phoneNormalized])
+  @@index([status])
+}
+
 model Employee {
   id                           String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name                         String
@@ -70,6 +99,8 @@ model Employee {
   managerName                  String?
   /// Gestor = outro Employee (ativos na seleção; histórico preserva inativos).
   managerId                    String?                    @db.Uuid
+  /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
+  personId                     String?                    @db.Uuid
   professionalNotes            String?
   address                      String?
   adminNotes                   String?
@@ -85,10 +116,12 @@ model Employee {
   financialCostCenter          FinancialCostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   manager                      Employee?                  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   directReports                Employee[]                 @relation("EmployeeManager")
+  person                       Person?                    @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   EmployeePayrollComponent     EmployeePayrollComponent[]
   /// Conta de acesso do sistema (Configurações → Usuários), quando vinculada.
   appUser                      AppUser?
 
+  @@unique([personId])
   @@index([costCenterId])
   @@index([managerId])
 }
@@ -792,16 +825,21 @@ model Customer {
   commercialNotes            String?
   relationshipStatus         String?
   accountOwner               String?
+  /// Somente quando o cliente for pessoa física (taxId CPF). PJ não usa este vínculo de identidade.
+  personId                   String?                     @db.Uuid
   CommercialActivity         CommercialActivity[]
   CrmCustomerProfile         CrmCustomerProfile?
   CrmCustomerCommercialOwner CrmCustomerCommercialOwner?
   CustomerCnpjLookup         CustomerCnpjLookup[]
+  person                     Person?                     @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   proposals                         Proposal[]
   salesOrders                       SalesOrder[]
   commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
   commissionReceiptLedgerLines      CommissionReceiptLedgerLine[]
   commissionOrderSnapshots          CommissionOrderSnapshot[]
   commissionReceivableSchedules     CommissionReceivableSchedule[]
+
+  @@index([personId])
 }
 
 model Proposal {
@@ -1893,6 +1931,8 @@ model AppUser {
   accessProfileId       String?        @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
   employeeId            String?        @unique @db.Uuid
+  /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
+  personId              String?        @unique @db.Uuid
   isActive              Boolean        @default(true)
   externalSellerId      Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
@@ -1903,6 +1943,7 @@ model AppUser {
   updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
   accessProfile         AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
   employee              Employee?      @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                Person?        @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   sessions              AppSession[]
   permissionOverrides   UserPermissionOverride[]
   permissionAuditsAsActor  PermissionAuditLog[] @relation("PermissionAuditActor")
@@ -1913,6 +1954,7 @@ model AppUser {
   @@index([externalSellerId])
   @@index([accessProfileId])
   @@index([employeeId])
+  @@index([personId])
 }
 
 model AppSession {
@@ -3105,9 +3147,11 @@ model FleetDriver {
   publicRegistrationReviewedByUserId String?           @db.Uuid
   publicRegistrationRejectionReason  String?
   notes                              String?
+  personId                           String?           @db.Uuid
   createdAt                          DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt                          DateTime          @default(now()) @updatedAt @db.Timestamptz(6)
 
+  person                    Person?                         @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   reservations              FleetReservation[]
   publicReservationRequests FleetPublicReservationRequest[]
   usages                    FleetUsage[]
@@ -3120,6 +3164,7 @@ model FleetDriver {
   @@index([cpf])
   @@index([cnhExpirationDate])
   @@index([unit])
+  @@index([personId])
 }
 
 model FleetReservation {
@@ -4925,9 +4970,11 @@ model CommissionPerson {
   document      String?
   active        Boolean                @default(true)
   notes         String?
+  personId      String?                @db.Uuid
   createdAt     DateTime               @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
 
+  person               Person?                       @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   fixedCommissionRules CommissionRule[]           @relation("CommissionRuleFixedPerson")
   commissionRecords    CommissionRecord[]
   paymentBatches       CommissionPaymentBatch[]
@@ -4941,6 +4988,7 @@ model CommissionPerson {
   @@index([type])
   @@index([active])
   @@index([name])
+  @@index([personId])
 }
 
 model CommissionPersonAlias {

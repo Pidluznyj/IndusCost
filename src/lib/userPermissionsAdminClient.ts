@@ -197,3 +197,14 @@ export async function fetchUserPermissionAudit(
   );
   return Array.isArray(res.entries) ? res.entries : [];
 }
+
+export async function deleteAdminUser(userId: string): Promise<{
+  success: true;
+  deletedUserId: string;
+  email: string;
+  name: string;
+}> {
+  return fetchJsonOk(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+}

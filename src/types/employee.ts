@@ -66,6 +66,14 @@ export interface Employee extends EmployeeHrProfileFields {
     socialName: string | null;
     status: string | null;
   } | null;
+  personId?: string | null;
+  person?: {
+    id: string;
+    displayName: string;
+    socialName: string | null;
+    corporateEmail: string | null;
+    status: string;
+  } | null;
   /** Conta de acesso vinculada (Configurações → Usuários), se houver. */
   appUser?: {
     id: string;
@@ -98,4 +106,9 @@ export interface CreateEmployeeInput extends EmployeeHrProfileFields {
   productivity: number;
   status?: "ACTIVE" | "INACTIVE";
   componentIds?: string[];
+  personId?: string | null;
+  personSourceKind?: string | null;
+  personSourceId?: string | null;
+  createNewPerson?: boolean;
+  personFieldResolutions?: Record<string, "form" | "person">;
 }

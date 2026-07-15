@@ -205,6 +205,11 @@ import {
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import {
+  registerCanonicalPersonRoutes,
+  resolvePersonIdFromEmployeeBody,
+} from "./src/lib/canonicalPersonRoutes.js";
+import { CanonicalPersonError } from "./src/lib/canonicalPerson.js";
+import {
   EmployeeRegistrationError,
   prepareEmployeePersistedFields,
 } from "./src/lib/employeeRegistration.js";
@@ -440,6 +445,7 @@ import {
   resolveLoginEmailForNewUser,
 } from "./src/lib/adminUserEmployeeLink.js";
 import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
+import { evaluateAppUserDeleteGuard } from "./src/lib/adminUserDelete.js";
 import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
 import {
   createAuthGuards,
@@ -2320,6 +2326,73 @@ async function startServer() {
     }
   });
 
+  app.delete("/api/admin/users/:id", requireUsersManageOrBootstrap, async (req, res) => {
+    try {
+      const id = String(req.params.id ?? "").trim();
+      if (!id) {
+        return res.status(400).json({ error: "INVALID_ID", message: "ID inválido." });
+      }
+
+      const existing = await prisma.appUser.findUnique({ where: { id } });
+      if (!existing) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Usuário não encontrado." });
+      }
+
+      const otherActiveSuperAdmins =
+        existing.role === AppUserRole.SUPER_ADMIN && existing.isActive
+          ? await prisma.appUser.count({
+              where: {
+                role: AppUserRole.SUPER_ADMIN,
+                isActive: true,
+                id: { not: existing.id },
+              },
+            })
+          : 0;
+
+      const guard = evaluateAppUserDeleteGuard({
+        target: {
+          id: existing.id,
+          role: existing.role,
+          isActive: existing.isActive,
+        },
+        actorUserId: req.appAuth?.id ?? null,
+        otherActiveSuperAdminCount: otherActiveSuperAdmins,
+      });
+      if (!guard.ok) {
+        return res.status(guard.status).json({
+          error: guard.code,
+          code: guard.code,
+          message: guard.message,
+        });
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await tx.appSession.updateMany({
+          where: { userId: id, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        await tx.appUser.delete({ where: { id } });
+      });
+
+      return res.json({
+        success: true,
+        deletedUserId: id,
+        email: existing.email,
+        name: existing.name,
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+        return res.status(409).json({
+          error: "USER_HAS_DEPENDENCIES",
+          message:
+            "Não foi possível excluir este usuário porque ainda existem vínculos no sistema. Inative-o ou remova os vínculos primeiro.",
+        });
+      }
+      console.error("DELETE /api/admin/users/:id", error);
+      return res.status(500).json({ error: "Erro ao excluir usuário." });
+    }
+  });
+
   app.post("/api/admin/users/bootstrap-super-admin", requireBootstrapAdmin, async (req, res) => {
     try {
       const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
@@ -2685,6 +2758,15 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
       manager: {
         select: { id: true, name: true, socialName: true, status: true },
       },
+      person: {
+        select: {
+          id: true,
+          displayName: true,
+          socialName: true,
+          corporateEmail: true,
+          status: true,
+        },
+      },
     },
     orderBy: { name: "asc" },
   });
@@ -2824,6 +2906,15 @@ const employeeApiInclude = {
   manager: {
     select: { id: true, name: true, socialName: true, status: true },
   },
+  person: {
+    select: {
+      id: true,
+      displayName: true,
+      socialName: true,
+      corporateEmail: true,
+      status: true,
+    },
+  },
 } as const;
 
 app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
@@ -2857,11 +2948,25 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
 
+    let personResolve;
+    try {
+      personResolve = await resolvePersonIdFromEmployeeBody(req.body);
+    } catch (linkErr) {
+      if (linkErr instanceof CanonicalPersonError) {
+        return res.status(linkErr.status).json({
+          error: linkErr.message,
+          code: linkErr.code,
+          conflicts: linkErr.conflicts,
+        });
+      }
+      throw linkErr;
+    }
+
     const persisted = await prepareEmployeePersistedFields(
       prisma,
       {
         ...hrProfileBody,
-        corporateEmail,
+        corporateEmail: personResolve.appliedForm.corporateEmail ?? corporateEmail,
         costCenter,
         costCenterId,
         classification,
@@ -2876,6 +2981,10 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
 
     const hrProfile = buildEmployeeHrProfileData({
       ...hrProfileBody,
+      socialName: personResolve.appliedForm.socialName ?? hrProfileBody.socialName,
+      personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
+      cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
+      phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
       admissionDate: undefined,
       terminationDate: undefined,
       contractType: undefined,
@@ -2900,6 +3009,7 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
         contractType: persisted.contractType,
         admissionDate: persisted.admissionDate,
         terminationDate: persisted.terminationDate,
+        personId: personResolve.personId,
         ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
@@ -2912,6 +3022,17 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       },
       include: employeeApiInclude,
     });
+
+    if (personResolve.personId) {
+      console.info(
+        JSON.stringify({
+          audit: "person.link_employee_create",
+          employeeId: employee.id,
+          personId: personResolve.personId,
+          at: new Date().toISOString(),
+        })
+      );
+    }
 
     res.json(employee);
   } catch (error) {
@@ -2952,7 +3073,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
     const existingEmployee = await prisma.employee.findUnique({
       where: { id },
-      select: { managerId: true },
+      select: { managerId: true, personId: true },
     });
     if (!existingEmployee) {
       return res.status(404).json({ error: "Funcionário não encontrado." });
@@ -2969,11 +3090,25 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       return res.status(400).json({ error: "Selecione um cargo válido." });
     }
 
+    let personResolve;
+    try {
+      personResolve = await resolvePersonIdFromEmployeeBody(req.body, id);
+    } catch (linkErr) {
+      if (linkErr instanceof CanonicalPersonError) {
+        return res.status(linkErr.status).json({
+          error: linkErr.message,
+          code: linkErr.code,
+          conflicts: linkErr.conflicts,
+        });
+      }
+      throw linkErr;
+    }
+
     const persisted = await prepareEmployeePersistedFields(
       prisma,
       {
         ...hrProfileBody,
-        corporateEmail,
+        corporateEmail: personResolve.appliedForm.corporateEmail ?? corporateEmail,
         costCenter,
         costCenterId,
         classification,
@@ -2989,6 +3124,10 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
     const hrProfile = buildEmployeeHrProfileData({
       ...hrProfileBody,
+      socialName: personResolve.appliedForm.socialName ?? hrProfileBody.socialName,
+      personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
+      cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
+      phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
       admissionDate: undefined,
       terminationDate: undefined,
       contractType: undefined,
@@ -2998,6 +3137,11 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
     await prisma.employeePayrollComponent.deleteMany({
       where: { employeeId: id },
     });
+
+    const nextPersonId =
+      personResolve.personId !== null
+        ? personResolve.personId
+        : existingEmployee.personId;
 
     const employee = await prisma.employee.update({
       where: { id },
@@ -3018,6 +3162,7 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
         contractType: persisted.contractType,
         admissionDate: persisted.admissionDate,
         terminationDate: persisted.terminationDate,
+        personId: nextPersonId,
         ...hrProfile,
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
@@ -13232,6 +13377,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     requireAppAuth,
     requirePermission,
     requireAnyPermission,
+  });
+
+  registerCanonicalPersonRoutes(app, {
+    requireAppAuth,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
   });
 
   app.post("/api/customers", requireAppAuth, requirePermission("customers.create"), async (req, res) => {

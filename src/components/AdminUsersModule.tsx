@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Search,
   Shield,
+  Trash2,
   X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -28,6 +29,7 @@ import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
 import {
   applyUserPermissionPreset,
   clearUserPermissionOverrides,
+  deleteAdminUser,
   fetchAdminUsersList,
   fetchPermissionPresets,
   fetchUserPermissionAudit,
@@ -40,6 +42,7 @@ import {
   type RoleMatrixRowDto,
   type UserPermissionsPayload,
 } from "@/src/lib/userPermissionsAdminClient";
+import { evaluateAppUserDeleteGuard } from "@/src/lib/adminUserDelete";
 import {
   filterAdminUsersList,
   flattenPermissionTreeLabels,
@@ -148,6 +151,9 @@ export const AdminUsersModule: React.FC = () => {
   const [resetPassword, setResetPassword] = useState("");
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetError, setResetError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmEmail, setDeleteConfirmEmail] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadEligibleEmployees = useCallback(async () => {
     setEligibleEmployeesLoading(true);
@@ -525,6 +531,52 @@ export const AdminUsersModule: React.FC = () => {
     }
   };
 
+  const deleteGuardPreview = useMemo(() => {
+    if (!selectedListUser) return null;
+    const otherActiveSuperAdmins = users.filter(
+      (u) =>
+        u.id !== selectedListUser.id && u.isActive && u.role === "SUPER_ADMIN"
+    ).length;
+    return evaluateAppUserDeleteGuard({
+      target: {
+        id: selectedListUser.id,
+        role: selectedListUser.role,
+        isActive: selectedListUser.isActive,
+      },
+      actorUserId: currentUserId,
+      otherActiveSuperAdminCount: otherActiveSuperAdmins,
+    });
+  }, [selectedListUser, users, currentUserId]);
+
+  const handleDeleteUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedListUser || !selectedId) return;
+    if (deleteGuardPreview && !deleteGuardPreview.ok) {
+      setDeleteError(deleteGuardPreview.message);
+      return;
+    }
+    if (
+      deleteConfirmEmail.trim().toLowerCase() !== selectedListUser.email.trim().toLowerCase()
+    ) {
+      setDeleteError("Digite o e-mail do usuário para confirmar a exclusão.");
+      return;
+    }
+    setSaving(true);
+    setDeleteError(null);
+    try {
+      await deleteAdminUser(selectedId);
+      setDeleteOpen(false);
+      setDeleteConfirmEmail("");
+      setSelectedId(null);
+      setDetail(null);
+      await loadUsers();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Falha ao excluir usuário.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (!canManage) {
     return (
       <div
@@ -773,19 +825,50 @@ export const AdminUsersModule: React.FC = () => {
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setResetPassword("");
-                        setResetConfirm("");
-                        setResetError(null);
-                        setResetOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                    >
-                      <KeyRound className="h-3 w-3" />
-                      Redefinir senha
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setResetPassword("");
+                          setResetConfirm("");
+                          setResetError(null);
+                          setResetOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                      >
+                        <KeyRound className="h-3 w-3" />
+                        Redefinir senha
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          saving ||
+                          selectedId === currentUserId ||
+                          (deleteGuardPreview != null && !deleteGuardPreview.ok)
+                        }
+                        title={
+                          selectedId === currentUserId
+                            ? "Você não pode excluir o próprio usuário"
+                            : deleteGuardPreview && !deleteGuardPreview.ok
+                              ? deleteGuardPreview.message
+                              : "Excluir usuário permanentemente"
+                        }
+                        onClick={() => {
+                          setDeleteConfirmEmail("");
+                          setDeleteError(
+                            deleteGuardPreview && !deleteGuardPreview.ok
+                              ? deleteGuardPreview.message
+                              : null
+                          );
+                          setDeleteOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
+                        data-testid="admin-user-delete-open"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        Excluir
+                      </button>
+                    </div>
                   </div>
 
                   {detail.warnings.editingSuperAdmin ? (
@@ -1315,6 +1398,70 @@ export const AdminUsersModule: React.FC = () => {
                   className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground"
                 >
                   Salvar senha
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteOpen && selectedListUser ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+          <div
+            className="bg-card w-full max-w-md rounded-2xl border border-border shadow-xl p-4 space-y-3"
+            data-testid="admin-user-delete-modal"
+          >
+            <h4 className="font-bold text-red-800">Excluir usuário</h4>
+            <p className="text-sm text-muted-foreground">
+              Esta ação remove permanentemente a conta{" "}
+              <span className="font-semibold text-foreground">{selectedListUser.name}</span> (
+              {selectedListUser.email}). Sessões ativas serão encerradas e a pessoa do RH fica
+              liberada para novo vínculo.
+            </p>
+            {deleteError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                {deleteError}
+              </div>
+            ) : null}
+            <form onSubmit={handleDeleteUser} className="space-y-3">
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  Digite o e-mail para confirmar
+                </span>
+                <input
+                  type="email"
+                  autoComplete="off"
+                  placeholder={selectedListUser.email}
+                  value={deleteConfirmEmail}
+                  onChange={(e) => setDeleteConfirmEmail(e.target.value)}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  data-testid="admin-user-delete-confirm-email"
+                />
+              </label>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteOpen(false);
+                    setDeleteConfirmEmail("");
+                    setDeleteError(null);
+                  }}
+                  className="rounded-lg border border-border px-3 py-2 text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    saving ||
+                    (deleteGuardPreview != null && !deleteGuardPreview.ok) ||
+                    deleteConfirmEmail.trim().toLowerCase() !==
+                      selectedListUser.email.trim().toLowerCase()
+                  }
+                  className="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                  data-testid="admin-user-delete-confirm"
+                >
+                  {saving ? "Excluindo…" : "Excluir definitivamente"}
                 </button>
               </div>
             </form>

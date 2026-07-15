@@ -6,7 +6,8 @@ export type EmployeeFichaTabId =
   | "emergency"
   | "epi"
   | "admin"
-  | "notes";
+  | "notes"
+  | "links";
 
 export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = [
   { id: "professional", label: "Profissional" },
@@ -15,6 +16,7 @@ export const EMPLOYEE_FICHA_TABS: { id: EmployeeFichaTabId; label: string }[] = 
   { id: "epi", label: "EPI / Uniformes" },
   { id: "admin", label: "Referência administrativa" },
   { id: "notes", label: "Observações" },
+  { id: "links", label: "Vínculos no sistema" },
 ];
 
 export const EPI_TOP_SIZE_OPTIONS = [
@@ -123,6 +125,8 @@ export function employeeToFormData(employee: Employee): CreateEmployeeInput {
     terminationDate: toDateInputValue(employee.terminationDate),
     managerName: employee.managerName ?? "",
     managerId: employee.managerId ?? employee.manager?.id ?? "",
+    personId: employee.personId ?? employee.person?.id ?? "",
+    createNewPerson: false,
     status: employee.status,
     cpf: employee.cpf ?? "",
     rg: employee.rg ?? "",
@@ -163,6 +167,8 @@ export function createEmptyEmployeeForm(roleId = ""): CreateEmployeeInput {
     terminationDate: "",
     managerName: "",
     managerId: "",
+    personId: "",
+    createNewPerson: true,
     cpf: "",
     rg: "",
     birthDate: "",
