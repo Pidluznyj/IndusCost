@@ -26,6 +26,12 @@ import {
 } from "@/src/lib/canonicalPersonService.server.js";
 import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
 import { buildSystemLinksViewerCaps } from "@/src/lib/employeeSystemLinks.js";
+import {
+  EMPLOYEES_LINKS_MANAGE_PERMISSIONS,
+  EMPLOYEES_LINKS_VIEW_PERMISSIONS,
+  EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS,
+} from "@/src/lib/employeesPermissions.js";
+import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -33,18 +39,11 @@ type AuthGuards = {
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
 
-const SEARCH_PERMS = [
-  "people.search",
-  "employees.view",
-  "employees.edit",
-  "users.manage",
-] as const;
+const SEARCH_PERMS = EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS;
+const LINK_PERMS = EMPLOYEES_LINKS_MANAGE_PERMISSIONS;
+const RH_LINKS_VIEW_PERMS = EMPLOYEES_LINKS_VIEW_PERMISSIONS;
 
-const LINK_PERMS = ["people.link.manage", "employees.edit", "users.manage"] as const;
-
-const RH_VIEW_PERMS = ["employees.view", "employees.edit"] as const;
-
-type AppUserBrief = { permissions?: string[]; role?: string };
+type AppUserBrief = { id?: string; permissions?: string[]; role?: string };
 
 async function resolveAppUserBrief(
   req: express.Request,
@@ -180,7 +179,7 @@ export function registerCanonicalPersonRoutes(
   app.get(
     "/api/employees/:id/system-links",
     requireAppAuth,
-    requireAnyPermission([...RH_VIEW_PERMS]),
+    requireAnyPermission([...RH_LINKS_VIEW_PERMS]),
     async (req, res) => {
       try {
         const id = req.params.id;
@@ -247,7 +246,13 @@ export function registerCanonicalPersonRoutes(
     requireAnyPermission([...LINK_PERMS]),
     async (req, res) => {
       try {
+        const actor = await resolveAppUserBrief(req, getCurrentAppUser);
         await unlinkEmployeeFromPerson(prisma, req.params.id);
+        logEmployeeHrAudit({
+          event: "employee.person_unlink",
+          actorUserId: (actor as { id?: string } | null)?.id ?? null,
+          employeeId: req.params.id,
+        });
         res.json({ ok: true });
       } catch (error) {
         if (error instanceof CanonicalPersonError) {

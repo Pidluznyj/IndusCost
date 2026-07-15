@@ -152,16 +152,26 @@ export function buildSystemLinksViewerCaps(input: {
 
   return {
     canViewPii:
-      has("employees.edit") || has("people.pii.view") || has("users.manage"),
+      has("employees.edit") ||
+      has("employees.personal_data.view") ||
+      has("people.pii.view") ||
+      has("users.manage"),
     canViewUsers: has("users.manage") || has("settings.view"),
     canViewCommissions: has("commissions.view"),
     canViewCustomers: has("customers.view"),
     canViewFleet: has("fleet.view"),
-    canViewEmployees: has("employees.view") || has("employees.edit"),
+    canViewEmployees:
+      has("employees.view") || has("employees.edit") || has("costs.view"),
     canOpenAudit:
-      has("people.link.manage") || has("users.manage") || has("employees.edit"),
+      has("employees.links.manage") ||
+      has("people.link.manage") ||
+      has("users.manage") ||
+      has("employees.edit"),
     canManagePersonLink:
-      has("people.link.manage") || has("employees.edit") || has("users.manage"),
+      has("employees.links.manage") ||
+      has("people.link.manage") ||
+      has("employees.edit") ||
+      has("users.manage"),
   };
 }
 

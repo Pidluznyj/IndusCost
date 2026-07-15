@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { cn } from "@/src/lib/utils";
 import { EMPLOYEE_FICHA_TABS, type EmployeeFichaTabId } from "@/src/lib/employeeHrUi";
 
@@ -6,14 +6,27 @@ type EmployeeFichaTabNavProps = {
   activeTab: EmployeeFichaTabId;
   onTabChange: (tab: EmployeeFichaTabId) => void;
   layout?: "sidebar" | "horizontal";
+  /** Quando informado, só exibe estas abas (permissões). */
+  visibleTabIds?: readonly EmployeeFichaTabId[];
 };
 
 export const EmployeeFichaTabNav: React.FC<EmployeeFichaTabNavProps> = ({
   activeTab,
   onTabChange,
   layout = "sidebar",
+  visibleTabIds,
 }) => {
   const isSidebar = layout === "sidebar";
+  const tabs = visibleTabIds
+    ? EMPLOYEE_FICHA_TABS.filter((t) => visibleTabIds.includes(t.id))
+    : EMPLOYEE_FICHA_TABS;
+
+  useEffect(() => {
+    if (!visibleTabIds || visibleTabIds.length === 0) return;
+    if (!visibleTabIds.includes(activeTab)) {
+      onTabChange(visibleTabIds[0]);
+    }
+  }, [activeTab, onTabChange, visibleTabIds]);
 
   return (
     <nav
@@ -32,7 +45,7 @@ export const EmployeeFichaTabNav: React.FC<EmployeeFichaTabNavProps> = ({
           isSidebar ? "flex-row lg:flex-col overflow-x-auto lg:overflow-x-visible pb-1 lg:pb-0" : "flex-wrap"
         )}
       >
-        {EMPLOYEE_FICHA_TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = activeTab === tab.id;
           return (
             <button

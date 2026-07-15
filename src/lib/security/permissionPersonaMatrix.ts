@@ -125,7 +125,8 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     permissions: ["dashboard.view", "employees.view", "guide.view"],
     expectViewModules: ["dashboard", "employees", "guide"],
     expectDenyModules: ["finance", "settings", "crm-commercial", "products", "sales-orders"],
-    notes: "Dados sensíveis de ficha exigem employees.edit (máscara Prompt 15).",
+    notes:
+      "Listagem com employees.view; PII/salário/vínculos manage exigem facetas ou employees.edit.",
   },
   {
     id: "viewer",

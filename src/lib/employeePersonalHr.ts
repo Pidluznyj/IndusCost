@@ -296,27 +296,39 @@ export function validateEmployeePersonalHrForm(
   }
 }
 
-export const EMPLOYEE_PERSONAL_REDACT_KEYS = [
+export const EMPLOYEE_PERSONAL_ONLY_REDACT_KEYS = [
   "cpf",
   "rg",
   "birthDate",
   "phone",
   "personalEmail",
   "address",
+] as const;
+
+export const EMPLOYEE_EMERGENCY_REDACT_KEYS = [
   "emergencyContactName",
   "emergencyContactPhone",
   "emergencyContactRelationship",
+] as const;
+
+export const EMPLOYEE_PERSONAL_REDACT_KEYS = [
+  ...EMPLOYEE_PERSONAL_ONLY_REDACT_KEYS,
+  ...EMPLOYEE_EMERGENCY_REDACT_KEYS,
 ] as const;
 
 export type EmployeePersonalRedactKey = (typeof EMPLOYEE_PERSONAL_REDACT_KEYS)[number];
 
 /**
  * Remove PII pessoal/emergência da resposta (listagem).
- * Quem tem employees.edit recebe campos completos (reveal=true).
+ * Facetas: personal_data.view vs sensitive_data.view (ou legado employees.edit via reveal).
  */
 export function redactEmployeePersonalEmergencyForApi<T extends Record<string, unknown>>(
   employee: T,
-  opts: { reveal: boolean }
+  opts: {
+    reveal?: boolean;
+    revealPersonal?: boolean;
+    revealEmergency?: boolean;
+  }
 ): T & {
   personalPiiRedacted: boolean;
   emergencyContactRedacted: boolean;
@@ -337,7 +349,10 @@ export function redactEmployeePersonalEmergencyForApi<T extends Record<string, u
       employee.emergencyContactRelationship
   );
 
-  if (opts.reveal) {
+  const revealPersonal = opts.reveal === true || opts.revealPersonal === true;
+  const revealEmergency = opts.reveal === true || opts.revealEmergency === true;
+
+  if (revealPersonal && revealEmergency) {
     return {
       ...employee,
       personalPiiRedacted: false,
@@ -348,13 +363,20 @@ export function redactEmployeePersonalEmergencyForApi<T extends Record<string, u
   }
 
   const next: Record<string, unknown> = { ...employee };
-  for (const key of EMPLOYEE_PERSONAL_REDACT_KEYS) {
-    next[key] = null;
+  if (!revealPersonal) {
+    for (const key of EMPLOYEE_PERSONAL_ONLY_REDACT_KEYS) {
+      next[key] = null;
+    }
+  }
+  if (!revealEmergency) {
+    for (const key of EMPLOYEE_EMERGENCY_REDACT_KEYS) {
+      next[key] = null;
+    }
   }
   return {
     ...(next as T),
-    personalPiiRedacted: true,
-    emergencyContactRedacted: true,
+    personalPiiRedacted: !revealPersonal,
+    emergencyContactRedacted: !revealEmergency,
     hasPersonalPii,
     hasEmergencyContact,
   };

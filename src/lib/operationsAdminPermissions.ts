@@ -151,16 +151,72 @@ export function canEditEmployees(check: PermissionChecker): boolean {
   return check.hasPermission("employees.edit");
 }
 
+export function canCreateEmployees(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.create") || check.hasPermission("employees.edit")
+  );
+}
+
 /**
- * Dados sensíveis de RH (salário, encargos, contato de emergência):
- * somente quem edita RH — evita exposição a quem entra só com costs.view.
+ * Dados sensíveis de RH (salário, encargos, contato de emergência).
+ * Facetas finas OR legado employees.edit — costs.view sozinho não libera.
  */
 export function canViewEmployeeCompensation(check: PermissionChecker): boolean {
-  return check.hasPermission("employees.edit");
+  return (
+    check.hasPermission("employees.edit") ||
+    check.hasPermission("employees.sensitive_data.view")
+  );
 }
 
 export function canViewEmployeeEmergencyContacts(check: PermissionChecker): boolean {
-  return check.hasPermission("employees.edit");
+  return canViewEmployeeCompensation(check);
+}
+
+export function canViewEmployeePersonalData(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.edit") ||
+    check.hasPermission("employees.personal_data.view") ||
+    check.hasPermission("people.pii.view")
+  );
+}
+
+export function canViewEmployeeAdministrativeData(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.edit") ||
+    check.hasPermission("employees.administrative_data.view")
+  );
+}
+
+export function canViewEmployeeLinks(check: ResourceAwareChecker): boolean {
+  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_LINKS, () =>
+    check.hasPermission("employees.links.view") ||
+      check.hasPermission("employees.view") ||
+      check.hasPermission("employees.edit") ||
+      check.hasPermission("people.search")
+  );
+}
+
+export function canManageEmployeeLinks(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.links.manage") ||
+    check.hasPermission("people.link.manage") ||
+    check.hasPermission("employees.edit") ||
+    check.hasPermission("users.manage")
+  );
+}
+
+export function canManageEmployeeUserLink(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.user_link.manage") ||
+    check.hasPermission("employees.edit") ||
+    check.hasPermission("users.manage")
+  );
+}
+
+export function canManageEmployeeEpi(check: PermissionChecker): boolean {
+  return (
+    check.hasPermission("employees.epi.manage") || check.hasPermission("employees.edit")
+  );
 }
 
 // ─── Administração: Configurações / Guia / ACL ───────────────

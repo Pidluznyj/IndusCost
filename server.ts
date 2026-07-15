@@ -227,6 +227,15 @@ import {
   prepareEmployeeNotesFields,
   redactEmployeeAdminForApi,
 } from "./src/lib/employeeAdminHr.js";
+import {
+  canViewEmployeeAdministrativeData,
+  canViewEmployeePersonalData,
+  canViewEmployeeSensitiveData,
+  EMPLOYEES_CREATE_PERMISSIONS,
+  EMPLOYEES_UPDATE_PERMISSIONS,
+  EMPLOYEES_VIEW_PERMISSIONS,
+} from "./src/lib/employeesPermissions.js";
+import { logEmployeeHrAudit, summarizeConflictResolutions } from "./src/lib/employeeHrAudit.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
   applyCommercialActivityProposalToCreate,
@@ -1719,6 +1728,14 @@ async function startServer() {
     };
   }
 
+  function employeePermCheck(authUser: AppAuthContext | null) {
+    return {
+      hasPermission: (p: string) => Boolean(authUser && hasPermission(authUser, p)),
+      hasAnyPermission: (list: readonly string[]) =>
+        Boolean(authUser && list.some((p) => hasPermission(authUser, p))),
+    };
+  }
+
   const requireUserAdminOrBootstrap: express.RequestHandler = async (req, res, next) => {
     if (isBootstrapAdminRequest(req)) {
       return next();
@@ -2756,10 +2773,13 @@ async function startServer() {
 
   
 // --- API: Employees (Funcionários) ---
-app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), async (req, res) => {
+app.get("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_VIEW_PERMISSIONS]), async (req, res) => {
   const authUser = await getCurrentAppUser(req);
-  const revealSensitive =
-    Boolean(authUser) && hasPermission(authUser!, "employees.edit");
+  const check = employeePermCheck(authUser);
+  const revealPersonal = canViewEmployeePersonalData(check);
+  const revealEmergency = canViewEmployeeSensitiveData(check);
+  const revealCompensation = canViewEmployeeSensitiveData(check);
+  const revealAdminNotes = canViewEmployeeAdministrativeData(check);
 
   const employees = await prisma.employee.findMany({
     include: {
@@ -2830,9 +2850,9 @@ app.get("/api/employees", requireAppAuth, requirePermission("employees.view"), a
 
     const personalSafe = redactEmployeePersonalEmergencyForApi(
       enriched as unknown as Record<string, unknown>,
-      { reveal: revealSensitive }
+      { revealPersonal, revealEmergency }
     );
-    return redactEmployeeAdminForApi(personalSafe, { reveal: revealSensitive });
+    return redactEmployeeAdminForApi(personalSafe, { revealCompensation, revealAdminNotes });
   });
 
   res.json(employeesWithCosts);
@@ -2974,8 +2994,9 @@ const employeeApiInclude = {
   },
 } as const;
 
-app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
+app.post("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_CREATE_PERMISSIONS]), async (req, res) => {
   try {
+    const authUser = await getCurrentAppUser(req);
     const {
       name,
       roleId,
@@ -3094,51 +3115,61 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
       include: employeeApiInclude,
     });
 
-    if (personResolve.personId) {
-      console.info(
-        JSON.stringify({
-          audit: "person.link_employee_create",
-          employeeId: employee.id,
-          personId: personResolve.personId,
-          at: new Date().toISOString(),
-        })
-      );
-    }
+    const actorUserId = authUser?.id ?? null;
 
-    if (persisted.corporateEmail) {
-      console.info(
-        JSON.stringify({
-          audit: "employee.corporate_email.set",
-          employeeId: employee.id,
-          corporateEmail: persisted.corporateEmail,
-          appUserHint: persisted.appUserEmailHint,
-          at: new Date().toISOString(),
-        })
-      );
-    }
-
-    console.info(
-      JSON.stringify({
-        audit: "employee.personal_hr.set",
-        employeeId: employee.id,
+    logEmployeeHrAudit({
+      event: "employee.create",
+      actorUserId,
+      employeeId: employee.id,
+      personId: personResolve.personId,
+      details: {
         ...hrBuilt.personalAudit,
-        at: new Date().toISOString(),
-      })
-    );
-
-    console.info(
-      JSON.stringify({
-        audit: "employee.admin_epi_notes.set",
-        employeeId: employee.id,
         ...auditEpiAdminNotesSummary({
           epi: hrBuilt.epi,
           notes: hrBuilt.notes,
           admin: adminRef,
           payrollComponentCount: cleanComponentIds.length,
         }),
-        at: new Date().toISOString(),
-      })
-    );
+      },
+    });
+
+    if (personResolve.personId) {
+      logEmployeeHrAudit({
+        event: "employee.person_link",
+        actorUserId,
+        employeeId: employee.id,
+        personId: personResolve.personId,
+      });
+    }
+
+    if (persisted.corporateEmail) {
+      logEmployeeHrAudit({
+        event: "employee.corporate_email.set",
+        actorUserId,
+        employeeId: employee.id,
+        personId: personResolve.personId,
+        details: {
+          corporateEmailPresent: true,
+          appUserEmailHintPresent: Boolean(persisted.appUserEmailHint),
+        },
+      });
+    }
+
+    const fieldResolutions =
+      (req.body as { fieldResolutions?: unknown; conflictResolutions?: unknown }).fieldResolutions ??
+      (req.body as { fieldResolutions?: unknown; conflictResolutions?: unknown }).conflictResolutions;
+    if (fieldResolutions && typeof fieldResolutions === "object") {
+      const summarized = summarizeConflictResolutions(fieldResolutions);
+      if (summarized.fieldCount > 0) {
+        logEmployeeHrAudit({
+          event: "employee.person_conflict_resolve",
+          actorUserId,
+          employeeId: employee.id,
+          personId: personResolve.personId,
+          details: summarized,
+        });
+      }
+    }
 
     res.json({
       ...employee,
@@ -3155,8 +3186,9 @@ app.post("/api/employees", requireAppAuth, requirePermission("employees.edit"), 
   }
 });
 
-app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
+app.put("/api/employees/:id", requireAppAuth, requireAnyPermission([...EMPLOYEES_UPDATE_PERMISSIONS]), async (req, res) => {
   try {
+    const authUser = await getCurrentAppUser(req);
     const { id } = req.params;
     const {
       componentIds,
@@ -3340,45 +3372,62 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
       include: employeeApiInclude,
     });
 
+    const actorUserId = authUser?.id ?? null;
+
+    if (existingEmployee.managerId !== persisted.managerId) {
+      logEmployeeHrAudit({
+        event: "employee.manager.change",
+        actorUserId,
+        employeeId: id,
+        personId: nextPersonId,
+        details: {
+          fromManagerId: existingEmployee.managerId,
+          toManagerId: persisted.managerId,
+        },
+      });
+    }
+
+    if (existingEmployee.personId !== nextPersonId) {
+      logEmployeeHrAudit({
+        event: nextPersonId ? "employee.person_link" : "employee.person_unlink",
+        actorUserId,
+        employeeId: id,
+        personId: nextPersonId,
+        details: { previousPersonId: existingEmployee.personId },
+      });
+    }
+
     const prevCorporate = existingEmployee.corporateEmail
       ? String(existingEmployee.corporateEmail).trim().toLowerCase()
       : null;
     if (prevCorporate !== persisted.corporateEmail) {
-      console.info(
-        JSON.stringify({
-          audit: "employee.corporate_email.change",
-          employeeId: id,
-          from: prevCorporate,
-          to: persisted.corporateEmail,
-          note: "AppUser.email não é alterado automaticamente",
-          appUserHint: persisted.appUserEmailHint,
-          at: new Date().toISOString(),
-        })
-      );
+      logEmployeeHrAudit({
+        event: "employee.corporate_email.change",
+        actorUserId,
+        employeeId: id,
+        personId: nextPersonId,
+        details: {
+          changed: true,
+          appUserEmailHintPresent: Boolean(persisted.appUserEmailHint),
+        },
+      });
     }
 
-    console.info(
-      JSON.stringify({
-        audit: "employee.personal_hr.update",
-        employeeId: id,
+    logEmployeeHrAudit({
+      event: "employee.update",
+      actorUserId,
+      employeeId: id,
+      personId: nextPersonId,
+      details: {
         ...hrBuilt.personalAudit,
-        at: new Date().toISOString(),
-      })
-    );
-
-    console.info(
-      JSON.stringify({
-        audit: "employee.admin_epi_notes.update",
-        employeeId: id,
         ...auditEpiAdminNotesSummary({
           epi: hrBuilt.epi,
           notes: hrBuilt.notes,
           admin: adminRef,
           payrollComponentCount: cleanComponentIds.length,
         }),
-        at: new Date().toISOString(),
-      })
-    );
+      },
+    });
 
     res.json({
       ...employee,
@@ -3397,7 +3446,13 @@ app.put("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"
 
 app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
   const { id } = req.params;
+  const authUser = await getCurrentAppUser(req);
   await prisma.employee.delete({ where: { id } });
+  logEmployeeHrAudit({
+    event: "employee.delete",
+    actorUserId: authUser?.id ?? null,
+    employeeId: id,
+  });
   res.json({ success: true });
 });
 
@@ -10861,9 +10916,16 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   app.patch("/api/employees/:id/status", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
+    const authUser = await getCurrentAppUser(req);
     const employee = await prisma.employee.update({
       where: { id },
       data: { status },
+    });
+    logEmployeeHrAudit({
+      event: "employee.status_change",
+      actorUserId: authUser?.id ?? null,
+      employeeId: id,
+      details: { status },
     });
     res.json(employee);
   });

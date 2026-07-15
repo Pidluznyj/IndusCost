@@ -61,8 +61,16 @@ import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
+  canCreateEmployees,
+  canEditEmployees,
+  canManageEmployeeEpi,
+  canManageEmployeeLinks,
+  canManageEmployeeUserLink,
+  canViewEmployeeAdministrativeData,
   canViewEmployeeCompensation,
   canViewEmployeeEmergencyContacts,
+  canViewEmployeeLinks,
+  canViewEmployeePersonalData,
 } from "@/src/lib/operationsAdminPermissions";
 import type { PersonFieldKey } from "@/src/lib/canonicalPerson";
 
@@ -147,9 +155,34 @@ function DetailField({
 
 export const EmployeeModule = () => {
   const auth = useAuth();
-  const canEdit = auth.hasPermission("employees.edit");
+  const canEdit = canEditEmployees(auth);
+  const canCreate = canCreateEmployees(auth);
+  const canWrite = canEdit || canCreate;
+  const canViewPersonalHr = canViewEmployeePersonalData(auth);
   const canViewSensitiveHr =
-    canViewEmployeeCompensation(auth) && canViewEmployeeEmergencyContacts(auth);
+    canViewEmployeeCompensation(auth) || canViewEmployeeEmergencyContacts(auth);
+  const canViewAdminHr = canViewEmployeeAdministrativeData(auth);
+  const canViewLinksTab = canViewEmployeeLinks(auth);
+  const canManageLinks = canManageEmployeeLinks(auth);
+  const canManageUserLink = canManageEmployeeUserLink(auth);
+  const canManageEpi = canManageEmployeeEpi(auth);
+  const visibleFichaTabs = useMemo((): EmployeeFichaTabId[] => {
+    const tabs: EmployeeFichaTabId[] = ["professional"];
+    if (canViewPersonalHr || canEdit) tabs.push("personal");
+    if (canViewSensitiveHr || canEdit) tabs.push("emergency");
+    if (canManageEpi || canEdit || canViewPersonalHr) tabs.push("epi");
+    if (canViewAdminHr || canViewSensitiveHr || canEdit) tabs.push("admin");
+    tabs.push("notes");
+    if (canViewLinksTab) tabs.push("links");
+    return tabs;
+  }, [
+    canEdit,
+    canManageEpi,
+    canViewAdminHr,
+    canViewLinksTab,
+    canViewPersonalHr,
+    canViewSensitiveHr,
+  ]);
   const canAccessOperationalSettings = auth.hasAnyPermission([
     "settings.operational.view",
     "settings.operational.manage",
@@ -806,22 +839,22 @@ export const EmployeeModule = () => {
           </button>
           ) : null}
           {canEdit && (
-            <>
-              <button 
-                onClick={() => setIsComponentModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
-              >
-                <PieChart className="h-4 w-4" />
-                Configurar Verbas
-              </button>
-              <button 
-                onClick={() => handleOpenModal()}
-                className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-              >
-                <Plus className="h-4 w-4" />
-                Novo Colaborador
-              </button>
-            </>
+            <button
+              onClick={() => setIsComponentModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium"
+            >
+              <PieChart className="h-4 w-4" />
+              Configurar Verbas
+            </button>
+          )}
+          {canCreate && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Novo Colaborador
+            </button>
           )}
         </div>
       </div>
@@ -968,7 +1001,7 @@ export const EmployeeModule = () => {
       </div>
 
       {/* Modal: Employee Form */}
-      {isModalOpen && canEdit && (
+      {isModalOpen && canWrite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-background/80 backdrop-blur-sm">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -984,7 +1017,12 @@ export const EmployeeModule = () => {
 
             <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
               <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-                <EmployeeFichaTabNav activeTab={employeeFichaTab} onTabChange={setEmployeeFichaTab} layout="sidebar" />
+                <EmployeeFichaTabNav
+                  activeTab={employeeFichaTab}
+                  onTabChange={setEmployeeFichaTab}
+                  layout="sidebar"
+                  visibleTabIds={visibleFichaTabs}
+                />
 
                 <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
                   <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
@@ -1812,7 +1850,12 @@ export const EmployeeModule = () => {
             </div>
 
             <div className="flex flex-col lg:flex-row flex-1 min-h-0">
-              <EmployeeFichaTabNav activeTab={viewFichaTab} onTabChange={setViewFichaTab} layout="sidebar" />
+              <EmployeeFichaTabNav
+                activeTab={viewFichaTab}
+                onTabChange={setViewFichaTab}
+                layout="sidebar"
+                visibleTabIds={visibleFichaTabs}
+              />
 
               <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6">
                 <p className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 px-3 py-2 mb-5">
@@ -1861,9 +1904,7 @@ export const EmployeeModule = () => {
                     <div className="col-span-2 md:col-span-3">
                       <EmployeeSystemAccessCard
                         employeeId={viewingEmployee.id}
-                        canManageLink={
-                          canEdit || auth.hasPermission("users.manage")
-                        }
+                        canManageLink={canManageUserLink}
                         canOpenUsersAdmin={auth.hasPermission("users.manage")}
                         onLinked={(appUser) => {
                           if (!appUser) return;
@@ -1894,19 +1935,19 @@ export const EmployeeModule = () => {
                     <DetailField
                       label="CPF"
                       value={
-                        canViewSensitiveHr
+                        canViewPersonalHr
                           ? formatCpfForDisplay(viewingEmployee.cpf)
                           : "•••••••••••"
                       }
                     />
                     <DetailField
                       label="RG"
-                      value={canViewSensitiveHr ? displayText(viewingEmployee.rg) : "••••••"}
+                      value={canViewPersonalHr ? displayText(viewingEmployee.rg) : "••••••"}
                     />
                     <DetailField
                       label="Nascimento"
                       value={
-                        canViewSensitiveHr
+                        canViewPersonalHr
                           ? formatEmployeeDate(viewingEmployee.birthDate)
                           : "••••••"
                       }
@@ -1914,7 +1955,7 @@ export const EmployeeModule = () => {
                     <DetailField
                       label="Telefone"
                       value={
-                        canViewSensitiveHr
+                        canViewPersonalHr
                           ? formatPhoneForDisplay(viewingEmployee.phone)
                           : "••••••••"
                       }
@@ -1922,7 +1963,7 @@ export const EmployeeModule = () => {
                     <DetailField
                       label="E-mail pessoal"
                       value={
-                        canViewSensitiveHr
+                        canViewPersonalHr
                           ? displayText(viewingEmployee.personalEmail)
                           : "••••••"
                       }
@@ -1931,15 +1972,16 @@ export const EmployeeModule = () => {
                     <DetailField
                       label="Endereço"
                       value={
-                        canViewSensitiveHr ? displayText(viewingEmployee.address) : "••••••"
+                        canViewPersonalHr ? displayText(viewingEmployee.address) : "••••••"
                       }
                       className="col-span-2 md:col-span-3"
                       multiline
                     />
-                    {!canViewSensitiveHr && (
+                    {!canViewPersonalHr && (
                       <p className="col-span-2 md:col-span-3 text-xs text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Dados pessoais restritos. A API também omite CPF, endereço e contatos sem a
-                        permissão <span className="font-mono">employees.edit</span>.
+                        Dados pessoais restritos. A API também omite CPF e endereço sem{" "}
+                        <span className="font-mono">employees.personal_data.view</span> (ou{" "}
+                        <span className="font-mono">employees.edit</span>).
                       </p>
                     )}
                   </div>
@@ -1965,8 +2007,9 @@ export const EmployeeModule = () => {
                       </>
                     ) : (
                       <p className="col-span-2 text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Contatos de emergência restritos. Solicite a permissão{" "}
-                        <span className="font-mono">employees.edit</span>.
+                        Contatos de emergência restritos. Solicite{" "}
+                        <span className="font-mono">employees.sensitive_data.view</span> (ou{" "}
+                        <span className="font-mono">employees.edit</span>).
                       </p>
                     )}
                   </div>
@@ -1989,9 +2032,10 @@ export const EmployeeModule = () => {
                   <div className="space-y-5">
                     {!canViewSensitiveHr || viewingEmployee.compensationRedacted ? (
                       <p className="text-sm text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
-                        Dados salariais e de custo restritos. Solicite a permissão{" "}
-                        <span className="font-mono">employees.edit</span>. A API também omite
-                        salário, custos e valores de verbas sem essa permissão.
+                        Dados salariais e de custo restritos. Solicite{" "}
+                        <span className="font-mono">employees.sensitive_data.view</span> (ou{" "}
+                        <span className="font-mono">employees.edit</span>). A API também omite
+                        salário e custos sem essa permissão.
                       </p>
                     ) : (
                       <>
@@ -2089,16 +2133,17 @@ export const EmployeeModule = () => {
                     <DetailField
                       label="Observações administrativas"
                       value={
-                        canViewSensitiveHr && !viewingEmployee.adminNotesRedacted
-                          ? displayText(viewingEmployee.adminNotes)
+                        canViewAdminHr && !viewingEmployee.adminNotesRedacted
+                      ? displayText(viewingEmployee.adminNotes)
                           : "••••••"
                       }
                       multiline
                     />
-                    {(!canViewSensitiveHr || viewingEmployee.adminNotesRedacted) && (
+                    {(!canViewAdminHr || viewingEmployee.adminNotesRedacted) && (
                       <p className="md:col-span-2 text-xs text-muted-foreground rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2">
                         Observações administrativas omitidas sem{" "}
-                        <span className="font-mono">employees.edit</span>.
+                        <span className="font-mono">employees.administrative_data.view</span> (ou{" "}
+                        <span className="font-mono">employees.edit</span>).
                       </p>
                     )}
                   </div>
@@ -2108,7 +2153,7 @@ export const EmployeeModule = () => {
                   <div className="space-y-4 text-sm">
                     <EmployeeSystemAccessCard
                       employeeId={viewingEmployee.id}
-                      canManageLink={canEdit || auth.hasPermission("users.manage")}
+                      canManageLink={canManageUserLink}
                       canOpenUsersAdmin={auth.hasPermission("users.manage")}
                       onLinked={(appUser) => {
                         if (!appUser) return;
@@ -2130,7 +2175,7 @@ export const EmployeeModule = () => {
                     />
                     <EmployeeSystemLinksPanel
                       employeeId={viewingEmployee.id}
-                      canUnlinkPerson={canEdit}
+                      canUnlinkPerson={canManageLinks}
                       onUnlinkedPerson={() => {
                         setViewingEmployee({
                           ...viewingEmployee,

@@ -42,10 +42,26 @@ Conflitos exigem resolução campo a campo.
 
 Leitura executiva agregada (sem regras paralelas de comissão/carteira):
 
-- Endpoint: `GET /api/employees/:id/system-links` (`employees.view` | `employees.edit`)
-- DTO: tipo, entidade, status, origem, data, ação, alerta; IDs só em `audit` (se `people.link.manage` | `users.manage` | `employees.edit`)
+- Endpoint: `GET /api/employees/:id/system-links` (`employees.links.view` | `employees.view` | `employees.edit` | `people.search`)
+- Manage/desvínculo: `employees.links.manage` | `people.link.manage` | `employees.edit` | `users.manage`
+- Contrato canônico: `admin.employees.links` (view/manage)
+- DTO: tipo, entidade, status, origem, data, ação, alerta; IDs só em `audit` quando permitido
 - Fontes: AppUser, hierarquia RH, CommissionPerson + aliases, Frota, Customer identidade/contato, carteira CRM via `sellerExternalId`
-- Permissões por módulo: `users.manage`/`settings.view`, `commissions.view`, `customers.view`, `fleet.view`
+- Permissões por módulo no card: `users.manage`/`settings.view`, `commissions.view`, `customers.view`, `fleet.view`
 - Fornecedor ↔ Person: **não existe** no schema (fora do agregador)
 - Vendedor de pedidos: aparece via **aliases / pessoa comissionada** (eixo oficial), não como pedido individual
 - Legado: `GET /api/people/:id/links` ainda devolve buckets + `executive`
+
+## Matriz RH (contrato + legado)
+
+| Capacidade | resourceKey | Ação | Legado (OR) |
+|------------|-------------|------|-------------|
+| Menu / lista | `admin.employees` | view | `employees.view`, `costs.view` |
+| Criar | `admin.employees` | create | `employees.create`, `employees.edit` |
+| Editar | `admin.employees` | update | `employees.edit` |
+| Dados pessoais | `admin.employees.personal_data` | view | `employees.personal_data.view`, `people.pii.view`, `employees.edit` |
+| Adm. / notas | `admin.employees.administrative_data` | view | `employees.administrative_data.view`, `employees.edit` |
+| Sensível | `admin.employees.sensitive_data` | view | `employees.sensitive_data.view`, `employees.edit` |
+| Vínculos | `admin.employees.links` | view/manage | ver acima |
+| User link | `admin.employees.user_link` | manage | `employees.user_link.manage`, `employees.edit`, `users.manage` |
+| EPI | `admin.employees.epi` | manage | `employees.epi.manage`, `employees.edit` |

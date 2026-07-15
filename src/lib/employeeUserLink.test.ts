@@ -191,6 +191,6 @@ describe("employeeUserLink.server — status e vínculo (mock)", () => {
     assert.ok(src.includes('"/api/employees/lookups/app-user-by-email"'));
     assert.ok(src.includes('"/api/employees/:id/link-user"'));
     assert.ok(src.includes('"/api/employees/:id/unlink-user"'));
-    assert.ok(src.includes('requireAnyPermission(["employees.edit", "users.manage"])'));
+    assert.ok(src.includes("EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS"));
   });
 });

@@ -208,7 +208,11 @@ export function auditEpiAdminNotesSummary(input: {
  */
 export function redactEmployeeAdminForApi<T extends Record<string, unknown>>(
   employee: T,
-  opts: { reveal: boolean }
+  opts: {
+    reveal?: boolean;
+    revealCompensation?: boolean;
+    revealAdminNotes?: boolean;
+  }
 ): T & {
   compensationRedacted: boolean;
   adminNotesRedacted: boolean;
@@ -223,7 +227,10 @@ export function redactEmployeeAdminForApi<T extends Record<string, unknown>>(
     (Array.isArray(employee.EmployeePayrollComponent) &&
       employee.EmployeePayrollComponent.length > 0);
 
-  if (opts.reveal) {
+  const revealCompensation = opts.reveal === true || opts.revealCompensation === true;
+  const revealAdminNotes = opts.reveal === true || opts.revealAdminNotes === true;
+
+  if (revealCompensation && revealAdminNotes) {
     return {
       ...employee,
       compensationRedacted: false,
@@ -234,11 +241,15 @@ export function redactEmployeeAdminForApi<T extends Record<string, unknown>>(
   }
 
   const next: Record<string, unknown> = { ...employee };
-  next.salary = null;
-  next.productivity = null;
-  next.adminNotes = null;
-  next.costs = null;
-  if (Array.isArray(employee.EmployeePayrollComponent)) {
+  if (!revealCompensation) {
+    next.salary = null;
+    next.productivity = null;
+    next.costs = null;
+  }
+  if (!revealAdminNotes) {
+    next.adminNotes = null;
+  }
+  if (!revealCompensation && Array.isArray(employee.EmployeePayrollComponent)) {
     next.EmployeePayrollComponent = (
       employee.EmployeePayrollComponent as { PayrollComponent?: { id?: string; name?: string } }[]
     ).map((rel) => ({
@@ -254,8 +265,8 @@ export function redactEmployeeAdminForApi<T extends Record<string, unknown>>(
 
   return {
     ...(next as T),
-    compensationRedacted: true,
-    adminNotesRedacted: true,
+    compensationRedacted: !revealCompensation,
+    adminNotesRedacted: !revealAdminNotes,
     hasAdminNotes,
     hasCompensation,
   };

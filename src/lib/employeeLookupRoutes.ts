@@ -18,6 +18,11 @@ import {
   isEmployeeUuid,
   normalizeCorporateEmail,
 } from "@/src/lib/employeeRegistration.js";
+import {
+  EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS,
+  EMPLOYEES_VIEW_PERMISSIONS,
+} from "@/src/lib/employeesPermissions.js";
+import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -28,7 +33,7 @@ type AuthGuards = {
   ) => Promise<{ id?: string } | null> | { id?: string } | null;
 };
 
-const RH_LOOKUP = ["employees.view", "employees.edit"] as const;
+const RH_LOOKUP = EMPLOYEES_VIEW_PERMISSIONS;
 
 export function registerEmployeeLookupRoutes(
   app: express.Application,
@@ -342,18 +347,25 @@ export function registerEmployeeLookupRoutes(
   app.post(
     "/api/employees/:id/link-user",
     requireAppAuth,
-    requireAnyPermission(["employees.edit", "users.manage"]),
+    requireAnyPermission([...EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS]),
     async (req, res) => {
       try {
         const id = req.params.id;
         if (!isEmployeeUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
+        const actorUserId = await resolveActorId(req);
         const { linkEmployeeToAppUser } = await import(
           "@/src/lib/employeeUserLink.server.js"
         );
         const result = await linkEmployeeToAppUser(prisma, id, {
-          actorUserId: await resolveActorId(req),
+          actorUserId,
+        });
+        logEmployeeHrAudit({
+          event: "employee.user_link",
+          actorUserId,
+          employeeId: id,
+          details: { appUserId: result.appUser?.id ?? null },
         });
         res.json({ ok: true, appUser: result.appUser });
       } catch (error) {
@@ -373,18 +385,24 @@ export function registerEmployeeLookupRoutes(
   app.post(
     "/api/employees/:id/unlink-user",
     requireAppAuth,
-    requireAnyPermission(["employees.edit", "users.manage"]),
+    requireAnyPermission([...EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS]),
     async (req, res) => {
       try {
         const id = req.params.id;
         if (!isEmployeeUuid(id)) {
           return res.status(400).json({ error: "ID inválido." });
         }
+        const actorUserId = await resolveActorId(req);
         const { unlinkEmployeeFromAppUser } = await import(
           "@/src/lib/employeeUserLink.server.js"
         );
         const result = await unlinkEmployeeFromAppUser(prisma, id, {
-          actorUserId: await resolveActorId(req),
+          actorUserId,
+        });
+        logEmployeeHrAudit({
+          event: "employee.user_unlink",
+          actorUserId,
+          employeeId: id,
         });
         res.json(result);
       } catch (error) {

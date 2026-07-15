@@ -10,6 +10,10 @@ import {
   canViewEmployeeCompensation,
   canViewEmployeeEmergencyContacts,
   canViewEmployees,
+  canEditEmployees,
+  canCreateEmployees,
+  canViewEmployeePersonalData,
+  canViewEmployeeAdministrativeData,
   canViewFleet,
   canViewGuide,
   canViewInventory,
@@ -102,6 +106,42 @@ describe("operationsAdminPermissions — admin / RH sensível", () => {
     const check = checker(["employees.edit"]);
     assert.equal(canViewEmployeeCompensation(check), true);
     assert.equal(canViewEmployeeEmergencyContacts(check), true);
+  });
+
+  it("personal_data.view sem edit libera PII mas nao sensivel", () => {
+    const check = checker(["employees.personal_data.view"]);
+    assert.equal(canViewEmployeePersonalData(check), true);
+    assert.equal(canViewEmployeeCompensation(check), false);
+    assert.equal(canViewEmployeeEmergencyContacts(check), false);
+    assert.equal(canEditEmployees(check), false);
+  });
+
+  it("sensitive_data.view libera salario e emergencia", () => {
+    const check = checker(["employees.sensitive_data.view"]);
+    assert.equal(canViewEmployeeCompensation(check), true);
+    assert.equal(canViewEmployeeEmergencyContacts(check), true);
+    assert.equal(canEditEmployees(check), false);
+  });
+
+  it("create sem edit permite criar e nao editar", () => {
+    const check = checker(["employees.create"]);
+    assert.equal(canCreateEmployees(check), true);
+    assert.equal(canEditEmployees(check), false);
+    assert.equal(canViewEmployeeCompensation(check), false);
+  });
+
+  it("administrative_data.view sem edit e costs.view ainda sem sensivel", () => {
+    const adminOnly = checker(["employees.administrative_data.view"]);
+    assert.equal(canViewEmployeeAdministrativeData(adminOnly), true);
+    assert.equal(canViewEmployeeCompensation(adminOnly), false);
+    const costs = {
+      ...checker(["costs.view"]),
+      canViewResource: createPermissionsApi(user("VIEWER", ["costs.view"])).canView,
+    };
+    assert.equal(canViewEmployees(costs), true);
+    assert.equal(canViewEmployeeCompensation(costs), false);
+    assert.equal(canViewEmployeeEmergencyContacts(costs), false);
+    assert.equal(canViewEmployeePersonalData(costs), false);
   });
 
   it("guia e sidebar ops/admin para ADMIN", () => {

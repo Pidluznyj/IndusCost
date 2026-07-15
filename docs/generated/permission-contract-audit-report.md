@@ -2,17 +2,17 @@
 
 | | |
 |---|---|
-| Gerado em | 2026-07-15T17:39:55.914Z |
-| Modo | strict |
+| Gerado em | 2026-07-15T21:06:46.874Z |
+| Modo | report |
 | OK (modo) | sim |
-| Catálogo | 176 |
-| Contrato | 76 |
+| Catálogo | 187 |
+| Contrato | 82 |
 | Seed relacional | 45 |
-| Uso FE (chaves) | 32 |
-| Uso BE (chaves) | 116 |
-| Rotas escaneadas | 719 |
-| Findings | error 0 · warn 9 · info 73 |
-| Known gaps | 81 |
+| Uso FE (chaves) | 40 |
+| Uso BE (chaves) | 128 |
+| Rotas escaneadas | 742 |
+| Findings | error 0 · warn 9 · info 72 |
+| Known gaps | 80 |
 | Erros acionáveis | 0 |
 
 ## Limitações
@@ -26,13 +26,12 @@
 _Nenhum._
 
 ## Findings (agrupados)
-### CATALOG_NEVER_USED (57)
+### CATALOG_NEVER_USED (56)
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: reports.material_demand.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: finance.suppliers.service_termination.update
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: finance.suppliers.service_termination.cancel
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: suppliers.serviceTermination.update
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: suppliers.serviceTermination.cancel
-- **info** _(known)_: Chave no catálogo sem uso literal detectado: crm.seller.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: crm.customers.assign_seller
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: proposals.material_report.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: products.tab.routing
@@ -52,7 +51,8 @@ _Nenhum._
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.drivers.view
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.drivers.manage
 - **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.reservations.view
-- … +32 omitidos
+- **info** _(known)_: Chave no catálogo sem uso literal detectado: fleet.reservations.create
+- … +31 omitidos
 
 ### CONTRACT_ACTION_UNUSED (16)
 - **info** _(known)_: Ação do contrato sem uso literal das legacy keys: engineering.products.tab.routing.view
@@ -93,7 +93,6 @@ _Nenhum._
 - `finance.suppliers.service_termination.cancel`
 - `suppliers.serviceTermination.update`
 - `suppliers.serviceTermination.cancel`
-- `crm.seller.view`
 - `crm.customers.assign_seller`
 - `proposals.material_report.view`
 - `products.tab.routing`
@@ -128,6 +127,7 @@ _Nenhum._
 - `inventory.item.manage`
 - `inventory.warehouse.manage`
 - `inventory.movements.create`
-- … +17
+- `inventory.movement.create`
+- … +16
 
 _Sem dados sensíveis (sem emails, tokens ou conteúdo de produção)._

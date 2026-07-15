@@ -23,7 +23,7 @@ describe("canonicalPersonRoutes — proteção do endpoint resolve", () => {
   it("registra /api/employees/:id/system-links com auth RH e agregador oficial", () => {
     const src = readFileSync(join(here, "canonicalPersonRoutes.ts"), "utf8");
     assert.ok(src.includes('"/api/employees/:id/system-links"'));
-    assert.ok(src.includes("requireAnyPermission([...RH_VIEW_PERMS])"));
+    assert.ok(src.includes("requireAnyPermission([...RH_LINKS_VIEW_PERMS])"));
     assert.ok(src.includes("getEmployeeSystemLinks"));
     assert.ok(src.includes("buildSystemLinksViewerCaps"));
   });
