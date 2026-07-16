@@ -34,6 +34,13 @@ describe("permissionResourceSeedData", () => {
       "comissoes",
       "comissoes.tab.fechamento_mes",
       "comissoes.tab.dashboard",
+      "operations",
+      "operations.inventory",
+      "operations.purchases",
+      "operations.machines",
+      "operations.performance",
+      "operations.maintenance",
+      "operations.fleet",
       "suprimentos",
       "suprimentos.tab.catalogo",
       "suprimentos.inteligencia_mercado",
@@ -55,6 +62,23 @@ describe("permissionResourceSeedData", () => {
 
   it("validatePermissionResourceCatalog não reporta issues", () => {
     assert.deepEqual(validatePermissionResourceCatalog(), []);
+  });
+
+  it("Comissões fica sob Comercial e Operações é MENU raiz (espelha o menu)", () => {
+    const comissoes = PERMISSION_RESOURCE_SEEDS.find((r) => r.key === "comissoes");
+    assert.ok(comissoes);
+    assert.equal(comissoes!.type, "SUBMENU");
+    assert.equal(comissoes!.parentKey, "comercial");
+
+    const operations = PERMISSION_RESOURCE_SEEDS.find((r) => r.key === "operations");
+    assert.ok(operations);
+    assert.equal(operations!.type, "MENU");
+    assert.equal(operations!.parentKey, null);
+
+    const children = PERMISSION_RESOURCE_SEEDS.filter((r) => r.parentKey === "operations");
+    assert.ok(children.some((c) => c.key === "operations.inventory"));
+    assert.ok(children.some((c) => c.key === "operations.purchases"));
+    assert.ok(children.some((c) => c.key === "operations.fleet"));
   });
 
   it("sortPermissionResourcesForInsert coloca pais antes dos filhos", () => {

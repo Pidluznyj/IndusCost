@@ -161,6 +161,15 @@ describe("userPermissionAdminService pure", () => {
     const financeiro = tree.find((n) => n.key === "financeiro");
     assert.ok(financeiro);
     assert.ok(financeiro!.children.some((c) => c.key === "financeiro.conciliacao_carteira"));
+
+    const comercial = tree.find((n) => n.key === "comercial");
+    assert.ok(comercial);
+    assert.ok(comercial!.children.some((c) => c.key === "comissoes"));
+    assert.equal(tree.some((n) => n.key === "comissoes"), false);
+
+    const operations = tree.find((n) => n.key === "operations");
+    assert.ok(operations);
+    assert.ok(operations!.children.some((c) => c.key === "operations.inventory"));
   });
 
   it("buildUserPermissionsPayload marca SUPER_ADMIN read-only", () => {

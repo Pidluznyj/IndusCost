@@ -314,8 +314,8 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   {
     key: ResourceKeys.COMISSOES,
     label: "Comissões",
-    type: "MENU",
-    parentKey: null,
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
     legacyAliasKeys: ["commissions.view"],
   },
   {
