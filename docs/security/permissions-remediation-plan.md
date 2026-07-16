@@ -278,11 +278,12 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P18 — Caso piloto Contas a Pagar
 
 - **Objetivo:** E2E Leticia desejado; fixtures + UI + API.
-- **Escopo:** testes integração, doc homologação, seed de usuário de teste (não prod).
-- **Deps:** P05–P17.
+- **Escopo:** `requireResource` em GET/mutação/export/sync AP; matriz view|export|manage|execute; UI alinhada; sem alterar eixo dueDate.
+- **Deps:** P05–P17, P14.
 - **Risco:** médio.
-- **Aceite:** checklist Leticia 100%.
-- **Rollback:** N/A testes.
+- **Aceite:** Leticia só AP view; export/manage/execute/AR/portfolio deny; settings.view não abre API AP.
+- **Rollback:** reverter guards das rotas AP para `requireAnyPermission`.
+- **Status (2026-07-16):** **feito.** Matriz em `financeAccountsPayableAccess.ts`; rotas AP + due-radar + allocation + nomus summary + sync AP status/run; testes Leticia/export/deny/SA.
 
 ### P19 — Comparação legado vs novo (Etapa A)
 

@@ -9,7 +9,6 @@ import {
   buildFinanceApPrismaWhere,
   FinanceApFilterParseError,
   loadFinanceApManagementRowsFromPrisma,
-  mapPrismaRowToFinanceApDashboardRow,
   parseFinanceApDashboardFilters,
   resolveFinanceApDashboardFiltersForLoad,
   type FinanceApDashboardFilters,
@@ -35,26 +34,26 @@ import {
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "@/src/lib/financeAccountsPayableAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  /** P18: preferir requireResource; legado ainda aceito em testes dual. */
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
-/** Permissões do dashboard AR — ver docs/generated/finance-accounts-payable-dashboard-report.md */
+/** @deprecated Use FINANCE_AP_RESOURCE_KEY + requireResource view — listas bag só documentação. */
 export const FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS = [
   "finance.accountsPayable.view",
-  "finance.view",
-  "reports.view",
-  "settings.nomus.view",
-  "settings.view",
 ] as const;
 
-/** Exportação CSV — preferencial; fallback para view documentado. */
+/** @deprecated Use requireResource export. */
 export const FINANCE_AP_EXPORT_PERMISSIONS = [
   "finance.accountsPayable.export",
-  ...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS,
 ] as const;
 
 export const FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS = [
@@ -111,15 +110,17 @@ function parseFinanceApTitlesOrRespond(
 }
 
 export function registerFinanceAccountsPayableRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS])] as const;
-  const classificationGuard = [
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_CLASSIFICATION_READ_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.view),
   ] as const;
-  const exportGuard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_EXPORT_PERMISSIONS])] as const;
+  const exportGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.export),
+  ] as const;
 
-  app.get("/api/finance/accounts-payable/dashboard", ...guard, async (req, res) => {
+  app.get("/api/finance/accounts-payable/dashboard", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -165,7 +166,7 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
     }
   });
 
-  app.get("/api/finance/accounts-payable/titles", ...guard, async (req, res) => {
+  app.get("/api/finance/accounts-payable/titles", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -249,7 +250,7 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
     }
   });
 
-  app.get("/api/finance/accounts-payable/titles/:id/classification", ...classificationGuard, async (req, res) => {
+  app.get("/api/finance/accounts-payable/titles/:id/classification", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {

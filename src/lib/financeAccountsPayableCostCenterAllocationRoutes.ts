@@ -19,10 +19,14 @@ import {
   parseUnclassifiedGroupTitlesQuery,
 } from "@/src/lib/financeUnclassifiedGroupTitles.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import {
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "@/src/lib/financeAccountsPayableAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -61,19 +65,16 @@ export function registerFinanceAccountsPayableCostCenterAllocationRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.view),
   ] as const;
   const manageGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.manage),
   ] as const;
-  const batchApplyGuard = [
-    requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS]),
-  ] as const;
+  const batchApplyGuard = manageGuard;
 
   app.get("/api/finance/accounts-payable/classification-summary", ...viewGuard, async (req, res) => {
     try {

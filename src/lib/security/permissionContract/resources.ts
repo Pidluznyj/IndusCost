@@ -835,17 +835,31 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     sortOrder: 43,
     actions: [
       V(["finance.accountsPayable.view", "finance.view"]),
-      X(["finance.accountsPayable.export", "finance.accountsPayable.view"]),
-      M(["finance.ap_allocations.manage"]),
+      X(["finance.accountsPayable.export"], "export dedicado — não promover view"),
+      M(
+        ["finance.ap_allocations.manage", "finance.ap_allocations.apply_batch"],
+        "classificação / alocação CC / batch"
+      ),
       E(["settings.nomus.sync"], "sync Nomus AP"),
     ],
-    relatedEndpoints: ["/api/finance/accounts-payable"],
+    relatedEndpoints: [
+      "/api/finance/accounts-payable",
+      "/api/finance/accounts-payable/dashboard",
+      "/api/finance/accounts-payable/titles",
+      "/api/finance/accounts-payable/export",
+      "/api/finance/accounts-payable/due-radar",
+      "/api/nomus/accounts-payable/summary",
+      "/api/settings/nomus-sync/accounts-payable-status",
+      "/api/settings/nomus-sync/accounts-payable-run",
+    ],
     sensitivity: "critical",
     appearsInSidebar: false,
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: ["financeiro.contas_pagar"],
+    notes:
+      "Piloto P18. Sem CRUD inventado. Eixo oficial: Data de Vencimento (dueDate).",
   },
   {
     resourceKey: "finance.billing",

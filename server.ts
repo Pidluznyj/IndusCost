@@ -14901,7 +14901,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerNomusAccountsPayableRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14919,7 +14919,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerFinanceAccountsPayableRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14931,6 +14931,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
   registerFinanceApDueRadarRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14981,7 +14982,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerFinanceAccountsPayableCostCenterAllocationRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -15111,7 +15112,11 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerSettingsNomusSyncRoutes(
     app,
-    { requireBootstrapOrAnyPermission },
+    {
+      requireBootstrapOrAnyPermission,
+      requireBootstrapOrResource,
+      isBootstrapAdminRequest,
+    },
     {
       listNomusSyncLogEntries,
       buildNomusSummary,

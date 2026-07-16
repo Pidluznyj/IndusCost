@@ -60,6 +60,7 @@ import {
 import { FinanceDueRadar } from "@/src/components/finance/due-radar/FinanceDueRadar";
 import {
   canExportFinanceAccountsPayable,
+  canManageFinanceApAllocations,
   canRunFinanceAccountsPayableSync,
 } from "@/src/lib/financeAccountsPayablePermissions";
 import {
@@ -485,7 +486,11 @@ export function FinanceAccountsPayablePage() {
     permissions.canPerformAction("finance.accounts_payable", "export");
   const canRunSync =
     canRunFinanceAccountsPayableSync(auth) ||
+    permissions.canPerformAction("finance.accounts_payable", "execute") ||
     permissions.canPerformAction("admin.settings.nomus_sync", "synchronize");
+  const canManageAllocations =
+    canManageFinanceApAllocations(auth) ||
+    permissions.canPerformAction("finance.accounts_payable", "manage");
 
   const [executiveTab, setExecutiveTab] = useState<FinanceApExecutiveTabId>("titles");
   const [secondaryTab, setSecondaryTab] = useState<FinanceApSecondaryTabId>("schedule");
@@ -1119,6 +1124,7 @@ export function FinanceAccountsPayablePage() {
               onLocalFilterChange={(v) =>
                 setTitlesLocalFilter(parseFinanceApTitlesLocalFilter(v))
               }
+              canManageAllocations={canManageAllocations}
             />
           ) : null}
           {executiveTab === "suppliers" ? (

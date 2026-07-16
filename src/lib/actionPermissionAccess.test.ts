@@ -252,7 +252,7 @@ describe("P14 pending endpoints registry", () => {
   it("lista endpoints críticos para guards de API", () => {
     const list = listP14PendingActionEndpoints();
     assert.ok(list.length >= 4);
-    assert.ok(list.some((e) => e.path.includes("accounts-payable/export") && e.action === "export"));
+    assert.ok(list.some((e) => e.path.includes("accounts-receivable/export") && e.action === "export"));
     assert.ok(list.some((e) => e.action === "reprocess"));
     assert.ok(list.some((e) => e.resourceKey === "admin.settings.nomus_sync"));
   });

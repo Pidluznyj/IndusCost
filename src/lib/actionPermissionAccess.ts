@@ -192,17 +192,10 @@ export const ACTION_GATE_RESOURCES = {
 export const P14_PENDING_ACTION_ENDPOINTS = [
   {
     method: "POST",
-    path: "/api/finance/accounts-payable/export",
-    resourceKey: "finance.accounts_payable",
-    action: "export" as const,
-    note: "UI exige .export; confirmar API não aceita só view.",
-  },
-  {
-    method: "POST",
     path: "/api/finance/accounts-receivable/export",
     resourceKey: "finance.accounts_receivable",
     action: "export" as const,
-    note: "UI exige .export; confirmar API não aceita só view.",
+    note: "Espelhar piloto AP (P18) — UI exige .export; API ainda OR view.",
   },
   {
     method: "POST",
@@ -230,14 +223,14 @@ export const P14_PENDING_ACTION_ENDPOINTS = [
     path: "/api/settings/nomus-sync/*",
     resourceKey: "admin.settings.nomus_sync",
     action: "execute" as const,
-    note: "Garantir settings.nomus.sync (não settings.view) em todos os runs.",
+    note: "AP sync migrado para finance.accounts_payable; restante ainda settings bags.",
   },
   {
     method: "POST",
     path: "/api/admin/users*",
     resourceKey: "admin.settings.security",
     action: "manage" as const,
-    note: "Create/update/delete users — confirmar users.manage em todas as mutações.",
+    note: "Create/update/delete users — P14 piloto; confirmar users.manage.",
   },
   {
     method: "GET",

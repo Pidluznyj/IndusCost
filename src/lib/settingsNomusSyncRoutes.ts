@@ -21,6 +21,10 @@ import {
   NomusNfesSyncConflictError,
   startNomusNfesSyncApply,
 } from "@/src/lib/nomusNfesSyncRunner.js";
+import {
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "@/src/lib/financeAccountsPayableAccess.js";
 
 export type NomusSyncLogSummary = {
   fileName: string;
@@ -43,6 +47,13 @@ export type NomusSyncLogSummary = {
 
 type AuthGuards = {
   requireBootstrapOrAnyPermission: (permissions: string[]) => RequestHandler;
+  /** Piloto P18 — Contas a Pagar sync usa requireResource. */
+  requireBootstrapOrResource?: (
+    isBootstrap: (req: express.Request) => boolean,
+    resourceKey: string,
+    action?: string
+  ) => RequestHandler;
+  isBootstrapAdminRequest?: (req: express.Request) => boolean;
 };
 
 export type SettingsNomusSyncRoutesDeps = {
@@ -276,9 +287,27 @@ export function registerSettingsNomusSyncRoutes(
   const nomusApSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
   const nomusApSyncManagePermissions = ["settings.nomus.sync"] as const;
 
+  const apStatusGuard =
+    auth.requireBootstrapOrResource && auth.isBootstrapAdminRequest
+      ? auth.requireBootstrapOrResource(
+          auth.isBootstrapAdminRequest,
+          FINANCE_AP_RESOURCE_KEY,
+          FINANCE_AP_ACTIONS.view
+        )
+      : requireBootstrapOrAnyPermission([...nomusApSyncViewPermissions]);
+
+  const apRunGuard =
+    auth.requireBootstrapOrResource && auth.isBootstrapAdminRequest
+      ? auth.requireBootstrapOrResource(
+          auth.isBootstrapAdminRequest,
+          FINANCE_AP_RESOURCE_KEY,
+          FINANCE_AP_ACTIONS.execute
+        )
+      : requireBootstrapOrAnyPermission([...nomusApSyncManagePermissions]);
+
   app.get(
     "/api/settings/nomus-sync/accounts-payable-status",
-    requireBootstrapOrAnyPermission([...nomusApSyncViewPermissions]),
+    apStatusGuard,
     async (_req, res) => {
       try {
         const status = await getNomusAccountsPayableSyncStatus();
@@ -294,7 +323,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.post(
     "/api/settings/nomus-sync/accounts-payable-run",
-    requireBootstrapOrAnyPermission([...nomusApSyncManagePermissions]),
+    apRunGuard,
     async (_req, res) => {
       try {
         const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();

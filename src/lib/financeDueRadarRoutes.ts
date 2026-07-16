@@ -23,6 +23,10 @@ import {
   parseDueRadarExportQuery,
 } from "./financeDueRadarExport.js";
 import { prisma } from "./prisma.js";
+import {
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "./financeAccountsPayableAccess.js";
 
 const FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS = [
   "finance.accountsReceivable.view",
@@ -37,22 +41,11 @@ const FINANCE_AR_EXPORT_PERMISSIONS = [
   ...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS,
 ] as const;
 
-const FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS = [
-  "finance.accountsPayable.view",
-  "finance.view",
-  "reports.view",
-  "settings.nomus.view",
-  "settings.view",
-] as const;
-
-const FINANCE_AP_EXPORT_PERMISSIONS = [
-  "finance.accountsPayable.export",
-  ...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS,
-] as const;
-
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
+  /** P18 Contas a Pagar — opcional; se ausente, AP due-radar permanece em bag. */
+  requireResource?: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -153,9 +146,18 @@ export function registerFinanceArDueRadarRoutes(app: express.Express, auth: Auth
 }
 
 export function registerFinanceApDueRadarRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_DASHBOARD_VIEW_PERMISSIONS])] as const;
-  const exportGuard = [requireAppAuth, requireAnyPermission([...FINANCE_AP_EXPORT_PERMISSIONS])] as const;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  if (!requireResource) {
+    throw new Error("registerFinanceApDueRadarRoutes exige requireResource (piloto P18).");
+  }
+  const guard = [
+    requireAppAuth,
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.view),
+  ] as const;
+  const exportGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.export),
+  ] as const;
 
   app.get("/api/finance/accounts-payable/due-radar", ...guard, async (req, res) => {
     try {

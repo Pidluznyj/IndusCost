@@ -35,6 +35,7 @@ import {
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { FinanceApTitleClassificationSheet } from "@/src/components/finance/FinanceApTitleClassificationSheet";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canManageFinanceApAllocations } from "@/src/lib/financeAccountsPayablePermissions";
 import {
   FINANCE_AP_NO_CLASSIFICATION,
@@ -47,15 +48,21 @@ export function FinanceApTitlesTab({
   onClearQualityAlert,
   localFilter,
   onLocalFilterChange,
+  canManageAllocations,
 }: {
   filters: FinanceApUiFilters;
   qualityAlert?: FinanceApDataQualityAlertKey | null;
   onClearQualityAlert?: () => void;
   localFilter: FinanceApTitlesLocalFilter;
   onLocalFilterChange: (value: FinanceApTitlesLocalFilter) => void;
+  canManageAllocations?: boolean;
 }) {
   const auth = useAuth();
-  const canEditClassification = canManageFinanceApAllocations(auth);
+  const permissions = usePermissions();
+  const canEditClassification =
+    canManageAllocations ??
+    (canManageFinanceApAllocations(auth) ||
+      permissions.canPerformAction("finance.accounts_payable", "manage"));
   const [selectedExternalId, setSelectedExternalId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<"dueDate" | "balancePayable" | "externalId">("dueDate");
