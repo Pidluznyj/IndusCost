@@ -1050,6 +1050,7 @@ model SalesOrder {
   items                  SalesOrderItem[]
   CommercialActivity     CommercialActivity[]
   nfeLinks               SalesOrderNfeLink[]
+  productionOrderSalesLinks NomusProductionOrderSalesLink[]
   commissionOrderSnapshots CommissionOrderSnapshot[]
   commissionReceivableSchedules CommissionReceivableSchedule[]
 
@@ -1142,6 +1143,7 @@ model SalesOrderItem {
   Product             Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   ProposalItem        ProposalItem? @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   SalesOrder          SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productionOrderSalesLinks NomusProductionOrderSalesLink[]
   commissionItemSnapshots CommissionOrderItemSnapshot[]
 
   @@index([salesOrderId])
@@ -2305,6 +2307,76 @@ enum NomusNfeBillingClassification {
   LOGISTICS_NOT_REVENUE
   INTERCOMPANY
   MARKET_REVENUE
+}
+
+/// Ordem de Produção Nomus (`/rest/ordens`) — stage oficial isolado.
+/// Vínculo com Pedido/Item somente via itensPedido[].idPedido e itensPedido[].id (nunca por nome/produto/datas).
+/// Não altera Pedido de Venda, NF-e, AR/AP, Fluxo, Comissões, Formação de Preço nem BOM.
+model NomusProductionOrder {
+  id String @id @default(uuid())
+
+  externalId Int @unique
+
+  name              String?
+  status            String?
+  tipo              String?
+  productCode       String?
+  externalProductId Int?
+  quantity          Decimal? @db.Decimal(20, 6)
+  unit              String?
+  companyName       String?
+
+  rawJson    Json
+  syncedAt   DateTime
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  salesLinks NomusProductionOrderSalesLink[]
+
+  @@index([status])
+  @@index([tipo])
+  @@index([productCode])
+  @@index([externalProductId])
+  @@index([syncedAt])
+  @@index([name])
+}
+
+/// Vínculo oficial OP ↔ Pedido de Venda / item (itensPedido do payload `/rest/ordens`).
+model NomusProductionOrderSalesLink {
+  id String @id @default(uuid())
+
+  productionOrderId         String
+  productionOrder           NomusProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  productionOrderExternalId Int
+
+  /// itensPedido[].idPedido → SalesOrder.externalSalesOrderId
+  externalSalesOrderId Int
+  /// itensPedido[].id → SalesOrderItem.nomusItemExternalId
+  externalSalesOrderItemId Int
+  itemSequence             String?
+  customerName             String?
+  linkQuantity             Decimal? @db.Decimal(20, 6)
+  rawJson                  Json?
+
+  salesOrderId     String?         @db.Uuid
+  salesOrderItemId String?         @db.Uuid
+  SalesOrder       SalesOrder?     @relation(fields: [salesOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  SalesOrderItem   SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  presentInLastPayload Boolean  @default(true)
+  firstSeenAt          DateTime @default(now())
+  lastSeenAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([productionOrderExternalId, externalSalesOrderItemId])
+  @@index([productionOrderId])
+  @@index([externalSalesOrderId])
+  @@index([externalSalesOrderItemId])
+  @@index([salesOrderId])
+  @@index([salesOrderItemId])
+  @@index([presentInLastPayload])
 }
 
 /// Documento de estoque Nomus (`/rest/documentosEstoque`) — stage isolado para conciliação Pedido × NF × saída.

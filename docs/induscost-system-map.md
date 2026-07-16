@@ -390,7 +390,7 @@ ProductModule / NomusMaintenanceOverviewPanel
 
 ### Sync Nomus — cadastros & comercial
 - `nomusCustomersSyncV1.ts`, `nomusProductsSyncV1.ts`, `nomusBomComponentsSyncV1.ts`
-- `nomusProposalsSyncV1.ts`, `nomusSalesOrdersSyncV1.ts`
+- `nomusProposalsSyncV1.ts`, `nomusSalesOrdersSyncV1.ts`, `nomusProductionOrdersSyncV1.ts` (OP `/rest/ordens` após pedidos)
 - `nomusSyncOrchestrator.ts` — `sync:nomus:all:{dry,apply}` (+ auto-apply BOM no final)
 
 ### Sync Nomus — financeiro

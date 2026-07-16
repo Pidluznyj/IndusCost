@@ -22,6 +22,7 @@ import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrder
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { autoAssignCommercialOwnersAfterNomusSync } from "../src/lib/commercial/crmCommercialOwnerAutoAssign.ts";
+import { runNomusProductionOrdersAfterSalesOrdersSync } from "./nomusProductionOrdersSyncV1.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 import {
   formatSalesOrdersPaginationNote,
@@ -1756,6 +1757,30 @@ async function main(): Promise<void> {
     } catch (err) {
       console.error(
         "[nomusSalesOrdersSyncV1] auto-assign comercial falhou (sync segue):",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    // Ordens de Produção: sync oficial `/rest/ordens` após pedidos (soft-fail).
+    try {
+      const linked = await prisma.salesOrder.findMany({
+        where: { id: { in: applied.affectedSalesOrderIds } },
+        select: { externalSalesOrderId: true },
+      });
+      const salesOrderExternalIds = linked
+        .map((row) => row.externalSalesOrderId)
+        .filter((id): id is number => id != null && Number.isFinite(id) && id > 0);
+      const opSummary = await runNomusProductionOrdersAfterSalesOrdersSync(prisma, {
+        salesOrderExternalIds,
+      });
+      if (opSummary) {
+        console.log(
+          `[nomusSalesOrdersSyncV1] production-orders: mapped=${opSummary.mapped} create=${opSummary.create} update=${opSummary.update} links=${opSummary.salesLinks} errors=${opSummary.writeErrors}`
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[nomusSalesOrdersSyncV1] production-orders sync falhou (sync de pedidos segue):",
         err instanceof Error ? err.message : err
       );
     }

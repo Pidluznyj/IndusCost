@@ -10,6 +10,8 @@
 
 > Relacionado: [`../sales/sales-order-to-cash-funnel-requirements.md`](../sales/sales-order-to-cash-funnel-requirements.md)
 
+> **Atualização 2026-07-16:** endpoint `GET /rest/ordens` CONFIRMADO com vínculo oficial `itensPedido.idPedido` / `itensPedido.id`. Integração stage: [`nomus-production-orders-sync.md`](./nomus-production-orders-sync.md).
+
 ---
 
 ## 1. Objetivo
