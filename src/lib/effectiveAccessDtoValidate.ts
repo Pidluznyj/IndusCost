@@ -66,11 +66,30 @@ export function validateEffectiveAccessMeDto(
     "actionsByResource",
     "navigationReveal",
     "capabilities",
+    "appliedProfile",
     "compatibility",
   ]);
   for (const k of Object.keys(value)) {
     if (!allowedTop.has(k)) {
       issues.push({ path: k, message: "chave desconhecida no DTO de sessão" });
+    }
+  }
+
+  if (value.appliedProfile !== undefined && value.appliedProfile !== null) {
+    if (!isPlainObject(value.appliedProfile)) {
+      issues.push({ path: "appliedProfile", message: "objeto ou null" });
+    } else {
+      if (typeof value.appliedProfile.id !== "string" || !value.appliedProfile.id.trim()) {
+        issues.push({ path: "appliedProfile.id", message: "string não vazia" });
+      }
+      if (typeof value.appliedProfile.name !== "string" || !value.appliedProfile.name.trim()) {
+        issues.push({ path: "appliedProfile.name", message: "string não vazia" });
+      }
+      for (const k of Object.keys(value.appliedProfile)) {
+        if (k !== "id" && k !== "name") {
+          issues.push({ path: `appliedProfile.${k}`, message: "chave desconhecida" });
+        }
+      }
     }
   }
 
@@ -124,8 +143,8 @@ export function validateEffectiveAccessMeDto(
         issues.push({ path: `compatibility.${k}`, message: "chave desconhecida" });
       }
     }
-    if (c.mode !== "shadow") {
-      issues.push({ path: "compatibility.mode", message: 'deve ser "shadow"' });
+    if (c.mode !== "shadow" && c.mode !== "session") {
+      issues.push({ path: "compatibility.mode", message: 'deve ser "session" ou "shadow"' });
     }
     for (const k of [
       "legacyBagAuthoritative",

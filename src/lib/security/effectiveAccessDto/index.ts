@@ -5,3 +5,4 @@ export * from "./mapOverrides.ts";
 export * from "./buildEffectiveAccessDto.ts";
 export * from "./buildFromUser.ts";
 export * from "./attachAuthMe.ts";
+export * from "./authMeCompact.ts";

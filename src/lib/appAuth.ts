@@ -141,6 +141,11 @@ export type SafeAppUserOptions = {
     socialName?: string | null;
     department?: string | null;
   } | null;
+  /**
+   * PERM-31 — sessão /me: SUPER_ADMIN não recebe catálogo expandido
+   * (use `effectiveAccess.isSuperAdmin` / role no FE).
+   */
+  sessionCompact?: boolean;
 };
 
 export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): SafeAppUser {
@@ -148,13 +153,17 @@ export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): 
   const employeeName = options.employee
     ? (options.employee.socialName?.trim() || options.employee.name.trim() || null)
     : null;
+  const effectivePermissions =
+    options.sessionCompact && user.role === "SUPER_ADMIN"
+      ? []
+      : getEffectivePermissions({ role: user.role, permissions });
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role,
-    permissions,
-    effectivePermissions: getEffectivePermissions({ role: user.role, permissions }),
+    permissions: options.sessionCompact && user.role === "SUPER_ADMIN" ? [] : permissions,
+    effectivePermissions,
     permissionsVersion: normalizePermissionsVersion(
       (user as AppUser & { permissionsVersion?: number }).permissionsVersion
     ),

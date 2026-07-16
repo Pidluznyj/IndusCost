@@ -478,7 +478,7 @@ import {
 } from "./src/lib/permissionsVersion.js";
 import {
   isEffectiveAccessDtoInMeEnabled,
-  tryBuildEffectiveAccessForAuthMe,
+  tryBuildAuthMeCompactResponse,
 } from "./src/lib/security/effectiveAccessDto/index.js";
 import { createCanonicalAccessLoaders } from "./src/lib/security/effectiveAccess/loadCanonicalAccessContext.js";
 import {
@@ -1921,7 +1921,7 @@ async function startServer() {
       const user = await prisma.appUser.findUnique({
         where: { id: auth.id },
         include: {
-          accessProfile: { select: { name: true, permissions: true } },
+          accessProfile: { select: { id: true, name: true, permissions: true } },
           employee: { select: { id: true, name: true, socialName: true, department: true } },
         },
       });
@@ -1929,39 +1929,36 @@ async function startServer() {
         clearAppSessionCookie(res);
         return res.json({ authenticated: false, user: null });
       }
-      const payload: {
-        authenticated: true;
-        user: ReturnType<typeof toSafeAppUser>;
-        effectiveAccess?: ReturnType<typeof tryBuildEffectiveAccessForAuthMe>;
-      } = {
-        authenticated: true,
-        user: toSafeAppUser(user, {
-          accessProfileName: user.accessProfile?.name ?? null,
-          employee: user.employee,
-        }),
-      };
-      // PERM-30: DTO canônico (role + profile snapshot + overrides). Bag só se compat flag.
+
+      // PERM-31: contrato compacto (user slim + effectiveAccess + cache versionado).
       if (isEffectiveAccessDtoInMeEnabled()) {
         try {
           const overrides = await canonicalAccessLoaders.loadOverrides(user.id);
-          const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
-            user: {
-              id: user.id,
-              role: user.role,
-              permissions: filterKnownPermissions(user.permissions),
-              permissionsVersion: user.permissionsVersion ?? 0,
-              accessProfilePermissions: user.accessProfile
-                ? filterKnownPermissions(user.accessProfile.permissions)
-                : null,
-            },
+          const compact = tryBuildAuthMeCompactResponse({
+            user,
             overrides,
+            accessProfilePermissions: user.accessProfile
+              ? filterKnownPermissions(user.accessProfile.permissions)
+              : null,
+            safeUserOptions: {
+              accessProfileName: user.accessProfile?.name ?? null,
+              employee: user.employee,
+            },
           });
-          if (effectiveAccess) payload.effectiveAccess = effectiveAccess;
+          if (compact) return res.json(compact);
         } catch (dtoError) {
           console.error("GET /api/auth/me effectiveAccess DTO", dtoError);
         }
       }
-      return res.json(payload);
+
+      return res.json({
+        authenticated: true,
+        user: toSafeAppUser(user, {
+          accessProfileName: user.accessProfile?.name ?? null,
+          employee: user.employee,
+          sessionCompact: true,
+        }),
+      });
     } catch (error) {
       console.error("GET /api/auth/me", error);
       return res.status(500).json({ error: "Erro ao consultar sessão." });
@@ -2020,38 +2017,33 @@ async function startServer() {
       const user = await prisma.appUser.findUniqueOrThrow({
         where: { id: auth.id },
         include: {
-          accessProfile: { select: { name: true, permissions: true } },
+          accessProfile: { select: { id: true, name: true, permissions: true } },
           employee: { select: { id: true, name: true, socialName: true, department: true } },
         },
       });
-      const payload: {
-        authenticated: true;
-        user: ReturnType<typeof toSafeAppUser>;
-        effectiveAccess?: ReturnType<typeof tryBuildEffectiveAccessForAuthMe>;
-      } = {
+      if (isEffectiveAccessDtoInMeEnabled()) {
+        const overrides = await canonicalAccessLoaders.loadOverrides(user.id);
+        const compact = tryBuildAuthMeCompactResponse({
+          user,
+          overrides,
+          accessProfilePermissions: user.accessProfile
+            ? filterKnownPermissions(user.accessProfile.permissions)
+            : null,
+          safeUserOptions: {
+            accessProfileName: user.accessProfile?.name ?? null,
+            employee: user.employee,
+          },
+        });
+        if (compact) return res.json(compact);
+      }
+      return res.json({
         authenticated: true,
         user: toSafeAppUser(user, {
           accessProfileName: user.accessProfile?.name ?? null,
           employee: user.employee,
+          sessionCompact: true,
         }),
-      };
-      if (isEffectiveAccessDtoInMeEnabled()) {
-        const overrides = await canonicalAccessLoaders.loadOverrides(user.id);
-        const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
-          user: {
-            id: user.id,
-            role: user.role,
-            permissions: filterKnownPermissions(user.permissions),
-            permissionsVersion: user.permissionsVersion ?? 0,
-            accessProfilePermissions: user.accessProfile
-              ? filterKnownPermissions(user.accessProfile.permissions)
-              : null,
-          },
-          overrides,
-        });
-        if (effectiveAccess) payload.effectiveAccess = effectiveAccess;
-      }
-      return res.json(payload);
+      });
     } catch (error) {
       console.error("POST /api/auth/sync-session-permissions", error);
       return res.status(500).json({ error: "Erro ao sincronizar sessão." });

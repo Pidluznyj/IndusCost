@@ -31,14 +31,23 @@ export type EffectiveAccessDtoCapability = {
  * Enquanto `legacyBagAuthoritative` for true, o runtime de sessão continua na bag.
  */
 export type EffectiveAccessDtoCompatibility = {
-  /** Sempre "shadow" até o cutover (P07+). */
-  mode: "shadow";
+  /**
+   * `session` = contrato compacto /me (PERM-31).
+   * `shadow` = legado P04 (ainda aceito na validação).
+   */
+  mode: "session" | "shadow";
   /** true = FE/BE ainda devem usar permissions[] para auth efetiva. */
   legacyBagAuthoritative: boolean;
   /** Bag não vazia no usuário. */
   legacyPermissionsPresent: boolean;
   /** Se o builder aplicou projeção 1:1 da bag neste DTO. */
   legacyCompatApplied: boolean;
+};
+
+/** Perfil de acesso aplicado (refs apenas — sem bag/ACL do perfil). */
+export type EffectiveAccessAppliedProfile = {
+  id: string;
+  name: string;
 };
 
 /** Deny explícito seguro para auditoria admin (não lista DENY_DEFAULT). */
@@ -57,7 +66,8 @@ export type EffectiveAccessDtoWarning = {
 
 /**
  * Bloco `effectiveAccess` em `/api/auth/me` (audiência sessão).
- * Compacto: só allows + capabilities + nav; sem denies/warnings/sources.
+ * Compacto: allows + capabilities + nav + perfil aplicado;
+ * sem denies/warnings/sources/auditoria.
  */
 export type EffectiveAccessMeDto = {
   permissionsVersion: number;
@@ -74,6 +84,8 @@ export type EffectiveAccessMeDto = {
   navigationReveal: string[];
   /** Flags 3 eixos só para recursos em allowedResources (ou vazio se SUPER_ADMIN). */
   capabilities: Record<string, EffectiveAccessDtoCapability>;
+  /** Perfil vinculado (id/nome). Ausente em DTOs antigos; /me compacto sempre envia. */
+  appliedProfile?: EffectiveAccessAppliedProfile | null;
   compatibility: EffectiveAccessDtoCompatibility;
 };
 

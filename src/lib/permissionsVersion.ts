@@ -24,6 +24,8 @@ export function isSessionPermissionsVersionStale(
 
 /** Cache leve in-process (invalidado no bump). */
 const effectiveAccessCacheKeys = new Set<string>();
+/** Valores do DTO /me por `userId:permissionsVersion` (PERM-31). */
+const effectiveAccessDtoCache = new Map<string, unknown>();
 
 export function cacheKeyForEffectiveAccess(userId: string, version: number): string {
   return `${userId}:${normalizePermissionsVersion(version)}`;
@@ -34,10 +36,37 @@ export function invalidatePermissionsVersionCache(userId: string): void {
   for (const key of [...effectiveAccessCacheKeys]) {
     if (key.startsWith(prefix)) effectiveAccessCacheKeys.delete(key);
   }
+  for (const key of [...effectiveAccessDtoCache.keys()]) {
+    if (key.startsWith(prefix)) effectiveAccessDtoCache.delete(key);
+  }
 }
 
 export function registerEffectiveAccessCacheKey(key: string): void {
   effectiveAccessCacheKeys.add(key);
+}
+
+export function getCachedEffectiveAccessDto<T>(
+  userId: string,
+  version: number
+): T | undefined {
+  const key = cacheKeyForEffectiveAccess(userId, version);
+  return effectiveAccessDtoCache.get(key) as T | undefined;
+}
+
+export function setCachedEffectiveAccessDto(
+  userId: string,
+  version: number,
+  dto: unknown
+): void {
+  const key = cacheKeyForEffectiveAccess(userId, version);
+  effectiveAccessDtoCache.set(key, dto);
+  registerEffectiveAccessCacheKey(key);
+}
+
+/** Testes / diagnóstico — não usar em produção. */
+export function __resetEffectiveAccessDtoCacheForTests(): void {
+  effectiveAccessCacheKeys.clear();
+  effectiveAccessDtoCache.clear();
 }
 
 export type PermissionsVersionTx = {

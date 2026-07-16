@@ -38,8 +38,8 @@ export type AuthMeResponse = {
   authenticated: boolean;
   user: AuthUser | null;
   /**
-   * Bloco shadow P04 — presente só com EFFECTIVE_ACCESS_DTO_IN_ME=1.
-   * Não substitui `user.permissions` / `effectivePermissions` (ainda autoridade).
+   * PERM-31 — ACL compacta (recursos/capacidades + perfil aplicado).
+   * Presente com EFFECTIVE_ACCESS_DTO_IN_ME (default ON).
    */
   effectiveAccess?: EffectiveAccessMeDto;
 };

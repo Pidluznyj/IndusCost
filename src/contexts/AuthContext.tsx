@@ -194,6 +194,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const hasPermission = useCallback(
     (permission: string) => {
       if (!authUser) return false;
+      // PERM-31: SUPER_ADMIN não recebe catálogo na bag — bypass por role.
+      if (authUser.role === "SUPER_ADMIN") return true;
       return authUser.effectivePermissions.includes(permission);
     },
     [authUser]
@@ -202,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const hasAnyPermission = useCallback(
     (permissions: string[]) => {
       if (!authUser) return false;
+      if (authUser.role === "SUPER_ADMIN") return true;
       return permissions.some((p) => authUser.effectivePermissions.includes(p));
     },
     [authUser]
