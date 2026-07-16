@@ -241,6 +241,8 @@
     "permissions:audit": "tsx scripts/validatePermissionsSetup.ts --audit",
     "permissions:qa": "tsx scripts/qaPermissions.ts",
     "permissions:compare:legacy-vs-resource": "tsx scripts/compareLegacyVsResourceNavAccess.ts",
+    "permissions:compare:legacy-vs-effective": "tsx scripts/compareLegacyVsEffectiveAccess.ts",
+    "test:access-comparison": "tsx --test src/lib/security/accessComparison/legacyAuthCompare.test.ts",
     "test:permission-persona-matrix": "tsx --test src/lib/security/permissionPersonaMatrix.test.ts src/lib/security/permissionPersonaMatrix.compare.test.ts",
     "qa:portfolio-order-status": "tsx scripts/qaPortfolioOrderStatusTab.ts",
     "qa:sales-order-item-status": "tsx scripts/qaSalesOrderItemStatusRules.ts",

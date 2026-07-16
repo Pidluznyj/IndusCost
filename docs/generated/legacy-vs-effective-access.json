@@ -1,0 +1,2191 @@
+{
+  "dryRun": true,
+  "generatedAt": "2026-07-16T16:57:37.214Z",
+  "migratedModuleScope": [
+    "finance (P17+P18 AP)",
+    "commercial (P19)",
+    "engineering (P19)",
+    "admin.settings (P19)",
+    "admin.employees (P15)",
+    "operations (P16)",
+    "admin.settings.security (P14)"
+  ],
+  "probeCount": 144,
+  "subjectCount": 16,
+  "categoryCounts": {
+    "preserved_intentional": 298,
+    "new_legitimate_access": 93,
+    "removed_by_deny": 0,
+    "mega_key_bleed": 75,
+    "permissive_fallback": 0,
+    "unmapped_resource": 0,
+    "conflict": 0,
+    "lockout_risk": 2,
+    "both_denied": 1836
+  },
+  "lockoutRiskCount": 2,
+  "megaKeyBleedCount": 75,
+  "unmappedResourceCount": 0,
+  "conflictCount": 0,
+  "note": "Read-only. Bleed/mega-key histórico nunca classificado como preservado intencional. Sem escrita em AppUser/overrides.",
+  "byProfile": [
+    {
+      "accessProfileRef": "none",
+      "subjectCount": 16,
+      "categoryCounts": {
+        "preserved_intentional": 298,
+        "new_legitimate_access": 93,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 75,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 2,
+        "both_denied": 1836
+      },
+      "lockoutRiskCount": 2,
+      "megaKeyBleedCount": 75
+    }
+  ],
+  "users": [
+    {
+      "subjectRef": "53817c43f05f",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "leticia-ap-only",
+      "legacyCompatMode": false,
+      "legacyPermissionCount": 1,
+      "overrideResourceCount": 1,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 1,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 3,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 140
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 3,
+      "diffs": [
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "067c0e01603b",
+      "role": "SUPER_ADMIN",
+      "accessProfileRef": null,
+      "scenarioTag": null,
+      "legacyCompatMode": false,
+      "legacyPermissionCount": 0,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 144,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 0,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 0
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 0,
+      "diffs": []
+    },
+    {
+      "subjectRef": "40ce03babcd4",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "legacy-mega-key",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 2,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 1,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 8,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 1,
+        "both_denied": 134
+      },
+      "lockoutRiskCount": 1,
+      "megaKeyBleedCount": 8,
+      "diffs": [
+        {
+          "resourceKey": "admin.employees",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.simulations",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.transformation_simulator",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.opex",
+          "action": "view",
+          "category": "lockout_risk",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 1
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.machines",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "0577ba931697",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "deny-wins",
+      "legacyCompatMode": false,
+      "legacyPermissionCount": 0,
+      "overrideResourceCount": 1,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 0,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 144
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 0,
+      "diffs": []
+    },
+    {
+      "subjectRef": "c62cd0b9518c",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "alias-1to1",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 1,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 1,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 3,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 140
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 3,
+      "diffs": [
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "ff495def7ed8",
+      "role": "SUPER_ADMIN",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:SUPER_ADMIN",
+      "legacyCompatMode": false,
+      "legacyPermissionCount": 0,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 144,
+        "new_legitimate_access": 0,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 0,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 0
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 0,
+      "diffs": []
+    },
+    {
+      "subjectRef": "481d695e6e30",
+      "role": "ADMIN",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:ADMIN",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 8,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 43,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 19,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 82
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 19,
+      "diffs": [
+        {
+          "resourceKey": "admin.employees",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "admin.employees.links",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.employees.links",
+          "action": "manage",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.employees.user_link",
+          "action": "manage",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.branding",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.branding",
+          "action": "update",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.global_params",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.global_params",
+          "action": "update",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.nomus_sync",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.operational",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.operational",
+          "action": "manage",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.price_tables",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.settings.security",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "admin.settings.security",
+          "action": "manage",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.commissions",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.closings",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.customer_exclusions",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.monthly_closing",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reports",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reprocess",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.customer_360",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm.general",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm.portfolio",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.seller",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders.detail",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.home",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.material_360",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.quotes",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.accounts_payable",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.accounts_payable",
+          "action": "export",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.accounts_payable",
+          "action": "execute",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.accounts_receivable",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.accounts_receivable",
+          "action": "export",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.accounts_receivable",
+          "action": "execute",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.cost_centers",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.executive_report",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation.order_status",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation.order_to_cash_audit",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.suppliers",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.fleet",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.inventory",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "operations.inventory.counts",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "operations.inventory.items",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "operations.inventory.movements",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "operations.inventory.warehouses",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "operations.machines",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.maintenance",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.performance",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.purchases",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "75e01089bef3",
+      "role": "COMMERCIAL_MANAGER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:gestor_comercial",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 5,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 15,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 5,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 124
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 5,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 4,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.commissions",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.closings",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.customer_exclusions",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.monthly_closing",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reports",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reprocess",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.customer_360",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.general",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm.portfolio",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.seller",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.customers",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.proposals",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders.detail",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "a6e69698b248",
+      "role": "SELLER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:vendedor",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 4,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 12,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 5,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 127
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 5,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 3,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.commissions",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.closings",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.monthly_closing",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reports",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.commissions.reprocess",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.crm",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.customer_360",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.portfolio",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.crm.seller",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.customers",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders.detail",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "0b7079902e58",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:financeiro_somente_leitura",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 4,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 2,
+        "new_legitimate_access": 3,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 7,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 132
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 7,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.accounts_payable",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.accounts_receivable",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cost_centers",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.executive_report",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "c51d3c86ada1",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:financeiro_operacional",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 6,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 4,
+        "new_legitimate_access": 3,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 6,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 1,
+        "both_denied": 130
+      },
+      "lockoutRiskCount": 1,
+      "megaKeyBleedCount": 6,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "finance.accounts_receivable",
+          "action": "export",
+          "category": "lockout_risk",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 1
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 3,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cost_centers",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.executive_report",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "9f3b0425acd9",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:engenharia",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 5,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 5,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 5,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 134
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 5,
+      "diffs": [
+        {
+          "resourceKey": "admin.settings.price_tables",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.pricing",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.products",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "engineering.projects",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.projects.detail",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.simulations",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "engineering.transformation_simulator",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 2,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "operations.performance",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "1db85bf88376",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:RH",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 3,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 4,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 1,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 139
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 1,
+      "diffs": [
+        {
+          "resourceKey": "admin.employees",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "admin.employees.links",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "admin.guide",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "d63c9b96d240",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:viewer",
+      "legacyCompatMode": false,
+      "legacyPermissionCount": 0,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 2,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 0,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 142
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 0,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "d678f791cff8",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:usuario_com_deny",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 2,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 0,
+        "new_legitimate_access": 2,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 5,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 137
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 5,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders.detail",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.billing",
+          "action": "export",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.sales_orders",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "8bcb05136c1d",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:legado_sem_grants_estruturados",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 5,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 1,
+        "new_legitimate_access": 4,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 8,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 131
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 8,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.home",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.material_360",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "engineering.materials.market_intelligence.quotes",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.executive_report",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.reports",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.tax_apuration",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.taxes",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": true,
+          "newAllow": true,
+          "newSource": "LEGACY_PROJECTED",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0,
+          "note": "bleed-only corrected from preserved_intentional"
+        }
+      ]
+    }
+  ]
+}
