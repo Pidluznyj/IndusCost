@@ -106,13 +106,15 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 
 ### P02 — Validador de consistência CI
 
-- **Objetivo:** Falhar CI se contrato ≠ seed ≠ FE keys ≠ sidebar map.
-- **Escopo:** script `check:permission-consistency` + npm script.
+- **Objetivo:** Falhar CI se contrato ≠ seed ≠ FE keys ≠ sidebar map **em gaps novos**.
+- **Escopo:** `check:permission-consistency` + baseline temporário + npm/test.
 - **Deps:** P01.
-- **Risco:** baixo (pode começar warn→error).
-- **Aceite:** detecta ausência `admin.employees` no seed vs FE.
+- **Risco:** baixo (baseline → error em regressões).
+- **Aceite:** detecta ausência `admin.employees` no seed vs FE; strict verde com baseline.
+- **Docs:** `docs/security/permissions-consistency.md`
 - **Rollback:** desligar script.
 - **Migration:** não.
+- **Status:** implementado (2026-07-16).
 
 ### P03 — Resolvedor backend único (shadow)
 

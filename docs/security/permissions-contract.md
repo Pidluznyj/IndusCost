@@ -126,9 +126,18 @@ Principais: `costs.view`, `costs.edit`, `finance.view`, bleed histórico de `fin
 - `truthTable.test.ts` — precedência + Leticia
 - `permissionsRuntimeDiagnosis.test.ts` — diagnóstico do runtime **atual** (não é o alvo)
 
+## 8.1 Validador de consistência (P02)
+
+Ver `docs/security/permissions-consistency.md`.
+
+```bash
+npm run check:permission-consistency:strict
+npm run test:permission-consistency
+```
+
 ---
 
 ## 9. Fora de escopo (P01)
 
 Não alterar: runtime auth, login, sidebar, rotas, APIs, Prisma seed de produção, dual-write.  
-Não iniciar P02 (validador CI de consistência).
+P02 (validador CI) é fase seguinte e **não** corrige gaps históricos — só os detecta com baseline.
