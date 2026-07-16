@@ -1,6 +1,7 @@
 /**
- * Lógica pura do auditor read-only de Documentos de Saída (DS-02.2 scaffold).
- * Sem I/O de banco — o script scripts/auditOutputDocumentsDb.ts orquestra Prisma.
+ * Lógica pura do auditor read-only de Documentos de Saída.
+ * Sem I/O de banco — loaders ficam em auditOutputDocumentsDbInventory.server.ts;
+ * o script scripts/auditOutputDocumentsDb.ts orquestra Prisma.
  */
 
 export const AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX = "[audit-output-documents-db]";
@@ -13,6 +14,9 @@ export const AUDIT_OUTPUT_DOCUMENTS_DB_DEFAULTS = {
   jsonOutput: "docs/output-documents/audit-output-documents-db.json",
   markdownOutput: "docs/output-documents/audit-output-documents-db.md",
 } as const;
+
+/** Tipo Nomus usado pelo sync oficial de Documentos de Saída. */
+export const NOMUS_STOCK_DOCUMENT_TIPO_SAIDA = "DocumentoSaida";
 
 export type AuditOutputDocumentsDbCliOptions = {
   document: number;
@@ -34,7 +38,73 @@ export type SanitizedDatabaseTarget = {
 
 export type AuditOutputDocumentsDbStatus = "ok" | "unavailable" | "error";
 
+export type AuditOutputDocumentsDbMode = "scaffold" | "stage-inventory";
+
+export type FieldCoverageStat = {
+  field: string;
+  model: "NomusStockDocument" | "NomusStockDocumentItem";
+  presentInSchema: boolean;
+  total: number;
+  filled: number;
+  nullCount: number;
+  /** 0–100 com 2 casas; null quando o campo não existe no schema. */
+  coveragePercent: number | null;
+  notes: string | null;
+};
+
+export type StageInventoryTypeCount = {
+  tipoDocumentoEstoque: string | null;
+  count: number;
+};
+
+export type StageInventoryMonthCount = {
+  year: number;
+  month: number;
+  count: number;
+};
+
+export type StageInventoryYearCount = {
+  year: number;
+  count: number;
+};
+
+export type StageInventory = {
+  documents: {
+    total: number;
+    documentoSaida: number;
+    otherTypes: number;
+    byType: StageInventoryTypeCount[];
+    byYear: StageInventoryYearCount[];
+    byMonth: StageInventoryMonthCount[];
+    nullDataDocumento: number;
+    minDataDocumento: string | null;
+    maxDataDocumento: string | null;
+    minExternalId: number | null;
+    maxExternalId: number | null;
+    withoutItems: number;
+  };
+  items: {
+    total: number;
+    orphanCount: number;
+    avgItemsPerDocument: number | null;
+    maxItemsPerDocument: number | null;
+    withoutProduct: number;
+    /** null = coluna inexistente no schema atual. */
+    withoutCode: number | null;
+    withoutDescription: number | null;
+    withoutQuantity: number;
+    withoutValue: number;
+  };
+  samples: {
+    documentsWithoutItemsExternalIds: number[];
+    orphanItemIds: string[];
+  };
+};
+
 export type AuditOutputDocumentsDbSections = {
+  inventory: StageInventory | null;
+  fieldCoverage: FieldCoverageStat[];
+  itemCoverage: FieldCoverageStat[];
   counts: Record<string, unknown>;
   documentFocus: unknown;
   orderFocus: unknown;
@@ -52,7 +122,7 @@ export type AuditOutputDocumentsDbResult = {
     durationMs: number;
     database: SanitizedDatabaseTarget | null;
     options: AuditOutputDocumentsDbCliOptions;
-    mode: "scaffold";
+    mode: AuditOutputDocumentsDbMode;
     readOnly: true;
   };
   status: AuditOutputDocumentsDbStatus;
@@ -171,7 +241,6 @@ export function sanitizeDatabaseUrl(rawUrl: string): SanitizedDatabaseTarget | n
 
     return { scheme, host, port, database, display };
   } catch {
-    // Fallback sem URL parser (ex.: formatos não padrão).
     const match = trimmed.match(
       /^(?<scheme>[a-z0-9+.-]+):\/\/(?:[^/@]+@)?(?<host>[^/:]+)(?::(?<port>\d+))?\/(?<database>[^/?#]+)/i
     );
@@ -187,8 +256,133 @@ export function sanitizeDatabaseUrl(rawUrl: string): SanitizedDatabaseTarget | n
   }
 }
 
+/** Percentual 0–100 com 2 casas; 0 quando total=0. */
+export function computeCoveragePercent(filled: number, total: number): number {
+  if (!Number.isFinite(filled) || !Number.isFinite(total) || total <= 0) {
+    return 0;
+  }
+  const safeFilled = Math.max(0, Math.min(filled, total));
+  return Math.round((safeFilled / total) * 10000) / 100;
+}
+
+export function formatCoveragePercent(percent: number | null): string {
+  if (percent == null || !Number.isFinite(percent)) return "n/a";
+  return `${percent.toFixed(2)}%`;
+}
+
+export function buildFieldCoverageStat(input: {
+  field: string;
+  model: FieldCoverageStat["model"];
+  presentInSchema: boolean;
+  total: number;
+  filled: number;
+  notes?: string | null;
+}): FieldCoverageStat {
+  if (!input.presentInSchema) {
+    return {
+      field: input.field,
+      model: input.model,
+      presentInSchema: false,
+      total: 0,
+      filled: 0,
+      nullCount: 0,
+      coveragePercent: null,
+      notes:
+        input.notes ??
+        "Campo não existe como coluna normalizada no schema Prisma atual.",
+    };
+  }
+
+  const total = Math.max(0, Math.trunc(input.total));
+  const filled = Math.max(0, Math.min(Math.trunc(input.filled), total));
+  const nullCount = Math.max(0, total - filled);
+  return {
+    field: input.field,
+    model: input.model,
+    presentInSchema: true,
+    total,
+    filled,
+    nullCount,
+    coveragePercent: computeCoveragePercent(filled, total),
+    notes: input.notes ?? null,
+  };
+}
+
+/**
+ * Campos normalizados de NomusStockDocument conforme schema atual.
+ * Não inventa colunas ausentes (cliente/empresa/status/total etc.).
+ */
+export const NOMUS_STOCK_DOCUMENT_COVERAGE_FIELDS = [
+  "externalId",
+  "idNfe",
+  "tipoDocumentoEstoque",
+  "dataDocumento",
+  "rawJson",
+  "syncedAt",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+/**
+ * Campos normalizados de NomusStockDocumentItem conforme schema atual.
+ * código/descrição não existem como colunas — reportados via presentInSchema=false.
+ */
+export const NOMUS_STOCK_DOCUMENT_ITEM_COVERAGE_FIELDS = [
+  "stockDocumentId",
+  "externalItemId",
+  "externalProductId",
+  "quantity",
+  "unitValue",
+  "estimatedTotalValue",
+  "rawJson",
+  "createdAt",
+  "updatedAt",
+] as const;
+
+export const NOMUS_STOCK_DOCUMENT_ITEM_ABSENT_SCHEMA_FIELDS = [
+  "productCode",
+  "productDescription",
+] as const;
+
+export function buildEmptyStageInventory(): StageInventory {
+  return {
+    documents: {
+      total: 0,
+      documentoSaida: 0,
+      otherTypes: 0,
+      byType: [],
+      byYear: [],
+      byMonth: [],
+      nullDataDocumento: 0,
+      minDataDocumento: null,
+      maxDataDocumento: null,
+      minExternalId: null,
+      maxExternalId: null,
+      withoutItems: 0,
+    },
+    items: {
+      total: 0,
+      orphanCount: 0,
+      avgItemsPerDocument: null,
+      maxItemsPerDocument: null,
+      withoutProduct: 0,
+      withoutCode: null,
+      withoutDescription: null,
+      withoutQuantity: 0,
+      withoutValue: 0,
+    },
+    samples: {
+      documentsWithoutItemsExternalIds: [],
+      orphanItemIds: [],
+    },
+  };
+}
+
 export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
   return {
+    inventory: null,
+    fieldCoverage: [],
+    itemCoverage: [],
     counts: {},
     documentFocus: null,
     orderFocus: null,
@@ -197,7 +391,7 @@ export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
     gaps: [],
     risks: [],
     notes: [
-      "Scaffold DS-02.2: seções estruturadas vazias. Consultas detalhadas serão implementadas em etapas posteriores.",
+      "Auditor read-only de Documentos de Saída.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ],
   };
@@ -211,6 +405,7 @@ export function buildAuditResult(input: {
   status: AuditOutputDocumentsDbStatus;
   error?: string | null;
   sections?: AuditOutputDocumentsDbSections;
+  mode?: AuditOutputDocumentsDbMode;
 }): AuditOutputDocumentsDbResult {
   const durationMs = Math.max(
     0,
@@ -223,13 +418,108 @@ export function buildAuditResult(input: {
       durationMs,
       database: input.database,
       options: input.options,
-      mode: "scaffold",
+      mode: input.mode ?? "scaffold",
       readOnly: true,
     },
     status: input.status,
     error: input.error ?? null,
     sections: input.sections ?? buildEmptyAuditSections(),
   };
+}
+
+function formatCoverageTableMarkdown(
+  title: string,
+  rows: FieldCoverageStat[]
+): string[] {
+  const lines = [
+    `## ${title}`,
+    "",
+  ];
+  if (rows.length === 0) {
+    lines.push("_Sem dados de cobertura._", "");
+    return lines;
+  }
+  lines.push(
+    "| Campo | Model | No schema | Total | Preenchidos | Nulos | Cobertura | Notas |",
+    "|---|---|---|---:|---:|---:|---:|---|"
+  );
+  for (const row of rows) {
+    const notes = (row.notes ?? "—").replace(/\|/g, "/");
+    lines.push(
+      `| ${row.field} | ${row.model} | ${row.presentInSchema ? "sim" : "não"} | ${row.total} | ${row.filled} | ${row.nullCount} | ${formatCoveragePercent(row.coveragePercent)} | ${notes} |`
+    );
+  }
+  lines.push("");
+  return lines;
+}
+
+function formatInventoryMarkdown(inventory: StageInventory): string[] {
+  const d = inventory.documents;
+  const i = inventory.items;
+  const lines: string[] = [
+    "## Inventory",
+    "",
+    "### Documentos (`NomusStockDocument`)",
+    "",
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| Total | ${d.total} |`,
+    `| DocumentoSaida | ${d.documentoSaida} |`,
+    `| Outros tipos | ${d.otherTypes} |`,
+    `| Sem itens | ${d.withoutItems} |`,
+    `| dataDocumento nula | ${d.nullDataDocumento} |`,
+    `| min dataDocumento | ${d.minDataDocumento ?? "—"} |`,
+    `| max dataDocumento | ${d.maxDataDocumento ?? "—"} |`,
+    `| min externalId | ${d.minExternalId ?? "—"} |`,
+    `| max externalId | ${d.maxExternalId ?? "—"} |`,
+    "",
+  ];
+
+  if (d.byType.length > 0) {
+    lines.push("#### Quantidade por tipo", "");
+    lines.push("| tipoDocumentoEstoque | count |", "|---|---:|");
+    for (const row of d.byType) {
+      lines.push(`| ${row.tipoDocumentoEstoque ?? "(null)"} | ${row.count} |`);
+    }
+    lines.push("");
+  }
+
+  if (d.byYear.length > 0) {
+    lines.push("#### Quantidade por ano (`dataDocumento`)", "");
+    lines.push("| year | count |", "|---:|---:|");
+    for (const row of d.byYear) {
+      lines.push(`| ${row.year} | ${row.count} |`);
+    }
+    lines.push("");
+  }
+
+  if (d.byMonth.length > 0) {
+    lines.push("#### Quantidade por mês (`dataDocumento`)", "");
+    lines.push("| year | month | count |", "|---:|---:|---:|");
+    for (const row of d.byMonth) {
+      lines.push(`| ${row.year} | ${row.month} | ${row.count} |`);
+    }
+    lines.push("");
+  }
+
+  lines.push(
+    "### Itens (`NomusStockDocumentItem`)",
+    "",
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| Total | ${i.total} |`,
+    `| Órfãos | ${i.orphanCount} |`,
+    `| Média de itens/documento | ${i.avgItemsPerDocument ?? "—"} |`,
+    `| Máximo de itens/documento | ${i.maxItemsPerDocument ?? "—"} |`,
+    `| Sem produto (\`externalProductId\`) | ${i.withoutProduct} |`,
+    `| Sem código | ${i.withoutCode == null ? "n/a (ausente no schema)" : i.withoutCode} |`,
+    `| Sem descrição | ${i.withoutDescription == null ? "n/a (ausente no schema)" : i.withoutDescription} |`,
+    `| Sem quantidade (null) | ${i.withoutQuantity} |`,
+    `| Sem valor unitário (null) | ${i.withoutValue} |`,
+    ""
+  );
+
+  return lines;
 }
 
 export function formatAuditOutputDocumentsDbMarkdown(
@@ -258,17 +548,23 @@ export function formatAuditOutputDocumentsDbMarkdown(
     lines.push("## Erro", "", result.error, "");
   }
 
+  if (result.sections.inventory) {
+    lines.push(...formatInventoryMarkdown(result.sections.inventory));
+  } else {
+    lines.push("## Inventory", "", "_Não disponível nesta execução._", "");
+  }
+
   lines.push(
-    "## Seções",
-    "",
-    "- `counts`: estrutura reservada (vazia neste scaffold)",
-    "- `documentFocus`: estrutura reservada (vazia neste scaffold)",
-    "- `orderFocus`: estrutura reservada (vazia neste scaffold)",
-    "- `nfeFocus`: estrutura reservada (vazia neste scaffold)",
-    "- `samples`: estrutura reservada (vazia neste scaffold)",
-    "- `gaps`: estrutura reservada (vazia neste scaffold)",
-    "- `risks`: estrutura reservada (vazia neste scaffold)",
-    ""
+    ...formatCoverageTableMarkdown(
+      "Field coverage (`NomusStockDocument`)",
+      result.sections.fieldCoverage
+    )
+  );
+  lines.push(
+    ...formatCoverageTableMarkdown(
+      "Item coverage (`NomusStockDocumentItem`)",
+      result.sections.itemCoverage
+    )
   );
 
   if (result.sections.notes.length > 0) {
@@ -333,12 +629,49 @@ export async function disconnectPrismaSafe(
 
 /**
  * Probe mínimo read-only: confirma conectividade sem mutar dados.
- * Consultas de domínio permanecem para etapas posteriores.
  */
 export async function probeDatabaseConnectivity(
   prisma: { $queryRaw: (...args: unknown[]) => Promise<unknown> }
 ): Promise<void> {
   await prisma.$queryRaw`SELECT 1 AS ok`;
+}
+
+/** Converte BigInt/Decimal/string numérica de agregações SQL para number. */
+export function toAuditNumber(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string" && value.trim()) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  if (typeof value === "object" && value !== null && "toNumber" in value) {
+    try {
+      const n = (value as { toNumber: () => number }).toNumber();
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+export function toAuditNullableNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = toAuditNumber(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+export function toAuditIsoDate(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+  }
+  return null;
 }
 
 /** Marcadores de escrita proibidos no runner (checagem estática em testes). */

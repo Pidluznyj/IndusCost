@@ -1,5 +1,5 @@
 /**
- * Auditor read-only de Documentos de Saída (scaffold DS-02.2).
+ * Auditor read-only de Documentos de Saída.
  *
  * Uso:
  *   npm run audit:output-documents:db
@@ -16,6 +16,7 @@ import { PrismaClient } from "@prisma/client";
 import {
   AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX,
   buildAuditResult,
+  buildEmptyAuditSections,
   disconnectPrismaSafe,
   formatAuditOutputDocumentsDbMarkdown,
   formatDatabaseUnavailableMessage,
@@ -26,6 +27,7 @@ import {
   sanitizeDatabaseUrl,
   type AuditOutputDocumentsDbResult,
 } from "../src/lib/output-documents/auditOutputDocumentsDb.ts";
+import { loadStageInventoryAndCoverage } from "../src/lib/output-documents/auditOutputDocumentsDbInventory.server.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -78,6 +80,35 @@ async function main(): Promise<void> {
     prisma = new PrismaClient();
     await probeDatabaseConnectivity(prisma);
 
+    console.warn(`${LOG} carregando inventário e cobertura do stage…`);
+    const loaded = await loadStageInventoryAndCoverage(prisma, {
+      sampleLimit: options.sampleLimit,
+    });
+
+    const sections = buildEmptyAuditSections();
+    sections.inventory = loaded.inventory;
+    sections.fieldCoverage = loaded.fieldCoverage;
+    sections.itemCoverage = loaded.itemCoverage;
+    sections.counts = {
+      documents: loaded.inventory.documents.total,
+      documentoSaida: loaded.inventory.documents.documentoSaida,
+      otherTypes: loaded.inventory.documents.otherTypes,
+      items: loaded.inventory.items.total,
+      documentsWithoutItems: loaded.inventory.documents.withoutItems,
+      orphanItems: loaded.inventory.items.orphanCount,
+    };
+    sections.samples = {
+      documentsWithoutItemsExternalIds:
+        loaded.inventory.samples.documentsWithoutItemsExternalIds,
+      orphanItemIds: loaded.inventory.samples.orphanItemIds,
+    };
+    sections.notes = [
+      "DS-02.3: inventário e cobertura do stage NomusStockDocument / NomusStockDocumentItem.",
+      "Consultas usam agregações SQL e amostras paginadas; tabelas completas não são carregadas em memória.",
+      "Campos productCode/productDescription não existem no schema do item — reportados como ausentes.",
+      "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
+    ];
+
     const finishedAt = new Date();
     const result = buildAuditResult({
       startedAt,
@@ -85,12 +116,14 @@ async function main(): Promise<void> {
       options,
       database,
       status: "ok",
+      mode: "stage-inventory",
+      sections,
     });
 
     writeOutputs(result, options.jsonOutput, options.markdownOutput);
     console.log(JSON.stringify(result, null, 2));
     console.warn(
-      `${LOG} concluído status=${result.status} durationMs=${result.meta.durationMs}`
+      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} items=${loaded.inventory.items.total} durationMs=${result.meta.durationMs}`
     );
   } catch (error) {
     const finishedAt = new Date();
@@ -103,6 +136,7 @@ async function main(): Promise<void> {
         database,
         status: "unavailable",
         error: message,
+        mode: "stage-inventory",
       });
       try {
         writeOutputs(result, options.jsonOutput, options.markdownOutput);
@@ -126,6 +160,7 @@ async function main(): Promise<void> {
       database,
       status: "error",
       error: message,
+      mode: "stage-inventory",
     });
     try {
       writeOutputs(result, options.jsonOutput, options.markdownOutput);

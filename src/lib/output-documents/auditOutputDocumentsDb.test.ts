@@ -8,8 +8,12 @@ import {
   AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS,
   buildAuditResult,
   buildEmptyAuditSections,
+  buildEmptyStageInventory,
+  buildFieldCoverageStat,
+  computeCoveragePercent,
   disconnectPrismaSafe,
   formatAuditOutputDocumentsDbMarkdown,
+  formatCoveragePercent,
   formatDatabaseUnavailableMessage,
   isDatabaseUnavailableError,
   parseAuditOutputDocumentsDbArgs,
@@ -17,6 +21,10 @@ import {
   resolveDefaultOutputPaths,
   sanitizeDatabaseUrl,
 } from "./auditOutputDocumentsDb.js";
+import {
+  buildDocumentFieldCoverage,
+  buildItemFieldCoverage,
+} from "./auditOutputDocumentsDbInventory.server.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(
@@ -26,6 +34,10 @@ const SCRIPT_PATH = join(
   "..",
   "scripts",
   "auditOutputDocumentsDb.ts"
+);
+const INVENTORY_SERVER_PATH = join(
+  HERE,
+  "auditOutputDocumentsDbInventory.server.ts"
 );
 
 describe("parseAuditOutputDocumentsDbArgs", () => {
@@ -140,11 +152,118 @@ describe("resolveDefaultOutputPaths", () => {
   });
 });
 
+describe("cobertura e percentuais", () => {
+  it("calcula percentual com 2 casas e formata n/a", () => {
+    assert.equal(computeCoveragePercent(0, 0), 0);
+    assert.equal(computeCoveragePercent(1, 4), 25);
+    assert.equal(computeCoveragePercent(2, 3), 66.67);
+    assert.equal(computeCoveragePercent(3, 3), 100);
+    assert.equal(formatCoveragePercent(66.67), "66.67%");
+    assert.equal(formatCoveragePercent(null), "n/a");
+  });
+
+  it("monta FieldCoverageStat para campo presente e ausente no schema", () => {
+    const present = buildFieldCoverageStat({
+      field: "idNfe",
+      model: "NomusStockDocument",
+      presentInSchema: true,
+      total: 100,
+      filled: 80,
+    });
+    assert.equal(present.nullCount, 20);
+    assert.equal(present.coveragePercent, 80);
+    assert.equal(present.presentInSchema, true);
+
+    const absent = buildFieldCoverageStat({
+      field: "productCode",
+      model: "NomusStockDocumentItem",
+      presentInSchema: false,
+      total: 0,
+      filled: 0,
+    });
+    assert.equal(absent.coveragePercent, null);
+    assert.equal(absent.presentInSchema, false);
+    assert.match(String(absent.notes), /não existe/i);
+  });
+
+  it("monta fieldCoverage e itemCoverage a partir de agregados", () => {
+    const fieldCoverage = buildDocumentFieldCoverage(10, {
+      externalId: 10,
+      idNfe: 7,
+      tipoDocumentoEstoque: 10,
+      dataDocumento: 9,
+      rawJson: 10,
+      syncedAt: 10,
+      createdAt: 10,
+      updatedAt: 10,
+    });
+    const idNfe = fieldCoverage.find((row) => row.field === "idNfe");
+    assert.ok(idNfe);
+    assert.equal(idNfe!.filled, 7);
+    assert.equal(idNfe!.nullCount, 3);
+    assert.equal(idNfe!.coveragePercent, 70);
+
+    const itemCoverage = buildItemFieldCoverage(20, {
+      stockDocumentId: 20,
+      externalItemId: 18,
+      externalProductId: 15,
+      quantity: 20,
+      unitValue: 20,
+      estimatedTotalValue: 20,
+      rawJson: 20,
+      createdAt: 20,
+      updatedAt: 20,
+    });
+    const product = itemCoverage.find((row) => row.field === "externalProductId");
+    assert.ok(product);
+    assert.equal(product!.nullCount, 5);
+    assert.equal(product!.coveragePercent, 75);
+
+    const code = itemCoverage.find((row) => row.field === "productCode");
+    const description = itemCoverage.find(
+      (row) => row.field === "productDescription"
+    );
+    assert.equal(code?.presentInSchema, false);
+    assert.equal(description?.presentInSchema, false);
+  });
+});
+
 describe("estrutura básica do resultado", () => {
-  it("monta scaffold com metadados e seções vazias", () => {
+  it("monta contrato com inventory, fieldCoverage e itemCoverage", () => {
     const startedAt = new Date("2026-07-16T12:00:00.000Z");
     const finishedAt = new Date("2026-07-16T12:00:01.250Z");
     const options = parseAuditOutputDocumentsDbArgs([]);
+    const inventory = buildEmptyStageInventory();
+    inventory.documents.total = 3;
+    inventory.documents.documentoSaida = 2;
+    inventory.documents.otherTypes = 1;
+    inventory.items.total = 5;
+    inventory.items.withoutProduct = 1;
+
+    const sections = buildEmptyAuditSections();
+    sections.inventory = inventory;
+    sections.fieldCoverage = buildDocumentFieldCoverage(3, {
+      externalId: 3,
+      idNfe: 2,
+      tipoDocumentoEstoque: 3,
+      dataDocumento: 3,
+      rawJson: 3,
+      syncedAt: 3,
+      createdAt: 3,
+      updatedAt: 3,
+    });
+    sections.itemCoverage = buildItemFieldCoverage(5, {
+      stockDocumentId: 5,
+      externalItemId: 5,
+      externalProductId: 4,
+      quantity: 5,
+      unitValue: 5,
+      estimatedTotalValue: 5,
+      rawJson: 5,
+      createdAt: 5,
+      updatedAt: 5,
+    });
+
     const result = buildAuditResult({
       startedAt,
       finishedAt,
@@ -153,33 +272,26 @@ describe("estrutura básica do resultado", () => {
         "postgresql://u:p@localhost:5432/induscost"
       ),
       status: "ok",
+      mode: "stage-inventory",
+      sections,
     });
 
-    assert.equal(result.meta.mode, "scaffold");
+    assert.equal(result.meta.mode, "stage-inventory");
     assert.equal(result.meta.readOnly, true);
-    assert.equal(result.meta.startedAt, "2026-07-16T12:00:00.000Z");
-    assert.equal(result.meta.finishedAt, "2026-07-16T12:00:01.250Z");
     assert.equal(result.meta.durationMs, 1250);
-    assert.equal(result.meta.database?.host, "localhost");
-    assert.equal(result.status, "ok");
-    assert.equal(result.error, null);
-
-    const sections = buildEmptyAuditSections();
-    assert.deepEqual(result.sections.counts, sections.counts);
-    assert.equal(result.sections.documentFocus, null);
-    assert.equal(result.sections.orderFocus, null);
-    assert.equal(result.sections.nfeFocus, null);
-    assert.deepEqual(result.sections.samples, {});
-    assert.deepEqual(result.sections.gaps, []);
-    assert.deepEqual(result.sections.risks, []);
-    assert.ok(result.sections.notes.length >= 1);
+    assert.ok(result.sections.inventory);
+    assert.equal(result.sections.inventory!.documents.total, 3);
+    assert.ok(result.sections.fieldCoverage.length > 0);
+    assert.ok(result.sections.itemCoverage.length > 0);
 
     const markdown = formatAuditOutputDocumentsDbMarkdown(result);
-    assert.match(markdown, /Status/);
-    assert.match(markdown, /scaffold/);
-    assert.match(markdown, /8451/);
-    assert.match(markdown, /PD02590/);
-    assert.match(markdown, /7208/);
+    assert.match(markdown, /Inventory/);
+    assert.match(markdown, /Field coverage/);
+    assert.match(markdown, /Item coverage/);
+    assert.match(markdown, /DocumentoSaida/);
+    assert.match(markdown, /idNfe/);
+    assert.match(markdown, /productCode/);
+    assert.match(markdown, /stage-inventory/);
   });
 });
 
@@ -235,17 +347,20 @@ describe("banco indisponível e desconexão", () => {
   });
 });
 
-describe("garantia read-only do script", () => {
-  it("não contém operações de escrita Prisma no runner", () => {
-    const source = readFileSync(SCRIPT_PATH, "utf8");
-    for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
-      assert.equal(
-        pattern.test(source),
-        false,
-        `padrão de escrita proibido encontrado: ${pattern}`
-      );
+describe("garantia read-only", () => {
+  it("não contém operações de escrita Prisma no runner nem no loader", () => {
+    for (const path of [SCRIPT_PATH, INVENTORY_SERVER_PATH]) {
+      const source = readFileSync(path, "utf8");
+      for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
+        assert.equal(
+          pattern.test(source),
+          false,
+          `padrão de escrita proibido em ${path}: ${pattern}`
+        );
+      }
     }
-    assert.match(source, /disconnectPrismaSafe/);
-    assert.match(source, /probeDatabaseConnectivity/);
+    const script = readFileSync(SCRIPT_PATH, "utf8");
+    assert.match(script, /disconnectPrismaSafe/);
+    assert.match(script, /loadStageInventoryAndCoverage/);
   });
 });

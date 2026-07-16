@@ -770,199 +770,24 @@ function SalesOrderList() {
   );
 }
 
-function SalesOrderDetailView({ id }: { id: string }) {
+function SalesOrderDetailRoute({ id }: { id: string }) {
   const navigate = useNavigate();
-  const [row, setRow] = useState<SalesOrderDetail | null>(undefined);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const data = await fetchJsonOk<SalesOrderDetail>(`/api/sales-orders/${id}`);
-        if (!cancelled) setRow(data);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setRow(null);
-        alert(e instanceof Error ? e.message : "Pedido não encontrado.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="mt-2 text-sm">Carregando pedido...</p>
-      </div>
-    );
-  }
-
-  if (!row) {
-    return (
-      <div className="rounded-xl border border-border bg-card p-6 text-center">
-        <p className="text-muted-foreground">Pedido não encontrado.</p>
-        <Link to="/sales-orders" className="mt-4 inline-block text-primary font-medium text-sm">
-          Voltar à lista
-        </Link>
-      </div>
-    );
-  }
-
-  const nomusLabel = row.sentToNomusAt
-    ? `Enviado em ${new Date(row.sentToNomusAt).toLocaleString("pt-BR")}`
-    : "Não enviado ao Nomus";
-
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => navigate("/sales-orders")}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Lista
-        </button>
-        <button
-          type="button"
-          onClick={() => window.open(`/sales-orders/${row.id}/print`, "_blank", "noopener,noreferrer")}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
-        >
-          <Printer className="h-4 w-4" />
-          Imprimir / PDF
-        </button>
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <Package className="h-5 w-5" />
-          <span className="font-mono font-bold text-foreground">{row.orderCode}</span>
-          <span className="text-xs">({STATUS_LABELS[row.status] ?? row.status})</span>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Cabeçalho comercial</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Cliente</p>
-            <p className="font-medium">{row.Customer?.companyName ?? "—"}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Vendedor</p>
-            <p>{resolveSalesOrderListSellerLabel(row)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Proposta de origem</p>
-            <p>
-              #{row.Proposal?.number ?? "—"}{" "}
-              {row.Proposal?.title ? <span className="text-muted-foreground">— {row.Proposal.title}</span> : null}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Emissão / entrega prevista</p>
-            <p>
-              {new Date(row.issueDate).toLocaleDateString("pt-BR")}
-              {row.expectedDeliveryDate ? (
-                <span className="text-muted-foreground"> → {new Date(row.expectedDeliveryDate).toLocaleDateString("pt-BR")}</span>
-              ) : null}
-            </p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Pagamento</p>
-            <p>{row.paymentTerms || "—"}</p>
-            <p className="text-xs text-muted-foreground">{row.paymentMethod || ""}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Frete / entrega</p>
-            <p>{row.freightCondition || "—"}</p>
-            <p className="text-xs text-muted-foreground">{row.deliveryLocation || ""}</p>
-          </div>
-          <div className="md:col-span-2">
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Observações</p>
-            <p className="whitespace-pre-wrap">{row.notes || "—"}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-amber-200/80 bg-amber-50/50 dark:bg-amber-950/20 p-4 text-sm">
-        <p className="font-semibold text-foreground">Envio ao Nomus</p>
-        <p className="text-muted-foreground mt-1">{nomusLabel}</p>
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3">Totais comerciais</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-[10px] text-muted-foreground">Bruto</p>
-            <p className="font-mono font-semibold">{money(row.totalGrossValue)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Desconto</p>
-            <p className="font-mono font-semibold">{money(row.totalDiscount)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Líquido</p>
-            <p className="font-mono font-semibold text-primary">{money(row.totalNetValue)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Impostos</p>
-            <p className="font-mono font-semibold">{money(row.totalTaxes)}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-muted-foreground">Frete</p>
-            <p className="font-mono font-semibold">{money(row.totalFreight)}</p>
-          </div>
-        </div>
-      </div>
-
-      <SalesOrderMarginAnalysisSection
-        summary={row.marginSummary}
-        items={row.items ?? []}
-        orderIssueDate={row.issueDate}
-      />
-
-      <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-border bg-accent/30">
-          <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">Itens comerciais</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm min-w-[720px]">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="p-3 font-semibold">SKU</th>
-                <th className="p-3 font-semibold">Produto</th>
-                <th className="p-3 font-semibold text-right">Qtd</th>
-                <th className="p-3 font-semibold">Un.</th>
-                <th className="p-3 font-semibold text-right">Preço unit.</th>
-                <th className="p-3 font-semibold text-right">Total líquido</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {(row.items ?? []).map((it) => (
-                <tr key={it.id}>
-                  <td className="p-3 font-mono text-xs">{it.skuSnapshot}</td>
-                  <td className="p-3 max-w-[220px]">{it.productNameSnapshot}</td>
-                  <td className="p-3 text-right font-mono">{formatNumber(it.quantity, 4)}</td>
-                  <td className="p-3 text-muted-foreground">{it.unit || "—"}</td>
-                  <td className="p-3 text-right font-mono">{money(it.negotiatedPrice)}</td>
-                  <td className="p-3 text-right font-mono font-medium">{money(it.totalNetValue)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+    <SalesOrderDetailDialog
+      open
+      salesOrderId={id}
+      onClose={() => navigate("/sales-orders")}
+      onOpenFullAudit={(salesOrderId) =>
+        navigate(
+          `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(salesOrderId)}`
+        )
+      }
+    />
   );
 }
 
 export function SalesOrdersModule() {
   const { id } = useParams();
-  if (id) return <SalesOrderDetailView id={id} />;
+  if (id) return <SalesOrderDetailRoute id={id} />;
   return <SalesOrderList />;
 }
