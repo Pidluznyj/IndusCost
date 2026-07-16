@@ -2,18 +2,18 @@
 
 | | |
 |---|---|
-| Gerado | 2026-07-16T14:14:24.806Z |
+| Gerado | 2026-07-16T14:33:44.052Z |
 | Modo | strict |
 | OK | sim |
 | Novos gaps | 0 |
-| Baselined | 70 |
+| Baselined | 73 |
 | Stale baseline | 0 |
 
 ## Fontes
-- Contrato: 82
-- Seed: 126
+- Contrato: 83
+- Seed: 127
 - Frontend: 83
-- Catálogo legado: 187
+- Catálogo legado: 190
 
 ## Novos gaps
 _Nenhum._
@@ -77,9 +77,9 @@ _Nenhum._
 - `ALIAS_DUPLICATE` / `contract:finance.view`
 - `ALIAS_DUPLICATE` / `contract:reports.view`
 - `ALIAS_DUPLICATE` / `contract:settings.nomus.sync`
-- `ALIAS_DUPLICATE` / `contract:inventory.view`
-- `ALIAS_DUPLICATE` / `contract:purchases.view`
-- … +10
+- `ALIAS_DUPLICATE` / `contract:taxes.view`
+- `ALIAS_DUPLICATE` / `contract:finance.tax_apuration.view`
+- … +13
 
 ## Limitações
 - Baseline temporário documenta gaps históricos; strict só falha em findings novos (code+subject).

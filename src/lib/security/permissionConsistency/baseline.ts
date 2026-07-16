@@ -82,6 +82,9 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:guide.view","reason":"Alias legado em múltiplos recursos do contrato: guide.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:users.manage","reason":"Alias legado em múltiplos recursos do contrato: users.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:employees.edit","reason":"Alias legado em múltiplos recursos do contrato: employees.edit"},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:taxes.view","reason":"Alias legado em multiplos recursos do contrato: taxes.view (finance.taxes + finance.tax_apuration / T05)."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.tax_apuration.view","reason":"Alias legado em multiplos recursos do contrato: finance.tax_apuration.view (finance.taxes + finance.tax_apuration / T05)."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.tax_apuration.manage","reason":"Alias legado em multiplos recursos do contrato: finance.tax_apuration.manage (finance.taxes + finance.tax_apuration / T05)."},
   {"code":"PERMISSIVE_FALLBACK","subject":"resourceNavigationAccess.UNMAPPED_PATH_ALLOW","reason":"resourceNavigationAccess: path sem mapeamento de módulo não bloqueia (unmapped pass-through)."},
 ];
 
