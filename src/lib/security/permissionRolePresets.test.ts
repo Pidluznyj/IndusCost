@@ -220,12 +220,17 @@ describe("userPermissionAdminService pure", () => {
     );
   });
 
-  it("normalizeOverrideInputs ignora chaves desconhecidas e vazias", () => {
-    const out = normalizeOverrideInputs([
-      { resourceKey: "nao.existe", canView: true },
+  it("normalizeOverrideInputs rejeita recurso desconhecido; omite tudo INHERIT", () => {
+    assert.throws(
+      () => normalizeOverrideInputs([{ resourceKey: "nao.existe", canView: true }]),
+      (err: unknown) =>
+        err instanceof UserPermissionAdminError && err.code === "UNKNOWN_RESOURCE"
+    );
+    const cleared = normalizeOverrideInputs([
       { resourceKey: "dashboard", canView: null, canExecute: null, canManage: null },
-      { resourceKey: "dashboard", canView: true },
     ]);
+    assert.equal(cleared.length, 0);
+    const out = normalizeOverrideInputs([{ resourceKey: "dashboard", canView: true }]);
     assert.equal(out.length, 1);
     assert.equal(out[0]!.resourceKey, "dashboard");
   });

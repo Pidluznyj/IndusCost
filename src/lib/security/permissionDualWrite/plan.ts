@@ -59,6 +59,7 @@ export function planStructuredToLegacy(args: {
   previousLegacyPermissions: readonly string[];
   dryRun?: boolean;
   preserveOutsideCatalog?: boolean;
+  oneToOneAliases?: boolean;
   index?: DualWriteAliasIndex;
 }): DualWritePlan {
   const index = args.index ?? getDualWriteAliasIndex();
@@ -68,6 +69,7 @@ export function planStructuredToLegacy(args: {
       effectiveByResourceKey: args.effectiveByResourceKey,
       previousLegacyPermissions: beforeLegacy,
       preserveOutsideCatalog: args.preserveOutsideCatalog,
+      oneToOneAliases: args.oneToOneAliases,
     },
     index
   );
@@ -102,7 +104,7 @@ export function planStructuredToLegacy(args: {
     compatible,
     unchanged: sameLegacy(beforeLegacy, afterLegacy),
     note:
-      "Materializa AppUser.permissions[] a partir das flags efetivas; preserva chaves de catálogo sem alias estrutural. Não escreve overrides.",
+      "Materializa AppUser.permissions[] a partir das flags efetivas (aliases 1:1 canônicos); preserva chaves de catálogo sem alias estrutural. Não escreve overrides. Não injeta baseline de role.",
   };
 }
 

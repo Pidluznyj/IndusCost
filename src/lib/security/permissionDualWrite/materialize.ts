@@ -1,5 +1,7 @@
 /**
- * Materialização estruturado → legado e projeção legado → estruturado.
+ * Materialização estruturado ↔ legado (P06).
+ * Estruturado = fonte; bag = materialização temporária.
+ * Aliases de emissão/projeção padrão = 1:1 canônicos (mega-keys permanecem no runtime).
  */
 
 import type { PermissionFlags } from "@/src/lib/security/permissionTypes.js";
@@ -21,30 +23,61 @@ function sortUnique(keys: Iterable<string>): string[] {
   return [...new Set(keys)].sort();
 }
 
+function emptyFlags(): PermissionFlags {
+  return { canView: false, canExecute: false, canManage: false };
+}
+
 /**
  * Grants estruturados → bag legado.
- * Preserva chaves do bag anterior sem alias estrutural (compatível).
+ * - Deny / flags falsas: não emite o alias 1:1 correspondente (remove da bag mapeada).
+ * - Preserva chaves de catálogo sem alias estrutural (relatório separado).
+ * - Fora do catálogo: drop default; opcional preserveOutsideCatalog.
  */
 export function materializeStructuredToLegacy(
   input: MaterializeToLegacyInput,
   index: DualWriteAliasIndex = getDualWriteAliasIndex()
 ): MaterializeToLegacyResult {
+  const oneToOne = input.oneToOneAliases !== false;
   const mapped = new Set<string>();
   const unmappedReport: DualWriteUnmappedEntry[] = [];
 
-  for (const [resourceKey, flags] of Object.entries(input.effectiveByResourceKey)) {
-    const bindings = index.byResource.get(resourceKey) ?? [];
-    if (bindings.length === 0) {
-      unmappedReport.push({
-        key: resourceKey,
-        reason: "alias_without_resource_flag",
-        detail: "resource sem legacyAliasKeys no índice",
-      });
-      continue;
+  if (oneToOne) {
+    for (const [legacyKey, binding] of index.canonicalByLegacy) {
+      const flags =
+        input.effectiveByResourceKey[binding.resourceKey] ?? emptyFlags();
+      if (flagAllowsAlias(flags, binding.axis)) {
+        mapped.add(legacyKey);
+      }
     }
-    for (const b of bindings) {
-      if (flagAllowsAlias(flags, b.axis)) {
-        mapped.add(b.legacyKey);
+  } else {
+    for (const [resourceKey, flags] of Object.entries(input.effectiveByResourceKey)) {
+      const bindings = index.byResource.get(resourceKey) ?? [];
+      if (bindings.length === 0) {
+        unmappedReport.push({
+          key: resourceKey,
+          reason: "alias_without_resource_flag",
+          detail: "resource sem legacyAliasKeys no índice",
+        });
+        continue;
+      }
+      for (const b of bindings) {
+        if (flagAllowsAlias(flags, b.axis)) {
+          mapped.add(b.legacyKey);
+        }
+      }
+    }
+  }
+
+  // Recursos do mapa sem binding 1:1 (somente relatório)
+  if (oneToOne) {
+    for (const resourceKey of Object.keys(input.effectiveByResourceKey)) {
+      if ((index.oneToOneByResource.get(resourceKey) ?? []).length > 0) continue;
+      if ((index.byResource.get(resourceKey) ?? []).length === 0) {
+        unmappedReport.push({
+          key: resourceKey,
+          reason: "alias_without_resource_flag",
+          detail: "resource sem legacyAliasKeys no índice",
+        });
       }
     }
   }
@@ -58,7 +91,7 @@ export function materializeStructuredToLegacy(
     const key = raw.trim();
     if (!key) continue;
     if (index.mappedLegacyKeys.has(key)) {
-      // mapeada: não “preservar” cegamente — o structured decide
+      // mapeada: structured decide (deny remove)
       continue;
     }
     if (!index.catalogKeys.has(key)) {
@@ -96,14 +129,17 @@ export function materializeStructuredToLegacy(
 
 /**
  * Legado → flags estruturadas (projeção). Não escreve DB.
- * Por padrão, ancestrais recebem canView=true (compatível com árvore UI).
- * Para round-trip legado sem ganhar aliases de pais, use elevateAncestors:false.
+ * Com 1:1 (default), cada chave legada mapeia só ao recurso canônico.
  */
 export function projectLegacyToStructured(
-  input: ProjectFromLegacyInput & { elevateAncestors?: boolean },
+  input: ProjectFromLegacyInput & {
+    elevateAncestors?: boolean;
+    oneToOneAliases?: boolean;
+  },
   index: DualWriteAliasIndex = getDualWriteAliasIndex()
 ): ProjectFromLegacyResult {
-  void input.role; // role não altera projeção pura de aliases (seed role fica fora)
+  void input.role;
+  const oneToOne = input.oneToOneAliases !== false;
   const projectedFlags: StructuredGrantMap = {};
   const mappedLegacyKeys: string[] = [];
   const unmappedLegacyKeys: string[] = [];
@@ -112,11 +148,7 @@ export function projectLegacyToStructured(
 
   const ensure = (resourceKey: string): PermissionFlags => {
     if (!projectedFlags[resourceKey]) {
-      projectedFlags[resourceKey] = {
-        canView: false,
-        canExecute: false,
-        canManage: false,
-      };
+      projectedFlags[resourceKey] = emptyFlags();
     }
     return projectedFlags[resourceKey];
   };
@@ -132,6 +164,26 @@ export function projectLegacyToStructured(
   for (const raw of input.legacyPermissions) {
     const key = raw.trim();
     if (!key) continue;
+
+    if (oneToOne) {
+      const binding = index.canonicalByLegacy.get(key);
+      if (!binding) {
+        unmappedLegacyKeys.push(key);
+        unmappedReport.push({
+          key,
+          reason: index.catalogKeys.has(key) ? "no_structural_alias" : "outside_catalog",
+        });
+        continue;
+      }
+      mappedLegacyKeys.push(key);
+      const flags = ensure(binding.resourceKey);
+      flags.canView = true;
+      if (binding.axis === "execute") flags.canExecute = true;
+      if (binding.axis === "manage") flags.canManage = true;
+      if (shouldElevate) elevateAncestors(binding.resourceKey);
+      continue;
+    }
+
     const bindings = index.byLegacy.get(key);
     if (!bindings || bindings.length === 0) {
       unmappedLegacyKeys.push(key);
@@ -168,7 +220,7 @@ export function projectLegacyToStructured(
   };
 }
 
-/** Round-trip structured → legacy → structured (somente chaves mapeadas). */
+/** Round-trip structured → legacy → structured (somente chaves mapeadas 1:1). */
 export function roundTripStructured(
   flags: StructuredGrantMap,
   index: DualWriteAliasIndex = getDualWriteAliasIndex()
@@ -193,41 +245,24 @@ export function roundTripStructured(
 
   const asymmetries: DualWriteUnmappedEntry[] = [];
   for (const [key, before] of Object.entries(flags)) {
-    const after = back.projectedFlags[key] ?? {
-      canView: false,
-      canExecute: false,
-      canManage: false,
-    };
-    const bindings = index.byResource.get(key) ?? [];
+    const after = back.projectedFlags[key] ?? emptyFlags();
+    const bindings = index.oneToOneByResource.get(key) ?? [];
     const hasManageAlias = bindings.some((b) => b.axis === "manage");
     const hasExecuteAlias = bindings.some((b) => b.axis === "execute");
     const hasViewAlias = bindings.some((b) => b.axis === "view");
 
-    // Só exige round-trip nos eixos que têm alias legado correspondente.
     if (before.canManage && hasManageAlias && !after.canManage) {
-      asymmetries.push({
-        key,
-        reason: "round_trip_asymmetry",
-        detail: "lost canManage",
-      });
+      asymmetries.push({ key, reason: "round_trip_asymmetry", detail: "lost canManage" });
     }
     if (
       before.canExecute &&
       hasExecuteAlias &&
       !(after.canExecute || after.canManage)
     ) {
-      asymmetries.push({
-        key,
-        reason: "round_trip_asymmetry",
-        detail: "lost canExecute",
-      });
+      asymmetries.push({ key, reason: "round_trip_asymmetry", detail: "lost canExecute" });
     }
     if (before.canView && hasViewAlias && !after.canView) {
-      asymmetries.push({
-        key,
-        reason: "round_trip_asymmetry",
-        detail: "lost canView",
-      });
+      asymmetries.push({ key, reason: "round_trip_asymmetry", detail: "lost canView" });
     }
   }
 
@@ -241,7 +276,6 @@ export function roundTripStructured(
 
 /**
  * Round-trip legacy → structured → legacy preservando unmapped.
- * Projeção sem elevar ancestrais para não ganhar aliases de pais.
  */
 export function roundTripLegacy(
   legacy: readonly string[],
@@ -276,7 +310,6 @@ export function roundTripLegacy(
   const gainedMapped = back.legacyPermissions.filter(
     (k) => index.mappedLegacyKeys.has(k) && !beforeSet.has(k)
   );
-  // Unmapped must stay
   const lostUnmapped = beforeSorted.filter(
     (k) => !index.mappedLegacyKeys.has(k) && index.catalogKeys.has(k) && !afterSet.has(k)
   );

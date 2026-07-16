@@ -15,7 +15,7 @@ import type {
   PermissionFlags,
   UserPermissionOverrideGrant,
 } from "@/src/lib/security/permissionTypes.js";
-import { materializeStructuredToLegacy } from "@/src/lib/security/permissionDualWrite/materialize.ts";
+import { materializeLegacyBagFromEffectiveFlags } from "@/src/lib/security/permissionDualWrite/service.ts";
 
 export type MatrixCellStatus = "allowed" | "blocked" | "partial";
 
@@ -219,18 +219,18 @@ export function diffUserAgainstRolePreset(args: {
 }
 
 /**
- * Materializa AppUser.permissions[] a partir das flags efetivas (dual-write).
- * Idempotente para o mesmo mapa de flags. Preserva chaves de catálogo sem alias
- * estrutural presentes em `previousLegacyPermissions` (modo compatível).
+ * Materializa AppUser.permissions[] a partir das flags efetivas (dual-write P06).
+ * Idempotente; aliases 1:1; deny remove chave mapeada; preserva unmapped de catálogo.
+ * Não injeta baseline de role — o mapa `effectiveByKey` é a fonte.
  */
 export function materializeLegacyPermissionsFromFlags(
   effectiveByKey: Record<string, PermissionFlags>,
   previousLegacyPermissions: readonly string[] = []
 ): string[] {
-  return materializeStructuredToLegacy({
-    effectiveByResourceKey: effectiveByKey,
-    previousLegacyPermissions,
-  }).legacyPermissions;
+  return materializeLegacyBagFromEffectiveFlags(
+    effectiveByKey,
+    previousLegacyPermissions
+  );
 }
 
 export type ApplyPresetPlan = {

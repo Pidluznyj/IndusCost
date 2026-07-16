@@ -27,6 +27,11 @@ export type MaterializeToLegacyInput = {
    * (evita ganho por colisão / ancestral). Unmapped do previous ainda são preservados.
    */
   compatibleMappedClamp?: readonly string[];
+  /**
+   * Default true (P06): só o recurso canônico 1:1 emite cada chave legada.
+   * false = comportamento legado N:1 (qualquer resource com alias pode emitir).
+   */
+  oneToOneAliases?: boolean;
 };
 
 export type MaterializeToLegacyResult = {

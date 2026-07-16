@@ -172,13 +172,14 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
     assert.equal(byKey.comercial?.canView, false, "deny explícito vs baseline VIEWER comercial=V");
   });
 
-  it("DIAG: dual-write — mega-keys mapeadas caem; unmapped preserva; baseline VIEWER materializa comercial", () => {
+  it("DIAG: dual-write — mega-keys mapeadas caem; unmapped preserva; baseline VIEWER sem crm.view 1:1", () => {
     const effective = buildEffectiveFlagsMap("VIEWER", [
       {
         resourceKey: "financeiro.contas_pagar",
         canView: true,
         canExecute: null,
         canManage: null,
+        userId: "diag",
       },
     ]);
     const bag = materializeLegacyPermissionsFromFlags(effective, [
@@ -187,16 +188,15 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
       "pricing.view",
       "finance.accountsPayable.view",
     ]);
-    // costs.view / products.view têm alias no seed (machines/suprimentos/performance) →
-    // com flags NONE do VIEWER, o dual-write NÃO as re-emite (não há preserve cego).
+    // costs.view / products.view têm alias no seed → com flags NONE do VIEWER, dual-write NÃO as re-emite.
     assert.equal(bag.includes("costs.view"), false);
     assert.equal(bag.includes("products.view"), false);
-    // pricing.view: no catálogo sem alias estrutural no seed → preservado.
     assert.ok(bag.includes("pricing.view"), "preserve no_structural_alias");
     assert.ok(bag.includes("finance.accountsPayable.view"));
-    // Role VIEWER baseline (comercial / pedidos) ainda entra na bag mesmo com “só Contas a Pagar”.
+    // P06 1:1: crm.view canônico em comercial.crm (NONE no VIEWER) — não sai do pai comercial.
+    assert.equal(bag.includes("crm.view"), false, "1:1 não emite crm.view do âncora comercial");
+    // Role VIEWER ainda materializa pedidos (canônico) e dashboard.
     assert.ok(bag.includes("sales_orders.view"), "baseline VIEWER pedidos");
-    assert.ok(bag.includes("crm.view"), "baseline VIEWER comercial");
     assert.ok(bag.includes("dashboard.view"), "baseline VIEWER dashboard");
   });
 

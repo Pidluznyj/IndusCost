@@ -31,6 +31,7 @@ import {
   validateAndNormalizeOverrideInputs,
 } from "@/src/lib/security/permissionOverrideValidate.js";
 import type { OverridePersistMode } from "@/src/lib/security/permissionOverrideState.js";
+import { materializeUserLegacyBag } from "@/src/lib/security/permissionDualWrite/service.js";
 import {
   buildOverrideSaveAuditPlans,
   buildPresetApplyAuditPlans,
@@ -502,9 +503,13 @@ export async function saveUserPermissionOverrides(
   }
 
   const effective = buildEffectiveFlagsMap(user.role, normalized);
-  const legacyPermissions = filterKnownPermissions(
-    materializeLegacyPermissionsFromFlags(effective, user.permissions)
-  );
+  const dual = materializeUserLegacyBag({
+    effectiveByResourceKey: effective,
+    previousLegacyPermissions: user.permissions,
+    dryRun: false,
+    filterKnown: true,
+  });
+  const legacyPermissions = dual.legacyPermissions;
 
   assertSelfUsersManageLock({
     isEditingSelf: args.isEditingSelf,

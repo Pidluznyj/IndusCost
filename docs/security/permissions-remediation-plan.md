@@ -154,12 +154,14 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P06 — Correção dual-write
 
 - **Objetivo:** materialize respeita deny; não reintroduz comercial no modo restrição; aliases só 1:1.
-- **Escopo:** `permissionDualWrite/*`, `permissionRolePresets.ts`.
+- **Escopo:** `permissionDualWrite/*`, `permissionRolePresets.ts`, create-user, apply perfil.
 - **Deps:** P05.
 - **Risco:** médio.
-- **Aceite:** fixture Leticia bag sem bleed keys.
-- **Rollback:** flag.
+- **Aceite:** fixture Leticia bag sem bleed keys; sem baseline VIEWER silencioso no create.
+- **Rollback:** reaplicar preset/perfil; sem migration.
 - **Migration:** não.
+- **Status:** implementado (2026-07-16).
+- **Docs:** `permissions-dual-write.md`
 
 ### P07 — Remover fallback ROLE_MATRIX VIEWER
 

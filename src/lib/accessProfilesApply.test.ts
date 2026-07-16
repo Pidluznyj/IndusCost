@@ -23,6 +23,7 @@ function makePrismaMock(args: {
 }) {
   const users = args.users.map((u) => ({ ...u }));
   let shouldFail = false;
+  const overridesDeleted: string[] = [];
 
   const prisma = {
     accessProfile: {
@@ -55,12 +56,20 @@ function makePrismaMock(args: {
         return u;
       },
     },
+    userPermissionOverride: {
+      async deleteMany({ where }: { where: { userId: string } }) {
+        overridesDeleted.push(where.userId);
+        return { count: 1 };
+      },
+    },
     async $transaction(fn: (tx: typeof prisma) => Promise<unknown>) {
       const snapshot = users.map((u) => ({ ...u, permissions: [...u.permissions] }));
+      const ovSnap = [...overridesDeleted];
       try {
         return await fn(prisma);
       } catch (e) {
         users.splice(0, users.length, ...snapshot);
+        overridesDeleted.splice(0, overridesDeleted.length, ...ovSnap);
         throw e;
       }
     },
@@ -69,6 +78,9 @@ function makePrismaMock(args: {
     },
     __users() {
       return users;
+    },
+    __overridesDeleted() {
+      return overridesDeleted;
     },
   };
 
@@ -126,6 +138,7 @@ describe("accessProfiles apply service", () => {
     assert.equal(result.applied, 1);
     assert.ok(prisma.__users()[0].permissions.includes("crm.view"));
     assert.equal(prisma.__users()[0].role, "SELLER");
+    assert.ok(prisma.__overridesDeleted().includes("u1"), "P06 limpa overrides no apply");
   });
 
   it("rollback em erro na transaction", async () => {

@@ -320,10 +320,6 @@ import {
 import { registerFleetPublicVehicleChecklistRoutes } from "./src/lib/fleetPublicVehicleChecklistRoutes.js";
 import { registerAccessProfilesRoutes } from "./src/lib/accessProfilesRoutes.js";
 import {
-  buildEffectiveFlagsMap,
-  materializeLegacyPermissionsFromFlags,
-} from "./src/lib/security/permissionRolePresets.js";
-import {
   listAdminUsersWithPermissionMeta,
   registerUserPermissionAdminRoutes,
 } from "./src/lib/security/userPermissionAdminRoutes.js";
@@ -2123,11 +2119,8 @@ async function startServer() {
         if (req.body?.permissions === undefined) permissions = applied.permissions;
       }
 
-      if (permissions.length === 0 && role !== "SUPER_ADMIN") {
-        permissions = filterKnownPermissions(
-          materializeLegacyPermissionsFromFlags(buildEffectiveFlagsMap(role, []))
-        );
-      }
+      // P06: não materializar baseline VIEWER/role silenciosamente quando bag vazia.
+      // Perfil ou permissions explícitas definem a bag; preset aplica-se via admin explícito.
 
       const passwordHash = await hashPassword(password);
       const user = await prisma.appUser.create({

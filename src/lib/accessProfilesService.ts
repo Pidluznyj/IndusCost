@@ -517,13 +517,15 @@ export async function applyAccessProfileToUsers(
 
   await prisma.$transaction(async (tx) => {
     for (const u of preview.users) {
-      if (!u.willChange) {
-        results.push({ userId: u.id, status: "skipped_unchanged" });
+      if (!u.matchesProfileBefore && !overwriteCustomized) {
+        results.push({ userId: u.id, status: "skipped_customized" });
         skipped += 1;
         continue;
       }
-      if (!u.matchesProfileBefore && !overwriteCustomized) {
-        results.push({ userId: u.id, status: "skipped_customized" });
+      // P06: troca de perfil substitui bag e limpa overrides (não acumula snapshot estruturado).
+      await tx.userPermissionOverride.deleteMany({ where: { userId: u.id } });
+      if (!u.willChange) {
+        results.push({ userId: u.id, status: "skipped_unchanged" });
         skipped += 1;
         continue;
       }

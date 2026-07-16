@@ -1,65 +1,76 @@
-# Dual-write e materialização legada (Prompt 06)
+# Dual-write e materialização legada (P06)
 
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Data** | 2026-07-15 |
-| **Status** | Serviço central — acesso efetivo continua `AppUser.permissions[]` |
+| **Data** | 2026-07-16 |
+| **Status** | Serviço central P06 — bag ainda é autoridade de runtime |
 | **Código** | `src/lib/security/permissionDualWrite/` |
 | **CLI** | `scripts/permissionDualWriteReport.ts` (somente dry-run / relatório) |
 
 ---
 
-## Objetivo
+## Modelo
 
-Manter a árvore estruturada (`PermissionResource` + flags Ver/Executar/Gerenciar) e o catálogo legado (`AppUser.permissions[]`) sincronizados **sem loops de gravação** e **sem alterar o acesso efetivo** no modo compatível.
+| Camada | Papel |
+|--------|--------|
+| **Estruturado** (`resourceKey` + eixos / overrides) | Fonte futura de verdade |
+| **Bag legada** (`AppUser.permissions[]`) | Materialização temporária para login/guards/sidebar |
+| **Mega-keys no runtime** | **Ainda presentes** (FE/API); dual-write **não** as expande N:1 |
 
-## Algoritmo (dois sentidos controlados)
+## Algoritmo
 
-### 1) Grants estruturados → permissões legadas materializadas
+### Estruturado → legado (`materializeUserLegacyBag` / `materializeStructuredToLegacy`)
 
-- Entrada: mapa efetivo `resourceKey → { canView, canExecute, canManage }` + bag legado atual.
-- Para cada recurso do índice (seed PT / aliases 1:1), emite aliases conforme o eixo:
-  - manage → `*.manage` / `users.manage` / …
-  - execute → `*.execute|export|sync|create|apply`
-  - view → demais aliases
-- **Preserva** chaves do bag anterior que estão no `PERMISSION_CATALOG` mas **não** têm alias estrutural.
-- Não apaga permissões desconhecidas de catálogo sem mapeamento.
-- Ordenação estável (`Array.sort` lexicográfico ASCII).
-- Escrita: apenas `AppUser.permissions[]` (caminho admin já existente). **Não** regenera overrides a partir do legado no mesmo passo.
+1. Para cada chave legada do índice, usa **apenas o binding canônico 1:1** (recurso mais profundo).
+2. Emite a chave se o eixo do canônico estiver permitido (`flagAllowsAlias`).
+3. **Deny** (flag falsa no canônico) ⇒ chave mapeada **não** é reemitida (sai da bag).
+4. Preserva chaves do bag anterior que estão no `PERMISSION_CATALOG` **sem** alias estrutural → `preservedUnmapped` + `unmappedReport`.
+5. Chaves fora do catálogo → drop (relatório `outside_catalog`); opcional `preserveOutsideCatalog`.
+6. Ordenação lexicográfica estável; idempotente.
+7. **Não** injeta baseline VIEWER/role — o caller passa o mapa efetivo desejado.
 
-### 2) Permissões legadas → representação estruturada inicial
+### Legado → estruturado (projeção / backfill)
 
-- Projeção pura: aliases → flags (+ opção de elevar ancestrais para UI).
-- Relatório de não mapeadas (`no_structural_alias` / `outside_catalog`).
-- **Apply de backfill** (futuro): grava só `UserPermissionOverride`; **nunca** regrava `permissions[]` no mesmo passo (anti-loop).
-- Exige `confirmBackfillApply=true` além de `dryRun=false`.
-- **Não executar backfill em produção neste prompt.**
+- Projeta cada chave só no recurso canônico 1:1.
+- Apply de backfill grava **somente** overrides; **nunca** regrava `permissions[]` no mesmo passo.
+- Exige `confirmBackfillApply=true`. **Não executar backfill em produção neste prompt.**
 
-## Idempotência e dry-run
+## Pontos de gravação
 
-- Mesmo input → mesmo bag legado ordenado.
-- `applyDualWrite({ dryRun: true })` devolve snapshot before/after sem escrever.
-- Plano inclui `gainedLegacy` / `lostLegacy` / `preservedUnmapped` / `unmappedReport`.
+| Ponto | Comportamento P06 |
+|-------|-------------------|
+| `saveUserPermissionOverrides` | `materializeUserLegacyBag` (effective = role∪overrides) + tx |
+| `applyRolePreset` / restore | Rematerializa preset; limpa overrides; preserve unmapped |
+| `POST /api/admin/users` | **Sem** baseline silencioso se bag vazia |
+| `applyAccessProfileToUsers` | Substitui bag pelo snapshot do perfil; **limpa overrides** (não acumula) |
+| `AccessProfile` save | Só snapshot do perfil (anti-cascade) |
+| `applyDualWrite` | Dry-run / apply com before/after; porta pluggable |
 
-## Pontos de gravação analisados
+## Dry-run e comparação
 
-| Ponto | Comportamento |
-|-------|----------------|
-| `saveUserPermissionOverrides` | Dual-write legado via materializador central **preservando** unmapped do bag atual |
-| `applyRolePreset` / `planApplyRolePreset` | Idem, com preserve do bag anterior |
-| `AccessProfile` assign | Continua copy-on-assign de chaves legadas (sem estrutura) |
-| `AppUser.permissions[]` direto | Runtime efetivo inalterado |
-| Backfill legado→estrutura | Opt-in; desligado por padrão |
-
-## Comandos
+```ts
+materializeUserLegacyBag({ effectiveByResourceKey, previousLegacyPermissions, dryRun: true })
+// → plan.beforeLegacy / afterLegacy / gainedLegacy / lostLegacy / unknownKeysReport
+```
 
 ```bash
 npm run permissions:dual-write:report
 npm run test:permission-dual-write
 ```
 
-Relatório: `docs/generated/permission-dual-write-report.md`
+## Limitações temporárias
+
+- Runtime ainda lê a bag (não o resolvedor P03).
+- Seed ainda lista aliases N:1 (colisões reportadas); materialização ignora não-canônicos.
+- Criar usuário sem perfil e sem `permissions` → bag vazia (sem menu até assign/preset) — alinhado a P07.
+- Modo restrição absoluta (Leticia) depende de mapa efetivo com DENY nos baselines (P05 `mode: absolute`).
+
+## Rollback
+
+1. Reaplicar preset / clear overrides.
+2. Reaplicar perfil (`applyAccessProfileToUsers`).
+3. Sem migration Prisma neste item.
 
 ## Produção
 
