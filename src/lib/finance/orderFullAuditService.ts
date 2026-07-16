@@ -19,6 +19,12 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { buildSalesOrderFiscalTaxesPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxes.server.js";
 import { canViewSalesOrderFiscalTaxesFromPermissions } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
+import {
+  extractOfficialItemNfeExternalId,
+  mapRelatedNfeOriginToAuditLinkOrigin,
+  resolveSalesOrderRelatedNfes,
+  type SalesOrderRelatedNfeResolveResult,
+} from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -1383,6 +1389,16 @@ export async function loadOrderFullAudit(
   }
 
   let facts: OrderToCashAuditFactRecord[] = [];
+  /** Evidências brutas O2C para o resolver TRIB-03 (campos não espelhados em normalizeFact). */
+  let relatedNfeO2cEvidence: Array<{
+    nfeExternalId: number | null;
+    nfeNumber: string | null;
+    nfeKey: string | null;
+    stockDocumentExternalId: number | null;
+    stockDocumentIdNfe: number | null;
+    salesOrderItemId: string | null;
+    nfeItemMatchedOrderItem: boolean | null;
+  }> = [];
   try {
     const rawFacts = await prisma.orderToCashAuditFact.findMany({
       where: resolvedRunId
@@ -1390,6 +1406,15 @@ export async function loadOrderFullAudit(
         : { salesOrderId },
       orderBy: [{ orderItemSequence: "asc" }, { id: "asc" }],
     });
+    relatedNfeO2cEvidence = rawFacts.map((r) => ({
+      nfeExternalId: r.nfeExternalId ?? null,
+      nfeNumber: r.nfeNumber ?? null,
+      nfeKey: r.nfeKey ?? null,
+      stockDocumentExternalId: r.stockDocumentExternalId ?? null,
+      stockDocumentIdNfe: r.stockDocumentIdNfe ?? null,
+      salesOrderItemId: r.salesOrderItemId ?? null,
+      nfeItemMatchedOrderItem: r.nfeItemMatchedOrderItem ?? null,
+    }));
     facts = rawFacts.map((r) => normalizeFact(r as unknown as Record<string, unknown>));
     facts = (await enrichFactsWithOrderItemStatus(
       facts as unknown as Parameters<typeof enrichFactsWithOrderItemStatus>[0]
@@ -1514,37 +1539,57 @@ export async function loadOrderFullAudit(
   const nfeMap = new Map<number, OrderFullAuditNfe>();
   const stockMap = new Map<number, OrderFullAuditStockDocument>();
 
-  for (const link of order.nfeLinks) {
-    if (link.nfeExternalId == null) continue;
-    if (!nfeMap.has(link.nfeExternalId)) {
-      nfeMap.set(link.nfeExternalId, {
-        nfeExternalId: link.nfeExternalId,
-        numero: link.nfeNumber ?? null,
-        serie: link.nfeSerie ?? null,
-        chave: link.nfeKey ?? null,
-        dataProcessamento: toIso(link.dataProcessamento),
-        dataEmissao: null,
-        status: link.nfeStatus ?? null,
-        ...emptyNfeStatusFields(),
-        tipoOperacao: link.tipoOperacao ?? null,
-        valorLiquido: null,
-        valorTotal: null,
-        highlightedTaxesValue: null,
-        allocatedValueToOrder: 0,
-        allocatedValueToOrderRaw: 0,
-        insideOrderItemsValue: 0,
-        outsideOrderItemsValue: 0,
-        headerGreaterThanOrder: false,
-        hasReceivable: false,
-        hasExtraItems: false,
-        customerName: null,
-        companyName: null,
-        linkedStockDocumentExternalIds: [],
-        linkedReceivableExternalIds: [],
-        linkOrigin: "SALES_ORDER_NFE_LINK" as const,
-        alerts: [] as string[],
-      });
-    }
+  // TRIB-03 — resolver único (links + DS + O2C + item refs); sem Nomus HTTP / sem writes.
+  const relatedNfes = await resolveRelatedNfesForOrderAudit({
+    salesOrderId,
+    links: order.nfeLinks,
+    items: order.items,
+    o2cFacts: relatedNfeO2cEvidence,
+  });
+
+  for (const related of relatedNfes.nfes) {
+    if (related.nfeExternalId <= 0) continue;
+    if (nfeMap.has(related.nfeExternalId)) continue;
+    const link = order.nfeLinks.find((l) => l.nfeExternalId === related.nfeExternalId);
+    nfeMap.set(related.nfeExternalId, {
+      nfeExternalId: related.nfeExternalId,
+      numero: related.nfeNumber ?? link?.nfeNumber ?? null,
+      serie: link?.nfeSerie ?? null,
+      chave: related.nfeKey ?? link?.nfeKey ?? null,
+      dataProcessamento: toIso(link?.dataProcessamento),
+      dataEmissao: null,
+      status: link?.nfeStatus ?? null,
+      ...emptyNfeStatusFields(),
+      tipoOperacao: link?.tipoOperacao ?? null,
+      valorLiquido: null,
+      valorTotal: null,
+      highlightedTaxesValue: null,
+      allocatedValueToOrder: 0,
+      allocatedValueToOrderRaw: 0,
+      insideOrderItemsValue: 0,
+      outsideOrderItemsValue: 0,
+      headerGreaterThanOrder: false,
+      hasReceivable: false,
+      hasExtraItems: false,
+      customerName: null,
+      companyName: null,
+      linkedStockDocumentExternalIds: [
+        ...new Set(
+          related.sources
+            .map((s) => s.stockDocumentExternalId)
+            .filter((id): id is number => id != null && id > 0)
+        ),
+      ],
+      linkedReceivableExternalIds: [],
+      linkOrigin: mapRelatedNfeOriginToAuditLinkOrigin(related.primaryOrigin),
+      alerts: related.hasConflict
+        ? [
+            related.conflict?.kind === "FOREIGN_ORDER_LINK"
+              ? "NFE_LINK_CONFLICT_FOREIGN_ORDER"
+              : "NFE_LINK_CONFLICT_IDENTITY",
+          ]
+        : [],
+    });
   }
 
   for (const fact of facts) {
@@ -1591,19 +1636,73 @@ export async function loadOrderFullAudit(
   }
 
   // Aggregate NFe header per fact.
-  for (const fact of facts) {
+  const relatedByNumber = new Map<string, number>();
+  for (const related of relatedNfes.nfes) {
+    const num = related.nfeNumber?.trim();
+    if (num && !relatedByNumber.has(num)) {
+      relatedByNumber.set(num, related.nfeExternalId);
+    }
+  }
+
+  for (let factIndex = 0; factIndex < facts.length; factIndex++) {
+    const fact = facts[factIndex]!;
+    const o2cEvidence = relatedNfeO2cEvidence[factIndex];
     const nfeNumber = fact.nfeNumber?.trim();
-    if (!nfeNumber && fact.nfeHeaderValue == null) continue;
-    // Try to locate by number in existing nfeMap
-    let nfeEntry: OrderFullAuditNfe | undefined;
-    if (nfeNumber) {
-      for (const v of nfeMap.values()) {
-        if (v.numero?.trim() === nfeNumber) {
-          nfeEntry = v;
-          break;
+    const evidenceNfeId =
+      o2cEvidence?.nfeExternalId != null && o2cEvidence.nfeExternalId > 0
+        ? o2cEvidence.nfeExternalId
+        : o2cEvidence?.stockDocumentIdNfe != null && o2cEvidence.stockDocumentIdNfe > 0
+          ? o2cEvidence.stockDocumentIdNfe
+          : null;
+    if (!nfeNumber && fact.nfeHeaderValue == null && evidenceNfeId == null) continue;
+
+    let nfeEntry: OrderFullAuditNfe | undefined =
+      evidenceNfeId != null ? nfeMap.get(evidenceNfeId) : undefined;
+
+    if (!nfeEntry && nfeNumber) {
+      const knownId = relatedByNumber.get(nfeNumber);
+      if (knownId != null) nfeEntry = nfeMap.get(knownId);
+      if (!nfeEntry) {
+        for (const v of nfeMap.values()) {
+          if (v.numero?.trim() === nfeNumber) {
+            nfeEntry = v;
+            break;
+          }
         }
       }
     }
+
+    if (!nfeEntry && evidenceNfeId != null) {
+      nfeEntry = {
+        nfeExternalId: evidenceNfeId,
+        numero: nfeNumber ?? null,
+        serie: null,
+        chave: o2cEvidence?.nfeKey ?? null,
+        dataProcessamento: null,
+        dataEmissao: toIso(fact.nfeIssueDate),
+        status: null,
+        ...emptyNfeStatusFields(),
+        tipoOperacao: null,
+        valorLiquido: fact.nfeHeaderValue ?? null,
+        valorTotal: fact.nfeHeaderValue ?? null,
+        highlightedTaxesValue: null,
+        allocatedValueToOrder: 0,
+        allocatedValueToOrderRaw: 0,
+        insideOrderItemsValue: 0,
+        outsideOrderItemsValue: 0,
+        headerGreaterThanOrder: false,
+        hasReceivable: false,
+        hasExtraItems: false,
+        customerName: fact.customerName ?? null,
+        companyName: null,
+        linkedStockDocumentExternalIds: [],
+        linkedReceivableExternalIds: [],
+        linkOrigin: "ITEM_EVIDENCE" as const,
+        alerts: [] as string[],
+      };
+      nfeMap.set(evidenceNfeId, nfeEntry);
+    }
+
     if (!nfeEntry && nfeNumber) {
       // Cria placeholder — sem externalId conhecido, usa hash negativo.
       const surrogate = -(nfeMap.size + 1);
@@ -4969,6 +5068,117 @@ function emptyCommissionBlock(): OrderFullAuditCommissionBlock {
 /* ---------------------------------------------------------------------- */
 /*  Helpers                                                                */
 /* ---------------------------------------------------------------------- */
+
+async function resolveRelatedNfesForOrderAudit(input: {
+  salesOrderId: string;
+  links: Array<{
+    id: string;
+    nfeExternalId: number;
+    nfeNumber: string | null;
+    nfeKey: string | null;
+    nfeStatus: number | null;
+    presentInLastPayload: boolean;
+  }>;
+  items: Array<{ id: string; nomusRawItem: unknown }>;
+  o2cFacts: Array<{
+    nfeExternalId: number | null;
+    nfeNumber: string | null;
+    nfeKey: string | null;
+    stockDocumentExternalId: number | null;
+    stockDocumentIdNfe: number | null;
+    salesOrderItemId: string | null;
+    nfeItemMatchedOrderItem: boolean | null;
+  }>;
+}): Promise<SalesOrderRelatedNfeResolveResult> {
+  const stockExternalIds = [
+    ...new Set(
+      input.o2cFacts
+        .map((f) => f.stockDocumentExternalId)
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ];
+
+  const stockDocuments =
+    stockExternalIds.length > 0
+      ? await prisma.nomusStockDocument.findMany({
+          where: { externalId: { in: stockExternalIds } },
+          select: { externalId: true, idNfe: true },
+        })
+      : [];
+
+  const itemRefs = [];
+  for (const item of input.items) {
+    const nfeExternalId = extractOfficialItemNfeExternalId(item.nomusRawItem);
+    if (nfeExternalId == null) continue;
+    itemRefs.push({
+      salesOrderItemId: item.id,
+      nfeExternalId,
+    });
+  }
+
+  const candidateIds = new Set<number>();
+  for (const link of input.links) {
+    if (link.nfeExternalId > 0) candidateIds.add(link.nfeExternalId);
+  }
+  for (const fact of input.o2cFacts) {
+    if (fact.nfeExternalId != null && fact.nfeExternalId > 0) {
+      candidateIds.add(fact.nfeExternalId);
+    }
+    if (fact.stockDocumentIdNfe != null && fact.stockDocumentIdNfe > 0) {
+      candidateIds.add(fact.stockDocumentIdNfe);
+    }
+  }
+  for (const doc of stockDocuments) {
+    if (doc.idNfe != null && doc.idNfe > 0) candidateIds.add(doc.idNfe);
+  }
+  for (const ref of itemRefs) candidateIds.add(ref.nfeExternalId);
+
+  const ids = [...candidateIds];
+  const [foreignLinks, nfeRows] = await Promise.all([
+    ids.length > 0
+      ? prisma.salesOrderNfeLink.findMany({
+          where: {
+            nfeExternalId: { in: ids },
+            salesOrderId: { not: input.salesOrderId },
+          },
+          select: {
+            salesOrderId: true,
+            orderCode: true,
+            nfeExternalId: true,
+          },
+        })
+      : Promise.resolve([]),
+    ids.length > 0
+      ? prisma.nomusNfe.findMany({
+          where: { externalId: { in: ids } },
+          select: { externalId: true, status: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  return resolveSalesOrderRelatedNfes({
+    salesOrderId: input.salesOrderId,
+    links: input.links.map((link) => ({
+      nfeExternalId: link.nfeExternalId,
+      nfeNumber: link.nfeNumber,
+      nfeKey: link.nfeKey,
+      nfeStatus: link.nfeStatus,
+      presentInLastPayload: link.presentInLastPayload,
+      linkId: link.id,
+    })),
+    o2cFacts: input.o2cFacts,
+    stockDocuments: stockDocuments.map((doc) => ({
+      stockDocumentExternalId: doc.externalId,
+      idNfe: doc.idNfe,
+    })),
+    itemRefs,
+    foreignLinks,
+    nfeStatusHints: nfeRows.map((row) => ({
+      nfeExternalId: row.externalId,
+      status: row.status,
+    })),
+  });
+}
 
 function normalizeFact(raw: Record<string, unknown>): OrderToCashAuditFactRecord {
   return {
