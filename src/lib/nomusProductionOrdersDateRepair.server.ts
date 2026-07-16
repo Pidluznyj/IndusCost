@@ -1,18 +1,34 @@
 /**
- * Reparo server-side: atualiza somente colunas de data a partir de rawJson.
- * Preserva rawJson, payloadHash, firstSeenAt, lastSeenAt, lastChangedAt, syncedAt e vínculos.
+ * Reparo server-side OP-14.2: lotes + checkpoint + lock compartilhado.
+ * Atualiza somente openedAt/releasedAt/plannedAt/deliveryAt/nomusUpdatedAt.
  */
 
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
+  countFieldsToFill,
   emptyProductionOrderDateRepairCounters,
+  extractRepairableDates,
+  hasRepairableDatesNull,
   mapProductionOrderDatesFromRawJson,
+  parseProductionOrderDateRepairCheckpoint,
+  parseProductionOrderDateRepairCli,
   productionOrderDatesNeedRepair,
+  serializeProductionOrderDateRepairCheckpoint,
   summarizeProductionOrderDateRepairDiff,
-  type ProductionOrderDateFields,
+  type ProductionOrderDateRepairCheckpoint,
   type ProductionOrderDateRepairCli,
   type ProductionOrderDateRepairCounters,
+  type ProductionOrderRepairableDateFields,
+  type ProductionOrderRepairableDateKey,
+  PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS,
 } from "@/src/lib/nomusProductionOrdersDateRepair.js";
+import {
+  buildProductionOrdersSyncAuditRecord,
+  type ProductionOrdersSyncAuditRecord,
+} from "@/src/lib/nomusProductionOrdersSyncAudit.js";
+import { withProductionOrdersSyncGuard } from "@/src/lib/nomusProductionOrdersSyncGuard.server.js";
+import { NOMUS_PRODUCTION_ORDERS_LOG_PREFIX } from "@/src/lib/nomusProductionOrdersSyncConstants.js";
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
@@ -28,35 +44,47 @@ const DATE_SELECT = {
   deliveryAt: true,
   closedAt: true,
   nomusUpdatedAt: true,
+  payloadHash: true,
 } as const;
 
-function currentDatesFromRow(row: {
+function currentRepairableFromRow(row: {
   openedAt: Date | null;
   releasedAt: Date | null;
   plannedAt: Date | null;
   deliveryAt: Date | null;
-  closedAt: Date | null;
   nomusUpdatedAt: Date | null;
-}): ProductionOrderDateFields {
+}): ProductionOrderRepairableDateFields {
   return {
     openedAt: row.openedAt,
     releasedAt: row.releasedAt,
     plannedAt: row.plannedAt,
     deliveryAt: row.deliveryAt,
-    closedAt: row.closedAt,
     nomusUpdatedAt: row.nomusUpdatedAt,
   };
 }
 
-function hasAllDatesNull(dates: ProductionOrderDateFields): boolean {
-  return (
-    dates.openedAt == null &&
-    dates.releasedAt == null &&
-    dates.plannedAt == null &&
-    dates.deliveryAt == null &&
-    dates.closedAt == null &&
-    dates.nomusUpdatedAt == null
-  );
+function addFieldCounts(
+  target: ProductionOrderDateRepairCounters["fieldsToFill"],
+  delta: Record<ProductionOrderRepairableDateKey, number>
+): void {
+  for (const key of PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS) {
+    target[key] += delta[key];
+  }
+}
+
+function readCheckpointFile(path: string | null): ProductionOrderDateRepairCheckpoint | null {
+  if (!path) return null;
+  try {
+    if (!existsSync(path)) return null;
+    return parseProductionOrderDateRepairCheckpoint(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeCheckpointFile(path: string | null, checkpoint: ProductionOrderDateRepairCheckpoint): void {
+  if (!path) return;
+  writeFileSync(path, serializeProductionOrderDateRepairCheckpoint(checkpoint), "utf8");
 }
 
 export type ProductionOrderDateRepairResult = {
@@ -66,90 +94,237 @@ export type ProductionOrderDateRepairResult = {
     externalId: number;
     name: string | null;
     status: string | null;
+    before: ProductionOrderRepairableDateFields;
+    after: ProductionOrderRepairableDateFields;
     diff: ReturnType<typeof summarizeProductionOrderDateRepairDiff>;
+    closedAtPreserved: Date | null;
   }>;
+  durationMs: number;
+  exitCode: number;
+  lockBlocked?: boolean;
+  checkpointFile: string | null;
+  lastProcessedExternalId: number | null;
+  audit?: ProductionOrdersSyncAuditRecord;
 };
 
-export async function runProductionOrderDateRepairFromRawJson(
-  db: DbClient,
-  cli: ProductionOrderDateRepairCli
-): Promise<ProductionOrderDateRepairResult> {
-  const counters = emptyProductionOrderDateRepairCounters();
-  const samples: ProductionOrderDateRepairResult["samples"] = [];
-
+function buildWhere(
+  cli: ProductionOrderDateRepairCli,
+  afterExternalId: number | null
+): Prisma.NomusProductionOrderWhereInput {
   const where: Prisma.NomusProductionOrderWhereInput = {};
   if (cli.externalId != null) {
     where.externalId = cli.externalId;
-  } else if (cli.onlyNullDates) {
-    where.AND = [
-      { openedAt: null },
-      { releasedAt: null },
-      { plannedAt: null },
-      { deliveryAt: null },
-      { closedAt: null },
-      { nomusUpdatedAt: null },
-    ];
+    return where;
+  }
+  const and: Prisma.NomusProductionOrderWhereInput[] = [];
+  if (afterExternalId != null) {
+    and.push({ externalId: { gt: afterExternalId } });
+  }
+  if (cli.onlyNullDates) {
+    and.push({
+      AND: [
+        { openedAt: null },
+        { releasedAt: null },
+        { plannedAt: null },
+        { deliveryAt: null },
+        { nomusUpdatedAt: null },
+      ],
+    });
+  }
+  if (and.length > 0) where.AND = and;
+  return where;
+}
+
+export async function runProductionOrderDateRepairFromRawJson(
+  db: DbClient,
+  cli: ProductionOrderDateRepairCli,
+  options?: {
+    readCheckpoint?: () => ProductionOrderDateRepairCheckpoint | null;
+    writeCheckpoint?: (checkpoint: ProductionOrderDateRepairCheckpoint) => void;
+    now?: () => Date;
+  }
+): Promise<ProductionOrderDateRepairResult> {
+  const started = Date.now();
+  const now = options?.now ?? (() => new Date());
+  const counters = emptyProductionOrderDateRepairCounters();
+  const samples: ProductionOrderDateRepairResult["samples"] = [];
+
+  const checkpoint =
+    options?.readCheckpoint?.() ?? readCheckpointFile(cli.checkpointFile);
+  let afterExternalId =
+    cli.afterExternalId ??
+    (cli.externalId == null ? checkpoint?.lastProcessedExternalId ?? null : null);
+
+  let remaining = cli.limit;
+  let lastProcessedExternalId: number | null = afterExternalId;
+
+  while (remaining == null || remaining > 0) {
+    const take =
+      remaining == null ? cli.batchSize : Math.min(cli.batchSize, remaining);
+    const rows = await db.nomusProductionOrder.findMany({
+      where: buildWhere(cli, afterExternalId),
+      select: DATE_SELECT,
+      orderBy: { externalId: "asc" },
+      take,
+    });
+    if (rows.length === 0) break;
+
+    for (const row of rows) {
+      counters.scanned += 1;
+      lastProcessedExternalId = row.externalId;
+      afterExternalId = row.externalId;
+
+      const mapped = mapProductionOrderDatesFromRawJson(row.rawJson);
+      if (!mapped.ok) {
+        counters.skippedInvalid += 1;
+        continue;
+      }
+
+      const current = currentRepairableFromRow(row);
+      const next = extractRepairableDates(mapped.dates);
+
+      if (mapped.fieldErrors.length > 0) {
+        counters.invalidDates += mapped.fieldErrors.length;
+      }
+
+      if (cli.onlyNullDates && !hasRepairableDatesNull(current) && cli.externalId == null) {
+        counters.unchanged += 1;
+        continue;
+      }
+
+      if (!productionOrderDatesNeedRepair(current, next)) {
+        counters.unchanged += 1;
+        continue;
+      }
+
+      const fill = countFieldsToFill(current, next);
+      addFieldCounts(counters.fieldsToFill, fill);
+      const diff = summarizeProductionOrderDateRepairDiff(current, next);
+      counters.wouldUpdate += 1;
+
+      if (samples.length < 20) {
+        samples.push({
+          externalId: row.externalId,
+          name: row.name,
+          status: row.status,
+          before: current,
+          after: next,
+          diff,
+          closedAtPreserved: row.closedAt,
+        });
+      }
+
+      if (cli.mode !== "apply") continue;
+
+      try {
+        await db.nomusProductionOrder.update({
+          where: { id: row.id },
+          data: {
+            openedAt: next.openedAt,
+            releasedAt: next.releasedAt,
+            plannedAt: next.plannedAt,
+            deliveryAt: next.deliveryAt,
+            nomusUpdatedAt: next.nomusUpdatedAt,
+            // NÃO alterar: closedAt, rawJson, payloadHash, firstSeenAt, lastSeenAt, lastChangedAt, syncedAt
+          },
+          select: { id: true },
+        });
+        counters.updated += 1;
+        addFieldCounts(counters.fieldsFilled, fill);
+      } catch {
+        counters.errors += 1;
+      }
+    }
+
+    if (cli.mode === "apply" && lastProcessedExternalId != null) {
+      const nextCheckpoint: ProductionOrderDateRepairCheckpoint = {
+        version: 1,
+        lastProcessedExternalId,
+        updatedAt: now().toISOString(),
+        mode: cli.mode,
+      };
+      if (options?.writeCheckpoint) options.writeCheckpoint(nextCheckpoint);
+      else writeCheckpointFile(cli.checkpointFile, nextCheckpoint);
+    }
+
+    if (remaining != null) remaining -= rows.length;
+    if (rows.length < take) break;
+    if (cli.externalId != null) break;
   }
 
-  const rows = await db.nomusProductionOrder.findMany({
-    where,
-    select: DATE_SELECT,
-    orderBy: { externalId: "asc" },
-    skip: cli.offset,
-    take: cli.limit ?? undefined,
-  });
+  const durationMs = Date.now() - started;
+  const exitCode = counters.errors > 0 ? 1 : 0;
 
-  for (const row of rows) {
-    counters.scanned += 1;
-    const mapped = mapProductionOrderDatesFromRawJson(row.rawJson);
-    if (!mapped.ok) {
-      counters.skippedInvalid += 1;
-      continue;
-    }
+  return {
+    mode: cli.mode,
+    counters,
+    samples,
+    durationMs,
+    exitCode,
+    checkpointFile: cli.checkpointFile,
+    lastProcessedExternalId,
+  };
+}
 
-    const current = currentDatesFromRow(row);
-    if (cli.onlyNullDates && !hasAllDatesNull(current) && cli.externalId == null) {
-      counters.unchanged += 1;
-      continue;
-    }
+/**
+ * Entrypoint oficial com lock compartilhado (evita concorrência com backfill/incremental).
+ */
+export async function runNomusProductionOrdersDateRepair(args: {
+  prisma: PrismaClient;
+  argv?: string[];
+  cli?: ProductionOrderDateRepairCli;
+  env?: NodeJS.ProcessEnv;
+  skipLock?: boolean;
+  respectGlobalLock?: boolean;
+  logger?: (message: string) => void;
+}): Promise<ProductionOrderDateRepairResult> {
+  const env = args.env ?? process.env;
+  const cli = args.cli ?? parseProductionOrderDateRepairCli(args.argv ?? process.argv.slice(2), env);
+  const log = args.logger ?? ((m: string) => console.warn(m));
 
-    if (!productionOrderDatesNeedRepair(current, mapped.dates)) {
-      counters.unchanged += 1;
-      continue;
-    }
+  const guarded = await withProductionOrdersSyncGuard(
+    {
+      type: "date-repair",
+      mode: cli.mode,
+      env,
+      prisma: args.prisma,
+      skipLock: args.skipLock ?? false,
+      respectGlobalLock: args.respectGlobalLock,
+      logger: log,
+    },
+    async () => runProductionOrderDateRepairFromRawJson(args.prisma, cli),
+    (result, ctx) =>
+      buildProductionOrdersSyncAuditRecord({
+        type: "date-repair",
+        mode: cli.mode,
+        startedAt: ctx.startedAt,
+        finishedAt: ctx.finishedAt,
+        status: result.exitCode === 0 ? "SUCCESS" : "FAILED",
+        exitCode: result.exitCode,
+        lockFile: ctx.lockFile,
+        received: result.counters.scanned,
+        updated: result.counters.updated,
+        unchanged: result.counters.unchanged,
+        invalid: result.counters.skippedInvalid,
+        errors: result.counters.errors,
+        finalMessage: `${NOMUS_PRODUCTION_ORDERS_LOG_PREFIX} date-repair scanned=${result.counters.scanned} updated=${result.counters.updated} wouldUpdate=${result.counters.wouldUpdate} unchanged=${result.counters.unchanged} invalid=${result.counters.skippedInvalid} errors=${result.counters.errors}`,
+      })
+  );
 
-    const diff = summarizeProductionOrderDateRepairDiff(current, mapped.dates);
-    counters.wouldUpdate += 1;
-    if (samples.length < 20) {
-      samples.push({
-        externalId: row.externalId,
-        name: row.name,
-        status: row.status,
-        diff,
-      });
-    }
-
-    if (cli.mode !== "apply") continue;
-
-    try {
-      await db.nomusProductionOrder.update({
-        where: { id: row.id },
-        data: {
-          openedAt: mapped.dates.openedAt,
-          releasedAt: mapped.dates.releasedAt,
-          plannedAt: mapped.dates.plannedAt,
-          deliveryAt: mapped.dates.deliveryAt,
-          closedAt: mapped.dates.closedAt,
-          nomusUpdatedAt: mapped.dates.nomusUpdatedAt,
-          // Não tocar: rawJson, payloadHash, firstSeenAt, lastSeenAt, lastChangedAt, syncedAt
-        },
-        select: { id: true },
-      });
-      counters.updated += 1;
-    } catch {
-      counters.errors += 1;
-    }
+  if (guarded.blocked) {
+    return {
+      mode: cli.mode,
+      counters: emptyProductionOrderDateRepairCounters(),
+      samples: [],
+      durationMs: 0,
+      exitCode: 0,
+      lockBlocked: true,
+      checkpointFile: cli.checkpointFile,
+      lastProcessedExternalId: null,
+      audit: guarded.audit,
+    };
   }
 
-  return { mode: cli.mode, counters, samples };
+  const result = guarded.result!;
+  return { ...result, audit: guarded.audit, exitCode: guarded.exitCode };
 }

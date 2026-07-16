@@ -1,34 +1,66 @@
 #!/usr/bin/env npx tsx
 /**
- * OP-14.1 — Repara datas de NomusProductionOrder a partir do rawJson local.
+ * OP-14.2 — Repara datas de NomusProductionOrder a partir do rawJson local.
  *
- * Não consulta Nomus. Não altera rawJson, payloadHash nem timestamps de sync.
+ * Não consulta Nomus. Não altera closedAt, rawJson, payloadHash nem timestamps de sync.
+ * Usa lock compartilhado com backfill/incremental.
  *
  * Preview:
- *   npx tsx scripts/nomusProductionOrdersRepairDates.ts preview --only-null-dates --limit=50
+ *   npm run repair:nomus:production-orders:dates:preview -- --only-null-dates --limit=50
+ *   npm run sync:nomus:production-orders:repair-dates:preview -- --only-null-dates
  *
- * Apply:
- *   npx tsx scripts/nomusProductionOrdersRepairDates.ts apply --only-null-dates
- *   npx tsx scripts/nomusProductionOrdersRepairDates.ts apply --externalId=30347
+ * Apply (com retomada via checkpoint):
+ *   npm run repair:nomus:production-orders:dates:apply -- --only-null-dates --checkpoint-file=/tmp/op-dates.ckpt.json
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 import { parseProductionOrderDateRepairCli } from "../src/lib/nomusProductionOrdersDateRepair.ts";
-import { runProductionOrderDateRepairFromRawJson } from "../src/lib/nomusProductionOrdersDateRepair.server.ts";
+import { runNomusProductionOrdersDateRepair } from "../src/lib/nomusProductionOrdersDateRepair.server.ts";
 
 async function main() {
   const cli = parseProductionOrderDateRepairCli(process.argv.slice(2));
-  const result = await runProductionOrderDateRepairFromRawJson(prisma, cli);
+  const result = await runNomusProductionOrdersDateRepair({
+    prisma,
+    cli,
+  });
+
   console.log(
     JSON.stringify(
       {
-        ok: true,
-        ...result,
+        ok: result.exitCode === 0,
+        mode: result.mode,
+        lockBlocked: result.lockBlocked ?? false,
+        durationMs: result.durationMs,
+        exitCode: result.exitCode,
+        counters: {
+          scanned: result.counters.scanned,
+          wouldUpdate: result.counters.wouldUpdate,
+          updated: result.counters.updated,
+          unchanged: result.counters.unchanged,
+          skippedInvalid: result.counters.skippedInvalid,
+          invalidDates: result.counters.invalidDates,
+          errors: result.counters.errors,
+          openedAtToFill: result.counters.fieldsToFill.openedAt,
+          releasedAtToFill: result.counters.fieldsToFill.releasedAt,
+          plannedAtToFill: result.counters.fieldsToFill.plannedAt,
+          deliveryAtToFill: result.counters.fieldsToFill.deliveryAt,
+          nomusUpdatedAtToFill: result.counters.fieldsToFill.nomusUpdatedAt,
+          openedAtFilled: result.counters.fieldsFilled.openedAt,
+          releasedAtFilled: result.counters.fieldsFilled.releasedAt,
+          plannedAtFilled: result.counters.fieldsFilled.plannedAt,
+          deliveryAtFilled: result.counters.fieldsFilled.deliveryAt,
+          nomusUpdatedAtFilled: result.counters.fieldsFilled.nomusUpdatedAt,
+        },
+        checkpointFile: result.checkpointFile,
+        lastProcessedExternalId: result.lastProcessedExternalId,
+        samples: result.samples,
+        note: "closedAt nunca é alterado por este reparo.",
       },
       null,
       2
     )
   );
+  process.exitCode = result.exitCode;
 }
 
 main()

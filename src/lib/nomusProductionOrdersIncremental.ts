@@ -1,17 +1,26 @@
 /**
- * Lógica pura do sync incremental de Ordens de Produção Nomus (OP-09).
+ * Lógica pura do sync incremental de Ordens de Produção Nomus (OP-14.2).
  *
- * Avaliação de seletores (docs + fixture OP 05800 + api-contract):
- * - dataAlteracao     → ACEITO (presente no payload real; mapper → nomusUpdatedAt)
- * - dataAbertura      → ACEITO como alternativo (menos ideal para edições)
- * - dataHoraEdicao    → REJEITADO como seletor RSQL (existe no payload → nomusUpdatedAt; não homologado p/ janela)
- * - dataHoraCriacao   → REJEITADO como seletor RSQL (existe no payload → openedAt; não homologado p/ janela)
- * - id / nome         → REJEITADOS para janela incremental (só consulta pontual)
+ * Seletores RSQL (payload ≠ query — homologar via probe):
+ * - dataHoraEdicao   → PREFERENCIAL (última edição real no payload → nomusUpdatedAt)
+ * - dataHoraCriacao  → ACEITO para janela de criação/abertura (→ openedAt), se homologado
+ * - dataAlteracao    → LEGADO (não preferencial; sem evidência no payload real)
+ * - dataAbertura     → LEGADO (não preferencial)
+ * - id / nome        → REJEITADOS para janela incremental (só consulta pontual)
  *
- * Fallback de seletor rejeitado: janela paginada LIMITADA + auditada (nunca full scan ilimitado).
+ * Homologação: env NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION
+ *   accepted | rejected | unverified (default)
+ * Se rejected → fallback limitado auditado (nunca sucesso silencioso de date_filter).
+ * Se a API rejeitar em runtime → fallback + estado só avança com strategy limited_page_window.
  */
 
 import { isoDateToNomusBrDate } from "@/src/lib/nomusProductionOrdersSyncLogic.js";
+import {
+  NOMUS_PRODUCTION_ORDERS_INCREMENTAL_PREFERRED_SELECTOR,
+  parseSelectorHomologation,
+  resolveSelectorHomologationFromEnv,
+  type ProductionOrdersRsqlHomologation,
+} from "@/src/lib/nomusProductionOrdersSelectorProbe.js";
 
 export const NOMUS_PRODUCTION_ORDERS_INCREMENTAL_DEFAULT_OVERLAP_HOURS = 72;
 export const NOMUS_PRODUCTION_ORDERS_INCREMENTAL_DEFAULT_PAGE_SIZE = 50;
@@ -20,23 +29,30 @@ export const NOMUS_PRODUCTION_ORDERS_INCREMENTAL_FALLBACK_MAX_PAGES = 20;
 export const NOMUS_PRODUCTION_ORDERS_INCREMENTAL_STATE_ENV =
   "NOMUS_PRODUCTION_ORDERS_INCREMENTAL_STATE_FILE";
 
-export const NOMUS_PRODUCTION_ORDERS_INCREMENTAL_PREFERRED_SELECTOR = "dataAlteracao" as const;
+export { NOMUS_PRODUCTION_ORDERS_INCREMENTAL_PREFERRED_SELECTOR };
 
 export type ProductionOrdersIncrementalSelector =
-  | "dataAlteracao"
-  | "dataAbertura"
   | "dataHoraEdicao"
   | "dataHoraCriacao"
+  | "dataAlteracao"
+  | "dataAbertura"
   | "id"
   | "nome";
+
+export type ProductionOrdersIncrementalDateFilterSelector =
+  | "dataHoraEdicao"
+  | "dataHoraCriacao"
+  | "dataAlteracao"
+  | "dataAbertura";
 
 export type ProductionOrdersIncrementalMode = "preview" | "apply";
 
 export type ProductionOrdersIncrementalSelectorDecision =
   | {
       ok: true;
-      selector: "dataAlteracao" | "dataAbertura";
-      source: "requested" | "default";
+      selector: ProductionOrdersIncrementalDateFilterSelector;
+      source: "requested" | "default" | "legacy_requested";
+      homologation: ProductionOrdersRsqlHomologation;
     }
   | {
       ok: false;
@@ -44,6 +60,7 @@ export type ProductionOrdersIncrementalSelectorDecision =
       reason: string;
       fallback: "limited_page_window";
       fallbackMaxPages: number;
+      homologation: ProductionOrdersRsqlHomologation;
     };
 
 export type ProductionOrdersIncrementalState = {
@@ -78,6 +95,8 @@ export type ProductionOrdersIncrementalPlan = {
   filterRsql: string | null;
   maxPages: number;
   pageSize: number;
+  /** Teto do fallback limited_page_window (env/CLI). */
+  fallbackMaxPages: number;
   hadPriorState: boolean;
   priorLastSuccessAt: string | null;
   bootstrap: boolean;
@@ -111,44 +130,86 @@ export type ProductionOrdersIncrementalSummary = {
   /** OP-11: auditoria/métricas finais. */
   audit?: import("@/src/lib/nomusProductionOrdersSyncAudit.js").ProductionOrdersSyncAuditRecord;
   exitCode?: number;
+  /** OP-14.2: seletor RSQL rejeitado em runtime pela API. */
+  selectorRejectedAtRuntime?: boolean;
+  selectorRejectionMessage?: string | null;
 };
 
-const ALLOWED_DATE_SELECTORS = new Set(["dataAlteracao", "dataAbertura"]);
+const OFFICIAL_DATE_SELECTORS = new Set<ProductionOrdersIncrementalDateFilterSelector>([
+  "dataHoraEdicao",
+  "dataHoraCriacao",
+]);
+const LEGACY_DATE_SELECTORS = new Set<ProductionOrdersIncrementalDateFilterSelector>([
+  "dataAlteracao",
+  "dataAbertura",
+]);
 
 export function evaluateProductionOrdersIncrementalSelector(
   requested: ProductionOrdersIncrementalSelector | null,
-  fallbackMaxPages: number = NOMUS_PRODUCTION_ORDERS_INCREMENTAL_FALLBACK_MAX_PAGES
-): ProductionOrdersIncrementalSelectorDecision {
-  if (requested == null) {
-    return {
-      ok: true,
-      selector: NOMUS_PRODUCTION_ORDERS_INCREMENTAL_PREFERRED_SELECTOR,
-      source: "default",
-    };
+  fallbackMaxPages: number = NOMUS_PRODUCTION_ORDERS_INCREMENTAL_FALLBACK_MAX_PAGES,
+  options?: {
+    env?: NodeJS.ProcessEnv;
+    homologation?: ProductionOrdersRsqlHomologation;
   }
-  if (ALLOWED_DATE_SELECTORS.has(requested)) {
+): ProductionOrdersIncrementalSelectorDecision {
+  const env = options?.env ?? process.env;
+  const selector =
+    requested ?? NOMUS_PRODUCTION_ORDERS_INCREMENTAL_PREFERRED_SELECTOR;
+  const homologation =
+    options?.homologation ??
+    resolveSelectorHomologationFromEnv(env, selector);
+
+  if (selector === "id" || selector === "nome") {
     return {
-      ok: true,
-      selector: requested as "dataAlteracao" | "dataAbertura",
-      source: "requested",
+      ok: false,
+      requested: selector,
+      reason:
+        selector === "id"
+          ? "id é seletor pontual, não janela temporal de incremental."
+          : "nome é seletor pontual, não janela temporal de incremental.",
+      fallback: "limited_page_window",
+      fallbackMaxPages: Math.max(1, fallbackMaxPages),
+      homologation,
     };
   }
 
-  const reasons: Record<string, string> = {
-    dataHoraEdicao:
-      "dataHoraEdicao existe no payload /rest/ordens (→ nomusUpdatedAt), mas não está homologado como seletor RSQL de janela incremental.",
-    dataHoraCriacao:
-      "dataHoraCriacao existe no payload /rest/ordens (→ openedAt), mas não está homologado como seletor RSQL de janela incremental.",
-    id: "id é seletor pontual, não janela temporal de incremental.",
-    nome: "nome é seletor pontual, não janela temporal de incremental.",
-  };
+  if (homologation === "rejected" && OFFICIAL_DATE_SELECTORS.has(selector)) {
+    return {
+      ok: false,
+      requested: selector,
+      reason: `Seletor ${selector} homologado como REJECTED no probe/env — não usar como date_filter.`,
+      fallback: "limited_page_window",
+      fallbackMaxPages: Math.max(1, fallbackMaxPages),
+      homologation,
+    };
+  }
+
+  if (OFFICIAL_DATE_SELECTORS.has(selector)) {
+    return {
+      ok: true,
+      selector,
+      source: requested == null ? "default" : "requested",
+      homologation,
+    };
+  }
+
+  if (LEGACY_DATE_SELECTORS.has(selector)) {
+    // Ainda montável se pedido explicitamente, mas não é preferencial (sem evidência no payload).
+    return {
+      ok: true,
+      selector,
+      source: "legacy_requested",
+      homologation: parseSelectorHomologation("unverified"),
+    };
+  }
 
   return {
     ok: false,
-    requested,
-    reason: reasons[requested] ?? `Seletor não suportado para incremental: ${requested}`,
+    requested: selector,
+    reason: `Seletor não suportado para incremental: ${selector}`,
     fallback: "limited_page_window",
     fallbackMaxPages: Math.max(1, fallbackMaxPages),
+    homologation,
   };
 }
 
@@ -294,7 +355,7 @@ export function formatProductionOrdersIncrementalCutoffBrDate(cutoff: Date): str
 }
 
 export function buildProductionOrdersIncrementalRsql(
-  selector: "dataAlteracao" | "dataAbertura",
+  selector: ProductionOrdersIncrementalDateFilterSelector,
   cutoff: Date
 ): string {
   return `${selector}>=${formatProductionOrdersIncrementalCutoffBrDate(cutoff)}`;
@@ -304,11 +365,13 @@ export function planProductionOrdersIncremental(args: {
   options: ProductionOrdersIncrementalCliOptions;
   priorState: ProductionOrdersIncrementalState | null;
   now?: Date;
+  env?: NodeJS.ProcessEnv;
 }): ProductionOrdersIncrementalPlan {
   const now = args.now ?? new Date();
   const decision = evaluateProductionOrdersIncrementalSelector(
     args.options.selector,
-    args.options.fallbackMaxPages
+    args.options.fallbackMaxPages,
+    { env: args.env }
   );
 
   const lastSuccessAt = args.priorState?.lastSuccessAt
@@ -324,7 +387,7 @@ export function planProductionOrdersIncremental(args: {
   if (!decision.ok) {
     if (args.options.strictSelector) {
       throw new Error(
-        `Seletor incremental rejeitado (${decision.requested}): ${decision.reason} Use --selector=dataAlteracao ou remova --strict-selector para fallback limitado auditado.`
+        `Seletor incremental rejeitado (${decision.requested}): ${decision.reason} Remova --strict-selector para fallback limitado auditado ou rode o probe de seletor.`
       );
     }
     return {
@@ -335,6 +398,7 @@ export function planProductionOrdersIncremental(args: {
       filterRsql: null,
       maxPages: Math.min(args.options.maxPages, decision.fallbackMaxPages),
       pageSize: args.options.pageSize,
+      fallbackMaxPages: decision.fallbackMaxPages,
       hadPriorState: args.priorState != null,
       priorLastSuccessAt: args.priorState?.lastSuccessAt ?? null,
       bootstrap,
@@ -350,9 +414,41 @@ export function planProductionOrdersIncremental(args: {
     filterRsql,
     maxPages: args.options.maxPages,
     pageSize: args.options.pageSize,
+    fallbackMaxPages: args.options.fallbackMaxPages,
     hadPriorState: args.priorState != null,
     priorLastSuccessAt: args.priorState?.lastSuccessAt ?? null,
     bootstrap,
+  };
+}
+
+/** Replaneja para fallback limitado após rejeição RSQL em runtime. */
+export function rebuildIncrementalPlanAfterSelectorRejection(args: {
+  plan: ProductionOrdersIncrementalPlan;
+  message: string;
+  fallbackMaxPages?: number;
+}): ProductionOrdersIncrementalPlan {
+  const requested =
+    args.plan.selectorDecision.ok
+      ? args.plan.selectorDecision.selector
+      : args.plan.selectorDecision.requested;
+  const fallbackMaxPages =
+    args.fallbackMaxPages ??
+    args.plan.fallbackMaxPages ??
+    NOMUS_PRODUCTION_ORDERS_INCREMENTAL_FALLBACK_MAX_PAGES;
+  return {
+    ...args.plan,
+    strategy: "limited_page_window",
+    filterRsql: null,
+    maxPages: Math.min(args.plan.maxPages, fallbackMaxPages),
+    fallbackMaxPages,
+    selectorDecision: {
+      ok: false,
+      requested,
+      reason: `Rejeição RSQL em runtime: ${args.message}`,
+      fallback: "limited_page_window",
+      fallbackMaxPages,
+      homologation: "rejected",
+    },
   };
 }
 

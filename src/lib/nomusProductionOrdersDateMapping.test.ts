@@ -217,12 +217,14 @@ describe("OP-14.1 — reparo a partir do rawJson", () => {
       "preview",
       "--only-null-dates",
       "--limit=100",
-      "--offset=10",
+      "--after-externalId=10",
+      "--batch-size=50",
     ]);
     assert.equal(preview.mode, "preview");
     assert.equal(preview.onlyNullDates, true);
     assert.equal(preview.limit, 100);
-    assert.equal(preview.offset, 10);
+    assert.equal(preview.afterExternalId, 10);
+    assert.equal(preview.batchSize, 50);
 
     const apply = parseProductionOrderDateRepairCli(["apply", "--externalId=30347"]);
     assert.equal(apply.mode, "apply");

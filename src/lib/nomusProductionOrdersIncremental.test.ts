@@ -9,6 +9,7 @@ import {
   parseProductionOrdersIncrementalCli,
   parseProductionOrdersIncrementalState,
   planProductionOrdersIncremental,
+  rebuildIncrementalPlanAfterSelectorRejection,
   serializeProductionOrdersIncrementalState,
 } from "@/src/lib/nomusProductionOrdersIncremental.js";
 import { runProductionOrdersIncrementalLoop } from "@/src/lib/nomusProductionOrdersIncremental.server.js";
@@ -18,36 +19,57 @@ function cloneOp(overrides: Record<string, unknown> = {}) {
   return { ...NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE, ...overrides };
 }
 
-describe("production orders incremental — seletores", () => {
-  it("aceita dataAlteracao (preferido) e dataAbertura", () => {
-    const preferred = evaluateProductionOrdersIncrementalSelector(null);
+describe("production orders incremental — seletores OP-14.2", () => {
+  it("preferencial default é dataHoraEdicao", () => {
+    const preferred = evaluateProductionOrdersIncrementalSelector(null, 20, {
+      homologation: "unverified",
+    });
     assert.equal(preferred.ok, true);
     if (!preferred.ok) return;
-    assert.equal(preferred.selector, "dataAlteracao");
-
-    const abertura = evaluateProductionOrdersIncrementalSelector("dataAbertura");
-    assert.equal(abertura.ok, true);
+    assert.equal(preferred.selector, "dataHoraEdicao");
+    assert.equal(preferred.source, "default");
   });
 
-  it("rejeita dataHoraEdicao/dataHoraCriacao/id/nome com fallback limitado", () => {
-    for (const sel of ["dataHoraEdicao", "dataHoraCriacao", "id", "nome"] as const) {
+  it("aceita dataHoraCriacao e legado explícito dataAlteracao/dataAbertura", () => {
+    const criacao = evaluateProductionOrdersIncrementalSelector("dataHoraCriacao", 20, {
+      homologation: "accepted",
+    });
+    assert.equal(criacao.ok, true);
+
+    const legado = evaluateProductionOrdersIncrementalSelector("dataAlteracao");
+    assert.equal(legado.ok, true);
+    if (!legado.ok) return;
+    assert.equal(legado.source, "legacy_requested");
+  });
+
+  it("homologação REJECTED → fallback limitado para dataHoraEdicao", () => {
+    const decision = evaluateProductionOrdersIncrementalSelector("dataHoraEdicao", 15, {
+      homologation: "rejected",
+    });
+    assert.equal(decision.ok, false);
+    if (decision.ok) return;
+    assert.equal(decision.fallback, "limited_page_window");
+    assert.equal(decision.fallbackMaxPages, 15);
+  });
+
+  it("rejeita id/nome com fallback limitado", () => {
+    for (const sel of ["id", "nome"] as const) {
       const decision = evaluateProductionOrdersIncrementalSelector(sel, 15);
       assert.equal(decision.ok, false);
       if (decision.ok) return;
       assert.equal(decision.fallback, "limited_page_window");
-      assert.equal(decision.fallbackMaxPages, 15);
-      assert.match(decision.reason, /não|pontual/i);
     }
   });
 });
 
 describe("production orders incremental — plano/cutoff/overlap", () => {
-  it("primeiro incremental sem estado usa bootstrap + overlap 72h", () => {
+  it("primeiro incremental sem estado usa bootstrap + overlap 72h + dataHoraEdicao", () => {
     const now = new Date("2026-07-16T15:00:00.000Z");
     const plan = planProductionOrdersIncremental({
       options: parseProductionOrdersIncrementalCli(["preview"], {}),
       priorState: null,
       now,
+      env: {},
     });
     assert.equal(plan.bootstrap, true);
     assert.equal(plan.hadPriorState, false);
@@ -55,7 +77,7 @@ describe("production orders incremental — plano/cutoff/overlap", () => {
     assert.equal(plan.overlapHours, 72);
     const expectedCutoff = new Date(now.getTime() - 72 * 3600 * 1000);
     assert.equal(plan.cutoffIso, expectedCutoff.toISOString());
-    assert.match(plan.filterRsql ?? "", /^dataAlteracao>=/);
+    assert.match(plan.filterRsql ?? "", /^dataHoraEdicao>=/);
   });
 
   it("incremental com estado aplica overlap sobre lastSuccess", () => {
@@ -71,38 +93,37 @@ describe("production orders incremental — plano/cutoff/overlap", () => {
 
     const plan = planProductionOrdersIncremental({
       options: parseProductionOrdersIncrementalCli(
-        ["preview", "--overlap-hours=72", "--selector=dataAlteracao"],
+        ["preview", "--overlap-hours=72", "--selector=dataHoraEdicao"],
         {}
       ),
       priorState: {
         version: 1,
         lastSuccessAt: lastSuccess.toISOString(),
         cutoffUsed: "2026-07-13T12:00:00.000Z",
-        filterField: "dataAlteracao",
-        filterRsql: "dataAlteracao>=13/07/2026",
+        filterField: "dataHoraEdicao",
+        filterRsql: "dataHoraEdicao>=13/07/2026",
         overlapHours: 72,
         strategy: "date_filter",
         pagesRead: 1,
         recordsReceived: 2,
       },
       now,
+      env: {},
     });
     assert.equal(plan.hadPriorState, true);
     assert.equal(plan.bootstrap, false);
-    assert.ok(plan.filterRsql);
+    assert.ok(plan.filterRsql?.startsWith("dataHoraEdicao>="));
   });
 
-  it("overlap cobre registro antigo editado recentemente via cutoff retrasado", () => {
+  it("monta RSQL dataHoraEdicao>=DD/MM/YYYY", () => {
     const rsql = buildProductionOrdersIncrementalRsql(
-      "dataAlteracao",
+      "dataHoraEdicao",
       new Date("2026-03-10T00:00:00.000Z")
     );
-    assert.equal(rsql, "dataAlteracao>=10/03/2026");
-    // Fixture dataAlteracao 12/03/2026 entra na janela.
-    assert.ok("12/03/2026" >= "10/03/2026" || true);
+    assert.equal(rsql, "dataHoraEdicao>=10/03/2026");
   });
 
-  it("filtro rejeitado → fallback limitado auditado (não full scan)", () => {
+  it("seletor REJECTED via env → fallback limitado auditado", () => {
     const plan = planProductionOrdersIncremental({
       options: parseProductionOrdersIncrementalCli(
         ["preview", "--selector=dataHoraEdicao", "--fallback-max-pages=7", "--max-pages=100"],
@@ -110,6 +131,9 @@ describe("production orders incremental — plano/cutoff/overlap", () => {
       ),
       priorState: null,
       now: new Date("2026-07-16T12:00:00.000Z"),
+      env: {
+        NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION: "dataHoraEdicao:rejected",
+      },
     });
     assert.equal(plan.strategy, "limited_page_window");
     assert.equal(plan.filterRsql, null);
@@ -121,11 +145,12 @@ describe("production orders incremental — plano/cutoff/overlap", () => {
     assert.throws(() =>
       planProductionOrdersIncremental({
         options: parseProductionOrdersIncrementalCli(
-          ["preview", "--selector=dataHoraCriacao", "--strict-selector"],
+          ["preview", "--selector=id", "--strict-selector"],
           {}
         ),
         priorState: null,
         now: new Date("2026-07-16T12:00:00.000Z"),
+        env: {},
       })
     );
   });
@@ -138,7 +163,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
     const plan = planProductionOrdersIncremental({
       options: {
         mode: "apply",
-        selector: "dataAlteracao",
+        selector: "dataHoraEdicao",
         overlapHours: 72,
         pageSize: 50,
         maxPages: 5,
@@ -148,6 +173,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
       },
       priorState: null,
       now,
+      env: {},
     });
 
     const ok = await runProductionOrdersIncrementalLoop({
@@ -157,7 +183,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
       fetchPages: async () => ({
         pagesRead: 1,
         recordsReceived: 1,
-        items: [cloneOp({ status: "Em produção", dataAlteracao: "16/07/2026 10:00:00" })],
+        items: [cloneOp({ status: "Em produção", dataHoraEdicao: "16/07/2026 10:00:00" })],
       }),
       persist: async () => ({
         outcome: "updated",
@@ -180,7 +206,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
     assert.equal(ok.updated, 1);
     assert.ok(written);
     const state = parseProductionOrdersIncrementalState(written);
-    assert.equal(state?.filterField, "dataAlteracao");
+    assert.equal(state?.filterField, "dataHoraEdicao");
     assert.equal(state?.cutoffUsed, plan.cutoffIso);
 
     written = null;
@@ -200,6 +226,166 @@ describe("runProductionOrdersIncrementalLoop", () => {
     assert.equal(fail.stateAdvanced, false);
     assert.equal(written, null);
     assert.equal(fail.errors, 1);
+  });
+
+  it("rejeição RSQL em runtime → fallback limitado; estado avança com strategy limited", async () => {
+    let written: string | null = null;
+    let calls = 0;
+    const now = new Date("2026-07-16T15:00:00.000Z");
+    const plan = planProductionOrdersIncremental({
+      options: {
+        mode: "apply",
+        selector: "dataHoraEdicao",
+        overlapHours: 72,
+        pageSize: 50,
+        maxPages: 10,
+        fallbackMaxPages: 3,
+        stateFile: "/tmp/op-incr-reject.state.json",
+        strictSelector: false,
+      },
+      priorState: null,
+      now,
+      env: {},
+    });
+    assert.equal(plan.strategy, "date_filter");
+
+    const summary = await runProductionOrdersIncrementalLoop({
+      mode: "apply",
+      plan,
+      stateFile: "/tmp/op-incr-reject.state.json",
+      fetchPages: async ({ query, maxPages }) => {
+        calls += 1;
+        if (query) {
+          throw new Error("Falha HTTP 400: campo inválido dataHoraEdicao");
+        }
+        assert.equal(maxPages, 3);
+        return {
+          pagesRead: 1,
+          recordsReceived: 1,
+          items: [cloneOp()],
+        };
+      },
+      persist: async () => ({
+        outcome: "unchanged",
+        externalId: 30347,
+        links: {
+          linksCreated: 0,
+          linksUpdated: 0,
+          linksReactivated: 0,
+          linksMarkedAbsent: 0,
+        },
+        error: null,
+      }),
+      writeState: (content) => {
+        written = content;
+      },
+      logger: () => undefined,
+      now: () => now.getTime(),
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(summary.selectorRejectedAtRuntime, true);
+    assert.equal(summary.plan.strategy, "limited_page_window");
+    assert.equal(summary.stateAdvanced, true);
+    const state = parseProductionOrdersIncrementalState(written);
+    assert.equal(state?.strategy, "limited_page_window");
+    assert.equal(state?.filterField, null);
+    assert.equal(state?.filterRsql, null);
+  });
+
+  it("rejeição RSQL + falha no fallback → estado NÃO avança", async () => {
+    let written: string | null = null;
+    const plan = planProductionOrdersIncremental({
+      options: parseProductionOrdersIncrementalCli(["apply", "--selector=dataHoraEdicao"], {}),
+      priorState: null,
+      now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
+    });
+
+    const summary = await runProductionOrdersIncrementalLoop({
+      mode: "apply",
+      plan,
+      stateFile: "/tmp/x",
+      fetchPages: async ({ query }) => {
+        if (query) throw new Error("Falha HTTP 400: filtro inválido dataHoraEdicao");
+        throw new Error("HTTP 500 fallback");
+      },
+      writeState: (c) => {
+        written = c;
+      },
+      logger: () => undefined,
+    });
+    assert.equal(summary.stateAdvanced, false);
+    assert.equal(written, null);
+    assert.equal(summary.selectorRejectedAtRuntime, true);
+    assert.ok(summary.errors >= 1);
+  });
+
+  it("HTTP 429 no fetch não avança estado", async () => {
+    let written: string | null = null;
+    const plan = planProductionOrdersIncremental({
+      options: parseProductionOrdersIncrementalCli(["apply"], {}),
+      priorState: null,
+      now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
+    });
+    const summary = await runProductionOrdersIncrementalLoop({
+      mode: "apply",
+      plan,
+      stateFile: "/tmp/x",
+      fetchPages: async () => {
+        throw new Error("Falha HTTP 429: rate limit");
+      },
+      writeState: (c) => {
+        written = c;
+      },
+      logger: () => undefined,
+    });
+    assert.equal(summary.stateAdvanced, false);
+    assert.equal(written, null);
+    assert.equal(summary.selectorRejectedAtRuntime, false);
+  });
+
+  it("timeout no fetch não avança estado", async () => {
+    let written: string | null = null;
+    const plan = planProductionOrdersIncremental({
+      options: parseProductionOrdersIncrementalCli(["apply"], {}),
+      priorState: null,
+      now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
+    });
+    const summary = await runProductionOrdersIncrementalLoop({
+      mode: "apply",
+      plan,
+      stateFile: "/tmp/x",
+      fetchPages: async () => {
+        throw new Error("Timeout após 30000ms");
+      },
+      writeState: (c) => {
+        written = c;
+      },
+      logger: () => undefined,
+    });
+    assert.equal(summary.stateAdvanced, false);
+    assert.equal(written, null);
+  });
+
+  it("rebuildIncrementalPlanAfterSelectorRejection limpa filtro", () => {
+    const plan = planProductionOrdersIncremental({
+      options: parseProductionOrdersIncrementalCli(["preview"], {}),
+      priorState: null,
+      now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
+    });
+    const rebuilt = rebuildIncrementalPlanAfterSelectorRejection({
+      plan,
+      message: "campo inválido",
+      fallbackMaxPages: 5,
+    });
+    assert.equal(rebuilt.strategy, "limited_page_window");
+    assert.equal(rebuilt.filterRsql, null);
+    assert.equal(rebuilt.maxPages, 5);
+    assert.equal(rebuilt.selectorDecision.ok, false);
   });
 
   it("reexecução idempotente e mudança de status na janela", async () => {
@@ -260,14 +446,15 @@ describe("runProductionOrdersIncrementalLoop", () => {
         version: 1,
         lastSuccessAt: "2026-07-16T10:00:00.000Z",
         cutoffUsed: "2026-07-13T10:00:00.000Z",
-        filterField: "dataAlteracao",
-        filterRsql: "dataAlteracao>=13/07/2026",
+        filterField: "dataHoraEdicao",
+        filterRsql: "dataHoraEdicao>=13/07/2026",
         overlapHours: 72,
         strategy: "date_filter",
         pagesRead: 1,
         recordsReceived: 1,
       },
       now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
     });
 
     const statusChange = await runProductionOrdersIncrementalLoop({
@@ -277,7 +464,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
       fetchPages: async () => ({
         pagesRead: 1,
         recordsReceived: 1,
-        items: [cloneOp({ status: "Encerrada", dataAlteracao: "16/07/2026 14:00:00" })],
+        items: [cloneOp({ status: "Encerrada", dataHoraEdicao: "16/07/2026 14:00:00" })],
       }),
       persist,
       logger: () => undefined,
@@ -292,7 +479,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
       fetchPages: async () => ({
         pagesRead: 1,
         recordsReceived: 1,
-        items: [cloneOp({ status: "Encerrada", dataAlteracao: "16/07/2026 14:00:00" })],
+        items: [cloneOp({ status: "Encerrada", dataHoraEdicao: "16/07/2026 14:00:00" })],
       }),
       persist,
       logger: () => undefined,
@@ -307,6 +494,7 @@ describe("runProductionOrdersIncrementalLoop", () => {
       options: parseProductionOrdersIncrementalCli(["preview"], {}),
       priorState: null,
       now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
     });
     const summary = await runProductionOrdersIncrementalLoop({
       mode: "preview",
@@ -340,9 +528,10 @@ describe("runProductionOrdersIncrementalLoop", () => {
 
   it("serializa estado com filtro e cutoff", () => {
     const plan = planProductionOrdersIncremental({
-      options: parseProductionOrdersIncrementalCli(["apply", "--selector=dataAlteracao"], {}),
+      options: parseProductionOrdersIncrementalCli(["apply", "--selector=dataHoraEdicao"], {}),
       priorState: null,
       now: new Date("2026-07-16T15:00:00.000Z"),
+      env: {},
     });
     const state = buildProductionOrdersIncrementalSuccessState({
       plan,

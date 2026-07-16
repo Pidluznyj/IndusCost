@@ -4,7 +4,7 @@
  * Uso:
  *   npx tsx scripts/nomusProductionOrdersIncremental.ts preview
  *   npx tsx scripts/nomusProductionOrdersIncremental.ts apply --state-file=/tmp/op-incr.state.json
- *   npx tsx scripts/nomusProductionOrdersIncremental.ts apply --overlap-hours=72 --selector=dataAlteracao
+ *   npx tsx scripts/nomusProductionOrdersIncremental.ts apply --overlap-hours=72 --selector=dataHoraEdicao
  */
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";

@@ -52,24 +52,33 @@ Usados **somente** se o nome oficial estiver ausente e forem semanticamente equi
 - Formato inválido → `null` + `fieldErrors` controlado
 - **Proibido** substituir ausência por data atual
 
-## Reparo da base (21.382 OPs)
+## Reparo da base (OP-14.2)
 
 É possível reparar **somente** a partir do `rawJson` já armazenado, sem nova consulta Nomus.
+Atualiza: `openedAt`, `releasedAt`, `plannedAt`, `deliveryAt`, `nomusUpdatedAt`.
+**Não** altera `closedAt`.
+
+Runbook: [`date-repair-runbook.md`](./date-repair-runbook.md).
 
 ```bash
-# Preview
-npm run sync:nomus:production-orders:repair-dates:preview -- --only-null-dates --limit=50
-
-# Apply
-npm run sync:nomus:production-orders:repair-dates:apply -- --only-null-dates
+npm run repair:nomus:production-orders:dates:preview -- --only-null-dates --limit=50
+npm run repair:nomus:production-orders:dates:apply -- --only-null-dates
+npm run sync:nomus:production-orders:probe-selector
 ```
 
 Durante o reparo **não** se altera:
 
-- `rawJson`, `payloadHash`
+- `closedAt`, `rawJson`, `payloadHash`
 - `firstSeenAt`, `lastSeenAt`, `lastChangedAt`, `syncedAt`
 - vínculos `NomusProductionOrderSalesLink`
 - Pedido de Venda, NF-e, Documento de Saída, AR/AP, Fluxo de Caixa, Comissões, Precificação, BOM, Relatório Presidencial
+
+### Incremental — seletor RSQL
+
+Preferencial no payload: `dataHoraEdicao` → `nomusUpdatedAt`.
+**Não assumir** que o campo do payload é aceito na query; homologar com o probe (`ACCEPTED` / `REJECTED` / `INCONCLUSIVE`).
+Env: `NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION`.
+`dataAlteracao` é legado (não preferencial).
 
 ## Amostra oficial — OP 05800 - 003
 

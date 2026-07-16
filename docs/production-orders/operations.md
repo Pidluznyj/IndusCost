@@ -80,9 +80,11 @@ Detalhes: [`api-contract.md`](./api-contract.md).
 | Id externo | `id==30347` | Confirmado |
 | Pedido | `itensPedido.idPedido==2530` | Nested — pode falhar; fallback por IDs locais |
 | Item | `itensPedido.id==11324` | Nested — idem |
-| Incremental data | `dataAlteracao>=…;dataAlteracao<=…` | Preferido; alt. `dataAbertura` |
+| Incremental (edição) | `dataHoraEdicao>=DD/MM/YYYY` | Preferencial OP-14.2 — **homologar via probe** (payload ≠ query) |
+| Incremental (criação) | `dataHoraCriacao>=DD/MM/YYYY` | Janela de abertura; mesma validação segura |
+| Legado | `dataAlteracao` / `dataAbertura` | Só se pedido explicitamente; sem evidência no payload real |
 
-Rejeitados como seletor de janela incremental: `dataHoraEdicao`, `dataHoraCriacao`, `id`, `nome` (só consulta pontual).
+Rejeitados como seletor de janela incremental: `id`, `nome` (só consulta pontual). Se o probe classificar `dataHoraEdicao` como `REJECTED`, usar fallback limitado auditado — nunca avançar estado como se `date_filter` tivesse funcionado.
 
 ---
 
@@ -99,17 +101,21 @@ Fixture real: OP `30347` / `OP 05800 - 003` / pedido `2530` / item `11324`.
 
 Datas oficiais: [`date-field-mapping.md`](./date-field-mapping.md).
 
-### Reparo de datas a partir do rawJson (OP-14.1)
+### Reparo de datas a partir do rawJson (OP-14.2)
 
-Não consulta Nomus. Atualiza só colunas de data.
+Não consulta Nomus. Atualiza só `openedAt`, `releasedAt`, `plannedAt`, `deliveryAt`, `nomusUpdatedAt`. **Não** altera `closedAt`.
+
+Runbook: [`date-repair-runbook.md`](./date-repair-runbook.md).
 
 ```bash
-npm run sync:nomus:production-orders:repair-dates:preview -- --only-null-dates --limit=50
-npm run sync:nomus:production-orders:repair-dates:apply -- --only-null-dates
-npm run sync:nomus:production-orders:repair-dates:apply -- --externalId=30347
+npm run repair:nomus:production-orders:dates:preview -- --only-null-dates --limit=50
+npm run repair:nomus:production-orders:dates:apply -- --only-null-dates --batch-size=200
+npm run repair:nomus:production-orders:dates:apply -- --externalId=30347
 ```
 
-Preserva `rawJson`, `payloadHash`, `firstSeenAt`, `lastSeenAt`, `lastChangedAt`, `syncedAt` e vínculos.
+Aliases: `sync:nomus:production-orders:repair-dates:preview|apply`.
+
+Preserva `closedAt`, `rawJson`, `payloadHash`, `firstSeenAt`, `lastSeenAt`, `lastChangedAt`, `syncedAt` e vínculos.
 
 ---
 
@@ -143,11 +149,13 @@ npm run sync:nomus:production-orders:backfill:apply -- --cursor-file=/tmp/op-bac
 
 - Script: `scripts/nomusProductionOrdersIncremental.ts`
 - Estado de último sucesso em arquivo (`NOMUS_PRODUCTION_ORDERS_INCREMENTAL_STATE_FILE`)
-- Overlap padrão **72h**; seletor preferido `dataAlteracao`
-- Seletor rejeitado → fallback **limitado e auditado** (nunca full scan silencioso)
+- Overlap padrão **72h**; seletor preferido `dataHoraEdicao` (após probe ACCEPTED)
+- Env de homologação: `NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION` (`accepted|rejected|unverified` ou `dataHoraEdicao:accepted`)
+- Seletor rejeitado (env ou runtime HTTP 400/422) → fallback **limitado e auditado** (nunca full scan silencioso); estado só avança com `strategy=limited_page_window`
 - Falha **não** avança estado; sucesso avança e grava filtro/cutoff
 
 ```bash
+npm run sync:nomus:production-orders:probe-selector
 npm run sync:nomus:production-orders:incremental:preview
 npm run sync:nomus:production-orders:incremental:apply -- --overlap-hours=72
 ```

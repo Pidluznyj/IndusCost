@@ -19,7 +19,7 @@ export const NOMUS_PRODUCTION_ORDERS_RESPECT_GLOBAL_LOCK_ENV =
 export const NOMUS_SYNC_GLOBAL_LOCK_FILE_DEFAULT =
   process.env.NOMUS_SYNC_LOCK_FILE || "/tmp/induscost-nomus-sync-global.lock";
 
-export type ProductionOrdersSyncRunType = "backfill" | "incremental" | "sync";
+export type ProductionOrdersSyncRunType = "backfill" | "incremental" | "sync" | "date-repair";
 
 export type ProductionOrdersSyncRunMode = "preview" | "apply";
 

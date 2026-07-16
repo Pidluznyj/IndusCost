@@ -17,12 +17,14 @@ import {
   parseProductionOrdersIncrementalCli,
   parseProductionOrdersIncrementalState,
   planProductionOrdersIncremental,
+  rebuildIncrementalPlanAfterSelectorRejection,
   serializeProductionOrdersIncrementalState,
   type ProductionOrdersIncrementalCliOptions,
   type ProductionOrdersIncrementalPlan,
   type ProductionOrdersIncrementalState,
   type ProductionOrdersIncrementalSummary,
 } from "@/src/lib/nomusProductionOrdersIncremental.js";
+import { isNomusRsqlSelectorRejectionError } from "@/src/lib/nomusProductionOrdersSelectorProbe.js";
 import { fetchNomusJson } from "@/src/lib/nomusRestClient.js";
 import { PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER } from "@/src/lib/nomusProductionOrdersPreview.js";
 import {
@@ -121,22 +123,63 @@ export async function runProductionOrdersIncrementalLoop(
 
   let fetchFailed = false;
   let items: unknown[] = [];
+  let activePlan = deps.plan;
+  summary.selectorRejectedAtRuntime = false;
+  summary.selectorRejectionMessage = null;
+
   try {
     const fetched = await deps.fetchPages({
-      query: deps.plan.filterRsql,
-      pageSize: deps.plan.pageSize,
-      maxPages: deps.plan.maxPages,
+      query: activePlan.filterRsql,
+      pageSize: activePlan.pageSize,
+      maxPages: activePlan.maxPages,
     });
     summary.pagesRead = fetched.pagesRead;
     summary.recordsReceived = fetched.recordsReceived;
     items = fetched.items;
   } catch (error) {
-    fetchFailed = true;
-    summary.errors += 1;
-    summary.errorReport.push({
-      externalId: null,
-      message: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      activePlan.strategy === "date_filter" &&
+      activePlan.filterRsql &&
+      isNomusRsqlSelectorRejectionError(error)
+    ) {
+      summary.selectorRejectedAtRuntime = true;
+      summary.selectorRejectionMessage = message;
+      activePlan = rebuildIncrementalPlanAfterSelectorRejection({
+        plan: activePlan,
+        message,
+      });
+      summary.plan = activePlan;
+      summary.filterUsed = null;
+      log(
+        `${LOG_PREFIX} SELECTOR REJECTED em runtime — fallback limited_page_window maxPages=${activePlan.maxPages} reason=${message}`
+      );
+      try {
+        const fetched = await deps.fetchPages({
+          query: null,
+          pageSize: activePlan.pageSize,
+          maxPages: activePlan.maxPages,
+        });
+        summary.pagesRead = fetched.pagesRead;
+        summary.recordsReceived = fetched.recordsReceived;
+        items = fetched.items;
+      } catch (fallbackError) {
+        fetchFailed = true;
+        summary.errors += 1;
+        summary.errorReport.push({
+          externalId: null,
+          message:
+            fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        });
+      }
+    } else {
+      fetchFailed = true;
+      summary.errors += 1;
+      summary.errorReport.push({
+        externalId: null,
+        message,
+      });
+    }
   }
 
   if (!fetchFailed) {
@@ -204,7 +247,7 @@ export async function runProductionOrdersIncrementalLoop(
   const success = !fetchFailed && summary.errors === 0;
   if (deps.mode === "apply" && success) {
     const nextState = buildProductionOrdersIncrementalSuccessState({
-      plan: deps.plan,
+      plan: activePlan,
       finishedAt,
       pagesRead: summary.pagesRead,
       recordsReceived: summary.recordsReceived,
@@ -212,7 +255,9 @@ export async function runProductionOrdersIncrementalLoop(
     if (deps.writeState) {
       deps.writeState(serializeProductionOrdersIncrementalState(nextState));
       summary.stateAdvanced = true;
-      log(`${LOG_PREFIX} estado de sucesso avançado cutoff=${nextState.cutoffUsed}`);
+      log(
+        `${LOG_PREFIX} estado de sucesso avançado strategy=${nextState.strategy} cutoff=${nextState.cutoffUsed} filter=${nextState.filterRsql}`
+      );
     }
   } else if (deps.mode === "apply" && !success) {
     log(`${LOG_PREFIX} falha — estado de último sucesso NÃO avançado.`);
