@@ -289,6 +289,7 @@ function mapFinancial(audit: OrderFullAuditPayload): SalesOrderDetailFinancial {
     plannedTotals: {
       totalCount: audit.plannedReceivablesTotal.totalCount,
       totalExpected: audit.plannedReceivablesTotal.totalExpected,
+      applicableExpected: audit.plannedReceivablesTotal.applicableExpected,
       openExpected: audit.plannedReceivablesTotal.openExpected,
       overdueExpected: audit.plannedReceivablesTotal.overdueExpected,
       overdueCount: audit.plannedReceivablesTotal.overdueCount,

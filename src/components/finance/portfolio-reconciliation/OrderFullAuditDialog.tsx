@@ -35,6 +35,7 @@ import {
   type OrderFullAuditTechnicalSource,
   type OrderFullAuditTimelinePoint,
 } from "@/src/lib/finance/orderFullAuditClient";
+import { computeConsolidatedFinancialSummary } from "@/src/lib/sales/orderFinancialConsolidation";
 import type { OrderToCashAuditListRow } from "@/src/lib/finance/orderToCashAuditApi";
 import { createDefaultOrderToCashAuditUiFilters } from "@/src/lib/finance/orderToCashAuditClient";
 import {
@@ -1622,10 +1623,6 @@ function FinancialTab({
   const totalPartialAmount = receivables
     .filter((r) => r.status === "PARTIALLY_RECEIVED")
     .reduce((s, r) => s + (r.amountReceived ?? 0), 0);
-  const maxDaysOverdue = receivables.reduce(
-    (max, r) => (r.daysOverdue != null && r.daysOverdue > max ? r.daysOverdue : max),
-    0
-  );
 
   const tabAlerts = alerts.filter((a) => RECEIVABLE_ALERT_CODES.has(a.code));
 
@@ -1639,6 +1636,7 @@ function FinancialTab({
   const plannedTotalsSafe: OrderFullAuditPlannedReceivablesTotal = plannedTotals ?? {
     totalCount: 0,
     totalExpected: 0,
+    applicableExpected: 0,
     openExpected: 0,
     overdueExpected: 0,
     overdueCount: 0,
@@ -1651,13 +1649,16 @@ function FinancialTab({
     netPlannedOpen: 0,
   };
   const activePlanned = plannedReceivables.filter((p) => !p.replacedByRealCr);
+  const replacedPlanned = plannedReceivables.filter((p) => p.replacedByRealCr);
   const hasPlanned = activePlanned.length > 0;
   const hasRealCr = receivables.length > 0;
   const hasAnyFinancialRow = hasRealCr || hasPlanned;
-  const totalFinancialValue =
-    round2Local(totals.totalAmount) + round2Local(plannedTotalsSafe.totalExpected);
-  const totalFinancialOpen =
-    round2Local(totals.openAmount) + round2Local(plannedTotalsSafe.openExpected);
+  const consolidated = computeConsolidatedFinancialSummary({
+    totals,
+    plannedTotals: plannedTotalsSafe,
+  });
+  const totalFinancialValue = consolidated.totalFinancialValue;
+  const totalFinancialOpen = consolidated.totalFinancialOpen;
   const nextDueCandidates = [totals.nextDueDate, plannedTotalsSafe.nextDueDate]
     .filter((d): d is string => Boolean(d))
     .sort();
@@ -1679,7 +1680,7 @@ function FinancialTab({
             label="Total financeiro"
             value={formatFinanceCurrency(totalFinancialValue)}
             tone="highlight"
-            help="Soma de CR real + planejado pelo pedido, sem duplicar parcelas cobertas."
+            help="CR real + planejado aplicável. Parcelas substituídas por CR real não entram novamente."
           />
           <Kpi
             label="CR real"
@@ -1688,15 +1689,27 @@ function FinancialTab({
             help="NomusAccountsReceivable — origem oficial. Prevalece sobre forecast."
           />
           <Kpi
-            label="Planejado pelo pedido"
-            value={formatFinanceCurrency(plannedTotalsSafe.totalExpected)}
-            tone={plannedTotalsSafe.totalExpected > 0.009 ? "info" : "muted"}
-            help="Parcelas previstas pela condição de pagamento (fallback quando não há CR real)."
+            label="Planejado aplicável"
+            value={formatFinanceCurrency(consolidated.plannedTotal)}
+            tone={consolidated.plannedTotal > 0.009 ? "info" : "muted"}
+            help="Parcelas previstas ainda sem CR real."
+          />
+          <Kpi
+            label="Planejado substituído"
+            value={formatFinanceCurrency(consolidated.plannedReplacedAmount)}
+            tone="muted"
+            help={`Evidência (${replacedPlanned.length} parcela(s)) — não soma no total financeiro.`}
           />
           <Kpi
             label="Aberto (real + planejado)"
             value={formatFinanceCurrency(totalFinancialOpen)}
             tone={totalFinancialOpen > 0.009 ? "info" : "muted"}
+          />
+          <Kpi
+            label="Saldo financeiro (CR)"
+            value={formatFinanceCurrency(totals.openAmount)}
+            tone={totals.openAmount > 0.009 ? "warning" : "muted"}
+            help="Somente saldo em aberto do Contas a Receber oficial. Nunca pedido − NF."
           />
           <Kpi
             label="Total vencido (CR)"
@@ -1719,8 +1732,8 @@ function FinancialTab({
           />
           <Kpi
             label="Títulos/parcelas"
-            value={`${totals.totalCount} real / ${plannedTotalsSafe.totalCount} planej.`}
-            help="Quantidade de títulos reais vs parcelas planejadas."
+            value={`${totals.totalCount} real / ${activePlanned.length} planej.`}
+            help="Quantidade de títulos reais vs parcelas planejadas ativas."
           />
         </div>
         {cardDiff > 0.01 ? (
@@ -3084,6 +3097,8 @@ function NfesTab({
                   <th className="py-1.5 pr-2 font-semibold">Cancelada?</th>
                   <th className="py-1.5 pr-2 font-semibold">Data canc.</th>
                   <th className="py-1.5 pr-2 font-semibold">Motivo canc.</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Produtos</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Impostos dest.</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Valor NF</th>
                   <th
                     className="py-1.5 pr-2 font-semibold text-right"
@@ -3172,6 +3187,27 @@ function NfesTab({
                         title={n.cancellationReason ?? undefined}
                       >
                         {n.cancellationReason ?? "—"}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1.5 pr-2 text-right tabular-nums",
+                          canceled && "line-through opacity-70"
+                        )}
+                      >
+                        {n.valorLiquido != null
+                          ? formatFinanceCurrency(n.valorLiquido)
+                          : "—"}
+                      </td>
+                      <td
+                        className={cn(
+                          "py-1.5 pr-2 text-right tabular-nums",
+                          canceled && "line-through opacity-70"
+                        )}
+                        title="Impostos destacados na NF (total − produtos), quando ambos existem. Não é imposto pago."
+                      >
+                        {n.highlightedTaxesValue != null
+                          ? formatFinanceCurrency(n.highlightedTaxesValue)
+                          : "—"}
                       </td>
                       <td
                         className={cn(

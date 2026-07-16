@@ -53,7 +53,13 @@ export type SalesOrderPlannedReceivable = {
 
 export type SalesOrderPlannedReceivablesTotal = {
   totalCount: number;
+  /** Soma de todas as parcelas planejadas (inclui substituídas — evidência). */
   totalExpected: number;
+  /**
+   * Planejado ainda aplicável ao total financeiro
+   * (= totalExpected − replacedAmount).
+   */
+  applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
   overdueCount: number;
@@ -303,6 +309,7 @@ function summarizePlanned(
   return {
     totalCount: planned.length,
     totalExpected: roundMoney(totalExpected),
+    applicableExpected: roundMoney(Math.max(0, totalExpected - replacedAmount)),
     openExpected: roundMoney(openExpected),
     overdueExpected: roundMoney(overdueExpected),
     overdueCount,
@@ -320,6 +327,7 @@ function emptyTotals(): SalesOrderPlannedReceivablesTotal {
   return {
     totalCount: 0,
     totalExpected: 0,
+    applicableExpected: 0,
     openExpected: 0,
     overdueExpected: 0,
     overdueCount: 0,

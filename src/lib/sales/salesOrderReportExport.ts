@@ -60,8 +60,14 @@ function mapReportRowToDetail(row: SalesOrderReportRow): Record<string, string |
     "Valor cancelado": row.canceledValue,
     "Valor cortado": row.cutValue,
     "Valor ativo": row.activeValue,
-    "Valor faturado": row.invoicedValue,
-    "Saldo pendente ativo": row.pendingBalance,
+    "Total NF válido": row.invoicedValue,
+    "Produtos NF": row.nfeProductsValue,
+    "Impostos destacados NF": row.nfeHighlightedTaxesValue,
+    "A faturar": row.amountToInvoice,
+    "CR original": row.crOriginal,
+    "CR recebido": row.crReceived,
+    "Saldo financeiro CR": row.financialBalance ?? "",
+    "Sem CR gerado": row.hasOfficialCr ? "Não" : "Sim",
     "NF emitida": row.hasInvoice ? "Sim" : "Não",
     "Qtde NF-e": row.nfeCount,
     "Última NF processada em": formatDateBr(row.lastNfeDate),
@@ -94,8 +100,14 @@ function applyReportSheetFormatting(ws: XLSX.WorkSheet, rowCount: number, colCou
     14, // Valor cancelado
     14, // Valor cortado
     14, // Valor ativo
-    14, // Valor faturado
-    16, // Saldo pendente ativo
+    14, // Total NF válido
+    14, // Produtos NF
+    16, // Impostos destacados
+    12, // A faturar
+    12, // CR original
+    12, // CR recebido
+    16, // Saldo financeiro CR
+    12, // Sem CR
     10, // NF emitida
     10, // Qtde NF-e
     18, // Última NF
@@ -126,8 +138,13 @@ function applyMoneyFormatToDetailSheet(
     "Valor cancelado",
     "Valor cortado",
     "Valor ativo",
-    "Valor faturado",
-    "Saldo pendente ativo",
+    "Total NF válido",
+    "Produtos NF",
+    "Impostos destacados NF",
+    "A faturar",
+    "CR original",
+    "CR recebido",
+    "Saldo financeiro CR",
   ]);
   const format = "R$ #,##0.00";
   headers.forEach((header, colIndex) => {
@@ -164,8 +181,14 @@ export function buildSalesOrderReportExportWorkbook(
     { Campo: "Valor cancelado total", Valor: summary.canceledValue },
     { Campo: "Valor cortado total", Valor: summary.cutValue },
     { Campo: "Valor ativo total", Valor: summary.activeValue },
-    { Campo: "Valor faturado total", Valor: summary.invoicedValue },
-    { Campo: "Saldo pendente ativo", Valor: summary.pendingBalance },
+    { Campo: "Total NF válido", Valor: summary.invoicedValue },
+    { Campo: "Produtos NF", Valor: summary.nfeProductsValue },
+    { Campo: "Impostos destacados NF", Valor: summary.nfeHighlightedTaxesValue },
+    { Campo: "A faturar", Valor: summary.amountToInvoice },
+    { Campo: "Saldo financeiro CR", Valor: summary.financialBalance },
+    { Campo: "CR original", Valor: summary.crOriginalTotal },
+    { Campo: "CR recebido", Valor: summary.crReceivedTotal },
+    { Campo: "Pedidos sem CR", Valor: summary.ordersWithoutCrCount },
     { Campo: "Ticket médio (ativo)", Valor: summary.averageTicket },
     { Campo: "Pedidos com NF", Valor: summary.invoicedCount },
     { Campo: "Pedidos sem NF", Valor: summary.notInvoicedCount },

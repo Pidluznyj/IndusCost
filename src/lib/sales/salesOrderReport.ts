@@ -28,8 +28,24 @@ export type SalesOrderReportSummary = {
   canceledValue: number;
   cutValue: number;
   activeValue: number;
+  /** Total NF válido (base comparável ao pedido — preferência xmlVNF). */
   invoicedValue: number;
+  /** Produtos líquidos das NF válidas (valorLiquido). */
+  nfeProductsValue: number;
+  /** Impostos destacados (vNF − produtos) das NF válidas. */
+  nfeHighlightedTaxesValue: number;
+  /** A faturar = ativo − total NF válido (operacional). */
+  amountToInvoice: number;
+  /**
+   * Saldo financeiro = soma do CR aberto oficial.
+   * Pedidos sem CR contribuem 0 no totalizador (ver `ordersWithoutCrCount`).
+   */
+  financialBalance: number;
+  /** @deprecated Alias de amountToInvoice — manter compat de consumidores antigos. */
   pendingBalance: number;
+  ordersWithoutCrCount: number;
+  crOriginalTotal: number;
+  crReceivedTotal: number;
   averageTicket: number;
   invoicedCount: number;
   notInvoicedCount: number;
@@ -60,7 +76,21 @@ export type SalesOrderReportRow = {
   canceledValue: number;
   cutValue: number;
   activeValue: number;
+  /** Total NF válido comparável (xmlVNF preferencial). */
   invoicedValue: number;
+  nfeProductsValue: number;
+  nfeHighlightedTaxesValue: number;
+  amountToInvoice: number;
+  hasOfficialCr: boolean;
+  crOriginal: number;
+  crReceived: number;
+  crOpen: number;
+  /**
+   * Saldo financeiro do CR (aberto). null = sem CR gerado.
+   * UI/PDF devem exibir "—" quando null.
+   */
+  financialBalance: number | null;
+  /** @deprecated Alias de amountToInvoice. */
   pendingBalance: number;
   hasInvoice: boolean;
   /**
@@ -149,7 +179,16 @@ export function computeSalesOrderReportSummaryFromRows(
   const cutValue = sumSalesOrderReportField(rows, (r) => r.cutValue);
   const activeValue = sumSalesOrderReportField(rows, (r) => r.activeValue);
   const invoicedValue = sumSalesOrderReportField(rows, (r) => r.invoicedValue);
-  const pendingBalance = sumSalesOrderReportField(rows, (r) => r.pendingBalance);
+  const nfeProductsValue = sumSalesOrderReportField(rows, (r) => r.nfeProductsValue);
+  const nfeHighlightedTaxesValue = sumSalesOrderReportField(
+    rows,
+    (r) => r.nfeHighlightedTaxesValue
+  );
+  const amountToInvoice = sumSalesOrderReportField(rows, (r) => r.amountToInvoice);
+  const financialBalance = sumSalesOrderReportField(rows, (r) => r.financialBalance ?? 0);
+  const pendingBalance = amountToInvoice;
+  const crOriginalTotal = sumSalesOrderReportField(rows, (r) => r.crOriginal);
+  const crReceivedTotal = sumSalesOrderReportField(rows, (r) => r.crReceived);
   const totalItemsCount = sumSalesOrderReportField(rows, (r) => r.itemsCount);
   const activeItemsCount = sumSalesOrderReportField(rows, (r) => r.activeItemsCount);
   const canceledItemsCount = sumSalesOrderReportField(rows, (r) => r.canceledItemsCount);
@@ -165,7 +204,14 @@ export function computeSalesOrderReportSummaryFromRows(
     cutValue,
     activeValue,
     invoicedValue,
+    nfeProductsValue,
+    nfeHighlightedTaxesValue,
+    amountToInvoice,
+    financialBalance,
     pendingBalance,
+    ordersWithoutCrCount: countSalesOrderReportRows(rows, (r) => !r.hasOfficialCr),
+    crOriginalTotal,
+    crReceivedTotal,
     averageTicket: computeSalesOrderReportAverageTicket(activeValue, rows.length),
     invoicedCount: countSalesOrderReportRows(rows, (r) => r.hasInvoice),
     notInvoicedCount: countSalesOrderReportRows(rows, (r) => !r.hasInvoice),

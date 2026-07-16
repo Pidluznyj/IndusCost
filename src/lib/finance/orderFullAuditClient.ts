@@ -114,6 +114,8 @@ export type OrderFullAuditNfe = {
   tipoOperacao: number | null;
   valorLiquido: number | null;
   valorTotal: number | null;
+  /** Impostos/encargos destacados (= max(0, valorTotal − valorLiquido)) quando ambos existem. */
+  highlightedTaxesValue: number | null;
   /** Atribuição válida ao pedido (0 se NF cancelada). */
   allocatedValueToOrder: number;
   /** Alocação bruta antes de zerar canceladas. */
@@ -607,6 +609,8 @@ export type OrderFullAuditPlannedReceivable = {
 export type OrderFullAuditPlannedReceivablesTotal = {
   totalCount: number;
   totalExpected: number;
+  /** Planejado ainda aplicável (= totalExpected − replacedAmount). */
+  applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
   overdueCount: number;

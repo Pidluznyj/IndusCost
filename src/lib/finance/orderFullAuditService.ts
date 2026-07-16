@@ -36,6 +36,9 @@ import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginS
 import type { SalesOrderListReceivableInput } from "@/src/lib/salesOrderListPaymentSchedule.js";
 import { buildSalesOrderPlannedReceivables } from "./salesOrderPlannedReceivables.js";
 import {
+  buildLinkedNfeFiscalAmounts,
+} from "@/src/lib/sales/orderFiscalFinancialMetrics.js";
+import {
   extractNfeCancellationMeta,
   normalizeNfeStatus,
   type NormalizedNfeStatus,
@@ -215,8 +218,15 @@ export type OrderFullAuditNfe = {
   cancellationDate: string | null;
   cancellationReason: string | null;
   tipoOperacao: number | null;
+  /** Produtos líquidos (valorLiquido / vProd−vDesc). */
   valorLiquido: number | null;
+  /**
+   * Total da NF em base comparável ao pedido (preferência xmlVNF / vNF).
+   * Usado em faturamento válido e cards.
+   */
   valorTotal: number | null;
+  /** Impostos/encargos destacados no total (= max(0, valorTotal − valorLiquido)) quando ambos existem. */
+  highlightedTaxesValue: number | null;
   /**
    * Valor atribuído válido ao pedido.
    * NF cancelada: sempre 0 (histórico permanece em `valorTotal` / `nfeCanceledValue`).
@@ -727,6 +737,8 @@ export type OrderFullAuditPlannedReceivable = {
 export type OrderFullAuditPlannedReceivablesTotal = {
   totalCount: number;
   totalExpected: number;
+  /** Planejado ainda aplicável (= totalExpected − replacedAmount). */
+  applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
   overdueCount: number;
@@ -1495,6 +1507,7 @@ export async function loadOrderFullAudit(
         tipoOperacao: link.tipoOperacao ?? null,
         valorLiquido: null,
         valorTotal: null,
+        highlightedTaxesValue: null,
         allocatedValueToOrder: 0,
         allocatedValueToOrderRaw: 0,
         insideOrderItemsValue: 0,
@@ -1584,6 +1597,7 @@ export async function loadOrderFullAudit(
         tipoOperacao: null,
         valorLiquido: fact.nfeHeaderValue ?? null,
         valorTotal: fact.nfeHeaderValue ?? null,
+        highlightedTaxesValue: null,
         allocatedValueToOrder: 0,
         allocatedValueToOrderRaw: 0,
         insideOrderItemsValue: 0,
@@ -1605,7 +1619,11 @@ export async function loadOrderFullAudit(
         nfeEntry.valorLiquido == null
           ? fact.nfeHeaderValue ?? null
           : Math.max(nfeEntry.valorLiquido, fact.nfeHeaderValue ?? 0);
-      nfeEntry.valorTotal = nfeEntry.valorLiquido;
+      // Sem xmlVNF no fact: valorTotal segue o cabeçalho materializado.
+      nfeEntry.valorTotal =
+        nfeEntry.valorTotal == null
+          ? fact.nfeHeaderValue ?? nfeEntry.valorLiquido
+          : Math.max(nfeEntry.valorTotal, fact.nfeHeaderValue ?? 0);
       nfeEntry.dataEmissao =
         nfeEntry.dataEmissao ?? toIso(fact.nfeIssueDate) ?? null;
       nfeEntry.allocatedValueToOrder +=
@@ -1638,6 +1656,8 @@ export async function loadOrderFullAudit(
             xmlDhEmi: true,
             valorLiquido: true,
             xmlVNF: true,
+            xmlVProd: true,
+            xmlVDesc: true,
             xmlCancelamento: true,
             justificativaCancelamento: true,
             rawPayload: true,
@@ -1681,12 +1701,19 @@ export async function loadOrderFullAudit(
     entry.tipoOperacao = entry.tipoOperacao ?? n.tipoOperacao ?? null;
     entry.dataProcessamento = entry.dataProcessamento ?? toIso(n.dataProcessamento);
     entry.dataEmissao = entry.dataEmissao ?? toIso(n.xmlDhEmi);
-    const nfeVal =
-      decimalToNumber(n.valorLiquido) ?? decimalToNumber(n.xmlVNF);
-    if (nfeVal != null) {
-      entry.valorLiquido = entry.valorLiquido ?? nfeVal;
-      entry.valorTotal = entry.valorTotal ?? nfeVal;
+    const fiscal = buildLinkedNfeFiscalAmounts({
+      valorLiquido: n.valorLiquido,
+      xmlVNF: n.xmlVNF,
+      xmlVProd: n.xmlVProd,
+      xmlVDesc: n.xmlVDesc,
+    });
+    if (fiscal.productsValue != null) {
+      entry.valorLiquido = fiscal.productsValue;
     }
+    if (fiscal.comparableBillingValue > 0 || fiscal.totalNfValue != null) {
+      entry.valorTotal = fiscal.comparableBillingValue;
+    }
+    entry.highlightedTaxesValue = fiscal.highlightedTaxesValue;
     // Metadados adicionais vindos do rawPayload (best-effort).
     entry.customerName =
       entry.customerName ??

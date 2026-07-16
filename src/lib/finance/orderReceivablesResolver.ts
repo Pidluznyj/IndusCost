@@ -44,6 +44,12 @@ import type {
   OrderFullAuditReceivable,
 } from "./orderFullAuditClient.js";
 
+// Helper puro frontend-safe — reexport para consumidores server-side.
+export {
+  computeConsolidatedFinancialSummary,
+} from "@/src/lib/sales/orderFinancialConsolidation.js";
+export type { ConsolidatedFinancialSummary } from "@/src/lib/sales/orderFinancialConsolidation.js";
+
 export type ResolveReceivablesInput = {
   /** ID interno do SalesOrder (uuid). Obrigatório. */
   salesOrderId: string;
@@ -160,33 +166,4 @@ export function isOrderInPlannedOnlyState(payload: {
   const anyReal = payload.realReceivables.length > 0;
   const anyActivePlanned = payload.plannedReceivables.some((p) => !p.replacedByRealCr);
   return !anyReal && anyActivePlanned;
-}
-
-/**
- * Helper puro — soma financeira consolidada (CR real + planejado).
- * Não substitui `totals` do CR oficial: apenas expõe a soma agregada para
- * cards executivos que precisam de "total financeiro".
- */
-export function computeConsolidatedFinancialSummary(payload: {
-  totals: ResolveReceivablesTotals;
-  plannedTotals: OrderFullAuditPlannedReceivablesTotal;
-}) {
-  const round = (value: number) =>
-    Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
-
-  const totalFinancialValue = round(
-    payload.totals.totalAmount + payload.plannedTotals.totalExpected
-  );
-  const totalFinancialOpen = round(
-    payload.totals.openAmount + payload.plannedTotals.openExpected
-  );
-  return {
-    totalFinancialValue,
-    totalFinancialOpen,
-    realCrTotal: round(payload.totals.totalAmount),
-    realCrOpen: round(payload.totals.openAmount),
-    plannedTotal: round(payload.plannedTotals.totalExpected),
-    plannedOpen: round(payload.plannedTotals.openExpected),
-    receivedTotal: round(payload.totals.receivedAmount),
-  };
 }

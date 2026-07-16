@@ -118,14 +118,24 @@ export function SalesOrderReportPrintDocument({
               tone="risk"
             />
             <SummaryKpiCard
-              label="Valor faturado"
+              label="Total NF válido"
               value={formatFinanceCurrency(summary.invoicedValue)}
               tone="info"
             />
             <SummaryKpiCard
-              label="Saldo pendente"
-              value={formatFinanceCurrency(summary.pendingBalance)}
+              label="A faturar"
+              value={formatFinanceCurrency(summary.amountToInvoice)}
               tone="warning"
+            />
+            <SummaryKpiCard
+              label="Saldo financeiro (CR)"
+              value={formatFinanceCurrency(summary.financialBalance)}
+              tone="warning"
+            />
+            <SummaryKpiCard
+              label="CR recebido"
+              value={formatFinanceCurrency(summary.crReceivedTotal)}
+              tone="positive"
             />
             <SummaryKpiCard
               label="Ticket médio"
@@ -147,6 +157,11 @@ export function SalesOrderReportPrintDocument({
               value={formatFinanceInteger(summary.notInvoicedCount)}
               tone="warning"
             />
+            <SummaryKpiCard
+              label="Sem CR gerado"
+              value={formatFinanceInteger(summary.ordersWithoutCrCount)}
+              tone="warning"
+            />
           </div>
         </section>
 
@@ -165,12 +180,7 @@ export function SalesOrderReportPrintDocument({
           {/*
             Ordem canônica das colunas da tabela analítica (2026-07):
               Cliente · Pedido · Emissão · Entrega · Vendedor · Faturamento
-              · Itens · Valor pedido · Valor ativo · Faturado · Saldo
-
-            A coluna "Empresa" foi removida — companyName só era preenchido
-            a partir do nomusRawResponse e aparecia como "—" na maioria dos
-            pedidos. O emissor institucional continua visível no cabeçalho
-            (PrintHeader), portanto a informação não sumiu do relatório.
+              · Itens · Valor ativo · Total NF · A faturar · Saldo CR
           */}
           {rows.length === 0 ? (
             <p className="sales-orders-print-empty">
@@ -187,10 +197,10 @@ export function SalesOrderReportPrintDocument({
                   <th className="col-seller">Vendedor</th>
                   <th className="col-status">Faturamento</th>
                   <th className="col-num">Itens</th>
-                  <th className="col-money">Valor pedido</th>
                   <th className="col-money">Valor ativo</th>
-                  <th className="col-money">Faturado</th>
-                  <th className="col-money">Saldo</th>
+                  <th className="col-money">Total NF</th>
+                  <th className="col-money">A faturar</th>
+                  <th className="col-money">Saldo CR</th>
                 </tr>
               </thead>
               <tbody>
@@ -229,9 +239,6 @@ export function SalesOrderReportPrintDocument({
                         </span>
                       ) : null}
                     </td>
-                    <td className={`col-money ${moneyClassForRow("original")}`}>
-                      {formatFinanceCurrency(row.originalValue)}
-                    </td>
                     <td className={`col-money ${moneyClassForRow("active")}`}>
                       {formatFinanceCurrency(row.activeValue)}
                     </td>
@@ -239,21 +246,21 @@ export function SalesOrderReportPrintDocument({
                       {formatFinanceCurrency(row.invoicedValue)}
                     </td>
                     <td className={`col-money ${moneyClassForRow("pending")}`}>
-                      {formatFinanceCurrency(row.pendingBalance)}
+                      {formatFinanceCurrency(row.amountToInvoice)}
+                    </td>
+                    <td className={`col-money ${moneyClassForRow("pending")}`}>
+                      {row.financialBalance == null
+                        ? "—"
+                        : formatFinanceCurrency(row.financialBalance)}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="sales-orders-print-total-row">
-                  {/* colSpan = 6 colunas de identificação (Cliente, Pedido, Emissão,
-                      Entrega, Vendedor, Faturamento) antes das 5 colunas numéricas. */}
                   <td colSpan={6}>Total</td>
                   <td className="col-num">
                     {formatFinanceInteger(summary.totalItemsCount)}
-                  </td>
-                  <td className={`col-money ${moneyClassForRow("original")} sales-orders-print-money--total`}>
-                    {formatFinanceCurrency(summary.originalValue)}
                   </td>
                   <td className={`col-money ${moneyClassForRow("active")} sales-orders-print-money--total`}>
                     {formatFinanceCurrency(summary.activeValue)}
@@ -262,7 +269,10 @@ export function SalesOrderReportPrintDocument({
                     {formatFinanceCurrency(summary.invoicedValue)}
                   </td>
                   <td className={`col-money ${moneyClassForRow("pending")} sales-orders-print-money--total`}>
-                    {formatFinanceCurrency(summary.pendingBalance)}
+                    {formatFinanceCurrency(summary.amountToInvoice)}
+                  </td>
+                  <td className={`col-money ${moneyClassForRow("pending")} sales-orders-print-money--total`}>
+                    {formatFinanceCurrency(summary.financialBalance)}
                   </td>
                 </tr>
               </tfoot>

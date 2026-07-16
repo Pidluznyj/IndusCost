@@ -18,6 +18,10 @@ import { loadCommissionSellerIdentityContext } from "../commissions/commissionSe
 import { loadManualCommercialOwnersForCustomers } from "../crmCustomerCommercialOwner.js";
 import { loadSalesOrderLinkedNfeContextMap } from "../salesOrderLinkedNfe.js";
 import {
+  buildOrderFiscalFinancialMetrics,
+  type OrderOfficialCrSummary,
+} from "./orderFiscalFinancialMetrics.js";
+import {
   buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
@@ -184,6 +188,23 @@ export async function loadSalesOrderReportPayload(
     referenceDate
   );
 
+  // CR oficial por sourceInvoiceId das NFs vinculadas (mesma regra da Auditoria 360º).
+  const nfeExternalIdsByOrder = new Map<string, number[]>();
+  const allNfeExternalIds = new Set<number>();
+  for (const order of orders) {
+    const linked = linkedNfeContextMap.get(order.id);
+    const ids = (linked?.nfeLinks ?? [])
+      .map((l) => l.nfeExternalId)
+      .filter((id): id is number => Number.isFinite(id) && id > 0);
+    nfeExternalIdsByOrder.set(order.id, ids);
+    for (const id of ids) allNfeExternalIds.add(id);
+  }
+  const crByOrderId = await loadOfficialCrSummaryByOrderNfes(
+    prisma,
+    nfeExternalIdsByOrder,
+    [...allNfeExternalIds]
+  );
+
   const uniqueCustomerIds = [
     ...new Set(orders.map((order) => order.Customer?.id).filter((id): id is string => !!id)),
   ];
@@ -194,7 +215,15 @@ export async function loadSalesOrderReportPayload(
     const hasInvoice = linked?.hasNfe ?? false;
     const nfeNumbers = linked?.nfeNumbers ?? [];
     const invoicedValue = linked?.nfeTotalValue ?? 0;
+    const nfeProductsValue = linked?.nfeProductsValue ?? 0;
+    const nfeHighlightedTaxesValue = linked?.nfeHighlightedTaxesValue ?? 0;
     const lastNfeDate = isoOrNull(linked?.lastNfeProcessingDate ?? null);
+    const crSummary = crByOrderId.get(order.id) ?? {
+      hasOfficialCr: false,
+      crOriginal: 0,
+      crReceived: 0,
+      crOpen: 0,
+    };
 
     // Status/quantidade oficial por item (nomusRawResponse.itensPedido[]).
     const rawItems = extractNomusRawItems(order.nomusRawResponse);
@@ -274,7 +303,17 @@ export async function loadSalesOrderReportPayload(
     }
 
     const activeValue = Math.max(0, originalValue - canceledValue - cutValue);
-    const pendingBalance = Math.max(0, activeValue - invoicedValue);
+    const metrics = buildOrderFiscalFinancialMetrics({
+      orderActiveValue: activeValue,
+      nfeProductsValue,
+      nfeHighlightedTaxesValue,
+      nfeValidTotalValue: invoicedValue,
+      cr: crSummary,
+    });
+    const amountToInvoice = metrics.amountToInvoice;
+    const financialBalance = metrics.financialBalance;
+    // Compat: pendingBalance legado = A faturar (operacional), NÃO saldo CR.
+    const pendingBalance = amountToInvoice;
 
     const seller = buildSalesOrderNomusSellerDto(
       { externalSellerId: order.externalSellerId ?? null, issueDate: order.issueDate },
@@ -300,7 +339,9 @@ export async function loadSalesOrderReportPayload(
       canceledItemsCount,
       cutItemsCount,
       hasInvoice,
-      pendingBalance,
+      amountToInvoice,
+      financialBalance,
+      hasOfficialCr: crSummary.hasOfficialCr,
       invoicedValue,
       activeValue,
     });
@@ -340,6 +381,15 @@ export async function loadSalesOrderReportPayload(
       cutValue: roundMoney(cutValue),
       activeValue: roundMoney(activeValue),
       invoicedValue: roundMoney(invoicedValue),
+      nfeProductsValue: roundMoney(nfeProductsValue),
+      nfeHighlightedTaxesValue: roundMoney(nfeHighlightedTaxesValue),
+      amountToInvoice: roundMoney(amountToInvoice),
+      hasOfficialCr: crSummary.hasOfficialCr,
+      crOriginal: roundMoney(crSummary.crOriginal),
+      crReceived: roundMoney(crSummary.crReceived),
+      crOpen: roundMoney(crSummary.crOpen),
+      financialBalance:
+        financialBalance == null ? null : roundMoney(financialBalance),
       pendingBalance: roundMoney(pendingBalance),
       hasInvoice,
       billingStatus,
@@ -446,7 +496,9 @@ function buildAlertsSummary(input: {
   canceledItemsCount: number;
   cutItemsCount: number;
   hasInvoice: boolean;
-  pendingBalance: number;
+  amountToInvoice: number;
+  financialBalance: number | null;
+  hasOfficialCr: boolean;
   invoicedValue: number;
   activeValue: number;
 }): string {
@@ -454,9 +506,79 @@ function buildAlertsSummary(input: {
   if (input.canceledItemsCount > 0) parts.push(`${input.canceledItemsCount} cancelado(s)`);
   if (input.cutItemsCount > 0) parts.push(`${input.cutItemsCount} cortado(s)`);
   if (!input.hasInvoice && input.activeValue > 0) parts.push("Sem NF");
-  if (input.pendingBalance > 0.01) parts.push("Saldo pendente");
+  if (input.amountToInvoice > 0.01) parts.push("A faturar");
+  if (!input.hasOfficialCr && input.hasInvoice) parts.push("Sem CR gerado");
+  if (input.hasOfficialCr && (input.financialBalance ?? 0) > 0.01) {
+    parts.push("Saldo financeiro");
+  }
   if (input.activeValue > 0 && Math.abs(input.invoicedValue - input.activeValue) < 0.01) {
     parts.push("100% faturado");
   }
   return parts.join(" · ");
+}
+
+/**
+ * Agrega CR oficial por pedido via sourceInvoiceId ∈ NFs vinculadas.
+ * Dedup por receivable.externalId.
+ */
+async function loadOfficialCrSummaryByOrderNfes(
+  prisma: PrismaClient,
+  nfeExternalIdsByOrder: Map<string, number[]>,
+  allNfeExternalIds: number[]
+): Promise<Map<string, OrderOfficialCrSummary>> {
+  const result = new Map<string, OrderOfficialCrSummary>();
+  for (const orderId of nfeExternalIdsByOrder.keys()) {
+    result.set(orderId, {
+      hasOfficialCr: false,
+      crOriginal: 0,
+      crReceived: 0,
+      crOpen: 0,
+    });
+  }
+  if (allNfeExternalIds.length === 0) return result;
+
+  const receivables = await prisma.nomusAccountsReceivable.findMany({
+    where: { sourceInvoiceId: { in: allNfeExternalIds } },
+    select: {
+      externalId: true,
+      sourceInvoiceId: true,
+      amountReceivable: true,
+      amountReceived: true,
+      balanceReceivable: true,
+    },
+  });
+
+  const orderIdByNfeId = new Map<number, string>();
+  for (const [orderId, nfeIds] of nfeExternalIdsByOrder) {
+    for (const nfeId of nfeIds) {
+      // Se a mesma NF aparecer em mais de um pedido (anomalia), o primeiro ganha —
+      // o relatório sinaliza divergência via hasValueDivergence no linked context.
+      if (!orderIdByNfeId.has(nfeId)) orderIdByNfeId.set(nfeId, orderId);
+    }
+  }
+
+  const seenReceivableByOrder = new Map<string, Set<number>>();
+  for (const row of receivables) {
+    if (row.sourceInvoiceId == null) continue;
+    const orderId = orderIdByNfeId.get(row.sourceInvoiceId);
+    if (!orderId) continue;
+    const seen = seenReceivableByOrder.get(orderId) ?? new Set<number>();
+    if (seen.has(row.externalId)) continue;
+    seen.add(row.externalId);
+    seenReceivableByOrder.set(orderId, seen);
+
+    const cur = result.get(orderId) ?? {
+      hasOfficialCr: false,
+      crOriginal: 0,
+      crReceived: 0,
+      crOpen: 0,
+    };
+    cur.hasOfficialCr = true;
+    cur.crOriginal += decimalToNumber(row.amountReceivable) ?? 0;
+    cur.crReceived += decimalToNumber(row.amountReceived) ?? 0;
+    cur.crOpen += decimalToNumber(row.balanceReceivable) ?? 0;
+    result.set(orderId, cur);
+  }
+
+  return result;
 }

@@ -170,6 +170,7 @@ export type SalesOrderDetailFinancial = {
   plannedTotals: {
     totalCount: number;
     totalExpected: number;
+    applicableExpected: number;
     openExpected: number;
     overdueExpected: number;
     overdueCount: number;

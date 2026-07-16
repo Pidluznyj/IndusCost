@@ -3,6 +3,10 @@ import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import { isNomusNfeCancelled } from "./finance/nfeStatus.js";
 import { prisma } from "./prisma.js";
 import {
+  buildLinkedNfeFiscalAmounts,
+  resolveNfeComparableBillingValue,
+} from "./sales/orderFiscalFinancialMetrics.js";
+import {
   diffCalendarDays,
   extractNomusRawNfes,
   parseNomusBrOrIsoDate,
@@ -38,6 +42,8 @@ export type SalesOrderLinkedNomusNfeInput = {
   xmlDhEmi: Date | null;
   valorLiquido: unknown;
   xmlVNF: unknown;
+  xmlVProd?: unknown;
+  xmlVDesc?: unknown;
 };
 
 export type SalesOrderLinkedNfeContext = {
@@ -63,10 +69,14 @@ export type SalesOrderLinkedNfeContext = {
   lastNfeProcessingDate: Date | null;
   firstNfeIssueDate: Date | null;
   lastNfeIssueDate: Date | null;
-  /** Soma só de NF válidas para faturamento (exclui canceladas). */
+  /** Soma só de NF válidas para faturamento (exclui canceladas) — base comparável (preferência xmlVNF). */
   nfeTotalValue: number;
   /** Soma histórica incluindo canceladas. */
   nfeTotalValueAll: number;
+  /** Soma de produtos líquidos (valorLiquido) das NF válidas. */
+  nfeProductsValue: number;
+  /** Soma de impostos destacados (vNF − produtos) das NF válidas, quando ambos existem. */
+  nfeHighlightedTaxesValue: number;
   invoiceCoveragePercent: number | null;
   isFullyInvoiced: boolean;
   isPartiallyInvoiced: boolean;
@@ -117,15 +127,25 @@ export function resolveLinkedNfeIssueDate(
   return startOfLocalDay(nomusNfe.xmlDhEmi);
 }
 
+/**
+ * Valor de faturamento da NF vinculada em base comparável ao pedido.
+ * Prefere `xmlVNF` (total da NF, incl. IPI quando presente no vNF).
+ * Fallback: `valorLiquido` (vProd − vDesc) e depois rawPayload.
+ */
 export function resolveLinkedNfeValue(
   link: Pick<SalesOrderLinkedNfeLinkInput, "rawPayload">,
   nomusNfe?: SalesOrderLinkedNomusNfeInput | null
 ): number {
-  const fromNomus =
-    decimalToNumber(nomusNfe?.valorLiquido) ?? decimalToNumber(nomusNfe?.xmlVNF);
-  if (fromNomus != null && fromNomus >= 0) return fromNomus;
-  const fromRaw = readRawValue(link.rawPayload, ["valor", "valorTotal", "xmlVNF", "vNF"]);
-  return fromRaw ?? 0;
+  const fromRaw = readRawValue(link.rawPayload, ["xmlVNF", "vNF", "valor", "valorTotal"]);
+  return resolveNfeComparableBillingValue(nomusNfe ?? null, fromRaw ?? 0);
+}
+
+export function resolveLinkedNfeFiscalBreakdown(
+  link: Pick<SalesOrderLinkedNfeLinkInput, "rawPayload">,
+  nomusNfe?: SalesOrderLinkedNomusNfeInput | null
+) {
+  const fromRaw = readRawValue(link.rawPayload, ["xmlVNF", "vNF", "valor", "valorTotal"]);
+  return buildLinkedNfeFiscalAmounts(nomusNfe ?? null, fromRaw ?? 0);
 }
 
 export function isInvoiceCoverageComplete(
@@ -161,6 +181,8 @@ function buildContextFromExtractedRows(input: {
     processingDate: Date | null;
     issueDate: Date | null;
     value: number;
+    productsValue: number;
+    highlightedTaxesValue: number;
     nomusNfeId: string | null;
     /** Status oficial preferencial (NomusNfe.status). */
     officialStatus?: number | null;
@@ -200,6 +222,11 @@ function buildContextFromExtractedRows(input: {
 
   const nfeTotalValueAll = input.rows.reduce((sum, row) => sum + row.value, 0);
   const nfeTotalValue = billingRows.reduce((sum, row) => sum + row.value, 0);
+  const nfeProductsValue = billingRows.reduce((sum, row) => sum + row.productsValue, 0);
+  const nfeHighlightedTaxesValue = billingRows.reduce(
+    (sum, row) => sum + row.highlightedTaxesValue,
+    0
+  );
   const totalNet = input.totalNetValue != null ? Number(input.totalNetValue) : null;
   const invoiceCoveragePercent = computeInvoiceCoveragePercent(nfeTotalValue, totalNet);
   const isFullyInvoiced = isInvoiceCoverageComplete(nfeTotalValue, totalNet);
@@ -303,6 +330,8 @@ function buildContextFromExtractedRows(input: {
     lastNfeIssueDate: issueDates[issueDates.length - 1] ?? null,
     nfeTotalValue,
     nfeTotalValueAll,
+    nfeProductsValue,
+    nfeHighlightedTaxesValue,
     invoiceCoveragePercent,
     isFullyInvoiced,
     isPartiallyInvoiced,
@@ -355,12 +384,15 @@ export function buildSalesOrderLinkedNfeContext(input: {
         isFornecedor: null,
         rawPayload: asObject(link.rawPayload) ?? {},
       };
+      const fiscal = resolveLinkedNfeFiscalBreakdown(link, nomusNfe);
       return {
         linkId: link.id,
         extracted,
         processingDate: resolveLinkedNfeProcessingDate(link, nomusNfe),
         issueDate: resolveLinkedNfeIssueDate(nomusNfe),
-        value: resolveLinkedNfeValue(link, nomusNfe),
+        value: fiscal.comparableBillingValue,
+        productsValue: fiscal.productsValue ?? 0,
+        highlightedTaxesValue: fiscal.highlightedTaxesValue ?? 0,
         nomusNfeId: nomusNfe?.id ?? link.nomusNfeId,
         officialStatus: nomusNfe?.status ?? link.nfeStatus ?? null,
       };
@@ -387,12 +419,16 @@ export function buildSalesOrderLinkedNfeContext(input: {
     const raw = rawNfes[index];
     const processingDate = parseNomusBrOrIsoDate(row.dataProcessamento);
     const issueDate = parseNomusBrOrIsoDate(row.dataEmissao);
+    const value =
+      raw?.valor ?? readRawValue(row.rawPayload, ["xmlVNF", "vNF", "valor", "valorTotal"]) ?? 0;
     return {
       linkId: `raw-${row.nfeExternalId}`,
       extracted: row,
       processingDate,
       issueDate,
-      value: raw?.valor ?? readRawValue(row.rawPayload, ["valor", "valorTotal", "xmlVNF", "vNF"]) ?? 0,
+      value,
+      productsValue: value,
+      highlightedTaxesValue: 0,
       nomusNfeId: null,
       officialStatus: row.nfeStatus ?? null,
     };
@@ -459,6 +495,8 @@ export async function loadSalesOrderLinkedNfeContextMap(
             xmlDhEmi: true,
             valorLiquido: true,
             xmlVNF: true,
+            xmlVProd: true,
+            xmlVDesc: true,
           },
         })
       : [];
