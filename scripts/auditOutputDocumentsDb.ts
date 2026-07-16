@@ -28,6 +28,7 @@ import {
   type AuditOutputDocumentsDbResult,
 } from "../src/lib/output-documents/auditOutputDocumentsDb.ts";
 import { loadStageInventoryAndCoverage } from "../src/lib/output-documents/auditOutputDocumentsDbInventory.server.ts";
+import { loadRawJsonSampleAnalysis } from "../src/lib/output-documents/auditOutputDocumentsRawJson.server.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -85,10 +86,17 @@ async function main(): Promise<void> {
       sampleLimit: options.sampleLimit,
     });
 
+    console.warn(`${LOG} amostrando rawJson (paginado, limitado)…`);
+    const rawSample = await loadRawJsonSampleAnalysis(prisma, {
+      sampleLimit: options.sampleLimit,
+    });
+
     const sections = buildEmptyAuditSections();
     sections.inventory = loaded.inventory;
     sections.fieldCoverage = loaded.fieldCoverage;
     sections.itemCoverage = loaded.itemCoverage;
+    sections.rawJsonKeys = rawSample.rawJsonKeys;
+    sections.paymentTermsEvidence = rawSample.paymentTermsEvidence;
     sections.counts = {
       documents: loaded.inventory.documents.total,
       documentoSaida: loaded.inventory.documents.documentoSaida,
@@ -96,16 +104,22 @@ async function main(): Promise<void> {
       items: loaded.inventory.items.total,
       documentsWithoutItems: loaded.inventory.documents.withoutItems,
       orphanItems: loaded.inventory.items.orphanCount,
+      rawJsonSampleSize: rawSample.rawJsonKeys.sampleSize,
+      rawJsonKeyCount: rawSample.rawJsonKeys.keys.length,
+      paymentCandidateKeys: rawSample.paymentTermsEvidence.candidateKeys.length,
     };
     sections.samples = {
       documentsWithoutItemsExternalIds:
         loaded.inventory.samples.documentsWithoutItemsExternalIds,
       orphanItemIds: loaded.inventory.samples.orphanItemIds,
+      rawJsonDocumentsScanned: rawSample.rawJsonKeys.documentsScanned,
+      rawJsonItemsScanned: rawSample.rawJsonKeys.itemsScanned,
     };
     sections.notes = [
       "DS-02.3: inventário e cobertura do stage NomusStockDocument / NomusStockDocumentItem.",
-      "Consultas usam agregações SQL e amostras paginadas; tabelas completas não são carregadas em memória.",
-      "Campos productCode/productDescription não existem no schema do item — reportados como ausentes.",
+      "DS-02.4: matriz amostral de rawJson + evidências hipotéticas de pagamento/parcelas.",
+      "rawJsonKeys/paymentTermsEvidence são hipóteses por nome de chave — validar no servidor.",
+      "Payloads completos não são exportados; exemplos são sanitizados e truncados.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ];
 
@@ -116,14 +130,14 @@ async function main(): Promise<void> {
       options,
       database,
       status: "ok",
-      mode: "stage-inventory",
+      mode: "rawjson-sample",
       sections,
     });
 
     writeOutputs(result, options.jsonOutput, options.markdownOutput);
     console.log(JSON.stringify(result, null, 2));
     console.warn(
-      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} items=${loaded.inventory.items.total} durationMs=${result.meta.durationMs}`
+      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} rawKeys=${rawSample.rawJsonKeys.keys.length} durationMs=${result.meta.durationMs}`
     );
   } catch (error) {
     const finishedAt = new Date();
@@ -136,7 +150,7 @@ async function main(): Promise<void> {
         database,
         status: "unavailable",
         error: message,
-        mode: "stage-inventory",
+        mode: "rawjson-sample",
       });
       try {
         writeOutputs(result, options.jsonOutput, options.markdownOutput);
@@ -160,7 +174,7 @@ async function main(): Promise<void> {
       database,
       status: "error",
       error: message,
-      mode: "stage-inventory",
+      mode: "rawjson-sample",
     });
     try {
       writeOutputs(result, options.jsonOutput, options.markdownOutput);

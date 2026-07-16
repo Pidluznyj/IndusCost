@@ -38,7 +38,10 @@ export type SanitizedDatabaseTarget = {
 
 export type AuditOutputDocumentsDbStatus = "ok" | "unavailable" | "error";
 
-export type AuditOutputDocumentsDbMode = "scaffold" | "stage-inventory";
+export type AuditOutputDocumentsDbMode =
+  | "scaffold"
+  | "stage-inventory"
+  | "rawjson-sample";
 
 export type FieldCoverageStat = {
   field: string;
@@ -105,6 +108,8 @@ export type AuditOutputDocumentsDbSections = {
   inventory: StageInventory | null;
   fieldCoverage: FieldCoverageStat[];
   itemCoverage: FieldCoverageStat[];
+  rawJsonKeys: import("./auditOutputDocumentsRawJson.js").RawJsonKeysSection | null;
+  paymentTermsEvidence: import("./auditOutputDocumentsRawJson.js").PaymentTermsEvidence | null;
   counts: Record<string, unknown>;
   documentFocus: unknown;
   orderFocus: unknown;
@@ -383,6 +388,8 @@ export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
     inventory: null,
     fieldCoverage: [],
     itemCoverage: [],
+    rawJsonKeys: null,
+    paymentTermsEvidence: null,
     counts: {},
     documentFocus: null,
     orderFocus: null,
@@ -522,6 +529,106 @@ function formatInventoryMarkdown(inventory: StageInventory): string[] {
   return lines;
 }
 
+function formatRawJsonKeysMarkdown(
+  section: import("./auditOutputDocumentsRawJson.js").RawJsonKeysSection | null
+): string[] {
+  const lines: string[] = ["## rawJsonKeys", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| sampleSize | ${section.sampleSize} |`,
+    `| documentsScanned | ${section.documentsScanned} |`,
+    `| itemsScanned | ${section.itemsScanned} |`,
+    `| maxDepth | ${section.maxDepth} |`,
+    `| keys | ${section.keys.length} |`,
+    ""
+  );
+
+  const topKeys = section.keys.slice(0, 40);
+  if (topKeys.length === 0) {
+    lines.push("_Nenhuma chave encontrada na amostra._", "");
+  } else {
+    lines.push(
+      "### Matriz de chaves (amostra; top 40)",
+      "",
+      "| Chave | Aparições | % amostra | Tipos | Exemplos sanitizados | Hipóteses |",
+      "|---|---:|---:|---|---|---|"
+    );
+    for (const row of topKeys) {
+      const examples = row.sanitizedExamples.join("; ").replace(/\|/g, "/") || "—";
+      const types = row.observedTypes.join(",") || "—";
+      const tags = row.hypothesisTags.join(",") || "—";
+      lines.push(
+        `| ${row.key.replace(/\|/g, "/")} | ${row.appearances} | ${row.samplePercent.toFixed(2)} | ${types} | ${examples} | ${tags} |`
+      );
+    }
+    lines.push("");
+  }
+
+  const focused = section.focusHypotheses.filter((f) => f.matchingKeyCount > 0);
+  if (focused.length > 0) {
+    lines.push("### Focos (hipótese por nome)", "");
+    for (const focus of focused) {
+      lines.push(
+        `- **${focus.focus}**: ${focus.matchingKeyCount} chave(s) — ${focus.matchingKeys.slice(0, 8).join(", ")}${focus.matchingKeys.length > 8 ? ", …" : ""}`
+      );
+    }
+    lines.push("");
+  }
+
+  for (const note of section.notes) {
+    lines.push(`- ${note}`);
+  }
+  lines.push("");
+  return lines;
+}
+
+function formatPaymentTermsEvidenceMarkdown(
+  evidence: import("./auditOutputDocumentsRawJson.js").PaymentTermsEvidence | null
+): string[] {
+  const lines: string[] = ["## paymentTermsEvidence", ""];
+  if (!evidence) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+
+  lines.push(
+    `| hypothesisOnly | ${evidence.hypothesisOnly ? "sim" : "não"} |`,
+    `| sampleSize | ${evidence.sampleSize} |`,
+    `| candidateKeys | ${evidence.candidateKeys.length} |`,
+    ""
+  );
+
+  if (evidence.candidateKeys.length === 0) {
+    lines.push(
+      "_Nenhuma chave candidata de pagamento/parcelas na amostra (hipótese)._",
+      ""
+    );
+  } else {
+    lines.push(
+      "| Chave | Aparições | % | Tipos | Exemplos | Tags |",
+      "|---|---:|---:|---|---|---|"
+    );
+    for (const row of evidence.candidateKeys.slice(0, 30)) {
+      lines.push(
+        `| ${row.key.replace(/\|/g, "/")} | ${row.appearances} | ${row.samplePercent.toFixed(2)} | ${row.observedTypes.join(",") || "—"} | ${row.sanitizedExamples.join("; ").replace(/\|/g, "/") || "—"} | ${row.hypothesisTags.join(",") || "—"} |`
+      );
+    }
+    lines.push("");
+  }
+
+  for (const note of evidence.notes) {
+    lines.push(`- ${note}`);
+  }
+  lines.push("");
+  return lines;
+}
+
 export function formatAuditOutputDocumentsDbMarkdown(
   result: AuditOutputDocumentsDbResult
 ): string {
@@ -565,6 +672,11 @@ export function formatAuditOutputDocumentsDbMarkdown(
       "Item coverage (`NomusStockDocumentItem`)",
       result.sections.itemCoverage
     )
+  );
+
+  lines.push(...formatRawJsonKeysMarkdown(result.sections.rawJsonKeys));
+  lines.push(
+    ...formatPaymentTermsEvidenceMarkdown(result.sections.paymentTermsEvidence)
   );
 
   if (result.sections.notes.length > 0) {

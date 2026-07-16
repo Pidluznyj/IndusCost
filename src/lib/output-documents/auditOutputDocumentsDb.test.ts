@@ -25,6 +25,13 @@ import {
   buildDocumentFieldCoverage,
   buildItemFieldCoverage,
 } from "./auditOutputDocumentsDbInventory.server.js";
+import {
+  accumulateRawJsonKeysFromPayload,
+  buildPaymentTermsEvidence,
+  buildRawJsonKeysSection,
+  createRawJsonKeyAccumulatorMap,
+  finalizeRawJsonKeyMatrix,
+} from "./auditOutputDocumentsRawJson.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(
@@ -38,6 +45,10 @@ const SCRIPT_PATH = join(
 const INVENTORY_SERVER_PATH = join(
   HERE,
   "auditOutputDocumentsDbInventory.server.ts"
+);
+const RAWJSON_SERVER_PATH = join(
+  HERE,
+  "auditOutputDocumentsRawJson.server.ts"
 );
 
 describe("parseAuditOutputDocumentsDbArgs", () => {
@@ -229,7 +240,7 @@ describe("cobertura e percentuais", () => {
 });
 
 describe("estrutura básica do resultado", () => {
-  it("monta contrato com inventory, fieldCoverage e itemCoverage", () => {
+  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys e paymentTermsEvidence", () => {
     const startedAt = new Date("2026-07-16T12:00:00.000Z");
     const finishedAt = new Date("2026-07-16T12:00:01.250Z");
     const options = parseAuditOutputDocumentsDbArgs([]);
@@ -239,6 +250,13 @@ describe("estrutura básica do resultado", () => {
     inventory.documents.otherTypes = 1;
     inventory.items.total = 5;
     inventory.items.withoutProduct = 1;
+
+    const acc = createRawJsonKeyAccumulatorMap();
+    accumulateRawJsonKeysFromPayload(acc, {
+      idNfe: 7208,
+      condicaoPagamento: { parcelas: [{ valor: "1,00" }] },
+    });
+    const rawRows = finalizeRawJsonKeyMatrix(acc, 1);
 
     const sections = buildEmptyAuditSections();
     sections.inventory = inventory;
@@ -263,6 +281,14 @@ describe("estrutura básica do resultado", () => {
       createdAt: 5,
       updatedAt: 5,
     });
+    sections.rawJsonKeys = buildRawJsonKeysSection({
+      sampleSize: 1,
+      documentsScanned: 1,
+      itemsScanned: 0,
+      maxDepth: 8,
+      rows: rawRows,
+    });
+    sections.paymentTermsEvidence = buildPaymentTermsEvidence(rawRows, 1);
 
     const result = buildAuditResult({
       startedAt,
@@ -272,26 +298,32 @@ describe("estrutura básica do resultado", () => {
         "postgresql://u:p@localhost:5432/induscost"
       ),
       status: "ok",
-      mode: "stage-inventory",
+      mode: "rawjson-sample",
       sections,
     });
 
-    assert.equal(result.meta.mode, "stage-inventory");
+    assert.equal(result.meta.mode, "rawjson-sample");
     assert.equal(result.meta.readOnly, true);
     assert.equal(result.meta.durationMs, 1250);
     assert.ok(result.sections.inventory);
     assert.equal(result.sections.inventory!.documents.total, 3);
     assert.ok(result.sections.fieldCoverage.length > 0);
     assert.ok(result.sections.itemCoverage.length > 0);
+    assert.ok(result.sections.rawJsonKeys);
+    assert.ok(result.sections.paymentTermsEvidence);
+    assert.equal(result.sections.paymentTermsEvidence!.hypothesisOnly, true);
 
     const markdown = formatAuditOutputDocumentsDbMarkdown(result);
     assert.match(markdown, /Inventory/);
     assert.match(markdown, /Field coverage/);
     assert.match(markdown, /Item coverage/);
+    assert.match(markdown, /rawJsonKeys/);
+    assert.match(markdown, /paymentTermsEvidence/);
     assert.match(markdown, /DocumentoSaida/);
     assert.match(markdown, /idNfe/);
     assert.match(markdown, /productCode/);
-    assert.match(markdown, /stage-inventory/);
+    assert.match(markdown, /rawjson-sample/);
+    assert.ok(!markdown.includes("12345678000190"));
   });
 });
 
@@ -348,8 +380,8 @@ describe("banco indisponível e desconexão", () => {
 });
 
 describe("garantia read-only", () => {
-  it("não contém operações de escrita Prisma no runner nem no loader", () => {
-    for (const path of [SCRIPT_PATH, INVENTORY_SERVER_PATH]) {
+  it("não contém operações de escrita Prisma no runner nem nos loaders", () => {
+    for (const path of [SCRIPT_PATH, INVENTORY_SERVER_PATH, RAWJSON_SERVER_PATH]) {
       const source = readFileSync(path, "utf8");
       for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
         assert.equal(
@@ -362,5 +394,6 @@ describe("garantia read-only", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
     assert.match(script, /disconnectPrismaSafe/);
     assert.match(script, /loadStageInventoryAndCoverage/);
+    assert.match(script, /loadRawJsonSampleAnalysis/);
   });
 });
