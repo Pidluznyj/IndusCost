@@ -28,9 +28,18 @@ export type AuthUser = {
   updatedAt: string;
 };
 
+import type { EffectiveAccessMeDto } from "@/src/lib/effectiveAccessDtoTypes";
+
+export type { EffectiveAccessMeDto };
+
 export type AuthMeResponse = {
   authenticated: boolean;
   user: AuthUser | null;
+  /**
+   * Bloco shadow P04 — presente só com EFFECTIVE_ACCESS_DTO_IN_ME=1.
+   * Não substitui `user.permissions` / `effectivePermissions` (ainda autoridade).
+   */
+  effectiveAccess?: EffectiveAccessMeDto;
 };
 
 export type PermissionCatalogEntry = {

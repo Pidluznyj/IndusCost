@@ -172,17 +172,23 @@ Cada célula efetiva deve expor `source`:
 
 ## 4. DTO `/api/auth/me`
 
+**Implementação P04:** ver `docs/security/permissions-effective-access-dto.md`.
+
 ```ts
-type EffectiveAccessDto = {
-  user: SafeAppUserIdentity; // id, name, email, role, profile meta, sellers, …
-  permissionsVersion: number; // bump em todo save de ACL
-  // Transição: manter bag legada somente leitura / deprecada
-  legacyPermissions?: string[]; // TEMP — não usar para auth FE
-  effective: {
-    // mapa compacto resourceKey → flags
-    byResource: Record<string, { canView: boolean; canExecute: boolean; canManage: boolean; source: string }>;
-    // opcional: lista só dos keys com algum allow (payload menor)
-    allowedKeys?: string[];
+// Bloco adicional (flag EFFECTIVE_ACCESS_DTO_IN_ME=1) — não remove SafeAppUser.permissions[]
+type EffectiveAccessMeDto = {
+  permissionsVersion: number;
+  role: string;
+  isSuperAdmin: boolean;
+  allowedResources: string[];
+  actionsByResource: Record<string, string[]>;
+  navigationReveal: string[];
+  capabilities: Record<string, { canView: boolean; canExecute: boolean; canManage: boolean }>;
+  compatibility: {
+    mode: "shadow";
+    legacyBagAuthoritative: true;
+    legacyPermissionsPresent: boolean;
+    legacyCompatApplied: boolean;
   };
 };
 ```
@@ -190,8 +196,9 @@ type EffectiveAccessDto = {
 **Regras:**
 
 - Cookie/sessão identifica o usuário; **não** embute árvore completa de permissões no token.
-- Cada request API: auth → carrega user → `resolveEffectiveAccess` (com cache curto por `userId+permissionsVersion`, ver §5).
-- FE: `hasPermission(legacyKey)` torna-se adapter temporário que consulta projeção 1:1; preferir `canView(resourceKey)`.
+- Cada request API: auth → carrega user → (futuro) `resolveEffectiveAccess` com cache por `userId+permissionsVersion`.
+- Hoje: bag continua autoridade; DTO é shadow até cutover.
+- FE: preferir `canView(resourceKey)` do DTO após cutover; `hasPermission(legacyKey)` adapter temporário.
 
 ---
 

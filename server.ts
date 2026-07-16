@@ -463,6 +463,10 @@ import {
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
 import {
+  isEffectiveAccessDtoInMeEnabled,
+  tryBuildEffectiveAccessForAuthMe,
+} from "./src/lib/security/effectiveAccessDto/index.js";
+import {
   assertEmployeeEligibleForUserLink,
   EmployeeUserLinkError,
   filterEligibleEmployeesForUserLink,
@@ -1898,13 +1902,43 @@ async function startServer() {
         clearAppSessionCookie(res);
         return res.json({ authenticated: false, user: null });
       }
-      return res.json({
+      const payload: {
+        authenticated: true;
+        user: ReturnType<typeof toSafeAppUser>;
+        effectiveAccess?: ReturnType<typeof tryBuildEffectiveAccessForAuthMe>;
+      } = {
         authenticated: true,
         user: toSafeAppUser(user, {
           accessProfileName: user.accessProfile?.name ?? null,
           employee: user.employee,
         }),
-      });
+      };
+      // P04 shadow: bloco adicional; bag continua autoridade até cutover.
+      if (isEffectiveAccessDtoInMeEnabled()) {
+        try {
+          const overrides = await prisma.userPermissionOverride.findMany({
+            where: { userId: user.id },
+            select: {
+              resourceKey: true,
+              canView: true,
+              canExecute: true,
+              canManage: true,
+            },
+          });
+          const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
+            user: {
+              id: user.id,
+              role: user.role,
+              permissions: filterKnownPermissions(user.permissions),
+            },
+            overrides,
+          });
+          if (effectiveAccess) payload.effectiveAccess = effectiveAccess;
+        } catch (dtoError) {
+          console.error("GET /api/auth/me effectiveAccess DTO", dtoError);
+        }
+      }
+      return res.json(payload);
     } catch (error) {
       console.error("GET /api/auth/me", error);
       return res.status(500).json({ error: "Erro ao consultar sessão." });

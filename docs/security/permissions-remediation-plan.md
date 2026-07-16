@@ -129,13 +129,15 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 
 ### P04 — DTO de sessão
 
-- **Objetivo:** `/api/auth/me` retorna `effective.byResource` (+ version).
-- **Escopo:** `appAuth.ts`, AuthContext types, compat bag legada.
+- **Objetivo:** `/api/auth/me` retorna `effectiveAccess` (+ version placeholder).
+- **Escopo:** tipos FE-safe, builder P03, validação, flag `EFFECTIVE_ACCESS_DTO_IN_ME`, bag intacta.
 - **Deps:** P03.
-- **Risco:** médio (payload).
-- **Aceite:** FE consegue `canView(resourceKey)` só do DTO.
-- **Rollback:** clients ignoram campo novo.
-- **Migration:** talvez `permissionsVersion`.
+- **Risco:** baixo (flag default off; clients ignoram campo).
+- **Aceite:** DTO Leticia/SA/VIEWER vazio válidos; `/me` sem flag inalterado.
+- **Rollback:** desligar flag.
+- **Migration:** `permissionsVersion` ainda placeholder (P21).
+- **Status:** implementado (2026-07-16) — shadow.
+- **Docs:** `permissions-effective-access-dto.md`
 
 ### P05 — Deny real na UI/API admin
 
