@@ -13,6 +13,8 @@ import type {
   SalesOrderFiscalNfeDto,
   SalesOrderFiscalTaxesPayload,
 } from "@/src/lib/sales-orders/salesOrderFiscalTaxesClient";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canViewFinanceAccountsPayable } from "@/src/lib/financeAccountsPayablePermissions";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -139,6 +141,8 @@ export function SalesOrderTributosTab({
   className,
   showTechnical = true,
 }: Props): JSX.Element {
+  const auth = useAuth();
+  const canOpenAp = canViewFinanceAccountsPayable(auth);
   const [selectedNfeId, setSelectedNfeId] = useState<number | null>(null);
   const [techOpen, setTechOpen] = useState(false);
 
@@ -204,9 +208,401 @@ export function SalesOrderTributosTab({
     );
   }
 
-  const { summary, highlightedTaxes, nfes, cancelledNfes, itemTaxLines, technical } =
-    fiscalTaxes;
+  const {
+    summary,
+    highlightedTaxes,
+    nfes,
+    cancelledNfes,
+    itemTaxLines,
+    settlements,
+    technical,
+  } = fiscalTaxes;
   const hasAnyNfe = nfes.length + cancelledNfes.length > 0;
+  const settlementBlock =
+    settlements ??
+    ({
+      taxMatrix: [],
+      guides: [],
+      allocations: [],
+      history: [],
+      totals: {
+        highlightedTotal: 0,
+        assessedTotal: 0,
+        amountDueTotal: 0,
+        amountPaidTotal: 0,
+        allocatedToOrderTotal: 0,
+      },
+      emptyStates: {
+        noGuides: true,
+        noApuration: true,
+        noAllocations: true,
+      },
+      updatedAt: null,
+      apurationSourceLabel: "Fechamento fiscal do período" as const,
+      collectionSourceLabel: "Guia + baixa/comprovante" as const,
+      allocationSourceLabel:
+        "Metodologia gerencial explicitamente indicada" as const,
+    });
+
+  const settlementsSections = (
+    <>
+      {/* Camada B — Apuração */}
+      <section
+        className="rounded-xl border border-[#E5E7EB] bg-white p-3"
+        data-testid="sales-order-tributos-apuration"
+      >
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
+          Apuração fiscal
+        </h3>
+        <p className="mb-2 text-[11px] text-[#6B7280]" title="Fonte: fechamento fiscal do período">
+          Fonte: {settlementBlock.apurationSourceLabel}. Valores “Apurado no
+          período” — não confundir com destacado na NF nem com pago.
+        </p>
+        {settlementBlock.emptyStates.noApuration &&
+        settlementBlock.emptyStates.noGuides ? (
+          <p className="text-[12px] text-[#6B7280]">
+            Sem informação de apuração vinculada a este pedido.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Kpi
+              label="Apurado no período"
+              value={money(settlementBlock.totals.assessedTotal)}
+              help="Soma dos valores apurados nas guias/períodos ligados"
+              tone="highlight"
+            />
+            <Kpi
+              label="Devido"
+              value={money(settlementBlock.totals.amountDueTotal)}
+            />
+            <Kpi
+              label="Efetivamente recolhido"
+              value={money(settlementBlock.totals.amountPaidTotal)}
+              help="Pago via guia/AP — não é o destacado da NF"
+            />
+            <Kpi
+              label="Atualizado"
+              value={
+                settlementBlock.updatedAt
+                  ? formatFinanceDateTime(settlementBlock.updatedAt)
+                  : "—"
+              }
+              tone="muted"
+            />
+          </div>
+        )}
+      </section>
+
+      {/* Matriz por tributo A×B×C×D */}
+      <section
+        className="rounded-xl border border-[#E5E7EB] bg-white p-3"
+        data-testid="sales-order-tributos-matrix"
+      >
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
+          Por tributo — destacado × apurado × recolhido × alocado
+        </h3>
+        <p className="mb-2 text-[11px] text-[#6B7280]">
+          Labels explícitos por camada. Nunca use “impostos pagos” para todos os
+          valores.
+        </p>
+        {settlementBlock.taxMatrix.length === 0 ? (
+          <p className="text-[12px] text-[#6B7280]">
+            Sem linhas consolidadas de tributo.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead>
+                <tr className="border-b border-[#E5E7EB] text-[#6B7280]">
+                  <th className="py-1.5 pr-2 font-semibold">Tributo</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Destacado na NF
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold">Período</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Apurado no período
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Créditos</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Devido</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Efetivamente recolhido
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Juros/Multa
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold">Pagamento</th>
+                  <th className="py-1.5 pr-2 font-semibold">Guia</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Alocado gerencialmente
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold">Metodologia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlementBlock.taxMatrix.map((row) => (
+                  <tr key={row.taxType} className="border-b border-[#F3F4F6]">
+                    <td className="py-1.5 pr-2 font-semibold">{row.label}</td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(row.highlightedAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {row.periodStart && row.periodEnd
+                        ? `${formatFinanceDate(row.periodStart)} → ${formatFinanceDate(row.periodEnd)}`
+                        : "—"}
+                      {row.periodStatus ? (
+                        <span className="ml-1 text-[10px] text-[#6B7280]">
+                          ({row.periodStatus})
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(row.assessedAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(row.creditsAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(row.amountDue)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right font-semibold">
+                      {money(row.amountPaid)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {row.interestAmount != null || row.fineAmount != null
+                        ? `${money(row.interestAmount)} / ${money(row.fineAmount)}`
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {row.paidAt ? formatFinanceDate(row.paidAt) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {row.guideType
+                        ? `${row.guideType}${row.guideNumber ? ` ${row.guideNumber}` : ""}`
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      <span
+                        className={cn(
+                          "inline-flex rounded border px-1.5 py-0.5 text-[10px] font-semibold",
+                          row.statusCode === "PAID" &&
+                            "border-emerald-200 bg-emerald-50 text-emerald-900",
+                          row.statusCode === "PARTIALLY_PAID" &&
+                            "border-amber-200 bg-amber-50 text-amber-900",
+                          row.statusCode === "NO_COLLECTION_INFO" &&
+                            "border-[#E5E7EB] bg-[#F9FAFB] text-[#4B5563]",
+                          row.statusCode === "ASSESSED_PENDING_PAYMENT" &&
+                            "border-sky-200 bg-sky-50 text-sky-900"
+                        )}
+                        title={row.statusLabel}
+                      >
+                        {row.statusLabel}
+                      </span>
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(row.allocatedToOrder)}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {row.allocationMethodLabel ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Camada C — Recolhimentos */}
+      <section
+        className="rounded-xl border border-[#E5E7EB] bg-white p-3"
+        data-testid="sales-order-tributos-collections"
+      >
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
+          Recolhimentos
+        </h3>
+        <p className="mb-2 text-[11px] text-[#6B7280]" title="Fonte: guia + baixa/comprovante">
+          Fonte: {settlementBlock.collectionSourceLabel}. “Efetivamente
+          recolhido” vem da guia/AP — não do XML da NF.
+        </p>
+        {settlementBlock.emptyStates.noGuides ? (
+          <p
+            className="rounded-md border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-4 text-[12px] text-[#6B7280]"
+            data-testid="sales-order-tributos-no-guides"
+          >
+            Sem informação de recolhimento.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead>
+                <tr className="border-b border-[#E5E7EB] text-[#6B7280]">
+                  <th className="py-1.5 pr-2 font-semibold">Guia</th>
+                  <th className="py-1.5 pr-2 font-semibold">Tributo</th>
+                  <th className="py-1.5 pr-2 font-semibold">Período</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Devido</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Pago</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Saldo</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold">AP / comprovante</th>
+                  <th className="py-1.5 pr-2 font-semibold">Situação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlementBlock.guides.map((g) => (
+                  <tr key={g.guideId} className="border-b border-[#F3F4F6]">
+                    <td className="py-1.5 pr-2 font-semibold">
+                      {g.guideTypeLabel}
+                      {g.guideNumber ? ` ${g.guideNumber}` : ""}
+                    </td>
+                    <td className="py-1.5 pr-2">{g.taxType}</td>
+                    <td className="py-1.5 pr-2">
+                      {formatFinanceDate(g.periodStart)} →{" "}
+                      {formatFinanceDate(g.periodEnd)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(g.amountDue)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right font-semibold">
+                      {money(g.amountPaid)}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(g.balanceDue)}
+                    </td>
+                    <td className="py-1.5 pr-2">{g.statusLabel}</td>
+                    <td className="py-1.5 pr-2">
+                      {g.accountsPayableExternalId != null && canOpenAp ? (
+                        <a
+                          href={`/finance/accounts-payable?search=${encodeURIComponent(
+                            g.accountsPayableDocumentNumber ??
+                              String(g.accountsPayableExternalId)
+                          )}`}
+                          className="text-sky-800 underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          AP #
+                          {g.accountsPayableDocumentNumber ??
+                            g.accountsPayableExternalId}
+                        </a>
+                      ) : g.accountsPayableExternalId != null ? (
+                        <span>
+                          AP #
+                          {g.accountsPayableDocumentNumber ??
+                            g.accountsPayableExternalId}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                      {g.proofCount > 0 ? (
+                        <span className="ml-1 text-[10px] text-[#6B7280]">
+                          · {g.proofCount} comprovante(s)
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-1.5 pr-2 text-[10px] text-[#374151]">
+                      {g.collectionLabel}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Camada D — Alocação */}
+      <section
+        className="rounded-xl border border-[#E5E7EB] bg-white p-3"
+        data-testid="sales-order-tributos-allocations"
+      >
+        <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
+          Alocação gerencialmente ao pedido
+        </h3>
+        <p className="mb-2 text-[11px] text-[#6B7280]" title="Fonte: metodologia gerencial">
+          Fonte: {settlementBlock.allocationSourceLabel}.{" "}
+          <strong>Não</strong> é pagamento oficial específico da NF.
+        </p>
+        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <Kpi
+            label="Alocado gerencialmente ao pedido"
+            value={money(settlementBlock.totals.allocatedToOrderTotal)}
+            tone="highlight"
+          />
+          <Kpi
+            label="Destacado na NF (ref.)"
+            value={money(settlementBlock.totals.highlightedTotal)}
+            tone="muted"
+          />
+        </div>
+        {settlementBlock.emptyStates.noAllocations ? (
+          <p className="text-[12px] text-[#6B7280]">
+            Nenhuma alocação gerencial registrada para este pedido.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-[11px]">
+              <thead>
+                <tr className="border-b border-[#E5E7EB] text-[#6B7280]">
+                  <th className="py-1.5 pr-2 font-semibold">Tributo</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Valor</th>
+                  <th className="py-1.5 pr-2 font-semibold">Metodologia</th>
+                  <th className="py-1.5 pr-2 font-semibold">Período</th>
+                  <th className="py-1.5 pr-2 font-semibold">Calculado em</th>
+                  <th className="py-1.5 pr-2 font-semibold">Versão</th>
+                  <th className="py-1.5 pr-2 font-semibold">Obs.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlementBlock.allocations.map((a) => (
+                  <tr key={a.id} className="border-b border-[#F3F4F6]">
+                    <td className="py-1.5 pr-2 font-semibold">{a.taxType}</td>
+                    <td className="py-1.5 pr-2 text-right">
+                      {money(a.allocatedAmount)}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {a.allocationMethodLabel}
+                      {a.manualOverride ? " · override manual" : ""}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {a.periodStart && a.periodEnd
+                        ? `${formatFinanceDate(a.periodStart)} → ${formatFinanceDate(a.periodEnd)}`
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {formatFinanceDateTime(a.calculatedAt)}
+                    </td>
+                    <td className="py-1.5 pr-2">v{a.version}</td>
+                    <td className="py-1.5 pr-2 max-w-[180px] truncate">
+                      {a.notes ?? "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {settlementBlock.history.length > 0 ? (
+        <section
+          className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] p-3"
+          data-testid="sales-order-tributos-history"
+        >
+          <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#4B5563]">
+            Histórico (apuração / guia / alocação)
+          </h3>
+          <ul className="space-y-1 text-[11px] text-[#4B5563]">
+            {settlementBlock.history.slice(0, 15).map((h, idx) => (
+              <li key={`${h.entityId}-${h.at}-${idx}`}>
+                {formatFinanceDateTime(h.at)} — {h.summary}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
 
   if (!hasAnyNfe) {
     return (
@@ -229,8 +625,9 @@ export function SalesOrderTributosTab({
           Nenhuma NF-e vinculada a este pedido. Tributos documentais aparecem após o
           faturamento.
         </div>
+        {settlementsSections}
         <p className="text-[10px] text-[#6B7280]">
-          Fonte: {summary.sourceLabel}
+          Fonte destacados: {summary.sourceLabel}
           {summary.lastParsedAt
             ? ` · Última leitura XML: ${formatFinanceDateTime(summary.lastParsedAt)}`
             : ""}
@@ -319,11 +716,10 @@ export function SalesOrderTributosTab({
         data-testid="sales-order-tributos-highlighted"
       >
         <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
-          Tributos destacados nas NF válidas
+          Destacado na NF
         </h3>
-        <p className="mb-2 text-[11px] text-[#6B7280]">
-          Apenas linhas de cabeçalho (HEADER). Não somar com itens. Não confundir com
-          imposto pago.
+        <p className="mb-2 text-[11px] text-[#6B7280]" title="Fonte: XML NF-e">
+          Fonte: XML NF-e (HEADER). Não confundir com apurado, recolhido ou alocado.
         </p>
         {highlightedTaxes.length === 0 ? (
           <p className="text-[12px] text-[#6B7280]">
@@ -343,7 +739,9 @@ export function SalesOrderTributosTab({
         )}
       </section>
 
-      {/* C — Notas fiscais */}
+      {settlementsSections}
+
+      {/* Notas fiscais */}
       <section
         className="rounded-xl border border-[#E5E7EB] bg-white p-3"
         data-testid="sales-order-tributos-nfes"
@@ -551,6 +949,10 @@ export function SalesOrderTributosTab({
               <p>{technical.source}</p>
               <p>{technical.note}</p>
               <p>Não somar HEADER e ITEM: {String(technical.doNotSumHeaderAndItem)}</p>
+              <p>
+                Camadas: Destacado na NF ≠ Apurado no período ≠ Efetivamente
+                recolhido ≠ Alocado gerencialmente ao pedido.
+              </p>
             </div>
           ) : null}
         </section>

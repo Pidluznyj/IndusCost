@@ -10,7 +10,28 @@ import {
   canViewSalesOrderFiscalTaxes,
   canViewSalesOrderFiscalTaxesFromPermissions,
 } from "./salesOrderFiscalTaxesPermissions.js";
+import {
+  collectionLabelForGuide,
+  resolveSalesOrderFiscalSettlementStatus,
+} from "./salesOrderFiscalTaxesClient.js";
 import type { OrderFullAuditPayload } from "../finance/orderFullAuditClient.js";
+
+function emptySettlementPrismaExtras() {
+  return {
+    fiscalAllocation: {
+      findMany: async () => [],
+    },
+    fiscalPaymentGuide: {
+      findMany: async () => [],
+    },
+    fiscalSettlementAuditLog: {
+      findMany: async () => [],
+    },
+    nomusAccountsPayable: {
+      findMany: async () => [],
+    },
+  };
+}
 
 function baseAudit(
   overrides: Partial<OrderFullAuditPayload> = {}
@@ -305,6 +326,7 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
           },
         ],
       },
+      ...emptySettlementPrismaExtras(),
     };
 
     const payload = await buildSalesOrderFiscalTaxesPayload(
@@ -333,6 +355,126 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
     assert.equal(payload.nfes.length, 1);
     assert.equal(payload.nfes[0]!.totalValue, PD_02457_FISCAL.vNF);
     assert.ok(payload.itemTaxLines.some((l) => l.taxType === "IPI"));
+
+    // T06 — settlements: sem guia → “Sem informação de recolhimento”
+    assert.ok(payload.settlements);
+    assert.equal(payload.settlements.emptyStates.noGuides, true);
+    const matrixIpi = payload.settlements.taxMatrix.find((r) => r.taxType === "IPI");
+    assert.ok(matrixIpi);
+    assert.equal(matrixIpi!.highlightedAmount, PD_02457_FISCAL.ipi);
+    assert.equal(matrixIpi!.statusCode, "NO_COLLECTION_INFO");
+    assert.equal(matrixIpi!.statusLabel, "Sem informação de recolhimento");
+  });
+
+  it("consolida alocação + guia parcial no pedido", async () => {
+    const money = (n: number) => ({
+      toNumber: () => n,
+      toFixed: (d: number) => n.toFixed(d),
+    });
+    const prisma = {
+      nomusNfe: { findMany: async () => [] },
+      fiscalAllocation: {
+        findMany: async () => [
+          {
+            id: "alloc-1",
+            guideId: "guide-1",
+            salesOrderId: "00000000-0000-4000-8000-000000000001",
+            nomusNfeId: null,
+            taxType: "IPI",
+            allocatedAmount: money(129.19),
+            allocationMethod: "MANUAL",
+            allocationBase: null,
+            periodStart: new Date("2026-03-01"),
+            periodEnd: new Date("2026-03-31"),
+            calculatedAt: new Date("2026-04-01T10:00:00Z"),
+            version: 1,
+            manualOverride: true,
+            notes: "gerencial",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ],
+      },
+      fiscalPaymentGuide: {
+        findMany: async () => [
+          {
+            id: "guide-1",
+            taxType: "IPI",
+            guideType: "DARF",
+            guideNumber: "G-IPI",
+            status: "PARTIALLY_PAID",
+            periodStart: new Date("2026-03-01"),
+            periodEnd: new Date("2026-03-31"),
+            dueDate: new Date("2026-04-20"),
+            assessedAmount: money(1000),
+            creditsAmount: money(0),
+            compensationsAmount: money(0),
+            interestAmount: money(0),
+            fineAmount: money(0),
+            amountDue: money(1000),
+            amountPaid: money(400),
+            balanceDue: money(600),
+            paidAt: new Date("2026-04-15"),
+            accountsPayableExternalId: 55,
+            period: { id: "p1", status: "CLOSED", periodStart: new Date("2026-03-01"), periodEnd: new Date("2026-03-31") },
+            proofs: [{ id: "pr1" }],
+            allocations: [
+              {
+                id: "alloc-1",
+                allocatedAmount: money(129.19),
+                allocationMethod: "MANUAL",
+                salesOrderId: "00000000-0000-4000-8000-000000000001",
+              },
+            ],
+          },
+        ],
+      },
+      fiscalSettlementAuditLog: {
+        findMany: async () => [
+          {
+            id: "aud-1",
+            entityType: "FiscalAllocation",
+            entityId: "alloc-1",
+            action: "CREATE",
+            userName: "tester",
+            createdAt: new Date("2026-04-01T10:00:00Z"),
+          },
+        ],
+      },
+      nomusAccountsPayable: {
+        findMany: async () => [
+          { externalId: 55, documentNumber: "AP-55" },
+        ],
+      },
+    };
+
+    const audit = baseAudit({
+      nfes: [],
+      nfeItems: [],
+      summary: { ...baseAudit().summary, activeOrderValue: 0 },
+    });
+    // inject highlighted via empty nfes — matrix from allocations/guides
+    const { buildSalesOrderFiscalSettlementsBlock } = await import(
+      "./salesOrderFiscalTaxes.server.js"
+    );
+    const block = await buildSalesOrderFiscalSettlementsBlock(prisma as never, {
+      salesOrderId: audit.salesOrderId,
+      highlightedTaxes: [{ taxType: "IPI", label: "IPI", amount: 129.19 }],
+      nomusNfeIds: [],
+    });
+
+    assert.equal(block.emptyStates.noGuides, false);
+    assert.equal(block.emptyStates.noAllocations, false);
+    assert.equal(block.guides.length, 1);
+    assert.match(block.guides[0]!.collectionLabel, /parcial/i);
+    assert.equal(block.guides[0]!.accountsPayableDocumentNumber, "AP-55");
+    assert.equal(block.totals.allocatedToOrderTotal, 129.19);
+    const row = block.taxMatrix.find((r) => r.taxType === "IPI");
+    assert.ok(row);
+    assert.equal(row!.statusCode, "PARTIALLY_PAID");
+    assert.equal(row!.allocatedToOrder, 129.19);
+    assert.equal(row!.highlightedAmount, 129.19);
+    assert.ok(block.history.length >= 1);
   });
 
   it("NF cancelada fica separada e fora dos totalizadores", async () => {
@@ -340,6 +482,7 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
       nomusNfe: {
         findMany: async () => [],
       },
+      ...emptySettlementPrismaExtras(),
     };
     const audit = baseAudit({
       nfes: [
@@ -396,6 +539,7 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
   it("pedido sem NF retorna resumo vazio e a faturar = ativo", async () => {
     const prisma = {
       nomusNfe: { findMany: async () => [] },
+      ...emptySettlementPrismaExtras(),
     };
     const audit = baseAudit({
       nfes: [],

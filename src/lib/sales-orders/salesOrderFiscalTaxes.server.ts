@@ -11,13 +11,30 @@ import {
 } from "@/src/lib/sales/orderFiscalFinancialMetrics.js";
 import type { OrderFullAuditNfe, OrderFullAuditPayload } from "@/src/lib/finance/orderFullAuditClient.js";
 import {
+  collectionLabelForGuide,
+  emptySalesOrderFiscalSettlementsBlock,
   filterPositiveTaxAmounts,
   labelForFiscalTaxType,
+  resolveSalesOrderFiscalSettlementStatus,
+  SALES_ORDER_FISCAL_SETTLEMENT_STATUS_LABELS,
   type SalesOrderFiscalNfeDto,
+  type SalesOrderFiscalSettlementAllocationDto,
+  type SalesOrderFiscalSettlementGuideDto,
+  type SalesOrderFiscalSettlementHistoryDto,
+  type SalesOrderFiscalSettlementsBlock,
   type SalesOrderFiscalTaxAmount,
   type SalesOrderFiscalTaxLineDto,
+  type SalesOrderFiscalTaxMatrixRow,
   type SalesOrderFiscalTaxesPayload,
 } from "./salesOrderFiscalTaxesClient.js";
+import {
+  FISCAL_ALLOCATION_METHOD_LABELS,
+  FISCAL_GUIDE_STATUS_LABELS,
+  FISCAL_GUIDE_TYPE_LABELS,
+  type FiscalAllocationMethodCode,
+  type FiscalGuideStatusCode,
+  type FiscalGuideTypeCode,
+} from "@/src/lib/finance/fiscalSettlementClient.js";
 
 type PrismaLike = PrismaClient;
 
@@ -409,6 +426,22 @@ export async function buildSalesOrderFiscalTaxesPayload(
     })
   );
 
+  const nomusNfeIds = built
+    .map((n) => n.nomusNfeId)
+    .filter((id): id is string => Boolean(id));
+
+  let settlements: SalesOrderFiscalSettlementsBlock;
+  try {
+    settlements = await buildSalesOrderFiscalSettlementsBlock(prisma, {
+      salesOrderId: audit.salesOrderId,
+      highlightedTaxes,
+      nomusNfeIds,
+    });
+  } catch (err) {
+    console.error("buildSalesOrderFiscalSettlementsBlock", err);
+    settlements = emptySalesOrderFiscalSettlementsBlock(new Date().toISOString());
+  }
+
   return {
     summary: {
       orderActiveValue,
@@ -438,10 +471,363 @@ export async function buildSalesOrderFiscalTaxesPayload(
     nfes: activeNfes,
     cancelledNfes: cancelled,
     itemTaxLines,
+    settlements,
     technical: {
-      source: "NomusNfeFiscalSummary + NomusNfeTaxLine (HEADER) · fallback highlightedTaxes",
-      note: "Não somar HEADER e ITEM. Destacados ≠ pagos. Residual ≠ saldo financeiro. Saldo financeiro = CR aberto.",
+      source:
+        "NomusNfeFiscalSummary + NomusNfeTaxLine (HEADER) · FiscalPaymentGuide/Allocation (B/C/D)",
+      note: "Não somar HEADER e ITEM. Destacado ≠ apurado ≠ pago ≠ alocado. Residual ≠ saldo financeiro.",
       doNotSumHeaderAndItem: true,
     },
   };
+}
+
+/**
+ * Camadas B/C/D para o pedido — 2–3 queries (allocations → guides → audit), sem N+1.
+ * Não altera NF, AP nem baixas; só lê.
+ */
+export async function buildSalesOrderFiscalSettlementsBlock(
+  prisma: PrismaLike,
+  input: {
+    salesOrderId: string;
+    highlightedTaxes: SalesOrderFiscalTaxAmount[];
+    nomusNfeIds: string[];
+  }
+): Promise<SalesOrderFiscalSettlementsBlock> {
+  const salesOrderId = input.salesOrderId?.trim();
+  if (!salesOrderId) {
+    return emptySalesOrderFiscalSettlementsBlock(new Date().toISOString());
+  }
+
+  const orFilters: Array<Record<string, unknown>> = [{ salesOrderId }];
+  if (input.nomusNfeIds.length > 0) {
+    orFilters.push({ nomusNfeId: { in: input.nomusNfeIds } });
+  }
+
+  const allocationRows = await prisma.fiscalAllocation.findMany({
+    where: { OR: orFilters },
+    orderBy: [{ calculatedAt: "desc" }, { createdAt: "desc" }],
+    take: 500,
+  });
+
+  const guideIds = [...new Set(allocationRows.map((a) => a.guideId))];
+
+  const guideRows =
+    guideIds.length === 0
+      ? []
+      : await prisma.fiscalPaymentGuide.findMany({
+          where: { id: { in: guideIds } },
+          include: {
+            period: { select: { id: true, status: true, periodStart: true, periodEnd: true } },
+            proofs: { select: { id: true } },
+            allocations: {
+              where: { OR: orFilters },
+              select: {
+                id: true,
+                allocatedAmount: true,
+                allocationMethod: true,
+                salesOrderId: true,
+              },
+            },
+          },
+        });
+
+  const guideById = new Map(guideRows.map((g) => [g.id, g] as const));
+
+  const allocations: SalesOrderFiscalSettlementAllocationDto[] =
+    allocationRows.map((a) => {
+      const method = a.allocationMethod as FiscalAllocationMethodCode;
+      return {
+        id: a.id,
+        settlementId: a.guideId,
+        guideId: a.guideId,
+        taxType: a.taxType,
+        allocatedAmount: dec(a.allocatedAmount) ?? 0,
+        allocationMethod: method,
+        allocationMethodLabel:
+          FISCAL_ALLOCATION_METHOD_LABELS[method] ?? method,
+        allocationBase: dec(a.allocationBase),
+        periodStart: isoDate(a.periodStart),
+        periodEnd: isoDate(a.periodEnd),
+        calculatedAt: a.calculatedAt.toISOString(),
+        version: a.version,
+        manualOverride: a.manualOverride,
+        notes: a.notes,
+        nomusNfeId: a.nomusNfeId,
+        isManagerialOnly: true,
+      };
+    });
+
+  const guides: SalesOrderFiscalSettlementGuideDto[] = guideRows.map((g) => {
+    const guideType = g.guideType as FiscalGuideTypeCode;
+    const status = g.status as FiscalGuideStatusCode;
+    const amountDue = dec(g.amountDue) ?? 0;
+    const amountPaid = dec(g.amountPaid) ?? 0;
+    const balanceDue = dec(g.balanceDue) ?? 0;
+    const allocatedToThisOrder = round2(
+      g.allocations.reduce((s, a) => s + (dec(a.allocatedAmount) ?? 0), 0)
+    );
+    const methodLabels = [
+      ...new Set(
+        g.allocations.map((a) => {
+          const m = a.allocationMethod as FiscalAllocationMethodCode;
+          return FISCAL_ALLOCATION_METHOD_LABELS[m] ?? m;
+        })
+      ),
+    ];
+    return {
+      guideId: g.id,
+      taxType: g.taxType,
+      guideType,
+      guideTypeLabel: FISCAL_GUIDE_TYPE_LABELS[guideType] ?? guideType,
+      guideNumber: g.guideNumber,
+      status,
+      statusLabel: FISCAL_GUIDE_STATUS_LABELS[status] ?? status,
+      periodStart: isoDate(g.periodStart)!,
+      periodEnd: isoDate(g.periodEnd)!,
+      dueDate: isoDate(g.dueDate),
+      assessedAmount: dec(g.assessedAmount) ?? 0,
+      creditsAmount: dec(g.creditsAmount) ?? 0,
+      compensationsAmount: dec(g.compensationsAmount) ?? 0,
+      interestAmount: dec(g.interestAmount) ?? 0,
+      fineAmount: dec(g.fineAmount) ?? 0,
+      amountDue,
+      amountPaid,
+      balanceDue,
+      paidAt: iso(g.paidAt),
+      accountsPayableExternalId: g.accountsPayableExternalId,
+      accountsPayableDocumentNumber: null,
+      proofCount: g.proofs.length,
+      allocatedToThisOrder,
+      allocationMethodLabels: methodLabels,
+      collectionLabel: collectionLabelForGuide({
+        status,
+        amountDue,
+        amountPaid,
+        balanceDue,
+      }),
+    };
+  });
+
+  // Enriquecer documento AP em lote (sem N+1).
+  const apIds = guides
+    .map((g) => g.accountsPayableExternalId)
+    .filter((n): n is number => n != null);
+  if (apIds.length > 0) {
+    const apRows = await prisma.nomusAccountsPayable.findMany({
+      where: { externalId: { in: [...new Set(apIds)] } },
+      select: { externalId: true, documentNumber: true },
+    });
+    const apDoc = new Map(apRows.map((r) => [r.externalId, r.documentNumber]));
+    for (const g of guides) {
+      if (g.accountsPayableExternalId != null) {
+        g.accountsPayableDocumentNumber =
+          apDoc.get(g.accountsPayableExternalId) ?? null;
+      }
+    }
+  }
+
+  // Matriz por tributo: união destacados + alocações + guias.
+  const taxTypes = new Set<string>();
+  for (const t of input.highlightedTaxes) taxTypes.add(t.taxType);
+  for (const a of allocations) taxTypes.add(a.taxType);
+  for (const g of guides) taxTypes.add(g.taxType);
+
+  const highlightedMap = new Map(
+    input.highlightedTaxes.map((t) => [t.taxType, t.amount] as const)
+  );
+
+  const taxMatrix: SalesOrderFiscalTaxMatrixRow[] = [...taxTypes]
+    .sort((a, b) => a.localeCompare(b))
+    .map((taxType) => {
+      const allocs = allocations.filter((a) => a.taxType === taxType);
+      const relatedGuides = guides.filter((g) => g.taxType === taxType);
+      const primaryGuide = relatedGuides[0] ?? null;
+      const guideFromAlloc =
+        allocs.length > 0 ? guideById.get(allocs[0]!.guideId) ?? null : null;
+      const periodStatus = guideFromAlloc?.period?.status ?? null;
+
+      const allocatedToOrder = round2(
+        allocs.reduce((s, a) => s + a.allocatedAmount, 0)
+      );
+      const assessedAmount = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.assessedAmount, 0))
+        : null;
+      const creditsAmount = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.creditsAmount, 0))
+        : null;
+      const amountDue = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.amountDue, 0))
+        : null;
+      const amountPaid = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.amountPaid, 0))
+        : null;
+      const interestAmount = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.interestAmount, 0))
+        : null;
+      const fineAmount = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.fineAmount, 0))
+        : null;
+      const guideBalanceDue = primaryGuide
+        ? round2(relatedGuides.reduce((s, g) => s + g.balanceDue, 0))
+        : null;
+
+      const paidAts = relatedGuides
+        .map((g) => g.paidAt)
+        .filter((d): d is string => Boolean(d))
+        .sort();
+      const methods = [
+        ...new Set(allocs.map((a) => a.allocationMethodLabel)),
+      ];
+
+      const statusCode = resolveSalesOrderFiscalSettlementStatus({
+        hasGuide: relatedGuides.length > 0,
+        guideStatus: primaryGuide?.status ?? null,
+        periodStatus,
+        assessedAmount,
+        amountDue,
+        amountPaid,
+        allocatedAmount: allocatedToOrder,
+      });
+
+      return {
+        taxType,
+        label: labelForFiscalTaxType(taxType),
+        highlightedAmount: highlightedMap.get(taxType) ?? null,
+        periodStart:
+          primaryGuide?.periodStart ??
+          allocs[0]?.periodStart ??
+          null,
+        periodEnd:
+          primaryGuide?.periodEnd ?? allocs[0]?.periodEnd ?? null,
+        periodStatus,
+        assessedAmount,
+        creditsAmount,
+        amountDue,
+        amountPaid,
+        interestAmount,
+        fineAmount,
+        paidAt: paidAts.at(-1) ?? null,
+        guideType: primaryGuide?.guideTypeLabel ?? null,
+        guideNumber: primaryGuide?.guideNumber ?? null,
+        guideStatus: primaryGuide?.statusLabel ?? null,
+        guideBalanceDue,
+        allocatedToOrder: allocatedToOrder > 0 ? allocatedToOrder : null,
+        allocationMethod: allocs[0]?.allocationMethod ?? null,
+        allocationMethodLabel: methods.join(" · ") || null,
+        statusCode,
+        statusLabel: SALES_ORDER_FISCAL_SETTLEMENT_STATUS_LABELS[statusCode],
+      };
+    });
+
+  // Histórico recente das entidades envolvidas (1 query).
+  const entityIds = [
+    ...guideIds,
+    ...allocationRows.map((a) => a.id),
+  ];
+  const historyRows =
+    entityIds.length === 0
+      ? []
+      : await prisma.fiscalSettlementAuditLog.findMany({
+          where: { entityId: { in: entityIds } },
+          orderBy: { createdAt: "desc" },
+          take: 30,
+        });
+
+  const history: SalesOrderFiscalSettlementHistoryDto[] = historyRows.map(
+    (h) => ({
+      at: h.createdAt.toISOString(),
+      entityType: h.entityType,
+      entityId: h.entityId,
+      action: h.action,
+      summary: `${h.entityType} · ${h.action}${h.userName ? ` · ${h.userName}` : ""}`,
+    })
+  );
+
+  const updatedAt =
+    [
+      ...allocations.map((a) => a.calculatedAt),
+      ...guides.map((g) => g.paidAt).filter((d): d is string => Boolean(d)),
+      ...history.map((h) => h.at),
+    ]
+      .sort()
+      .at(-1) ?? new Date().toISOString();
+
+  const highlightedTotal = round2(
+    input.highlightedTaxes.reduce((s, t) => s + t.amount, 0)
+  );
+  const assessedTotal = round2(
+    taxMatrix.reduce((s, r) => s + (r.assessedAmount ?? 0), 0)
+  );
+  const amountDueTotal = round2(
+    taxMatrix.reduce((s, r) => s + (r.amountDue ?? 0), 0)
+  );
+  const amountPaidTotal = round2(
+    taxMatrix.reduce((s, r) => s + (r.amountPaid ?? 0), 0)
+  );
+  const allocatedToOrderTotal = round2(
+    allocations.reduce((s, a) => s + a.allocatedAmount, 0)
+  );
+
+  // Se há destacados mas nenhuma guia/alocação, ainda assim listar matriz A-only.
+  if (taxMatrix.length === 0 && input.highlightedTaxes.length > 0) {
+    for (const t of input.highlightedTaxes) {
+      const statusCode = resolveSalesOrderFiscalSettlementStatus({
+        hasGuide: false,
+        allocatedAmount: 0,
+      });
+      taxMatrix.push({
+        taxType: t.taxType,
+        label: t.label,
+        highlightedAmount: t.amount,
+        periodStart: null,
+        periodEnd: null,
+        periodStatus: null,
+        assessedAmount: null,
+        creditsAmount: null,
+        amountDue: null,
+        amountPaid: null,
+        interestAmount: null,
+        fineAmount: null,
+        paidAt: null,
+        guideType: null,
+        guideNumber: null,
+        guideStatus: null,
+        guideBalanceDue: null,
+        allocatedToOrder: null,
+        allocationMethod: null,
+        allocationMethodLabel: null,
+        statusCode,
+        statusLabel: SALES_ORDER_FISCAL_SETTLEMENT_STATUS_LABELS[statusCode],
+      });
+    }
+  }
+
+  return {
+    apurationSourceLabel: "Fechamento fiscal do período",
+    collectionSourceLabel: "Guia + baixa/comprovante",
+    allocationSourceLabel: "Metodologia gerencial explicitamente indicada",
+    updatedAt,
+    taxMatrix,
+    guides,
+    allocations,
+    history,
+    totals: {
+      highlightedTotal,
+      assessedTotal,
+      amountDueTotal,
+      amountPaidTotal,
+      allocatedToOrderTotal,
+    },
+    emptyStates: {
+      noGuides: guides.length === 0,
+      noApuration: !guides.some((g) => g.assessedAmount > 0.009),
+      noAllocations: allocations.length === 0,
+    },
+  };
+}
+
+function isoDate(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value.slice(0, 10);
+  return value.toISOString().slice(0, 10);
 }

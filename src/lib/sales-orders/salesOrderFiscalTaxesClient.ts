@@ -129,12 +129,225 @@ export type SalesOrderFiscalTaxesPayload = {
   nfes: SalesOrderFiscalNfeDto[];
   cancelledNfes: SalesOrderFiscalNfeDto[];
   itemTaxLines: SalesOrderFiscalTaxLineDto[];
+  /**
+   * Camadas B/C/D — apuração, recolhimento e alocação gerencial.
+   * Sempre presente quando o payload fiscal é carregado; pode estar vazio.
+   */
+  settlements: SalesOrderFiscalSettlementsBlock;
   technical: {
     source: string;
     note: string;
     doNotSumHeaderAndItem: true;
   };
 };
+
+/** Status textual da linha consolidada por tributo (nunca “impostos pagos” genérico). */
+export type SalesOrderFiscalSettlementStatusCode =
+  | "NO_COLLECTION_INFO"
+  | "ASSESSED_PENDING_PAYMENT"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "GUIDE_CANCELLED"
+  | "OPEN_PERIOD"
+  | "ALLOCATED_ONLY";
+
+export const SALES_ORDER_FISCAL_SETTLEMENT_STATUS_LABELS: Record<
+  SalesOrderFiscalSettlementStatusCode,
+  string
+> = {
+  NO_COLLECTION_INFO: "Sem informação de recolhimento",
+  ASSESSED_PENDING_PAYMENT: "Apurado, pendente de recolhimento",
+  PARTIALLY_PAID: "Recolhimento parcial",
+  PAID: "Efetivamente recolhido",
+  GUIDE_CANCELLED: "Guia cancelada/estornada",
+  OPEN_PERIOD: "Período de apuração ainda aberto",
+  ALLOCATED_ONLY: "Alocado gerencialmente (sem guia completa)",
+};
+
+export type SalesOrderFiscalTaxMatrixRow = {
+  taxType: string;
+  label: string;
+  /** Destacado na NF (HEADER). */
+  highlightedAmount: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  periodStatus: string | null;
+  /** Apurado no período (soma linhas do mesmo taxType nos períodos ligados). */
+  assessedAmount: number | null;
+  creditsAmount: number | null;
+  amountDue: number | null;
+  amountPaid: number | null;
+  interestAmount: number | null;
+  fineAmount: number | null;
+  paidAt: string | null;
+  guideType: string | null;
+  guideNumber: string | null;
+  guideStatus: string | null;
+  guideBalanceDue: number | null;
+  allocatedToOrder: number | null;
+  allocationMethod: string | null;
+  allocationMethodLabel: string | null;
+  statusCode: SalesOrderFiscalSettlementStatusCode;
+  statusLabel: string;
+};
+
+export type SalesOrderFiscalSettlementGuideDto = {
+  guideId: string;
+  taxType: string;
+  guideType: string;
+  guideTypeLabel: string;
+  guideNumber: string | null;
+  status: string;
+  statusLabel: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string | null;
+  assessedAmount: number;
+  creditsAmount: number;
+  compensationsAmount: number;
+  interestAmount: number;
+  fineAmount: number;
+  amountDue: number;
+  amountPaid: number;
+  balanceDue: number;
+  paidAt: string | null;
+  accountsPayableExternalId: number | null;
+  accountsPayableDocumentNumber: string | null;
+  proofCount: number;
+  allocatedToThisOrder: number;
+  allocationMethodLabels: string[];
+  /** Texto operacional (parcial / pendente / sem recolhimento). */
+  collectionLabel: string;
+};
+
+export type SalesOrderFiscalSettlementAllocationDto = {
+  id: string;
+  settlementId: string;
+  guideId: string;
+  taxType: string;
+  allocatedAmount: number;
+  allocationMethod: string;
+  allocationMethodLabel: string;
+  allocationBase: number | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  calculatedAt: string;
+  version: number;
+  manualOverride: boolean;
+  notes: string | null;
+  nomusNfeId: string | null;
+  isManagerialOnly: true;
+};
+
+export type SalesOrderFiscalSettlementHistoryDto = {
+  at: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  summary: string;
+};
+
+export type SalesOrderFiscalSettlementsBlock = {
+  /** Fonte B */
+  apurationSourceLabel: "Fechamento fiscal do período";
+  /** Fonte C */
+  collectionSourceLabel: "Guia + baixa/comprovante";
+  /** Fonte D */
+  allocationSourceLabel: "Metodologia gerencial explicitamente indicada";
+  updatedAt: string | null;
+  taxMatrix: SalesOrderFiscalTaxMatrixRow[];
+  guides: SalesOrderFiscalSettlementGuideDto[];
+  allocations: SalesOrderFiscalSettlementAllocationDto[];
+  history: SalesOrderFiscalSettlementHistoryDto[];
+  totals: {
+    highlightedTotal: number;
+    assessedTotal: number;
+    amountDueTotal: number;
+    amountPaidTotal: number;
+    allocatedToOrderTotal: number;
+  };
+  emptyStates: {
+    noGuides: boolean;
+    noApuration: boolean;
+    noAllocations: boolean;
+  };
+};
+
+export function emptySalesOrderFiscalSettlementsBlock(
+  updatedAt: string | null = null
+): SalesOrderFiscalSettlementsBlock {
+  return {
+    apurationSourceLabel: "Fechamento fiscal do período",
+    collectionSourceLabel: "Guia + baixa/comprovante",
+    allocationSourceLabel: "Metodologia gerencial explicitamente indicada",
+    updatedAt,
+    taxMatrix: [],
+    guides: [],
+    allocations: [],
+    history: [],
+    totals: {
+      highlightedTotal: 0,
+      assessedTotal: 0,
+      amountDueTotal: 0,
+      amountPaidTotal: 0,
+      allocatedToOrderTotal: 0,
+    },
+    emptyStates: {
+      noGuides: true,
+      noApuration: true,
+      noAllocations: true,
+    },
+  };
+}
+
+export function resolveSalesOrderFiscalSettlementStatus(input: {
+  hasGuide: boolean;
+  guideStatus?: string | null;
+  periodStatus?: string | null;
+  assessedAmount?: number | null;
+  amountDue?: number | null;
+  amountPaid?: number | null;
+  allocatedAmount?: number | null;
+}): SalesOrderFiscalSettlementStatusCode {
+  const paid = input.amountPaid ?? 0;
+  const due = input.amountDue ?? 0;
+  const assessed = input.assessedAmount ?? 0;
+  const allocated = input.allocatedAmount ?? 0;
+  const st = (input.guideStatus ?? "").toUpperCase();
+
+  if (st === "CANCELLED" || st === "REVERSED") return "GUIDE_CANCELLED";
+  if (!input.hasGuide) {
+    if (allocated > 0.009) return "ALLOCATED_ONLY";
+    return "NO_COLLECTION_INFO";
+  }
+  if ((input.periodStatus ?? "").toUpperCase() === "OPEN" && paid <= 0.009) {
+    return "OPEN_PERIOD";
+  }
+  if (paid > 0.009 && due > 0 && paid + 0.009 < due) return "PARTIALLY_PAID";
+  if (paid + 0.009 >= due && due > 0.009) return "PAID";
+  if (assessed > 0.009 && paid <= 0.009) return "ASSESSED_PENDING_PAYMENT";
+  if (paid <= 0.009) return "ASSESSED_PENDING_PAYMENT";
+  return "PAID";
+}
+
+export function collectionLabelForGuide(input: {
+  status: string;
+  amountDue: number;
+  amountPaid: number;
+  balanceDue: number;
+}): string {
+  const st = input.status.toUpperCase();
+  if (st === "CANCELLED" || st === "REVERSED") {
+    return "Guia cancelada/estornada — sem recolhimento válido";
+  }
+  if (input.amountPaid <= 0.009) {
+    return "Apurado, pendente de recolhimento";
+  }
+  if (input.balanceDue > 0.009) {
+    return `Recolhimento parcial — devido ${input.amountDue.toFixed(2)}, pago ${input.amountPaid.toFixed(2)}, saldo ${input.balanceDue.toFixed(2)}`;
+  }
+  return "Efetivamente recolhido";
+}
 
 export function labelForFiscalTaxType(taxType: string): string {
   return SALES_ORDER_FISCAL_TAX_LABELS[taxType] ?? taxType;
