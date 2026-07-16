@@ -116,6 +116,23 @@ export function buildAccessProfileMatrixTree(
   return skeleton;
 }
 
+/** Mapa resourceKey → flags 3 eixos a partir do bag do perfil. */
+export function projectAccessProfileResourceFlags(
+  permissions: readonly string[],
+  roleBase?: AppUserRole | null | ""
+): Record<string, { canView: boolean; canExecute: boolean; canManage: boolean }> {
+  const role: AppUserRole =
+    roleBase && roleBase !== "" && roleBase !== "SUPER_ADMIN"
+      ? roleBase
+      : "VIEWER";
+  const projected = projectLegacyToStructured({
+    role,
+    legacyPermissions: permissions,
+    elevateAncestors: false,
+  });
+  return projected.projectedFlags;
+}
+
 export function buildAccessProfileMatrixModel(
   permissions: readonly string[],
   roleBase?: AppUserRole | null | ""

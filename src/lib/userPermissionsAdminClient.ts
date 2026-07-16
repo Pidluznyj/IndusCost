@@ -75,6 +75,10 @@ export type UserPermissionsPayload = {
     editingSuperAdmin: boolean;
     isLastSuperAdmin: boolean;
   };
+  /** Perfil de acesso vinculado (snapshot). */
+  accessProfile: { id: string; name: string } | null;
+  /** Flags projetadas do snapshot do perfil (origem na matriz). */
+  profileFlags: Record<string, PermissionFlagsDto>;
 };
 
 export type RoleMatrixRowDto = {

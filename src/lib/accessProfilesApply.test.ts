@@ -46,14 +46,31 @@ function makePrismaMock(args: {
         data,
       }: {
         where: { id: string };
-        data: { role: AppUserRole; permissions: string[] };
+        data: {
+          role?: AppUserRole;
+          permissions?: string[];
+          permissionsVersion?: { increment: number };
+        };
       }) {
         if (shouldFail) throw new Error("ROLLBACK_TEST");
         const u = users.find((x) => x.id === where.id);
         if (!u) throw new Error("missing");
-        u.role = data.role;
-        u.permissions = data.permissions;
+        if (data.role) u.role = data.role;
+        if (data.permissions) u.permissions = data.permissions;
         return u;
+      },
+    },
+    appSession: {
+      async updateMany() {
+        return { count: 0 };
+      },
+      async update() {
+        return {};
+      },
+    },
+    permissionAuditLog: {
+      async createMany() {
+        return { count: 0 };
       },
     },
     userPermissionOverride: {

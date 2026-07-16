@@ -3,13 +3,16 @@ import { describe, it } from "node:test";
 import {
   applyDenyOnResource,
   applyAllowOnResource,
+  buildMatrixSaveDiff,
   buildSaveOverridesFromMatrix,
   buildUserEffectivePreview,
   buildUserPermissionMatrixModel,
   clearMatrixOverrideForResource,
   draftOverrideMapFromMatrixDraft,
+  hasBroadPermissionChanges,
   hasCriticalPermissionChanges,
   resolveAxisWithPrecedence,
+  sessionAffectedMessage,
   wouldMatrixRemoveOwnUsersManage,
   USER_PERMISSION_PRECEDENCE_NOTICE,
 } from "./userPermissionsMatrix.ts";
@@ -194,5 +197,57 @@ describe("userPermissionsMatrix model", () => {
     });
     assert.equal(flags.dashboard.canView, true);
     assert.equal(flags.dashboard.canExecute, true);
+  });
+});
+
+describe("userPermissionsMatrix P22 — diff e confirmação ampla", () => {
+  it("buildMatrixSaveDiff lista grants e revokes", () => {
+    const tree = [
+      node({
+        key: "dashboard",
+        label: "Dashboard",
+        roleFlags: { canView: true, canExecute: false, canManage: false },
+        effectiveFlags: { canView: true, canExecute: false, canManage: false },
+      }),
+    ];
+    const model = buildUserPermissionMatrixModel(tree);
+    const before = { ...model.draft };
+    const after = applyDenyOnResource(model.draft, "dashboard");
+    const diff = buildMatrixSaveDiff(model.rows, before, after);
+    assert.ok(diff.some((d) => d.kind === "revoke" && d.resourceKey === "dashboard"));
+  });
+
+  it("hasBroadPermissionChanges usa limiar", () => {
+    assert.equal(
+      hasBroadPermissionChanges({
+        dirtyResourceCount: 4,
+        grantedCount: 0,
+        deniedCount: 0,
+        unchangedCount: 0,
+        parentBlockedCount: 0,
+        unsupportedCellCount: 0,
+        changedLabels: [],
+      }),
+      false
+    );
+    assert.equal(
+      hasBroadPermissionChanges({
+        dirtyResourceCount: 5,
+        grantedCount: 0,
+        deniedCount: 0,
+        unchangedCount: 0,
+        parentBlockedCount: 0,
+        unsupportedCellCount: 0,
+        changedLabels: [],
+      }),
+      true
+    );
+  });
+
+  it("sessionAffectedMessage diferencia self vs outro", () => {
+    assert.ok(sessionAffectedMessage({ isEditingSelf: true, targetName: "Eu" }).includes("Sua sessão"));
+    assert.ok(
+      sessionAffectedMessage({ isEditingSelf: false, targetName: "Leticia" }).includes("Leticia")
+    );
   });
 });

@@ -12,6 +12,9 @@ export const PermissionAuditActions = {
   OVERRIDE_UPDATED: "OVERRIDE_UPDATED",
   PRESET_APPLIED: "PRESET_APPLIED",
   PERMISSIONS_RESTORED_TO_DEFAULT: "PERMISSIONS_RESTORED_TO_DEFAULT",
+  ACCESS_PROFILE_CREATED: "ACCESS_PROFILE_CREATED",
+  ACCESS_PROFILE_UPDATED: "ACCESS_PROFILE_UPDATED",
+  ACCESS_PROFILE_APPLIED: "ACCESS_PROFILE_APPLIED",
 } as const;
 
 export type PermissionAuditAction =
@@ -277,6 +280,91 @@ export function buildPresetApplyAuditPlans(args: {
   return plans;
 }
 
+/** Metadados compactos — sem bag completo nem e-mails. */
+export function compactAccessProfileAuditMeta(args: {
+  profileId: string;
+  profileName: string;
+  permissionCount: number;
+  roleBase?: string | null;
+}): Record<string, unknown> {
+  return {
+    profileId: args.profileId,
+    profileName: args.profileName,
+    permissionCount: args.permissionCount,
+    ...(args.roleBase != null ? { roleBase: args.roleBase } : {}),
+  };
+}
+
+export function buildAccessProfileAuditPlans(args: {
+  kind: "created" | "updated" | "applied";
+  profileId: string;
+  profileName: string;
+  before?: { permissionCount: number; roleBase?: string | null };
+  after: { permissionCount: number; roleBase?: string | null; appliedUserCount?: number };
+  reason?: string | null;
+}): PermissionAuditEntryPlan[] {
+  const reason = args.reason?.trim() || null;
+  const action =
+    args.kind === "created"
+      ? PermissionAuditActions.ACCESS_PROFILE_CREATED
+      : args.kind === "updated"
+        ? PermissionAuditActions.ACCESS_PROFILE_UPDATED
+        : PermissionAuditActions.ACCESS_PROFILE_APPLIED;
+
+  const beforeJson = args.before
+    ? compactAccessProfileAuditMeta({
+        profileId: args.profileId,
+        profileName: args.profileName,
+        permissionCount: args.before.permissionCount,
+        roleBase: args.before.roleBase,
+      })
+    : null;
+
+  const afterJson: Record<string, unknown> = {
+    ...compactAccessProfileAuditMeta({
+      profileId: args.profileId,
+      profileName: args.profileName,
+      permissionCount: args.after.permissionCount,
+      roleBase: args.after.roleBase,
+    }),
+    ...(typeof args.after.appliedUserCount === "number"
+      ? { appliedUserCount: args.after.appliedUserCount }
+      : {}),
+    ...(reason ? { reason } : {}),
+  };
+
+  return [
+    {
+      action,
+      resourceKey: args.profileId,
+      targetRole: "VIEWER",
+      beforeJson,
+      afterJson,
+    },
+  ];
+}
+
+export function buildAccessProfileUserApplyAuditPlans(args: {
+  profileId: string;
+  profileName: string;
+  targetRole: string;
+  userId: string;
+}): PermissionAuditEntryPlan[] {
+  return [
+    {
+      action: PermissionAuditActions.ACCESS_PROFILE_APPLIED,
+      resourceKey: args.profileId,
+      targetRole: args.targetRole,
+      beforeJson: null,
+      afterJson: {
+        profileId: args.profileId,
+        profileName: args.profileName,
+        userId: args.userId,
+      },
+    },
+  ];
+}
+
 export function permissionAuditActionLabel(action: string): string {
   switch (action) {
     case PermissionAuditActions.ROLE_CHANGED:
@@ -295,6 +383,12 @@ export function permissionAuditActionLabel(action: string): string {
       return "Padrão do perfil aplicado";
     case PermissionAuditActions.PERMISSIONS_RESTORED_TO_DEFAULT:
       return "Acessos restaurados ao padrão";
+    case PermissionAuditActions.ACCESS_PROFILE_CREATED:
+      return "Perfil de acesso criado";
+    case PermissionAuditActions.ACCESS_PROFILE_UPDATED:
+      return "Perfil de acesso atualizado";
+    case PermissionAuditActions.ACCESS_PROFILE_APPLIED:
+      return "Perfil de acesso aplicado ao usuário";
     case "SAVE_OVERRIDES":
       return "Personalizações salvas";
     case "APPLY_ROLE_PRESET":

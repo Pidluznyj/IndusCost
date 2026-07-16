@@ -12,6 +12,11 @@ import {
   applyProfilePermissionsRaw,
   permissionsMatchProfile,
 } from "@/src/lib/accessProfilesUtils.js";
+import {
+  buildAccessProfileAuditPlans,
+  buildAccessProfileUserApplyAuditPlans,
+  type PermissionAuditEntryPlan,
+} from "@/src/lib/security/permissionAudit.js";
 
 export {
   applyAccessProfileToUserFields,
@@ -161,7 +166,7 @@ export type CreateAccessProfileInput = {
 
 export async function createAccessProfile(
   prisma: PrismaClient,
-  input: CreateAccessProfileInput
+  input: CreateAccessProfileInput & { actorUserId?: string | null }
 ): Promise<AccessProfileDto> {
   const name = input.name.trim();
   if (!name) throw new AccessProfileError("INVALID_NAME", "Informe o nome do perfil.");
@@ -181,6 +186,20 @@ export async function createAccessProfile(
     include: { _count: { select: { users: true } } },
   });
 
+  await writeAccessProfileAuditPlans(prisma, {
+    actorUserId: input.actorUserId ?? null,
+    targetUserId: null,
+    plans: buildAccessProfileAuditPlans({
+      kind: "created",
+      profileId: created.id,
+      profileName: created.name,
+      after: {
+        permissionCount: permissions.length,
+        roleBase: created.roleBase,
+      },
+    }),
+  });
+
   return toDto(created, created._count.users);
 }
 
@@ -195,7 +214,7 @@ export type UpdateAccessProfileInput = {
 export async function updateAccessProfile(
   prisma: PrismaClient,
   id: string,
-  input: UpdateAccessProfileInput
+  input: UpdateAccessProfileInput & { actorUserId?: string | null }
 ): Promise<AccessProfileDto> {
   const existing = await prisma.accessProfile.findUnique({ where: { id } });
   if (!existing) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
@@ -234,6 +253,32 @@ export async function updateAccessProfile(
     data,
     include: { _count: { select: { users: true } } },
   });
+
+  const beforeCount = Array.isArray(existing.permissions) ? existing.permissions.length : 0;
+  const afterCount = Array.isArray(updated.permissions) ? updated.permissions.length : 0;
+  if (
+    beforeCount !== afterCount ||
+    existing.roleBase !== updated.roleBase ||
+    existing.name !== updated.name
+  ) {
+    await writeAccessProfileAuditPlans(prisma, {
+      actorUserId: input.actorUserId ?? null,
+      targetUserId: null,
+      plans: buildAccessProfileAuditPlans({
+        kind: "updated",
+        profileId: updated.id,
+        profileName: updated.name,
+        before: {
+          permissionCount: beforeCount,
+          roleBase: existing.roleBase,
+        },
+        after: {
+          permissionCount: afterCount,
+          roleBase: updated.roleBase,
+        },
+      }),
+    });
+  }
 
   return toDto(updated, updated._count.users);
 }
@@ -490,6 +535,7 @@ export async function applyAccessProfileToUsers(
     profileId: string;
     userIds?: string[] | null;
     confirm: boolean;
+    actorUserId?: string | null;
     /** Se false, pula usuários que já customizaram permissões. Default true com confirm. */
     overwriteCustomized?: boolean;
   }
@@ -543,7 +589,72 @@ export async function applyAccessProfileToUsers(
     }
   });
 
+  if (applied > 0) {
+    const applyPlans: PermissionAuditEntryPlan[] = [];
+    for (const r of results) {
+      if (r.status !== "applied") continue;
+      const u = preview.users.find((x) => x.id === r.userId);
+      if (!u) continue;
+      applyPlans.push(
+        ...buildAccessProfileUserApplyAuditPlans({
+          profileId: preview.profileId,
+          profileName: preview.profileName,
+          targetRole: u.afterRole,
+          userId: u.id,
+        })
+      );
+    }
+    await writeAccessProfileAuditPlans(prisma, {
+      actorUserId: args.actorUserId ?? null,
+      targetUserId: null,
+      plans: [
+        ...buildAccessProfileAuditPlans({
+          kind: "applied",
+          profileId: preview.profileId,
+          profileName: preview.profileName,
+          after: {
+            permissionCount: preview.profilePermissions.length,
+            appliedUserCount: applied,
+          },
+        }),
+        ...applyPlans,
+      ],
+    });
+  }
+
   return { applied, skipped, results };
+}
+
+async function writeAccessProfileAuditPlans(
+  prisma: PrismaClient,
+  args: {
+    actorUserId: string | null;
+    targetUserId: string | null;
+    plans: readonly PermissionAuditEntryPlan[];
+  }
+): Promise<void> {
+  if (args.plans.length === 0) return;
+  try {
+    await prisma.permissionAuditLog.createMany({
+      data: args.plans.map((plan) => ({
+        actorUserId: args.actorUserId,
+        targetUserId:
+          plan.action === "ACCESS_PROFILE_APPLIED" &&
+          plan.afterJson &&
+          typeof plan.afterJson === "object" &&
+          typeof (plan.afterJson as { userId?: string }).userId === "string"
+            ? (plan.afterJson as { userId: string }).userId
+            : args.targetUserId,
+        targetRole: plan.targetRole as AppUserRole,
+        resourceKey: plan.resourceKey,
+        action: plan.action,
+        beforeJson: (plan.beforeJson ?? undefined) as object | undefined,
+        afterJson: (plan.afterJson ?? undefined) as object | undefined,
+      })),
+    });
+  } catch (error) {
+    console.warn("[access-profile-audit] falha ao gravar auditoria", error);
+  }
 }
 
 export function parseAccessProfileBody(body: unknown): {

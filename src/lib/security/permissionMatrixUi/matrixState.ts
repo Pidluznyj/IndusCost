@@ -372,8 +372,8 @@ export function buildLargeSyntheticMatrixRows(
           action: a,
           supported: ok,
           allowed: values[a],
-          source: ok ? "inherited" : "unsupported",
-          originLabel: ok ? "Herdado" : "n/a",
+          source: ok ? "role" : "unsupported",
+          originLabel: ok ? "Herdado da role" : "n/a",
         };
       }
       children.push({

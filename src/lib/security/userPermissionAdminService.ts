@@ -39,6 +39,7 @@ import {
   overridesUnchanged,
   type PermissionAuditEntryPlan,
 } from "@/src/lib/security/permissionAudit.js";
+import { projectAccessProfileResourceFlags } from "@/src/lib/accessProfilesMatrix.js";
 
 export class UserPermissionAdminError extends Error {
   readonly code: string;
@@ -210,6 +211,12 @@ export function buildUserPermissionsPayload(args: {
   };
   overrides: UserPermissionOverrideGrant[];
   activeSuperAdminCount: number;
+  accessProfile?: {
+    id: string;
+    name: string;
+    permissions: string[];
+    roleBase: AppUserRole | null;
+  } | null;
 }) {
   const role = args.user.role;
   const effective = buildEffectiveFlagsMap(role, args.overrides);
@@ -217,6 +224,12 @@ export function buildUserPermissionsPayload(args: {
   const summary = buildPermissionAccessSummary({ role, effective });
   const diff = diffUserAgainstRolePreset({ role, overrides: args.overrides, effective });
   const preset = getOfficialRolePreset(role);
+  const profileFlags = args.accessProfile
+    ? projectAccessProfileResourceFlags(
+        args.accessProfile.permissions,
+        args.accessProfile.roleBase
+      )
+    : {};
 
   return {
     user: args.user,
@@ -224,6 +237,10 @@ export function buildUserPermissionsPayload(args: {
     treeReadOnly: role === "SUPER_ADMIN",
     hasCustomPermissions: args.overrides.length > 0,
     overrideCount: args.overrides.length,
+    accessProfile: args.accessProfile
+      ? { id: args.accessProfile.id, name: args.accessProfile.name }
+      : null,
+    profileFlags,
     roleDefaults: preset.resources.map((r) => ({
       resourceKey: r.resourceKey,
       flags: r.flags,
@@ -403,6 +420,14 @@ export async function getUserPermissionsAdmin(
       isActive: true,
       lastLoginAt: true,
       permissions: true,
+      accessProfile: {
+        select: {
+          id: true,
+          name: true,
+          permissions: true,
+          roleBase: true,
+        },
+      },
     },
   });
   if (!user) {
@@ -412,13 +437,22 @@ export async function getUserPermissionsAdmin(
     loadOverrides(prisma, userId),
     countActiveSuperAdminsDb(prisma),
   ]);
+  const { accessProfile, ...userCore } = user;
   return buildUserPermissionsPayload({
     user: {
-      ...user,
+      ...userCore,
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
     },
     overrides,
     activeSuperAdminCount,
+    accessProfile: accessProfile
+      ? {
+          id: accessProfile.id,
+          name: accessProfile.name,
+          permissions: filterKnownPermissions(accessProfile.permissions),
+          roleBase: accessProfile.roleBase,
+        }
+      : null,
   });
 }
 

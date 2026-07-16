@@ -54,27 +54,49 @@ export type PermissionMatrixProps = {
 
 function SourceBadge({
   source,
+  originLabel,
 }: {
   source: string;
+  originLabel?: string;
 }) {
+  const title = originLabel?.trim() || undefined;
   if (source === "granted") {
     return (
-      <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-900">
+      <span
+        title={title}
+        className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-900"
+      >
         Allow
       </span>
     );
   }
   if (source === "denied") {
     return (
-      <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-900">
+      <span
+        title={title}
+        className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-900"
+      >
         Deny
       </span>
     );
   }
-  if (source === "inherited") {
+  if (source === "profile") {
     return (
-      <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-700">
-        Baseline
+      <span
+        title={title}
+        className="rounded-full bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold text-violet-900"
+      >
+        Perfil
+      </span>
+    );
+  }
+  if (source === "role" || source === "inherited") {
+    return (
+      <span
+        title={title}
+        className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-700"
+      >
+        Role
       </span>
     );
   }
@@ -490,12 +512,8 @@ export function PermissionMatrix({
                             }
                           />
                           <SourceBadge
-                            source={(() => {
-                              // Origem vs role (row.inherited), não vs snapshot de dirty.
-                              const roleBase = row.inherited[action] ?? false;
-                              if (allowed === Boolean(roleBase)) return "inherited";
-                              return allowed ? "granted" : "denied";
-                            })()}
+                            source={cell.source}
+                            originLabel={cell.originLabel}
                           />
                         </label>
                       </td>

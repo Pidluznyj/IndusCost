@@ -22,6 +22,8 @@ export type PermissionMatrixStandardAction =
   (typeof PERMISSION_MATRIX_STANDARD_ACTIONS)[number];
 
 export type PermissionMatrixGrantSource =
+  | "role"
+  | "profile"
   | "inherited"
   | "granted"
   | "denied"
@@ -60,6 +62,11 @@ export type PermissionMatrixRow = {
 export type PermissionMatrixDraft = Record<
   string,
   Record<string, boolean>
+>;
+
+export type ProfileFlagsByKey = Record<
+  string,
+  { canView: boolean; canExecute: boolean; canManage: boolean }
 >;
 
 export type PermissionMatrixImpactSummary = {

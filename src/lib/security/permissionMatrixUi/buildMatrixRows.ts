@@ -15,6 +15,7 @@ import {
   type PermissionMatrixDraft,
   type PermissionMatrixGrantSource,
   type PermissionMatrixRow,
+  type ProfileFlagsByKey,
 } from "./types.ts";
 
 function contractByRelationalKey(
@@ -60,22 +61,37 @@ function cellSource(args: {
   inherited: boolean;
   hasOverride: boolean;
   overrideValue: boolean | null | undefined;
+  roleAllowed: boolean;
+  profileAllowed?: boolean | null;
+  hasProfileSnapshot: boolean;
 }): { source: PermissionMatrixGrantSource; originLabel: string } {
   if (!args.supported) {
     return { source: "unsupported", originLabel: "Ação não aplicável a este recurso" };
   }
-  if (!args.hasOverride || args.overrideValue === null || args.overrideValue === undefined) {
+  if (args.hasOverride && args.overrideValue !== null && args.overrideValue !== undefined) {
+    if (args.overrideValue === true) {
+      return { source: "granted", originLabel: "Allow direto (override explícito)" };
+    }
+    return { source: "denied", originLabel: "Deny direto (override explícito)" };
+  }
+  if (
+    args.hasProfileSnapshot &&
+    args.profileAllowed != null &&
+    args.profileAllowed !== args.roleAllowed
+  ) {
     return {
-      source: "inherited",
+      source: "profile",
       originLabel: args.allowed
-        ? "Herdado do perfil / role (permitido)"
-        : "Herdado do perfil / role (negado)",
+        ? "Herdado do snapshot do perfil de acesso"
+        : "Negado pelo snapshot do perfil de acesso",
     };
   }
-  if (args.overrideValue === true) {
-    return { source: "granted", originLabel: "Concedido por override explícito" };
-  }
-  return { source: "denied", originLabel: "Negado por override explícito" };
+  return {
+    source: "role",
+    originLabel: args.allowed
+      ? "Herdado da role (permitido)"
+      : "Herdado da role (negado)",
+  };
 }
 
 function overrideAxisValue(
@@ -93,7 +109,8 @@ function overrideAxisValue(
 function buildCells(
   node: EditableTreeNodeDto,
   supported: readonly PermissionMatrixActionId[],
-  draftValues: Record<string, boolean> | undefined
+  draftValues: Record<string, boolean> | undefined,
+  profileFlags?: ProfileFlagsByKey[string]
 ): {
   cells: Record<string, PermissionMatrixCell>;
   values: Record<string, boolean>;
@@ -111,6 +128,10 @@ function buildCells(
     const allowed = draftValues?.[action] ?? valueFromFlags(action, node.effectiveFlags);
     values[action] = allowed;
     const ov = overrideAxisValue(action, node.override);
+    const roleAllowed = valueFromFlags(action, node.roleFlags);
+    const profileAllowed = profileFlags
+      ? valueFromFlags(action, profileFlags)
+      : null;
     const { source, originLabel } = cellSource({
       action,
       supported: isSupported,
@@ -118,6 +139,9 @@ function buildCells(
       inherited: inheritedAllowed,
       hasOverride: Boolean(node.override),
       overrideValue: ov,
+      roleAllowed,
+      profileAllowed,
+      hasProfileSnapshot: Boolean(profileFlags),
     });
     cells[action] = {
       action,
@@ -138,6 +162,10 @@ function buildCells(
     const allowed = draftValues?.[action] ?? valueFromFlags(action, node.effectiveFlags);
     values[action] = allowed;
     const ov = overrideAxisValue(action, node.override);
+    const roleAllowed = valueFromFlags(action, node.roleFlags);
+    const profileAllowed = profileFlags
+      ? valueFromFlags(action, profileFlags)
+      : null;
     const { source, originLabel } = cellSource({
       action,
       supported: true,
@@ -145,6 +173,9 @@ function buildCells(
       inherited: inheritedAllowed,
       hasOverride: Boolean(node.override),
       overrideValue: ov,
+      roleAllowed,
+      profileAllowed,
+      hasProfileSnapshot: Boolean(profileFlags),
     });
     cells[action] = {
       action,
@@ -162,13 +193,15 @@ function mapNode(
   node: EditableTreeNodeDto,
   depth: number,
   contractMap: Map<string, PermissionContractResource>,
-  draft: PermissionMatrixDraft | undefined
+  draft: PermissionMatrixDraft | undefined,
+  profileFlagsByKey?: ProfileFlagsByKey
 ): PermissionMatrixRow {
   const supported = supportedActionsForNode(node, contractMap);
   const { cells, values, inherited } = buildCells(
     node,
     supported,
-    draft?.[node.key]
+    draft?.[node.key],
+    profileFlagsByKey?.[node.key]
   );
   const groupId = node.module || "other";
   return {
@@ -184,7 +217,7 @@ function mapNode(
     values,
     inherited,
     children: node.children.map((c) =>
-      mapNode(c, depth + 1, contractMap, draft)
+      mapNode(c, depth + 1, contractMap, draft, profileFlagsByKey)
     ),
   };
 }
@@ -195,12 +228,15 @@ export function buildPermissionMatrixRowsFromAdminTree(
   options?: {
     draft?: PermissionMatrixDraft;
     contractResources?: readonly PermissionContractResource[];
+    profileFlagsByKey?: ProfileFlagsByKey;
   }
 ): PermissionMatrixRow[] {
   const contractMap = contractByRelationalKey(
     options?.contractResources ?? PERMISSION_CONTRACT_RESOURCES
   );
-  return tree.map((n) => mapNode(n, 0, contractMap, options?.draft));
+  return tree.map((n) =>
+    mapNode(n, 0, contractMap, options?.draft, options?.profileFlagsByKey)
+  );
 }
 
 /** Draft inicial a partir da árvore (valores efetivos por ação suportada). */

@@ -51,6 +51,10 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
   });
 }
 
+function actorId(req: express.Request): string | null {
+  return (req as { appAuth?: { id?: string } }).appAuth?.id ?? null;
+}
+
 export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDeps): void {
   const viewGuard = deps.requirePermission(REQUIRE_RESOURCE_ADMIN_KEYS.security, "view");
   const manageGuard = deps.requirePermission(REQUIRE_RESOURCE_ADMIN_KEYS.security, "manage");
@@ -125,6 +129,7 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
         userIds,
         confirm: req.body?.confirm === true,
         overwriteCustomized: req.body?.overwriteCustomized !== false,
+        actorUserId: actorId(req),
       });
       return res.json({ result });
     } catch (error) {
@@ -144,6 +149,7 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
         roleBase: body.roleBase,
         permissions: body.permissions,
         isActive: body.isActive,
+        actorUserId: actorId(req),
       });
       return res.status(201).json({ profile });
     } catch (error) {
@@ -155,7 +161,10 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
     try {
       const id = String(req.params.id ?? "").trim();
       const body = parseAccessProfileBody(req.body);
-      const profile = await updateAccessProfile(prisma, id, body);
+      const profile = await updateAccessProfile(prisma, id, {
+        ...body,
+        actorUserId: actorId(req),
+      });
       return res.json({ profile });
     } catch (error) {
       return handleAccessProfileError(res, error);

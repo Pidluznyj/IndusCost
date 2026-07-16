@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   PermissionAuditActions,
+  buildAccessProfileAuditPlans,
   buildOverrideSaveAuditPlans,
   buildPresetApplyAuditPlans,
   canViewFullPermissionAudit,
+  compactAccessProfileAuditMeta,
   overridesUnchanged,
   permissionAuditActionLabel,
   summarizePermissionAuditChange,
@@ -49,6 +51,8 @@ function auth(partial: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-1",
+    sessionPermissionsVersionAtIssue: 0,
+    permissionsVersion: 0,
   };
 }
 
@@ -183,5 +187,40 @@ describe("permissionAudit — UI / ACL", () => {
     );
     assert.equal(allowed.ok, true);
     void admin;
+  });
+});
+
+describe("permissionAudit — perfil de acesso (P22)", () => {
+  it("buildAccessProfileAuditPlans não inclui bag completo", () => {
+    const plans = buildAccessProfileAuditPlans({
+      kind: "updated",
+      profileId: "prof-1",
+      profileName: "Financeiro AP",
+      before: { permissionCount: 3, roleBase: "VIEWER" },
+      after: { permissionCount: 5, roleBase: "VIEWER" },
+      reason: "ajuste matriz",
+    });
+    assert.equal(plans.length, 1);
+    const after = plans[0]!.afterJson as Record<string, unknown>;
+    assert.equal(after.permissionCount, 5);
+    assert.equal(after.profileName, "Financeiro AP");
+    assert.equal(after.reason, "ajuste matriz");
+    assert.ok(!("permissions" in after));
+  });
+
+  it("compactAccessProfileAuditMeta é compacto", () => {
+    const meta = compactAccessProfileAuditMeta({
+      profileId: "p1",
+      profileName: "X",
+      permissionCount: 2,
+    });
+    assert.deepEqual(Object.keys(meta).sort(), ["permissionCount", "profileId", "profileName"]);
+  });
+
+  it("rótulos de perfil na UI", () => {
+    assert.equal(
+      permissionAuditActionLabel(PermissionAuditActions.ACCESS_PROFILE_APPLIED),
+      "Perfil de acesso aplicado ao usuário"
+    );
   });
 });

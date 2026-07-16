@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { fetchJsonOk } from "@/src/lib/http";
+import { HttpError, fetchJsonOk } from "@/src/lib/http";
 import { useAuth } from "@/src/contexts/AuthContext";
 import {
   APP_PASSWORD_MIN_LENGTH,
@@ -53,12 +53,15 @@ import {
   formatPermissionFlagsHuman,
 } from "@/src/lib/userPermissionsAdminUi";
 import {
+  buildMatrixSaveDiff,
   buildSaveOverridesFromMatrix,
   buildUserEffectivePreview,
   buildUserPermissionMatrixModel,
+  hasBroadPermissionChanges,
   hasCriticalPermissionChanges,
   liberateFirstMenuInMatrixDraft,
   resetMatrixDraftToBaseline,
+  sessionAffectedMessage,
   USER_PERMISSION_PRECEDENCE_NOTICE,
   userMatrixImpact,
   wouldMatrixRemoveOwnUsersManage,
@@ -74,7 +77,6 @@ import {
 } from "@/src/lib/security/permissionAudit";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { ResourceKeys } from "@/src/lib/permissionsClient";
-import { HttpError } from "@/src/lib/http";
 
 type CreateForm = {
   employeeId: string;
@@ -168,6 +170,8 @@ export const AdminUsersModule: React.FC = () => {
   /** Snapshot efetivo no load (dirty / cancelar). */
   const [loadedSnapshot, setLoadedSnapshot] = useState<PermissionMatrixDraft>({});
   const [confirmCriticalOpen, setConfirmCriticalOpen] = useState(false);
+  const [confirmBroadOpen, setConfirmBroadOpen] = useState(false);
+  const [saveReason, setSaveReason] = useState("");
   const [showEffectivePreview, setShowEffectivePreview] = useState(true);
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -317,8 +321,15 @@ export const AdminUsersModule: React.FC = () => {
 
   const matrixModelRows = useMemo(() => {
     if (!detail) return [];
-    return buildUserPermissionMatrixModel(detail.tree).rows;
+    return buildUserPermissionMatrixModel(detail.tree, {
+      profileFlagsByKey: detail.profileFlags,
+    }).rows;
   }, [detail]);
+
+  const saveDiff = useMemo(() => {
+    if (!detail || matrixModelRows.length === 0) return [];
+    return buildMatrixSaveDiff(matrixModelRows, loadedSnapshot, matrixDraft);
+  }, [detail, matrixModelRows, loadedSnapshot, matrixDraft]);
 
   const effectivePreview = useMemo(() => {
     if (!detail) return null;
@@ -392,16 +403,25 @@ export const AdminUsersModule: React.FC = () => {
         return;
       }
       const overrides = buildSaveOverridesFromMatrix(matrixDraft, detail.roleDefaults);
-      const payload = await saveUserPermissionOverrides(selectedId, overrides);
+      const payload = await saveUserPermissionOverrides(selectedId, overrides, {
+        ifMatchOverrideCount: detail.overrideCount,
+        reason: saveReason.trim() || undefined,
+      });
       setDetail(payload);
       hydrateMatrixFromPayload(payload);
       setConfirmCriticalOpen(false);
+      setConfirmBroadOpen(false);
+      setSaveReason("");
       await loadUsers();
       if (selectedId === currentUserId) {
         await loadMe();
       }
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : "Falha ao salvar.");
+      if (e instanceof HttpError && e.code === "CONFLICT") {
+        setDetailError(`${e.message} Recarregue os dados do usuário.`);
+      } else {
+        setDetailError(e instanceof Error ? e.message : "Falha ao salvar.");
+      }
     } finally {
       setSaving(false);
     }
@@ -411,6 +431,10 @@ export const AdminUsersModule: React.FC = () => {
     if (!detail || !selectedId) return;
     if (hasCriticalPermissionChanges(matrixDraft, roleBaseline) && !confirmCriticalOpen) {
       setConfirmCriticalOpen(true);
+      return;
+    }
+    if (hasBroadPermissionChanges(impact) && !confirmBroadOpen && !confirmCriticalOpen) {
+      setConfirmBroadOpen(true);
       return;
     }
     await persistOverrides();
@@ -1088,9 +1112,9 @@ export const AdminUsersModule: React.FC = () => {
                         </p>
                         <p>
                           <strong>Snapshot de perfil de acesso:</strong>{" "}
-                          {selectedListUser?.accessProfileName
-                            ? selectedListUser.accessProfileName
-                            : "Nenhum vinculado (só role / overrides)"}
+                          {detail.accessProfile?.name ??
+                            selectedListUser?.accessProfileName ??
+                            "Nenhum vinculado (só role / overrides)"}
                         </p>
                         <p>
                           <strong>Permissões diretas:</strong>{" "}
@@ -1149,9 +1173,20 @@ export const AdminUsersModule: React.FC = () => {
                             {effectivePreview.denyCount} · Só baseline:{" "}
                             {effectivePreview.baselineOnlyCount}
                             {impact
-                              ? ` · ${impact.dirtyResourceCount} recurso(s) alterado(s)`
+                              ? ` · ${impact.dirtyResourceCount} recurso(s) alterado(s) · ${impact.parentBlockedCount} bloqueado(s) por pai`
                               : ""}
                           </p>
+                          {pending && selectedListUser ? (
+                            <p
+                              className="mt-1 text-amber-900"
+                              data-testid="user-permission-session-warning"
+                            >
+                              {sessionAffectedMessage({
+                                isEditingSelf: selectedId === currentUserId,
+                                targetName: selectedListUser.name,
+                              })}
+                            </p>
+                          ) : null}
                           <div className="mt-2 grid gap-2 sm:grid-cols-2">
                             <div>
                               <p className="font-medium">Menus liberados</p>
@@ -1172,6 +1207,66 @@ export const AdminUsersModule: React.FC = () => {
                               </p>
                             </div>
                           </div>
+                          {saveDiff.length > 0 ? (
+                            <div className="mt-2 border-t border-border/60 pt-2">
+                              <p className="font-medium">Diff pendente (amostra)</p>
+                              <ul className="mt-1 max-h-24 overflow-y-auto text-muted-foreground">
+                                {saveDiff.slice(0, 8).map((d) => (
+                                  <li key={`${d.resourceKey}:${d.action}`}>
+                                    {d.kind === "grant" ? "+" : "−"} {d.label} ({d.action})
+                                  </li>
+                                ))}
+                                {saveDiff.length > 8 ? (
+                                  <li>… +{saveDiff.length - 8} alteração(ões)</li>
+                                ) : null}
+                              </ul>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+
+                      {confirmBroadOpen ? (
+                        <div
+                          className="rounded-xl border border-sky-300 bg-sky-50 px-3 py-3 text-sm text-sky-950 space-y-2"
+                          data-testid="user-permission-broad-confirm"
+                        >
+                          <p className="font-semibold">
+                            Confirmar alteração ampla ({impact?.dirtyResourceCount ?? 0}{" "}
+                            recursos)?
+                          </p>
+                          <p className="text-xs">
+                            {sessionAffectedMessage({
+                              isEditingSelf: selectedId === currentUserId,
+                              targetName: selectedListUser?.name ?? "usuário",
+                            })}
+                          </p>
+                          <label className="block text-xs">
+                            Motivo (opcional, auditoria)
+                            <input
+                              type="text"
+                              value={saveReason}
+                              onChange={(e) => setSaveReason(e.target.value)}
+                              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                              maxLength={200}
+                            />
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+                              onClick={() => setConfirmBroadOpen(false)}
+                            >
+                              Voltar
+                            </button>
+                            <button
+                              type="button"
+                              disabled={saving}
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                              onClick={() => void persistOverrides()}
+                            >
+                              Confirmar e salvar
+                            </button>
+                          </div>
                         </div>
                       ) : null}
 
@@ -1183,6 +1278,22 @@ export const AdminUsersModule: React.FC = () => {
                           <p className="font-semibold">
                             Confirmar alteração em permissões administrativas críticas?
                           </p>
+                          <p className="text-xs">
+                            {sessionAffectedMessage({
+                              isEditingSelf: selectedId === currentUserId,
+                              targetName: selectedListUser?.name ?? "usuário",
+                            })}
+                          </p>
+                          <label className="block text-xs">
+                            Motivo (opcional, auditoria)
+                            <input
+                              type="text"
+                              value={saveReason}
+                              onChange={(e) => setSaveReason(e.target.value)}
+                              className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1 text-xs"
+                              maxLength={200}
+                            />
+                          </label>
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"

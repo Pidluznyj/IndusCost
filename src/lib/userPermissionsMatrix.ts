@@ -68,9 +68,17 @@ export function draftBaselineFromRoleTree(
 }
 
 export function buildUserPermissionMatrixModel(
-  tree: readonly EditableTreeNodeDto[]
+  tree: readonly EditableTreeNodeDto[],
+  options?: {
+    profileFlagsByKey?: Record<
+      string,
+      { canView: boolean; canExecute: boolean; canManage: boolean }
+    >;
+  }
 ): UserPermissionMatrixModel {
-  const rows = buildPermissionMatrixRowsFromAdminTree([...tree]);
+  const rows = buildPermissionMatrixRowsFromAdminTree([...tree], {
+    profileFlagsByKey: options?.profileFlagsByKey,
+  });
   return {
     rows,
     draft: draftFromAdminTree([...tree]),
@@ -339,4 +347,61 @@ export function resolveAxisWithPrecedence(args: {
     override: args.override,
     effective: args.override,
   };
+}
+
+/** Limite de recursos alterados para exigir confirmação ampliada (P22). */
+export const BROAD_PERMISSION_CHANGE_RESOURCE_THRESHOLD = 5;
+
+export type MatrixSaveDiffEntry = {
+  resourceKey: string;
+  label: string;
+  action: string;
+  before: boolean;
+  after: boolean;
+  kind: "grant" | "revoke";
+};
+
+/** Diff antes/depois do draft (para confirmação de save). */
+export function buildMatrixSaveDiff(
+  rows: readonly PermissionMatrixRow[],
+  before: PermissionMatrixDraft,
+  after: PermissionMatrixDraft
+): MatrixSaveDiffEntry[] {
+  const out: MatrixSaveDiffEntry[] = [];
+  const walk = (list: readonly PermissionMatrixRow[]) => {
+    for (const row of list) {
+      for (const action of row.supportedActions) {
+        const b = Boolean(before[row.resourceKey]?.[action]);
+        const a = Boolean(after[row.resourceKey]?.[action]);
+        if (b === a) continue;
+        out.push({
+          resourceKey: row.resourceKey,
+          label: row.label,
+          action,
+          before: b,
+          after: a,
+          kind: a ? "grant" : "revoke",
+        });
+      }
+      walk(row.children);
+    }
+  };
+  walk(rows);
+  return out;
+}
+
+export function hasBroadPermissionChanges(
+  impact: PermissionMatrixImpactSummary | null
+): boolean {
+  return (impact?.dirtyResourceCount ?? 0) >= BROAD_PERMISSION_CHANGE_RESOURCE_THRESHOLD;
+}
+
+export function sessionAffectedMessage(args: {
+  isEditingSelf: boolean;
+  targetName: string;
+}): string {
+  if (args.isEditingSelf) {
+    return "Sua sessão será atualizada automaticamente após salvar.";
+  }
+  return `As sessões ativas de ${args.targetName} serão encerradas. O usuário precisará recarregar ou aguardar a sincronização automática de permissões.`;
 }

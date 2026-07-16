@@ -327,6 +327,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Risco:** baixo.
 - **Aceite:** trilha save matriz.
 - **Rollback:** revert UI.
+- **Status (2026-07-16):** implementado — badges Role/Perfil/Allow/Deny, preview+d diff+confirmação ampla, motivo opcional, ifMatchOverrideCount, auditoria perfil de acesso, aviso sessão afetada.
 
 ### P23 — Regressão
 
