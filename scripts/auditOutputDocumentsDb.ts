@@ -29,6 +29,7 @@ import {
 } from "../src/lib/output-documents/auditOutputDocumentsDb.ts";
 import { loadStageInventoryAndCoverage } from "../src/lib/output-documents/auditOutputDocumentsDbInventory.server.ts";
 import { loadRawJsonSampleAnalysis } from "../src/lib/output-documents/auditOutputDocumentsRawJson.server.ts";
+import { loadDocumentLinkAudit } from "../src/lib/output-documents/auditOutputDocumentsLinks.server.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -91,12 +92,19 @@ async function main(): Promise<void> {
       sampleLimit: options.sampleLimit,
     });
 
+    console.warn(`${LOG} auditando vínculos NF-e / Pedidos…`);
+    const links = await loadDocumentLinkAudit(prisma, {
+      sampleLimit: options.sampleLimit,
+    });
+
     const sections = buildEmptyAuditSections();
     sections.inventory = loaded.inventory;
     sections.fieldCoverage = loaded.fieldCoverage;
     sections.itemCoverage = loaded.itemCoverage;
     sections.rawJsonKeys = rawSample.rawJsonKeys;
     sections.paymentTermsEvidence = rawSample.paymentTermsEvidence;
+    sections.nfeLinks = links.nfeLinks;
+    sections.salesOrderLinks = links.salesOrderLinks;
     sections.counts = {
       documents: loaded.inventory.documents.total,
       documentoSaida: loaded.inventory.documents.documentoSaida,
@@ -107,6 +115,15 @@ async function main(): Promise<void> {
       rawJsonSampleSize: rawSample.rawJsonKeys.sampleSize,
       rawJsonKeyCount: rawSample.rawJsonKeys.keys.length,
       paymentCandidateKeys: rawSample.paymentTermsEvidence.candidateKeys.length,
+      documentsWithIdNfe: links.nfeLinks.metrics.documentsWithIdNfe,
+      documentsWithoutIdNfe: links.nfeLinks.metrics.documentsWithoutIdNfe,
+      nfeMissingLocally: links.nfeLinks.metrics.nfeMissingLocally,
+      nfeCancelled: links.nfeLinks.metrics.nfeCancelled,
+      documentsWithZeroOrders:
+        links.salesOrderLinks.metrics.documentsWithZeroOrders,
+      documentsWithMultipleOrders:
+        links.salesOrderLinks.metrics.documentsWithMultipleOrders,
+      linkConflicts: links.salesOrderLinks.metrics.conflictsBetweenSources,
     };
     sections.samples = {
       documentsWithoutItemsExternalIds:
@@ -114,12 +131,16 @@ async function main(): Promise<void> {
       orphanItemIds: loaded.inventory.samples.orphanItemIds,
       rawJsonDocumentsScanned: rawSample.rawJsonKeys.documentsScanned,
       rawJsonItemsScanned: rawSample.rawJsonKeys.itemsScanned,
+      missingNfeExternalIds: links.nfeLinks.samples.missingNfeExternalIds,
+      multiDocumentNfeIds: links.nfeLinks.samples.multiDocumentNfeIds,
+      multiOrderDocumentExternalIds:
+        links.salesOrderLinks.samples.multiOrderDocumentExternalIds,
     };
     sections.notes = [
       "DS-02.3: inventário e cobertura do stage NomusStockDocument / NomusStockDocumentItem.",
       "DS-02.4: matriz amostral de rawJson + evidências hipotéticas de pagamento/parcelas.",
-      "rawJsonKeys/paymentTermsEvidence são hipóteses por nome de chave — validar no servidor.",
-      "Payloads completos não são exportados; exemplos são sanitizados e truncados.",
+      "DS-02.5: vínculos Documento↔NF-e↔Pedido classificados (persistido/derivado/inferido/conflitante/nao_resolvido).",
+      "Este auditor não cria nem corrige vínculos; O2C/SalesOrderNfeLink/NF/Pedido não são modificados.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ];
 
@@ -130,14 +151,14 @@ async function main(): Promise<void> {
       options,
       database,
       status: "ok",
-      mode: "rawjson-sample",
+      mode: "link-audit",
       sections,
     });
 
     writeOutputs(result, options.jsonOutput, options.markdownOutput);
     console.log(JSON.stringify(result, null, 2));
     console.warn(
-      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} rawKeys=${rawSample.rawJsonKeys.keys.length} durationMs=${result.meta.durationMs}`
+      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} withIdNfe=${links.nfeLinks.metrics.documentsWithIdNfe} durationMs=${result.meta.durationMs}`
     );
   } catch (error) {
     const finishedAt = new Date();
@@ -150,7 +171,7 @@ async function main(): Promise<void> {
         database,
         status: "unavailable",
         error: message,
-        mode: "rawjson-sample",
+        mode: "link-audit",
       });
       try {
         writeOutputs(result, options.jsonOutput, options.markdownOutput);
@@ -174,7 +195,7 @@ async function main(): Promise<void> {
       database,
       status: "error",
       error: message,
-      mode: "rawjson-sample",
+      mode: "link-audit",
     });
     try {
       writeOutputs(result, options.jsonOutput, options.markdownOutput);

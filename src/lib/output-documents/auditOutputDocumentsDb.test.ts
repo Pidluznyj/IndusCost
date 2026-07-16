@@ -32,6 +32,10 @@ import {
   createRawJsonKeyAccumulatorMap,
   finalizeRawJsonKeyMatrix,
 } from "./auditOutputDocumentsRawJson.js";
+import {
+  buildEmptyNfeLinksSection,
+  buildEmptySalesOrderLinksSection,
+} from "./auditOutputDocumentsLinks.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT_PATH = join(
@@ -50,6 +54,7 @@ const RAWJSON_SERVER_PATH = join(
   HERE,
   "auditOutputDocumentsRawJson.server.ts"
 );
+const LINKS_SERVER_PATH = join(HERE, "auditOutputDocumentsLinks.server.ts");
 
 describe("parseAuditOutputDocumentsDbArgs", () => {
   it("aplica valores padrão quando argv está vazio", () => {
@@ -240,7 +245,7 @@ describe("cobertura e percentuais", () => {
 });
 
 describe("estrutura básica do resultado", () => {
-  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys e paymentTermsEvidence", () => {
+  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys, paymentTermsEvidence, nfeLinks e salesOrderLinks", () => {
     const startedAt = new Date("2026-07-16T12:00:00.000Z");
     const finishedAt = new Date("2026-07-16T12:00:01.250Z");
     const options = parseAuditOutputDocumentsDbArgs([]);
@@ -289,6 +294,10 @@ describe("estrutura básica do resultado", () => {
       rows: rawRows,
     });
     sections.paymentTermsEvidence = buildPaymentTermsEvidence(rawRows, 1);
+    sections.nfeLinks = buildEmptyNfeLinksSection();
+    sections.nfeLinks.metrics.documentsWithIdNfe = 2;
+    sections.salesOrderLinks = buildEmptySalesOrderLinksSection();
+    sections.salesOrderLinks.metrics.documentsWithOneOrder = 1;
 
     const result = buildAuditResult({
       startedAt,
@@ -298,11 +307,11 @@ describe("estrutura básica do resultado", () => {
         "postgresql://u:p@localhost:5432/induscost"
       ),
       status: "ok",
-      mode: "rawjson-sample",
+      mode: "link-audit",
       sections,
     });
 
-    assert.equal(result.meta.mode, "rawjson-sample");
+    assert.equal(result.meta.mode, "link-audit");
     assert.equal(result.meta.readOnly, true);
     assert.equal(result.meta.durationMs, 1250);
     assert.ok(result.sections.inventory);
@@ -311,6 +320,8 @@ describe("estrutura básica do resultado", () => {
     assert.ok(result.sections.itemCoverage.length > 0);
     assert.ok(result.sections.rawJsonKeys);
     assert.ok(result.sections.paymentTermsEvidence);
+    assert.ok(result.sections.nfeLinks);
+    assert.ok(result.sections.salesOrderLinks);
     assert.equal(result.sections.paymentTermsEvidence!.hypothesisOnly, true);
 
     const markdown = formatAuditOutputDocumentsDbMarkdown(result);
@@ -319,10 +330,12 @@ describe("estrutura básica do resultado", () => {
     assert.match(markdown, /Item coverage/);
     assert.match(markdown, /rawJsonKeys/);
     assert.match(markdown, /paymentTermsEvidence/);
+    assert.match(markdown, /nfeLinks/);
+    assert.match(markdown, /salesOrderLinks/);
     assert.match(markdown, /DocumentoSaida/);
     assert.match(markdown, /idNfe/);
     assert.match(markdown, /productCode/);
-    assert.match(markdown, /rawjson-sample/);
+    assert.match(markdown, /link-audit/);
     assert.ok(!markdown.includes("12345678000190"));
   });
 });
@@ -381,7 +394,12 @@ describe("banco indisponível e desconexão", () => {
 
 describe("garantia read-only", () => {
   it("não contém operações de escrita Prisma no runner nem nos loaders", () => {
-    for (const path of [SCRIPT_PATH, INVENTORY_SERVER_PATH, RAWJSON_SERVER_PATH]) {
+    for (const path of [
+      SCRIPT_PATH,
+      INVENTORY_SERVER_PATH,
+      RAWJSON_SERVER_PATH,
+      LINKS_SERVER_PATH,
+    ]) {
       const source = readFileSync(path, "utf8");
       for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
         assert.equal(
@@ -395,5 +413,6 @@ describe("garantia read-only", () => {
     assert.match(script, /disconnectPrismaSafe/);
     assert.match(script, /loadStageInventoryAndCoverage/);
     assert.match(script, /loadRawJsonSampleAnalysis/);
+    assert.match(script, /loadDocumentLinkAudit/);
   });
 });

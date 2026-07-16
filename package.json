@@ -39,7 +39,7 @@
     "sync:nomus:stock-documents:apply": "tsx scripts/nomusStockDocumentsSync.ts apply",
     "test:nomus:stock-documents": "tsx --test src/lib/nomusStockDocuments.test.ts",
     "audit:output-documents:db": "tsx scripts/auditOutputDocumentsDb.ts",
-    "test:output-documents:audit-db": "tsx --test src/lib/output-documents/auditOutputDocumentsDb.test.ts src/lib/output-documents/auditOutputDocumentsRawJson.test.ts",
+    "test:output-documents:audit-db": "tsx --test src/lib/output-documents/auditOutputDocumentsDb.test.ts src/lib/output-documents/auditOutputDocumentsRawJson.test.ts src/lib/output-documents/auditOutputDocumentsLinks.test.ts",
     "sync:nomus:bom-compare": "tsx scripts/nomusBomCompareV1.ts",
     "sync:nomus:bom-report": "tsx scripts/nomusBomBatchReportV1.ts",
     "sync:nomus:bom-classify": "tsx scripts/nomusBomClassifyV1.ts",

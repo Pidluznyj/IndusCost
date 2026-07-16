@@ -41,7 +41,8 @@ export type AuditOutputDocumentsDbStatus = "ok" | "unavailable" | "error";
 export type AuditOutputDocumentsDbMode =
   | "scaffold"
   | "stage-inventory"
-  | "rawjson-sample";
+  | "rawjson-sample"
+  | "link-audit";
 
 export type FieldCoverageStat = {
   field: string;
@@ -110,6 +111,8 @@ export type AuditOutputDocumentsDbSections = {
   itemCoverage: FieldCoverageStat[];
   rawJsonKeys: import("./auditOutputDocumentsRawJson.js").RawJsonKeysSection | null;
   paymentTermsEvidence: import("./auditOutputDocumentsRawJson.js").PaymentTermsEvidence | null;
+  nfeLinks: import("./auditOutputDocumentsLinks.js").NfeLinksSection | null;
+  salesOrderLinks: import("./auditOutputDocumentsLinks.js").SalesOrderLinksSection | null;
   counts: Record<string, unknown>;
   documentFocus: unknown;
   orderFocus: unknown;
@@ -390,6 +393,8 @@ export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
     itemCoverage: [],
     rawJsonKeys: null,
     paymentTermsEvidence: null,
+    nfeLinks: null,
+    salesOrderLinks: null,
     counts: {},
     documentFocus: null,
     orderFocus: null,
@@ -629,6 +634,73 @@ function formatPaymentTermsEvidenceMarkdown(
   return lines;
 }
 
+function formatClassificationCountsMarkdown(
+  counts: Record<string, number>
+): string {
+  return Object.entries(counts)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(", ");
+}
+
+function formatNfeLinksMarkdown(
+  section: import("./auditOutputDocumentsLinks.js").NfeLinksSection | null
+): string[] {
+  const lines: string[] = ["## nfeLinks", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  const m = section.metrics;
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| documentsTotal | ${m.documentsTotal} |`,
+    `| documentsWithIdNfe | ${m.documentsWithIdNfe} |`,
+    `| documentsWithoutIdNfe | ${m.documentsWithoutIdNfe} |`,
+    `| nfeFoundLocally | ${m.nfeFoundLocally} |`,
+    `| nfeMissingLocally | ${m.nfeMissingLocally} |`,
+    `| nfeValid | ${m.nfeValid} |`,
+    `| nfeCancelled | ${m.nfeCancelled} |`,
+    `| nfeWithMultipleDocuments | ${m.nfeWithMultipleDocuments} |`,
+    "",
+    `Classificações (amostra): ${formatClassificationCountsMarkdown(m.classificationCounts)}`,
+    ""
+  );
+  for (const note of section.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
+function formatSalesOrderLinksMarkdown(
+  section: import("./auditOutputDocumentsLinks.js").SalesOrderLinksSection | null
+): string[] {
+  const lines: string[] = ["## salesOrderLinks", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  const m = section.metrics;
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| documentsTotal | ${m.documentsTotal} |`,
+    `| documentsWithZeroOrders | ${m.documentsWithZeroOrders} |`,
+    `| documentsWithOneOrder | ${m.documentsWithOneOrder} |`,
+    `| documentsWithMultipleOrders | ${m.documentsWithMultipleOrders} |`,
+    `| ordersWithMultipleDocuments | ${m.ordersWithMultipleDocuments} |`,
+    `| resolvedByItem | ${m.resolvedByItem} |`,
+    `| resolvedByNfeOnly | ${m.resolvedByNfeOnly} |`,
+    `| dependentOnO2c | ${m.dependentOnO2c} |`,
+    `| conflictsBetweenSources | ${m.conflictsBetweenSources} |`,
+    "",
+    `Classificações (amostra): ${formatClassificationCountsMarkdown(m.classificationCounts)}`,
+    ""
+  );
+  for (const note of section.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
 export function formatAuditOutputDocumentsDbMarkdown(
   result: AuditOutputDocumentsDbResult
 ): string {
@@ -678,6 +750,8 @@ export function formatAuditOutputDocumentsDbMarkdown(
   lines.push(
     ...formatPaymentTermsEvidenceMarkdown(result.sections.paymentTermsEvidence)
   );
+  lines.push(...formatNfeLinksMarkdown(result.sections.nfeLinks));
+  lines.push(...formatSalesOrderLinksMarkdown(result.sections.salesOrderLinks));
 
   if (result.sections.notes.length > 0) {
     lines.push("## Notas", "");
