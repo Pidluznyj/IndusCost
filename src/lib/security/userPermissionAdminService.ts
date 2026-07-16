@@ -247,6 +247,7 @@ export function buildUserPermissionsPayload(args: {
     isActive: boolean;
     lastLoginAt: string | null;
     permissions: string[];
+    permissionsVersion?: number;
   };
   overrides: UserPermissionOverrideGrant[];
   activeSuperAdminCount: number;
@@ -255,6 +256,7 @@ export function buildUserPermissionsPayload(args: {
     name: string;
     permissions: string[];
     roleBase: AppUserRole | null;
+    updatedAt?: Date | string | null;
   } | null;
 }) {
   const role = args.user.role;
@@ -277,15 +279,31 @@ export function buildUserPermissionsPayload(args: {
         args.accessProfile.roleBase
       )
     : {};
+  const profileUpdatedAt = args.accessProfile?.updatedAt
+    ? typeof args.accessProfile.updatedAt === "string"
+      ? args.accessProfile.updatedAt
+      : args.accessProfile.updatedAt.toISOString()
+    : null;
 
   return {
-    user: args.user,
+    user: {
+      ...args.user,
+      permissionsVersion:
+        typeof args.user.permissionsVersion === "number"
+          ? args.user.permissionsVersion
+          : 0,
+    },
     isSuperAdmin: role === "SUPER_ADMIN",
     treeReadOnly: role === "SUPER_ADMIN",
     hasCustomPermissions: args.overrides.length > 0,
     overrideCount: args.overrides.length,
     accessProfile: args.accessProfile
-      ? { id: args.accessProfile.id, name: args.accessProfile.name }
+      ? {
+          id: args.accessProfile.id,
+          name: args.accessProfile.name,
+          permissions: [...args.accessProfile.permissions],
+          updatedAt: profileUpdatedAt,
+        }
       : null,
     profileFlags,
     /** Baseline INHERIT para save (perfil se vinculado; senão role). */
@@ -468,12 +486,14 @@ export async function getUserPermissionsAdmin(
       isActive: true,
       lastLoginAt: true,
       permissions: true,
+      permissionsVersion: true,
       accessProfile: {
         select: {
           id: true,
           name: true,
           permissions: true,
           roleBase: true,
+          updatedAt: true,
         },
       },
     },
@@ -490,6 +510,7 @@ export async function getUserPermissionsAdmin(
     user: {
       ...userCore,
       lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      permissionsVersion: user.permissionsVersion ?? 0,
     },
     overrides,
     activeSuperAdminCount,
@@ -499,6 +520,7 @@ export async function getUserPermissionsAdmin(
           name: accessProfile.name,
           permissions: filterKnownPermissions(accessProfile.permissions),
           roleBase: accessProfile.roleBase,
+          updatedAt: accessProfile.updatedAt,
         }
       : null,
   });

@@ -42,6 +42,8 @@ export type UserPermissionsPayload = {
     isActive: boolean;
     lastLoginAt: string | null;
     permissions: string[];
+    /** Incrementado ao salvar overrides / restaurar / limpar. */
+    permissionsVersion: number;
   };
   isSuperAdmin: boolean;
   treeReadOnly: boolean;
@@ -76,7 +78,12 @@ export type UserPermissionsPayload = {
     isLastSuperAdmin: boolean;
   };
   /** Perfil de acesso vinculado (snapshot). */
-  accessProfile: { id: string; name: string } | null;
+  accessProfile: {
+    id: string;
+    name: string;
+    permissions: string[];
+    updatedAt: string | null;
+  } | null;
   /** Flags projetadas do snapshot do perfil (origem na matriz). */
   profileFlags: Record<string, PermissionFlagsDto>;
 };

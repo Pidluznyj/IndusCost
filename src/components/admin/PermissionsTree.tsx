@@ -43,6 +43,11 @@ export type PermissionsTreeProps = {
   viewportPreset?: PermissionsTreeViewport;
   /** Exibe seleção de ramo + barra de ações em lote (PERM-34). */
   enableBranchBatch?: boolean;
+  /**
+   * Destaca exceções vs valor do perfil (PERM-35):
+   * DENY/ALLOW sobrepondo perfil e estado “Herdando”.
+   */
+  highlightExceptions?: boolean;
   resourceColumnLabel?: string;
   originColumnLabel?: string;
   configuredColumnLabel?: string;
@@ -129,6 +134,66 @@ function EffectiveBadge({
   );
 }
 
+function ProfileValueBadge({
+  baseline,
+}: {
+  baseline: PermissionTreeEffective;
+}) {
+  const allowed = baseline === "allowed";
+  return (
+    <span
+      data-testid="permissions-tree-profile-value"
+      data-profile={allowed ? "allowed" : "denied"}
+      className={cn(
+        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
+        allowed ? "bg-sky-50 text-sky-800" : "bg-slate-100 text-slate-600"
+      )}
+    >
+      {allowed ? "Permitido" : "Negado"}
+    </span>
+  );
+}
+
+function ExceptionOverlayChip({
+  decision,
+  baseline,
+}: {
+  decision: PermissionTreeDecision;
+  baseline: PermissionTreeEffective;
+}) {
+  if (decision === "deny" && baseline === "allowed") {
+    return (
+      <span
+        data-testid="permissions-tree-exception-deny"
+        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-rose-100 text-rose-900"
+      >
+        DENY sobrepõe
+      </span>
+    );
+  }
+  if (decision === "allow" && baseline === "denied") {
+    return (
+      <span
+        data-testid="permissions-tree-exception-allow"
+        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-900"
+      >
+        ALLOW sobrepõe
+      </span>
+    );
+  }
+  if (decision === "inherit") {
+    return (
+      <span
+        data-testid="permissions-tree-exception-inherit"
+        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-50 text-amber-900"
+      >
+        Herdando
+      </span>
+    );
+  }
+  return null;
+}
+
 function KindChip({ kind }: { kind: PermissionTreeNode["kind"] }) {
   return (
     <span
@@ -163,6 +228,7 @@ export function PermissionsTree({
   className,
   viewportPreset = "fluid",
   enableBranchBatch = false,
+  highlightExceptions = false,
   resourceColumnLabel = "Recurso",
   originColumnLabel = "Origem/perfil",
   configuredColumnLabel = "Decisão individual",
@@ -303,6 +369,14 @@ export function PermissionsTree({
     const isBranchRoot = selectedBranchId === node.id;
     const canSelectBranch =
       enableBranchBatch && !readOnly && node.kind !== "action";
+    const exceptionKind =
+      highlightExceptions &&
+      ((decision === "deny" && node.baselineEffective === "allowed") ||
+        (decision === "allow" && node.baselineEffective === "denied"))
+        ? decision === "deny"
+          ? "deny"
+          : "allow"
+        : null;
 
     if (isModule) {
       return (
@@ -310,19 +384,26 @@ export function PermissionsTree({
           key={node.id}
           data-testid={`permissions-tree-module-${node.id}`}
           data-branch-selected={isBranchRoot ? "true" : undefined}
+          data-exception={exceptionKind ?? undefined}
           className={cn(
             "overflow-hidden rounded-lg border bg-white",
             isBranchRoot
               ? "border-sky-400 ring-2 ring-sky-200"
               : inSelectedBranch
                 ? "border-sky-200"
-                : "border-slate-200"
+                : exceptionKind === "deny"
+                  ? "border-rose-300"
+                  : exceptionKind === "allow"
+                    ? "border-emerald-300"
+                    : "border-slate-200"
           )}
         >
           <div
             className={cn(
               "flex w-full items-center gap-2 bg-slate-50/90 px-3 py-2.5",
-              inSelectedBranch && "bg-sky-50/80"
+              inSelectedBranch && "bg-sky-50/80",
+              exceptionKind === "deny" && "bg-rose-50/70",
+              exceptionKind === "allow" && "bg-emerald-50/70"
             )}
           >
             <button
@@ -345,9 +426,19 @@ export function PermissionsTree({
               <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
                 {node.label}
               </span>
-              <span className="hidden text-xs text-slate-500 sm:inline">
-                {node.originLabel}
-              </span>
+              {highlightExceptions ? (
+                <>
+                  <ProfileValueBadge baseline={node.baselineEffective} />
+                  <ExceptionOverlayChip
+                    decision={decision}
+                    baseline={node.baselineEffective}
+                  />
+                </>
+              ) : (
+                <span className="hidden text-xs text-slate-500 sm:inline">
+                  {node.originLabel}
+                </span>
+              )}
               <EffectiveBadge effective={effective} />
             </button>
             {canSelectBranch ? (
@@ -387,6 +478,7 @@ export function PermissionsTree({
       <div key={node.id} data-testid={`permissions-tree-row-${node.id}`}>
         <div
           data-branch-selected={isBranchRoot ? "true" : undefined}
+          data-exception={exceptionKind ?? undefined}
           className={cn(
             "grid grid-cols-1 items-center gap-2 px-3 py-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_auto_auto]",
             indentClass(node.kind),
@@ -394,7 +486,9 @@ export function PermissionsTree({
             node.kind === "page" && "bg-white",
             node.kind === "tab" && "bg-slate-50/30",
             inSelectedBranch && "bg-sky-50/70",
-            isBranchRoot && "ring-1 ring-inset ring-sky-300"
+            isBranchRoot && "ring-1 ring-inset ring-sky-300",
+            exceptionKind === "deny" && "bg-rose-50/80",
+            exceptionKind === "allow" && "bg-emerald-50/80"
           )}
         >
           <div className="flex min-w-0 items-start gap-2">
@@ -431,6 +525,12 @@ export function PermissionsTree({
                 >
                   {node.label}
                 </span>
+                {highlightExceptions ? (
+                  <ExceptionOverlayChip
+                    decision={decision}
+                    baseline={node.baselineEffective}
+                  />
+                ) : null}
                 {canSelectBranch ? (
                   <button
                     type="button"
@@ -459,7 +559,11 @@ export function PermissionsTree({
             className="truncate text-xs text-slate-600"
             title={node.originLabel}
           >
-            {node.originLabel || "—"}
+            {highlightExceptions ? (
+              <ProfileValueBadge baseline={node.baselineEffective} />
+            ) : (
+              node.originLabel || "—"
+            )}
           </div>
 
           <div className="flex flex-col gap-0.5">
@@ -469,7 +573,7 @@ export function PermissionsTree({
             <DecisionSegmented
               value={decision}
               disabled={readOnly}
-              ariaLabel={`Estado configurado para ${node.label}`}
+              ariaLabel={`Exceção do usuário para ${node.label}`}
               testId={`permissions-tree-decision-${node.id}`}
               onChange={(next) =>
                 onDecisionsChange(

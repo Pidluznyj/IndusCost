@@ -61,10 +61,9 @@ npm run test:permissions-tree
 ## Integração
 
 - `AccessProfilesModule` (PERM-34) — ver `docs/security/access-profiles-editor.md`
-- `AdminUsersModule` — ainda na matriz (fora deste passo)
+- `AdminUsersModule` (PERM-35) — ver `docs/security/user-permissions-editor.md`
 
 ## Fora de escopo neste passo
 
-- Ligar `AdminUsersModule`
 - Alterar guards / autorização efetiva
 - Storybook (não existe no repo; examples + testes fazem o papel)

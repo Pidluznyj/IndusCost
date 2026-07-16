@@ -29,7 +29,7 @@ import {
 } from "@/src/lib/adminUserSellerLink";
 import { countActiveSuperAdmins } from "@/src/lib/adminUsersPagination";
 import { RolePermissionMatrixPanel } from "@/src/components/admin/RolePermissionMatrixPanel";
-import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
+import { PermissionsTree } from "@/src/components/admin/PermissionsTree";
 import {
   applyUserPermissionPreset,
   clearUserPermissionOverrides,
@@ -66,10 +66,20 @@ import {
   userMatrixImpact,
   wouldMatrixRemoveOwnUsersManage,
 } from "@/src/lib/userPermissionsMatrix";
-import type { PermissionMatrixDraft } from "@/src/lib/security/permissionMatrixUi/index.ts";
 import {
-  isMatrixDraftDirty,
-} from "@/src/lib/security/permissionMatrixUi/index.ts";
+  buildUserPermissionTreeModel,
+  countUserPermissionExceptions,
+  countUserPermissionTreeChanges,
+  decisionsFromUserDraft,
+  detectAccessProfileSnapshotDrift,
+  draftFromUserDecisions,
+} from "@/src/lib/userPermissionsTree";
+import type { PermissionMatrixDraft } from "@/src/lib/security/permissionMatrixUi/index.ts";
+import { isMatrixDraftDirty } from "@/src/lib/security/permissionMatrixUi/index.ts";
+import type {
+  PermissionTreeDecisions,
+  PermissionTreeNode,
+} from "@/src/lib/security/permissionsTreeUi/index.ts";
 import {
   canViewFullPermissionAudit,
   permissionAuditActionLabel,
@@ -169,9 +179,14 @@ export const AdminUsersModule: React.FC = () => {
   const [roleBaseline, setRoleBaseline] = useState<PermissionMatrixDraft>({});
   /** Snapshot efetivo no load (dirty / cancelar). */
   const [loadedSnapshot, setLoadedSnapshot] = useState<PermissionMatrixDraft>({});
+  const [treeNodes, setTreeNodes] = useState<PermissionTreeNode[]>([]);
+  const [treeDecisions, setTreeDecisions] = useState<PermissionTreeDecisions>({});
+  const [treeBaselineDecisions, setTreeBaselineDecisions] =
+    useState<PermissionTreeDecisions>({});
   const [confirmCriticalOpen, setConfirmCriticalOpen] = useState(false);
   const [confirmBroadOpen, setConfirmBroadOpen] = useState(false);
   const [saveReason, setSaveReason] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [showEffectivePreview, setShowEffectivePreview] = useState(true);
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -256,17 +271,27 @@ export const AdminUsersModule: React.FC = () => {
     }
   }, [workbenchTab, matrix.length, loadMatrix]);
 
+  const hydrateTreeFromPayload = useCallback((payload: UserPermissionsPayload) => {
+    const model = buildUserPermissionTreeModel(payload.tree, {
+      profileFlagsByKey: payload.profileFlags,
+    });
+    setRoleBaseline(model.baseline);
+    setLoadedSnapshot(model.draft);
+    setMatrixDraft(model.draft);
+    setTreeNodes(model.nodes);
+    setTreeDecisions(model.decisions);
+    setTreeBaselineDecisions({ ...model.decisions });
+  }, []);
+
   const loadDetail = useCallback(async (userId: string) => {
     setDetailLoading(true);
     setDetailError(null);
     setConfirmCriticalOpen(false);
+    setSaveSuccess(null);
     try {
       const payload = await fetchUserPermissions(userId);
       setDetail(payload);
-      const model = buildUserPermissionMatrixModel(payload.tree);
-      setRoleBaseline(model.baseline);
-      setLoadedSnapshot(model.draft);
-      setMatrixDraft(model.draft);
+      hydrateTreeFromPayload(payload);
       setInnerTab("permissions");
     } catch (e) {
       setDetail(null);
@@ -274,7 +299,7 @@ export const AdminUsersModule: React.FC = () => {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [hydrateTreeFromPayload]);
 
   useEffect(() => {
     if (selectedId) void loadDetail(selectedId);
@@ -319,12 +344,43 @@ export const AdminUsersModule: React.FC = () => {
     return isMatrixDraftDirty(matrixDraft, loadedSnapshot);
   }, [matrixDraft, loadedSnapshot]);
 
+  const changeCount = useMemo(
+    () => countUserPermissionTreeChanges(treeDecisions, treeBaselineDecisions),
+    [treeDecisions, treeBaselineDecisions]
+  );
+
+  const exceptionCounts = useMemo(
+    () => countUserPermissionExceptions(treeDecisions),
+    [treeDecisions]
+  );
+
+  const profileDrift = useMemo(() => {
+    if (!detail) return false;
+    return detectAccessProfileSnapshotDrift({
+      hasAccessProfile: Boolean(detail.accessProfile),
+      hasCustomPermissions: detail.hasCustomPermissions,
+      userPermissions: detail.user.permissions,
+      profilePermissions: detail.accessProfile?.permissions,
+    });
+  }, [detail]);
+
   const matrixModelRows = useMemo(() => {
     if (!detail) return [];
     return buildUserPermissionMatrixModel(detail.tree, {
       profileFlagsByKey: detail.profileFlags,
     }).rows;
   }, [detail]);
+
+  const handleTreeDecisionsChange = useCallback(
+    (next: PermissionTreeDecisions) => {
+      setTreeDecisions(next);
+      setMatrixDraft((prev) =>
+        draftFromUserDecisions(treeNodes, next, roleBaseline, prev)
+      );
+      setSaveSuccess(null);
+    },
+    [treeNodes, roleBaseline]
+  );
 
   const saveDiff = useMemo(() => {
     if (!detail || matrixModelRows.length === 0) return [];
@@ -372,12 +428,7 @@ export const AdminUsersModule: React.FC = () => {
   );
 
   const hydrateMatrixFromPayload = (payload: UserPermissionsPayload) => {
-    const model = buildUserPermissionMatrixModel(payload.tree, {
-      profileFlagsByKey: payload.profileFlags,
-    });
-    setRoleBaseline(model.baseline);
-    setLoadedSnapshot(model.draft);
-    setMatrixDraft(model.draft);
+    hydrateTreeFromPayload(payload);
   };
 
   const confirmClearIfNeeded = (hasCustom: boolean, message: string): boolean => {
@@ -414,6 +465,9 @@ export const AdminUsersModule: React.FC = () => {
       setConfirmCriticalOpen(false);
       setConfirmBroadOpen(false);
       setSaveReason("");
+      setSaveSuccess(
+        `Permissões salvas. permissionsVersion → ${payload.user.permissionsVersion}. Resultado efetivo recarregado.`
+      );
       await loadUsers();
       if (selectedId === currentUserId) {
         await loadMe();
@@ -488,8 +542,9 @@ export const AdminUsersModule: React.FC = () => {
     }
   };
 
-  const handleRoleChange = async (role: AppUserRole) => {
-    if (!detail || !selectedId || role === detail.user.role) return;
+  const handleApplyRolePreset = async (role: AppUserRole, forceSameRole = false) => {
+    if (!detail || !selectedId) return;
+    if (!forceSameRole && role === detail.user.role) return;
     if (detail.warnings.isLastSuperAdmin && role !== "SUPER_ADMIN") {
       setDetailError("Não é possível alterar o perfil do único Super Administrador ativo.");
       return;
@@ -497,12 +552,15 @@ export const AdminUsersModule: React.FC = () => {
     if (
       !confirmClearIfNeeded(
         detail.hasCustomPermissions,
-        "Trocar o perfil aplica o padrão do novo perfil e remove personalizações. Continuar?"
+        forceSameRole && role === detail.user.role
+          ? "Aplicar o perfil remove as exceções individuais e reaplica o padrão. Continuar?"
+          : "Trocar o perfil aplica o padrão do novo perfil e remove personalizações. Continuar?"
       )
     ) {
       return;
     }
     setSaving(true);
+    setSaveSuccess(null);
     try {
       const payload = await applyUserPermissionPreset(selectedId, {
         role,
@@ -510,12 +568,19 @@ export const AdminUsersModule: React.FC = () => {
       });
       setDetail(payload);
       hydrateMatrixFromPayload(payload);
+      setSaveSuccess(
+        `Perfil aplicado. permissionsVersion → ${payload.user.permissionsVersion}.`
+      );
       await loadUsers();
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Falha ao alterar perfil.");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleRoleChange = async (role: AppUserRole) => {
+    await handleApplyRolePreset(role, false);
   };
 
   const handleSaveSellerLink = async () => {
@@ -1105,55 +1170,123 @@ export const AdminUsersModule: React.FC = () => {
                   {innerTab === "permissions" ? (
                     <>
                       <div
-                        className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px] space-y-1"
+                        className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px] space-y-1.5"
                         data-testid="user-permission-context"
                       >
-                        <p>
-                          <strong>Baseline (role):</strong>{" "}
-                          {formatRoleLabel(detail.user.role)}
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          <p>
+                            <strong>Role atual:</strong>{" "}
+                            {formatRoleLabel(detail.user.role)}
+                          </p>
+                          <p>
+                            <strong>Perfil aplicado:</strong>{" "}
+                            {detail.accessProfile?.name ??
+                              selectedListUser?.accessProfileName ??
+                              "Nenhum (só role / exceções)"}
+                          </p>
+                          <p data-testid="user-permission-version">
+                            <strong>permissionsVersion:</strong>{" "}
+                            {detail.user.permissionsVersion}
+                          </p>
+                          <p>
+                            <strong>Status:</strong>{" "}
+                            {detail.user.isActive ? "Ativo" : "Inativo"}
+                            {detail.hasCustomPermissions
+                              ? " · com exceções individuais"
+                              : " · sem exceções"}
+                          </p>
+                        </div>
+                        <p className="text-muted-foreground">
+                          {USER_PERMISSION_PRECEDENCE_NOTICE}
                         </p>
-                        <p>
-                          <strong>Snapshot de perfil de acesso:</strong>{" "}
-                          {detail.accessProfile?.name ??
-                            selectedListUser?.accessProfileName ??
-                            "Nenhum vinculado (só role / overrides)"}
+                        <p className="text-muted-foreground">
+                          Exceções: {exceptionCounts.allow} ALLOW ·{" "}
+                          {exceptionCounts.deny} DENY
+                          {pending
+                            ? ` · ${changeCount} alteração(ões) não salvas`
+                            : ""}
                         </p>
-                        <p>
-                          <strong>Permissões diretas:</strong>{" "}
-                          {detail.user.permissions.length} chave(s) legadas materializadas
-                        </p>
-                        <p className="text-muted-foreground">{USER_PERMISSION_PRECEDENCE_NOTICE}</p>
                       </div>
+
+                      {saveSuccess ? (
+                        <div
+                          className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
+                          data-testid="user-permission-save-success"
+                          role="status"
+                        >
+                          {saveSuccess}
+                        </div>
+                      ) : null}
+
+                      {pending ? (
+                        <div
+                          className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950"
+                          data-testid="user-permission-unsaved"
+                        >
+                          Há mudanças ainda não salvas ({changeCount} na árvore).
+                        </div>
+                      ) : null}
+
+                      {profileDrift ? (
+                        <div
+                          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-950"
+                          data-testid="user-permission-profile-drift"
+                        >
+                          O perfil de acesso parece ter sido alterado depois do snapshot
+                          aplicado a este usuário. Use <strong>Reaplicar perfil</strong>{" "}
+                          para sincronizar o baseline.
+                        </div>
+                      ) : null}
 
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          disabled={detail.treeReadOnly}
-                          title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
+                          disabled={detail.treeReadOnly || detail.warnings.isLastSuperAdmin}
                           className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                          onClick={() => {
-                            setMatrixDraft(
-                              liberateFirstMenuInMatrixDraft(detail.tree, matrixDraft)
-                            );
-                          }}
+                          title="Aplica o padrão da role selecionada acima (limpa exceções)"
+                          onClick={() =>
+                            void handleApplyRolePreset(detail.user.role, true)
+                          }
+                          data-testid="user-permission-apply-profile"
                         >
-                          Liberar 1º menu
-                        </button>
-                        <button
-                          type="button"
-                          disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                          onClick={() => void handleClearCustom()}
-                        >
-                          Limpar personalizações
+                          Aplicar perfil
                         </button>
                         <button
                           type="button"
                           disabled={detail.treeReadOnly}
                           className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                           onClick={() => void handleRestoreDefault()}
+                          data-testid="user-permission-reapply-profile"
                         >
-                          Restaurar padrão do perfil
+                          Reaplicar perfil
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detail.treeReadOnly}
+                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                          onClick={() => void handleClearCustom()}
+                          data-testid="user-permission-clear-exceptions"
+                        >
+                          Limpar exceções individuais
+                        </button>
+                        <button
+                          type="button"
+                          disabled={detail.treeReadOnly}
+                          title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
+                          className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-accent disabled:opacity-50"
+                          onClick={() => {
+                            const next = liberateFirstMenuInMatrixDraft(
+                              detail.tree,
+                              matrixDraft
+                            );
+                            setMatrixDraft(next);
+                            setTreeDecisions(
+                              decisionsFromUserDraft(treeNodes, next, roleBaseline)
+                            );
+                            setSaveSuccess(null);
+                          }}
+                        >
+                          Liberar 1º menu
                         </button>
                         <button
                           type="button"
@@ -1316,13 +1449,18 @@ export const AdminUsersModule: React.FC = () => {
                         </div>
                       ) : null}
 
-                      <PermissionMatrix
-                        rows={matrixModelRows}
-                        draft={matrixDraft}
-                        baseline={loadedSnapshot}
-                        onDraftChange={setMatrixDraft}
+                      <PermissionsTree
+                        nodes={treeNodes}
+                        decisions={treeDecisions}
+                        onDecisionsChange={handleTreeDecisionsChange}
                         readOnly={detail.treeReadOnly}
+                        highlightExceptions
+                        enableBranchBatch={!detail.treeReadOnly}
+                        originColumnLabel="Valor do perfil"
+                        configuredColumnLabel="Exceção do usuário"
+                        resultColumnLabel="Resultado efetivo"
                         emptyMessage="Nenhuma área de acesso disponível."
+                        className="max-h-[min(52vh,560px)]"
                       />
                     </>
                   ) : null}
@@ -1429,21 +1567,26 @@ export const AdminUsersModule: React.FC = () => {
                 </div>
 
                 {innerTab === "permissions" && !detail.treeReadOnly ? (
-                  <div className="border-t border-border p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between bg-muted/20">
+                  <div
+                    className="border-t border-border p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between bg-muted/20"
+                    data-testid="user-permission-editor-footer"
+                  >
                     <div className="flex flex-wrap items-center gap-2 text-[11px]">
                       {pending ? (
-                        <span className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-950">
-                          Alterações pendentes
+                        <span
+                          className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-950"
+                          data-testid="user-permission-pending-count"
+                        >
+                          {changeCount} alteração(ões) pendente(s)
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">Sem alterações pendentes</span>
-                      )}
-                      {activeSuperAdminCount > 0 ? (
                         <span className="text-muted-foreground">
-                          · {activeSuperAdminCount} Super Admin ativo
-                          {activeSuperAdminCount === 1 ? "" : "s"}
+                          Sem alterações pendentes
                         </span>
-                      ) : null}
+                      )}
+                      <span className="text-muted-foreground">
+                        · v{detail.user.permissionsVersion}
+                      </span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button
@@ -1451,8 +1594,18 @@ export const AdminUsersModule: React.FC = () => {
                         disabled={!pending || saving}
                         onClick={() => {
                           if (!detail) return;
-                          setMatrixDraft(resetMatrixDraftToBaseline(loadedSnapshot));
+                          const restored = resetMatrixDraftToBaseline(loadedSnapshot);
+                          setMatrixDraft(restored);
+                          setTreeDecisions(
+                            decisionsFromUserDraft(
+                              treeNodes,
+                              restored,
+                              roleBaseline
+                            )
+                          );
                           setConfirmCriticalOpen(false);
+                          setConfirmBroadOpen(false);
+                          setSaveSuccess(null);
                         }}
                         className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
                       >
@@ -1460,19 +1613,12 @@ export const AdminUsersModule: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        disabled={saving}
-                        onClick={() => void handleRestoreDefault()}
-                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold hover:bg-accent disabled:opacity-50"
-                      >
-                        Restaurar padrão do perfil
-                      </button>
-                      <button
-                        type="button"
                         disabled={!pending || saving}
                         onClick={() => void handleSaveOverrides()}
                         className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+                        data-testid="user-permission-save"
                       >
-                        {saving ? "Salvando…" : "Salvar alterações"}
+                        {saving ? "Salvando…" : "Salvar permissões"}
                       </button>
                     </div>
                   </div>

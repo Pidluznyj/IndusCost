@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PERM-35 — Permissões por usuário</title>
+  <style>
+    :root {
+      --bg: #eef2f7; --card: #fff; --border: #e2e8f0; --muted: #64748b;
+      --text: #0f172a; --primary: #0f766e;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    .meta { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+    .shell { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 260px 1fr; gap: 12px; min-height: 720px; }
+    .list, .editor { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+    .list { display: flex; flex-direction: column; }
+    .list-h, .ed-h { padding: 12px 14px; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 14px; }
+    .search { margin: 10px 12px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; width: calc(100% - 24px); }
+    .user { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; background: #f0fdfa; font-size: 13px; }
+    .user small { color: var(--muted); display: block; }
+    .ed { display: flex; flex-direction: column; min-height: 720px; }
+    .body { padding: 14px; flex: 1; }
+    .ctx { background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 11px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 10px; padding: 8px 10px; font-size: 12px; margin-bottom: 10px; }
+    .warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; border-radius: 10px; padding: 8px 10px; font-size: 11px; margin-bottom: 10px; }
+    .drift { background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; border-radius: 10px; padding: 8px 10px; font-size: 11px; margin-bottom: 10px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .btn { border: 1px solid var(--border); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 11px; font-weight: 700; }
+    .tree { border: 1px solid var(--border); border-radius: 12px; background: #f8fafc; overflow: hidden; }
+    .tree-h { background: #fff; border-bottom: 1px solid var(--border); padding: 10px; }
+    .cols { display: grid; grid-template-columns: 1.4fr 0.9fr auto auto; gap: 8px; margin-top: 8px; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--muted); }
+    .mod { margin: 8px; border: 1px solid #fda4af; border-radius: 8px; overflow: hidden; }
+    .mod-h { display: flex; gap: 8px; align-items: center; padding: 10px; background: #fff1f2; font-size: 13px; font-weight: 700; }
+    .chip { font-size: 9px; font-weight: 800; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; background: #e0f2fe; color: #075985; }
+    .exc { font-size: 9px; font-weight: 800; text-transform: uppercase; padding: 2px 6px; border-radius: 4px; background: #ffe4e6; color: #9f1239; }
+    .row { display: grid; grid-template-columns: 1.4fr 0.9fr auto auto; gap: 8px; align-items: center; padding: 8px 12px; border-top: 1px solid #f1f5f9; font-size: 13px; background: #ecfdf5; }
+    .pill { border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+    .pill.ok { background: #ecfdf5; color: #065f46; }
+    .pill.no { background: #f1f5f9; color: #475569; }
+    .pill.sky { background: #e0f2fe; color: #075985; }
+    .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; padding: 2px; font-size: 11px; font-weight: 700; background: #f8fafc; }
+    .seg span { padding: 4px 8px; border-radius: 4px; color: #475569; }
+    .seg .on-d { background: #ffe4e6; color: #9f1239; }
+    .seg .on-a { background: #d1fae5; color: #065f46; }
+    .footer { border-top: 1px solid var(--border); padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; background: #fff; }
+    .primary { background: var(--primary); color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 700; }
+    @media (max-width: 860px) { .shell { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>PERM-35 — Configuração de acesso por usuário</h1>
+  <p class="meta">Seleção · role/perfil/version · árvore PERM-33 · exceções destacadas · rodapé fixo</p>
+  <div class="shell">
+    <aside class="list">
+      <div class="list-h">Usuários</div>
+      <input class="search" placeholder="Buscar usuário…" readonly />
+      <div class="user">Ana Vendedora<small>ana@empresa.com · Vendedor</small></div>
+      <div class="user" style="background:#fff;">Carlos Admin<small>carlos@empresa.com · Admin</small></div>
+    </aside>
+    <section class="editor ed" data-testid="user-permission-editor">
+      <div class="ed-h">Ana Vendedora · Permissões</div>
+      <div class="body">
+        <div class="ctx" data-testid="user-permission-context">
+          <div><strong>Role atual:</strong> Vendedor</div>
+          <div><strong>Perfil aplicado:</strong> Vendedor comercial</div>
+          <div data-testid="user-permission-version"><strong>permissionsVersion:</strong> 7</div>
+          <div><strong>Status:</strong> Ativo · com exceções individuais</div>
+        </div>
+        <div class="ok" data-testid="user-permission-save-success">Permissões salvas. permissionsVersion → 8. Resultado efetivo recarregado.</div>
+        <div class="warn" data-testid="user-permission-unsaved">Há mudanças ainda não salvas (2 na árvore).</div>
+        <div class="drift" data-testid="user-permission-profile-drift">O perfil de acesso parece ter sido alterado depois do snapshot. Use <strong>Reaplicar perfil</strong>.</div>
+        <div class="actions">
+          <button class="btn" type="button">Aplicar perfil</button>
+          <button class="btn" type="button">Reaplicar perfil</button>
+          <button class="btn" type="button">Limpar exceções individuais</button>
+        </div>
+        <div class="tree" data-testid="permissions-tree">
+          <div class="tree-h">
+            <input class="search" style="margin:0;width:100%" placeholder="Buscar por nome ou chave…" readonly />
+            <div class="cols">
+              <span>Recurso</span><span>Valor do perfil</span><span>Exceção do usuário</span><span>Resultado efetivo</span>
+            </div>
+          </div>
+          <div class="mod">
+            <div class="mod-h">
+              <span class="chip">Módulo</span> CRM
+              <span class="pill sky">Permitido</span>
+              <span class="exc">DENY sobrepõe</span>
+              <span class="pill no" style="margin-left:auto">Negado</span>
+            </div>
+            <div class="row">
+              <div><span class="chip" style="background:#eef2ff;color:#3730a3">Página</span> Clientes <span class="exc" style="background:#d1fae5;color:#065f46">ALLOW sobrepõe</span></div>
+              <div><span class="pill no">Negado</span></div>
+              <div class="seg"><span>Herdar</span><span class="on-a">Permitir</span><span>Negar</span></div>
+              <div><span class="pill ok">Permitido</span></div>
+            </div>
+            <div class="row" style="background:#fffbeb;padding-left:28px">
+              <div><span class="chip" style="background:#f5f3ff;color:#5b21b6">Aba</span> Dados <span style="font-size:9px;font-weight:800;background:#fffbeb;color:#92400e;padding:2px 6px;border-radius:4px">HERDANDO</span></div>
+              <div><span class="pill sky">Permitido</span></div>
+              <div class="seg"><span class="on-a" style="background:#fffbeb;color:#92400e">Herdar</span><span>Permitir</span><span>Negar</span></div>
+              <div><span class="pill ok">Permitido</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer" data-testid="user-permission-editor-footer">
+        <span style="font-size:12px;font-weight:700;color:var(--muted)" data-testid="user-permission-pending-count">2 alteração(ões) pendente(s) · v8</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn" type="button">Cancelar</button>
+          <button class="primary" type="button">Salvar permissões</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
