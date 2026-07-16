@@ -12,6 +12,9 @@
  * POST /api/finance/fiscal-settlements/guides/:id/proofs
  * POST /api/finance/fiscal-settlements/allocations
  * GET  /api/finance/fiscal-settlements/allocations?salesOrderId=
+ * GET  /api/finance/fiscal-settlements/reports
+ * GET  /api/finance/fiscal-settlements/reports/export.xlsx
+ * GET  /api/finance/fiscal-settlements/reports/drill
  */
 import type express from "express";
 import type { RequestHandler } from "express";
@@ -34,6 +37,19 @@ import {
   registerFiscalGuidePayment,
   reverseFiscalGuidePayment,
 } from "./fiscalSettlementService.server.js";
+import {
+  FISCAL_TAX_INTEL_DRILL_LEVELS,
+  type FiscalTaxIntelDrillLevel,
+} from "./fiscalTaxIntelligenceClient.js";
+import {
+  buildFiscalTaxIntelligenceExportBuffer,
+  buildFiscalTaxIntelligenceExportFilename,
+} from "./fiscalTaxIntelligenceExport.js";
+import {
+  buildFiscalTaxIntelligenceDrilldown,
+  buildFiscalTaxIntelligenceReport,
+  parseFiscalTaxIntelFilters,
+} from "./fiscalTaxIntelligenceService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -366,6 +382,94 @@ export function registerFiscalSettlementRoutes(
         });
       } catch (error) {
         console.error("POST fiscal allocation", error);
+        sendErr(res, error);
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/fiscal-settlements/reports",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const filters = parseFiscalTaxIntelFilters(
+          req.query as Record<string, unknown>
+        );
+        const payload = await buildFiscalTaxIntelligenceReport(prisma, filters);
+        res.setHeader("Cache-Control", "no-store");
+        res.json(payload);
+      } catch (error) {
+        console.error("GET fiscal tax intelligence report", error);
+        sendErr(res, error);
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/fiscal-settlements/reports/export.xlsx",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const filters = parseFiscalTaxIntelFilters(
+          req.query as Record<string, unknown>
+        );
+        const payload = await buildFiscalTaxIntelligenceReport(prisma, filters);
+        const buffer = buildFiscalTaxIntelligenceExportBuffer(payload);
+        const filename = buildFiscalTaxIntelligenceExportFilename(payload);
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader(
+          "Content-Type",
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${filename}"`
+        );
+        res.send(buffer);
+      } catch (error) {
+        console.error("GET fiscal tax intelligence export", error);
+        sendErr(res, error);
+      }
+    }
+  );
+
+  app.get(
+    "/api/finance/fiscal-settlements/reports/drill",
+    ...viewGuard,
+    async (req, res) => {
+      try {
+        const levelRaw = String(req.query.level ?? "period");
+        const level = (
+          FISCAL_TAX_INTEL_DRILL_LEVELS as readonly string[]
+        ).includes(levelRaw)
+          ? (levelRaw as FiscalTaxIntelDrillLevel)
+          : "period";
+        const periodStart =
+          typeof req.query.periodStart === "string"
+            ? req.query.periodStart
+            : new Date().toISOString().slice(0, 10);
+        const periodEnd =
+          typeof req.query.periodEnd === "string"
+            ? req.query.periodEnd
+            : periodStart;
+        const drill = await buildFiscalTaxIntelligenceDrilldown(prisma, {
+          level,
+          periodStart,
+          periodEnd,
+          taxType:
+            typeof req.query.taxType === "string" ? req.query.taxType : null,
+          guideId:
+            typeof req.query.guideId === "string" ? req.query.guideId : null,
+          nfeExternalId:
+            req.query.nfeExternalId != null &&
+            String(req.query.nfeExternalId).trim() !== ""
+              ? Number(req.query.nfeExternalId)
+              : null,
+        });
+        res.setHeader("Cache-Control", "no-store");
+        res.json({ ok: true, drill });
+      } catch (error) {
+        console.error("GET fiscal tax intelligence drill", error);
         sendErr(res, error);
       }
     }

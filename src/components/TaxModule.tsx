@@ -23,6 +23,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { TAX_TOUR_STEPS } from "@/src/tours/taxTourSteps";
 import { FiscalSettlementsPanel } from "@/src/components/finance/FiscalSettlementsPanel";
+import { FiscalTaxIntelligencePanel } from "@/src/components/finance/FiscalTaxIntelligencePanel";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { canViewFiscalSettlements } from "@/src/lib/finance/fiscalSettlementPermissions";
 
@@ -57,7 +58,9 @@ interface TaxRule {
 export const TaxModule = () => {
   const auth = useAuth();
   const canSettlements = canViewFiscalSettlements(auth);
-  const [moduleTab, setModuleTab] = useState<"pricing" | "settlements">("settlements");
+  const [moduleTab, setModuleTab] = useState<"pricing" | "settlements" | "intelligence">(
+    "settlements"
+  );
   const [rules, setRules] = useState<TaxRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -185,6 +188,23 @@ export const TaxModule = () => {
             Apuração e guias
           </button>
         ) : null}
+        {canSettlements ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={moduleTab === "intelligence"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[12px] font-semibold",
+              moduleTab === "intelligence"
+                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                : "text-[#4B5563] hover:bg-[#F3F4F6]"
+            )}
+            onClick={() => setModuleTab("intelligence")}
+            data-testid="tax-module-tab-intelligence"
+          >
+            Inteligência fiscal
+          </button>
+        ) : null}
         <button
           type="button"
           role="tab"
@@ -204,6 +224,8 @@ export const TaxModule = () => {
 
       {moduleTab === "settlements" && canSettlements ? (
         <FiscalSettlementsPanel />
+      ) : moduleTab === "intelligence" && canSettlements ? (
+        <FiscalTaxIntelligencePanel />
       ) : (
         <>
       {/* Header Actions */}

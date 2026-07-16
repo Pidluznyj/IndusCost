@@ -1073,6 +1073,9 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/finance/fiscal-settlements/apurations",
       "/api/finance/fiscal-settlements/guides",
       "/api/finance/fiscal-settlements/allocations",
+      "/api/finance/fiscal-settlements/reports",
+      "/api/finance/fiscal-settlements/reports/export.xlsx",
+      "/api/finance/fiscal-settlements/reports/drill",
     ],
     sensitivity: "high",
     appearsInSidebar: true,
@@ -1082,7 +1085,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: [],
     moduleId: "taxes",
     notes:
-      "UI /taxes: regras de precificação (TaxRule) + abas de apuração/guias (camadas B/C). Destacados da NF ficam no pedido.",
+      "UI /taxes: regras de precificação (TaxRule) + apuração/guias + inteligência tributária (T07). Destacados da NF ficam no pedido. Relatório Presidencial não é alterado.",
   },
   {
     resourceKey: "finance.tax_apuration",
@@ -1100,6 +1103,9 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/finance/fiscal-settlements/apurations",
       "/api/finance/fiscal-settlements/guides",
       "/api/finance/fiscal-settlements/allocations",
+      "/api/finance/fiscal-settlements/reports",
+      "/api/finance/fiscal-settlements/reports/export.xlsx",
+      "/api/finance/fiscal-settlements/reports/drill",
     ],
     sensitivity: "high",
     appearsInSidebar: false,
