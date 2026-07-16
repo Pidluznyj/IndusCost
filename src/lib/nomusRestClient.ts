@@ -95,7 +95,25 @@ export type FetchNomusJsonOptions = {
   maxRetries?: number;
   retryBaseMs?: number;
   logPrefix?: string;
+  /** Timeout por tentativa (ms). `0` desliga. Default: `NOMUS_HTTP_TIMEOUT_MS` ou sem timeout. */
+  timeoutMs?: number;
+  /** Injetável em testes (ex.: sleep mock). */
+  sleepFn?: (ms: number) => Promise<void>;
 };
+
+function resolveNomusHttpTimeoutMs(optionsTimeout?: number): number {
+  if (optionsTimeout != null && Number.isFinite(optionsTimeout)) {
+    return Math.max(0, Math.trunc(optionsTimeout));
+  }
+  const fromEnv = Number.parseInt((process.env.NOMUS_HTTP_TIMEOUT_MS ?? "").trim(), 10);
+  return Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : 0;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: unknown }).name;
+  return name === "AbortError" || name === "TimeoutError";
+}
 
 export async function fetchNomusJson(
   url: URL,
@@ -104,46 +122,79 @@ export async function fetchNomusJson(
   const envMaxRetries = Number.parseInt((process.env.NOMUS_MAX_RETRIES ?? "").trim(), 10);
   const maxRetries =
     options.maxRetries ?? (Number.isFinite(envMaxRetries) && envMaxRetries >= 0 ? envMaxRetries : 10);
-  const retryBaseMs = options.retryBaseMs ?? 700;
+  const envRetryBase = Number.parseInt((process.env.NOMUS_RETRY_BASE_MS ?? "").trim(), 10);
+  const retryBaseMs =
+    options.retryBaseMs ??
+    (Number.isFinite(envRetryBase) && envRetryBase >= 0 ? envRetryBase : 700);
   const logPrefix = options.logPrefix ?? "[nomus]";
+  const timeoutMs = resolveNomusHttpTimeoutMs(options.timeoutMs);
+  const sleepFn = options.sleepFn ?? sleep;
   const headers = buildNomusHeaders();
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-    const res = await fetch(url, { method: "GET", headers });
-    if (res.ok) return res.json();
+    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const timer =
+      controller != null
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        headers,
+        signal: controller?.signal,
+      });
+      if (res.ok) return res.json();
 
-    const body = await res.text().catch(() => "");
-    if (res.status === 429 && attempt < maxRetries) {
-      let waitMs: number | null = null;
-      try {
-        const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
-        const tempo = Number(parsed?.tempoAteLiberar);
-        if (Number.isFinite(tempo) && tempo > 0) waitMs = tempo * 1000 + 1000;
-      } catch {
-        waitMs = null;
+      const body = await res.text().catch(() => "");
+      if (res.status === 429 && attempt < maxRetries) {
+        let waitMs: number | null = null;
+        try {
+          const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
+          const tempo = Number(parsed?.tempoAteLiberar);
+          // Margem adicional de 1s sobre tempoAteLiberar (segundos).
+          if (Number.isFinite(tempo) && tempo > 0) waitMs = tempo * 1000 + 1000;
+        } catch {
+          waitMs = null;
+        }
+        if (waitMs == null) {
+          const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
+          waitMs =
+            Number.isFinite(retryAfterSec) && retryAfterSec > 0
+              ? retryAfterSec * 1000 + 1000
+              : retryBaseMs * Math.pow(2, attempt);
+        }
+        console.warn(
+          `${logPrefix} rate limit 429 em ${redactNomusUrlForLog(url)}; aguardando ${(waitMs / 1000).toFixed(0)}s.`
+        );
+        await sleepFn(waitMs);
+        continue;
       }
-      if (waitMs == null) {
-        const retryAfterSec = Number.parseInt(res.headers.get("retry-after") ?? "", 10);
-        waitMs =
-          Number.isFinite(retryAfterSec) && retryAfterSec > 0
-            ? retryAfterSec * 1000 + 1000
-            : retryBaseMs * Math.pow(2, attempt);
-      }
-      console.warn(
-        `${logPrefix} rate limit 429 em ${redactNomusUrlForLog(url)}; aguardando ${(waitMs / 1000).toFixed(0)}s.`
-      );
-      await sleep(waitMs);
-      continue;
-    }
 
-    const retryable = res.status === 429 || res.status >= 500;
-    if (!retryable || attempt === maxRetries) {
-      const safeBody = sanitizeNomusErrorBody(body);
-      throw new Error(
-        `Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${safeBody || "(sem corpo)"}`
-      );
+      const retryable = res.status === 429 || res.status >= 500;
+      if (!retryable || attempt === maxRetries) {
+        const safeBody = sanitizeNomusErrorBody(body);
+        throw new Error(
+          `Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${safeBody || "(sem corpo)"}`
+        );
+      }
+      await sleepFn(retryBaseMs * Math.pow(2, attempt));
+    } catch (error) {
+      if (isAbortError(error)) {
+        if (attempt < maxRetries) {
+          console.warn(
+            `${logPrefix} timeout após ${timeoutMs}ms em ${redactNomusUrlForLog(url)}; retry ${attempt + 1}/${maxRetries}.`
+          );
+          await sleepFn(retryBaseMs * Math.pow(2, attempt));
+          continue;
+        }
+        throw new Error(
+          `Timeout HTTP após ${timeoutMs}ms em ${redactNomusUrlForLog(url)}`
+        );
+      }
+      throw error;
+    } finally {
+      if (timer != null) clearTimeout(timer);
     }
-    await sleep(retryBaseMs * Math.pow(2, attempt));
   }
 
   throw new Error("Estado inesperado no retry HTTP Nomus.");
