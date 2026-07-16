@@ -2,6 +2,7 @@
  * Testes do DTO/builder da aba Tributos (T04) — âncora PD 02457.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { parseNfeFiscalXml } from "../nfeFiscalXmlParser.js";
 import { PD_02457_FISCAL, PD_02457_NFE_XML } from "../nfeFiscalFixtures.js";
@@ -568,5 +569,46 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
     assert.equal(payload.summary.amountToInvoice, 500);
     assert.equal(payload.summary.financialBalance, null);
     assert.equal(payload.highlightedTaxes.length, 0);
+  });
+});
+
+describe("TRIB-01 — empty state da aba Tributos (contrato atual)", () => {
+  it("mensagem empty só quando fiscalTaxes é null; no-nfe é estado distinto", () => {
+    const tab = readFileSync(
+      new URL("../../components/sales/SalesOrderTributosTab.tsx", import.meta.url),
+      "utf8"
+    );
+    assert.match(tab, /data-testid="sales-order-tributos-empty"/);
+    assert.match(tab, /Tributos documentais indisponíveis para este pedido/);
+    assert.match(tab, /data-testid="sales-order-tributos-no-nfe"/);
+    assert.match(tab, /Nenhuma NF-e vinculada a este pedido/);
+    assert.match(tab, /if \(!fiscalTaxes\)/);
+  });
+
+  it("detail passa appAuth.permissions (bag crua) ao gate fiscal — mismatch com FE effectivePermissions", () => {
+    const routes = readFileSync(
+      new URL("../salesOrderDetailRoutes.ts", import.meta.url),
+      "utf8"
+    );
+    const dialog = readFileSync(
+      new URL("../../components/sales/SalesOrderDetailDialog.tsx", import.meta.url),
+      "utf8"
+    );
+    assert.match(routes, /permissions:\s*appAuth\.permissions/);
+    assert.doesNotMatch(routes, /effectivePermissions:\s*appAuth\.effectivePermissions/);
+    assert.match(dialog, /denied=\{!canTributos\}/);
+    assert.match(dialog, /fiscalTaxes=\{payload\.fiscalTaxes\}/);
+    // Reproduz o empty: FE liberaria com detail.view efetivo; BE nega com bag só view.
+    assert.equal(
+      canViewSalesOrderFiscalTaxesFromPermissions(["sales_orders.view"]),
+      false
+    );
+    assert.equal(
+      canViewSalesOrderFiscalTaxes({
+        hasPermission: (p) =>
+          p === "sales_orders.detail.view" || p === "sales_orders.invoice.view",
+      }),
+      true
+    );
   });
 });
