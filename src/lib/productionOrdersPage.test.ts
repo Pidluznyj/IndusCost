@@ -29,6 +29,7 @@ import {
   canViewProductionOrders,
   classifyProductionOrdersListError,
   formatProductionOrderQuantity,
+  formatProductionOrderDeliveryTimingLabel,
   hasActiveProductionOrdersFilters,
   isProductionOrdersDateRangeInvalid,
   PRODUCTION_ORDERS_BREADCRUMB,
@@ -36,6 +37,7 @@ import {
   PRODUCTION_ORDERS_PAGE_TITLE,
   PRODUCTION_ORDERS_ROUTE_PATH,
   productionOrderStatusBadgeClass,
+  resolveProductionOrderDeliveryTiming,
   resolveProductionOrderStatusTone,
   resolveLatestSyncedAt,
 } from "@/src/lib/productionOrdersUi.js";
@@ -310,6 +312,29 @@ describe("productionOrdersUi", () => {
       "2026-07-16T12:00:00.000Z"
     );
     assert.equal(
+      resolveProductionOrderDeliveryTiming(
+        "2026-03-24T17:00:00.000Z",
+        "2026-04-07T17:00:00.000Z"
+      ),
+      "LATE"
+    );
+    assert.equal(
+      formatProductionOrderDeliveryTimingLabel("LATE"),
+      "Entregue fora do prazo"
+    );
+    assert.equal(
+      resolveProductionOrderDeliveryTiming(
+        "2026-04-07T17:00:00.000Z",
+        "2026-04-07T17:00:00.000Z"
+      ),
+      "ON_TIME"
+    );
+    assert.equal(
+      formatProductionOrderDeliveryTimingLabel("ON_TIME"),
+      "Entregue no prazo"
+    );
+    assert.equal(resolveProductionOrderDeliveryTiming(null, "2026-04-07T17:00:00.000Z"), "UNAVAILABLE");
+    assert.equal(
       hasActiveProductionOrdersFilters({
         search: "",
         status: null,
@@ -468,6 +493,8 @@ describe("ProductionOrderGridTableRow", () => {
     assert.doesNotMatch(html, /KOPPETEL/);
     assert.match(html, /PD 02534/);
     assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+    assert.doesNotMatch(html, />Prioridade</);
+    assert.doesNotMatch(html, /Última sincronização/);
   });
 
   it("exibe datas normalizadas de abertura, planejada e entrega", () => {
@@ -483,6 +510,17 @@ describe("ProductionOrderGridTableRow", () => {
     assert.match(html, /23\/06\/2026|23\/06/);
     assert.match(html, /24\/06\/2026|24\/06/);
     assert.match(html, /08\/07\/2026|08\/07/);
+    assert.match(html, /Entregue fora do prazo/);
+  });
+
+  it("marca entregue no prazo quando entrega <= planejada", () => {
+    const html = renderRow(
+      gridRow({
+        plannedAt: "2026-07-10T20:00:00.000Z",
+        deliveryAt: "2026-07-08T20:00:00.000Z",
+      })
+    );
+    assert.match(html, /Entregue no prazo/);
   });
 
   it("preserva decimal pequeno sem arredondar para zero", () => {

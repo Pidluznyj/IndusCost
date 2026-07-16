@@ -458,7 +458,7 @@ export function ProductionOrdersModule() {
               if (top && top.scrollLeft !== event.currentTarget.scrollLeft) top.scrollLeft = event.currentTarget.scrollLeft;
             }}
           >
-            <table className="min-w-[1280px] text-left text-sm">
+            <table className="min-w-[1180px] text-left text-sm">
               <caption className="sr-only">
                 Ordens de Produção sincronizadas do Nomus. Ative uma linha para abrir a auditoria.
               </caption>
@@ -469,13 +469,12 @@ export function ProductionOrdersModule() {
                     "Tipo",
                     "Produto",
                     "Quantidade",
-                    "Prioridade",
                     "Data de abertura",
                     "Data planejada",
                     "Data de entrega",
+                    "Status da entrega",
                     "Status",
                     "Pedido de Venda",
-                    "Última sincronização",
                   ].map((label) => (
                     <th key={label} className="whitespace-nowrap px-3 py-2 font-medium">
                       {label}
@@ -629,7 +628,6 @@ export function ProductionOrderGridTableRow({
       <td className="whitespace-nowrap px-3 py-2 tabular-nums">
         {formatProductionOrderQuantity(row.quantity, row.unit)}
       </td>
-      <td className="px-3 py-2">{row.priority ?? "—"}</td>
       <td className="whitespace-nowrap px-3 py-2">
         {formatProductionOrderDateTime(row.openedAt)}
       </td>
@@ -638,6 +636,21 @@ export function ProductionOrderGridTableRow({
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         {formatProductionOrderDateTime(row.deliveryAt)}
+      </td>
+      <td className="px-3 py-2">
+        {(() => {
+          const timing = resolveProductionOrderDeliveryTiming(
+            row.plannedAt,
+            row.deliveryAt
+          );
+          const label = formatProductionOrderDeliveryTimingLabel(timing);
+          if (timing === "UNAVAILABLE") return label;
+          return (
+            <OverlayBadge tone={productionOrderDeliveryTimingOverlayTone(timing)}>
+              {label}
+            </OverlayBadge>
+          );
+        })()}
       </td>
       <td className="px-3 py-2">
         <OverlayBadge tone={productionOrderStatusOverlayTone(row.status)}>
@@ -673,9 +686,6 @@ export function ProductionOrderGridTableRow({
         ) : (
           "—"
         )}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">
-        {formatProductionOrderDateTime(row.syncedAt)}
       </td>
     </tr>
   );
