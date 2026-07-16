@@ -202,6 +202,27 @@ export function validatePermissionContract(
     }
   }
 
+  // deprecated / replacementKeys (P01)
+  const keySet = new Set(resources.map((r) => r.resourceKey));
+  for (const r of resources) {
+    if (r.deprecated && (!r.replacementKeys || r.replacementKeys.length === 0)) {
+      issues.push({
+        code: "DEPRECATED_WITHOUT_REPLACEMENT",
+        message: `recurso depreciado sem replacementKeys: ${r.resourceKey}`,
+        resourceKey: r.resourceKey,
+      });
+    }
+    for (const rep of r.replacementKeys ?? []) {
+      if (!keySet.has(rep)) {
+        issues.push({
+          code: "INVALID_REPLACEMENT_KEY",
+          message: `replacementKey inexistente ${rep} em ${r.resourceKey}`,
+          resourceKey: r.resourceKey,
+        });
+      }
+    }
+  }
+
   return issues;
 }
 
