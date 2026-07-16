@@ -352,10 +352,16 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
       !payload.highlightedTaxes.some((t) => /saldo/i.test(t.label))
     );
     assert.match(payload.technical.note, /Residual ≠ saldo financeiro/);
+    assert.match(payload.technical.note, /não são impostos pagos/i);
 
     assert.equal(payload.nfes.length, 1);
     assert.equal(payload.nfes[0]!.totalValue, PD_02457_FISCAL.vNF);
     assert.ok(payload.itemTaxLines.some((l) => l.taxType === "IPI"));
+
+    // TRIB-04: ICMS oficial zero ≠ ausente
+    const icms = payload.highlightedTaxes.find((t) => t.taxType === "ICMS");
+    assert.ok(icms);
+    assert.equal(icms!.amount, 0);
 
     // T06 — settlements: sem guia → “Sem informação de recolhimento”
     assert.ok(payload.settlements);
@@ -569,6 +575,263 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
     assert.equal(payload.summary.amountToInvoice, 500);
     assert.equal(payload.summary.financialBalance, null);
     assert.equal(payload.highlightedTaxes.length, 0);
+  });
+
+  it("TRIB-04: várias NF-es válidas consolidam IPI/frete/despesas sem duplicar", async () => {
+    const fiscalRow = (externalId: number, ipi: number, frete: number, outro: number) => ({
+      id: `nfe-${externalId}`,
+      externalId,
+      fiscalSummary: {
+        id: `sum-${externalId}`,
+        finalidade: 1,
+        vProd: 100,
+        vDesc: 0,
+        vFrete: frete,
+        vSeg: 0,
+        vOutro: outro,
+        vNF: 100 + ipi + frete + outro,
+        vICMS: 0,
+        vIPI: ipi,
+        vPIS: null,
+        vCOFINS: null,
+        vST: null,
+        vBC: 100,
+        vBCST: null,
+        highlightedResidual: 0,
+        parsedAt: new Date("2026-07-16T12:00:00.000Z"),
+        parserVersion: "test",
+        source: "XML",
+        qualityAlert: null,
+        taxLines: [
+          {
+            lineKey: "H:IPI",
+            taxType: "IPI",
+            scope: "HEADER",
+            itemNumber: null,
+            baseAmount: null,
+            rate: null,
+            amount: ipi,
+            cst: null,
+            csosn: null,
+            cfop: null,
+            ncm: null,
+            metadata: null,
+          },
+          {
+            lineKey: "H:ICMS",
+            taxType: "ICMS",
+            scope: "HEADER",
+            itemNumber: null,
+            baseAmount: 100,
+            rate: null,
+            amount: 0,
+            cst: null,
+            csosn: null,
+            cfop: null,
+            ncm: null,
+            metadata: null,
+          },
+        ],
+      },
+    });
+
+    const prisma = {
+      nomusNfe: {
+        findMany: async () => [fiscalRow(10, 10, 5, 2), fiscalRow(20, 20.21, 0, 0)],
+      },
+      ...emptySettlementPrismaExtras(),
+    };
+
+    const nfeBase = baseAudit().nfes[0] as OrderFullAuditPayload["nfes"][number];
+    const payload = await buildSalesOrderFiscalTaxesPayload(prisma as never, {
+      ...baseAudit({
+        nfes: [
+          {
+            ...nfeBase,
+            nfeExternalId: 10,
+            numero: "10",
+            valorTotal: 117,
+            valorLiquido: 100,
+            highlightedTaxesValue: 10,
+          },
+          {
+            ...nfeBase,
+            nfeExternalId: 20,
+            numero: "20",
+            valorTotal: 120.21,
+            valorLiquido: 100,
+            highlightedTaxesValue: 20.21,
+          },
+          // duplicata da NF 10 (várias fontes)
+          {
+            ...nfeBase,
+            nfeExternalId: 10,
+            numero: "10-dup",
+            valorTotal: 999,
+            valorLiquido: 999,
+            highlightedTaxesValue: 999,
+          },
+        ],
+        nfeItems: [],
+        receivables: [],
+        receivablesTotal: {
+          totalAmount: 0,
+          openAmount: 0,
+          receivedAmount: 0,
+          overdueCount: 0,
+          nextDueDate: null,
+          maxAmount: 0,
+          totalCount: 0,
+        },
+        summary: { ...baseAudit().summary, activeOrderValue: 237.21 },
+      }),
+    });
+
+    assert.equal(payload.summary.validNfeCount, 2);
+    assert.equal(payload.nfes.length, 2);
+    assert.equal(payload.summary.freightValue, 5);
+    assert.equal(payload.summary.otherExpensesValue, 2);
+    assert.equal(payload.summary.nfeValidTotal, 237.21);
+    const ipi = payload.highlightedTaxes.find((t) => t.taxType === "IPI");
+    assert.equal(ipi?.amount, 30.21);
+    const icms = payload.highlightedTaxes.find((t) => t.taxType === "ICMS");
+    assert.equal(icms?.amount, 0);
+    assert.equal(icms?.baseAmount, 200);
+  });
+
+  it("TRIB-04: campo ausente não inventa IPI; NF cancelada fora do consolidado", async () => {
+    const prisma = {
+      nomusNfe: {
+        findMany: async () => [
+          {
+            id: "ok",
+            externalId: 1,
+            fiscalSummary: {
+              id: "s1",
+              finalidade: 1,
+              vProd: 50,
+              vDesc: null,
+              vFrete: null,
+              vSeg: null,
+              vOutro: null,
+              vNF: 50,
+              vIPI: null,
+              vICMS: null,
+              highlightedResidual: 0,
+              parsedAt: new Date(),
+              parserVersion: "t",
+              source: "XML",
+              qualityAlert: null,
+              taxLines: [
+                {
+                  lineKey: "H:IPI",
+                  taxType: "IPI",
+                  scope: "HEADER",
+                  itemNumber: null,
+                  baseAmount: 50,
+                  rate: 10,
+                  amount: null,
+                  cst: null,
+                  csosn: null,
+                  cfop: null,
+                  ncm: null,
+                  metadata: null,
+                },
+              ],
+            },
+          },
+          {
+            id: "cancel",
+            externalId: 2,
+            fiscalSummary: {
+              id: "s2",
+              finalidade: 1,
+              vProd: 999,
+              vDesc: 0,
+              vFrete: 0,
+              vSeg: 0,
+              vOutro: 0,
+              vNF: 999,
+              vIPI: 80,
+              highlightedResidual: 0,
+              parsedAt: new Date(),
+              parserVersion: "t",
+              source: "XML",
+              qualityAlert: null,
+              taxLines: [
+                {
+                  lineKey: "H:IPI",
+                  taxType: "IPI",
+                  scope: "HEADER",
+                  itemNumber: null,
+                  baseAmount: null,
+                  rate: null,
+                  amount: 80,
+                  cst: null,
+                  csosn: null,
+                  cfop: null,
+                  ncm: null,
+                  metadata: null,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ...emptySettlementPrismaExtras(),
+    };
+
+    const nfeBase = baseAudit().nfes[0] as OrderFullAuditPayload["nfes"][number];
+    const payload = await buildSalesOrderFiscalTaxesPayload(
+      prisma as never,
+      baseAudit({
+        nfes: [
+          {
+            ...nfeBase,
+            nfeExternalId: 1,
+            isCanceled: false,
+            isValidForBilling: true,
+            valorTotal: 50,
+            valorLiquido: 50,
+            highlightedTaxesValue: null,
+          },
+          {
+            ...nfeBase,
+            nfeExternalId: 2,
+            isCanceled: true,
+            isValidForBilling: false,
+            valorTotal: 999,
+            valorLiquido: 999,
+            highlightedTaxesValue: 80,
+            statusLabel: "Cancelada",
+          },
+        ],
+        nfeItems: [],
+        receivables: [],
+        receivablesTotal: {
+          totalAmount: 0,
+          openAmount: 0,
+          receivedAmount: 0,
+          overdueCount: 0,
+          nextDueDate: null,
+          maxAmount: 0,
+          totalCount: 0,
+        },
+        summary: { ...baseAudit().summary, activeOrderValue: 50 },
+      })
+    );
+
+    assert.equal(payload.summary.validNfeCount, 1);
+    assert.equal(payload.summary.cancelledNfeCount, 1);
+    assert.equal(payload.summary.nfeValidTotal, 50);
+    assert.equal(payload.summary.freightValue, 0);
+    assert.equal(
+      payload.highlightedTaxes.find((t) => t.taxType === "IPI"),
+      undefined
+    );
+    assert.equal(payload.nfes[0]!.freightValue, null);
+    assert.equal(payload.nfes[0]!.discountsValue, null);
+    assert.ok(payload.cancelledNfes[0]!.headerTaxes.some((t) => t.taxType === "IPI"));
   });
 });
 

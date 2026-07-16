@@ -11,9 +11,19 @@ import {
 } from "@/src/lib/sales/orderFiscalFinancialMetrics.js";
 import type { OrderFullAuditNfe, OrderFullAuditPayload } from "@/src/lib/finance/orderFullAuditClient.js";
 import {
+  buildDocumentaryHeaderTaxes,
+  consolidateDocumentaryHeaderTaxes,
+  dedupeDocumentaryNfesByExternalId,
+  fromDocumentaryMoneyCents,
+  parseDocumentaryMoney,
+  resolveDocumentaryProductsNet,
+  sumDocumentaryMoney,
+  toDocumentaryMoneyCents,
+} from "./salesOrderDocumentaryTaxes.js";
+import {
   collectionLabelForGuide,
   emptySalesOrderFiscalSettlementsBlock,
-  filterPositiveTaxAmounts,
+  filterPresentTaxAmounts,
   labelForFiscalTaxType,
   resolveSalesOrderFiscalSettlementStatus,
   SALES_ORDER_FISCAL_SETTLEMENT_STATUS_LABELS,
@@ -40,22 +50,11 @@ type PrismaLike = PrismaClient;
 
 function round2(n: number | null | undefined): number {
   if (n == null || !Number.isFinite(n)) return 0;
-  return Math.round(n * 100) / 100;
+  return fromDocumentaryMoneyCents(toDocumentaryMoneyCents(n));
 }
 
 function dec(value: unknown): number | null {
-  if (value == null) return null;
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-  if (typeof value === "object" && value !== null && "toNumber" in value) {
-    try {
-      const n = (value as { toNumber: () => number }).toNumber();
-      return Number.isFinite(n) ? n : null;
-    } catch {
-      return null;
-    }
-  }
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  return parseDocumentaryMoney(value);
 }
 
 function iso(value: Date | string | null | undefined): string | null {
@@ -65,22 +64,10 @@ function iso(value: Date | string | null | undefined): string | null {
 }
 
 function aggregateHeaderTaxes(
-  lines: Array<{ taxType: string; amount: unknown; scope: string }>
+  lines: Array<{ taxType: string; amount: unknown; scope: string; baseAmount?: unknown }>,
+  summaryTotals?: Parameters<typeof buildDocumentaryHeaderTaxes>[0]["summaryTotals"]
 ): SalesOrderFiscalTaxAmount[] {
-  const map = new Map<string, number>();
-  for (const line of lines) {
-    if (line.scope !== "HEADER") continue;
-    const amount = dec(line.amount);
-    if (amount == null) continue;
-    map.set(line.taxType, round2((map.get(line.taxType) ?? 0) + amount));
-  }
-  return filterPositiveTaxAmounts(
-    [...map.entries()].map(([taxType, amount]) => ({
-      taxType,
-      label: labelForFiscalTaxType(taxType),
-      amount,
-    }))
-  );
+  return buildDocumentaryHeaderTaxes({ taxLines: lines, summaryTotals });
 }
 
 function mapItemLines(
@@ -106,6 +93,8 @@ function mapItemLines(
         l.metadata && typeof l.metadata === "object"
           ? (l.metadata as Record<string, unknown>)
           : null;
+      const amount = dec(l.amount);
+      // Valor oficial ausente: não recalcular por rate × base.
       return {
         lineKey: l.lineKey,
         taxType: l.taxType,
@@ -114,7 +103,7 @@ function mapItemLines(
         itemNumber: l.itemNumber,
         baseAmount: dec(l.baseAmount),
         rate: dec(l.rate),
-        amount: dec(l.amount),
+        amount,
         cst: l.cst,
         csosn: l.csosn,
         cfop: l.cfop,
@@ -136,6 +125,20 @@ function buildNfeDto(
     vSeg: unknown;
     vOutro: unknown;
     vNF: unknown;
+    vICMS?: unknown;
+    vICMSDeson?: unknown;
+    vST?: unknown;
+    vFCP?: unknown;
+    vFCPST?: unknown;
+    vFCPSTRet?: unknown;
+    vIPI?: unknown;
+    vIPIDevol?: unknown;
+    vPIS?: unknown;
+    vCOFINS?: unknown;
+    vII?: unknown;
+    vISS?: unknown;
+    vBC?: unknown;
+    vBCST?: unknown;
     highlightedResidual: unknown;
     parsedAt: Date;
     parserVersion: string;
@@ -204,10 +207,25 @@ function buildNfeDto(
     };
   }
 
-  const headerTaxes = aggregateHeaderTaxes(fiscal.taxLines);
-  const taxesTotalHeader = round2(
-    headerTaxes.reduce((acc, t) => acc + t.amount, 0)
-  );
+  const summaryTotals = {
+    vICMS: fiscal.vICMS,
+    vICMSDeson: fiscal.vICMSDeson,
+    vST: fiscal.vST,
+    vFCP: fiscal.vFCP,
+    vFCPST: fiscal.vFCPST,
+    vFCPSTRet: fiscal.vFCPSTRet,
+    vIPI: fiscal.vIPI,
+    vIPIDevol: fiscal.vIPIDevol,
+    vPIS: fiscal.vPIS,
+    vCOFINS: fiscal.vCOFINS,
+    vII: fiscal.vII,
+    vISS: fiscal.vISS,
+    vBC: fiscal.vBC,
+    vBCST: fiscal.vBCST,
+  };
+
+  const headerTaxes = aggregateHeaderTaxes(fiscal.taxLines, summaryTotals);
+  const taxesTotalHeader = sumDocumentaryMoney(headerTaxes.map((t) => t.amount));
   const residual = dec(fiscal.highlightedResidual) ?? 0;
   const compositionIncomplete =
     residual > 0.05 ||
@@ -250,8 +268,10 @@ export async function buildSalesOrderFiscalTaxesPayload(
   prisma: PrismaLike,
   audit: OrderFullAuditPayload
 ): Promise<SalesOrderFiscalTaxesPayload> {
-  const nfes = audit.nfes ?? [];
-  const externalIds = nfes.map((n) => n.nfeExternalId);
+  const nfes = dedupeDocumentaryNfesByExternalId(audit.nfes ?? []);
+  const externalIds = nfes
+    .map((n) => n.nfeExternalId)
+    .filter((id) => Number.isFinite(id) && id > 0);
 
   const nomusRows =
     externalIds.length === 0
@@ -271,6 +291,20 @@ export async function buildSalesOrderFiscalTaxesPayload(
                 vSeg: true,
                 vOutro: true,
                 vNF: true,
+                vICMS: true,
+                vICMSDeson: true,
+                vST: true,
+                vFCP: true,
+                vFCPST: true,
+                vFCPSTRet: true,
+                vIPI: true,
+                vIPIDevol: true,
+                vPIS: true,
+                vCOFINS: true,
+                vII: true,
+                vISS: true,
+                vBC: true,
+                vBCST: true,
                 highlightedResidual: true,
                 parsedAt: true,
                 parserVersion: true,
@@ -303,10 +337,6 @@ export async function buildSalesOrderFiscalTaxesPayload(
 
   const built: SalesOrderFiscalNfeDto[] = nfes.map((nfe) => {
     const row = byExternal.get(nfe.nfeExternalId);
-    const summary = row?.fiscalSummary
-      ? { ...row.fiscalSummary, id: row.id }
-      : null;
-    // fiscalSummary.id is summary id; we need nomusNfeId = row.id
     const fiscal = row?.fiscalSummary
       ? {
           id: row.id,
@@ -317,6 +347,20 @@ export async function buildSalesOrderFiscalTaxesPayload(
           vSeg: row.fiscalSummary.vSeg,
           vOutro: row.fiscalSummary.vOutro,
           vNF: row.fiscalSummary.vNF,
+          vICMS: row.fiscalSummary.vICMS,
+          vICMSDeson: row.fiscalSummary.vICMSDeson,
+          vST: row.fiscalSummary.vST,
+          vFCP: row.fiscalSummary.vFCP,
+          vFCPST: row.fiscalSummary.vFCPST,
+          vFCPSTRet: row.fiscalSummary.vFCPSTRet,
+          vIPI: row.fiscalSummary.vIPI,
+          vIPIDevol: row.fiscalSummary.vIPIDevol,
+          vPIS: row.fiscalSummary.vPIS,
+          vCOFINS: row.fiscalSummary.vCOFINS,
+          vII: row.fiscalSummary.vII,
+          vISS: row.fiscalSummary.vISS,
+          vBC: row.fiscalSummary.vBC,
+          vBCST: row.fiscalSummary.vBCST,
           highlightedResidual: row.fiscalSummary.highlightedResidual,
           parsedAt: row.fiscalSummary.parsedAt,
           parserVersion: row.fiscalSummary.parserVersion,
@@ -325,7 +369,6 @@ export async function buildSalesOrderFiscalTaxesPayload(
           taxLines: row.fiscalSummary.taxLines,
         }
       : null;
-    void summary;
     return buildNfeDto(nfe, fiscal);
   });
 
@@ -333,44 +376,24 @@ export async function buildSalesOrderFiscalTaxesPayload(
   const cancelled = built.filter((n) => n.isCancelled);
   const activeNfes = built.filter((n) => !n.isCancelled);
 
-  const sum = (pick: (n: SalesOrderFiscalNfeDto) => number | null) =>
-    round2(valid.reduce((acc, n) => acc + (pick(n) ?? 0), 0));
+  const productsValue = sumDocumentaryMoney(
+    valid.map((n) =>
+      resolveDocumentaryProductsNet({
+        productsValue: n.productsValue,
+        discountsValue: n.discountsValue,
+      })
+    )
+  );
+  const discountsValue = sumDocumentaryMoney(valid.map((n) => n.discountsValue));
+  const freightValue = sumDocumentaryMoney(valid.map((n) => n.freightValue));
+  const insuranceValue = sumDocumentaryMoney(valid.map((n) => n.insuranceValue));
+  const otherExpensesValue = sumDocumentaryMoney(
+    valid.map((n) => n.otherExpensesValue)
+  );
+  const nfeValidTotal = sumDocumentaryMoney(valid.map((n) => n.totalValue));
 
-  /** Produtos líquidos = vProd − vDesc (quando ambos existem). */
-  const productsValue = sum((n) => {
-    if (n.productsValue != null && n.discountsValue != null) {
-      return Math.max(0, n.productsValue - n.discountsValue);
-    }
-    return n.productsValue;
-  });
-  const discountsValue = sum((n) => n.discountsValue);
-  const freightValue = sum((n) => n.freightValue);
-  const insuranceValue = sum((n) => n.insuranceValue);
-  const otherExpensesValue = sum((n) => n.otherExpensesValue);
-  const nfeValidTotal = sum((n) => n.totalValue);
-
-  const taxMap = new Map<string, number>();
-  for (const nfe of valid) {
-    for (const t of nfe.headerTaxes) {
-      if (t.taxType === "OTHER" && nfe.source !== "FISCAL_SUMMARY") continue;
-      taxMap.set(t.taxType, round2((taxMap.get(t.taxType) ?? 0) + t.amount));
-    }
-  }
-  // Se nenhuma composição tipada, exibir fallback agregado (HEADER_DIFF).
-  if (taxMap.size === 0) {
-    for (const nfe of valid) {
-      for (const t of nfe.headerTaxes) {
-        taxMap.set(t.taxType, round2((taxMap.get(t.taxType) ?? 0) + t.amount));
-      }
-    }
-  }
-
-  const highlightedTaxes = filterPositiveTaxAmounts(
-    [...taxMap.entries()].map(([taxType, amount]) => ({
-      taxType,
-      label: labelForFiscalTaxType(taxType),
-      amount,
-    }))
+  const highlightedTaxes = consolidateDocumentaryHeaderTaxes(
+    valid.map((n) => n.headerTaxes)
   );
 
   const orderActiveValue = round2(audit.summary.activeOrderValue ?? 0);
@@ -467,7 +490,7 @@ export async function buildSalesOrderFiscalTaxesPayload(
       lastParsedAt,
       parserVersion,
     },
-    highlightedTaxes,
+    highlightedTaxes: filterPresentTaxAmounts(highlightedTaxes),
     nfes: activeNfes,
     cancelledNfes: cancelled,
     itemTaxLines,
@@ -475,7 +498,7 @@ export async function buildSalesOrderFiscalTaxesPayload(
     technical: {
       source:
         "NomusNfeFiscalSummary + NomusNfeTaxLine (HEADER) · FiscalPaymentGuide/Allocation (B/C/D)",
-      note: "Não somar HEADER e ITEM. Destacado ≠ apurado ≠ pago ≠ alocado. Residual ≠ saldo financeiro.",
+      note: "Tributos documentais destacados na NF — não são impostos pagos. Não somar HEADER e ITEM. Residual ≠ saldo financeiro.",
       doNotSumHeaderAndItem: true,
     },
   };

@@ -46,6 +46,8 @@ export type SalesOrderFiscalTaxAmount = {
   taxType: string;
   label: string;
   amount: number;
+  /** Base oficial (ex. vBC do ICMS HEADER), quando existir — não inferir de alíquota. */
+  baseAmount?: number | null;
 };
 
 export type SalesOrderFiscalTaxesSummary = {
@@ -369,9 +371,23 @@ export function sortFiscalTaxAmounts(
   });
 }
 
-/** Soma só amounts > 0 (campos disponíveis). */
+/** Soma só amounts > 0 (atalhos de UI que omitem zero). */
 export function filterPositiveTaxAmounts(
   rows: SalesOrderFiscalTaxAmount[]
 ): SalesOrderFiscalTaxAmount[] {
   return sortFiscalTaxAmounts(rows.filter((r) => r.amount > 0.009));
+}
+
+/**
+ * Mantém tributos documentais presentes, inclusive valor oficial zero.
+ * Ausente (não listado) ≠ zero.
+ */
+export function filterPresentTaxAmounts(
+  rows: SalesOrderFiscalTaxAmount[]
+): SalesOrderFiscalTaxAmount[] {
+  return sortFiscalTaxAmounts(
+    rows.filter(
+      (r) => r.amount != null && Number.isFinite(r.amount) && r.amount >= 0
+    )
+  );
 }
