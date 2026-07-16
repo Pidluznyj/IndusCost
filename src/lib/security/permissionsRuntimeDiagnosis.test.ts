@@ -198,7 +198,7 @@ describe("P09 Leticia — Contas a Pagar only (comportamento desejado)", () => {
   it("path /employees protegido por resource quando bag limpa", () => {
     const d = evaluatePathViewAccess("/employees", navCtx(onlyAp));
     assert.equal(d.allowed, false);
-    assert.equal(d.source, "resource");
+    assert.equal(d.source, "effective_dto");
   });
 
   it("createPermissionsApi.canView: AP não abre Conciliação", () => {

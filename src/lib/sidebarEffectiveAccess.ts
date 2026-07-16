@@ -101,6 +101,28 @@ export function projectSidebarContractKeysFromLegacyBag(
     }
   }
 
+  // Mega/bleed legado que o contrato restringiu a um único recurso do mapa sidebar
+  // (ex.: costs.view → só finance.opex após P09).
+  const legacyOwners = new Map<string, Set<string>>();
+  for (const moduleId of SIDEBAR_MODULE_ORDER) {
+    for (const contractKey of SIDEBAR_MODULE_CONTRACT_KEYS[moduleId] ?? []) {
+      const view = CONTRACT_BY_KEY.get(contractKey)?.actions.find(
+        (a) => a.action === "view"
+      );
+      for (const legacy of view?.legacyPermissionKeys ?? []) {
+        const set = legacyOwners.get(legacy) ?? new Set<string>();
+        set.add(contractKey);
+        legacyOwners.set(legacy, set);
+      }
+    }
+  }
+  for (const legacy of bag) {
+    const owners = legacyOwners.get(legacy);
+    if (owners?.size === 1) {
+      granted.add([...owners][0]!);
+    }
+  }
+
   return [...granted].sort();
 }
 
