@@ -247,6 +247,7 @@ describe("fixture OP 05800 - 003 (caso real)", () => {
         new Prisma.Decimal(expected.linkedQuantity)
       )
     );
+    assert.equal(expected.salesOrderCode, "PD 02534");
     assert.ok(mapped.row.openedAt);
     assert.ok(mapped.row.closedAt);
     assert.ok(mapped.row.payloadHash.length === 64);

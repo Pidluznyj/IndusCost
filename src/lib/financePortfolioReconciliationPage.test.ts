@@ -181,8 +181,15 @@ describe("finance portfolio reconciliation menu + page", () => {
   });
 
   it("permissões espelham a API e query não recalcula fatos", () => {
+    // P17: OR legado esvaziado — AR não concede Conciliação de Carteira.
     assert.equal(
       canViewFinancePortfolioReconciliation(checker(["finance.accountsReceivable.view"])),
+      false
+    );
+    assert.equal(
+      canViewFinancePortfolioReconciliation(
+        checker(["finance.portfolioReconciliation.view"])
+      ),
       true
     );
     assert.equal(canViewFinancePortfolioReconciliation(checker(["dashboard.view"])), false);

@@ -12,6 +12,7 @@ Documentos irmãos:
 - [`api-contract.md`](./api-contract.md) — contrato RSQL / payload
 - [`current-state.md`](./current-state.md) — inventário da plataforma
 - [`target-architecture.md`](./target-architecture.md) — arquitetura-alvo
+- [`release-candidate.md`](./release-candidate.md) — **regressão OP-14 / RC**
 - [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md) — resumo da integração
 
 ---

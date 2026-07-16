@@ -48,4 +48,6 @@ export const NOMUS_PRODUCTION_ORDER_OP_05800_EXPECTED = {
   externalSalesOrderItemId: 11324,
   itemNumber: "00010",
   linkedQuantity: 15000,
+  /** Cruzamento documentado: GET /rest/pedidos/2530 */
+  salesOrderCode: "PD 02534",
 } as const;
