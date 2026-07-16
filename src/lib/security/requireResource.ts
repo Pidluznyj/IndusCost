@@ -8,9 +8,10 @@
 import type { Request, RequestHandler, Response } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
-  canEffectiveAccess,
-  resolveEffectiveAccess,
-  type EffectiveAccessInput,
+  buildCanonicalEffectiveAccessInput,
+  canCanonicalAccess,
+  resolveCanonicalEffectiveAccess,
+  type EffectiveAccessBaselineMap,
   type EffectiveAccessOverrideMap,
   type EffectiveAccessSource,
 } from "@/src/lib/security/effectiveAccess/index.js";
@@ -48,7 +49,12 @@ export type RequireResourceAuthInput = {
 export type AuthorizeRequireResourceOptions = {
   /** Overrides seed/contrato (deny vence). */
   overrides?: readonly SeedAxisOverride[] | EffectiveAccessOverrideMap;
-  /** Default: true na transição (bag → contrato 1:1). */
+  /** Snapshot do AccessProfile (substitui role quando definido). */
+  profileSnapshot?: EffectiveAccessBaselineMap | null;
+  /**
+   * Ponte bag → contrato. Default: true na transição (REQUIRE_RESOURCE_LEGACY_COMPAT).
+   * Com overrides/profile carregados, preferir false.
+   */
   legacyCompatMode?: boolean;
   permissionsVersion?: number | null;
 };
@@ -135,18 +141,21 @@ function asOverrideMap(
 export function buildRequireResourceInput(
   auth: RequireResourceAuthInput,
   options?: AuthorizeRequireResourceOptions
-): EffectiveAccessInput {
-  const legacy = auth.effectivePermissions ?? auth.permissions ?? [];
-  return {
+) {
+  const legacyCompatMode =
+    options?.legacyCompatMode ?? isRequireResourceLegacyCompatEnabled();
+  const legacy = legacyCompatMode
+    ? (auth.effectivePermissions ?? auth.permissions ?? [])
+    : [];
+  return buildCanonicalEffectiveAccessInput({
     userId: auth.id,
     role: auth.role,
     permissionsVersion: options?.permissionsVersion ?? null,
     overrides: asOverrideMap(options?.overrides),
-    legacyPermissions: [...legacy],
-    legacyCompatMode:
-      options?.legacyCompatMode ?? isRequireResourceLegacyCompatEnabled(),
-    legacySkipMegaKeys: true,
-  };
+    profileSnapshot: options?.profileSnapshot,
+    legacyCompatMode,
+    legacyPermissions: legacy,
+  });
 }
 
 /**
@@ -223,9 +232,9 @@ export function authorizeRequireResource(
   }
 
   const input = buildRequireResourceInput(auth, options);
-  const result = resolveEffectiveAccess(input);
+  const result = resolveCanonicalEffectiveAccess(input);
   const cell = result.byResourceAction[contractKey]?.[normalizedAction];
-  const allowed = canEffectiveAccess(result, contractKey, normalizedAction);
+  const allowed = canCanonicalAccess(result, contractKey, normalizedAction);
 
   if (allowed) {
     return {
@@ -281,6 +290,10 @@ function shouldBypassInTestEnv(): boolean {
 export type RequireResourceGuardOptions = AuthorizeRequireResourceOptions & {
   /** Carrega overrides do usuário (ex.: DB) antes de decidir. */
   loadOverrides?: (userId: string) => Promise<readonly SeedAxisOverride[] | null | undefined>;
+  /** Carrega snapshot do AccessProfile (contrato) antes de decidir. */
+  loadProfileSnapshot?: (
+    userId: string
+  ) => Promise<EffectiveAccessBaselineMap | null | undefined>;
 };
 
 /**
@@ -310,9 +323,20 @@ export function requireResource(
         overrides = (await guardOptions.loadOverrides(auth.id)) ?? undefined;
       }
 
+      let profileSnapshot = guardOptions?.profileSnapshot;
+      if (
+        profileSnapshot === undefined &&
+        guardOptions?.loadProfileSnapshot &&
+        auth?.id
+      ) {
+        profileSnapshot =
+          (await guardOptions.loadProfileSnapshot(auth.id)) ?? undefined;
+      }
+
       const decision = authorizeRequireResource(auth, resourceKey, action, {
         ...guardOptions,
         overrides,
+        profileSnapshot,
         permissionsVersion:
           guardOptions?.permissionsVersion ??
           (auth as AppAuthContext | null)?.permissionsVersion ??

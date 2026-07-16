@@ -6,10 +6,12 @@
 import {
   isHardMegaKey,
   isKnownMegaOrBleedKey,
-  PERMISSION_CONTRACT_RESOURCES,
-  type PermissionContractAction,
-  type PermissionContractResource,
-} from "@/src/lib/security/permissionContract/index.js";
+} from "@/src/lib/security/permissionContract/megaKeys.ts";
+import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/resources.ts";
+import type {
+  PermissionContractAction,
+  PermissionContractResource,
+} from "@/src/lib/security/permissionContract/types.ts";
 import type {
   EffectiveAccessBaselineMap,
   EffectiveAccessWarning,

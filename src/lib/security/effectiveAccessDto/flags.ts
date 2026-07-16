@@ -1,6 +1,5 @@
 /**
- * Flag segura para anexar `effectiveAccess` em GET /api/auth/me (P04).
- * Default OFF — sessão/auth efetiva inalterada.
+ * Flags do DTO de acesso efetivo (P04 / PERM-30).
  */
 
 export function parseEnvFlag(raw: string | undefined): boolean {
@@ -9,16 +8,21 @@ export function parseEnvFlag(raw: string | undefined): boolean {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-/** Anexa bloco effectiveAccess no /me. */
+/**
+ * Anexa bloco effectiveAccess no /me.
+ * PERM-30: default ON (ausente = true). Desligar: EFFECTIVE_ACCESS_DTO_IN_ME=0.
+ */
 export function isEffectiveAccessDtoInMeEnabled(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
-  return parseEnvFlag(env.EFFECTIVE_ACCESS_DTO_IN_ME);
+  const raw = env.EFFECTIVE_ACCESS_DTO_IN_ME;
+  if (raw == null || raw.trim() === "") return true;
+  return parseEnvFlag(raw);
 }
 
 /**
- * Se true, o builder do /me projeta a bag via aliases 1:1 no DTO shadow.
- * Não altera a autoridade da bag no runtime.
+ * Se true, o builder do /me projeta a bag via aliases 1:1 (ponte).
+ * Default OFF — decisão canônica sem AppUser.permissions[].
  */
 export function isEffectiveAccessDtoLegacyCompatEnabled(
   env: NodeJS.ProcessEnv = process.env

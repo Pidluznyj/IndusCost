@@ -68,7 +68,10 @@ export function usePermissions(): UsePermissionsResult {
   const nav = useMemo(() => {
     const ctx = navigationAccessContextFromAuth(auth);
     return {
-      canViewResource: (resourceKey: string) => canViewResource(auth.authUser, resourceKey),
+      canViewResource: (resourceKey: string) =>
+        canViewResource(auth.authUser, resourceKey, {
+          effectiveAccess: auth.effectiveAccess,
+        }),
       canViewTabResource: (resourceKey: string) => canViewTabResource(resourceKey, ctx),
       canPerformAction: (resourceKey: string, action: UiPermissionAction) =>
         canPerformAction(resourceKey, action, ctx),

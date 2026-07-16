@@ -44,6 +44,11 @@ export type BuildEffectiveAccessDtoOptions = {
   /** Bag ainda presente no usuário (compat). */
   legacyPermissionsPresent?: boolean;
   /**
+   * Se false, o DTO é a autoridade de decisão (PERM-30).
+   * Default true só para builders legados que ainda projetam bag.
+   */
+  legacyBagAuthoritative?: boolean;
+  /**
    * session = /me (sem denies/warnings).
    * admin = auditoria (denies explícitos + warnings sanitizados).
    */
@@ -153,7 +158,7 @@ export function buildEffectiveAccessDto(
     capabilities,
     compatibility: {
       mode: "shadow",
-      legacyBagAuthoritative: true,
+      legacyBagAuthoritative: options.legacyBagAuthoritative !== false,
       legacyPermissionsPresent: options.legacyPermissionsPresent === true,
       legacyCompatApplied: result.legacyCompatApplied,
     },

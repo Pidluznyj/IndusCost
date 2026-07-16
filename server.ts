@@ -480,6 +480,7 @@ import {
   isEffectiveAccessDtoInMeEnabled,
   tryBuildEffectiveAccessForAuthMe,
 } from "./src/lib/security/effectiveAccessDto/index.js";
+import { createCanonicalAccessLoaders } from "./src/lib/security/effectiveAccess/loadCanonicalAccessContext.js";
 import {
   assertEmployeeEligibleForUserLink,
   EmployeeUserLinkError,
@@ -1731,11 +1732,15 @@ async function startServer() {
     getCurrentAppUser,
   } = createAuthGuards(readAppSession);
 
+  const canonicalAccessLoaders = createCanonicalAccessLoaders(prisma);
   const {
     requirePermission: requireResourcePermission,
     requireResource,
     requireBootstrapOrResource,
-  } = createResourcePermissionGuards(getCurrentAppUser);
+  } = createResourcePermissionGuards(getCurrentAppUser, {
+    loadOverrides: canonicalAccessLoaders.loadOverrides,
+    loadProfileSnapshot: canonicalAccessLoaders.loadProfileSnapshot,
+  });
 
   const isBootstrapAdminRequest = (req: express.Request): boolean => {
     if (!(bootstrapAdminConfig.enabled && isBootstrapReady)) return false;
@@ -1916,7 +1921,7 @@ async function startServer() {
       const user = await prisma.appUser.findUnique({
         where: { id: auth.id },
         include: {
-          accessProfile: { select: { name: true } },
+          accessProfile: { select: { name: true, permissions: true } },
           employee: { select: { id: true, name: true, socialName: true, department: true } },
         },
       });
@@ -1935,24 +1940,19 @@ async function startServer() {
           employee: user.employee,
         }),
       };
-      // P04 shadow: bloco adicional; bag continua autoridade até cutover.
+      // PERM-30: DTO canônico (role + profile snapshot + overrides). Bag só se compat flag.
       if (isEffectiveAccessDtoInMeEnabled()) {
         try {
-          const overrides = await prisma.userPermissionOverride.findMany({
-            where: { userId: user.id },
-            select: {
-              resourceKey: true,
-              canView: true,
-              canExecute: true,
-              canManage: true,
-            },
-          });
+          const overrides = await canonicalAccessLoaders.loadOverrides(user.id);
           const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
             user: {
               id: user.id,
               role: user.role,
               permissions: filterKnownPermissions(user.permissions),
               permissionsVersion: user.permissionsVersion ?? 0,
+              accessProfilePermissions: user.accessProfile
+                ? filterKnownPermissions(user.accessProfile.permissions)
+                : null,
             },
             overrides,
           });
@@ -2020,7 +2020,7 @@ async function startServer() {
       const user = await prisma.appUser.findUniqueOrThrow({
         where: { id: auth.id },
         include: {
-          accessProfile: { select: { name: true } },
+          accessProfile: { select: { name: true, permissions: true } },
           employee: { select: { id: true, name: true, socialName: true, department: true } },
         },
       });
@@ -2036,21 +2036,16 @@ async function startServer() {
         }),
       };
       if (isEffectiveAccessDtoInMeEnabled()) {
-        const overrides = await prisma.userPermissionOverride.findMany({
-          where: { userId: user.id },
-          select: {
-            resourceKey: true,
-            canView: true,
-            canExecute: true,
-            canManage: true,
-          },
-        });
+        const overrides = await canonicalAccessLoaders.loadOverrides(user.id);
         const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
           user: {
             id: user.id,
             role: user.role,
             permissions: filterKnownPermissions(user.permissions),
             permissionsVersion: user.permissionsVersion ?? 0,
+            accessProfilePermissions: user.accessProfile
+              ? filterKnownPermissions(user.accessProfile.permissions)
+              : null,
           },
           overrides,
         });

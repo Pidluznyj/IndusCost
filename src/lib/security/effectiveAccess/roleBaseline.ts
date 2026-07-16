@@ -7,17 +7,16 @@ import {
   getOfficialRolePermissionFlags,
   OFFICIAL_APP_USER_ROLES,
 } from "@/src/lib/permissionResourceSeedData.js";
-import {
-  PERMISSION_CONTRACT_RESOURCES,
-  type PermissionContractAction,
-  type PermissionContractResource,
-} from "@/src/lib/security/permissionContract/index.js";
+import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/resources.ts";
+import type {
+  PermissionContractAction,
+  PermissionContractResource,
+} from "@/src/lib/security/permissionContract/types.ts";
 import type { EffectiveAccessBaselineMap } from "./types.ts";
 
-const OFFICIAL_SET = new Set<string>(OFFICIAL_APP_USER_ROLES);
-
 function isAppUserRole(role: string): role is AppUserRole {
-  return OFFICIAL_SET.has(role);
+  // Lazy: evita TDZ se houver ciclo de import com o seed.
+  return (OFFICIAL_APP_USER_ROLES as readonly string[]).includes(role);
 }
 
 /** Mapeia flags seed (3 eixos) → ações do contrato suportadas no recurso. */

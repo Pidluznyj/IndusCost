@@ -38,10 +38,13 @@ import {
   dtoAllowsAction,
   type UiPermissionAction,
 } from "@/src/lib/actionPermissionAccess.js";
+import { canAccessFromEffectiveAccessDto } from "@/src/lib/canAccessFromEffectiveAccess.js";
 
 export type ResourceViewOptions = {
   /** MENU: não elevar só por filhos; SUBMENU/TAB: elevação legada. Default: regras do sidebar. */
   elevateFromDescendants?: boolean;
+  /** PERM-30: DTO canônico — quando presente, não usa bag. */
+  effectiveAccess?: EffectiveAccessMeDto | null;
 };
 
 export type PathViewDecision = {
@@ -80,12 +83,24 @@ export type NavigationAccessContext = {
 /** Viewer oficial de resourceKey (reexport tipado). */
 export type CanViewResourceFn = (resourceKey: string) => boolean;
 
-/** Alias oficial: `view` do recurso via resolvedor canônico + aliases legados. */
+/**
+ * Alias oficial: `view` do recurso.
+ * PERM-30: com `effectiveAccess` DTO → decisão canônica (sem bag).
+ * Sem DTO → ponte legada (bag) para compatibilidade.
+ */
 export function canViewResource(
   user: AuthUser | null | undefined,
   resourceKey: string,
   options?: ResourceViewOptions
 ): boolean {
+  if (options?.effectiveAccess) {
+    if (options.effectiveAccess.isSuperAdmin) return true;
+    return canAccessFromEffectiveAccessDto(
+      options.effectiveAccess,
+      resourceKey,
+      "view"
+    );
+  }
   return canAccessResourceClient(user, resourceKey, "view", options);
 }
 

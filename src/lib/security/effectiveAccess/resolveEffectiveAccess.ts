@@ -1,23 +1,25 @@
 /**
- * Resolvedor oficial backend `resolveEffectiveAccess` (P03).
+ * Resolvedor canônico `resolveEffectiveAccess` (P03 / PERM-30).
  *
- * Precedência: SUPER_ADMIN → unknown/unsupported DENY → override deny →
- * override allow → baseline (profile|role + structured + legacyCompat) → DENY.
- * Ancestral com view DENY explícito bloqueia filho.
- * Bag legada só com legacyCompatMode.
+ * Precedência: SUPER_ADMIN → unknown/unsupported DENY → ancestor view DENY →
+ * DENY individual → ALLOW individual → baseline (profile|role + structured +
+ * legacyCompat) → DENY default.
+ * Bag legada só com legacyCompatMode — código novo não consulta AppUser.permissions[].
  *
- * Não conecta login, sidebar nem APIs — consumidores atuais intactos.
+ * API pública: `resolveCanonicalEffectiveAccess` / `canCanonicalAccess`.
  */
 
 import {
   listPermissionAncestors,
   listPermissionDescendants,
   listSupportedActions,
-  PERMISSION_CONTRACT_RESOURCES,
   supportsPermissionAction,
-  type PermissionContractAction,
-  type PermissionContractResource,
-} from "@/src/lib/security/permissionContract/index.js";
+} from "@/src/lib/security/permissionContract/helpers.ts";
+import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/resources.ts";
+import type {
+  PermissionContractAction,
+  PermissionContractResource,
+} from "@/src/lib/security/permissionContract/types.ts";
 import { projectLegacyBagToBaseline } from "./legacyCompat.ts";
 import { buildRoleBaselineFromSeed, mergeBaselines } from "./roleBaseline.ts";
 import type {

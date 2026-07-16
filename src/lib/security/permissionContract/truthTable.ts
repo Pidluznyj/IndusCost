@@ -1,58 +1,58 @@
 /**
- * Tabela-verdade executável do modelo alvo (P01).
+ * Tabela-verdade do modelo alvo (P01 / PERM-30).
  *
- * Decisões fechadas:
- * - backend é a autoridade (este módulo é o contrato puro; runtime NÃO importa ainda)
- * - deny > allow > herança (baseline)
- * - ausência de override = herdar baseline
- * - recurso ou ação desconhecida = DENY
- * - VIEWER com baseline vazio = sem acesso
- * - perfil = snapshot (baseline)
- * - SUPER_ADMIN mantém bypass
- * - parent com view DENY explícito bloqueia filho
- * - parent sem grant NÃO apaga config do filho; filho allow não concede APIs do parent
- * - navegação: ancestral pode ser “virtual” se algum descendente tem view allow
- *
- * Não lê AppUser.permissions[] (compat temporária).
+ * Delega 100% ao resolvedor canônico `resolveEffectiveAccess`.
+ * Não lê AppUser.permissions[].
  */
 
+import {
+  canRevealNavigation,
+  resolveEffectiveAccess,
+} from "@/src/lib/security/effectiveAccess/resolveEffectiveAccess.ts";
+import type { EffectiveAccessSource } from "@/src/lib/security/effectiveAccess/types.ts";
 import {
   getPermissionContractResource,
   isKnownPermissionAction,
   isKnownPermissionResource,
-  listPermissionAncestors,
-  listPermissionDescendants,
   supportsPermissionAction,
 } from "./helpers.ts";
 import { PERMISSION_CONTRACT_RESOURCES } from "./resources.ts";
 import type {
-  PermissionContractAction,
   PermissionContractResource,
   PermissionTruthDecision,
   PermissionTruthResolveResult,
   PermissionTruthSubject,
 } from "./types.ts";
 
-function isSuperAdmin(role: string): boolean {
-  return role === "SUPER_ADMIN";
-}
-
-type LocalDecision = "allow" | "deny" | "none";
-
-function localDecision(
-  subject: PermissionTruthSubject,
-  resourceKey: string,
-  action: PermissionContractAction
-): LocalDecision {
-  const ov = subject.overrides?.[resourceKey]?.[action];
-  if (ov === "deny") return "deny";
-  if (ov === "allow") return "allow";
-  if (subject.baseline?.[resourceKey]?.[action] === true) return "allow";
-  return "none";
+function mapSourceToReason(source: EffectiveAccessSource): PermissionTruthResolveResult["reason"] {
+  switch (source) {
+    case "SUPER_ADMIN":
+      return "SUPER_ADMIN_BYPASS";
+    case "OVERRIDE_DENY":
+      return "OVERRIDE_DENY";
+    case "OVERRIDE_ALLOW":
+      return "OVERRIDE_ALLOW";
+    case "ANCESTOR_VIEW_DENY":
+      return "ANCESTOR_VIEW_DENY";
+    case "UNKNOWN_RESOURCE":
+      return "UNKNOWN_RESOURCE";
+    case "UNSUPPORTED_ACTION":
+      return "UNSUPPORTED_ACTION";
+    case "DENY_DEFAULT":
+      return "DEFAULT_DENY";
+    case "PROFILE":
+    case "ROLE":
+    case "STRUCTURED_GRANT":
+    case "LEGACY_PROJECTED":
+      return "BASELINE_ALLOW";
+    default:
+      return "DEFAULT_DENY";
+  }
 }
 
 /**
- * Resolve allow/deny para resourceKey × action no modelo alvo.
+ * Resolve allow/deny para resourceKey × action via resolvedor canônico.
+ * `subject.baseline` → profileSnapshot (substitui role; `{}` = vazio).
  */
 export function resolvePermissionTruth(
   subject: PermissionTruthSubject,
@@ -60,53 +60,38 @@ export function resolvePermissionTruth(
   action: string,
   resources: readonly PermissionContractResource[] = PERMISSION_CONTRACT_RESOURCES
 ): PermissionTruthResolveResult {
-  if (isSuperAdmin(subject.role)) {
+  const result = resolveEffectiveAccess(
+    {
+      userId: "truth-table",
+      role: subject.role,
+      // baseline explícito (mesmo {}) substitui role — alinhado ao contrato P01
+      profileSnapshot: subject.baseline !== undefined ? subject.baseline : null,
+      overrides: subject.overrides ?? {},
+      legacyCompatMode: false,
+      legacyPermissions: [],
+    },
+    resources
+  );
+
+  const cell = result.byResourceAction[resourceKey]?.[
+    action as keyof (typeof result.byResourceAction)[string]
+  ];
+
+  if (!cell) {
     if (!isKnownPermissionResource(resourceKey, resources)) {
       return { decision: "deny", reason: "UNKNOWN_RESOURCE" };
     }
     if (!isKnownPermissionAction(action)) {
       return { decision: "deny", reason: "UNSUPPORTED_ACTION" };
     }
-    // Bypass: qualquer ação do contrato no recurso (mesmo se não listada? arquitetura: todas as ações do contrato)
-    // Estrito: só ações suportadas pelo recurso; ações não suportadas = DENY mesmo para SA? 
-    // Decisão: SUPER_ADMIN bypass total nas ações suportadas; unsupported ainda DENY (contrato).
     if (!supportsPermissionAction(resourceKey, action, resources)) {
       return { decision: "deny", reason: "UNSUPPORTED_ACTION" };
     }
-    return { decision: "allow", reason: "SUPER_ADMIN_BYPASS" };
+    return { decision: "deny", reason: "DEFAULT_DENY" };
   }
 
-  if (!isKnownPermissionResource(resourceKey, resources)) {
-    return { decision: "deny", reason: "UNKNOWN_RESOURCE" };
-  }
-  if (!isKnownPermissionAction(action)) {
-    return { decision: "deny", reason: "UNSUPPORTED_ACTION" };
-  }
-  if (!supportsPermissionAction(resourceKey, action, resources)) {
-    return { decision: "deny", reason: "UNSUPPORTED_ACTION" };
-  }
-
-  // Parent explícito deny(view) bloqueia subárvore (navegação + API)
-  for (const ancestor of listPermissionAncestors(resourceKey, resources)) {
-    if (localDecision(subject, ancestor, "view") === "deny") {
-      return { decision: "deny", reason: "ANCESTOR_VIEW_DENY" };
-    }
-  }
-
-  const local = localDecision(subject, resourceKey, action as PermissionContractAction);
-  if (local === "deny") {
-    return { decision: "deny", reason: "OVERRIDE_DENY" };
-  }
-  if (local === "allow") {
-    const fromOverride = subject.overrides?.[resourceKey]?.[action as PermissionContractAction];
-    return {
-      decision: "allow",
-      reason: fromOverride === "allow" ? "OVERRIDE_ALLOW" : "BASELINE_ALLOW",
-    };
-  }
-
-  // ausência = herdar; baseline já consultado → default DENY
-  return { decision: "deny", reason: "DEFAULT_DENY" };
+  const decision: PermissionTruthDecision = cell.decision === "allow" ? "allow" : "deny";
+  return { decision, reason: mapSourceToReason(cell.source) };
 }
 
 export function canPerformPermissionTruth(
@@ -118,44 +103,26 @@ export function canPerformPermissionTruth(
   return resolvePermissionTruth(subject, resourceKey, action, resources).decision === "allow";
 }
 
-function hasViewAllow(
-  subject: PermissionTruthSubject,
-  resourceKey: string,
-  resources: readonly PermissionContractResource[]
-): boolean {
-  return canPerformPermissionTruth(subject, resourceKey, "view", resources);
-}
-
 /**
- * Navegação / accordion: recurso revelável se
- * - tem view allow efetivo, OU
- * - é ancestral “virtual” de algum descendente com view allow, E não tem deny view local/ancestral.
- *
- * Não concede canPerform no parent genérico.
+ * Navegação / accordion — mesma regra do resolvedor canônico.
  */
 export function canRevealPermissionNavigation(
   subject: PermissionTruthSubject,
   resourceKey: string,
   resources: readonly PermissionContractResource[] = PERMISSION_CONTRACT_RESOURCES
 ): boolean {
-  if (!isKnownPermissionResource(resourceKey, resources)) return false;
-
-  if (isSuperAdmin(subject.role)) {
-    return supportsPermissionAction(resourceKey, "view", resources);
-  }
-
-  // Ancestral com deny view bloqueia
-  for (const ancestor of listPermissionAncestors(resourceKey, resources)) {
-    if (localDecision(subject, ancestor, "view") === "deny") return false;
-  }
-  if (localDecision(subject, resourceKey, "view") === "deny") return false;
-
-  if (hasViewAllow(subject, resourceKey, resources)) return true;
-
-  for (const desc of listPermissionDescendants(resourceKey, resources)) {
-    if (hasViewAllow(subject, desc, resources)) return true;
-  }
-  return false;
+  const result = resolveEffectiveAccess(
+    {
+      userId: "truth-table",
+      role: subject.role,
+      profileSnapshot: subject.baseline !== undefined ? subject.baseline : null,
+      overrides: subject.overrides ?? {},
+      legacyCompatMode: false,
+      legacyPermissions: [],
+    },
+    resources
+  );
+  return canRevealNavigation(result, resourceKey);
 }
 
 /** Caso Leticia: VIEWER só Contas a Pagar (baseline vazio + override allow). */
@@ -185,8 +152,8 @@ export function listLeticiaAccountsPayableExpectations(): LeticiaExpectation[] {
     },
     {
       resourceKey: "finance",
-      canPerformView: false, // Financeiro geral / APIs finance.view
-      canRevealNavigation: true, // parent estritamente necessário (virtual)
+      canPerformView: false,
+      canRevealNavigation: true,
     },
     {
       resourceKey: "finance.portfolio_reconciliation",

@@ -23,10 +23,11 @@ import {
 } from "@/src/lib/security/effectiveAccess/fixtures.js";
 
 describe("effectiveAccessDto flags", () => {
-  it("default off", () => {
-    assert.equal(isEffectiveAccessDtoInMeEnabled({}), false);
+  it("PERM-30: DTO no /me default ON; desliga com 0", () => {
+    assert.equal(isEffectiveAccessDtoInMeEnabled({}), true);
     assert.equal(isEffectiveAccessDtoInMeEnabled({ EFFECTIVE_ACCESS_DTO_IN_ME: "0" }), false);
     assert.equal(isEffectiveAccessDtoInMeEnabled({ EFFECTIVE_ACCESS_DTO_IN_ME: "1" }), true);
+    assert.equal(isEffectiveAccessDtoLegacyCompatEnabled({}), false);
     assert.equal(isEffectiveAccessDtoLegacyCompatEnabled({ EFFECTIVE_ACCESS_DTO_LEGACY_COMPAT: "true" }), true);
   });
 });
@@ -47,7 +48,7 @@ describe("effectiveAccessDto build + validate", () => {
     assert.deepEqual(dto.actionsByResource, {});
     assert.deepEqual(dto.capabilities, {});
     assert.equal(dto.compatibility.mode, "shadow");
-    assert.equal(dto.compatibility.legacyBagAuthoritative, true);
+    assert.equal(dto.compatibility.legacyBagAuthoritative, false);
     assert.equal(dto.compatibility.legacyPermissionsPresent, false);
     assert.equal(isValidEffectiveAccessMeDto(dto), true);
     assert.deepEqual(validateEffectiveAccessMeDto(dto), []);
@@ -136,14 +137,20 @@ describe("effectiveAccessDto build + validate", () => {
 });
 
 describe("effectiveAccessDto attach /me", () => {
-  it("flag off → null (não autenticado / sem bloco)", () => {
+  it("flag 0 → null; default ON → DTO", () => {
     assert.equal(
       tryBuildEffectiveAccessForAuthMe({
         user: { id: "u", role: "VIEWER", permissions: [] },
-        env: {},
+        env: { EFFECTIVE_ACCESS_DTO_IN_ME: "0" },
       }),
       null
     );
+    const dto = tryBuildEffectiveAccessForAuthMe({
+      user: { id: "u", role: "VIEWER", permissions: [] },
+      env: {},
+    });
+    assert.ok(dto);
+    assert.equal(isValidEffectiveAccessMeDto(dto), true);
   });
 
   it("flag on → DTO válido; endpoint não autenticado não inclui user", () => {
@@ -162,7 +169,7 @@ describe("effectiveAccessDto attach /me", () => {
     assert.equal("effectiveAccess" in unauth, false);
   });
 
-  it("payload autenticado compatível: user.permissions permanece", () => {
+  it("payload autenticado: bag permanece no user; DTO canônico sem autoridade da bag", () => {
     const permissions = ["finance.accountsPayable.view"];
     const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
       user: { id: "leticia", role: "VIEWER", permissions },
@@ -181,6 +188,9 @@ describe("effectiveAccessDto attach /me", () => {
     };
     assert.deepEqual(me.user.permissions, permissions);
     assert.ok(me.effectiveAccess);
-    assert.equal(me.effectiveAccess!.compatibility.legacyBagAuthoritative, true);
+    assert.equal(me.effectiveAccess!.compatibility.legacyBagAuthoritative, false);
+    assert.ok(
+      me.effectiveAccess!.allowedResources.includes("finance.accounts_payable")
+    );
   });
 });

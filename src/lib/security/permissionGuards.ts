@@ -180,8 +180,11 @@ export function requirePermission(
   };
 }
 
-export function createResourcePermissionGuards(getCurrentAppUser: ReadAppUserFn) {
-  const official = createRequireResourceGuards(getCurrentAppUser);
+export function createResourcePermissionGuards(
+  getCurrentAppUser: ReadAppUserFn,
+  defaults?: import("@/src/lib/security/requireResource.js").RequireResourceGuardOptions
+) {
+  const official = createRequireResourceGuards(getCurrentAppUser, defaults);
   return {
     /** @deprecated Preferir `requireResource` (resolvedor oficial P14). */
     requirePermission: (
@@ -190,7 +193,7 @@ export function createResourcePermissionGuards(getCurrentAppUser: ReadAppUserFn)
     ): RequestHandler => requirePermission(resourceKey, action, getCurrentAppUser),
 
     /**
-     * Guard oficial P14: `requireResource(resourceKey, action)` via resolveEffectiveAccess.
+     * Guard oficial P14/PERM-30: `requireResource` via resolvedor canônico.
      */
     requireResource: (
       resourceKey: string,
