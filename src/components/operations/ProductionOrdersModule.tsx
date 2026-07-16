@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Loader2, Search } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
@@ -28,6 +28,12 @@ import { cn } from "@/src/lib/utils";
 import { ProductionOrderQuickDetailOverlay } from "./ProductionOrderQuickDetailOverlay";
 import { OverlayBadge } from "@/src/components/ui/overlay";
 
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
+
 const PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
 const FILTER_CONTROL_CLASS =
@@ -45,6 +51,7 @@ function initialPage(params: URLSearchParams): number {
 export function ProductionOrdersModule() {
   const auth = useAuth();
   const permissions = usePermissions();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const canView = canViewProductionOrders({
     canPerformAction: permissions.canPerformAction,
@@ -63,6 +70,21 @@ export function ProductionOrdersModule() {
   const [page, setPage] = useState(() => initialPage(searchParams));
   const [retryToken, setRetryToken] = useState(0);
   const [selectedProductionOrderId, setSelectedProductionOrderId] = useState<string | null>(null);
+  const [salesOrderDetailId, setSalesOrderDetailId] = useState<string | null>(null);
+  const [salesOrderDetailCode, setSalesOrderDetailCode] = useState<string | null>(null);
+
+  const openSalesOrderDetail = useCallback(
+    (salesOrderId: string, orderCode?: string | null) => {
+      setSalesOrderDetailId(salesOrderId);
+      setSalesOrderDetailCode(orderCode?.trim() || null);
+    },
+    []
+  );
+
+  const closeSalesOrderDetail = useCallback(() => {
+    setSalesOrderDetailId(null);
+    setSalesOrderDetailCode(null);
+  }, []);
 
   const [rows, setRows] = useState<ProductionOrderGridRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -469,7 +491,6 @@ export function ProductionOrdersModule() {
                     "Tipo",
                     "Produto",
                     "Quantidade",
-                    "Data de abertura",
                     "Data planejada",
                     "Data de entrega",
                     "Status da entrega",
@@ -489,6 +510,7 @@ export function ProductionOrdersModule() {
                     row={row}
                     selected={selectedProductionOrderId === row.id}
                     onOpen={() => setSelectedProductionOrderId(row.id)}
+                    onOpenSalesOrder={openSalesOrderDetail}
                   />
                 ))}
               </tbody>
@@ -533,7 +555,26 @@ export function ProductionOrdersModule() {
       <ProductionOrderQuickDetailOverlay
         productionOrderId={selectedProductionOrderId}
         onClose={() => setSelectedProductionOrderId(null)}
+        onOpenSalesOrder={openSalesOrderDetail}
+        dismissOnEsc={salesOrderDetailId == null}
       />
+
+      {salesOrderDetailId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={salesOrderDetailId}
+            orderCode={salesOrderDetailCode}
+            onClose={closeSalesOrderDetail}
+            onOpenFullAudit={(id) => {
+              closeSalesOrderDetail();
+              navigate(
+                `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(id)}`
+              );
+            }}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 }
@@ -586,10 +627,12 @@ export function ProductionOrderGridTableRow({
   row,
   selected,
   onOpen,
+  onOpenSalesOrder,
 }: {
   row: ProductionOrderGridRow;
   selected: boolean;
   onOpen: () => void;
+  onOpenSalesOrder: (salesOrderId: string, orderCode?: string | null) => void;
 }) {
   const firstOrder = row.currentSalesOrders[0];
   const extraOrders = productionOrderExtraSalesOrderCount(row);
@@ -629,9 +672,6 @@ export function ProductionOrderGridTableRow({
         {formatProductionOrderQuantity(row.quantity, row.unit)}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
-        {formatProductionOrderDateTime(row.openedAt)}
-      </td>
-      <td className="whitespace-nowrap px-3 py-2">
         {formatProductionOrderDateTime(row.plannedAt)}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
@@ -662,15 +702,18 @@ export function ProductionOrderGridTableRow({
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
             Pedido ainda não sincronizado
           </span>
-        ) : firstOrder ? (
+        ) : firstOrder?.salesOrderId ? (
           <div className="flex items-center gap-1">
-            <Link
-              to={`/sales-orders/${firstOrder.salesOrderId}`}
+            <button
+              type="button"
               className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 hover:underline"
               data-testid={`production-order-sales-link-${firstOrder.externalSalesOrderId}`}
+              onClick={() =>
+                onOpenSalesOrder(firstOrder.salesOrderId!, firstOrder.orderCode)
+              }
             >
               {firstOrder.orderCode?.trim() || firstOrder.externalSalesOrderId}
-            </Link>
+            </button>
             {extraOrders > 0 ? (
               <span
                 className="inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"

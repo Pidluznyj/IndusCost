@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Check, Copy, Loader2 } from "lucide-react";
-import { Link } from "react-router-dom";
 import {
   Overlay,
   OverlayBadge,
@@ -27,6 +26,9 @@ import {
 type Props = {
   productionOrderId: string | null;
   onClose: () => void;
+  onOpenSalesOrder: (salesOrderId: string, orderCode?: string | null) => void;
+  /** Desliga Esc enquanto o detalhe do Pedido de Venda está aberto por cima. */
+  dismissOnEsc?: boolean;
 };
 
 type ProductionOrderDetailTab = "geral" | "auditoria";
@@ -34,6 +36,8 @@ type ProductionOrderDetailTab = "geral" | "auditoria";
 export function ProductionOrderQuickDetailOverlay({
   productionOrderId,
   onClose,
+  onOpenSalesOrder,
+  dismissOnEsc = true,
 }: Props) {
   const [detail, setDetail] = useState<ProductionOrderDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +93,7 @@ export function ProductionOrderQuickDetailOverlay({
       open={productionOrderId != null}
       onClose={onClose}
       size="full"
+      dismissOnEsc={dismissOnEsc}
       ariaLabelledBy={titleId}
       ariaDescribedBy="production-order-audit-description"
       testId="production-order-audit-drawer"
@@ -168,6 +173,7 @@ export function ProductionOrderQuickDetailOverlay({
             copyFeedback={copyFeedback}
             onCopy={() => void copyTechnicalJson()}
             activeTab={activeTab}
+            onOpenSalesOrder={onOpenSalesOrder}
           />
         ) : null}
       </OverlayBody>
@@ -218,12 +224,14 @@ export function ProductionOrderAuditContent({
   copyFeedback,
   onCopy,
   activeTab = "geral",
+  onOpenSalesOrder,
 }: {
   detail: ProductionOrderDetailResponse;
   technicalJson: string;
   copyFeedback: string | null;
   onCopy: () => void;
   activeTab?: ProductionOrderDetailTab;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
 }) {
   if (activeTab === "auditoria") {
     return (
@@ -331,14 +339,20 @@ export function ProductionOrderAuditContent({
       </OverlaySection>
 
       <OverlaySection title="Pedidos de Venda vinculados">
-        <SalesLinksTable links={detail.salesLinks} />
+        <SalesLinksTable links={detail.salesLinks} onOpenSalesOrder={onOpenSalesOrder} />
       </OverlaySection>
 
     </div>
   );
 }
 
-function SalesLinksTable({ links }: { links: ProductionOrderDetailSalesLink[] }) {
+function SalesLinksTable({
+  links,
+  onOpenSalesOrder,
+}: {
+  links: ProductionOrderDetailSalesLink[];
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
+}) {
   if (links.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border p-5 text-center text-sm text-muted-foreground">
@@ -373,16 +387,17 @@ function SalesLinksTable({ links }: { links: ProductionOrderDetailSalesLink[] })
               <LinkStateBadge link={link} />
             </OverlayTable.Cell>
             <OverlayTable.Cell>
-              {link.salesOrderId ? (
-                <Link
-                  to={`/sales-orders/${link.salesOrderId}`}
+              {link.salesOrderId && onOpenSalesOrder ? (
+                <button
+                  type="button"
                   className="font-semibold text-primary hover:underline"
                   data-testid={`production-order-open-sales-order-${link.salesOrderId}`}
+                  onClick={() => onOpenSalesOrder(link.salesOrderId!, link.orderCode)}
                 >
                   {link.orderCode ?? `Pedido #${link.externalSalesOrderId}`}
-                </Link>
+                </button>
               ) : (
-                link.orderCode ?? "—"
+                link.orderCode ?? (link.salesOrderId ? `Pedido #${link.externalSalesOrderId}` : "—")
               )}
             </OverlayTable.Cell>
             <OverlayTable.Cell>

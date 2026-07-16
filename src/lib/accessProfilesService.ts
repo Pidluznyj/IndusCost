@@ -1,5 +1,6 @@
 import type { AccessProfile, AppUserRole, Prisma, PrismaClient } from "@prisma/client";
 import {
+  ALL_PERMISSION_KEYS,
   filterKnownPermissions,
   type AppAuthContext,
   hasPermission,
@@ -17,6 +18,29 @@ import {
   buildAccessProfileUserApplyAuditPlans,
   type PermissionAuditEntryPlan,
 } from "@/src/lib/security/permissionAudit.js";
+
+const KNOWN_PERMISSION_KEY_SET = new Set(ALL_PERMISSION_KEYS);
+
+/** Códigos de validação → HTTP 400 (nunca 500). */
+export const ACCESS_PROFILE_VALIDATION_CODES = new Set([
+  "INVALID_NAME",
+  "EMPTY_PERMISSIONS",
+  "UNKNOWN_PERMISSIONS",
+  "CONFIRM_REQUIRED",
+  "NO_CHANGES",
+  "INVALID_BODY",
+  "INVALID_ROLE_BASE",
+]);
+
+/** Códigos de conflito/regra de negócio → HTTP 409. */
+export const ACCESS_PROFILE_CONFLICT_CODES = new Set([
+  "NAME_ALREADY_EXISTS",
+  "LAST_ADMIN_PROFILE",
+  "SYSTEM_PROFILE_PROTECTED",
+  "PROFILE_IN_USE",
+  "INACTIVE_PROFILE",
+  "INVALID_PROFILE",
+]);
 
 export {
   applyAccessProfileToUserFields,
@@ -132,9 +156,74 @@ export async function getAccessProfileById(
   return row ? toDto(row, row._count.users) : null;
 }
 
-function normalizePermissionsInput(permissions: unknown): string[] {
-  const filtered = filterKnownPermissions(permissions);
-  return filtered.sort();
+/**
+ * Separa chaves do catálogo legado das desconhecidas (P28).
+ * Compatibilidade controlada: só bag keys do PERMISSION_CATALOG são aceitas.
+ */
+export function parseAccessProfilePermissionsInput(permissions: unknown): {
+  known: string[];
+  unknown: string[];
+} {
+  if (!Array.isArray(permissions)) {
+    return { known: [], unknown: [] };
+  }
+  const known: string[] = [];
+  const unknown: string[] = [];
+  for (const raw of permissions) {
+    if (typeof raw !== "string") continue;
+    const key = raw.trim();
+    if (!key) continue;
+    if (KNOWN_PERMISSION_KEY_SET.has(key)) {
+      if (!known.includes(key)) known.push(key);
+    } else if (!unknown.includes(key)) {
+      unknown.push(key);
+    }
+  }
+  return { known: known.sort(), unknown: unknown.sort() };
+}
+
+function normalizePermissionsInput(
+  permissions: unknown,
+  options?: { allowEmpty?: boolean; roleBase?: AppUserRole | null }
+): string[] {
+  const { known, unknown } = parseAccessProfilePermissionsInput(permissions);
+  if (unknown.length > 0) {
+    const sample = unknown.slice(0, 5).join(", ");
+    const more = unknown.length > 5 ? ` (+${unknown.length - 5})` : "";
+    throw new AccessProfileError(
+      "UNKNOWN_PERMISSIONS",
+      `Permissões não registradas no catálogo: ${sample}${more}. Remova chaves inválidas ou use apenas aliases legados conhecidos.`
+    );
+  }
+  const roleBase = options?.roleBase ?? null;
+  const allowEmpty = options?.allowEmpty === true || roleBase === "SUPER_ADMIN";
+  if (!allowEmpty && known.length === 0) {
+    throw new AccessProfileError(
+      "EMPTY_PERMISSIONS",
+      "Selecione ao menos uma permissão registrada ou defina role Super administrador."
+    );
+  }
+  return known;
+}
+
+async function assertNameAvailable(
+  prisma: PrismaClient,
+  name: string,
+  excludeId?: string
+): Promise<void> {
+  const existing = await prisma.accessProfile.findFirst({
+    where: {
+      name,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    throw new AccessProfileError(
+      "NAME_ALREADY_EXISTS",
+      "Já existe um perfil com este nome."
+    );
+  }
 }
 
 function hasAdminCapability(permissions: string[], roleBase: AppUserRole | null): boolean {
@@ -171,19 +260,25 @@ export async function createAccessProfile(
   const name = input.name.trim();
   if (!name) throw new AccessProfileError("INVALID_NAME", "Informe o nome do perfil.");
 
-  const permissions = normalizePermissionsInput(input.permissions ?? []);
   const roleBase = input.roleBase ?? null;
+  const permissions = normalizePermissionsInput(input.permissions ?? [], {
+    roleBase,
+  });
 
-  const created = await prisma.accessProfile.create({
-    data: {
-      name,
-      description: input.description?.trim() || null,
-      roleBase,
-      permissions,
-      isSystem: false,
-      isActive: input.isActive !== false,
-    },
-    include: { _count: { select: { users: true } } },
+  await assertNameAvailable(prisma, name);
+
+  const created = await prisma.$transaction(async (tx) => {
+    return tx.accessProfile.create({
+      data: {
+        name,
+        description: input.description?.trim() || null,
+        roleBase,
+        permissions,
+        isSystem: false,
+        isActive: input.isActive !== false,
+      },
+      include: { _count: { select: { users: true } } },
+    });
   });
 
   await writeAccessProfileAuditPlans(prisma, {
@@ -220,20 +315,38 @@ export async function updateAccessProfile(
   if (!existing) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
 
   const data: Prisma.AccessProfileUpdateInput = {};
+  const nextRoleBase =
+    input.roleBase !== undefined ? input.roleBase : existing.roleBase;
 
   if (input.name !== undefined) {
     const name = input.name.trim();
     if (!name) throw new AccessProfileError("INVALID_NAME", "Nome inválido.");
+    if (existing.isSystem && name !== existing.name) {
+      throw new AccessProfileError(
+        "SYSTEM_PROFILE_PROTECTED",
+        "Perfis de sistema não podem ser renomeados."
+      );
+    }
+    await assertNameAvailable(prisma, name, id);
     data.name = name;
   }
   if (input.description !== undefined) {
     data.description = input.description?.trim() || null;
   }
   if (input.roleBase !== undefined) {
+    if (existing.isSystem && input.roleBase !== existing.roleBase) {
+      throw new AccessProfileError(
+        "SYSTEM_PROFILE_PROTECTED",
+        "A role base de perfis de sistema não pode ser alterada."
+      );
+    }
     data.roleBase = input.roleBase;
   }
   if (input.permissions !== undefined) {
-    data.permissions = normalizePermissionsInput(input.permissions);
+    // Snapshot: editar permissões NÃO propaga a usuários (apply é explícito).
+    data.permissions = normalizePermissionsInput(input.permissions, {
+      roleBase: nextRoleBase,
+    });
   }
   if (input.isActive !== undefined) {
     if (input.isActive === false) {
@@ -248,10 +361,12 @@ export async function updateAccessProfile(
     return current;
   }
 
-  const updated = await prisma.accessProfile.update({
-    where: { id },
-    data,
-    include: { _count: { select: { users: true } } },
+  const updated = await prisma.$transaction(async (tx) => {
+    return tx.accessProfile.update({
+      where: { id },
+      data,
+      include: { _count: { select: { users: true } } },
+    });
   });
 
   const beforeCount = Array.isArray(existing.permissions) ? existing.permissions.length : 0;
@@ -259,7 +374,8 @@ export async function updateAccessProfile(
   if (
     beforeCount !== afterCount ||
     existing.roleBase !== updated.roleBase ||
-    existing.name !== updated.name
+    existing.name !== updated.name ||
+    existing.isActive !== updated.isActive
   ) {
     await writeAccessProfileAuditPlans(prisma, {
       actorUserId: input.actorUserId ?? null,
@@ -664,11 +780,23 @@ export function parseAccessProfileBody(body: unknown): {
   permissions?: unknown;
   isActive?: boolean;
 } {
-  if (!body || typeof body !== "object") return {};
+  if (!body || typeof body !== "object") {
+    throw new AccessProfileError("INVALID_BODY", "Payload inválido para perfil de acesso.");
+  }
   const data = body as Record<string, unknown>;
   let roleBase: AppUserRole | null | undefined = undefined;
-  if (data.roleBase === null) roleBase = null;
-  else if (data.roleBase !== undefined) roleBase = parseAppUserRole(data.roleBase);
+  if (data.roleBase === null || data.roleBase === "") {
+    roleBase = null;
+  } else if (data.roleBase !== undefined) {
+    const parsed = parseAppUserRole(data.roleBase);
+    if (parsed == null) {
+      throw new AccessProfileError(
+        "INVALID_ROLE_BASE",
+        "Role base inválida. Use SUPER_ADMIN, ADMIN, COMMERCIAL_MANAGER, SELLER ou VIEWER."
+      );
+    }
+    roleBase = parsed;
+  }
 
   return {
     name: typeof data.name === "string" ? data.name : undefined,

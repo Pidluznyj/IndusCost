@@ -71,9 +71,10 @@ export function SalesOrderListTable({
   const columnCount = showMarginEconomics ? 10 : 9;
   return (
     <div
-      className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+      className="sales-order-list-section overflow-hidden"
       data-testid="sales-order-list-table-wrap"
     >
+      <div className="sales-order-list-grid-title">Pedidos de venda</div>
       <div className="sales-order-list-table-wrap">
         <table className="sales-order-list-table" data-testid="sales-order-list-table">
           <thead>

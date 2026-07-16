@@ -88,7 +88,11 @@ export async function parseApiErrorPayload(res: Response): Promise<{
         const o = data as Record<string, unknown>;
         const msg = typeof o.message === "string" ? o.message.trim() : "";
         const err = typeof o.error === "string" ? o.error.trim() : "";
-        const code = typeof o.code === "string" ? o.code.trim() : undefined;
+        // Aceitar `code` explícito ou `error` no formato CODE_CASE (AccessProfile etc.).
+        const codeFromField = typeof o.code === "string" ? o.code.trim() : "";
+        const codeFromError =
+          err && /^[A-Z][A-Z0-9_]*$/.test(err) ? err : "";
+        const code = codeFromField || codeFromError || undefined;
         const existingSupplierId =
           typeof o.existingSupplierId === "string" ? o.existingSupplierId : undefined;
         const conflicts = Array.isArray(o.conflicts)

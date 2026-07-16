@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MemoryRouter } from "react-router-dom";
 import {
   buildGroupedNavigationStructure,
   flattenGroupedNavigationItems,
@@ -105,20 +104,17 @@ function gridRow(overrides: Partial<ProductionOrderGridRow> = {}): ProductionOrd
 function renderRow(row: ProductionOrderGridRow): string {
   return renderToStaticMarkup(
     React.createElement(
-      MemoryRouter,
+      "table",
       null,
       React.createElement(
-        "table",
+        "tbody",
         null,
-        React.createElement(
-          "tbody",
-          null,
-          React.createElement(ProductionOrderGridTableRow, {
-            row,
-            selected: false,
-            onOpen: () => {},
-          })
-        )
+        React.createElement(ProductionOrderGridTableRow, {
+          row,
+          selected: false,
+          onOpen: () => {},
+          onOpenSalesOrder: () => {},
+        })
       )
     )
   );
@@ -210,17 +206,14 @@ function detailResponse(
 function renderAuditContent(detail: ProductionOrderDetailResponse, activeTab: "geral" | "auditoria" = "geral"): string {
   const technicalJson = stringifyProductionOrderTechnicalEvidence(detail);
   return renderToStaticMarkup(
-    React.createElement(
-      MemoryRouter,
-      null,
-      React.createElement(ProductionOrderAuditContent, {
-        detail,
-        technicalJson,
-        copyFeedback: null,
-        onCopy: () => {},
-        activeTab,
-      })
-    )
+    React.createElement(ProductionOrderAuditContent, {
+      detail,
+      technicalJson,
+      copyFeedback: null,
+      onCopy: () => {},
+      activeTab,
+      onOpenSalesOrder: () => {},
+    })
   );
 }
 
@@ -397,6 +390,19 @@ describe("productionOrdersClient e página base", () => {
     assert.match(clientSrc, /\/api\/operations\/production-orders/);
   });
 
+  it("abre detalhe do Pedido de Venda in-place sem sair da rota de OP", () => {
+    const moduleSrc = read("src/components/operations/ProductionOrdersModule.tsx");
+    const drawerSrc = read(
+      "src/components/operations/ProductionOrderQuickDetailOverlay.tsx"
+    );
+    assert.match(moduleSrc, /SalesOrderDetailDialog/);
+    assert.match(moduleSrc, /openSalesOrderDetail/);
+    assert.match(moduleSrc, /dismissOnEsc=\{salesOrderDetailId == null\}/);
+    assert.doesNotMatch(moduleSrc, /to=\{`\/sales-orders\//);
+    assert.match(drawerSrc, /onOpenSalesOrder/);
+    assert.doesNotMatch(drawerSrc, /to=\{`\/sales-orders\//);
+  });
+
   it("página base contém estados obrigatórios e copy oficial", () => {
     const moduleSrc = read("src/components/operations/ProductionOrdersModule.tsx");
     const uiSrc = read("src/lib/productionOrdersUi.ts");
@@ -492,12 +498,16 @@ describe("ProductionOrderGridTableRow", () => {
     assert.match(html, /Encerrada/);
     assert.doesNotMatch(html, /KOPPETEL/);
     assert.match(html, /PD 02534/);
-    assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+    assert.match(
+      html,
+      /data-testid="production-order-sales-link-2530"/
+    );
+    assert.doesNotMatch(html, /\/sales-orders\//);
     assert.doesNotMatch(html, />Prioridade</);
     assert.doesNotMatch(html, /Última sincronização/);
   });
 
-  it("exibe datas normalizadas de abertura, planejada e entrega", () => {
+  it("exibe datas normalizadas de planejada e entrega", () => {
     const html = renderRow(
       gridRow({
         openedAt: "2026-06-23T03:00:00.000Z",
@@ -506,8 +516,8 @@ describe("ProductionOrderGridTableRow", () => {
         companyName: "02 - KOPPETEL",
       })
     );
-    // formatProductionOrderDateTime — não lê rawJson
-    assert.match(html, /23\/06\/2026|23\/06/);
+    // Coluna Data de abertura removida do grid; filtros de abertura permanecem.
+    assert.doesNotMatch(html, /23\/06\/2026|23\/06/);
     assert.match(html, /24\/06\/2026|24\/06/);
     assert.match(html, /08\/07\/2026|08\/07/);
     assert.match(html, /Entregue fora do prazo/);
@@ -639,12 +649,16 @@ describe("ProductionOrderAuditContent", () => {
     assert.match(html, /não possui vínculo de Pedido de Venda/);
   });
 
-  it("um vínculo resolvido mostra pedido, item local e rota oficial", () => {
+  it("um vínculo resolvido mostra pedido, item local e abre detalhe in-place", () => {
     const html = renderAuditContent(detailResponse());
     assert.match(html, /Atual/);
     assert.match(html, /PD 02534/);
     assert.match(html, /311\.32AA/);
-    assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+    assert.match(
+      html,
+      /data-testid="production-order-open-sales-order-00000000-0000-4000-8000-000000000301"/
+    );
+    assert.doesNotMatch(html, /\/sales-orders\//);
   });
 
   it("vários vínculos mantêm removido e pendente visíveis", () => {

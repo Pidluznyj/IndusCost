@@ -69,6 +69,8 @@ export const AccessProfilesModule: React.FC = () => {
   const [applyLoading, setApplyLoading] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  /** P28: estado do checkbox "sobrescrever customizados" no modal Aplicar. */
+  const [overwriteCustomized, setOverwriteCustomized] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!canView) {
@@ -597,9 +599,15 @@ export const AccessProfilesModule: React.FC = () => {
                       setForm((f) => ({ ...f, roleBase }));
                       if (roleBase === "SUPER_ADMIN") {
                         hydrateMatrix([], roleBase);
-                      } else {
-                        hydrateMatrix(form.permissions, roleBase);
+                        return;
                       }
+                      // P28: preservar seleções do draft (não o bag stale form.permissions).
+                      const preserved = materializeAccessProfilePermissionsFromDraft(
+                        matrixDraft,
+                        form.permissions,
+                        { compatibleClamp: false }
+                      );
+                      hydrateMatrix(preserved, roleBase);
                     }}
                     className="w-full rounded-lg border border-border px-3 py-2 text-sm"
                   >

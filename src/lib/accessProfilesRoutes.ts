@@ -3,6 +3,8 @@ import type { RequestHandler } from "express";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  ACCESS_PROFILE_CONFLICT_CODES,
+  ACCESS_PROFILE_VALIDATION_CODES,
   AccessProfileError,
   applyAccessProfileToUsers,
   createAccessProfile,
@@ -26,29 +28,43 @@ type RouteDeps = {
   ) => RequestHandler;
 };
 
+function sendAccessProfileError(
+  res: express.Response,
+  status: number,
+  code: string,
+  message: string
+) {
+  // `code` + `error` para compat FE (parseApiErrorPayload).
+  return res.status(status).json({ error: code, code, message });
+}
+
 function handleAccessProfileError(res: express.Response, error: unknown) {
   if (error instanceof AccessProfileError) {
     const status =
       error.code === "NOT_FOUND"
         ? 404
-        : error.code === "NO_CHANGES" ||
-            error.code === "INVALID_NAME" ||
-            error.code === "CONFIRM_REQUIRED"
+        : ACCESS_PROFILE_VALIDATION_CODES.has(error.code)
           ? 400
-          : 409;
-    return res.status(status).json({ error: error.code, message: error.message });
+          : ACCESS_PROFILE_CONFLICT_CODES.has(error.code)
+            ? 409
+            : 400;
+    return sendAccessProfileError(res, status, error.code, error.message);
   }
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-    return res.status(409).json({
-      error: "NAME_ALREADY_EXISTS",
-      message: "Já existe um perfil com este nome.",
-    });
+    return sendAccessProfileError(
+      res,
+      409,
+      "NAME_ALREADY_EXISTS",
+      "Já existe um perfil com este nome."
+    );
   }
   console.error("[access-profiles]", error);
-  return res.status(500).json({
-    error: "INTERNAL_ERROR",
-    message: "Erro ao processar perfil de acesso.",
-  });
+  return sendAccessProfileError(
+    res,
+    500,
+    "INTERNAL_ERROR",
+    "Erro ao processar perfil de acesso."
+  );
 }
 
 function actorId(req: express.Request): string | null {
@@ -141,7 +157,12 @@ export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDe
     try {
       const body = parseAccessProfileBody(req.body);
       if (!body.name?.trim()) {
-        return res.status(400).json({ error: "INVALID_NAME", message: "Informe o nome do perfil." });
+        return sendAccessProfileError(
+          res,
+          400,
+          "INVALID_NAME",
+          "Informe o nome do perfil."
+        );
       }
       const profile = await createAccessProfile(prisma, {
         name: body.name,

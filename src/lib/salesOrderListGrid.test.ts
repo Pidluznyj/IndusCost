@@ -163,6 +163,10 @@ describe("salesOrderListGrid components", () => {
     assert.doesNotMatch(tableSrc, />Margem R\$</);
     assert.doesNotMatch(tableSrc, />Status margem</);
     assert.match(css, /white-space:\s*nowrap/);
+    assert.match(tableSrc, /sales-order-list-grid-title/);
+    assert.match(css, /background:\s*#dbeafe/);
+    assert.match(css, /color:\s*#1e3a8a/);
+    assert.match(css, /font-size:\s*11px/);
   });
 
   it("6. coluna Margem mostra percentual, valor e status compacto", () => {
