@@ -51,7 +51,7 @@ No select de **role base**, o formulário faz:
 hydrateMatrix(form.permissions, roleBase);
 ```
 
-Em **criação**, `form.permissions` permanece `[]` enquanto as marcações vivem só em `matrixDraft`.  
+Em **criação**, `form.permissions` permanece `[]` enquanto as marcações vivem só em `matrixDraft`.
 Ao mudar o role (fluxo comum: marcar permissões → escolher VIEWER/SELLER), a matriz é **reidratada do bag vazio** e o draft é descartado.
 
 Efeito:
@@ -66,7 +66,7 @@ Reproduzido em teste: `ROOT CAUSE D`.
 
 `AccessProfilesModule` usa `overwriteCustomized` / `setOverwriteCustomized` **sem** `useState`.
 
-Ao abrir o modal **Aplicar aos usuários**, o React lança `ReferenceError` na renderização do checkbox.  
+Ao abrir o modal **Aplicar aos usuários**, o React lança `ReferenceError` na renderização do checkbox.
 Não é o path de create/save, mas quebra a superfície irmã do mesmo módulo.
 
 Reproduzido em teste: `ROOT CAUSE C` (assinatura estática do fonte).
