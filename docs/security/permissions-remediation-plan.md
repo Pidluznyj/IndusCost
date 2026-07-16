@@ -250,12 +250,13 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P15 — Migração Pessoas/RH
 
 - **Objetivo:** Remover `costs.view` de `EMPLOYEES_*`; resource `admin.employees*`.
-- **Escopo:** `employeesPermissions`, `server.ts` employees, lookups.
+- **Escopo:** `employeesAccess`, `employeesPermissions`, `server.ts` employees, lookups, people/canonical.
 - **Deps:** P09, P14, P08.
 - **Risco:** alto.
-- **Aceite:** Leticia 403 em GET `/api/employees`.
+- **Aceite:** Leticia 403 em GET `/api/employees` e URL `/employees`; AP/finance não abrem RH.
 - **Rollback:** re-add costs temporário + feature flag.
 - **Migration:** não. **Servidor:** regrant RH users.
+- **Status (2026-07-16):** **feito.** Matriz em `employeesAccess.ts`; `requireResource` em CRUD/status/lookups/user-link/system-links/people search; FE `canPerformAction` + redaction de facetas; testes Leticia/finance deny/SA.
 
 ### P16 — Migração Máquinas
 

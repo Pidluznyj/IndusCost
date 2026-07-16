@@ -60,6 +60,7 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { EMPLOYEE_TOUR_STEPS } from "@/src/tours/employeeTourSteps";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   canCreateEmployees,
   canEditEmployees,
@@ -72,6 +73,10 @@ import {
   canViewEmployeeLinks,
   canViewEmployeePersonalData,
 } from "@/src/lib/operationsAdminPermissions";
+import {
+  EMPLOYEES_ACTIONS,
+  EMPLOYEES_RESOURCE_KEYS,
+} from "@/src/lib/employeesAccess";
 import type { PersonFieldKey } from "@/src/lib/canonicalPerson";
 
 const EMPLOYEE_CLASSIFICATION_OPTIONS = [
@@ -155,17 +160,39 @@ function DetailField({
 
 export const EmployeeModule = () => {
   const auth = useAuth();
-  const canEdit = canEditEmployees(auth);
-  const canCreate = canCreateEmployees(auth);
+  const permissions = usePermissions();
+  const canEdit =
+    canEditEmployees(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update);
+  const canCreate =
+    canCreateEmployees(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create);
   const canWrite = canEdit || canCreate;
-  const canViewPersonalHr = canViewEmployeePersonalData(auth);
+  const canViewPersonalHr =
+    canViewEmployeePersonalData(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.personalData, EMPLOYEES_ACTIONS.view);
   const canViewSensitiveHr =
-    canViewEmployeeCompensation(auth) || canViewEmployeeEmergencyContacts(auth);
-  const canViewAdminHr = canViewEmployeeAdministrativeData(auth);
-  const canViewLinksTab = canViewEmployeeLinks(auth);
-  const canManageLinks = canManageEmployeeLinks(auth);
-  const canManageUserLink = canManageEmployeeUserLink(auth);
-  const canManageEpi = canManageEmployeeEpi(auth);
+    canViewEmployeeCompensation(auth) ||
+    canViewEmployeeEmergencyContacts(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.sensitiveData, EMPLOYEES_ACTIONS.view);
+  const canViewAdminHr =
+    canViewEmployeeAdministrativeData(auth) ||
+    permissions.canPerformAction(
+      EMPLOYEES_RESOURCE_KEYS.administrativeData,
+      EMPLOYEES_ACTIONS.view
+    );
+  const canViewLinksTab =
+    canViewEmployeeLinks(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.links, EMPLOYEES_ACTIONS.view);
+  const canManageLinks =
+    canManageEmployeeLinks(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.links, EMPLOYEES_ACTIONS.manage);
+  const canManageUserLink =
+    canManageEmployeeUserLink(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage);
+  const canManageEpi =
+    canManageEmployeeEpi(auth) ||
+    permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.epi, EMPLOYEES_ACTIONS.manage);
   const visibleFichaTabs = useMemo((): EmployeeFichaTabId[] => {
     const tabs: EmployeeFichaTabId[] = ["professional"];
     if (canViewPersonalHr || canEdit) tabs.push("personal");

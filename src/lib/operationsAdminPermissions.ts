@@ -159,31 +159,31 @@ export function canCreateEmployees(check: PermissionChecker): boolean {
 
 /**
  * Dados sensíveis de RH (salário, encargos, contato de emergência).
- * Facetas finas OR legado employees.edit — costs.view não libera RH (P09).
+ * Facetas finas OR legado employees.edit — costs.view não libera RH (P09/P15).
  */
-export function canViewEmployeeCompensation(check: PermissionChecker): boolean {
-  return (
+export function canViewEmployeeCompensation(check: ResourceAwareChecker): boolean {
+  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_SENSITIVE_DATA, () =>
     check.hasPermission("employees.edit") ||
-    check.hasPermission("employees.sensitive_data.view")
+      check.hasPermission("employees.sensitive_data.view")
   );
 }
 
-export function canViewEmployeeEmergencyContacts(check: PermissionChecker): boolean {
+export function canViewEmployeeEmergencyContacts(check: ResourceAwareChecker): boolean {
   return canViewEmployeeCompensation(check);
 }
 
-export function canViewEmployeePersonalData(check: PermissionChecker): boolean {
-  return (
+export function canViewEmployeePersonalData(check: ResourceAwareChecker): boolean {
+  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_PERSONAL_DATA, () =>
     check.hasPermission("employees.edit") ||
-    check.hasPermission("employees.personal_data.view") ||
-    check.hasPermission("people.pii.view")
+      check.hasPermission("employees.personal_data.view") ||
+      check.hasPermission("people.pii.view")
   );
 }
 
-export function canViewEmployeeAdministrativeData(check: PermissionChecker): boolean {
-  return (
+export function canViewEmployeeAdministrativeData(check: ResourceAwareChecker): boolean {
+  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_ADMINISTRATIVE_DATA, () =>
     check.hasPermission("employees.edit") ||
-    check.hasPermission("employees.administrative_data.view")
+      check.hasPermission("employees.administrative_data.view")
   );
 }
 

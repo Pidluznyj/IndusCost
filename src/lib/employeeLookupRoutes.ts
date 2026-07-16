@@ -19,28 +19,32 @@ import {
   normalizeCorporateEmail,
 } from "@/src/lib/employeeRegistration.js";
 import {
-  EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS,
-  EMPLOYEES_VIEW_PERMISSIONS,
-} from "@/src/lib/employeesPermissions.js";
+  EMPLOYEES_RESOURCE_KEYS,
+  EMPLOYEES_ACTIONS,
+} from "@/src/lib/employeesAccess.js";
 import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser?: (
     req: express.Request
   ) => Promise<{ id?: string } | null> | { id?: string } | null;
 };
 
-const RH_LOOKUP = EMPLOYEES_VIEW_PERMISSIONS;
-
 export function registerEmployeeLookupRoutes(
   app: express.Application,
   guards: AuthGuards
 ): void {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = guards;
-  const lookupGuard = [requireAppAuth, requireAnyPermission([...RH_LOOKUP])];
+  const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
+  const lookupGuard = [
+    requireAppAuth,
+    requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.view),
+  ];
+  const userLinkManageGuard = [
+    requireAppAuth,
+    requireResource(EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage),
+  ];
 
   async function resolveActorId(req: express.Request): Promise<string | null> {
     try {
@@ -296,10 +300,10 @@ export function registerEmployeeLookupRoutes(
     }
   });
 
-  /** Status de vínculo com AppUser a partir do e-mail corporativo (sem criar login). */
+  /** Status de vínculo com AppUser — exige user_link.manage (contrato). */
   app.get(
     "/api/employees/:id/user-link-status",
-    ...lookupGuard,
+    ...userLinkManageGuard,
     async (req, res) => {
       try {
         const id = req.params.id;
@@ -347,7 +351,7 @@ export function registerEmployeeLookupRoutes(
   app.post(
     "/api/employees/:id/link-user",
     requireAppAuth,
-    requireAnyPermission([...EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS]),
+    requireResource(EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage),
     async (req, res) => {
       try {
         const id = req.params.id;
@@ -385,7 +389,7 @@ export function registerEmployeeLookupRoutes(
   app.post(
     "/api/employees/:id/unlink-user",
     requireAppAuth,
-    requireAnyPermission([...EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS]),
+    requireResource(EMPLOYEES_RESOURCE_KEYS.userLink, EMPLOYEES_ACTIONS.manage),
     async (req, res) => {
       try {
         const id = req.params.id;

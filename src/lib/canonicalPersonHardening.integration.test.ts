@@ -88,17 +88,18 @@ describe("hardening — migrations Person/RH presentes e seguras", () => {
 });
 
 describe("hardening — guards de API (fonte)", () => {
-  it("GET /api/employees usa bag VIEW (não só employees.view)", () => {
+  it("GET /api/employees usa requireResource admin.employees view", () => {
     const src = readSrc("server.ts");
-    assert.ok(src.includes("EMPLOYEES_VIEW_PERMISSIONS"));
+    assert.ok(src.includes("EMPLOYEES_RESOURCE_KEYS"));
+    assert.ok(src.includes("requireResource(EMPLOYEES_RESOURCE_KEYS.module"));
     assert.ok(src.includes('"/api/employees"'));
     assert.ok(src.includes("redactEmployeePersonalEmergencyForApi"));
     assert.ok(src.includes("redactEmployeeAdminForApi"));
   });
 
-  it("POST create usa EMPLOYEES_CREATE_PERMISSIONS", () => {
+  it("POST create usa requireResource create", () => {
     const src = readSrc("server.ts");
-    assert.ok(src.includes("EMPLOYEES_CREATE_PERMISSIONS"));
+    assert.ok(src.includes("EMPLOYEES_ACTIONS.create"));
   });
 
   it("PUT customers strip personId/contactPersonId", () => {
@@ -110,17 +111,18 @@ describe("hardening — guards de API (fonte)", () => {
     assert.ok(slice.includes("delete body.contactPersonId"));
   });
 
-  it("system-links e person-link protegidos", () => {
+  it("system-links e person-link protegidos por requireResource", () => {
     const src = readSrc("src/lib/canonicalPersonRoutes.ts");
     assert.ok(src.includes('"/api/employees/:id/system-links"'));
-    assert.ok(src.includes("RH_LINKS_VIEW_PERMS") || src.includes("EMPLOYEES_LINKS_VIEW"));
+    assert.ok(src.includes("linksViewGuard") || src.includes("EMPLOYEES_RESOURCE_KEYS.links"));
     assert.ok(src.includes('"/api/employees/:id/person-link"'));
-    assert.ok(src.includes("LINK_PERMS") || src.includes("EMPLOYEES_LINKS_MANAGE"));
+    assert.ok(src.includes("linksManageGuard") || src.includes("EMPLOYEES_ACTIONS.manage"));
   });
 
-  it("user-link manage bag", () => {
+  it("user-link manage via admin.employees.user_link", () => {
     const src = readSrc("src/lib/employeeLookupRoutes.ts");
-    assert.ok(src.includes("EMPLOYEES_USER_LINK_MANAGE_PERMISSIONS"));
+    assert.ok(src.includes("EMPLOYEES_RESOURCE_KEYS.userLink"));
+    assert.ok(src.includes("EMPLOYEES_ACTIONS.manage"));
   });
 });
 

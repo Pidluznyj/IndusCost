@@ -242,7 +242,7 @@
     "rebuild:portfolio-reconciliation:apply": "tsx scripts/rebuildPortfolioReconciliationFacts.ts apply",
     "rebuild:order-to-cash-audit:preview": "tsx scripts/rebuildOrderToCashAudit.ts --mode preview",
     "rebuild:order-to-cash-audit:apply": "tsx scripts/rebuildOrderToCashAudit.ts --mode apply",
-    "test:people-hr-hardening": "tsx --test src/lib/canonicalPersonHardening.integration.test.ts src/lib/canonicalPersonBackfill.test.ts src/lib/employeesPermissions.test.ts src/lib/employeeRegistration.test.ts src/lib/canonicalPersonRoutes.auth.test.ts src/lib/customerPeopleLinks.test.ts src/lib/employeeSystemLinks.test.ts src/lib/employeeUserLink.test.ts",
+    "test:people-hr-hardening": "tsx --test src/lib/canonicalPersonHardening.integration.test.ts src/lib/canonicalPersonBackfill.test.ts src/lib/employeesPermissions.test.ts src/lib/employeesAccess.test.ts src/lib/employeeRegistration.test.ts src/lib/canonicalPersonRoutes.auth.test.ts src/lib/customerPeopleLinks.test.ts src/lib/employeeSystemLinks.test.ts src/lib/employeeUserLink.test.ts",
     "check:permission-consistency": "tsx scripts/checkPermissionConsistency.ts --report",
     "check:permission-consistency:report": "tsx scripts/checkPermissionConsistency.ts --report",
     "check:permission-consistency:strict": "tsx scripts/checkPermissionConsistency.ts --strict",

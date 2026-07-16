@@ -27,21 +27,17 @@ import {
 import { resolvePeopleSearch } from "@/src/lib/canonicalPersonSearch.server.js";
 import { buildSystemLinksViewerCaps } from "@/src/lib/employeeSystemLinks.js";
 import {
-  EMPLOYEES_LINKS_MANAGE_PERMISSIONS,
-  EMPLOYEES_LINKS_VIEW_PERMISSIONS,
-  EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS,
-} from "@/src/lib/employeesPermissions.js";
+  EMPLOYEES_ACTIONS,
+  EMPLOYEES_RESOURCE_KEYS,
+} from "@/src/lib/employeesAccess.js";
 import { logEmployeeHrAudit } from "@/src/lib/employeeHrAudit.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   requirePermission: (permission: string) => RequestHandler;
   requireAnyPermission: (permissions: string[]) => RequestHandler;
 };
-
-const SEARCH_PERMS = EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS;
-const LINK_PERMS = EMPLOYEES_LINKS_MANAGE_PERMISSIONS;
-const RH_LINKS_VIEW_PERMS = EMPLOYEES_LINKS_VIEW_PERMISSIONS;
 
 type AppUserBrief = { id?: string; permissions?: string[]; role?: string };
 
@@ -87,182 +83,170 @@ export function registerCanonicalPersonRoutes(
     ) => Promise<{ permissions?: string[]; role?: string } | null>;
   }
 ): void {
-  const { requireAppAuth, requirePermission, requireAnyPermission, getCurrentAppUser } = guards;
-
-  app.get(
-    "/api/people/search",
+  const {
     requireAppAuth,
-    requireAnyPermission([...SEARCH_PERMS]),
-    async (req, res) => {
-      try {
-        const q = typeof req.query.q === "string" ? req.query.q : "";
-        const excludeEmployeeId =
-          typeof req.query.excludeEmployeeId === "string"
-            ? req.query.excludeEmployeeId
-            : null;
-        const rows = await searchCanonicalPeople(prisma, {
-          q,
-          excludeEmployeeId,
-          canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
-          limit: Number(req.query.limit) || 20,
-        });
-        res.json({ rows });
-      } catch (error) {
-        console.error("GET /api/people/search", error);
-        res.status(500).json({ error: "Erro ao pesquisar pessoas." });
-      }
+    requireResource,
+    requirePermission,
+    requireAnyPermission,
+    getCurrentAppUser,
+  } = guards;
+  const moduleViewGuard = [
+    requireAppAuth,
+    requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.view),
+  ];
+  const linksViewGuard = [
+    requireAppAuth,
+    requireResource(EMPLOYEES_RESOURCE_KEYS.links, EMPLOYEES_ACTIONS.view),
+  ];
+  const linksManageGuard = [
+    requireAppAuth,
+    requireResource(EMPLOYEES_RESOURCE_KEYS.links, EMPLOYEES_ACTIONS.manage),
+  ];
+
+  app.get("/api/people/search", ...moduleViewGuard, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const excludeEmployeeId =
+        typeof req.query.excludeEmployeeId === "string"
+          ? req.query.excludeEmployeeId
+          : null;
+      const rows = await searchCanonicalPeople(prisma, {
+        q,
+        excludeEmployeeId,
+        canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
+        limit: Number(req.query.limit) || 20,
+      });
+      res.json({ rows });
+    } catch (error) {
+      console.error("GET /api/people/search", error);
+      res.status(500).json({ error: "Erro ao pesquisar pessoas." });
     }
-  );
+  });
 
   /**
    * Motor unificado de resolução (Prompt 03).
    * Query: q, page, limit, excludeEmployeeId, includeInactive=1
    */
-  app.get(
-    "/api/people/resolve",
-    requireAppAuth,
-    requireAnyPermission([...SEARCH_PERMS]),
-    async (req, res) => {
-      try {
-        const q = typeof req.query.q === "string" ? req.query.q : "";
-        const excludeEmployeeId =
-          typeof req.query.excludeEmployeeId === "string"
-            ? req.query.excludeEmployeeId
-            : null;
-        const includeInactive =
-          req.query.includeInactive === "1" || req.query.includeInactive === "true";
-        const result = await resolvePeopleSearch(prisma, {
-          q,
-          page: Number(req.query.page) || 1,
-          limit: Number(req.query.limit) || 20,
-          excludeEmployeeId,
-          includeInactive,
-          canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
-        });
-        res.json(result);
-      } catch (error) {
-        console.error("GET /api/people/resolve", error);
-        res.status(500).json({ error: "Erro ao resolver pessoas." });
-      }
+  app.get("/api/people/resolve", ...moduleViewGuard, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const excludeEmployeeId =
+        typeof req.query.excludeEmployeeId === "string"
+          ? req.query.excludeEmployeeId
+          : null;
+      const includeInactive =
+        req.query.includeInactive === "1" || req.query.includeInactive === "true";
+      const result = await resolvePeopleSearch(prisma, {
+        q,
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 20,
+        excludeEmployeeId,
+        includeInactive,
+        canViewPii: await resolveCanViewPii(req, getCurrentAppUser),
+      });
+      res.json(result);
+    } catch (error) {
+      console.error("GET /api/people/resolve", error);
+      res.status(500).json({ error: "Erro ao resolver pessoas." });
     }
-  );
+  });
 
-  app.get(
-    "/api/people/:id/links",
-    requireAppAuth,
-    requireAnyPermission([...SEARCH_PERMS]),
-    async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!isPersonUuid(id)) {
-          return res.status(400).json({ error: "ID inválido." });
-        }
-        const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
-        const payload = await getPersonSystemLinks(prisma, id, caps);
-        res.json(payload);
-      } catch (error) {
-        if (error instanceof CanonicalPersonError) {
-          return res
-            .status(error.status)
-            .json({ error: error.message, code: error.code, conflicts: error.conflicts });
-        }
-        console.error("GET /api/people/:id/links", error);
-        res.status(500).json({ error: "Erro ao listar vínculos." });
+  app.get("/api/people/:id/links", ...moduleViewGuard, async (req, res) => {
+    try {
+      const id = req.params.id;
+      if (!isPersonUuid(id)) {
+        return res.status(400).json({ error: "ID inválido." });
       }
+      const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
+      const payload = await getPersonSystemLinks(prisma, id, caps);
+      res.json(payload);
+    } catch (error) {
+      if (error instanceof CanonicalPersonError) {
+        return res
+          .status(error.status)
+          .json({ error: error.message, code: error.code, conflicts: error.conflicts });
+      }
+      console.error("GET /api/people/:id/links", error);
+      res.status(500).json({ error: "Erro ao listar vínculos." });
     }
-  );
+  });
 
   /**
    * Agregador executivo da ficha do colaborador (“Vínculos no sistema”).
    * IDs técnicos só em `audit` quando permitido.
    */
-  app.get(
-    "/api/employees/:id/system-links",
-    requireAppAuth,
-    requireAnyPermission([...RH_LINKS_VIEW_PERMS]),
-    async (req, res) => {
-      try {
-        const id = req.params.id;
-        if (!isPersonUuid(id)) {
-          return res.status(400).json({ error: "ID inválido." });
-        }
-        const { getEmployeeSystemLinks } = await import(
-          "@/src/lib/employeeSystemLinks.server.js"
-        );
-        const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
-        const { dto, audit } = await getEmployeeSystemLinks(prisma, id, caps);
-        res.json({ ...dto, audit });
-      } catch (error) {
-        if (error instanceof CanonicalPersonError) {
-          return res
-            .status(error.status)
-            .json({ error: error.message, code: error.code, conflicts: error.conflicts });
-        }
-        console.error("GET /api/employees/:id/system-links", error);
-        res.status(500).json({ error: "Erro ao listar vínculos do colaborador." });
+  app.get("/api/employees/:id/system-links", ...linksViewGuard, async (req, res) => {
+    try {
+      const id = req.params.id;
+      if (!isPersonUuid(id)) {
+        return res.status(400).json({ error: "ID inválido." });
       }
+      const { getEmployeeSystemLinks } = await import(
+        "@/src/lib/employeeSystemLinks.server.js"
+      );
+      const caps = await resolveSystemLinksCaps(req, getCurrentAppUser);
+      const { dto, audit } = await getEmployeeSystemLinks(prisma, id, caps);
+      res.json({ ...dto, audit });
+    } catch (error) {
+      if (error instanceof CanonicalPersonError) {
+        return res
+          .status(error.status)
+          .json({ error: error.message, code: error.code, conflicts: error.conflicts });
+      }
+      console.error("GET /api/employees/:id/system-links", error);
+      res.status(500).json({ error: "Erro ao listar vínculos do colaborador." });
     }
-  );
+  });
 
-  app.post(
-    "/api/people/preview-employee-link",
-    requireAppAuth,
-    requireAnyPermission([...LINK_PERMS]),
-    async (req, res) => {
-      try {
-        const body = req.body ?? {};
-        const { previewLinkEmployeeToPerson } = await import(
-          "@/src/lib/canonicalPersonService.server.js"
-        );
-        const result = await previewLinkEmployeeToPerson(prisma, {
-          personId: body.personId ?? null,
-          sourceKind: body.sourceKind ?? null,
-          sourceId: body.sourceId ?? null,
-          form: {
-            displayName: body.name ?? body.displayName,
-            socialName: body.socialName,
-            corporateEmail: body.corporateEmail,
-            personalEmail: body.personalEmail,
-            cpfNormalized: body.cpf ?? body.cpfNormalized,
-            phoneNormalized: body.phone ?? body.phoneNormalized,
-          },
-        });
-        res.json(result);
-      } catch (error) {
-        if (error instanceof CanonicalPersonError) {
-          return res
-            .status(error.status)
-            .json({ error: error.message, code: error.code, conflicts: error.conflicts });
-        }
-        console.error("POST /api/people/preview-employee-link", error);
-        res.status(500).json({ error: "Erro ao pré-visualizar vínculo." });
+  app.post("/api/people/preview-employee-link", ...linksManageGuard, async (req, res) => {
+    try {
+      const body = req.body ?? {};
+      const { previewLinkEmployeeToPerson } = await import(
+        "@/src/lib/canonicalPersonService.server.js"
+      );
+      const result = await previewLinkEmployeeToPerson(prisma, {
+        personId: body.personId ?? null,
+        sourceKind: body.sourceKind ?? null,
+        sourceId: body.sourceId ?? null,
+        form: {
+          displayName: body.name ?? body.displayName,
+          socialName: body.socialName,
+          corporateEmail: body.corporateEmail,
+          personalEmail: body.personalEmail,
+          cpfNormalized: body.cpf ?? body.cpfNormalized,
+          phoneNormalized: body.phone ?? body.phoneNormalized,
+        },
+      });
+      res.json(result);
+    } catch (error) {
+      if (error instanceof CanonicalPersonError) {
+        return res
+          .status(error.status)
+          .json({ error: error.message, code: error.code, conflicts: error.conflicts });
       }
+      console.error("POST /api/people/preview-employee-link", error);
+      res.status(500).json({ error: "Erro ao pré-visualizar vínculo." });
     }
-  );
+  });
 
-  app.delete(
-    "/api/employees/:id/person-link",
-    requireAppAuth,
-    requireAnyPermission([...LINK_PERMS]),
-    async (req, res) => {
-      try {
-        const actor = await resolveAppUserBrief(req, getCurrentAppUser);
-        await unlinkEmployeeFromPerson(prisma, req.params.id);
-        logEmployeeHrAudit({
-          event: "employee.person_unlink",
-          actorUserId: (actor as { id?: string } | null)?.id ?? null,
-          employeeId: req.params.id,
-        });
-        res.json({ ok: true });
-      } catch (error) {
-        if (error instanceof CanonicalPersonError) {
-          return res.status(error.status).json({ error: error.message, code: error.code });
-        }
-        console.error("DELETE /api/employees/:id/person-link", error);
-        res.status(500).json({ error: "Erro ao desvincular pessoa." });
+  app.delete("/api/employees/:id/person-link", ...linksManageGuard, async (req, res) => {
+    try {
+      const actor = await resolveAppUserBrief(req, getCurrentAppUser);
+      await unlinkEmployeeFromPerson(prisma, req.params.id);
+      logEmployeeHrAudit({
+        event: "employee.person_unlink",
+        actorUserId: (actor as { id?: string } | null)?.id ?? null,
+        employeeId: req.params.id,
+      });
+      res.json({ ok: true });
+    } catch (error) {
+      if (error instanceof CanonicalPersonError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
       }
+      console.error("DELETE /api/employees/:id/person-link", error);
+      res.status(500).json({ error: "Erro ao desvincular pessoa." });
     }
-  );
+  });
 
   app.get(
     "/api/customers/:id/people-links",

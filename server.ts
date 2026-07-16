@@ -233,10 +233,11 @@ import {
   canViewEmployeeAdministrativeData,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
-  EMPLOYEES_CREATE_PERMISSIONS,
-  EMPLOYEES_UPDATE_PERMISSIONS,
-  EMPLOYEES_VIEW_PERMISSIONS,
 } from "./src/lib/employeesPermissions.js";
+import {
+  EMPLOYEES_ACTIONS,
+  EMPLOYEES_RESOURCE_KEYS,
+} from "./src/lib/employeesAccess.js";
 import { logEmployeeHrAudit, summarizeConflictResolutions } from "./src/lib/employeeHrAudit.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
@@ -2800,7 +2801,7 @@ async function startServer() {
 
   
 // --- API: Employees (Funcionários) ---
-app.get("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_VIEW_PERMISSIONS]), async (req, res) => {
+app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.view), async (req, res) => {
   const authUser = await getCurrentAppUser(req);
   const check = employeePermCheck(authUser);
   const revealPersonal = canViewEmployeePersonalData(check);
@@ -3005,7 +3006,7 @@ const employeeApiInclude = {
   },
 } as const;
 
-app.post("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_CREATE_PERMISSIONS]), async (req, res) => {
+app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const {
@@ -3197,7 +3198,7 @@ app.post("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_CR
   }
 });
 
-app.put("/api/employees/:id", requireAppAuth, requireAnyPermission([...EMPLOYEES_UPDATE_PERMISSIONS]), async (req, res) => {
+app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
   try {
     const authUser = await getCurrentAppUser(req);
     const { id } = req.params;
@@ -3475,7 +3476,7 @@ app.put("/api/employees/:id", requireAppAuth, requireAnyPermission([...EMPLOYEES
   }
 });
 
-app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
+app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
   const { id } = req.params;
   const authUser = await getCurrentAppUser(req);
   await prisma.employee.delete({ where: { id } });
@@ -10944,7 +10945,7 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
     }
   );
 
-  app.patch("/api/employees/:id/status", requireAppAuth, requirePermission("employees.edit"), async (req, res) => {
+  app.patch("/api/employees/:id/status", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const authUser = await getCurrentAppUser(req);
@@ -13675,13 +13676,13 @@ app.delete("/api/employees/:id", requireAppAuth, requirePermission("employees.ed
 
   registerEmployeeLookupRoutes(app, {
     requireAppAuth,
-    requirePermission,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerCanonicalPersonRoutes(app, {
     requireAppAuth,
+    requireResource,
     requirePermission,
     requireAnyPermission,
     getCurrentAppUser,
