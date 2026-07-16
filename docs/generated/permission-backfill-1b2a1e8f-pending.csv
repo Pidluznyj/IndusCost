@@ -1,0 +1,3 @@
+subjectRef,role,status,kind,legacyKey,resourceKey,reason
+40ce03babcd4,VIEWER,pending_only,mega_key,costs.view,,PERMISSION_HARD_MEGA_KEYS — revisão manual; não expandir cross-module
+40ce03babcd4,VIEWER,pending_only,lockout_risk,,finance.opex,P20 lockout_risk finance.opex:view

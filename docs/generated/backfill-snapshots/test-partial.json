@@ -1,0 +1,16 @@
+{
+  "runId": "test-partial",
+  "createdAt": "2026-07-16T17:06:42.774Z",
+  "label": "pre-apply",
+  "users": [
+    {
+      "userId": "alias-user",
+      "role": "VIEWER",
+      "legacyPermissions": [
+        "dashboard.view",
+        "finance.accountsPayable.view"
+      ],
+      "overrides": []
+    }
+  ]
+}

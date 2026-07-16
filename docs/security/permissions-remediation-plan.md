@@ -306,6 +306,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Aceite:** dry-run revisado; apply com backup.
 - **Rollback:** restaurar dump + bags.
 - **Migration/script:** sim. **Servidor:** sim.
+- **Status (2026-07-16):** implementado — `permissionBackfill/*`, `scripts/backfillPermissionOverrides.ts`, runbook `permission-backfill-runbook.md`. Preview obrigatório; apply/rollback explícitos; **não executar em prod neste prompt.**
 
 ### P21 — Sessão / cache
 

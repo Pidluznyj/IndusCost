@@ -1,0 +1,126 @@
+{
+  "dryRun": true,
+  "runId": "1b2a1e8f",
+  "generatedAt": "2026-07-16T17:06:46.008Z",
+  "subjectCount": 5,
+  "readyCount": 1,
+  "skippedCount": 3,
+  "pendingCount": 1,
+  "appliedCount": 0,
+  "failedCount": 0,
+  "snapshotPath": null,
+  "note": "Preview only. permissions[] não alterada. Apply exige --apply --confirm=BACKFILL PERMISSIONS.",
+  "users": [
+    {
+      "subjectRef": "53817c43f05f",
+      "role": "VIEWER",
+      "scenarioTag": null,
+      "status": "skipped_idempotent",
+      "legacyPermissionCount": 1,
+      "migratableKeyCount": 1,
+      "pendingCount": 0,
+      "deltaOverrideCount": 0,
+      "pending": [],
+      "classifications": [
+        {
+          "legacyKey": "finance.accountsPayable.view",
+          "kind": "alias_1_1",
+          "migratable": true,
+          "canonicalResourceKey": "financeiro.contas_pagar"
+        }
+      ]
+    },
+    {
+      "subjectRef": "40ce03babcd4",
+      "role": "VIEWER",
+      "scenarioTag": null,
+      "status": "pending_only",
+      "legacyPermissionCount": 2,
+      "migratableKeyCount": 1,
+      "pendingCount": 2,
+      "deltaOverrideCount": 0,
+      "pending": [
+        {
+          "kind": "mega_key",
+          "legacyKey": "costs.view",
+          "reason": "PERMISSION_HARD_MEGA_KEYS — revisão manual; não expandir cross-module"
+        },
+        {
+          "kind": "lockout_risk",
+          "resourceKey": "finance.opex",
+          "reason": "P20 lockout_risk finance.opex:view"
+        }
+      ],
+      "classifications": [
+        {
+          "legacyKey": "costs.view",
+          "kind": "mega_key",
+          "migratable": false,
+          "canonicalResourceKey": "finance.opex"
+        },
+        {
+          "legacyKey": "finance.accountsPayable.view",
+          "kind": "alias_1_1",
+          "migratable": true,
+          "canonicalResourceKey": "financeiro.contas_pagar"
+        }
+      ]
+    },
+    {
+      "subjectRef": "093d7f416291",
+      "role": "VIEWER",
+      "scenarioTag": null,
+      "status": "ready",
+      "legacyPermissionCount": 2,
+      "migratableKeyCount": 2,
+      "pendingCount": 0,
+      "deltaOverrideCount": 2,
+      "pending": [],
+      "classifications": [
+        {
+          "legacyKey": "dashboard.view",
+          "kind": "alias_1_1",
+          "migratable": true,
+          "canonicalResourceKey": "dashboard"
+        },
+        {
+          "legacyKey": "finance.accountsPayable.view",
+          "kind": "alias_1_1",
+          "migratable": true,
+          "canonicalResourceKey": "financeiro.contas_pagar"
+        }
+      ]
+    },
+    {
+      "subjectRef": "3f2f13d832c2",
+      "role": "VIEWER",
+      "scenarioTag": null,
+      "status": "skipped_no_legacy_grants",
+      "legacyPermissionCount": 0,
+      "migratableKeyCount": 0,
+      "pendingCount": 0,
+      "deltaOverrideCount": 0,
+      "pending": [],
+      "classifications": []
+    },
+    {
+      "subjectRef": "4f59ca303fb9",
+      "role": "SUPER_ADMIN",
+      "scenarioTag": null,
+      "status": "skipped_super_admin",
+      "legacyPermissionCount": 0,
+      "migratableKeyCount": 0,
+      "pendingCount": 0,
+      "deltaOverrideCount": 0,
+      "pending": [],
+      "classifications": []
+    }
+  ],
+  "applyResults": [
+    {
+      "subjectRef": "093d7f416291",
+      "applied": false,
+      "unchanged": false
+    }
+  ]
+}
