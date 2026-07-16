@@ -58,8 +58,9 @@ describe("employeesPermissions — acesso efetivo legado", () => {
     assert.equal(canViewEmployeeSensitiveData(c), false);
   });
 
-  it("costs.view lista RH", () => {
-    assert.equal(canListEmployees(check(["costs.view"])), true);
+  it("P09: costs.view NÃO lista RH", () => {
+    assert.equal(canListEmployees(check(["costs.view"])), false);
+    assert.equal(canListEmployees(check(["employees.view"])), true);
   });
 });
 

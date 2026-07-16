@@ -6,7 +6,6 @@
 export const EMPLOYEES_VIEW_PERMISSIONS = [
   "employees.view",
   "employees.edit",
-  "costs.view",
 ] as const;
 
 export const EMPLOYEES_CREATE_PERMISSIONS = [

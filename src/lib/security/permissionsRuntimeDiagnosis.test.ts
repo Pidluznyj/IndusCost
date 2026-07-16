@@ -1,9 +1,6 @@
 /**
- * DIAGNÓSTICO (somente leitura de comportamento atual) — Prompt permissions-runtime.
- *
- * Estes testes documentam o comportamento EFETIVO do código hoje.
- * NÃO representam o comportamento desejado pós-correção.
- * Não alteram runtime; servem como evidência reprodutível.
+ * P09 — diagnóstico Leticia / Contas a Pagar (comportamento desejado pós-hotfix).
+ * Guardrails: reintroduzir bleed AP→Conciliação ou costs→RH deve falhar estes testes.
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -13,6 +10,7 @@ import {
   ResourceKeys,
   canAccessResourceClient,
   createPermissionsApi,
+  createSidebarCanViewResource,
 } from "@/src/lib/permissionsClient.js";
 import {
   canAccessPath,
@@ -21,10 +19,13 @@ import {
 } from "@/src/lib/resourceNavigationAccess.js";
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import { canAccessModule } from "@/src/lib/modulePermissions.js";
-import { overridesPayloadFromDraft } from "@/src/lib/userPermissionsAdminUi.js";
 import { buildEffectiveFlagsMap } from "@/src/lib/security/permissionRolePresets.js";
 import { materializeLegacyPermissionsFromFlags } from "@/src/lib/security/permissionRolePresets.js";
 import { EMPLOYEES_VIEW_PERMISSIONS } from "@/src/lib/employeesPermissions.js";
+import {
+  assertNoResidualP09Bleeds,
+  runMegaKeyMigrationDryRun,
+} from "@/src/lib/security/permissionMegaKeyMigration.js";
 
 function authUser(partial: {
   role?: AuthUser["role"];
@@ -68,13 +69,13 @@ function navCtx(user: AuthUser) {
   return { user, checker: checkerFromUser(user) };
 }
 
-describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (comportamento atual)", () => {
+describe("P09 Leticia — Contas a Pagar only (comportamento desejado)", () => {
   const onlyAp = authUser({
     role: "VIEWER",
     permissions: ["finance.accountsPayable.view"],
   });
 
-  it("DIAG: getEffectivePermissions NÃO amplia VIEWER — só filtra a bag", () => {
+  it("getEffectivePermissions NÃO amplia VIEWER — só filtra a bag", () => {
     const eff = getEffectivePermissions({
       role: "VIEWER",
       permissions: ["finance.accountsPayable.view"],
@@ -82,105 +83,89 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
     assert.deepEqual(eff, ["finance.accountsPayable.view"]);
   });
 
-  it("DIAG: finance.accountsPayable.view abre o MENU Financeiro (alias amplo)", () => {
+  it("AP 1:1 abre Contas a Pagar; MENU Financeiro (sidebar) NÃO eleva só por filho", () => {
     assert.equal(
-      canAccessResourceClient(onlyAp, ResourceKeys.FINANCEIRO, "view"),
-      true,
-      "Bleed confirmado: Contas a Pagar libera o parent Financeiro"
+      canAccessResourceClient(onlyAp, ResourceKeys.FINANCEIRO_CONTAS_PAGAR, "view"),
+      true
+    );
+    const sidebarView = createSidebarCanViewResource(onlyAp);
+    assert.equal(
+      sidebarView(ResourceKeys.FINANCEIRO),
+      false,
+      "MENU Financeiro não deve abrir só porque AP existe (sem alias amplo)"
     );
   });
 
-  it("DIAG: finance.accountsPayable.view abre Conciliação de Carteira (alias cruzado)", () => {
+  it("AP NÃO libera Conciliação de Carteira", () => {
     assert.equal(
       canAccessResourceClient(onlyAp, ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA, "view"),
-      true,
-      "Bleed confirmado: mesma chave legada em legacyAliasKeys da Conciliação"
+      false
     );
+    assert.equal(canViewModule("portfolio-reconciliation", navCtx(onlyAp)), false);
+    assert.equal(
+      canAccessPath("/finance/portfolio-reconciliation", navCtx(onlyAp)),
+      false
+    );
+    assert.equal(createPermissionsApi(onlyAp).canViewPortfolioModule(), false);
   });
 
-  it("DIAG: bag só com Contas a Pagar NÃO abre Pessoas/RH nem Máquinas via resource API", () => {
+  it("AP abre shell /finance (filho 1:1) sem abrir Conciliação", () => {
+    assert.equal(canViewModule("finance", navCtx(onlyAp)), true);
+    assert.equal(canAccessPath("/finance", navCtx(onlyAp)), true);
+    assert.equal(canViewModule("portfolio-reconciliation", navCtx(onlyAp)), false);
+  });
+
+  it("bag só AP NÃO abre Pessoas/RH nem Máquinas", () => {
     assert.equal(canAccessResourceClient(onlyAp, ResourceKeys.ADMIN_PESSOAS, "view"), false);
     assert.equal(canAccessResourceClient(onlyAp, ResourceKeys.OPERACOES_MAQUINAS, "view"), false);
     assert.equal(canAccessResourceClient(onlyAp, ResourceKeys.ENGENHARIA, "view"), false);
   });
 
-  it("DIAG: costs.view legado abre Pessoas/RH e Máquinas na sidebar resource API", () => {
+  it("costs.view NÃO abre RH/Máquinas; ausência não é compensada", () => {
     const withCosts = authUser({
       role: "VIEWER",
       permissions: ["finance.accountsPayable.view", "costs.view"],
     });
-    assert.equal(canAccessResourceClient(withCosts, ResourceKeys.ADMIN_PESSOAS, "view"), true);
-    assert.equal(canAccessResourceClient(withCosts, ResourceKeys.OPERACOES_MAQUINAS, "view"), true);
-    assert.equal(canViewModule("employees", navCtx(withCosts)), true);
-    assert.equal(canViewModule("machines", navCtx(withCosts)), true);
-    assert.equal(canAccessPath("/employees", navCtx(withCosts)), true);
-    assert.equal(canAccessPath("/machines", navCtx(withCosts)), true);
+    assert.equal(canAccessResourceClient(withCosts, ResourceKeys.ADMIN_PESSOAS, "view"), false);
+    assert.equal(canAccessResourceClient(withCosts, ResourceKeys.OPERACOES_MAQUINAS, "view"), false);
+    assert.equal(canViewModule("employees", navCtx(withCosts)), false);
+    assert.equal(canViewModule("machines", navCtx(withCosts)), false);
+    assert.equal(canAccessPath("/employees", navCtx(withCosts)), false);
+    assert.equal(canAccessPath("/machines", navCtx(withCosts)), false);
+    assert.equal(EMPLOYEES_VIEW_PERMISSIONS.includes("costs.view" as never), false);
   });
 
-  it("DIAG: products.view legado abre Engenharia", () => {
+  it("costs.view ainda abre Custos Indiretos (camada legado opex)", () => {
+    const withCosts = authUser({ role: "VIEWER", permissions: ["costs.view"] });
+    assert.equal(canAccessModule("opex", checkerFromUser(withCosts)), true);
+    assert.equal(
+      canAccessResourceClient(withCosts, ResourceKeys.FINANCE_OPEX, "view"),
+      true
+    );
+  });
+
+  it("products.view ainda abre Engenharia (não é hotfix P09)", () => {
     const withProducts = authUser({
       role: "VIEWER",
       permissions: ["finance.accountsPayable.view", "products.view"],
     });
-    assert.equal(canAccessResourceClient(withProducts, ResourceKeys.ENGENHARIA, "view"), true);
     assert.equal(canAccessResourceClient(withProducts, ResourceKeys.ENGENHARIA_PRODUTOS, "view"), true);
     assert.equal(canViewModule("products", navCtx(withProducts)), true);
   });
 
-  it("DIAG: costs.view abre Custos Indiretos via canAccessModule legado", () => {
-    const withCosts = authUser({ role: "VIEWER", permissions: ["costs.view"] });
-    assert.equal(canAccessModule("opex", checkerFromUser(withCosts)), true);
+  it("P07: bag vazia + VIEWER NÃO libera Engenharia", () => {
+    const empty = authUser({ role: "VIEWER", permissions: [] });
+    assert.equal(canAccessResourceClient(empty, ResourceKeys.ENGENHARIA, "view"), false);
+    assert.equal(canViewModule("products", navCtx(empty)), false);
   });
 
-  it("DIAG: API Pessoas/RH aceita costs.view como view (EMPLOYEES_VIEW_PERMISSIONS)", () => {
-    assert.ok(EMPLOYEES_VIEW_PERMISSIONS.includes("costs.view"));
+  it("dry-run migração sem residual bleed AP/costs cross-module", () => {
+    const report = runMegaKeyMigrationDryRun();
+    assert.equal(report.residualBleeds.length, 0, JSON.stringify(report.residualBleeds));
+    assertNoResidualP09Bleeds(report);
   });
 
-  it("P07: bag vazia + VIEWER NÃO libera Engenharia (sem ROLE_MATRIX)", () => {
-    const emptyBag = authUser({ role: "VIEWER", permissions: [] });
-    assert.equal(emptyBag.effectivePermissions.length, 0);
-    assert.equal(
-      canAccessResourceClient(emptyBag, ResourceKeys.ENGENHARIA, "view"),
-      false,
-      "bag vazia ⇒ deny; sem overlay ROLE_MATRIX.VIEWER"
-    );
-    assert.equal(
-      canAccessResourceClient(emptyBag, ResourceKeys.COMERCIAL_PEDIDOS_VENDA, "view"),
-      false
-    );
-    assert.equal(
-      canAccessResourceClient(emptyBag, ResourceKeys.DASHBOARD, "view"),
-      false
-    );
-  });
-
-  it("DIAG: desmarcar checkbox só gera override se diferir do baseline da role", () => {
-    const payload = overridesPayloadFromDraft(
-      {
-        "financeiro.contas_pagar": {
-          canView: true,
-          canExecute: false,
-          canManage: false,
-        },
-        comercial: { canView: false, canExecute: false, canManage: false },
-      },
-      [
-        {
-          resourceKey: "financeiro.contas_pagar",
-          flags: { canView: false, canExecute: false, canManage: false },
-        },
-        {
-          resourceKey: "comercial",
-          flags: { canView: true, canExecute: false, canManage: false },
-        },
-      ]
-    );
-    const byKey = Object.fromEntries(payload.map((r) => [r.resourceKey, r]));
-    assert.equal(byKey["financeiro.contas_pagar"]?.canView, true);
-    assert.equal(byKey.comercial?.canView, false, "deny explícito vs baseline VIEWER comercial=V");
-  });
-
-  it("DIAG: dual-write — mega-keys mapeadas caem; unmapped preserva; baseline VIEWER sem crm.view 1:1", () => {
+  it("dual-write — mega-keys mapeadas caem; unmapped preserva; baseline VIEWER", () => {
     const effective = buildEffectiveFlagsMap("VIEWER", [
       {
         resourceKey: "financeiro.contas_pagar",
@@ -197,7 +182,6 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
       "reports.material_demand.view",
       "finance.accountsPayable.view",
     ]);
-    // costs.view / products.view / pricing.view têm alias no seed → VIEWER NONE não re-emite.
     assert.equal(bag.includes("costs.view"), false);
     assert.equal(bag.includes("products.view"), false);
     assert.equal(bag.includes("pricing.view"), false, "P08: pricing.view mapeia commercial.pricing");
@@ -206,23 +190,20 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
       "preserve no_structural_alias"
     );
     assert.ok(bag.includes("finance.accountsPayable.view"));
-    // P06 1:1: crm.view canônico em comercial.crm (NONE no VIEWER) — não sai do pai comercial.
     assert.equal(bag.includes("crm.view"), false, "1:1 não emite crm.view do âncora comercial");
-    // Role VIEWER ainda materializa pedidos (canônico) e dashboard.
     assert.ok(bag.includes("sales_orders.view"), "baseline VIEWER pedidos");
     assert.ok(bag.includes("dashboard.view"), "baseline VIEWER dashboard");
   });
 
-  it("DIAG: path /employees protegido por resource quando bag limpa", () => {
+  it("path /employees protegido por resource quando bag limpa", () => {
     const d = evaluatePathViewAccess("/employees", navCtx(onlyAp));
     assert.equal(d.allowed, false);
     assert.equal(d.source, "resource");
   });
 
-  it("DIAG: createPermissionsApi.canView espelha bleed de Contas a Pagar", () => {
+  it("createPermissionsApi.canView: AP não abre Conciliação", () => {
     const api = createPermissionsApi(onlyAp);
-    assert.equal(api.canView(ResourceKeys.FINANCEIRO), true);
-    assert.equal(api.canView(ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA), true);
-    assert.equal(api.canView(ResourceKeys.ADMIN_PESSOAS), false);
+    assert.equal(api.canView(ResourceKeys.FINANCEIRO_CONTAS_PAGAR), true);
+    assert.equal(api.canView(ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA), false);
   });
 });

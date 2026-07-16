@@ -2,17 +2,17 @@
 
 | | |
 |---|---|
-| Gerado | 2026-07-16T14:04:42.588Z |
+| Gerado | 2026-07-16T14:14:24.806Z |
 | Modo | strict |
 | OK | sim |
 | Novos gaps | 0 |
-| Baselined | 77 |
+| Baselined | 70 |
 | Stale baseline | 0 |
 
 ## Fontes
 - Contrato: 82
 - Seed: 126
-- Frontend: 81
+- Frontend: 83
 - Catálogo legado: 187
 
 ## Novos gaps
@@ -27,7 +27,6 @@ _Nenhum._
 - `ALIAS_WIDE` / `commissions.release.view`
 - `ALIAS_WIDE` / `commissions.rules.view`
 - `ALIAS_WIDE` / `commissions.view`
-- `ALIAS_WIDE` / `costs.view`
 - `ALIAS_WIDE` / `crm.general.view`
 - `ALIAS_WIDE` / `crm.seller.all`
 - `ALIAS_WIDE` / `crm.seller.own`
@@ -36,8 +35,6 @@ _Nenhum._
 - `ALIAS_WIDE` / `customers.view`
 - `ALIAS_WIDE` / `employees.edit`
 - `ALIAS_WIDE` / `employees.view`
-- `ALIAS_WIDE` / `finance.accountsPayable.view`
-- `ALIAS_WIDE` / `finance.accountsReceivable.view`
 - `ALIAS_WIDE` / `finance.portfolioReconciliation.conciliation.view`
 - `ALIAS_WIDE` / `finance.portfolioReconciliation.intelligence.view`
 - `ALIAS_WIDE` / `finance.portfolioReconciliation.orderStatusPedidos.view`
@@ -55,13 +52,11 @@ _Nenhum._
 - `ALIAS_WIDE` / `purchases.view`
 - `ALIAS_WIDE` / `reports.view`
 - `ALIAS_WIDE` / `sales_orders.view`
-- `ALIAS_WIDE` / `settings.nomus.view`
 - `ALIAS_WIDE` / `settings.view`
 - `ALIAS_WIDE` / `simulations.view`
 - `ALIAS_WIDE` / `users.manage`
 - `ALIAS_DUPLICATE` / `contract:products.view`
 - `ALIAS_DUPLICATE` / `contract:simulations.view`
-- `ALIAS_DUPLICATE` / `contract:costs.view`
 - `ALIAS_DUPLICATE` / `contract:materials.view`
 - `ALIAS_DUPLICATE` / `contract:materials.edit`
 - `ALIAS_DUPLICATE` / `contract:projects.view`
@@ -79,7 +74,12 @@ _Nenhum._
 - `ALIAS_DUPLICATE` / `contract:pricing.publish_tables`
 - `ALIAS_DUPLICATE` / `contract:commissions.payments.manage`
 - `ALIAS_DUPLICATE` / `contract:commissions.rules.manage`
-- … +17
+- `ALIAS_DUPLICATE` / `contract:finance.view`
+- `ALIAS_DUPLICATE` / `contract:reports.view`
+- `ALIAS_DUPLICATE` / `contract:settings.nomus.sync`
+- `ALIAS_DUPLICATE` / `contract:inventory.view`
+- `ALIAS_DUPLICATE` / `contract:purchases.view`
+- … +10
 
 ## Limitações
 - Baseline temporário documenta gaps históricos; strict só falha em findings novos (code+subject).

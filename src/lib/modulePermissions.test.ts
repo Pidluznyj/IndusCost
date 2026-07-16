@@ -44,9 +44,14 @@ describe("modulePermissions — alinhamento UI/API (INT-008, INT-009, INT-010)",
   });
 });
 
-describe("modulePermissions — itens com decisão humana (não alterados nesta etapa)", () => {
-  it("INT-002: costs.view ainda abre employees (legado preservado)", () => {
-    assert.equal(canAccessModule("employees", checker(["costs.view"])), true);
+describe("modulePermissions — P09 costs.view sem cross-module", () => {
+  it("INT-002: costs.view NÃO abre employees (P09)", () => {
+    assert.equal(canAccessModule("employees", checker(["costs.view"])), false);
+    assert.equal(canAccessModule("employees", checker(["employees.view"])), true);
+  });
+
+  it("costs.view ainda abre opex (legado identificado)", () => {
+    assert.equal(canAccessModule("opex", checker(["costs.view"])), true);
   });
 
   it("INT-003: dashboard.view ainda abre Relatórios (legado preservado)", () => {

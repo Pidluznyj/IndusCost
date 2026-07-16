@@ -83,8 +83,8 @@ const CRM_MENU_PERMISSIONS = [
 
 const SETTINGS_MENU_PERMISSIONS = ["settings.view", "users.manage"] as const;
 
-/** Legado: costs.view liberava todos os módulos de custo/operação. */
-const LEGACY_COSTS_VIEW = "costs.view";
+/** Legado P09: costs.view só em opex (camada identificada). Cross-module removido. */
+const LEGACY_COSTS_VIEW_OPEX_ONLY = "costs.view";
 
 export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker): boolean {
   switch (moduleId) {
@@ -105,23 +105,25 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "transformation-simulator":
       return (
         check.hasPermission("products.view") ||
-        check.hasPermission("simulations.view") ||
-        check.hasPermission(LEGACY_COSTS_VIEW)
+        check.hasPermission("simulations.view")
       );
     case "purchases":
       return check.hasPermission("purchases.view");
     case "pricing":
       return check.hasPermission("pricing.view");
     case "employees":
-      return check.hasPermission("employees.view") || check.hasPermission(LEGACY_COSTS_VIEW);
+      return check.hasPermission("employees.view");
     case "machines":
-      return check.hasPermission("machines.view") || check.hasPermission(LEGACY_COSTS_VIEW);
+      return check.hasPermission("machines.view");
     case "materials":
-      return check.hasPermission("materials.view") || check.hasPermission(LEGACY_COSTS_VIEW);
+      return check.hasPermission("materials.view");
     case "opex":
-      return check.hasPermission("opex.view") || check.hasPermission(LEGACY_COSTS_VIEW);
+      return (
+        check.hasPermission("opex.view") ||
+        check.hasPermission(LEGACY_COSTS_VIEW_OPEX_ONLY)
+      );
     case "simulations":
-      return check.hasPermission("simulations.view") || check.hasPermission(LEGACY_COSTS_VIEW);
+      return check.hasPermission("simulations.view");
     case "taxes":
       return check.hasPermission("taxes.view");
     case "settings":
@@ -166,12 +168,7 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("finance.portfolioReconciliation.conciliation.view") ||
         check.hasPermission("finance.portfolioReconciliation.intelligence.view") ||
         check.hasPermission("finance.portfolioReconciliation.orderToCashAudit.view") ||
-        check.hasPermission("finance.portfolioReconciliation.orderStatusPedidos.view") ||
-        check.hasPermission("finance.view") ||
-        check.hasPermission("finance.accountsReceivable.view") ||
-        check.hasPermission("finance.accountsPayable.view") ||
-        check.hasPermission("reports.view") ||
-        check.hasPermission("settings.nomus.view")
+        check.hasPermission("finance.portfolioReconciliation.orderStatusPedidos.view")
       );
     case "guide":
       return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");

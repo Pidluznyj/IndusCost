@@ -92,7 +92,7 @@ export function canEditPurchases(check: PermissionChecker): boolean {
 
 export function canViewMachines(check: ResourceAwareChecker): boolean {
   return legacyOrResource(check, ResourceKeys.OPERACOES_MAQUINAS, () =>
-    check.hasPermission("machines.view") || check.hasPermission("costs.view")
+    check.hasPermission("machines.view")
   );
 }
 
@@ -143,7 +143,7 @@ export function canManageFleet(check: PermissionChecker): boolean {
 
 export function canViewEmployees(check: ResourceAwareChecker): boolean {
   return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS, () =>
-    check.hasPermission("employees.view") || check.hasPermission("costs.view")
+    check.hasPermission("employees.view")
   );
 }
 
@@ -159,7 +159,7 @@ export function canCreateEmployees(check: PermissionChecker): boolean {
 
 /**
  * Dados sensíveis de RH (salário, encargos, contato de emergência).
- * Facetas finas OR legado employees.edit — costs.view sozinho não libera.
+ * Facetas finas OR legado employees.edit — costs.view não libera RH (P09).
  */
 export function canViewEmployeeCompensation(check: PermissionChecker): boolean {
   return (

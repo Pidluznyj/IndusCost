@@ -92,14 +92,12 @@ describe("operationsAdminPermissions — operações", () => {
 });
 
 describe("operationsAdminPermissions — admin / RH sensível", () => {
-  it("costs.view vê RH mas não salário/emergência", () => {
+  it("P09: costs.view NÃO vê RH", () => {
     const check = {
       ...checker(["costs.view"]),
       canViewResource: createPermissionsApi(user("VIEWER", ["costs.view"])).canView,
     };
-    assert.equal(canViewEmployees(check), true);
-    assert.equal(canViewEmployeeCompensation(check), false);
-    assert.equal(canViewEmployeeEmergencyContacts(check), false);
+    assert.equal(canViewEmployees(check), false);
   });
 
   it("employees.edit libera dados sensíveis", () => {
@@ -130,7 +128,7 @@ describe("operationsAdminPermissions — admin / RH sensível", () => {
     assert.equal(canViewEmployeeCompensation(check), false);
   });
 
-  it("administrative_data.view sem edit e costs.view ainda sem sensivel", () => {
+  it("administrative_data.view sem edit; costs.view sem RH", () => {
     const adminOnly = checker(["employees.administrative_data.view"]);
     assert.equal(canViewEmployeeAdministrativeData(adminOnly), true);
     assert.equal(canViewEmployeeCompensation(adminOnly), false);
@@ -138,15 +136,19 @@ describe("operationsAdminPermissions — admin / RH sensível", () => {
       ...checker(["costs.view"]),
       canViewResource: createPermissionsApi(user("VIEWER", ["costs.view"])).canView,
     };
-    assert.equal(canViewEmployees(costs), true);
-    assert.equal(canViewEmployeeCompensation(costs), false);
-    assert.equal(canViewEmployeeEmergencyContacts(costs), false);
-    assert.equal(canViewEmployeePersonalData(costs), false);
+    assert.equal(canViewEmployees(costs), false);
   });
 
-  it("guia e sidebar ops/admin para ADMIN", () => {
-    const u = user("ADMIN", []);
-    const ctx = { user: u, checker: checker([]) };
+  it("guia e sidebar ops/admin para ADMIN com grants explícitos", () => {
+    const perms = [
+      "inventory.view",
+      "employees.view",
+      "guide.view",
+      "fleet.view",
+      "settings.view",
+    ];
+    const u = user("ADMIN", perms);
+    const ctx = { user: u, checker: checker(perms) };
     assert.equal(canViewModule("inventory", ctx), true);
     assert.equal(canViewModule("employees", ctx), true);
     assert.equal(canViewModule("guide", ctx), true);

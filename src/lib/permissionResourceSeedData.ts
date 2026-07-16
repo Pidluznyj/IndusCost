@@ -64,8 +64,6 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     isSystem: true,
     legacyAliasKeys: [
       "finance.view",
-      "finance.accountsReceivable.view",
-      "finance.accountsPayable.view",
       "reports.view",
       "settings.nomus.view",
       "settings.view",
@@ -86,11 +84,6 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
       "finance.portfolioReconciliation.intelligence.view",
       "finance.portfolioReconciliation.orderToCashAudit.view",
       "finance.portfolioReconciliation.orderStatusPedidos.view",
-      "finance.view",
-      "finance.accountsReceivable.view",
-      "finance.accountsPayable.view",
-      "reports.view",
-      "settings.nomus.view",
     ],
   },
   {
@@ -534,7 +527,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "machines",
     sortOrder: 73,
     isSystem: true,
-    legacyAliasKeys: ["machines.view", "costs.view"],
+    legacyAliasKeys: ["machines.view"],
   },
   {
     key: "operations.performance",
@@ -582,7 +575,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "materials",
     sortOrder: 60,
     isSystem: true,
-    legacyAliasKeys: ["materials.view", "costs.view"],
+    legacyAliasKeys: ["materials.view"],
   },
   {
     key: "suprimentos.tab.catalogo",
@@ -593,7 +586,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "materials",
     sortOrder: 61,
     isSystem: true,
-    legacyAliasKeys: ["materials.view", "costs.view"],
+    legacyAliasKeys: ["materials.view"],
   },
   {
     key: "suprimentos.inteligencia_mercado",

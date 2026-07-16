@@ -55,10 +55,10 @@ describe("permissionConsistency baseline", () => {
 
   it("baselineKey estável", () => {
     assert.equal(
-      baselineKey("ALIAS_WIDE", "costs.view"),
-      "ALIAS_WIDE::costs.view"
+      baselineKey("ALIAS_WIDE", "commissions.view"),
+      "ALIAS_WIDE::commissions.view"
     );
-    assert.ok(buildBaselineIndex().has("ALIAS_WIDE::costs.view"));
+    assert.ok(buildBaselineIndex().has("ALIAS_WIDE::commissions.view"));
   });
 });
 

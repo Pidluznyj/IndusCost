@@ -195,6 +195,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Aceite:** testes diagnóstico passam no comportamento **desejado**.
 - **Rollback:** revert aliases; restaurar bags do backup.
 - **Migration:** não. **Servidor:** report + possível regrant.
+- **Status (2026-07-16):** **feito em código.** Mapa `permissionMegaKeyMigration.ts`; AP 1:1; costs só opex; sem regrant automático. Aplicar em prod só após P19 snapshot.
 
 ### P10 — Migração sidebar
 

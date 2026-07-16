@@ -56,7 +56,7 @@ export function listPermissionMegaKeyRecords(): PermissionMegaKeyRecord[] {
       ],
       migrationStatus: "mega_key_temporary",
       notes:
-        "Abre RH, Máquinas, Suprimentos, OPEX, Simulações, etc. Proibida no estado final.",
+        "Abre OPEX (legado identificado P09). RH/Máquinas/Suprimentos/Simulações removidos.",
     },
     {
       legacyKey: "costs.edit",
@@ -84,7 +84,7 @@ export function listPermissionMegaKeyRecords(): PermissionMegaKeyRecord[] {
       replacementKeys: ["finance.accounts_payable"],
       migrationStatus: "cross_resource_bleed_temporary",
       notes:
-        "Canônica 1:1 com Contas a Pagar; bleed histórico para pai Financeiro e Conciliação no runtime (seed/FE) — não no modelo alvo.",
+        "Canônica 1:1 com Contas a Pagar (P09). Bleed pai/conciliação removido do seed/FE/runtime.",
     },
     {
       legacyKey: "reports.view",

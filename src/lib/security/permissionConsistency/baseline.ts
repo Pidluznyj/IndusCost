@@ -1,5 +1,5 @@
 /**
- * Baseline temporário — gaps históricos conhecidos (P02; atualizado P08 2026-07-16).
+ * Baseline temporário P02 — gaps históricos conhecidos (frozen 2026-07-16).
  * Strict falha apenas em findings cujo (code, subject) NÃO está aqui.
  *
  * Ao corrigir um gap: remova a entrada correspondente.
@@ -21,7 +21,6 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_WIDE","subject":"commissions.release.view","reason":"Alias amplo no FE: commissions.release.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"commissions.rules.view","reason":"Alias amplo no FE: commissions.rules.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"commissions.view","reason":"Alias amplo no FE: commissions.view → 15 recursos"},
-  {"code":"ALIAS_WIDE","subject":"costs.view","reason":"Alias amplo no FE: costs.view → 7 recursos"},
   {"code":"ALIAS_WIDE","subject":"crm.general.view","reason":"Alias amplo no FE: crm.general.view → 3 recursos"},
   {"code":"ALIAS_WIDE","subject":"crm.seller.all","reason":"Alias amplo no FE: crm.seller.all → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"crm.seller.own","reason":"Alias amplo no FE: crm.seller.own → 2 recursos"},
@@ -30,13 +29,11 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_WIDE","subject":"customers.view","reason":"Alias amplo no FE: customers.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"employees.edit","reason":"Alias amplo no FE: employees.edit → 7 recursos"},
   {"code":"ALIAS_WIDE","subject":"employees.view","reason":"Alias amplo no FE: employees.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"finance.accountsPayable.view","reason":"Alias amplo no FE: finance.accountsPayable.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"finance.accountsReceivable.view","reason":"Alias amplo no FE: finance.accountsReceivable.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"finance.portfolioReconciliation.conciliation.view","reason":"Alias amplo no FE: finance.portfolioReconciliation.conciliation.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"finance.portfolioReconciliation.intelligence.view","reason":"Alias amplo no FE: finance.portfolioReconciliation.intelligence.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"finance.portfolioReconciliation.orderStatusPedidos.view","reason":"Alias amplo no FE: finance.portfolioReconciliation.orderStatusPedidos.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"finance.portfolioReconciliation.orderToCashAudit.view","reason":"Alias amplo no FE: finance.portfolioReconciliation.orderToCashAudit.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"finance.view","reason":"Alias amplo no FE: finance.view → 3 recursos"},
+  {"code":"ALIAS_WIDE","subject":"finance.view","reason":"Alias amplo no FE: finance.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"fleet.view","reason":"Alias amplo no FE: fleet.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"inventory.view","reason":"Alias amplo no FE: inventory.view → 6 recursos"},
   {"code":"ALIAS_WIDE","subject":"machines.view","reason":"Alias amplo no FE: machines.view → 2 recursos"},
@@ -47,15 +44,13 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_WIDE","subject":"products.view","reason":"Alias amplo no FE: products.view → 4 recursos"},
   {"code":"ALIAS_WIDE","subject":"projects.view","reason":"Alias amplo no FE: projects.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"purchases.view","reason":"Alias amplo no FE: purchases.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"reports.view","reason":"Alias amplo no FE: reports.view → 3 recursos"},
+  {"code":"ALIAS_WIDE","subject":"reports.view","reason":"Alias amplo no FE: reports.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"sales_orders.view","reason":"Alias amplo no FE: sales_orders.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"settings.nomus.view","reason":"Alias amplo no FE: settings.nomus.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"settings.view","reason":"Alias amplo no FE: settings.view → 3 recursos"},
   {"code":"ALIAS_WIDE","subject":"simulations.view","reason":"Alias amplo no FE: simulations.view → 3 recursos"},
   {"code":"ALIAS_WIDE","subject":"users.manage","reason":"Alias amplo no FE: users.manage → 5 recursos"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:products.view","reason":"Alias legado em múltiplos recursos do contrato: products.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:simulations.view","reason":"Alias legado em múltiplos recursos do contrato: simulations.view"},
-  {"code":"ALIAS_DUPLICATE","subject":"contract:costs.view","reason":"Alias legado em múltiplos recursos do contrato: costs.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:materials.view","reason":"Alias legado em múltiplos recursos do contrato: materials.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:materials.edit","reason":"Alias legado em múltiplos recursos do contrato: materials.edit"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:projects.view","reason":"Alias legado em múltiplos recursos do contrato: projects.view"},
@@ -74,8 +69,6 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:commissions.payments.manage","reason":"Alias legado em múltiplos recursos do contrato: commissions.payments.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:commissions.rules.manage","reason":"Alias legado em múltiplos recursos do contrato: commissions.rules.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.view","reason":"Alias legado em múltiplos recursos do contrato: finance.view"},
-  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.accountsReceivable.view","reason":"Alias legado em múltiplos recursos do contrato: finance.accountsReceivable.view"},
-  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.accountsPayable.view","reason":"Alias legado em múltiplos recursos do contrato: finance.accountsPayable.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:reports.view","reason":"Alias legado em múltiplos recursos do contrato: reports.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:settings.nomus.sync","reason":"Alias legado em múltiplos recursos do contrato: settings.nomus.sync"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:inventory.view","reason":"Alias legado em múltiplos recursos do contrato: inventory.view"},

@@ -20,6 +20,7 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
 import {
   canAccessResourceClient,
   createSidebarCanViewResource,
+  ResourceKeys,
   type FrontendPermissionResource,
 } from "@/src/lib/permissionsClient.js";
 import { resolveSidebarModuleResourceKey } from "@/src/lib/sidebarMenuResources.js";
@@ -81,7 +82,39 @@ export function canViewModule(
 
   const resourceKey = resolveSidebarModuleResourceKey(moduleId);
   if (resourceKey) {
-    return createSidebarCanViewResource(user)(resourceKey);
+    const viewSidebar = createSidebarCanViewResource(user);
+    if (viewSidebar(resourceKey)) return true;
+    // P09: shell Financeiro — filho 1:1 (ex.: Contas a Pagar) abre /finance
+    // sem conceder Conciliação nem o MENU via alias amplo.
+    if (moduleId === "finance") {
+      return (
+        canAccessResourceClient(user, ResourceKeys.FINANCEIRO_CONTAS_PAGAR, "view", {
+          elevateFromDescendants: false,
+        }) ||
+        canAccessResourceClient(user, ResourceKeys.FINANCEIRO_CONTAS_RECEBER, "view", {
+          elevateFromDescendants: false,
+        }) ||
+        canAccessResourceClient(
+          user,
+          ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
+          "view",
+          { elevateFromDescendants: false }
+        ) ||
+        canAccessResourceClient(user, ResourceKeys.FINANCE_OPEX, "view", {
+          elevateFromDescendants: false,
+        }) ||
+        canAccessResourceClient(user, ResourceKeys.FINANCE_TAXES, "view", {
+          elevateFromDescendants: false,
+        }) ||
+        canAccessResourceClient(user, ResourceKeys.FINANCE_REPORTS, "view", {
+          elevateFromDescendants: false,
+        }) ||
+        canAccessResourceClient(user, ResourceKeys.FINANCE_SUPPLIERS, "view", {
+          elevateFromDescendants: false,
+        })
+      );
+    }
+    return false;
   }
   return canAccessModule(moduleId, checker);
 }

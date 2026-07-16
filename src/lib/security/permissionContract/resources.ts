@@ -195,7 +195,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/transformation-simulator",
     sortOrder: 22,
     actions: [
-      V(["products.view", "simulations.view", "costs.view"], "OR de acesso ao módulo"),
+      V(["products.view", "simulations.view"], "OR de acesso ao módulo"),
     ],
     relatedEndpoints: [],
     sensitivity: "medium",
@@ -214,7 +214,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/materials",
     sortOrder: 23,
     actions: [
-      V(["materials.view", "costs.view"]),
+      V(["materials.view"]),
       U(["materials.edit"], "legado materials.edit"),
     ],
     relatedEndpoints: ["/api/materials"],
@@ -310,7 +310,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/simulations",
     sortOrder: 24,
     actions: [
-      V(["simulations.view", "costs.view"]),
+      V(["simulations.view"]),
       C(["simulations.create"]),
     ],
     relatedEndpoints: ["/api/simulations", "/api/new-product-simulations"],
@@ -795,8 +795,6 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     actions: [
       V([
         "finance.view",
-        "finance.accountsReceivable.view",
-        "finance.accountsPayable.view",
         "reports.view",
       ]),
     ],
@@ -1237,7 +1235,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/machines",
     sortOrder: 63,
     actions: [
-      V(["machines.view", "costs.view"]),
+      V(["machines.view"]),
       U(["machines.edit"]),
     ],
     relatedEndpoints: ["/api/machines"],
@@ -1336,7 +1334,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/employees",
     sortOrder: 71,
     actions: [
-      V(["employees.view", "costs.view"]),
+      V(["employees.view"]),
       C(["employees.create", "employees.edit"]),
       U(["employees.edit"]),
     ],

@@ -161,7 +161,7 @@ export function buildSystemLinksViewerCaps(input: {
     canViewCustomers: has("customers.view"),
     canViewFleet: has("fleet.view"),
     canViewEmployees:
-      has("employees.view") || has("employees.edit") || has("costs.view"),
+      has("employees.view") || has("employees.edit"),
     canOpenAudit:
       has("employees.links.manage") ||
       has("people.link.manage") ||

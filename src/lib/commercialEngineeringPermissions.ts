@@ -126,15 +126,13 @@ export function listVisibleProductTabIds(
 
 export function canViewTransformationSimulator(check: ResourceAwareChecker): boolean {
   return legacyOrResource(check, ResourceKeys.ENGENHARIA_SIMULADOR_INJECAO, () =>
-    check.hasPermission("products.view") ||
-      check.hasPermission("simulations.view") ||
-      check.hasPermission("costs.view")
+    check.hasPermission("products.view") || check.hasPermission("simulations.view")
   );
 }
 
 export function canViewSimulations(check: ResourceAwareChecker): boolean {
   return legacyOrResource(check, ResourceKeys.ENGENHARIA_SIMULACOES, () =>
-    check.hasPermission("simulations.view") || check.hasPermission("costs.view")
+    check.hasPermission("simulations.view")
   );
 }
 

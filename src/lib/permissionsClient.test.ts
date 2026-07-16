@@ -5,6 +5,7 @@ import {
   PERMISSION_EMPTY_TABS_MESSAGE,
   ResourceKeys,
   createPermissionsApi,
+  createSidebarCanViewResource,
 } from "./permissionsClient.ts";
 
 function user(partial: {
@@ -131,14 +132,18 @@ describe("permissionsClient UI", () => {
     assert.equal(empty.canView(ResourceKeys.ENGENHARIA), false);
     assert.equal(empty.canView(ResourceKeys.DASHBOARD), false);
 
-    const leticia = createPermissionsApi(
-      user({
-        role: "VIEWER",
-        permissions: ["finance.accountsPayable.view"],
-      })
+    const leticiaUser = user({
+      role: "VIEWER",
+      permissions: ["finance.accountsPayable.view"],
+    });
+    const leticia = createPermissionsApi(leticiaUser);
+    // P09: AP 1:1 Contas a Pagar; sem Conciliação; MENU sidebar sem elevação.
+    assert.equal(leticia.canView(ResourceKeys.FINANCEIRO_CONTAS_PAGAR), true);
+    assert.equal(leticia.canView(ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA), false);
+    assert.equal(
+      createSidebarCanViewResource(leticiaUser)(ResourceKeys.FINANCEIRO),
+      false
     );
-    // FE ainda mapeia AP no menu Financeiro (bleed documentado P09); Engenharia permanece negada.
-    assert.equal(leticia.canView(ResourceKeys.FINANCEIRO), true);
     assert.equal(leticia.canView(ResourceKeys.ENGENHARIA), false);
 
     const legacy = createPermissionsApi(

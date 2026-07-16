@@ -170,10 +170,16 @@ describe("navigationGroups — permissões preservadas", () => {
     }
   });
 
-  it("legado costs.view ainda refletido nos módulos de operação/custo", () => {
-    for (const moduleId of ["employees", "machines", "materials", "opex", "simulations"] as const) {
-      assert.ok(MODULE_MENU_PERMISSION_KEYS[moduleId].includes("costs.view"));
-      assert.equal(canAccessModule(moduleId, checker(["costs.view"])), true);
+  it("P09: costs.view só em opex; não em RH/máquinas/suprimentos/simulações", () => {
+    assert.ok(MODULE_MENU_PERMISSION_KEYS.opex.includes("costs.view"));
+    assert.equal(canAccessModule("opex", checker(["costs.view"])), true);
+    for (const moduleId of ["employees", "machines", "materials", "simulations"] as const) {
+      assert.equal(
+        MODULE_MENU_PERMISSION_KEYS[moduleId].includes("costs.view"),
+        false,
+        moduleId
+      );
+      assert.equal(canAccessModule(moduleId, checker(["costs.view"])), false, moduleId);
     }
   });
 });
