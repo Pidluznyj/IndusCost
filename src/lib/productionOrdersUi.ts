@@ -68,6 +68,56 @@ export function formatProductionOrderStatusLabel(status: string | null | undefin
   return status;
 }
 
+export type ProductionOrderDeliveryTiming =
+  | "ON_TIME"
+  | "LATE"
+  | "UNAVAILABLE";
+
+/**
+ * Status da entrega vs data planejada (grade OP).
+ * entrega > planejada → fora do prazo; entrega <= planejada → no prazo.
+ */
+export function resolveProductionOrderDeliveryTiming(
+  plannedAt: string | null | undefined,
+  deliveryAt: string | null | undefined
+): ProductionOrderDeliveryTiming {
+  if (plannedAt == null || plannedAt === "" || deliveryAt == null || deliveryAt === "") {
+    return "UNAVAILABLE";
+  }
+  const plannedMs = Date.parse(plannedAt);
+  const deliveryMs = Date.parse(deliveryAt);
+  if (!Number.isFinite(plannedMs) || !Number.isFinite(deliveryMs)) {
+    return "UNAVAILABLE";
+  }
+  return deliveryMs > plannedMs ? "LATE" : "ON_TIME";
+}
+
+export function formatProductionOrderDeliveryTimingLabel(
+  timing: ProductionOrderDeliveryTiming
+): string {
+  switch (timing) {
+    case "ON_TIME":
+      return "Entregue no prazo";
+    case "LATE":
+      return "Entregue fora do prazo";
+    default:
+      return "—";
+  }
+}
+
+export function productionOrderDeliveryTimingOverlayTone(
+  timing: ProductionOrderDeliveryTiming
+): "emerald" | "amber" | "slate" {
+  switch (timing) {
+    case "ON_TIME":
+      return "emerald";
+    case "LATE":
+      return "amber";
+    default:
+      return "slate";
+  }
+}
+
 export function formatProductionOrderPrimaryOrder(
   row: Pick<ProductionOrderGridRow, "currentSalesOrders">
 ): string {
