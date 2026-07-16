@@ -1,0 +1,6 @@
+subjectRef,role,scenarioTag,status,legacyPermissionCount,migratableKeyCount,pendingCount,deltaOverrideCount
+53817c43f05f,VIEWER,,skipped_idempotent,1,1,0,0
+40ce03babcd4,VIEWER,,pending_only,2,1,2,0
+093d7f416291,VIEWER,,ready,2,2,0,2
+3f2f13d832c2,VIEWER,,skipped_no_legacy_grants,0,0,0,0
+4f59ca303fb9,SUPER_ADMIN,,skipped_super_admin,0,0,0,0

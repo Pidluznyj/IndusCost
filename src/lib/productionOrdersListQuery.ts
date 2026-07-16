@@ -3,6 +3,7 @@
  * Puro — sem Prisma / Express.
  */
 import { safeTrim } from "@/src/lib/safeTrim.js";
+import { wallTimeInTimeZoneToUtc } from "@/src/lib/nomusProductionOrdersParsers.js";
 
 export const PRODUCTION_ORDERS_LIST_DEFAULT_PAGE_SIZE = 50;
 export const PRODUCTION_ORDERS_LIST_MAX_PAGE_SIZE = 200;
@@ -84,7 +85,24 @@ function optTrim(value: unknown): string | null {
 function parsePeriodDate(value: unknown, param: "from" | "to"): Date | null {
   const raw = optTrim(first(value));
   if (!raw) return null;
-  const d = new Date(raw);
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const boundary = dateOnly
+    ? wallTimeInTimeZoneToUtc({
+        year: Number(dateOnly[1]),
+        month: Number(dateOnly[2]),
+        day: Number(dateOnly[3]),
+        hour: param === "from" ? 0 : 23,
+        minute: param === "from" ? 0 : 59,
+        second: param === "from" ? 0 : 59,
+      })
+    : null;
+  const d = dateOnly
+    ? boundary == null
+      ? new Date(Number.NaN)
+      : param === "to"
+        ? new Date(boundary.getTime() + 999)
+        : boundary
+    : new Date(raw);
   if (Number.isNaN(d.getTime())) {
     throw new ProductionOrdersListQueryError(
       param === "from" ? "INVALID_FROM" : "INVALID_TO",

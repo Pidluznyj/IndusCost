@@ -72,16 +72,17 @@ export function ProductionOrdersModule() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setSearch(searchDraft.trim());
-      setTipo(tipoDraft.trim());
-      setCompany(companyDraft.trim());
+      const nextSearch = searchDraft.trim();
+      const nextTipo = tipoDraft.trim();
+      const nextCompany = companyDraft.trim();
+      if (nextSearch === search && nextTipo === tipo && nextCompany === company) return;
+      setPage(1);
+      setSearch(nextSearch);
+      setTipo(nextTipo);
+      setCompany(nextCompany);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, tipoDraft, companyDraft]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, status, tipo, company, from, to]);
+  }, [searchDraft, tipoDraft, companyDraft, search, tipo, company]);
 
   useEffect(() => {
     const next = new URLSearchParams();
@@ -116,6 +117,10 @@ export function ProductionOrdersModule() {
     )
       .then((data) => {
         if (controller.signal.aborted) return;
+        if (data.total > 0 && data.page > data.totalPages) {
+          setPage(data.totalPages);
+          return;
+        }
         setRows(data.rows);
         setTotal(data.total);
         setTotalPages(data.totalPages);
@@ -153,7 +158,19 @@ export function ProductionOrdersModule() {
     to,
   });
   const statusChips = useMemo(() => buildStatusChipEntries(statusCounts), [statusCounts]);
+  const statusTotal = useMemo(
+    () => Object.values(statusCounts).reduce((sum, count) => sum + count, 0),
+    [statusCounts]
+  );
   const latestSyncedAt = useMemo(() => resolveLatestSyncedAt(rows), [rows]);
+  const draftFiltersActive = Boolean(
+    searchDraft.trim() ||
+      tipoDraft.trim() ||
+      companyDraft.trim() ||
+      status ||
+      from ||
+      to
+  );
 
   if (!canView) {
     return (
@@ -242,7 +259,10 @@ export function ProductionOrdersModule() {
               data-testid="production-orders-from"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
               value={from}
-              onChange={(event) => setFrom(event.target.value)}
+              onChange={(event) => {
+                setPage(1);
+                setFrom(event.target.value);
+              }}
             />
           </FilterField>
           <FilterField label="Abertura até">
@@ -251,15 +271,19 @@ export function ProductionOrdersModule() {
               data-testid="production-orders-to"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
               value={to}
-              onChange={(event) => setTo(event.target.value)}
+              onChange={(event) => {
+                setPage(1);
+                setTo(event.target.value);
+              }}
             />
           </FilterField>
           <div className="flex items-end">
             <button
               type="button"
               data-testid="production-orders-clear-filters"
-              className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/50"
+              className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-40"
               onClick={clearFilters}
+              disabled={!draftFiltersActive}
             >
               Limpar filtros
             </button>
@@ -270,14 +294,17 @@ export function ProductionOrdersModule() {
       <div
         className="flex flex-wrap gap-2"
         data-testid="production-orders-status-chips"
-        role="tablist"
+        role="group"
         aria-label="Filtro por status"
       >
         <StatusChip
-          label="Todos"
+          label={`Todos (${statusTotal})`}
           selected={status == null}
           testId="production-orders-status-all"
-          onClick={() => setStatus(null)}
+          onClick={() => {
+            setPage(1);
+            setStatus(null);
+          }}
         />
         {statusChips.map((chip) => (
           <StatusChip
@@ -285,7 +312,10 @@ export function ProductionOrdersModule() {
             label={`${chip.label} (${chip.count})`}
             selected={status === chip.value}
             testId={`production-orders-status-${chip.value}`}
-            onClick={() => setStatus(chip.value)}
+            onClick={() => {
+              setPage(1);
+              setStatus(chip.value);
+            }}
           />
         ))}
       </div>
@@ -298,7 +328,7 @@ export function ProductionOrdersModule() {
           Total filtrado: <strong className="text-foreground">{total}</strong>
         </span>
         <span>
-          Última sincronização nos dados:{" "}
+          Última sincronização na página:{" "}
           <strong className="text-foreground">
             {formatProductionOrderDateTime(latestSyncedAt)}
           </strong>
@@ -307,6 +337,7 @@ export function ProductionOrdersModule() {
 
       {errorMessage ? (
         <div
+          role="alert"
           className={cn(
             "rounded-xl border p-4 text-sm",
             errorKind === "api_unavailable"
@@ -337,13 +368,16 @@ export function ProductionOrdersModule() {
       <div
         className="overflow-hidden rounded-xl border border-border bg-card"
         data-testid="production-orders-grid"
+        aria-busy={loading}
       >
         {loading ? (
           <div
             className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground"
             data-testid="production-orders-loading"
+            role="status"
+            aria-live="polite"
           >
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Carregando ordens de produção…
           </div>
         ) : showEmptyCatalog ? (
@@ -363,6 +397,9 @@ export function ProductionOrdersModule() {
         ) : (
           <div className="max-w-full overflow-x-auto">
             <table className="min-w-[1280px] text-left text-sm">
+              <caption className="sr-only">
+                Ordens de Produção sincronizadas do Nomus. Ative uma linha para abrir a auditoria.
+              </caption>
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   {[
@@ -403,6 +440,8 @@ export function ProductionOrdersModule() {
         <div
           className="flex items-center justify-between gap-3 text-sm"
           data-testid="production-orders-pagination"
+          role="navigation"
+          aria-label="Paginação das Ordens de Produção"
         >
           <span className="text-muted-foreground">
             Página {page} de {totalPages}
@@ -465,8 +504,7 @@ function StatusChip({
   return (
     <button
       type="button"
-      role="tab"
-      aria-selected={selected}
+      aria-pressed={selected}
       data-testid={testId}
       className={cn(
         "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
@@ -497,7 +535,8 @@ export function ProductionOrderGridTableRow({
       tabIndex={0}
       aria-selected={selected}
       data-selected={selected ? "true" : "false"}
-      className="cursor-pointer border-b border-border/70 outline-none last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40"
+      aria-label={`Abrir auditoria da Ordem de Produção ${row.name ?? row.externalId}`}
+      className="cursor-pointer border-b border-border/70 outline-none last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40 data-[selected=true]:bg-primary/5"
       data-testid={`production-orders-row-${row.externalId}`}
       onClick={onOpen}
       onKeyDown={(event) => {

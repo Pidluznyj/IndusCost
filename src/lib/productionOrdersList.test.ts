@@ -117,6 +117,20 @@ describe("productionOrdersListQuery", () => {
     assert.ok(q.openedFrom);
     assert.ok(q.openedTo);
   });
+
+  it("data civil cobre o dia inteiro em America/Sao_Paulo", () => {
+    const q = parseProductionOrdersListQuery({
+      from: "2026-03-10",
+      to: "2026-03-10",
+    });
+    assert.equal(q.openedFrom?.toISOString(), "2026-03-10T03:00:00.000Z");
+    assert.equal(q.openedTo?.toISOString(), "2026-03-11T02:59:59.999Z");
+    assert.throws(
+      () => parseProductionOrdersListQuery({ from: "2026-02-31" }),
+      (error: unknown) =>
+        error instanceof ProductionOrdersListQueryError && error.code === "INVALID_FROM"
+    );
+  });
 });
 
 describe("buildProductionOrdersListWhere", () => {

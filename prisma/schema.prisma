@@ -2379,6 +2379,9 @@ model NomusProductionOrder {
   @@index([lastChangedAt])
   @@index([payloadHash])
   @@index([name])
+  @@index([openedAt, externalId])
+  @@index([status, openedAt, externalId])
+  @@index([tipo, openedAt, externalId])
 }
 
 /// Vínculo oficial OP ↔ Pedido de Venda / item (itensPedido do payload `/rest/ordens`).
