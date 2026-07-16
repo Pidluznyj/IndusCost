@@ -78,11 +78,28 @@ Filtros pontuais SyncV1 (legado unificado): `--externalId`, `--name`, `--salesOr
 
 ## 4. Pós-sync Pedidos de Venda
 
-Após `nomusSalesOrdersSyncV1.ts --apply` com pedidos afetados:
+Após `nomusSalesOrdersSyncV1.ts --apply` **concluir com sucesso**:
 
-1. materialização de comissões (se habilitada);
-2. auto-assign de responsável comercial;
-3. **`runNomusProductionOrdersAfterSalesOrdersSync`** (soft-fail).
+1. materialização de comissões (se habilitada e houver IDs afetados);
+2. auto-assign de responsável comercial (se houver IDs afetados);
+3. **`runNomusProductionOrdersAfterSalesOrdersSync`** → **incremental apply** (OP-13; soft-fail).
+
+Regras:
+
+- falha em Pedidos → OP **não** inicia (hook só no fim do apply);
+- falha / lock em OP → pedidos **permanecem válidos**; falha logada claramente;
+- **nunca** backfill automático; **nunca** full scan;
+- uma única execução de OP por fluxo de pedidos;
+- `respectGlobalLock=false` (já sob flock global dos pedidos).
+
+Fluxos que herdam o hook (via `sales-orders:apply`):
+
+- `scripts/runNomusSalesOrdersSync.sh` (rotina ~2h);
+- `scripts/runNomusSalesOrdersWideReconciliation.sh`;
+- `npm run sync:nomus:sales-orders:apply`;
+- orquestrador quando o target `sales-orders` apply roda.
+
+**Não** aplicável: daily sync (não inclui sales-orders), AR/AP/NF-e admin.
 
 Desligar: `NOMUS_PRODUCTION_ORDERS_AFTER_SYNC=false`.
 

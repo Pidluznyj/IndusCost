@@ -22,7 +22,10 @@ import { parseNomusSalesOrderItemStatus } from "../src/lib/sales/nomusSalesOrder
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import { autoAssignCommercialOwnersAfterNomusSync } from "../src/lib/commercial/crmCommercialOwnerAutoAssign.ts";
-import { runNomusProductionOrdersAfterSalesOrdersSync } from "./nomusProductionOrdersSyncV1.ts";
+import {
+  formatProductionOrdersAfterSalesOrdersLogLine,
+  runNomusProductionOrdersAfterSalesOrdersSync,
+} from "../src/lib/nomusProductionOrdersAfterSalesOrders.server.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 import {
   formatSalesOrdersPaginationNote,
@@ -1760,22 +1763,39 @@ async function main(): Promise<void> {
         err instanceof Error ? err.message : err
       );
     }
+  }
 
-    // Ordens de Produção: sync oficial `/rest/ordens` após pedidos (soft-fail).
+  // OP-13: após apply de pedidos bem-sucedido → incremental de OP (uma vez; soft-fail).
+  // Pedidos já sincronizados permanecem válidos se OP falhar / lock bloquear.
+  // Não roda em dry-run. Nunca dispara backfill.
+  if (isApply) {
     try {
-      const linked = await prisma.salesOrder.findMany({
-        where: { id: { in: applied.affectedSalesOrderIds } },
-        select: { externalSalesOrderId: true },
-      });
+      const affectedIds = applied?.affectedSalesOrderIds ?? [];
+      const linked =
+        affectedIds.length > 0
+          ? await prisma.salesOrder.findMany({
+              where: { id: { in: affectedIds } },
+              select: { externalSalesOrderId: true },
+            })
+          : [];
       const salesOrderExternalIds = linked
         .map((row) => row.externalSalesOrderId)
         .filter((id): id is number => id != null && Number.isFinite(id) && id > 0);
-      const opSummary = await runNomusProductionOrdersAfterSalesOrdersSync(prisma, {
+      const opResult = await runNomusProductionOrdersAfterSalesOrdersSync({
+        prisma,
         salesOrderExternalIds,
       });
-      if (opSummary) {
-        console.log(
-          `[nomusSalesOrdersSyncV1] production-orders: mapped=${opSummary.mapped} create=${opSummary.create} update=${opSummary.update} links=${opSummary.salesLinks} errors=${opSummary.writeErrors}`
+      console.log(
+        `[nomusSalesOrdersSyncV1] ${formatProductionOrdersAfterSalesOrdersLogLine(opResult)}`
+      );
+      if (
+        opResult.summary &&
+        !opResult.skipped &&
+        !opResult.summary.lockBlocked &&
+        (opResult.summary.errors > 0 || (opResult.summary.exitCode ?? 0) !== 0)
+      ) {
+        console.error(
+          `[nomusSalesOrdersSyncV1] production-orders incremental falhou (sync de pedidos permanece válido): errors=${opResult.summary.errors} exitCode=${opResult.summary.exitCode ?? 0}`
         );
       }
     } catch (err) {

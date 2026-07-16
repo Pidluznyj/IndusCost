@@ -31,8 +31,8 @@ npm sync:nomus:production-orders:{incremental|backfill}:{preview|apply}
         ├─ Reconcile FKs locais (sem API, se apply)
         └─ IntegrationRun + log [nomus-production-orders]
 
-Pós Pedidos de Venda (apply)
-        └─ runNomusProductionOrdersAfterSalesOrdersSync (soft-fail; herda lock global)
+Pós Pedidos de Venda (apply OK)
+        └─ runNomusProductionOrdersAfterSalesOrdersSync → incremental apply (soft-fail; 1×; sem backfill)
 ```
 
 Princípios:

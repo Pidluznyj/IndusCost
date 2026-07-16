@@ -162,6 +162,7 @@ describe("nomusProductionOrders wiring", () => {
     assert.match(script, /runNomusProductionOrdersAfterSalesOrdersSync/);
     assert.match(sales, /runNomusProductionOrdersAfterSalesOrdersSync/);
     assert.match(sales, /production-orders sync falhou/);
+    assert.match(sales, /nomusProductionOrdersAfterSalesOrders/);
   });
 
   it("schema e migration aditivos OP-02", () => {

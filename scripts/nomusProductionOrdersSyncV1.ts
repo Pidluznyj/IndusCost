@@ -24,8 +24,6 @@ import {
   buildProductionOrdersPageParams,
   buildProductionOrdersSyncQueries,
   hasNextProductionOrdersPage,
-  isProductionOrdersAfterSalesSyncEnabled,
-  NOMUS_PRODUCTION_ORDERS_DEFAULT_INCREMENTAL_MAX_PAGES,
   NOMUS_PRODUCTION_ORDERS_DEFAULT_PAGE_SIZE,
   NOMUS_PRODUCTION_ORDERS_RESOURCE,
   parseProductionOrdersSyncCli,
@@ -37,7 +35,6 @@ import {
   type ProductionOrdersSyncCliOptions,
 } from "../src/lib/nomusProductionOrdersSyncLogic.ts";
 import { upsertNomusProductionOrder } from "../src/lib/nomusProductionOrdersRepository.server.ts";
-import { reconcilePendingNomusProductionOrderSalesLinks } from "../src/lib/nomusProductionOrdersSalesLinks.server.ts";
 import { runNomusProductionOrdersPreviewWithPrisma } from "../src/lib/nomusProductionOrdersPreview.server.ts";
 import { PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER } from "../src/lib/nomusProductionOrdersPreview.ts";
 import { readSalesOrdersPageCursor } from "../src/lib/nomusSalesOrdersPaginationCursor.ts";
@@ -336,57 +333,22 @@ export async function runNomusProductionOrdersSync(args: {
 }
 
 /**
- * Pós-sync de Pedidos de Venda: incremental limitado (soft-fail no chamador).
- * Não consulta Nomus em abertura de tela — só scripts/cron.
+ * Pós-sync Pedidos → OP incremental (OP-13).
+ * Delega para `nomusProductionOrdersAfterSalesOrders.server.ts` (nunca backfill).
  */
 export async function runNomusProductionOrdersAfterSalesOrdersSync(
   prisma: PrismaClient,
   options?: { salesOrderExternalIds?: number[]; maxPages?: number }
-): Promise<NomusProductionOrdersSyncSummary | null> {
-  if (!isProductionOrdersAfterSalesSyncEnabled()) {
-    console.warn(`${LOG_PREFIX} pós-sync desabilitado (NOMUS_PRODUCTION_ORDERS_AFTER_SYNC).`);
-    return null;
-  }
-
-  const salesOrderExternalIds = (options?.salesOrderExternalIds ?? []).filter(
-    (id) => Number.isFinite(id) && id > 0
+) {
+  const { runNomusProductionOrdersAfterSalesOrdersSync: runAfter } = await import(
+    "../src/lib/nomusProductionOrdersAfterSalesOrders.server.ts"
   );
-
-  const argv =
-    salesOrderExternalIds.length > 0
-      ? [
-          "apply",
-          `--salesOrderExternalId=${salesOrderExternalIds.join(",")}`,
-          `--max-pages=${options?.maxPages ?? 3}`,
-          `--page-size=${NOMUS_PRODUCTION_ORDERS_DEFAULT_PAGE_SIZE}`,
-        ]
-      : [
-          "apply",
-          "--strategy=incremental",
-          `--max-pages=${options?.maxPages ?? NOMUS_PRODUCTION_ORDERS_DEFAULT_INCREMENTAL_MAX_PAGES}`,
-          `--page-size=${NOMUS_PRODUCTION_ORDERS_DEFAULT_PAGE_SIZE}`,
-        ];
-
-  const summary = await runNomusProductionOrdersSync({ prisma, argv });
-
-  // Após pedidos sincronizados: preenche FKs locais em vínculos ainda pendentes.
-  try {
-    const reconciled = await reconcilePendingNomusProductionOrderSalesLinks(prisma, {
-      externalSalesOrderIds:
-        salesOrderExternalIds.length > 0 ? salesOrderExternalIds : undefined,
-      limit: 2000,
-    });
-    console.warn(
-      `${LOG_PREFIX} reconcile vínculos pendentes: scanned=${reconciled.scanned} updated=${reconciled.updated} salesOrderResolved=${reconciled.salesOrderResolved} salesOrderItemResolved=${reconciled.salesOrderItemResolved}`
-    );
-  } catch (error) {
-    console.error(
-      `${LOG_PREFIX} falha ao reconciliar vínculos pendentes (soft-fail):`,
-      error instanceof Error ? error.message : error
-    );
-  }
-
-  return summary;
+  // maxPages ignorado de propósito — incremental usa seus próprios limites (não full scan).
+  void options?.maxPages;
+  return runAfter({
+    prisma,
+    salesOrderExternalIds: options?.salesOrderExternalIds,
+  });
 }
 
 async function main(): Promise<void> {
