@@ -220,11 +220,12 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P12 — Proteção de abas
 
 - **Objetivo:** Tabs finance/CRM/etc. via `filterTabsByView` + keys canônicas.
-- **Escopo:** FinanceModule, CRM tabs, portfolio tabs.
+- **Escopo:** FinanceModule, CRM tabs, portfolio tabs, ProtectedTab, heranças documentadas.
 - **Deps:** P10.
 - **Risco:** médio.
 - **Aceite:** AP não mostra abas de conciliação.
 - **Rollback:** revert.
+- **Status (2026-07-16):** **feito.** `filterTabsByViewDto` / `canViewTabResource` no DTO; FinanceModule seções com resourceKey; portfolio UI via DTO; ProtectedTab DTO; heranças em `INTERNAL_SURFACE_INHERITANCE`; AP removido do OR legado de portfolio.
 
 ### P13 — Proteção de botões
 

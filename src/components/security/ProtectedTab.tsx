@@ -1,10 +1,11 @@
 import React from "react";
-import { usePermissions } from "@/src/hooks/usePermissions";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { PERMISSION_DENIED_TAB_MESSAGE } from "@/src/lib/permissionsClient";
 import {
-  PERMISSION_DENIED_TAB_MESSAGE,
-} from "@/src/lib/permissionsClient";
-import { canViewResource } from "@/src/lib/resourceNavigationAccess";
+  canViewTabResource,
+  navigationAccessContextFromAuth,
+} from "@/src/lib/resourceNavigationAccess";
 
 type Props = {
   resourceKey: string;
@@ -15,8 +16,9 @@ type Props = {
 };
 
 /**
- * Conteúdo de aba: se ativa sem permissão, mostra mensagem amigável
- * (ex.: deep-link / estado antigo). Se inativa, não renderiza.
+ * Conteúdo de aba (P12): view via DTO efetivo.
+ * Ativa sem permissão → PermissionDenied (não CSS-only).
+ * Inativa → null.
  */
 export function ProtectedTab({
   resourceKey,
@@ -24,11 +26,12 @@ export function ProtectedTab({
   children,
   deniedMessage = PERMISSION_DENIED_TAB_MESSAGE,
 }: Props) {
-  const { authUser } = usePermissions();
+  const auth = useAuth();
+  const ctx = navigationAccessContextFromAuth(auth);
 
   if (!active) return null;
 
-  if (!canViewResource(authUser, resourceKey)) {
+  if (!canViewTabResource(resourceKey, ctx)) {
     return (
       <PermissionDenied
         title="Aba sem permissão"

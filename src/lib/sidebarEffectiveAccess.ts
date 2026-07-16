@@ -1,16 +1,13 @@
-/**
- * P10 — Sidebar a partir do DTO de acesso efetivo (contrato canônico).
- * Backend/DTO = autoridade; sem canAccessModule / mega-key / role matrix na sidebar.
- */
-
-import type { AuthUser } from "@/src/lib/appAuthClient.js";
-import type { EffectiveAccessMeDto } from "@/src/lib/effectiveAccessDtoTypes.js";
+import type { SidebarAccessibleNavigation, SidebarMenuItemDef } from "@/src/lib/sidebarNavigation.js";
+import { projectInternalContractKeysFromLegacyBag } from "@/src/lib/internalSurfaceAccess.js";
 import { EFFECTIVE_ACCESS_PERMISSIONS_VERSION_PLACEHOLDER } from "@/src/lib/effectiveAccessDtoTypes.js";
 import { projectLegacyBagToBaseline } from "@/src/lib/security/effectiveAccess/legacyCompat.js";
 import {
   PERMISSION_CONTRACT_RESOURCES,
   type PermissionContractResource,
 } from "@/src/lib/security/permissionContract/index.js";
+import type { AuthUser } from "@/src/lib/appAuthClient.js";
+import type { EffectiveAccessMeDto } from "@/src/lib/effectiveAccessDtoTypes.js";
 import {
   buildGroupedNavigationStructure,
   type GroupedNavigationStructure,
@@ -22,7 +19,6 @@ import {
   type AppModuleId,
 } from "@/src/lib/modulePermissions.js";
 import { getModulePath } from "@/src/lib/navigationGroups.js";
-import type { SidebarAccessibleNavigation, SidebarMenuItemDef } from "@/src/lib/sidebarNavigation.js";
 
 /**
  * Chaves do **contrato** que revelam cada item da sidebar.
@@ -130,7 +126,13 @@ function buildSidebarDtoFromLegacyBag(args: {
   role: AuthUser["role"];
   legacyPermissions: readonly string[];
 }): EffectiveAccessMeDto {
-  const keys = projectSidebarContractKeysFromLegacyBag(args.legacyPermissions);
+  const sidebarKeys = projectSidebarContractKeysFromLegacyBag(
+    args.legacyPermissions
+  );
+  const internalKeys = projectInternalContractKeysFromLegacyBag(
+    args.legacyPermissions
+  );
+  const keys = [...new Set([...sidebarKeys, ...internalKeys])].sort();
   const actionsByResource: EffectiveAccessMeDto["actionsByResource"] = {};
   const capabilities: EffectiveAccessMeDto["capabilities"] = {};
   for (const resourceKey of keys) {

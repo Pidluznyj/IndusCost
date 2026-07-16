@@ -46,45 +46,48 @@ function pickDisplayRun(
  */
 export function FinancePortfolioReconciliationPage() {
   const permissions = usePermissions();
-  const canView = permissions.canViewPortfolioModule();
+  /** P12: módulo e abas via DTO (mesmo contrato da sidebar/rotas). */
+  const canView = permissions.canViewModule("portfolio-reconciliation");
   /**
    * Abas visíveis na UI (2026-07 em diante): somente Status Pedidos e
-   * Auditoria Pedido → Caixa, filtradas por permissão. Ver
+   * Auditoria Pedido → Caixa, filtradas por DTO. Ver
    * `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS` em `permissionsClient.ts`.
-   * As abas Conciliação/Inteligência da Carteira foram ocultadas, mas os
-   * services permanecem para reaproveitamento interno.
    */
-  const visibleTabs = useMemo<PortfolioReconciliationVisibleTabId[]>(
-    () => permissions.listVisiblePortfolioReconciliationTabs(),
-    // Recalcula quando o usuário efetivo muda (reload/refetch de /api/auth/me).
+  const visibleTabs = useMemo<PortfolioReconciliationVisibleTabId[]>(() => {
+    const whitelist = new Set(
+      PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) =>
+        isPortfolioReconciliationVisibleTabId(t.id)
+      ).map((t) => t.id)
+    );
+    return permissions
+      .filterTabsByViewDto(
+        PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) => whitelist.has(t.id))
+        // Tab dedicada basta; pai portfolio não é obrigatório (grant fino).
+      )
+      .map((t) => t.id as PortfolioReconciliationVisibleTabId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      permissions.authUser?.id,
-      permissions.authUser?.role,
-      permissions.authUser?.effectivePermissions?.join("|"),
-    ]
-  );
+  }, [
+    permissions.authUser?.id,
+    permissions.authUser?.role,
+    permissions.authUser?.effectivePermissions?.join("|"),
+  ]);
   const abortRef = useRef<AbortController | null>(null);
 
   const [runs, setRuns] = useState<PortfolioReconciliationRunsPayload["runs"]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
-   * Aba ativa. Default: Status Pedidos (primeira aba visível permitida).
-   * Aceita apenas ids da whitelist visível — qualquer estado antigo
-   * (`conciliation`, `intelligence`, `portfolio`, `carteira`, `reconciliation`)
-   * cai no fallback e vira `order-status-pedidos`.
+   * Aba ativa. pickAllowedTabId bloqueia seleção / estado legado não autorizado.
    */
   const [activeView, setActiveView] = useState<PortfolioReconciliationVisibleTabId>(
     () => visibleTabs[0] ?? "order-status-pedidos"
   );
 
   useEffect(() => {
-    if (visibleTabs.length === 0) return;
-    if (!isPortfolioReconciliationVisibleTabId(activeView) || !visibleTabs.includes(activeView)) {
-      setActiveView(visibleTabs[0]!);
-    }
-  }, [activeView, visibleTabs]);
+    const next = permissions.pickAllowedTabId(activeView, visibleTabs);
+    if (next && next !== activeView) setActiveView(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, visibleTabs.join("|")]);
 
   const loadRuns = useCallback(async () => {
     if (!canView) {

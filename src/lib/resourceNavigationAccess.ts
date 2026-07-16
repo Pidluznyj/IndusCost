@@ -30,6 +30,10 @@ import {
   EMPTY_SIDEBAR_NAVIGATION,
   resolveSidebarEffectiveAccessDto,
 } from "@/src/lib/sidebarEffectiveAccess.js";
+import {
+  canViewInternalSurfaceFromDto,
+  FINANCE_UI_SECTIONS,
+} from "@/src/lib/internalSurfaceAccess.js";
 
 export type ResourceViewOptions = {
   /** MENU: não elevar só por filhos; SUBMENU/TAB: elevação legada. Default: regras do sidebar. */
@@ -274,7 +278,30 @@ export function filterTabsByView<T extends { resourceKey: string }>(
 }
 
 /**
+ * P12 — view de aba/seção via DTO efetivo (contrato), não bag FE paralela.
+ */
+export function canViewTabResource(
+  resourceKey: string,
+  ctx: NavigationAccessContext
+): boolean {
+  if (ctx.authLoading || ctx.authError) return false;
+  const dto = resolveDto(ctx);
+  return canViewInternalSurfaceFromDto(dto, resourceKey);
+}
+
+/** Filtra abas pelo DTO (P12). */
+export function filterTabsByViewDto<T extends { resourceKey: string }>(
+  tabs: readonly T[],
+  ctx: NavigationAccessContext,
+  options?: { parentResourceKey?: string; requireParentView?: boolean }
+): T[] {
+  const canView: CanViewResourceFn = (key) => canViewTabResource(key, ctx);
+  return filterTabsByView(tabs, canView, options);
+}
+
+/**
  * Escolhe aba ativa sem loop: pedida se permitida; senão primeira permitida; senão null.
+ * Bloqueia seleção programática / query string / hash não autorizada.
  */
 export function pickAllowedTabId<T extends string>(
   requested: T | null | undefined,
@@ -283,6 +310,30 @@ export function pickAllowedTabId<T extends string>(
   if (allowedIds.length === 0) return null;
   if (requested && allowedIds.includes(requested)) return requested;
   return allowedIds[0] ?? null;
+}
+
+/**
+ * Resolve aba a partir de query/hash/state — só IDs permitidos.
+ */
+export function resolveActiveTabFromRequest<T extends string>(args: {
+  requested: T | null | undefined;
+  allowedTabs: ReadonlyArray<{ id: T; resourceKey: string }>;
+  ctx: NavigationAccessContext;
+  parentResourceKey?: string;
+}): { activeId: T | null; allowedIds: T[] } {
+  const allowed = filterTabsByViewDto(args.allowedTabs, args.ctx, {
+    parentResourceKey: args.parentResourceKey,
+  });
+  const allowedIds = allowed.map((t) => t.id);
+  return {
+    activeId: pickAllowedTabId(args.requested, allowedIds),
+    allowedIds,
+  };
+}
+
+/** Seções FinanceModule visíveis via DTO. */
+export function listVisibleFinanceSections(ctx: NavigationAccessContext) {
+  return filterTabsByViewDto(FINANCE_UI_SECTIONS, ctx);
 }
 
 /** Filtra recursos TAB do catálogo (pai + filhos). */

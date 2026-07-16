@@ -39,8 +39,10 @@ function checker(perms: string[]): PermissionChecker {
 }
 
 describe("finance portfolio reconciliation menu + page", () => {
-  it("item Financeiro > Conciliação de Carteira aparece no menu", () => {
-    const nav = buildAccessibleSidebarNavigation(checker(["finance.view"]));
+  it("item Financeiro > Conciliação de Carteira aparece no menu com grant dedicado", () => {
+    const nav = buildAccessibleSidebarNavigation(
+      checker(["finance.portfolioReconciliation.view"])
+    );
     const financeiro = nav.groups.find((g) => g.id === "financeiro");
     assert.ok(financeiro);
     assert.ok(financeiro!.items.some((i) => i.itemId === "portfolio-reconciliation"));
@@ -49,7 +51,10 @@ describe("finance portfolio reconciliation menu + page", () => {
       "/finance/portfolio-reconciliation"
     );
     assert.equal(
-      canAccessModule("portfolio-reconciliation", checker(["finance.view"])),
+      canAccessModule(
+        "portfolio-reconciliation",
+        checker(["finance.portfolioReconciliation.view"])
+      ),
       true
     );
     assert.equal(
@@ -144,16 +149,15 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /portfolio-reconciliation-empty-permission|PERMISSION_EMPTY_TABS_MESSAGE/);
   });
 
-  it("aba default = Status Pedidos e fallback cobre estado antigo (conciliation/intelligence)", () => {
+  it("aba default = Status Pedidos e fallback via pickAllowedTabId (P12)", () => {
     const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
-    // Default do useState: primeira visível, senão fallback estático para order-status-pedidos.
     assert.match(
       page,
       /useState<PortfolioReconciliationVisibleTabId>\s*\(\s*\(\)\s*=>\s*visibleTabs\[0\]\s*\?\?\s*"order-status-pedidos"\s*\)/
     );
-    // useEffect corrige activeView sempre que ele sair da whitelist visível.
-    assert.match(page, /isPortfolioReconciliationVisibleTabId\s*\(\s*activeView\s*\)/);
-    assert.match(page, /setActiveView\s*\(\s*visibleTabs\[0\]!/);
+    assert.match(page, /pickAllowedTabId\s*\(\s*activeView\s*,\s*visibleTabs\s*\)/);
+    assert.match(page, /filterTabsByViewDto/);
+    assert.match(page, /canViewModule\s*\(\s*"portfolio-reconciliation"\s*\)/);
   });
 
   it("whitelist visível declara somente Status Pedidos + Auditoria Pedido → Caixa (nessa ordem)", () => {

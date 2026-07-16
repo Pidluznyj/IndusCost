@@ -8,26 +8,20 @@ import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAcco
 import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
 import { FinanceCashFlowPage } from "@/src/components/finance/FinanceCashFlowPage";
 import { FinanceExecutiveReportPage } from "@/src/components/finance/FinanceExecutiveReportPage";
-import {
-  canViewFinanceAccountsPayable,
-} from "@/src/lib/financeAccountsPayablePermissions";
-import { canViewFinanceAccountsReceivable } from "@/src/lib/financeAccountsReceivablePermissions";
-import { canViewFinanceBilling } from "@/src/lib/financeBillingPermissions";
-import { canViewFinanceCashFlow } from "@/src/lib/financeCashFlowPermissions";
-import { canViewFinanceExecutiveReport } from "@/src/lib/financeExecutiveReportPermissions";
-import { canViewFinanceCostCenters } from "@/src/lib/financeCostCentersPermissions";
 import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/FinanceCostCentersPage";
 import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
-import { canViewFinanceSalesOrders } from "@/src/lib/financeSalesOrdersPermissions";
 import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
 import {
-  FINANCE_SECTIONS,
   getFinanceDefaultPath,
-  getFinanceSectionPath,
   isFinanceCanonicalPath,
   resolveFinanceCanonicalPath,
   type FinanceSectionId,
 } from "@/src/lib/financeNavigation";
+import {
+  listVisibleFinanceSections,
+  navigationAccessContextFromAuth,
+} from "@/src/lib/resourceNavigationAccess";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 
 function FinanceCanonicalRedirect() {
   const location = useLocation();
@@ -35,28 +29,23 @@ function FinanceCanonicalRedirect() {
   return <Navigate to={target} replace />;
 }
 
+function DeniedSection({ label }: { label: string }) {
+  return (
+    <PermissionDenied
+      title="Seção sem permissão"
+      message={`Você não tem permissão para ${label}.`}
+      testId="finance-section-denied"
+    />
+  );
+}
+
 export function FinanceModule() {
   const auth = useAuth();
   const location = useLocation();
-  const canViewAccountsReceivable = canViewFinanceAccountsReceivable(auth);
-  const canViewAccountsPayable = canViewFinanceAccountsPayable(auth);
-  const canViewBilling = canViewFinanceBilling(auth);
-  const canViewCashFlow = canViewFinanceCashFlow(auth);
-  const canViewExecutiveReport = canViewFinanceExecutiveReport(auth);
-  const canViewSalesOrders = canViewFinanceSalesOrders(auth);
-  const canViewCostCenters = canViewFinanceCostCenters(auth);
+  const ctx = navigationAccessContextFromAuth(auth);
 
-  const visibleSections = FINANCE_SECTIONS.filter((section) => {
-    if (section.id === "cash-flow") return canViewCashFlow;
-    if (section.id === "accounts-receivable") return canViewAccountsReceivable;
-    if (section.id === "accounts-payable") return canViewAccountsPayable;
-    if (section.id === "billing") return canViewBilling;
-    if (section.id === "sales-orders") return canViewSalesOrders;
-    if (section.id === "cost-centers") return canViewCostCenters;
-    if (section.id === "executive-report") return canViewExecutiveReport;
-    return false;
-  });
-
+  const visibleSections = listVisibleFinanceSections(ctx);
+  const visibleIds = new Set(visibleSections.map((s) => s.id));
   const defaultPath = visibleSections[0]?.path ?? getFinanceDefaultPath();
 
   if (!isFinanceCanonicalPath(location.pathname)) {
@@ -71,64 +60,64 @@ export function FinanceModule() {
     );
   }
 
+  // URL de seção sem grant → redirect para primeira autorizada (não renderiza conteúdo oculto)
+  const pathNorm = location.pathname.replace(/\/+$/, "") || "/";
+  const onDeniedSection =
+    pathNorm.startsWith("/finance/") &&
+    !visibleSections.some(
+      (s) => pathNorm === s.path || pathNorm.startsWith(`${s.path}/`)
+    ) &&
+    pathNorm !== "/finance";
+  if (onDeniedSection && pathNorm !== defaultPath) {
+    return <Navigate to={defaultPath} replace />;
+  }
+
+  const can = (id: FinanceSectionId) => visibleIds.has(id);
+
   const sectionRoutes: Record<FinanceSectionId, React.ReactNode> = {
-    "cash-flow": canViewCashFlow ? (
+    "cash-flow": can("cash-flow") ? (
       <FinanceCashFlowPage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Fluxo de Caixa.
-      </div>
+      <DeniedSection label="Fluxo de Caixa" />
     ),
-    "accounts-receivable": canViewAccountsReceivable ? (
+    "accounts-receivable": can("accounts-receivable") ? (
       <FinanceAccountsReceivablePage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Contas a Receber.
-      </div>
+      <DeniedSection label="Contas a Receber" />
     ),
-    "accounts-payable": canViewAccountsPayable ? (
+    "accounts-payable": can("accounts-payable") ? (
       <FinanceAccountsPayablePage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Contas a Pagar.
-      </div>
+      <DeniedSection label="Contas a Pagar" />
     ),
-    billing: canViewBilling ? (
+    billing: can("billing") ? (
       <FinanceBillingPage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Faturamento.
-      </div>
+      <DeniedSection label="Faturamento" />
     ),
-    "sales-orders": canViewSalesOrders ? (
+    "sales-orders": can("sales-orders") ? (
       <FinanceSalesOrdersPage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Pedidos de Venda.
-      </div>
+      <DeniedSection label="Pedidos de Venda" />
     ),
-    "cost-centers": canViewCostCenters ? (
+    "cost-centers": can("cost-centers") ? (
       <FinanceCostCentersPage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Centros de Custo.
-      </div>
+      <DeniedSection label="Centros de Custo" />
     ),
-    "executive-report": canViewExecutiveReport ? (
+    "executive-report": can("executive-report") ? (
       <FinanceExecutiveReportPage />
     ) : (
-      <div className="rounded-xl border border-border bg-card/60 p-4 text-sm text-muted-foreground">
-        Sem permissão para Relatório Presidencial.
-      </div>
+      <DeniedSection label="Relatório Presidencial" />
     ),
   };
 
   return (
     <div className="space-y-6" data-testid="finance-module-with-tabs">
-      {canViewExecutiveReport ? (
+      {can("executive-report") ? (
         <div className="finance-executive-report-print-no-print flex justify-end">
           <NavLink
-            to={getFinanceSectionPath("executive-report")}
+            to="/finance/executive-report"
             className={({ isActive }) =>
               cn(
                 "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
@@ -175,7 +164,16 @@ export function FinanceModule() {
         <Route path="accounts-payable" element={sectionRoutes["accounts-payable"]} />
         <Route path="billing" element={sectionRoutes.billing} />
         <Route path="sales-orders" element={sectionRoutes["sales-orders"]} />
-        <Route path="cost-centers/:costCenterId" element={sectionRoutes["cost-centers"] ? <FinanceCostCenterDetailPage /> : <Navigate to={defaultPath} replace />} />
+        <Route
+          path="cost-centers/:costCenterId"
+          element={
+            can("cost-centers") ? (
+              <FinanceCostCenterDetailPage />
+            ) : (
+              <Navigate to={defaultPath} replace />
+            )
+          }
+        />
         <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
         <Route path="executive-report" element={sectionRoutes["executive-report"]} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />

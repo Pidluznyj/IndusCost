@@ -37,13 +37,14 @@ describe("financePortfolioReconciliationPermissions", () => {
     );
   });
 
-  it("legado finance.view continua liberando módulo e abas", () => {
+  it("legado finance.view continua liberando helpers de módulo/abas (canAccessModule exige chave dedicada)", () => {
     const auth = checker(["finance.view"]);
     assert.equal(canViewFinancePortfolioReconciliation(auth), true);
     assert.equal(canViewPortfolioConciliationTab(auth), true);
     assert.equal(canViewPortfolioIntelligenceTab(auth), true);
     assert.equal(canViewPortfolioOrderToCashAuditTab(auth), true);
-    assert.equal(canAccessModule("portfolio-reconciliation", auth), true);
+    // P11/P12: path/módulo sidebar usa DTO + chaves dedicadas — finance.view não basta
+    assert.equal(canAccessModule("portfolio-reconciliation", auth), false);
   });
 
   it("chave dedicada de módulo libera todas as abas", () => {
@@ -67,6 +68,13 @@ describe("financePortfolioReconciliationPermissions", () => {
     assert.equal(canViewPortfolioOrderToCashAuditTab(auth), false);
     assert.deepEqual(listVisiblePortfolioReconciliationTabs(auth), ["intelligence"]);
     assert.equal(resolveDefaultPortfolioReconciliationTab(auth), "intelligence");
+  });
+
+  it("P09/P12: Contas a Pagar não libera portfolio (sem bleed)", () => {
+    const auth = checker(["finance.accountsPayable.view"]);
+    assert.equal(canViewFinancePortfolioReconciliation(auth), false);
+    assert.deepEqual(listVisiblePortfolioReconciliationTabs(auth), []);
+    assert.equal(canAccessModule("portfolio-reconciliation", auth), false);
   });
 
   it("sem permissão não vê nada", () => {

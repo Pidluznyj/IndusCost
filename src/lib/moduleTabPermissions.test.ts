@@ -44,15 +44,31 @@ describe("module tab permissions", () => {
     assert.deepEqual(validatePermissionResourceCatalog(), []);
   });
 
-  it("ADMIN vê abas CRM / comissões live / materiais", () => {
-    const api = createPermissionsApi(user({ role: "ADMIN" }));
+  it("ADMIN vê abas CRM / comissões live / materiais com bag explícita (P07/P12)", () => {
+    const api = createPermissionsApi(
+      user({
+        role: "ADMIN",
+        permissions: [
+          "crm.view",
+          "crm.general.view",
+          "crm.seller.view",
+          "commissions.view",
+          "materials.view",
+        ],
+      })
+    );
     assert.equal(api.listAllowedCrmTabs().length, CRM_UI_TABS.length);
     assert.equal(api.listAllowedCommissionsLiveTabs().length, COMMISSIONS_LIVE_UI_TABS.length);
     assert.equal(api.listAllowedMaterialsSections().length, MATERIALS_UI_SECTIONS.length);
   });
 
   it("SELLER não vê Gestão Geral CRM", () => {
-    const api = createPermissionsApi(user({ role: "SELLER" }));
+    const api = createPermissionsApi(
+      user({
+        role: "SELLER",
+        permissions: ["crm.view", "crm.seller.view", "crm.seller.own"],
+      })
+    );
     const tabs = api.listAllowedCrmTabs();
     assert.ok(!tabs.includes("general"));
     assert.ok(tabs.includes("seller"));

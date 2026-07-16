@@ -1,11 +1,9 @@
 /**
  * Permissões — Financeiro > Conciliação de Carteira (módulo + abas).
  *
- * Motor central: catálogo (`permissionCatalog`) + helpers aqui.
- * Frontend só esconde; APIs validam com as mesmas listas.
+ * Motor central: catálogo + DTO (P12). Frontend esconde; APIs validam.
  *
- * Compatibilidade: quem já acessava via OR legado (finance.view / AR / AP / reports / Nomus)
- * continua acessando até o admin atribuir as chaves dedicadas.
+ * P09/P12: Contas a Pagar NÃO entra no OR legado de portfolio (sem bleed AP→conciliação).
  */
 
 export const FINANCE_PORTFOLIO_RECONCILIATION_VIEW =
@@ -20,11 +18,12 @@ export const FINANCE_PORTFOLIO_RECONCILIATION_INTELLIGENCE_VIEW =
 export const FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_VIEW =
   "finance.portfolioReconciliation.orderToCashAudit.view" as const;
 
-/** OR legado — não remover até backfill/admin migrar perfis. */
+/**
+ * OR legado residual — sem AP (P09). Preferir chaves dedicadas / DTO.
+ */
 export const FINANCE_PORTFOLIO_RECONCILIATION_LEGACY_VIEW_PERMISSIONS = [
   "finance.view",
   "finance.accountsReceivable.view",
-  "finance.accountsPayable.view",
   "reports.view",
   "settings.nomus.view",
 ] as const;

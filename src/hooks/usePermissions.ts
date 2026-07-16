@@ -8,9 +8,14 @@ import {
 import {
   canViewModule,
   canViewResource,
+  canViewTabResource,
   evaluatePathViewAccess,
+  filterTabsByViewDto,
   getSafeFirstAllowedPath,
+  listVisibleFinanceSections,
+  navigationAccessContextFromAuth,
   pickAllowedTabId,
+  resolveActiveTabFromRequest,
   type PathViewDecision,
 } from "@/src/lib/resourceNavigationAccess";
 import type { AppModuleId } from "@/src/lib/modulePermissions";
@@ -24,10 +29,14 @@ export type UsePermissionsResult = PermissionsApi & {
   refetch: () => Promise<void>;
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
   canViewResource: (resourceKey: string) => boolean;
+  canViewTabResource: (resourceKey: string) => boolean;
   canViewModule: (moduleId: AppModuleId) => boolean;
   evaluatePathViewAccess: (pathname: string) => PathViewDecision;
   getSafeFirstAllowedPath: () => string | null;
   pickAllowedTabId: typeof pickAllowedTabId;
+  filterTabsByViewDto: typeof filterTabsByViewDto;
+  resolveActiveTabFromRequest: typeof resolveActiveTabFromRequest;
+  listVisibleFinanceSections: () => ReturnType<typeof listVisibleFinanceSections>;
 };
 
 /**
@@ -54,19 +63,20 @@ export function usePermissions(): UsePermissionsResult {
   );
 
   const nav = useMemo(() => {
-    const ctx = {
-      user: auth.authUser,
-      checker: auth,
-      effectiveAccess: auth.effectiveAccess,
-      authLoading: auth.authLoading,
-      authError: auth.authError,
-    };
+    const ctx = navigationAccessContextFromAuth(auth);
     return {
       canViewResource: (resourceKey: string) => canViewResource(auth.authUser, resourceKey),
+      canViewTabResource: (resourceKey: string) => canViewTabResource(resourceKey, ctx),
       canViewModule: (moduleId: AppModuleId) => canViewModule(moduleId, ctx),
       evaluatePathViewAccess: (pathname: string) => evaluatePathViewAccess(pathname, ctx),
       getSafeFirstAllowedPath: () => getSafeFirstAllowedPath(ctx),
       pickAllowedTabId,
+      filterTabsByViewDto: <T extends { resourceKey: string }>(
+        tabs: readonly T[],
+        options?: { parentResourceKey?: string; requireParentView?: boolean }
+      ) => filterTabsByViewDto(tabs, ctx, options),
+      resolveActiveTabFromRequest,
+      listVisibleFinanceSections: () => listVisibleFinanceSections(ctx),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permissionKey]);
