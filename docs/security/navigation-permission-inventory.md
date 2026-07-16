@@ -297,8 +297,8 @@ Filhos MI: `…tab.materia_prima_360`, `…fornecedores`, `…alertas`, `…conf
 
 ### 5.8 Frota (`fleetNavigation.ts`)
 
-Abas nav: Visão Geral, Veículos, Motoristas, Reservas, Solicitações QR, Checklists, Manutenção, Configurações.  
-Avançadas (`canFinancial`): Relatórios, Custos, Ocorrências.  
+Abas nav: Visão Geral, Veículos, Motoristas, Reservas, Solicitações QR, Checklists, Manutenção, Configurações.
+Avançadas (`canFinancial`): Relatórios, Custos, Ocorrências.
 Todas herdam `operations.fleet` (sem resourceKey por aba).
 
 ### 5.9 Configurações — hub (`HUB_SECTIONS`)
