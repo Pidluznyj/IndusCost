@@ -1350,7 +1350,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/production-orders",
     sortOrder: 641,
     actions: [V(["operations.production-orders.view"])],
-    relatedEndpoints: ["/api/operations/production-orders"],
+    relatedEndpoints: [
+      "/api/operations/production-orders",
+      "/api/operations/production-orders/:id",
+    ],
     sensitivity: "medium",
     appearsInSidebar: true,
     isTab: false,

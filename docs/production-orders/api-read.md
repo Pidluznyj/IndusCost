@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Endpoint** | `GET /api/operations/production-orders` |
-| **Status** | Implementado (OP-16) |
+| **Endpoint** | `GET /api/operations/production-orders` · `GET /api/operations/production-orders/:id` |
+| **Status** | Implementado (OP-16 listagem · OP-17 detalhe) |
 | **Fonte de dados** | PostgreSQL local — **sem** chamada Nomus |
 
 Documentos irmãos:
@@ -34,6 +34,8 @@ Respostas de erro:
 | 400 | `INVALID_PAGE_SIZE` | `pageSize` inválido ou acima do teto |
 | 400 | `INVALID_FROM` / `INVALID_TO` | Data ISO inválida |
 | 400 | `INVALID_DATE_RANGE` | `from` > `to` |
+| 400 | `INVALID_ID` | `:id` não é UUID válido (detalhe) |
+| 404 | `NOT_FOUND` | OP inexistente (detalhe) |
 | 500 | `INTERNAL_ERROR` | Erro inesperado |
 
 ---
@@ -159,7 +161,96 @@ Testes: `npm run test:production-orders-api` ou inclusão em `test:nomus:product
 
 ---
 
-## 7. Próximo prompt (OP-17+)
+## 7. Detalhe — `GET /api/operations/production-orders/:id` (OP-17)
 
-- `GET /api/operations/production-orders/:id` — detalhe + drawer
-- Menu `/production-orders` + UI grid
+### 7.1 Identificador
+
+- `:id` = **UUID interno** (`NomusProductionOrder.id`) retornado pelo grid.
+- **Não** aceita `externalId`, nome textual ou código Nomus.
+
+### 7.2 Resposta
+
+```json
+{
+  "identification": { "id", "externalId", "name", "status", "tipo", "priority" },
+  "product": {
+    "externalProductId", "productCode", "productDescription", "productAdditionalInfo",
+    "productConfigId", "productConfigCode", "quantity", "unit", "stockSector"
+  },
+  "company": { "externalCompanyId", "companyName" },
+  "dates": {
+    "openedAt", "plannedAt", "closedAt", "nomusUpdatedAt",
+    "firstSeenAt", "lastSeenAt", "lastChangedAt", "syncedAt", "createdAt", "updatedAt"
+  },
+  "salesLinks": [/* ver abaixo */],
+  "auditSummary": {
+    "currentLinkCount", "removedLinkCount", "resolvedLinkCount", "pendingLinkCount"
+  },
+  "rawJson": { /* payload Nomus sanitizado */ }
+}
+```
+
+Valores `null` permanecem `null`. Decimais serializados como string.
+
+### 7.3 Vínculos (`salesLinks[]`)
+
+| Campo | Descrição |
+|-------|-----------|
+| `linkState` | `current_resolved` \| `current_pending` \| `removed` |
+| `isCurrent` | Flag persistida |
+| `externalSalesOrderId` | ID Nomus pedido |
+| `externalSalesOrderItemId` | ID Nomus item |
+| `itemNumber` | Sequência Nomus |
+| `customerName` | Denormalizado do payload |
+| `linkedQuantity` | Quantidade do vínculo |
+| `salesOrderId` / `salesOrderItemId` | FKs locais (null = pendente) |
+| `orderCode` | `SalesOrder.orderCode` quando resolvido |
+| `localItem` | Dados mínimos do `SalesOrderItem` ou `null` |
+| `firstSeenAt` / `lastSeenAt` / `removedAt` | Metadados sync |
+| `rawJson` | Item `itensPedido` sanitizado ou `null` |
+
+**Estados:**
+
+- **Atual resolvido:** `isCurrent=true` + FKs locais preenchidas.
+- **Pendente:** `isCurrent=true` + FK local ausente.
+- **Removido:** `isCurrent=false` — **não ocultado** na resposta.
+- **Reativado:** volta a `current_*` conforme FKs; histórico removido permanece na lista.
+
+Relações **somente** por IDs oficiais Nomus já persistidos — sem inferência por cliente/produto/quantidade.
+
+### 7.4 `auditSummary`
+
+| Campo | Regra |
+|-------|-------|
+| `currentLinkCount` | `isCurrent === true` |
+| `removedLinkCount` | `isCurrent === false` |
+| `resolvedLinkCount` | `salesOrderId` e `salesOrderItemId` preenchidos (qualquer estado) |
+| `pendingLinkCount` | `isCurrent === true` e FK local incompleta |
+
+### 7.5 Segurança do payload
+
+`rawJson` (OP e vínculos) passa por `sanitizeProductionOrderRawJson`:
+
+- Redige chaves sensíveis (`authorization`, `token`, `NOMUS_TOKEN`, etc.).
+- Remove padrões Bearer/Basic em strings.
+- **Não** chama Nomus; **não** muta banco.
+
+### 7.6 Consulta (sem N+1)
+
+Uma única `findUnique` com `include.salesLinks` + joins `SalesOrder` / `SalesOrderItem`.
+
+Implementação: `src/lib/productionOrdersDetail.server.ts`.
+
+### 7.7 Arquivos
+
+| Arquivo | Papel |
+|---------|-------|
+| `src/lib/productionOrdersDetail.ts` | Tipos, serialização, sanitização, audit |
+| `src/lib/productionOrdersDetail.server.ts` | Prisma read |
+| `src/lib/productionOrdersDetail.test.ts` | Testes |
+
+---
+
+## 8. Próximo prompt (OP-18+)
+
+- Menu `/production-orders` + UI grid + drawer

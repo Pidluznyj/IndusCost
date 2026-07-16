@@ -143,6 +143,12 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
     resourceKey: "operations.production_orders",
     action: "view",
   },
+  {
+    method: "GET",
+    path: "/api/operations/production-orders/:id",
+    resourceKey: "operations.production_orders",
+    action: "view",
+  },
 
   {
     method: "GET",
