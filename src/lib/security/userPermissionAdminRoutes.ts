@@ -11,6 +11,7 @@ import { PermissionResourceKeys } from "@/src/lib/security/permissionsCatalog.js
 import {
   applyRolePresetToUser,
   clearUserPermissionOverrides,
+  restoreUserPermissionBaseline,
   getUserPermissionsAdmin,
   listPermissionPresetsAdmin,
   listUserPermissionAudit,
@@ -283,12 +284,12 @@ export function registerUserPermissionAdminRoutes(
     async (req, res) => {
       try {
         const id = String(req.params.id ?? "").trim();
-        const payload = await applyRolePresetToUser(prisma, {
+        const payload = await restoreUserPermissionBaseline(prisma, {
           userId: id,
           actorUserId: actorId(req),
+          actorSessionId: actorSessionId(req),
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),
-          auditKind: "restore",
           reason: typeof req.body?.reason === "string" ? req.body.reason : undefined,
         });
         return res.json(payload);

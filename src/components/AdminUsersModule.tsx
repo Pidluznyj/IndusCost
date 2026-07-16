@@ -372,7 +372,9 @@ export const AdminUsersModule: React.FC = () => {
   );
 
   const hydrateMatrixFromPayload = (payload: UserPermissionsPayload) => {
-    const model = buildUserPermissionMatrixModel(payload.tree);
+    const model = buildUserPermissionMatrixModel(payload.tree, {
+      profileFlagsByKey: payload.profileFlags,
+    });
     setRoleBaseline(model.baseline);
     setLoadedSnapshot(model.draft);
     setMatrixDraft(model.draft);

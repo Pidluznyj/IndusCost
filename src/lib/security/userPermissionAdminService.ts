@@ -16,13 +16,15 @@ import {
   buildPermissionAccessSummary,
   diffUserAgainstRolePreset,
   flagsEqual,
-  getOfficialRolePreset,
   listOfficialRolePresets,
   materializeLegacyPermissionsFromFlags,
   mergeRoleAndOverrideFlags,
   planApplyRolePreset,
   buildRolePermissionMatrixRows,
 } from "@/src/lib/security/permissionRolePresets.js";
+import {
+  applyAccessProfileToUserFields,
+} from "@/src/lib/accessProfilesUtils.js";
 import type {
   PermissionFlags,
   UserPermissionOverrideGrant,
@@ -82,15 +84,52 @@ export type OverrideInput = {
   reason?: string | null;
 };
 
+const EMPTY_FLAGS: PermissionFlags = {
+  canView: false,
+  canExecute: false,
+  canManage: false,
+};
+
+/**
+ * Baseline INHERIT: snapshot do AccessProfile (quando vinculado) substitui o preset da role.
+ * Sem perfil → preset oficial da role. Recurso ausente no snapshot → DENY.
+ */
+export function resolveUserPermissionBaselineFlags(args: {
+  role: AppUserRole;
+  accessProfile?: {
+    permissions: string[];
+    roleBase: AppUserRole | null;
+  } | null;
+}): Record<string, PermissionFlags> {
+  if (!args.accessProfile) {
+    const out: Record<string, PermissionFlags> = {};
+    for (const seed of PERMISSION_RESOURCE_SEEDS) {
+      out[seed.key] = getOfficialRolePermissionFlags(args.role, seed.key);
+    }
+    return out;
+  }
+  const profileFlags = projectAccessProfileResourceFlags(
+    args.accessProfile.permissions,
+    args.accessProfile.roleBase
+  );
+  const out: Record<string, PermissionFlags> = {};
+  for (const seed of PERMISSION_RESOURCE_SEEDS) {
+    out[seed.key] = profileFlags[seed.key] ?? { ...EMPTY_FLAGS };
+  }
+  return out;
+}
+
 export function buildEditablePermissionTree(
   role: AppUserRole,
-  overrides: readonly UserPermissionOverrideGrant[]
+  overrides: readonly UserPermissionOverrideGrant[],
+  baselineFlagsByKey?: Readonly<Record<string, PermissionFlags>> | null
 ): EditablePermissionTreeNode[] {
   const overrideByKey = new Map(overrides.map((o) => [o.resourceKey, o]));
   const nodes = new Map<string, EditablePermissionTreeNode>();
 
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    const roleFlags = getOfficialRolePermissionFlags(role, seed.key);
+    const roleFlags =
+      baselineFlagsByKey?.[seed.key] ?? getOfficialRolePermissionFlags(role, seed.key);
     const ov = overrideByKey.get(seed.key);
     const override = ov
       ? {
@@ -219,11 +258,19 @@ export function buildUserPermissionsPayload(args: {
   } | null;
 }) {
   const role = args.user.role;
-  const effective = buildEffectiveFlagsMap(role, args.overrides);
-  const tree = buildEditablePermissionTree(role, args.overrides);
+  const baselineByKey = resolveUserPermissionBaselineFlags({
+    role,
+    accessProfile: args.accessProfile,
+  });
+  const effective = buildEffectiveFlagsMap(role, args.overrides, baselineByKey);
+  const tree = buildEditablePermissionTree(role, args.overrides, baselineByKey);
   const summary = buildPermissionAccessSummary({ role, effective });
-  const diff = diffUserAgainstRolePreset({ role, overrides: args.overrides, effective });
-  const preset = getOfficialRolePreset(role);
+  const diff = diffUserAgainstRolePreset({
+    role,
+    overrides: args.overrides,
+    effective,
+    baselineFlagsByKey: baselineByKey,
+  });
   const profileFlags = args.accessProfile
     ? projectAccessProfileResourceFlags(
         args.accessProfile.permissions,
@@ -241,9 +288,10 @@ export function buildUserPermissionsPayload(args: {
       ? { id: args.accessProfile.id, name: args.accessProfile.name }
       : null,
     profileFlags,
-    roleDefaults: preset.resources.map((r) => ({
-      resourceKey: r.resourceKey,
-      flags: r.flags,
+    /** Baseline INHERIT para save (perfil se vinculado; senão role). */
+    roleDefaults: PERMISSION_RESOURCE_SEEDS.map((seed) => ({
+      resourceKey: seed.key,
+      flags: baselineByKey[seed.key] ?? { ...EMPTY_FLAGS },
     })),
     overrides: args.overrides,
     effectiveFlags: effective,
@@ -482,7 +530,14 @@ export async function saveUserPermissionOverrides(
     ifMatchOverrideCount?: number;
   }
 ) {
-  const user = await prisma.appUser.findUnique({ where: { id: args.userId } });
+  const user = await prisma.appUser.findUnique({
+    where: { id: args.userId },
+    include: {
+      accessProfile: {
+        select: { id: true, name: true, permissions: true, roleBase: true },
+      },
+    },
+  });
   if (!user) throw new UserPermissionAdminError("NOT_FOUND", "Usuário não encontrado.");
   if (user.role === "SUPER_ADMIN") {
     throw new UserPermissionAdminError(
@@ -512,18 +567,27 @@ export async function saveUserPermissionOverrides(
     userId: args.userId,
   }));
 
+  const baselineByKey = resolveUserPermissionBaselineFlags({
+    role: user.role,
+    accessProfile: user.accessProfile
+      ? {
+          permissions: filterKnownPermissions(user.accessProfile.permissions),
+          roleBase: user.accessProfile.roleBase,
+        }
+      : null,
+  });
+
   // Modo absoluto a partir de um draft parcial: completa DENY nos baselines allow não enviados.
   if (args.mode === "absolute") {
     const byKey = new Map(normalized.map((o) => [o.resourceKey, o]));
-    const preset = getOfficialRolePreset(user.role);
-    for (const row of preset.resources) {
-      const existing = byKey.get(row.resourceKey);
+    for (const seed of PERMISSION_RESOURCE_SEEDS) {
+      const existing = byKey.get(seed.key);
       if (existing) continue;
-      const flags = row.flags;
+      const flags = baselineByKey[seed.key] ?? EMPTY_FLAGS;
       if (!flags.canView && !flags.canExecute && !flags.canManage) continue;
-      byKey.set(row.resourceKey, {
+      byKey.set(seed.key, {
         userId: args.userId,
-        resourceKey: row.resourceKey,
+        resourceKey: seed.key,
         canView: flags.canView ? false : null,
         canExecute: flags.canExecute ? false : null,
         canManage: flags.canManage ? false : null,
@@ -538,7 +602,7 @@ export async function saveUserPermissionOverrides(
     return getUserPermissionsAdmin(prisma, args.userId);
   }
 
-  const effective = buildEffectiveFlagsMap(user.role, normalized);
+  const effective = buildEffectiveFlagsMap(user.role, normalized, baselineByKey);
   const dual = materializeUserLegacyBag({
     effectiveByResourceKey: effective,
     previousLegacyPermissions: user.permissions,
@@ -606,6 +670,115 @@ export async function saveUserPermissionOverrides(
   return getUserPermissionsAdmin(prisma, args.userId);
 }
 
+/**
+ * Restaura a fotografia baseline: snapshot do AccessProfile se vinculado;
+ * senão preset oficial da role. Sempre limpa overrides e faz bump de versão.
+ */
+export async function restoreUserPermissionBaseline(
+  prisma: PrismaLike,
+  args: {
+    userId: string;
+    actorUserId: string | null;
+    actorSessionId?: string | null;
+    confirmClearOverrides?: boolean;
+    isEditingSelf: boolean;
+    reason?: string | null;
+  }
+) {
+  const user = await prisma.appUser.findUnique({
+    where: { id: args.userId },
+    include: {
+      accessProfile: {
+        select: { id: true, name: true, permissions: true, roleBase: true },
+      },
+    },
+  });
+  if (!user) throw new UserPermissionAdminError("NOT_FOUND", "Usuário não encontrado.");
+
+  if (user.accessProfile) {
+    if (!args.confirmClearOverrides) {
+      const beforeOverrides = await loadOverrides(prisma, args.userId);
+      if (beforeOverrides.length > 0) {
+        throw new UserPermissionAdminError(
+          "CONFIRM_REQUIRED",
+          "Este usuário tem permissões customizadas. Confirme para removê-las e restaurar o snapshot do perfil.",
+          { overrideCount: beforeOverrides.length }
+        );
+      }
+    }
+
+    const applied = applyAccessProfileToUserFields({
+      roleBase: user.accessProfile.roleBase,
+      permissions: filterKnownPermissions(user.accessProfile.permissions),
+    });
+    const nextRole = applied.role ?? user.role;
+    const legacyPermissions = filterKnownPermissions(applied.permissions);
+
+    assertSelfUsersManageLock({
+      isEditingSelf: args.isEditingSelf,
+      existingRole: user.role,
+      existingPermissions: user.permissions,
+      nextRole,
+      nextLegacyPermissions: legacyPermissions,
+    });
+
+    const beforeOverrides = await loadOverrides(prisma, args.userId);
+    const legacySame =
+      legacyPermissions.length === user.permissions.length &&
+      legacyPermissions.every((k) => user.permissions.includes(k));
+    if (beforeOverrides.length === 0 && legacySame && nextRole === user.role) {
+      return getUserPermissionsAdmin(prisma, args.userId);
+    }
+
+    await ensurePermissionCatalogResources(prisma);
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.userPermissionOverride.deleteMany({ where: { userId: args.userId } });
+        await tx.appUser.update({
+          where: { id: args.userId },
+          data: {
+            role: nextRole,
+            permissions: legacyPermissions,
+          },
+        });
+        await bumpPermissionsVersionAndSyncSessions(tx, {
+          userId: args.userId,
+          actorSessionId: args.isEditingSelf ? args.actorSessionId : null,
+        });
+      });
+    } catch (error) {
+      mapPermissionWriteError(error);
+    }
+
+    const plans = buildPresetApplyAuditPlans({
+      beforeRole: user.role,
+      afterRole: nextRole,
+      beforeOverrides,
+      beforePermissions: user.permissions,
+      afterPermissions: legacyPermissions,
+      kind: "restore",
+      reason: args.reason ?? `restore-access-profile:${user.accessProfile.id}`,
+    });
+    await writeAuditPlans(prisma, {
+      actorUserId: args.actorUserId,
+      targetUserId: args.userId,
+      plans,
+    });
+
+    return getUserPermissionsAdmin(prisma, args.userId);
+  }
+
+  return applyRolePresetToUser(prisma, {
+    userId: args.userId,
+    actorUserId: args.actorUserId,
+    actorSessionId: args.actorSessionId,
+    confirmClearOverrides: args.confirmClearOverrides,
+    isEditingSelf: args.isEditingSelf,
+    auditKind: "restore",
+    reason: args.reason,
+  });
+}
+
 export async function clearUserPermissionOverrides(
   prisma: PrismaLike,
   args: {
@@ -623,13 +796,12 @@ export async function clearUserPermissionOverrides(
       "Confirme a limpeza das permissões customizadas."
     );
   }
-  return applyRolePresetToUser(prisma, {
+  return restoreUserPermissionBaseline(prisma, {
     userId: args.userId,
     actorUserId: args.actorUserId,
     actorSessionId: args.actorSessionId,
     confirmClearOverrides: true,
     isEditingSelf: args.isEditingSelf,
-    auditKind: "restore",
     reason: args.reason,
   });
 }

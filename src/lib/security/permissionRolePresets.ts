@@ -179,15 +179,21 @@ export function buildRolePermissionMatrixRows(options?: {
     });
 }
 
+/**
+ * Efetivo = baseline ⊕ override (null = INHERIT).
+ * `baselineFlagsByKey` opcional: snapshot do AccessProfile (substitui preset da role).
+ */
 export function buildEffectiveFlagsMap(
   role: AppUserRole,
-  overrides: readonly UserPermissionOverrideGrant[]
+  overrides: readonly UserPermissionOverrideGrant[],
+  baselineFlagsByKey?: Readonly<Record<string, PermissionFlags>> | null
 ): Record<string, PermissionFlags> {
   const overrideByKey = new Map(overrides.map((o) => [o.resourceKey, o]));
   const out: Record<string, PermissionFlags> = {};
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    const roleFlags = getOfficialRolePermissionFlags(role, seed.key);
-    out[seed.key] = mergeRoleAndOverrideFlags(roleFlags, overrideByKey.get(seed.key));
+    const baseline =
+      baselineFlagsByKey?.[seed.key] ?? getOfficialRolePermissionFlags(role, seed.key);
+    out[seed.key] = mergeRoleAndOverrideFlags(baseline, overrideByKey.get(seed.key));
   }
   return out;
 }
@@ -196,12 +202,18 @@ export function diffUserAgainstRolePreset(args: {
   role: AppUserRole;
   overrides: readonly UserPermissionOverrideGrant[];
   effective?: Record<string, PermissionFlags>;
+  /** Quando informado (ex.: snapshot de perfil), diff vs este baseline e não vs role seed. */
+  baselineFlagsByKey?: Readonly<Record<string, PermissionFlags>> | null;
 }): UserVsRoleDiffItem[] {
-  const effective = args.effective ?? buildEffectiveFlagsMap(args.role, args.overrides);
+  const effective =
+    args.effective ??
+    buildEffectiveFlagsMap(args.role, args.overrides, args.baselineFlagsByKey);
   const overrideKeys = new Set(args.overrides.map((o) => o.resourceKey));
   const items: UserVsRoleDiffItem[] = [];
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    const roleFlags = getOfficialRolePermissionFlags(args.role, seed.key);
+    const roleFlags =
+      args.baselineFlagsByKey?.[seed.key] ??
+      getOfficialRolePermissionFlags(args.role, seed.key);
     const effectiveFlags = effective[seed.key] ?? roleFlags;
     const hasOverride = overrideKeys.has(seed.key);
     const changed = hasOverride || !flagsEqual(roleFlags, effectiveFlags);

@@ -577,10 +577,12 @@ export async function previewApplyAccessProfile(
   const profileRow = await prisma.accessProfile.findUnique({ where: { id: profileId } });
   if (!profileRow) throw new AccessProfileError("NOT_FOUND", "Perfil não encontrado.");
 
-  const where: Prisma.AppUserWhereInput = { accessProfileId: profileId };
-  if (userIds && userIds.length > 0) {
-    where.id = { in: userIds };
-  }
+  // Com userIds: aplica/vincula aos usuários informados (mesmo sem FK prévia).
+  // Sem userIds: reaplica aos já vinculados ao perfil.
+  const where: Prisma.AppUserWhereInput =
+    userIds && userIds.length > 0
+      ? { id: { in: userIds } }
+      : { accessProfileId: profileId };
 
   const users = await prisma.appUser.findMany({
     where,
@@ -685,21 +687,22 @@ export async function applyAccessProfileToUsers(
         skipped += 1;
         continue;
       }
-      // P06: troca de perfil substitui bag e limpa overrides (não acumula snapshot estruturado).
+      // P06: aplica fotografia do perfil — limpa overrides, vincula FK, dual-write bag + bump.
       await tx.userPermissionOverride.deleteMany({ where: { userId: u.id } });
-      if (!u.willChange) {
-        results.push({ userId: u.id, status: "skipped_unchanged" });
-        skipped += 1;
-        continue;
-      }
       await tx.appUser.update({
         where: { id: u.id },
         data: {
+          accessProfileId: preview.profileId,
           role: u.afterRole,
           permissions: u.afterPermissions,
         },
       });
       await bumpPermissionsVersionAndSyncSessions(tx, { userId: u.id });
+      if (!u.willChange) {
+        results.push({ userId: u.id, status: "skipped_unchanged" });
+        skipped += 1;
+        continue;
+      }
       results.push({ userId: u.id, status: "applied" });
       applied += 1;
     }

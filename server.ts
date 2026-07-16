@@ -472,7 +472,10 @@ import {
   verifyPassword,
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
-import { isSessionPermissionsVersionStale } from "./src/lib/permissionsVersion.js";
+import {
+  bumpPermissionsVersionAndSyncSessions,
+  isSessionPermissionsVersionStale,
+} from "./src/lib/permissionsVersion.js";
 import {
   isEffectiveAccessDtoInMeEnabled,
   tryBuildEffectiveAccessForAuthMe,
@@ -2326,6 +2329,9 @@ async function startServer() {
       if (req.body?.permissions !== undefined) {
         data.permissions = filterKnownPermissions(req.body.permissions);
       }
+      /** PERM-29: vincular perfil copia snapshot, limpa overrides e bumpa versão. */
+      let clearPermissionOverrides = false;
+      let bumpPermissionsVersion = false;
       if (req.body?.accessProfileId !== undefined) {
         if (req.body.accessProfileId === null) {
           data.accessProfile = { disconnect: true };
@@ -2346,7 +2352,12 @@ async function startServer() {
           if (req.body?.permissions === undefined) {
             data.permissions = applied.permissions;
           }
+          clearPermissionOverrides = true;
+          bumpPermissionsVersion = true;
         }
+      }
+      if (data.role !== undefined || data.permissions !== undefined) {
+        bumpPermissionsVersion = true;
       }
       if (req.body?.isActive !== undefined) {
         data.isActive = Boolean(req.body.isActive);
@@ -2448,13 +2459,25 @@ async function startServer() {
         }
       }
 
-      const user = await prisma.appUser.update({
-        where: { id },
-        data,
-        include: {
-          accessProfile: { select: { name: true } },
-          employee: { select: { id: true, name: true, socialName: true, department: true } },
-        },
+      const user = await prisma.$transaction(async (tx) => {
+        if (clearPermissionOverrides) {
+          await tx.userPermissionOverride.deleteMany({ where: { userId: id } });
+        }
+        const updated = await tx.appUser.update({
+          where: { id },
+          data,
+          include: {
+            accessProfile: { select: { name: true } },
+            employee: { select: { id: true, name: true, socialName: true, department: true } },
+          },
+        });
+        if (bumpPermissionsVersion) {
+          await bumpPermissionsVersionAndSyncSessions(tx, {
+            userId: id,
+            actorSessionId: isEditingSelf ? req.appAuth?.sessionId ?? null : null,
+          });
+        }
+        return updated;
       });
       return res.json({
         user: toSafeAppUser(user, {

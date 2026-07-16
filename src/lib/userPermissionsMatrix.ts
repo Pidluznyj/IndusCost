@@ -1,7 +1,8 @@
 /**
- * Bridge Usuário × PermissionMatrix (Prompt 10).
- * Precedência: deny explícito (false) > allow explícito (true) > baseline da role.
- * Persistência continua via overrides + dual-write (AppUser.permissions[]).
+ * Bridge Usuário × PermissionMatrix (Prompt 10 / PERM-29).
+ * Precedência: SUPER_ADMIN → DENY individual → ALLOW individual →
+ * snapshot do perfil (ou role se sem perfil) → DENY por padrão.
+ * Persistência: overrides + dual-write (AppUser.permissions[]).
  */
 
 import {
@@ -26,13 +27,13 @@ import {
 import type { AppUserRole } from "@/src/lib/appAuthClient";
 
 export const USER_PERMISSION_PRECEDENCE_NOTICE =
-  "Ordem de precedência: 1) Deny explícito · 2) Allow explícito · 3) Baseline da role. Negar pai bloqueia filhos no acesso efetivo.";
+  "Ordem de precedência: SUPER_ADMIN → Deny individual → Allow individual → snapshot do perfil (senão role) → Deny por padrão. Negar pai bloqueia filhos no acesso efetivo.";
 
 export type UserPermissionMatrixModel = {
   rows: PermissionMatrixRow[];
-  /** Efetivo atual (role ⊕ override). */
+  /** Efetivo atual (baseline ⊕ override). */
   draft: PermissionMatrixDraft;
-  /** Somente baseline da role (sem override). */
+  /** Baseline INHERIT (perfil se vinculado; senão role). */
   baseline: PermissionMatrixDraft;
 };
 
@@ -52,7 +53,7 @@ function flagsToActionValues(flags: PermissionFlagsDto): Record<string, boolean>
   };
 }
 
-/** Baseline da role (para badge Herdado / Allow / Deny). */
+/** Baseline INHERIT a partir da árvore (roleFlags = baseline já resolvida no payload). */
 export function draftBaselineFromRoleTree(
   tree: readonly EditableTreeNodeDto[]
 ): PermissionMatrixDraft {
@@ -67,6 +68,20 @@ export function draftBaselineFromRoleTree(
   return out;
 }
 
+function draftBaselineFromProfileFlags(
+  profileFlagsByKey: Record<
+    string,
+    { canView: boolean; canExecute: boolean; canManage: boolean }
+  >,
+  tree: readonly EditableTreeNodeDto[]
+): PermissionMatrixDraft {
+  const out = draftBaselineFromRoleTree(tree);
+  for (const [key, flags] of Object.entries(profileFlagsByKey)) {
+    out[key] = flagsToActionValues(flags);
+  }
+  return out;
+}
+
 export function buildUserPermissionMatrixModel(
   tree: readonly EditableTreeNodeDto[],
   options?: {
@@ -76,13 +91,18 @@ export function buildUserPermissionMatrixModel(
     >;
   }
 ): UserPermissionMatrixModel {
+  const profileFlagsByKey = options?.profileFlagsByKey;
+  const hasProfile =
+    profileFlagsByKey != null && Object.keys(profileFlagsByKey).length > 0;
   const rows = buildPermissionMatrixRowsFromAdminTree([...tree], {
-    profileFlagsByKey: options?.profileFlagsByKey,
+    profileFlagsByKey,
   });
   return {
     rows,
     draft: draftFromAdminTree([...tree]),
-    baseline: draftBaselineFromRoleTree(tree),
+    baseline: hasProfile
+      ? draftBaselineFromProfileFlags(profileFlagsByKey!, tree)
+      : draftBaselineFromRoleTree(tree),
   };
 }
 
