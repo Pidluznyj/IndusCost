@@ -33,15 +33,6 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-function toSnapshot(user: BackfillUserPlan, portUser: BackfillUserSnapshot): BackfillUserSnapshot {
-  return {
-    userId: user.userId,
-    role: portUser.role,
-    legacyPermissions: portUser.legacyPermissions,
-    overrides: user.beforeOverrides.map((o) => ({ ...o })),
-  };
-}
-
 export async function applyUserBackfill(args: {
   port: BackfillPort;
   plan: BackfillUserPlan;
