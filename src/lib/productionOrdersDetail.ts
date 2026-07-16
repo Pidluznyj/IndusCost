@@ -74,7 +74,9 @@ export type ProductionOrderDetailResponse = {
   };
   dates: {
     openedAt: string | null;
+    releasedAt: string | null;
     plannedAt: string | null;
+    deliveryAt: string | null;
     closedAt: string | null;
     nomusUpdatedAt: string | null;
     firstSeenAt: string | null;
@@ -224,7 +226,9 @@ export type ProductionOrderDetailDbRow = {
   externalCompanyId: number | null;
   companyName: string | null;
   openedAt: Date | null;
+  releasedAt: Date | null;
   plannedAt: Date | null;
+  deliveryAt: Date | null;
   closedAt: Date | null;
   nomusUpdatedAt: Date | null;
   firstSeenAt: Date;
@@ -311,7 +315,9 @@ export function serializeProductionOrderDetail(
     },
     dates: {
       openedAt: serializeProductionOrderDate(row.openedAt),
+      releasedAt: serializeProductionOrderDate(row.releasedAt),
       plannedAt: serializeProductionOrderDate(row.plannedAt),
+      deliveryAt: serializeProductionOrderDate(row.deliveryAt),
       closedAt: serializeProductionOrderDate(row.closedAt),
       nomusUpdatedAt: serializeProductionOrderDate(row.nomusUpdatedAt),
       firstSeenAt: serializeProductionOrderDate(row.firstSeenAt),

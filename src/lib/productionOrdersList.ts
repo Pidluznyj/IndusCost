@@ -11,6 +11,7 @@ import {
 
 export type ProductionOrderCurrentSalesOrderSummary = {
   externalSalesOrderId: number;
+  salesOrderId: string | null;
   orderCode: string | null;
   customerName: string | null;
 };
@@ -29,7 +30,9 @@ export type ProductionOrderGridRow = {
   unit: string | null;
   stockSector: string | null;
   openedAt: string | null;
+  releasedAt: string | null;
   plannedAt: string | null;
+  deliveryAt: string | null;
   closedAt: string | null;
   nomusUpdatedAt: string | null;
   syncedAt: string | null;
@@ -63,7 +66,9 @@ export const PRODUCTION_ORDERS_GRID_SELECT = {
   unit: true,
   stockSector: true,
   openedAt: true,
+  releasedAt: true,
   plannedAt: true,
+  deliveryAt: true,
   closedAt: true,
   nomusUpdatedAt: true,
   syncedAt: true,
@@ -210,6 +215,7 @@ export function buildProductionOrderLinkAggregates(
         bucket.seenOrders.add(link.externalSalesOrderId);
         bucket.currentSalesOrders.push({
           externalSalesOrderId: link.externalSalesOrderId,
+          salesOrderId: link.salesOrderId,
           orderCode: link.orderCode,
           customerName: link.customerName,
         });
@@ -261,7 +267,9 @@ export function serializeProductionOrderGridRow(
     unit: row.unit,
     stockSector: row.stockSector,
     openedAt: serializeProductionOrderDate(row.openedAt),
+    releasedAt: serializeProductionOrderDate(row.releasedAt),
     plannedAt: serializeProductionOrderDate(row.plannedAt),
+    deliveryAt: serializeProductionOrderDate(row.deliveryAt),
     closedAt: serializeProductionOrderDate(row.closedAt),
     nomusUpdatedAt: serializeProductionOrderDate(row.nomusUpdatedAt),
     syncedAt: serializeProductionOrderDate(row.syncedAt),

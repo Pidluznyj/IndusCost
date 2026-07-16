@@ -1,7 +1,10 @@
 /**
- * Fixture sanitizada — OP real confirmada no Nomus.
+ * Fixture sanitizada — OP real confirmada no Nomus (OP-14.1).
  * GET /rest/ordens?query=nome=="OP 05800 - 003"
  * Pedido cruzado: /rest/pedidos/2530 → PD 02534 / item 11324.
+ *
+ * Datas oficiais confirmadas em produção (America/Sao_Paulo):
+ * - dataHoraCriacao / Liberacao / InicialPlanejada / Entrega / Edicao
  */
 
 import type { JsonObject } from "@/src/lib/nomusProductionOrdersParsers.js";
@@ -23,10 +26,11 @@ export const NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE: JsonObject = {
   empresa: "KOPPETEL",
   idEmpresa: 1,
   setorEstoque: "PRODUCAO",
-  dataAbertura: "10/03/2026 08:15:00",
-  dataEncerramento: "12/03/2026 17:40:22",
-  dataPrevista: "12/03/2026 18:00:00",
-  dataAlteracao: "12/03/2026 17:40:22",
+  dataHoraCriacao: "23/06/2026 00:00:00",
+  dataHoraLiberacao: "23/06/2026 10:55:11",
+  dataHoraInicialPlanejada: "24/06/2026 17:00:00",
+  dataHoraEntrega: "08/07/2026 17:00:00",
+  dataHoraEdicao: "14/07/2026 00:00:00",
   // Campo desconhecido — parser não deve quebrar.
   campoDesconhecidoNomus: { nested: true, valor: "ok" },
   itensPedido: [
@@ -39,6 +43,16 @@ export const NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE: JsonObject = {
     },
   ],
 };
+
+/** Conversões UTC esperadas (parede America/Sao_Paulo → Instant). */
+export const NOMUS_PRODUCTION_ORDER_OP_05800_EXPECTED_DATES = {
+  openedAt: "2026-06-23T03:00:00.000Z",
+  releasedAt: "2026-06-23T13:55:11.000Z",
+  plannedAt: "2026-06-24T20:00:00.000Z",
+  deliveryAt: "2026-07-08T20:00:00.000Z",
+  nomusUpdatedAt: "2026-07-14T03:00:00.000Z",
+  closedAt: null,
+} as const;
 
 export const NOMUS_PRODUCTION_ORDER_OP_05800_EXPECTED = {
   externalId: 30347,

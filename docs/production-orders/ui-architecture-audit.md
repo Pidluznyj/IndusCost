@@ -359,10 +359,14 @@ Padrão usado em Comissões, Material Demand, `SalesOrderMarginDetailDrawer.tsx`
 | `externalCompanyId` / `companyName` | `idEmpresa` / `empresa` | Drawer — **empresa emissora**, não cliente |
 | `quantity` / `unit` | `quantidade` / `unidade` | Sim |
 | `stockSector` | `setorEstoque` | Drawer |
-| `openedAt` | `dataAbertura` | Sim |
-| `closedAt` | `dataEncerramento` | Sim |
-| `plannedAt` | `dataPrevista` | Sim |
-| `nomusUpdatedAt` | `dataAlteracao` | Drawer |
+| `openedAt` | `dataHoraCriacao` | Sim |
+| `releasedAt` | `dataHoraLiberacao` | Sim |
+| `plannedAt` | `dataHoraInicialPlanejada` | Sim |
+| `deliveryAt` | `dataHoraEntrega` | Sim |
+| `closedAt` | encerramento oficial (raro) | Não inferir de entrega/edição |
+| `nomusUpdatedAt` | `dataHoraEdicao` | Sim |
+
+Ver `docs/production-orders/date-field-mapping.md`.
 | `rawJson` | payload integral | Drawer “payload” colapsável (opcional) |
 | `payloadHash` | hash estável | Não (auditoria técnica) |
 | `firstSeenAt` / `lastSeenAt` / `lastChangedAt` / `syncedAt` | metadados sync | Drawer metadados |

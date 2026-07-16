@@ -178,6 +178,13 @@ describe("nomusProductionOrders wiring", () => {
       ),
       "utf8"
     );
+    const op14 = readFileSync(
+      join(
+        process.cwd(),
+        "prisma/migrations/20260730120000_nomus_production_orders_op14_dates/migration.sql"
+      ),
+      "utf8"
+    );
     assert.match(schema, /model NomusProductionOrder /);
     assert.match(schema, /model NomusProductionOrderSalesLink /);
     assert.match(schema, /payloadHash/);
@@ -186,10 +193,14 @@ describe("nomusProductionOrders wiring", () => {
     assert.match(schema, /isCurrent/);
     assert.match(schema, /removedAt/);
     assert.match(schema, /lastChangedAt/);
+    assert.match(schema, /releasedAt/);
+    assert.match(schema, /deliveryAt/);
     assert.doesNotMatch(schema, /model SyncState/);
     assert.match(base, /CREATE TABLE "NomusProductionOrder"/);
     assert.match(op02, /payloadHash/);
     assert.match(op02, /itemNumber/);
     assert.match(op02, /isCurrent/);
+    assert.match(op14, /releasedAt/);
+    assert.match(op14, /deliveryAt/);
   });
 });

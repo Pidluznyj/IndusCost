@@ -55,9 +55,11 @@ Respostas de erro:
 
 ### Eixo do período
 
-Campo oficial: **`openedAt`** (`NomusProductionOrder.openedAt` ← `dataAbertura` Nomus).
+Campo oficial: **`openedAt`** (`NomusProductionOrder.openedAt` ← `dataHoraCriacao` Nomus).
 
 Documentado em código: `PRODUCTION_ORDERS_LIST_PERIOD_FIELD = "openedAt"`.
+
+Mapeamento completo de datas: `docs/production-orders/date-field-mapping.md`.
 
 Não inferir datas ausentes. OP com `openedAt = null` **não** entra em filtros `from`/`to`.
 
@@ -108,10 +110,12 @@ Fixa (não parametrizável na v1):
 | `quantity` | string \| null | `quantity` serializado (`Decimal` → string; **null permanece null**) |
 | `unit` | string \| null | `unit` |
 | `stockSector` | string \| null | `stockSector` |
-| `openedAt` | ISO \| null | `openedAt` |
-| `plannedAt` | ISO \| null | `plannedAt` |
-| `closedAt` | ISO \| null | `closedAt` |
-| `nomusUpdatedAt` | ISO \| null | `nomusUpdatedAt` |
+| `openedAt` | ISO \| null | `openedAt` ← `dataHoraCriacao` |
+| `releasedAt` | ISO \| null | `releasedAt` ← `dataHoraLiberacao` |
+| `plannedAt` | ISO \| null | `plannedAt` ← `dataHoraInicialPlanejada` |
+| `deliveryAt` | ISO \| null | `deliveryAt` ← `dataHoraEntrega` |
+| `closedAt` | ISO \| null | só encerramento oficial (geralmente null) |
+| `nomusUpdatedAt` | ISO \| null | `nomusUpdatedAt` ← `dataHoraEdicao` |
 | `syncedAt` | ISO \| null | `syncedAt` |
 | `currentLinkCount` | int | vínculos com `isCurrent=true` |
 | `currentSalesOrders` | array | resumo deduplicado por `externalSalesOrderId` |
@@ -122,12 +126,15 @@ Fixa (não parametrizável na v1):
 | Campo | Tipo |
 |-------|------|
 | `externalSalesOrderId` | int |
+| `salesOrderId` | uuid \| null (deep link local) |
 | `orderCode` | string \| null |
 | `customerName` | string \| null |
 
 ### 4.2 `statusCounts`
 
-Contagem por valor **real** de `status` no banco, respeitando os mesmos filtros da listagem (exceto paginação).
+Contagem por valor **real** de `status` no banco, respeitando busca, tipo,
+empresa e período, mas ignorando o próprio filtro `status`. Isso mantém a faixa
+de status navegável ao selecionar um chip.
 
 - Chave `""` (string vazia) = registros com `status IS NULL`.
 - Sem enum inventado.
@@ -179,7 +186,7 @@ Testes: `npm run test:production-orders-api` ou inclusão em `test:nomus:product
   },
   "company": { "externalCompanyId", "companyName" },
   "dates": {
-    "openedAt", "plannedAt", "closedAt", "nomusUpdatedAt",
+    "openedAt", "releasedAt", "plannedAt", "deliveryAt", "closedAt", "nomusUpdatedAt",
     "firstSeenAt", "lastSeenAt", "lastChangedAt", "syncedAt", "createdAt", "updatedAt"
   },
   "salesLinks": [/* ver abaixo */],
@@ -264,3 +271,13 @@ Implementação: `src/lib/productionOrdersDetail.server.ts`.
 | Menu | Operações → Ordens de Produção |
 | resourceKey | `operations.production_orders` |
 | Módulo | `src/components/operations/ProductionOrdersModule.tsx` |
+
+### Grid (OP-19)
+
+- Filtros compactos: busca, tipo, empresa e período de `openedAt`.
+- Busca com debounce de 300 ms; requisição anterior cancelada por `AbortController`.
+- Estado de filtros e página refletido na URL.
+- Paginação permanece server-side (`pageSize=50`).
+- Status usam valores reais de `statusCounts`; valores desconhecidos continuam visíveis.
+- Pedidos usam `salesOrderId` para deep link local, primeiro chip + `+N`.
+- Clique na linha abre detalhe read-only sem perder filtros/página.

@@ -249,14 +249,18 @@ describe("fixture OP 05800 - 003 (caso real)", () => {
     );
     assert.equal(expected.salesOrderCode, "PD 02534");
     assert.ok(mapped.row.openedAt);
-    assert.ok(mapped.row.closedAt);
+    assert.ok(mapped.row.releasedAt);
+    assert.ok(mapped.row.plannedAt);
+    assert.ok(mapped.row.deliveryAt);
+    assert.ok(mapped.row.nomusUpdatedAt);
+    assert.equal(mapped.row.closedAt, null);
     assert.ok(mapped.row.payloadHash.length === 64);
   });
 
   it("datas inválidas no payload viram fieldErrors controlados", () => {
     const mapped = mapNomusProductionOrderPayload({
       id: 1,
-      dataAbertura: "não-é-data",
+      dataHoraCriacao: "não-é-data",
       quantidade: "20",
     });
     assert.equal(mapped.ok, true);

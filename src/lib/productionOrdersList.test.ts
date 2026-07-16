@@ -22,7 +22,7 @@ function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
 }
 
-const baseOpened = new Date("2026-03-10T11:15:00.000Z");
+const baseOpened = new Date("2026-06-23T03:00:00.000Z");
 
 function gridRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -39,9 +39,11 @@ function gridRow(overrides: Record<string, unknown> = {}) {
     unit: "PC",
     stockSector: "PRODUCAO",
     openedAt: baseOpened,
-    plannedAt: new Date("2026-03-12T21:00:00.000Z"),
-    closedAt: new Date("2026-03-12T20:40:22.000Z"),
-    nomusUpdatedAt: new Date("2026-03-12T20:40:22.000Z"),
+    releasedAt: new Date("2026-06-23T13:55:11.000Z"),
+    plannedAt: new Date("2026-06-24T20:00:00.000Z"),
+    deliveryAt: new Date("2026-07-08T20:00:00.000Z"),
+    closedAt: null,
+    nomusUpdatedAt: new Date("2026-07-14T03:00:00.000Z"),
     syncedAt: new Date("2026-07-16T12:00:00.000Z"),
     ...overrides,
   };
@@ -149,7 +151,9 @@ describe("serializeProductionOrderGridRow", () => {
       gridRow({
         quantity: null,
         openedAt: null,
+        releasedAt: null,
         plannedAt: null,
+        deliveryAt: null,
         closedAt: null,
         nomusUpdatedAt: null,
         syncedAt: null,
@@ -186,6 +190,7 @@ describe("buildProductionOrderLinkAggregates", () => {
     assert.deepEqual(agg?.currentSalesOrders, [
       {
         externalSalesOrderId: 2530,
+        salesOrderId: "so-1",
         orderCode: "PD 02534",
         customerName: "Esmaltec S/A",
       },
@@ -287,8 +292,13 @@ describe("listProductionOrdersForGrid", () => {
           calls.count += 1;
           return 42;
         },
-        groupBy: async () => {
+        groupBy: async (args: { where: { AND?: unknown[] } }) => {
           calls.groupBy += 1;
+          assert.equal(
+            JSON.stringify(args.where).includes('"status":"Encerrada"'),
+            false,
+            "statusCounts deve ignorar o próprio filtro status"
+          );
           return [
             { status: "Encerrada", _count: { _all: 40 } },
             { status: null, _count: { _all: 2 } },
@@ -339,6 +349,7 @@ describe("listProductionOrdersForGrid", () => {
     assert.deepEqual(payload.rows[0]?.currentSalesOrders, [
       {
         externalSalesOrderId: 2530,
+        salesOrderId: "so-1",
         orderCode: "PD 02534",
         customerName: "Esmaltec S/A",
       },

@@ -97,6 +97,20 @@ Rejeitados como seletor de janela incremental: `dataHoraEdicao`, `dataHoraCriaca
 
 Fixture real: OP `30347` / `OP 05800 - 003` / pedido `2530` / item `11324`.
 
+Datas oficiais: [`date-field-mapping.md`](./date-field-mapping.md).
+
+### Reparo de datas a partir do rawJson (OP-14.1)
+
+Não consulta Nomus. Atualiza só colunas de data.
+
+```bash
+npm run sync:nomus:production-orders:repair-dates:preview -- --only-null-dates --limit=50
+npm run sync:nomus:production-orders:repair-dates:apply -- --only-null-dates
+npm run sync:nomus:production-orders:repair-dates:apply -- --externalId=30347
+```
+
+Preserva `rawJson`, `payloadHash`, `firstSeenAt`, `lastSeenAt`, `lastChangedAt`, `syncedAt` e vínculos.
+
 ---
 
 ## 6. Modos

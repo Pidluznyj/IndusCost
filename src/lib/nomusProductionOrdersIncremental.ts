@@ -4,8 +4,8 @@
  * Avaliação de seletores (docs + fixture OP 05800 + api-contract):
  * - dataAlteracao     → ACEITO (presente no payload real; mapper → nomusUpdatedAt)
  * - dataAbertura      → ACEITO como alternativo (menos ideal para edições)
- * - dataHoraEdicao    → REJEITADO (campo AR/AP; não consta no contrato /rest/ordens)
- * - dataHoraCriacao   → REJEITADO (idem)
+ * - dataHoraEdicao    → REJEITADO como seletor RSQL (existe no payload → nomusUpdatedAt; não homologado p/ janela)
+ * - dataHoraCriacao   → REJEITADO como seletor RSQL (existe no payload → openedAt; não homologado p/ janela)
  * - id / nome         → REJEITADOS para janela incremental (só consulta pontual)
  *
  * Fallback de seletor rejeitado: janela paginada LIMITADA + auditada (nunca full scan ilimitado).
@@ -136,9 +136,9 @@ export function evaluateProductionOrdersIncrementalSelector(
 
   const reasons: Record<string, string> = {
     dataHoraEdicao:
-      "dataHoraEdicao não faz parte do contrato documentado de GET /rest/ordens (campo típico de AR/AP).",
+      "dataHoraEdicao existe no payload /rest/ordens (→ nomusUpdatedAt), mas não está homologado como seletor RSQL de janela incremental.",
     dataHoraCriacao:
-      "dataHoraCriacao não faz parte do contrato documentado de GET /rest/ordens (campo típico de AR/AP).",
+      "dataHoraCriacao existe no payload /rest/ordens (→ openedAt), mas não está homologado como seletor RSQL de janela incremental.",
     id: "id é seletor pontual, não janela temporal de incremental.",
     nome: "nome é seletor pontual, não janela temporal de incremental.",
   };

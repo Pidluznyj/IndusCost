@@ -51,8 +51,10 @@ export type MappedNomusProductionOrder = {
   unit: string | null;
   stockSector: string | null;
   openedAt: Date | null;
-  closedAt: Date | null;
+  releasedAt: Date | null;
   plannedAt: Date | null;
+  deliveryAt: Date | null;
+  closedAt: Date | null;
   nomusUpdatedAt: Date | null;
   rawJson: JsonObject;
   payloadHash: string;
@@ -82,6 +84,63 @@ function mapDateField(
   if (parsed.ok) return parsed.value;
   fieldErrors.push({ field, error: parsed.error, raw: parsed.raw });
   return null;
+}
+
+/**
+ * Primeiro valor presente e não-vazio.
+ * Não usa Date.now(); ausência permanece ausência (caller passa null ao parser).
+ */
+export function firstPresentNomusDateCandidate(...candidates: unknown[]): unknown {
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    if (typeof candidate === "string" && candidate.trim() === "") continue;
+    return candidate;
+  }
+  return null;
+}
+
+/**
+ * Mapeamento oficial OP-14.1 (prioridade = nomes reais de GET /rest/ordens).
+ * Aliases legados só como fallback semanticamente equivalente.
+ *
+ * closedAt: NUNCA dataHoraEntrega / dataHoraEdicao — só encerramento inequívoco.
+ */
+export function resolveNomusProductionOrderDateInputs(raw: JsonObject): {
+  openedAt: unknown;
+  releasedAt: unknown;
+  plannedAt: unknown;
+  deliveryAt: unknown;
+  closedAt: unknown;
+  nomusUpdatedAt: unknown;
+} {
+  return {
+    openedAt: firstPresentNomusDateCandidate(
+      raw.dataHoraCriacao,
+      raw.dataAbertura,
+      raw.dataInicio,
+      raw.dataCriacao
+    ),
+    releasedAt: firstPresentNomusDateCandidate(raw.dataHoraLiberacao, raw.dataLiberacao),
+    plannedAt: firstPresentNomusDateCandidate(
+      raw.dataHoraInicialPlanejada,
+      raw.dataPrevista,
+      raw.dataPrevisao,
+      raw.dataEntregaPrevista
+    ),
+    deliveryAt: firstPresentNomusDateCandidate(raw.dataHoraEntrega, raw.dataEntrega),
+    // Encerramento oficial apenas — não confundir com entrega/edição.
+    closedAt: firstPresentNomusDateCandidate(
+      raw.dataHoraEncerramento,
+      raw.dataEncerramento,
+      raw.dataFim,
+      raw.dataConclusao
+    ),
+    nomusUpdatedAt: firstPresentNomusDateCandidate(
+      raw.dataHoraEdicao,
+      raw.dataAlteracao,
+      raw.dataAtualizacao
+    ),
+  };
 }
 
 export function pickItensPedidoFromOrdem(doc: JsonObject): unknown[] {
@@ -247,6 +306,8 @@ export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOr
     byItemId.set(link.externalSalesOrderItemId, link);
   }
 
+  const dateInputs = resolveNomusProductionOrderDateInputs(raw);
+
   return {
     ok: true,
     fieldErrors,
@@ -283,27 +344,13 @@ export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOr
           asNomusProductionOrderObject(raw.setorEstoque)?.nome
         ) ??
         null,
-      openedAt: mapDateField(
-        "openedAt",
-        raw.dataAbertura ?? raw.dataInicio ?? raw.dataCriacao,
-        fieldErrors
-      ),
-      closedAt: mapDateField(
-        "closedAt",
-        raw.dataEncerramento ?? raw.dataFim ?? raw.dataConclusao,
-        fieldErrors
-      ),
-      plannedAt: mapDateField(
-        "plannedAt",
-        raw.dataPrevista ?? raw.dataPrevisao ?? raw.dataEntregaPrevista,
-        fieldErrors
-      ),
+      openedAt: mapDateField("openedAt", dateInputs.openedAt, fieldErrors),
+      releasedAt: mapDateField("releasedAt", dateInputs.releasedAt, fieldErrors),
+      plannedAt: mapDateField("plannedAt", dateInputs.plannedAt, fieldErrors),
+      deliveryAt: mapDateField("deliveryAt", dateInputs.deliveryAt, fieldErrors),
+      closedAt: mapDateField("closedAt", dateInputs.closedAt, fieldErrors),
       // Não usar timestamps locais do stage; só campos Nomus oficiais.
-      nomusUpdatedAt: mapDateField(
-        "nomusUpdatedAt",
-        raw.dataAlteracao ?? raw.dataAtualizacao,
-        fieldErrors
-      ),
+      nomusUpdatedAt: mapDateField("nomusUpdatedAt", dateInputs.nomusUpdatedAt, fieldErrors),
       rawJson: raw,
       payloadHash: stableNomusProductionOrderPayloadHash(raw),
       salesLinks: [...byItemId.values()],

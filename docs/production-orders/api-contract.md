@@ -111,10 +111,21 @@ Parser oficial: `parseNomusPtBrNumber` / `parseNomusProductionQuantity`.
 
 Ainda **não** tratados como contrato estável (mapear só se aparecerem de forma consistente):
 
-- datas (`dataAbertura`, `dataEncerramento`, …)
 - `empresa` como objeto `{ id, nome }`
 - status numérico vs textual
 - arrays alternativos de itens (`itensPedidos`, etc. — parser já tolera alguns aliases)
+
+**Datas oficiais (OP-14.1):** ver `docs/production-orders/date-field-mapping.md`
+
+| Nomus | Local |
+|-------|-------|
+| `dataHoraCriacao` | `openedAt` |
+| `dataHoraLiberacao` | `releasedAt` |
+| `dataHoraInicialPlanejada` | `plannedAt` |
+| `dataHoraEntrega` | `deliveryAt` |
+| `dataHoraEdicao` | `nomusUpdatedAt` |
+
+`closedAt` só com campo inequívoco de encerramento — **não** usar `dataHoraEntrega`.
 
 ---
 
