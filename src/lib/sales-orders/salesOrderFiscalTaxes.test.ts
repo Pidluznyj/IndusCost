@@ -836,19 +836,18 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
   });
 });
 
-describe("TRIB-01 / TRIB-05 — empty state e gate da aba Tributos", () => {
+describe("TRIB-01 / TRIB-05 / TRIB-06 — empty state e gate da aba Tributos", () => {
   it("mensagem empty só quando fiscalTaxes é null; no-nfe é estado distinto", () => {
     const tab = readFileSync(
       new URL("../../components/sales/SalesOrderTributosTab.tsx", import.meta.url),
       "utf8"
     );
     assert.match(tab, /data-testid="sales-order-tributos-empty"/);
-    assert.match(tab, /Tributos documentais indisponíveis para este pedido/);
+    assert.match(tab, /SALES_ORDER_TRIBUTOS_EMPTY_MESSAGE/);
     assert.match(tab, /data-testid="sales-order-tributos-no-nfe"/);
-    assert.match(tab, /Nenhuma NF-e vinculada a este pedido/);
-    assert.match(tab, /if \(!fiscalTaxes\)/);
-    assert.match(tab, /fiscalTaxes\?\.status === "error"/);
-    assert.match(tab, /fiscalTaxesAccess === "denied"/);
+    assert.match(tab, /SALES_ORDER_TRIBUTOS_NO_VALID_NFE_MESSAGE/);
+    assert.match(tab, /resolveSalesOrderTributosTabViewState/);
+    assert.match(tab, /fiscalTaxesAccess/);
   });
 
   it("detail passa effectivePermissions + role ao gate fiscal (TRIB-05)", () => {

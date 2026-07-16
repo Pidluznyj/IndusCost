@@ -1,6 +1,6 @@
 /**
  * Aba Tributos — detalhe do Pedido de Venda e Auditoria 360º.
- * Camada A (destacados na NF). Nunca exibe “pago”.
+ * TRIB-06: estados do contrato TRIB-05. Camada A = tributos documentais / destacados.
  */
 import React, { useMemo, useState } from "react";
 import {
@@ -13,8 +13,18 @@ import type {
   SalesOrderFiscalNfeDto,
   SalesOrderFiscalTaxesPayload,
 } from "@/src/lib/sales-orders/salesOrderFiscalTaxesClient";
-import { useAuth } from "@/src/contexts/AuthContext";
-import { canViewFinanceAccountsPayable } from "@/src/lib/financeAccountsPayablePermissions";
+import {
+  SALES_ORDER_TRIBUTOS_DENIED_MESSAGE,
+  SALES_ORDER_TRIBUTOS_EMPTY_MESSAGE,
+  SALES_ORDER_TRIBUTOS_LOADING_MESSAGE,
+  SALES_ORDER_TRIBUTOS_NO_VALID_NFE_MESSAGE,
+  SALES_ORDER_TRIBUTOS_PARTIAL_WARNING,
+  buildPrimaryHighlightedTaxCards,
+  formatSalesOrderTributosLinkOrigins,
+  resolveSalesOrderTributosTabViewState,
+  salesOrderTributosAdditiveExists,
+  salesOrderTributosErrorMessage,
+} from "@/src/lib/sales-orders/salesOrderTributosTabUi";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -39,11 +49,13 @@ function Kpi({
   value,
   help,
   tone,
+  "data-tax-type": dataTaxType,
 }: {
   label: string;
   value: string;
   help?: string;
   tone?: "default" | "highlight" | "muted" | "warn";
+  "data-tax-type"?: string;
 }): JSX.Element {
   return (
     <div
@@ -55,6 +67,7 @@ function Kpi({
         (!tone || tone === "default") && "border-[#E5E7EB] bg-white"
       )}
       title={help}
+      data-tax-type={dataTaxType}
     >
       <p className="text-[9px] font-bold uppercase tracking-wide text-[#6B7280]">
         {label}
@@ -144,10 +157,16 @@ export function SalesOrderTributosTab({
   className,
   showTechnical = true,
 }: Props): JSX.Element {
-  const auth = useAuth();
-  const canOpenAp = canViewFinanceAccountsPayable(auth);
   const [selectedNfeId, setSelectedNfeId] = useState<number | null>(null);
   const [techOpen, setTechOpen] = useState(false);
+
+  const viewState = resolveSalesOrderTributosTabViewState({
+    loading,
+    denied,
+    fiscalTaxesAccess,
+    error,
+    fiscalTaxes,
+  });
 
   const selectedNfe = useMemo(() => {
     if (selectedNfeId == null || !fiscalTaxes) return null;
@@ -158,18 +177,19 @@ export function SalesOrderTributosTab({
     );
   }, [fiscalTaxes, selectedNfeId]);
 
-  if (loading) {
+  if (viewState === "loading") {
     return (
       <div
         className={cn("py-10 text-center text-[12px] text-[#6B7280]", className)}
         data-testid="sales-order-tributos-loading"
+        data-view-state="loading"
       >
-        Carregando tributos documentais…
+        {SALES_ORDER_TRIBUTOS_LOADING_MESSAGE}
       </div>
     );
   }
 
-  if (denied || fiscalTaxesAccess === "denied") {
+  if (viewState === "denied") {
     return (
       <div
         className={cn(
@@ -177,13 +197,14 @@ export function SalesOrderTributosTab({
           className
         )}
         data-testid="sales-order-tributos-denied"
+        data-view-state="denied"
       >
-        Você não tem permissão para ver tributos / faturamento deste pedido.
+        {SALES_ORDER_TRIBUTOS_DENIED_MESSAGE}
       </div>
     );
   }
 
-  if (error) {
+  if (viewState === "error") {
     return (
       <div
         className={cn(
@@ -191,28 +212,17 @@ export function SalesOrderTributosTab({
           className
         )}
         data-testid="sales-order-tributos-error"
+        data-view-state="error"
       >
-        {error}
+        {salesOrderTributosErrorMessage({
+          error,
+          fiscalTaxes,
+        })}
       </div>
     );
   }
 
-  if (fiscalTaxes?.status === "error") {
-    return (
-      <div
-        className={cn(
-          "rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800",
-          className
-        )}
-        data-testid="sales-order-tributos-error"
-      >
-        {fiscalTaxes.statusReason ??
-          "Falha técnica ao carregar tributos documentais."}
-      </div>
-    );
-  }
-
-  if (!fiscalTaxes) {
+  if (viewState === "empty" || !fiscalTaxes) {
     return (
       <div
         className={cn(
@@ -220,8 +230,9 @@ export function SalesOrderTributosTab({
           className
         )}
         data-testid="sales-order-tributos-empty"
+        data-view-state="empty"
       >
-        Tributos documentais indisponíveis para este pedido.
+        {SALES_ORDER_TRIBUTOS_EMPTY_MESSAGE}
       </div>
     );
   }
@@ -236,8 +247,10 @@ export function SalesOrderTributosTab({
     technical,
     warnings,
     status,
+    linkOrigins,
   } = fiscalTaxes;
-  const hasAnyNfe = nfes.length + cancelledNfes.length > 0;
+  const documentaryOriginLine = formatSalesOrderTributosLinkOrigins(linkOrigins);
+  const primaryTaxCards = buildPrimaryHighlightedTaxCards(highlightedTaxes);
   const settlementBlock =
     settlements ??
     ({
@@ -322,8 +335,8 @@ export function SalesOrderTributosTab({
           Por tributo — destacado × apurado × recolhido × alocado
         </h3>
         <p className="mb-2 text-[11px] text-[#6B7280]">
-          Labels explícitos por camada. Nunca use “impostos pagos” para todos os
-          valores.
+          Labels explícitos por camada. Tributos documentais ≠ apurado ≠ recolhido ≠
+          alocado.
         </p>
         {settlementBlock.taxMatrix.length === 0 ? (
           <p className="text-[12px] text-[#6B7280]">
@@ -491,7 +504,7 @@ export function SalesOrderTributosTab({
                     </td>
                     <td className="py-1.5 pr-2">{g.statusLabel}</td>
                     <td className="py-1.5 pr-2">
-                      {g.accountsPayableExternalId != null && canOpenAp ? (
+                      {g.accountsPayableExternalId != null ? (
                         <a
                           href={`/finance/accounts-payable?search=${encodeURIComponent(
                             g.accountsPayableDocumentNumber ??
@@ -505,12 +518,6 @@ export function SalesOrderTributosTab({
                           {g.accountsPayableDocumentNumber ??
                             g.accountsPayableExternalId}
                         </a>
-                      ) : g.accountsPayableExternalId != null ? (
-                        <span>
-                          AP #
-                          {g.accountsPayableDocumentNumber ??
-                            g.accountsPayableExternalId}
-                        </span>
                       ) : (
                         "—"
                       )}
@@ -624,9 +631,13 @@ export function SalesOrderTributosTab({
     </>
   );
 
-  if (!hasAnyNfe) {
+  if (viewState === "unavailable" || status === "unavailable") {
     return (
-      <div className={cn("space-y-3", className)} data-testid="sales-order-tributos-tab">
+      <div
+        className={cn("space-y-3", className)}
+        data-testid="sales-order-tributos-tab"
+        data-view-state="unavailable"
+      >
         <section className="rounded-xl border border-[#E5E7EB] bg-white p-3">
           <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
             Resumo fiscal do pedido
@@ -634,8 +645,15 @@ export function SalesOrderTributosTab({
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
             <Kpi label="Valor ativo do pedido" value={money(summary.orderActiveValue)} />
             <Kpi label="A faturar" value={money(summary.amountToInvoice)} tone="highlight" />
-            <Kpi label="NF válidas" value={formatFinanceInteger(0)} />
-            <Kpi label="NF canceladas" value={formatFinanceInteger(summary.cancelledNfeCount)} />
+            <Kpi
+              label="NF válidas"
+              value={formatFinanceInteger(summary.validNfeCount)}
+            />
+            <Kpi
+              label="NF canceladas"
+              value={formatFinanceInteger(summary.cancelledNfeCount)}
+              tone={summary.cancelledNfeCount > 0 ? "warn" : "muted"}
+            />
           </div>
         </section>
         <div
@@ -643,32 +661,65 @@ export function SalesOrderTributosTab({
           data-testid="sales-order-tributos-no-nfe"
           data-status={status}
         >
-          {fiscalTaxes.statusReason ??
-            "Nenhuma NF-e vinculada a este pedido. Tributos documentais aparecem após o faturamento."}
+          {SALES_ORDER_TRIBUTOS_NO_VALID_NFE_MESSAGE}
         </div>
+        {cancelledNfes.length > 0 ? (
+          <section
+            className="rounded-xl border border-rose-100 bg-white p-3"
+            data-testid="sales-order-tributos-cancelled"
+          >
+            <p className="mb-1 text-[11px] font-semibold text-rose-800">
+              NF canceladas (auditoria — fora dos totalizadores)
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-[11px]">
+                <thead>
+                  <tr className="border-b border-rose-100 text-[#6B7280]">
+                    <th className="py-1 pr-2 font-semibold">Número</th>
+                    <th className="py-1 pr-2 font-semibold">Status</th>
+                    <th className="py-1 pr-2 font-semibold text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cancelledNfes.map((n) => (
+                    <tr key={n.nfeExternalId} className="border-b border-rose-50">
+                      <td className="py-1 pr-2">{n.numero ?? "—"}</td>
+                      <td className="py-1 pr-2">{n.statusLabel}</td>
+                      <td className="py-1 pr-2 text-right">{money(n.totalValue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : null}
         {settlementsSections}
-        <p className="text-[10px] text-[#6B7280]">
-          Fonte destacados: {summary.sourceLabel}
-          {summary.lastParsedAt
-            ? ` · Última leitura XML: ${formatFinanceDateTime(summary.lastParsedAt)}`
-            : ""}
+        <p
+          className="text-[10px] text-[#6B7280]"
+          data-testid="sales-order-tributos-documentary-origin"
+        >
+          Origem documental: {summary.sourceLabel}
+          {documentaryOriginLine ? ` · ${documentaryOriginLine}` : ""}
         </p>
       </div>
     );
   }
 
   return (
-    <div className={cn("space-y-4", className)} data-testid="sales-order-tributos-tab">
-      {status === "partial" || warnings.length > 0 ? (
+    <div
+      className={cn("space-y-4", className)}
+      data-testid="sales-order-tributos-tab"
+      data-view-state={viewState}
+    >
+      {viewState === "partial" || status === "partial" || warnings.length > 0 ? (
         <div
-          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
+          className="rounded-md border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[11px] text-[#4B5563]"
           data-testid="sales-order-tributos-warnings"
+          data-partial="true"
         >
-          {status === "partial" ? (
-            <p className="font-semibold">Dados fiscais parciais</p>
-          ) : null}
+          <p>{SALES_ORDER_TRIBUTOS_PARTIAL_WARNING}</p>
           {warnings.length > 0 ? (
-            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[#6B7280]">
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}
@@ -685,18 +736,9 @@ export function SalesOrderTributosTab({
           Resumo fiscal do pedido
         </h3>
         <p className="mb-2 text-[11px] text-[#6B7280]">
-          Destacados nas NF válidas (XML NF-e). Não inclui impostos pagos nem apuração
-          periódica.
+          Tributos documentais nas NF válidas (XML NF-e). Não inclui apuração
+          periódica nem recolhimento.
         </p>
-        {summary.compositionIncomplete ? (
-          <p
-            className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900"
-            data-testid="sales-order-tributos-composition-incomplete"
-          >
-            {summary.compositionIncompleteReason ??
-              "Composição não totalmente disponível"}
-          </p>
-        ) : null}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           <Kpi label="Valor ativo do pedido" value={money(summary.orderActiveValue)} />
           <Kpi
@@ -704,10 +746,21 @@ export function SalesOrderTributosTab({
             value={money(summary.productsValue)}
             help="Produtos líquidos (vProd − vDesc) nas NF válidas"
           />
-          <Kpi label="Descontos" value={money(summary.discountsValue)} />
-          <Kpi label="Frete" value={money(summary.freightValue)} />
-          <Kpi label="Seguro" value={money(summary.insuranceValue)} />
-          <Kpi label="Outras despesas" value={money(summary.otherExpensesValue)} />
+          {salesOrderTributosAdditiveExists(summary.discountsValue) ? (
+            <Kpi label="Descontos" value={money(summary.discountsValue)} />
+          ) : null}
+          {salesOrderTributosAdditiveExists(summary.freightValue) ? (
+            <Kpi label="Frete" value={money(summary.freightValue)} />
+          ) : null}
+          {salesOrderTributosAdditiveExists(summary.insuranceValue) ? (
+            <Kpi label="Seguro" value={money(summary.insuranceValue)} />
+          ) : null}
+          {salesOrderTributosAdditiveExists(summary.otherExpensesValue) ? (
+            <Kpi
+              label="Outras despesas / acréscimos"
+              value={money(summary.otherExpensesValue)}
+            />
+          ) : null}
           <Kpi
             label="Total NF válidas"
             value={money(summary.nfeValidTotal)}
@@ -739,12 +792,16 @@ export function SalesOrderTributosTab({
             tone={summary.cancelledNfeCount > 0 ? "warn" : "muted"}
           />
         </div>
-        <p className="mt-2 text-[10px] text-[#6B7280]">
-          Fonte: {summary.sourceLabel}
+        <p
+          className="mt-2 text-[10px] text-[#6B7280]"
+          data-testid="sales-order-tributos-documentary-origin"
+        >
+          Origem documental: {summary.sourceLabel}
           {summary.lastParsedAt
             ? ` · Última leitura XML: ${formatFinanceDateTime(summary.lastParsedAt)}`
             : " · Leitura XML ainda não registrada"}
           {summary.parserVersion ? ` · Parser ${summary.parserVersion}` : ""}
+          {documentaryOriginLine ? ` · ${documentaryOriginLine}` : ""}
         </p>
       </section>
 
@@ -754,27 +811,23 @@ export function SalesOrderTributosTab({
         data-testid="sales-order-tributos-highlighted"
       >
         <h3 className="mb-1 text-[11px] font-bold uppercase tracking-wide text-[#1e3a8a]">
-          Destacado na NF
+          Tributos destacados
         </h3>
         <p className="mb-2 text-[11px] text-[#6B7280]" title="Fonte: XML NF-e">
-          Fonte: XML NF-e (HEADER). Não confundir com apurado, recolhido ou alocado.
+          Fonte: XML NF-e (HEADER). Valores documentais — não confundir com apurado,
+          recolhido ou alocado.
         </p>
-        {highlightedTaxes.length === 0 ? (
-          <p className="text-[12px] text-[#6B7280]">
-            Nenhum tributo tipado disponível nas NF válidas.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {highlightedTaxes.map((t) => (
-              <Kpi
-                key={t.taxType}
-                label={t.label}
-                value={money(t.amount)}
-                tone="highlight"
-              />
-            ))}
-          </div>
-        )}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          {primaryTaxCards.map((t) => (
+            <Kpi
+              key={t.taxType}
+              label={t.label}
+              value={money(t.amount)}
+              tone={t.amount != null ? "highlight" : "muted"}
+              data-tax-type={t.taxType}
+            />
+          ))}
+        </div>
       </section>
 
       {settlementsSections}
