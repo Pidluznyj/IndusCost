@@ -172,6 +172,6 @@ Critérios: vínculo 2530/11324; sem duplicate `externalId`; preview sem escrita
 
 ## 8. Fora de escopo (confirmado)
 
-- Tela de Ordens de Produção
+- Tela de Ordens de Produção (auditoria de arquitetura: [`ui-architecture-audit.md`](./ui-architecture-audit.md))
 - Operações / reportes / movimentações de estoque
 - Alterar regras de comissão, precificação, BOM, Relatório Presidencial
