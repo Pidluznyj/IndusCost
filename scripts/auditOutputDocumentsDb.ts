@@ -22,6 +22,7 @@ import {
   parseAuditOutputDocumentsDbArgs,
   probeDatabaseConnectivity,
   readDatabaseUrlSafe,
+  resolveAuditProcessExitCode,
   sanitizeDatabaseUrl,
   type AuditOutputDocumentsDbResult,
 } from "../src/lib/output-documents/auditOutputDocumentsDb.ts";
@@ -62,14 +63,14 @@ async function main(): Promise<void> {
       `${LOG} argumentos inválidos:`,
       error instanceof Error ? error.message : error
     );
-    process.exitCode = 1;
+    process.exitCode = resolveAuditProcessExitCode("args_invalid");
     return;
   }
 
   const dbUrl = readDatabaseUrlSafe(process.env);
   if (!dbUrl.ok) {
     console.error(`${LOG} ${dbUrl.error}`);
-    process.exitCode = 1;
+    process.exitCode = resolveAuditProcessExitCode("error");
     return;
   }
 
@@ -233,7 +234,7 @@ async function main(): Promise<void> {
         );
       }
       console.error(`${LOG} ${message}`);
-      process.exitCode = 1;
+      process.exitCode = resolveAuditProcessExitCode("unavailable");
       return;
     }
 
@@ -262,7 +263,7 @@ async function main(): Promise<void> {
       );
     }
     console.error(`${LOG} falha técnica:`, message);
-    process.exitCode = 1;
+    process.exitCode = resolveAuditProcessExitCode("error");
   } finally {
     await disconnectPrismaSafe(prisma);
   }
@@ -273,5 +274,5 @@ main().catch(async (error) => {
     `${LOG} falha não tratada:`,
     error instanceof Error ? error.message : error
   );
-  process.exitCode = 1;
+  process.exitCode = resolveAuditProcessExitCode("error");
 });

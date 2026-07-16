@@ -20,6 +20,7 @@ import {
   readDatabaseUrlSafe,
   resolveDefaultOutputPaths,
   sanitizeDatabaseUrl,
+  scanAllAuditorReadOnlySources,
 } from "./auditOutputDocumentsDb.js";
 import {
   buildDocumentFieldCoverage,
@@ -488,5 +489,14 @@ describe("garantia read-only", () => {
     assert.match(script, /writeAuditReports/);
     assert.match(script, /printCompactSummary/);
     assert.equal(/console\.log\(JSON\.stringify\(result/.test(script), false);
+  });
+
+  it("varredura estatica DS-02.9 nao encontra escritas/locks/Nomus HTTP", () => {
+    const violations = scanAllAuditorReadOnlySources();
+    assert.deepEqual(
+      violations,
+      [],
+      violations.map((v) => `${v.file} [${v.ruleId}] ${v.snippet}`).join("\n")
+    );
   });
 });

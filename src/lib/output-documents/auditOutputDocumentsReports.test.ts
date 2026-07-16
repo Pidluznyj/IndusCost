@@ -13,6 +13,7 @@ import {
   AUDIT_OUTPUT_DOCUMENTS_DB_DEFAULTS,
   buildAuditResult,
   buildEmptyAuditSections,
+  buildEmptyStageInventory,
   parseAuditOutputDocumentsDbArgs,
   sanitizeDatabaseUrl,
 } from "./auditOutputDocumentsDb.js";
@@ -54,6 +55,8 @@ function sampleResult() {
   const startedAt = new Date("2026-07-16T21:00:00.000Z");
   const finishedAt = new Date("2026-07-16T21:00:02.000Z");
   const sections = buildEmptyAuditSections();
+  sections.inventory = buildEmptyStageInventory();
+  sections.inventory.documents.total = 10;
   sections.examples = buildEmptyExamplesSection();
   sections.notes = ["nota de teste"];
   sections.counts = {

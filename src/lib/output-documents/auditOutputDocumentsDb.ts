@@ -1036,14 +1036,9 @@ export function toAuditIsoDate(value: unknown): string | null {
 }
 
 /** Marcadores de escrita proibidos no runner (checagem estática em testes). */
-export const AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS = [
-  /\.create\s*\(/,
-  /\.createMany\s*\(/,
-  /\.update\s*\(/,
-  /\.updateMany\s*\(/,
-  /\.upsert\s*\(/,
-  /\.delete\s*\(/,
-  /\.deleteMany\s*\(/,
-  /\$executeRaw(?:Unsafe)?\s*[`(]/,
-  /\$executeRawUnsafe\s*\(/,
-] as const;
+export {
+  AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS,
+  AUDIT_OUTPUT_DOCUMENTS_READONLY_RELATIVE_PATHS,
+  resolveAuditProcessExitCode,
+  scanAllAuditorReadOnlySources,
+} from "./auditOutputDocumentsReadOnlyGuard.js";
