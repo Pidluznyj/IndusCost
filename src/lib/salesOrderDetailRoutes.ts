@@ -3,22 +3,25 @@
  *
  * GET /api/sales-orders/:salesOrderId/detail
  *
- * Guardas: `requireAppAuth` + permissão em `SALES_ORDER_DETAIL_PERMISSIONS`
- * (`sales_orders.detail.view` OR `sales_orders.view`) — mesma política do
- * endpoint legado `GET /api/sales-orders/:id`.
+ * Guardas: `requireAppAuth` + `requireResource(commercial.sales_orders.detail, view)`.
  *
  * Deve ser registrada **antes** do handler inline `/api/sales-orders/:id` no
  * `server.ts` para que a rota mais específica tenha prioridade.
  */
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { getSalesOrderDetail } from "./sales-orders/salesOrderDetailService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
+/** @deprecated Prefer COMMERCIAL_RESOURCE_KEYS.salesOrdersDetail. */
 const SALES_ORDER_DETAIL_PERMISSIONS = [
   "sales_orders.detail.view",
   "sales_orders.view",
@@ -33,7 +36,10 @@ export function registerSalesOrderDetailRoutes(
 ): void {
   const guard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission(SALES_ORDER_DETAIL_PERMISSIONS),
+    auth.requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersDetail,
+      COMMERCIAL_ACTIONS.view
+    ),
   ];
 
   app.get(
@@ -80,3 +86,5 @@ export function registerSalesOrderDetailRoutes(
     }
   );
 }
+
+export { SALES_ORDER_DETAIL_PERMISSIONS };

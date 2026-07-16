@@ -426,16 +426,20 @@ export const REQUIRE_RESOURCE_ADMIN_KEYS = {
  * Não migrar em massa neste prompt.
  */
 export const REQUIRE_RESOURCE_LEGACY_BACKLOG = [
-  { area: "dashboard", prompt: "P20+", note: "requirePermission(dashboard.view) bag" },
   {
-    area: "commercial-remaining-bags",
-    prompt: "P19 residual",
-    note: "alguns requireAnyPermission em CRM 360 / ranking / funnel ainda amplos",
+    area: "commercial-or-multi-domain",
+    prompt: "PERM-32 residual",
+    note: "funil pedido→caixa e ranking vendidos ainda em requireAnyPermission (OR multi-domínio)",
   },
   {
     area: "engineering-remaining-bags",
     prompt: "P19 residual",
-    note: "parte de Nomus engineering / MI attachments ainda em bags em server.ts",
+    note: "parte de Nomus engineering / MI attachments / Brent / PTAX ainda em bags",
+  },
+  {
+    area: "finance-audit-or",
+    prompt: "PERM-32 residual",
+    note: "cost-to-cash / production-cost audit ainda em requireAnyPermission amplo",
   },
 ] as const;
 

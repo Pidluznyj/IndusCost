@@ -4,22 +4,22 @@
  * - GET /api/sales-orders/report            → JSON usado pelo PDF (client-side print).
  * - GET /api/sales-orders/report/export.xlsx → XLSX branded.
  *
- * Guards: `sales_orders.view` (mesma permissão do resto de Pedidos de Venda).
- * O layout PDF é renderizado no frontend seguindo o mesmo padrão do relatório
- * oficial de Contas a Receber > Títulos (window.print()).
+ * Guards: `requireResource(commercial.sales_orders, view)`.
  */
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
 import { loadSalesOrderReportPayload } from "./sales/salesOrderReportService.server.js";
-import {
-  buildSalesOrderReportExportBuffer,
-} from "./sales/salesOrderReportExport.js";
+import { buildSalesOrderReportExportBuffer } from "./sales/salesOrderReportExport.js";
 import { salesOrderReportExportFilename } from "./sales/salesOrderReport.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   resolveEmitterName?: (
     req: express.Request
   ) => Promise<string | null> | string | null;
@@ -43,7 +43,10 @@ export function registerSalesOrderReportRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const guard = [auth.requireAppAuth, auth.requirePermission("sales_orders.view")];
+  const guard = [
+    auth.requireAppAuth,
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
+  ];
 
   app.get("/api/sales-orders/report", ...guard, async (req, res) => {
     try {

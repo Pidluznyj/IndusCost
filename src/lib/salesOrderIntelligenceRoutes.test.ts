@@ -21,7 +21,7 @@ describe("salesOrderIntelligenceRoutes", () => {
   it("requer autenticação e permissão", () => {
     const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
     assert.match(routes, /requireAppAuth/);
-    assert.match(routes, /requireAnyPermission\(SALES_ORDER_DETAIL_PERMISSIONS\)/);
+    assert.match(routes, /requireResource\(\s*COMMERCIAL_RESOURCE_KEYS\.salesOrdersDetail/);
     assert.ok(SALES_ORDER_VIEW_PERMISSIONS.includes("sales_orders.view"));
     assert.ok(SALES_ORDER_DETAIL_PERMISSIONS.includes("sales_orders.detail.view"));
   });
@@ -45,7 +45,7 @@ describe("salesOrderIntelligenceRoutes", () => {
       server.indexOf('app.get("/api/sales-orders/:id"') + 400
     );
     const routes = read("src/lib/salesOrderIntelligenceRoutes.ts");
-    assert.match(salesDetail, /sales_orders\.detail\.view/);
+    assert.match(salesDetail, /commercial\.sales_orders\.detail/);
     assert.match(routes, /SALES_ORDER_DETAIL_PERMISSIONS/);
   });
 

@@ -222,7 +222,7 @@ describe("requireResource — auth / personas", () => {
 describe("requireResource — backlog P15+", () => {
   it("lista backlog de módulos ainda legados", () => {
     const list = listRequireResourceLegacyBacklog();
-    assert.ok(list.some((e) => e.prompt === "P19 residual" || e.prompt === "P20+"));
+    assert.ok(list.some((e) => e.prompt === "P19 residual" || e.prompt === "P20+" || e.prompt === "PERM-32 residual"));
     assert.ok(list.length >= 3);
   });
 });

@@ -1,5 +1,9 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
 import {
   buildSalesOrderInternalMarginExportWorkbook,
@@ -13,7 +17,7 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 const SCOPES: Record<string, SalesOrderInternalMarginExportScope> = {
@@ -52,7 +56,10 @@ export function registerSalesOrderInternalMarginExportRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const guard = [auth.requireAppAuth, auth.requireAnyPermission(["sales_orders.view"])];
+  const guard = [
+    auth.requireAppAuth,
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
+  ];
 
   app.get("/api/sales-orders/export-internal.xlsx", ...guard, async (req, res) => {
     try {

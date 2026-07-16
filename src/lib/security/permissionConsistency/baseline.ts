@@ -85,6 +85,11 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:taxes.view","reason":"Alias legado em multiplos recursos do contrato: taxes.view (finance.taxes + finance.tax_apuration / T05)."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.tax_apuration.view","reason":"Alias legado em multiplos recursos do contrato: finance.tax_apuration.view (finance.taxes + finance.tax_apuration / T05)."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.tax_apuration.manage","reason":"Alias legado em multiplos recursos do contrato: finance.tax_apuration.manage (finance.taxes + finance.tax_apuration / T05)."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:products.edit","reason":"PERM-32: products.edit também em engineering.products.tab.bom/tree para preservar OR legado das APIs BOM."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:products.tab.bom","reason":"PERM-32: products.tab.bom também em engineering.products.tab.tree para preservar OR legado da árvore."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:costs.view","reason":"PERM-32: costs.view também em engineering.products.tab.cost para /api/sales-orders/results."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.view","reason":"PERM-32: finance.suppliers.view também em service_termination para preservar OR legado."},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.manage","reason":"PERM-32: finance.suppliers.manage também em service_termination para preservar OR legado."},
 ];
 
 export function baselineKey(

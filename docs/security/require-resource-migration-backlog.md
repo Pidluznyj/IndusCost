@@ -95,5 +95,6 @@ Ações especiais: commissions `close`/`reprocess`, pricing `execute`/`manage`, 
 
 Ver `REQUIRE_RESOURCE_LEGACY_BACKLOG` em `src/lib/security/requireResource.ts`:
 
-- **P19+** materials, products
-- **P18+** commissions, sales-orders (módulo comercial), other nomus sync, dashboard
+- **PERM-32 done:** dashboard, CRM 360/profile/intelligence/owner, sales-order satellites, supplier service termination, product BOM/tree
+- **PERM-32 residual:** funil pedido→caixa + ranking vendidos (OR multi-domínio); cost-to-cash audit bags
+- **P19 residual:** Nomus engineering / MI attachments / Brent / PTAX ainda em bags

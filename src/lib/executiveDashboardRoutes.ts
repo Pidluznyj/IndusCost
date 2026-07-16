@@ -5,7 +5,7 @@ import { buildExecutiveDashboardSummary } from "@/src/lib/executiveDashboardServ
 
 type ExecutiveAuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -13,12 +13,12 @@ export function registerExecutiveDashboardRoutes(
   app: express.Express,
   auth: ExecutiveAuthGuards
 ) {
-  const { requireAppAuth, requirePermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
 
   app.get(
     "/api/dashboard/executive-summary",
     requireAppAuth,
-    requirePermission("dashboard.view"),
+    requireResource("dashboard", "view"),
     async (req, res) => {
       try {
         const user = await getCurrentAppUser(req);

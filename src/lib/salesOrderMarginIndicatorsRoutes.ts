@@ -1,5 +1,9 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
 import {
   buildSalesOrderMarginIndicatorsPayload,
@@ -8,7 +12,7 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 export function registerSalesOrderMarginIndicatorsRoutes(
@@ -18,10 +22,12 @@ export function registerSalesOrderMarginIndicatorsRoutes(
   app.get(
     "/api/sales-orders/margin-indicators",
     auth.requireAppAuth,
-    auth.requireAnyPermission(["sales_orders.view"]),
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
     async (req, res) => {
       try {
-        const filters = parseSalesOrderMarginIndicatorFilters(req.query as Record<string, unknown>);
+        const filters = parseSalesOrderMarginIndicatorFilters(
+          req.query as Record<string, unknown>
+        );
         const payload = await buildSalesOrderMarginIndicatorsPayload(prisma, filters);
         res.json(payload);
       } catch (error) {

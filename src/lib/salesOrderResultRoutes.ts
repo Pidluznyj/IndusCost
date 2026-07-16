@@ -1,19 +1,23 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
 import { buildSalesOrderResultDashboard } from "./salesOrderResultEngine.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 export function registerSalesOrderResultRoutes(app: express.Express, auth: AuthGuards) {
   app.get(
     "/api/sales-orders/results",
     auth.requireAppAuth,
-    auth.requireAnyPermission(["sales_orders.view"]),
-    auth.requireAnyPermission(["products.tab.cost", "costs.view"]),
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
+    auth.requireResource("engineering.products.tab.cost", "view"),
     async (req, res) => {
       try {
         const payload = await buildSalesOrderResultDashboard(

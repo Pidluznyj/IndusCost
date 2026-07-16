@@ -14,6 +14,7 @@ export const FINANCE_MODULE_RESOURCE_KEYS = {
   costCenters: "finance.cost_centers",
   executiveReport: "finance.executive_report",
   suppliers: "finance.suppliers",
+  suppliersServiceTermination: "finance.suppliers.service_termination",
   portfolio: "finance.portfolio_reconciliation",
   portfolioOrderStatus: "finance.portfolio_reconciliation.order_status",
   portfolioOrderToCashAudit: "finance.portfolio_reconciliation.order_to_cash_audit",
@@ -78,6 +79,12 @@ export const FINANCE_MODULE_PILOT_ENDPOINTS = [
   // Fornecedores
   { method: "GET", path: "/api/finance/suppliers", resourceKey: "finance.suppliers", action: "view" },
   { method: "POST", path: "/api/finance/suppliers/apply", resourceKey: "finance.suppliers", action: "manage" },
+  { method: "GET", path: "/api/suppliers/:id/service-terminations", resourceKey: "finance.suppliers.service_termination", action: "view" },
+  { method: "POST", path: "/api/suppliers/:id/service-terminations", resourceKey: "finance.suppliers.service_termination", action: "create" },
+  { method: "PUT", path: "/api/suppliers/service-terminations/:id", resourceKey: "finance.suppliers.service_termination", action: "update" },
+  { method: "POST", path: "/api/suppliers/service-terminations/:id/finalize", resourceKey: "finance.suppliers.service_termination", action: "execute" },
+  { method: "GET", path: "/api/suppliers/service-terminations/:id/export*", resourceKey: "finance.suppliers.service_termination", action: "export" },
+  { method: "POST", path: "/api/suppliers/service-terminations/:id/cancel", resourceKey: "finance.suppliers.service_termination", action: "manage" },
 
   // Conciliação / Inteligência / Status / Pedido→Caixa
   { method: "GET", path: "/api/finance/portfolio-reconciliation", resourceKey: "finance.portfolio_reconciliation", action: "view" },
@@ -117,6 +124,7 @@ export const FINANCE_LETICIA_DENIED_RESOURCE_KEYS = [
   FINANCE_MODULE_RESOURCE_KEYS.costCenters,
   FINANCE_MODULE_RESOURCE_KEYS.executiveReport,
   FINANCE_MODULE_RESOURCE_KEYS.suppliers,
+  FINANCE_MODULE_RESOURCE_KEYS.suppliersServiceTermination,
   FINANCE_MODULE_RESOURCE_KEYS.portfolio,
   FINANCE_MODULE_RESOURCE_KEYS.portfolioOrderStatus,
   FINANCE_MODULE_RESOURCE_KEYS.portfolioOrderToCashAudit,

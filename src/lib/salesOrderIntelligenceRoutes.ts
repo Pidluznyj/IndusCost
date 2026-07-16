@@ -18,10 +18,14 @@ import {
   buildOfficialSalesOrderManagementCore,
   mapPrismaOrderToSalesOrderRulesInput,
 } from "./salesOrderRulesAdapter.js";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   requireUserAdminOrBootstrap?: RequestHandler;
 };
 
@@ -177,7 +181,7 @@ export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth:
   app.get(
     "/api/sales-orders/management",
     auth.requireAppAuth,
-    auth.requireAnyPermission(SALES_ORDER_VIEW_PERMISSIONS),
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
     async (req, res) => {
       try {
         const payload = await loadSalesOrderManagementPage(
@@ -194,7 +198,10 @@ export function registerSalesOrderIntelligenceRoutes(app: express.Express, auth:
   app.get(
     "/api/sales-orders/:id/intelligence",
     auth.requireAppAuth,
-    auth.requireAnyPermission(SALES_ORDER_DETAIL_PERMISSIONS),
+    auth.requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersDetail,
+      COMMERCIAL_ACTIONS.view
+    ),
     async (req, res) => {
       try {
         const { id } = req.params;

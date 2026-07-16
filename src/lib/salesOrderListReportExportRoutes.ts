@@ -1,5 +1,9 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 import { prisma } from "./prisma.js";
 import {
   buildSalesOrderListReportExportPdf,
@@ -12,7 +16,7 @@ import { loadSalesOrderSellerFilterOptions } from "./salesOrderListQuery.server.
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   canViewMarginEconomics: (req: express.Request) => Promise<boolean>;
 };
 
@@ -20,7 +24,10 @@ export function registerSalesOrderListReportExportRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const guard = [auth.requireAppAuth, auth.requirePermission("sales_orders.view")];
+  const guard = [
+    auth.requireAppAuth,
+    auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
+  ];
 
   app.get("/api/sales-orders/seller-filter-options", ...guard, async (req, res) => {
     try {

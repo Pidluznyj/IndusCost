@@ -42,11 +42,17 @@ export const COMMERCIAL_ACTIONS = {
 export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/crm/management-dashboard", resourceKey: "commercial.crm.general", action: "view" },
   { method: "GET", path: "/api/crm/seller-dashboard", resourceKey: "commercial.crm.seller", action: "view" },
+  { method: "GET", path: "/api/crm/dashboard/basic", resourceKey: "commercial.crm", action: "view" },
   { method: "GET", path: "/api/crm/customers", resourceKey: "commercial.crm.portfolio", action: "view" },
   { method: "GET", path: "/api/crm/customers/:id/profile", resourceKey: "commercial.crm.customer_360", action: "view" },
   { method: "PUT", path: "/api/crm/customers/:id/profile", resourceKey: "commercial.crm.activities", action: "update" },
+  { method: "GET", path: "/api/customers/:id/commercial-360", resourceKey: "commercial.crm.customer_360", action: "view" },
+  { method: "GET", path: "/api/customers/:id/commercial-activities", resourceKey: "commercial.crm.customer_360", action: "view" },
   { method: "POST", path: "/api/customers/:id/commercial-activities", resourceKey: "commercial.crm.activities", action: "create" },
   { method: "PATCH", path: "/api/commercial-activities/:id", resourceKey: "commercial.crm.activities", action: "update" },
+  { method: "GET", path: "/api/crm/customers/:id/commercial-intelligence", resourceKey: "commercial.crm.customer_360", action: "view" },
+  { method: "GET", path: "/api/crm/customers/:id/commercial-owner", resourceKey: "commercial.crm.customer_360", action: "view" },
+  { method: "GET", path: "/api/crm/commercial-sellers/active", resourceKey: "commercial.crm", action: "view" },
   { method: "PATCH", path: "/api/crm/customers/:id/commercial-owner", resourceKey: "commercial.crm.assign_seller", action: "manage" },
 
   { method: "GET", path: "/api/customers", resourceKey: "commercial.customers", action: "view" },
@@ -61,9 +67,12 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/proposals/:id/pdf*", resourceKey: "commercial.proposals", action: "export" },
 
   { method: "GET", path: "/api/sales-orders", resourceKey: "commercial.sales_orders", action: "view" },
-  { method: "GET", path: "/api/sales-orders/export*", resourceKey: "commercial.sales_orders", action: "export" },
+  { method: "GET", path: "/api/sales-orders/management", resourceKey: "commercial.sales_orders", action: "view" },
+  { method: "GET", path: "/api/sales-orders/report", resourceKey: "commercial.sales_orders", action: "view" },
+  { method: "GET", path: "/api/sales-orders/export*", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/detail", resourceKey: "commercial.sales_orders.detail", action: "view" },
+  { method: "GET", path: "/api/sales-orders/:id/intelligence", resourceKey: "commercial.sales_orders.detail", action: "view" },
 
   { method: "GET", path: "/api/pricing", resourceKey: "commercial.pricing", action: "view" },
   { method: "POST", path: "/api/pricing/simulate*", resourceKey: "commercial.pricing", action: "execute" },

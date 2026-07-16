@@ -2,35 +2,31 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
-  CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION,
   fetchActiveCommercialSellers,
   getCustomerCommercialOwnerPayload,
   patchCustomerCommercialOwner,
 } from "@/src/lib/crmCustomerCommercialOwner.js";
+import {
+  COMMERCIAL_ACTIONS,
+  COMMERCIAL_RESOURCE_KEYS,
+} from "@/src/lib/commercialAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
-
-const VIEW_PERMISSIONS = [
-  "customers.view",
-  "crm.view",
-  "crm.customer_cockpit.view",
-];
 
 export function registerCrmCustomerCommercialOwnerRoutes(
   app: express.Application,
   guards: AuthGuards
 ): void {
-  const { requireAppAuth, requireAnyPermission, requirePermission, getCurrentAppUser } = guards;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = guards;
 
   app.get(
     "/api/crm/commercial-sellers/active",
     requireAppAuth,
-    requireAnyPermission([...VIEW_PERMISSIONS, CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION]),
+    requireResource(COMMERCIAL_RESOURCE_KEYS.crm, COMMERCIAL_ACTIONS.view),
     async (req, res) => {
       try {
         const query = typeof req.query.query === "string" ? req.query.query : undefined;
@@ -46,16 +42,16 @@ export function registerCrmCustomerCommercialOwnerRoutes(
   app.get(
     "/api/crm/customers/:customerId/commercial-owner",
     requireAppAuth,
-    requireAnyPermission(VIEW_PERMISSIONS),
+    requireResource(COMMERCIAL_RESOURCE_KEYS.crmCustomer360, COMMERCIAL_ACTIONS.view),
     async (req, res) => {
       try {
-        const auth = await getCurrentAppUser(req);
-        if (!auth) {
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
           res.status(401).json({ error: "UNAUTHORIZED" });
           return;
         }
         const customerId = String(req.params.customerId ?? "").trim();
-        const payload = await getCustomerCommercialOwnerPayload(customerId, auth);
+        const payload = await getCustomerCommercialOwnerPayload(customerId, authUser);
         if (!payload) {
           res.status(404).json({ error: "NOT_FOUND", message: "Cliente não encontrado." });
           return;
@@ -63,7 +59,10 @@ export function registerCrmCustomerCommercialOwnerRoutes(
         res.json(payload);
       } catch (error) {
         console.error("GET /api/crm/customers/:customerId/commercial-owner", error);
-        res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao carregar responsável comercial." });
+        res.status(500).json({
+          error: "INTERNAL_ERROR",
+          message: "Erro ao carregar responsável comercial.",
+        });
       }
     }
   );
@@ -71,11 +70,11 @@ export function registerCrmCustomerCommercialOwnerRoutes(
   app.patch(
     "/api/crm/customers/:customerId/commercial-owner",
     requireAppAuth,
-    requirePermission(CRM_CUSTOMER_COMMERCIAL_OWNER_ASSIGN_PERMISSION),
+    requireResource(COMMERCIAL_RESOURCE_KEYS.crmAssignSeller, COMMERCIAL_ACTIONS.manage),
     async (req, res) => {
       try {
-        const auth = await getCurrentAppUser(req);
-        if (!auth) {
+        const authUser = await getCurrentAppUser(req);
+        if (!authUser) {
           res.status(401).json({ error: "UNAUTHORIZED" });
           return;
         }
@@ -87,7 +86,7 @@ export function registerCrmCustomerCommercialOwnerRoutes(
         };
         const result = await patchCustomerCommercialOwner({
           customerId,
-          auth,
+          auth: authUser,
           sellerOptionKey: body.sellerOptionKey,
           clear: body.clear === true,
           notes: body.notes,
@@ -99,7 +98,10 @@ export function registerCrmCustomerCommercialOwnerRoutes(
         res.json(result.payload);
       } catch (error) {
         console.error("PATCH /api/crm/customers/:customerId/commercial-owner", error);
-        res.status(500).json({ error: "INTERNAL_ERROR", message: "Erro ao salvar responsável comercial." });
+        res.status(500).json({
+          error: "INTERNAL_ERROR",
+          message: "Erro ao atualizar responsável comercial.",
+        });
       }
     }
   );

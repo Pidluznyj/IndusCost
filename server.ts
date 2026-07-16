@@ -2681,7 +2681,7 @@ async function startServer() {
   });
 
   // --- API: Dashboard Gerencial ---
-  app.get("/api/dashboard", requireAppAuth, requirePermission("dashboard.view"), async (req, res, next) => {
+  app.get("/api/dashboard", requireAppAuth, requireResource("dashboard", "view"), async (req, res, next) => {
     console.log("Fetching dashboard data...");
     try {
       const [employees, machines, products, pricings, indirectCosts] = await Promise.all([
@@ -6464,7 +6464,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
    * Opções para montagem da BOM: matérias-primas + produtos/componentes ativos.
    * `excludeProductId` evita auto-referência direta na lista (produto não pode ser filho de si mesmo).
    */
-  app.get("/api/products/bom-item-options", requireAppAuth, requireAnyPermission(["products.view", "products.tab.bom", "products.edit"]), async (req, res) => {
+  app.get("/api/products/bom-item-options", requireAppAuth, requireResource("engineering.products.tab.bom", "view"), async (req, res) => {
     try {
       const excludeId = typeof req.query.excludeProductId === "string" ? req.query.excludeProductId.trim() : "";
       const activeMaterialWhere: Prisma.MaterialWhereInput = {
@@ -8150,7 +8150,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/products/:id/engineering-change-log",
     requireAppAuth,
-    requireAnyPermission(["products.view", "products.tab.bom"]),
+    requireResource("engineering.products.tab.bom", "view"),
     async (req, res) => {
       try {
         const productId = String(req.params.id);
@@ -8167,7 +8167,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.get("/api/products/:id/tree", requireAppAuth, requireAnyPermission(["products.tab.tree", "products.tab.bom", "products.edit"]), async (req, res) => {
+  app.get("/api/products/:id/tree", requireAppAuth, requireResource("engineering.products.tab.tree", "view"), async (req, res) => {
     const { id } = req.params;
     const tree = await getFullBOMTree(id);
     if (!tree) return res.status(404).json({ error: "Produto não encontrado" });
@@ -12616,7 +12616,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   /** Visão comercial 360°: cliente + pedidos de venda com itens e produto. */
-  app.get("/api/customers/:id/commercial-360", requireAppAuth, requireAnyPermission(["customers.commercial360.view", "customers.view"]), async (req, res) => {
+  app.get("/api/customers/:id/commercial-360", requireAppAuth, requireResource("commercial.crm.customer_360", "view"), async (req, res) => {
     const { id } = req.params;
     try {
       const customer = await prisma.customer.findUnique({ where: { id } });
@@ -12757,7 +12757,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     );
   }
 
-  app.get("/api/customers/:customerId/commercial-activities", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
+  app.get("/api/customers/:customerId/commercial-activities", requireAppAuth, requireResource("commercial.crm.customer_360", "view"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -13169,7 +13169,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/crm/dashboard/basic", requireAppAuth, requireAnyPermission(["crm.view", "crm.customer_cockpit.view", "customers.view"]), async (req, res) => {
+  app.get("/api/crm/dashboard/basic", requireAppAuth, requireResource("commercial.crm", "view"), async (req, res) => {
     try {
       const authUser = await getCurrentAppUser(req);
       if (!authUser) {
@@ -13561,7 +13561,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return { data };
   }
 
-  app.get("/api/crm/customers/:customerId/profile", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "crm.view", "customers.view"]), async (req, res) => {
+  app.get("/api/crm/customers/:customerId/profile", requireAppAuth, requireResource("commercial.crm.customer_360", "view"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -13608,7 +13608,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   /** CRM Fase 1H-B — inteligência comercial só leitura (base principal: Pedidos de Venda). */
-  app.get("/api/crm/customers/:customerId/commercial-intelligence", requireAppAuth, requireAnyPermission(["crm.customer_cockpit.view", "customers.commercial360.view", "customers.view"]), async (req, res) => {
+  app.get("/api/crm/customers/:customerId/commercial-intelligence", requireAppAuth, requireResource("commercial.crm.customer_360", "view"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -13799,8 +13799,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerCrmCustomerCommercialOwnerRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
-    requirePermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14533,7 +14532,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerSalesOrderIntelligenceRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     requireUserAdminOrBootstrap,
   });
 
@@ -14544,22 +14543,22 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerSalesOrderMarginIndicatorsRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   registerSalesOrderResultRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   registerSalesOrderInternalMarginExportRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   registerSalesOrderListReportExportRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
     canViewMarginEconomics: async (req) => {
       const auth = await readAppSession(req);
       return (
@@ -14571,7 +14570,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerSalesOrderReportRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
     resolveEmitterName: async (req) => {
       const user = await getCurrentAppUser(req);
       return user?.name?.trim() || null;
@@ -14582,7 +14581,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   // para que a rota mais específica `/detail` seja prioritária.
   registerSalesOrderDetailRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   app.get("/api/sales-orders/:id", requireAppAuth, requireResource("commercial.sales_orders.detail", "view"), async (req, res) => {
@@ -15021,7 +15020,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerExecutiveDashboardRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -15074,7 +15073,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerSupplierServiceTerminationRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 

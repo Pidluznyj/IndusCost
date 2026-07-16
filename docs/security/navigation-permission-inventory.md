@@ -119,7 +119,7 @@ Proteção FE comum de shell: `RequireAuth` + Layout `evaluatePathViewAccess` + 
 | Contrato EN | `dashboard` |
 | Recurso ausente | abas internas sem recurso |
 | Proteção FE | sidebar/Layout view `dashboard`; bags `dashboard.view` em UI |
-| Proteção BE | backlog: ainda `requirePermission("dashboard.view")` bag (`REQUIRE_RESOURCE_LEGACY_BACKLOG`) |
+| Proteção BE | `requireResource("dashboard", "view")` em `/api/dashboard` + executive-summary (PERM-32) |
 
 ### 3.2 Engenharia
 
@@ -444,7 +444,7 @@ Chaves literais/constantes usadas com o guard oficial (amostra consolidada dos `
 | `admin.settings.security` | view / manage |
 | `admin.settings.price_tables` | view |
 
-Backlog explícito (`REQUIRE_RESOURCE_LEGACY_BACKLOG`): dashboard bag; residual commercial (CRM 360 / ranking / funnel); residual engineering (Nomus / MI attachments).
+Backlog explícito (`REQUIRE_RESOURCE_LEGACY_BACKLOG`): residual commercial OR multi-domínio (ranking / funnel); residual engineering (Nomus / MI); cost-to-cash audit bags. Dashboard + CRM 360 migrados em PERM-32.
 
 ---
 
@@ -478,7 +478,7 @@ Sem inventar estado do banco — apenas o que o código evidencia:
 5. **Inventory** — overview/balances/reservations/audit só herdam; reservations/audit `comingSoon`.
 6. **Fleet / Projects** — abas internas sem resourceKey fino.
 7. **Settings** — sidebar `configuracoes` deprecated retain vs `admin.settings`.
-8. **APIs ainda bag-only** em superfícies já migradas na UI (dashboard, cost-to-cash OR, residual CRM/engineering) — gap de BE.
+8. **APIs ainda bag-only** em residual multi-domínio (funil/ranking) e cost-to-cash OR / Nomus-MI — gap de BE residual pós-PERM-32.
 9. **Rotas de print** de propostas/pedidos/rescisão registradas **fora** de `RequireAuth` no `App.tsx` — revisar auth no componente/API.
 10. **`permissions-navigation-view.md` desatualizado** — afirma que só ~8 módulos têm resourceKey; `sidebarMenuResources.ts` hoje mapeia essencialmente todos.
 11. **Employee ficha** — facetas HR / capabilities, nem sempre `PermissionGate` por aba.

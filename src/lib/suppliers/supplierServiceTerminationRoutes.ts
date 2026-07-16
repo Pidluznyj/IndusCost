@@ -28,9 +28,11 @@ import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
+
+const SERVICE_TERMINATION_RESOURCE = "finance.suppliers.service_termination";
 
 export const SERVICE_TERMINATION_VIEW_PERMISSIONS = [
   "finance.suppliers.service_termination.view",
@@ -195,31 +197,31 @@ export function registerSupplierServiceTerminationRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
 
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_VIEW_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "view"),
   ] as const;
   const createGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_CREATE_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "create"),
   ] as const;
   const updateGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_UPDATE_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "update"),
   ] as const;
   const finalizeGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_FINALIZE_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "execute"),
   ] as const;
   const exportGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_EXPORT_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "export"),
   ] as const;
   const cancelGuard = [
     requireAppAuth,
-    requireAnyPermission([...SERVICE_TERMINATION_CANCEL_PERMISSIONS]),
+    requireResource(SERVICE_TERMINATION_RESOURCE, "manage"),
   ] as const;
 
   app.get(
