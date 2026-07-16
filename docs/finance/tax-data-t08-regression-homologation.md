@@ -4,6 +4,32 @@
 **Escopo:** T01–T07 (parser → persistência → backfill → PV Tributos → apuração/guias/AP/alocação → inteligência)  
 **Regra:** este documento é operacional. **Não executar no servidor de produção** a partir deste prompt — só após revisão humana.
 
+## 0. Resultado da regressão local (pré-RC)
+
+| Check | Resultado |
+|-------|-----------|
+| `npx prisma validate` (com `DATABASE_URL` local/dummy de schema) | OK |
+| `prisma migrate deploy` em banco isolado | Não executado aqui — exige URL isolada (ver §3.3) |
+| `npm run test:finance:fiscal-regression` | OK (parser, persist, backfill, PV Tributos, settlements, inteligência, T08) |
+| `orderFiscalFinancialMetrics` | OK |
+| `npm run test:finance:accounts-payable` | OK |
+| `npm run test:permission-contract` | OK |
+| `check:frontend-server-imports` / `check:server-imports` / `check:browser-bundle` | OK |
+| `npm test` | OK |
+| `npm run build` | OK |
+
+**Commits âncora T01–T07 (ancestrais de `main`):**
+
+| Task | Hash (prefixo) | Assunto |
+|------|----------------|---------|
+| T01 | `4de802e` | docs audit + target model |
+| T02 | `e1d85de` | persist structured NF-e fiscal taxes |
+| T03 | `9560473` | historical XML backfill |
+| T04 | `524cc3b` | aba Tributos PV / Auditoria 360 |
+| T05 | `054c578` | apuração, guias, alocação |
+| T06 | `8b97893` | settlements na aba Tributos |
+| T07 | `dbbe742` | inteligência tributária + XLSX + drill |
+
 ## 1. Critérios de aceite (não declarar RC com falha)
 
 | Critério | Esperado |
@@ -17,7 +43,7 @@
 | Sem soma HEADER+ITEM | KPIs usam um escopo |
 | Parser / backfill idempotentes | `xmlHash` + `parserVersion` |
 | AP / Pedido / NF / CR preservados | Backfill não altera ledgers |
-| Build + testes verdes | Ver §4 |
+| Build + testes verdes | Ver §0 e §4 |
 
 ## 2. Migrations fiscais (repo)
 
@@ -47,10 +73,13 @@ npm run backfill:nomus:nfe-fiscal:dry -- --preview --order="PD 02457"
 ### 3.3 Migration (somente após backup)
 
 ```bash
+# Validar schema (requer DATABASE_URL no ambiente do servidor)
 npx prisma validate
 npx prisma migrate deploy
 npx prisma generate
 ```
+
+**Banco isolado (homologação / CI):** apontar `DATABASE_URL` (ou URL dedicada) para um database **não produção**, por exemplo `induscost_t08_isolated`, rodar `migrate deploy`, depois repetir smoke. Nunca usar credencial de produção neste passo de ensaio.
 
 ### 3.4 Backfill fiscal (preview → apply)
 
@@ -88,6 +117,7 @@ npm run check:browser-bundle
 ## 4. Suíte de regressão local (CI / pré-push)
 
 ```bash
+# Schema (precisa DATABASE_URL no shell)
 npx prisma validate
 # Migration em banco isolado (DATABASE_URL do isolado — nunca produção):
 #   npx prisma migrate deploy
@@ -157,4 +187,4 @@ DELETE FROM "FiscalApurationPeriod" WHERE ...;
 - PV Tributos: `src/lib/sales-orders/salesOrderFiscalTaxes*`  
 - Settlements: `src/lib/finance/fiscalSettlement*` + migration `20260727*`  
 - Inteligência: `src/lib/finance/fiscalTaxIntelligence*` + UI `FiscalTaxIntelligencePanel`  
-- Regressão: `src/lib/finance/fiscalRegression.t08.test.ts`
+- Regressão: `src/lib/finance/fiscalRegression.t08.test.ts` + `npm run test:finance:fiscal-regression`
