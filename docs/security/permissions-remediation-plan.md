@@ -229,12 +229,13 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 
 ### P13 — Proteção de botões
 
-- **Objetivo:** PermissionGate/`canExecute`/`canManage` no DTO.
-- **Escopo:** componentes críticos (users, employees, payables mutations).
-- **Deps:** P04.
+- **Objetivo:** PermissionGate/`canPerformAction` com `resourceKey + action` no DTO (nunca só `view` para mutação).
+- **Escopo:** exportações AP/AR/pedidos; fechamento/reprocessamento comissões; sync Nomus; Admin users manage; helper único + fila P14.
+- **Deps:** P04, P10–P12.
 - **Risco:** baixo–médio.
-- **Aceite:** botão mutação oculto+API 403 alinhados.
+- **Aceite:** botão mutação oculto/indisponível; handlers não disparam API sem action; endpoints críticos listados em `P14_PENDING_ACTION_ENDPOINTS`.
 - **Rollback:** revert UI.
+- **Status (2026-07-16):** **feito.** `actionPermissionAccess` + `PermissionGate`/`canPerformAction`; AP/AR export sem view; CommissionReprocessPanel sem gate por role; Settings Nomus/Admin users/SalesOrders/audit fechamento migrados; testes action/deny/loading/SA.
 
 ### P14 — Guards backend genéricos
 

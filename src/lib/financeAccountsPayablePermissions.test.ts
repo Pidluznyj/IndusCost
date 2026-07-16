@@ -17,9 +17,10 @@ describe("financeAccountsPayablePermissions", () => {
     assert.equal(canViewFinanceAccountsPayable(auth(["reports.view"])), true);
   });
 
-  it("export permite export dedicado ou view", () => {
+  it("export exige chave dedicada — view não autoriza", () => {
     assert.equal(canExportFinanceAccountsPayable(auth(["finance.accountsPayable.export"])), true);
-    assert.equal(canExportFinanceAccountsPayable(auth(["finance.view"])), true);
+    assert.equal(canExportFinanceAccountsPayable(auth(["finance.view"])), false);
+    assert.equal(canExportFinanceAccountsPayable(auth(["finance.accountsPayable.view"])), false);
     assert.equal(canExportFinanceAccountsPayable(auth([])), false);
   });
 

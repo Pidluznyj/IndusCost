@@ -14,11 +14,11 @@ export function canViewFinanceAccountsReceivable(auth: FinanceArPermissionCheck)
   );
 }
 
+/**
+ * P13: export exige chave .export — não autorizar só com view.
+ */
 export function canExportFinanceAccountsReceivable(auth: FinanceArPermissionCheck): boolean {
-  return (
-    auth.hasPermission("finance.accountsReceivable.export") ||
-    canViewFinanceAccountsReceivable(auth)
-  );
+  return auth.hasPermission("finance.accountsReceivable.export");
 }
 
 /** Alinhado ao Admin (`settings.nomus.sync` apenas). */

@@ -11,9 +11,11 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { canReprocessCommissions } from "@/src/lib/commissionsModulePermissions";
+import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 import { formatFinanceCurrency } from "@/src/lib/financeAccountsReceivableFormat";
 import { FinanceKpiCard } from "@/src/components/finance/shared/FinanceKpiCard";
-import { COMMISSIONS_RECALCULATE_PERMISSIONS } from "@/src/lib/commissionsPermissions";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
@@ -56,7 +58,10 @@ function formatDate(iso: string | null): string {
 
 export function CommissionsAuditPage() {
   const auth = useAuth();
-  const canReprocess = auth.hasAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]);
+  const permissions = usePermissions();
+  const canReprocess =
+    canReprocessCommissions(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsReprocess, "reprocess");
 
   const [draftFilters, setDraftFilters] = useState<CommissionsAuditFilters>(
     EMPTY_COMMISSIONS_AUDIT_FILTERS

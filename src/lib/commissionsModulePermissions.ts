@@ -73,6 +73,19 @@ export function canManageReceiptClosing(check: PermissionChecker): boolean {
   return check.hasAnyPermission([...COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS]);
 }
 
+/** P13: fechamento = close/manage — não view. */
+export function canCloseReceiptClosing(check: PermissionChecker): boolean {
+  return canManageReceiptClosing(check);
+}
+
+/** P13: reprocessar comissões — manage de rules/payments (contrato reprocess). */
+export function canReprocessCommissions(check: PermissionChecker): boolean {
+  return (
+    check.hasAnyPermission([...COMMISSIONS_RECALCULATE_PERMISSIONS]) ||
+    check.hasAnyPermission([...COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS])
+  );
+}
+
 export function listAllowedCommissionsLiveSectionIds(
   canViewResource: (key: string) => boolean
 ): Array<"monthlyClosing" | "closings" | "customerExclusions" | "reports" | "reprocess"> {

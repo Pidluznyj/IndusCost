@@ -63,7 +63,7 @@ export function canViewSalesOrders(check: ResourceAwareChecker): boolean {
   );
 }
 
-/** Export alinhado ao contrato: mesma chave de view (sem .export dedicado). */
+/** Export: contrato mapeia export←sales_orders.view até chave .export dedicada (P14). */
 export function canExportSalesOrders(check: PermissionChecker): boolean {
   return check.hasPermission("sales_orders.view");
 }

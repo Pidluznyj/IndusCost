@@ -17,9 +17,16 @@ describe("financeAccountsReceivablePermissions", () => {
     assert.equal(canViewFinanceAccountsReceivable(auth(["reports.view"])), true);
   });
 
-  it("export permite export dedicado ou view", () => {
-    assert.equal(canExportFinanceAccountsReceivable(auth(["finance.accountsReceivable.export"])), true);
-    assert.equal(canExportFinanceAccountsReceivable(auth(["finance.view"])), true);
+  it("export exige chave dedicada — view não autoriza", () => {
+    assert.equal(
+      canExportFinanceAccountsReceivable(auth(["finance.accountsReceivable.export"])),
+      true
+    );
+    assert.equal(canExportFinanceAccountsReceivable(auth(["finance.view"])), false);
+    assert.equal(
+      canExportFinanceAccountsReceivable(auth(["finance.accountsReceivable.view"])),
+      false
+    );
     assert.equal(canExportFinanceAccountsReceivable(auth([])), false);
   });
 

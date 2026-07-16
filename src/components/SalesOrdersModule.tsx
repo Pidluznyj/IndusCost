@@ -24,6 +24,8 @@ import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMargin
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
 import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
 import { canExportSalesOrders } from "@/src/lib/commercialEngineeringPermissions";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
   SALES_ORDER_MONTH_OPTIONS,
@@ -154,11 +156,14 @@ function money(v: unknown, decimals = 2): string {
 function SalesOrderList() {
   const navigate = useNavigate();
   const auth = useAuth();
+  const permissions = usePermissions();
   const showMarginEconomics = useMemo(
     () => canViewSalesOrderMarginEconomics(auth),
     [auth]
   );
-  const allowExport = canExportSalesOrders(auth);
+  const allowExport =
+    canExportSalesOrders(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.salesOrders, "export");
   const [rows, setRows] = useState<SalesOrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);

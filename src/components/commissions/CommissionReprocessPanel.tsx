@@ -1,6 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, Loader2, RefreshCw, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { canReprocessCommissions } from "@/src/lib/commissionsModulePermissions";
+import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 import { fetchJsonOk } from "@/src/lib/http";
 import {
   financeBiButtonOutlineClass,
@@ -72,7 +75,10 @@ function downloadCsv(filename: string, csv: string): void {
 
 export function CommissionReprocessPanel() {
   const auth = useAuth();
-  const canApply = auth.authUser?.role === "ADMIN" || auth.authUser?.role === "SUPER_ADMIN";
+  const permissions = usePermissions();
+  const canApply =
+    canReprocessCommissions(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsReprocess, "reprocess");
 
   const [filters, setFilters] = useState<CommissionReprocessFilters>(() =>
     defaultCommissionReprocessFilters()

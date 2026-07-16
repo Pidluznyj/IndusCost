@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
@@ -478,8 +479,13 @@ function FinanceApHighlightTable({
 
 export function FinanceAccountsPayablePage() {
   const auth = useAuth();
-  const canExport = canExportFinanceAccountsPayable(auth);
-  const canRunSync = canRunFinanceAccountsPayableSync(auth);
+  const permissions = usePermissions();
+  const canExport =
+    canExportFinanceAccountsPayable(auth) ||
+    permissions.canPerformAction("finance.accounts_payable", "export");
+  const canRunSync =
+    canRunFinanceAccountsPayableSync(auth) ||
+    permissions.canPerformAction("admin.settings.nomus_sync", "synchronize");
 
   const [executiveTab, setExecutiveTab] = useState<FinanceApExecutiveTabId>("titles");
   const [secondaryTab, setSecondaryTab] = useState<FinanceApSecondaryTabId>("schedule");

@@ -34,6 +34,10 @@ import {
   canViewInternalSurfaceFromDto,
   FINANCE_UI_SECTIONS,
 } from "@/src/lib/internalSurfaceAccess.js";
+import {
+  dtoAllowsAction,
+  type UiPermissionAction,
+} from "@/src/lib/actionPermissionAccess.js";
 
 export type ResourceViewOptions = {
   /** MENU: não elevar só por filhos; SUBMENU/TAB: elevação legada. Default: regras do sidebar. */
@@ -277,9 +281,7 @@ export function filterTabsByView<T extends { resourceKey: string }>(
   return tabs.filter((tab) => canView(tab.resourceKey));
 }
 
-/**
- * P12 — view de aba/seção via DTO efetivo (contrato), não bag FE paralela.
- */
+/** P12 — view de aba/seção via DTO efetivo (contrato), não bag FE paralela. */
 export function canViewTabResource(
   resourceKey: string,
   ctx: NavigationAccessContext
@@ -287,6 +289,24 @@ export function canViewTabResource(
   if (ctx.authLoading || ctx.authError) return false;
   const dto = resolveDto(ctx);
   return canViewInternalSurfaceFromDto(dto, resourceKey);
+}
+
+/**
+ * P13 — resourceKey + action via DTO.
+ * Mutação nunca autorizada só com `view`.
+ */
+export function canPerformAction(
+  resourceKey: string,
+  action: UiPermissionAction,
+  ctx: NavigationAccessContext
+): boolean {
+  if (ctx.authLoading || ctx.authError) return false;
+  if (!ctx.user) return false;
+  if (ctx.user.isActive === false && ctx.user.role !== "SUPER_ADMIN") {
+    return false;
+  }
+  const dto = resolveDto(ctx);
+  return dtoAllowsAction(dto, resourceKey, action);
 }
 
 /** Filtra abas pelo DTO (P12). */

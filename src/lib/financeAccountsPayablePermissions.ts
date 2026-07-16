@@ -14,11 +14,11 @@ export function canViewFinanceAccountsPayable(auth: FinanceApPermissionCheck): b
   );
 }
 
+/**
+ * P13: export exige chave .export — não autorizar só com view.
+ */
 export function canExportFinanceAccountsPayable(auth: FinanceApPermissionCheck): boolean {
-  return (
-    auth.hasPermission("finance.accountsPayable.export") ||
-    canViewFinanceAccountsPayable(auth)
-  );
+  return auth.hasPermission("finance.accountsPayable.export");
 }
 
 /** Alinhado ao Admin (`settings.nomus.sync` apenas). */

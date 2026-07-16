@@ -16,6 +16,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableManagement";
@@ -502,8 +503,13 @@ function FinanceArHighlightTable({
    ───────────────────────────────────────────────────────────────── */
 export function FinanceAccountsReceivablePage() {
   const auth = useAuth();
-  const canExport = canExportFinanceAccountsReceivable(auth);
-  const canRunSync = canRunFinanceAccountsReceivableSync(auth);
+  const permissions = usePermissions();
+  const canExport =
+    canExportFinanceAccountsReceivable(auth) ||
+    permissions.canPerformAction("finance.accounts_receivable", "export");
+  const canRunSync =
+    canRunFinanceAccountsReceivableSync(auth) ||
+    permissions.canPerformAction("admin.settings.nomus_sync", "synchronize");
 
   const [pageView, setPageView] = useState<FinanceArPageViewId>("overview");
   const [activeTab, setActiveTab] = useState<FinanceArTabId>("overdue");

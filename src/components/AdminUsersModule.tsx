@@ -105,9 +105,12 @@ function formatDateTimePt(iso: string | null | undefined): string {
 export const AdminUsersModule: React.FC = () => {
   const { hasPermission, authUser } = useAuth();
   const permissionsApi = usePermissions();
-  const canManage = hasPermission("users.manage");
+  const canManage =
+    hasPermission("users.manage") ||
+    permissionsApi.canPerformAction("admin.settings.security", "manage");
   const canViewPermissionAudit = canViewFullPermissionAudit(
     permissionsApi.canManage(ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE) ||
+      permissionsApi.canPerformAction("admin.settings.security", "manage") ||
       authUser?.role === "SUPER_ADMIN"
   );
   const currentUserId = authUser?.id ?? null;

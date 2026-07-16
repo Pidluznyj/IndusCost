@@ -35,6 +35,7 @@ import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarg
 import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   canAccessSettingsSection,
   canManageUsers,
@@ -311,7 +312,10 @@ export const SettingsModule = () => {
     "settings.global_params.edit",
     "users.manage",
   ]);
-  const canRunNomusDailySync = auth.hasPermission("settings.nomus.sync");
+  const permissions = usePermissions();
+  const canRunNomusDailySync =
+    auth.hasPermission("settings.nomus.sync") ||
+    permissions.canPerformAction("admin.settings.nomus_sync", "synchronize");
   const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles">("users");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);

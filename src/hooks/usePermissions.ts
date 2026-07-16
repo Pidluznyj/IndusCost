@@ -9,6 +9,7 @@ import {
   canViewModule,
   canViewResource,
   canViewTabResource,
+  canPerformAction,
   evaluatePathViewAccess,
   filterTabsByViewDto,
   getSafeFirstAllowedPath,
@@ -19,6 +20,7 @@ import {
   type PathViewDecision,
 } from "@/src/lib/resourceNavigationAccess";
 import type { AppModuleId } from "@/src/lib/modulePermissions";
+import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 
 export type UsePermissionsResult = PermissionsApi & {
   authUser: ReturnType<typeof useAuth>["authUser"];
@@ -30,6 +32,7 @@ export type UsePermissionsResult = PermissionsApi & {
   listAllowedPortfolioReconciliationTabs: () => PortfolioReconciliationUiTabId[];
   canViewResource: (resourceKey: string) => boolean;
   canViewTabResource: (resourceKey: string) => boolean;
+  canPerformAction: (resourceKey: string, action: UiPermissionAction) => boolean;
   canViewModule: (moduleId: AppModuleId) => boolean;
   evaluatePathViewAccess: (pathname: string) => PathViewDecision;
   getSafeFirstAllowedPath: () => string | null;
@@ -67,6 +70,8 @@ export function usePermissions(): UsePermissionsResult {
     return {
       canViewResource: (resourceKey: string) => canViewResource(auth.authUser, resourceKey),
       canViewTabResource: (resourceKey: string) => canViewTabResource(resourceKey, ctx),
+      canPerformAction: (resourceKey: string, action: UiPermissionAction) =>
+        canPerformAction(resourceKey, action, ctx),
       canViewModule: (moduleId: AppModuleId) => canViewModule(moduleId, ctx),
       evaluatePathViewAccess: (pathname: string) => evaluatePathViewAccess(pathname, ctx),
       getSafeFirstAllowedPath: () => getSafeFirstAllowedPath(ctx),

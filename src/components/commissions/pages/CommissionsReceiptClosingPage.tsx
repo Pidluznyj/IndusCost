@@ -14,7 +14,9 @@ import {
 } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveAlert } from "@/src/components/ui/ExecutiveAlert";
 import { fetchJsonOk } from "@/src/lib/http";
-import { canManageReceiptClosing } from "@/src/lib/commissionsModulePermissions";
+import { canCloseReceiptClosing, canReprocessCommissions } from "@/src/lib/commissionsModulePermissions";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
@@ -275,7 +277,15 @@ function DetailTable({
 
 export function CommissionsReceiptClosingPage() {
   const auth = useAuth();
-  const canManage = canManageReceiptClosing(auth);
+  const permissions = usePermissions();
+  const canClose =
+    canCloseReceiptClosing(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsMonthlyClosing, "close");
+  const canReprocess =
+    canReprocessCommissions(auth) ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsReprocess, "reprocess") ||
+    permissions.canPerformAction(ACTION_GATE_RESOURCES.commissionsMonthlyClosing, "reprocess");
+  const canManage = canClose; // lotes / apply notes ainda alinhados a close/manage
   const initial = currentYearMonth();
 
   const [year, setYear] = useState(initial.year);
@@ -531,7 +541,7 @@ export function CommissionsReceiptClosingPage() {
   }
 
   async function applyClosing() {
-    if (!canManage) return;
+    if (!canClose) return;
     setApplying(true);
     setError(null);
     try {
@@ -561,7 +571,7 @@ export function CommissionsReceiptClosingPage() {
   }
 
   async function reprocessClosing() {
-    if (!canManage) return;
+    if (!canReprocess) return;
     setReprocessing(true);
     setError(null);
     try {
@@ -773,11 +783,12 @@ export function CommissionsReceiptClosingPage() {
             Exportar tudo
           </button>
         ) : null}
-        {canManage && data?.canApply && data.mode === "PREVIEW" ? (
+        {canClose && data?.canApply && data.mode === "PREVIEW" ? (
           <button
             type="button"
             className="inline-flex items-center rounded-lg bg-[#111827] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1f2937] disabled:opacity-50"
             onClick={() => setApplyOpen(true)}
+            data-testid="commissions-receipt-closing-close"
           >
             <ShieldCheck className="mr-2 h-4 w-4" />
             Fechar comissão
@@ -799,11 +810,12 @@ export function CommissionsReceiptClosingPage() {
             Imprimir / PDF
           </button>
         ) : null}
-        {canManage && isClosed ? (
+        {canReprocess && isClosed ? (
           <button
             type="button"
             className="inline-flex items-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 hover:bg-amber-100"
             onClick={() => setReprocessOpen(true)}
+            data-testid="commissions-receipt-closing-reprocess"
           >
             <Lock className="mr-2 h-4 w-4" />
             Reprocessar

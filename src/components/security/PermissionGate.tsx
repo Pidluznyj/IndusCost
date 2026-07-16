@@ -1,14 +1,19 @@
 import React from "react";
-import { usePermissions } from "@/src/hooks/usePermissions";
+import { useAuth } from "@/src/contexts/AuthContext";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
-import type { PermissionAction } from "@/src/lib/permissionsClient";
+import {
+  canPerformAction,
+  navigationAccessContextFromAuth,
+} from "@/src/lib/resourceNavigationAccess";
+import type { UiPermissionAction } from "@/src/lib/actionPermissionAccess";
 import { cn } from "@/src/lib/utils";
 
 export type PermissionGateMode = "hide" | "disable" | "deny";
 
 type Props = {
   resourceKey: string;
-  action?: PermissionAction;
+  /** Action do contrato (default view). Mutações devem passar action explícita. */
+  action?: UiPermissionAction;
   mode?: PermissionGateMode;
   children: React.ReactNode;
   fallback?: React.ReactNode;
@@ -19,7 +24,8 @@ type Props = {
 };
 
 /**
- * Gate visual de permissão. Backend continua sendo a fonte de segurança.
+ * Gate visual P13: resourceKey + action via DTO efetivo.
+ * Backend permanece a autoridade; esconder botão não substitui API guard (P14).
  */
 export function PermissionGate({
   resourceKey,
@@ -32,13 +38,9 @@ export function PermissionGate({
   className,
   disabledClassName,
 }: Props) {
-  const { canView, canExecute, canManage } = usePermissions();
-  const allowed =
-    action === "view"
-      ? canView(resourceKey)
-      : action === "execute"
-        ? canExecute(resourceKey)
-        : canManage(resourceKey);
+  const auth = useAuth();
+  const ctx = navigationAccessContextFromAuth(auth);
+  const allowed = canPerformAction(resourceKey, action, ctx);
 
   if (allowed) {
     if (className) {
@@ -61,7 +63,6 @@ export function PermissionGate({
     );
   }
 
-  // disable
   return (
     <div
       className={cn("pointer-events-none opacity-50", disabledClassName, className)}

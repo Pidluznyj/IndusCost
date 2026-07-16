@@ -1,5 +1,10 @@
 import type { SidebarAccessibleNavigation, SidebarMenuItemDef } from "@/src/lib/sidebarNavigation.js";
 import { projectInternalContractKeysFromLegacyBag } from "@/src/lib/internalSurfaceAccess.js";
+import {
+  capabilitiesFromActions,
+  mergeActionMaps,
+  projectContractActionsFromLegacyBag,
+} from "@/src/lib/actionPermissionAccess.js";
 import { EFFECTIVE_ACCESS_PERMISSIONS_VERSION_PLACEHOLDER } from "@/src/lib/effectiveAccessDtoTypes.js";
 import { projectLegacyBagToBaseline } from "@/src/lib/security/effectiveAccess/legacyCompat.js";
 import {
@@ -132,16 +137,19 @@ function buildSidebarDtoFromLegacyBag(args: {
   const internalKeys = projectInternalContractKeysFromLegacyBag(
     args.legacyPermissions
   );
-  const keys = [...new Set([...sidebarKeys, ...internalKeys])].sort();
+  const actionMap = mergeActionMaps(
+    projectContractActionsFromLegacyBag(args.legacyPermissions),
+    Object.fromEntries(
+      [...new Set([...sidebarKeys, ...internalKeys])].map((k) => [k, ["view" as const]])
+    )
+  );
+  const keys = Object.keys(actionMap).sort();
   const actionsByResource: EffectiveAccessMeDto["actionsByResource"] = {};
   const capabilities: EffectiveAccessMeDto["capabilities"] = {};
   for (const resourceKey of keys) {
-    actionsByResource[resourceKey] = ["view"];
-    capabilities[resourceKey] = {
-      canView: true,
-      canExecute: false,
-      canManage: false,
-    };
+    const actions = actionMap[resourceKey] ?? ["view"];
+    actionsByResource[resourceKey] = actions;
+    capabilities[resourceKey] = capabilitiesFromActions(actions);
   }
   return {
     permissionsVersion: EFFECTIVE_ACCESS_PERMISSIONS_VERSION_PLACEHOLDER,
@@ -149,7 +157,9 @@ function buildSidebarDtoFromLegacyBag(args: {
     isSuperAdmin: false,
     allowedResources: keys,
     actionsByResource,
-    navigationReveal: keys,
+    navigationReveal: keys.filter((k) =>
+      (actionMap[k] ?? []).includes("view")
+    ),
     capabilities,
     compatibility: {
       mode: "shadow",
