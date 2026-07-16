@@ -8,15 +8,9 @@ import { Prisma, type InventoryMovement, type InventoryMovementType } from "@pri
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  INVENTORY_COUNT_APPROVE_PERMISSIONS,
-  INVENTORY_COUNT_MANAGE_PERMISSIONS,
-  INVENTORY_ITEM_MANAGE_PERMISSIONS,
-  INVENTORY_MANAGE_PERMISSIONS,
-  INVENTORY_MOVEMENT_CREATE_PERMISSIONS,
-  INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS,
-  INVENTORY_VIEW_PERMISSIONS,
-  INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS,
-} from "@/src/lib/inventoryPermissions.js";
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess.js";
 import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
 import {
   parseCreateCountSessionBody,
@@ -70,7 +64,7 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -227,31 +221,40 @@ function buildBalancesListSummary(
 }
 
 export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) {
-  const view = [auth.requireAppAuth, auth.requireAnyPermission([...INVENTORY_VIEW_PERMISSIONS])] as const;
+  const view = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventory, OPERATIONS_ACTIONS.view),
+  ] as const;
   const itemManage = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_ITEM_MANAGE_PERMISSIONS]),
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryItems, OPERATIONS_ACTIONS.manage),
   ] as const;
   const warehouseManage = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS]),
+    auth.requireResource(
+      OPERATIONS_RESOURCE_KEYS.inventoryWarehouses,
+      OPERATIONS_ACTIONS.manage
+    ),
   ] as const;
-  const manage = [auth.requireAppAuth, auth.requireAnyPermission([...INVENTORY_MANAGE_PERMISSIONS])] as const;
+  const manage = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventory, OPERATIONS_ACTIONS.manage),
+  ] as const;
   const moveCreate = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_MOVEMENT_CREATE_PERMISSIONS]),
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryMovements, OPERATIONS_ACTIONS.create),
   ] as const;
   const reserveManage = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS]),
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventory, OPERATIONS_ACTIONS.manage),
   ] as const;
   const countApprove = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_COUNT_APPROVE_PERMISSIONS]),
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryCounts, OPERATIONS_ACTIONS.approve),
   ] as const;
   const countManage = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...INVENTORY_COUNT_MANAGE_PERMISSIONS]),
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.inventoryCounts, OPERATIONS_ACTIONS.manage),
   ] as const;
 
   app.get("/api/inventory/dashboard", ...view, async (_req, res) => {

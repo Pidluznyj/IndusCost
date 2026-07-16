@@ -15,13 +15,13 @@ import {
   serializeCoverageReportForApi,
 } from "./componentPerformanceCoverage.server.js";
 import {
-  COMPONENT_PERFORMANCE_EDIT_PERMISSIONS,
-  COMPONENT_PERFORMANCE_VIEW_PERMISSIONS,
-} from "./componentPerformancePermissions.js";
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "./operationsAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -49,67 +49,59 @@ export function registerComponentPerformanceRoutes(
   app: express.Express,
   auth: AuthGuards
 ): void {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-
-  app.get(
-    "/api/operations/performance/coverage",
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...COMPONENT_PERFORMANCE_VIEW_PERMISSIONS, "products.view"]),
-    async (req, res) => {
-      try {
-        const report = await buildComponentPerformanceCoverageReportFromDb(
-          prisma,
-          req.query as Record<string, unknown>
-        );
-        res.json(serializeCoverageReportForApi(report));
-      } catch (error) {
-        handleServiceError(error, res, "GET /api/operations/performance/coverage");
-      }
-    }
-  );
-
-  app.get(
-    "/api/operations/performance/components",
+    requireResource(OPERATIONS_RESOURCE_KEYS.performance, OPERATIONS_ACTIONS.view),
+  ] as const;
+  const updateGuard = [
     requireAppAuth,
-    requireAnyPermission([...COMPONENT_PERFORMANCE_VIEW_PERMISSIONS, "products.view"]),
-    async (req, res) => {
-      try {
-        const payload = await listComponentPerformanceProducts(
-          prisma,
-          req.query as Record<string, unknown>
-        );
-        res.json(payload);
-      } catch (error) {
-        handleServiceError(error, res, "GET /api/operations/performance/components");
-      }
-    }
-  );
+    requireResource(OPERATIONS_RESOURCE_KEYS.performance, OPERATIONS_ACTIONS.update),
+  ] as const;
 
-  app.get(
-    "/api/operations/performance/components/:id",
-    requireAppAuth,
-    requireAnyPermission([...COMPONENT_PERFORMANCE_VIEW_PERMISSIONS, "products.view"]),
-    async (req, res) => {
-      try {
-        const { id } = req.params;
-        if (!isUuid(id)) {
-          return res.status(400).json({ error: "INVALID_ID", message: "ID inválido." });
-        }
-        const product = await getComponentPerformanceProduct(prisma, id);
-        if (!product) {
-          return res.status(404).json({ error: "NOT_FOUND", message: "Componente não encontrado." });
-        }
-        res.json(product);
-      } catch (error) {
-        handleServiceError(error, res, "GET /api/operations/performance/components/:id");
-      }
+  app.get("/api/operations/performance/coverage", ...viewGuard, async (req, res) => {
+    try {
+      const report = await buildComponentPerformanceCoverageReportFromDb(
+        prisma,
+        req.query as Record<string, unknown>
+      );
+      res.json(serializeCoverageReportForApi(report));
+    } catch (error) {
+      handleServiceError(error, res, "GET /api/operations/performance/coverage");
     }
-  );
+  });
+
+  app.get("/api/operations/performance/components", ...viewGuard, async (req, res) => {
+    try {
+      const payload = await listComponentPerformanceProducts(
+        prisma,
+        req.query as Record<string, unknown>
+      );
+      res.json(payload);
+    } catch (error) {
+      handleServiceError(error, res, "GET /api/operations/performance/components");
+    }
+  });
+
+  app.get("/api/operations/performance/components/:id", ...viewGuard, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) {
+        return res.status(400).json({ error: "INVALID_ID", message: "ID inválido." });
+      }
+      const product = await getComponentPerformanceProduct(prisma, id);
+      if (!product) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Componente não encontrado." });
+      }
+      res.json(product);
+    } catch (error) {
+      handleServiceError(error, res, "GET /api/operations/performance/components/:id");
+    }
+  });
 
   app.patch(
     "/api/operations/performance/components/:id",
-    requireAppAuth,
-    requireAnyPermission([...COMPONENT_PERFORMANCE_EDIT_PERMISSIONS, "products.edit"]),
+    ...updateGuard,
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -135,8 +127,7 @@ export function registerComponentPerformanceRoutes(
 
   app.get(
     "/api/operations/performance/components/:id/history",
-    requireAppAuth,
-    requireAnyPermission([...COMPONENT_PERFORMANCE_VIEW_PERMISSIONS, "products.view"]),
+    ...viewGuard,
     async (req, res) => {
       try {
         const { id } = req.params;

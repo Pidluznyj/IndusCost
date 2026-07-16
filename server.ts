@@ -238,6 +238,10 @@ import {
   EMPLOYEES_ACTIONS,
   EMPLOYEES_RESOURCE_KEYS,
 } from "./src/lib/employeesAccess.js";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "./src/lib/operationsAccess.js";
 import { logEmployeeHrAudit, summarizeConflictResolutions } from "./src/lib/employeeHrAudit.js";
 import { buildCrmDashboardBasicResponse } from "./src/lib/crmDashboardBasicService.js";
 import {
@@ -2691,7 +2695,7 @@ async function startServer() {
   });
 
   // --- API: Machines (Máquinas e Centros de Trabalho) ---
-  app.get("/api/machines", requireAppAuth, requirePermission("machines.view"), async (req, res) => {
+  app.get("/api/machines", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.machines, OPERATIONS_ACTIONS.view), async (req, res) => {
     const machines = await prisma.machine.findMany({
       include: { MachineCostComponent: true },
       orderBy: { code: "asc" },
@@ -2699,7 +2703,7 @@ async function startServer() {
     res.json(machines);
   });
 
-  app.post("/api/machines", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
+  app.post("/api/machines", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.machines, OPERATIONS_ACTIONS.update), async (req, res) => {
     const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
     const machine = await prisma.machine.create({
       data: {
@@ -2720,7 +2724,7 @@ async function startServer() {
     res.json(machine);
   });
 
-  app.put("/api/machines/:id", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
+  app.put("/api/machines/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.machines, OPERATIONS_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     const { code, name, acquisitionValue, residualValue, usefulLifeMonths, components } = req.body;
 
@@ -2747,7 +2751,7 @@ async function startServer() {
     res.json(machine);
   });
 
-  app.delete("/api/machines/:id", requireAppAuth, requirePermission("machines.edit"), async (req, res) => {
+  app.delete("/api/machines/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.machines, OPERATIONS_ACTIONS.update), async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -5426,7 +5430,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- Compras: centros de custo e solicitações (Bloco 1) ---
-  app.get("/api/cost-centers", requireAppAuth, requirePermission("purchases.view"), async (_req, res) => {
+  app.get("/api/cost-centers", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.view), async (_req, res) => {
     try {
       const rows = await prisma.costCenter.findMany({
         orderBy: [{ isActive: "desc" }, { code: "asc" }],
@@ -5438,7 +5442,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/cost-centers", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
+  app.post("/api/cost-centers", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update), async (req, res) => {
     try {
       const { code, name, description, notes, isActive } = req.body;
       if (!code || !name) {
@@ -5463,7 +5467,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/cost-centers/:id", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
+  app.patch("/api/cost-centers/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -5493,7 +5497,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
   };
 
-  app.get("/api/purchase-requests", requireAppAuth, requirePermission("purchases.view"), async (_req, res) => {
+  app.get("/api/purchase-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.view), async (_req, res) => {
     try {
       const rows = await prisma.purchaseRequest.findMany({
         include: {
@@ -5509,7 +5513,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/purchase-requests/:id", requireAppAuth, requirePermission("purchases.view"), async (req, res) => {
+  app.get("/api/purchase-requests/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.view), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -5599,7 +5603,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     };
   }
 
-  app.post("/api/purchase-requests", requireAppAuth, requirePermission("purchases.create"), async (req, res) => {
+  app.post("/api/purchase-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.create), async (req, res) => {
     try {
       const err = validatePurchaseRequestPayload(req.body);
       if (err) return res.status(400).json({ error: err });
@@ -5681,7 +5685,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/purchase-requests/:id", requireAppAuth, requirePermission("purchases.edit"), async (req, res) => {
+  app.put("/api/purchase-requests/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -14547,7 +14551,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  app.get("/api/maintenance-requests", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
+  app.get("/api/maintenance-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.view), async (req, res) => {
     try {
       const search = String(req.query.search ?? "").trim();
       const statusQ = String(req.query.status ?? "").trim();
@@ -14622,7 +14626,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/maintenance-requests", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
+  app.post("/api/maintenance-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.manage), async (req, res) => {
     try {
       const body = req.body ?? {};
       const title = typeof body.title === "string" ? body.title.trim() : "";
@@ -14698,7 +14702,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/maintenance-requests/:id/history", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
+  app.get("/api/maintenance-requests/:id/history", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.view), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -14715,7 +14719,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/maintenance-requests/:id", requireAppAuth, requirePermission("maintenance.view"), async (req, res) => {
+  app.get("/api/maintenance-requests/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.view), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -14731,7 +14735,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/maintenance-requests/:id", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
+  app.patch("/api/maintenance-requests/:id", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.manage), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -14824,7 +14828,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/maintenance-requests/:id/status", requireAppAuth, requirePermission("maintenance.manage"), async (req, res) => {
+  app.patch("/api/maintenance-requests/:id/status", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.maintenance, OPERATIONS_ACTIONS.manage), async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -14885,6 +14889,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   // --- API: Gestão de Frota ---
   registerFleetRoutes(app, {
     requireAppAuth,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -15049,7 +15054,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerInventoryRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -15083,7 +15088,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerComponentPerformanceRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 

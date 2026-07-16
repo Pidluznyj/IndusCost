@@ -39,10 +39,10 @@ describe("inventoryRoutes", () => {
     assert.match(server(), /registerInventoryRoutes/);
   });
 
-  it("1. GET /api/inventory/items exige auth e permissão", () => {
+  it("1. GET /api/inventory/items exige auth e requireResource view", () => {
     const src = routes();
     assert.match(src, /requireAppAuth/);
-    assert.match(src, /requireAnyPermission\(\[\.\.\.INVENTORY_VIEW_PERMISSIONS\]\)/);
+    assert.match(src, /requireResource\(OPERATIONS_RESOURCE_KEYS\.inventory/);
     assert.match(src, /\/api\/inventory\/items/);
   });
 
@@ -66,13 +66,14 @@ describe("inventoryRoutes", () => {
     const src = routes();
     assert.match(src, /\/api\/inventory\/movements/);
     assert.match(src, /createInventoryMovement/);
-    assert.match(src, /INVENTORY_MOVEMENT_CREATE_PERMISSIONS/);
+    assert.match(src, /OPERATIONS_RESOURCE_KEYS\.inventoryMovements/);
   });
 
   it("12. POST /api/inventory/reservations", () => {
     const src = routes();
     assert.match(src, /\/api\/inventory\/reservations/);
-    assert.match(src, /INVENTORY_RESERVATIONS_MANAGE_PERMISSIONS/);
+    assert.match(src, /OPERATIONS_RESOURCE_KEYS\.inventory/);
+    assert.match(src, /OPERATIONS_ACTIONS\.manage/);
   });
 
   it("13. POST /api/inventory/reservations/:id/cancel", () => {
@@ -89,7 +90,7 @@ describe("inventoryRoutes", () => {
     assert.match(src, /\/api\/inventory\/count-sessions\/:id\/approve/);
     assert.match(src, /\/api\/inventory\/count-sessions\/:id\/generate-adjustments/);
     assert.match(src, /generateInventoryCountAdjustments/);
-    assert.match(src, /INVENTORY_COUNT_MANAGE_PERMISSIONS/);
+    assert.match(src, /OPERATIONS_RESOURCE_KEYS\.inventoryCounts/);
     assert.doesNotMatch(src, /inventoryCountLine[\s\S]*inventoryBalance\.update/);
   });
 

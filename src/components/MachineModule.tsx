@@ -21,7 +21,12 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { MACHINE_TOUR_STEPS } from "@/src/tours/machineTourSteps";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canEditMachines } from "@/src/lib/operationsAdminPermissions";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
 
 interface MachineCostComponent {
   id?: string;
@@ -41,7 +46,10 @@ interface Machine {
 
 export const MachineModule = () => {
   const auth = useAuth();
-  const allowEdit = canEditMachines(auth);
+  const permissions = usePermissions();
+  const allowEdit =
+    canEditMachines(auth) ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.machines, OPERATIONS_ACTIONS.update);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");

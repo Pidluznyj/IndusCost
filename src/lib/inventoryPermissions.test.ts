@@ -218,11 +218,12 @@ describe("inventory UI — permissões", () => {
 });
 
 describe("inventoryRoutes — permissões granulares", () => {
-  it("rotas usam guards granulares", () => {
+  it("rotas usam requireResource por faceta do contrato", () => {
     const routes = read("src/lib/inventoryRoutes.ts");
-    assert.match(routes, /INVENTORY_ITEM_MANAGE_PERMISSIONS/);
-    assert.match(routes, /INVENTORY_WAREHOUSE_MANAGE_PERMISSIONS/);
-    assert.match(routes, /INVENTORY_COUNT_APPROVE_PERMISSIONS/);
+    assert.match(routes, /OPERATIONS_RESOURCE_KEYS\.inventoryItems/);
+    assert.match(routes, /OPERATIONS_RESOURCE_KEYS\.inventoryWarehouses/);
+    assert.match(routes, /OPERATIONS_RESOURCE_KEYS\.inventoryCounts/);
+    assert.match(routes, /OPERATIONS_ACTIONS\.approve/);
     assert.doesNotMatch(routes, /inventoryMovement\.delete/);
     assert.doesNotMatch(routes, /inventoryMovement\.update/);
   });

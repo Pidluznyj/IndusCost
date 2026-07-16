@@ -39,8 +39,9 @@ describe("inventoryNavigation", () => {
 
   it("1. Sidebar inclui Estoque / Almoxarifado", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.match(sidebar, /id: "inventory"/);
-    assert.match(sidebar, /Warehouse/);
+    assert.match(sidebar, /inventory:\s*Warehouse/);
+    const menu = read("src/lib/sidebarMenuResources.ts");
+    assert.match(menu, /inventory:\s*ResourceKeys\.OPERACOES_ESTOQUE/);
   });
 
   it("inventory.view abre módulo", () => {
@@ -128,9 +129,9 @@ describe("inventoryDashboardPresentation", () => {
 });
 
 describe("InventoryDashboardTab", () => {
-  it("4. dashboard tab usa MetricCard", () => {
+  it("4. dashboard tab usa totalizadores executivos", () => {
     const tab = read("src/components/inventory/InventoryDashboardTab.tsx");
-    assert.match(tab, /MetricCardGrid/);
+    assert.match(tab, /FinanceExecutiveTotalizerCard/);
     assert.match(tab, /Valor total em estoque/);
     assert.match(tab, /inventory-recent-movements/);
   });

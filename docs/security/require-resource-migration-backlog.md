@@ -2,6 +2,21 @@
 
 Guard oficial: `requireResource(resourceKey, action)` → `resolveEffectiveAccess`.
 
+## Migrado em P16 — Máquinas + Operações prioritárias
+
+Ver `operationsAccess.ts` / `OPERATIONS_PILOT_ENDPOINTS`:
+
+| resourceKey | actions | superfície |
+|-------------|---------|------------|
+| `operations.machines` | view, update | `/api/machines*` (POST/DELETE → update) |
+| `operations.inventory*` | view, create, manage, approve | `/api/inventory*` |
+| `operations.purchases` | view, create, update | purchase-requests + cost-centers |
+| `operations.performance` | view, update | `/api/operations/performance*` |
+| `operations.maintenance` | view, manage | `/api/maintenance-requests*` |
+| `operations.fleet` | view, manage | gate canônico + `fleetRouteGuards` granulares |
+
+`costs.view` e chaves financeiras **não** abrem Operações/Máquinas.
+
 ## Migrado em P15 — Pessoas / RH
 
 `admin.employees*` via `requireResource` (ver `employeesAccess.ts` / `EMPLOYEES_PILOT_ENDPOINTS`):
@@ -49,6 +64,5 @@ Wrappers: `requireUsersOrPermissionsAdmin`, `requireUsersViewOrBootstrap`, `requ
 
 Ver `REQUIRE_RESOURCE_LEGACY_BACKLOG` em `src/lib/security/requireResource.ts`:
 
-- **P16** machines
 - **P17+** materials, products
 - **P18+** AR, commissions, sales-orders, other nomus sync, portfolio, dashboard

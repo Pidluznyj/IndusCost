@@ -32,6 +32,11 @@ import { PURCHASE_TOUR_STEPS } from "@/src/tours/purchaseTourSteps";
 import { motion } from "motion/react";
 import { filterPurchaseRequests } from "@/src/lib/operationalListFilters";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
@@ -173,9 +178,16 @@ function itemFromApi(row: PurchaseRequestRow["items"][0]): PurchaseItemDraft {
 
 export const PurchaseModule = () => {
   const auth = useAuth();
-  const allowCreate = auth.hasPermission("purchases.create");
-  const allowEdit = auth.hasPermission("purchases.edit");
-  const allowDelete = auth.hasPermission("purchases.delete");
+  const permissions = usePermissions();
+  const allowCreate =
+    auth.hasPermission("purchases.create") ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.create);
+  const allowEdit =
+    auth.hasPermission("purchases.edit") ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update);
+  const allowDelete =
+    auth.hasPermission("purchases.delete") ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.delete);
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
   const [formMode, setFormMode] = useState<"create" | "edit" | "view">("create");

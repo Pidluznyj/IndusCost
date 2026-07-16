@@ -8,6 +8,7 @@ import {
   Search,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   fetchComponentPerformanceCoverage,
   fetchComponentPerformanceHistory,
@@ -26,6 +27,10 @@ import {
   formatPerformanceNumber,
   type ComponentPerformanceFilterId,
 } from "@/src/lib/componentPerformanceUi";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
 import { cn } from "@/src/lib/utils";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
@@ -69,8 +74,13 @@ function filterToQuery(
 
 export function OperationsPerformanceModule() {
   const auth = useAuth();
-  const canView = canViewComponentPerformance(auth);
-  const canEdit = canEditComponentPerformance(auth);
+  const permissions = usePermissions();
+  const canView =
+    canViewComponentPerformance(auth) ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.performance, OPERATIONS_ACTIONS.view);
+  const canEdit =
+    canEditComponentPerformance(auth) ||
+    permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.performance, OPERATIONS_ACTIONS.update);
 
   const [skuSearch, setSkuSearch] = useState("");
   const [nameSearch, setNameSearch] = useState("");

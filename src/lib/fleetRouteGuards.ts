@@ -10,11 +10,17 @@ import {
   type FleetRouteGuardKey,
 } from "@/src/lib/fleetPermissionResolve.js";
 import { FLEET_FORBIDDEN_CODE } from "@/src/lib/fleetErrors.js";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess.js";
 
 /** Guards reutilizáveis para todas as rotas /api/fleet/*. */
 export type FleetAuthGuards = {
   requireAppAuth: express.RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
+  /** P16: gate canônico operations.fleet antes das permissões granulares. */
+  requireResource?: (resourceKey: string, action?: string) => express.RequestHandler;
 };
 
 export type FleetRouteGuardSet = {
@@ -65,13 +71,24 @@ function createRequireFleetAny(
   };
 }
 
-export function createFleetRouteGuards(auth: FleetAuthGuards): FleetRouteGuardSet {
-  const { requireAppAuth, getCurrentAppUser } = auth;
+const VIEW_GUARDS: ReadonlySet<FleetRouteGuardKey> = new Set(["view"]);
 
-  const chain = (guard: FleetRouteGuardKey): express.RequestHandler[] => [
-    requireAppAuth,
-    createRequireFleetAny(getCurrentAppUser, guard),
-  ];
+export function createFleetRouteGuards(auth: FleetAuthGuards): FleetRouteGuardSet {
+  const { requireAppAuth, getCurrentAppUser, requireResource } = auth;
+
+  const chain = (guard: FleetRouteGuardKey): express.RequestHandler[] => {
+    const resourceAction = VIEW_GUARDS.has(guard)
+      ? OPERATIONS_ACTIONS.view
+      : OPERATIONS_ACTIONS.manage;
+    const handlers: express.RequestHandler[] = [requireAppAuth];
+    if (typeof requireResource === "function") {
+      handlers.push(
+        requireResource(OPERATIONS_RESOURCE_KEYS.fleet, resourceAction)
+      );
+    }
+    handlers.push(createRequireFleetAny(getCurrentAppUser, guard));
+    return handlers;
+  };
 
   return {
     view: chain("view"),

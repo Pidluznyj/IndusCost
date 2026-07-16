@@ -11,7 +11,12 @@ import type {
   MaintenanceStatus,
 } from "@/src/types/maintenance";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canManageMaintenance } from "@/src/lib/operationsAdminPermissions";
+import {
+  OPERATIONS_ACTIONS,
+  OPERATIONS_RESOURCE_KEYS,
+} from "@/src/lib/operationsAccess";
 
 const STATUS_LABEL: Record<MaintenanceStatus, string> = {
   NOVA_SOLICITACAO: "Nova solicitação",
@@ -102,7 +107,13 @@ const EMPTY_FORM: FormState = {
 
 export function MaintenanceModule() {
   const auth = useAuth();
-  const allowManage = canManageMaintenance(auth);
+  const permissions = usePermissions();
+  const allowManage =
+    canManageMaintenance(auth) ||
+    permissions.canPerformAction(
+      OPERATIONS_RESOURCE_KEYS.maintenance,
+      OPERATIONS_ACTIONS.manage
+    );
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [rows, setRows] = useState<MaintenanceRequestRow[]>([]);
   const [loading, setLoading] = useState(true);

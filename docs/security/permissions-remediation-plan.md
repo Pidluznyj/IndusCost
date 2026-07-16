@@ -258,14 +258,15 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Migration:** não. **Servidor:** regrant RH users.
 - **Status (2026-07-16):** **feito.** Matriz em `employeesAccess.ts`; `requireResource` em CRUD/status/lookups/user-link/system-links/people search; FE `canPerformAction` + redaction de facetas; testes Leticia/finance deny/SA.
 
-### P16 — Migração Máquinas
+### P16 — Migração Máquinas + Operações prioritárias
 
-- **Objetivo:** Só `operations.machines` / `machines.view` 1:1; sem costs.
-- **Escopo:** modulePermissions, machines routes.
+- **Objetivo:** Só `operations.machines` / `machines.view` 1:1; sem costs; estender a estoque/compras/performance/manutenção/frota.
+- **Escopo:** `operationsAccess`, `server.ts` machines/purchases/maintenance, inventory/performance/fleet guards.
 - **Deps:** P09, P14.
 - **Risco:** médio.
-- **Aceite:** costs.view não abre `/machines`.
+- **Aceite:** costs.view / AP não abrem `/machines` nem APIs de Operações; Leticia deny.
 - **Rollback:** flag.
+- **Status (2026-07-16):** **feito.** Matriz em `operationsAccess.ts`; `requireResource` em máquinas, estoque (abas), compras, performance, manutenção; frota com gate canônico + guards granulares preservados.
 
 ### P17 — Migração Financeiro
 

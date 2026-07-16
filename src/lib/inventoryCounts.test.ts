@@ -289,7 +289,7 @@ describe("inventoryCounts — rotas e navegação", () => {
     const routes = read("src/lib/inventoryRoutes.ts");
     assert.match(routes, /\/api\/inventory\/count-sessions/);
     assert.match(routes, /generate-adjustments/);
-    assert.match(routes, /INVENTORY_COUNT_MANAGE_PERMISSIONS/);
+    assert.match(routes, /OPERATIONS_RESOURCE_KEYS\.inventoryCounts/);
     assert.doesNotMatch(routes, /inventoryBalance\.update/);
   });
 

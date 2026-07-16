@@ -398,7 +398,6 @@ export const REQUIRE_RESOURCE_ADMIN_KEYS = {
  * Não migrar em massa neste prompt.
  */
 export const REQUIRE_RESOURCE_LEGACY_BACKLOG = [
-  { area: "machines", prompt: "P16", note: "GET/POST /api/machines* — machines.view/edit legado" },
   { area: "materials", prompt: "P17+", note: "materiais — materials.view/edit" },
   { area: "products", prompt: "P17+", note: "produtos/BOM — products.*" },
   {
