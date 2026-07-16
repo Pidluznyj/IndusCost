@@ -2897,20 +2897,6 @@ function normalizeOptionalDigits(value: unknown): string | null {
   return digits.length > 0 ? digits : null;
 }
 
-function normalizeOptionalDate(value: unknown): Date | null {
-  if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
-  }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (!trimmed) return null;
-    const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed}T12:00:00.000Z` : trimmed);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-  return null;
-}
-
 function buildEmployeeHrProfileData(
   body: Record<string, unknown>,
   opts?: {
