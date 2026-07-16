@@ -41,6 +41,16 @@ import {
 import { HttpError } from "@/src/lib/http.js";
 import { ProductionOrderGridTableRow } from "@/src/components/operations/ProductionOrdersModule.js";
 import type { ProductionOrderGridRow } from "@/src/lib/productionOrdersList.js";
+import type {
+  ProductionOrderDetailResponse,
+  ProductionOrderDetailSalesLink,
+} from "@/src/lib/productionOrdersDetail.js";
+import {
+  ProductionOrderAuditContent,
+  buildProductionOrderTechnicalEvidence,
+  copyProductionOrderTechnicalEvidence,
+  stringifyProductionOrderTechnicalEvidence,
+} from "@/src/components/operations/ProductionOrderQuickDetailOverlay.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -105,6 +115,105 @@ function renderRow(row: ProductionOrderGridRow): string {
           })
         )
       )
+    )
+  );
+}
+
+function detailLink(
+  overrides: Partial<ProductionOrderDetailSalesLink> = {}
+): ProductionOrderDetailSalesLink {
+  return {
+    id: "link-1",
+    linkState: "current_resolved",
+    isCurrent: true,
+    externalSalesOrderId: 2530,
+    externalSalesOrderItemId: 11324,
+    itemNumber: "10",
+    customerName: "Esmaltec S/A",
+    linkedQuantity: "15000",
+    salesOrderId: "00000000-0000-4000-8000-000000000301",
+    salesOrderItemId: "00000000-0000-4000-8000-000000000401",
+    orderCode: "PD 02534",
+    localItem: {
+      id: "00000000-0000-4000-8000-000000000401",
+      skuSnapshot: "311.32AA",
+      productNameSnapshot: "Produto fixture",
+      quantity: "15000",
+      unit: "PC",
+      nomusItemExternalId: 11324,
+      nomusItemSequence: "10",
+    },
+    firstSeenAt: "2026-03-10T11:15:00.000Z",
+    lastSeenAt: "2026-07-16T12:00:00.000Z",
+    removedAt: null,
+    rawJson: { id: 11324, idPedido: 2530 },
+    ...overrides,
+  };
+}
+
+function detailResponse(
+  overrides: Partial<ProductionOrderDetailResponse> = {}
+): ProductionOrderDetailResponse {
+  return {
+    identification: {
+      id: "00000000-0000-4000-8000-000000000101",
+      externalId: 30347,
+      name: "OP 05800 - 003",
+      status: "Encerrada",
+      tipo: "Injeção",
+      priority: "Normal",
+    },
+    product: {
+      externalProductId: 5800,
+      productCode: "311.32AA",
+      productDescription: "Produto fixture OP 05800",
+      productAdditionalInfo: null,
+      productConfigId: null,
+      productConfigCode: null,
+      quantity: "15400",
+      unit: "PC",
+      stockSector: "PRODUCAO",
+    },
+    company: { externalCompanyId: 1, companyName: "KOPPETEL" },
+    dates: {
+      openedAt: "2026-03-10T11:15:00.000Z",
+      releasedAt: null,
+      plannedAt: "2026-03-12T21:00:00.000Z",
+      deliveryAt: null,
+      closedAt: "2026-03-12T20:40:22.000Z",
+      nomusUpdatedAt: "2026-03-12T20:40:22.000Z",
+      firstSeenAt: "2026-03-10T11:15:00.000Z",
+      lastSeenAt: "2026-07-16T12:00:00.000Z",
+      lastChangedAt: "2026-03-12T20:40:22.000Z",
+      syncedAt: "2026-07-16T12:00:00.000Z",
+      createdAt: "2026-03-10T11:15:00.000Z",
+      updatedAt: "2026-07-16T12:00:00.000Z",
+    },
+    salesLinks: [detailLink()],
+    auditSummary: {
+      currentLinkCount: 1,
+      removedLinkCount: 0,
+      resolvedLinkCount: 1,
+      pendingLinkCount: 0,
+    },
+    payloadHash: "sha256:op-05800",
+    rawJson: { id: 30347, nome: "OP 05800 - 003", html: "<script>não executar</script>" },
+    ...overrides,
+  };
+}
+
+function renderAuditContent(detail: ProductionOrderDetailResponse): string {
+  const technicalJson = stringifyProductionOrderTechnicalEvidence(detail);
+  return renderToStaticMarkup(
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(ProductionOrderAuditContent, {
+        detail,
+        technicalJson,
+        copyFeedback: null,
+        onCopy: () => {},
+      })
     )
   );
 }
@@ -375,5 +484,147 @@ describe("ProductionOrderGridTableRow", () => {
     assert.match(html, /tabindex="0"/);
     assert.match(html, /Sem status/);
     assert.match(html, /—/);
+  });
+});
+
+describe("ProductionOrderAuditContent", () => {
+  it("renderiza as seis seções e campos executivos completos", () => {
+    const html = renderAuditContent(detailResponse());
+    for (const section of [
+      "Resumo",
+      "Produto",
+      "Datas",
+      "Pedidos de Venda vinculados",
+      "Auditoria interna",
+      "Dados técnicos do Nomus",
+    ]) {
+      assert.match(html, new RegExp(section));
+    }
+    assert.match(html, /OP 05800 - 003/);
+    assert.match(html, /15\.400/);
+    assert.match(html, /sha256:op-05800/);
+  });
+
+  it("OP sem vínculo exibe estado explícito", () => {
+    const html = renderAuditContent(
+      detailResponse({
+        salesLinks: [],
+        auditSummary: {
+          currentLinkCount: 0,
+          removedLinkCount: 0,
+          resolvedLinkCount: 0,
+          pendingLinkCount: 0,
+        },
+      })
+    );
+    assert.match(html, /não possui vínculo de Pedido de Venda/);
+  });
+
+  it("um vínculo resolvido mostra pedido, item local e rota oficial", () => {
+    const html = renderAuditContent(detailResponse());
+    assert.match(html, /Atual/);
+    assert.match(html, /PD 02534/);
+    assert.match(html, /311\.32AA/);
+    assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+  });
+
+  it("vários vínculos mantêm removido e pendente visíveis", () => {
+    const removed = detailLink({
+      id: "link-removed",
+      linkState: "removed",
+      isCurrent: false,
+      externalSalesOrderId: 3000,
+      externalSalesOrderItemId: 13000,
+      removedAt: "2026-07-15T12:00:00.000Z",
+    });
+    const pending = detailLink({
+      id: "link-pending",
+      linkState: "current_pending",
+      salesOrderId: null,
+      salesOrderItemId: null,
+      orderCode: null,
+      localItem: null,
+      externalSalesOrderId: 4000,
+      externalSalesOrderItemId: 14000,
+    });
+    const html = renderAuditContent(
+      detailResponse({
+        salesLinks: [detailLink(), removed, pending],
+        auditSummary: {
+          currentLinkCount: 2,
+          removedLinkCount: 1,
+          resolvedLinkCount: 1,
+          pendingLinkCount: 1,
+        },
+      })
+    );
+    assert.match(html, /Removido/);
+    assert.match(html, /Pendente de resolução local/);
+    assert.match(html, /3000/);
+    assert.match(html, /4000/);
+  });
+
+  it("rawJson fica em accordion fechado, escapado e inclui vínculos", () => {
+    const detail = detailResponse();
+    const evidence = buildProductionOrderTechnicalEvidence(detail);
+    const text = stringifyProductionOrderTechnicalEvidence(detail);
+    const html = renderAuditContent(detail);
+    assert.equal(evidence.salesLinks.length, 1);
+    assert.match(text, /"productionOrder"/);
+    assert.match(text, /"salesLinks"/);
+    assert.match(html, /Payload original do Nomus/);
+    assert.match(html, /Copiar JSON/);
+    assert.doesNotMatch(html, /<details[^>]* open/);
+    assert.match(html, /&lt;script&gt;não executar&lt;\/script&gt;/);
+  });
+
+  it("copiar JSON usa exatamente a evidência técnica sanitizada", async () => {
+    let copied = "";
+    const detail = detailResponse();
+    const returned = await copyProductionOrderTechnicalEvidence(detail, {
+      writeText: async (text) => {
+        copied = text;
+      },
+    });
+    assert.equal(copied, stringifyProductionOrderTechnicalEvidence(detail));
+    assert.equal(returned, copied);
+  });
+
+  it("campos nulos relevantes permanecem como travessão", () => {
+    const html = renderAuditContent(
+      detailResponse({
+        identification: {
+          ...detailResponse().identification,
+          status: null,
+          tipo: null,
+          priority: null,
+        },
+        product: {
+          ...detailResponse().product,
+          productDescription: null,
+          productAdditionalInfo: null,
+        },
+      })
+    );
+    assert.match(html, /—/);
+  });
+
+  it("drawer usa overlay oficial com fechamento, loading, erro, clipboard e acessibilidade", () => {
+    const drawer = read(
+      "src/components/operations/ProductionOrderQuickDetailOverlay.tsx"
+    );
+    const overlay = read("src/components/ui/overlay/Overlay.tsx");
+    assert.match(drawer, /size="xl"/);
+    assert.match(drawer, /className="ml-auto/);
+    assert.match(drawer, /ariaLabelledBy=/);
+    assert.match(drawer, /ariaDescribedBy=/);
+    assert.match(drawer, /onClose=\{onClose\}/);
+    assert.match(drawer, /production-order-detail-loading/);
+    assert.match(drawer, /production-order-detail-error/);
+    assert.match(drawer, /copyProductionOrderTechnicalEvidence\(detail, navigator\.clipboard\)/);
+    assert.match(drawer, /aria-live="polite"/);
+    assert.match(overlay, /event\.key === "Escape"/);
+    assert.match(overlay, /event\.target === event\.currentTarget/);
+    assert.match(overlay, /role="dialog"/);
   });
 });

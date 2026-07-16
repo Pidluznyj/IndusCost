@@ -88,6 +88,7 @@ export type ProductionOrderDetailResponse = {
   };
   salesLinks: ProductionOrderDetailSalesLink[];
   auditSummary: ProductionOrderDetailAuditSummary;
+  payloadHash: string;
   rawJson: unknown;
 };
 
@@ -237,6 +238,7 @@ export type ProductionOrderDetailDbRow = {
   syncedAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  payloadHash: string;
   rawJson: unknown;
   salesLinks: ProductionOrderDetailDbLink[];
 };
@@ -329,6 +331,7 @@ export function serializeProductionOrderDetail(
     },
     salesLinks,
     auditSummary: buildProductionOrderDetailAuditSummary(row.salesLinks),
+    payloadHash: row.payloadHash,
     rawJson: sanitizeProductionOrderRawJson(row.rawJson),
   };
 }

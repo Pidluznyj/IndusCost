@@ -55,6 +55,7 @@ function detailRow(overrides: Partial<ProductionOrderDetailDbRow> = {}): Product
     syncedAt: now,
     createdAt: now,
     updatedAt: now,
+    payloadHash: "sha256:op-05800",
     rawJson: NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE,
     salesLinks: [],
     ...overrides,
@@ -218,6 +219,7 @@ describe("serializeProductionOrderDetail", () => {
     assert.equal(detail.product.quantity, null);
     assert.equal(detail.dates.openedAt, null);
     assert.equal(detail.salesLinks.length, 0);
+    assert.equal(detail.payloadHash, "sha256:op-05800");
     assert.deepEqual(detail.auditSummary, {
       currentLinkCount: 0,
       removedLinkCount: 0,

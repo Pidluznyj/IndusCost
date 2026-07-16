@@ -193,6 +193,7 @@ Testes: `npm run test:production-orders-api` ou inclusão em `test:nomus:product
   "auditSummary": {
     "currentLinkCount", "removedLinkCount", "resolvedLinkCount", "pendingLinkCount"
   },
+  "payloadHash": "hash persistido do payload",
   "rawJson": { /* payload Nomus sanitizado */ }
 }
 ```
@@ -258,10 +259,7 @@ Implementação: `src/lib/productionOrdersDetail.server.ts`.
 
 ---
 
-## 8. Próximo prompt (OP-19+)
-
-- Drawer detalhe Overlay DS
-- Refinos de UX do grid
+## 8. UI de consulta (OP-19/OP-20)
 
 ### UI (OP-18)
 
@@ -281,3 +279,14 @@ Implementação: `src/lib/productionOrdersDetail.server.ts`.
 - Status usam valores reais de `statusCounts`; valores desconhecidos continuam visíveis.
 - Pedidos usam `salesOrderId` para deep link local, primeiro chip + `+N`.
 - Clique na linha abre detalhe read-only sem perder filtros/página.
+
+### Drawer de auditoria (OP-20)
+
+- Usa o Overlay Design System em largura `xl`, alinhado lateralmente.
+- Cabeçalho e seis seções: resumo, produto, datas, vínculos, auditoria interna
+  e dados técnicos.
+- A tabela compacta mantém vínculos atuais, removidos e pendentes.
+- Pedido resolvido navega somente pela rota existente `/sales-orders/:id`.
+- `rawJson` da OP e dos vínculos permanece em accordion fechado e é renderizado
+  como texto escapado.
+- O botão de cópia envia apenas o JSON sanitizado retornado pela API local.
