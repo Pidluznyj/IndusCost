@@ -16,13 +16,13 @@ import {
   setAccessProfileStatus,
   updateAccessProfile,
 } from "@/src/lib/accessProfilesService.js";
-import { PermissionResourceKeys } from "@/src/lib/security/permissionsCatalog.js";
+import { REQUIRE_RESOURCE_ADMIN_KEYS } from "@/src/lib/security/requireResource.js";
 
 type RouteDeps = {
   requireAppAuth: express.RequestHandler;
   requirePermission: (
     resourceKey: string,
-    action?: "view" | "execute" | "manage" | "admin"
+    action?: string
   ) => RequestHandler;
 };
 
@@ -52,11 +52,8 @@ function handleAccessProfileError(res: express.Response, error: unknown) {
 }
 
 export function registerAccessProfilesRoutes(app: express.Express, deps: RouteDeps): void {
-  const viewGuard = deps.requirePermission(PermissionResourceKeys.ADMIN_PERMISSOES, "view");
-  const manageGuard = deps.requirePermission(
-    PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
-    "admin"
-  );
+  const viewGuard = deps.requirePermission(REQUIRE_RESOURCE_ADMIN_KEYS.security, "view");
+  const manageGuard = deps.requirePermission(REQUIRE_RESOURCE_ADMIN_KEYS.security, "manage");
 
   app.get("/api/access-profiles", deps.requireAppAuth, viewGuard, async (req, res) => {
     try {

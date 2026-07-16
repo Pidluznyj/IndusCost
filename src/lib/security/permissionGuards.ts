@@ -26,6 +26,12 @@ import type {
 } from "@/src/lib/security/permissionTypes.js";
 import { PermissionAccessError } from "@/src/lib/security/permissionTypes.js";
 import { normalizePermissionAction } from "@/src/lib/security/permissionService.js";
+import {
+  authorizeRequireResource,
+  createRequireResourceGuards,
+  requireResource,
+  type RequireResourceAction,
+} from "@/src/lib/security/requireResource.js";
 
 export type ReadAppUserFn = (req: Request) => Promise<AppAuthContext | null>;
 
@@ -175,13 +181,25 @@ export function requirePermission(
 }
 
 export function createResourcePermissionGuards(getCurrentAppUser: ReadAppUserFn) {
+  const official = createRequireResourceGuards(getCurrentAppUser);
   return {
+    /** @deprecated Preferir `requireResource` (resolvedor oficial P14). */
     requirePermission: (
       resourceKey: string,
       action: PermissionActionInput = "view"
     ): RequestHandler => requirePermission(resourceKey, action, getCurrentAppUser),
 
-    /** Bootstrap cookie OU permissão de recurso. */
+    /**
+     * Guard oficial P14: `requireResource(resourceKey, action)` via resolveEffectiveAccess.
+     */
+    requireResource: (
+      resourceKey: string,
+      action: RequireResourceAction | string = "view"
+    ): RequestHandler => official.requireResource(resourceKey, action),
+
+    requireBootstrapOrResource: official.requireBootstrapOrResource,
+
+    /** Bootstrap cookie OU permissão de recurso (seed path legado). */
     requireBootstrapOrPermission: (
       isBootstrap: (req: Request) => boolean,
       resourceKey: string,
@@ -193,6 +211,8 @@ export function createResourcePermissionGuards(getCurrentAppUser: ReadAppUserFn)
         return requirePermission(resourceKey, action, getCurrentAppUser)(req, res, next);
       };
     },
+
+    authorizeRequireResource,
   };
 }
 
@@ -209,4 +229,6 @@ export {
   assertCanAccessResource,
   canAccessResource,
   buildPermissionSnapshotForAuth,
+  requireResource,
+  authorizeRequireResource,
 };

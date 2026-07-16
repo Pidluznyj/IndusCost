@@ -108,7 +108,9 @@ const PERMISSION_CALLEES = new Set([
   "requireAllPermissions",
   "requireBootstrapOrAnyPermission",
   "requireBootstrapOrPermission",
+  "requireBootstrapOrResource",
   "requireResourcePermission",
+  "requireResource",
   "canView",
   "canExecute",
   "canManage",
@@ -161,8 +163,14 @@ const GUARD_CALLEES = new Set([
   "requireBootstrapAdmin",
   "requireBootstrapOrAnyPermission",
   "requireBootstrapOrPermission",
+  "requireBootstrapOrResource",
   "requireResourcePermission",
+  "requireResource",
   "requireUserAdminOrBootstrap",
+  "requireUsersOrPermissionsAdmin",
+  "requireUsersManageOrBootstrap",
+  "requireUsersViewOrBootstrap",
+  "requirePermissionsAdminOrBootstrap",
   "requireBootstrapForGlobalParamMutation",
 ]);
 
@@ -242,7 +250,12 @@ function collectGuardsFromArg(
       guardCallees.push(name);
       const strings: string[] = [];
       for (const a of arg.arguments) collectStringLiteralsFromNode(a, strings);
-      if (name === "requireResourcePermission" || name === "requireBootstrapOrPermission") {
+      if (
+        name === "requireResourcePermission" ||
+        name === "requireResource" ||
+        name === "requireBootstrapOrPermission" ||
+        name === "requireBootstrapOrResource"
+      ) {
         if (strings[0]) resourceKeys.push(strings[0]);
         for (const s of strings.slice(1)) {
           if (s.includes(".")) permissionKeys.push(s);
@@ -336,11 +349,9 @@ export function buildUsageIndex(root: string): UsageIndex {
   ]);
   const RESOURCE_CALLEES = new Set([
     "requireResourcePermission",
+    "requireResource",
     "requireBootstrapOrPermission",
-    "canView",
-    "canExecute",
-    "canManage",
-    "canAccessResource",
+    "requireBootstrapOrResource",
   ]);
 
   for (const file of feFiles) {

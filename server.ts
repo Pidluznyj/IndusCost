@@ -324,9 +324,12 @@ import {
   registerUserPermissionAdminRoutes,
 } from "./src/lib/security/userPermissionAdminRoutes.js";
 import {
-  authorizeResourceAccess,
+  authorizeRequireResource,
   createResourcePermissionGuards,
 } from "./src/lib/security/permissionGuards.js";
+import {
+  REQUIRE_RESOURCE_ADMIN_KEYS,
+} from "./src/lib/security/requireResource.js";
 import { PermissionResourceKeys } from "./src/lib/security/permissionsCatalog.js";
 import {
   AccessProfileError,
@@ -1707,7 +1710,8 @@ async function startServer() {
 
   const {
     requirePermission: requireResourcePermission,
-    requireBootstrapOrPermission,
+    requireResource,
+    requireBootstrapOrResource,
   } = createResourcePermissionGuards(getCurrentAppUser);
 
   const isBootstrapAdminRequest = (req: express.Request): boolean => {
@@ -1743,32 +1747,28 @@ async function startServer() {
     if (isBootstrapAdminRequest(req)) {
       return next();
     }
-    return requireResourcePermission(PermissionResourceKeys.ADMIN_USUARIOS, "manage")(
-      req,
-      res,
-      next
-    );
+    return requireResource(REQUIRE_RESOURCE_ADMIN_KEYS.security, "manage")(req, res, next);
   };
 
-  const requireUsersViewOrBootstrap = requireBootstrapOrPermission(
+  const requireUsersViewOrBootstrap = requireBootstrapOrResource(
     isBootstrapAdminRequest,
-    PermissionResourceKeys.ADMIN_USUARIOS,
+    REQUIRE_RESOURCE_ADMIN_KEYS.security,
     "view"
   );
 
-  const requireUsersManageOrBootstrap = requireBootstrapOrPermission(
+  const requireUsersManageOrBootstrap = requireBootstrapOrResource(
     isBootstrapAdminRequest,
-    PermissionResourceKeys.ADMIN_USUARIOS,
-    "admin"
+    REQUIRE_RESOURCE_ADMIN_KEYS.security,
+    "manage"
   );
 
-  const requirePermissionsAdminOrBootstrap = requireBootstrapOrPermission(
+  const requirePermissionsAdminOrBootstrap = requireBootstrapOrResource(
     isBootstrapAdminRequest,
-    PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
-    "admin"
+    REQUIRE_RESOURCE_ADMIN_KEYS.security,
+    "manage"
   );
 
-  /** admin.usuarios:admin OU admin.permissoes.action.manage:admin (+ bootstrap). */
+  /** admin.settings.security:manage (+ bootstrap) — usuários e ACL. */
   const requireUsersOrPermissionsAdmin: express.RequestHandler = async (req, res, next) => {
     if (isBootstrapAdminRequest(req)) return next();
     try {
@@ -1777,18 +1777,12 @@ async function startServer() {
         auth = await getCurrentAppUser(req);
         if (auth) (req as { appAuth?: AppAuthContext }).appAuth = auth;
       }
-      const usersOk = authorizeResourceAccess(
+      const decision = authorizeRequireResource(
         auth,
-        PermissionResourceKeys.ADMIN_USUARIOS,
-        "admin"
+        REQUIRE_RESOURCE_ADMIN_KEYS.security,
+        "manage"
       );
-      if (usersOk.ok) return next();
-      const aclOk = authorizeResourceAccess(
-        auth,
-        PermissionResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE,
-        "admin"
-      );
-      if (aclOk.ok) return next();
+      if (decision.ok) return next();
       if (!auth) {
         return res.status(401).json({
           error: "UNAUTHORIZED",
@@ -1797,7 +1791,10 @@ async function startServer() {
       }
       return res.status(403).json({
         error: "FORBIDDEN",
+        code: "PERMISSION_DENIED",
         message: "Sem permissão para gerenciar usuários/permissões.",
+        resourceKey: REQUIRE_RESOURCE_ADMIN_KEYS.security,
+        action: "manage",
       });
     } catch (error) {
       console.error("requireUsersOrPermissionsAdmin", error);
@@ -2519,12 +2516,12 @@ async function startServer() {
 
   registerAccessProfilesRoutes(app, {
     requireAppAuth,
-    requirePermission: requireResourcePermission,
+    requirePermission: requireResource,
   });
 
   registerUserPermissionAdminRoutes(app, {
     requireAppAuth,
-    requirePermission: requireResourcePermission,
+    requirePermission: requireResource,
     requireUsersOrPermissionsAdmin,
     requirePermissionsAdmin: requirePermissionsAdminOrBootstrap,
     requireUsersView: requireUsersViewOrBootstrap,

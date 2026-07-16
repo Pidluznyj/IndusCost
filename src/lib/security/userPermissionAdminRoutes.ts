@@ -25,11 +25,11 @@ type RouteDeps = {
   requireAppAuth: express.RequestHandler;
   requirePermission: (
     resourceKey: string,
-    action?: "view" | "execute" | "manage" | "admin"
+    action?: string
   ) => RequestHandler;
   /** Bootstrap admin OU permissão de usuários/ACL. */
   requireUsersOrPermissionsAdmin: express.RequestHandler;
-  /** Somente admin.permissoes:admin (+ bootstrap) — auditoria completa. */
+  /** Somente admin.settings.security:manage (+ bootstrap) — auditoria completa. */
   requirePermissionsAdmin: express.RequestHandler;
   requireUsersView: express.RequestHandler;
 };

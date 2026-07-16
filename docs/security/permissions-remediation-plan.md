@@ -239,12 +239,13 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 
 ### P14 — Guards backend genéricos
 
-- **Objetivo:** `requireResource(key, action)` middleware.
-- **Escopo:** `permissionGuards` / novo helper; migração gradual rotas.
+- **Objetivo:** `requireResource(key, action)` middleware via `resolveEffectiveAccess`.
+- **Escopo:** helper + migração piloto infra admin de permissões/usuários/access-profiles; backlog módulos em `require-resource-migration-backlog.md`.
 - **Deps:** P03.
 - **Risco:** alto se big-bang — fazer por módulo.
-- **Aceite:** helper testado; 2–3 rotas piloto.
-- **Rollback:** flag dual-check.
+- **Aceite:** helper testado; rotas admin permissões no guard oficial; 401/403/deny/VIEWER/SUPER_ADMIN.
+- **Rollback:** reverter wiring admin para `requireResourcePermission` (seed).
+- **Status (2026-07-16):** **feito (piloto).** `src/lib/security/requireResource.ts`; admin users/ACL/catalog/access-profiles migrados; bag legacyCompat default ON; backlog P15+.
 
 ### P15 — Migração Pessoas/RH
 

@@ -246,7 +246,8 @@
     "test:permission-consistency": "tsx --test src/lib/security/permissionConsistency/permissionConsistency.test.ts",
     "test:effective-access": "tsx --test src/lib/security/effectiveAccess/effectiveAccess.test.ts",
     "test:effective-access-dto": "tsx --test src/lib/security/effectiveAccessDto/effectiveAccessDto.test.ts",
-    "test:permission-override": "tsx --test src/lib/security/permissionOverrideState.test.ts"
+    "test:permission-override": "tsx --test src/lib/security/permissionOverrideState.test.ts",
+    "test:require-resource": "tsx --test src/lib/security/requireResource.test.ts src/lib/security/permissionGuards.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
