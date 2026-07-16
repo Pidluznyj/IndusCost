@@ -36,8 +36,18 @@ function user(partial: {
 }
 
 describe("permissionsClient UI", () => {
-  it("usuário com 4 abas (ADMIN) vê 4", () => {
-    const api = createPermissionsApi(user({ role: "ADMIN", permissions: [] }));
+  it("usuário com 4 abas explícitas vê 4 (sem overlay de role)", () => {
+    const api = createPermissionsApi(
+      user({
+        role: "ADMIN",
+        permissions: [
+          "finance.portfolioReconciliation.conciliation.view",
+          "finance.portfolioReconciliation.intelligence.view",
+          "finance.portfolioReconciliation.orderStatusPedidos.view",
+          "finance.portfolioReconciliation.orderToCashAudit.view",
+        ],
+      })
+    );
     assert.deepEqual(api.listAllowedPortfolioReconciliationTabs(), [
       "conciliation",
       "intelligence",
@@ -114,5 +124,32 @@ describe("permissionsClient UI", () => {
     assert.equal(api.canView(ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE), true);
     assert.equal(api.canManage(ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE), true);
     assert.equal(api.canExecute(ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO), true);
+  });
+
+  it("P07: VIEWER bag vazia não vê Engenharia; Leticia AP só; legado com bag; desconhecido nega", () => {
+    const empty = createPermissionsApi(user({ role: "VIEWER", permissions: [] }));
+    assert.equal(empty.canView(ResourceKeys.ENGENHARIA), false);
+    assert.equal(empty.canView(ResourceKeys.DASHBOARD), false);
+
+    const leticia = createPermissionsApi(
+      user({
+        role: "VIEWER",
+        permissions: ["finance.accountsPayable.view"],
+      })
+    );
+    // FE ainda mapeia AP no menu Financeiro (bleed documentado P09); Engenharia permanece negada.
+    assert.equal(leticia.canView(ResourceKeys.FINANCEIRO), true);
+    assert.equal(leticia.canView(ResourceKeys.ENGENHARIA), false);
+
+    const legacy = createPermissionsApi(
+      user({
+        role: "VIEWER",
+        permissions: ["dashboard.view", "crm.view", "sales_orders.view"],
+      })
+    );
+    assert.equal(legacy.canView(ResourceKeys.DASHBOARD), true);
+    assert.equal(legacy.canView(ResourceKeys.COMERCIAL_PEDIDOS_VENDA), true);
+
+    assert.equal(empty.canView("recurso.fantasma.inexistente"), false);
   });
 });

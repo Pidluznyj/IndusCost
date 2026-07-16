@@ -169,9 +169,11 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Escopo:** `permissionsClient.ts` `resolveRawFlags`.
 - **Deps:** P04 (bag/DTO sempre populados no create user).
 - **Risco:** baixo–médio.
-- **Aceite:** teste diagnóstico invertido.
-- **Rollback:** reverter.
+- **Aceite:** VIEWER bag vazia não vê Engenharia; teste diagnóstico invertido.
+- **Rollback:** reverter commit.
 - **Migration:** não.
+- **Status:** implementado (2026-07-16).
+- **Docs:** `permissions-frontend-fallbacks.md`
 
 ### P08 — Catálogo/seed alinhados
 

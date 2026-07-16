@@ -161,7 +161,6 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:guide.view","reason":"Alias legado em múltiplos recursos do contrato: guide.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:users.manage","reason":"Alias legado em múltiplos recursos do contrato: users.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:employees.edit","reason":"Alias legado em múltiplos recursos do contrato: employees.edit"},
-  {"code":"PERMISSIVE_FALLBACK","subject":"permissionsClient.ROLE_MATRIX_EMPTY_BAG","reason":"permissionsClient: ROLE_MATRIX aplicada quando bag efetiva está vazia (VIEWER vazio recebe defaults de papel)."},
   {"code":"PERMISSIVE_FALLBACK","subject":"resourceNavigationAccess.UNMAPPED_PATH_ALLOW","reason":"resourceNavigationAccess: path sem mapeamento de módulo não bloqueia (unmapped pass-through)."},
 ];
 

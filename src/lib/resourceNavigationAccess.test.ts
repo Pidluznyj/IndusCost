@@ -68,8 +68,13 @@ describe("resourceNavigationAccess — perfis", () => {
     assert.equal(getSafeFirstAllowedPath(c), "/dashboard");
   });
 
-  it("ADMIN com matriz de role vê CRM / financeiro resource-key", () => {
-    const c = ctx("ADMIN", []);
+  it("ADMIN com bag explícita vê CRM / financeiro resource-key", () => {
+    const c = ctx("ADMIN", [
+      "dashboard.view",
+      "crm.view",
+      "finance.view",
+      "sales_orders.view",
+    ]);
     assert.equal(canViewResource(c.user, ResourceKeys.COMERCIAL_CRM), true);
     assert.equal(canViewModule("crm-commercial", c), true);
     assert.equal(canAccessPath("/crm-commercial", c), true);
@@ -77,7 +82,13 @@ describe("resourceNavigationAccess — perfis", () => {
   });
 
   it("gestor comercial: CRM e pedidos; sem financeiro por resource", () => {
-    const c = ctx("COMMERCIAL_MANAGER", []);
+    const c = ctx("COMMERCIAL_MANAGER", [
+      "dashboard.view",
+      "crm.view",
+      "sales_orders.view",
+      "customers.view",
+      "proposals.view",
+    ]);
     assert.equal(canViewModule("crm-commercial", c), true);
     assert.equal(canViewModule("sales-orders", c), true);
     assert.equal(canViewModule("finance", c), false);
@@ -93,9 +104,9 @@ describe("resourceNavigationAccess — perfis", () => {
     assert.equal(canAccessPath("/settings", c), false);
   });
 
-  it("viewer: pedidos pela matriz; CRM negado", () => {
+  it("P07: VIEWER bag vazia — pedidos e CRM negados", () => {
     const c = ctx("VIEWER", []);
-    assert.equal(canViewModule("sales-orders", c), true);
+    assert.equal(canViewModule("sales-orders", c), false);
     assert.equal(canViewModule("crm-commercial", c), false);
     assert.equal(canAccessPath("/crm-commercial", c), false);
   });
@@ -138,7 +149,7 @@ describe("resourceNavigationAccess — perfis", () => {
     const noOpex = ctx("VIEWER", ["dashboard.view"]);
     assert.equal(canViewModule("opex", noOpex), false);
   });
-  it("bag parcial (só AP): não libera menus de ROLE_MATRIX do VIEWER", () => {
+  it("bag parcial (só AP): não libera menus sem chave explícita", () => {
     const c = ctx("VIEWER", [
       "dashboard.view",
       "finance.view",
@@ -154,10 +165,11 @@ describe("resourceNavigationAccess — perfis", () => {
     assert.equal(canAccessPath("/finance", c), true);
   });
 
-  it("VIEWER com bag vazia ainda usa ROLE_MATRIX (defaults do papel)", () => {
+  it("P07: VIEWER com bag vazia não libera sales-orders nem products", () => {
     const c = ctx("VIEWER", []);
-    assert.equal(canViewModule("sales-orders", c), true);
-    assert.equal(canViewModule("products", c), true);
+    assert.equal(canViewModule("sales-orders", c), false);
+    assert.equal(canViewModule("products", c), false);
+    assert.equal(canViewModule("dashboard", c), false);
   });
 });
 
@@ -177,9 +189,8 @@ describe("resourceNavigationAccess — rota e navegação segura", () => {
     assert.equal(canAccessPath(denied.path!, c), true);
 
     const empty = ctx("VIEWER", []);
-    // VIEWER role matrix ainda libera dashboard + sales-orders
-    const home = getSafeFirstAllowedPath(empty);
-    assert.ok(home);
+    // P07: bag vazia ⇒ sem área segura
+    assert.equal(getSafeFirstAllowedPath(empty), null);
   });
 
   it("sem nenhuma área: null (não redireciona em loop)", () => {
@@ -199,7 +210,7 @@ describe("resourceNavigationAccess — abas", () => {
       { id: "a" as const, resourceKey: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL },
       { id: "b" as const, resourceKey: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR },
     ];
-    const seller = ctx("SELLER", []);
+    const seller = ctx("SELLER", ["crm.view", "crm.seller.view"]);
     const canView = (key: string) => canViewResource(seller.user, key);
     const visible = filterTabsByView(tabs, canView, {
       parentResourceKey: ResourceKeys.COMERCIAL_CRM,

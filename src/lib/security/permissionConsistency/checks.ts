@@ -373,14 +373,7 @@ export function runCrossCatalogChecks(
 export function runPermissiveFallbackChecks(): PermissionConsistencyFinding[] {
   const findings: PermissionConsistencyFinding[] = [];
 
-  push(findings, {
-    code: "PERMISSIVE_FALLBACK",
-    severity: "error",
-    message:
-      "permissionsClient: ROLE_MATRIX aplicada quando bag efetiva está vazia (VIEWER vazio recebe defaults de papel).",
-    subject: "permissionsClient.ROLE_MATRIX_EMPTY_BAG",
-    evidence: ["src/lib/permissionsClient.ts#resolveRawFlags"],
-  });
+  // P07: ROLE_MATRIX empty-bag overlay removido de permissionsClient.resolveRawFlags.
 
   push(findings, {
     code: "PERMISSIVE_FALLBACK",

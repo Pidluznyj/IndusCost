@@ -8,7 +8,7 @@ import {
   CRM_UI_TABS,
   MATERIALS_UI_SECTIONS,
 } from "@/src/lib/moduleTabResources.js";
-import type { AppUserRole, AuthUser } from "@/src/lib/appAuthClient.js";
+import type { AuthUser } from "@/src/lib/appAuthClient.js";
 
 export type PermissionAction = "view" | "execute" | "manage";
 
@@ -183,9 +183,6 @@ export function isPortfolioReconciliationVisibleTabId(
   return (PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS as readonly string[]).includes(id);
 }
 
-const V: PermissionFlags = { canView: true, canExecute: false, canManage: false };
-const VE: PermissionFlags = { canView: true, canExecute: true, canManage: false };
-const VM: PermissionFlags = { canView: true, canExecute: false, canManage: true };
 const ALL: PermissionFlags = { canView: true, canExecute: true, canManage: true };
 const NONE: PermissionFlags = { canView: false, canExecute: false, canManage: false };
 
@@ -803,163 +800,6 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   },
 ] as const;
 
-function fillRoleMatrix(
-  grants: Partial<Record<string, PermissionFlags>>
-): Record<string, PermissionFlags> {
-  const out: Record<string, PermissionFlags> = {};
-  for (const r of FRONTEND_PERMISSION_RESOURCES) {
-    out[r.key] = grants[r.key] ?? NONE;
-  }
-  return out;
-}
-
-const ROLE_MATRIX: Record<
-  Exclude<AppUserRole, "SUPER_ADMIN">,
-  Record<string, PermissionFlags>
-> = {
-  ADMIN: fillRoleMatrix({
-    [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.FINANCEIRO]: V,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA]: V,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO]: V,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA]: V,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA]: V,
-    [ResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS]: V,
-    [ResourceKeys.COMERCIAL]: V,
-    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
-    [ResourceKeys.COMERCIAL_CRM]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
-    [ResourceKeys.COMISSOES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTOS]: V,
-    [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
-    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
-    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
-    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
-    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
-    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
-    [ResourceKeys.COMISSOES_TAB_LIBERACAO]: V,
-    [ResourceKeys.COMISSOES_TAB_PAGAMENTOS]: V,
-    [ResourceKeys.COMISSOES_TAB_PESSOAS]: V,
-    [ResourceKeys.COMISSOES_TAB_REGRAS]: V,
-    [ResourceKeys.COMISSOES_TAB_AUDITORIA]: V,
-    [ResourceKeys.COMISSOES_TAB_CONFIGURACOES]: V,
-    [ResourceKeys.SUPRIMENTOS]: V,
-    [ResourceKeys.SUPRIMENTOS_TAB_CATALOGO]: V,
-    [ResourceKeys.SUPRIMENTOS_INTELIGENCIA_MERCADO]: V,
-    [ResourceKeys.SUPRIMENTOS_MI_TAB_HOME]: V,
-    [ResourceKeys.SUPRIMENTOS_MI_TAB_MATERIA_PRIMA_360]: V,
-    [ResourceKeys.SUPRIMENTOS_MI_TAB_FORNECEDORES]: V,
-    [ResourceKeys.SUPRIMENTOS_MI_TAB_ALERTAS]: V,
-    [ResourceKeys.SUPRIMENTOS_MI_TAB_CONFIGURACOES]: VE,
-    [ResourceKeys.ADMIN]: V,
-    [ResourceKeys.ADMIN_USUARIOS]: VM,
-    [ResourceKeys.ADMIN_PERMISSOES]: V,
-    [ResourceKeys.ADMIN_PERMISSOES_ACTION_MANAGE]: NONE,
-    [ResourceKeys.CONFIGURACOES]: V,
-    [ResourceKeys.COMERCIAL_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS_INDICADORES]: V,
-    [ResourceKeys.COMERCIAL_FORMACAO_PRECO]: V,
-    [ResourceKeys.ENGENHARIA]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_INFO]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_BOM]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_ROUTING]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_TREE]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_COST]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_COMPOSITION]: V,
-    [ResourceKeys.ENGENHARIA_SIMULADOR_INJECAO]: V,
-    [ResourceKeys.ENGENHARIA_SIMULACOES]: V,
-    [ResourceKeys.ENGENHARIA_PROJETOS]: V,
-    [ResourceKeys.OPERACOES]: V,
-    [ResourceKeys.OPERACOES_ESTOQUE]: V,
-    [ResourceKeys.OPERACOES_ESTOQUE_ITENS]: V,
-    [ResourceKeys.OPERACOES_ESTOQUE_ALMOXARIFADOS]: V,
-    [ResourceKeys.OPERACOES_ESTOQUE_MOVIMENTACOES]: V,
-    [ResourceKeys.OPERACOES_ESTOQUE_CONFERENCIAS]: V,
-    [ResourceKeys.OPERACOES_COMPRAS]: V,
-    [ResourceKeys.OPERACOES_MAQUINAS]: V,
-    [ResourceKeys.OPERACOES_PERFORMANCE]: V,
-    [ResourceKeys.OPERACOES_MANUTENCAO]: V,
-    [ResourceKeys.OPERACOES_FROTA]: V,
-    [ResourceKeys.ADMIN_PESSOAS]: V,
-    [ResourceKeys.ADMIN_PESSOAS_PERSONAL_DATA]: V,
-    [ResourceKeys.ADMIN_PESSOAS_ADMINISTRATIVE_DATA]: V,
-    [ResourceKeys.ADMIN_PESSOAS_SENSITIVE_DATA]: V,
-    [ResourceKeys.ADMIN_PESSOAS_LINKS]: VM,
-    [ResourceKeys.ADMIN_PESSOAS_USER_LINK]: VM,
-    [ResourceKeys.ADMIN_PESSOAS_EPI]: VM,
-    [ResourceKeys.ADMIN_GUIA]: V,
-    [ResourceKeys.ADMIN_SETTINGS]: V,
-  }),
-  COMMERCIAL_MANAGER: fillRoleMatrix({
-    [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.COMERCIAL]: V,
-    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
-    [ResourceKeys.COMERCIAL_CRM]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
-    [ResourceKeys.COMERCIAL_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS_INDICADORES]: V,
-    [ResourceKeys.COMERCIAL_FORMACAO_PRECO]: V,
-    [ResourceKeys.COMISSOES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTOS]: V,
-    [ResourceKeys.COMISSOES_TAB_EXCECOES_CLIENTE]: V,
-    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
-    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
-    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
-    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
-    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
-    [ResourceKeys.COMISSOES_TAB_LIBERACAO]: V,
-    [ResourceKeys.COMISSOES_TAB_PAGAMENTOS]: V,
-    [ResourceKeys.COMISSOES_TAB_PESSOAS]: V,
-    [ResourceKeys.COMISSOES_TAB_REGRAS]: V,
-    [ResourceKeys.COMISSOES_TAB_AUDITORIA]: V,
-  }),
-  SELLER: fillRoleMatrix({
-    [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.COMERCIAL]: V,
-    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
-    [ResourceKeys.COMERCIAL_CRM]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: V,
-    [ResourceKeys.COMERCIAL_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS]: V,
-    [ResourceKeys.COMISSOES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTO_MES]: V,
-    [ResourceKeys.COMISSOES_TAB_FECHAMENTOS]: V,
-    [ResourceKeys.COMISSOES_TAB_RELATORIOS]: V,
-    [ResourceKeys.COMISSOES_TAB_REPROCESSAR]: V,
-    [ResourceKeys.COMISSOES_TAB_DASHBOARD]: V,
-    [ResourceKeys.COMISSOES_TAB_PREVISTAS]: V,
-    [ResourceKeys.COMISSOES_TAB_CONFIRMADAS]: V,
-  }),
-  VIEWER: fillRoleMatrix({
-    [ResourceKeys.DASHBOARD]: V,
-    [ResourceKeys.COMERCIAL]: V,
-    [ResourceKeys.COMERCIAL_PEDIDOS_VENDA]: V,
-    [ResourceKeys.COMERCIAL_CRM]: NONE,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL]: NONE,
-    [ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR]: NONE,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES]: NONE,
-    [ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360]: NONE,
-    [ResourceKeys.COMERCIAL_CLIENTES]: V,
-    [ResourceKeys.COMERCIAL_PROPOSTAS]: V,
-    [ResourceKeys.ENGENHARIA]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS]: V,
-    [ResourceKeys.ENGENHARIA_PRODUTOS_TAB_INFO]: V,
-  }),
-};
-
 const byKey = new Map(FRONTEND_PERMISSION_RESOURCES.map((r) => [r.key, r]));
 
 function isManageAlias(key: string): boolean {
@@ -983,22 +823,18 @@ function mergeFlags(base: PermissionFlags, overlay: Partial<PermissionFlags>): P
 }
 
 /**
- * Flags brutas por recurso.
+ * Flags brutas por recurso (P07).
  *
- * Fonte de verdade das APIs = `effectivePermissions` (bag).
- * ROLE_MATRIX só entra quando a bag está vazia (defaults do papel, sem grants
- * customizados) — evita menus "fantasma" (VIEWER + 2 chaves ainda via matriz
- * ampla) que abrem páginas vazias/403 porque o backend não usa ROLE_MATRIX.
+ * Fonte de verdade da UI = `effectivePermissions` / `permissions` (bag).
+ * Bag vazia ⇒ NONE (sem overlay de papel). SUPER_ADMIN ⇒ ALL.
+ * Recurso desconhecido ⇒ NONE (canAccessResourceClient nega).
+ * Não há "sem chave = permitido".
  */
 function resolveRawFlags(user: AuthUser, resourceKey: string): PermissionFlags {
   if (user.role === "SUPER_ADMIN") return { ...ALL };
 
   const effective = user.effectivePermissions ?? user.permissions ?? [];
-  const useRoleMatrixDefaults = effective.length === 0;
-
-  let flags: PermissionFlags = useRoleMatrixDefaults
-    ? { ...(ROLE_MATRIX[user.role]?.[resourceKey] ?? NONE) }
-    : { ...NONE };
+  let flags: PermissionFlags = { ...NONE };
 
   const resource = byKey.get(resourceKey);
   if (!resource) return flags;

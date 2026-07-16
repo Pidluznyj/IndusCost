@@ -136,13 +136,21 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
     assert.ok(EMPLOYEES_VIEW_PERMISSIONS.includes("costs.view"));
   });
 
-  it("DIAG: bag vazia + VIEWER usa ROLE_MATRIX FE e libera Engenharia", () => {
+  it("P07: bag vazia + VIEWER NÃO libera Engenharia (sem ROLE_MATRIX)", () => {
     const emptyBag = authUser({ role: "VIEWER", permissions: [] });
     assert.equal(emptyBag.effectivePermissions.length, 0);
     assert.equal(
       canAccessResourceClient(emptyBag, ResourceKeys.ENGENHARIA, "view"),
-      true,
-      "FE ROLE_MATRIX.VIEWER concede engineering quando bag vazia"
+      false,
+      "bag vazia ⇒ deny; sem overlay ROLE_MATRIX.VIEWER"
+    );
+    assert.equal(
+      canAccessResourceClient(emptyBag, ResourceKeys.COMERCIAL_PEDIDOS_VENDA, "view"),
+      false
+    );
+    assert.equal(
+      canAccessResourceClient(emptyBag, ResourceKeys.DASHBOARD, "view"),
+      false
     );
   });
 
