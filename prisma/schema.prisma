@@ -45,7 +45,7 @@ model Role {
 /// Unicidade de CPF/e-mail: índices de busca apenas; validação no service (sem UNIQUE no banco
 /// até diagnóstico de duplicidades históricas — ver migration 20260715200000).
 model Person {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Nome canônico exibido.
   displayName     String
   socialName      String?
@@ -55,23 +55,23 @@ model Person {
   /// CPF somente dígitos (nullable). Sem UNIQUE de banco nesta etapa.
   cpfNormalized   String?
   phoneNormalized String?
-  status          String   @default("ACTIVE")
+  status          String    @default("ACTIVE")
   /// Origem da criação: MANUAL | EMPLOYEE | APP_USER | COMMISSION | SYSTEM | BACKFILL
-  origin          String   @default("MANUAL")
+  origin          String    @default("MANUAL")
   /// Auditoria leve (opcional). Sem cascade: se o usuário sumir, mantém histórico.
-  createdByUserId String?  @db.Uuid
+  createdByUserId String?   @db.Uuid
   inactivatedAt   DateTime? @db.Timestamptz(6)
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
-  employees         Employee[]
-  appUsers          AppUser[]
-  commissionPeople  CommissionPerson[]
-  fleetDrivers      FleetDriver[]
+  employees           Employee[]
+  appUsers            AppUser[]
+  commissionPeople    CommissionPerson[]
+  fleetDrivers        FleetDriver[]
   /// Clientes PF cuja identidade é esta pessoa.
-  customersAsIdentity Customer[] @relation("CustomerIdentityPerson")
+  customersAsIdentity Customer[]         @relation("CustomerIdentityPerson")
   /// Contatos cadastrais de clientes (tipicamente PJ) apontando para esta pessoa.
-  customersAsContact  Customer[] @relation("CustomerContactPerson")
+  customersAsContact  Customer[]         @relation("CustomerContactPerson")
 
   @@index([displayName])
   @@index([corporateEmail])
@@ -164,36 +164,36 @@ model EmployeePayrollComponent {
 }
 
 model Material {
-  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                 String                 @unique
-  description          String
-  unit                 String
-  category             String
-  supplier             String?
-  currentCost          Decimal                @db.Decimal(20, 6)
-  averageCost          Decimal                @db.Decimal(20, 6)
-  standardCost         Decimal                @db.Decimal(20, 6)
-  freight              Decimal?               @default(0) @db.Decimal(20, 6)
-  standardLoss         Decimal?               @default(0) @db.Decimal(10, 6)
-  conversionFactor     Decimal?               @default(1) @db.Decimal(20, 6)
-  status               String?                @default("ACTIVE")
-  isMarketMonitored    Boolean                @default(false)
-  marketCriticality    MaterialMarketCriticality?
+  id                            String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                          String                       @unique
+  description                   String
+  unit                          String
+  category                      String
+  supplier                      String?
+  currentCost                   Decimal                      @db.Decimal(20, 6)
+  averageCost                   Decimal                      @db.Decimal(20, 6)
+  standardCost                  Decimal                      @db.Decimal(20, 6)
+  freight                       Decimal?                     @default(0) @db.Decimal(20, 6)
+  standardLoss                  Decimal?                     @default(0) @db.Decimal(10, 6)
+  conversionFactor              Decimal?                     @default(1) @db.Decimal(20, 6)
+  status                        String?                      @default("ACTIVE")
+  isMarketMonitored             Boolean                      @default(false)
+  marketCriticality             MaterialMarketCriticality?
   marketMonitoringFrequencyDays Int?
-  marketNotes            String?
-  createdAt            DateTime?              @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
-  MaterialPriceHistory MaterialPriceHistory[]
-  MaterialMarketQuote  MaterialMarketQuote[]
-  MaterialOfficialQuoteAudit MaterialOfficialQuoteAudit[]
-  MaterialMarketAuditEvent MaterialMarketAuditEvent[]
-  MaterialMarketAlert  MaterialMarketAlert[]
-  MaterialMarketAlertConfig MaterialMarketAlertConfig?
-  MaterialMarketPurchaseLink MaterialMarketPurchaseLink[]
-  ProductBOM           ProductBOM[]
-  PurchaseRequestItem  PurchaseRequestItem[]
-  ProjectStructureLine ProjectStructureLine[]
-  MaterialCostTableItem MaterialCostTableItem[]
+  marketNotes                   String?
+  createdAt                     DateTime?                    @default(now()) @db.Timestamptz(6)
+  updatedAt                     DateTime?                    @default(now()) @updatedAt @db.Timestamptz(6)
+  MaterialPriceHistory          MaterialPriceHistory[]
+  MaterialMarketQuote           MaterialMarketQuote[]
+  MaterialOfficialQuoteAudit    MaterialOfficialQuoteAudit[]
+  MaterialMarketAuditEvent      MaterialMarketAuditEvent[]
+  MaterialMarketAlert           MaterialMarketAlert[]
+  MaterialMarketAlertConfig     MaterialMarketAlertConfig?
+  MaterialMarketPurchaseLink    MaterialMarketPurchaseLink[]
+  ProductBOM                    ProductBOM[]
+  PurchaseRequestItem           PurchaseRequestItem[]
+  ProjectStructureLine          ProjectStructureLine[]
+  MaterialCostTableItem         MaterialCostTableItem[]
 }
 
 enum MaterialMarketCriticality {
@@ -265,55 +265,55 @@ enum MaterialMarketQuoteAttachmentType {
 
 /// Cotação manual de mercado — append-only; nunca sobrescreve histórico.
 model MaterialMarketQuote {
-  id                   String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  materialId           String                    @db.Uuid
-  supplierId           String?                   @db.Uuid
-  supplierName         String?
-  quoteDate            DateTime                  @db.Date
-  price                Decimal                   @db.Decimal(20, 6)
-  currency             String                    @default("BRL")
-  unit                 String
-  origin               String?
-  manufacturer         String?
-  freightValue         Decimal?                  @db.Decimal(20, 6)
-  taxValue             Decimal?                  @db.Decimal(20, 6)
-  netPrice             Decimal                   @db.Decimal(20, 6)
-  paymentTerms         String?
-  proposalValidityDate DateTime?                 @db.Date
-  notes                String?
-  status                      MaterialMarketQuoteStatus           @default(ACTIVE)
+  id                          String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId                  String                               @db.Uuid
+  supplierId                  String?                              @db.Uuid
+  supplierName                String?
+  quoteDate                   DateTime                             @db.Date
+  price                       Decimal                              @db.Decimal(20, 6)
+  currency                    String                               @default("BRL")
+  unit                        String
+  origin                      String?
+  manufacturer                String?
+  freightValue                Decimal?                             @db.Decimal(20, 6)
+  taxValue                    Decimal?                             @db.Decimal(20, 6)
+  netPrice                    Decimal                              @db.Decimal(20, 6)
+  paymentTerms                String?
+  proposalValidityDate        DateTime?                            @db.Date
+  notes                       String?
+  status                      MaterialMarketQuoteStatus            @default(ACTIVE)
   exchangeOrigin              MaterialMarketQuoteExchangeOrigin?
-  ptaxVenda                   Decimal?                            @db.Decimal(20, 6)
-  ptaxReferenceDate           DateTime?                           @db.Date
+  ptaxVenda                   Decimal?                             @db.Decimal(20, 6)
+  ptaxReferenceDate           DateTime?                            @db.Date
   ptaxFetchStatus             MaterialMarketQuotePtaxFetchStatus?
   ptaxFetchFailureReason      String?
-  priceBrl                    Decimal?                            @db.Decimal(20, 6)
-  netPriceBrl                 Decimal?                            @db.Decimal(20, 6)
+  priceBrl                    Decimal?                             @db.Decimal(20, 6)
+  netPriceBrl                 Decimal?                             @db.Decimal(20, 6)
   manualExchangeJustification String?
   manualExchangeBy            String?
-  manualExchangeAt            DateTime?                           @db.Timestamptz(6)
-  isOfficialReference         Boolean                             @default(false)
-  officialStatus              MaterialMarketQuoteOfficialStatus   @default(DRAFT)
+  manualExchangeAt            DateTime?                            @db.Timestamptz(6)
+  isOfficialReference         Boolean                              @default(false)
+  officialStatus              MaterialMarketQuoteOfficialStatus    @default(DRAFT)
   rejectionReason             String?
   submittedForApprovalBy      String?
-  submittedForApprovalAt      DateTime?                           @db.Timestamptz(6)
+  submittedForApprovalAt      DateTime?                            @db.Timestamptz(6)
   approvedBy                  String?
-  approvedAt                  DateTime?                           @db.Timestamptz(6)
+  approvedAt                  DateTime?                            @db.Timestamptz(6)
   setOfficialBy               String?
-  setOfficialAt               DateTime?                           @db.Timestamptz(6)
+  setOfficialAt               DateTime?                            @db.Timestamptz(6)
   reliabilityLevel            MaterialMarketQuoteReliabilityLevel?
   reliabilitySuggestedLevel   MaterialMarketQuoteReliabilityLevel?
   reliabilityOverrideReason   String?
   reliabilitySetBy            String?
-  reliabilitySetAt            DateTime?                           @db.Timestamptz(6)
+  reliabilitySetAt            DateTime?                            @db.Timestamptz(6)
   suggestedReliabilityLevel   MaterialMarketQuoteReliabilityLevel?
   createdBy                   String?
   updatedBy                   String?
-  createdAt                   DateTime                            @default(now()) @db.Timestamptz(6)
-  updatedAt                   DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt                   DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
 
-  Material          Material           @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  FinancialSupplier FinancialSupplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  Material          Material                        @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  FinancialSupplier FinancialSupplier?              @relation(fields: [supplierId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   Attachments       MaterialMarketQuoteAttachment[]
   AuditLogs         MaterialMarketQuoteAuditLog[]
   purchaseLinks     MaterialMarketPurchaseLink[]
@@ -357,8 +357,8 @@ model MaterialMarketPurchaseLink {
 
 /// Anexo de evidência vinculado a uma cotação de mercado.
 model MaterialMarketQuoteAttachment {
-  id                        String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quoteId                   String                              @db.Uuid
+  id                        String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quoteId                   String                               @db.Uuid
   fileName                  String
   originalFileName          String
   mimeType                  String
@@ -368,7 +368,7 @@ model MaterialMarketQuoteAttachment {
   suggestedReliabilityLevel MaterialMarketQuoteReliabilityLevel?
   notes                     String?
   uploadedBy                String?
-  uploadedAt                DateTime                            @default(now()) @db.Timestamptz(6)
+  uploadedAt                DateTime                             @default(now()) @db.Timestamptz(6)
 
   MaterialMarketQuote MaterialMarketQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -393,14 +393,14 @@ model MaterialMarketQuoteAuditLog {
 
 /// Auditoria de governança da cotação oficial por matéria-prima.
 model MaterialOfficialQuoteAudit {
-  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  materialId      String                         @db.Uuid
-  quoteId         String                         @db.Uuid
+  id              String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId      String                           @db.Uuid
+  quoteId         String                           @db.Uuid
   action          MaterialOfficialQuoteAuditAction
-  previousQuoteId String?                        @db.Uuid
-  newQuoteId      String?                        @db.Uuid
+  previousQuoteId String?                          @db.Uuid
+  newQuoteId      String?                          @db.Uuid
   changedBy       String?
-  changedAt       DateTime                       @default(now()) @db.Timestamptz(6)
+  changedAt       DateTime                         @default(now()) @db.Timestamptz(6)
   reason          String?
   rejectionReason String?
 
@@ -622,37 +622,37 @@ model PtaxSnapshot {
 }
 
 model Product {
-  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sku                  String                 @unique
-  name                 String
-  description          String?
-  version              String?                @default("1.0.0")
-  status               String?                @default("ACTIVE")
-  defaultLotSize       Decimal?               @default(1) @db.Decimal(20, 6)
-  createdAt            DateTime?              @default(now()) @db.Timestamptz(6)
-  updatedAt            DateTime?              @default(now()) @updatedAt @db.Timestamptz(6)
-  type                 ItemType               @default(PRODUCT)
-  cycleTimeSeconds     Decimal?               @db.Decimal(20, 6)
-  cavities             Int?
-  setupTimeMin         Decimal?               @db.Decimal(20, 6)
-  efficiencyExpected   Decimal?               @db.Decimal(10, 6)
-  sourceSystem         String?
-  sourceExternalId     String?
-  isNomusControlled    Boolean                @default(false)
-  lastNomusSyncAt      DateTime?              @db.Timestamptz(6)
-  nomusPayloadHash     String?
-  costingMode          ProductCostingMode     @default(OWN_PROCESS)
-  CostCalculationLog   CostCalculationLog[]
-  UsedInBOM            ProductBOM[]           @relation("ChildProduct")
-  ProductBOM           ProductBOM[]           @relation("ParentProduct")
-  ProductPricing       ProductPricing[]
-  ProductRouting       ProductRouting[]
-  ProposalItem         ProposalItem[]
-  SalesOrderItem       SalesOrderItem[]
-  PriceTableItem       PriceTableItem[]
-  ProductionCostTableItem ProductionCostTableItem[]
-  ProjectStructureLine ProjectStructureLine[]
-  InventoryItem        InventoryItem[]
+  id                            String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sku                           String                          @unique
+  name                          String
+  description                   String?
+  version                       String?                         @default("1.0.0")
+  status                        String?                         @default("ACTIVE")
+  defaultLotSize                Decimal?                        @default(1) @db.Decimal(20, 6)
+  createdAt                     DateTime?                       @default(now()) @db.Timestamptz(6)
+  updatedAt                     DateTime?                       @default(now()) @updatedAt @db.Timestamptz(6)
+  type                          ItemType                        @default(PRODUCT)
+  cycleTimeSeconds              Decimal?                        @db.Decimal(20, 6)
+  cavities                      Int?
+  setupTimeMin                  Decimal?                        @db.Decimal(20, 6)
+  efficiencyExpected            Decimal?                        @db.Decimal(10, 6)
+  sourceSystem                  String?
+  sourceExternalId              String?
+  isNomusControlled             Boolean                         @default(false)
+  lastNomusSyncAt               DateTime?                       @db.Timestamptz(6)
+  nomusPayloadHash              String?
+  costingMode                   ProductCostingMode              @default(OWN_PROCESS)
+  CostCalculationLog            CostCalculationLog[]
+  UsedInBOM                     ProductBOM[]                    @relation("ChildProduct")
+  ProductBOM                    ProductBOM[]                    @relation("ParentProduct")
+  ProductPricing                ProductPricing[]
+  ProductRouting                ProductRouting[]
+  ProposalItem                  ProposalItem[]
+  SalesOrderItem                SalesOrderItem[]
+  PriceTableItem                PriceTableItem[]
+  ProductionCostTableItem       ProductionCostTableItem[]
+  ProjectStructureLine          ProjectStructureLine[]
+  InventoryItem                 InventoryItem[]
   ComponentPerformanceChangeLog ComponentPerformanceChangeLog[]
   commissionOrderItemSnapshots  CommissionOrderItemSnapshot[]
 
@@ -821,43 +821,43 @@ model NewProductSimulation {
 }
 
 model Customer {
-  id                         String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyName                String
-  tradeName                  String?
-  taxId                      String                      @unique
-  stateTaxId                 String?
-  contactName                String?
-  email                      String?
-  phone                      String?
-  address                    String?
-  city                       String?
-  state                      String?
-  zipCode                    String?
-  country                    String                      @default("Brasil")
-  segment                    String?
-  notes                      String?
-  status                     String                      @default("ACTIVE")
-  createdAt                  DateTime                    @default(now())
-  updatedAt                  DateTime                    @default(now()) @updatedAt
-  commercialNotes            String?
-  relationshipStatus         String?
-  accountOwner               String?
+  id                               String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyName                      String
+  tradeName                        String?
+  taxId                            String                            @unique
+  stateTaxId                       String?
+  contactName                      String?
+  email                            String?
+  phone                            String?
+  address                          String?
+  city                             String?
+  state                            String?
+  zipCode                          String?
+  country                          String                            @default("Brasil")
+  segment                          String?
+  notes                            String?
+  status                           String                            @default("ACTIVE")
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @default(now()) @updatedAt
+  commercialNotes                  String?
+  relationshipStatus               String?
+  accountOwner                     String?
   /// Somente quando o cliente for pessoa física (taxId CPF). PJ não usa este vínculo de identidade.
-  personId                   String?                     @db.Uuid
+  personId                         String?                           @db.Uuid
   /// Pessoa canônica do contato cadastral (ex.: comprador de um PJ). Não é identidade da empresa.
-  contactPersonId            String?                     @db.Uuid
-  CommercialActivity         CommercialActivity[]
-  CrmCustomerProfile         CrmCustomerProfile?
-  CrmCustomerCommercialOwner CrmCustomerCommercialOwner?
-  CustomerCnpjLookup         CustomerCnpjLookup[]
-  person                     Person?                     @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  contactPerson              Person?                     @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  proposals                         Proposal[]
-  salesOrders                       SalesOrder[]
-  commissionCustomerExclusionRules  CommissionCustomerExclusionRule[]
-  commissionReceiptLedgerLines      CommissionReceiptLedgerLine[]
-  commissionOrderSnapshots          CommissionOrderSnapshot[]
-  commissionReceivableSchedules     CommissionReceivableSchedule[]
+  contactPersonId                  String?                           @db.Uuid
+  CommercialActivity               CommercialActivity[]
+  CrmCustomerProfile               CrmCustomerProfile?
+  CrmCustomerCommercialOwner       CrmCustomerCommercialOwner?
+  CustomerCnpjLookup               CustomerCnpjLookup[]
+  person                           Person?                           @relation("CustomerIdentityPerson", fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  contactPerson                    Person?                           @relation("CustomerContactPerson", fields: [contactPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  proposals                        Proposal[]
+  salesOrders                      SalesOrder[]
+  commissionCustomerExclusionRules CommissionCustomerExclusionRule[]
+  commissionReceiptLedgerLines     CommissionReceiptLedgerLine[]
+  commissionOrderSnapshots         CommissionOrderSnapshot[]
+  commissionReceivableSchedules    CommissionReceivableSchedule[]
 
   @@index([personId])
   @@index([contactPersonId])
@@ -1008,50 +1008,49 @@ model BrandingSettings {
   updatedAt                 DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 }
 
-
 model SalesOrder {
-  id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  proposalId             String?              @unique @db.Uuid
-  sourceSystem           String?
-  externalSalesOrderId   Int?
-  externalSalesOrderCode String?
-  orderCode              String               @unique
-  customerId             String               @db.Uuid
-  externalCustomerId     Int?
-  responsible            String?
-  externalSellerId       Int?
-  nomusSellerName        String?
-  companyIssuer          String?
-  externalCompanyId      Int?
-  status                 SalesOrderStatus     @default(READY_TO_SEND)
-  issueDate              DateTime             @default(now())
-  expectedDeliveryDate   DateTime?
-  paymentTerms           String?
-  paymentMethod          String?
-  freightCondition       String?
-  deliveryLocation       String?
-  notes                  String?
-  internalNotes          String?
-  totalItems             Int                  @default(0)
-  totalGrossValue        Decimal              @default(0) @db.Decimal(20, 6)
-  totalDiscount          Decimal              @default(0) @db.Decimal(20, 6)
-  totalNetValue          Decimal              @default(0) @db.Decimal(20, 6)
-  totalCost              Decimal              @default(0) @db.Decimal(20, 6)
-  totalMarginValue       Decimal              @default(0) @db.Decimal(20, 6)
-  totalMarginPerc        Decimal              @default(0) @db.Decimal(10, 6)
-  totalTaxes             Decimal              @default(0) @db.Decimal(20, 6)
-  totalFreight           Decimal              @default(0) @db.Decimal(20, 6)
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @default(now()) @updatedAt
-  sentToNomusAt          DateTime?
-  nomusRawResponse       Json?
-  Customer               Customer             @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Proposal               Proposal?            @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  items                  SalesOrderItem[]
-  CommercialActivity     CommercialActivity[]
-  nfeLinks               SalesOrderNfeLink[]
-  productionOrderSalesLinks NomusProductionOrderSalesLink[]
-  commissionOrderSnapshots CommissionOrderSnapshot[]
+  id                            String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  proposalId                    String?                         @unique @db.Uuid
+  sourceSystem                  String?
+  externalSalesOrderId          Int?
+  externalSalesOrderCode        String?
+  orderCode                     String                          @unique
+  customerId                    String                          @db.Uuid
+  externalCustomerId            Int?
+  responsible                   String?
+  externalSellerId              Int?
+  nomusSellerName               String?
+  companyIssuer                 String?
+  externalCompanyId             Int?
+  status                        SalesOrderStatus                @default(READY_TO_SEND)
+  issueDate                     DateTime                        @default(now())
+  expectedDeliveryDate          DateTime?
+  paymentTerms                  String?
+  paymentMethod                 String?
+  freightCondition              String?
+  deliveryLocation              String?
+  notes                         String?
+  internalNotes                 String?
+  totalItems                    Int                             @default(0)
+  totalGrossValue               Decimal                         @default(0) @db.Decimal(20, 6)
+  totalDiscount                 Decimal                         @default(0) @db.Decimal(20, 6)
+  totalNetValue                 Decimal                         @default(0) @db.Decimal(20, 6)
+  totalCost                     Decimal                         @default(0) @db.Decimal(20, 6)
+  totalMarginValue              Decimal                         @default(0) @db.Decimal(20, 6)
+  totalMarginPerc               Decimal                         @default(0) @db.Decimal(10, 6)
+  totalTaxes                    Decimal                         @default(0) @db.Decimal(20, 6)
+  totalFreight                  Decimal                         @default(0) @db.Decimal(20, 6)
+  createdAt                     DateTime                        @default(now())
+  updatedAt                     DateTime                        @default(now()) @updatedAt
+  sentToNomusAt                 DateTime?
+  nomusRawResponse              Json?
+  Customer                      Customer                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Proposal                      Proposal?                       @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items                         SalesOrderItem[]
+  CommercialActivity            CommercialActivity[]
+  nfeLinks                      SalesOrderNfeLink[]
+  productionOrderSalesLinks     NomusProductionOrderSalesLink[]
+  commissionOrderSnapshots      CommissionOrderSnapshot[]
   commissionReceivableSchedules CommissionReceivableSchedule[]
 
   @@index([customerId])
@@ -1102,49 +1101,49 @@ model SalesOrderNfeLink {
 }
 
 model SalesOrderItem {
-  id                  String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  salesOrderId        String        @db.Uuid
-  proposalItemId      String?       @db.Uuid
-  productId           String        @db.Uuid
-  externalProductId   Int?
-  skuSnapshot         String
-  productNameSnapshot String
-  quantity            Decimal       @db.Decimal(20, 6)
-  unit                String?
-  unitCost            Decimal       @db.Decimal(20, 6)
-  negotiatedPrice     Decimal       @db.Decimal(20, 6)
-  totalNetValue       Decimal       @db.Decimal(20, 6)
-  totalCost           Decimal       @db.Decimal(20, 6)
-  marginValue         Decimal       @db.Decimal(20, 6)
-  marginPerc          Decimal       @db.Decimal(10, 6)
-  notes               String?
+  id                        String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  salesOrderId              String                          @db.Uuid
+  proposalItemId            String?                         @db.Uuid
+  productId                 String                          @db.Uuid
+  externalProductId         Int?
+  skuSnapshot               String
+  productNameSnapshot       String
+  quantity                  Decimal                         @db.Decimal(20, 6)
+  unit                      String?
+  unitCost                  Decimal                         @db.Decimal(20, 6)
+  negotiatedPrice           Decimal                         @db.Decimal(20, 6)
+  totalNetValue             Decimal                         @db.Decimal(20, 6)
+  totalCost                 Decimal                         @db.Decimal(20, 6)
+  marginValue               Decimal                         @db.Decimal(20, 6)
+  marginPerc                Decimal                         @db.Decimal(10, 6)
+  notes                     String?
   /// id do item no payload Nomus (itensPedido[].id / idItemPedido), quando existir
-  nomusItemExternalId Int?
+  nomusItemExternalId       Int?
   /// sequência/posição no payload (item / índice)
-  nomusItemSequence   String?
+  nomusItemSequence         String?
   /// status bruto Nomus (ex.: "4", "6", "Cancelado")
-  nomusItemStatusRaw  String?
+  nomusItemStatusRaw        String?
   /// status normalizado: FULFILLED | CANCELED | PARTIAL | PENDING | UNKNOWN
   nomusItemStatusNormalized String?
-  nomusQuantityFulfilled Decimal?   @db.Decimal(20, 6)
-  nomusQuantityPending   Decimal?   @db.Decimal(20, 6)
-  nomusIsCanceled     Boolean       @default(false)
+  nomusQuantityFulfilled    Decimal?                        @db.Decimal(20, 6)
+  nomusQuantityPending      Decimal?                        @db.Decimal(20, 6)
+  nomusIsCanceled           Boolean                         @default(false)
   /// item local que sumiu do payload atual do Nomus
-  nomusIsStale        Boolean       @default(false)
+  nomusIsStale              Boolean                         @default(false)
   /// item atendido com corte (saldo cortado encerrado, não pendente)
-  nomusIsCut          Boolean       @default(false)
+  nomusIsCut                Boolean                         @default(false)
   /// HIGH | MEDIUM | LOW | AMBIGUOUS | NONE
-  nomusMatchConfidence String?
-  nomusMatchReason    String?
-  nomusLastSeenAt     DateTime?
-  nomusRawItem        Json?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @default(now()) @updatedAt
-  Product             Product       @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  ProposalItem        ProposalItem? @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  SalesOrder          SalesOrder    @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  nomusMatchConfidence      String?
+  nomusMatchReason          String?
+  nomusLastSeenAt           DateTime?
+  nomusRawItem              Json?
+  createdAt                 DateTime                        @default(now())
+  updatedAt                 DateTime                        @default(now()) @updatedAt
+  Product                   Product                         @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ProposalItem              ProposalItem?                   @relation(fields: [proposalItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  SalesOrder                SalesOrder                      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   productionOrderSalesLinks NomusProductionOrderSalesLink[]
-  commissionItemSnapshots CommissionOrderItemSnapshot[]
+  commissionItemSnapshots   CommissionOrderItemSnapshot[]
 
   @@index([salesOrderId])
   @@index([proposalItemId])
@@ -1170,27 +1169,27 @@ model PriceTable {
 
 /// Versão congelada de uma tabela de preço (DRAFT / PUBLISHED / etc. como string).
 model PriceTableVersion {
-  id                    String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  priceTableId          String           @db.Uuid
-  taxRuleId             String?          @db.Uuid
-  versionNumber         Int
-  status                String           @default("DRAFT")
-  generatedAt           DateTime?        @db.Timestamptz(6)
-  publishedAt           DateTime?        @db.Timestamptz(6)
-  effectiveFrom         DateTime?        @db.Timestamptz(6)
-  effectiveTo           DateTime?        @db.Timestamptz(6)
-  notes                 String?
-  createdBy             String?
-  approvedBy            String?
-  generationSummaryJson Json?
-  commissionPerc        Decimal?         @db.Decimal(10, 6)
-  productionCostTableVersionId String?   @db.Uuid
-  createdAt             DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime         @default(now()) @updatedAt @db.Timestamptz(6)
-  PriceTable            PriceTable       @relation(fields: [priceTableId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  TaxRule               TaxRule?         @relation("PriceTableVersionTaxRule", fields: [taxRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  productionCostTableVersion ProductionCostTableVersion? @relation(fields: [productionCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  items                 PriceTableItem[]
+  id                           String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  priceTableId                 String                      @db.Uuid
+  taxRuleId                    String?                     @db.Uuid
+  versionNumber                Int
+  status                       String                      @default("DRAFT")
+  generatedAt                  DateTime?                   @db.Timestamptz(6)
+  publishedAt                  DateTime?                   @db.Timestamptz(6)
+  effectiveFrom                DateTime?                   @db.Timestamptz(6)
+  effectiveTo                  DateTime?                   @db.Timestamptz(6)
+  notes                        String?
+  createdBy                    String?
+  approvedBy                   String?
+  generationSummaryJson        Json?
+  commissionPerc               Decimal?                    @db.Decimal(10, 6)
+  productionCostTableVersionId String?                     @db.Uuid
+  createdAt                    DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt                    DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+  PriceTable                   PriceTable                  @relation(fields: [priceTableId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  TaxRule                      TaxRule?                    @relation("PriceTableVersionTaxRule", fields: [taxRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  productionCostTableVersion   ProductionCostTableVersion? @relation(fields: [productionCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items                        PriceTableItem[]
 
   @@unique([priceTableId, versionNumber])
   @@index([priceTableId])
@@ -1231,26 +1230,26 @@ model PriceTableItem {
 
 /// Versão oficial de tabela de custo de produção industrial (governança — separada de formação de preço comercial).
 model ProductionCostTableVersion {
-  id                  String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                String
-  name                String
-  effectiveDate       DateTime                         @db.Date
-  status              ProductionCostTableVersionStatus @default(DRAFT)
-  revision            Int
-  supersedesVersionId String?                          @db.Uuid
-  source              String?
-  notes               String?
-  publishedAt         DateTime?                        @db.Timestamptz(6)
-  publishedBy         String?
-  createdBy           String?
-  createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
-  materialCostTableVersionId String?                   @db.Uuid
-  supersedesVersion   ProductionCostTableVersion?      @relation("ProductionCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  supersededBy        ProductionCostTableVersion[]     @relation("ProductionCostTableVersionSupersedes")
-  materialCostTableVersion   MaterialCostTableVersion? @relation(fields: [materialCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  items               ProductionCostTableItem[]
-  priceTableVersions  PriceTableVersion[]
+  id                         String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                       String
+  name                       String
+  effectiveDate              DateTime                         @db.Date
+  status                     ProductionCostTableVersionStatus @default(DRAFT)
+  revision                   Int
+  supersedesVersionId        String?                          @db.Uuid
+  source                     String?
+  notes                      String?
+  publishedAt                DateTime?                        @db.Timestamptz(6)
+  publishedBy                String?
+  createdBy                  String?
+  createdAt                  DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  materialCostTableVersionId String?                          @db.Uuid
+  supersedesVersion          ProductionCostTableVersion?      @relation("ProductionCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersededBy               ProductionCostTableVersion[]     @relation("ProductionCostTableVersionSupersedes")
+  materialCostTableVersion   MaterialCostTableVersion?        @relation(fields: [materialCostTableVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items                      ProductionCostTableItem[]
+  priceTableVersions         PriceTableVersion[]
 
   @@unique([code, revision])
   @@index([code])
@@ -1290,25 +1289,25 @@ model ProductionCostTableItem {
 
 /// Versão oficial de tabela de custo de matéria-prima por vigência.
 model MaterialCostTableVersion {
-  id                  String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                String
-  name                String
-  description         String?
-  effectiveDate       DateTime                         @db.Date
-  status              ProductionCostTableVersionStatus @default(DRAFT)
-  revision            Int
-  supersedesVersionId String?                          @db.Uuid
-  source              String?
-  notes               String?
-  summaryJson         Json?
-  publishedAt         DateTime?                        @db.Timestamptz(6)
-  publishedBy         String?
-  createdBy           String?
-  createdAt           DateTime                         @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
-  supersedesVersion   MaterialCostTableVersion?        @relation("MaterialCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  supersededBy        MaterialCostTableVersion[]       @relation("MaterialCostTableVersionSupersedes")
-  items               MaterialCostTableItem[]
+  id                          String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                        String
+  name                        String
+  description                 String?
+  effectiveDate               DateTime                         @db.Date
+  status                      ProductionCostTableVersionStatus @default(DRAFT)
+  revision                    Int
+  supersedesVersionId         String?                          @db.Uuid
+  source                      String?
+  notes                       String?
+  summaryJson                 Json?
+  publishedAt                 DateTime?                        @db.Timestamptz(6)
+  publishedBy                 String?
+  createdBy                   String?
+  createdAt                   DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt                   DateTime                         @default(now()) @updatedAt @db.Timestamptz(6)
+  supersedesVersion           MaterialCostTableVersion?        @relation("MaterialCostTableVersionSupersedes", fields: [supersedesVersionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersededBy                MaterialCostTableVersion[]       @relation("MaterialCostTableVersionSupersedes")
+  items                       MaterialCostTableItem[]
   productionCostTableVersions ProductionCostTableVersion[]
 
   @@unique([code, revision])
@@ -1669,20 +1668,20 @@ model ProductionHourCostSimulation {
 
 /// Histórico de simulações HH/HM do Simulador de Custo de Injeção (não altera custo oficial).
 model TransformationHhHmCostSimulation {
-  id              String                                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   type            TransformationHhHmCostSimulationType
   observation     String?
   periodLabel     String?
   dateAxis        String?
-  hhEffectiveRate Decimal?                              @db.Decimal(20, 6)
-  hmEffectiveRate Decimal?                              @db.Decimal(20, 6)
-  finalHhHmRate   Decimal?                              @db.Decimal(20, 6)
+  hhEffectiveRate Decimal?                             @db.Decimal(20, 6)
+  hmEffectiveRate Decimal?                             @db.Decimal(20, 6)
+  finalHhHmRate   Decimal?                             @db.Decimal(20, 6)
   inputSnapshot   Json
   resultSnapshot  Json
-  createdByUserId String?                               @db.Uuid
+  createdByUserId String?                              @db.Uuid
   createdByName   String?
-  createdAt       DateTime                              @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt       DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                             @default(now()) @updatedAt @db.Timestamptz(6)
 
   @@index([createdAt])
   @@index([type, createdAt])
@@ -1945,32 +1944,32 @@ model AccessProfile {
 }
 
 model AppUser {
-  id                    String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                  String
-  email                 String         @unique
-  passwordHash          String
-  role                  AppUserRole    @default(VIEWER)
-  permissions           String[]       @default([])
-  accessProfileId       String?        @db.Uuid
+  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                     String
+  email                    String                   @unique
+  passwordHash             String
+  role                     AppUserRole              @default(VIEWER)
+  permissions              String[]                 @default([])
+  accessProfileId          String?                  @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
-  employeeId            String?        @unique @db.Uuid
+  employeeId               String?                  @unique @db.Uuid
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
-  personId              String?        @unique @db.Uuid
-  isActive              Boolean        @default(true)
-  externalSellerId      Int?
+  personId                 String?                  @unique @db.Uuid
+  isActive                 Boolean                  @default(true)
+  externalSellerId         Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
-  externalSellerIds     Int[]          @default([])
-  sellerResponsibleName String?
-  lastLoginAt           DateTime?      @db.Timestamptz(6)
-  createdAt             DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
-  accessProfile         AccessProfile? @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  employee              Employee?      @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  person                Person?        @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  sessions              AppSession[]
-  permissionOverrides   UserPermissionOverride[]
-  permissionAuditsAsActor  PermissionAuditLog[] @relation("PermissionAuditActor")
-  permissionAuditsAsTarget PermissionAuditLog[] @relation("PermissionAuditTarget")
+  externalSellerIds        Int[]                    @default([])
+  sellerResponsibleName    String?
+  lastLoginAt              DateTime?                @db.Timestamptz(6)
+  createdAt                DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt                DateTime                 @updatedAt @db.Timestamptz(6)
+  accessProfile            AccessProfile?           @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee                 Employee?                @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                   Person?                  @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                 AppSession[]
+  permissionOverrides      UserPermissionOverride[]
+  permissionAuditsAsActor  PermissionAuditLog[]     @relation("PermissionAuditActor")
+  permissionAuditsAsTarget PermissionAuditLog[]     @relation("PermissionAuditTarget")
 
   @@index([role])
   @@index([isActive])
@@ -2004,20 +2003,20 @@ enum PermissionResourceType {
 }
 
 model PermissionResource {
-  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  key         String                 @unique
-  label       String
-  description String?
-  type        PermissionResourceType
-  parentKey   String?
-  module      String
-  sortOrder   Int                    @default(0)
-  isSystem    Boolean                @default(true)
-  isActive    Boolean                @default(true)
-  createdAt   DateTime               @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime               @updatedAt @db.Timestamptz(6)
-  parent      PermissionResource?    @relation("PermissionResourceHierarchy", fields: [parentKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
-  children    PermissionResource[]   @relation("PermissionResourceHierarchy")
+  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key             String                   @unique
+  label           String
+  description     String?
+  type            PermissionResourceType
+  parentKey       String?
+  module          String
+  sortOrder       Int                      @default(0)
+  isSystem        Boolean                  @default(true)
+  isActive        Boolean                  @default(true)
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                 @updatedAt @db.Timestamptz(6)
+  parent          PermissionResource?      @relation("PermissionResourceHierarchy", fields: [parentKey], references: [key], onDelete: Restrict, onUpdate: Cascade)
+  children        PermissionResource[]     @relation("PermissionResourceHierarchy")
   rolePermissions RolePermission[]
   userOverrides   UserPermissionOverride[]
 
@@ -2312,51 +2311,85 @@ enum NomusNfeBillingClassification {
 /// Ordem de Produção Nomus (`/rest/ordens`) — stage oficial isolado.
 /// Vínculo com Pedido/Item somente via itensPedido[].idPedido e itensPedido[].id (nunca por nome/produto/datas).
 /// Não altera Pedido de Venda, NF-e, AR/AP, Fluxo, Comissões, Formação de Preço nem BOM.
+/// Estado incremental: cursor em arquivo + IntegrationRun (sem SyncState dedicado).
 model NomusProductionOrder {
   id String @id @default(uuid())
 
+  /// ID Nomus da OP (`id`) — chave de upsert.
   externalId Int @unique
 
-  name              String?
-  status            String?
-  tipo              String?
-  productCode       String?
-  externalProductId Int?
-  quantity          Decimal? @db.Decimal(20, 6)
-  unit              String?
+  name     String?
+  status   String?
+  tipo     String?
+  priority String?
+
+  externalProductId     Int?
+  productCode           String?
+  productDescription    String?
+  productAdditionalInfo String?
+  productConfigId       Int?
+  productConfigCode     String?
+
+  externalCompanyId Int?
   companyName       String?
 
-  rawJson    Json
-  syncedAt   DateTime
-  lastSeenAt DateTime @default(now())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  quantity    Decimal? @db.Decimal(20, 6)
+  unit        String?
+  stockSector String?
+
+  /// Datas Nomus (quando presentes no payload).
+  openedAt       DateTime?
+  closedAt       DateTime?
+  plannedAt      DateTime?
+  nomusUpdatedAt DateTime?
+
+  rawJson     Json
+  payloadHash String
+
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  lastChangedAt DateTime @default(now())
+  syncedAt      DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   salesLinks NomusProductionOrderSalesLink[]
 
   @@index([status])
   @@index([tipo])
+  @@index([priority])
   @@index([productCode])
   @@index([externalProductId])
+  @@index([externalCompanyId])
+  @@index([stockSector])
+  @@index([openedAt])
+  @@index([closedAt])
   @@index([syncedAt])
+  @@index([lastSeenAt])
+  @@index([lastChangedAt])
+  @@index([payloadHash])
   @@index([name])
 }
 
 /// Vínculo oficial OP ↔ Pedido de Venda / item (itensPedido do payload `/rest/ordens`).
+/// Permite várias OPs no mesmo item e vários itens na mesma OP.
+/// FKs locais opcionais: dados históricos podem existir só com IDs externos Nomus.
 model NomusProductionOrderSalesLink {
   id String @id @default(uuid())
 
-  productionOrderId         String
-  productionOrder           NomusProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  productionOrderId String
+  productionOrder   NomusProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+
+  /// Denormalizado para unicidade estável sem join.
   productionOrderExternalId Int
 
   /// itensPedido[].idPedido → SalesOrder.externalSalesOrderId
-  externalSalesOrderId Int
+  externalSalesOrderId     Int
   /// itensPedido[].id → SalesOrderItem.nomusItemExternalId
   externalSalesOrderItemId Int
-  itemSequence             String?
+  itemNumber               String?
   customerName             String?
-  linkQuantity             Decimal? @db.Decimal(20, 6)
+  linkedQuantity           Decimal? @db.Decimal(20, 6)
   rawJson                  Json?
 
   salesOrderId     String?         @db.Uuid
@@ -2364,11 +2397,13 @@ model NomusProductionOrderSalesLink {
   SalesOrder       SalesOrder?     @relation(fields: [salesOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   SalesOrderItem   SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
-  presentInLastPayload Boolean  @default(true)
-  firstSeenAt          DateTime @default(now())
-  lastSeenAt           DateTime @default(now())
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  /// true enquanto o vínculo aparece no último payload da OP.
+  isCurrent   Boolean   @default(true)
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  removedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([productionOrderExternalId, externalSalesOrderItemId])
   @@index([productionOrderId])
@@ -2376,7 +2411,10 @@ model NomusProductionOrderSalesLink {
   @@index([externalSalesOrderItemId])
   @@index([salesOrderId])
   @@index([salesOrderItemId])
-  @@index([presentInLastPayload])
+  @@index([isCurrent])
+  @@index([removedAt])
+  @@index([externalSalesOrderId, isCurrent])
+  @@index([externalSalesOrderItemId, isCurrent])
 }
 
 /// Documento de estoque Nomus (`/rest/documentosEstoque`) — stage isolado para conciliação Pedido × NF × saída.
@@ -2413,9 +2451,9 @@ model NomusStockDocumentItem {
   externalItemId    Int?
   externalProductId Int?
 
-  quantity             Decimal @db.Decimal(20, 6)
-  unitValue            Decimal @db.Decimal(20, 6)
-  estimatedTotalValue  Decimal @db.Decimal(20, 6)
+  quantity            Decimal @db.Decimal(20, 6)
+  unitValue           Decimal @db.Decimal(20, 6)
+  estimatedTotalValue Decimal @db.Decimal(20, 6)
 
   rawJson Json
 
@@ -2514,30 +2552,30 @@ model PortfolioReconciliationFact {
   orderUnitPrice Decimal? @db.Decimal(20, 6)
   orderItemValue Decimal? @db.Decimal(20, 6)
 
-  nomusNfeId      String?
-  nfeExternalId   Int?
-  nfeNumber       String?
-  nfeSerie        String?
-  nfeKey          String?
-  nfeProcessedAt  DateTime?
-  nfeHeaderValue  Decimal? @db.Decimal(20, 6)
+  nomusNfeId     String?
+  nfeExternalId  Int?
+  nfeNumber      String?
+  nfeSerie       String?
+  nfeKey         String?
+  nfeProcessedAt DateTime?
+  nfeHeaderValue Decimal?  @db.Decimal(20, 6)
 
   stockDocumentId             String?
   stockDocumentExternalId     Int?
   stockDocumentItemId         String?
   stockDocumentItemExternalId Int?
   stockDocumentDate           DateTime?
-  stockQuantity               Decimal? @db.Decimal(20, 6)
-  stockUnitValue              Decimal? @db.Decimal(20, 6)
-  stockItemValue              Decimal? @db.Decimal(20, 6)
+  stockQuantity               Decimal?  @db.Decimal(20, 6)
+  stockUnitValue              Decimal?  @db.Decimal(20, 6)
+  stockItemValue              Decimal?  @db.Decimal(20, 6)
 
-  allocatedQuantity                   Decimal? @db.Decimal(20, 6)
-  allocatedValueByOrderPrice          Decimal? @db.Decimal(20, 6)
-  allocatedValueByStockPrice          Decimal? @db.Decimal(20, 6)
+  allocatedQuantity                     Decimal? @db.Decimal(20, 6)
+  allocatedValueByOrderPrice            Decimal? @db.Decimal(20, 6)
+  allocatedValueByStockPrice            Decimal? @db.Decimal(20, 6)
   remainingOrderQuantityAfterAllocation Decimal? @db.Decimal(20, 6)
-  remainingOrderValueAfterAllocation  Decimal? @db.Decimal(20, 6)
-  priceDifferenceUnit                 Decimal? @db.Decimal(20, 6)
-  priceDifferenceTotal                Decimal? @db.Decimal(20, 6)
+  remainingOrderValueAfterAllocation    Decimal? @db.Decimal(20, 6)
+  priceDifferenceUnit                   Decimal? @db.Decimal(20, 6)
+  priceDifferenceTotal                  Decimal? @db.Decimal(20, 6)
 
   receivableIdsJson    Json?
   receivableTotalValue Decimal? @db.Decimal(20, 6)
@@ -2546,14 +2584,14 @@ model PortfolioReconciliationFact {
   dueDatesJson         Json?
   settlementDatesJson  Json?
 
-  forecastSource   PortfolioReconciliationForecastSource @default(UNRESOLVED)
-  forecastDate     DateTime?
-  forecastValue    Decimal? @db.Decimal(20, 6)
-  confidenceLevel  PortfolioReconciliationConfidenceLevel @default(LOW)
+  forecastSource  PortfolioReconciliationForecastSource  @default(UNRESOLVED)
+  forecastDate    DateTime?
+  forecastValue   Decimal?                               @db.Decimal(20, 6)
+  confidenceLevel PortfolioReconciliationConfidenceLevel @default(LOW)
   /// Status dominante da linha (ex.: ORDER_ONLY, ITEM_ALLOCATED, PRICE_MISMATCH).
-  status           String?
-  alertsJson       Json?
-  traceJson        Json?
+  status          String?
+  alertsJson      Json?
+  traceJson       Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2645,6 +2683,9 @@ model NomusNfe {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  fiscalSummary NomusNfeFiscalSummary?
+  taxLines      NomusNfeTaxLine[]
+
   @@index([dataProcessamento])
   @@index([xmlDhEmi])
   @@index([status])
@@ -2654,51 +2695,48 @@ model NomusNfe {
   @@index([xmlDestCnpjCpf])
   @@index([syncedAt])
   @@index([payloadHash])
-
-  fiscalSummary NomusNfeFiscalSummary?
-  taxLines      NomusNfeTaxLine[]
 }
 
 /// Resumo fiscal 1:1 da NF-e (totais oficiais do XML — camada A / destacado).
 /// Não representa apuração, pagamento nem alocação gerencial.
 model NomusNfeFiscalSummary {
-  id         String @id @default(uuid())
-  nomusNfeId String @unique
+  id         String   @id @default(uuid())
+  nomusNfeId String   @unique
   nomusNfe   NomusNfe @relation(fields: [nomusNfeId], references: [id], onDelete: Cascade)
 
   parserVersion String
   /// XML | MISSING | PARTIAL
-  source  String
-  xmlHash String?
-  parsedAt DateTime
+  source        String
+  xmlHash       String?
+  parsedAt      DateTime
 
   /// Espelha status Nomus cancelado (documento ainda pode ter tributos destacados).
   isCancelled Boolean @default(false)
   /// ide/finNFe quando presente (1=normal, 2=complementar, 3=ajuste, 4=devolução).
-  finalidade Int?
-  tpNF       Int?
+  finalidade  Int?
+  tpNF        Int?
 
-  vProd       Decimal? @db.Decimal(20, 2)
-  vDesc       Decimal? @db.Decimal(20, 2)
-  vFrete      Decimal? @db.Decimal(20, 2)
-  vSeg        Decimal? @db.Decimal(20, 2)
-  vOutro      Decimal? @db.Decimal(20, 2)
-  vII         Decimal? @db.Decimal(20, 2)
-  vIPI        Decimal? @db.Decimal(20, 2)
-  vIPIDevol   Decimal? @db.Decimal(20, 2)
-  vBC         Decimal? @db.Decimal(20, 2)
-  vICMS       Decimal? @db.Decimal(20, 2)
-  vICMSDeson  Decimal? @db.Decimal(20, 2)
-  vBCST       Decimal? @db.Decimal(20, 2)
-  vST         Decimal? @db.Decimal(20, 2)
-  vFCP        Decimal? @db.Decimal(20, 2)
-  vFCPST      Decimal? @db.Decimal(20, 2)
-  vFCPSTRet   Decimal? @db.Decimal(20, 2)
-  vPIS        Decimal? @db.Decimal(20, 2)
-  vCOFINS     Decimal? @db.Decimal(20, 2)
-  vISS        Decimal? @db.Decimal(20, 2)
-  vTotTrib    Decimal? @db.Decimal(20, 2)
-  vNF         Decimal? @db.Decimal(20, 2)
+  vProd      Decimal? @db.Decimal(20, 2)
+  vDesc      Decimal? @db.Decimal(20, 2)
+  vFrete     Decimal? @db.Decimal(20, 2)
+  vSeg       Decimal? @db.Decimal(20, 2)
+  vOutro     Decimal? @db.Decimal(20, 2)
+  vII        Decimal? @db.Decimal(20, 2)
+  vIPI       Decimal? @db.Decimal(20, 2)
+  vIPIDevol  Decimal? @db.Decimal(20, 2)
+  vBC        Decimal? @db.Decimal(20, 2)
+  vICMS      Decimal? @db.Decimal(20, 2)
+  vICMSDeson Decimal? @db.Decimal(20, 2)
+  vBCST      Decimal? @db.Decimal(20, 2)
+  vST        Decimal? @db.Decimal(20, 2)
+  vFCP       Decimal? @db.Decimal(20, 2)
+  vFCPST     Decimal? @db.Decimal(20, 2)
+  vFCPSTRet  Decimal? @db.Decimal(20, 2)
+  vPIS       Decimal? @db.Decimal(20, 2)
+  vCOFINS    Decimal? @db.Decimal(20, 2)
+  vISS       Decimal? @db.Decimal(20, 2)
+  vTotTrib   Decimal? @db.Decimal(20, 2)
+  vNF        Decimal? @db.Decimal(20, 2)
 
   /// Totais futuros (IBS/CBS/IS etc.) sem migration por tag.
   extensibleTotals Json?
@@ -2720,15 +2758,15 @@ model NomusNfeFiscalSummary {
 /// Linha de tributo oficial (HEADER = ICMSTot; ITEM = det/imposto).
 /// Consumidores não devem somar HEADER+ITEM do mesmo taxType.
 model NomusNfeTaxLine {
-  id         String @id @default(uuid())
+  id         String                @id @default(uuid())
   nomusNfeId String
   summaryId  String
-  nomusNfe   NomusNfe             @relation(fields: [nomusNfeId], references: [id], onDelete: Cascade)
+  nomusNfe   NomusNfe              @relation(fields: [nomusNfeId], references: [id], onDelete: Cascade)
   summary    NomusNfeFiscalSummary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
 
   /// Chave estável: H:IPI | I:1:ICMS
-  lineKey  String
-  taxType  String
+  lineKey    String
+  taxType    String
   /// HEADER | ITEM
   scope      String
   itemNumber Int?
@@ -2816,15 +2854,15 @@ model FiscalApurationPeriod {
   companyName  String?
   jurisdiction FiscalJurisdiction
   uf           String?
-  periodStart  DateTime @db.Date
-  periodEnd    DateTime @db.Date
+  periodStart  DateTime              @db.Date
+  periodEnd    DateTime              @db.Date
   status       FiscalApurationStatus @default(OPEN)
   notes        String?
   /// MANUAL | IMPORT
-  source       String @default("MANUAL")
+  source       String                @default("MANUAL")
 
-  closedAt       DateTime?
-  closedByUserId String?
+  closedAt        DateTime?
+  closedByUserId  String?
   createdByUserId String?
   createdByName   String?
 
@@ -2842,22 +2880,22 @@ model FiscalApurationPeriod {
 
 /// Linha de apuração (débito/crédito/compensação/juros/multa).
 model FiscalApurationLine {
-  id       String @id @default(uuid())
+  id       String                @id @default(uuid())
   periodId String
   period   FiscalApurationPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
-  taxType              String
-  nature               FiscalApurationLineNature
-  revenueCode          String?
-  assessedAmount       Decimal  @default(0) @db.Decimal(20, 2)
-  creditsAmount        Decimal  @default(0) @db.Decimal(20, 2)
-  compensationsAmount  Decimal  @default(0) @db.Decimal(20, 2)
-  interestAmount       Decimal  @default(0) @db.Decimal(20, 2)
-  fineAmount           Decimal  @default(0) @db.Decimal(20, 2)
+  taxType             String
+  nature              FiscalApurationLineNature
+  revenueCode         String?
+  assessedAmount      Decimal                   @default(0) @db.Decimal(20, 2)
+  creditsAmount       Decimal                   @default(0) @db.Decimal(20, 2)
+  compensationsAmount Decimal                   @default(0) @db.Decimal(20, 2)
+  interestAmount      Decimal                   @default(0) @db.Decimal(20, 2)
+  fineAmount          Decimal                   @default(0) @db.Decimal(20, 2)
   /// Devido líquido da linha (apurado − crédito − compensação + juros + multa).
-  amountDue            Decimal  @default(0) @db.Decimal(20, 2)
-  notes                String?
-  source               String   @default("MANUAL")
+  amountDue           Decimal                   @default(0) @db.Decimal(20, 2)
+  notes               String?
+  source              String                    @default("MANUAL")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2899,7 +2937,7 @@ model FiscalPaymentGuide {
   paidAt DateTime?
   status FiscalGuideStatus @default(DRAFT)
 
-  paymentAccount String?
+  paymentAccount            String?
   /// FK lógica → NomusAccountsPayable.externalId (sem constraint: espelho Nomus).
   accountsPayableExternalId Int?
   costCenterId              String?
@@ -2908,8 +2946,8 @@ model FiscalPaymentGuide {
   dedupeKey String? @unique
 
   /// MANUAL | IMPORT | AP_LINK
-  source  String  @default("MANUAL")
-  notes   String?
+  source String  @default("MANUAL")
+  notes  String?
 
   cancelledAt       DateTime?
   cancelledByUserId String?
@@ -2932,9 +2970,9 @@ model FiscalPaymentGuide {
 
 /// Comprovante / anexo de pagamento da guia.
 model FiscalPaymentProof {
-  id               String @id @default(uuid())
-  guideId          String
-  guide            FiscalPaymentGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  id      String             @id @default(uuid())
+  guideId String
+  guide   FiscalPaymentGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
 
   fileName         String
   originalFileName String
@@ -2951,7 +2989,7 @@ model FiscalPaymentProof {
 /// Alocação gerencial do recolhimento a pedido/NF (camada D).
 /// Nunca apresentar como pagamento oficial específico da NF.
 model FiscalAllocation {
-  id      String @id @default(uuid())
+  id      String             @id @default(uuid())
   guideId String
   guide   FiscalPaymentGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
 
@@ -2959,14 +2997,14 @@ model FiscalAllocation {
   nomusNfeId   String?
 
   taxType          String
-  allocatedAmount  Decimal @db.Decimal(20, 2)
+  allocatedAmount  Decimal                @db.Decimal(20, 2)
   allocationMethod FiscalAllocationMethod
-  allocationBase   Decimal? @db.Decimal(20, 2)
-  periodStart      DateTime? @db.Date
-  periodEnd        DateTime? @db.Date
-  calculatedAt     DateTime @default(now())
-  version          Int      @default(1)
-  manualOverride   Boolean  @default(false)
+  allocationBase   Decimal?               @db.Decimal(20, 2)
+  periodStart      DateTime?              @db.Date
+  periodEnd        DateTime?              @db.Date
+  calculatedAt     DateTime               @default(now())
+  version          Int                    @default(1)
+  manualOverride   Boolean                @default(false)
   notes            String?
 
   createdByUserId String?
@@ -4128,14 +4166,14 @@ model Project {
   createdAt             DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
 
-  versions          ProjectVersion[]
-  simulatedProducts ProjectSimulatedProduct[]
-  simulatedItems    ProjectSimulatedItem[]
-  structureLines    ProjectStructureLine[]
-  molds             ProjectMold[]
-  costAmortizations ProjectCostAmortization[]
-  pricingConfig     ProjectPricingConfig?
-  pricingItems      ProjectPricingItem[]
+  versions            ProjectVersion[]
+  simulatedProducts   ProjectSimulatedProduct[]
+  simulatedItems      ProjectSimulatedItem[]
+  structureLines      ProjectStructureLine[]
+  molds               ProjectMold[]
+  costAmortizations   ProjectCostAmortization[]
+  pricingConfig       ProjectPricingConfig?
+  pricingItems        ProjectPricingItem[]
   clientProposalItems ProjectClientProposalItem[]
 
   @@index([status])
@@ -4167,30 +4205,30 @@ model ProjectPricingConfig {
 }
 
 model ProjectPricingItem {
-  id                           String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId                    String                            @db.Uuid
-  configId                     String                            @db.Uuid
-  targetItemId                 String
-  targetItemType               ProjectCostAmortizationTargetType
-  targetDescriptionSnapshot    String
-  fiscalRuleId                 String?                           @db.Uuid
-  fiscalRuleNameSnapshot       String?
-  costBaseUnitSnapshot         Decimal                           @default(0) @db.Decimal(20, 6)
-  amortizationUnitCostSnapshot Decimal                           @default(0) @db.Decimal(20, 6)
-  finalUnitCostSnapshot        Decimal                           @default(0) @db.Decimal(20, 6)
-  taxPercentSnapshot           Decimal                           @default(0) @db.Decimal(10, 6)
-  targetMarginPercent          Decimal                           @default(0) @db.Decimal(10, 6)
-  suggestedPrice               Decimal?                          @db.Decimal(20, 6)
-  suggestedPriceWithoutAmortization Decimal?                     @db.Decimal(20, 6)
+  id                                String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId                         String                            @db.Uuid
+  configId                          String                            @db.Uuid
+  targetItemId                      String
+  targetItemType                    ProjectCostAmortizationTargetType
+  targetDescriptionSnapshot         String
+  fiscalRuleId                      String?                           @db.Uuid
+  fiscalRuleNameSnapshot            String?
+  costBaseUnitSnapshot              Decimal                           @default(0) @db.Decimal(20, 6)
+  amortizationUnitCostSnapshot      Decimal                           @default(0) @db.Decimal(20, 6)
+  finalUnitCostSnapshot             Decimal                           @default(0) @db.Decimal(20, 6)
+  taxPercentSnapshot                Decimal                           @default(0) @db.Decimal(10, 6)
+  targetMarginPercent               Decimal                           @default(0) @db.Decimal(10, 6)
+  suggestedPrice                    Decimal?                          @db.Decimal(20, 6)
+  suggestedPriceWithoutAmortization Decimal?                          @db.Decimal(20, 6)
   /// Preço unitário acordado com o cliente (proposta). Null = usar sugerido c/ amortização.
-  agreedCustomerPrice          Decimal?                          @db.Decimal(20, 6)
-  taxAmountWithoutAmortization Decimal?                          @db.Decimal(20, 6)
-  marginAmountWithoutAmortization Decimal?                       @db.Decimal(20, 6)
-  taxAmount                    Decimal?                          @db.Decimal(20, 6)
-  marginAmount                 Decimal?                          @db.Decimal(20, 6)
-  status                       ProjectPricingItemStatus          @default(PENDING)
-  createdAt                    DateTime                          @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+  agreedCustomerPrice               Decimal?                          @db.Decimal(20, 6)
+  taxAmountWithoutAmortization      Decimal?                          @db.Decimal(20, 6)
+  marginAmountWithoutAmortization   Decimal?                          @db.Decimal(20, 6)
+  taxAmount                         Decimal?                          @db.Decimal(20, 6)
+  marginAmount                      Decimal?                          @db.Decimal(20, 6)
+  status                            ProjectPricingItemStatus          @default(PENDING)
+  createdAt                         DateTime                          @default(now()) @db.Timestamptz(6)
+  updatedAt                         DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
 
   project    Project              @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   config     ProjectPricingConfig @relation(fields: [configId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -4492,12 +4530,12 @@ model FinancialSupplier {
   createdAt          DateTime                @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
 
-  aliases             FinancialSupplierAlias[]
-  costCenterRules     SupplierCostCenterRule[]
-  classificationRules FinancialCostCenterClassificationRule[]
-  allocations         AccountsPayableCostCenterAllocation[]
+  aliases              FinancialSupplierAlias[]
+  costCenterRules      SupplierCostCenterRule[]
+  classificationRules  FinancialCostCenterClassificationRule[]
+  allocations          AccountsPayableCostCenterAllocation[]
   materialMarketQuotes MaterialMarketQuote[]
-  serviceTerminations SupplierServiceTermination[]
+  serviceTerminations  SupplierServiceTermination[]
 
   @@index([normalizedDocument])
   @@index([normalizedName])
@@ -4540,97 +4578,97 @@ enum SupplierServiceTerminationNoticeOrigin {
 }
 
 model SupplierServiceTermination {
-  id                      String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  supplierId              String                              @db.Uuid
-  personName              String
-  personDocument          String?
-  serviceRole             String?
-  contractStartDate       DateTime                            @db.Date
-  contractEndDate         DateTime                            @db.Date
-  monthlyServiceAmount    Decimal                             @db.Decimal(20, 2)
+  id                        String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId                String                             @db.Uuid
+  personName                String
+  personDocument            String?
+  serviceRole               String?
+  contractStartDate         DateTime                           @db.Date
+  contractEndDate           DateTime                           @db.Date
+  monthlyServiceAmount      Decimal                            @db.Decimal(20, 2)
   /// Dias médios considerados no mês (parâmetro interno de cálculo).
-  averageWorkedDaysPerMonth Decimal                           @default(30) @db.Decimal(8, 2)
+  averageWorkedDaysPerMonth Decimal                            @default(30) @db.Decimal(8, 2)
   /// Horas por dia (parâmetro interno — não impresso no distrato).
-  hoursPerDay             Decimal                             @default(8) @db.Decimal(8, 2)
-  monthlyHours            Decimal                             @db.Decimal(12, 2)
-  hourlyServiceAmount     Decimal                             @db.Decimal(20, 4)
-  dailyServiceAmount      Decimal                             @db.Decimal(20, 4)
-  restDaysPerYear         Decimal                             @default(20) @db.Decimal(8, 2)
-  calculationMode         SupplierServiceTerminationCalcMode  @default(WORKED_MONTHS)
-  workedMonths            Decimal                             @db.Decimal(10, 4)
-  workedDays              Int                                 @default(0)
-  proportionalRestDays    Decimal                             @db.Decimal(12, 4)
-  proportionalRestAmount  Decimal                             @db.Decimal(20, 2)
+  hoursPerDay               Decimal                            @default(8) @db.Decimal(8, 2)
+  monthlyHours              Decimal                            @db.Decimal(12, 2)
+  hourlyServiceAmount       Decimal                            @db.Decimal(20, 4)
+  dailyServiceAmount        Decimal                            @db.Decimal(20, 4)
+  restDaysPerYear           Decimal                            @default(20) @db.Decimal(8, 2)
+  calculationMode           SupplierServiceTerminationCalcMode @default(WORKED_MONTHS)
+  workedMonths              Decimal                            @db.Decimal(10, 4)
+  workedDays                Int                                @default(0)
+  proportionalRestDays      Decimal                            @db.Decimal(12, 4)
+  proportionalRestAmount    Decimal                            @db.Decimal(20, 2)
   /// Dias/serviços adicionais no período do encerramento (cálculo interno).
-  extraWorkedDays         Int                                 @default(0)
-  extraWorkedAmount       Decimal                             @default(0) @db.Decimal(20, 2)
+  extraWorkedDays           Int                                @default(0)
+  extraWorkedAmount         Decimal                            @default(0) @db.Decimal(20, 2)
   /// Compensação/valor negociado de encerramento (cálculo interno).
-  noticePenaltyAmount     Decimal                             @default(0) @db.Decimal(20, 2)
-  commissionReportId      String?
-  commissionReportTotal   Decimal                             @default(0) @db.Decimal(20, 2)
-  otherCredits            Decimal                             @default(0) @db.Decimal(20, 2)
-  otherDiscounts          Decimal                             @default(0) @db.Decimal(20, 2)
-  totalTerminationAmount  Decimal                             @db.Decimal(20, 2)
-  status                  SupplierServiceTerminationStatus    @default(DRAFT)
-  notes                   String?
-  adjustmentNotes         String?
-  createdById             String?
-  createdByName           String?
-  finalizedById           String?
-  finalizedByName         String?
-  finalizedAt             DateTime?                           @db.Timestamptz(6)
-  createdAt               DateTime                            @default(now()) @db.Timestamptz(6)
-  updatedAt               DateTime                            @default(now()) @updatedAt @db.Timestamptz(6)
+  noticePenaltyAmount       Decimal                            @default(0) @db.Decimal(20, 2)
+  commissionReportId        String?
+  commissionReportTotal     Decimal                            @default(0) @db.Decimal(20, 2)
+  otherCredits              Decimal                            @default(0) @db.Decimal(20, 2)
+  otherDiscounts            Decimal                            @default(0) @db.Decimal(20, 2)
+  totalTerminationAmount    Decimal                            @db.Decimal(20, 2)
+  status                    SupplierServiceTerminationStatus   @default(DRAFT)
+  notes                     String?
+  adjustmentNotes           String?
+  createdById               String?
+  createdByName             String?
+  finalizedById             String?
+  finalizedByName           String?
+  finalizedAt               DateTime?                          @db.Timestamptz(6)
+  createdAt                 DateTime                           @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                           @default(now()) @updatedAt @db.Timestamptz(6)
 
   /// Dados do termo de distrato / quitação
-  documentCode            String?
-  documentVersion         Int                                 @default(1)
-  supersedesId            String?                             @db.Uuid
-  originalContractDate    DateTime?                           @db.Date
-  originalContractReference String?
-  contractingPartyName    String?
-  contractingPartyDocument String?
-  contractingPartyRepName String?
-  contractingPartyRepRole String?
-  contractingPartyRepDocument String?
-  contractedPartyName     String?
-  contractedPartyDocument String?
-  contractedPartyRepName  String?
-  contractedPartyRepDocument String?
-  contractedServiceDescription String?
-  signaturePlace          String?
-  terminationModality     SupplierServiceTerminationModality?
-  terminationReason       String?
-  paymentDueDate          DateTime?                           @db.Date
-  paymentMethod           String?
-  paymentTransactionId    String?
-  paymentEffectiveDate    DateTime?                           @db.Date
-  paymentConfirmedAmount  Decimal?                            @db.Decimal(20, 2)
-  paymentProofStorageKey  String?
-  paymentProofFileName    String?
-  paymentProofWaiverReason String?
-  commissionTreatment     SupplierServiceTerminationCommissionTreatment?
-  commissionPendingNotes  String?
-  commissionNegotiatedAmount Decimal?                         @db.Decimal(20, 2)
-  commissionNegotiatedOrders String?
-  commissionNegotiatedJustification String?
-  commissionNegotiatedApprover String?
-  noticePenaltyOrigin     SupplierServiceTerminationNoticeOrigin?
-  noticePenaltyClauseNumber String?
-  noticePenaltyClauseDescription String?
+  documentCode                          String?
+  documentVersion                       Int                                            @default(1)
+  supersedesId                          String?                                        @db.Uuid
+  originalContractDate                  DateTime?                                      @db.Date
+  originalContractReference             String?
+  contractingPartyName                  String?
+  contractingPartyDocument              String?
+  contractingPartyRepName               String?
+  contractingPartyRepRole               String?
+  contractingPartyRepDocument           String?
+  contractedPartyName                   String?
+  contractedPartyDocument               String?
+  contractedPartyRepName                String?
+  contractedPartyRepDocument            String?
+  contractedServiceDescription          String?
+  signaturePlace                        String?
+  terminationModality                   SupplierServiceTerminationModality?
+  terminationReason                     String?
+  paymentDueDate                        DateTime?                                      @db.Date
+  paymentMethod                         String?
+  paymentTransactionId                  String?
+  paymentEffectiveDate                  DateTime?                                      @db.Date
+  paymentConfirmedAmount                Decimal?                                       @db.Decimal(20, 2)
+  paymentProofStorageKey                String?
+  paymentProofFileName                  String?
+  paymentProofWaiverReason              String?
+  commissionTreatment                   SupplierServiceTerminationCommissionTreatment?
+  commissionPendingNotes                String?
+  commissionNegotiatedAmount            Decimal?                                       @db.Decimal(20, 2)
+  commissionNegotiatedOrders            String?
+  commissionNegotiatedJustification     String?
+  commissionNegotiatedApprover          String?
+  noticePenaltyOrigin                   SupplierServiceTerminationNoticeOrigin?
+  noticePenaltyClauseNumber             String?
+  noticePenaltyClauseDescription        String?
   proportionalCompensationJustification String?
-  extraServicesDescription String?
-  otherDiscountsDescription String?
-  contractualNotes        String?
-  pendingObligationsNotes String?
-  hasPendingObligations   Boolean                             @default(false)
-  witness1Name            String?
-  witness1Document        String?
-  witness2Name            String?
-  witness2Document        String?
-  integrityCode           String?
-  settledSnapshotJson     Json?
-  contractTypeConfirmedPj Boolean                             @default(false)
+  extraServicesDescription              String?
+  otherDiscountsDescription             String?
+  contractualNotes                      String?
+  pendingObligationsNotes               String?
+  hasPendingObligations                 Boolean                                        @default(false)
+  witness1Name                          String?
+  witness1Document                      String?
+  witness2Name                          String?
+  witness2Document                      String?
+  integrityCode                         String?
+  settledSnapshotJson                   Json?
+  contractTypeConfirmedPj               Boolean                                        @default(false)
 
   supplier        FinancialSupplier                          @relation(fields: [supplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   commissionLinks SupplierServiceTerminationCommissionLink[]
@@ -5410,14 +5448,14 @@ model CommissionPerson {
   createdAt     DateTime               @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime               @default(now()) @updatedAt @db.Timestamptz(6)
 
-  person               Person?                       @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  fixedCommissionRules CommissionRule[]           @relation("CommissionRuleFixedPerson")
+  person               Person?                        @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  fixedCommissionRules CommissionRule[]               @relation("CommissionRuleFixedPerson")
   commissionRecords    CommissionRecord[]
   paymentBatches       CommissionPaymentBatch[]
   customerExceptions   CommissionCustomerException[]
   sellerAliases        CommissionPersonAlias[]
-  receiptLedgerLines   CommissionReceiptLedgerLine[] @relation("ReceiptLedgerCanonicalSeller")
-  orderSnapshots       CommissionOrderSnapshot[]     @relation("OrderSnapshotCanonicalSeller")
+  receiptLedgerLines   CommissionReceiptLedgerLine[]  @relation("ReceiptLedgerCanonicalSeller")
+  orderSnapshots       CommissionOrderSnapshot[]      @relation("OrderSnapshotCanonicalSeller")
   receivableSchedules  CommissionReceivableSchedule[] @relation("ReceivableScheduleCanonicalSeller")
 
   @@index([nomusPersonId])
@@ -5457,7 +5495,7 @@ model CommissionRule {
   active                  Boolean                       @default(true)
   priority                Int                           @default(100)
   beneficiaryType         CommissionRuleBeneficiaryType
-  calculationType         CommissionRuleCalculationType   @default(FIXED_PERCENT)
+  calculationType         CommissionRuleCalculationType @default(FIXED_PERCENT)
   fixedCommissionPersonId String?                       @db.Uuid
   ratePercent             Decimal                       @db.Decimal(10, 4)
   baseType                CommissionRuleBaseType
@@ -5467,7 +5505,7 @@ model CommissionRule {
   createdAt               DateTime                      @default(now()) @db.Timestamptz(6)
   updatedAt               DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
 
-  fixedCommissionPerson CommissionPerson?       @relation("CommissionRuleFixedPerson", fields: [fixedCommissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  fixedCommissionPerson CommissionPerson?             @relation("CommissionRuleFixedPerson", fields: [fixedCommissionPersonId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   conditions            CommissionRuleCondition[]
   receiptLedgerLines    CommissionReceiptLedgerLine[]
 
@@ -5573,10 +5611,10 @@ model CommissionRecord {
   createdAt                 DateTime                    @default(now()) @db.Timestamptz(6)
   updatedAt                 DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
 
-  calculationRun    CommissionCalculationRun?  @relation(fields: [calculationRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  commissionPerson  CommissionPerson           @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  paymentSchedules  CommissionPaymentSchedule[]
-  paymentBatchItems CommissionPaymentBatchItem[]
+  calculationRun     CommissionCalculationRun?     @relation(fields: [calculationRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionPerson   CommissionPerson              @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  paymentSchedules   CommissionPaymentSchedule[]
+  paymentBatchItems  CommissionPaymentBatchItem[]
   receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([orderCode])
@@ -5610,8 +5648,8 @@ model CommissionPaymentSchedule {
   createdAt                DateTime                        @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime                        @default(now()) @updatedAt @db.Timestamptz(6)
 
-  commissionRecord  CommissionRecord             @relation(fields: [commissionRecordId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  paymentBatchItems CommissionPaymentBatchItem[]
+  commissionRecord   CommissionRecord              @relation(fields: [commissionRecordId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  paymentBatchItems  CommissionPaymentBatchItem[]
   receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([commissionRecordId])
@@ -5638,7 +5676,7 @@ model CommissionPaymentBatch {
   createdAt          DateTime                     @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
 
-  commissionPerson CommissionPerson           @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  commissionPerson CommissionPerson             @relation(fields: [commissionPersonId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items            CommissionPaymentBatchItem[]
 
   @@index([commissionPersonId])
@@ -5735,7 +5773,7 @@ model CommissionCustomerExclusionRule {
   reason                 String
   effectiveFrom          DateTime                              @db.Date
   effectiveTo            DateTime?                             @db.Date
-  status                 CommissionCustomerExclusionRuleStatus   @default(ACTIVE)
+  status                 CommissionCustomerExclusionRuleStatus @default(ACTIVE)
   createdByUserId        String?                               @db.Uuid
   inactivatedAt          DateTime?                             @db.Timestamptz(6)
   inactivatedByUserId    String?                               @db.Uuid
@@ -5743,7 +5781,7 @@ model CommissionCustomerExclusionRule {
   createdAt              DateTime                              @default(now()) @db.Timestamptz(6)
   updatedAt              DateTime                              @default(now()) @updatedAt @db.Timestamptz(6)
 
-  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer           Customer?                     @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   receiptLedgerLines CommissionReceiptLedgerLine[]
 
   @@index([status])
@@ -5776,9 +5814,9 @@ model CommissionMonthlyClosing {
   updatedAt               DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
   closedAt                DateTime?                      @db.Timestamptz(6)
 
-  supersededBy  CommissionMonthlyClosing?  @relation("CommissionClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  supersedes    CommissionMonthlyClosing[] @relation("CommissionClosingSupersession")
-  ledgerLines   CommissionReceiptLedgerLine[]
+  supersededBy CommissionMonthlyClosing?     @relation("CommissionClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supersedes   CommissionMonthlyClosing[]    @relation("CommissionClosingSupersession")
+  ledgerLines  CommissionReceiptLedgerLine[]
 
   @@index([year, month])
   @@index([status])
@@ -5836,13 +5874,13 @@ model CommissionReceiptLedgerLine {
   createdAt                   DateTime                          @default(now()) @db.Timestamptz(6)
   updatedAt                   DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
 
-  closing                   CommissionMonthlyClosing?          @relation(fields: [closingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  commissionRecord          CommissionRecord?                  @relation(fields: [commissionRecordId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  commissionPaymentSchedule CommissionPaymentSchedule?         @relation(fields: [commissionPaymentScheduleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  rule                      CommissionRule?                    @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  canonicalSeller           CommissionPerson?                  @relation("ReceiptLedgerCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  customerExclusionRule     CommissionCustomerExclusionRule?   @relation(fields: [customerExclusionRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  customer                  Customer?                          @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  closing                   CommissionMonthlyClosing?        @relation(fields: [closingId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionRecord          CommissionRecord?                @relation(fields: [commissionRecordId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  commissionPaymentSchedule CommissionPaymentSchedule?       @relation(fields: [commissionPaymentScheduleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  rule                      CommissionRule?                  @relation(fields: [ruleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  canonicalSeller           CommissionPerson?                @relation("ReceiptLedgerCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customerExclusionRule     CommissionCustomerExclusionRule? @relation(fields: [customerExclusionRuleId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  customer                  Customer?                        @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([year, month])
   @@index([closingId])
@@ -5895,10 +5933,10 @@ model CommissionOrderSnapshot {
   createdAt                  DateTime                      @default(now()) @db.Timestamptz(6)
   updatedAt                  DateTime                      @default(now()) @updatedAt @db.Timestamptz(6)
 
-  salesOrder      SalesOrder                      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  customer        Customer                        @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  canonicalSeller CommissionPerson?               @relation("OrderSnapshotCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  items           CommissionOrderItemSnapshot[]
+  salesOrder          SalesOrder                     @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customer            Customer                       @relation(fields: [customerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  canonicalSeller     CommissionPerson?              @relation("OrderSnapshotCanonicalSeller", fields: [canonicalSellerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items               CommissionOrderItemSnapshot[]
   receivableSchedules CommissionReceivableSchedule[]
 
   @@index([salesOrderId])
@@ -5952,22 +5990,22 @@ enum CommissionReceivableScheduleStatus {
 
 /// Rateio da comissão da venda (order snapshot) por título de Contas a Receber.
 model CommissionReceivableSchedule {
-  id                        String                            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  orderSnapshotId           String                            @db.Uuid
+  id                        String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orderSnapshotId           String                             @db.Uuid
   receivableId              Int
   receivableCode            String?
   installmentNumber         Int
   nfeId                     Int?
-  salesOrderId              String                            @db.Uuid
-  customerId                String                            @db.Uuid
-  canonicalSellerId         String?                           @db.Uuid
-  receivableNominalAmount   Decimal                           @default(0) @db.Decimal(20, 2)
-  receivableSharePercent    Decimal                           @default(0) @db.Decimal(10, 4)
-  scheduledCommissionAmount Decimal                           @default(0) @db.Decimal(20, 2)
+  salesOrderId              String                             @db.Uuid
+  customerId                String                             @db.Uuid
+  canonicalSellerId         String?                            @db.Uuid
+  receivableNominalAmount   Decimal                            @default(0) @db.Decimal(20, 2)
+  receivableSharePercent    Decimal                            @default(0) @db.Decimal(10, 4)
+  scheduledCommissionAmount Decimal                            @default(0) @db.Decimal(20, 2)
   status                    CommissionReceivableScheduleStatus @default(ACTIVE)
-  sourceHash                String                            @unique
-  createdAt                 DateTime                          @default(now()) @db.Timestamptz(6)
-  updatedAt                 DateTime                          @default(now()) @updatedAt @db.Timestamptz(6)
+  sourceHash                String                             @unique
+  createdAt                 DateTime                           @default(now()) @db.Timestamptz(6)
+  updatedAt                 DateTime                           @default(now()) @updatedAt @db.Timestamptz(6)
 
   orderSnapshot   CommissionOrderSnapshot @relation(fields: [orderSnapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   salesOrder      SalesOrder              @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -6003,15 +6041,15 @@ model OrderToCashAuditRun {
   sellerFilter   String?
   orderFilter    String?
 
-  totalOrders         Int      @default(0)
-  totalOrderItems     Int      @default(0)
-  totalFacts          Int      @default(0)
-  totalOrderValue     Decimal? @db.Decimal(20, 6)
-  totalAllocatedValue Decimal? @db.Decimal(20, 6)
+  totalOrders          Int      @default(0)
+  totalOrderItems      Int      @default(0)
+  totalFacts           Int      @default(0)
+  totalOrderValue      Decimal? @db.Decimal(20, 6)
+  totalAllocatedValue  Decimal? @db.Decimal(20, 6)
   totalReceivableValue Decimal? @db.Decimal(20, 6)
-  totalReceivedValue  Decimal? @db.Decimal(20, 6)
-  totalOpenValue      Decimal? @db.Decimal(20, 6)
-  totalBlockedValue   Decimal? @db.Decimal(20, 6)
+  totalReceivedValue   Decimal? @db.Decimal(20, 6)
+  totalOpenValue       Decimal? @db.Decimal(20, 6)
+  totalBlockedValue    Decimal? @db.Decimal(20, 6)
 
   warningsJson Json?
   errorMessage String?
@@ -6049,9 +6087,9 @@ model OrderToCashAuditFact {
   orderStatus               String?
   orderIssueDate            DateTime?
   orderExpectedDeliveryDate DateTime?
-  orderTotalValue           Decimal? @db.Decimal(20, 6)
-  orderNetValue             Decimal? @db.Decimal(20, 6)
-  orderGrossValue           Decimal? @db.Decimal(20, 6)
+  orderTotalValue           Decimal?  @db.Decimal(20, 6)
+  orderNetValue             Decimal?  @db.Decimal(20, 6)
+  orderGrossValue           Decimal?  @db.Decimal(20, 6)
   companyId                 String?
   companyName               String?
 
@@ -6080,7 +6118,7 @@ model OrderToCashAuditFact {
   plannedFirstDueDate      DateTime?
   plannedLastDueDate       DateTime?
   plannedPaymentDatesJson  Json?
-  plannedReceivableValue   Decimal? @db.Decimal(20, 6)
+  plannedReceivableValue   Decimal?  @db.Decimal(20, 6)
   plannedPaymentStatus     String?
 
   // Item do pedido
@@ -6093,9 +6131,9 @@ model OrderToCashAuditFact {
   sku                           String?
   productName                   String?
   productDescription            String?
-  orderedQuantity               Decimal? @db.Decimal(20, 6)
-  orderUnitPrice                Decimal? @db.Decimal(20, 6)
-  orderItemTotalValue           Decimal? @db.Decimal(20, 6)
+  orderedQuantity               Decimal?  @db.Decimal(20, 6)
+  orderUnitPrice                Decimal?  @db.Decimal(20, 6)
+  orderItemTotalValue           Decimal?  @db.Decimal(20, 6)
   orderItemExpectedDeliveryDate DateTime?
   orderItemStatus               String?
 
@@ -6104,103 +6142,103 @@ model OrderToCashAuditFact {
   stockDocumentExternalId Int?
   stockDocumentType       String?
   stockDocumentDate       DateTime?
-  stockDocumentTotalValue Decimal? @db.Decimal(20, 6)
+  stockDocumentTotalValue Decimal?  @db.Decimal(20, 6)
   stockDocumentPersonId   String?
   stockDocumentPersonName String?
   stockDocumentIdNfe      Int?
 
   // Item do documento
-  stockDocumentItemId                 String?
-  stockDocumentItemExternalProductId  Int?
-  stockDocumentItemProductCode        String?
-  stockDocumentItemProductName        String?
-  stockDocumentItemQuantity           Decimal? @db.Decimal(20, 6)
-  stockDocumentItemUnitValue          Decimal? @db.Decimal(20, 6)
-  stockDocumentItemTotalValue         Decimal? @db.Decimal(20, 6)
-  matchedByProduct                    Boolean  @default(false)
-  quantityUsedForOrder                Decimal? @db.Decimal(20, 6)
-  quantityRemainingBeforeAllocation   Decimal? @db.Decimal(20, 6)
-  quantityRemainingAfterAllocation    Decimal? @db.Decimal(20, 6)
-  excessQuantity                      Decimal? @db.Decimal(20, 6)
-  outsideOrderQuantity                Decimal? @db.Decimal(20, 6)
-  allocatedValueByOrderPrice          Decimal? @db.Decimal(20, 6)
-  allocatedValueByDocumentPrice       Decimal? @db.Decimal(20, 6)
-  priceDifferenceValue                Decimal? @db.Decimal(20, 6)
-  priceDifferencePercent              Decimal? @db.Decimal(10, 6)
+  stockDocumentItemId                String?
+  stockDocumentItemExternalProductId Int?
+  stockDocumentItemProductCode       String?
+  stockDocumentItemProductName       String?
+  stockDocumentItemQuantity          Decimal? @db.Decimal(20, 6)
+  stockDocumentItemUnitValue         Decimal? @db.Decimal(20, 6)
+  stockDocumentItemTotalValue        Decimal? @db.Decimal(20, 6)
+  matchedByProduct                   Boolean  @default(false)
+  quantityUsedForOrder               Decimal? @db.Decimal(20, 6)
+  quantityRemainingBeforeAllocation  Decimal? @db.Decimal(20, 6)
+  quantityRemainingAfterAllocation   Decimal? @db.Decimal(20, 6)
+  excessQuantity                     Decimal? @db.Decimal(20, 6)
+  outsideOrderQuantity               Decimal? @db.Decimal(20, 6)
+  allocatedValueByOrderPrice         Decimal? @db.Decimal(20, 6)
+  allocatedValueByDocumentPrice      Decimal? @db.Decimal(20, 6)
+  priceDifferenceValue               Decimal? @db.Decimal(20, 6)
+  priceDifferencePercent             Decimal? @db.Decimal(10, 6)
 
   // NF
-  nfeId                 String?
-  nfeExternalId         Int?
-  nfeNumber             String?
-  nfeSerie              String?
-  nfeKey                String?
-  nfeStatus             String?
-  nfeOperationType      String?
-  nfeProcessedAt        DateTime?
-  nfeIssueDate          DateTime?
-  nfeHeaderValue        Decimal? @db.Decimal(20, 6)
-  nfeLinkedBy           String?
-  nfeItemsAvailable     Boolean  @default(false)
-  nfeItemsSource        String?
-  nfeItemProductCode    String?
-  nfeItemProductName    String?
-  nfeItemQuantity       Decimal? @db.Decimal(20, 6)
-  nfeItemUnitValue      Decimal? @db.Decimal(20, 6)
-  nfeItemTotalValue     Decimal? @db.Decimal(20, 6)
-  nfeItemMatchedOrderItem Boolean @default(false)
+  nfeId                   String?
+  nfeExternalId           Int?
+  nfeNumber               String?
+  nfeSerie                String?
+  nfeKey                  String?
+  nfeStatus               String?
+  nfeOperationType        String?
+  nfeProcessedAt          DateTime?
+  nfeIssueDate            DateTime?
+  nfeHeaderValue          Decimal?  @db.Decimal(20, 6)
+  nfeLinkedBy             String?
+  nfeItemsAvailable       Boolean   @default(false)
+  nfeItemsSource          String?
+  nfeItemProductCode      String?
+  nfeItemProductName      String?
+  nfeItemQuantity         Decimal?  @db.Decimal(20, 6)
+  nfeItemUnitValue        Decimal?  @db.Decimal(20, 6)
+  nfeItemTotalValue       Decimal?  @db.Decimal(20, 6)
+  nfeItemMatchedOrderItem Boolean   @default(false)
 
   // Contas a Receber
-  receivableIdsJson            Json?
-  receivableCount              Int?
-  receivableTotalValue         Decimal? @db.Decimal(20, 6)
-  receivableOpenValue          Decimal? @db.Decimal(20, 6)
-  receivableReceivedValue      Decimal? @db.Decimal(20, 6)
-  receivableDueDatesJson       Json?
+  receivableIdsJson             Json?
+  receivableCount               Int?
+  receivableTotalValue          Decimal? @db.Decimal(20, 6)
+  receivableOpenValue           Decimal? @db.Decimal(20, 6)
+  receivableReceivedValue       Decimal? @db.Decimal(20, 6)
+  receivableDueDatesJson        Json?
   receivableSettlementDatesJson Json?
-  receivableStatus             String?
-  receivableSource             String?
+  receivableStatus              String?
+  receivableSource              String?
 
   // Pagamento
   paymentScheduledDate  DateTime?
   paymentDueDate        DateTime?
   paymentSettlementDate DateTime?
   paymentReceivedAt     DateTime?
-  paymentExpectedValue  Decimal? @db.Decimal(20, 6)
-  paymentReceivedValue  Decimal? @db.Decimal(20, 6)
-  paymentOpenValue      Decimal? @db.Decimal(20, 6)
+  paymentExpectedValue  Decimal?  @db.Decimal(20, 6)
+  paymentReceivedValue  Decimal?  @db.Decimal(20, 6)
+  paymentOpenValue      Decimal?  @db.Decimal(20, 6)
   paymentDelayDays      Int?
   paymentStatus         String?
 
   // Status consolidado
-  commercialStage    String?
-  operationalStage   String?
-  fiscalStage        String?
-  financialStage     String?
-  cashStage          String?
-  orderToCashStage   String?
-  temperature        String?
-  confidenceScore    Decimal? @db.Decimal(10, 4)
-  confidenceLabel    String?
-  responsibleArea    String?
-  recommendedAction  String?
+  commercialStage   String?
+  operationalStage  String?
+  fiscalStage       String?
+  financialStage    String?
+  cashStage         String?
+  orderToCashStage  String?
+  temperature       String?
+  confidenceScore   Decimal? @db.Decimal(10, 4)
+  confidenceLabel   String?
+  responsibleArea   String?
+  recommendedAction String?
 
   // Alertas
-  hasDeliveryDelay              Boolean @default(false)
-  hasMissingStockDocument       Boolean @default(false)
-  hasPartialFulfillment         Boolean @default(false)
-  hasFullFulfillment            Boolean @default(false)
-  hasExcessQuantity             Boolean @default(false)
-  hasProductOutsideOrder        Boolean @default(false)
-  hasNfeHeaderGreaterThanOrder  Boolean @default(false)
-  hasPriceMismatch              Boolean @default(false)
-  hasDocumentWithoutReceivable  Boolean @default(false)
-  hasReceivableWithoutSafeLink  Boolean @default(false)
-  hasPaymentConditionMissing    Boolean @default(false)
-  hasPaymentDateDivergence      Boolean @default(false)
-  hasOverdueReceivable          Boolean @default(false)
-  hasRecentPaymentNotReflected  Boolean @default(false)
-  alertsJson                    Json?
-  blockingReasonsJson           Json?
+  hasDeliveryDelay             Boolean @default(false)
+  hasMissingStockDocument      Boolean @default(false)
+  hasPartialFulfillment        Boolean @default(false)
+  hasFullFulfillment           Boolean @default(false)
+  hasExcessQuantity            Boolean @default(false)
+  hasProductOutsideOrder       Boolean @default(false)
+  hasNfeHeaderGreaterThanOrder Boolean @default(false)
+  hasPriceMismatch             Boolean @default(false)
+  hasDocumentWithoutReceivable Boolean @default(false)
+  hasReceivableWithoutSafeLink Boolean @default(false)
+  hasPaymentConditionMissing   Boolean @default(false)
+  hasPaymentDateDivergence     Boolean @default(false)
+  hasOverdueReceivable         Boolean @default(false)
+  hasRecentPaymentNotReflected Boolean @default(false)
+  alertsJson                   Json?
+  blockingReasonsJson          Json?
 
   // Datas / lead times
   lastOrderUpdateAt              DateTime?
@@ -6247,4 +6285,3 @@ model OrderToCashAuditFact {
   @@index([lineType])
   @@index([auditKey])
 }
-

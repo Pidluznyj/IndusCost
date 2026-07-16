@@ -59,25 +59,31 @@
 
 ## 4. Models (estado e proposta)
 
-### 4.1 Já existentes (manter)
+### 4.1 Já existentes (OP-02)
 
 ```text
 NomusProductionOrder
   externalId @unique
-  name, status, tipo, productCode, externalProductId, quantity, unit, companyName
-  rawJson, syncedAt, lastSeenAt
+  name, status, tipo, priority
+  externalProductId, productCode, productDescription, productAdditionalInfo
+  productConfigId, productConfigCode
+  externalCompanyId, companyName
+  quantity, unit, stockSector
+  openedAt, closedAt, plannedAt, nomusUpdatedAt
+  rawJson, payloadHash
+  firstSeenAt, lastSeenAt, lastChangedAt, syncedAt
 
 NomusProductionOrderSalesLink
   productionOrderId → NomusProductionOrder
   productionOrderExternalId
-  externalSalesOrderId          // itensPedido.idPedido
-  externalSalesOrderItemId      // itensPedido.id
-  itemSequence, customerName, linkQuantity, rawJson
-  salesOrderId? → SalesOrder
-  salesOrderItemId? → SalesOrderItem
-  presentInLastPayload, firstSeenAt, lastSeenAt
+  externalSalesOrderId, externalSalesOrderItemId
+  itemNumber, customerName, linkedQuantity, rawJson
+  salesOrderId?, salesOrderItemId?
+  isCurrent, firstSeenAt, lastSeenAt, removedAt
   @@unique([productionOrderExternalId, externalSalesOrderItemId])
 ```
+
+Sem `SyncState` dedicado — incremental via cursor arquivo + `IntegrationRun`.
 
 ### 4.2 Relações propostas (sem migration nova agora)
 

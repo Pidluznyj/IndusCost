@@ -63,13 +63,26 @@ describe("nomusProductionOrdersMapper", () => {
     assert.equal(mapped.row.externalProductId, 391);
     assert.equal(mapped.row.unit, "PC");
     assert.equal(mapped.row.companyName, "KOPPETEL");
+    assert.ok(mapped.row.payloadHash.length >= 32);
     assert.ok(mapped.row.quantity?.equals(new Prisma.Decimal(15400)));
     assert.equal(mapped.row.salesLinks.length, 1);
     assert.equal(mapped.row.salesLinks[0]!.externalSalesOrderId, 2530);
     assert.equal(mapped.row.salesLinks[0]!.externalSalesOrderItemId, 11324);
-    assert.equal(mapped.row.salesLinks[0]!.itemSequence, "00010");
+    assert.equal(mapped.row.salesLinks[0]!.itemNumber, "00010");
     assert.equal(mapped.row.salesLinks[0]!.customerName, "Esmaltec S/A");
-    assert.ok(mapped.row.salesLinks[0]!.linkQuantity?.equals(new Prisma.Decimal(15000)));
+    assert.ok(mapped.row.salesLinks[0]!.linkedQuantity?.equals(new Prisma.Decimal(15000)));
+  });
+
+  it("permite OP sem itensPedido (sem vínculo)", () => {
+    const mapped = mapNomusProductionOrderPayload({
+      id: 1,
+      nome: "OP SEM PEDIDO",
+      quantidade: "1.000",
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.salesLinks.length, 0);
+    assert.ok(mapped.row.quantity?.equals(new Prisma.Decimal(1000)));
   });
 
   it("rejeita OP sem id externo", () => {
@@ -167,16 +180,31 @@ describe("nomusProductionOrders wiring", () => {
     assert.match(sales, /production-orders sync falhou/);
   });
 
-  it("schema e migration aditivos", () => {
+  it("schema e migration aditivos OP-02", () => {
     const schema = readFileSync(join(process.cwd(), "prisma/schema.prisma"), "utf8");
-    const migration = readFileSync(
+    const base = readFileSync(
       join(process.cwd(), "prisma/migrations/20260728120000_nomus_production_orders/migration.sql"),
+      "utf8"
+    );
+    const op02 = readFileSync(
+      join(
+        process.cwd(),
+        "prisma/migrations/20260728140000_nomus_production_orders_op02_schema/migration.sql"
+      ),
       "utf8"
     );
     assert.match(schema, /model NomusProductionOrder /);
     assert.match(schema, /model NomusProductionOrderSalesLink /);
-    assert.match(schema, /externalSalesOrderItemId/);
-    assert.match(migration, /CREATE TABLE "NomusProductionOrder"/);
-    assert.match(migration, /CREATE TABLE "NomusProductionOrderSalesLink"/);
+    assert.match(schema, /payloadHash/);
+    assert.match(schema, /itemNumber/);
+    assert.match(schema, /linkedQuantity/);
+    assert.match(schema, /isCurrent/);
+    assert.match(schema, /removedAt/);
+    assert.match(schema, /lastChangedAt/);
+    assert.doesNotMatch(schema, /model SyncState/);
+    assert.match(base, /CREATE TABLE "NomusProductionOrder"/);
+    assert.match(op02, /payloadHash/);
+    assert.match(op02, /itemNumber/);
+    assert.match(op02, /isCurrent/);
   });
 });

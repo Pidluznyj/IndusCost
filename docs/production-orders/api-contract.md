@@ -79,9 +79,9 @@ Objeto completo persistido em `rawJson`.
 |-------------|---------------|-----------|
 | `id` | `11324` | ID externo do **item** do pedido → `SalesOrderItem.nomusItemExternalId` / `externalSalesOrderItemId` |
 | `idPedido` | `2530` | ID externo do **pedido** → `SalesOrder.externalSalesOrderId` / `externalSalesOrderId` |
-| `item` | `00010` | sequência → `itemSequence` |
+| `item` | `00010` | sequência → `itemNumber` |
 | `nomeCliente` | `Esmaltec S/A` | `customerName` (informativo) |
-| `quantidade` | `"15.000"` | `linkQuantity` **15000** |
+| `quantidade` | `"15.000"` | `linkedQuantity` **15000** |
 
 ### 4.3 Confirmação cruzada Pedido
 

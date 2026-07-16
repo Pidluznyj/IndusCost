@@ -1,5 +1,5 @@
 /**
- * Persistência idempotente de Ordens de Produção Nomus + vínculos oficiais Pedido/Item.
+ * Persistência idempotente de Ordens de Produção Nomus + vínculos oficiais Pedido/Item (OP-02).
  * Resolve FKs locais por externalSalesOrderId / nomusItemExternalId — sem inferência.
  */
 
@@ -16,6 +16,7 @@ export type UpsertNomusProductionOrderResult = {
   linksMarkedAbsent: number;
   salesOrderResolved: number;
   salesOrderItemResolved: number;
+  payloadUnchanged: boolean;
 };
 
 async function resolveLocalSalesOrderId(
@@ -57,21 +58,37 @@ export async function upsertNomusProductionOrder(
 ): Promise<UpsertNomusProductionOrderResult> {
   const existing = await db.nomusProductionOrder.findUnique({
     where: { externalId: row.externalId },
-    select: { id: true },
+    select: { id: true, payloadHash: true, firstSeenAt: true },
   });
+
+  const payloadUnchanged = existing != null && existing.payloadHash === row.payloadHash;
+  const lastChangedAt = payloadUnchanged ? undefined : syncedAt;
 
   const headerData = {
     name: row.name,
     status: row.status,
     tipo: row.tipo,
-    productCode: row.productCode,
+    priority: row.priority,
     externalProductId: row.externalProductId,
+    productCode: row.productCode,
+    productDescription: row.productDescription,
+    productAdditionalInfo: row.productAdditionalInfo,
+    productConfigId: row.productConfigId,
+    productConfigCode: row.productConfigCode,
+    externalCompanyId: row.externalCompanyId,
+    companyName: row.companyName,
     quantity: row.quantity,
     unit: row.unit,
-    companyName: row.companyName,
+    stockSector: row.stockSector,
+    openedAt: row.openedAt,
+    closedAt: row.closedAt,
+    plannedAt: row.plannedAt,
+    nomusUpdatedAt: row.nomusUpdatedAt,
     rawJson: row.rawJson as Prisma.InputJsonValue,
+    payloadHash: row.payloadHash,
     syncedAt,
     lastSeenAt: syncedAt,
+    ...(lastChangedAt ? { lastChangedAt } : {}),
   };
 
   const productionOrder =
@@ -79,6 +96,8 @@ export async function upsertNomusProductionOrder(
       ? await db.nomusProductionOrder.create({
           data: {
             externalId: row.externalId,
+            firstSeenAt: syncedAt,
+            lastChangedAt: syncedAt,
             ...headerData,
           },
           select: { id: true },
@@ -110,13 +129,14 @@ export async function upsertNomusProductionOrder(
       productionOrderExternalId: row.externalId,
       externalSalesOrderId: link.externalSalesOrderId,
       externalSalesOrderItemId: link.externalSalesOrderItemId,
-      itemSequence: link.itemSequence,
+      itemNumber: link.itemNumber,
       customerName: link.customerName,
-      linkQuantity: link.linkQuantity,
+      linkedQuantity: link.linkedQuantity,
       rawJson: link.rawJson as Prisma.InputJsonValue,
       salesOrderId,
       salesOrderItemId,
-      presentInLastPayload: true,
+      isCurrent: true,
+      removedAt: null,
       lastSeenAt: syncedAt,
     };
 
@@ -137,46 +157,41 @@ export async function upsertNomusProductionOrder(
       });
       linksUpdated += 1;
     } else {
-      await db.nomusProductionOrderSalesLink.create({ data: linkData });
+      await db.nomusProductionOrderSalesLink.create({
+        data: {
+          ...linkData,
+          firstSeenAt: syncedAt,
+        },
+      });
       linksCreated += 1;
     }
   }
 
-  let linksMarkedAbsent = 0;
-  if (payloadItemIds.length === 0) {
-    const allMarked = await db.nomusProductionOrderSalesLink.updateMany({
-      where: {
-        productionOrderId: productionOrder.id,
-        presentInLastPayload: true,
-      },
-      data: {
-        presentInLastPayload: false,
-        lastSeenAt: syncedAt,
-      },
-    });
-    linksMarkedAbsent = allMarked.count;
-  } else {
-    const marked = await db.nomusProductionOrderSalesLink.updateMany({
-      where: {
-        productionOrderId: productionOrder.id,
-        presentInLastPayload: true,
-        externalSalesOrderItemId: { notIn: payloadItemIds },
-      },
-      data: {
-        presentInLastPayload: false,
-        lastSeenAt: syncedAt,
-      },
-    });
-    linksMarkedAbsent = marked.count;
-  }
+  const absentWhere = {
+    productionOrderId: productionOrder.id,
+    isCurrent: true,
+    ...(payloadItemIds.length > 0
+      ? { externalSalesOrderItemId: { notIn: payloadItemIds } }
+      : {}),
+  };
+
+  const marked = await db.nomusProductionOrderSalesLink.updateMany({
+    where: absentWhere,
+    data: {
+      isCurrent: false,
+      removedAt: syncedAt,
+      lastSeenAt: syncedAt,
+    },
+  });
 
   return {
     action: existing == null ? "create" : "update",
     productionOrderId: productionOrder.id,
     linksCreated,
     linksUpdated,
-    linksMarkedAbsent,
+    linksMarkedAbsent: marked.count,
     salesOrderResolved,
     salesOrderItemResolved,
+    payloadUnchanged,
   };
 }
