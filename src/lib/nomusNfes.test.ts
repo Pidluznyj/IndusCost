@@ -425,7 +425,7 @@ describe("nomusNfesSync preview script", () => {
 describe("nomusRestClient security", () => {
   it("redactHeadersForLog hides authorization", () => {
     const redacted = redactHeadersForLog({ Authorization: "Bearer secret", Accept: "json" });
-    assert.equal(redacted.Authorization, "***");
+    assert.equal(redacted.Authorization, "<redigido>");
     assert.equal(redacted.Accept, "json");
   });
 

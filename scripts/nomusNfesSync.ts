@@ -24,6 +24,7 @@ import {
 } from "@/src/lib/nomusNfesSyncLogic.js";
 import { NOMUS_NFES_SYNC_WINDOW_LABEL } from "@/src/lib/nomusNfesSyncConstants.js";
 import { mapNomusNfePayload, type MappedNomusNfe } from "@/src/lib/nomusNfeMapper.js";
+import { ensureNomusNfeFiscalPersisted } from "@/src/lib/nfeFiscalPersist.js";
 import {
   buildNomusUrl,
   fetchNomusJson,
@@ -216,28 +217,36 @@ async function runApply(rows: MappedNomusNfe[], syncedAt: Date) {
         select: { id: true, payloadHash: true },
       });
 
+      let nomusNfeId: string;
+
       if (!existing) {
-        await prisma.nomusNfe.create({ data });
+        const createdRow = await prisma.nomusNfe.create({ data });
+        nomusNfeId = createdRow.id;
         created += 1;
         affectedNfeIds.push(row.externalId);
-        continue;
-      }
-
-      if (existing.payloadHash === row.payloadHash) {
+      } else if (existing.payloadHash === row.payloadHash) {
         await prisma.nomusNfe.update({
           where: { externalId: row.externalId },
           data: { syncedAt },
         });
+        nomusNfeId = existing.id;
         unchanged += 1;
-        continue;
+      } else {
+        await prisma.nomusNfe.update({
+          where: { externalId: row.externalId },
+          data,
+        });
+        nomusNfeId = existing.id;
+        updated += 1;
+        affectedNfeIds.push(row.externalId);
       }
 
-      await prisma.nomusNfe.update({
-        where: { externalId: row.externalId },
-        data,
+      // Fiscal: sempre garantir (mesmo payload inalterado pode ainda não ter summary).
+      await ensureNomusNfeFiscalPersisted(prisma, {
+        nomusNfeId,
+        xmlRaw: row.xmlRaw,
+        status: row.status,
       });
-      updated += 1;
-      affectedNfeIds.push(row.externalId);
     } catch {
       errors += 1;
     }

@@ -2582,6 +2582,107 @@ model NomusNfe {
   @@index([xmlDestCnpjCpf])
   @@index([syncedAt])
   @@index([payloadHash])
+
+  fiscalSummary NomusNfeFiscalSummary?
+  taxLines      NomusNfeTaxLine[]
+}
+
+/// Resumo fiscal 1:1 da NF-e (totais oficiais do XML — camada A / destacado).
+/// Não representa apuração, pagamento nem alocação gerencial.
+model NomusNfeFiscalSummary {
+  id         String @id @default(uuid())
+  nomusNfeId String @unique
+  nomusNfe   NomusNfe @relation(fields: [nomusNfeId], references: [id], onDelete: Cascade)
+
+  parserVersion String
+  /// XML | MISSING | PARTIAL
+  source  String
+  xmlHash String?
+  parsedAt DateTime
+
+  /// Espelha status Nomus cancelado (documento ainda pode ter tributos destacados).
+  isCancelled Boolean @default(false)
+  /// ide/finNFe quando presente (1=normal, 2=complementar, 3=ajuste, 4=devolução).
+  finalidade Int?
+  tpNF       Int?
+
+  vProd       Decimal? @db.Decimal(20, 2)
+  vDesc       Decimal? @db.Decimal(20, 2)
+  vFrete      Decimal? @db.Decimal(20, 2)
+  vSeg        Decimal? @db.Decimal(20, 2)
+  vOutro      Decimal? @db.Decimal(20, 2)
+  vII         Decimal? @db.Decimal(20, 2)
+  vIPI        Decimal? @db.Decimal(20, 2)
+  vIPIDevol   Decimal? @db.Decimal(20, 2)
+  vBC         Decimal? @db.Decimal(20, 2)
+  vICMS       Decimal? @db.Decimal(20, 2)
+  vICMSDeson  Decimal? @db.Decimal(20, 2)
+  vBCST       Decimal? @db.Decimal(20, 2)
+  vST         Decimal? @db.Decimal(20, 2)
+  vFCP        Decimal? @db.Decimal(20, 2)
+  vFCPST      Decimal? @db.Decimal(20, 2)
+  vFCPSTRet   Decimal? @db.Decimal(20, 2)
+  vPIS        Decimal? @db.Decimal(20, 2)
+  vCOFINS     Decimal? @db.Decimal(20, 2)
+  vISS        Decimal? @db.Decimal(20, 2)
+  vTotTrib    Decimal? @db.Decimal(20, 2)
+  vNF         Decimal? @db.Decimal(20, 2)
+
+  /// Totais futuros (IBS/CBS/IS etc.) sem migration por tag.
+  extensibleTotals Json?
+
+  /// Gap residual após componentes conhecidos (auditoria; não é saldo financeiro).
+  highlightedResidual Decimal? @db.Decimal(20, 2)
+  qualityAlert        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  taxLines NomusNfeTaxLine[]
+
+  @@index([parserVersion])
+  @@index([parsedAt])
+  @@index([isCancelled])
+}
+
+/// Linha de tributo oficial (HEADER = ICMSTot; ITEM = det/imposto).
+/// Consumidores não devem somar HEADER+ITEM do mesmo taxType.
+model NomusNfeTaxLine {
+  id         String @id @default(uuid())
+  nomusNfeId String
+  summaryId  String
+  nomusNfe   NomusNfe             @relation(fields: [nomusNfeId], references: [id], onDelete: Cascade)
+  summary    NomusNfeFiscalSummary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  /// Chave estável: H:IPI | I:1:ICMS
+  lineKey  String
+  taxType  String
+  /// HEADER | ITEM
+  scope      String
+  itemNumber Int?
+
+  baseAmount Decimal? @db.Decimal(20, 4)
+  rate       Decimal? @db.Decimal(12, 6)
+  amount     Decimal? @db.Decimal(20, 4)
+
+  cst   String?
+  csosn String?
+  cfop  String?
+  ncm   String?
+
+  /// Metadados limitados (grupo ICMS, paths extras).
+  metadata   Json?
+  source     String
+  sourcePath String?
+  parsedAt   DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([nomusNfeId, lineKey])
+  @@index([nomusNfeId, scope, taxType])
+  @@index([summaryId])
+  @@index([taxType])
 }
 
 enum NomusOptionalPricingSelectionMode {
