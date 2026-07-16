@@ -14,6 +14,7 @@ Documentos irmãos:
 - [`target-architecture.md`](./target-architecture.md) — arquitetura-alvo
 - [`release-candidate.md`](./release-candidate.md) — **regressão OP-14 / RC**
 - [`ui-architecture-audit.md`](./ui-architecture-audit.md) — **auditoria UI OP-15**
+- [`api-read.md`](./api-read.md) — **API IndusCost read-only (OP-16)**
 - [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md) — resumo da integração
 
 ---

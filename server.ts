@@ -416,6 +416,7 @@ import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
 import { registerComponentPerformanceRoutes } from "./src/lib/componentPerformanceRoutes.js";
+import { registerProductionOrdersRoutes } from "./src/lib/productionOrdersRoutes.js";
 import { registerTransformationHhHmSimulationHistoryRoutes } from "./src/lib/transformationHhHmSimulationHistoryRoutes.js";
 import { registerProposalInternalManagementPdfRoutes } from "./src/lib/proposalInternalManagementPdfRoutes.js";
 import {
@@ -15202,6 +15203,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  registerProductionOrdersRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   const { registerCompanyIntelligenceRoutes } = await import(

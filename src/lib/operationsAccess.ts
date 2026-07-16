@@ -14,6 +14,7 @@
  * | operations.performance | view, update |
  * | operations.maintenance | view, manage |
  * | operations.fleet | view, manage |
+ * | operations.production_orders | view |
  */
 
 export const OPERATIONS_RESOURCE_KEYS = {
@@ -25,6 +26,7 @@ export const OPERATIONS_RESOURCE_KEYS = {
   inventoryCounts: "operations.inventory.counts",
   purchases: "operations.purchases",
   performance: "operations.performance",
+  productionOrders: "operations.production_orders",
   maintenance: "operations.maintenance",
   fleet: "operations.fleet",
 } as const;
@@ -137,6 +139,13 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
 
   {
     method: "GET",
+    path: "/api/operations/production-orders",
+    resourceKey: "operations.production_orders",
+    action: "view",
+  },
+
+  {
+    method: "GET",
     path: "/api/maintenance-requests",
     resourceKey: "operations.maintenance",
     action: "view",
@@ -176,6 +185,7 @@ export const OPERATIONS_MODULE_RESOURCE_KEYS = [
   OPERATIONS_RESOURCE_KEYS.inventory,
   OPERATIONS_RESOURCE_KEYS.purchases,
   OPERATIONS_RESOURCE_KEYS.performance,
+  OPERATIONS_RESOURCE_KEYS.productionOrders,
   OPERATIONS_RESOURCE_KEYS.maintenance,
   OPERATIONS_RESOURCE_KEYS.fleet,
 ] as const;

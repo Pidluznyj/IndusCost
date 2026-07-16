@@ -1055,6 +1055,15 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["operations.component-performance.view"],
   }),
   perm({
+    key: "operations.production-orders.view",
+    label: "Operações — Ordens de Produção",
+    group: OPS,
+    module: "production-orders",
+    description:
+      "Consultar Ordens de Produção sincronizadas do Nomus (stage local, somente leitura).",
+    type: "menu",
+  }),
+  perm({
     key: "engineering.view",
     label: "Engenharia",
     group: OPS,

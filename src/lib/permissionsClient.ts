@@ -107,6 +107,7 @@ export const ResourceKeys = {
   OPERACOES_COMPRAS: "operations.purchases",
   OPERACOES_MAQUINAS: "operations.machines",
   OPERACOES_PERFORMANCE: "operations.performance",
+  OPERACOES_ORDENS_PRODUCAO: "operations.production_orders",
   OPERACOES_MANUTENCAO: "operations.maintenance",
   OPERACOES_FROTA: "operations.fleet",
   ADMIN_PESSOAS: "admin.employees",
@@ -747,6 +748,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
       "operations.component-performance.edit",
       "products.view",
     ],
+  },
+  {
+    key: ResourceKeys.OPERACOES_ORDENS_PRODUCAO,
+    label: "Ordens de Produção",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.OPERACOES,
+    legacyAliasKeys: ["operations.production-orders.view"],
   },
   {
     key: ResourceKeys.OPERACOES_MANUTENCAO,
