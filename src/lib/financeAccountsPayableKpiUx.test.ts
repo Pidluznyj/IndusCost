@@ -46,7 +46,7 @@ describe("financeAccountsPayableKpiUx", () => {
     assert.equal(page.includes("xl:grid-cols-8"), false);
     assert.match(page, /SummaryKpiGrid/);
     assert.match(page, /ExecutiveSummarySection/);
-    assert.match(page, /FinanceKpiCard/);
+    assert.match(page, /FinanceExecutiveTotalizerCard/);
   });
 
   it("card Pago no mês usa subtítulo curto e explicação negocial no tooltip", () => {

@@ -61,6 +61,12 @@ function makePrismaMock() {
   return {
     allocations,
     fiscalPaymentGuide: {
+      findMany: async () =>
+        guides.map((g) => ({
+          ...g,
+          proofs: [],
+          allocations: allocations.filter((a) => a.guideId === g.id),
+        })),
       findUnique: async ({ where, include }: any) => {
         let g =
           guides.find((x) => x.id === where.id) ??
