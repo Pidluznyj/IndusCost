@@ -68,7 +68,7 @@ O enum Prisma atual permanece `MENU | SUBMENU | TAB | ACTION` até cutover futur
 | `TAB` | `TAB` |
 | `ACTION` | `ACTION` |
 
-Helpers: `toOfficialHierarchyType`, `toLegacyResourceStorageType`.  
+Helpers: `toOfficialHierarchyType`, `toLegacyResourceStorageType`.
 Derivação seed (`permissionSeedFromContract`) usa a hierarquia oficial e grava o alias legado.
 
 ---
