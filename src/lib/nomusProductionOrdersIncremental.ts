@@ -105,6 +105,12 @@ export type ProductionOrdersIncrementalSummary = {
   filterUsed: string | null;
   cutoffUsed: string;
   duration: number;
+  rateLimitCount?: number;
+  /** OP-11: execução bloqueada por lock (sem API). */
+  lockBlocked?: boolean;
+  /** OP-11: auditoria/métricas finais. */
+  audit?: import("@/src/lib/nomusProductionOrdersSyncAudit.js").ProductionOrdersSyncAuditRecord;
+  exitCode?: number;
 };
 
 const ALLOWED_DATE_SELECTORS = new Set(["dataAlteracao", "dataAbertura"]);

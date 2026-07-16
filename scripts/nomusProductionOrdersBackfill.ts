@@ -34,8 +34,11 @@ async function main(): Promise<void> {
     if (summary.mode === "preview") {
       console.warn(`${LOG_PREFIX} ${PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER}`);
     }
-    console.log(JSON.stringify({ ok: true, ...summary }, null, 2));
-    if (summary.errors > 0) process.exitCode = 2;
+    console.log(JSON.stringify({ ok: !summary.lockBlocked, ...summary }, null, 2));
+    if (summary.lockBlocked) process.exitCode = 0;
+    else if (summary.errors > 0 || (summary.exitCode != null && summary.exitCode !== 0)) {
+      process.exitCode = summary.exitCode ?? 2;
+    }
   } finally {
     process.off("SIGINT", onSignal);
     process.off("SIGTERM", onSignal);

@@ -25,6 +25,11 @@ import {
 } from "@/src/lib/nomusProductionOrdersIncremental.js";
 import { fetchNomusJson } from "@/src/lib/nomusRestClient.js";
 import { PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER } from "@/src/lib/nomusProductionOrdersPreview.js";
+import {
+  auditFromIncrementalSummary,
+  withProductionOrdersSyncGuard,
+} from "@/src/lib/nomusProductionOrdersSyncGuard.server.js";
+import type { ProductionOrdersSyncAuditRecord } from "@/src/lib/nomusProductionOrdersSyncAudit.js";
 
 const LOG_PREFIX = "[nomus-production-orders-incremental]";
 
@@ -233,133 +238,207 @@ export async function runNomusProductionOrdersIncremental(args: {
   readState?: () => string | null;
   writeState?: (content: string) => void;
   reconcilePending?: () => Promise<number>;
+  /** OP-11: pula lock (testes). Default true se fetchPages injetado. */
+  skipLock?: boolean;
+  respectGlobalLock?: boolean;
+  probeGlobalLock?: () => boolean;
+  lockFile?: string;
+  persistAudit?: (audit: ProductionOrdersSyncAuditRecord) => Promise<void> | void;
 }): Promise<ProductionOrdersIncrementalSummary> {
   const env = args.env ?? process.env;
   const options =
     args.options ?? parseProductionOrdersIncrementalCli(args.argv ?? process.argv.slice(2), env);
   const log = args.logger ?? ((m: string) => console.warn(m));
   const now = args.now ?? new Date();
+  const skipLock = args.skipLock ?? args.fetchPages != null;
 
-  const stateRaw =
-    args.readState?.() ?? (options.stateFile ? readStateFile(options.stateFile) : null);
-  const priorState = parseProductionOrdersIncrementalState(stateRaw);
-  const plan = planProductionOrdersIncremental({ options, priorState, now });
+  const runInner = async (): Promise<ProductionOrdersIncrementalSummary> => {
+    const stateRaw =
+      args.readState?.() ?? (options.stateFile ? readStateFile(options.stateFile) : null);
+    const priorState = parseProductionOrdersIncrementalState(stateRaw);
+    const plan = planProductionOrdersIncremental({ options, priorState, now });
 
-  const client =
-    args.client ??
-    (args.fetchPages
-      ? null
-      : createNomusProductionOrdersClient({
-          baseUrl: args.baseUrl,
-          pageSize: plan.pageSize,
-          maxPages: plan.maxPages,
-          env,
-          logger: log,
-          fetchJson: async (url, fetchOptions) => fetchNomusJson(url, fetchOptions),
-        }));
+    const client =
+      args.client ??
+      (args.fetchPages
+        ? null
+        : createNomusProductionOrdersClient({
+            baseUrl: args.baseUrl,
+            pageSize: plan.pageSize,
+            maxPages: plan.maxPages,
+            env,
+            logger: log,
+            fetchJson: async (url, fetchOptions) => fetchNomusJson(url, fetchOptions),
+          }));
 
-  const fetchPages: ProductionOrdersIncrementalFetchPages =
-    args.fetchPages ??
-    (async ({ query, pageSize, maxPages }) => {
-      if (!client) throw new Error("Cliente Nomus ausente para incremental.");
-      const traversed = await client.traversePages({
-        startPage: 1,
-        pageSize,
-        maxPages,
-        query,
+    const fetchPages: ProductionOrdersIncrementalFetchPages =
+      args.fetchPages ??
+      (async ({ query, pageSize, maxPages }) => {
+        if (!client) throw new Error("Cliente Nomus ausente para incremental.");
+        const traversed = await client.traversePages({
+          startPage: 1,
+          pageSize,
+          maxPages,
+          query,
+        });
+        return {
+          pagesRead: traversed.pagesRead,
+          recordsReceived: traversed.recordsRead,
+          items: traversed.items,
+        };
       });
-      return {
-        pagesRead: traversed.pagesRead,
-        recordsReceived: traversed.recordsRead,
-        items: traversed.items,
-      };
-    });
 
-  const persist: ProductionOrdersIncrementalPersistFn | undefined =
-    args.persist ??
-    (args.prisma
-      ? async (raw) => {
-          if (options.mode === "apply") {
-            const result = await persistNomusProductionOrder(args.prisma!, raw, {
-              useTransaction: true,
+    const persist: ProductionOrdersIncrementalPersistFn | undefined =
+      args.persist ??
+      (args.prisma
+        ? async (raw) => {
+            if (options.mode === "apply") {
+              const result = await persistNomusProductionOrder(args.prisma!, raw, {
+                useTransaction: true,
+              });
+              return {
+                outcome: result.outcome,
+                externalId: result.externalId,
+                links: result.links
+                  ? {
+                      linksCreated: result.links.linksCreated,
+                      linksUpdated: result.links.linksUpdated,
+                      linksReactivated: result.links.linksReactivated,
+                      linksMarkedAbsent: result.links.linksMarkedAbsent,
+                    }
+                  : null,
+                error: result.error,
+              };
+            }
+            const mapped = mapNomusProductionOrderForPersist(raw);
+            if (!mapped.ok) {
+              return {
+                outcome: "invalid",
+                externalId: mapped.externalId,
+                links: null,
+                error: mapped.reasons.join(","),
+              };
+            }
+            const existing = await args.prisma!.nomusProductionOrder.findUnique({
+              where: { externalId: mapped.row.externalId },
+              select: { payloadHash: true },
             });
+            let outcome: "created" | "updated" | "unchanged" = "created";
+            if (existing) {
+              outcome =
+                existing.payloadHash === mapped.row.payloadHash ? "unchanged" : "updated";
+            }
             return {
-              outcome: result.outcome,
-              externalId: result.externalId,
-              links: result.links
-                ? {
-                    linksCreated: result.links.linksCreated,
-                    linksUpdated: result.links.linksUpdated,
-                    linksReactivated: result.links.linksReactivated,
-                    linksMarkedAbsent: result.links.linksMarkedAbsent,
-                  }
-                : null,
-              error: result.error,
+              outcome,
+              externalId: mapped.row.externalId,
+              links: {
+                linksCreated: existing ? 0 : mapped.row.salesLinks.length,
+                linksUpdated: existing ? mapped.row.salesLinks.length : 0,
+                linksReactivated: 0,
+                linksMarkedAbsent: 0,
+              },
+              error: null,
             };
           }
-          const mapped = mapNomusProductionOrderForPersist(raw);
-          if (!mapped.ok) {
-            return {
-              outcome: "invalid",
-              externalId: mapped.externalId,
-              links: null,
-              error: mapped.reasons.join(","),
-            };
+        : undefined);
+
+    const writeState =
+      args.writeState ??
+      (options.mode === "apply" && options.stateFile
+        ? (content: string) => {
+            writeFileSync(options.stateFile!, content, "utf8");
           }
-          const existing = await args.prisma!.nomusProductionOrder.findUnique({
-            where: { externalId: mapped.row.externalId },
-            select: { payloadHash: true },
-          });
-          let outcome: "created" | "updated" | "unchanged" = "created";
-          if (existing) {
-            outcome =
-              existing.payloadHash === mapped.row.payloadHash ? "unchanged" : "updated";
+        : undefined);
+
+    const reconcilePending =
+      args.reconcilePending ??
+      (options.mode === "apply" && args.prisma
+        ? async () => {
+            const result = await reconcilePendingNomusProductionOrderSalesLinks(args.prisma!, {
+              limit: 2000,
+            });
+            return result.updated;
           }
-          return {
-            outcome,
-            externalId: mapped.row.externalId,
-            links: {
-              linksCreated: existing ? 0 : mapped.row.salesLinks.length,
-              linksUpdated: existing ? mapped.row.salesLinks.length : 0,
-              linksReactivated: 0,
-              linksMarkedAbsent: 0,
-            },
-            error: null,
-          };
-        }
-      : undefined);
+        : undefined);
 
-  const writeState =
-    args.writeState ??
-    (options.mode === "apply" && options.stateFile
-      ? (content: string) => {
-          writeFileSync(options.stateFile!, content, "utf8");
-        }
-      : undefined);
+    return runProductionOrdersIncrementalLoop({
+      mode: options.mode,
+      plan,
+      stateFile: options.stateFile,
+      fetchPages,
+      persist,
+      reconcilePending,
+      readState: () => stateRaw,
+      writeState,
+      logger: log,
+      now: () => now.getTime(),
+    });
+  };
 
-  const reconcilePending =
-    args.reconcilePending ??
-    (options.mode === "apply" && args.prisma
-      ? async () => {
-          const result = await reconcilePendingNomusProductionOrderSalesLinks(args.prisma!, {
-            limit: 2000,
-          });
-          return result.updated;
-        }
-      : undefined);
+  const guarded = await withProductionOrdersSyncGuard(
+    {
+      type: "incremental",
+      mode: options.mode,
+      skipLock,
+      lockFile: args.lockFile,
+      env,
+      respectGlobalLock: args.respectGlobalLock,
+      probeGlobalLock: args.probeGlobalLock,
+      prisma: args.prisma,
+      persistAudit: args.persistAudit,
+      logger: log,
+    },
+    runInner,
+    (summary, ctx) =>
+      auditFromIncrementalSummary({
+        mode: options.mode,
+        startedAt: ctx.startedAt,
+        finishedAt: ctx.finishedAt,
+        summary,
+        lockFile: ctx.lockFile,
+      })
+  );
 
-  return runProductionOrdersIncrementalLoop({
-    mode: options.mode,
-    plan,
-    stateFile: options.stateFile,
-    fetchPages,
-    persist,
-    reconcilePending,
-    readState: () => stateRaw,
-    writeState,
-    logger: log,
-    now: () => now.getTime(),
-  });
+  if (guarded.blocked) {
+    const plan = planProductionOrdersIncremental({
+      options,
+      priorState: null,
+      now,
+    });
+    return {
+      mode: options.mode,
+      strategy: "incremental",
+      plan,
+      pagesRead: 0,
+      recordsReceived: 0,
+      created: 0,
+      updated: 0,
+      unchanged: 0,
+      invalid: 0,
+      linkedRows: 0,
+      linksCreated: 0,
+      linksUpdated: 0,
+      linksReactivated: 0,
+      linksMarkedAbsent: 0,
+      errors: 0,
+      errorReport: [{ externalId: null, message: guarded.audit.finalMessage }],
+      stateAdvanced: false,
+      stateFile: options.stateFile,
+      filterUsed: null,
+      cutoffUsed: plan.cutoffIso,
+      duration: guarded.audit.durationMs,
+      rateLimitCount: 0,
+      lockBlocked: true,
+      audit: guarded.audit,
+      exitCode: 0,
+    };
+  }
+
+  const summary = guarded.result!;
+  summary.lockBlocked = false;
+  summary.audit = guarded.audit;
+  summary.exitCode = guarded.exitCode;
+  return summary;
 }
 
 export type { ProductionOrdersIncrementalState };

@@ -65,6 +65,11 @@ export type ProductionOrdersBackfillSummary = {
   hardMaxPages: number;
   cursorFile: string | null;
   duration: number;
+  /** OP-11: execução bloqueada por lock (sem API). */
+  lockBlocked?: boolean;
+  /** OP-11: auditoria/métricas finais. */
+  audit?: import("@/src/lib/nomusProductionOrdersSyncAudit.js").ProductionOrdersSyncAuditRecord;
+  exitCode?: number;
 };
 
 function parsePositiveInt(raw: string, label: string): number {

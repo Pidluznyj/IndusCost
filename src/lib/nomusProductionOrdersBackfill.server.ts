@@ -28,6 +28,11 @@ import {
 } from "@/src/lib/nomusProductionOrdersBackfill.js";
 import { fetchNomusJson } from "@/src/lib/nomusRestClient.js";
 import { PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER } from "@/src/lib/nomusProductionOrdersPreview.js";
+import {
+  auditFromBackfillSummary,
+  withProductionOrdersSyncGuard,
+} from "@/src/lib/nomusProductionOrdersSyncGuard.server.js";
+import type { ProductionOrdersSyncAuditRecord } from "@/src/lib/nomusProductionOrdersSyncAudit.js";
 
 const LOG_PREFIX = "[nomus-production-orders-backfill]";
 
@@ -314,153 +319,206 @@ export async function runNomusProductionOrdersBackfill(args: {
   readCheckpoint?: () => string | null;
   writeCheckpoint?: (content: string) => void;
   rateLimitCounter?: { count: number };
+  /** OP-11: pula lock (testes). Default true se fetchPage injetado. */
+  skipLock?: boolean;
+  respectGlobalLock?: boolean;
+  probeGlobalLock?: () => boolean;
+  lockFile?: string;
+  persistAudit?: (audit: ProductionOrdersSyncAuditRecord) => Promise<void> | void;
 }): Promise<ProductionOrdersBackfillSummary> {
   const env = args.env ?? process.env;
   const options =
     args.options ?? parseProductionOrdersBackfillCli(args.argv ?? process.argv.slice(2), env);
   const log = args.logger ?? ((m: string) => console.warn(m));
+  const skipLock = args.skipLock ?? args.fetchPage != null;
 
-  const cursorContent =
-    args.readCheckpoint?.() ??
-    (options.cursorFile ? readCursorFile(options.cursorFile) : null);
-  const startPage = resolveProductionOrdersBackfillStartPage({
-    options,
-    cursorContent,
-  });
+  const runInner = async (): Promise<ProductionOrdersBackfillSummary> => {
+    const cursorContent =
+      args.readCheckpoint?.() ??
+      (options.cursorFile ? readCursorFile(options.cursorFile) : null);
+    const startPage = resolveProductionOrdersBackfillStartPage({
+      options,
+      cursorContent,
+    });
 
-  log(
-    `${LOG_PREFIX} mode=${options.mode} startPage=${startPage} maxPages=${options.maxPages} hardMax=${options.hardMaxPages} cursor=${options.cursorFile ?? "(none)"} reprocess=${options.reprocess}`
+    log(
+      `${LOG_PREFIX} mode=${options.mode} startPage=${startPage} maxPages=${options.maxPages} hardMax=${options.hardMaxPages} cursor=${options.cursorFile ?? "(none)"} reprocess=${options.reprocess}`
+    );
+
+    const rateLimitCounter = args.rateLimitCounter ?? { count: 0 };
+
+    const fetchPage: ProductionOrdersBackfillPageFetcher =
+      args.fetchPage ??
+      (() => {
+        const client =
+          args.client ??
+          createNomusProductionOrdersClient({
+            baseUrl: args.baseUrl,
+            pageSize: options.pageSize,
+            maxPages: 1,
+            env,
+            logger: log,
+            fetchJson: async (url, fetchOptions) =>
+              fetchNomusJson(url, {
+                ...fetchOptions,
+                onRetryableStatus: (info) => {
+                  if (info.status === 429) rateLimitCounter.count += 1;
+                  fetchOptions?.onRetryableStatus?.(info);
+                },
+              }),
+          });
+        return async ({ page, pageSize }) => {
+          const result = await client.listPage({ page, pageSize, query: null });
+          return {
+            items: result.items,
+            fingerprint: fingerprintItems(result.items),
+          };
+        };
+      })();
+
+    const persist: ProductionOrdersBackfillPersistFn | undefined =
+      args.persist ??
+      (args.prisma
+        ? async (raw) => {
+            if (options.mode === "apply") {
+              const result = await persistNomusProductionOrder(args.prisma!, raw, {
+                useTransaction: true,
+              });
+              return {
+                outcome: result.outcome,
+                externalId: result.externalId,
+                links: result.links,
+                error: result.error,
+              };
+            }
+
+            // Preview: somente leitura — classifica sem gravar.
+            const mapped = mapNomusProductionOrderForPersist(raw);
+            if (!mapped.ok) {
+              return {
+                outcome: "invalid",
+                externalId: mapped.externalId,
+                links: null,
+                error: mapped.reasons.join(","),
+              };
+            }
+            const existing = await args.prisma!.nomusProductionOrder.findUnique({
+              where: { externalId: mapped.row.externalId },
+              select: { payloadHash: true },
+            });
+            let outcome: "created" | "updated" | "unchanged" = "created";
+            if (existing) {
+              outcome =
+                existing.payloadHash === mapped.row.payloadHash ? "unchanged" : "updated";
+            }
+            let salesOrderResolved = 0;
+            let salesOrderItemResolved = 0;
+            for (const link of mapped.row.salesLinks) {
+              const so = await args.prisma!.salesOrder.findFirst({
+                where: { externalSalesOrderId: link.externalSalesOrderId },
+                select: { id: true },
+              });
+              const soi = await args.prisma!.salesOrderItem.findFirst({
+                where: { nomusItemExternalId: link.externalSalesOrderItemId },
+                select: { id: true },
+              });
+              if (so) salesOrderResolved += 1;
+              if (soi) salesOrderItemResolved += 1;
+            }
+            return {
+              outcome,
+              externalId: mapped.row.externalId,
+              links: {
+                linksCreated: existing ? 0 : mapped.row.salesLinks.length,
+                linksUpdated: existing ? mapped.row.salesLinks.length : 0,
+                linksReactivated: 0,
+                linksMarkedAbsent: 0,
+                salesOrderResolved,
+                salesOrderItemResolved,
+              },
+              error: null,
+            };
+          }
+        : undefined);
+
+    const reconcilePending =
+      args.reconcilePending ??
+      (options.mode === "apply" && args.prisma
+        ? async () => {
+            const result = await reconcilePendingNomusProductionOrderSalesLinks(args.prisma!, {
+              limit: 2000,
+            });
+            return result.updated;
+          }
+        : undefined);
+
+    const writeCheckpoint =
+      args.writeCheckpoint ??
+      (options.mode === "apply" && options.cursorFile
+        ? (content: string) => {
+            writeFileSync(options.cursorFile!, content, "utf8");
+            log(`${LOG_PREFIX} checkpoint gravado ${options.cursorFile}`);
+          }
+        : undefined);
+
+    const summary = await runProductionOrdersBackfillLoop({
+      mode: options.mode,
+      options,
+      startPage,
+      fetchPage,
+      persist,
+      reconcilePending,
+      readCheckpoint: () => cursorContent,
+      writeCheckpoint,
+      shouldContinue: () => !(args.signal?.aborted ?? false),
+      logger: log,
+    });
+
+    summary.rateLimitCount = rateLimitCounter.count;
+    return summary;
+  };
+
+  const guarded = await withProductionOrdersSyncGuard(
+    {
+      type: "backfill",
+      mode: options.mode,
+      skipLock,
+      lockFile: args.lockFile,
+      env,
+      respectGlobalLock: args.respectGlobalLock,
+      probeGlobalLock: args.probeGlobalLock,
+      prisma: args.prisma,
+      persistAudit: args.persistAudit,
+      logger: log,
+    },
+    runInner,
+    (summary, ctx) =>
+      auditFromBackfillSummary({
+        mode: options.mode,
+        startedAt: ctx.startedAt,
+        finishedAt: ctx.finishedAt,
+        summary,
+        lockFile: ctx.lockFile,
+      })
   );
 
-  const rateLimitCounter = args.rateLimitCounter ?? { count: 0 };
+  if (guarded.blocked) {
+    const empty = buildEmptyProductionOrdersBackfillSummary(options, options.startPage);
+    empty.lockBlocked = true;
+    empty.audit = guarded.audit;
+    empty.exitCode = 0;
+    empty.errorReport.push({
+      page: null,
+      externalId: null,
+      stage: "interrupt",
+      message: guarded.audit.finalMessage,
+    });
+    return empty;
+  }
 
-  const fetchPage: ProductionOrdersBackfillPageFetcher =
-    args.fetchPage ??
-    (() => {
-      const client =
-        args.client ??
-        createNomusProductionOrdersClient({
-          baseUrl: args.baseUrl,
-          pageSize: options.pageSize,
-          maxPages: 1,
-          env,
-          logger: log,
-          fetchJson: async (url, fetchOptions) =>
-            fetchNomusJson(url, {
-              ...fetchOptions,
-              onRetryableStatus: (info) => {
-                if (info.status === 429) rateLimitCounter.count += 1;
-                fetchOptions?.onRetryableStatus?.(info);
-              },
-            }),
-        });
-      return async ({ page, pageSize }) => {
-        const result = await client.listPage({ page, pageSize, query: null });
-        return {
-          items: result.items,
-          fingerprint: fingerprintItems(result.items),
-        };
-      };
-    })();
-
-  const persist: ProductionOrdersBackfillPersistFn | undefined =
-    args.persist ??
-    (args.prisma
-      ? async (raw) => {
-          if (options.mode === "apply") {
-            const result = await persistNomusProductionOrder(args.prisma!, raw, {
-              useTransaction: true,
-            });
-            return {
-              outcome: result.outcome,
-              externalId: result.externalId,
-              links: result.links,
-              error: result.error,
-            };
-          }
-
-          // Preview: somente leitura — classifica sem gravar.
-          const mapped = mapNomusProductionOrderForPersist(raw);
-          if (!mapped.ok) {
-            return {
-              outcome: "invalid",
-              externalId: mapped.externalId,
-              links: null,
-              error: mapped.reasons.join(","),
-            };
-          }
-          const existing = await args.prisma!.nomusProductionOrder.findUnique({
-            where: { externalId: mapped.row.externalId },
-            select: { payloadHash: true },
-          });
-          let outcome: "created" | "updated" | "unchanged" = "created";
-          if (existing) {
-            outcome =
-              existing.payloadHash === mapped.row.payloadHash ? "unchanged" : "updated";
-          }
-          let salesOrderResolved = 0;
-          let salesOrderItemResolved = 0;
-          for (const link of mapped.row.salesLinks) {
-            const so = await args.prisma!.salesOrder.findFirst({
-              where: { externalSalesOrderId: link.externalSalesOrderId },
-              select: { id: true },
-            });
-            const soi = await args.prisma!.salesOrderItem.findFirst({
-              where: { nomusItemExternalId: link.externalSalesOrderItemId },
-              select: { id: true },
-            });
-            if (so) salesOrderResolved += 1;
-            if (soi) salesOrderItemResolved += 1;
-          }
-          return {
-            outcome,
-            externalId: mapped.row.externalId,
-            links: {
-              linksCreated: existing ? 0 : mapped.row.salesLinks.length,
-              linksUpdated: existing ? mapped.row.salesLinks.length : 0,
-              linksReactivated: 0,
-              linksMarkedAbsent: 0,
-              salesOrderResolved,
-              salesOrderItemResolved,
-            },
-            error: null,
-          };
-        }
-      : undefined);
-
-  const reconcilePending =
-    args.reconcilePending ??
-    (options.mode === "apply" && args.prisma
-      ? async () => {
-          const result = await reconcilePendingNomusProductionOrderSalesLinks(args.prisma!, {
-            limit: 2000,
-          });
-          return result.updated;
-        }
-      : undefined);
-
-  const writeCheckpoint =
-    args.writeCheckpoint ??
-    (options.mode === "apply" && options.cursorFile
-      ? (content: string) => {
-          writeFileSync(options.cursorFile!, content, "utf8");
-          log(`${LOG_PREFIX} checkpoint gravado ${options.cursorFile}`);
-        }
-      : undefined);
-
-  const summary = await runProductionOrdersBackfillLoop({
-    mode: options.mode,
-    options,
-    startPage,
-    fetchPage,
-    persist,
-    reconcilePending,
-    readCheckpoint: () => cursorContent,
-    writeCheckpoint,
-    shouldContinue: () => !(args.signal?.aborted ?? false),
-    logger: log,
-  });
-
-  summary.rateLimitCount = rateLimitCounter.count;
+  const summary = guarded.result!;
+  summary.lockBlocked = false;
+  summary.audit = guarded.audit;
+  summary.exitCode = guarded.exitCode;
   return summary;
 }
