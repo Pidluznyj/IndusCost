@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| Gerado | 2026-07-16T14:33:44.052Z |
+| Gerado | 2026-07-16T14:36:34.296Z |
 | Modo | strict |
 | OK | sim |
 | Novos gaps | 0 |
-| Baselined | 73 |
+| Baselined | 72 |
 | Stale baseline | 0 |
 
 ## Fontes
@@ -79,7 +79,7 @@ _Nenhum._
 - `ALIAS_DUPLICATE` / `contract:settings.nomus.sync`
 - `ALIAS_DUPLICATE` / `contract:taxes.view`
 - `ALIAS_DUPLICATE` / `contract:finance.tax_apuration.view`
-- … +13
+- … +12
 
 ## Limitações
 - Baseline temporário documenta gaps históricos; strict só falha em findings novos (code+subject).

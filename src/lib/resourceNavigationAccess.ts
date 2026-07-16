@@ -1,8 +1,9 @@
 /**
  * Fonte oficial FE para `view` na navegação (P10/P11).
  *
- * Sidebar e canViewModule: DTO efetivo (contrato) — sem canAccessModule / mega-key.
- * Loading / sessão inválida → sem menu e sem acesso de módulo.
+ * Sidebar e rotas: DTO efetivo (contrato) — sem canAccessModule / mega-key / role matrix.
+ * Loading / sessão inválida → sem menu e sem acesso.
+ * Path sem módulo mapeado → DENY (salvo allowlist autenticada explícita).
  */
 
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
@@ -18,6 +19,9 @@ import {
   createSidebarCanViewResource,
   type FrontendPermissionResource,
 } from "@/src/lib/permissionsClient.js";
+import {
+  isAuthenticatedAllowlistPath,
+} from "@/src/lib/privateRouteAccess.js";
 import { resolveSidebarModuleResourceKey } from "@/src/lib/sidebarMenuResources.js";
 import type { SidebarAccessibleNavigation } from "@/src/lib/sidebarNavigation.js";
 import {
@@ -36,20 +40,32 @@ export type PathViewDecision = {
   allowed: boolean;
   moduleId: AppModuleId | null;
   resourceKey: string | null;
-  /** `unmapped` = rota autenticada fora do mapa de módulos (não bloqueia no Layout — P11). */
-  reason: "allowed" | "denied" | "unmapped" | "super_admin" | "loading" | "session_error";
-  source: "effective_dto" | "none" | "super_admin";
+  /**
+   * `unmapped` = path autenticado sem módulo/resource → DENY (P11).
+   * `allowlist` = autenticado sem resourceKey por exceção explícita.
+   */
+  reason:
+    | "allowed"
+    | "denied"
+    | "unmapped"
+    | "allowlist"
+    | "super_admin"
+    | "loading"
+    | "session_error";
+  source: "effective_dto" | "none" | "super_admin" | "allowlist";
+  /** Path pedido — preservado para refresh / grant futuro (URL não é forçada a mudar). */
+  intendedPath?: string;
 };
 
 export type NavigationAccessContext = {
   user: AuthUser | null | undefined;
-  /** Checker legado (AuthContext) — ainda usado por APIs UI; sidebar não usa. */
+  /** Checker legado (AuthContext) — ainda usado por APIs UI; sidebar/rotas DTO não usam. */
   checker: PermissionChecker;
   /** Bloco `/me.effectiveAccess` quando a flag servidor estiver on. */
   effectiveAccess?: EffectiveAccessMeDto | null;
-  /** true enquanto /api/auth/me não resolveu — sidebar vazia. */
+  /** true enquanto /api/auth/me não resolveu — sidebar vazia / rotas bloqueadas. */
   authLoading?: boolean;
-  /** Erro de sessão — não libera menu. */
+  /** Erro de sessão — não libera menu nem rota. */
   authError?: string | null;
 };
 
@@ -83,27 +99,31 @@ function resolveDto(ctx: NavigationAccessContext): EffectiveAccessMeDto | null {
 }
 
 /**
- * View do módulo de menu/rota — somente DTO efetivo (P10).
+ * View do módulo de menu/rota — somente DTO efetivo (P10/P11).
+ * SUPER_ADMIN via `dto.isSuperAdmin` / synthetic DTO — não por role matrix.
  */
 export function canViewModule(
   moduleId: AppModuleId,
   ctx: NavigationAccessContext
 ): boolean {
   if (ctx.authLoading || ctx.authError) return false;
-  if (ctx.user?.role === "SUPER_ADMIN") return true;
-  if (ctx.user && ctx.user.isActive === false) return false;
+  if (ctx.user && ctx.user.isActive === false && ctx.user.role !== "SUPER_ADMIN") {
+    return false;
+  }
   const dto = resolveDto(ctx);
   return canViewSidebarModuleFromDto(dto, moduleId);
 }
 
 /**
- * Proteção de rota por path (Layout / URL direta).
- * Paths não mapeados a `AppModuleId` → `unmapped` (allowed), evitando loop/falso negativo.
+ * Proteção central de rota (Layout / URL direta / RequirePathViewAccess).
+ * action implícita = view do resourceKey do módulo (mapa sidebar).
  */
 export function evaluatePathViewAccess(
   pathname: string,
   ctx: NavigationAccessContext
 ): PathViewDecision {
+  const intendedPath = pathname;
+
   if (ctx.authLoading) {
     return {
       allowed: false,
@@ -111,6 +131,7 @@ export function evaluatePathViewAccess(
       resourceKey: null,
       reason: "loading",
       source: "none",
+      intendedPath,
     };
   }
   if (ctx.authError) {
@@ -120,27 +141,42 @@ export function evaluatePathViewAccess(
       resourceKey: null,
       reason: "session_error",
       source: "none",
+      intendedPath,
     };
   }
-  const { user } = ctx;
-  if (user?.role === "SUPER_ADMIN") {
+
+  const dto = resolveDto(ctx);
+  if (dto?.isSuperAdmin) {
     return {
       allowed: true,
       moduleId: resolveModuleIdFromPath(pathname),
       resourceKey: null,
       reason: "super_admin",
       source: "super_admin",
+      intendedPath,
+    };
+  }
+
+  if (isAuthenticatedAllowlistPath(pathname)) {
+    return {
+      allowed: true,
+      moduleId: null,
+      resourceKey: null,
+      reason: "allowlist",
+      source: "allowlist",
+      intendedPath,
     };
   }
 
   const moduleId = resolveModuleIdFromPath(pathname);
   if (!moduleId) {
     return {
-      allowed: true,
+      allowed: false,
       moduleId: null,
       resourceKey: null,
       reason: "unmapped",
       source: "none",
+      intendedPath,
     };
   }
 
@@ -152,6 +188,7 @@ export function evaluatePathViewAccess(
     resourceKey,
     reason: allowed ? "allowed" : "denied",
     source: "effective_dto",
+    intendedPath,
   };
 }
 
@@ -189,7 +226,8 @@ export function getSafeFirstAllowedPath(
   ctx: NavigationAccessContext
 ): string | null {
   if (ctx.authLoading || ctx.authError) return null;
-  if (ctx.user?.role === "SUPER_ADMIN") {
+  const dto = resolveDto(ctx);
+  if (dto?.isSuperAdmin) {
     return getModulePath("dashboard");
   }
   const nav = buildResourceAwareSidebarNavigation(ctx);
@@ -200,6 +238,7 @@ export function getSafeFirstAllowedPath(
 /**
  * Navegação segura: se o destino não tem view, cai no primeiro permitido
  * (ou `null` = nenhuma área — UI deve mostrar NoPermissionsGranted, sem Navigate).
+ * URL negada permanece no address bar quando o caller renderiza AccessDenied.
  */
 export function resolveSafeNavigateTarget(
   desiredPath: string,
@@ -259,4 +298,22 @@ export function filterCatalogTabsByView(
       r.type === "TAB" &&
       canView(r.key)
   );
+}
+
+/** Helper para montar ctx a partir do AuthContext. */
+export function navigationAccessContextFromAuth(auth: {
+  authUser: AuthUser | null;
+  effectiveAccess?: EffectiveAccessMeDto | null;
+  authLoading: boolean;
+  authError: string | null;
+  hasPermission: (p: string) => boolean;
+  hasAnyPermission: (ps: string[]) => boolean;
+}): NavigationAccessContext {
+  return {
+    user: auth.authUser,
+    checker: auth,
+    effectiveAccess: auth.effectiveAccess,
+    authLoading: auth.authLoading,
+    authError: auth.authError,
+  };
 }

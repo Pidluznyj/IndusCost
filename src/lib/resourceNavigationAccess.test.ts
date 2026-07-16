@@ -184,11 +184,59 @@ describe("resourceNavigationAccess — perfis", () => {
 });
 
 describe("resourceNavigationAccess — rota e navegação segura", () => {
-  it("path unmapped não bloqueia (sem loop)", () => {
+  it("P11: path unmapped é negado (sem pass-through)", () => {
     const c = ctx("SELLER", ["crm.view"]);
     const d = evaluatePathViewAccess("/area-inexistente/deep", c);
-    assert.equal(d.allowed, true);
+    assert.equal(d.allowed, false);
     assert.equal(d.reason, "unmapped");
+    assert.equal(d.intendedPath, "/area-inexistente/deep");
+  });
+
+  it("P11: deep links crm/finance resolvem módulo da sidebar", () => {
+    const crm = ctx("VIEWER", ["customers.view"]);
+    assert.equal(canAccessPath("/crm/customers/abc/intelligence", crm), true);
+    assert.equal(evaluatePathViewAccess("/crm/customers/abc/intelligence", crm).moduleId, "customers");
+
+    const leticia = ctx("VIEWER", ["finance.accountsPayable.view"]);
+    assert.equal(canAccessPath("/finance/accounts-payable", leticia), true);
+    assert.equal(canAccessPath("/finance/portfolio-reconciliation", leticia), false);
+    assert.equal(canAccessPath("/employees", leticia), false);
+    assert.equal(canAccessPath("/machines", leticia), false);
+    assert.equal(canAccessPath("/products", leticia), false);
+    assert.equal(canAccessPath("/settings", leticia), false);
+    assert.equal(canAccessPath("/crm-commercial", leticia), false);
+  });
+
+  it("P11: loading e session_error não liberam rota", () => {
+    const base = ctx("VIEWER", ["dashboard.view"]);
+    assert.equal(canAccessPath("/dashboard", { ...base, authLoading: true }), false);
+    assert.equal(
+      evaluatePathViewAccess("/dashboard", { ...base, authLoading: true }).reason,
+      "loading"
+    );
+    assert.equal(
+      canAccessPath("/dashboard", { ...base, authError: "Sessão expirada" }),
+      false
+    );
+  });
+
+  it("P11: URL direta — RH, máquinas, engenharia, admin, comercial", () => {
+    const rh = ctx("VIEWER", ["employees.view", "dashboard.view"]);
+    assert.equal(canAccessPath("/employees", rh), true);
+    assert.equal(canAccessPath("/machines", rh), false);
+
+    const eng = ctx("VIEWER", ["products.view", "dashboard.view"]);
+    assert.equal(canAccessPath("/products", eng), true);
+    assert.equal(canAccessPath("/finance", eng), false);
+
+    const admin = ctx("VIEWER", ["settings.view", "dashboard.view"]);
+    assert.equal(canAccessPath("/settings", admin), true);
+    assert.equal(canAccessPath("/finance/accounts-payable", admin), false);
+
+    const comercial = ctx("VIEWER", ["crm.view", "sales_orders.view", "dashboard.view"]);
+    assert.equal(canAccessPath("/crm-commercial", comercial), true);
+    assert.equal(canAccessPath("/sales-orders", comercial), true);
+    assert.equal(canAccessPath("/employees", comercial), false);
   });
 
   it("URL direta negada → safe target ou null", () => {

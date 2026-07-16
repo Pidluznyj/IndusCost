@@ -285,15 +285,27 @@ export function canAccessSettingsSection(
   }
 }
 
-/** Primeiro segmento da rota autenticada → módulo. */
+/** Path autenticado → módulo da sidebar (P11 — deep links finance/crm). */
 export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   const normalized = pathname.replace(/\/+$/, "") || "/";
-  if (normalized === "/finance/suppliers") {
+
+  if (normalized.startsWith("/finance/suppliers")) {
     return "suppliers";
   }
-  if (normalized === "/finance/portfolio-reconciliation") {
+  if (normalized.startsWith("/finance/portfolio-reconciliation")) {
     return "portfolio-reconciliation";
   }
+  if (normalized === "/finance" || normalized.startsWith("/finance/")) {
+    return "finance";
+  }
+
+  if (normalized.startsWith("/crm/customers")) {
+    return "customers";
+  }
+  if (normalized === "/crm" || normalized.startsWith("/crm/")) {
+    return "crm-commercial";
+  }
+
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {

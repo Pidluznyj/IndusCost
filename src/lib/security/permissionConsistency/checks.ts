@@ -369,20 +369,10 @@ export function runCrossCatalogChecks(
 
 /**
  * Fallbacks permissivos documentados no código FE (não remove — só detecta).
+ * P11: unmapped path pass-through removido (DENY por padrão).
  */
 export function runPermissiveFallbackChecks(): PermissionConsistencyFinding[] {
-  const findings: PermissionConsistencyFinding[] = [];
-
   // P07: ROLE_MATRIX empty-bag overlay removido de permissionsClient.resolveRawFlags.
-
-  push(findings, {
-    code: "PERMISSIVE_FALLBACK",
-    severity: "warn",
-    message:
-      "resourceNavigationAccess: path sem mapeamento de módulo não bloqueia (unmapped pass-through).",
-    subject: "resourceNavigationAccess.UNMAPPED_PATH_ALLOW",
-    evidence: ["src/lib/resourceNavigationAccess.ts"],
-  });
-
-  return findings;
+  // P11: UNMAPPED_PATH_ALLOW removido — evaluatePathViewAccess nega path sem módulo.
+  return [];
 }

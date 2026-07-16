@@ -210,11 +210,12 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P11 — Proteção de rotas
 
 - **Objetivo:** Path unmapped → DENY ou allowlist; Layout 100% resource.
-- **Escopo:** `resourceNavigationAccess`, `Layout.tsx`, App routes map.
+- **Escopo:** `resourceNavigationAccess`, `privateRouteAccess`, `Layout.tsx`, `RequirePathViewAccess`, App routes.
 - **Deps:** P10.
 - **Risco:** médio (rotas esquecidas).
 - **Aceite:** `/employees`  deny sem grant; unmapped sensível bloqueado.
 - **Rollback:** revert.
+- **Status (2026-07-16):** **feito.** URL direta usa o mesmo DTO/view da sidebar; unmapped → DENY; allowlist autenticada vazia; projetos fora do Layout via `RequirePathViewAccess`; loading/sessão não liberam; URL negada preservada no address bar.
 
 ### P12 — Proteção de abas
 

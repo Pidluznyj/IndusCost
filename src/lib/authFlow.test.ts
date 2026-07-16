@@ -34,6 +34,21 @@ test("RequireAuth: bloqueia enquanto carrega e redireciona ao /login sem sessão
   assert.match(src, /if\s*\(authLoading\)/);
   assert.match(src, /if\s*\(!authenticated\)/);
   assert.match(src, /to="\/login"/);
+  assert.match(src, /from:\s*location/);
+});
+
+test("P11: Layout e RequirePathViewAccess usam DTO/navegação efetiva", () => {
+  const layout = read("src/components/layout/Layout.tsx");
+  assert.match(layout, /navigationAccessContextFromAuth/);
+  assert.match(layout, /evaluatePathViewAccess/);
+  assert.match(layout, /intendedPath/);
+
+  const guard = read("src/components/RequirePathViewAccess.tsx");
+  assert.match(guard, /evaluatePathViewAccess/);
+  assert.match(guard, /AccessDenied/);
+
+  const app = read("src/App.tsx");
+  assert.match(app, /RequirePathViewAccess/);
 });
 
 test("DashboardModule usa fetchJsonOk (sem fetch cru) para dashboard", () => {

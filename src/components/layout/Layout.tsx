@@ -4,7 +4,7 @@ import { Sidebar } from "./Sidebar";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/src/contexts/SidebarLayoutContext";
-import { evaluatePathViewAccess } from "@/src/lib/resourceNavigationAccess";
+import { evaluatePathViewAccess, navigationAccessContextFromAuth } from "@/src/lib/resourceNavigationAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { AppHeaderBar } from "@/src/components/layout/AppHeaderBar";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -12,6 +12,7 @@ import {
   resolveNextNomusRunAt,
   type HeaderSyncStatus,
 } from "@/src/lib/appHeaderStatus";
+import { Loader2 } from "lucide-react";
 
 type HeaderSyncLog = {
   status?: "SUCCESS" | "FAILED" | "UNKNOWN" | "SKIPPED";
@@ -46,12 +47,13 @@ function LayoutShell() {
   const [lastSyncAt, setLastSyncAt] = React.useState<string>("—");
   const [lastSyncStatus, setLastSyncStatus] = React.useState<HeaderSyncStatus>("—");
 
-  const pathView = evaluatePathViewAccess(location.pathname, {
-    user: authUser,
-    checker: auth,
-  });
+  const pathView = evaluatePathViewAccess(
+    location.pathname,
+    navigationAccessContextFromAuth(auth)
+  );
   const currentModuleId = pathView.moduleId;
   const moduleAccessAllowed = pathView.allowed;
+  const pathLoading = pathView.reason === "loading";
 
   React.useEffect(() => {
     let cancelled = false;
@@ -117,10 +119,19 @@ function LayoutShell() {
               transition={{ duration: 0.3, ease: "easeOut" }}
               className="max-w-7xl mx-auto w-full"
             >
-              {moduleAccessAllowed ? (
+              {pathLoading ? (
+                <div className="flex flex-col items-center justify-center gap-3 py-24">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Verificando acesso…</p>
+                </div>
+              ) : moduleAccessAllowed ? (
                 <Outlet />
               ) : (
-                <AccessDenied moduleId={currentModuleId ?? undefined} />
+                <AccessDenied
+                  moduleId={currentModuleId ?? undefined}
+                  intendedPath={pathView.intendedPath ?? location.pathname}
+                  reason={pathView.reason}
+                />
               )}
             </motion.div>
           </AnimatePresence>

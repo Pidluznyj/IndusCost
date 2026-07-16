@@ -59,6 +59,7 @@ import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView"
 import { SupplierServiceTerminationPrintView } from "@/src/components/finance/cost-centers/SupplierServiceTerminationPrintView";
 import { RequireAuth } from "@/src/components/RequireAuth";
 import { DefaultModuleRedirect } from "@/src/components/DefaultModuleRedirect";
+import { RequirePathViewAccess } from "@/src/components/RequirePathViewAccess";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -357,6 +358,8 @@ export default function App() {
       <Route path="/reservar-carro" element={<FleetPublicReservationShortLinkPage />} />
       <Route path="/r/:sub" element={<FleetPublicReservationShortLinkPage />} />
       <Route element={<RequireAuth />}>
+      {/* P11: telas autenticadas fora do Layout — mesmo view da sidebar */}
+      <Route element={<RequirePathViewAccess />}>
       <Route path="/projects/intake-form" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/intake-form/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/intake-form/blank" element={<ProjectIntakeFormPage />} />
@@ -371,6 +374,7 @@ export default function App() {
       <Route path="/projects/:projectId/intake-form/full/print" element={<ProjectIntakeFormPage />} />
       <Route path="/projects/:projectId/report" element={<ProjectExecutiveReportPage />} />
       <Route path="/projects/:projectId/client-report" element={<ProjectClientReportPage />} />
+      </Route>
       <Route element={<Layout />}>
         <Route
           path="dashboard"
