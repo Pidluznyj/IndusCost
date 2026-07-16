@@ -11,8 +11,8 @@ export const AUDIT_OUTPUT_DOCUMENTS_DB_DEFAULTS = {
   order: "PD02590",
   nfe: 7208,
   sampleLimit: 20,
-  jsonOutput: "docs/output-documents/audit-output-documents-db.json",
-  markdownOutput: "docs/output-documents/audit-output-documents-db.md",
+  jsonOutput: "docs/output-documents/audits/output-documents-db-audit.json",
+  markdownOutput: "docs/output-documents/audits/output-documents-db-audit.md",
 } as const;
 
 /** Tipo Nomus usado pelo sync oficial de Documentos de Saída. */

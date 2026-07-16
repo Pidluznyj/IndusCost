@@ -10,15 +10,13 @@
  * Exit code != 0 somente para falha técnica (args inválidos, DB indisponível, I/O).
  */
 import "dotenv/config";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import {
   AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX,
   buildAuditResult,
   buildEmptyAuditSections,
   disconnectPrismaSafe,
-  formatAuditOutputDocumentsDbMarkdown,
   formatDatabaseUnavailableMessage,
   isDatabaseUnavailableError,
   parseAuditOutputDocumentsDbArgs,
@@ -32,6 +30,7 @@ import { loadRawJsonSampleAnalysis } from "../src/lib/output-documents/auditOutp
 import { loadDocumentLinkAudit } from "../src/lib/output-documents/auditOutputDocumentsLinks.server.ts";
 import { loadDocumentFinancialAudit } from "../src/lib/output-documents/auditOutputDocumentsFinancial.server.ts";
 import { loadParameterizedExamplesAudit } from "../src/lib/output-documents/auditOutputDocumentsExamples.server.ts";
+import { writeAuditReports } from "../src/lib/output-documents/auditOutputDocumentsReports.io.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -39,15 +38,18 @@ function writeOutputs(
   result: AuditOutputDocumentsDbResult,
   jsonOutput: string,
   markdownOutput: string
-): void {
-  const jsonPath = resolve(jsonOutput);
-  const mdPath = resolve(markdownOutput);
-  mkdirSync(dirname(jsonPath), { recursive: true });
-  mkdirSync(dirname(mdPath), { recursive: true });
-  writeFileSync(jsonPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-  writeFileSync(mdPath, formatAuditOutputDocumentsDbMarkdown(result), "utf8");
-  console.warn(`${LOG} JSON: ${jsonPath}`);
-  console.warn(`${LOG} Markdown: ${mdPath}`);
+): ReturnType<typeof writeAuditReports> {
+  return writeAuditReports({
+    result,
+    jsonOutput: resolve(jsonOutput),
+    markdownOutput: resolve(markdownOutput),
+  });
+}
+
+function printCompactSummary(summary: string): void {
+  for (const line of summary.split("\n")) {
+    console.warn(`${LOG} ${line}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -182,6 +184,7 @@ async function main(): Promise<void> {
       "DS-02.5: vínculos Documento↔NF-e↔Pedido classificados (persistido/derivado/inferido/conflitante/nao_resolvido).",
       "DS-02.6: alocação financeira, Contas a Receber e evidência sem dupla contagem (CR > Documento > Pedido).",
       "DS-02.7: exemplos parametrizados (document/order/nfe); ausência → found=false, sem erro técnico.",
+      "DS-02.8: relatório JSON/Markdown sanitizado com escrita atômica (sem dump completo no terminal).",
       "Este auditor não cria nem corrige vínculos; O2C/SalesOrderNfeLink/NF/Pedido/CR não são modificados.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ];
@@ -197,11 +200,12 @@ async function main(): Promise<void> {
       sections,
     });
 
-    writeOutputs(result, options.jsonOutput, options.markdownOutput);
-    console.log(JSON.stringify(result, null, 2));
-    console.warn(
-      `${LOG} concluído status=${result.status} mode=${result.meta.mode} exampleDoc=${examples.outputDocument.found} exampleOrder=${examples.salesOrder.found} exampleNfe=${examples.nfe.found} durationMs=${result.meta.durationMs}`
+    const written = writeOutputs(
+      result,
+      options.jsonOutput,
+      options.markdownOutput
     );
+    printCompactSummary(written.compactSummary);
   } catch (error) {
     const finishedAt = new Date();
     if (isDatabaseUnavailableError(error)) {
@@ -216,7 +220,12 @@ async function main(): Promise<void> {
         mode: "examples-audit",
       });
       try {
-        writeOutputs(result, options.jsonOutput, options.markdownOutput);
+        const written = writeOutputs(
+          result,
+          options.jsonOutput,
+          options.markdownOutput
+        );
+        printCompactSummary(written.compactSummary);
       } catch (writeError) {
         console.error(
           `${LOG} falha ao gravar relatório de indisponibilidade:`,
@@ -240,9 +249,17 @@ async function main(): Promise<void> {
       mode: "examples-audit",
     });
     try {
-      writeOutputs(result, options.jsonOutput, options.markdownOutput);
-    } catch {
-      // ignore secondary write failures
+      const written = writeOutputs(
+        result,
+        options.jsonOutput,
+        options.markdownOutput
+      );
+      printCompactSummary(written.compactSummary);
+    } catch (writeError) {
+      console.error(
+        `${LOG} falha ao gravar relatório de erro:`,
+        writeError instanceof Error ? writeError.message : writeError
+      );
     }
     console.error(`${LOG} falha técnica:`, message);
     process.exitCode = 1;

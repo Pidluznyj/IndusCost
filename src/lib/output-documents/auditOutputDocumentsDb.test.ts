@@ -183,8 +183,9 @@ describe("sanitizeDatabaseUrl / readDatabaseUrlSafe", () => {
 describe("resolveDefaultOutputPaths", () => {
   it("expõe caminhos padrão documentados", () => {
     assert.deepEqual(resolveDefaultOutputPaths(), {
-      jsonOutput: "docs/output-documents/audit-output-documents-db.json",
-      markdownOutput: "docs/output-documents/audit-output-documents-db.md",
+      jsonOutput: "docs/output-documents/audits/output-documents-db-audit.json",
+      markdownOutput:
+        "docs/output-documents/audits/output-documents-db-audit.md",
     });
   });
 });
@@ -484,5 +485,8 @@ describe("garantia read-only", () => {
     assert.match(script, /loadDocumentLinkAudit/);
     assert.match(script, /loadDocumentFinancialAudit/);
     assert.match(script, /loadParameterizedExamplesAudit/);
+    assert.match(script, /writeAuditReports/);
+    assert.match(script, /printCompactSummary/);
+    assert.equal(/console\.log\(JSON\.stringify\(result/.test(script), false);
   });
 });
