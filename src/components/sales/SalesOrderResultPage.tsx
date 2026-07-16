@@ -13,12 +13,17 @@ import {
   getSalesOrderResultApiPath,
 } from "@/src/lib/salesOrderResultApi";
 import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
+import { buildSalesOrderResultTotalsMarginTooltipText } from "@/src/lib/salesOrderMarginDisplay";
 import {
-  buildSalesOrderResultTotalsMarginTooltipText,
-  formatSalesOrderMarginMoney,
-  formatSalesOrderMarginPercent,
-} from "@/src/lib/salesOrderMarginDisplay";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+  metricVariantToTotalizerTone,
+  resolveMarginMoneyVariant,
+  resolveMarginPercentVariant,
+} from "@/src/lib/salesOrderManagementMetricCards";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderResultMonthlyMarginChart } from "@/src/components/sales/SalesOrderResultMonthlyMarginChart";
@@ -191,41 +196,70 @@ export function SalesOrderResultPage() {
               </button>
             }
           >
-            <SummaryKpiGrid minColumnWidth={168} testId="sales-order-result-kpis">
-              <MetricCard
+            <SummaryKpiGrid
+              minColumnWidth={168}
+              className={SYSTEM_TOTALIZER_GRID_CLASS}
+              testId="sales-order-result-kpis"
+            >
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="R$ Pedidos"
-                formattedValue={formatSalesOrderMarginMoney(totals.salesAmount)}
-                icon={<ShoppingBag className="h-4 w-4" />}
+                amount={totals.salesAmount}
+                amountFormat="currency"
+                tone="money"
+                icon={ShoppingBag}
+                helperText="Soma do valor de venda dos pedidos no filtro aplicado."
+                loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="R$ Custo"
-                formattedValue={formatSalesOrderMarginMoney(totals.costAmount)}
-                icon={<Package className="h-4 w-4" />}
+                amount={totals.costAmount}
+                amountFormat="currency"
+                tone="internal"
+                icon={Package}
+                helperText="Custo de produção consolidado dos itens no filtro."
+                loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="R$ Margem"
-                formattedValue={formatSalesOrderMarginMoney(totals.marginAmount)}
-                icon={<Wallet className="h-4 w-4" />}
-                variant={totals.marginAmount < 0 ? "danger" : "success"}
+                amount={totals.marginAmount}
+                amountFormat="currency"
+                tone={metricVariantToTotalizerTone(resolveMarginMoneyVariant(totals.marginAmount))}
+                icon={Wallet}
+                helperText="Margem gerencial consolidada (venda − custo)."
+                loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="% Margem"
-                formattedValue={formatSalesOrderMarginPercent(totals.marginPercent)}
-                icon={<Percent className="h-4 w-4" />}
+                amount={totals.marginPercent}
+                amountFormat="percent"
+                tone={metricVariantToTotalizerTone(resolveMarginPercentVariant(totals.marginPercent))}
+                icon={Percent}
+                helperText="Margem percentual sobre a venda do filtro."
+                loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Margem média/un."
-                formattedValue={
-                  totals.averageUnitMargin != null
-                    ? formatSalesOrderMarginMoney(totals.averageUnitMargin)
-                    : "—"
-                }
-                icon={<Scale className="h-4 w-4" />}
+                amount={totals.averageUnitMargin}
+                amountFormat="currency"
+                tone="neutral"
+                icon={Scale}
+                helperText="Margem média por unidade nos itens do filtro."
+                loading={loading}
               />
-              <MetricCard
+              <SystemTotalizerCard
+                className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
                 label="Qtde Pedidos"
-                formattedValue={String(totals.ordersCount)}
-                icon={<ShoppingBag className="h-4 w-4" />}
+                amount={totals.ordersCount}
+                amountFormat="number"
+                tone="info"
+                icon={ShoppingBag}
+                helperText="Quantidade de pedidos no filtro aplicado."
+                loading={loading}
               />
             </SummaryKpiGrid>
           </ExecutiveSummarySection>

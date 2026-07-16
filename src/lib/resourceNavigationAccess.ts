@@ -1,17 +1,13 @@
 /**
- * Fonte oficial FE para `view` na navegação (Prompt 11).
+ * Fonte oficial FE para `view` na navegação (P10/P11).
  *
- * - Resolvedor canônico: `canAccessResourceClient` / `createSidebarCanViewResource`
- * - Fallback legado: `canAccessModule` quando o módulo ainda não tem `resourceKey`
- * - Não altera ações internas (execute/manage) — só visibilidade/acesso de rota/aba/menu
- *
- * Persistência: negar view do pai na UI não apaga overrides/config dos filhos
- * (isso fica no backend/admin; aqui só filtramos exibição/acesso).
+ * Sidebar e canViewModule: DTO efetivo (contrato) — sem canAccessModule / mega-key.
+ * Loading / sessão inválida → sem menu e sem acesso de módulo.
  */
 
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
+import type { EffectiveAccessMeDto } from "@/src/lib/effectiveAccessDtoTypes.js";
 import {
-  canAccessModule,
   resolveModuleIdFromPath,
   type AppModuleId,
   type PermissionChecker,
@@ -20,14 +16,16 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
 import {
   canAccessResourceClient,
   createSidebarCanViewResource,
-  ResourceKeys,
   type FrontendPermissionResource,
 } from "@/src/lib/permissionsClient.js";
 import { resolveSidebarModuleResourceKey } from "@/src/lib/sidebarMenuResources.js";
+import type { SidebarAccessibleNavigation } from "@/src/lib/sidebarNavigation.js";
 import {
-  buildAccessibleSidebarNavigation,
-  type SidebarAccessibleNavigation,
-} from "@/src/lib/sidebarNavigation.js";
+  buildSidebarNavigationFromEffectiveAccess,
+  canViewSidebarModuleFromDto,
+  EMPTY_SIDEBAR_NAVIGATION,
+  resolveSidebarEffectiveAccessDto,
+} from "@/src/lib/sidebarEffectiveAccess.js";
 
 export type ResourceViewOptions = {
   /** MENU: não elevar só por filhos; SUBMENU/TAB: elevação legada. Default: regras do sidebar. */
@@ -38,15 +36,21 @@ export type PathViewDecision = {
   allowed: boolean;
   moduleId: AppModuleId | null;
   resourceKey: string | null;
-  /** `unmapped` = rota autenticada fora do mapa de módulos (não bloqueia no Layout). */
-  reason: "allowed" | "denied" | "unmapped" | "super_admin";
-  source: "resource" | "legacy" | "none" | "super_admin";
+  /** `unmapped` = rota autenticada fora do mapa de módulos (não bloqueia no Layout — P11). */
+  reason: "allowed" | "denied" | "unmapped" | "super_admin" | "loading" | "session_error";
+  source: "effective_dto" | "none" | "super_admin";
 };
 
 export type NavigationAccessContext = {
   user: AuthUser | null | undefined;
-  /** Checker legado (AuthContext / hasPermission). */
+  /** Checker legado (AuthContext) — ainda usado por APIs UI; sidebar não usa. */
   checker: PermissionChecker;
+  /** Bloco `/me.effectiveAccess` quando a flag servidor estiver on. */
+  effectiveAccess?: EffectiveAccessMeDto | null;
+  /** true enquanto /api/auth/me não resolveu — sidebar vazia. */
+  authLoading?: boolean;
+  /** Erro de sessão — não libera menu. */
+  authError?: string | null;
 };
 
 /** Viewer oficial de resourceKey (reexport tipado). */
@@ -68,55 +72,28 @@ export function createCanViewResourceForSidebar(
   return createSidebarCanViewResource(user);
 }
 
+function resolveDto(ctx: NavigationAccessContext): EffectiveAccessMeDto | null {
+  if (ctx.authLoading) return null;
+  if (ctx.authError) return null;
+  if (!ctx.user) return null;
+  return resolveSidebarEffectiveAccessDto({
+    user: ctx.user,
+    effectiveAccessFromMe: ctx.effectiveAccess,
+  });
+}
+
 /**
- * View do módulo de menu/rota.
- * Com `resourceKey` mapeado → catálogo; sem mapeamento → `canAccessModule` legado.
+ * View do módulo de menu/rota — somente DTO efetivo (P10).
  */
 export function canViewModule(
   moduleId: AppModuleId,
   ctx: NavigationAccessContext
 ): boolean {
-  const { user, checker } = ctx;
-  if (user?.role === "SUPER_ADMIN") return true;
-  if (user && user.isActive === false) return false;
-
-  const resourceKey = resolveSidebarModuleResourceKey(moduleId);
-  if (resourceKey) {
-    const viewSidebar = createSidebarCanViewResource(user);
-    if (viewSidebar(resourceKey)) return true;
-    // P09: shell Financeiro — filho 1:1 (ex.: Contas a Pagar) abre /finance
-    // sem conceder Conciliação nem o MENU via alias amplo.
-    if (moduleId === "finance") {
-      return (
-        canAccessResourceClient(user, ResourceKeys.FINANCEIRO_CONTAS_PAGAR, "view", {
-          elevateFromDescendants: false,
-        }) ||
-        canAccessResourceClient(user, ResourceKeys.FINANCEIRO_CONTAS_RECEBER, "view", {
-          elevateFromDescendants: false,
-        }) ||
-        canAccessResourceClient(
-          user,
-          ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
-          "view",
-          { elevateFromDescendants: false }
-        ) ||
-        canAccessResourceClient(user, ResourceKeys.FINANCE_OPEX, "view", {
-          elevateFromDescendants: false,
-        }) ||
-        canAccessResourceClient(user, ResourceKeys.FINANCE_TAXES, "view", {
-          elevateFromDescendants: false,
-        }) ||
-        canAccessResourceClient(user, ResourceKeys.FINANCE_REPORTS, "view", {
-          elevateFromDescendants: false,
-        }) ||
-        canAccessResourceClient(user, ResourceKeys.FINANCE_SUPPLIERS, "view", {
-          elevateFromDescendants: false,
-        })
-      );
-    }
-    return false;
-  }
-  return canAccessModule(moduleId, checker);
+  if (ctx.authLoading || ctx.authError) return false;
+  if (ctx.user?.role === "SUPER_ADMIN") return true;
+  if (ctx.user && ctx.user.isActive === false) return false;
+  const dto = resolveDto(ctx);
+  return canViewSidebarModuleFromDto(dto, moduleId);
 }
 
 /**
@@ -127,6 +104,24 @@ export function evaluatePathViewAccess(
   pathname: string,
   ctx: NavigationAccessContext
 ): PathViewDecision {
+  if (ctx.authLoading) {
+    return {
+      allowed: false,
+      moduleId: resolveModuleIdFromPath(pathname),
+      resourceKey: null,
+      reason: "loading",
+      source: "none",
+    };
+  }
+  if (ctx.authError) {
+    return {
+      allowed: false,
+      moduleId: resolveModuleIdFromPath(pathname),
+      resourceKey: null,
+      reason: "session_error",
+      source: "none",
+    };
+  }
   const { user } = ctx;
   if (user?.role === "SUPER_ADMIN") {
     return {
@@ -156,7 +151,7 @@ export function evaluatePathViewAccess(
     moduleId,
     resourceKey,
     reason: allowed ? "allowed" : "denied",
-    source: resourceKey ? "resource" : "legacy",
+    source: "effective_dto",
   };
 }
 
@@ -167,27 +162,23 @@ export function canAccessPath(
   return evaluatePathViewAccess(pathname, ctx).allowed;
 }
 
-/** Sidebar filtrada pela fonte oficial (resource + legado). */
+/** Sidebar filtrada exclusivamente pelo DTO efetivo (P10). */
 export function buildResourceAwareSidebarNavigation(
   ctx: NavigationAccessContext
 ): SidebarAccessibleNavigation {
-  // Inativo (exceto SUPER_ADMIN): não listar nada — evita escape via fallback legado.
+  if (ctx.authLoading || ctx.authError) {
+    return EMPTY_SIDEBAR_NAVIGATION;
+  }
   if (
     ctx.user &&
     ctx.user.role !== "SUPER_ADMIN" &&
     ctx.user.isActive === false
   ) {
-    return {
-      directItems: [],
-      groups: [],
-      fallbackGroup: null,
-      flatAccessibleItems: [],
-    };
+    return EMPTY_SIDEBAR_NAVIGATION;
   }
 
-  return buildAccessibleSidebarNavigation(ctx.checker, undefined, {
-    canViewResource: createCanViewResourceForSidebar(ctx.user),
-  });
+  const dto = resolveDto(ctx);
+  return buildSidebarNavigationFromEffectiveAccess(dto);
 }
 
 /**
@@ -197,6 +188,7 @@ export function buildResourceAwareSidebarNavigation(
 export function getSafeFirstAllowedPath(
   ctx: NavigationAccessContext
 ): string | null {
+  if (ctx.authLoading || ctx.authError) return null;
   if (ctx.user?.role === "SUPER_ADMIN") {
     return getModulePath("dashboard");
   }
@@ -220,7 +212,6 @@ export function resolveSafeNavigateTarget(
   if (!fallback) {
     return { path: null, redirected: false, deniedDesired: true };
   }
-  // Evita “redirect para o mesmo path negado”.
   if (fallback === desiredPath || !canAccessPath(fallback, ctx)) {
     return { path: null, redirected: false, deniedDesired: true };
   }

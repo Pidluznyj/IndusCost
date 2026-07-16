@@ -132,22 +132,32 @@ describe("resourceNavigationAccess — perfis", () => {
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "portfolio-reconciliation"));
   });
 
-  it("módulo com resourceKey usa fonte resource (fleet); legado ainda cobre checks", () => {
+  it("módulo via DTO efetivo (fleet)", () => {
     const withFleet = ctx("VIEWER", ["fleet.view"]);
     assert.equal(canViewModule("fleet", withFleet), true);
-    assert.equal(evaluatePathViewAccess("/fleet", withFleet).source, "resource");
+    assert.equal(evaluatePathViewAccess("/fleet", withFleet).source, "effective_dto");
 
     const noFleet = ctx("VIEWER", ["dashboard.view"]);
     assert.equal(canViewModule("fleet", noFleet), false);
   });
 
-  it("módulo sem resourceKey no mapa residual usa fallback legado (opex)", () => {
+  it("opex via DTO efetivo (P10 — sem fallback canAccessModule na sidebar)", () => {
     const withOpex = ctx("VIEWER", ["opex.view"]);
     assert.equal(canViewModule("opex", withOpex), true);
-    assert.equal(evaluatePathViewAccess("/opex", withOpex).source, "legacy");
+    assert.equal(evaluatePathViewAccess("/opex", withOpex).source, "effective_dto");
 
     const noOpex = ctx("VIEWER", ["dashboard.view"]);
     assert.equal(canViewModule("opex", noOpex), false);
+  });
+
+  it("loading / erro de sessão: menu vazio e módulos negados", () => {
+    const base = ctx("VIEWER", ["dashboard.view", "finance.view"]);
+    const loading = { ...base, authLoading: true };
+    assert.equal(canViewModule("dashboard", loading), false);
+    assert.deepEqual(buildResourceAwareSidebarNavigation(loading).flatAccessibleItems, []);
+    const errored = { ...base, authError: "Sessão expirada" };
+    assert.equal(canViewModule("finance", errored), false);
+    assert.deepEqual(buildResourceAwareSidebarNavigation(errored).flatAccessibleItems, []);
   });
   it("bag parcial (só AP): não libera menus sem chave explícita", () => {
     const c = ctx("VIEWER", [

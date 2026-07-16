@@ -429,6 +429,9 @@ export const Sidebar = () => {
     permissions.authUser?.id ?? "",
     permissions.authUser?.role ?? "",
     (permissions.authUser?.effectivePermissions ?? []).join("|"),
+    permissions.authLoading ? "1" : "0",
+    permissions.authError ?? "",
+    (auth.effectiveAccess?.allowedResources ?? []).join("|"),
   ].join("::");
 
   const navigation = React.useMemo(
@@ -436,9 +439,12 @@ export const Sidebar = () => {
       buildResourceAwareSidebarNavigation({
         user: permissions.authUser,
         checker: auth,
+        effectiveAccess: auth.effectiveAccess,
+        authLoading: permissions.authLoading,
+        authError: permissions.authError,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [auth.hasPermission, auth.hasAnyPermission, permissionKey]
+    [permissionKey]
   );
 
   const [expandedGroups, setExpandedGroups] = React.useState<Set<NavigationGroupId>>(() =>

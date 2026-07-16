@@ -85,9 +85,17 @@ describe("commercialEngineeringPermissions — engenharia", () => {
     assert.equal(tabs.includes("cost"), false);
   });
 
-  it("ADMIN vê módulos comerciais/engenharia no sidebar resource-aware", () => {
-    const u = user("ADMIN", []);
-    const ctx = { user: u, checker: checker([]) };
+  it("ADMIN vê módulos comerciais/engenharia no sidebar com bag explícita (P10)", () => {
+    const bag = [
+      "customers.view",
+      "proposals.view",
+      "pricing.view",
+      "products.view",
+      "projects.view",
+      "simulations.view",
+    ];
+    const u = user("ADMIN", bag);
+    const ctx = { user: u, checker: checker(bag) };
     assert.equal(canViewModule("customers", ctx), true);
     assert.equal(canViewModule("proposals", ctx), true);
     assert.equal(canViewModule("pricing", ctx), true);
@@ -98,6 +106,13 @@ describe("commercialEngineeringPermissions — engenharia", () => {
     const nav = buildResourceAwareSidebarNavigation(ctx);
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "products"));
     assert.ok(nav.flatAccessibleItems.some((i) => i.id === "customers"));
+  });
+
+  it("ADMIN bag vazia não libera comercial/engenharia (P07/P10)", () => {
+    const u = user("ADMIN", []);
+    const ctx = { user: u, checker: checker([]) };
+    assert.equal(canViewModule("customers", ctx), false);
+    assert.equal(canViewModule("products", ctx), false);
   });
 
   it("SUPER_ADMIN não perde engenharia", () => {

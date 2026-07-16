@@ -19,6 +19,8 @@ describe("salesOrderResult UI", () => {
     const page = read("src/components/sales/SalesOrderResultPage.tsx");
     assert.match(page, /getSalesOrderResultApiPath/);
     assert.match(page, /sales-order-result-kpis/);
+    assert.match(page, /SystemTotalizerCard/);
+    assert.match(page, /SYSTEM_TOTALIZER_GRID_CLASS/);
     assert.doesNotMatch(page, /calculateSalesOrderItemMargin/);
     assert.doesNotMatch(page, /calculateSalePriceFromCost/);
   });

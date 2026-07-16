@@ -93,12 +93,12 @@ describe("permissionPersonaMatrix — navegação por persona", () => {
     assert.equal(canViewResource(c.user, ResourceKeys.ADMIN_USUARIOS), true);
   });
 
-  it("legado: opex permanece legado puro (source)", () => {
+  it("legado: opex via DTO efetivo (P10)", () => {
     const persona = PERMISSION_PERSONA_MATRIX.find(
       (p) => p.id === "legado_sem_grants_estruturados"
     )!;
     const c = buildPersonaContext(persona);
-    assert.equal(evaluatePathViewAccess("/opex", c).source, "legacy");
+    assert.equal(evaluatePathViewAccess("/opex", c).source, "effective_dto");
     assert.equal(canAccessModule("opex", c.checker), true);
     assert.equal(canViewModule("opex", c), true);
   });

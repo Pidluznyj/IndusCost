@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import { APP_AUTH_REQUIRED_EVENT, fetchJsonOk } from "@/src/lib/http";
-import type { AuthMeResponse, AuthUser } from "@/src/lib/appAuthClient";
+import type { AuthMeResponse, AuthUser, EffectiveAccessMeDto } from "@/src/lib/appAuthClient";
 
 const SESSION_EXPIRED_MESSAGE = "Sessão expirada. Faça login novamente.";
 
@@ -17,6 +17,8 @@ export type AuthContextValue = {
   authenticated: boolean;
   authLoading: boolean;
   authError: string | null;
+  /** Bloco shadow `/me.effectiveAccess` quando o servidor anexa (P04/P10). */
+  effectiveAccess: EffectiveAccessMeDto | null;
   loadMe: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -32,6 +34,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authenticated, setAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [effectiveAccess, setEffectiveAccess] = useState<EffectiveAccessMeDto | null>(null);
   const loadSeq = useRef(0);
 
   const loadMe = useCallback(async () => {
@@ -46,14 +49,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.authenticated && data.user) {
         setAuthUser(data.user);
         setAuthenticated(true);
+        setEffectiveAccess(data.effectiveAccess ?? null);
       } else {
         setAuthUser(null);
         setAuthenticated(false);
+        setEffectiveAccess(null);
       }
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setAuthUser(null);
       setAuthenticated(false);
+      setEffectiveAccess(null);
       setAuthError(
         e instanceof Error
           ? e.message
@@ -77,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       loadSeq.current += 1; // invalida loadMe em voo
       setAuthUser(null);
       setAuthenticated(false);
+      setEffectiveAccess(null);
       setAuthLoading(false);
       setAuthError((prev) => prev ?? SESSION_EXPIRED_MESSAGE);
     };
@@ -95,6 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
     setAuthUser(res.user);
     setAuthenticated(true);
+    setEffectiveAccess(null);
     setAuthLoading(false);
   }, []);
 
@@ -106,6 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setAuthUser(null);
     setAuthenticated(false);
+    setEffectiveAccess(null);
     setAuthError(null);
     setAuthLoading(false);
   }, []);
@@ -134,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authenticated,
       authLoading,
       authError,
+      effectiveAccess,
       loadMe,
       login,
       logout,
@@ -146,6 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authenticated,
       authLoading,
       authError,
+      effectiveAccess,
       loadMe,
       login,
       logout,

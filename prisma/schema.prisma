@@ -2685,6 +2685,248 @@ model NomusNfeTaxLine {
   @@index([taxType])
 }
 
+// —— Camadas B/C/D — apuração, guias de recolhimento, alocação gerencial ——
+// Destacados da NF (camada A) NÃO são sinônimos de apurado/pago.
+// Pagamento oficial hospeda-se em NomusAccountsPayable quando vinculado.
+
+enum FiscalJurisdiction {
+  FEDERAL
+  STATE
+  MUNICIPAL
+  REFORM
+}
+
+enum FiscalApurationStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum FiscalApurationLineNature {
+  DEBIT
+  CREDIT
+  RETENTION
+  COMPENSATION
+  INTEREST
+  FINE
+}
+
+enum FiscalGuideType {
+  DARF
+  GNRE
+  DAS
+  DAE
+  GPS
+  STATE_GUIDE
+  MUNICIPAL_GUIDE
+  OTHER
+}
+
+enum FiscalGuideStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  REVERSED
+}
+
+enum FiscalAllocationMethod {
+  PRO_RATA_HIGHLIGHTED
+  DIRECT_GUIDE_NFE
+  MANUAL
+}
+
+/// Período de apuração fiscal (camada B) — consolidado por competência, não por NF.
+model FiscalApurationPeriod {
+  id String @id @default(uuid())
+
+  companyName  String?
+  jurisdiction FiscalJurisdiction
+  uf           String?
+  periodStart  DateTime @db.Date
+  periodEnd    DateTime @db.Date
+  status       FiscalApurationStatus @default(OPEN)
+  notes        String?
+  /// MANUAL | IMPORT
+  source       String @default("MANUAL")
+
+  closedAt       DateTime?
+  closedByUserId String?
+  createdByUserId String?
+  createdByName   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines  FiscalApurationLine[]
+  guides FiscalPaymentGuide[]
+
+  @@index([periodStart, periodEnd])
+  @@index([jurisdiction, status])
+  @@index([uf])
+  @@index([companyName])
+}
+
+/// Linha de apuração (débito/crédito/compensação/juros/multa).
+model FiscalApurationLine {
+  id       String @id @default(uuid())
+  periodId String
+  period   FiscalApurationPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  taxType              String
+  nature               FiscalApurationLineNature
+  revenueCode          String?
+  assessedAmount       Decimal  @default(0) @db.Decimal(20, 2)
+  creditsAmount        Decimal  @default(0) @db.Decimal(20, 2)
+  compensationsAmount  Decimal  @default(0) @db.Decimal(20, 2)
+  interestAmount       Decimal  @default(0) @db.Decimal(20, 2)
+  fineAmount           Decimal  @default(0) @db.Decimal(20, 2)
+  /// Devido líquido da linha (apurado − crédito − compensação + juros + multa).
+  amountDue            Decimal  @default(0) @db.Decimal(20, 2)
+  notes                String?
+  source               String   @default("MANUAL")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([periodId, taxType])
+  @@index([nature])
+  @@index([revenueCode])
+}
+
+/// Guia / documento de arrecadação (camada C) — recolhimento.
+/// Opcionalmente vinculada a NomusAccountsPayable.externalId (hospedeiro oficial do pago).
+model FiscalPaymentGuide {
+  id String @id @default(uuid())
+
+  periodId String?
+  period   FiscalApurationPeriod? @relation(fields: [periodId], references: [id], onDelete: SetNull)
+
+  taxType      String
+  jurisdiction FiscalJurisdiction
+  revenueCode  String?
+  guideType    FiscalGuideType
+  guideNumber  String?
+  barcode      String?
+
+  periodStart DateTime  @db.Date
+  periodEnd   DateTime  @db.Date
+  dueDate     DateTime? @db.Date
+
+  assessedAmount      Decimal @default(0) @db.Decimal(20, 2)
+  creditsAmount       Decimal @default(0) @db.Decimal(20, 2)
+  compensationsAmount Decimal @default(0) @db.Decimal(20, 2)
+  interestAmount      Decimal @default(0) @db.Decimal(20, 2)
+  fineAmount          Decimal @default(0) @db.Decimal(20, 2)
+  amountDue           Decimal @default(0) @db.Decimal(20, 2)
+  amountPaid          Decimal @default(0) @db.Decimal(20, 2)
+  /// Saldo em aberto da guia (amountDue − amountPaid), nunca confundir com residual de NF.
+  balanceDue          Decimal @default(0) @db.Decimal(20, 2)
+
+  paidAt DateTime?
+  status FiscalGuideStatus @default(DRAFT)
+
+  paymentAccount String?
+  /// FK lógica → NomusAccountsPayable.externalId (sem constraint: espelho Nomus).
+  accountsPayableExternalId Int?
+  costCenterId              String?
+
+  /// Chave de não-duplicação (guideType|guideNumber|revenueCode|periodStart|periodEnd).
+  dedupeKey String? @unique
+
+  /// MANUAL | IMPORT | AP_LINK
+  source  String  @default("MANUAL")
+  notes   String?
+
+  cancelledAt       DateTime?
+  cancelledByUserId String?
+  createdByUserId   String?
+  createdByName     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  proofs      FiscalPaymentProof[]
+  allocations FiscalAllocation[]
+
+  @@index([status, dueDate])
+  @@index([guideType, guideNumber])
+  @@index([taxType])
+  @@index([accountsPayableExternalId])
+  @@index([periodStart, periodEnd])
+  @@index([periodId])
+}
+
+/// Comprovante / anexo de pagamento da guia.
+model FiscalPaymentProof {
+  id               String @id @default(uuid())
+  guideId          String
+  guide            FiscalPaymentGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  fileName         String
+  originalFileName String
+  mimeType         String
+  fileSize         Int
+  storageKey       String
+  notes            String?
+  uploadedBy       String?
+  uploadedAt       DateTime @default(now())
+
+  @@index([guideId, uploadedAt(sort: Desc)])
+}
+
+/// Alocação gerencial do recolhimento a pedido/NF (camada D).
+/// Nunca apresentar como pagamento oficial específico da NF.
+model FiscalAllocation {
+  id      String @id @default(uuid())
+  guideId String
+  guide   FiscalPaymentGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  salesOrderId String?
+  nomusNfeId   String?
+
+  taxType          String
+  allocatedAmount  Decimal @db.Decimal(20, 2)
+  allocationMethod FiscalAllocationMethod
+  allocationBase   Decimal? @db.Decimal(20, 2)
+  periodStart      DateTime? @db.Date
+  periodEnd        DateTime? @db.Date
+  calculatedAt     DateTime @default(now())
+  version          Int      @default(1)
+  manualOverride   Boolean  @default(false)
+  notes            String?
+
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([guideId])
+  @@index([salesOrderId])
+  @@index([nomusNfeId])
+  @@index([taxType])
+  @@index([allocationMethod])
+}
+
+/// Auditoria de mutações em apuração / guias / alocações.
+model FiscalSettlementAuditLog {
+  id         String   @id @default(uuid())
+  entityType String
+  entityId   String
+  action     String
+  beforeJson Json?
+  afterJson  Json?
+  userId     String?
+  userName   String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+}
+
 enum NomusOptionalPricingSelectionMode {
   EXACTLY_ONE
   OPTIONAL_ONE

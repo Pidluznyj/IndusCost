@@ -200,11 +200,12 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P10 — Migração sidebar
 
 - **Objetivo:** Todo item com resourceKey; opex mapeado; grupos sem elevação indevida.
-- **Escopo:** `sidebarMenuResources`, `sidebarNavigation`, `resourceNavigationAccess`.
+- **Escopo:** `sidebarMenuResources`, `sidebarNavigation`, `resourceNavigationAccess`, `sidebarEffectiveAccess`.
 - **Deps:** P04, P08.
 - **Risco:** médio.
 - **Aceite:** Leticia sidebar só AP (+ dashboard se política).
 - **Rollback:** revert.
+- **Status (2026-07-16):** **feito.** Sidebar consome só DTO efetivo (`buildSidebarNavigationFromEffectiveAccess` / `SIDEBAR_MODULE_CONTRACT_KEYS`); `/me.effectiveAccess` preferido; bag → projeção primary/1:1 sem `canAccessModule`/ROLE_MATRIX; loading/erro de sessão → menu vazio; parent finance como contêiner de filho autorizado sem liberar irmãos.
 
 ### P11 — Proteção de rotas
 
