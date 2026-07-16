@@ -125,6 +125,10 @@ export function hasActiveProductionOrdersFilters(args: {
   );
 }
 
+export function isProductionOrdersDateRangeInvalid(from: string, to: string): boolean {
+  return Boolean(from && to && from > to);
+}
+
 export function classifyProductionOrdersListError(error: unknown): {
   kind: "access_denied" | "api_unavailable" | "generic";
   message: string;
@@ -225,5 +229,22 @@ export function productionOrderStatusBadgeClass(
       return `${base} border-rose-200 bg-rose-50 text-rose-800`;
     default:
       return `${base} border-slate-200 bg-slate-50 text-slate-700`;
+  }
+}
+
+export function productionOrderStatusOverlayTone(
+  status: string | null | undefined
+): "emerald" | "sky" | "amber" | "rose" | "slate" {
+  switch (resolveProductionOrderStatusTone(status)) {
+    case "completed":
+      return "emerald";
+    case "released":
+      return "sky";
+    case "pending":
+      return "amber";
+    case "cancelled":
+      return "rose";
+    default:
+      return "slate";
   }
 }

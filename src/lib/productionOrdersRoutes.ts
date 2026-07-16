@@ -23,9 +23,11 @@ function handleListError(error: unknown, res: express.Response, context: string)
     res.status(400).json({ error: error.code, message: error.message });
     return;
   }
-  const message = error instanceof Error ? error.message : "Erro interno.";
   console.error(context, error);
-  res.status(500).json({ error: "INTERNAL_ERROR", message });
+  res.status(500).json({
+    error: "INTERNAL_ERROR",
+    message: "Não foi possível consultar Ordens de Produção.",
+  });
 }
 
 export function registerProductionOrdersRoutes(

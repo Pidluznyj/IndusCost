@@ -46,7 +46,7 @@ Respostas de erro:
 |-------|------|---------|-----------|
 | `page` | int ≥ 1 | `1` | Página |
 | `pageSize` | int ≥ 1 | `50` | Tamanho (máx. **200**) |
-| `search` | string | — | Busca case-insensitive em `name`, `productCode`, `productDescription`, `salesLinks.customerName`, `SalesOrder.orderCode` |
+| `search` | string | — | Busca case-insensitive em `name`, `productCode`, `productDescription` e, somente nos vínculos atuais, `salesLinks.customerName` / `SalesOrder.orderCode` |
 | `status` | string | — | Igualdade exata em `NomusProductionOrder.status` |
 | `tipo` | string | — | Igualdade exata em `tipo` |
 | `company` | string | — | `contains` case-insensitive em `companyName` |
@@ -63,6 +63,10 @@ Mapeamento completo de datas: `docs/production-orders/date-field-mapping.md`.
 
 Não inferir datas ausentes. OP com `openedAt = null` **não** entra em filtros `from`/`to`.
 
+Quando a UI envia uma data civil (`YYYY-MM-DD`), `from` representa 00:00:00.000
+e `to` representa 23:59:59.999 em `America/Sao_Paulo`. Assim, o último dia do
+intervalo é incluído por completo.
+
 ---
 
 ## 3. Ordenação
@@ -71,6 +75,11 @@ Fixa (não parametrizável na v1):
 
 1. `openedAt` **desc**
 2. `externalId` **desc** (desempate)
+
+Valores `null` de `openedAt` ficam por último.
+
+Índices OP-21: `(openedAt, externalId)`, `(status, openedAt, externalId)` e
+`(tipo, openedAt, externalId)`.
 
 ---
 

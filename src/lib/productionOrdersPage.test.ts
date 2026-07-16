@@ -30,6 +30,7 @@ import {
   classifyProductionOrdersListError,
   formatProductionOrderQuantity,
   hasActiveProductionOrdersFilters,
+  isProductionOrdersDateRangeInvalid,
   PRODUCTION_ORDERS_BREADCRUMB,
   PRODUCTION_ORDERS_PAGE_SUBTITLE,
   PRODUCTION_ORDERS_PAGE_TITLE,
@@ -323,6 +324,8 @@ describe("productionOrdersUi", () => {
       }),
       true
     );
+    assert.equal(isProductionOrdersDateRangeInvalid("2026-03-11", "2026-03-10"), true);
+    assert.equal(isProductionOrdersDateRangeInvalid("2026-03-10", "2026-03-10"), false);
     const chips = buildStatusChipEntries({ Encerrada: 2, "": 1 });
     assert.equal(chips[0]?.label, "Encerrada");
     assert.equal(chips.some((c) => c.label === "Sem status"), false);
@@ -369,6 +372,7 @@ describe("productionOrdersClient e página base", () => {
   it("página base contém estados obrigatórios e copy oficial", () => {
     const moduleSrc = read("src/components/operations/ProductionOrdersModule.tsx");
     const uiSrc = read("src/lib/productionOrdersUi.ts");
+    const appSrc = read("src/App.tsx");
     assert.match(moduleSrc, /production-orders-denied/);
     assert.match(moduleSrc, /production-orders-loading/);
     assert.match(moduleSrc, /production-orders-empty/);
@@ -377,8 +381,13 @@ describe("productionOrdersClient e página base", () => {
     assert.match(moduleSrc, /production-orders-grid/);
     assert.match(moduleSrc, /production-orders-status-chips/);
     assert.match(moduleSrc, /PRODUCTION_ORDERS_BREADCRUMB/);
-    assert.match(moduleSrc, /PRODUCTION_ORDERS_PAGE_TITLE/);
-    assert.match(moduleSrc, /PRODUCTION_ORDERS_PAGE_SUBTITLE/);
+    assert.doesNotMatch(moduleSrc, /PRODUCTION_ORDERS_PAGE_TITLE/);
+    assert.doesNotMatch(moduleSrc, /PRODUCTION_ORDERS_PAGE_SUBTITLE/);
+    assert.match(appSrc, new RegExp(`title="${PRODUCTION_ORDERS_PAGE_TITLE}"`));
+    assert.match(
+      appSrc,
+      new RegExp(`description="${PRODUCTION_ORDERS_PAGE_SUBTITLE.replace(/\./g, "\\.")}"`)
+    );
     assert.match(uiSrc, new RegExp(PRODUCTION_ORDERS_BREADCRUMB.replace(/\//g, "\\/")));
     assert.match(uiSrc, new RegExp(PRODUCTION_ORDERS_PAGE_TITLE));
     assert.match(uiSrc, new RegExp(PRODUCTION_ORDERS_PAGE_SUBTITLE.replace(/\./g, "\\.")));
@@ -400,6 +409,48 @@ describe("productionOrdersClient e página base", () => {
     assert.match(moduleSrc, /production-orders-pagination/);
     assert.match(clientSrc, /\{ signal \}/);
   });
+
+  it("polimento evita request na página antiga e expõe semântica acessível", () => {
+    const moduleSrc = read("src/components/operations/ProductionOrdersModule.tsx");
+    assert.match(moduleSrc, /nextSearch === search/);
+    assert.match(moduleSrc, /setPage\(1\);\s*setSearch\(nextSearch\)/);
+    assert.doesNotMatch(
+      moduleSrc,
+      /useEffect\(\(\) => \{\s*setPage\(1\);\s*\}, \[search, status/
+    );
+    assert.match(moduleSrc, /role="group"/);
+    assert.match(moduleSrc, /aria-pressed=\{selected\}/);
+    assert.match(moduleSrc, /aria-busy=\{loading\}/);
+    assert.match(moduleSrc, /role="status"/);
+    assert.match(moduleSrc, /role="alert"/);
+    assert.match(moduleSrc, /<caption className="sr-only">/);
+    assert.match(moduleSrc, /Paginação das Ordens de Produção/);
+    assert.match(moduleSrc, /focus:ring-2 focus:ring-primary\/20/);
+    assert.match(moduleSrc, /dateRangeInvalid/);
+    assert.match(moduleSrc, /A data inicial não pode ser posterior/);
+    assert.match(moduleSrc, /loading && hasLoadedOnce/);
+    assert.match(moduleSrc, /Atualizando…/);
+    assert.match(moduleSrc, /!errorMessage \? \(/);
+  });
+
+  it("schema possui índices compostos para ordenação e filtros principais", () => {
+    const schema = read("prisma/schema.prisma");
+    const migration = read(
+      "prisma/migrations/20260730130000_production_orders_read_indexes/migration.sql"
+    );
+    assert.match(schema, /@@index\(\[openedAt, externalId\]\)/);
+    assert.match(schema, /@@index\(\[status, openedAt, externalId\]\)/);
+    assert.match(schema, /@@index\(\[tipo, openedAt, externalId\]\)/);
+    assert.match(migration, /NomusProductionOrder_openedAt_externalId_idx/);
+    assert.match(migration, /NomusProductionOrder_status_openedAt_externalId_idx/);
+    assert.match(migration, /NomusProductionOrder_tipo_openedAt_externalId_idx/);
+  });
+
+  it("rota não expõe mensagem interna de banco no erro 500", () => {
+    const routes = read("src/lib/productionOrdersRoutes.ts");
+    assert.match(routes, /Não foi possível consultar Ordens de Produção\./);
+    assert.doesNotMatch(routes, /res\.status\(500\)[\s\S]{0,200}error\.message/);
+  });
 });
 
 describe("ProductionOrderGridTableRow", () => {
@@ -419,6 +470,12 @@ describe("ProductionOrderGridTableRow", () => {
     const html = renderRow(gridRow({ quantity: "0.002925", unit: "KG" }));
     assert.match(html, /0,002925 KG/);
     assert.doesNotMatch(html, />0 KG</);
+  });
+
+  it("badges representativos mantêm contraste suave por situação", () => {
+    assert.match(renderRow(gridRow({ status: "Liberada" })), /bg-sky-50/);
+    assert.match(renderRow(gridRow({ status: "Encerrada" })), /bg-emerald-50/);
+    assert.match(renderRow(gridRow({ status: "Cancelada" })), /bg-rose-50/);
   });
 
   it("mostra primeiro pedido e +N para vários pedidos", () => {
@@ -609,13 +666,18 @@ describe("ProductionOrderAuditContent", () => {
     assert.match(html, /—/);
   });
 
-  it("drawer usa overlay oficial com fechamento, loading, erro, clipboard e acessibilidade", () => {
+  it("drawer amplo preserva auditoria completa, fechamento e acessibilidade", () => {
     const drawer = read(
       "src/components/operations/ProductionOrderQuickDetailOverlay.tsx"
     );
     const overlay = read("src/components/ui/overlay/Overlay.tsx");
     assert.match(drawer, /size="xl"/);
-    assert.match(drawer, /className="ml-auto/);
+    assert.match(drawer, /ml-auto h-full/);
+    assert.match(drawer, /max-h-\[calc\(100vh-2rem\)\]/);
+    assert.match(drawer, /OverlayTable/);
+    assert.match(drawer, /Primeiro registro/);
+    assert.match(drawer, /Último registro/);
+    assert.match(drawer, /Remoção/);
     assert.match(drawer, /ariaLabelledBy=/);
     assert.match(drawer, /ariaDescribedBy=/);
     assert.match(drawer, /onClose=\{onClose\}/);

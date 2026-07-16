@@ -15,18 +15,20 @@ import {
   formatProductionOrderQuantity,
   formatProductionOrderStatusLabel,
   hasActiveProductionOrdersFilters,
+  isProductionOrdersDateRangeInvalid,
   productionOrderExtraSalesOrderCount,
-  productionOrderStatusBadgeClass,
+  productionOrderStatusOverlayTone,
   PRODUCTION_ORDERS_BREADCRUMB,
-  PRODUCTION_ORDERS_PAGE_SUBTITLE,
-  PRODUCTION_ORDERS_PAGE_TITLE,
   resolveLatestSyncedAt,
 } from "@/src/lib/productionOrdersUi";
 import { cn } from "@/src/lib/utils";
 import { ProductionOrderQuickDetailOverlay } from "./ProductionOrderQuickDetailOverlay";
+import { OverlayBadge } from "@/src/components/ui/overlay";
 
 const PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
+const FILTER_CONTROL_CLASS =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 function initialParam(params: URLSearchParams, key: string): string {
   return params.get(key)?.trim() ?? "";
@@ -69,6 +71,7 @@ export function ProductionOrdersModule() {
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const dateRangeInvalid = isProductionOrdersDateRangeInvalid(from, to);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -98,6 +101,12 @@ export function ProductionOrdersModule() {
 
   useEffect(() => {
     if (!canView) return;
+    if (dateRangeInvalid) {
+      setLoading(false);
+      setErrorKind(null);
+      setErrorMessage(null);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setErrorKind(null);
@@ -147,7 +156,7 @@ export function ProductionOrdersModule() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [canView, page, search, status, tipo, company, from, to, retryToken]);
+  }, [canView, dateRangeInvalid, page, search, status, tipo, company, from, to, retryToken]);
 
   const filtersActive = hasActiveProductionOrdersFilters({
     search,
@@ -187,6 +196,7 @@ export function ProductionOrdersModule() {
     hasLoadedOnce && !loading && !errorMessage && total === 0 && !filtersActive;
   const showEmptyFilters =
     hasLoadedOnce && !loading && !errorMessage && total === 0 && filtersActive;
+  const initialLoading = loading && (!hasLoadedOnce || rows.length === 0);
 
   const clearFilters = () => {
     setSearchDraft("");
@@ -203,20 +213,12 @@ export function ProductionOrdersModule() {
 
   return (
     <div className="space-y-4" data-testid="production-orders-module">
-      <div className="space-y-1">
-        <p
-          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
-          data-testid="production-orders-breadcrumb"
-        >
-          {PRODUCTION_ORDERS_BREADCRUMB}
-        </p>
-        <h2 className="text-xl font-semibold text-foreground">
-          {PRODUCTION_ORDERS_PAGE_TITLE}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {PRODUCTION_ORDERS_PAGE_SUBTITLE}
-        </p>
-      </div>
+      <p
+        className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+        data-testid="production-orders-breadcrumb"
+      >
+        {PRODUCTION_ORDERS_BREADCRUMB}
+      </p>
 
       <div
         className="rounded-xl border border-border bg-card p-3"
@@ -228,7 +230,7 @@ export function ProductionOrdersModule() {
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
                 data-testid="production-orders-search"
-                className="w-full rounded-lg border border-border bg-background py-2 pl-8 pr-3 text-sm text-foreground"
+                className={cn(FILTER_CONTROL_CLASS, "pl-8")}
                 placeholder="OP, produto, cliente ou pedido…"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
@@ -238,7 +240,7 @@ export function ProductionOrdersModule() {
           <FilterField label="Tipo">
             <input
               data-testid="production-orders-tipo"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              className={FILTER_CONTROL_CLASS}
               value={tipoDraft}
               onChange={(event) => setTipoDraft(event.target.value)}
               placeholder="Ex.: Injeção"
@@ -247,7 +249,7 @@ export function ProductionOrdersModule() {
           <FilterField label="Empresa">
             <input
               data-testid="production-orders-company"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              className={FILTER_CONTROL_CLASS}
               value={companyDraft}
               onChange={(event) => setCompanyDraft(event.target.value)}
               placeholder="Ex.: KOPPETEL"
@@ -257,8 +259,9 @@ export function ProductionOrdersModule() {
             <input
               type="date"
               data-testid="production-orders-from"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              className={FILTER_CONTROL_CLASS}
               value={from}
+              aria-invalid={dateRangeInvalid}
               onChange={(event) => {
                 setPage(1);
                 setFrom(event.target.value);
@@ -269,8 +272,9 @@ export function ProductionOrdersModule() {
             <input
               type="date"
               data-testid="production-orders-to"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              className={FILTER_CONTROL_CLASS}
               value={to}
+              aria-invalid={dateRangeInvalid}
               onChange={(event) => {
                 setPage(1);
                 setTo(event.target.value);
@@ -289,6 +293,11 @@ export function ProductionOrdersModule() {
             </button>
           </div>
         </div>
+        {dateRangeInvalid ? (
+          <p className="mt-2 text-xs font-medium text-rose-700" role="alert">
+            A data inicial não pode ser posterior à data final.
+          </p>
+        ) : null}
       </div>
 
       <div
@@ -298,7 +307,7 @@ export function ProductionOrdersModule() {
         aria-label="Filtro por status"
       >
         <StatusChip
-          label={`Todos (${statusTotal})`}
+          label={hasLoadedOnce ? `Todos (${statusTotal})` : "Todos"}
           selected={status == null}
           testId="production-orders-status-all"
           onClick={() => {
@@ -365,12 +374,22 @@ export function ProductionOrdersModule() {
         </div>
       ) : null}
 
-      <div
-        className="overflow-hidden rounded-xl border border-border bg-card"
-        data-testid="production-orders-grid"
-        aria-busy={loading}
-      >
-        {loading ? (
+      {!errorMessage ? (
+        <div
+          className="relative overflow-hidden rounded-xl border border-border bg-card"
+          data-testid="production-orders-grid"
+          aria-busy={loading}
+        >
+          {loading && hasLoadedOnce ? (
+            <div
+              className="absolute right-3 top-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-2.5 py-1 text-xs text-muted-foreground shadow-sm"
+              role="status"
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              Atualizando…
+            </div>
+          ) : null}
+          {initialLoading ? (
           <div
             className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground"
             data-testid="production-orders-loading"
@@ -380,21 +399,21 @@ export function ProductionOrdersModule() {
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Carregando ordens de produção…
           </div>
-        ) : showEmptyCatalog ? (
+          ) : showEmptyCatalog ? (
           <div
             className="p-10 text-center text-sm text-muted-foreground"
             data-testid="production-orders-empty"
           >
             Nenhuma ordem de produção sincronizada ainda.
           </div>
-        ) : showEmptyFilters ? (
+          ) : showEmptyFilters ? (
           <div
             className="p-10 text-center text-sm text-muted-foreground"
             data-testid="production-orders-empty-filters"
           >
             Nenhum resultado para os filtros aplicados.
           </div>
-        ) : (
+          ) : (
           <div className="max-w-full overflow-x-auto">
             <table className="min-w-[1280px] text-left text-sm">
               <caption className="sr-only">
@@ -433,8 +452,9 @@ export function ProductionOrdersModule() {
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+          )}
+        </div>
+      ) : null}
 
       {totalPages > 1 ? (
         <div
@@ -483,7 +503,7 @@ function FilterField({
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+    <label className="flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
       {label}
       {children}
     </label>
@@ -530,6 +550,8 @@ export function ProductionOrderGridTableRow({
 }) {
   const firstOrder = row.currentSalesOrders[0];
   const extraOrders = productionOrderExtraSalesOrderCount(row);
+  const pendingOrder =
+    Boolean(firstOrder && !firstOrder.salesOrderId) || (row.hasPendingLink && !firstOrder);
   return (
     <tr
       tabIndex={0}
@@ -572,30 +594,24 @@ export function ProductionOrderGridTableRow({
         {formatProductionOrderDateTime(row.plannedAt)}
       </td>
       <td className="px-3 py-2">
-        <span className={productionOrderStatusBadgeClass(row.status)}>
+        <OverlayBadge tone={productionOrderStatusOverlayTone(row.status)}>
           {formatProductionOrderStatusLabel(row.status)}
-        </span>
+        </OverlayBadge>
       </td>
       <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        {row.hasPendingLink && !firstOrder?.salesOrderId ? (
+        {pendingOrder ? (
           <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
             Pedido ainda não sincronizado
           </span>
         ) : firstOrder ? (
           <div className="flex items-center gap-1">
-            {firstOrder.salesOrderId ? (
-              <Link
-                to={`/sales-orders/${firstOrder.salesOrderId}`}
-                className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 hover:underline"
-                data-testid={`production-order-sales-link-${firstOrder.externalSalesOrderId}`}
-              >
-                {firstOrder.orderCode?.trim() || firstOrder.externalSalesOrderId}
-              </Link>
-            ) : (
-              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
-                Pedido ainda não sincronizado
-              </span>
-            )}
+            <Link
+              to={`/sales-orders/${firstOrder.salesOrderId}`}
+              className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 hover:underline"
+              data-testid={`production-order-sales-link-${firstOrder.externalSalesOrderId}`}
+            >
+              {firstOrder.orderCode?.trim() || firstOrder.externalSalesOrderId}
+            </Link>
             {extraOrders > 0 ? (
               <span
                 className="inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"

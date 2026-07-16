@@ -7,6 +7,7 @@ import {
   buildProductionOrderLinkAggregates,
   buildProductionOrdersListWhere,
   buildProductionOrdersStatusCounts,
+  productionOrdersListOrderBy,
   serializeProductionOrderGridRow,
   statusCountKey,
 } from "@/src/lib/productionOrdersList.js";
@@ -146,11 +147,23 @@ describe("buildProductionOrdersListWhere", () => {
     const where = buildProductionOrdersListWhere(q);
     assert.ok(Array.isArray(where.AND));
     assert.equal((where.AND as unknown[]).length, 5);
+    assert.equal(
+      JSON.stringify(where).match(/"isCurrent":true/g)?.length,
+      2,
+      "busca deve considerar apenas vínculos atuais"
+    );
   });
 
   it("where vazio sem filtros", () => {
     const where = buildProductionOrdersListWhere(parseProductionOrdersListQuery({}));
     assert.equal(where.AND, undefined);
+  });
+
+  it("ordenação mantém openedAt nulo no fim e externalId como desempate", () => {
+    assert.deepEqual(productionOrdersListOrderBy(), [
+      { openedAt: { sort: "desc", nulls: "last" } },
+      { externalId: "desc" },
+    ]);
   });
 });
 

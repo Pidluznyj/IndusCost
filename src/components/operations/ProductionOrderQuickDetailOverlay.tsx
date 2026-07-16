@@ -18,7 +18,7 @@ import {
   classifyProductionOrdersListError,
   formatProductionOrderDateTime,
   formatProductionOrderQuantity,
-  resolveProductionOrderStatusTone,
+  productionOrderStatusOverlayTone,
 } from "@/src/lib/productionOrdersUi";
 
 type Props = {
@@ -103,14 +103,17 @@ export function ProductionOrderQuickDetailOverlay({
         }
         actions={
           detail ? (
-            <>
-              <OverlayBadge tone={statusBadgeTone(detail.identification.status)} emphasized>
+            <div className="hidden items-center gap-2 sm:flex">
+              <OverlayBadge
+                tone={productionOrderStatusOverlayTone(detail.identification.status)}
+                emphasized
+              >
                 {detail.identification.status ?? "Sem status"}
               </OverlayBadge>
               {detail.identification.tipo ? (
                 <OverlayBadge tone="slate">{detail.identification.tipo}</OverlayBadge>
               ) : null}
-            </>
+            </div>
           ) : null
         }
         onClose={onClose}
@@ -193,11 +196,27 @@ export function ProductionOrderAuditContent({
   onCopy: () => void;
 }) {
   return (
-    <div className="space-y-4" data-testid="production-order-detail-content">
+    <div className="space-y-5" data-testid="production-order-detail-content">
+      <dl className="grid grid-cols-2 gap-3 sm:hidden">
+        <div>
+          <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Situação
+          </dt>
+          <dd className="mt-1">
+            <OverlayBadge
+              tone={productionOrderStatusOverlayTone(detail.identification.status)}
+              emphasized
+            >
+              {detail.identification.status ?? "Sem status"}
+            </OverlayBadge>
+          </dd>
+        </div>
+        <DateField label="Abertura" value={detail.dates.openedAt} />
+      </dl>
+
       <OverlaySection title="Resumo">
         <AuditFieldGrid>
           <AuditField label="Ordem" value={detail.identification.name} />
-          <AuditField label="Status" value={detail.identification.status} />
           <AuditField label="Tipo" value={detail.identification.tipo} />
           <AuditField label="Prioridade" value={detail.identification.priority} />
           <AuditField label="Empresa" value={detail.company.companyName} />
@@ -394,7 +413,7 @@ function LinkStateBadge({ link }: { link: ProductionOrderDetailSalesLink }) {
 }
 
 function AuditFieldGrid({ children }: { children: React.ReactNode }) {
-  return <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</dl>;
+  return <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</dl>;
 }
 
 function AuditField({
@@ -410,7 +429,7 @@ function AuditField({
 }) {
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <dt className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         {label}
       </dt>
       <dd className={`mt-1 break-words text-sm font-medium text-foreground ${mono ? "font-mono text-xs" : ""}`}>
@@ -444,21 +463,4 @@ function DrawerState({
 
 function displayNumber(value: number | null): string | null {
   return value == null ? null : String(value);
-}
-
-function statusBadgeTone(
-  status: string | null
-): "emerald" | "sky" | "amber" | "rose" | "slate" {
-  switch (resolveProductionOrderStatusTone(status)) {
-    case "completed":
-      return "emerald";
-    case "released":
-      return "sky";
-    case "pending":
-      return "amber";
-    case "cancelled":
-      return "rose";
-    default:
-      return "slate";
-  }
 }

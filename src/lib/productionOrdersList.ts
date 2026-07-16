@@ -112,6 +112,7 @@ export function buildProductionOrdersListWhere(
         {
           salesLinks: {
             some: {
+              isCurrent: true,
               customerName: { contains: query.search, mode: "insensitive" },
             },
           },
@@ -119,6 +120,7 @@ export function buildProductionOrdersListWhere(
         {
           salesLinks: {
             some: {
+              isCurrent: true,
               SalesOrder: {
                 orderCode: { contains: query.search, mode: "insensitive" },
               },
@@ -137,7 +139,7 @@ export function buildProductionOrdersListWhere(
 }
 
 export function productionOrdersListOrderBy(): Prisma.NomusProductionOrderOrderByWithRelationInput[] {
-  return [{ openedAt: "desc" }, { externalId: "desc" }];
+  return [{ openedAt: { sort: "desc", nulls: "last" } }, { externalId: "desc" }];
 }
 
 export function serializeProductionOrderDecimal(
