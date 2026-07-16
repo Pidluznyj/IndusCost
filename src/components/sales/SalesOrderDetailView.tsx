@@ -355,7 +355,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
       <section className="so-detail-section" data-testid="sales-order-detail-financial">
         <h3 className="so-detail-section-title">Financeiro</h3>
         <p className="so-detail-section-subtitle">
-          Contas a Receber oficial + Recebíveis planejados pelo pedido. CR real prevalece.
+          Contas a Receber oficial prevalece sobre Documento de Saída e previsão do pedido.
         </p>
         <div className="so-detail-kpi-grid" style={{ marginBottom: 8 }}>
           <Kpi
@@ -373,18 +373,13 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             value={formatFinanceCurrency(financial.totals.receivedAmount)}
             tone={financial.totals.receivedAmount > 0.009 ? "positive" : "muted"}
           />
-          <Kpi
-            label="Planejado pelo pedido"
-            value={formatFinanceCurrency(financial.plannedTotals.totalExpected)}
-            tone={financial.plannedTotals.totalExpected > 0.009 ? "info" : "muted"}
-          />
+          <PlannedForecastKpi financial={financial} />
           <Kpi
             label="Próximo vencimento"
             value={
-              (financial.totals.nextDueDate || financial.plannedTotals.nextDueDate) &&
-              formatFinanceDate(
-                financial.totals.nextDueDate ?? financial.plannedTotals.nextDueDate ?? ""
-              )
+              financial.effectiveNextDueDate
+                ? formatFinanceDate(financial.effectiveNextDueDate)
+                : "—"
             }
           />
         </div>
@@ -392,7 +387,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
         {financial.realReceivables.length === 0 &&
         financial.plannedReceivables.length === 0 ? (
           <div className="so-detail-empty">
-            Sem CR real e sem recebível planejado para este pedido.
+            Sem CR real e sem recebível planejado ativo para este pedido.
           </div>
         ) : (
           <div className="so-detail-scroll">
@@ -457,7 +452,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                   <tr key={`planned-${p.key}`}>
                     <td>
                       <span className="so-detail-badge so-detail-badge--info">
-                        Planejado pelo pedido
+                        Previsão do pedido
                       </span>
                     </td>
                     <td className="font-semibold">{p.reference}</td>
@@ -491,6 +486,67 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             </table>
           </div>
         )}
+
+        {(financial.supersededPlannedReceivables?.length ?? 0) > 0 ? (
+          <details
+            className="so-detail-superseded-plan"
+            data-testid="sales-order-detail-superseded-plan"
+          >
+            <summary>
+              {financial.plannedTotals.partiallySuperseded
+                ? "Previsão original do pedido — parcialmente substituída"
+                : "Previsão original do pedido — substituída"}
+            </summary>
+            <div className="so-detail-scroll" style={{ marginTop: 8 }}>
+              <table className="so-detail-table">
+                <thead>
+                  <tr>
+                    <th>Origem</th>
+                    <th>Referência</th>
+                    <th>Parcela</th>
+                    <th>Vencimento</th>
+                    <th className="so-detail-num">Valor original</th>
+                    <th>Status</th>
+                    <th>Fonte</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {financial.supersededPlannedReceivables.map((p) => (
+                    <tr key={`superseded-${p.key}`}>
+                      <td>
+                        <span className="so-detail-badge so-detail-badge--muted">
+                          Previsão histórica
+                        </span>
+                      </td>
+                      <td className="font-semibold">{p.reference}</td>
+                      <td>{`${p.installmentNumber}/${p.totalInstallments}`}</td>
+                      <td>{p.dueDate ? formatFinanceDate(p.dueDate) : "—"}</td>
+                      <td className="so-detail-money">
+                        {formatFinanceCurrency(
+                          p.originalExpectedAmount ?? p.expectedAmount
+                        )}
+                      </td>
+                      <td>
+                        <span className="so-detail-badge so-detail-badge--muted">
+                          {p.statusLabel === "Parcialmente substituída"
+                            ? "Parcialmente substituída"
+                            : "Substituída"}
+                        </span>
+                      </td>
+                      <td className="text-[11px] text-[#64748b]">
+                        {p.replacedBySource === "OUTPUT_DOCUMENT"
+                          ? "Documento de saída"
+                          : p.replacedBySource === "REAL_RECEIVABLE"
+                            ? "CR real"
+                            : p.note}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        ) : null}
       </section>
 
       {/* 6 — Margem, preço e custo */}
@@ -610,10 +666,12 @@ type KpiTone = "muted" | "positive" | "warning" | "risk" | "info";
 function Kpi({
   label,
   value,
+  hint,
   tone = "muted",
 }: {
   label: string;
   value: string | null | undefined;
+  hint?: string | null;
   tone?: KpiTone;
 }) {
   const cls =
@@ -630,7 +688,56 @@ function Kpi({
     <div className={cn("so-detail-kpi", cls)}>
       <p className="so-detail-kpi-label">{label}</p>
       <p className="so-detail-kpi-value">{value ?? "—"}</p>
+      {hint ? <p className="so-detail-kpi-hint">{hint}</p> : null}
     </div>
+  );
+}
+
+function PlannedForecastKpi({
+  financial,
+}: {
+  financial: SalesOrderDetailPayload["financial"];
+}): JSX.Element {
+  const applicable = financial.plannedTotals.applicableExpected ?? 0;
+  const covered =
+    (financial.plannedTotals.coveredByRealReceivables ?? 0) +
+    (financial.plannedTotals.coveredByDocumentsWithoutRealReceivable ?? 0);
+  const original = financial.plannedTotals.totalExpected ?? 0;
+  const fully = Boolean(financial.plannedTotals.fullySuperseded);
+  const partial = Boolean(financial.plannedTotals.partiallySuperseded);
+
+  if (fully || (original > 0.009 && applicable <= 0.009 && covered > 0.009)) {
+    return (
+      <Kpi
+        label="Previsão do pedido"
+        value="Substituída"
+        hint={original > 0.009 ? `Original: ${formatFinanceCurrency(original)}` : null}
+        tone="muted"
+      />
+    );
+  }
+
+  if (partial && applicable > 0.009) {
+    return (
+      <Kpi
+        label="Previsão residual"
+        value={formatFinanceCurrency(applicable)}
+        hint={
+          covered > 0.009
+            ? `${formatFinanceCurrency(covered)} já cobertos por documento/CR`
+            : null
+        }
+        tone="info"
+      />
+    );
+  }
+
+  return (
+    <Kpi
+      label="Previsão do pedido"
+      value={formatFinanceCurrency(applicable > 0.009 ? applicable : original)}
+      tone={applicable > 0.009 || original > 0.009 ? "info" : "muted"}
+    />
   );
 }
 

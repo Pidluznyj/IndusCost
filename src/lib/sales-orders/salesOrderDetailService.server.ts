@@ -286,9 +286,21 @@ function mapStockDocuments(
 }
 
 function mapFinancial(audit: OrderFullAuditPayload): SalesOrderDetailFinancial {
+  const activePlanned = audit.plannedReceivables.filter((p) => !p.replacedByRealCr);
+  const supersededPlanned = audit.plannedReceivables.filter((p) => p.replacedByRealCr);
+  const crNext = audit.receivablesTotal.nextDueDate;
+  const plannedNext = audit.plannedReceivablesTotal.nextDueDate;
+  const effectiveNextDueDate =
+    crNext && plannedNext
+      ? crNext < plannedNext
+        ? crNext
+        : plannedNext
+      : crNext ?? plannedNext ?? null;
+
   return {
     realReceivables: audit.receivables,
-    plannedReceivables: audit.plannedReceivables.filter((p) => !p.replacedByRealCr),
+    plannedReceivables: activePlanned,
+    supersededPlannedReceivables: supersededPlanned,
     receipts: audit.receipts,
     totals: audit.receivablesTotal,
     plannedTotals: {
@@ -301,7 +313,16 @@ function mapFinancial(audit: OrderFullAuditPayload): SalesOrderDetailFinancial {
       nextDueDate: audit.plannedReceivablesTotal.nextDueDate,
       replacedCount: audit.plannedReceivablesTotal.replacedCount,
       replacedAmount: audit.plannedReceivablesTotal.replacedAmount,
+      coveredByRealReceivables:
+        audit.plannedReceivablesTotal.coveredByRealReceivables,
+      coveredByDocumentsWithoutRealReceivable:
+        audit.plannedReceivablesTotal.coveredByDocumentsWithoutRealReceivable,
+      remainingPlannedValue: audit.plannedReceivablesTotal.remainingPlannedValue,
+      fullySuperseded: audit.plannedReceivablesTotal.fullySuperseded,
+      partiallySuperseded: audit.plannedReceivablesTotal.partiallySuperseded,
+      precedenceSource: audit.plannedReceivablesTotal.precedenceSource,
     },
+    effectiveNextDueDate,
   };
 }
 

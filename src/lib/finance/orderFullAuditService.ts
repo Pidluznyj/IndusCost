@@ -714,8 +714,8 @@ export type OrderFullAuditReceipt = {
  * Recebível **planejado** do Pedido de Venda — surge quando o pedido ainda não
  * tem NF/CR real, mas a condição de pagamento define parcelas previstas.
  *
- * CR real sempre prevalece: quando `replacedByRealCr === true`, a linha é
- * exibida na aba Auditoria Técnica / oculta na tabela oficial de planejados.
+ * CR real / Documento válido prevalecem: quando `replacedByRealCr === true`,
+ * a linha fica só no histórico/auditoria (sem status operacional "Vencido").
  */
 export type OrderFullAuditPlannedReceivable = {
   key: string;
@@ -725,21 +725,35 @@ export type OrderFullAuditPlannedReceivable = {
   totalInstallments: number;
   reference: string;
   dueDate: string | null;
+  /** Valor original da condição do pedido. */
+  originalExpectedAmount?: number;
   expectedAmount: number;
   openAmount: number;
-  statusLabel: "A vencer" | "Vence hoje" | "Vencido" | "Não informado";
+  statusLabel:
+    | "A vencer"
+    | "Vence hoje"
+    | "Vencido"
+    | "Não informado"
+    | "Substituída"
+    | "Parcialmente substituída";
   paymentConditionLabel: string;
   paymentMethodLabel: string | null;
   origin: string;
   note: string;
   replacedByRealCr: boolean;
   replacedByReceivableExternalId: number | null;
+  replacedBySource?:
+    | "REAL_RECEIVABLE"
+    | "OUTPUT_DOCUMENT"
+    | "VALUE_COVERAGE"
+    | null;
+  entryKind?: "ACTIVE_ORDER_PLAN" | "SUPERSEDED_ORDER_PLAN" | "RESIDUAL_ORDER_PLAN";
 };
 
 export type OrderFullAuditPlannedReceivablesTotal = {
   totalCount: number;
   totalExpected: number;
-  /** Planejado ainda aplicável (= totalExpected − replacedAmount). */
+  /** Planejado ainda aplicável (= residual ativo). */
   applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
@@ -751,6 +765,12 @@ export type OrderFullAuditPlannedReceivablesTotal = {
   replacedCount: number;
   replacedAmount: number;
   netPlannedOpen: number;
+  coveredByRealReceivables?: number;
+  coveredByDocumentsWithoutRealReceivable?: number;
+  remainingPlannedValue?: number;
+  fullySuperseded?: boolean;
+  partiallySuperseded?: boolean;
+  precedenceSource?: "REAL_RECEIVABLE" | "OUTPUT_DOCUMENT" | "ORDER_PLAN" | "MIXED";
 };
 
 export type OrderFullAuditFreightBlock = {
@@ -2762,6 +2782,21 @@ export async function loadOrderFullAudit(
       settlementDate: r.settlementDate ? new Date(r.settlementDate) : null,
     }));
 
+  const validDocumentAllocatedValue = round2(
+    [...stockMap.values()]
+      .filter((doc) => {
+        const st = (doc.status ?? "").toLowerCase();
+        if (!st) return true;
+        return !(
+          st.includes("cancel") ||
+          st.includes("estorno") ||
+          st.includes("anulado") ||
+          st.includes("inutil")
+        );
+      })
+      .reduce((sum, doc) => sum + (doc.allocatedValue ?? 0), 0)
+  );
+
   const plannedForecast = buildSalesOrderPlannedReceivables({
     salesOrderId,
     orderCode: order.orderCode ?? "SO",
@@ -2775,6 +2810,7 @@ export async function loadOrderFullAudit(
     nfeDocuments: [...nfeMap.values()]
       .map((nfe) => nfe.numero)
       .filter((num): num is string => Boolean(num?.trim())),
+    validDocumentAllocatedValue,
   });
   const plannedReceivables = plannedForecast.planned;
   const plannedReceivablesTotal = plannedForecast.totals;
@@ -5930,8 +5966,10 @@ function buildAlerts(input: {
       push({
         code: "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
         severity: "critical",
-        title: "Parcela planejada vencida sem CR real",
-        description: `${planned.reference} venceu em ${dueLabel} sem NF/CR real emitida (${formatMoneyShort(
+        title: planned.entryKind === "RESIDUAL_ORDER_PLAN"
+          ? "Previsão residual vencida sem cobertura"
+          : "Parcela planejada vencida sem CR real",
+        description: `${planned.reference} venceu em ${dueLabel} sem cobertura vigente (${formatMoneyShort(
           planned.openAmount
         )}).`,
         origin: "Pedido de Venda / Condição de pagamento",

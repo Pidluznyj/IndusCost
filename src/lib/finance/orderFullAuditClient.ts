@@ -585,8 +585,8 @@ export type OrderFullAuditReceipt = {
 
 /**
  * Recebível **planejado** do Pedido de Venda (forecast pela condição de pagamento).
- * CR real sempre prevalece — quando `replacedByRealCr === true`, a linha é
- * mantida na aba Auditoria Técnica mas oculta da tabela oficial de planejados.
+ * CR real / Documento válido prevalecem — quando `replacedByRealCr === true`,
+ * a linha é histórica (sem "Vencido" operacional).
  */
 export type OrderFullAuditPlannedReceivable = {
   key: string;
@@ -596,21 +596,34 @@ export type OrderFullAuditPlannedReceivable = {
   totalInstallments: number;
   reference: string;
   dueDate: string | null;
+  originalExpectedAmount?: number;
   expectedAmount: number;
   openAmount: number;
-  statusLabel: "A vencer" | "Vence hoje" | "Vencido" | "Não informado";
+  statusLabel:
+    | "A vencer"
+    | "Vence hoje"
+    | "Vencido"
+    | "Não informado"
+    | "Substituída"
+    | "Parcialmente substituída";
   paymentConditionLabel: string;
   paymentMethodLabel: string | null;
   origin: string;
   note: string;
   replacedByRealCr: boolean;
   replacedByReceivableExternalId: number | null;
+  replacedBySource?:
+    | "REAL_RECEIVABLE"
+    | "OUTPUT_DOCUMENT"
+    | "VALUE_COVERAGE"
+    | null;
+  entryKind?: "ACTIVE_ORDER_PLAN" | "SUPERSEDED_ORDER_PLAN" | "RESIDUAL_ORDER_PLAN";
 };
 
 export type OrderFullAuditPlannedReceivablesTotal = {
   totalCount: number;
   totalExpected: number;
-  /** Planejado ainda aplicável (= totalExpected − replacedAmount). */
+  /** Planejado ainda aplicável (= residual ativo). */
   applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
@@ -622,6 +635,12 @@ export type OrderFullAuditPlannedReceivablesTotal = {
   replacedCount: number;
   replacedAmount: number;
   netPlannedOpen: number;
+  coveredByRealReceivables?: number;
+  coveredByDocumentsWithoutRealReceivable?: number;
+  remainingPlannedValue?: number;
+  fullySuperseded?: boolean;
+  partiallySuperseded?: boolean;
+  precedenceSource?: "REAL_RECEIVABLE" | "OUTPUT_DOCUMENT" | "ORDER_PLAN" | "MIXED";
 };
 
 export type OrderFullAuditFreightBlock = {

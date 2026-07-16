@@ -157,7 +157,10 @@ export type SalesOrderDetailStockDocument = {
 
 export type SalesOrderDetailFinancial = {
   realReceivables: OrderFullAuditReceivable[];
+  /** Parcelas vigentes (previsão residual ativa). */
   plannedReceivables: OrderFullAuditPlannedReceivable[];
+  /** Previsão original substituída (histórico/auditoria). */
+  supersededPlannedReceivables: OrderFullAuditPlannedReceivable[];
   receipts: OrderFullAuditReceipt[];
   totals: {
     totalAmount: number;
@@ -178,7 +181,15 @@ export type SalesOrderDetailFinancial = {
     nextDueDate: string | null;
     replacedCount: number;
     replacedAmount: number;
+    coveredByRealReceivables?: number;
+    coveredByDocumentsWithoutRealReceivable?: number;
+    remainingPlannedValue?: number;
+    fullySuperseded?: boolean;
+    partiallySuperseded?: boolean;
+    precedenceSource?: "REAL_RECEIVABLE" | "OUTPUT_DOCUMENT" | "ORDER_PLAN" | "MIXED";
   };
+  /** Próximo vencimento da agenda efetiva (CR aberto + previsão residual). */
+  effectiveNextDueDate: string | null;
 };
 
 // ---------------------------------------------------------------------------

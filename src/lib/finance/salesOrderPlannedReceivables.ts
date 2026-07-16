@@ -1,14 +1,17 @@
 /**
  * Recebíveis planejados (forecast) do Pedido de Venda.
  *
- * Motor único de previsão para telas oficiais (Fluxo de Caixa, Auditoria 360º).
- * Reutiliza `resolveSalesOrderListPaymentSummary` — a mesma função que já produz
- * a coluna "Cronograma de pagamento" na tela Comercial > Pedidos de Venda.
+ * Motor único de previsão para telas oficiais (Fluxo de Caixa, Auditoria 360º,
+ * Detalhe do Pedido). Reutiliza `resolveSalesOrderListPaymentSummary`.
  *
- * Regra: só emite planejado quando **não** houver CR real coberto para a
- * parcela (dueDate + valor). CR real do Nomus sempre prevalece.
+ * Precedência operacional (cobertura por valor, sem dupla contagem):
+ *   CR real ≥ Documento de Saída válido ≥ previsão do Pedido.
  *
- * Frontend-safe: não importa Prisma. Recebe entradas já normalizadas.
+ * A previsão só permanece ativa no saldo não coberto. Parcelas originais
+ * substituídas ficam no payload para auditoria (`replacedByRealCr`), sem
+ * status operacional "Vencido".
+ *
+ * Frontend-safe: não importa Prisma.
  */
 import {
   resolveSalesOrderListPaymentSummary,
@@ -18,47 +21,55 @@ import {
   type SalesOrderListPaymentLine,
   type SalesOrderListReceivableInput,
 } from "../salesOrderListPaymentSchedule.js";
+import { roundOrderMoney } from "../sales/orderFiscalFinancialMetrics.js";
+
+export type SalesOrderPlannedStatusLabel =
+  | "A vencer"
+  | "Vence hoje"
+  | "Vencido"
+  | "Não informado"
+  | "Substituída"
+  | "Parcialmente substituída";
+
+export type SalesOrderPlannedSupersessionSource =
+  | "REAL_RECEIVABLE"
+  | "OUTPUT_DOCUMENT"
+  | "VALUE_COVERAGE"
+  | null;
 
 /** Uma parcela planejada — espelha o layout esperado pela aba Financeiro. */
 export type SalesOrderPlannedReceivable = {
-  /** Chave estável — `orderCode:parcela:vencimento:valor` (mesmo pedido → mesma chave). */
   key: string;
   orderCode: string;
   salesOrderId: string;
   installmentNumber: number;
   totalInstallments: number;
-  /** Referência amigável usada em listagens: "Pedido PD 02740 - Parcela 1 de 1". */
   reference: string;
-  /** Data prevista de vencimento (ISO). */
   dueDate: string | null;
-  /** Valor previsto da parcela (positivo). */
+  /** Valor original da condição do pedido (sempre preservado). */
+  originalExpectedAmount: number;
+  /** Valor operacional da linha (residual ativo ou original se intacta/substituída). */
   expectedAmount: number;
-  /** Saldo previsto em aberto (== expectedAmount até que exista CR real). */
   openAmount: number;
-  /** Rótulo de status: A vencer / Vence hoje / Vencido / Não informado. */
-  statusLabel: "A vencer" | "Vence hoje" | "Vencido" | "Não informado";
-  /** Rótulo da condição de pagamento (mesmo do grid Comercial). */
+  statusLabel: SalesOrderPlannedStatusLabel;
   paymentConditionLabel: string;
-  /** Rótulo do meio de pagamento (mesmo do grid Comercial). */
   paymentMethodLabel: string | null;
-  /** Origem do dado — sempre "Pedido de Venda / Condição de pagamento". */
   origin: string;
-  /** Observação estruturada para PDFs/auditoria. */
   note: string;
-  /** Se true, foi substituído por CR real (planned continua listado como replaced). */
+  /**
+   * true = não compõe agenda operacional (total aberto / vencido / alertas).
+   * Mantém o nome histórico por compatibilidade com consumidores.
+   */
   replacedByRealCr: boolean;
-  /** ID externo do CR real que substituiu esta parcela (quando `replacedByRealCr`). */
   replacedByReceivableExternalId: number | null;
+  replacedBySource: SalesOrderPlannedSupersessionSource;
+  /** ACTIVE_ORDER_PLAN | SUPERSEDED_ORDER_PLAN | RESIDUAL_ORDER_PLAN */
+  entryKind: "ACTIVE_ORDER_PLAN" | "SUPERSEDED_ORDER_PLAN" | "RESIDUAL_ORDER_PLAN";
 };
 
 export type SalesOrderPlannedReceivablesTotal = {
   totalCount: number;
-  /** Soma de todas as parcelas planejadas (inclui substituídas — evidência). */
   totalExpected: number;
-  /**
-   * Planejado ainda aplicável ao total financeiro
-   * (= totalExpected − replacedAmount).
-   */
   applicableExpected: number;
   openExpected: number;
   overdueExpected: number;
@@ -70,6 +81,13 @@ export type SalesOrderPlannedReceivablesTotal = {
   replacedCount: number;
   replacedAmount: number;
   netPlannedOpen: number;
+  /** Cobertura agregada usada na precedência. */
+  coveredByRealReceivables: number;
+  coveredByDocumentsWithoutRealReceivable: number;
+  remainingPlannedValue: number;
+  fullySuperseded: boolean;
+  partiallySuperseded: boolean;
+  precedenceSource: "REAL_RECEIVABLE" | "OUTPUT_DOCUMENT" | "ORDER_PLAN" | "MIXED";
 };
 
 export type BuildSalesOrderPlannedReceivablesInput = {
@@ -80,12 +98,24 @@ export type BuildSalesOrderPlannedReceivablesInput = {
   paymentTerms: string | null;
   paymentMethod: string | null;
   nomusRawResponse: unknown;
-  /** CR real do pedido (mesmo shape usado pelo cash-flow/forecast). */
   realReceivables: SalesOrderListReceivableInput[];
-  /** Números de NF vinculados ao pedido — repassados para o resolvedor de condição. */
   nfeDocuments?: string[];
-  /** Data de referência para status (default: agora). */
   referenceDate?: Date;
+  /**
+   * Valor alocado ao pedido por Documentos de Saída válidos (não cancelados).
+   * Usado só na proporção ainda não representada por CR real.
+   */
+  validDocumentAllocatedValue?: number;
+};
+
+export type SalesOrderFinancialCoverage = {
+  orderActiveValue: number;
+  coveredByRealReceivables: number;
+  coveredByDocumentsWithoutRealReceivable: number;
+  remainingPlannedValue: number;
+  fullySuperseded: boolean;
+  partiallySuperseded: boolean;
+  precedenceSource: SalesOrderPlannedReceivablesTotal["precedenceSource"];
 };
 
 const MONEY_TOLERANCE = 0.01;
@@ -104,7 +134,7 @@ function startOfLocalDay(d: Date): Date {
 function classifyPlannedStatus(
   dueDate: Date | null,
   referenceDate: Date
-): SalesOrderPlannedReceivable["statusLabel"] {
+): Exclude<SalesOrderPlannedStatusLabel, "Substituída" | "Parcialmente substituída"> {
   if (!dueDate) return "Não informado";
   const due = startOfLocalDay(dueDate).getTime();
   const today = startOfLocalDay(referenceDate).getTime();
@@ -132,12 +162,6 @@ function nearlyEqualDate(a: Date | null, b: Date | null, toleranceDays = 3): boo
   return diffMs <= toleranceDays * 24 * 60 * 60 * 1000;
 }
 
-/**
- * Detecta CR real que "cobre" a mesma parcela planejada.
- * Critérios (progressivos, mais forte primeiro):
- *   1. Valor (± MONEY_TOLERANCE) + vencimento (± 3 dias).
- *   2. Só valor + inexistência de outra parcela real do mesmo valor.
- */
 function findCoveringRealCr(
   planned: SalesOrderListPaymentLine,
   realReceivables: SalesOrderListReceivableInput[],
@@ -146,7 +170,6 @@ function findCoveringRealCr(
   const expectedAmount = planned.amount;
   if (expectedAmount <= MONEY_TOLERANCE) return null;
 
-  // 1) valor + vencimento próximos
   const strong = realReceivables.find(
     (real) =>
       !consumedRealIds.has(real.externalId) &&
@@ -156,7 +179,6 @@ function findCoveringRealCr(
   );
   if (strong) return strong;
 
-  // 2) só valor (fallback), preferência para o mais próximo em data
   const sameValueList = realReceivables
     .filter(
       (real) =>
@@ -174,13 +196,89 @@ function findCoveringRealCr(
 }
 
 /**
+ * Cobertura financeira oficial do pedido (CR > Documento > Pedido).
+ * Evita somar CR + Documento do mesmo faturamento.
+ */
+export function computeSalesOrderFinancialCoverage(input: {
+  orderActiveValue: number;
+  realReceivableTotal: number;
+  validDocumentAllocatedValue?: number;
+}): SalesOrderFinancialCoverage {
+  const orderActiveValue = roundOrderMoney(Math.max(0, input.orderActiveValue));
+  const coveredByRealReceivables = roundOrderMoney(
+    Math.min(orderActiveValue, Math.max(0, input.realReceivableTotal))
+  );
+  const docAllocated = roundOrderMoney(
+    Math.max(0, input.validDocumentAllocatedValue ?? 0)
+  );
+  // Documento só cobre o que o CR ainda não cobriu (max evita dupla contagem).
+  const coveredByDominant = roundOrderMoney(
+    Math.min(orderActiveValue, Math.max(coveredByRealReceivables, docAllocated))
+  );
+  const coveredByDocumentsWithoutRealReceivable = roundOrderMoney(
+    Math.max(0, coveredByDominant - coveredByRealReceivables)
+  );
+  const remainingPlannedValue = roundOrderMoney(
+    Math.max(0, orderActiveValue - coveredByDominant)
+  );
+  const fullySuperseded =
+    orderActiveValue > MONEY_TOLERANCE && remainingPlannedValue <= MONEY_TOLERANCE;
+  const partiallySuperseded =
+    coveredByDominant > MONEY_TOLERANCE && remainingPlannedValue > MONEY_TOLERANCE;
+
+  let precedenceSource: SalesOrderFinancialCoverage["precedenceSource"] = "ORDER_PLAN";
+  if (coveredByRealReceivables > MONEY_TOLERANCE && coveredByDocumentsWithoutRealReceivable > MONEY_TOLERANCE) {
+    precedenceSource = "MIXED";
+  } else if (coveredByRealReceivables > MONEY_TOLERANCE) {
+    precedenceSource = "REAL_RECEIVABLE";
+  } else if (coveredByDocumentsWithoutRealReceivable > MONEY_TOLERANCE) {
+    precedenceSource = "OUTPUT_DOCUMENT";
+  }
+
+  return {
+    orderActiveValue,
+    coveredByRealReceivables,
+    coveredByDocumentsWithoutRealReceivable,
+    remainingPlannedValue,
+    fullySuperseded,
+    partiallySuperseded,
+    precedenceSource,
+  };
+}
+
+/**
+ * Distribui saldo residual nas parcelas originais (datas preservadas).
+ * Arredondamento oficial + diferença de centavos na última parcela.
+ */
+export function allocateResidualPlannedAmounts(
+  originalAmounts: readonly number[],
+  residualTotal: number
+): number[] {
+  const residual = roundOrderMoney(Math.max(0, residualTotal));
+  if (originalAmounts.length === 0) return [];
+  if (residual <= MONEY_TOLERANCE) {
+    return originalAmounts.map(() => 0);
+  }
+  const baseTotal = originalAmounts.reduce((s, n) => s + Math.max(0, n), 0);
+  if (baseTotal <= MONEY_TOLERANCE) {
+    // Sem base: concentra tudo na última.
+    const out = originalAmounts.map(() => 0);
+    out[out.length - 1] = residual;
+    return out;
+  }
+  const scaled = originalAmounts.map((amount) =>
+    roundOrderMoney((Math.max(0, amount) / baseTotal) * residual)
+  );
+  const sumScaled = roundOrderMoney(scaled.reduce((s, n) => s + n, 0));
+  const diff = roundOrderMoney(residual - sumScaled);
+  if (Math.abs(diff) >= 0.005) {
+    scaled[scaled.length - 1] = roundOrderMoney(scaled[scaled.length - 1]! + diff);
+  }
+  return scaled;
+}
+
+/**
  * Constrói recebíveis planejados oficiais do Pedido de Venda.
- *
- * Retorno:
- *   - `planned`: array com todas as parcelas planejadas (inclui as substituídas
- *     por CR real, marcadas com `replacedByRealCr=true`).
- *   - `totals`: agregação para KPI cards.
- *   - `source`: origem detectada pelo resolvedor (AR, FORECAST, NÃO INFORMADO).
  */
 export function buildSalesOrderPlannedReceivables(
   input: BuildSalesOrderPlannedReceivablesInput
@@ -188,8 +286,18 @@ export function buildSalesOrderPlannedReceivables(
   planned: SalesOrderPlannedReceivable[];
   totals: SalesOrderPlannedReceivablesTotal;
   source: string;
+  coverage: SalesOrderFinancialCoverage;
 } {
   const referenceDate = input.referenceDate ?? new Date();
+  const orderActive = roundOrderMoney(Math.max(0, input.totalActiveValue));
+  const realReceivableTotal = roundOrderMoney(
+    input.realReceivables.reduce((s, r) => s + Math.max(0, r.amountReceivable), 0)
+  );
+  const coverage = computeSalesOrderFinancialCoverage({
+    orderActiveValue: orderActive,
+    realReceivableTotal,
+    validDocumentAllocatedValue: input.validDocumentAllocatedValue,
+  });
 
   const summary = resolveSalesOrderListPaymentSummary({
     paymentTerms: input.paymentTerms,
@@ -202,45 +310,210 @@ export function buildSalesOrderPlannedReceivables(
     referenceDate,
   });
 
-  // Descartamos linhas sem valor útil ou sem qualquer sinal de parcelamento.
-  const rawLines = summary.lines.filter(
-    (line) => line.amount > MONEY_TOLERANCE
-  );
+  const rawLines = summary.lines.filter((line) => line.amount > MONEY_TOLERANCE);
 
-  // Quando não há linhas planejadas úteis e há CR real, o forecast fica vazio.
   if (rawLines.length === 0) {
     return {
       planned: [],
-      totals: emptyTotals(),
+      totals: emptyTotals(coverage),
       source:
         input.realReceivables.length > 0
           ? SALES_ORDER_PAYMENT_SOURCE_AR
           : SALES_ORDER_PAYMENT_NOT_INFORMED,
+      coverage,
     };
   }
 
   const totalInstallments = rawLines.length;
   const consumedRealIds = new Set<number>();
+  const installmentMatched = new Map<number, SalesOrderListReceivableInput>();
+
+  rawLines.forEach((line, index) => {
+    const covering = findCoveringRealCr(line, input.realReceivables, consumedRealIds);
+    if (covering) {
+      consumedRealIds.add(covering.externalId);
+      installmentMatched.set(index, covering);
+    }
+  });
+
+  const originalAmounts = rawLines.map((l) => roundOrderMoney(l.amount));
+  const originalSum = roundOrderMoney(originalAmounts.reduce((s, n) => s + n, 0));
+
+  // Valor ainda coberto após matches parcela-a-parcela (cobertura agregada).
+  const matchedAmount = roundOrderMoney(
+    [...installmentMatched.keys()].reduce((s, idx) => s + (originalAmounts[idx] ?? 0), 0)
+  );
+  const dominantCoverage = roundOrderMoney(
+    coverage.coveredByRealReceivables + coverage.coveredByDocumentsWithoutRealReceivable
+  );
+  const valueCoverageLeft = roundOrderMoney(
+    Math.max(0, Math.min(originalSum, dominantCoverage) - matchedAmount)
+  );
+
+  const unmatchedIndexes = rawLines
+    .map((_, idx) => idx)
+    .filter((idx) => !installmentMatched.has(idx));
+  const unmatchedOriginalSum = roundOrderMoney(
+    unmatchedIndexes.reduce((s, idx) => s + (originalAmounts[idx] ?? 0), 0)
+  );
+
+  let residualForUnmatched = roundOrderMoney(
+    Math.max(0, unmatchedOriginalSum - valueCoverageLeft)
+  );
+  // Se cobertura dominante zera o pedido, residual global prevalece.
+  if (coverage.fullySuperseded) {
+    residualForUnmatched = 0;
+  } else if (coverage.partiallySuperseded) {
+    // Residual operacional limitado ao saldo do pedido não coberto.
+    residualForUnmatched = roundOrderMoney(
+      Math.min(residualForUnmatched, coverage.remainingPlannedValue)
+    );
+  }
+
+  const unmatchedOriginalAmounts = unmatchedIndexes.map((idx) => originalAmounts[idx] ?? 0);
+  const residualAmounts = allocateResidualPlannedAmounts(
+    unmatchedOriginalAmounts,
+    residualForUnmatched
+  );
+
   const planned: SalesOrderPlannedReceivable[] = [];
+  const paymentConditionLabel = summary.paymentConditionLabel;
+  const paymentMethodLabel = input.paymentMethod?.trim() || null;
+
+  const supersessionSource = (): SalesOrderPlannedSupersessionSource => {
+    if (coverage.coveredByRealReceivables > MONEY_TOLERANCE) return "REAL_RECEIVABLE";
+    if (coverage.coveredByDocumentsWithoutRealReceivable > MONEY_TOLERANCE) {
+      return "OUTPUT_DOCUMENT";
+    }
+    if (dominantCoverage > MONEY_TOLERANCE) return "VALUE_COVERAGE";
+    return null;
+  };
 
   rawLines.forEach((line, index) => {
     const installmentNumber = index + 1;
     const dueIso = toIso(line.dueDate);
-    const covering = findCoveringRealCr(line, input.realReceivables, consumedRealIds);
-    const replaced = covering !== null;
-    if (covering) consumedRealIds.add(covering.externalId);
-
+    const originalAmount = originalAmounts[index] ?? roundOrderMoney(line.amount);
+    const installmentCover = installmentMatched.get(index) ?? null;
     const reference = buildReferenceLabel({
       orderCode: input.orderCode,
       installmentNumber,
       totalInstallments,
     });
+    const key = `${input.orderCode}:${installmentNumber}:${dueIso ?? "no-date"}:${originalAmount.toFixed(2)}`;
 
-    const statusLabel = replaced
-      ? "A vencer"
-      : classifyPlannedStatus(line.dueDate, referenceDate);
-    const key = `${input.orderCode}:${installmentNumber}:${dueIso ?? "no-date"}:${line.amount.toFixed(2)}`;
+    if (installmentCover) {
+      planned.push({
+        key,
+        orderCode: input.orderCode,
+        salesOrderId: input.salesOrderId,
+        installmentNumber,
+        totalInstallments,
+        reference,
+        dueDate: dueIso,
+        originalExpectedAmount: originalAmount,
+        expectedAmount: originalAmount,
+        openAmount: 0,
+        statusLabel: "Substituída",
+        paymentConditionLabel,
+        paymentMethodLabel,
+        origin: "Pedido de Venda / Condição de pagamento",
+        note: "Substituído por CR real do Nomus (match parcela).",
+        replacedByRealCr: true,
+        replacedByReceivableExternalId: installmentCover.externalId,
+        replacedBySource: "REAL_RECEIVABLE",
+        entryKind: "SUPERSEDED_ORDER_PLAN",
+      });
+      return;
+    }
 
+    const unmatchedPos = unmatchedIndexes.indexOf(index);
+    const residualAmount =
+      unmatchedPos >= 0 ? residualAmounts[unmatchedPos] ?? 0 : originalAmount;
+    const fullyReplaced =
+      residualAmount <= MONEY_TOLERANCE &&
+      (valueCoverageLeft > MONEY_TOLERANCE || coverage.fullySuperseded || dominantCoverage > MONEY_TOLERANCE);
+    const partially =
+      residualAmount > MONEY_TOLERANCE &&
+      residualAmount + MONEY_TOLERANCE < originalAmount &&
+      dominantCoverage > MONEY_TOLERANCE;
+
+    if (fullyReplaced) {
+      planned.push({
+        key,
+        orderCode: input.orderCode,
+        salesOrderId: input.salesOrderId,
+        installmentNumber,
+        totalInstallments,
+        reference,
+        dueDate: dueIso,
+        originalExpectedAmount: originalAmount,
+        expectedAmount: originalAmount,
+        openAmount: 0,
+        statusLabel: "Substituída",
+        paymentConditionLabel,
+        paymentMethodLabel,
+        origin: "Pedido de Venda / Condição de pagamento",
+        note:
+          coverage.coveredByRealReceivables > MONEY_TOLERANCE
+            ? "Substituído por CR real (cobertura por valor do pedido)."
+            : "Substituído por Documento de Saída válido (cobertura por valor).",
+        replacedByRealCr: true,
+        replacedByReceivableExternalId: null,
+        replacedBySource: supersessionSource(),
+        entryKind: "SUPERSEDED_ORDER_PLAN",
+      });
+      return;
+    }
+
+    if (partially) {
+      // Histórico: linha original marcada como parcialmente substituída.
+      planned.push({
+        key: `${key}:original`,
+        orderCode: input.orderCode,
+        salesOrderId: input.salesOrderId,
+        installmentNumber,
+        totalInstallments,
+        reference,
+        dueDate: dueIso,
+        originalExpectedAmount: originalAmount,
+        expectedAmount: originalAmount,
+        openAmount: 0,
+        statusLabel: "Parcialmente substituída",
+        paymentConditionLabel,
+        paymentMethodLabel,
+        origin: "Pedido de Venda / Condição de pagamento",
+        note: `Previsão original parcialmente coberta. Residual ativo: ${residualAmount.toFixed(2)}.`,
+        replacedByRealCr: true,
+        replacedByReceivableExternalId: null,
+        replacedBySource: supersessionSource(),
+        entryKind: "SUPERSEDED_ORDER_PLAN",
+      });
+      // Residual ativo operacional.
+      planned.push({
+        key: `${key}:residual`,
+        orderCode: input.orderCode,
+        salesOrderId: input.salesOrderId,
+        installmentNumber,
+        totalInstallments,
+        reference: `${reference} (residual)`,
+        dueDate: dueIso,
+        originalExpectedAmount: originalAmount,
+        expectedAmount: residualAmount,
+        openAmount: residualAmount,
+        statusLabel: classifyPlannedStatus(line.dueDate, referenceDate),
+        paymentConditionLabel,
+        paymentMethodLabel,
+        origin: "Pedido de Venda / Condição de pagamento",
+        note: "Saldo residual da previsão do pedido ainda sem CR/Documento correspondente.",
+        replacedByRealCr: false,
+        replacedByReceivableExternalId: null,
+        replacedBySource: null,
+        entryKind: "RESIDUAL_ORDER_PLAN",
+      });
+      return;
+    }
+
+    // Previsão integralmente ativa.
     planned.push({
       key,
       orderCode: input.orderCode,
@@ -249,29 +522,32 @@ export function buildSalesOrderPlannedReceivables(
       totalInstallments,
       reference,
       dueDate: dueIso,
-      expectedAmount: roundMoney(line.amount),
-      openAmount: replaced ? 0 : roundMoney(line.amount),
-      statusLabel,
-      paymentConditionLabel: summary.paymentConditionLabel,
-      paymentMethodLabel: input.paymentMethod?.trim() || null,
+      originalExpectedAmount: originalAmount,
+      expectedAmount: originalAmount,
+      openAmount: originalAmount,
+      statusLabel: classifyPlannedStatus(line.dueDate, referenceDate),
+      paymentConditionLabel,
+      paymentMethodLabel,
       origin: "Pedido de Venda / Condição de pagamento",
-      note: replaced
-        ? "Substituído por CR real do Nomus (dedup automático)."
-        : "Ainda sem NF/CR real — recebível previsto pela condição de pagamento.",
-      replacedByRealCr: replaced,
-      replacedByReceivableExternalId: covering?.externalId ?? null,
+      note: "Ainda sem NF/CR real — recebível previsto pela condição de pagamento.",
+      replacedByRealCr: false,
+      replacedByReceivableExternalId: null,
+      replacedBySource: null,
+      entryKind: "ACTIVE_ORDER_PLAN",
     });
   });
 
   return {
     planned,
-    totals: summarizePlanned(planned),
+    totals: summarizePlanned(planned, coverage),
     source: summary.paymentSourceLabel || SALES_ORDER_PAYMENT_SOURCE_FORECAST,
+    coverage,
   };
 }
 
 function summarizePlanned(
-  planned: readonly SalesOrderPlannedReceivable[]
+  planned: readonly SalesOrderPlannedReceivable[],
+  coverage: SalesOrderFinancialCoverage
 ): SalesOrderPlannedReceivablesTotal {
   let totalExpected = 0;
   let openExpected = 0;
@@ -285,12 +561,14 @@ function summarizePlanned(
   let nextDueDate: string | null = null;
 
   for (const p of planned) {
-    totalExpected += p.expectedAmount;
     if (p.replacedByRealCr) {
       replacedCount += 1;
-      replacedAmount += p.expectedAmount;
+      replacedAmount += p.originalExpectedAmount;
+      // Totais de evidência usam valor original nas linhas históricas.
+      totalExpected += p.originalExpectedAmount;
       continue;
     }
+    totalExpected += p.expectedAmount;
     openExpected += p.openAmount;
     if (p.statusLabel === "Vencido") {
       overdueExpected += p.openAmount;
@@ -306,24 +584,44 @@ function summarizePlanned(
     }
   }
 
+  // totalExpected de evidência: preferir soma das originais únicas (sem double-count residual+original).
+  const originalKeys = new Set<string>();
+  let originalsSum = 0;
+  for (const p of planned) {
+    const baseKey = p.key.replace(/:(original|residual)$/, "");
+    if (originalKeys.has(baseKey)) continue;
+    originalKeys.add(baseKey);
+    originalsSum += p.originalExpectedAmount;
+  }
+  totalExpected = originalsSum;
+
   return {
-    totalCount: planned.length,
-    totalExpected: roundMoney(totalExpected),
-    applicableExpected: roundMoney(Math.max(0, totalExpected - replacedAmount)),
-    openExpected: roundMoney(openExpected),
-    overdueExpected: roundMoney(overdueExpected),
+    totalCount: planned.filter((p) => !p.key.endsWith(":residual")).length,
+    totalExpected: roundOrderMoney(totalExpected),
+    applicableExpected: roundOrderMoney(openExpected),
+    openExpected: roundOrderMoney(openExpected),
+    overdueExpected: roundOrderMoney(overdueExpected),
     overdueCount,
-    dueTodayExpected: roundMoney(dueTodayExpected),
+    dueTodayExpected: roundOrderMoney(dueTodayExpected),
     dueTodayCount,
     upcomingCount,
     nextDueDate,
     replacedCount,
-    replacedAmount: roundMoney(replacedAmount),
-    netPlannedOpen: roundMoney(openExpected),
+    replacedAmount: roundOrderMoney(replacedAmount),
+    netPlannedOpen: roundOrderMoney(openExpected),
+    coveredByRealReceivables: coverage.coveredByRealReceivables,
+    coveredByDocumentsWithoutRealReceivable:
+      coverage.coveredByDocumentsWithoutRealReceivable,
+    remainingPlannedValue: coverage.remainingPlannedValue,
+    fullySuperseded: coverage.fullySuperseded,
+    partiallySuperseded: coverage.partiallySuperseded,
+    precedenceSource: coverage.precedenceSource,
   };
 }
 
-function emptyTotals(): SalesOrderPlannedReceivablesTotal {
+function emptyTotals(
+  coverage: SalesOrderFinancialCoverage
+): SalesOrderPlannedReceivablesTotal {
   return {
     totalCount: 0,
     totalExpected: 0,
@@ -338,10 +636,12 @@ function emptyTotals(): SalesOrderPlannedReceivablesTotal {
     replacedCount: 0,
     replacedAmount: 0,
     netPlannedOpen: 0,
+    coveredByRealReceivables: coverage.coveredByRealReceivables,
+    coveredByDocumentsWithoutRealReceivable:
+      coverage.coveredByDocumentsWithoutRealReceivable,
+    remainingPlannedValue: coverage.remainingPlannedValue,
+    fullySuperseded: coverage.fullySuperseded,
+    partiallySuperseded: coverage.partiallySuperseded,
+    precedenceSource: coverage.precedenceSource,
   };
-}
-
-function roundMoney(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 100) / 100;
 }
