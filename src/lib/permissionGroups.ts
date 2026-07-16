@@ -74,6 +74,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   fleet: "operacoes",
   machines: "operacoes",
   "operations-performance": "operacoes",
+  "production-orders": "operacoes",
   employees: "administracao",
   settings: "administracao",
   costs: "outros",
@@ -149,12 +150,13 @@ export const PERMISSION_ACCESS_GROUP_DEFINITIONS: readonly PermissionAccessGroup
     id: "operacoes",
     label: "Operações",
     order: 5,
-    description: "Estoque, compras, máquinas, manutenção predial e frota.",
+    description: "Estoque, compras, máquinas, performance, ordens de produção, manutenção e frota.",
     relatedMenuLabels: [
       MODULE_LABELS.inventory,
       MODULE_LABELS.purchases,
       MODULE_LABELS.machines,
       MODULE_LABELS["operations-performance"],
+      MODULE_LABELS["production-orders"],
       MODULE_LABELS.maintenance,
       MODULE_LABELS.fleet,
     ],
@@ -358,7 +360,15 @@ export function getRelatedSidebarModulesForAccessGroup(
     case "financeiro":
       return ["finance", "suppliers", "opex", "taxes", "reports"];
     case "operacoes":
-      return ["inventory", "purchases", "machines", "operations-performance", "maintenance", "fleet"];
+      return [
+        "inventory",
+        "purchases",
+        "machines",
+        "operations-performance",
+        "production-orders",
+        "maintenance",
+        "fleet",
+      ];
     case "administracao":
       return ["employees", "settings", "guide"];
     default:

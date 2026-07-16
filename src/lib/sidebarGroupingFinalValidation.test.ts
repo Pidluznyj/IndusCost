@@ -65,6 +65,7 @@ const EXPECTED_MENU: Record<
   Dashboard: [MODULE_LABELS.dashboard],
   Engenharia: [
     MODULE_LABELS.products,
+    MODULE_LABELS["transformation-simulator"],
     MODULE_LABELS.materials,
     MODULE_LABELS.simulations,
     MODULE_LABELS.projects,
@@ -80,6 +81,7 @@ const EXPECTED_MENU: Record<
   Financeiro: [
     MODULE_LABELS.finance,
     MODULE_LABELS.suppliers,
+    MODULE_LABELS["portfolio-reconciliation"],
     MODULE_LABELS.opex,
     MODULE_LABELS.taxes,
     MODULE_LABELS.reports,
@@ -89,6 +91,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.purchases,
     MODULE_LABELS.machines,
     MODULE_LABELS["operations-performance"],
+    MODULE_LABELS["production-orders"],
     MODULE_LABELS.maintenance,
     MODULE_LABELS.fleet,
   ],
@@ -144,12 +147,20 @@ describe("validação final — rotas preservadas", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       const item = allItems.find((i) => i.itemId === moduleId);
       const expectedPath =
-        moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
+        moduleId === "suppliers"
+          ? "/finance/suppliers"
+          : moduleId === "portfolio-reconciliation"
+            ? "/finance/portfolio-reconciliation"
+            : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
         assert.match(appTsx, /path=["']finance\/suppliers["']/);
         assert.match(appTsx, /FinanceSuppliersPage/);
         assert.doesNotMatch(read("src/components/FinanceModule.tsx"), /path="suppliers"/);
+        continue;
+      }
+      if (moduleId === "portfolio-reconciliation") {
+        assert.match(appTsx, /path=["']finance\/portfolio-reconciliation["']/);
         continue;
       }
       const escaped = moduleId.replace(/-/g, "\\-");
@@ -293,6 +304,6 @@ describe("validação final — UI sidebar", () => {
     assert.ok(sidebar.includes("sidebar-nav-scroll"));
     assert.ok(sidebar.includes("sidebar-footer"));
     assert.ok(sidebar.includes("data-sidebar-collapsed"));
-    assert.ok(sidebar.includes("buildAccessibleSidebarNavigation"));
+    assert.ok(sidebar.includes("buildResourceAwareSidebarNavigation"));
   });
 });

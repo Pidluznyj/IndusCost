@@ -40,6 +40,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   maintenance: ["operations.maintenance"],
   inventory: ["operations.inventory"],
   "operations-performance": ["operations.performance"],
+  "production-orders": ["operations.production_orders"],
   projects: ["engineering.projects"],
   fleet: ["operations.fleet"],
   products: ["engineering.products"],

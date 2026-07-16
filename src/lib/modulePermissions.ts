@@ -13,6 +13,7 @@ export type AppModuleId =
   | "maintenance"
   | "inventory"
   | "operations-performance"
+  | "production-orders"
   | "projects"
   | "fleet"
   | "products"
@@ -52,6 +53,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "maintenance",
   "inventory",
   "operations-performance",
+  "production-orders",
   "projects",
   "fleet",
   "products",
@@ -138,6 +140,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         "operations.component-performance.edit",
         "products.view",
       ]);
+    case "production-orders":
+      return check.hasPermission("operations.production-orders.view");
     case "projects":
       return check.hasPermission("projects.view");
     case "fleet": {
@@ -332,6 +336,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   maintenance: "Manutenção Predial",
   inventory: "Estoque / Almoxarifado",
   "operations-performance": "Performance",
+  "production-orders": "Ordens de Produção",
   projects: "Projetos",
   fleet: "Gestão de Frota",
   products: "Produtos",

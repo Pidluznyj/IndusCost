@@ -28,6 +28,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   purchases: ResourceKeys.OPERACOES_COMPRAS,
   machines: ResourceKeys.OPERACOES_MAQUINAS,
   "operations-performance": ResourceKeys.OPERACOES_PERFORMANCE,
+  "production-orders": ResourceKeys.OPERACOES_ORDENS_PRODUCAO,
   maintenance: ResourceKeys.OPERACOES_MANUTENCAO,
   fleet: ResourceKeys.OPERACOES_FROTA,
   employees: ResourceKeys.ADMIN_PESSOAS,

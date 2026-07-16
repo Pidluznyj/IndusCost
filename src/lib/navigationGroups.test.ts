@@ -53,6 +53,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   purchases: "operacoes",
   machines: "operacoes",
   "operations-performance": "operacoes",
+  "production-orders": "operacoes",
   maintenance: "operacoes",
   fleet: "operacoes",
   employees: "administracao",
@@ -136,7 +137,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       engenharia: 5,
       comercial: 6,
       financeiro: 6,
-      operacoes: 6,
+      operacoes: 7,
       administracao: 3,
     });
   });
@@ -185,9 +186,9 @@ describe("navigationGroups — permissões preservadas", () => {
 });
 
 describe("navigationGroups — integração com sidebar agrupada", () => {
-  it("Sidebar.tsx consome buildAccessibleSidebarNavigation", () => {
+  it("Sidebar.tsx consome navegação agrupada com resource awareness", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
-    assert.ok(sidebar.includes("buildAccessibleSidebarNavigation"));
+    assert.ok(sidebar.includes("buildResourceAwareSidebarNavigation"));
     assert.ok(sidebar.includes("@/src/lib/navigationGroups"));
   });
 });

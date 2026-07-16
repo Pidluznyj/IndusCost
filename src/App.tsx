@@ -33,6 +33,7 @@ import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPa
 import { FleetModule } from "./components/FleetModule";
 import { InventoryModule } from "./components/InventoryModule";
 import { OperationsPerformanceModule } from "./components/operations/OperationsPerformanceModule";
+import { ProductionOrdersModule } from "./components/operations/ProductionOrdersModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
 import { FleetPublicReservationPage } from "./components/fleet/FleetPublicReservationPage";
 import { FleetPublicVehicleChecklistPage } from "./components/fleet/FleetPublicVehicleChecklistPage";
@@ -462,6 +463,17 @@ export default function App() {
               description="Atualize ciclo e cavidades dos componentes. Alterações impactam apenas novas gerações de DRAFT de custo; custos publicados permanecem congelados."
             >
               <OperationsPerformanceModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="production-orders"
+          element={
+            <ModulePageShell
+              title="Ordens de Produção"
+              description="Consulta e auditoria das ordens sincronizadas do Nomus."
+            >
+              <ProductionOrdersModule />
             </ModulePageShell>
           }
         />

@@ -33,6 +33,7 @@ import {
   Factory,
   Gauge,
   Activity,
+  Cog,
   HelpCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -92,6 +93,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   maintenance: Wrench,
   inventory: Warehouse,
   "operations-performance": Activity,
+  "production-orders": Cog,
   projects: FolderKanban,
   fleet: Car,
   products: Package,

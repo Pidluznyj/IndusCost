@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-13T09:59:48.611Z",
+  "generatedAt": "2026-07-16T18:48:15.173Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -24,8 +24,7 @@
       "groupLabel": "Administração",
       "isDirect": false,
       "requiredPermissions": [
-        "employees.view",
-        "costs.view"
+        "employees.view"
       ]
     },
     {
@@ -37,8 +36,7 @@
       "groupLabel": "Operações",
       "isDirect": false,
       "requiredPermissions": [
-        "machines.view",
-        "costs.view"
+        "machines.view"
       ]
     },
     {
@@ -50,8 +48,7 @@
       "groupLabel": "Engenharia",
       "isDirect": false,
       "requiredPermissions": [
-        "materials.view",
-        "costs.view"
+        "materials.view"
       ]
     },
     {
@@ -106,6 +103,18 @@
     },
     {
       "order": 9,
+      "itemId": "production-orders",
+      "label": "Ordens de Produção",
+      "path": "/production-orders",
+      "groupId": "operacoes",
+      "groupLabel": "Operações",
+      "isDirect": false,
+      "requiredPermissions": [
+        "operations.production-orders.view"
+      ]
+    },
+    {
+      "order": 10,
       "itemId": "projects",
       "label": "Projetos",
       "path": "/projects",
@@ -117,7 +126,7 @@
       ]
     },
     {
-      "order": 10,
+      "order": 11,
       "itemId": "fleet",
       "label": "Gestão de Frota",
       "path": "/fleet",
@@ -130,7 +139,7 @@
       ]
     },
     {
-      "order": 11,
+      "order": 12,
       "itemId": "products",
       "label": "Produtos",
       "path": "/products",
@@ -142,7 +151,7 @@
       ]
     },
     {
-      "order": 12,
+      "order": 13,
       "itemId": "transformation-simulator",
       "label": "Simulador de Custo de Injeção",
       "path": "/transformation-simulator",
@@ -151,12 +160,11 @@
       "isDirect": false,
       "requiredPermissions": [
         "products.view",
-        "simulations.view",
-        "costs.view"
+        "simulations.view"
       ]
     },
     {
-      "order": 13,
+      "order": 14,
       "itemId": "opex",
       "label": "Custos Indiretos",
       "path": "/opex",
@@ -169,7 +177,7 @@
       ]
     },
     {
-      "order": 14,
+      "order": 15,
       "itemId": "taxes",
       "label": "Tributos",
       "path": "/taxes",
@@ -181,7 +189,7 @@
       ]
     },
     {
-      "order": 15,
+      "order": 16,
       "itemId": "pricing",
       "label": "Formação de Preço",
       "path": "/pricing",
@@ -193,7 +201,7 @@
       ]
     },
     {
-      "order": 16,
+      "order": 17,
       "itemId": "proposals",
       "label": "Propostas",
       "path": "/proposals",
@@ -205,7 +213,7 @@
       ]
     },
     {
-      "order": 17,
+      "order": 18,
       "itemId": "sales-orders",
       "label": "Pedidos de venda",
       "path": "/sales-orders",
@@ -217,7 +225,7 @@
       ]
     },
     {
-      "order": 18,
+      "order": 19,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -229,7 +237,7 @@
       ]
     },
     {
-      "order": 19,
+      "order": 20,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -245,7 +253,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -266,7 +274,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -274,12 +282,11 @@
       "groupLabel": "Engenharia",
       "isDirect": false,
       "requiredPermissions": [
-        "simulations.view",
-        "costs.view"
+        "simulations.view"
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -292,7 +299,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -309,7 +316,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -323,7 +330,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -335,15 +342,11 @@
         "finance.portfolioReconciliation.conciliation.view",
         "finance.portfolioReconciliation.intelligence.view",
         "finance.portfolioReconciliation.orderToCashAudit.view",
-        "finance.view",
-        "finance.accountsReceivable.view",
-        "finance.accountsPayable.view",
-        "reports.view",
-        "settings.nomus.view"
+        "finance.portfolioReconciliation.orderStatusPedidos.view"
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -356,7 +359,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -378,6 +381,7 @@
     "maintenance": true,
     "inventory": true,
     "operations-performance": true,
+    "production-orders": true,
     "projects": true,
     "fleet": true,
     "products": true,
@@ -435,8 +439,7 @@
     ],
     "transformation-simulator": [
       "products.view",
-      "simulations.view",
-      "costs.view"
+      "simulations.view"
     ],
     "purchases": [
       "purchases.view"
@@ -445,24 +448,20 @@
       "pricing.view"
     ],
     "employees": [
-      "employees.view",
-      "costs.view"
+      "employees.view"
     ],
     "machines": [
-      "machines.view",
-      "costs.view"
+      "machines.view"
     ],
     "materials": [
-      "materials.view",
-      "costs.view"
+      "materials.view"
     ],
     "opex": [
       "opex.view",
       "costs.view"
     ],
     "simulations": [
-      "simulations.view",
-      "costs.view"
+      "simulations.view"
     ],
     "taxes": [
       "taxes.view"
@@ -481,6 +480,9 @@
       "operations.component-performance.view",
       "operations.component-performance.edit",
       "products.view"
+    ],
+    "production-orders": [
+      "operations.production-orders.view"
     ],
     "projects": [
       "projects.view"
@@ -511,11 +513,7 @@
       "finance.portfolioReconciliation.conciliation.view",
       "finance.portfolioReconciliation.intelligence.view",
       "finance.portfolioReconciliation.orderToCashAudit.view",
-      "finance.view",
-      "finance.accountsReceivable.view",
-      "finance.accountsPayable.view",
-      "reports.view",
-      "settings.nomus.view"
+      "finance.portfolioReconciliation.orderStatusPedidos.view"
     ],
     "guide": [
       "guide.view",

@@ -34,6 +34,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   maintenance: "Manut.",
   inventory: "Estoque",
   "operations-performance": "Perf.",
+  "production-orders": "OPs",
   projects: "Proj.",
   fleet: "Frota",
   products: "Prod.",

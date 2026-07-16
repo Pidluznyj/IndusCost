@@ -251,6 +251,16 @@ Implementação: `src/lib/productionOrdersDetail.server.ts`.
 
 ---
 
-## 8. Próximo prompt (OP-18+)
+## 8. Próximo prompt (OP-19+)
 
-- Menu `/production-orders` + UI grid + drawer
+- Drawer detalhe Overlay DS
+- Refinos de UX do grid
+
+### UI (OP-18)
+
+| Campo | Valor |
+|-------|-------|
+| Rota | `/production-orders` |
+| Menu | Operações → Ordens de Produção |
+| resourceKey | `operations.production_orders` |
+| Módulo | `src/components/operations/ProductionOrdersModule.tsx` |
