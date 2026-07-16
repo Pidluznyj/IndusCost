@@ -1,6 +1,7 @@
 /**
- * Persistência idempotente de Ordens de Produção Nomus + vínculos oficiais Pedido/Item (OP-02).
- * Resolve FKs locais por externalSalesOrderId / nomusItemExternalId — sem inferência.
+ * Persistência idempotente do cabeçalho de Ordens de Produção Nomus (OP-05).
+ * Identidade: `externalId`. Sem soft-delete por ausência no lote.
+ * Vínculos `itensPedido` / salesLinks: fora deste módulo (OP-06+).
  */
 
 import { Prisma, type PrismaClient } from "@prisma/client";
@@ -8,8 +9,17 @@ import type { MappedNomusProductionOrder } from "@/src/lib/nomusProductionOrders
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
+export type UpsertNomusProductionOrderHeaderAction = "create" | "update" | "unchanged";
+
+export type UpsertNomusProductionOrderHeaderResult = {
+  action: UpsertNomusProductionOrderHeaderAction;
+  productionOrderId: string;
+  payloadUnchanged: boolean;
+};
+
+/** @deprecated Prefer UpsertNomusProductionOrderHeaderResult; links zerados até OP-06. */
 export type UpsertNomusProductionOrderResult = {
-  action: "create" | "update";
+  action: "create" | "update" | "unchanged";
   productionOrderId: string;
   linksCreated: number;
   linksUpdated: number;
@@ -19,52 +29,14 @@ export type UpsertNomusProductionOrderResult = {
   payloadUnchanged: boolean;
 };
 
-async function resolveLocalSalesOrderId(
-  db: DbClient,
-  externalSalesOrderId: number
-): Promise<string | null> {
-  const row = await db.salesOrder.findFirst({
-    where: { externalSalesOrderId },
-    select: { id: true },
-    orderBy: { updatedAt: "desc" },
-  });
-  return row?.id ?? null;
-}
-
-async function resolveLocalSalesOrderItemId(
-  db: DbClient,
-  externalSalesOrderItemId: number,
-  salesOrderId: string | null
-): Promise<string | null> {
-  if (salesOrderId) {
-    const inOrder = await db.salesOrderItem.findFirst({
-      where: { salesOrderId, nomusItemExternalId: externalSalesOrderItemId },
-      select: { id: true },
-    });
-    if (inOrder) return inOrder.id;
-  }
-  const any = await db.salesOrderItem.findFirst({
-    where: { nomusItemExternalId: externalSalesOrderItemId },
-    select: { id: true },
-    orderBy: { updatedAt: "desc" },
-  });
-  return any?.id ?? null;
-}
-
-export async function upsertNomusProductionOrder(
-  db: DbClient,
+function buildHeaderWriteData(
   row: MappedNomusProductionOrder,
   syncedAt: Date
-): Promise<UpsertNomusProductionOrderResult> {
-  const existing = await db.nomusProductionOrder.findUnique({
-    where: { externalId: row.externalId },
-    select: { id: true, payloadHash: true, firstSeenAt: true },
-  });
-
-  const payloadUnchanged = existing != null && existing.payloadHash === row.payloadHash;
-  const lastChangedAt = payloadUnchanged ? undefined : syncedAt;
-
-  const headerData = {
+): Omit<
+  Prisma.NomusProductionOrderCreateInput,
+  "externalId" | "firstSeenAt" | "lastChangedAt"
+> {
+  return {
     name: row.name,
     status: row.status,
     tipo: row.tipo,
@@ -88,110 +60,93 @@ export async function upsertNomusProductionOrder(
     payloadHash: row.payloadHash,
     syncedAt,
     lastSeenAt: syncedAt,
-    ...(lastChangedAt ? { lastChangedAt } : {}),
   };
+}
 
-  const productionOrder =
-    existing == null
-      ? await db.nomusProductionOrder.create({
-          data: {
-            externalId: row.externalId,
-            firstSeenAt: syncedAt,
-            lastChangedAt: syncedAt,
-            ...headerData,
-          },
-          select: { id: true },
-        })
-      : await db.nomusProductionOrder.update({
-          where: { externalId: row.externalId },
-          data: headerData,
-          select: { id: true },
-        });
+/**
+ * Upsert idempotente somente do registro principal da OP.
+ * - Hash igual → atualiza apenas `syncedAt` / `lastSeenAt` (sem reescrever payload).
+ * - Hash diferente → atualiza campos + `rawJson` + `lastChangedAt`.
+ * - Não apaga OP ausente do lote.
+ * - Não escreve `NomusProductionOrderSalesLink`.
+ */
+export async function upsertNomusProductionOrderHeader(
+  db: DbClient,
+  row: MappedNomusProductionOrder,
+  syncedAt: Date
+): Promise<UpsertNomusProductionOrderHeaderResult> {
+  const existing = await db.nomusProductionOrder.findUnique({
+    where: { externalId: row.externalId },
+    select: { id: true, payloadHash: true },
+  });
 
-  let linksCreated = 0;
-  let linksUpdated = 0;
-  let salesOrderResolved = 0;
-  let salesOrderItemResolved = 0;
-  const payloadItemIds = row.salesLinks.map((l) => l.externalSalesOrderItemId);
-
-  for (const link of row.salesLinks) {
-    const salesOrderId = await resolveLocalSalesOrderId(db, link.externalSalesOrderId);
-    const salesOrderItemId = await resolveLocalSalesOrderItemId(
-      db,
-      link.externalSalesOrderItemId,
-      salesOrderId
-    );
-    if (salesOrderId) salesOrderResolved += 1;
-    if (salesOrderItemId) salesOrderItemResolved += 1;
-
-    const linkData = {
-      productionOrderId: productionOrder.id,
-      productionOrderExternalId: row.externalId,
-      externalSalesOrderId: link.externalSalesOrderId,
-      externalSalesOrderItemId: link.externalSalesOrderItemId,
-      itemNumber: link.itemNumber,
-      customerName: link.customerName,
-      linkedQuantity: link.linkedQuantity,
-      rawJson: link.rawJson as Prisma.InputJsonValue,
-      salesOrderId,
-      salesOrderItemId,
-      isCurrent: true,
-      removedAt: null,
-      lastSeenAt: syncedAt,
-    };
-
-    const existingLink = await db.nomusProductionOrderSalesLink.findUnique({
-      where: {
-        productionOrderExternalId_externalSalesOrderItemId: {
-          productionOrderExternalId: row.externalId,
-          externalSalesOrderItemId: link.externalSalesOrderItemId,
-        },
+  if (existing == null) {
+    const created = await db.nomusProductionOrder.create({
+      data: {
+        externalId: row.externalId,
+        firstSeenAt: syncedAt,
+        lastChangedAt: syncedAt,
+        ...buildHeaderWriteData(row, syncedAt),
       },
       select: { id: true },
     });
-
-    if (existingLink) {
-      await db.nomusProductionOrderSalesLink.update({
-        where: { id: existingLink.id },
-        data: linkData,
-      });
-      linksUpdated += 1;
-    } else {
-      await db.nomusProductionOrderSalesLink.create({
-        data: {
-          ...linkData,
-          firstSeenAt: syncedAt,
-        },
-      });
-      linksCreated += 1;
-    }
+    return {
+      action: "create",
+      productionOrderId: created.id,
+      payloadUnchanged: false,
+    };
   }
 
-  const absentWhere = {
-    productionOrderId: productionOrder.id,
-    isCurrent: true,
-    ...(payloadItemIds.length > 0
-      ? { externalSalesOrderItemId: { notIn: payloadItemIds } }
-      : {}),
-  };
+  if (existing.payloadHash === row.payloadHash) {
+    await db.nomusProductionOrder.update({
+      where: { externalId: row.externalId },
+      data: {
+        syncedAt,
+        lastSeenAt: syncedAt,
+      },
+      select: { id: true },
+    });
+    return {
+      action: "unchanged",
+      productionOrderId: existing.id,
+      payloadUnchanged: true,
+    };
+  }
 
-  const marked = await db.nomusProductionOrderSalesLink.updateMany({
-    where: absentWhere,
+  const updated = await db.nomusProductionOrder.update({
+    where: { externalId: row.externalId },
     data: {
-      isCurrent: false,
-      removedAt: syncedAt,
-      lastSeenAt: syncedAt,
+      ...buildHeaderWriteData(row, syncedAt),
+      lastChangedAt: syncedAt,
     },
+    select: { id: true },
   });
 
   return {
-    action: existing == null ? "create" : "update",
-    productionOrderId: productionOrder.id,
-    linksCreated,
-    linksUpdated,
-    linksMarkedAbsent: marked.count,
-    salesOrderResolved,
-    salesOrderItemResolved,
-    payloadUnchanged,
+    action: "update",
+    productionOrderId: updated.id,
+    payloadUnchanged: false,
+  };
+}
+
+/**
+ * Persistência do cabeçalho (OP-05). Não processa itensPedido.
+ * Mantido para o sync V1 até o service ser o caminho único.
+ */
+export async function upsertNomusProductionOrder(
+  db: DbClient,
+  row: MappedNomusProductionOrder,
+  syncedAt: Date
+): Promise<UpsertNomusProductionOrderResult> {
+  const header = await upsertNomusProductionOrderHeader(db, row, syncedAt);
+  return {
+    action: header.action,
+    productionOrderId: header.productionOrderId,
+    linksCreated: 0,
+    linksUpdated: 0,
+    linksMarkedAbsent: 0,
+    salesOrderResolved: 0,
+    salesOrderItemResolved: 0,
+    payloadUnchanged: header.payloadUnchanged,
   };
 }

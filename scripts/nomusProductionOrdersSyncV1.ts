@@ -56,6 +56,7 @@ export type NomusProductionOrdersSyncSummary = {
   mapErrors: number;
   create: number;
   update: number;
+  unchanged: number;
   salesLinks: number;
   linksCreated: number;
   linksUpdated: number;
@@ -257,16 +258,19 @@ export async function runNomusProductionOrdersSync(args: {
   let writeErrors = 0;
   let created = 0;
   let updated = 0;
+  let unchanged = 0;
 
   if (shouldWriteProductionOrders(options.mode)) {
     const syncedAt = new Date();
     for (const row of rows) {
       try {
+        // OP-05: somente cabeçalho (itensPedido / salesLinks em OP-06+).
         const result = await args.prisma.$transaction(async (tx) =>
-          upsertNomusProductionOrder(tx, row, syncedAt)
+          upsertNomusProductionOrder(tx, { ...row, salesLinks: [] }, syncedAt)
         );
         if (result.action === "create") created += 1;
-        else updated += 1;
+        else if (result.action === "update") updated += 1;
+        else unchanged += 1;
         linksCreated += result.linksCreated;
         linksUpdated += result.linksUpdated;
         linksMarkedAbsent += result.linksMarkedAbsent;
@@ -304,6 +308,7 @@ export async function runNomusProductionOrdersSync(args: {
     mapErrors,
     create: created,
     update: updated,
+    unchanged,
     salesLinks: summaryPlans.salesLinks,
     linksCreated,
     linksUpdated,

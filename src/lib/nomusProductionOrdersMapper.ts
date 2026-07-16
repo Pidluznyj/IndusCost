@@ -13,6 +13,7 @@ import {
   parseNomusProductionOrderDateTime,
   parseNomusProductionQuantity,
   stableNomusProductionOrderPayloadHash,
+  validateNomusProductionOrderPayload,
   type JsonObject,
   type NomusProductionOrderDateParseResult,
 } from "@/src/lib/nomusProductionOrdersParsers.js";
@@ -306,6 +307,31 @@ export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOr
       rawJson: raw,
       payloadHash: stableNomusProductionOrderPayloadHash(raw),
       salesLinks: [...byItemId.values()],
+    },
+  };
+}
+
+/**
+ * Mapper do cabeçalho OP (OP-05): valida payload, converte datas/quantidades e hash.
+ * `salesLinks` fica vazio — vínculos itensPedido não entram na persistência deste prompt.
+ */
+export function mapNomusProductionOrderHeader(raw: unknown): MapProductionOrderResult {
+  const validated = validateNomusProductionOrderPayload(raw);
+  if (!validated.ok || !validated.payload) {
+    return {
+      ok: false,
+      reasons: validated.reasons.length > 0 ? validated.reasons : ["INVALID_PAYLOAD"],
+      externalId: validated.externalId,
+    };
+  }
+  const mapped = mapNomusProductionOrderPayload(validated.payload);
+  if (!mapped.ok) return mapped;
+  return {
+    ok: true,
+    fieldErrors: mapped.fieldErrors,
+    row: {
+      ...mapped.row,
+      salesLinks: [],
     },
   };
 }
