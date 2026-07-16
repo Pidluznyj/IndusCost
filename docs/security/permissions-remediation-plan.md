@@ -135,7 +135,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Risco:** baixo (flag default off; clients ignoram campo).
 - **Aceite:** DTO Leticia/SA/VIEWER vazio válidos; `/me` sem flag inalterado.
 - **Rollback:** desligar flag.
-- **Migration:** `permissionsVersion` ainda placeholder (P21).
+- **Migration:** `permissionsVersion` implementado (P21); aplicar em homolog antes de prod.
 - **Status:** implementado (2026-07-16) — shadow.
 - **Docs:** `permissions-effective-access-dto.md`
 
@@ -317,6 +317,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Aceite:** deny RH → aba antiga recebe 403/`me` desatualizado detectado.
 - **Rollback:** desligar invalidação.
 - **Migration:** campo version.
+- **Status (2026-07-16):** implementado — `permissionsVersion` + `permissionsVersionAtIssue`, bump em save ACL, `readAppSession` stale → revoke, poll FE + `sync-session-permissions`, runbook `permissions-version-runbook.md`. **Migration não executada em prod.**
 
 ### P22 — Auditoria
 

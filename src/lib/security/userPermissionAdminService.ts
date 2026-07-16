@@ -10,6 +10,7 @@ import {
   validatePermissionResourceCatalog,
 } from "@/src/lib/permissionResourceSeedData.js";
 import { filterKnownPermissions } from "@/src/lib/appAuth.js";
+import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
 import {
   buildEffectiveFlagsMap,
   buildPermissionAccessSummary,
@@ -434,6 +435,7 @@ export async function saveUserPermissionOverrides(
   args: {
     userId: string;
     actorUserId: string | null;
+    actorSessionId?: string | null;
     overrides: readonly OverrideInput[];
     isEditingSelf: boolean;
     reason?: string | null;
@@ -546,6 +548,10 @@ export async function saveUserPermissionOverrides(
         where: { id: args.userId },
         data: { permissions: legacyPermissions },
       });
+      await bumpPermissionsVersionAndSyncSessions(tx, {
+        userId: args.userId,
+        actorSessionId: args.isEditingSelf ? args.actorSessionId : null,
+      });
     });
   } catch (error) {
     mapPermissionWriteError(error);
@@ -571,6 +577,7 @@ export async function clearUserPermissionOverrides(
   args: {
     userId: string;
     actorUserId: string | null;
+    actorSessionId?: string | null;
     confirm: boolean;
     isEditingSelf: boolean;
     reason?: string | null;
@@ -585,6 +592,7 @@ export async function clearUserPermissionOverrides(
   return applyRolePresetToUser(prisma, {
     userId: args.userId,
     actorUserId: args.actorUserId,
+    actorSessionId: args.actorSessionId,
     confirmClearOverrides: true,
     isEditingSelf: args.isEditingSelf,
     auditKind: "restore",
@@ -597,6 +605,7 @@ export async function applyRolePresetToUser(
   args: {
     userId: string;
     actorUserId: string | null;
+    actorSessionId?: string | null;
     role?: AppUserRole;
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
@@ -662,6 +671,10 @@ export async function applyRolePresetToUser(
           permissions: legacyPermissions,
         },
       });
+      await bumpPermissionsVersionAndSyncSessions(tx, {
+        userId: args.userId,
+        actorSessionId: args.isEditingSelf ? args.actorSessionId : null,
+      });
     });
   } catch (error) {
     mapPermissionWriteError(error);
@@ -690,6 +703,7 @@ export async function updateUserRoleAdmin(
   args: {
     userId: string;
     actorUserId: string | null;
+    actorSessionId?: string | null;
     role: AppUserRole;
     confirmClearOverrides?: boolean;
     isEditingSelf: boolean;
@@ -699,6 +713,7 @@ export async function updateUserRoleAdmin(
   return applyRolePresetToUser(prisma, {
     userId: args.userId,
     actorUserId: args.actorUserId,
+    actorSessionId: args.actorSessionId,
     role: args.role,
     confirmClearOverrides: args.confirmClearOverrides,
     isEditingSelf: args.isEditingSelf,

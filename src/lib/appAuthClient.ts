@@ -14,6 +14,8 @@ export type AuthUser = {
   role: AppUserRole;
   permissions: string[];
   effectivePermissions: string[];
+  /** Versão monotônica de ACL (P21). */
+  permissionsVersion: number;
   accessProfileId: string | null;
   accessProfileName: string | null;
   employeeId: string | null;
@@ -40,6 +42,12 @@ export type AuthMeResponse = {
    * Não substitui `user.permissions` / `effectivePermissions` (ainda autoridade).
    */
   effectiveAccess?: EffectiveAccessMeDto;
+};
+
+export type AuthPermissionsVersionResponse = {
+  authenticated: boolean;
+  permissionsVersion: number;
+  sessionPermissionsVersionAtIssue: number;
 };
 
 export type PermissionCatalogEntry = {

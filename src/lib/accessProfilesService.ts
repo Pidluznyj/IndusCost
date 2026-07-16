@@ -4,6 +4,7 @@ import {
   type AppAuthContext,
   hasPermission,
 } from "@/src/lib/appAuth.js";
+import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
 import { parseAppUserRole } from "@/src/lib/appAuthRoles.js";
 import { SYSTEM_ACCESS_PROFILE_SEEDS } from "@/src/lib/accessProfilesSeedData.js";
 import {
@@ -536,6 +537,7 @@ export async function applyAccessProfileToUsers(
           permissions: u.afterPermissions,
         },
       });
+      await bumpPermissionsVersionAndSyncSessions(tx, { userId: u.id });
       results.push({ userId: u.id, status: "applied" });
       applied += 1;
     }

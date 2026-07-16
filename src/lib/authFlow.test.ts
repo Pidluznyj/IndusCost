@@ -29,6 +29,31 @@ test("AuthContext: source-of-truth, escuta 401 global e suprime evento em /me e 
   assert.doesNotMatch(src, /localStorage|sessionStorage/);
 });
 
+test("P21 AuthContext: poll permissions-version, sync-session e evento stale", () => {
+  const ctx = read("src/contexts/AuthContext.tsx");
+  const http = read("src/lib/http.ts");
+  assert.match(ctx, /\/api\/auth\/permissions-version/);
+  assert.match(ctx, /\/api\/auth\/sync-session-permissions/);
+  assert.match(ctx, /APP_PERMISSIONS_STALE_EVENT/);
+  assert.match(ctx, /await loadMe\(\)/);
+  assert.match(http, /PERMISSIONS_VERSION_STALE/);
+  assert.match(http, /notifyPermissionsStale/);
+});
+
+test("P21 server: epoch de sessão, endpoints de versão e readAppSession stale", () => {
+  const server = read("server.ts");
+  assert.match(server, /permissionsVersionAtIssue/);
+  assert.match(server, /isSessionPermissionsVersionStale/);
+  assert.match(server, /\/api\/auth\/permissions-version/);
+  assert.match(server, /\/api\/auth\/sync-session-permissions/);
+});
+
+test("P21 schema: permissionsVersion em AppUser e AppSession", () => {
+  const schema = read("prisma/schema.prisma");
+  assert.match(schema, /permissionsVersion\s+Int\s+@default\(0\)/);
+  assert.match(schema, /permissionsVersionAtIssue\s+Int\s+@default\(0\)/);
+});
+
 test("RequireAuth: bloqueia enquanto carrega e redireciona ao /login sem sessão", () => {
   const src = read("src/components/RequireAuth.tsx");
   assert.match(src, /if\s*\(authLoading\)/);

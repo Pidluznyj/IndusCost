@@ -7,10 +7,20 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { APP_AUTH_REQUIRED_EVENT, fetchJsonOk } from "@/src/lib/http";
-import type { AuthMeResponse, AuthUser, EffectiveAccessMeDto } from "@/src/lib/appAuthClient";
+import {
+  APP_AUTH_REQUIRED_EVENT,
+  APP_PERMISSIONS_STALE_EVENT,
+  fetchJsonOk,
+} from "@/src/lib/http";
+import type {
+  AuthMeResponse,
+  AuthPermissionsVersionResponse,
+  AuthUser,
+  EffectiveAccessMeDto,
+} from "@/src/lib/appAuthClient";
 
 const SESSION_EXPIRED_MESSAGE = "Sessão expirada. Faça login novamente.";
+const PERMISSIONS_POLL_MS = 60_000;
 
 export type AuthContextValue = {
   authUser: AuthUser | null;
@@ -20,6 +30,7 @@ export type AuthContextValue = {
   /** Bloco shadow `/me.effectiveAccess` quando o servidor anexa (P04/P10). */
   effectiveAccess: EffectiveAccessMeDto | null;
   loadMe: () => Promise<void>;
+  refreshPermissions: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
@@ -36,6 +47,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authError, setAuthError] = useState<string | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveAccessMeDto | null>(null);
   const loadSeq = useRef(0);
+  const authUserRef = useRef<AuthUser | null>(null);
+
+  useEffect(() => {
+    authUserRef.current = authUser;
+  }, [authUser]);
+
+  const applyMePayload = useCallback((data: AuthMeResponse) => {
+    if (data.authenticated && data.user) {
+      setAuthUser(data.user);
+      setAuthenticated(true);
+      setEffectiveAccess(data.effectiveAccess ?? null);
+    } else {
+      setAuthUser(null);
+      setAuthenticated(false);
+      setEffectiveAccess(null);
+    }
+  }, []);
 
   const loadMe = useCallback(async () => {
     const seq = ++loadSeq.current;
@@ -46,15 +74,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         suppressAuthEvent: true,
       });
       if (seq !== loadSeq.current) return;
-      if (data.authenticated && data.user) {
-        setAuthUser(data.user);
-        setAuthenticated(true);
-        setEffectiveAccess(data.effectiveAccess ?? null);
-      } else {
-        setAuthUser(null);
-        setAuthenticated(false);
-        setEffectiveAccess(null);
-      }
+      applyMePayload(data);
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setAuthUser(null);
@@ -70,41 +90,93 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAuthLoading(false);
       }
     }
-  }, []);
+  }, [applyMePayload]);
+
+  const refreshPermissions = useCallback(async () => {
+    try {
+      const data = await fetchJsonOk<AuthMeResponse>("/api/auth/sync-session-permissions", {
+        method: "POST",
+        suppressAuthEvent: true,
+      });
+      applyMePayload(data);
+      setAuthError(null);
+    } catch {
+      await loadMe();
+    }
+  }, [applyMePayload, loadMe]);
+
+  const pollPermissionsVersion = useCallback(async () => {
+    if (!authUserRef.current) return;
+    try {
+      const data = await fetchJsonOk<AuthPermissionsVersionResponse>(
+        "/api/auth/permissions-version",
+        { suppressAuthEvent: true }
+      );
+      if (!data.authenticated) return;
+      const current = authUserRef.current.permissionsVersion ?? 0;
+      if (data.permissionsVersion !== current) {
+        await refreshPermissions();
+      }
+    } catch {
+      // 401 tratado pelo próximo request protegido ou poll seguinte.
+    }
+  }, [refreshPermissions]);
 
   useEffect(() => {
     void loadMe();
   }, [loadMe]);
 
-  // 401 global (qualquer chamada protegida sem sessão válida): limpa o usuário e
-  // deixa o RequireAuth redirecionar ao login. Idempotente — evita avalanche.
   useEffect(() => {
     const handleAuthRequired = () => {
-      loadSeq.current += 1; // invalida loadMe em voo
+      loadSeq.current += 1;
       setAuthUser(null);
       setAuthenticated(false);
       setEffectiveAccess(null);
       setAuthLoading(false);
       setAuthError((prev) => prev ?? SESSION_EXPIRED_MESSAGE);
     };
+    const handlePermissionsStale = () => {
+      void refreshPermissions();
+    };
     window.addEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
-    return () => window.removeEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
-  }, []);
+    window.addEventListener(APP_PERMISSIONS_STALE_EVENT, handlePermissionsStale);
+    return () => {
+      window.removeEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
+      window.removeEventListener(APP_PERMISSIONS_STALE_EVENT, handlePermissionsStale);
+    };
+  }, [refreshPermissions]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    setAuthError(null);
-    const res = await fetchJsonOk<{ user: AuthUser }>("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: email.trim(), password }),
-      // Falha de credenciais (401) é tratada no formulário, não como sessão expirada.
-      suppressAuthEvent: true,
+  useEffect(() => {
+    if (!authenticated) return;
+    const onFocus = () => {
+      void pollPermissionsVersion();
+    };
+    const timer = window.setInterval(() => {
+      void pollPermissionsVersion();
+    }, PERMISSIONS_POLL_MS);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void pollPermissionsVersion();
     });
-    setAuthUser(res.user);
-    setAuthenticated(true);
-    setEffectiveAccess(null);
-    setAuthLoading(false);
-  }, []);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [authenticated, pollPermissionsVersion]);
+
+  const login = useCallback(
+    async (email: string, password: string) => {
+      setAuthError(null);
+      await fetchJsonOk<{ user: AuthUser }>("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+        suppressAuthEvent: true,
+      });
+      await loadMe();
+    },
+    [loadMe]
+  );
 
   const logout = useCallback(async () => {
     try {
@@ -145,6 +217,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authError,
       effectiveAccess,
       loadMe,
+      refreshPermissions,
       login,
       logout,
       hasPermission,
@@ -158,6 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authError,
       effectiveAccess,
       loadMe,
+      refreshPermissions,
       login,
       logout,
       hasPermission,

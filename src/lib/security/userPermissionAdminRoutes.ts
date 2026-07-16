@@ -111,6 +111,10 @@ function actorId(req: express.Request): string | null {
   return (req as { appAuth?: { id?: string } }).appAuth?.id ?? null;
 }
 
+function actorSessionId(req: express.Request): string | null {
+  return (req as { appAuth?: { sessionId?: string } }).appAuth?.sessionId ?? null;
+}
+
 function isEditingSelf(req: express.Request, userId: string): boolean {
   return actorId(req) === userId;
 }
@@ -183,6 +187,7 @@ export function registerUserPermissionAdminRoutes(
         const payload = await saveUserPermissionOverrides(prisma, {
           userId: id,
           actorUserId: actorId(req),
+          actorSessionId: actorSessionId(req),
           overrides,
           isEditingSelf: isEditingSelf(req, id),
           reason,
@@ -210,6 +215,7 @@ export function registerUserPermissionAdminRoutes(
         const payload = await clearUserPermissionOverrides(prisma, {
           userId: id,
           actorUserId: actorId(req),
+          actorSessionId: actorSessionId(req),
           confirm,
           isEditingSelf: isEditingSelf(req, id),
         });
@@ -230,6 +236,7 @@ export function registerUserPermissionAdminRoutes(
       const payload = await updateUserRoleAdmin(prisma, {
         userId: id,
         actorUserId: actorId(req),
+        actorSessionId: actorSessionId(req),
         role,
         confirmClearOverrides: req.body?.confirmClearOverrides === true,
         isEditingSelf: isEditingSelf(req, id),
@@ -255,6 +262,7 @@ export function registerUserPermissionAdminRoutes(
         const payload = await applyRolePresetToUser(prisma, {
           userId: id,
           actorUserId: actorId(req),
+          actorSessionId: actorSessionId(req),
           role: role ?? undefined,
           confirmClearOverrides: req.body?.confirmClearOverrides === true,
           isEditingSelf: isEditingSelf(req, id),

@@ -14,6 +14,7 @@ export type AuthMeUserForEffectiveAccess = {
   id: string;
   role: string;
   permissions: string[];
+  permissionsVersion?: number | null;
 };
 
 /**
@@ -34,6 +35,7 @@ export function tryBuildEffectiveAccessForAuthMe(args: {
     legacyPermissions: args.user.permissions,
     overrides: args.overrides ?? [],
     legacyCompatMode: isEffectiveAccessDtoLegacyCompatEnabled(env),
+    permissionsVersion: args.user.permissionsVersion,
     audience: "session",
   }) as EffectiveAccessMeDto;
 }

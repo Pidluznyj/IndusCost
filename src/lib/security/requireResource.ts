@@ -313,6 +313,10 @@ export function requireResource(
       const decision = authorizeRequireResource(auth, resourceKey, action, {
         ...guardOptions,
         overrides,
+        permissionsVersion:
+          guardOptions?.permissionsVersion ??
+          (auth as AppAuthContext | null)?.permissionsVersion ??
+          null,
       });
 
       if (!decision.ok) {

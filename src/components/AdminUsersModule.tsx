@@ -131,7 +131,7 @@ function formatDateTimePt(iso: string | null | undefined): string {
 }
 
 export const AdminUsersModule: React.FC = () => {
-  const { hasPermission, authUser } = useAuth();
+  const { hasPermission, authUser, loadMe } = useAuth();
   const permissionsApi = usePermissions();
   const canManage =
     hasPermission("users.manage") ||
@@ -397,6 +397,9 @@ export const AdminUsersModule: React.FC = () => {
       hydrateMatrixFromPayload(payload);
       setConfirmCriticalOpen(false);
       await loadUsers();
+      if (selectedId === currentUserId) {
+        await loadMe();
+      }
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : "Falha ao salvar.");
     } finally {

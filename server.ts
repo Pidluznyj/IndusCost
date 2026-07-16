@@ -471,6 +471,7 @@ import {
   verifyPassword,
   type AppAuthContext,
 } from "./src/lib/appAuth.js";
+import { isSessionPermissionsVersionStale } from "./src/lib/permissionsVersion.js";
 import {
   isEffectiveAccessDtoInMeEnabled,
   tryBuildEffectiveAccessForAuthMe,
@@ -1665,7 +1666,16 @@ async function startServer() {
       include: { user: true },
     });
     if (!session?.user?.isActive) return null;
-    const auth = toAppAuthContext(session.user, session.id);
+    if (
+      isSessionPermissionsVersionStale(
+        session.permissionsVersionAtIssue,
+        session.user.permissionsVersion
+      )
+    ) {
+      await revokeAppSessionById(session.id);
+      return null;
+    }
+    const auth = toAppAuthContext(session.user, session);
     return enrichAppAuthSellerCommercialLink(auth);
   }
 
@@ -1845,7 +1855,12 @@ async function startServer() {
 
       await prisma.$transaction([
         prisma.appSession.create({
-          data: { userId: user.id, tokenHash, expiresAt },
+          data: {
+            userId: user.id,
+            tokenHash,
+            expiresAt,
+            permissionsVersionAtIssue: user.permissionsVersion ?? 0,
+          },
         }),
         prisma.appUser.update({
           where: { id: user.id },
@@ -1933,6 +1948,7 @@ async function startServer() {
               id: user.id,
               role: user.role,
               permissions: filterKnownPermissions(user.permissions),
+              permissionsVersion: user.permissionsVersion ?? 0,
             },
             overrides,
           });
@@ -1945,6 +1961,101 @@ async function startServer() {
     } catch (error) {
       console.error("GET /api/auth/me", error);
       return res.status(500).json({ error: "Erro ao consultar sessão." });
+    }
+  });
+
+  app.get("/api/auth/permissions-version", async (req, res) => {
+    try {
+      const auth = await readAppSession(req);
+      if (!auth) {
+        return res.status(401).json({
+          authenticated: false,
+          error: "UNAUTHORIZED",
+          message: "Autenticação necessária.",
+        });
+      }
+      return res.json({
+        authenticated: true,
+        permissionsVersion: auth.permissionsVersion,
+        sessionPermissionsVersionAtIssue: auth.sessionPermissionsVersionAtIssue,
+      });
+    } catch (error) {
+      console.error("GET /api/auth/permissions-version", error);
+      return res.status(500).json({ error: "Erro ao consultar versão de permissões." });
+    }
+  });
+
+  app.post("/api/auth/sync-session-permissions", async (req, res) => {
+    try {
+      const cookies = parseCookiesFromHeader(req.headers.cookie);
+      const token = cookies[APP_SESSION_COOKIE_NAME];
+      if (!token) {
+        return res.status(401).json({ authenticated: false, error: "UNAUTHORIZED" });
+      }
+      const tokenHash = hashSessionToken(token);
+      const session = await prisma.appSession.findFirst({
+        where: {
+          tokenHash,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        include: { user: true },
+      });
+      if (!session?.user?.isActive) {
+        clearAppSessionCookie(res);
+        return res.status(401).json({ authenticated: false, error: "UNAUTHORIZED" });
+      }
+      await prisma.appSession.update({
+        where: { id: session.id },
+        data: { permissionsVersionAtIssue: session.user.permissionsVersion ?? 0 },
+      });
+      const auth = await readAppSession(req);
+      if (!auth) {
+        return res.status(401).json({ authenticated: false, error: "UNAUTHORIZED" });
+      }
+      const user = await prisma.appUser.findUniqueOrThrow({
+        where: { id: auth.id },
+        include: {
+          accessProfile: { select: { name: true } },
+          employee: { select: { id: true, name: true, socialName: true, department: true } },
+        },
+      });
+      const payload: {
+        authenticated: true;
+        user: ReturnType<typeof toSafeAppUser>;
+        effectiveAccess?: ReturnType<typeof tryBuildEffectiveAccessForAuthMe>;
+      } = {
+        authenticated: true,
+        user: toSafeAppUser(user, {
+          accessProfileName: user.accessProfile?.name ?? null,
+          employee: user.employee,
+        }),
+      };
+      if (isEffectiveAccessDtoInMeEnabled()) {
+        const overrides = await prisma.userPermissionOverride.findMany({
+          where: { userId: user.id },
+          select: {
+            resourceKey: true,
+            canView: true,
+            canExecute: true,
+            canManage: true,
+          },
+        });
+        const effectiveAccess = tryBuildEffectiveAccessForAuthMe({
+          user: {
+            id: user.id,
+            role: user.role,
+            permissions: filterKnownPermissions(user.permissions),
+            permissionsVersion: user.permissionsVersion ?? 0,
+          },
+          overrides,
+        });
+        if (effectiveAccess) payload.effectiveAccess = effectiveAccess;
+      }
+      return res.json(payload);
+    } catch (error) {
+      console.error("POST /api/auth/sync-session-permissions", error);
+      return res.status(500).json({ error: "Erro ao sincronizar sessão." });
     }
   });
 

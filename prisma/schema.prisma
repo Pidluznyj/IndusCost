@@ -1950,6 +1950,8 @@ model AppUser {
   passwordHash             String
   role                     AppUserRole              @default(VIEWER)
   permissions              String[]                 @default([])
+  /// Incrementado a cada mutação de ACL (P21). Sessões com epoch desatualizado são invalidadas.
+  permissionsVersion       Int                      @default(0)
   accessProfileId          String?                  @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
   employeeId               String?                  @unique @db.Uuid
@@ -1980,12 +1982,14 @@ model AppUser {
 }
 
 model AppSession {
-  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String    @db.Uuid
-  tokenHash String    @unique
-  expiresAt DateTime  @db.Timestamptz(6)
-  revokedAt DateTime? @db.Timestamptz(6)
-  createdAt DateTime  @default(now()) @db.Timestamptz(6)
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                   String    @db.Uuid
+  tokenHash                String    @unique
+  expiresAt                DateTime  @db.Timestamptz(6)
+  revokedAt                DateTime? @db.Timestamptz(6)
+  /// Snapshot de AppUser.permissionsVersion na emissão da sessão (P21).
+  permissionsVersionAtIssue Int      @default(0)
+  createdAt                DateTime  @default(now()) @db.Timestamptz(6)
   user      AppUser   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])

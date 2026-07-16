@@ -6,6 +6,7 @@ import {
   PERMISSION_CATALOG,
   type PermissionCatalogEntry,
 } from "@/src/lib/permissionCatalog";
+import { normalizePermissionsVersion } from "@/src/lib/permissionsVersion.js";
 
 const scryptAsync = promisify(crypto.scrypt);
 
@@ -26,6 +27,8 @@ export type SafeAppUser = {
   role: AppUserRole;
   permissions: string[];
   effectivePermissions: string[];
+  /** Versão monotônica de ACL — bump em cada save (P21). */
+  permissionsVersion: number;
   accessProfileId: string | null;
   accessProfileName: string | null;
   /** Vínculo com Pessoas / RH (`Employee.id`). */
@@ -44,6 +47,8 @@ export type SafeAppUser = {
 
 export type AppAuthContext = SafeAppUser & {
   sessionId: string;
+  /** Epoch da sessão na emissão (P21). */
+  sessionPermissionsVersionAtIssue: number;
   /** Chave de identidade consolidada (sessão) — filtra todos os IDs Nomus com mesmo nome. */
   sellerIdentityKey?: string | null;
 };
@@ -150,6 +155,9 @@ export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): 
     role: user.role,
     permissions,
     effectivePermissions: getEffectivePermissions({ role: user.role, permissions }),
+    permissionsVersion: normalizePermissionsVersion(
+      (user as AppUser & { permissionsVersion?: number }).permissionsVersion
+    ),
     accessProfileId: user.accessProfileId ?? null,
     accessProfileName: options.accessProfileName ?? null,
     employeeId: user.employeeId ?? null,
@@ -169,8 +177,17 @@ export function toSafeAppUser(user: AppUser, options: SafeAppUserOptions = {}): 
   };
 }
 
-export function toAppAuthContext(user: AppUser, sessionId: string): AppAuthContext {
-  return { ...toSafeAppUser(user), sessionId };
+export function toAppAuthContext(
+  user: AppUser,
+  session: { id: string; permissionsVersionAtIssue?: number | null }
+): AppAuthContext {
+  return {
+    ...toSafeAppUser(user),
+    sessionId: session.id,
+    sessionPermissionsVersionAtIssue: normalizePermissionsVersion(
+      session.permissionsVersionAtIssue
+    ),
+  };
 }
 
 declare global {

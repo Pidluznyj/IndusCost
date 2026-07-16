@@ -11,6 +11,9 @@
  */
 
 export const APP_AUTH_REQUIRED_EVENT = "app-auth-required";
+export const APP_PERMISSIONS_STALE_EVENT = "app-permissions-stale";
+
+export const PERMISSIONS_VERSION_STALE_CODE = "PERMISSIONS_VERSION_STALE";
 
 export class HttpError extends Error {
   readonly status: number;
@@ -45,6 +48,14 @@ export class AuthRequiredError extends HttpError {
   }
 }
 
+/** Erro tipado para ACL desatualizada na sessão (P21). */
+export class PermissionsStaleError extends HttpError {
+  constructor(message = "Permissões atualizadas. Recarregando sessão…") {
+    super(403, message, PERMISSIONS_VERSION_STALE_CODE);
+    this.name = "PermissionsStaleError";
+  }
+}
+
 export type AppRequestInit = RequestInit & {
   /** Não disparar o evento global de auth em 401 (ex.: login, /api/auth/me). */
   suppressAuthEvent?: boolean;
@@ -53,6 +64,12 @@ export type AppRequestInit = RequestInit & {
 export function notifyAuthRequired(): void {
   if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
     window.dispatchEvent(new CustomEvent(APP_AUTH_REQUIRED_EVENT));
+  }
+}
+
+export function notifyPermissionsStale(): void {
+  if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+    window.dispatchEvent(new CustomEvent(APP_PERMISSIONS_STALE_EVENT));
   }
 }
 
@@ -125,6 +142,14 @@ export async function fetchJsonOk<T = unknown>(
   }
   if (!res.ok) {
     const payload = await parseApiErrorPayload(res);
+    if (
+      res.status === 403 &&
+      payload.code === PERMISSIONS_VERSION_STALE_CODE &&
+      !init.suppressAuthEvent
+    ) {
+      notifyPermissionsStale();
+      throw new PermissionsStaleError(payload.message);
+    }
     throw new HttpError(
       res.status,
       payload.message,
