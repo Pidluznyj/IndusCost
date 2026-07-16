@@ -634,12 +634,16 @@ export function parseNfeFiscalXml(xml: string | null | undefined): NfeFiscalPars
   if (totals.vProd == null && totals.vNF == null) alerts.push("totais ausentes");
   if (dets.length === 0) alerts.push("nenhum det/item");
 
-  const hasPartial =
-    Boolean(icmsTot) && (totals.vNF == null || totals.vProd == null || dets.length === 0);
+  let source: NfeFiscalSource = NFE_FISCAL_SOURCE.XML;
+  if (totals.vProd == null && totals.vNF == null) {
+    source = NFE_FISCAL_SOURCE.PARTIAL;
+  } else if (!icmsTot || totals.vNF == null || totals.vProd == null || dets.length === 0) {
+    source = NFE_FISCAL_SOURCE.PARTIAL;
+  }
 
   return {
     parserVersion: NFE_FISCAL_PARSER_VERSION,
-    source: hasPartial ? NFE_FISCAL_SOURCE.PARTIAL : NFE_FISCAL_SOURCE.XML,
+    source,
     xmlHash,
     parsedAt,
     finalidade,
