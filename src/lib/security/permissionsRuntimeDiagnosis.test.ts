@@ -194,12 +194,17 @@ describe("permissions-runtime-diagnosis — cenário Contas a Pagar only (compor
       "costs.view",
       "products.view",
       "pricing.view",
+      "reports.material_demand.view",
       "finance.accountsPayable.view",
     ]);
-    // costs.view / products.view têm alias no seed → com flags NONE do VIEWER, dual-write NÃO as re-emite.
+    // costs.view / products.view / pricing.view têm alias no seed → VIEWER NONE não re-emite.
     assert.equal(bag.includes("costs.view"), false);
     assert.equal(bag.includes("products.view"), false);
-    assert.ok(bag.includes("pricing.view"), "preserve no_structural_alias");
+    assert.equal(bag.includes("pricing.view"), false, "P08: pricing.view mapeia commercial.pricing");
+    assert.ok(
+      bag.includes("reports.material_demand.view"),
+      "preserve no_structural_alias"
+    );
     assert.ok(bag.includes("finance.accountsPayable.view"));
     // P06 1:1: crm.view canônico em comercial.crm (NONE no VIEWER) — não sai do pai comercial.
     assert.equal(bag.includes("crm.view"), false, "1:1 não emite crm.view do âncora comercial");

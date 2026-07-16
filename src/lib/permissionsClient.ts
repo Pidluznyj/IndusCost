@@ -74,6 +74,11 @@ export const ResourceKeys = {
   ADMIN_PERMISSOES: "admin.permissoes",
   ADMIN_PERMISSOES_ACTION_MANAGE: "admin.permissoes.action.manage",
   CONFIGURACOES: "configuracoes",
+  /** Canônico EN — custos indiretos (contrato finance.opex). */
+  FINANCE_OPEX: "finance.opex",
+  FINANCE_TAXES: "finance.taxes",
+  FINANCE_REPORTS: "finance.reports",
+  FINANCE_SUPPLIERS: "finance.suppliers",
   /** Prompt 13 — canônicos (contrato) com aliases legados no FE. */
   COMERCIAL_CLIENTES: "commercial.customers",
   COMERCIAL_PROPOSTAS: "commercial.proposals",
@@ -523,10 +528,38 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
   },
   {
     key: ResourceKeys.CONFIGURACOES,
-    label: "Configurações",
+    label: "Configurações (legado)",
     type: "MENU",
     parentKey: null,
     legacyAliasKeys: ["settings.view", "users.manage"],
+  },
+  {
+    key: ResourceKeys.FINANCE_OPEX,
+    label: "Custos Indiretos",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["opex.view", "costs.view", "opex.edit"],
+  },
+  {
+    key: ResourceKeys.FINANCE_TAXES,
+    label: "Tributos",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["taxes.view", "taxes.edit"],
+  },
+  {
+    key: ResourceKeys.FINANCE_REPORTS,
+    label: "Relatórios",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["reports.view"],
+  },
+  {
+    key: ResourceKeys.FINANCE_SUPPLIERS,
+    label: "Fornecedores",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.FINANCEIRO,
+    legacyAliasKeys: ["finance.suppliers.view", "finance.view", "finance.suppliers.manage"],
   },
   {
     key: ResourceKeys.COMERCIAL_CLIENTES,
@@ -789,7 +822,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "Guia do Sistema",
     type: "SUBMENU",
     parentKey: ResourceKeys.ADMIN,
-    legacyAliasKeys: ["guide.view", "dashboard.view"],
+    legacyAliasKeys: ["guide.view"],
   },
   {
     key: ResourceKeys.ADMIN_SETTINGS,

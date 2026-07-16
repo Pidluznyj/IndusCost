@@ -32,6 +32,10 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   fleet: ResourceKeys.OPERACOES_FROTA,
   employees: ResourceKeys.ADMIN_PESSOAS,
   guide: ResourceKeys.ADMIN_GUIA,
+  opex: ResourceKeys.FINANCE_OPEX,
+  taxes: ResourceKeys.FINANCE_TAXES,
+  reports: ResourceKeys.FINANCE_REPORTS,
+  suppliers: ResourceKeys.FINANCE_SUPPLIERS,
 };
 
 /** Grupos accordion com resourceKey (visibilidade = filhos filtrados; chave documenta o pai). */

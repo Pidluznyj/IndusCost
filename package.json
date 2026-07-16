@@ -220,7 +220,7 @@
     "permissions:seed": "tsx scripts/seedPermissionResources.ts",
     "permissions:seed:contract:dry": "tsx scripts/seedPermissionCatalogFromContract.ts --dry-run",
     "permissions:seed:contract:apply": "tsx scripts/seedPermissionCatalogFromContract.ts --apply",
-    "test:permission-catalog-seed": "tsx --test src/lib/security/permissionCatalogSeed/permissionCatalogSeed.test.ts",
+    "test:permission-catalog-seed": "tsx --test src/lib/security/permissionCatalogSeed/permissionCatalogSeed.test.ts src/lib/security/permissionSeedFromContract.test.ts src/lib/permissionResourceSeedData.test.ts",
     "permissions:dual-write:report": "tsx scripts/permissionDualWriteReport.ts",
     "test:permission-dual-write": "tsx --test src/lib/security/permissionDualWrite/permissionDualWrite.test.ts",
     "test:permission-matrix": "tsx --test src/lib/security/permissionMatrixUi/permissionMatrixUi.test.ts src/components/admin/PermissionMatrix.test.tsx",

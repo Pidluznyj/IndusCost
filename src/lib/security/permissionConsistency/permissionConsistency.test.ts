@@ -18,12 +18,12 @@ import { collectPermissionConsistencySources } from "./collectSources.ts";
 import { runCrossCatalogChecks } from "./checks.ts";
 
 describe("permissionConsistency baseline", () => {
-  it("baseline contém aceite P02 admin.employees ausente do seed", () => {
-    assert.ok(
+  it("baseline não cobre mais admin.employees (fechado em P08)", () => {
+    assert.equal(
       isBaselinedFinding("FE_RESOURCE_MISSING_FROM_SEED", "admin.employees"),
-      "admin.employees deve estar no baseline até o seed ser alinhado"
+      false
     );
-    assert.ok(PERMISSION_CONSISTENCY_BASELINE.length >= 50);
+    assert.ok(PERMISSION_CONSISTENCY_BASELINE.length >= 40);
   });
 
   it("isBaselinedFinding distingue subjects", () => {
@@ -58,28 +58,30 @@ describe("permissionConsistency baseline", () => {
       baselineKey("ALIAS_WIDE", "costs.view"),
       "ALIAS_WIDE::costs.view"
     );
-    assert.ok(buildBaselineIndex().has("FE_RESOURCE_MISSING_FROM_SEED::admin.employees"));
+    assert.ok(buildBaselineIndex().has("ALIAS_WIDE::costs.view"));
   });
 });
 
 describe("permissionConsistency checks", () => {
-  it("detecta FE admin.employees ausente do seed (aceite P02)", () => {
+  it("FE admin.employees e engineering.* estão no seed (P08)", () => {
     const sources = collectPermissionConsistencySources();
     assert.ok(sources.frontendKeys.has("admin.employees"));
-    assert.equal(sources.seedKeys.has("admin.employees"), false);
+    assert.ok(sources.seedKeys.has("admin.employees"));
+    assert.ok(sources.seedKeys.has("engineering"));
+    assert.ok(sources.seedKeys.has("engineering.products"));
     const findings = runCrossCatalogChecks(sources);
     const hit = findings.find(
       (f) =>
         f.code === "FE_RESOURCE_MISSING_FROM_SEED" &&
         f.subject === "admin.employees"
     );
-    assert.ok(hit, "deve reportar admin.employees missing from seed");
+    assert.equal(hit, undefined);
   });
 
   it("fontes têm volumes mínimos", () => {
     const s = collectPermissionConsistencySources();
     assert.ok(s.contractKeys.size >= 60);
-    assert.ok(s.seedKeys.size >= 40);
+    assert.ok(s.seedKeys.size >= 80);
     assert.ok(s.frontendKeys.size >= 50);
     assert.ok(s.catalogLegacyKeys.size >= 100);
   });

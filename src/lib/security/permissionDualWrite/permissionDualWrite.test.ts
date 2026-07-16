@@ -38,7 +38,7 @@ describe("permissionDualWrite materialize", () => {
   it("estrutura → legado preserva unmapped de catálogo", () => {
     const effective = buildEffectiveFlagsMap("VIEWER", []);
     const previous = materializeLegacyPermissionsFromFlags(effective, []);
-    const unmapped = "pricing.view";
+    const unmapped = "reports.material_demand.view";
     assert.equal(getDualWriteAliasIndex().mappedLegacyKeys.has(unmapped), false);
     assert.equal(getDualWriteAliasIndex().catalogKeys.has(unmapped), true);
     const withExtra = [...previous, unmapped];
@@ -54,15 +54,15 @@ describe("permissionDualWrite materialize", () => {
   it("não apaga unmapped ao materializar de flags vazias no resource", () => {
     const result = materializeStructuredToLegacy({
       effectiveByResourceKey: {},
-      previousLegacyPermissions: ["pricing.view"],
+      previousLegacyPermissions: ["reports.material_demand.view"],
     });
-    assert.ok(result.legacyPermissions.includes("pricing.view"));
-    assert.deepEqual(result.preservedUnmappedKeys, ["pricing.view"]);
+    assert.ok(result.legacyPermissions.includes("reports.material_demand.view"));
+    assert.deepEqual(result.preservedUnmappedKeys, ["reports.material_demand.view"]);
   });
 
   it("idempotente: mesma entrada → mesma saída", () => {
     const effective = buildEffectiveFlagsMap("SELLER", []);
-    const a = materializeLegacyPermissionsFromFlags(effective, ["pricing.view"]);
+    const a = materializeLegacyPermissionsFromFlags(effective, ["reports.material_demand.view"]);
     const b = materializeLegacyPermissionsFromFlags(effective, a);
     assert.deepEqual(a, b);
   });
@@ -103,7 +103,7 @@ describe("permissionDualWrite plans", () => {
   it("planLegacyToStructured dry-run é compatível e não aplica", () => {
     const plan = planLegacyToStructured({
       role: "VIEWER",
-      legacyPermissions: ["dashboard.view", "pricing.view"],
+      legacyPermissions: ["dashboard.view", "reports.material_demand.view"],
       dryRun: true,
     });
     assert.equal(plan.direction, "legacy_to_structured");
@@ -118,11 +118,11 @@ describe("permissionDualWrite plans", () => {
       effectiveByResourceKey: effective,
       previousLegacyPermissions: [
         ...materializeLegacyPermissionsFromFlags(effective, []),
-        "pricing.view",
+        "reports.material_demand.view",
       ],
       dryRun: true,
     });
-    assert.ok(plan.preservedUnmapped.includes("pricing.view"));
+    assert.ok(plan.preservedUnmapped.includes("reports.material_demand.view"));
   });
 });
 
@@ -133,7 +133,7 @@ describe("permissionDualWrite apply integration (memory)", () => {
       {
         userId: "u1",
         role: "VIEWER",
-        legacyPermissions: ["pricing.view"],
+        legacyPermissions: ["reports.material_demand.view"],
         overrides: [],
       },
     ]);
@@ -144,7 +144,7 @@ describe("permissionDualWrite apply integration (memory)", () => {
       effectiveByResourceKey: effective,
     });
     assert.equal(dry.applied, false);
-    assert.ok(dry.afterLegacy.includes("pricing.view"));
+    assert.ok(dry.afterLegacy.includes("reports.material_demand.view"));
 
     const applied = await applyDualWrite({
       port,
@@ -153,7 +153,7 @@ describe("permissionDualWrite apply integration (memory)", () => {
       effectiveByResourceKey: effective,
     });
     assert.equal(applied.applied, true);
-    assert.ok(port.store.get("u1")!.legacyPermissions.includes("pricing.view"));
+    assert.ok(port.store.get("u1")!.legacyPermissions.includes("reports.material_demand.view"));
   });
 
   it("backfill exige confirm e não regrava permissions[]", async () => {
@@ -276,11 +276,11 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
     const effective = buildLeticiaStructuredFlags();
     const first = materializeUserLegacyBag({
       effectiveByResourceKey: effective,
-      previousLegacyPermissions: ["pricing.view", "crm.view", "dashboard.view"],
+      previousLegacyPermissions: ["reports.material_demand.view", "crm.view", "dashboard.view"],
       dryRun: false,
     });
     assert.ok(first.legacyPermissions.includes("finance.accountsPayable.view"));
-    assert.ok(first.legacyPermissions.includes("pricing.view"));
+    assert.ok(first.legacyPermissions.includes("reports.material_demand.view"));
     assert.equal(first.legacyPermissions.includes("crm.view"), false);
     assert.equal(first.legacyPermissions.includes("dashboard.view"), false);
     assert.equal(first.legacyPermissions.includes("sales_orders.view"), false);
@@ -321,7 +321,7 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
   });
 
   it("troca de perfil semântica: bag vira snapshot; não acumula mapped antigo", () => {
-    const before = ["dashboard.view", "crm.view", "sales_orders.view", "pricing.view"];
+    const before = ["dashboard.view", "crm.view", "sales_orders.view", "reports.material_demand.view"];
     // Perfil “só AP”
     const profileFlags = buildLeticiaStructuredFlags();
     const after = materializeUserLegacyBag({
@@ -331,7 +331,7 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
     });
     assert.equal(after.legacyPermissions.includes("crm.view"), false);
     assert.equal(after.legacyPermissions.includes("sales_orders.view"), false);
-    assert.ok(after.legacyPermissions.includes("pricing.view"), "unmapped preservado");
+    assert.ok(after.legacyPermissions.includes("reports.material_demand.view"), "unmapped preservado");
     assert.ok(after.legacyPermissions.includes("finance.accountsPayable.view"));
   });
 
@@ -341,7 +341,7 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
       {
         userId: "leticia",
         role: "VIEWER",
-        legacyPermissions: ["crm.view", "pricing.view"],
+        legacyPermissions: ["crm.view", "reports.material_demand.view"],
         overrides: [
           {
             resourceKey: "comercial",
@@ -362,7 +362,7 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
     assert.equal(dry.applied, false);
     assert.deepEqual(port.store.get("leticia")!.legacyPermissions, [
       "crm.view",
-      "pricing.view",
+      "reports.material_demand.view",
     ]);
 
     const applied = await applyDualWrite({
@@ -373,7 +373,7 @@ describe("P06 materialize service — deny / Leticia / idempotência / unknown",
     });
     assert.equal(applied.applied, true);
     assert.equal(port.store.get("leticia")!.legacyPermissions.includes("crm.view"), false);
-    assert.ok(port.store.get("leticia")!.legacyPermissions.includes("pricing.view"));
+    assert.ok(port.store.get("leticia")!.legacyPermissions.includes("reports.material_demand.view"));
 
     // rollback: force failure inside transaction
     const port2 = createInMemoryDualWritePort([

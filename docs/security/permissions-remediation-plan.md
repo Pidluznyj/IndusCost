@@ -184,6 +184,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Aceite:** validador CI verde em error mode.
 - **Rollback:** seed previous.
 - **Migration:** seed sync no servidor.
+- **Status (2026-07-16):** **feito.** Seed = legado PT ∪ derivados do contrato (`permissionSeedFromContract`); `configuracoes` deprecated retain; bridges PT obsoletos no contrato; FE+sidebar cobrem opex/taxes/reports/suppliers; strict consistency verde (baseline só ALIAS_* + FE_BE_KEY_MISMATCH + PERMISSIVE_FALLBACK). Dry-run: `permissions:seed:contract:dry` — **não** apply em produção.
 
 ### P09 — Aliases 1:1 (hotfix bleeds)
 

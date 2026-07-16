@@ -1,12 +1,12 @@
-# Seed hierárquico do catálogo (Prompt 05)
+# Seed hierárquico do catálogo (Prompt 05 / P08)
 
 | | |
 |---|---|
 | **Projeto** | IndusCost / My Industry |
-| **Data** | 2026-07-15 |
+| **Data** | 2026-07-16 |
 | **Status** | Seed de catálogo — **não** altera grants nem navegação runtime |
-| **Fonte** | Contrato canônico P02 + seed PT legado (bridge) |
-| **Código** | `src/lib/security/permissionCatalogSeed/` |
+| **Fonte** | Contrato canônico + seed PT legado (bridge) + merge P08 |
+| **Código** | `src/lib/security/permissionCatalogSeed/` · `permissionSeedFromContract.ts` |
 | **CLI** | `scripts/seedPermissionCatalogFromContract.ts` |
 
 ---
@@ -20,6 +20,12 @@ Materializar a árvore canônica em `PermissionResource` de forma **idempotente*
 - `UserPermissionOverride`
 - `AccessProfile`
 - sidebar / guards efetivos
+
+## P08 — mesma árvore
+
+`PERMISSION_RESOURCE_SEEDS` = legado PT + `configuracoes` (deprecated retain) + linhas derivadas do contrato ausentes no legado.
+
+O contrato continua a fonte de labels/parents/order/actions/aliases canônicos; o seed materializa para consistência FE ↔ seed ↔ contrato.
 
 ## Comandos
 

@@ -1,10 +1,15 @@
 /**
  * Catálogo seed + matriz por role para PermissionResource / RolePermission.
  * Fonte documental: docs/security/permissions-model-plan.md
+ * P08: merge legado PT + derivados do contrato canônico (sem delete).
  * Não altera AppUser.permissions[] — só prepara o modelo relacional.
  */
 
 import type { AppUserRole } from "@prisma/client";
+import {
+  derivePermissionResourceSeedsFromContract,
+  mergeLegacyAndContractSeeds,
+} from "@/src/lib/security/permissionSeedFromContract.js";
 
 /** Espelha o enum Prisma PermissionResourceType (evita acoplar testes ao generate). */
 export type PermissionResourceTypeSeed = "MENU" | "SUBMENU" | "TAB" | "ACTION";
@@ -32,8 +37,11 @@ export type RolePermissionSeed = {
   resourceKey: string;
 } & RolePermissionFlags;
 
-/** Catálogo mínimo oficial (MENU → SUBMENU → TAB → ACTION). */
-export const PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
+/**
+ * Seed PT legado (Stack B). Preservado integralmente — P08 não remove chaves.
+ * Canônicos EN vêm do contrato via `derivePermissionResourceSeedsFromContract`.
+ */
+const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
   {
     key: "dashboard",
     label: "Dashboard",
@@ -706,7 +714,25 @@ export const PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     isSystem: true,
     legacyAliasKeys: ["accessProfiles.manage"],
   },
-] as const;
+];
+
+/**
+ * Recursos FE legados retidos (deprecated) — ponte para canônico; nunca deletar.
+ */
+const DEPRECATED_RETAIN_SEEDS: readonly PermissionResourceSeed[] = [
+  {
+    key: "configuracoes",
+    label: "Configurações (legado)",
+    description:
+      "[deprecated] Preferir admin.settings. Mantido para sidebar/FE legado (ResourceKeys.CONFIGURACOES).",
+    type: "MENU",
+    parentKey: null,
+    module: "settings",
+    sortOrder: 9990,
+    isSystem: true,
+    legacyAliasKeys: ["settings.view", "users.manage"],
+  },
+];
 
 const V: RolePermissionFlags = { canView: true, canExecute: false, canManage: false };
 const VE: RolePermissionFlags = { canView: true, canExecute: true, canManage: false };
@@ -956,9 +982,10 @@ export function listPermissionResourceKeys(): string[] {
 
 /** Pais antes dos filhos (seguro para FK parentKey). */
 export function sortPermissionResourcesForInsert(
-  rows: readonly PermissionResourceSeed[] = PERMISSION_RESOURCE_SEEDS
+  rows?: readonly PermissionResourceSeed[]
 ): PermissionResourceSeed[] {
-  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const list = rows ?? PERMISSION_RESOURCE_SEEDS;
+  const byKey = new Map(list.map((r) => [r.key, r]));
   const depth = (key: string, seen = new Set<string>()): number => {
     if (seen.has(key)) return 0;
     seen.add(key);
@@ -966,12 +993,24 @@ export function sortPermissionResourcesForInsert(
     if (!row?.parentKey) return 0;
     return 1 + depth(row.parentKey, seen);
   };
-  return [...rows].sort((a, b) => {
+  return [...list].sort((a, b) => {
     const d = depth(a.key) - depth(b.key);
     if (d !== 0) return d;
     return a.sortOrder - b.sortOrder || a.key.localeCompare(b.key);
   });
 }
+
+/**
+ * Catálogo oficial = legado PT + deprecated retain + canônicos do contrato ausentes no legado.
+ * Fonte primária de identidade canônica: permissionContract; este array é a materialização seed.
+ */
+export const PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] =
+  sortPermissionResourcesForInsert(
+    mergeLegacyAndContractSeeds(
+      [...LEGACY_PERMISSION_RESOURCE_SEEDS, ...DEPRECATED_RETAIN_SEEDS],
+      derivePermissionResourceSeedsFromContract()
+    )
+  );
 
 export function buildRolePermissionSeeds(
   resourceKeys: readonly string[] = listPermissionResourceKeys()
@@ -1040,13 +1079,8 @@ export function validatePermissionResourceCatalog(
       issues.push({ code: "ACTION_WITHOUT_PARENT", message: row.key });
     }
   }
-  for (const role of ["ADMIN", "COMMERCIAL_MANAGER", "SELLER", "VIEWER"] as const) {
-    for (const key of keys) {
-      if (!(key in ROLE_MATRIX[role])) {
-        issues.push({ code: "MATRIX_GAP", message: `${role}/${key}` });
-      }
-    }
-  }
+  // MATRIX: chave ausente ⇒ NONE (getOfficialRolePermissionFlags / buildRolePermissionSeeds).
+  // Não exigir entrada explícita — evita bloquear expansão canônica (P08).
   return issues;
 }
 

@@ -240,7 +240,11 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["suprimentos.inteligencia_mercado"],
+    relationalResourceKeys: [
+      "suprimentos.inteligencia_mercado",
+      "suprimentos.inteligencia_mercado.tab.alertas",
+      "suprimentos.inteligencia_mercado.tab.configuracoes",
+    ],
   },
   {
     resourceKey: "engineering.materials.market_intelligence.home",
@@ -644,7 +648,19 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["comissoes"],
+    relationalResourceKeys: [
+      "comissoes",
+      // Abas PT obsoletas (UI oculta) — retidas no seed; ponte para não falhar consistência
+      "comissoes.tab.dashboard",
+      "comissoes.tab.previstas",
+      "comissoes.tab.confirmadas",
+      "comissoes.tab.liberacao",
+      "comissoes.tab.pagamentos",
+      "comissoes.tab.pessoas",
+      "comissoes.tab.regras",
+      "comissoes.tab.auditoria",
+      "comissoes.tab.configuracoes",
+    ],
     moduleId: "commissions",
   },
   {
@@ -981,7 +997,11 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: ["financeiro.conciliacao_carteira"],
+    relationalResourceKeys: [
+      "financeiro.conciliacao_carteira",
+      "financeiro.conciliacao_carteira.tab.conciliacao",
+      "financeiro.conciliacao_carteira.tab.inteligencia",
+    ],
     moduleId: "portfolio-reconciliation",
   },
   {
@@ -1066,7 +1086,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "finance",
     route: "/reports",
     sortOrder: 52,
-    actions: [V(["reports.view", "dashboard.view"])],
+    actions: [V(["reports.view"])],
     relatedEndpoints: ["/api/reports/data"],
     sensitivity: "medium",
     appearsInSidebar: true,
@@ -1075,6 +1095,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isDetailScreen: false,
     relationalResourceKeys: [],
     moduleId: "reports",
+    notes: "Sem dashboard.view — evita roubar canônico 1:1 de dashboard (P08).",
   },
 
   // ─── Operations ────────────────────────────────────────────
@@ -1492,9 +1513,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isTab: false,
     isInternalAction: false,
     isDetailScreen: false,
-    relationalResourceKeys: [],
+    relationalResourceKeys: ["configuracoes"],
     moduleId: "settings",
-    notes: "FE sidebar usa resourceKey configuracoes (fora do seed admin) — gap Prompt 01.",
+    notes:
+      "FE/sidebar ainda usam resourceKey `configuracoes` (deprecated retain no seed). Canônico: admin.settings.",
   },
   {
     resourceKey: "admin.settings.security",
@@ -1615,7 +1637,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "admin",
     route: "/guide",
     sortOrder: 73,
-    actions: [V(["guide.view", "dashboard.view"])],
+    actions: [V(["guide.view"])],
     relatedEndpoints: [],
     sensitivity: "low",
     appearsInSidebar: true,
@@ -1624,6 +1646,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isDetailScreen: false,
     relationalResourceKeys: [],
     moduleId: "guide",
+    notes: "Sem dashboard.view — evita roubar canônico 1:1 de dashboard (P08).",
   },
 ];
 

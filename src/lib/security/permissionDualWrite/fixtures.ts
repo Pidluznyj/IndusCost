@@ -10,10 +10,10 @@ import {
 import type { DualWriteCompatibilityFixture } from "./plan.ts";
 import type { StructuredGrantMap } from "./types.ts";
 
-/** Chaves de catálogo tipicamente sem alias estrutural (confirmadas no relatório). */
+/** Chaves de catálogo tipicamente sem alias estrutural (P08: pricing.view passou a mapear commercial.pricing). */
 export const SAMPLE_UNMAPPED_CATALOG_KEYS = [
-  "pricing.view",
-  "fleet.view",
+  "reports.material_demand.view",
+  "purchases.create",
 ] as const;
 
 export function buildRolePresetFixtures(): DualWriteCompatibilityFixture[] {
@@ -45,7 +45,11 @@ export function buildFictionalUserFixtures(): DualWriteCompatibilityFixture[] {
     {
       id: "fic-with-unmapped-catalog",
       role: "VIEWER",
-      legacyPermissions: ["dashboard.view", "pricing.view", "fleet.view"],
+      legacyPermissions: [
+        "dashboard.view",
+        "reports.material_demand.view",
+        "purchases.create",
+      ],
     },
     {
       id: "fic-admin-users-manage",
@@ -82,7 +86,7 @@ export function buildLeticiaFixture(): DualWriteCompatibilityFixture {
     id: "leticia-ap-only",
     role: "VIEWER",
     legacyPermissions: materializeLegacyPermissionsFromFlags(effective, [
-      "pricing.view",
+      "reports.material_demand.view",
     ]),
     effectiveByResourceKey: effective,
   };

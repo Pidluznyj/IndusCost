@@ -237,11 +237,11 @@ describe("P05 round-trip UI → flags → dual-write → resolver → DTO", () =
     assert.equal(effective.dashboard?.canView, false);
     assert.equal(effective.comercial?.canView, false);
     assert.equal(effective["financeiro.contas_pagar"]?.canView, true);
-    const bag = materializeLegacyPermissionsFromFlags(effective, ["pricing.view"]);
+    const bag = materializeLegacyPermissionsFromFlags(effective, ["reports.material_demand.view"]);
     assert.equal(bag.includes("crm.view"), false);
     assert.equal(bag.includes("dashboard.view"), false);
     assert.ok(bag.includes("finance.accountsPayable.view"));
-    assert.ok(bag.includes("pricing.view"), "unmapped preservado");
+    assert.ok(bag.includes("reports.material_demand.view"), "unmapped preservado");
 
     const mapped = mapSeedAxisOverridesToContract(rows);
     const resolved = resolveEffectiveAccess({
