@@ -10,6 +10,7 @@ import {
   isKnownMegaOrBleedKey,
   listPermissionMegaKeyRecords,
 } from "./megaKeys.ts";
+import { inferPermissionHierarchyType } from "./hierarchyTypes.ts";
 import { PERMISSION_CONTRACT_RESOURCES } from "./resources.ts";
 import type {
   PermissionAliasMigrationStatus,
@@ -278,17 +279,20 @@ export function toPermissionContractCatalogEntry(
   r: PermissionContractResource,
   resources: readonly PermissionContractResource[] = PERMISSION_CONTRACT_RESOURCES
 ): PermissionContractCatalogEntry {
+  const deprecated = Boolean(r.deprecated);
   return {
     resourceKey: r.resourceKey,
     label: r.label,
     group: r.groupId,
     parentKey: r.parentKey,
     order: r.sortOrder,
+    hierarchyType: inferPermissionHierarchyType(r),
+    isActive: !deprecated,
     supportedActions: r.actions.map((a) => a.action),
     sensitivity: r.sensitivity,
     metadata: toUiMetadata(r),
     legacyAliases: listLegacyAliasesForResource(r.resourceKey, resources),
-    deprecated: Boolean(r.deprecated),
+    deprecated,
     replacementKeys: r.replacementKeys ?? [],
     migrationStatus: resolveMigrationStatus(r),
     notes: r.notes,

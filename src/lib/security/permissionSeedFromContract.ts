@@ -4,6 +4,8 @@
  */
 
 import {
+  inferPermissionHierarchyType,
+  toLegacyResourceStorageType,
   PERMISSION_CONTRACT_RESOURCES,
   type PermissionContractResource,
 } from "@/src/lib/security/permissionContract/index.js";
@@ -12,6 +14,7 @@ export type DerivedPermissionResourceSeed = {
   key: string;
   label: string;
   description: string;
+  /** Persistência atual (Prisma): MENU/SUBMENU = aliases oficiais MODULE/PAGE. */
   type: "MENU" | "SUBMENU" | "TAB" | "ACTION";
   parentKey: string | null;
   module: string;
@@ -20,13 +23,11 @@ export type DerivedPermissionResourceSeed = {
   legacyAliasKeys: string[];
 };
 
+/** Tipo de storage legado a partir da hierarquia oficial (PERM-26). */
 function inferType(
   r: PermissionContractResource
 ): DerivedPermissionResourceSeed["type"] {
-  if (r.isInternalAction) return "ACTION";
-  if (r.isTab) return "TAB";
-  if (r.parentKey == null) return "MENU";
-  return "SUBMENU";
+  return toLegacyResourceStorageType(inferPermissionHierarchyType(r));
 }
 
 function buildDescription(r: PermissionContractResource): string {

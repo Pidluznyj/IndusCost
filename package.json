@@ -226,7 +226,7 @@
     "audit:permission-contract:strict": "tsx scripts/auditPermissionContract.ts --strict",
     "audit:permission-contract:full": "tsx scripts/auditPermissionContract.ts --full",
     "test:permission-audit": "tsx --test src/lib/security/permissionAudit/permissionAudit.test.ts src/lib/security/permissionAudit.test.ts",
-    "test:permission-contract": "tsx --test src/lib/security/permissionContract/permissionContract.test.ts src/lib/security/permissionContract/helpers.test.ts src/lib/security/permissionContract/truthTable.test.ts src/lib/security/permissionsRuntimeDiagnosis.test.ts src/lib/security/permissionMegaKeyMigration.test.ts",
+    "test:permission-contract": "tsx --test src/lib/security/permissionContract/permissionContract.test.ts src/lib/security/permissionContract/helpers.test.ts src/lib/security/permissionContract/truthTable.test.ts src/lib/security/permissionContract/resourceHierarchy.test.ts src/lib/security/permissionsRuntimeDiagnosis.test.ts src/lib/security/permissionMegaKeyMigration.test.ts",
     "audit:navigation-grouping": "tsx scripts/audit-navigation-grouping.ts",
     "audit:system-integrity": "tsx scripts/systemIntegrityAudit.ts",
     "audit:data-lineage": "tsx scripts/audit-data-lineage.ts",

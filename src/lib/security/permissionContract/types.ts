@@ -118,6 +118,10 @@ export type PermissionContractCatalogEntry = {
   group: PermissionContractGroupId;
   parentKey: string | null;
   order: number;
+  /** Hierarquia oficial MODULE | PAGE | TAB | ACTION (PERM-26). */
+  hierarchyType: "MODULE" | "PAGE" | "TAB" | "ACTION";
+  /** Ativo quando não deprecated. */
+  isActive: boolean;
   supportedActions: readonly PermissionContractAction[];
   sensitivity: PermissionContractSensitivity;
   metadata: PermissionContractUiMetadata;

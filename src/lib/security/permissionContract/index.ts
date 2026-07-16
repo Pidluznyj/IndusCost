@@ -4,8 +4,10 @@
  */
 
 export * from "./types.ts";
+export * from "./hierarchyTypes.ts";
 export * from "./resources.ts";
 export * from "./validate.ts";
 export * from "./megaKeys.ts";
+export * from "./resourceHierarchy.ts";
 export * from "./helpers.ts";
 export * from "./truthTable.ts";
