@@ -575,6 +575,7 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
     assert.equal(payload.summary.amountToInvoice, 500);
     assert.equal(payload.summary.financialBalance, null);
     assert.equal(payload.highlightedTaxes.length, 0);
+    assert.equal(payload.status, "unavailable");
   });
 
   it("TRIB-04: várias NF-es válidas consolidam IPI/frete/despesas sem duplicar", async () => {
@@ -835,7 +836,7 @@ describe("buildSalesOrderFiscalTaxesPayload — PD 02457", () => {
   });
 });
 
-describe("TRIB-01 — empty state da aba Tributos (contrato atual)", () => {
+describe("TRIB-01 / TRIB-05 — empty state e gate da aba Tributos", () => {
   it("mensagem empty só quando fiscalTaxes é null; no-nfe é estado distinto", () => {
     const tab = readFileSync(
       new URL("../../components/sales/SalesOrderTributosTab.tsx", import.meta.url),
@@ -846,9 +847,11 @@ describe("TRIB-01 — empty state da aba Tributos (contrato atual)", () => {
     assert.match(tab, /data-testid="sales-order-tributos-no-nfe"/);
     assert.match(tab, /Nenhuma NF-e vinculada a este pedido/);
     assert.match(tab, /if \(!fiscalTaxes\)/);
+    assert.match(tab, /fiscalTaxes\?\.status === "error"/);
+    assert.match(tab, /fiscalTaxesAccess === "denied"/);
   });
 
-  it("detail passa appAuth.permissions (bag crua) ao gate fiscal — mismatch com FE effectivePermissions", () => {
+  it("detail passa effectivePermissions + role ao gate fiscal (TRIB-05)", () => {
     const routes = readFileSync(
       new URL("../salesOrderDetailRoutes.ts", import.meta.url),
       "utf8"
@@ -858,10 +861,10 @@ describe("TRIB-01 — empty state da aba Tributos (contrato atual)", () => {
       "utf8"
     );
     assert.match(routes, /permissions:\s*appAuth\.permissions/);
-    assert.doesNotMatch(routes, /effectivePermissions:\s*appAuth\.effectivePermissions/);
-    assert.match(dialog, /denied=\{!canTributos\}/);
+    assert.match(routes, /effectivePermissions:\s*appAuth\.effectivePermissions/);
+    assert.match(routes, /role:\s*appAuth\.role/);
+    assert.match(dialog, /fiscalTaxesAccess=\{payload\.fiscalTaxesAccess\}/);
     assert.match(dialog, /fiscalTaxes=\{payload\.fiscalTaxes\}/);
-    // Reproduz o empty: FE liberaria com detail.view efetivo; BE nega com bag só view.
     assert.equal(
       canViewSalesOrderFiscalTaxesFromPermissions(["sales_orders.view"]),
       false

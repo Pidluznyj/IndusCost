@@ -121,14 +121,44 @@ export type SalesOrderFiscalNfeDto = {
   source: "FISCAL_SUMMARY" | "HEADER_DIFF" | "MISSING";
   parsedAt: string | null;
   parserVersion: string | null;
+  /** Origem principal do vínculo Pedido → NF (TRIB-03). */
+  linkOrigin?: string | null;
+  /** Todas as origens oficiais conhecidas para auditoria. */
+  linkOrigins?: string[];
   headerTaxes: SalesOrderFiscalTaxAmount[];
   itemTaxLines: SalesOrderFiscalTaxLineDto[];
 };
 
+/** Contrato TRIB-05 — disponibilidade dos tributos documentais. */
+export const SALES_ORDER_FISCAL_TAXES_STATUSES = [
+  "available",
+  "unavailable",
+  "partial",
+  "error",
+] as const;
+
+export type SalesOrderFiscalTaxesStatus =
+  (typeof SALES_ORDER_FISCAL_TAXES_STATUSES)[number];
+
+export type SalesOrderFiscalNfeLinkOriginDto = {
+  nfeExternalId: number;
+  numero: string | null;
+  origins: string[];
+  primaryOrigin: string | null;
+};
+
 export type SalesOrderFiscalTaxesPayload = {
+  /** Estado estável do contrato (nunca omitir quando o bloco é autorizado). */
+  status: SalesOrderFiscalTaxesStatus;
+  statusReason: string | null;
+  warnings: string[];
+  /** Origem dos vínculos NF ↔ pedido (auditoria). */
+  linkOrigins: SalesOrderFiscalNfeLinkOriginDto[];
   summary: SalesOrderFiscalTaxesSummary;
   highlightedTaxes: SalesOrderFiscalTaxAmount[];
+  /** NF-es válidas consideradas nos totais. */
   nfes: SalesOrderFiscalNfeDto[];
+  /** NF canceladas — bloco de auditoria (fora dos totais). */
   cancelledNfes: SalesOrderFiscalNfeDto[];
   itemTaxLines: SalesOrderFiscalTaxLineDto[];
   /**

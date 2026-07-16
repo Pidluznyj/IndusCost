@@ -51,9 +51,8 @@ import type {
 } from "../finance/orderFullAuditClient.js";
 import { prisma as defaultPrisma } from "@/src/lib/prisma.js";
 import { buildSalesOrderFiscalTaxesPayload } from "./salesOrderFiscalTaxes.server.js";
-import {
-  canViewSalesOrderFiscalTaxesFromPermissions,
-} from "./salesOrderFiscalTaxesPermissions.js";
+import { buildSalesOrderFiscalTaxesErrorPayload } from "./salesOrderFiscalTaxesContract.js";
+import { canViewSalesOrderFiscalTaxesFromAuth } from "./salesOrderFiscalTaxesPermissions.js";
 import type {
   SalesOrderDetailAlert,
   SalesOrderDetailFinancial,
@@ -389,7 +388,12 @@ function mapAlerts(audit: OrderFullAuditPayload): SalesOrderDetailAlert[] {
 export type GetSalesOrderDetailInput = {
   salesOrderId: string;
   orderCode?: string | null;
-  userContext?: { userId?: string | null; permissions?: readonly string[] } | null;
+  userContext?: {
+    userId?: string | null;
+    permissions?: readonly string[] | null;
+    effectivePermissions?: readonly string[] | null;
+    role?: string | null;
+  } | null;
 };
 
 /**
@@ -452,13 +456,23 @@ export async function getSalesOrderDetail(
   const pricingMargin = mapPricingMargin(audit);
   const alerts = mapAlerts(audit);
 
-  const allowFiscal = canViewSalesOrderFiscalTaxesFromPermissions(
-    input.userContext?.permissions ?? null
-  );
-  const fiscalTaxes = allowFiscal
-    ? (audit.fiscalTaxes ??
-      (await buildSalesOrderFiscalTaxesPayload(prismaClient, audit)))
-    : null;
+  const allowFiscal = canViewSalesOrderFiscalTaxesFromAuth({
+    permissions: input.userContext?.permissions ?? null,
+    effectivePermissions: input.userContext?.effectivePermissions ?? null,
+    role: input.userContext?.role ?? null,
+  });
+  let fiscalTaxes = allowFiscal ? (audit.fiscalTaxes ?? null) : null;
+  if (allowFiscal && !fiscalTaxes) {
+    try {
+      fiscalTaxes = await buildSalesOrderFiscalTaxesPayload(prismaClient, audit);
+    } catch (err) {
+      console.error("getSalesOrderDetail fiscalTaxes", err);
+      fiscalTaxes = buildSalesOrderFiscalTaxesErrorPayload(
+        "Falha técnica ao montar tributos documentais.",
+        { orderActiveValue: audit.summary.activeOrderValue ?? 0 }
+      );
+    }
+  }
 
   const now = new Date().toISOString();
   const payload: SalesOrderDetailPayload = {
@@ -475,6 +489,7 @@ export async function getSalesOrderDetail(
     pricingMargin,
     alerts,
     fiscalTaxes,
+    fiscalTaxesAccess: allowFiscal ? "allowed" : "denied",
     technicalInfo: {
       sources: [
         "SalesOrder + SalesOrderItem (Prisma)",

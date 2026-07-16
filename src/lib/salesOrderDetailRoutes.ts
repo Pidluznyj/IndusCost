@@ -57,15 +57,25 @@ export function registerSalesOrderDetailRoutes(
             ? req.query.orderCode.trim() || null
             : null;
         const appAuth = (
-          req as { appAuth?: { userId?: string; permissions?: string[] } }
+          req as {
+            appAuth?: {
+              userId?: string;
+              id?: string;
+              permissions?: string[];
+              effectivePermissions?: string[];
+              role?: string;
+            };
+          }
         ).appAuth;
         const payload = await getSalesOrderDetail({
           salesOrderId,
           orderCode,
           userContext: appAuth
             ? {
-                userId: appAuth.userId ?? null,
+                userId: appAuth.userId ?? appAuth.id ?? null,
                 permissions: appAuth.permissions ?? [],
+                effectivePermissions: appAuth.effectivePermissions ?? [],
+                role: appAuth.role ?? null,
               }
             : null,
         });

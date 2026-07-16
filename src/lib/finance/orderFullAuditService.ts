@@ -18,7 +18,8 @@
  */
 import { prisma } from "@/src/lib/prisma.js";
 import { buildSalesOrderFiscalTaxesPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxes.server.js";
-import { canViewSalesOrderFiscalTaxesFromPermissions } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
+import { buildSalesOrderFiscalTaxesErrorPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxesContract.js";
+import { canViewSalesOrderFiscalTaxesFromAuth } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
 import {
   extractOfficialItemNfeExternalId,
   mapRelatedNfeOriginToAuditLinkOrigin,
@@ -3500,7 +3501,12 @@ export async function getOrderFullAudit(input: {
   runId?: string | null;
   orderCode?: string | null;
   includeRaw?: boolean;
-  userContext?: { userId?: string | null; permissions?: readonly string[] } | null;
+  userContext?: {
+    userId?: string | null;
+    permissions?: readonly string[] | null;
+    effectivePermissions?: readonly string[] | null;
+    role?: string | null;
+  } | null;
 }): Promise<
   OrderFullAuditPayload | { ok: false; status: number; error: string }
 > {
@@ -3514,9 +3520,11 @@ export async function getOrderFullAudit(input: {
     return loaded;
   }
 
-  const allowFiscal = canViewSalesOrderFiscalTaxesFromPermissions(
-    input.userContext?.permissions ?? null
-  );
+  const allowFiscal = canViewSalesOrderFiscalTaxesFromAuth({
+    permissions: input.userContext?.permissions ?? null,
+    effectivePermissions: input.userContext?.effectivePermissions ?? null,
+    role: input.userContext?.role ?? null,
+  });
   if (!allowFiscal) {
     return { ...loaded, fiscalTaxes: null };
   }
@@ -3526,7 +3534,13 @@ export async function getOrderFullAudit(input: {
     return { ...loaded, fiscalTaxes };
   } catch (err) {
     console.error("getOrderFullAudit fiscalTaxes", err);
-    return { ...loaded, fiscalTaxes: null };
+    return {
+      ...loaded,
+      fiscalTaxes: buildSalesOrderFiscalTaxesErrorPayload(
+        "Falha técnica ao montar tributos documentais.",
+        { orderActiveValue: loaded.summary.activeOrderValue ?? 0 }
+      ),
+    };
   }
 }
 

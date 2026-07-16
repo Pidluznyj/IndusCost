@@ -230,9 +230,12 @@ export type SalesOrderDetailPayload = {
   alerts: SalesOrderDetailAlert[];
   /**
    * Aba Tributos (camada A — destacados na NF).
-   * null quando o usuário não tem permissão de faturamento/NF ou quando omitido.
+   * null somente quando `fiscalTaxesAccess === "denied"`.
+   * Autorizado: sempre objeto com `status` available|unavailable|partial|error.
    */
   fiscalTaxes: SalesOrderFiscalTaxesPayload | null;
+  /** Gate oficial da aba Tributos (backend). */
+  fiscalTaxesAccess: "allowed" | "denied";
   technicalInfo: {
     sources: string[];
     sourceTables: string[];

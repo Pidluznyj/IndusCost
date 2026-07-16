@@ -22,6 +22,8 @@ type Props = {
   loading?: boolean;
   error?: string | null;
   denied?: boolean;
+  /** Gate oficial do backend (TRIB-05). */
+  fiscalTaxesAccess?: "allowed" | "denied" | null;
   className?: string;
   /** Exibe bloco técnico expandível (auditoria). */
   showTechnical?: boolean;
@@ -138,6 +140,7 @@ export function SalesOrderTributosTab({
   loading,
   error,
   denied,
+  fiscalTaxesAccess,
   className,
   showTechnical = true,
 }: Props): JSX.Element {
@@ -166,7 +169,7 @@ export function SalesOrderTributosTab({
     );
   }
 
-  if (denied) {
+  if (denied || fiscalTaxesAccess === "denied") {
     return (
       <div
         className={cn(
@@ -194,6 +197,21 @@ export function SalesOrderTributosTab({
     );
   }
 
+  if (fiscalTaxes?.status === "error") {
+    return (
+      <div
+        className={cn(
+          "rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800",
+          className
+        )}
+        data-testid="sales-order-tributos-error"
+      >
+        {fiscalTaxes.statusReason ??
+          "Falha técnica ao carregar tributos documentais."}
+      </div>
+    );
+  }
+
   if (!fiscalTaxes) {
     return (
       <div
@@ -216,6 +234,8 @@ export function SalesOrderTributosTab({
     itemTaxLines,
     settlements,
     technical,
+    warnings,
+    status,
   } = fiscalTaxes;
   const hasAnyNfe = nfes.length + cancelledNfes.length > 0;
   const settlementBlock =
@@ -615,15 +635,16 @@ export function SalesOrderTributosTab({
             <Kpi label="Valor ativo do pedido" value={money(summary.orderActiveValue)} />
             <Kpi label="A faturar" value={money(summary.amountToInvoice)} tone="highlight" />
             <Kpi label="NF válidas" value={formatFinanceInteger(0)} />
-            <Kpi label="NF canceladas" value={formatFinanceInteger(0)} />
+            <Kpi label="NF canceladas" value={formatFinanceInteger(summary.cancelledNfeCount)} />
           </div>
         </section>
         <div
           className="rounded-lg border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-4 py-8 text-center text-[12px] text-[#6B7280]"
           data-testid="sales-order-tributos-no-nfe"
+          data-status={status}
         >
-          Nenhuma NF-e vinculada a este pedido. Tributos documentais aparecem após o
-          faturamento.
+          {fiscalTaxes.statusReason ??
+            "Nenhuma NF-e vinculada a este pedido. Tributos documentais aparecem após o faturamento."}
         </div>
         {settlementsSections}
         <p className="text-[10px] text-[#6B7280]">
@@ -638,6 +659,23 @@ export function SalesOrderTributosTab({
 
   return (
     <div className={cn("space-y-4", className)} data-testid="sales-order-tributos-tab">
+      {status === "partial" || warnings.length > 0 ? (
+        <div
+          className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
+          data-testid="sales-order-tributos-warnings"
+        >
+          {status === "partial" ? (
+            <p className="font-semibold">Dados fiscais parciais</p>
+          ) : null}
+          {warnings.length > 0 ? (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {/* A — Resumo fiscal */}
       <section
         className="rounded-xl border border-[#E5E7EB] bg-white p-3"

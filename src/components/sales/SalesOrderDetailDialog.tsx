@@ -290,7 +290,8 @@ export function SalesOrderDetailDialog({
             ) : (
               <SalesOrderTributosTab
                 fiscalTaxes={payload.fiscalTaxes}
-                denied={!canTributos}
+                denied={!canTributos || payload.fiscalTaxesAccess === "denied"}
+                fiscalTaxesAccess={payload.fiscalTaxesAccess}
               />
             )
           ) : (

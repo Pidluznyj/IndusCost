@@ -21,6 +21,10 @@ import {
   toDocumentaryMoneyCents,
 } from "./salesOrderDocumentaryTaxes.js";
 import {
+  attachSalesOrderFiscalTaxesContract,
+  buildSalesOrderFiscalNfeLinkOrigins,
+} from "./salesOrderFiscalTaxesContract.js";
+import {
   collectionLabelForGuide,
   emptySalesOrderFiscalSettlementsBlock,
   filterPresentTaxAmounts,
@@ -193,6 +197,8 @@ function buildNfeDto(
       source: products != null && total != null ? "HEADER_DIFF" : "MISSING",
       parsedAt: null,
       parserVersion: null,
+      linkOrigin: auditNfe.linkOrigin ?? null,
+      linkOrigins: auditNfe.linkOrigin ? [auditNfe.linkOrigin] : [],
       headerTaxes:
         highlighted != null && highlighted > 0.009
           ? [
@@ -259,6 +265,8 @@ function buildNfeDto(
     source: "FISCAL_SUMMARY",
     parsedAt: iso(fiscal.parsedAt),
     parserVersion: fiscal.parserVersion,
+    linkOrigin: auditNfe.linkOrigin ?? null,
+    linkOrigins: auditNfe.linkOrigin ? [auditNfe.linkOrigin] : [],
     headerTaxes,
     itemTaxLines: mapItemLines(fiscal.taxLines),
   };
@@ -465,43 +473,56 @@ export async function buildSalesOrderFiscalTaxesPayload(
     settlements = emptySalesOrderFiscalSettlementsBlock(new Date().toISOString());
   }
 
-  return {
-    summary: {
-      orderActiveValue,
-      productsValue,
-      discountsValue,
-      freightValue,
-      insuranceValue,
-      otherExpensesValue,
-      nfeValidTotal,
-      amountToInvoice,
-      financialBalance,
-      financialBalanceLabel:
-        financialBalance == null
-          ? "Sem CR gerado"
-          : `R$ ${financialBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
-      validNfeCount: valid.length,
-      cancelledNfeCount: cancelled.length,
-      compositionIncomplete,
-      compositionIncompleteReason: compositionIncomplete
-        ? "Composição não totalmente disponível"
-        : null,
-      sourceLabel: "XML NF-e",
-      lastParsedAt,
-      parserVersion,
+  return attachSalesOrderFiscalTaxesContract(
+    {
+      summary: {
+        orderActiveValue,
+        productsValue,
+        discountsValue,
+        freightValue,
+        insuranceValue,
+        otherExpensesValue,
+        nfeValidTotal,
+        amountToInvoice,
+        financialBalance,
+        financialBalanceLabel:
+          financialBalance == null
+            ? "Sem CR gerado"
+            : `R$ ${financialBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+        validNfeCount: valid.length,
+        cancelledNfeCount: cancelled.length,
+        compositionIncomplete,
+        compositionIncompleteReason: compositionIncomplete
+          ? "Composição não totalmente disponível"
+          : null,
+        sourceLabel: "XML NF-e",
+        lastParsedAt,
+        parserVersion,
+      },
+      highlightedTaxes: filterPresentTaxAmounts(highlightedTaxes),
+      nfes: activeNfes,
+      cancelledNfes: cancelled,
+      itemTaxLines,
+      settlements,
+      technical: {
+        source:
+          "NomusNfeFiscalSummary + NomusNfeTaxLine (HEADER) · FiscalPaymentGuide/Allocation (B/C/D)",
+        note: "Tributos documentais destacados na NF — não são impostos pagos. Não somar HEADER e ITEM. Residual ≠ saldo financeiro.",
+        doNotSumHeaderAndItem: true,
+      },
     },
-    highlightedTaxes: filterPresentTaxAmounts(highlightedTaxes),
-    nfes: activeNfes,
-    cancelledNfes: cancelled,
-    itemTaxLines,
-    settlements,
-    technical: {
-      source:
-        "NomusNfeFiscalSummary + NomusNfeTaxLine (HEADER) · FiscalPaymentGuide/Allocation (B/C/D)",
-      note: "Tributos documentais destacados na NF — não são impostos pagos. Não somar HEADER e ITEM. Residual ≠ saldo financeiro.",
-      doNotSumHeaderAndItem: true,
-    },
-  };
+    {
+      linkOrigins: buildSalesOrderFiscalNfeLinkOrigins([
+        ...activeNfes,
+        ...cancelled,
+        ...nfes.map((n) => ({
+          nfeExternalId: n.nfeExternalId,
+          numero: n.numero,
+          linkOrigin: n.linkOrigin,
+        })),
+      ]),
+    }
+  );
 }
 
 /**
