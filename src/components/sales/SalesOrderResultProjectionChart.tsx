@@ -11,16 +11,30 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CalendarDays, Percent, Target, TrendingUp, Wallet } from "lucide-react";
 import type {
   SalesOrderResultProjection,
   SalesOrderResultRealizedVsProjectedRow,
 } from "@/src/lib/salesOrderResultTypes";
 import { formatFinanceCurrencyCompact } from "@/src/lib/financeAccountsReceivableFormat";
-import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { formatCurrency } from "@/src/lib/utils";
 import { ChartBarValueLabel } from "@/src/components/finance/shared/ChartValueLabel";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
-import { MetricCard } from "@/src/components/ui/MetricCard";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+  type SystemTotalizerTone,
+} from "@/src/components/ui/SystemTotalizerCard";
+import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+
+function resolveAchievementTone(percent: number | null): SystemTotalizerTone {
+  if (percent == null || !Number.isFinite(percent)) return "neutral";
+  if (percent >= 100) return "success";
+  if (percent >= 80) return "warning";
+  return "danger";
+}
 
 export function SalesOrderResultProjectionChart({
   rows,
@@ -36,42 +50,69 @@ export function SalesOrderResultProjectionChart({
     target: row.targetAmount ?? 0,
   }));
 
+  const hasYearTarget = projection.yearTarget != null;
+
   return (
     <div className="space-y-4" data-testid="sales-order-result-projection-chart">
-      <SummaryKpiGrid minColumnWidth={180}>
-        <MetricCard
-          label="Média diária (mês)"
-          formattedValue={
-            projection.averageBusinessDaySales != null
-              ? formatCurrency(projection.averageBusinessDaySales)
-              : "—"
-          }
-        />
-        <MetricCard
-          label="Realizado no ano"
-          formattedValue={formatCurrency(projection.yearRealized)}
-        />
-        <MetricCard
-          label="Meta no ano"
-          formattedValue={
-            projection.yearTarget != null ? formatCurrency(projection.yearTarget) : "Sem meta cadastrada"
-          }
-        />
-        <MetricCard
-          label="Projeção no ano"
-          formattedValue={
-            projection.yearProjected != null ? formatCurrency(projection.yearProjected) : "—"
-          }
-        />
-        <MetricCard
-          label="% atingimento projetado"
-          formattedValue={
-            projection.projectedAchievementPercent != null
-              ? `${formatNumber(projection.projectedAchievementPercent, 1)}%`
-              : "—"
-          }
-        />
-      </SummaryKpiGrid>
+      <ExecutiveSummarySection
+        title="Projeção comercial"
+        eyebrow="Indicadores de realizado, meta e projeção"
+        testId="sales-order-result-projection-summary"
+      >
+        <SummaryKpiGrid minColumnWidth={168} className={SYSTEM_TOTALIZER_GRID_CLASS}>
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Média diária (mês)"
+            amount={projection.averageBusinessDaySales}
+            amountFormat="currency"
+            tone="money"
+            icon={CalendarDays}
+            helperText="Média de venda por dia útil no mês corrente."
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Realizado no ano"
+            amount={projection.yearRealized}
+            amountFormat="currency"
+            tone="success"
+            icon={Wallet}
+            helperText="Soma do valor realizado no ano até a data de referência."
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Meta no ano"
+            amount={hasYearTarget ? projection.yearTarget : null}
+            amountFormat={hasYearTarget ? "currency" : undefined}
+            value={hasYearTarget ? undefined : "Sem meta cadastrada"}
+            valueSize={hasYearTarget ? "default" : "text"}
+            tone={hasYearTarget ? "info" : "neutral"}
+            icon={Target}
+            helperText={
+              hasYearTarget
+                ? "Meta comercial anual (quando disponível no sistema)."
+                : "Nenhuma meta anual cadastrada para o período."
+            }
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Projeção no ano"
+            amount={projection.yearProjected}
+            amountFormat="currency"
+            tone="warning"
+            icon={TrendingUp}
+            helperText="Projeção anual com base na média por dia útil."
+          />
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="% atingimento projetado"
+            amount={projection.projectedAchievementPercent}
+            amountFormat="percent"
+            tone={resolveAchievementTone(projection.projectedAchievementPercent)}
+            icon={Percent}
+            helperText="Projeção no ano ÷ meta no ano."
+          />
+        </SummaryKpiGrid>
+      </ExecutiveSummarySection>
 
       <div className={`${financeBiCardClass} p-5`}>
         <h3 className="text-sm font-bold text-[#111827]">Realizado vs Projetado</h3>

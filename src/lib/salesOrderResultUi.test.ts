@@ -27,7 +27,11 @@ describe("salesOrderResult UI", () => {
 
   it("gráficos renderizam", () => {
     assert.match(read("src/components/sales/SalesOrderResultMonthlyMarginChart.tsx"), /ComposedChart/);
-    assert.match(read("src/components/sales/SalesOrderResultProjectionChart.tsx"), /ComposedChart/);
+    const projection = read("src/components/sales/SalesOrderResultProjectionChart.tsx");
+    assert.match(projection, /ComposedChart/);
+    assert.match(projection, /SystemTotalizerCard/);
+    assert.match(projection, /SYSTEM_TOTALIZER_GRID_CLASS/);
+    assert.doesNotMatch(projection, /MetricCard/);
   });
 
   it("permissão de margem respeitada", () => {

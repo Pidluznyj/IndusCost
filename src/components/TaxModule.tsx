@@ -22,6 +22,9 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { TAX_TOUR_STEPS } from "@/src/tours/taxTourSteps";
+import { FiscalSettlementsPanel } from "@/src/components/finance/FiscalSettlementsPanel";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { canViewFiscalSettlements } from "@/src/lib/finance/fiscalSettlementPermissions";
 
 const TAX_OPERATION_OPTIONS = [
   { value: "VENDA", label: "Venda", searchTerms: "VENDA venda" },
@@ -52,6 +55,9 @@ interface TaxRule {
 }
 
 export const TaxModule = () => {
+  const auth = useAuth();
+  const canSettlements = canViewFiscalSettlements(auth);
+  const [moduleTab, setModuleTab] = useState<"pricing" | "settlements">("settlements");
   const [rules, setRules] = useState<TaxRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,8 +86,13 @@ export const TaxModule = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (moduleTab === "pricing") fetchData();
+  }, [moduleTab]);
+
+  // default: settlements if permitted, else pricing
+  useEffect(() => {
+    if (!canSettlements) setModuleTab("pricing");
+  }, [canSettlements]);
 
   const handleOpenModal = (rule?: TaxRule) => {
     if (rule) {
@@ -141,7 +152,60 @@ export const TaxModule = () => {
   };
 
   return (
-    <div className="space-y-6" data-tour="tax-rules-root">
+    <div className="space-y-6" data-tour="tax-rules-root" data-testid="tax-module">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-wide text-[#1e3a8a]">
+          Financeiro · Tributos
+        </p>
+        <h1 className="text-lg font-bold text-[#0f172a]">Tributos</h1>
+        <p className="text-[12px] text-[#6B7280]">
+          Separe precificação comercial de apuração e recolhimento documental.
+        </p>
+      </div>
+
+      <nav
+        className="flex flex-wrap gap-1 border-b border-border pb-2"
+        role="tablist"
+        data-testid="tax-module-tabs"
+      >
+        {canSettlements ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={moduleTab === "settlements"}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[12px] font-semibold",
+              moduleTab === "settlements"
+                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                : "text-[#4B5563] hover:bg-[#F3F4F6]"
+            )}
+            onClick={() => setModuleTab("settlements")}
+            data-testid="tax-module-tab-settlements"
+          >
+            Apuração e guias
+          </button>
+        ) : null}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={moduleTab === "pricing"}
+          className={cn(
+            "rounded-md px-3 py-1.5 text-[12px] font-semibold",
+            moduleTab === "pricing"
+              ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+              : "text-[#4B5563] hover:bg-[#F3F4F6]"
+          )}
+          onClick={() => setModuleTab("pricing")}
+          data-testid="tax-module-tab-pricing"
+        >
+          Regras de precificação
+        </button>
+      </nav>
+
+      {moduleTab === "settlements" && canSettlements ? (
+        <FiscalSettlementsPanel />
+      ) : (
+        <>
       {/* Header Actions */}
       <div
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -388,6 +452,8 @@ export const TaxModule = () => {
         steps={TAX_TOUR_STEPS}
         tourName="Tour de Regras Fiscais"
       />
+        </>
+      )}
     </div>
   );
 };
