@@ -138,7 +138,7 @@ describe("Contas a Pagar — autorização Leticia / deny / SA", () => {
     );
     assert.equal(
       authorizeRequireResource(
-        auth({ role: "ADMIN", permissions: ["settings.nomus.sync"] }),
+        auth({ role: "VIEWER", permissions: ["finance.accountsPayable.sync"] }),
         FINANCE_AP_RESOURCE_KEY,
         "execute",
         { legacyCompatMode: true }

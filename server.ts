@@ -2667,14 +2667,14 @@ async function startServer() {
   });
 
   // --- API: Roles (Cargos) ---
-  app.get("/api/roles", requireAppAuth, requireBootstrapOrAnyPermission(["settings.operational.view", "settings.view"]), async (req, res) => {
+  app.get("/api/roles", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const roles = await prisma.role.findMany({
       orderBy: { name: "asc" },
     });
     res.json(roles);
   });
 
-  app.post("/api/roles", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.post("/api/roles", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.create({
       data: { name, baseSalary, monthlyHours },
@@ -2682,7 +2682,7 @@ async function startServer() {
     res.json(role);
   });
 
-  app.put("/api/roles/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.put("/api/roles/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { id } = req.params;
     const { name, baseSalary, monthlyHours } = req.body;
     const role = await prisma.role.update({
@@ -2692,7 +2692,7 @@ async function startServer() {
     res.json(role);
   });
 
-  app.delete("/api/roles/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.delete("/api/roles/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { id } = req.params;
     await prisma.role.delete({ where: { id } });
     res.json({ success: true });
@@ -2776,14 +2776,14 @@ async function startServer() {
   });
 
   // --- API: Payroll Components ---
-  app.get("/api/payroll-components", requireAppAuth, requireBootstrapOrAnyPermission(["settings.operational.view", "settings.view"]), async (req, res) => {
+  app.get("/api/payroll-components", requireAppAuth, requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "view"), async (req, res) => {
     const components = await prisma.payrollComponent.findMany({
       orderBy: { name: "asc" },
     });
     res.json(components);
   });
 
-  app.post("/api/payroll-components", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.post("/api/payroll-components", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.create({
       data: { name, type, calculationType, value },
@@ -2791,7 +2791,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.put("/api/payroll-components/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.put("/api/payroll-components/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { id } = req.params;
     const { name, type, calculationType, value } = req.body;
     const component = await prisma.payrollComponent.update({
@@ -2801,7 +2801,7 @@ async function startServer() {
     res.json(component);
   });
 
-  app.delete("/api/payroll-components/:id", requireBootstrapOrAnyPermission(["settings.operational.manage", "users.manage"]), async (req, res) => {
+  app.delete("/api/payroll-components/:id", requireBootstrapOrResource(isBootstrapAdminRequest, "admin.settings.operational", "manage"), async (req, res) => {
     const { id } = req.params;
     await prisma.payrollComponent.delete({ where: { id } });
     res.json({ success: true });
@@ -3497,7 +3497,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 });
 
   // --- API: Materials (Matérias-Primas e Insumos) ---
-  app.get("/api/materials/import/template", requireAppAuth, requirePermission("materials.view"), (req, res) => {
+  app.get("/api/materials/import/template", requireAppAuth, requireResource("engineering.materials", "view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplate(MaterialImportConfig);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -3509,7 +3509,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/materials/import/preview", requireAppAuth, requirePermission("materials.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
+  app.post("/api/materials/import/preview", requireAppAuth, requireResource("engineering.materials", "update"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const result = await ServerImporter.parseExcel(req.file.buffer, MaterialImportConfig);
@@ -3526,7 +3526,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/materials/import/confirm", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
+  app.post("/api/materials/import/confirm", requireAppAuth, requireResource("engineering.materials", "update"), async (req, res) => {
     const { data: bodyData, importId } = req.body;
     let data = bodyData;
 
@@ -3584,7 +3584,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/materials", requireAppAuth, requirePermission("materials.view"), async (req, res) => {
+  app.get("/api/materials", requireAppAuth, requireResource("engineering.materials", "view"), async (req, res) => {
     const materials = await prisma.material.findMany({
       include: {
         MaterialPriceHistory: { orderBy: { effectiveDate: "desc" }, take: 5 },
@@ -3622,7 +3622,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/monitored",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
+    requireResource("engineering.materials.market_intelligence.home", "view"),
     async (req, res) => {
       try {
         const q = typeof req.query.q === "string" ? req.query.q : "";
@@ -3673,7 +3673,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/reports",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
+    requireResource("engineering.materials.market_intelligence.home", "view"),
     async (req, res) => {
       try {
         const payload = await buildMaterialMarketIntelligenceReportForApi(
@@ -3699,7 +3699,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/opportunities",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_HOME, "view"),
+    requireResource("engineering.materials.market_intelligence.home", "view"),
     async (req, res) => {
       try {
         const volume = parseMaterialMarketSavingsVolume(
@@ -3748,7 +3748,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/alerts",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.SUPRIMENTOS_MI_TAB_ALERTAS, "view"),
+    requireResource("engineering.materials.market_intelligence", "view"),
     async (req, res) => {
       try {
         const statusFilter = parseMaterialMarketAlertStatusFilter(req.query.status);
@@ -3779,7 +3779,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.patch(
     "/api/materials/market-intelligence/alerts/:alertId",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { alertId } = req.params;
@@ -3838,7 +3838,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/market-intelligence/alert-config/global",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (_req, res) => {
       try {
         const effective = await loadEffectiveMaterialMarketAlertConfig(prisma);
@@ -3868,7 +3868,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.put(
     "/api/market-intelligence/alert-config/global",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const authUser = await getCurrentAppUser(req);
@@ -3906,7 +3906,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/market-intelligence/alert-config/audit",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const materialId =
@@ -3932,7 +3932,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/alert-config",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -3974,7 +3974,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.put(
     "/api/materials/market-intelligence/:materialId/alert-config",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4026,7 +4026,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/ptax-preview",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const authUser = await getCurrentAppUser(req);
@@ -4059,7 +4059,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/savings",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4107,7 +4107,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/financial-impact",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4172,7 +4172,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/simulate",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4215,7 +4215,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/impacted-products",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4247,7 +4247,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/purchase-links",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4284,7 +4284,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/timeline",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4327,7 +4327,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/purchase-links",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4453,7 +4453,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/quotes",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4500,7 +4500,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/price-history",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4559,7 +4559,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/comparative-chart",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4635,7 +4635,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4770,7 +4770,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/analytics",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4825,7 +4825,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/fx-decomposition",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4883,7 +4883,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/suppliers",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4942,7 +4942,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/alerts",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4982,7 +4982,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/alerts/evaluate",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -5021,7 +5021,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId",
     requireAppAuth,
-    requirePermission("materials.view"),
+    requireResource("engineering.materials", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -5064,7 +5064,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.post("/api/materials", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
+  app.post("/api/materials", requireAppAuth, requireResource("engineering.materials", "update"), async (req, res) => {
     try {
       const body = req.body ?? {};
       const code = typeof body.code === "string" ? body.code.trim() : "";
@@ -5256,7 +5256,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
+  app.put("/api/materials/:id", requireAppAuth, requireResource("engineering.materials", "update"), async (req, res) => {
     try {
       const { id } = req.params;
       const body = req.body ?? {};
@@ -5335,7 +5335,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.patch(
     "/api/materials/:id/market-monitoring",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    requireResource("engineering.materials", "update"),
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -5389,7 +5389,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.patch("/api/materials/:id/status", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
+  app.patch("/api/materials/:id/status", requireAppAuth, requireResource("engineering.materials", "update"), async (req, res) => {
     try {
       const { id } = req.params;
       const { status } = req.body;
@@ -5427,7 +5427,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.delete("/api/materials/:id", requireAppAuth, requirePermission("materials.edit"), async (req, res) => {
+  app.delete("/api/materials/:id", requireAppAuth, requireResource("engineering.materials", "update"), async (req, res) => {
     const { id } = req.params;
     await prisma.material.delete({ where: { id } });
     res.json({ success: true });
@@ -5865,7 +5865,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   // --- API: Products (Engenharia / BOM / Routing) ---
   // --- API: Products Import ---
-  app.get("/api/products/import/template", requireAppAuth, requirePermission("products.view"), (req, res) => {
+  app.get("/api/products/import/template", requireAppAuth, requireResource("engineering.products", "view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplateMulti(EngineeringImportConfigs);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -5877,7 +5877,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/products/import/preview", requireAppAuth, requirePermission("products.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
+  app.post("/api/products/import/preview", requireAppAuth, requireResource("engineering.products", "update"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const results = await ServerImporter.parseExcelMulti(req.file.buffer, EngineeringImportConfigs);
@@ -5895,7 +5895,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/products/import/confirm", requireAppAuth, requirePermission("products.edit"), async (req, res) => {
+  app.post("/api/products/import/confirm", requireAppAuth, requireResource("engineering.products", "update"), async (req, res) => {
     const { cadastro: bodyCadastro, estrutura: bodyEstrutura, importId } = req.body;
     let cadastro = bodyCadastro;
     let estrutura = bodyEstrutura;
@@ -6181,7 +6181,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/products", requireAppAuth, requirePermission("products.view"), async (req, res) => {
+  app.get("/api/products", requireAppAuth, requireResource("engineering.products", "view"), async (req, res) => {
     try {
       const typeQ = typeof req.query.type === "string" ? req.query.type.trim() : "";
       /** Product.type no Prisma é apenas PRODUCT | COMPONENT (matéria-prima é modelo Material). */
@@ -6395,7 +6395,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/products/bom-usage", requireAppAuth, requirePermission("products.view"), async (req, res) => {
+  app.get("/api/products/bom-usage", requireAppAuth, requireResource("engineering.products", "view"), async (req, res) => {
     try {
       const rawCode = typeof req.query.code === "string" ? req.query.code : "";
       if (!rawCode.trim()) {
@@ -6440,7 +6440,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/products/:id", requireAppAuth, requirePermission("products.view"), async (req, res) => {
+  app.get("/api/products/:id", requireAppAuth, requireResource("engineering.products", "view"), async (req, res) => {
     const { id } = req.params;
     const product = await prisma.product.findUnique({
       where: { id },
@@ -7031,7 +7031,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/nomus/effective-pricing-bom/apply",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const body = req.body ?? {};
@@ -7109,7 +7109,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/nomus/product-import-simulation/preview",
     requireAppAuth,
-    requirePermission("products.view"),
+    requireResource("engineering.products", "view"),
     async (req, res) => {
       try {
         const parentCode = String(req.query.parentCode ?? "").trim();
@@ -7137,7 +7137,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/nomus/product-import-simulation/import",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const body = req.body ?? {};
@@ -7825,7 +7825,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/nomus/bom-auto-apply/products/:parentCode/apply",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const parentCode = String(req.params.parentCode ?? "").trim();
@@ -7868,7 +7868,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/nomus/bom-auto-apply/products/apply-batch",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const body = req.body ?? {};
@@ -7945,7 +7945,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/nomus/engineering-sync/preview",
     requireAppAuth,
-    requirePermission("products.view"),
+    requireResource("engineering.products", "view"),
     async (req, res) => {
       try {
         const scopeRaw = String(req.query.scope ?? "ONE_PRODUCT").trim();
@@ -7975,7 +7975,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/nomus/engineering-sync/apply",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const body = req.body ?? {};
@@ -8052,7 +8052,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(tree);
   });
 
-  app.post("/api/products", requireAppAuth, requirePermission("products.create"), async (req, res) => {
+  app.post("/api/products", requireAppAuth, requireResource("engineering.products", "create"), async (req, res) => {
     const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected, costingMode } = req.body;
 
     const normalizedSku = sku?.toString().trim().toUpperCase();
@@ -8180,7 +8180,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/products/:id", requireAppAuth, requirePermission("products.edit"), async (req, res) => {
+  app.put("/api/products/:id", requireAppAuth, requireResource("engineering.products", "update"), async (req, res) => {
     const { id } = req.params;
     const { sku, name, description, type, version, defaultLotSize, bom, routing, cycleTimeSeconds, cavities, setupTimeMin, efficiencyExpected, costingMode } = req.body;
     const normalizedSku = sku?.toString().trim().toUpperCase();
@@ -8422,7 +8422,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/products/:id/reclassification-impact",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -8500,7 +8500,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/products/:id/reclassify",
     requireAppAuth,
-    requirePermission("products.edit"),
+    requireResource("engineering.products", "update"),
     async (req, res) => {
       try {
         const { id } = req.params;
@@ -8560,7 +8560,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.delete("/api/products/:id", requireAppAuth, requirePermission("products.delete"), async (req, res) => {
+  app.delete("/api/products/:id", requireAppAuth, requireResource("engineering.products", "delete"), async (req, res) => {
     const { id } = req.params;
 
     try {
@@ -8613,7 +8613,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/products/bulk-delete", requireAppAuth, requirePermission("products.delete"), async (req, res) => {
+  app.post("/api/products/bulk-delete", requireAppAuth, requireResource("engineering.products", "delete"), async (req, res) => {
     const { ids } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -8731,7 +8731,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Tabelas de preço comerciais (somente leitura; Fase 1) ---
-  app.get("/api/price-tables", requireAppAuth, requireAnyPermission(["settings.price_tables.view", "pricing.view", "settings.view"]), async (_req, res) => {
+  app.get("/api/price-tables", requireAppAuth, requireResource("admin.settings.price_tables", "view"), async (_req, res) => {
     try {
       const tables = await prisma.priceTable.findMany({
         orderBy: { code: "asc" },
@@ -8911,7 +8911,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/price-table-versions/:id/items", requireAppAuth, requireAnyPermission(["settings.price_tables.view", "pricing.view"]), async (req, res) => {
+  app.get("/api/price-table-versions/:id/items", requireAppAuth, requireResource("admin.settings.price_tables", "view"), async (req, res) => {
     const { id } = req.params;
     const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
     const limitRaw = Number.parseInt(String(req.query.limit ?? "50"), 10) || 50;
@@ -9920,7 +9920,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Product Pricing (Formação de Preço) ---
-  app.get("/api/pricing", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
+  app.get("/api/pricing", requireAppAuth, requireResource("commercial.pricing", "view"), async (req, res) => {
     try {
       const cache = await initAnalysisCache();
       const pricings = await prisma.productPricing.findMany({
@@ -9963,7 +9963,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/pricing/published-price-source-trace",
     requireAppAuth,
-    requirePermission("pricing.view"),
+    requireResource("commercial.pricing", "view"),
     async (req, res) => {
       try {
         const query = parsePublishedPriceSourceTraceQuery(req.query as Record<string, unknown>);
@@ -9983,7 +9983,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/pricing/commercial-published-prices",
     requireAppAuth,
-    requirePermission("pricing.view"),
+    requireResource("commercial.pricing", "view"),
     async (req, res) => {
       try {
         const query = parseCommercialPublishedPricesQuery(req.query as Record<string, unknown>);
@@ -9996,7 +9996,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.post("/api/pricing", requireAppAuth, requirePermission("pricing.view"), async (req, res) => {
+  app.post("/api/pricing", requireAppAuth, requireResource("commercial.pricing", "view"), async (req, res) => {
     const { productId, taxRuleId, desiredMargin, commission, freightOut, otherVariables } = req.body;
     const pricing = await prisma.productPricing.upsert({
       where: { productId_taxRuleId: { productId, taxRuleId } },
@@ -10006,7 +10006,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(pricing);
   });
 
-  app.post("/api/pricing/bulk-delete", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "pricing.publish_tables"]), async (req, res) => {
+  app.post("/api/pricing/bulk-delete", requireAppAuth, requireResource("commercial.pricing", "manage"), async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
        return res.status(400).json({ error: "Nenhum ID fornecido para exclusão." });
@@ -10035,7 +10035,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     });
   });
 
-  app.delete("/api/pricing/:id", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "pricing.publish_tables"]), async (req, res) => {
+  app.delete("/api/pricing/:id", requireAppAuth, requireResource("commercial.pricing", "manage"), async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -10053,7 +10053,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/pricing/:productId/:taxRuleId/calculate", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
+  app.get("/api/pricing/:productId/:taxRuleId/calculate", requireAppAuth, requireResource("commercial.pricing", "execute"), async (req, res) => {
     const { productId, taxRuleId } = req.params;
 
     try {
@@ -10220,7 +10220,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/pricing/simulate-unit", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
+  app.post("/api/pricing/simulate-unit", requireAppAuth, requireResource("commercial.pricing", "execute"), async (req, res) => {
     const { productId, taxRuleId, desiredMarginPerc } = req.body ?? {};
     const desiredMarginNumber = Number(desiredMarginPerc);
 
@@ -10381,7 +10381,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/pricing/simulate-batch", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
+  app.post("/api/pricing/simulate-batch", requireAppAuth, requireResource("commercial.pricing", "execute"), async (req, res) => {
     const { productIds, taxRuleId, desiredMargin, commission, freightOut, otherVariables, itemScope } = req.body;
 
     if (!Array.isArray(productIds) || productIds.length === 0) {
@@ -10415,7 +10415,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/pricing/apply-batch", requireAppAuth, requirePermission("pricing.simulate"), async (req, res) => {
+  app.post("/api/pricing/apply-batch", requireAppAuth, requireResource("commercial.pricing", "execute"), async (req, res) => {
     const { validResults, taxRuleId, desiredMargin, commission, freightOut, otherVariables, itemScope } = req.body;
 
     if (!Array.isArray(validResults) || validResults.length === 0) {
@@ -10447,7 +10447,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/transformation-simulator/official-reference-costs",
     requireAppAuth,
-    requireBootstrapOrAnyPermission(["products.view", "simulations.view", "costs.view"]),
+    requireResource("engineering.transformation_simulator", "view"),
     async (_req, res) => {
       try {
         const cache = await initAnalysisCache();
@@ -10486,7 +10486,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/simulations/default-process-hour-costs",
     requireAppAuth,
-    requirePermission("simulations.view"),
+    requireResource("engineering.simulations", "view"),
     async (_req, res) => {
       try {
         const cache = await initAnalysisCache();
@@ -10515,26 +10515,26 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   );
 
-  app.get("/api/simulations", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
+  app.get("/api/simulations", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
     const simulations = await prisma.simulation.findMany({
       orderBy: { createdAt: "desc" },
     });
     res.json(simulations);
   });
 
-  app.post("/api/simulations", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
+  app.post("/api/simulations", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
     const data = req.body;
     const simulation = await prisma.simulation.create({ data });
     res.json(simulation);
   });
 
-  app.delete("/api/simulations/:id", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
+  app.delete("/api/simulations/:id", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
     const { id } = req.params;
     await prisma.simulation.delete({ where: { id } });
     res.json({ success: true });
   });
 
-  app.get("/api/simulations/:id/compare", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
+  app.get("/api/simulations/:id/compare", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
     const { id } = req.params;
     try {
       const sim = await prisma.simulation.findUnique({ where: { id } });
@@ -10644,7 +10644,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 });
 
   // --- API: New Product Simulations (Sandbox Snapshot Persistence) ---
-  app.get("/api/new-product-simulations", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
+  app.get("/api/new-product-simulations", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
     const status = String(req.query.status ?? "").toUpperCase();
     const where =
       status === "SAVED" || status === "DRAFT"
@@ -10667,14 +10667,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(rows);
   });
 
-  app.get("/api/new-product-simulations/:id", requireAppAuth, requirePermission("simulations.view"), async (req, res) => {
+  app.get("/api/new-product-simulations/:id", requireAppAuth, requireResource("engineering.simulations", "view"), async (req, res) => {
     const { id } = req.params;
     const row = await prisma.newProductSimulation.findUnique({ where: { id } });
     if (!row) return res.status(404).json({ error: "Simulação de novo produto não encontrada." });
     res.json(row);
   });
 
-  app.post("/api/new-product-simulations/save", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
+  app.post("/api/new-product-simulations/save", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
     const { simulationName, snapshot, createdBy, origin } = req.body ?? {};
     if (!simulationName || typeof simulationName !== "string") {
       return res.status(400).json({ error: "Nome da simulação é obrigatório." });
@@ -10696,7 +10696,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(created);
   });
 
-  app.post("/api/new-product-simulations/:id/clone", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
+  app.post("/api/new-product-simulations/:id/clone", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
     const { id } = req.params;
     const source = await prisma.newProductSimulation.findUnique({
       where: { id },
@@ -10710,7 +10710,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(created);
   });
 
-  app.delete("/api/new-product-simulations/:id", requireAppAuth, requirePermission("simulations.create"), async (req, res) => {
+  app.delete("/api/new-product-simulations/:id", requireAppAuth, requireResource("engineering.simulations", "create"), async (req, res) => {
     const { id } = req.params;
     try {
       await prisma.newProductSimulation.delete({ where: { id } });
@@ -12202,7 +12202,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Customers (Clientes) ---
-  app.get("/api/customers/import/template", requireAppAuth, requirePermission("customers.view"), (req, res) => {
+  app.get("/api/customers/import/template", requireAppAuth, requireResource("commercial.customers", "view"), (req, res) => {
     try {
       const buffer = ServerImporter.generateTemplate(CustomerImportConfig);
       res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -12214,7 +12214,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/customers/import/preview", requireAppAuth, requirePermission("customers.edit"), upload.single("file"), upload.single("file"), async (req, res) => {
+  app.post("/api/customers/import/preview", requireAppAuth, requireResource("commercial.customers", "update"), upload.single("file"), upload.single("file"), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
     try {
       const result = await ServerImporter.parseExcel(req.file.buffer, CustomerImportConfig);
@@ -12231,7 +12231,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/customers/import/confirm", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
+  app.post("/api/customers/import/confirm", requireAppAuth, requireResource("commercial.customers", "update"), async (req, res) => {
     const { data: bodyData, importId } = req.body;
     let data = bodyData;
 
@@ -12291,7 +12291,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/customers/search", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
+  app.get("/api/customers/search", requireAppAuth, requireResource("commercial.customers", "view"), async (req, res) => {
     try {
       const idRaw = typeof req.query.id === "string" ? req.query.id.trim() : "";
       if (idRaw) {
@@ -12384,7 +12384,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/customers", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
+  app.get("/api/customers", requireAppAuth, requireResource("commercial.customers", "view"), async (req, res) => {
     try {
       const query = req.query as Record<string, unknown>;
       if (!shouldUseCustomerPagination(query)) {
@@ -12415,7 +12415,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   /** Indicadores agregados do cadastro (somente leitura; base: SalesOrder). */
-  app.get("/api/customers/indicators", requireAppAuth, requirePermission("customers.view"), async (_req, res) => {
+  app.get("/api/customers/indicators", requireAppAuth, requireResource("commercial.customers", "view"), async (_req, res) => {
     try {
       const VALID_ORDER_STATUSES = ["CANCELLED", "ERROR"] as const;
       const NEGOTIATION_PROPOSAL_STATUSES = ["DRAFT", "ANALYSIS", "SENT"] as const;
@@ -12462,7 +12462,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   /** Lista clientes de um agrupamento de UF (mesma regra de normalização do indicador). Somente leitura. */
-  app.get("/api/customers/indicators/drilldown", requireAppAuth, requirePermission("customers.view"), async (req, res) => {
+  app.get("/api/customers/indicators/drilldown", requireAppAuth, requireResource("commercial.customers", "view"), async (req, res) => {
     const raw = typeof req.query.bucket === "string" ? req.query.bucket.trim() : "";
     if (!raw) {
       return res.status(400).json({ error: "Parâmetro bucket é obrigatório (ex.: SP, —, OUTROS)." });
@@ -12676,7 +12676,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/customers/:customerId/commercial-activities", requireAppAuth, requirePermission("crm.activities.create"), async (req, res) => {
+  app.post("/api/customers/:customerId/commercial-activities", requireAppAuth, requireResource("commercial.crm.activities", "create"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -12840,7 +12840,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/commercial-activities/:id", requireAppAuth, requirePermission("crm.activities.edit"), async (req, res) => {
+  app.patch("/api/commercial-activities/:id", requireAppAuth, requireResource("commercial.crm.activities", "update"), async (req, res) => {
     const { id } = req.params;
     if (!isUuidParam(id)) {
       return res.status(400).json({ error: "id inválido." });
@@ -13069,7 +13069,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/crm/management-dashboard",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL, "view"),
+    requireResource("commercial.crm.general", "view"),
     async (req, res) => {
     try {
       const authUser = await getCurrentAppUser(req);
@@ -13101,7 +13101,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/crm/seller-dashboard",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR, "view"),
+    requireResource("commercial.crm.seller", "view"),
     async (req, res) => {
     const parseExternalSellerIdQuery = (raw: unknown): number | null => {
       if (raw === undefined || raw === null || raw === "") return null;
@@ -13202,7 +13202,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/crm/customers",
     requireAppAuth,
-    requireResourcePermission(PermissionResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES, "view"),
+    requireResource("commercial.crm.portfolio", "view"),
     async (req, res) => {
     try {
       const authUser = await getCurrentAppUser(req);
@@ -13608,7 +13608,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/crm/customers/:customerId/profile", requireAppAuth, requirePermission("crm.profile.edit"), async (req, res) => {
+  app.put("/api/crm/customers/:customerId/profile", requireAppAuth, requireResource("commercial.crm.activities", "update"), async (req, res) => {
     const { customerId } = req.params;
     if (!isUuidParam(customerId)) {
       return res.status(400).json({ error: "customerId inválido." });
@@ -13696,12 +13696,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     getCurrentAppUser,
   });
 
-  app.post("/api/customers", requireAppAuth, requirePermission("customers.create"), async (req, res) => {
+  app.post("/api/customers", requireAppAuth, requireResource("commercial.customers", "create"), async (req, res) => {
     const customer = await prisma.customer.create({ data: req.body });
     res.json(customer);
   });
 
-  app.put("/api/customers/:id", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
+  app.put("/api/customers/:id", requireAppAuth, requireResource("commercial.customers", "update"), async (req, res) => {
     const { id } = req.params;
     const body = { ...(req.body as Record<string, unknown>) };
     // Vínculos Person só via endpoints dedicados (people-links), nunca pelo PUT bruto.
@@ -13716,7 +13716,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(customer);
   });
 
-  app.delete("/api/customers/:id", requireAppAuth, requirePermission("customers.edit"), async (req, res) => {
+  app.delete("/api/customers/:id", requireAppAuth, requireResource("commercial.customers", "update"), async (req, res) => {
     const { id } = req.params;
     await prisma.customer.delete({ where: { id } });
     res.json({ success: true });
@@ -13879,7 +13879,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return new Prisma.Decimal(parsed);
   }
 
-  app.get("/api/proposals", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+  app.get("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     const pageRaw = req.query.page;
     const pageSizeRaw = req.query.pageSize;
     const search = String(req.query.search ?? "").trim();
@@ -13975,7 +13975,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     });
   });
 
-  app.get("/api/proposals/responsibles", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+  app.get("/api/proposals/responsibles", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     const rows = await prisma.proposal.findMany({
       where: { responsible: { not: null } },
       select: { responsible: true },
@@ -13988,7 +13988,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(responsibles);
   });
 
-  app.post("/api/proposals/:id/generate-sales-order", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
+  app.post("/api/proposals/:id/generate-sales-order", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
     const { id } = req.params;
 
     const existing = await prisma.salesOrder.findUnique({
@@ -14138,7 +14138,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.get("/api/proposals/:id", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+  app.get("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     const { id } = req.params;
     const proposal = await prisma.proposal.findUnique({
       where: { id },
@@ -14150,7 +14150,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(proposal);
   });
 
-  app.post("/api/proposals", requireAppAuth, requirePermission("proposals.create"), async (req, res) => {
+  app.post("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "create"), async (req, res) => {
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
@@ -14184,7 +14184,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.put("/api/proposals/:id", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
+  app.put("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
     const { id } = req.params;
     const { items, ...proposalData } = req.body;
     if (!Array.isArray(items)) {
@@ -14224,7 +14224,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.patch("/api/proposals/:id/status", requireAppAuth, requirePermission("proposals.edit"), async (req, res) => {
+  app.patch("/api/proposals/:id/status", requireAppAuth, requireResource("commercial.proposals", "update"), async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     if (!isValidProposalStatus(status)) {
@@ -14239,7 +14239,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(proposal);
   });
 
-  app.delete("/api/proposals/:id", requireAppAuth, requirePermission("proposals.delete"), async (req, res) => {
+  app.delete("/api/proposals/:id", requireAppAuth, requireResource("commercial.proposals", "delete"), async (req, res) => {
     const { id } = req.params;
     await prisma.proposal.delete({ where: { id } });
     res.json({ success: true });
@@ -14251,7 +14251,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     { prisma, isUuid }
   );
 
-  app.get("/api/proposals/:id/pptx", requireAppAuth, requirePermission("proposals.view"), async (req, res) => {
+  app.get("/api/proposals/:id/pptx", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     try {
       const { id } = req.params;
       const data = await fetchProposalPptxData(id);
@@ -14284,7 +14284,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     },
   });
 
-  app.get("/api/sales-orders", requireAppAuth, requirePermission("sales_orders.view"), async (req, res) => {
+  app.get("/api/sales-orders", requireAppAuth, requireResource("commercial.sales_orders", "view"), async (req, res) => {
     try {
       const auth = await readAppSession(req);
       const canViewMarginEconomics =
@@ -14463,7 +14463,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAnyPermission,
   });
 
-  app.get("/api/sales-orders/:id", requireAppAuth, requireAnyPermission(["sales_orders.detail.view", "sales_orders.view"]), async (req, res) => {
+  app.get("/api/sales-orders/:id", requireAppAuth, requireResource("commercial.sales_orders.detail", "view"), async (req, res) => {
     try {
       const { id } = req.params;
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
@@ -15043,7 +15043,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     app,
     {
       requireAppAuth,
-      requireAnyPermission,
+      requireResource,
       getCurrentAppUser,
     },
     {
@@ -15062,8 +15062,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerCommissionsRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
-    requirePermission: requireResourcePermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -15108,7 +15107,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     app,
     {
       requireAppAuth,
-      requireBootstrapOrAnyPermission,
+      requireBootstrapOrResource,
+      isBootstrapAdminRequest,
     },
     { initAnalysisCache, isUuid }
   );

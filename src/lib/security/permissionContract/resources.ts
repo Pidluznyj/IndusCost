@@ -58,7 +58,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "engineering",
     route: null,
     sortOrder: 20,
-    actions: [V(["products.view"], "Grupo estrutural — view composto pelos filhos")],
+    actions: [V(["engineering.view"], "Grupo accordion — chave 1:1 do grupo (P19)")],
     relatedEndpoints: [],
     sensitivity: "low",
     appearsInSidebar: false,
@@ -66,7 +66,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
-    notes: "Grupo accordion; resourceKey FE Prompt 13.",
+    notes:
+      "Grupo accordion; products.view fica só em engineering.products (1:1).",
   },
   {
     resourceKey: "engineering.products",
@@ -195,9 +196,12 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/transformation-simulator",
     sortOrder: 22,
     actions: [
-      V(["products.view", "simulations.view"], "OR de acesso ao módulo"),
+      V(
+        ["transformation_simulator.view", "products.view", "simulations.view"],
+        "P19: chave 1:1 dedicada"
+      ),
     ],
-    relatedEndpoints: [],
+    relatedEndpoints: ["/api/transformation-simulator"],
     sensitivity: "medium",
     appearsInSidebar: true,
     isTab: false,
@@ -233,7 +237,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "engineering",
     route: "/materials/market-intelligence",
     sortOrder: 231,
-    actions: [V(["materials.view"])],
+    actions: [V(["materials.market_intelligence.view", "materials.view"])],
     relatedEndpoints: ["/api/materials/market-intelligence"],
     sensitivity: "high",
     appearsInSidebar: false,
@@ -253,7 +257,9 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "engineering",
     route: "/materials/market-intelligence",
     sortOrder: 2311,
-    actions: [V(["materials.view"])],
+    actions: [
+      V(["materials.market_intelligence.home.view", "materials.view"]),
+    ],
     relatedEndpoints: [],
     sensitivity: "medium",
     appearsInSidebar: false,
@@ -269,7 +275,9 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "engineering",
     route: "/materials/market-intelligence/:materialId",
     sortOrder: 2312,
-    actions: [V(["materials.view"])],
+    actions: [
+      V(["materials.market_intelligence.material_360.view", "materials.view"]),
+    ],
     relatedEndpoints: ["/api/materials/market-intelligence/:materialId"],
     sensitivity: "high",
     appearsInSidebar: false,
@@ -286,7 +294,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: null,
     sortOrder: 2313,
     actions: [
-      V(["materials.view"]),
+      V(["materials.market_intelligence.quotes.view", "materials.view"]),
       U(["materials.edit"]),
       A(["materials.market_quote.approve"]),
       E(["materials.market_quote.manual_exchange"], "câmbio manual / fluxos auxiliares"),
@@ -820,7 +828,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     actions: [
       V(["finance.accountsReceivable.view", "finance.view"]),
       X(["finance.accountsReceivable.export", "finance.accountsReceivable.view"]),
-      E(["settings.nomus.sync"], "sync Nomus AR — chave dedicada no UI; API OR settings.view (gap)"),
+      E(["finance.accountsReceivable.sync", "settings.nomus.sync"], "sync Nomus AR — chave dedicada 1:1 (P19)"),
     ],
     relatedEndpoints: ["/api/finance/accounts-receivable", "/api/settings/nomus-sync"],
     sensitivity: "critical",
@@ -844,7 +852,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
         ["finance.ap_allocations.manage", "finance.ap_allocations.apply_batch"],
         "classificação / alocação CC / batch"
       ),
-      E(["settings.nomus.sync"], "sync Nomus AP"),
+      E(["finance.accountsPayable.sync", "settings.nomus.sync"], "sync Nomus AP — chave dedicada 1:1 (P19)"),
     ],
     relatedEndpoints: [
       "/api/finance/accounts-payable",
@@ -874,7 +882,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     sortOrder: 44,
     actions: [
       V(["finance.billing.view", "sales_orders.view", "finance.view"]),
-      E(["settings.nomus.sync"], "sync NF / billing"),
+      E(["finance.billing.sync", "settings.nomus.sync"], "sync NF / billing — chave dedicada 1:1 (P19)"),
       X(["finance.billing.view", "sales_orders.view"], "export lista — sem chave .export dedicada"),
     ],
     relatedEndpoints: ["/api/finance/billing"],
@@ -1632,14 +1640,18 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "admin",
     route: "/settings",
     sortOrder: 723,
-    actions: [V(["settings.branding.view", "settings.view"])],
-    relatedEndpoints: [],
+    actions: [
+      V(["settings.branding.view", "settings.view"]),
+      U(["settings.branding.edit", "users.manage"], "PUT identidade visual — P19"),
+    ],
+    relatedEndpoints: ["/api/branding-settings"],
     sensitivity: "low",
     appearsInSidebar: false,
     isTab: true,
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
+    notes: "P19: update dedicado; settings.view não edita branding via requireResource.",
   },
   {
     resourceKey: "admin.settings.global_params",
@@ -1652,7 +1664,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       V(["settings.global_params.view", "settings.view"]),
       U(["settings.global_params.edit", "users.manage"]),
     ],
-    relatedEndpoints: [],
+    relatedEndpoints: ["/api/settings/globals"],
     sensitivity: "high",
     appearsInSidebar: false,
     isTab: true,
@@ -1667,7 +1679,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "admin",
     route: "/settings",
     sortOrder: 725,
-    actions: [V(["settings.operational.view", "settings.view"])],
+    actions: [
+      V(["settings.operational.view", "settings.view"]),
+      M(["settings.operational.manage", "users.manage"], "roles / payroll mutations — P19"),
+    ],
     relatedEndpoints: ["/api/roles", "/api/payroll-components"],
     sensitivity: "high",
     appearsInSidebar: false,
@@ -1675,6 +1690,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
+    notes: "P19: manage para mutações; view sozinho não altera estrutura.",
   },
   {
     resourceKey: "admin.settings.price_tables",

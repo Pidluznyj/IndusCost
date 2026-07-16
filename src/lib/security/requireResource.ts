@@ -398,12 +398,17 @@ export const REQUIRE_RESOURCE_ADMIN_KEYS = {
  * Não migrar em massa neste prompt.
  */
 export const REQUIRE_RESOURCE_LEGACY_BACKLOG = [
-  { area: "materials", prompt: "P19+", note: "materiais — materials.view/edit" },
-  { area: "products", prompt: "P19+", note: "produtos/BOM — products.*" },
-  { area: "commissions", prompt: "P18+", note: "receipt-closing apply/reprocess; reprocess panel" },
-  { area: "sales-orders", prompt: "P18+", note: "export pedidos; sales_orders.view" },
-  { area: "nomus-sync-other", prompt: "P18+", note: "daily/AR/NFe sync ainda settings bags" },
-  { area: "dashboard", prompt: "P18+", note: "requirePermission(dashboard.view) bag" },
+  { area: "dashboard", prompt: "P20+", note: "requirePermission(dashboard.view) bag" },
+  {
+    area: "commercial-remaining-bags",
+    prompt: "P19 residual",
+    note: "alguns requireAnyPermission em CRM 360 / ranking / funnel ainda amplos",
+  },
+  {
+    area: "engineering-remaining-bags",
+    prompt: "P19 residual",
+    note: "parte de Nomus engineering / MI attachments ainda em bags em server.ts",
+  },
 ] as const;
 
 export function listRequireResourceLegacyBacklog(): readonly {

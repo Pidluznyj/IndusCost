@@ -81,6 +81,16 @@ Ver `financeAccountsPayableAccess.ts` / `FINANCE_AP_PILOT_ENDPOINTS`.
 
 Wrappers: `requireUsersOrPermissionsAdmin`, `requireUsersViewOrBootstrap`, `requireUsersManageOrBootstrap`, `requirePermissionsAdminOrBootstrap`, `requireUserAdminOrBootstrap`.
 
+## Migrado em P19 — Comercial / Engenharia / Administração
+
+| área | resourceKeys | superfície |
+|------|--------------|------------|
+| Comercial | `commercial.*` (CRM, customers, proposals, sales_orders, pricing, commissions+tabs) | APIs + commissionsRoutes |
+| Engenharia | `engineering.*` (products, materials/MI, simulations, projects, transformation_simulator) | APIs + projectsRoutes |
+| Admin settings | `admin.settings.*` + `admin.guide` | globals/branding/Nomus/ops/price-tables |
+
+Ações especiais: commissions `close`/`reprocess`, pricing `execute`/`manage`, MI `approve`, Nomus `execute`.
+
 ## Ainda legado (prompts de módulo)
 
 Ver `REQUIRE_RESOURCE_LEGACY_BACKLOG` em `src/lib/security/requireResource.ts`:

@@ -7,10 +7,19 @@ import {
   parseApplyHhHmSimulationBody,
 } from "./settingsApplyHhHmSimulation.js";
 import { applyHhHmSimulationToOfficialParams } from "./settingsApplyHhHmSimulation.server.js";
+import {
+  ADMIN_SETTINGS_ACTIONS,
+  ADMIN_SETTINGS_RESOURCE_KEYS,
+} from "./adminSettingsAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireBootstrapOrAnyPermission: (permissions: string[]) => RequestHandler;
+  requireBootstrapOrResource: (
+    isBootstrap: (req: express.Request) => boolean,
+    resourceKey: string,
+    action?: string
+  ) => RequestHandler;
+  isBootstrapAdminRequest: (req: express.Request) => boolean;
 };
 
 type Deps = {
@@ -18,6 +27,7 @@ type Deps = {
   isUuid: (value: unknown) => value is string;
 };
 
+/** @deprecated Preferir requireResource / ADMIN_SETTINGS_RESOURCE_KEYS. */
 export const SETTINGS_GLOBAL_PARAMS_VIEW_PERMISSIONS = [
   "settings.global_params.view",
   "settings.view",
@@ -87,15 +97,23 @@ export function registerSettingsGlobalsRoutes(
   auth: AuthGuards,
   deps: Deps
 ) {
-  const { requireAppAuth, requireBootstrapOrAnyPermission } = auth;
+  const { requireAppAuth, requireBootstrapOrResource, isBootstrapAdminRequest } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireBootstrapOrAnyPermission([...SETTINGS_GLOBAL_PARAMS_VIEW_PERMISSIONS]),
+    requireBootstrapOrResource(
+      isBootstrapAdminRequest,
+      ADMIN_SETTINGS_RESOURCE_KEYS.globalParams,
+      ADMIN_SETTINGS_ACTIONS.view
+    ),
   ] as const;
 
   const editGuard = [
     requireAppAuth,
-    requireBootstrapOrAnyPermission([...SETTINGS_GLOBAL_PARAMS_EDIT_PERMISSIONS]),
+    requireBootstrapOrResource(
+      isBootstrapAdminRequest,
+      ADMIN_SETTINGS_RESOURCE_KEYS.globalParams,
+      ADMIN_SETTINGS_ACTIONS.update
+    ),
   ] as const;
 
   app.get("/api/settings/globals", ...viewGuard, async (_req, res) => {
@@ -149,12 +167,20 @@ export function registerSettingsGlobalsRoutes(
 
   const brandingViewGuard = [
     requireAppAuth,
-    requireBootstrapOrAnyPermission([...SETTINGS_BRANDING_VIEW_PERMISSIONS]),
+    requireBootstrapOrResource(
+      isBootstrapAdminRequest,
+      ADMIN_SETTINGS_RESOURCE_KEYS.branding,
+      ADMIN_SETTINGS_ACTIONS.view
+    ),
   ] as const;
 
   const brandingEditGuard = [
     requireAppAuth,
-    requireBootstrapOrAnyPermission([...SETTINGS_BRANDING_EDIT_PERMISSIONS]),
+    requireBootstrapOrResource(
+      isBootstrapAdminRequest,
+      ADMIN_SETTINGS_RESOURCE_KEYS.branding,
+      ADMIN_SETTINGS_ACTIONS.update
+    ),
   ] as const;
 
   app.get("/api/branding-settings", ...brandingViewGuard, async (_req, res) => {

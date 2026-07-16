@@ -25,6 +25,10 @@ import {
   FINANCE_AP_ACTIONS,
   FINANCE_AP_RESOURCE_KEY,
 } from "@/src/lib/financeAccountsPayableAccess.js";
+import {
+  ADMIN_SETTINGS_ACTIONS,
+  ADMIN_SETTINGS_RESOURCE_KEYS,
+} from "@/src/lib/adminSettingsAccess.js";
 
 export type NomusSyncLogSummary = {
   fileName: string;
@@ -46,7 +50,7 @@ export type NomusSyncLogSummary = {
 };
 
 type AuthGuards = {
-  requireBootstrapOrAnyPermission: (permissions: string[]) => RequestHandler;
+  requireBootstrapOrAnyPermission?: (permissions: string[]) => RequestHandler;
   /** Piloto P18 — Contas a Pagar sync usa requireResource. */
   requireBootstrapOrResource?: (
     isBootstrap: (req: express.Request) => boolean,
@@ -91,11 +95,19 @@ export function registerSettingsNomusSyncRoutes(
   auth: AuthGuards,
   deps: SettingsNomusSyncRoutesDeps
 ) {
-  const { requireBootstrapOrAnyPermission } = auth;
+  const isBootstrap = auth.isBootstrapAdminRequest ?? (() => false);
+  if (!auth.requireBootstrapOrResource) {
+    throw new Error("registerSettingsNomusSyncRoutes requires requireBootstrapOrResource");
+  }
+  const nomusView = auth.requireBootstrapOrResource(
+    isBootstrap,
+    ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync,
+    ADMIN_SETTINGS_ACTIONS.view
+  );
 
   app.get(
     "/api/integrations/nomus/health",
-    requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]),
+    nomusView,
     async (_req, res) => {
       try {
         const payload = await deps.buildNomusIntegrationHealthPayload();
@@ -109,7 +121,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.get(
     "/api/settings/nomus-sync/logs",
-    requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]),
+    nomusView,
     async (req, res) => {
       try {
         const rawLimit = Number(req.query.limit);
@@ -169,7 +181,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.get(
     "/api/settings/nomus-sync/logs/:fileName",
-    requireBootstrapOrAnyPermission(["settings.nomus.view", "settings.view"]),
+    nomusView,
     async (req, res) => {
       try {
         const row = await deps.readNomusSyncLogSafe(String(req.params.fileName || ""));
@@ -207,7 +219,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.get(
     "/api/settings/nomus-sync/daily-status",
-    requireBootstrapOrAnyPermission([...nomusDailySyncManagePermissions]),
+    auth.requireBootstrapOrResource(isBootstrap, ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync, ADMIN_SETTINGS_ACTIONS.execute),
     async (_req, res) => {
       try {
         const status = await getNomusDailySyncStatus();
@@ -221,7 +233,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.post(
     "/api/settings/nomus-sync/daily-run",
-    requireBootstrapOrAnyPermission([...nomusDailySyncManagePermissions]),
+    auth.requireBootstrapOrResource(isBootstrap, ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync, ADMIN_SETTINGS_ACTIONS.execute),
     async (_req, res) => {
       try {
         const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
@@ -247,7 +259,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.get(
     "/api/settings/nomus-sync/accounts-receivable-status",
-    requireBootstrapOrAnyPermission([...nomusArSyncViewPermissions]),
+    nomusView,
     async (_req, res) => {
       try {
         const status = await getNomusAccountsReceivableSyncStatus();
@@ -263,7 +275,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.post(
     "/api/settings/nomus-sync/accounts-receivable-run",
-    requireBootstrapOrAnyPermission([...nomusArSyncManagePermissions]),
+    auth.requireBootstrapOrResource(isBootstrap, ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync, ADMIN_SETTINGS_ACTIONS.execute),
     async (_req, res) => {
       try {
         const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
@@ -284,26 +296,17 @@ export function registerSettingsNomusSyncRoutes(
     }
   );
 
-  const nomusApSyncViewPermissions = ["settings.nomus.view", "settings.view"] as const;
-  const nomusApSyncManagePermissions = ["settings.nomus.sync"] as const;
+  const apStatusGuard = auth.requireBootstrapOrResource(
+    isBootstrap,
+    FINANCE_AP_RESOURCE_KEY,
+    FINANCE_AP_ACTIONS.view
+  );
 
-  const apStatusGuard =
-    auth.requireBootstrapOrResource && auth.isBootstrapAdminRequest
-      ? auth.requireBootstrapOrResource(
-          auth.isBootstrapAdminRequest,
-          FINANCE_AP_RESOURCE_KEY,
-          FINANCE_AP_ACTIONS.view
-        )
-      : requireBootstrapOrAnyPermission([...nomusApSyncViewPermissions]);
-
-  const apRunGuard =
-    auth.requireBootstrapOrResource && auth.isBootstrapAdminRequest
-      ? auth.requireBootstrapOrResource(
-          auth.isBootstrapAdminRequest,
-          FINANCE_AP_RESOURCE_KEY,
-          FINANCE_AP_ACTIONS.execute
-        )
-      : requireBootstrapOrAnyPermission([...nomusApSyncManagePermissions]);
+  const apRunGuard = auth.requireBootstrapOrResource(
+    isBootstrap,
+    FINANCE_AP_RESOURCE_KEY,
+    FINANCE_AP_ACTIONS.execute
+  );
 
   app.get(
     "/api/settings/nomus-sync/accounts-payable-status",
@@ -349,7 +352,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.get(
     "/api/settings/nomus-sync/nfes-status",
-    requireBootstrapOrAnyPermission([...nomusNfeSyncViewPermissions]),
+    nomusView,
     async (_req, res) => {
       try {
         const status = await getNomusNfesSyncStatus();
@@ -365,7 +368,7 @@ export function registerSettingsNomusSyncRoutes(
 
   app.post(
     "/api/settings/nomus-sync/nfes-run",
-    requireBootstrapOrAnyPermission([...nomusNfeSyncManagePermissions]),
+    auth.requireBootstrapOrResource(isBootstrap, ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync, ADMIN_SETTINGS_ACTIONS.execute),
     async (_req, res) => {
       try {
         const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();

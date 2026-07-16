@@ -3,10 +3,14 @@ import type { RequestHandler } from "express";
 import { Prisma, type ProjectStatus, type ProjectType } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import {
+  ENGINEERING_ACTIONS,
+  ENGINEERING_RESOURCE_KEYS,
+} from "@/src/lib/engineeringAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 import { buildProjectsDashboard } from "@/src/lib/projectsDashboard.js";
@@ -23,9 +27,6 @@ import {
 } from "@/src/lib/projectsCommercialOwnerLookup.js";
 import {
   assertProjectsDeleteSuperAdmin,
-  PROJECTS_LOOKUP_PERMISSIONS,
-  PROJECTS_MANAGE_PERMISSIONS,
-  PROJECTS_VIEW_PERMISSIONS,
   ProjectsAccessError,
 } from "@/src/lib/projectsPermissions.js";
 import {
@@ -143,9 +144,18 @@ export function registerProjectsRoutes(
   if (deps.resolveOfficialProductCostAnalysis) {
     setProjectsProductCostResolver(deps.resolveOfficialProductCostAnalysis);
   }
-  const view = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_VIEW_PERMISSIONS])] as const;
-  const lookup = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_LOOKUP_PERMISSIONS])] as const;
-  const manage = [auth.requireAppAuth, auth.requireAnyPermission([...PROJECTS_MANAGE_PERMISSIONS])] as const;
+  const view = [
+    auth.requireAppAuth,
+    auth.requireResource(ENGINEERING_RESOURCE_KEYS.projects, ENGINEERING_ACTIONS.view),
+  ] as const;
+  const lookup = [
+    auth.requireAppAuth,
+    auth.requireResource(ENGINEERING_RESOURCE_KEYS.projects, ENGINEERING_ACTIONS.view),
+  ] as const;
+  const manage = [
+    auth.requireAppAuth,
+    auth.requireResource(ENGINEERING_RESOURCE_KEYS.projects, ENGINEERING_ACTIONS.manage),
+  ] as const;
 
   app.get("/api/projects/dashboard", ...view, async (_req, res) => {
     try {

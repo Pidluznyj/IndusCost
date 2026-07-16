@@ -288,15 +288,14 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Rollback:** reverter guards das rotas AP para `requireAnyPermission`.
 - **Status (2026-07-16):** **feito.** Matriz em `financeAccountsPayableAccess.ts`; rotas AP + due-radar + allocation + nomus summary + sync AP status/run; testes Leticia/export/deny/SA.
 
-### P19 — Comparação legado vs novo (Etapa A)
+### P19 — Migração Comercial / Engenharia / Administração
 
-- **Objetivo:** Relatório read-only impacto.
-- **Escopo:** script dry-run (não altera dados).
-- **Deps:** P03.
-- **Risco:** baixo.
-- **Aceite:** CSV com classes ALIAS_BLEED/MEGA_KEY.
-- **Rollback:** N/A.
-- **Servidor:** execução read-only futura.
+- **Objetivo:** Migrar CRM, clientes, propostas, pedidos, pricing, comissões, produtos, MI, simulações, projetos, settings (branding/ops/price-tables/Nomus logs/sync) e guia para `requireResource`.
+- **Deps:** P14–P18.
+- **Risco:** alto.
+- **Aceite:** Leticia AP-only continua deny em comercial/engenharia/admin; ações especiais (close/reprocess/approve/sync/simulate) sem bag ampla.
+- **Rollback:** flag `REQUIRE_RESOURCE_LEGACY_COMPAT`.
+- **Status (2026-07-16):** **feito (piloto amplo).** Matrizes `commercialAccess.ts`, `engineeringAccess.ts`, `adminSettingsAccess.ts`; aliases 1:1 no contrato (MI, simulador, sync Nomus); rotas projects/commissions/settings/globals/Nomus + bulk `server.ts` customers/proposals/products/materials/CRM tabs.
 
 ### P20 — Backfill (Etapa B)
 
