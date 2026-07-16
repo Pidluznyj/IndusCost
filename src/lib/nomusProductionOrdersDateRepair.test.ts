@@ -1,5 +1,5 @@
 /**
- * OP-14.2 — testes do reparo de datas (preview/apply/idempotência/closedAt/hash).
+ * OP-14.2 — testes do reparo de datas + empresa (preview/apply/idempotência).
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
@@ -7,6 +7,7 @@ import { NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE } from "@/src/lib/fixtures/nomu
 import {
   parseProductionOrderDateRepairCli,
   productionOrderDatesNeedRepair,
+  productionOrderFieldsNeedRepair,
 } from "@/src/lib/nomusProductionOrdersDateRepair.js";
 import { runProductionOrderDateRepairFromRawJson } from "@/src/lib/nomusProductionOrdersDateRepair.server.js";
 
@@ -22,6 +23,8 @@ type Stored = {
   deliveryAt: Date | null;
   closedAt: Date | null;
   nomusUpdatedAt: Date | null;
+  externalCompanyId: number | null;
+  companyName: string | null;
   payloadHash: string;
   firstSeenAt: Date;
   lastSeenAt: Date;
@@ -47,13 +50,15 @@ function extractGt(where: unknown): number | null {
   return null;
 }
 
-function wantsOnlyNullDates(where: unknown): boolean {
+function wantsOnlyNullRepairables(where: unknown): boolean {
   if (!where || typeof where !== "object") return false;
   const w = where as Record<string, unknown>;
   const check = (node: unknown): boolean => {
     if (!node || typeof node !== "object") return false;
     const n = node as Record<string, unknown>;
-    if (n.openedAt === null && n.releasedAt === null) return true;
+    if (Array.isArray(n.OR) && n.OR.some((part) => part && typeof part === "object" && "openedAt" in (part as object))) {
+      return true;
+    }
     if (Array.isArray(n.AND)) return n.AND.some(check);
     return false;
   };
@@ -89,14 +94,16 @@ function createMemoryDb(initial: Stored[]) {
           const gt = extractGt(args.where);
           if (gt != null) rows = rows.filter((r) => r.externalId > gt);
         }
-        if (wantsOnlyNullDates(args.where)) {
+        if (wantsOnlyNullRepairables(args.where)) {
           rows = rows.filter(
             (r) =>
-              r.openedAt == null &&
-              r.releasedAt == null &&
-              r.plannedAt == null &&
-              r.deliveryAt == null &&
-              r.nomusUpdatedAt == null
+              r.openedAt == null ||
+              r.releasedAt == null ||
+              r.plannedAt == null ||
+              r.deliveryAt == null ||
+              r.nomusUpdatedAt == null ||
+              r.companyName == null ||
+              r.externalCompanyId == null
           );
         }
         rows.sort((a, b) => a.externalId - b.externalId);
@@ -139,6 +146,8 @@ function baseRow(overrides: Partial<Stored> = {}): Stored {
     deliveryAt: null,
     closedAt: new Date("2026-01-01T00:00:00.000Z"),
     nomusUpdatedAt: null,
+    externalCompanyId: null,
+    companyName: null,
     payloadHash: "hash-preserve",
     firstSeenAt: syncedAt,
     lastSeenAt: syncedAt,
@@ -149,7 +158,7 @@ function baseRow(overrides: Partial<Stored> = {}): Stored {
   };
 }
 
-describe("OP-14.2 — reparo de datas", () => {
+describe("OP-14.2 — reparo de datas + empresa", () => {
   it("CLI parseia batch/checkpoint/after", () => {
     const cli = parseProductionOrderDateRepairCli(
       [
@@ -167,7 +176,7 @@ describe("OP-14.2 — reparo de datas", () => {
     assert.equal(cli.checkpointFile, "/tmp/ckpt.json");
   });
 
-  it("preview não escreve e conta campos a preencher", async () => {
+  it("preview não escreve e conta campos a preencher (datas + empresa)", async () => {
     const db = createMemoryDb([baseRow()]);
     const result = await runProductionOrderDateRepairFromRawJson(db as never, {
       mode: "preview",
@@ -183,10 +192,12 @@ describe("OP-14.2 — reparo de datas", () => {
     assert.equal(result.counters.updated, 0);
     assert.equal(db.updates.length, 0);
     assert.ok(result.counters.fieldsToFill.openedAt >= 1);
+    assert.ok(result.counters.fieldsToFill.companyName >= 1);
     assert.ok(result.samples[0]?.closedAtPreserved);
+    assert.equal(result.samples[0]?.after.companyName, "02 - KOPPETEL");
   });
 
-  it("apply preenche datas, preserva closedAt/hash/vínculos e é idempotente", async () => {
+  it("apply preenche datas+empresa, preserva closedAt/hash/vínculos e é idempotente", async () => {
     const db = createMemoryDb([baseRow()]);
     const first = await runProductionOrderDateRepairFromRawJson(db as never, {
       mode: "apply",
@@ -202,12 +213,15 @@ describe("OP-14.2 — reparo de datas", () => {
     assert.ok(row.openedAt);
     assert.ok(row.releasedAt);
     assert.ok(row.deliveryAt);
+    assert.equal(row.companyName, "02 - KOPPETEL");
+    assert.equal(row.externalCompanyId, 2);
     assert.equal(row.closedAt?.toISOString(), "2026-01-01T00:00:00.000Z");
     assert.equal(row.payloadHash, "hash-preserve");
     assert.equal(row._linkCount, 1);
     assert.ok(!("closedAt" in db.updates[0]!.data));
     assert.ok(!("payloadHash" in db.updates[0]!.data));
     assert.ok(!("syncedAt" in db.updates[0]!.data));
+    assert.ok(!("rawJson" in db.updates[0]!.data));
 
     const second = await runProductionOrderDateRepairFromRawJson(db as never, {
       mode: "apply",
@@ -298,7 +312,7 @@ describe("OP-14.2 — reparo de datas", () => {
     assert.ok(result.counters.invalidDates >= 1 || result.counters.unchanged >= 0);
   });
 
-  it("needRepair ignora closedAt", () => {
+  it("needRepair ignora closedAt e detecta empresa", () => {
     assert.equal(
       productionOrderDatesNeedRepair(
         {
@@ -317,6 +331,29 @@ describe("OP-14.2 — reparo de datas", () => {
         }
       ),
       false
+    );
+    assert.equal(
+      productionOrderFieldsNeedRepair(
+        {
+          openedAt: null,
+          releasedAt: null,
+          plannedAt: null,
+          deliveryAt: null,
+          nomusUpdatedAt: null,
+          externalCompanyId: null,
+          companyName: null,
+        },
+        {
+          openedAt: null,
+          releasedAt: null,
+          plannedAt: null,
+          deliveryAt: null,
+          nomusUpdatedAt: null,
+          externalCompanyId: 2,
+          companyName: "02 - KOPPETEL",
+        }
+      ),
+      true
     );
   });
 });

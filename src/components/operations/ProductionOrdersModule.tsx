@@ -430,6 +430,7 @@ export function ProductionOrdersModule() {
                     "Prioridade",
                     "Data de abertura",
                     "Data planejada",
+                    "Data de entrega",
                     "Status",
                     "Pedido de Venda",
                     "Última sincronização",
@@ -592,6 +593,9 @@ export function ProductionOrderGridTableRow({
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         {formatProductionOrderDateTime(row.plannedAt)}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        {formatProductionOrderDateTime(row.deliveryAt)}
       </td>
       <td className="px-3 py-2">
         <OverlayBadge tone={productionOrderStatusOverlayTone(row.status)}>

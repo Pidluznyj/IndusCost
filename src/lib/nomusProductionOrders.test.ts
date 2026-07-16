@@ -46,7 +46,8 @@ describe("nomusProductionOrdersMapper", () => {
     assert.equal(mapped.row.productCode, "311.32AA");
     assert.equal(mapped.row.externalProductId, 391);
     assert.equal(mapped.row.unit, "PC");
-    assert.equal(mapped.row.companyName, "KOPPETEL");
+    assert.equal(mapped.row.companyName, "02 - KOPPETEL");
+    assert.equal(mapped.row.externalCompanyId, 2);
     assert.ok(mapped.row.payloadHash.length >= 32);
     assert.ok(mapped.row.quantity?.equals(new Prisma.Decimal(15400)));
     assert.equal(mapped.row.salesLinks.length, 1);

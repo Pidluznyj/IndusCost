@@ -80,7 +80,9 @@ function gridRow(overrides: Partial<ProductionOrderGridRow> = {}): ProductionOrd
     unit: "PC",
     stockSector: "PRODUCAO",
     openedAt: "2026-03-10T11:15:00.000Z",
+    releasedAt: "2026-03-10T12:00:00.000Z",
     plannedAt: "2026-03-12T21:00:00.000Z",
+    deliveryAt: "2026-03-15T21:00:00.000Z",
     closedAt: "2026-03-12T20:40:22.000Z",
     nomusUpdatedAt: "2026-03-12T20:40:22.000Z",
     syncedAt: "2026-07-16T12:00:00.000Z",
@@ -462,8 +464,25 @@ describe("ProductionOrderGridTableRow", () => {
     assert.match(html, /15\.400 PC/);
     assert.doesNotMatch(html, /15400\.000000/);
     assert.match(html, /Encerrada/);
+    assert.match(html, /KOPPETEL/);
     assert.match(html, /PD 02534/);
     assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+  });
+
+  it("exibe datas normalizadas de abertura, planejada e entrega", () => {
+    const html = renderRow(
+      gridRow({
+        openedAt: "2026-06-23T03:00:00.000Z",
+        plannedAt: "2026-06-24T20:00:00.000Z",
+        deliveryAt: "2026-07-08T20:00:00.000Z",
+        companyName: "02 - KOPPETEL",
+      })
+    );
+    assert.match(html, /02 - KOPPETEL/);
+    // formatProductionOrderDateTime — não lê rawJson
+    assert.match(html, /23\/06\/2026|23\/06/);
+    assert.match(html, /24\/06\/2026|24\/06/);
+    assert.match(html, /08\/07\/2026|08\/07/);
   });
 
   it("preserva decimal pequeno sem arredondar para zero", () => {

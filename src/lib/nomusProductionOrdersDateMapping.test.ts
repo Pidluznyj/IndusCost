@@ -8,7 +8,13 @@ import {
   NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE,
 } from "@/src/lib/fixtures/nomusProductionOrderOp05800.js";
 import {
+  NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED,
+  NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED_DATES,
+  NOMUS_PRODUCTION_ORDER_OP_05967_FIXTURE,
+} from "@/src/lib/fixtures/nomusProductionOrderOp05967.js";
+import {
   mapNomusProductionOrderPayload,
+  parseNomusEmpresaLabel,
   resolveNomusProductionOrderDateInputs,
 } from "@/src/lib/nomusProductionOrdersMapper.js";
 import { parseNomusProductionOrderDateTime } from "@/src/lib/nomusProductionOrdersParsers.js";
@@ -181,6 +187,85 @@ describe("OP-14.1 — mapeamento oficial de datas", () => {
     if (!mapped.ok) return;
     assert.equal(iso(mapped.row.closedAt), "2026-07-14T21:00:00.000Z");
     assert.equal(iso(mapped.row.deliveryAt), "2026-07-08T20:00:00.000Z");
+  });
+});
+
+describe("OP-14.1 — empresa no mapper", () => {
+  it("mapeia string '02 - KOPPETEL' para companyName + externalCompanyId", () => {
+    const mapped = mapNomusProductionOrderPayload({
+      id: 20,
+      empresa: "02 - KOPPETEL",
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.companyName, "02 - KOPPETEL");
+    assert.equal(mapped.row.externalCompanyId, 2);
+  });
+
+  it("idEmpresa explícito tem prioridade sobre prefixo do rótulo", () => {
+    const mapped = mapNomusProductionOrderPayload({
+      id: 21,
+      empresa: "02 - KOPPETEL",
+      idEmpresa: 9,
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.companyName, "02 - KOPPETEL");
+    assert.equal(mapped.row.externalCompanyId, 9);
+  });
+
+  it("empresa objeto { id, nome }", () => {
+    const mapped = mapNomusProductionOrderPayload({
+      id: 22,
+      empresa: { id: 2, nome: "02 - KOPPETEL" },
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.companyName, "02 - KOPPETEL");
+    assert.equal(mapped.row.externalCompanyId, 2);
+  });
+
+  it("empresa ausente permanece null (sem inferir por produto/pedido)", () => {
+    const mapped = mapNomusProductionOrderPayload({
+      id: 23,
+      nome: "OP SEM EMPRESA",
+      produto: "311.32AA",
+      itensPedido: [{ id: 1, idPedido: 2, quantidade: "1" }],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.companyName, null);
+    assert.equal(mapped.row.externalCompanyId, null);
+  });
+
+  it("fixture OP 05800 e OP 05967 — datas + empresa + quantidade decimal", () => {
+    const op5800 = mapNomusProductionOrderPayload(NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE);
+    assert.equal(op5800.ok, true);
+    if (!op5800.ok) return;
+    assert.equal(op5800.row.companyName, "02 - KOPPETEL");
+    assert.equal(op5800.row.externalCompanyId, 2);
+    assert.equal(op5800.row.closedAt, null);
+
+    const op5967 = mapNomusProductionOrderPayload(NOMUS_PRODUCTION_ORDER_OP_05967_FIXTURE);
+    assert.equal(op5967.ok, true);
+    if (!op5967.ok) return;
+    assert.equal(op5967.row.name, NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED.name);
+    assert.equal(op5967.row.companyName, NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED.companyName);
+    assert.equal(iso(op5967.row.openedAt), NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED_DATES.openedAt);
+    assert.equal(iso(op5967.row.deliveryAt), NOMUS_PRODUCTION_ORDER_OP_05967_EXPECTED_DATES.deliveryAt);
+    assert.equal(op5967.row.closedAt, null);
+    assert.equal(Number(op5967.row.quantity), 0.002925);
+  });
+
+  it("parseNomusEmpresaLabel extrai id do prefixo", () => {
+    assert.deepEqual(parseNomusEmpresaLabel("02 - KOPPETEL"), {
+      id: 2,
+      name: "02 - KOPPETEL",
+    });
+    assert.deepEqual(parseNomusEmpresaLabel("KOPPETEL"), {
+      id: null,
+      name: "KOPPETEL",
+    });
   });
 });
 

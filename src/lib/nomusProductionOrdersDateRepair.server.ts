@@ -1,27 +1,28 @@
 /**
- * Reparo server-side OP-14.2: lotes + checkpoint + lock compartilhado.
- * Atualiza somente openedAt/releasedAt/plannedAt/deliveryAt/nomusUpdatedAt.
+ * Reparo server-side OP-14.1/14.2: datas + empresa a partir do rawJson.
+ * Atualiza: openedAt, releasedAt, plannedAt, deliveryAt, nomusUpdatedAt,
+ * externalCompanyId, companyName.
+ * Não altera: closedAt, rawJson, payloadHash, timestamps de sync, vínculos.
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
-  countFieldsToFill,
+  countRepairFieldsToFill,
   emptyProductionOrderDateRepairCounters,
-  extractRepairableDates,
-  hasRepairableDatesNull,
-  mapProductionOrderDatesFromRawJson,
+  hasRepairableFieldsNull,
+  mapProductionOrderRepairFieldsFromRawJson,
   parseProductionOrderDateRepairCheckpoint,
   parseProductionOrderDateRepairCli,
-  productionOrderDatesNeedRepair,
+  productionOrderFieldsNeedRepair,
   serializeProductionOrderDateRepairCheckpoint,
-  summarizeProductionOrderDateRepairDiff,
+  summarizeProductionOrderRepairDiff,
   type ProductionOrderDateRepairCheckpoint,
   type ProductionOrderDateRepairCli,
   type ProductionOrderDateRepairCounters,
-  type ProductionOrderRepairableDateFields,
-  type ProductionOrderRepairableDateKey,
-  PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS,
+  type ProductionOrderRepairableFields,
+  type ProductionOrderRepairableKey,
+  PRODUCTION_ORDER_REPAIRABLE_KEYS,
 } from "@/src/lib/nomusProductionOrdersDateRepair.js";
 import {
   buildProductionOrdersSyncAuditRecord,
@@ -32,7 +33,7 @@ import { NOMUS_PRODUCTION_ORDERS_LOG_PREFIX } from "@/src/lib/nomusProductionOrd
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
-const DATE_SELECT = {
+const REPAIR_SELECT = {
   id: true,
   externalId: true,
   name: true,
@@ -44,6 +45,8 @@ const DATE_SELECT = {
   deliveryAt: true,
   closedAt: true,
   nomusUpdatedAt: true,
+  externalCompanyId: true,
+  companyName: true,
   payloadHash: true,
 } as const;
 
@@ -53,21 +56,25 @@ function currentRepairableFromRow(row: {
   plannedAt: Date | null;
   deliveryAt: Date | null;
   nomusUpdatedAt: Date | null;
-}): ProductionOrderRepairableDateFields {
+  externalCompanyId: number | null;
+  companyName: string | null;
+}): ProductionOrderRepairableFields {
   return {
     openedAt: row.openedAt,
     releasedAt: row.releasedAt,
     plannedAt: row.plannedAt,
     deliveryAt: row.deliveryAt,
     nomusUpdatedAt: row.nomusUpdatedAt,
+    externalCompanyId: row.externalCompanyId,
+    companyName: row.companyName,
   };
 }
 
 function addFieldCounts(
   target: ProductionOrderDateRepairCounters["fieldsToFill"],
-  delta: Record<ProductionOrderRepairableDateKey, number>
+  delta: Record<ProductionOrderRepairableKey, number>
 ): void {
-  for (const key of PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS) {
+  for (const key of PRODUCTION_ORDER_REPAIRABLE_KEYS) {
     target[key] += delta[key];
   }
 }
@@ -94,9 +101,9 @@ export type ProductionOrderDateRepairResult = {
     externalId: number;
     name: string | null;
     status: string | null;
-    before: ProductionOrderRepairableDateFields;
-    after: ProductionOrderRepairableDateFields;
-    diff: ReturnType<typeof summarizeProductionOrderDateRepairDiff>;
+    before: ProductionOrderRepairableFields;
+    after: ProductionOrderRepairableFields;
+    diff: ReturnType<typeof summarizeProductionOrderRepairDiff>;
     closedAtPreserved: Date | null;
   }>;
   durationMs: number;
@@ -121,13 +128,16 @@ function buildWhere(
     and.push({ externalId: { gt: afterExternalId } });
   }
   if (cli.onlyNullDates) {
+    // Otimização: só linhas com algum campo reparável ainda nulo.
     and.push({
-      AND: [
+      OR: [
         { openedAt: null },
         { releasedAt: null },
         { plannedAt: null },
         { deliveryAt: null },
         { nomusUpdatedAt: null },
+        { companyName: null },
+        { externalCompanyId: null },
       ],
     });
   }
@@ -163,7 +173,7 @@ export async function runProductionOrderDateRepairFromRawJson(
       remaining == null ? cli.batchSize : Math.min(cli.batchSize, remaining);
     const rows = await db.nomusProductionOrder.findMany({
       where: buildWhere(cli, afterExternalId),
-      select: DATE_SELECT,
+      select: REPAIR_SELECT,
       orderBy: { externalId: "asc" },
       take,
     });
@@ -174,32 +184,36 @@ export async function runProductionOrderDateRepairFromRawJson(
       lastProcessedExternalId = row.externalId;
       afterExternalId = row.externalId;
 
-      const mapped = mapProductionOrderDatesFromRawJson(row.rawJson);
+      const mapped = mapProductionOrderRepairFieldsFromRawJson(row.rawJson);
       if (!mapped.ok) {
         counters.skippedInvalid += 1;
         continue;
       }
 
       const current = currentRepairableFromRow(row);
-      const next = extractRepairableDates(mapped.dates);
+      const next = mapped.fields;
 
       if (mapped.fieldErrors.length > 0) {
         counters.invalidDates += mapped.fieldErrors.length;
       }
 
-      if (cli.onlyNullDates && !hasRepairableDatesNull(current) && cli.externalId == null) {
+      if (
+        cli.onlyNullDates &&
+        !hasRepairableFieldsNull(current) &&
+        cli.externalId == null
+      ) {
         counters.unchanged += 1;
         continue;
       }
 
-      if (!productionOrderDatesNeedRepair(current, next)) {
+      if (!productionOrderFieldsNeedRepair(current, next)) {
         counters.unchanged += 1;
         continue;
       }
 
-      const fill = countFieldsToFill(current, next);
+      const fill = countRepairFieldsToFill(current, next);
       addFieldCounts(counters.fieldsToFill, fill);
-      const diff = summarizeProductionOrderDateRepairDiff(current, next);
+      const diff = summarizeProductionOrderRepairDiff(current, next);
       counters.wouldUpdate += 1;
 
       if (samples.length < 20) {
@@ -225,7 +239,10 @@ export async function runProductionOrderDateRepairFromRawJson(
             plannedAt: next.plannedAt,
             deliveryAt: next.deliveryAt,
             nomusUpdatedAt: next.nomusUpdatedAt,
-            // NÃO alterar: closedAt, rawJson, payloadHash, firstSeenAt, lastSeenAt, lastChangedAt, syncedAt
+            externalCompanyId: next.externalCompanyId,
+            companyName: next.companyName,
+            // NÃO alterar: closedAt, rawJson, payloadHash, firstSeenAt, lastSeenAt,
+            // lastChangedAt, syncedAt, vínculos
           },
           select: { id: true },
         });

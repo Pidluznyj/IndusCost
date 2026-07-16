@@ -248,19 +248,51 @@ function resolveCompanyFields(raw: JsonObject): {
   externalCompanyId: number | null;
   companyName: string | null;
 } {
-  const empresa = asNomusProductionOrderObject(raw.empresa);
+  const empresaObj = asNomusProductionOrderObject(raw.empresa);
+  const empresaAsString =
+    normalizeNomusProductionOrderString(raw.empresaNome) ??
+    normalizeNomusProductionOrderString(raw.nomeEmpresa) ??
+    normalizeNomusProductionOrderString(raw.descricaoEmpresa) ??
+    normalizeNomusProductionOrderString(raw.empresaDescricao) ??
+    normalizeNomusProductionOrderString(raw.companyName) ??
+    normalizeNomusProductionOrderString(empresaObj?.nome) ??
+    normalizeNomusProductionOrderString(empresaObj?.razaoSocial) ??
+    normalizeNomusProductionOrderString(empresaObj?.descricao) ??
+    normalizeNomusProductionOrderString(empresaObj?.codigoNome) ??
+    // string pura: "02 - KOPPETEL" ou "KOPPETEL"
+    normalizeNomusProductionOrderString(raw.empresa);
+
+  const parsedFromLabel = empresaAsString
+    ? parseNomusEmpresaLabel(empresaAsString)
+    : null;
+
+  const externalCompanyId =
+    normalizeNomusProductionOrderInt(raw.idEmpresa) ??
+    normalizeNomusProductionOrderInt(empresaObj?.id) ??
+    normalizeNomusProductionOrderInt(raw.empresa) ??
+    parsedFromLabel?.id ??
+    null;
+
+  const companyName = empresaAsString;
+
+  return { externalCompanyId, companyName };
+}
+
+/**
+ * Aceita rótulos Nomus no formato `"02 - KOPPETEL"` → `{ id: 2, name: "02 - KOPPETEL" }`.
+ * O nome exibido preserva o texto original; o id só é inferido do prefixo numérico.
+ */
+export function parseNomusEmpresaLabel(
+  value: string
+): { id: number | null; name: string } {
+  const trimmed = value.trim();
+  if (!trimmed) return { id: null, name: "" };
+  const match = trimmed.match(/^(\d+)\s*[-–—]\s*(.+)$/);
+  if (!match) return { id: null, name: trimmed };
+  const id = Number(match[1]);
   return {
-    externalCompanyId:
-      normalizeNomusProductionOrderInt(raw.idEmpresa) ??
-      normalizeNomusProductionOrderInt(empresa?.id) ??
-      null,
-    companyName:
-      normalizeNomusProductionOrderString(raw.empresaNome) ??
-      normalizeNomusProductionOrderString(raw.companyName) ??
-      normalizeNomusProductionOrderString(empresa?.nome) ??
-      normalizeNomusProductionOrderString(empresa?.razaoSocial) ??
-      normalizeNomusProductionOrderString(raw.empresa) ??
-      null,
+    id: Number.isFinite(id) ? id : null,
+    name: trimmed,
   };
 }
 

@@ -23,8 +23,9 @@ export const NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE: JsonObject = {
   idProduto: 391,
   idConfiguracaoProduto: 12,
   codigoConfiguracaoProduto: "CFG-311",
-  empresa: "KOPPETEL",
-  idEmpresa: 1,
+  /** Formato real observado em produção: código + nome. */
+  empresa: "02 - KOPPETEL",
+  idEmpresa: 2,
   setorEstoque: "PRODUCAO",
   dataHoraCriacao: "23/06/2026 00:00:00",
   dataHoraLiberacao: "23/06/2026 10:55:11",

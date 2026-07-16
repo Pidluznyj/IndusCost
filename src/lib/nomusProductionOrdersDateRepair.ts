@@ -1,5 +1,5 @@
 /**
- * Reparo aditivo de datas de OP a partir do rawJson (OP-14.2).
+ * Reparo aditivo de datas + empresa de OP a partir do rawJson (OP-14.1).
  * Não consulta Nomus. Não altera closedAt, rawJson, payloadHash nem timestamps de sync.
  */
 
@@ -19,6 +19,14 @@ export type ProductionOrderRepairableDateFields = {
   nomusUpdatedAt: Date | null;
 };
 
+export type ProductionOrderRepairableCompanyFields = {
+  externalCompanyId: number | null;
+  companyName: string | null;
+};
+
+export type ProductionOrderRepairableFields = ProductionOrderRepairableDateFields &
+  ProductionOrderRepairableCompanyFields;
+
 export type ProductionOrderDateFields = ProductionOrderRepairableDateFields & {
   closedAt: Date | null;
 };
@@ -31,8 +39,24 @@ export const PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS = [
   "nomusUpdatedAt",
 ] as const satisfies ReadonlyArray<keyof ProductionOrderRepairableDateFields>;
 
+export const PRODUCTION_ORDER_REPAIRABLE_COMPANY_KEYS = [
+  "externalCompanyId",
+  "companyName",
+] as const satisfies ReadonlyArray<keyof ProductionOrderRepairableCompanyFields>;
+
+export const PRODUCTION_ORDER_REPAIRABLE_KEYS = [
+  ...PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS,
+  ...PRODUCTION_ORDER_REPAIRABLE_COMPANY_KEYS,
+] as const;
+
 export type ProductionOrderRepairableDateKey =
   (typeof PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS)[number];
+
+export type ProductionOrderRepairableCompanyKey =
+  (typeof PRODUCTION_ORDER_REPAIRABLE_COMPANY_KEYS)[number];
+
+export type ProductionOrderRepairableKey =
+  (typeof PRODUCTION_ORDER_REPAIRABLE_KEYS)[number];
 
 /** @deprecated Prefer PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS — closedAt não entra no reparo. */
 export const PRODUCTION_ORDER_DATE_FIELD_KEYS = [
@@ -46,6 +70,15 @@ function sameInstant(a: Date | null, b: Date | null): boolean {
   if (a == null && b == null) return true;
   if (a == null || b == null) return false;
   return a.getTime() === b.getTime();
+}
+
+function sameCompanyValue(
+  a: string | number | null,
+  b: string | number | null
+): boolean {
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  return a === b;
 }
 
 export function extractMappedProductionOrderDates(
@@ -73,10 +106,49 @@ export function extractRepairableDates(
   };
 }
 
+export function extractRepairableFields(
+  mapped: Pick<
+    MappedNomusProductionOrder,
+    ProductionOrderRepairableKey | "closedAt"
+  >
+): ProductionOrderRepairableFields {
+  return {
+    openedAt: mapped.openedAt,
+    releasedAt: mapped.releasedAt,
+    plannedAt: mapped.plannedAt,
+    deliveryAt: mapped.deliveryAt,
+    nomusUpdatedAt: mapped.nomusUpdatedAt,
+    externalCompanyId: mapped.externalCompanyId,
+    companyName: mapped.companyName,
+  };
+}
+
 export function mapProductionOrderDatesFromRawJson(
   rawJson: unknown
 ):
   | { ok: true; dates: ProductionOrderDateFields; fieldErrors: Array<{ field: string; error: string }> }
+  | { ok: false; reasons: string[] } {
+  const mapped = mapProductionOrderRepairFieldsFromRawJson(rawJson);
+  if (!mapped.ok) return mapped;
+  return {
+    ok: true,
+    dates: {
+      ...extractRepairableDates(mapped.fields),
+      closedAt: mapped.closedAt,
+    },
+    fieldErrors: mapped.fieldErrors,
+  };
+}
+
+export function mapProductionOrderRepairFieldsFromRawJson(
+  rawJson: unknown
+):
+  | {
+      ok: true;
+      fields: ProductionOrderRepairableFields;
+      closedAt: Date | null;
+      fieldErrors: Array<{ field: string; error: string }>;
+    }
   | { ok: false; reasons: string[] } {
   const obj = asNomusProductionOrderObject(rawJson);
   if (!obj) {
@@ -88,7 +160,8 @@ export function mapProductionOrderDatesFromRawJson(
   }
   return {
     ok: true,
-    dates: extractMappedProductionOrderDates(mapped.row),
+    fields: extractRepairableFields(mapped.row),
+    closedAt: mapped.row.closedAt,
     fieldErrors: mapped.fieldErrors,
   };
 }
@@ -100,6 +173,16 @@ export function productionOrderDatesNeedRepair(
   for (const key of PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS) {
     if (!sameInstant(current[key], next[key])) return true;
   }
+  return false;
+}
+
+export function productionOrderFieldsNeedRepair(
+  current: ProductionOrderRepairableFields,
+  next: ProductionOrderRepairableFields
+): boolean {
+  if (productionOrderDatesNeedRepair(current, next)) return true;
+  if (!sameCompanyValue(current.externalCompanyId, next.externalCompanyId)) return true;
+  if (!sameCompanyValue(current.companyName, next.companyName)) return true;
   return false;
 }
 
@@ -122,6 +205,38 @@ export function summarizeProductionOrderDateRepairDiff(
   return diff;
 }
 
+export function summarizeProductionOrderRepairDiff(
+  current: ProductionOrderRepairableFields,
+  next: ProductionOrderRepairableFields
+): Partial<
+  Record<
+    ProductionOrderRepairableKey,
+    { from: string | number | null; to: string | number | null }
+  >
+> {
+  const diff: Partial<
+    Record<
+      ProductionOrderRepairableKey,
+      { from: string | number | null; to: string | number | null }
+    >
+  > = {
+    ...summarizeProductionOrderDateRepairDiff(current, next),
+  };
+  if (!sameCompanyValue(current.externalCompanyId, next.externalCompanyId)) {
+    diff.externalCompanyId = {
+      from: current.externalCompanyId,
+      to: next.externalCompanyId,
+    };
+  }
+  if (!sameCompanyValue(current.companyName, next.companyName)) {
+    diff.companyName = {
+      from: current.companyName,
+      to: next.companyName,
+    };
+  }
+  return diff;
+}
+
 export function countFieldsToFill(
   current: ProductionOrderRepairableDateFields,
   next: ProductionOrderRepairableDateFields
@@ -137,6 +252,18 @@ export function countFieldsToFill(
     if (current[key] == null && next[key] != null) counts[key] = 1;
   }
   return counts;
+}
+
+export function countRepairFieldsToFill(
+  current: ProductionOrderRepairableFields,
+  next: ProductionOrderRepairableFields
+): Record<ProductionOrderRepairableKey, number> {
+  return {
+    ...countFieldsToFill(current, next),
+    externalCompanyId:
+      current.externalCompanyId == null && next.externalCompanyId != null ? 1 : 0,
+    companyName: current.companyName == null && next.companyName != null ? 1 : 0,
+  };
 }
 
 export type ProductionOrderDateRepairCli = {
@@ -170,7 +297,7 @@ export function parseProductionOrderDateRepairCli(
 
   for (const arg of argv) {
     if (arg === "preview" || arg === "apply") continue;
-    if (arg === "--only-null-dates") {
+    if (arg === "--only-null-dates" || arg === "--only-null") {
       onlyNullDates = true;
       continue;
     }
@@ -185,7 +312,6 @@ export function parseProductionOrderDateRepairCli(
       continue;
     }
     if (arg.startsWith("--offset=")) {
-      // Compat OP-14.1: offset aproximado não é retomada segura; ignorado em favor de afterExternalId.
       continue;
     }
     if (arg.startsWith("--after-externalId=") || arg.startsWith("--afterExternalId=")) {
@@ -218,7 +344,7 @@ export function parseProductionOrderDateRepairCli(
 }
 
 export type ProductionOrderDateRepairFieldFillCounters = Record<
-  ProductionOrderRepairableDateKey,
+  ProductionOrderRepairableKey,
   number
 >;
 
@@ -241,6 +367,8 @@ export function emptyFieldFillCounters(): ProductionOrderDateRepairFieldFillCoun
     plannedAt: 0,
     deliveryAt: 0,
     nomusUpdatedAt: 0,
+    externalCompanyId: 0,
+    companyName: 0,
   };
 }
 
@@ -293,4 +421,9 @@ export function serializeProductionOrderDateRepairCheckpoint(
 
 export function hasRepairableDatesNull(dates: ProductionOrderRepairableDateFields): boolean {
   return PRODUCTION_ORDER_REPAIRABLE_DATE_KEYS.every((key) => dates[key] == null);
+}
+
+/** True se algum campo reparável (data ou empresa) ainda está nulo. */
+export function hasRepairableFieldsNull(fields: ProductionOrderRepairableFields): boolean {
+  return PRODUCTION_ORDER_REPAIRABLE_KEYS.some((key) => fields[key] == null);
 }

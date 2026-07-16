@@ -1,10 +1,10 @@
-# OP-14.2 — Runbook: reparo de datas + probe do seletor incremental
+# OP-14.2 — Runbook: reparo de datas + empresa + probe do seletor incremental
 
-Rotina segura para preencher datas de Ordens de Produção já armazenadas (~21k) a partir do `rawJson`, sem consultar a API Nomus, e validar o seletor RSQL `dataHoraEdicao` antes de confiar no incremental.
+Rotina segura para preencher datas e empresa de Ordens de Produção já armazenadas (~21k) a partir do `rawJson`, sem consultar a API Nomus, e validar o seletor RSQL `dataHoraEdicao` antes de confiar no incremental.
 
 Pré-requisito: OP-14.1 (schema + mapper oficial).
 
-Mapeamento:
+## Campos atualizados pelo reparo
 
 | Campo Nomus (`rawJson`) | Coluna IndusCost |
 |-------------------------|------------------|
@@ -13,8 +13,11 @@ Mapeamento:
 | `dataHoraInicialPlanejada` | `plannedAt` |
 | `dataHoraEntrega` | `deliveryAt` |
 | `dataHoraEdicao` | `nomusUpdatedAt` |
+| `empresa` / `idEmpresa` (e aliases) | `companyName` / `externalCompanyId` |
 
 **Não alterados pelo reparo:** `closedAt`, `rawJson`, `payloadHash`, vínculos, `firstSeenAt`, `lastSeenAt`, `lastChangedAt`, `syncedAt`.
+
+Garantias: paginado, idempotente, preview sem escrita, apply auditável, retomável (`--checkpoint-file` / `--after-externalId`), lock compartilhado `date-repair`.
 
 ---
 
@@ -48,7 +51,7 @@ Conferir no JSON de saída:
 
 - `counters.scanned` (total lido)
 - `counters.wouldUpdate` (total que seria alterado)
-- `counters.fieldsToFill.*` (`openedAt`, `releasedAt`, `plannedAt`, `deliveryAt`, `nomusUpdatedAt`)
+- `counters.fieldsToFill.*` (`openedAt`, `releasedAt`, `plannedAt`, `deliveryAt`, `nomusUpdatedAt`, `externalCompanyId`, `companyName`)
 - `counters.invalidDates` / `skippedInvalid`
 - `counters.unchanged`
 - `samples[]` (antes/depois + `closedAtPreserved`)
@@ -60,8 +63,8 @@ Conferir no JSON de saída:
 
 Antes do apply:
 
-1. Comparar `wouldUpdate` com a expectativa de cobertura nula (ex.: OPs com `openedAt IS NULL`).
-2. Amostrar 3–5 `externalId` do preview e conferir no `rawJson` os campos `dataHora*`.
+1. Comparar `wouldUpdate` com a expectativa de cobertura nula (ex.: OPs com `openedAt IS NULL` ou `companyName IS NULL`).
+2. Amostrar 3–5 `externalId` do preview e conferir no `rawJson` os campos `dataHora*` e `empresa`.
 3. Confirmar que amostras **não** propõem mudança de `closedAt`.
 
 Consulta útil (cobertura atual):
@@ -73,7 +76,9 @@ SELECT
   count(*) FILTER (WHERE "releasedAt" IS NULL) AS released_null,
   count(*) FILTER (WHERE "plannedAt" IS NULL) AS planned_null,
   count(*) FILTER (WHERE "deliveryAt" IS NULL) AS delivery_null,
-  count(*) FILTER (WHERE "nomusUpdatedAt" IS NULL) AS edited_null
+  count(*) FILTER (WHERE "nomusUpdatedAt" IS NULL) AS edited_null,
+  count(*) FILTER (WHERE "companyName" IS NULL) AS company_null,
+  count(*) FILTER (WHERE "externalCompanyId" IS NULL) AS company_id_null
 FROM "NomusProductionOrder";
 ```
 
@@ -109,7 +114,8 @@ Repetir a consulta da seção 3. Esperado: queda forte em `*_null` para campos p
 Sanidade pontual:
 
 ```sql
-SELECT "externalId", "openedAt", "releasedAt", "plannedAt", "deliveryAt", "nomusUpdatedAt", "closedAt", "payloadHash"
+SELECT "externalId", "openedAt", "releasedAt", "plannedAt", "deliveryAt", "nomusUpdatedAt",
+       "externalCompanyId", "companyName", "closedAt", "payloadHash"
 FROM "NomusProductionOrder"
 WHERE "externalId" = 30347;
 ```
@@ -120,69 +126,22 @@ WHERE "externalId" = 30347;
 
 ## 6. Probe do seletor incremental (`dataHoraEdicao`)
 
-Campo no payload **não** implica aceite na query RSQL. Probe read-only (1 página, sem gravação, sem avançar estado):
+`dataHoraEdicao` existe no payload e alimenta `nomusUpdatedAt`, mas **não** se assume que o Nomus aceita o campo como seletor RSQL.
 
 ```bash
 npm run sync:nomus:production-orders:probe-selector
-# ou
-npm run probe:nomus:production-orders:selector -- --selector=dataHoraEdicao
-npm run probe:nomus:production-orders:selector -- --selector=dataHoraCriacao
 ```
 
-Classificação:
-
-| Status | Significado | Ação |
-|--------|-------------|------|
-| `ACCEPTED` | HTTP 200 na query com o seletor | Pode setar homologação `accepted` e usar `date_filter` |
-| `REJECTED` | 400/422 (campo/filtro inválido) | Setar `rejected`; incremental usa fallback limitado auditado |
-| `INCONCLUSIVE` | 429, 5xx, auth, timeout | Não declarar sucesso; repetir probe; não avançar homologação |
-
-Após ACCEPTED:
-
-```bash
-export NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION=dataHoraEdicao:accepted
-```
-
-Após REJECTED:
-
-```bash
-export NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION=dataHoraEdicao:rejected
-```
+Resultados: `ACCEPTED` | `REJECTED` | `INCONCLUSIVE`.
+Persistir homologação via `NOMUS_PRODUCTION_ORDERS_INCREMENTAL_SELECTOR_HOMOLOGATION`.
+Em rejeição ou sync incompleto: **não** avançar o estado incremental.
 
 ---
 
-## 7. Validação do hook automático (pós Pedidos de Venda)
+## 7. Pós-apply na UI
 
-1. Rodar um apply de Pedidos de Venda em ambiente controlado **ou** inspecionar logs do orquestrador.
-2. Confirmar soft-fail: falha do incremental de OP **não** derruba o sync de pedidos.
-3. Confirmar que o hook chama **incremental apply** (nunca backfill) com overlap 72h.
-4. Se o seletor estiver `REJECTED`, o resumo deve registrar fallback / rejeição — não sucesso silencioso de `date_filter`.
+Após o apply (e deploy se necessário):
 
----
-
-## 8. Rollback
-
-1. Parar novos applies de reparo.
-2. Restaurar dump da seção 1 **ou** reverter colunas de data a partir do backup (não há “undo” automático no código).
-3. `rawJson` permanece intacto no reparo bem-sucedido — o pior caso típico é reexecutar o reparo após restaurar colunas, não um backfill completo.
-
----
-
-## 9. Riscos residuais
-
-- **Seletor RSQL não homologado:** incremental pode cair em `limited_page_window` (cobertura parcial); monitorar resumos.
-- **Datas inválidas no `rawJson`:** contam como inválidas; campos ficam null — não inventa valores.
-- **`closedAt` legado:** reparo não corrige encerramento; se estiver errado, exige rotina separada.
-- **Concorrência:** lock compartilhado evita corrida com backfill/incremental, mas preview/apply longos ainda competem pelo lock.
-- **Overlap 72h:** registros editados fora da janela + falha de seletor podem atrasar a convergência até o próximo ciclo/fallback.
-
----
-
-## Comandos rápidos
-
-```bash
-npm run repair:nomus:production-orders:dates:preview -- --only-null-dates
-npm run repair:nomus:production-orders:dates:apply -- --only-null-dates --checkpoint-file=/tmp/op-dates.ckpt.json
-npm run sync:nomus:production-orders:probe-selector
-npm run sync:nomus:production-orders:incremental:preview
-```
+1. Grid: abertura (`openedAt`), planejada (`plannedAt`), entrega (`deliveryAt`), empresa (`companyName`).
+2. Detalhe/API: mesmos campos normalizados — sem ler `rawJson` no frontend para datas.
+3. Conferir OP 05800 - 003 e OP 05967 - 001 (quantidade `0,002925`).
