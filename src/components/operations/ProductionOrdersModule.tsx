@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { Loader2, Search } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
@@ -11,34 +12,52 @@ import {
   canViewProductionOrders,
   classifyProductionOrdersListError,
   formatProductionOrderDateTime,
-  formatProductionOrderPrimaryCustomer,
-  formatProductionOrderPrimaryOrder,
   formatProductionOrderQuantity,
   formatProductionOrderStatusLabel,
   hasActiveProductionOrdersFilters,
+  productionOrderExtraSalesOrderCount,
+  productionOrderStatusBadgeClass,
   PRODUCTION_ORDERS_BREADCRUMB,
   PRODUCTION_ORDERS_PAGE_SUBTITLE,
   PRODUCTION_ORDERS_PAGE_TITLE,
   resolveLatestSyncedAt,
 } from "@/src/lib/productionOrdersUi";
 import { cn } from "@/src/lib/utils";
+import { ProductionOrderQuickDetailOverlay } from "./ProductionOrderQuickDetailOverlay";
 
 const PAGE_SIZE = 50;
+const SEARCH_DEBOUNCE_MS = 300;
+
+function initialParam(params: URLSearchParams, key: string): string {
+  return params.get(key)?.trim() ?? "";
+}
+
+function initialPage(params: URLSearchParams): number {
+  const parsed = Number.parseInt(params.get("page") ?? "1", 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
 
 export function ProductionOrdersModule() {
   const auth = useAuth();
   const permissions = usePermissions();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canView = canViewProductionOrders({
     canPerformAction: permissions.canPerformAction,
     hasPermission: (permission) => auth.hasPermission(permission),
   });
 
-  const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [tipo, setTipo] = useState("");
-  const [company, setCompany] = useState("");
-  const [page, setPage] = useState(1);
+  const [searchDraft, setSearchDraft] = useState(() => initialParam(searchParams, "search"));
+  const [tipoDraft, setTipoDraft] = useState(() => initialParam(searchParams, "tipo"));
+  const [companyDraft, setCompanyDraft] = useState(() => initialParam(searchParams, "company"));
+  const [search, setSearch] = useState(searchDraft);
+  const [tipo, setTipo] = useState(tipoDraft);
+  const [company, setCompany] = useState(companyDraft);
+  const [status, setStatus] = useState<string | null>(() => searchParams.get("status"));
+  const [from, setFrom] = useState(() => initialParam(searchParams, "from"));
+  const [to, setTo] = useState(() => initialParam(searchParams, "to"));
+  const [page, setPage] = useState(() => initialPage(searchParams));
+  const [retryToken, setRetryToken] = useState(0);
+  const [selectedProductionOrderId, setSelectedProductionOrderId] = useState<string | null>(null);
 
   const [rows, setRows] = useState<ProductionOrderGridRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -51,56 +70,90 @@ export function ProductionOrdersModule() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchDraft.trim());
+      setTipo(tipoDraft.trim());
+      setCompany(companyDraft.trim());
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, tipoDraft, companyDraft]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, status, tipo, company, from, to]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (page > 1) next.set("page", String(page));
+    if (search) next.set("search", search);
+    if (status) next.set("status", status);
+    if (tipo) next.set("tipo", tipo);
+    if (company) next.set("company", company);
+    if (from) next.set("from", from);
+    if (to) next.set("to", to);
+    setSearchParams(next, { replace: true });
+  }, [page, search, status, tipo, company, from, to, setSearchParams]);
+
+  useEffect(() => {
+    if (!canView) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setErrorKind(null);
+    setErrorMessage(null);
+    void fetchProductionOrdersList(
+      {
+        page,
+        pageSize: PAGE_SIZE,
+        search,
+        status,
+        tipo: tipo || null,
+        company: company || null,
+        from: from || null,
+        to: to || null,
+      },
+      controller.signal
+    )
+      .then((data) => {
+        if (controller.signal.aborted) return;
+        setRows(data.rows);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setStatusCounts(data.statusCounts);
+        setHasLoadedOnce(true);
+      })
+      .catch((error: unknown) => {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
+          return;
+        }
+        const classified = classifyProductionOrdersListError(error);
+        setErrorKind(classified.kind);
+        setErrorMessage(classified.message);
+        setRows([]);
+        setTotal(0);
+        setTotalPages(1);
+        setStatusCounts({});
+        setHasLoadedOnce(true);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [canView, page, search, status, tipo, company, from, to, retryToken]);
+
   const filtersActive = hasActiveProductionOrdersFilters({
     search,
     status,
     tipo,
     company,
+    from,
+    to,
   });
-
   const statusChips = useMemo(() => buildStatusChipEntries(statusCounts), [statusCounts]);
   const latestSyncedAt = useMemo(() => resolveLatestSyncedAt(rows), [rows]);
-
-  const loadList = useCallback(async () => {
-    if (!canView) return;
-    setLoading(true);
-    setErrorKind(null);
-    setErrorMessage(null);
-    try {
-      const data = await fetchProductionOrdersList({
-        page,
-        pageSize: PAGE_SIZE,
-        search,
-        status,
-        tipo: tipo.trim() || null,
-        company: company.trim() || null,
-      });
-      setRows(data.rows);
-      setTotal(data.total);
-      setTotalPages(data.totalPages);
-      setStatusCounts(data.statusCounts);
-      setHasLoadedOnce(true);
-    } catch (error: unknown) {
-      const classified = classifyProductionOrdersListError(error);
-      setErrorKind(classified.kind);
-      setErrorMessage(classified.message);
-      setRows([]);
-      setTotal(0);
-      setTotalPages(1);
-      setStatusCounts({});
-      setHasLoadedOnce(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [canView, page, search, status, tipo, company]);
-
-  useEffect(() => {
-    void loadList();
-  }, [loadList]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [search, status, tipo, company]);
 
   if (!canView) {
     return (
@@ -113,8 +166,23 @@ export function ProductionOrdersModule() {
     );
   }
 
-  const showEmptyCatalog = hasLoadedOnce && !loading && !errorMessage && total === 0 && !filtersActive;
-  const showEmptyFilters = hasLoadedOnce && !loading && !errorMessage && total === 0 && filtersActive;
+  const showEmptyCatalog =
+    hasLoadedOnce && !loading && !errorMessage && total === 0 && !filtersActive;
+  const showEmptyFilters =
+    hasLoadedOnce && !loading && !errorMessage && total === 0 && filtersActive;
+
+  const clearFilters = () => {
+    setSearchDraft("");
+    setTipoDraft("");
+    setCompanyDraft("");
+    setSearch("");
+    setStatus(null);
+    setTipo("");
+    setCompany("");
+    setFrom("");
+    setTo("");
+    setPage(1);
+  };
 
   return (
     <div className="space-y-4" data-testid="production-orders-module">
@@ -125,73 +193,77 @@ export function ProductionOrdersModule() {
         >
           {PRODUCTION_ORDERS_BREADCRUMB}
         </p>
-        <h2 className="text-xl font-semibold text-foreground">{PRODUCTION_ORDERS_PAGE_TITLE}</h2>
-        <p className="text-sm text-muted-foreground">{PRODUCTION_ORDERS_PAGE_SUBTITLE}</p>
+        <h2 className="text-xl font-semibold text-foreground">
+          {PRODUCTION_ORDERS_PAGE_TITLE}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {PRODUCTION_ORDERS_PAGE_SUBTITLE}
+        </p>
       </div>
 
       <div
         className="rounded-xl border border-border bg-card p-3"
         data-testid="production-orders-filters"
       >
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-end">
-          <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-muted-foreground">
-            Busca
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_10rem_12rem_9.5rem_9.5rem_auto]">
+          <FilterField label="Busca geral">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <input
                 data-testid="production-orders-search"
                 className="w-full rounded-lg border border-border bg-background py-2 pl-8 pr-3 text-sm text-foreground"
                 placeholder="OP, produto, cliente ou pedido…"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") setSearch(searchInput.trim());
-                }}
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
               />
             </div>
-          </label>
-          <label className="flex w-full flex-col gap-1 text-xs text-muted-foreground lg:w-40">
-            Tipo
+          </FilterField>
+          <FilterField label="Tipo">
             <input
               data-testid="production-orders-tipo"
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              value={tipoDraft}
+              onChange={(event) => setTipoDraft(event.target.value)}
               placeholder="Ex.: Injeção"
             />
-          </label>
-          <label className="flex w-full flex-col gap-1 text-xs text-muted-foreground lg:w-44">
-            Empresa
+          </FilterField>
+          <FilterField label="Empresa">
             <input
               data-testid="production-orders-company"
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              value={companyDraft}
+              onChange={(event) => setCompanyDraft(event.target.value)}
               placeholder="Ex.: KOPPETEL"
             />
-          </label>
-          <button
-            type="button"
-            data-testid="production-orders-apply-filters"
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-            onClick={() => setSearch(searchInput.trim())}
-          >
-            Filtrar
-          </button>
-          <button
-            type="button"
-            data-testid="production-orders-clear-filters"
-            className="rounded-lg border border-border px-4 py-2 text-sm text-foreground"
-            onClick={() => {
-              setSearchInput("");
-              setSearch("");
-              setStatus(null);
-              setTipo("");
-              setCompany("");
-            }}
-          >
-            Limpar
-          </button>
+          </FilterField>
+          <FilterField label="Abertura de">
+            <input
+              type="date"
+              data-testid="production-orders-from"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+            />
+          </FilterField>
+          <FilterField label="Abertura até">
+            <input
+              type="date"
+              data-testid="production-orders-to"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+            />
+          </FilterField>
+          <div className="flex items-end">
+            <button
+              type="button"
+              data-testid="production-orders-clear-filters"
+              className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/50"
+              onClick={clearFilters}
+            >
+              Limpar filtros
+            </button>
+          </div>
         </div>
       </div>
 
@@ -201,44 +273,21 @@ export function ProductionOrdersModule() {
         role="tablist"
         aria-label="Filtro por status"
       >
-        <button
-          type="button"
-          role="tab"
-          aria-selected={status == null}
-          data-testid="production-orders-status-all"
-          className={cn(
-            "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-            status == null
-              ? "border-primary bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:text-foreground"
-          )}
+        <StatusChip
+          label="Todos"
+          selected={status == null}
+          testId="production-orders-status-all"
           onClick={() => setStatus(null)}
-        >
-          Todos
-        </button>
-        {statusChips.map((chip) => {
-          const selected = status === chip.value;
-          const chipKey = chip.value ?? "__null__";
-          return (
-            <button
-              key={chipKey}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              data-testid={`production-orders-status-${chipKey}`}
-              className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-                selected
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground"
-              )}
-              onClick={() => setStatus(chip.value)}
-            >
-              {chip.label}
-              <span className="ml-1 opacity-70">({chip.count})</span>
-            </button>
-          );
-        })}
+        />
+        {statusChips.map((chip) => (
+          <StatusChip
+            key={chip.value}
+            label={`${chip.label} (${chip.count})`}
+            selected={status === chip.value}
+            testId={`production-orders-status-${chip.value}`}
+            onClick={() => setStatus(chip.value)}
+          />
+        ))}
       </div>
 
       <div
@@ -278,7 +327,7 @@ export function ProductionOrdersModule() {
           <button
             type="button"
             className="ml-3 underline"
-            onClick={() => void loadList()}
+            onClick={() => setRetryToken((token) => token + 1)}
           >
             Tentar novamente
           </button>
@@ -312,71 +361,37 @@ export function ProductionOrdersModule() {
             Nenhum resultado para os filtros aplicados.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
+          <div className="max-w-full overflow-x-auto">
+            <table className="min-w-[1280px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
-                  <th className="px-3 py-2 font-medium">OP</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-3 py-2 font-medium">Produto</th>
-                  <th className="px-3 py-2 font-medium">Quantidade</th>
-                  <th className="px-3 py-2 font-medium">Tipo</th>
-                  <th className="px-3 py-2 font-medium">Pedido</th>
-                  <th className="px-3 py-2 font-medium">Cliente</th>
-                  <th className="px-3 py-2 font-medium">Abertura</th>
-                  <th className="px-3 py-2 font-medium">Prevista</th>
-                  <th className="px-3 py-2 font-medium">Vínculos</th>
-                  <th className="px-3 py-2 font-medium">Sync</th>
+                  {[
+                    "Ordem",
+                    "Tipo",
+                    "Empresa",
+                    "Produto",
+                    "Quantidade",
+                    "Prioridade",
+                    "Data de abertura",
+                    "Data planejada",
+                    "Status",
+                    "Pedido de Venda",
+                    "Última sincronização",
+                  ].map((label) => (
+                    <th key={label} className="whitespace-nowrap px-3 py-2 font-medium">
+                      {label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row) => (
-                  <tr
+                  <ProductionOrderGridTableRow
                     key={row.id}
-                    className="border-b border-border/70 last:border-0 hover:bg-muted/30"
-                    data-testid={`production-orders-row-${row.externalId}`}
-                  >
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-foreground">{row.name ?? "—"}</div>
-                      <div className="text-xs text-muted-foreground">#{row.externalId}</div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-700">
-                        {formatProductionOrderStatusLabel(row.status)}
-                      </span>
-                      {row.hasPendingLink ? (
-                        <div className="mt-1 text-[11px] text-amber-700">Vínculo pendente</div>
-                      ) : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{row.productCode ?? "—"}</div>
-                      <div className="line-clamp-1 max-w-[220px] text-xs text-muted-foreground">
-                        {row.productDescription ?? "—"}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatProductionOrderQuantity(row.quantity, row.unit)}
-                    </td>
-                    <td className="px-3 py-2">{row.tipo ?? "—"}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatProductionOrderPrimaryOrder(row)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="line-clamp-1 max-w-[180px]">
-                        {formatProductionOrderPrimaryCustomer(row)}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatProductionOrderDateTime(row.openedAt)}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatProductionOrderDateTime(row.plannedAt)}
-                    </td>
-                    <td className="px-3 py-2">{row.currentLinkCount}</td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {formatProductionOrderDateTime(row.syncedAt)}
-                    </td>
-                  </tr>
+                    row={row}
+                    selected={selectedProductionOrderId === row.id}
+                    onOpen={() => setSelectedProductionOrderId(row.id)}
+                  />
                 ))}
               </tbody>
             </table>
@@ -397,7 +412,7 @@ export function ProductionOrdersModule() {
               type="button"
               className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40"
               disabled={page <= 1 || loading}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
             >
               Anterior
             </button>
@@ -405,13 +420,162 @@ export function ProductionOrdersModule() {
               type="button"
               className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40"
               disabled={page >= totalPages || loading}
-              onClick={() => setPage((p) => p + 1)}
+              onClick={() => setPage((current) => current + 1)}
             >
               Próxima
             </button>
           </div>
         </div>
       ) : null}
+
+      <ProductionOrderQuickDetailOverlay
+        productionOrderId={selectedProductionOrderId}
+        onClose={() => setSelectedProductionOrderId(null)}
+      />
     </div>
+  );
+}
+
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function StatusChip({
+  label,
+  selected,
+  testId,
+  onClick,
+}: {
+  label: string;
+  selected: boolean;
+  testId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      data-testid={testId}
+      className={cn(
+        "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+        selected
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border bg-card text-muted-foreground hover:text-foreground"
+      )}
+      onClick={onClick}
+    >
+      {label}
+    </button>
+  );
+}
+
+export function ProductionOrderGridTableRow({
+  row,
+  selected,
+  onOpen,
+}: {
+  row: ProductionOrderGridRow;
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  const firstOrder = row.currentSalesOrders[0];
+  const extraOrders = productionOrderExtraSalesOrderCount(row);
+  return (
+    <tr
+      tabIndex={0}
+      aria-selected={selected}
+      data-selected={selected ? "true" : "false"}
+      className="cursor-pointer border-b border-border/70 outline-none last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40"
+      data-testid={`production-orders-row-${row.externalId}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <td className="px-3 py-2">
+        <div className="whitespace-nowrap font-semibold text-foreground">{row.name ?? "—"}</div>
+        <div className="text-xs text-muted-foreground">#{row.externalId}</div>
+      </td>
+      <td className="px-3 py-2">{row.tipo ?? "—"}</td>
+      <td className="px-3 py-2">{row.companyName ?? "—"}</td>
+      <td className="px-3 py-2">
+        <div className="font-medium text-foreground">{row.productCode ?? "—"}</div>
+        <div
+          className="max-w-[20rem] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground"
+          title={row.productDescription ?? undefined}
+        >
+          {row.productDescription ?? "—"}
+        </div>
+      </td>
+      <td className="whitespace-nowrap px-3 py-2 tabular-nums">
+        {formatProductionOrderQuantity(row.quantity, row.unit)}
+      </td>
+      <td className="px-3 py-2">{row.priority ?? "—"}</td>
+      <td className="whitespace-nowrap px-3 py-2">
+        {formatProductionOrderDateTime(row.openedAt)}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        {formatProductionOrderDateTime(row.plannedAt)}
+      </td>
+      <td className="px-3 py-2">
+        <span className={productionOrderStatusBadgeClass(row.status)}>
+          {formatProductionOrderStatusLabel(row.status)}
+        </span>
+      </td>
+      <td className="px-3 py-2" onClick={(event) => event.stopPropagation()}>
+        {row.hasPendingLink && !firstOrder?.salesOrderId ? (
+          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+            Pedido ainda não sincronizado
+          </span>
+        ) : firstOrder ? (
+          <div className="flex items-center gap-1">
+            {firstOrder.salesOrderId ? (
+              <Link
+                to={`/sales-orders/${firstOrder.salesOrderId}`}
+                className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-800 hover:underline"
+                data-testid={`production-order-sales-link-${firstOrder.externalSalesOrderId}`}
+              >
+                {firstOrder.orderCode?.trim() || firstOrder.externalSalesOrderId}
+              </Link>
+            ) : (
+              <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                Pedido ainda não sincronizado
+              </span>
+            )}
+            {extraOrders > 0 ? (
+              <span
+                className="inline-flex rounded-full border border-border bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"
+                title={row.currentSalesOrders
+                  .slice(1)
+                  .map((order) => order.orderCode ?? order.externalSalesOrderId)
+                  .join(", ")}
+              >
+                +{extraOrders}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          "—"
+        )}
+      </td>
+      <td className="whitespace-nowrap px-3 py-2">
+        {formatProductionOrderDateTime(row.syncedAt)}
+      </td>
+    </tr>
   );
 }

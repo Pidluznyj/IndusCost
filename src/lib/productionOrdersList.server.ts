@@ -20,6 +20,10 @@ export async function listProductionOrdersForGrid(
   query: ProductionOrdersListQuery
 ): Promise<ProductionOrdersListResponse> {
   const where = buildProductionOrdersListWhere(query);
+  const statusCountsWhere = buildProductionOrdersListWhere({
+    ...query,
+    status: null,
+  });
 
   const [headers, total, statusGroups] = await Promise.all([
     db.nomusProductionOrder.findMany({
@@ -32,7 +36,7 @@ export async function listProductionOrdersForGrid(
     db.nomusProductionOrder.count({ where }),
     db.nomusProductionOrder.groupBy({
       by: ["status"],
-      where,
+      where: statusCountsWhere,
       _count: { _all: true },
     }),
   ]);

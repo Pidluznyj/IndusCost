@@ -7,6 +7,7 @@ import type {
   ProductionOrderGridRow,
   ProductionOrdersListResponse,
 } from "@/src/lib/productionOrdersList.js";
+import type { ProductionOrderDetailResponse } from "@/src/lib/productionOrdersDetail.js";
 
 export type ProductionOrdersListClientQuery = {
   page?: number;
@@ -20,6 +21,7 @@ export type ProductionOrdersListClientQuery = {
 };
 
 export type { ProductionOrderGridRow, ProductionOrdersListResponse };
+export type { ProductionOrderDetailResponse };
 
 export const PRODUCTION_ORDERS_LIST_API_PATH = "/api/operations/production-orders";
 
@@ -40,9 +42,21 @@ export function buildProductionOrdersListQueryString(
 }
 
 export async function fetchProductionOrdersList(
-  query: ProductionOrdersListClientQuery = {}
+  query: ProductionOrdersListClientQuery = {},
+  signal?: AbortSignal
 ): Promise<ProductionOrdersListResponse> {
   return fetchJsonOk<ProductionOrdersListResponse>(
-    `${PRODUCTION_ORDERS_LIST_API_PATH}${buildProductionOrdersListQueryString(query)}`
+    `${PRODUCTION_ORDERS_LIST_API_PATH}${buildProductionOrdersListQueryString(query)}`,
+    { signal }
+  );
+}
+
+export async function fetchProductionOrderDetail(
+  id: string,
+  signal?: AbortSignal
+): Promise<ProductionOrderDetailResponse> {
+  return fetchJsonOk<ProductionOrderDetailResponse>(
+    `${PRODUCTION_ORDERS_LIST_API_PATH}/${encodeURIComponent(id)}`,
+    { signal }
   );
 }

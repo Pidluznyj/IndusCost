@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import {
   buildGroupedNavigationStructure,
   flattenGroupedNavigationItems,
@@ -31,9 +34,13 @@ import {
   PRODUCTION_ORDERS_PAGE_SUBTITLE,
   PRODUCTION_ORDERS_PAGE_TITLE,
   PRODUCTION_ORDERS_ROUTE_PATH,
+  productionOrderStatusBadgeClass,
+  resolveProductionOrderStatusTone,
   resolveLatestSyncedAt,
 } from "@/src/lib/productionOrdersUi.js";
 import { HttpError } from "@/src/lib/http.js";
+import { ProductionOrderGridTableRow } from "@/src/components/operations/ProductionOrdersModule.js";
+import type { ProductionOrderGridRow } from "@/src/lib/productionOrdersList.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -45,6 +52,61 @@ function checker(perms: string[]): PermissionChecker {
     hasPermission: (p) => set.has(p),
     hasAnyPermission: (list) => list.some((p) => set.has(p)),
   };
+}
+
+function gridRow(overrides: Partial<ProductionOrderGridRow> = {}): ProductionOrderGridRow {
+  return {
+    id: "00000000-0000-4000-8000-000000000101",
+    externalId: 30347,
+    name: "OP 05800 - 003",
+    status: "Encerrada",
+    tipo: "Injeção",
+    priority: "Normal",
+    companyName: "KOPPETEL",
+    productCode: "311.32AA",
+    productDescription: "Produto fixture OP 05800",
+    quantity: "15400.000000",
+    unit: "PC",
+    stockSector: "PRODUCAO",
+    openedAt: "2026-03-10T11:15:00.000Z",
+    plannedAt: "2026-03-12T21:00:00.000Z",
+    closedAt: "2026-03-12T20:40:22.000Z",
+    nomusUpdatedAt: "2026-03-12T20:40:22.000Z",
+    syncedAt: "2026-07-16T12:00:00.000Z",
+    currentLinkCount: 1,
+    currentSalesOrders: [
+      {
+        externalSalesOrderId: 2530,
+        salesOrderId: "00000000-0000-4000-8000-000000000301",
+        orderCode: "PD 02534",
+        customerName: "Esmaltec S/A",
+      },
+    ],
+    hasPendingLink: false,
+    ...overrides,
+  };
+}
+
+function renderRow(row: ProductionOrderGridRow): string {
+  return renderToStaticMarkup(
+    React.createElement(
+      MemoryRouter,
+      null,
+      React.createElement(
+        "table",
+        null,
+        React.createElement(
+          "tbody",
+          null,
+          React.createElement(ProductionOrderGridTableRow, {
+            row,
+            selected: false,
+            onOpen: () => {},
+          })
+        )
+      )
+    )
+  );
 }
 
 describe("production orders navigation", () => {
@@ -124,7 +186,7 @@ describe("productionOrdersUi", () => {
   });
 
   it("helpers de formatação e filtros", () => {
-    assert.equal(formatProductionOrderQuantity("15400", "PC"), "15400 PC");
+    assert.equal(formatProductionOrderQuantity("15400", "PC"), "15.400 PC");
     assert.equal(formatProductionOrderQuantity(null, null), "—");
     assert.equal(
       resolveLatestSyncedAt([
@@ -154,7 +216,22 @@ describe("productionOrdersUi", () => {
     );
     const chips = buildStatusChipEntries({ Encerrada: 2, "": 1 });
     assert.equal(chips[0]?.label, "Encerrada");
-    assert.ok(chips.some((c) => c.label === "Sem status"));
+    assert.equal(chips.some((c) => c.label === "Sem status"), false);
+  });
+
+  it("mapeia badges claros e preserva status desconhecido", () => {
+    assert.equal(resolveProductionOrderStatusTone("Encerrada"), "completed");
+    assert.equal(resolveProductionOrderStatusTone("Liberada"), "released");
+    assert.equal(resolveProductionOrderStatusTone("Planejada"), "pending");
+    assert.equal(resolveProductionOrderStatusTone("Cancelada"), "cancelled");
+    assert.equal(resolveProductionOrderStatusTone("Status futuro"), "unknown");
+    assert.match(productionOrderStatusBadgeClass("Encerrada"), /emerald-50/);
+    assert.match(productionOrderStatusBadgeClass("Liberada"), /sky-50/);
+    assert.match(productionOrderStatusBadgeClass("Planejada"), /amber-50/);
+    assert.match(productionOrderStatusBadgeClass("Cancelada"), /rose-50/);
+    assert.match(productionOrderStatusBadgeClass("Status futuro"), /slate-50/);
+    const chips = buildStatusChipEntries({ Encerrada: 2, "Status futuro": 1 });
+    assert.ok(chips.some((chip) => chip.label === "Status futuro"));
   });
 });
 
@@ -201,5 +278,102 @@ describe("productionOrdersClient e página base", () => {
 
   it("Sidebar mapeia ícone do módulo", () => {
     assert.match(read("src/components/layout/Sidebar.tsx"), /"production-orders": Cog/);
+  });
+
+  it("implementa debounce, URL, cancelamento e paginação server-side", () => {
+    const moduleSrc = read("src/components/operations/ProductionOrdersModule.tsx");
+    const clientSrc = read("src/lib/productionOrdersClient.ts");
+    assert.match(moduleSrc, /useSearchParams/);
+    assert.match(moduleSrc, /SEARCH_DEBOUNCE_MS = 300/);
+    assert.match(moduleSrc, /AbortController/);
+    assert.match(moduleSrc, /controller\.abort/);
+    assert.match(moduleSrc, /pageSize: PAGE_SIZE/);
+    assert.match(moduleSrc, /production-orders-pagination/);
+    assert.match(clientSrc, /\{ signal \}/);
+  });
+});
+
+describe("ProductionOrderGridTableRow", () => {
+  it("renderiza colunas, badge, pedido e quantidade inteira sem zeros inúteis", () => {
+    const html = renderRow(gridRow());
+    assert.match(html, /OP 05800 - 003/);
+    assert.match(html, /311\.32AA/);
+    assert.match(html, /Produto fixture OP 05800/);
+    assert.match(html, /15\.400 PC/);
+    assert.doesNotMatch(html, /15400\.000000/);
+    assert.match(html, /Encerrada/);
+    assert.match(html, /PD 02534/);
+    assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
+  });
+
+  it("preserva decimal pequeno sem arredondar para zero", () => {
+    const html = renderRow(gridRow({ quantity: "0.002925", unit: "KG" }));
+    assert.match(html, /0,002925 KG/);
+    assert.doesNotMatch(html, />0 KG</);
+  });
+
+  it("mostra primeiro pedido e +N para vários pedidos", () => {
+    const html = renderRow(
+      gridRow({
+        currentSalesOrders: [
+          ...gridRow().currentSalesOrders,
+          {
+            externalSalesOrderId: 3000,
+            salesOrderId: "00000000-0000-4000-8000-000000000302",
+            orderCode: "PD 03000",
+            customerName: "Cliente B",
+          },
+          {
+            externalSalesOrderId: 4000,
+            salesOrderId: "00000000-0000-4000-8000-000000000303",
+            orderCode: "PD 04000",
+            customerName: "Cliente C",
+          },
+        ],
+        currentLinkCount: 3,
+      })
+    );
+    assert.match(html, /PD 02534/);
+    assert.match(html, /\+2/);
+  });
+
+  it("mostra vínculo pendente explicitamente", () => {
+    const html = renderRow(
+      gridRow({
+        hasPendingLink: true,
+        currentSalesOrders: [
+          {
+            externalSalesOrderId: 2530,
+            salesOrderId: null,
+            orderCode: null,
+            customerName: "Esmaltec S/A",
+          },
+        ],
+      })
+    );
+    assert.match(html, /Pedido ainda não sincronizado/);
+  });
+
+  it("campos nulos aparecem como travessão e linha é clicável por teclado", () => {
+    const html = renderRow(
+      gridRow({
+        name: null,
+        tipo: null,
+        companyName: null,
+        productCode: null,
+        productDescription: null,
+        quantity: null,
+        unit: null,
+        priority: null,
+        openedAt: null,
+        plannedAt: null,
+        status: null,
+        currentSalesOrders: [],
+        syncedAt: null,
+      })
+    );
+    assert.match(html, /tabindex="0"/);
+    assert.match(html, /Sem status/);
+    assert.match(html, /—/);
   });
 });
