@@ -103,8 +103,8 @@ describe("portfolioMaturityIntelligenceApi", () => {
       /\/api\/finance\/portfolio-reconciliation\/intelligence\/orders\/:salesOrderId/
     );
     assert.match(routes, /requireAppAuth/);
-    assert.match(routes, /requirePermission/);
-    assert.match(routes, /FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA/);
+    assert.match(routes, /requireResource/);
+    assert.match(routes, /FINANCE_MODULE_RESOURCE_KEYS\.portfolio/);
     assert.match(routes, /intelligenceGuard/);
     assert.equal(
       canViewFinancePortfolioReconciliation({
@@ -118,9 +118,14 @@ describe("portfolioMaturityIntelligenceApi", () => {
         hasPermission: (p) => p === "finance.view",
         hasAnyPermission: (perms) => perms.includes("finance.view"),
       }),
-      true
+      false
     );
-    assert.ok(FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS.includes("finance.view"));
+    assert.equal(
+      (FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS as readonly string[]).includes(
+        "finance.view"
+      ),
+      false
+    );
     assert.ok(
       FINANCE_PORTFOLIO_RECONCILIATION_VIEW_PERMISSIONS.includes(
         "finance.portfolioReconciliation.view"

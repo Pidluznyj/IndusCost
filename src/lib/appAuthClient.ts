@@ -69,12 +69,12 @@ export const APP_USER_ROLE_OPTIONS: { value: AppUserRole; label: string; hint: s
   {
     value: "COMMERCIAL_MANAGER",
     label: "Gestor comercial",
-    hint: "Classificação comercial; libere telas marcando permissões abaixo.",
+    hint: "Classificação comercial; pode vincular IDs Nomus/responsável (opcional) e liberar telas abaixo.",
   },
   {
     value: "SELLER",
     label: "Vendedor",
-    hint: "Classificação de vendedor; informe externalSellerId do Nomus e marque permissões.",
+    hint: "Classificação de vendedor; vincule IDs Nomus do responsável e marque permissões.",
   },
   {
     value: "VIEWER",

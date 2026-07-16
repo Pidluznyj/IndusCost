@@ -15,23 +15,14 @@ import {
 import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
 import type { FinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import { prisma } from "./prisma.js";
-
-const FINANCE_AR_OVERDUE_VIEW_PERMISSIONS = [
-  "finance.accountsReceivable.view",
-  "finance.view",
-  "reports.view",
-  "settings.nomus.view",
-  "settings.view",
-] as const;
-
-const FINANCE_AR_OVERDUE_EXPORT_PERMISSIONS = [
-  "finance.accountsReceivable.export",
-  ...FINANCE_AR_OVERDUE_VIEW_PERMISSIONS,
-] as const;
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "./financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 async function loadFinanceArOverdueRows(filters: FinanceArDashboardFilters) {
@@ -56,11 +47,17 @@ export function registerFinanceAccountsReceivableOverdueRoutes(
 ) {
   const guard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_AR_OVERDUE_VIEW_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+      FINANCE_MODULE_ACTIONS.view
+    ),
   ] as const;
   const exportGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_AR_OVERDUE_EXPORT_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+      FINANCE_MODULE_ACTIONS.export
+    ),
   ] as const;
 
   app.get("/api/finance/accounts-receivable/overdue", ...guard, async (req, res) => {

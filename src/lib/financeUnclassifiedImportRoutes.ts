@@ -14,15 +14,14 @@ import {
   unclassifiedExportWorkbookToBytes,
 } from "@/src/lib/financeUnclassifiedImport.js";
 import {
-  FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS,
-  FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS,
-} from "@/src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
-import { FINANCE_SUPPLIER_COST_CENTER_RULES_MANAGE_PERMISSIONS } from "@/src/lib/financeSupplierCostCenterRulesRoutes.js";
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "@/src/lib/financeAccountsPayableAccess.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -37,18 +36,18 @@ export function registerFinanceUnclassifiedImportRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.view),
   ] as const;
   const manageGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIER_COST_CENTER_RULES_MANAGE_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.manage),
   ] as const;
   const applyGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.manage),
   ] as const;
 
   app.get("/api/finance/cost-centers/unclassified/export", ...viewGuard, async (req, res) => {

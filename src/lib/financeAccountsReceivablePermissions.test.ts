@@ -11,10 +11,18 @@ function auth(keys: string[]) {
 }
 
 describe("financeAccountsReceivablePermissions", () => {
-  it("view exige permissão financeira ou fallback", () => {
+  it("view: AR.view | finance.view — sem reports/settings/AP", () => {
     assert.equal(canViewFinanceAccountsReceivable(auth([])), false);
     assert.equal(canViewFinanceAccountsReceivable(auth(["finance.view"])), true);
-    assert.equal(canViewFinanceAccountsReceivable(auth(["reports.view"])), true);
+    assert.equal(
+      canViewFinanceAccountsReceivable(auth(["finance.accountsReceivable.view"])),
+      true
+    );
+    assert.equal(canViewFinanceAccountsReceivable(auth(["reports.view"])), false);
+    assert.equal(
+      canViewFinanceAccountsReceivable(auth(["finance.accountsPayable.view"])),
+      false
+    );
   });
 
   it("export exige chave dedicada — view não autoriza", () => {

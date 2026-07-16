@@ -27,25 +27,14 @@ import {
   FINANCE_AP_ACTIONS,
   FINANCE_AP_RESOURCE_KEY,
 } from "./financeAccountsPayableAccess.js";
-
-const FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS = [
-  "finance.accountsReceivable.view",
-  "finance.view",
-  "reports.view",
-  "settings.nomus.view",
-  "settings.view",
-] as const;
-
-const FINANCE_AR_EXPORT_PERMISSIONS = [
-  "finance.accountsReceivable.export",
-  ...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS,
-] as const;
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "./financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
-  /** P18 Contas a Pagar — opcional; se ausente, AP due-radar permanece em bag. */
-  requireResource?: (resourceKey: string, action?: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -76,9 +65,21 @@ function respondDueRadarError(res: express.Response, error: unknown): boolean {
 }
 
 export function registerFinanceArDueRadarRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS])] as const;
-  const exportGuard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_EXPORT_PERMISSIONS])] as const;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const guard = [
+    requireAppAuth,
+    requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+      FINANCE_MODULE_ACTIONS.view
+    ),
+  ] as const;
+  const exportGuard = [
+    requireAppAuth,
+    requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+      FINANCE_MODULE_ACTIONS.export
+    ),
+  ] as const;
 
   app.get("/api/finance/accounts-receivable/due-radar", ...guard, async (req, res) => {
     try {
@@ -147,9 +148,6 @@ export function registerFinanceArDueRadarRoutes(app: express.Express, auth: Auth
 
 export function registerFinanceApDueRadarRoutes(app: express.Express, auth: AuthGuards) {
   const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
-  if (!requireResource) {
-    throw new Error("registerFinanceApDueRadarRoutes exige requireResource (piloto P18).");
-  }
   const guard = [
     requireAppAuth,
     requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.view),

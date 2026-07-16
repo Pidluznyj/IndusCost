@@ -20,10 +20,9 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  FISCAL_ALLOCATION_MANAGE_PERMISSIONS,
-  FISCAL_SETTLEMENT_MANAGE_PERMISSIONS,
-  FISCAL_SETTLEMENT_VIEW_PERMISSIONS,
-} from "./fiscalSettlementPermissions.js";
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 import {
   addFiscalPaymentProof,
   cancelFiscalPaymentGuide,
@@ -53,7 +52,7 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 function actorFromReq(req: express.Request): {
@@ -87,15 +86,24 @@ export function registerFiscalSettlementRoutes(
 ): void {
   const viewGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FISCAL_SETTLEMENT_VIEW_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.taxApuration,
+      FINANCE_MODULE_ACTIONS.view
+    ),
   ];
   const manageGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FISCAL_SETTLEMENT_MANAGE_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.taxApuration,
+      FINANCE_MODULE_ACTIONS.update
+    ),
   ];
   const allocGuard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FISCAL_ALLOCATION_MANAGE_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.taxApuration,
+      FINANCE_MODULE_ACTIONS.manage
+    ),
   ];
 
   app.get(

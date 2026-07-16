@@ -365,6 +365,10 @@ import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.j
 import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financePortfolioReconciliationRoutes.js";
 import { registerFiscalSettlementRoutes } from "./src/lib/finance/fiscalSettlementRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "./src/lib/financeModulesAccess.js";
 import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
 import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
 import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
@@ -8684,14 +8688,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Indirect Costs (OPEX) ---
-  app.get("/api/indirect-costs", requireAppAuth, requirePermission("opex.view"), async (req, res) => {
+  app.get("/api/indirect-costs", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.opex, FINANCE_MODULE_ACTIONS.view), async (req, res) => {
     const costs = await prisma.indirectCost.findMany({
       orderBy: { category: "asc" },
     });
     res.json(costs);
   });
 
-  app.post("/api/indirect-costs", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.post("/api/indirect-costs", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.opex, FINANCE_MODULE_ACTIONS.update), requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { description, category, monthlyValue, costCenter, allocationCriteria } = req.body;
     const cost = await prisma.indirectCost.create({
       data: { description, category, monthlyValue, costCenter, allocationCriteria }
@@ -8699,7 +8703,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(cost);
   });
 
-  app.put("/api/indirect-costs/:id", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.put("/api/indirect-costs/:id", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.opex, FINANCE_MODULE_ACTIONS.update), requireBootstrapForGlobalParamMutation, async (req, res) => {
     const { id } = req.params;
     const { description, category, monthlyValue, costCenter, allocationCriteria, status } = req.body;
     const cost = await prisma.indirectCost.update({
@@ -8709,7 +8713,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(cost);
   });
 
-  app.delete("/api/indirect-costs/:id", requireAppAuth, requirePermission("opex.edit"), requireBootstrapForGlobalParamMutation, async (req, res) => {
+  app.delete("/api/indirect-costs/:id", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.opex, FINANCE_MODULE_ACTIONS.update), requireBootstrapForGlobalParamMutation, async (req, res) => {
     try {
       const { id } = req.params;
       
@@ -9852,7 +9856,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   // --- API: Tax Rules (Módulo Tributário) ---
-  app.get("/api/tax-rules", requireAppAuth, requireAnyPermission(["taxes.view", "pricing.view"]), async (req, res) => {
+  app.get("/api/tax-rules", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.taxes, FINANCE_MODULE_ACTIONS.view), async (req, res) => {
     const rules = await prisma.taxRule.findMany({
       include: { TaxComponent: true },
       orderBy: { name: "asc" },
@@ -9860,7 +9864,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(rules);
   });
 
-  app.post("/api/tax-rules", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
+  app.post("/api/tax-rules", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.taxes, FINANCE_MODULE_ACTIONS.update), async (req, res) => {
     const { name, description, operation, components } = req.body;
     const rule = await prisma.taxRule.create({
       data: {
@@ -9881,7 +9885,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(rule);
   });
 
-  app.put("/api/tax-rules/:id", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
+  app.put("/api/tax-rules/:id", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.taxes, FINANCE_MODULE_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     const { name, description, operation, components, status } = req.body;
 
@@ -9909,7 +9913,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     res.json(rule);
   });
 
-  app.delete("/api/tax-rules/:id", requireAppAuth, requirePermission("taxes.edit"), async (req, res) => {
+  app.delete("/api/tax-rules/:id", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.taxes, FINANCE_MODULE_ACTIONS.update), async (req, res) => {
     const { id } = req.params;
     await prisma.taxRule.delete({ where: { id } });
     res.json({ success: true });
@@ -12183,7 +12187,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   }
 
   /** Agregações para a aba Relatórios (sem BI externo). Respeita filtros de query. */
-  app.get("/api/reports/data", requireAppAuth, requirePermission("reports.view"), async (req, res) => {
+  app.get("/api/reports/data", requireAppAuth, requireResource(FINANCE_MODULE_RESOURCE_KEYS.reports, FINANCE_MODULE_ACTIONS.view), async (req, res) => {
     try {
       const payload = await buildReportsDataPayload(
         prisma,
@@ -14913,13 +14917,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerFinanceAccountsReceivableRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceArDueRadarRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14931,20 +14935,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerFiscalSettlementRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   registerFinanceApDueRadarRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
     requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceSuppliersRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
-    requirePermission: requireResourcePermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14958,31 +14960,31 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   // "allocations" é capturado como id e estoura findUnique com UUID inválido.
   registerFinanceCostCenterDetailRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceCostCentersRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceCostCenterReclassificationRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceSupplierCostCenterRulesRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceClassificationRulesRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
@@ -14994,35 +14996,35 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerFinanceUnclassifiedImportRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceBillingRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinanceSalesOrdersRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
   });
 
   registerFinanceCashFlowRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 
   registerFinancePortfolioReconciliationRoutes(app, {
     requireAppAuth,
-    requirePermission: requireResourcePermission,
+    requireResource,
   });
 
   registerFinanceExecutiveReportRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 

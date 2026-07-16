@@ -276,6 +276,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Risco:** alto.
 - **Aceite:** AP ≠ Conciliação ≠ AR ≠ fluxo.
 - **Rollback:** flag.
+- **Status (2026-07-16):** **feito.** Matriz em `financeModulesAccess.ts`; `requireResource` em Home/fluxo/AR/billing/sales-orders/CC/executive/suppliers/portfolio(+tabs)/opex/taxes/reports; aliases 1:1 no contrato (`finance.cashFlow.view`, `finance.billing.view`, `finance.executiveReport.view`, …); Conciliação sem `finance.accountsPayable.view`; Leticia AP-only nos testes.
 
 ### P18 — Caso piloto Contas a Pagar
 

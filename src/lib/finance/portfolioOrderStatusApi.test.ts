@@ -439,11 +439,11 @@ describe("portfolioOrderStatusApi", () => {
     assert.equal(empty.ok, true);
   });
 
-  it("rota order-status registrada com permissão Status Pedidos", () => {
+  it("rota order-status registrada com requireResource order_status", () => {
     const routes = read("src/lib/financePortfolioReconciliationRoutes.ts");
     assert.match(routes, /\/api\/finance\/portfolio-reconciliation\/order-status/);
     assert.match(routes, /loadPortfolioOrderStatusList/);
-    assert.match(routes, /FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS/);
+    assert.match(routes, /portfolioOrderStatus/);
     assert.equal(
       PORTFOLIO_ORDER_STATUS_API_PATH,
       "/api/finance/portfolio-reconciliation/order-status"

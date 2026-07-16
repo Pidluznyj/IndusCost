@@ -217,29 +217,18 @@ describe("permissionGuards API protection", () => {
     );
   });
 
-  it("rotas de conciliação usam requirePermission do motor relacional", () => {
+  it("rotas de conciliação usam requireResource (contrato EN, sem bag AP)", () => {
     const routes = readFileSync(
       join(process.cwd(), "src/lib/financePortfolioReconciliationRoutes.ts"),
       "utf8"
     );
-    assert.match(routes, /requirePermission/);
-    assert.match(
-      routes,
-      /FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO/
-    );
-    assert.match(
-      routes,
-      /FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA/
-    );
-    assert.match(
-      routes,
-      /FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA/
-    );
-    assert.match(
-      routes,
-      /FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS/
-    );
+    assert.match(routes, /requireResource/);
+    assert.match(routes, /FINANCE_MODULE_RESOURCE_KEYS\.portfolio/);
+    assert.match(routes, /portfolioOrderStatus/);
+    assert.match(routes, /portfolioOrderToCashAudit/);
     assert.match(routes, /order-status/);
     assert.doesNotMatch(routes, /requireAnyPermission/);
+    assert.doesNotMatch(routes, /accountsPayable/);
+    assert.doesNotMatch(routes, /FINANCEIRO_CONCILIACAO_TAB_/);
   });
 });

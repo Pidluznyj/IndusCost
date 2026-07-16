@@ -112,10 +112,21 @@ const INCOMPLETE_AMORTIZATION_STATUSES = new Set([
   "NOT_CONFIGURED",
 ]);
 
-/** Primeira entrega: somente itens simulados (referência de Simulações). */
+/** Tipos comerciais elegíveis à precificação (mesmos alvos raiz da distribuição de custos). */
+export const PROJECT_PRICING_ELIGIBLE_TARGET_TYPES = new Set<ProjectCostAmortizationTargetType>([
+  "SIMULATION",
+  "OFFICIAL_PRODUCT",
+  "OFFICIAL_COMPONENT",
+]);
+
+/**
+ * Itens elegíveis à precificação comercial:
+ * simulações + produtos/componentes oficiais referenciados no projeto.
+ * (LEGACY / matérias-primas avulsas ficam de fora.)
+ */
 export function listProjectPricingEligibleTargets(detail: ProjectDetail) {
-  return buildProjectAmortizationTargets(detail).filter(
-    (target) => target.targetItemType === "SIMULATION"
+  return buildProjectAmortizationTargets(detail).filter((target) =>
+    PROJECT_PRICING_ELIGIBLE_TARGET_TYPES.has(target.targetItemType)
   );
 }
 

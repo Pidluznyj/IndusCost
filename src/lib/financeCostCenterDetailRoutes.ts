@@ -24,13 +24,16 @@ import {
   buildCostCenterSelectionExportFilename,
 } from "@/src/lib/financeCostCenterDetailExportMeta.js";
 import { FinanceCostCenterValidationError } from "@/src/lib/financeCostCenters.js";
-import { FINANCE_COST_CENTERS_VIEW_PERMISSIONS } from "@/src/lib/financeCostCentersRoutes.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 import { FinanceApFilterParseError } from "@/src/lib/financeAccountsPayableDashboard.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -66,10 +69,10 @@ function handleDetailError(
 }
 
 export function registerFinanceCostCenterDetailRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_COST_CENTERS_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.view),
   ] as const;
 
   app.post("/api/finance/cost-centers/reallocation/preview", ...viewGuard, async (req, res) => {

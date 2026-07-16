@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Gerado | 2026-07-16T16:03:02.878Z |
+| Gerado | 2026-07-16T16:29:33.727Z |
 | Modo | strict |
 | OK | sim |
 | Novos gaps | 0 |
@@ -13,7 +13,7 @@
 - Contrato: 83
 - Seed: 127
 - Frontend: 83
-- Catálogo legado: 190
+- Catálogo legado: 194
 
 ## Novos gaps
 _Nenhum._

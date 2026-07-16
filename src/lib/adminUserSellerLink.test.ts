@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   parseExternalSellerIdsInput,
   resolveAppUserSellerLinkFromBody,
   resolvePrimaryExternalSellerId,
+  roleAllowsSellerNomusLink,
+  roleRequiresSellerNomusLink,
 } from "@/src/lib/adminUserSellerLink";
 import {
   flattenAdminSellerOptionsToNomusPicks,
@@ -11,6 +15,14 @@ import {
 } from "@/src/lib/adminSellerOptionsTypes";
 
 describe("adminUserSellerLink", () => {
+  it("roleAllowsSellerNomusLink cobre vendedor e gestor comercial", () => {
+    assert.equal(roleAllowsSellerNomusLink("SELLER"), true);
+    assert.equal(roleAllowsSellerNomusLink("COMMERCIAL_MANAGER"), true);
+    assert.equal(roleAllowsSellerNomusLink("ADMIN"), false);
+    assert.equal(roleRequiresSellerNomusLink("SELLER"), true);
+    assert.equal(roleRequiresSellerNomusLink("COMMERCIAL_MANAGER"), false);
+  });
+
   it("parseExternalSellerIdsInput normaliza e deduplica", () => {
     assert.deepEqual(parseExternalSellerIdsInput([646, "464", 464, 0, -1, "x"]), [464, 646]);
     assert.deepEqual(parseExternalSellerIdsInput("464, 646; 1189"), [464, 646, 1189]);
@@ -74,5 +86,16 @@ describe("flattenAdminSellerOptionsToNomusPicks", () => {
       [464, 646]
     );
     assert.equal(picks[0]?.displayName, "Gislene Lima");
+  });
+});
+
+describe("AdminUsersModule seller Nomus link", () => {
+  it("permite vínculo Nomus para vendedor e gestor comercial", () => {
+    const src = readFileSync(join(process.cwd(), "src/components/AdminUsersModule.tsx"), "utf8");
+    assert.match(src, /roleAllowsSellerNomusLink/);
+    assert.match(src, /roleRequiresSellerNomusLink/);
+    assert.match(src, /admin-user-seller-nomus-link/);
+    assert.match(src, /Gestor comercial/);
+    assert.match(src, /Salvar vínculo Nomus/);
   });
 });

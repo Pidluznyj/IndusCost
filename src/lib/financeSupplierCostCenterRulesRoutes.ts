@@ -15,18 +15,24 @@ import {
   type SupplierCostCenterRuleListQuery,
 } from "@/src/lib/financeSupplierCostCenterRules.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
+/** @deprecated Use costCenters requireResource view. */
 export const FINANCE_SUPPLIER_COST_CENTER_RULES_VIEW_PERMISSIONS = [
   "finance.cost_center_rules.view",
   "finance.view",
 ] as const;
 
+/** @deprecated Use costCenters requireResource manage. */
 export const FINANCE_SUPPLIER_COST_CENTER_RULES_MANAGE_PERMISSIONS = [
   "finance.cost_center_rules.manage",
 ] as const;
@@ -56,14 +62,14 @@ export function registerFinanceSupplierCostCenterRulesRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIER_COST_CENTER_RULES_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.view),
   ] as const;
   const manageGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIER_COST_CENTER_RULES_MANAGE_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
 
   app.get("/api/finance/supplier-cost-center-rules", ...viewGuard, async (req, res) => {

@@ -1,32 +1,23 @@
-/** Permissões UI/API Financeiro > Faturamento (espelha motor executivo + domínio financeiro). */
+/** Permissões UI Financeiro > Faturamento — contrato finance.billing. */
 
-import { canViewFinanceAccountsPayable } from "./financeAccountsPayablePermissions.js";
-import {
-  canViewFinanceAccountsReceivable,
-  type FinanceArPermissionCheck,
-} from "./financeAccountsReceivablePermissions.js";
+export type FinanceBillingPermissionCheck = {
+  hasPermission: (key: string) => boolean;
+};
 
-export type FinanceBillingPermissionCheck = FinanceArPermissionCheck;
-
-/** Mesma base do motor executivo (`canSeeSalesOrders`) + acesso financeiro. */
+/** Contrato: finance.billing.view | sales_orders.view | finance.view — sem AR/AP/reports. */
 export function canViewFinanceBilling(auth: FinanceBillingPermissionCheck): boolean {
   return (
+    auth.hasPermission("finance.billing.view") ||
     auth.hasPermission("sales_orders.view") ||
-    auth.hasPermission("reports.view") ||
-    auth.hasPermission("finance.view") ||
-    canViewFinanceAccountsReceivable(auth) ||
-    canViewFinanceAccountsPayable(auth)
+    auth.hasPermission("finance.view")
   );
 }
 
+/** @deprecated Preferir requireResource. */
 export const FINANCE_BILLING_VIEW_PERMISSIONS = [
+  "finance.billing.view",
   "sales_orders.view",
-  "reports.view",
   "finance.view",
-  "finance.accountsReceivable.view",
-  "finance.accountsPayable.view",
-  "settings.nomus.view",
-  "settings.view",
 ] as const;
 
 /** Alinhado ao Admin (`settings.nomus.sync` apenas). */

@@ -19,10 +19,14 @@ import {
   type AppUserRole,
   formatRoleLabel,
 } from "@/src/lib/appAuthClient";
-import { SellerNomusPicker } from "@/src/components/admin/SellerNomusPicker";
+import { SellerNomusPicker, type SellerNomusPickerValue } from "@/src/components/admin/SellerNomusPicker";
 import { EmployeeUserPicker } from "@/src/components/admin/EmployeeUserPicker";
 import type { AdminSellerOption } from "@/src/lib/adminSellerOptionsTypes";
 import type { EligibleEmployeeForUserDto } from "@/src/lib/adminUserEmployeeLink";
+import {
+  roleAllowsSellerNomusLink,
+  roleRequiresSellerNomusLink,
+} from "@/src/lib/adminUserSellerLink";
 import { countActiveSuperAdmins } from "@/src/lib/adminUsersPagination";
 import { RolePermissionMatrixPanel } from "@/src/components/admin/RolePermissionMatrixPanel";
 import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
@@ -96,6 +100,30 @@ const EMPTY_CREATE: CreateForm = {
   sellerResponsibleName: "",
 };
 
+const EMPTY_SELLER_LINK: SellerNomusPickerValue = {
+  externalSellerId: "",
+  externalSellerIds: [],
+  sellerResponsibleName: "",
+};
+
+function sellerLinkFromUser(user: {
+  externalSellerId: number | null;
+  externalSellerIds?: number[] | null;
+  sellerResponsibleName: string | null;
+}): SellerNomusPickerValue {
+  const ids = Array.isArray(user.externalSellerIds)
+    ? user.externalSellerIds.filter((id) => Number.isFinite(id) && id > 0)
+    : user.externalSellerId != null
+      ? [user.externalSellerId]
+      : [];
+  const primary = user.externalSellerId ?? (ids.length > 0 ? Math.min(...ids) : null);
+  return {
+    externalSellerId: primary != null ? String(primary) : "",
+    externalSellerIds: ids,
+    sellerResponsibleName: user.sellerResponsibleName?.trim() ?? "",
+  };
+}
+
 function formatDateTimePt(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -149,6 +177,9 @@ export const AdminUsersModule: React.FC = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [sellerLinkDraft, setSellerLinkDraft] = useState<SellerNomusPickerValue>(EMPTY_SELLER_LINK);
+  const [sellerLinkError, setSellerLinkError] = useState<string | null>(null);
+  const [sellerLinkSaving, setSellerLinkSaving] = useState(false);
 
   const [resetOpen, setResetOpen] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
@@ -304,6 +335,26 @@ export const AdminUsersModule: React.FC = () => {
     [users, selectedId]
   );
 
+  useEffect(() => {
+    if (!selectedListUser) {
+      setSellerLinkDraft(EMPTY_SELLER_LINK);
+      setSellerLinkError(null);
+      return;
+    }
+    setSellerLinkDraft(sellerLinkFromUser(selectedListUser));
+    setSellerLinkError(null);
+  }, [selectedListUser]);
+
+  const sellerLinkDirty = useMemo(() => {
+    if (!selectedListUser || !roleAllowsSellerNomusLink(selectedListUser.role)) return false;
+    const baseline = sellerLinkFromUser(selectedListUser);
+    return (
+      baseline.sellerResponsibleName !== sellerLinkDraft.sellerResponsibleName.trim() ||
+      baseline.externalSellerId !== sellerLinkDraft.externalSellerId ||
+      baseline.externalSellerIds.join(",") !== sellerLinkDraft.externalSellerIds.join(",")
+    );
+  }, [selectedListUser, sellerLinkDraft]);
+
   const treeLabels = useMemo(
     () => (detail ? flattenPermissionTreeLabels(detail.tree) : new Map<string, string>()),
     [detail]
@@ -438,6 +489,43 @@ export const AdminUsersModule: React.FC = () => {
     }
   };
 
+  const handleSaveSellerLink = async () => {
+    if (!selectedListUser || !selectedId) return;
+    if (!roleAllowsSellerNomusLink(selectedListUser.role)) return;
+
+    if (roleRequiresSellerNomusLink(selectedListUser.role)) {
+      if (!sellerLinkDraft.sellerResponsibleName.trim()) {
+        setSellerLinkError("Vendedor precisa de um responsável comercial.");
+        return;
+      }
+      if (sellerLinkDraft.externalSellerIds.length === 0) {
+        setSellerLinkError("Selecione ao menos um ID Nomus para vincular a este login.");
+        return;
+      }
+    }
+
+    setSellerLinkSaving(true);
+    setSellerLinkError(null);
+    try {
+      await fetchJsonOk(`/api/admin/users/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          externalSellerId: sellerLinkDraft.externalSellerId.trim()
+            ? Number.parseInt(sellerLinkDraft.externalSellerId.trim(), 10)
+            : null,
+          externalSellerIds: sellerLinkDraft.externalSellerIds,
+          sellerResponsibleName: sellerLinkDraft.sellerResponsibleName.trim() || null,
+        }),
+      });
+      await loadUsers();
+    } catch (e) {
+      setSellerLinkError(e instanceof Error ? e.message : "Falha ao salvar vínculo Nomus.");
+    } finally {
+      setSellerLinkSaving(false);
+    }
+  };
+
   const handleReloadCatalog = async () => {
     setSaving(true);
     try {
@@ -466,7 +554,7 @@ export const AdminUsersModule: React.FC = () => {
       setCreateError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
       return;
     }
-    if (createForm.role === "SELLER") {
+    if (roleRequiresSellerNomusLink(createForm.role)) {
       if (!createForm.sellerResponsibleName.trim()) {
         setCreateError("Vendedor precisa de um responsável comercial.");
         return;
@@ -910,6 +998,47 @@ export const AdminUsersModule: React.FC = () => {
                     </select>
                   </div>
 
+                  {selectedListUser && roleAllowsSellerNomusLink(selectedListUser.role) ? (
+                    <div
+                      className="rounded-xl border border-border bg-muted/20 p-3 space-y-3"
+                      data-testid="admin-user-seller-nomus-link"
+                    >
+                      <div>
+                        <p className="text-xs font-semibold text-foreground">
+                          Vínculo Nomus / responsável comercial
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                          {roleRequiresSellerNomusLink(selectedListUser.role)
+                            ? "Obrigatório para o perfil Vendedor filtrar a carteira corretamente."
+                            : "Opcional no perfil Gestor comercial — use para vincular os IDs Nomus da carteira acompanhada."}
+                        </p>
+                      </div>
+                      {sellerLinkError ? (
+                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                          {sellerLinkError}
+                        </div>
+                      ) : null}
+                      <SellerNomusPicker
+                        sellers={sellerOptions}
+                        requireNomusIds={roleRequiresSellerNomusLink(selectedListUser.role)}
+                        disabled={sellerLinkSaving || saving}
+                        value={sellerLinkDraft}
+                        onChange={setSellerLinkDraft}
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          disabled={!sellerLinkDirty || sellerLinkSaving || saving}
+                          onClick={() => void handleSaveSellerLink()}
+                          className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground disabled:opacity-50"
+                          data-testid="admin-user-seller-nomus-save"
+                        >
+                          {sellerLinkSaving ? "Salvando…" : "Salvar vínculo Nomus"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="flex gap-1 rounded-lg border border-border bg-muted/20 p-0.5 w-fit">
                     {(
                       [
@@ -1323,24 +1452,31 @@ export const AdminUsersModule: React.FC = () => {
                   </option>
                 ))}
               </select>
-              {createForm.role === "SELLER" ? (
-                <SellerNomusPicker
-                  sellers={sellerOptions}
-                  requireNomusIds
-                  value={{
-                    externalSellerId: createForm.externalSellerId,
-                    externalSellerIds: createForm.externalSellerIds,
-                    sellerResponsibleName: createForm.sellerResponsibleName,
-                  }}
-                  onChange={(next) =>
-                    setCreateForm((f) => ({
-                      ...f,
-                      externalSellerId: next.externalSellerId,
-                      externalSellerIds: next.externalSellerIds,
-                      sellerResponsibleName: next.sellerResponsibleName,
-                    }))
-                  }
-                />
+              {roleAllowsSellerNomusLink(createForm.role) ? (
+                <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    {roleRequiresSellerNomusLink(createForm.role)
+                      ? "Vínculo obrigatório: responsável comercial e ao menos um ID Nomus."
+                      : "Opcional para gestor comercial: vincule o responsável e os IDs Nomus da carteira que este perfil acompanha."}
+                  </p>
+                  <SellerNomusPicker
+                    sellers={sellerOptions}
+                    requireNomusIds={roleRequiresSellerNomusLink(createForm.role)}
+                    value={{
+                      externalSellerId: createForm.externalSellerId,
+                      externalSellerIds: createForm.externalSellerIds,
+                      sellerResponsibleName: createForm.sellerResponsibleName,
+                    }}
+                    onChange={(next) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        externalSellerId: next.externalSellerId,
+                        externalSellerIds: next.externalSellerIds,
+                        sellerResponsibleName: next.sellerResponsibleName,
+                      }))
+                    }
+                  />
+                </div>
               ) : null}
               <div className="flex justify-end gap-2 pt-2">
                 <button

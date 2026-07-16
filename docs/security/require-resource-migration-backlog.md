@@ -33,6 +33,27 @@ Ver `operationsAccess.ts` / `OPERATIONS_PILOT_ENDPOINTS`:
 
 `costs.view` e chaves financeiras **não** abrem RH.
 
+## Migrado em P17 — Financeiro (exceto AP P18)
+
+`financeModulesAccess.ts` / `FINANCE_MODULE_PILOT_ENDPOINTS`:
+
+| resourceKey | actions | superfície |
+|-------------|---------|------------|
+| `finance` | view | Home `/finance` |
+| `finance.cash_flow` | view | cash-flow dashboard/export |
+| `finance.accounts_receivable` | view, export, execute | AR + due-radar |
+| `finance.billing` | view, export, execute | faturamento / sync |
+| `finance.sales_orders` | view | pedidos financeiro |
+| `finance.cost_centers` | view, manage | CC + regras/reclass |
+| `finance.executive_report` | view | Relatório Presidencial |
+| `finance.suppliers` | view, manage | fornecedores |
+| `finance.portfolio_reconciliation` (+ order_status, order_to_cash_audit) | view | conciliação / inteligência / status / Pedido→Caixa |
+| `finance.opex` | view, update | `/api/indirect-costs` |
+| `finance.taxes` / `finance.tax_apuration` | view, update, manage | tax-rules + fiscal settlements |
+| `finance.reports` | view | `/api/reports/data` |
+
+`finance.view` **não** abre filhos via `requireResource` (secundário nos filhos; canônico só em `finance`). Conciliação **não** aceita `finance.accountsPayable.view`. Aliases 1:1: `finance.cashFlow.view`, `finance.billing.view`, `finance.salesOrders.view`, `finance.executiveReport.view`, `finance.reports.view`.
+
 ## Migrado em P18 — Contas a Pagar (piloto módulo)
 
 `finance.accounts_payable` via `requireResource`:
@@ -64,5 +85,5 @@ Wrappers: `requireUsersOrPermissionsAdmin`, `requireUsersViewOrBootstrap`, `requ
 
 Ver `REQUIRE_RESOURCE_LEGACY_BACKLOG` em `src/lib/security/requireResource.ts`:
 
-- **P17+** materials, products
-- **P18+** AR, commissions, sales-orders, other nomus sync, portfolio, dashboard
+- **P19+** materials, products
+- **P18+** commissions, sales-orders (módulo comercial), other nomus sync, dashboard

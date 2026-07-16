@@ -11,27 +11,35 @@ import {
   buildExecutiveReportCashRadarForFilters,
   parseExecutiveReportCashRadarRangeKey,
 } from "@/src/lib/financeExecutiveReportCashRadar.js";
-import { FINANCE_BILLING_VIEW_PERMISSIONS } from "@/src/lib/financeBillingPermissions.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
+/** @deprecated Use FINANCE_MODULE_RESOURCE_KEYS.executiveReport + requireResource view. */
 export const FINANCE_EXECUTIVE_REPORT_VIEW_PERMISSIONS = [
-  ...FINANCE_BILLING_VIEW_PERMISSIONS,
   "finance.executiveReport.view",
+  "reports.view",
+  "finance.view",
 ] as const;
 
 export function registerFinanceExecutiveReportRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const guard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_EXECUTIVE_REPORT_VIEW_PERMISSIONS]),
+    requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.executiveReport,
+      FINANCE_MODULE_ACTIONS.view
+    ),
   ] as const;
 
   app.get("/api/finance/executive-report", ...guard, async (req, res) => {

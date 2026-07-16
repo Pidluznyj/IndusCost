@@ -398,21 +398,11 @@ export const REQUIRE_RESOURCE_ADMIN_KEYS = {
  * Não migrar em massa neste prompt.
  */
 export const REQUIRE_RESOURCE_LEGACY_BACKLOG = [
-  { area: "materials", prompt: "P17+", note: "materiais — materials.view/edit" },
-  { area: "products", prompt: "P17+", note: "produtos/BOM — products.*" },
-  {
-    area: "finance-ar",
-    prompt: "P18+",
-    note: "Contas a Receber ainda bag OR — espelhar piloto AP",
-  },
+  { area: "materials", prompt: "P19+", note: "materiais — materials.view/edit" },
+  { area: "products", prompt: "P19+", note: "produtos/BOM — products.*" },
   { area: "commissions", prompt: "P18+", note: "receipt-closing apply/reprocess; reprocess panel" },
   { area: "sales-orders", prompt: "P18+", note: "export pedidos; sales_orders.view" },
   { area: "nomus-sync-other", prompt: "P18+", note: "daily/AR/NFe sync ainda settings bags" },
-  {
-    area: "portfolio",
-    prompt: "P18+",
-    note: "ainda requireResourcePermission (seed) em financePortfolioReconciliationRoutes",
-  },
   { area: "dashboard", prompt: "P18+", note: "requirePermission(dashboard.view) bag" },
 ] as const;
 

@@ -24,18 +24,18 @@ import {
   updateFinancialSupplierProfileDefault,
 } from "@/src/lib/financeSupplierProfile.js";
 import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
-import { PermissionResourceKeys } from "@/src/lib/security/permissionsCatalog.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
-  requirePermission?: (
-    resourceKey: string,
-    action?: "view" | "execute" | "manage" | "admin"
-  ) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
+/** @deprecated Use suppliers requireResource view. */
 export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = [
   "finance.suppliers.view",
   "finance.cost_centers.view",
@@ -45,9 +45,10 @@ export const FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS = [
   "materials.edit",
 ] as const;
 
+/** @deprecated Use suppliers requireResource manage. */
 export const FINANCE_SUPPLIERS_APPLY_PERMISSIONS = ["finance.suppliers.manage"] as const;
 
-/** Materializar origem AP exige cadastro ou gestão de regras CC. */
+/** @deprecated Use suppliers requireResource manage. */
 export const FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS = [
   "finance.suppliers.manage",
   "finance.cost_centers.manage",
@@ -79,26 +80,22 @@ function handleSupplierProfileError(res: express.Response, error: unknown) {
 }
 
 export function registerFinanceSuppliersRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, requirePermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const previewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIERS_PREVIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.suppliers, FINANCE_MODULE_ACTIONS.view),
   ] as const;
   const applyGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIERS_APPLY_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.suppliers, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
   const ensureFromApGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIERS_ENSURE_FROM_AP_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.suppliers, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
-  /** Rebuild apply: legado finance.suppliers.manage + execute em Contas a Pagar (fonte AP). */
   const rebuildApplyGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_SUPPLIERS_APPLY_PERMISSIONS]),
-    ...(requirePermission
-      ? [requirePermission(PermissionResourceKeys.FINANCEIRO_CONTAS_PAGAR, "execute")]
-      : []),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.suppliers, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
 
   app.get("/api/finance/suppliers/search", ...previewGuard, async (req, res) => {

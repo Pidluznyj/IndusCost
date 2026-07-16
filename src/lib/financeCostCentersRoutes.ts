@@ -24,7 +24,6 @@ import {
   buildCostCenterHhHmSimulationMonthlyPayload,
   parseCostCenterHhHmSimulationAveragePeriod,
 } from "@/src/lib/financeCostCenterHhHmSimulation.server.js";
-import { FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS } from "@/src/lib/financeCostCenterHhHmSimulation.js";
 import {
   buildCostCenterSupplierPaymentSummary,
   buildCostCenterSupplierPaymentTitles,
@@ -33,7 +32,6 @@ import {
 } from "@/src/lib/financeCostCenterSupplierPaymentDrilldown.js";
 import { buildCostCenterSupplierTitles } from "@/src/lib/financeCostCenterSupplierTitlesDrilldown.js";
 import {
-  FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS,
   listFinanceCostCenterAuditLogs,
   parseFinanceCostCenterAuditListQuery,
 } from "@/src/lib/financeCostCenterAudit.js";
@@ -44,20 +42,29 @@ import {
   FinanceApAllocationError,
   parseBatchReclassificationBody,
 } from "@/src/lib/financeAccountsPayableCostCenterAllocation.js";
-import { FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS } from "@/src/lib/financeAccountsPayableCostCenterAllocationRoutes.js";
+import {
+  FINANCE_AP_ACTIONS,
+  FINANCE_AP_RESOURCE_KEY,
+} from "@/src/lib/financeAccountsPayableAccess.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 import { parsePaidTitleListFilters, createDefaultSupplierTitleListFilters } from "@/src/lib/financePaidTitlesModalFilters.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
+/** @deprecated Use FINANCE_MODULE_RESOURCE_KEYS.costCenters + requireResource view. */
 export const FINANCE_COST_CENTERS_VIEW_PERMISSIONS = [
   "finance.cost_centers.view",
   "finance.view",
 ] as const;
 
+/** @deprecated Use requireResource manage. */
 export const FINANCE_COST_CENTERS_MANAGE_PERMISSIONS = ["finance.cost_centers.manage"] as const;
 
 export { FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS } from "@/src/lib/financeCostCenterHhHmSimulation.js";
@@ -94,26 +101,26 @@ function isFinanceCostCenterUuid(value: unknown): value is string {
 }
 
 export function registerFinanceCostCentersRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const viewGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_COST_CENTERS_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.view),
   ] as const;
   const manageGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_COST_CENTERS_MANAGE_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.manage),
   ] as const;
   const allocationManageGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS]),
+    requireResource(FINANCE_AP_RESOURCE_KEY, FINANCE_AP_ACTIONS.manage),
   ] as const;
   const auditGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_COST_CENTER_AUDIT_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.view),
   ] as const;
   const hhHmSimulationGuard = [
     requireAppAuth,
-    requireAnyPermission([...FINANCE_COST_CENTER_HH_HM_SIMULATION_VIEW_PERMISSIONS]),
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.costCenters, FINANCE_MODULE_ACTIONS.view),
   ] as const;
 
   app.get("/api/finance/cost-center-audit", ...auditGuard, async (req, res) => {

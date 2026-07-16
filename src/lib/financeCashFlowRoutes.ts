@@ -2,6 +2,10 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
+import {
   buildCashFlowArPrismaWhere,
   buildCashFlowApPrismaWhere,
 } from "@/src/lib/financeCashFlowRowFilters.js";
@@ -68,22 +72,19 @@ import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomus
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
+/** @deprecated Use FINANCE_MODULE_RESOURCE_KEYS.cashFlow + requireResource view — lista bag só documentação. */
 export const FINANCE_CASH_FLOW_VIEW_PERMISSIONS = [
+  "finance.cashFlow.view",
   "finance.view",
-  "finance.accountsReceivable.view",
-  "finance.accountsPayable.view",
   "reports.view",
-  "settings.nomus.view",
-  "settings.view",
 ] as const;
 
+/** @deprecated Contrato finance.cash_flow não tem export — export usa view. */
 export const FINANCE_CASH_FLOW_EXPORT_PERMISSIONS = [
-  "finance.accountsReceivable.export",
-  "finance.accountsPayable.export",
   ...FINANCE_CASH_FLOW_VIEW_PERMISSIONS,
 ] as const;
 
@@ -165,10 +166,15 @@ async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
 }
 
 export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGuards) {
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const view = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.cashFlow, FINANCE_MODULE_ACTIONS.view),
+  ] as const;
+
   app.get(
     "/api/finance/cash-flow/audit",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
@@ -191,8 +197,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/dashboard",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
@@ -228,8 +233,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/export",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_EXPORT_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
@@ -253,8 +257,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/annual-comparison",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       try {
         const referenceDate = new Date();
@@ -283,8 +286,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/daily-radar/cost-centers",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       try {
         const rawQuery = parseDailyRadarQuery(req.query as Record<string, unknown>);
@@ -438,8 +440,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/daily-radar/cost-centers/titles",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       try {
         const rawQuery = parseDailyRadarQuery(req.query as Record<string, unknown>);
@@ -532,8 +533,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
 
   app.get(
     "/api/finance/cash-flow/daily-radar",
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_VIEW_PERMISSIONS]),
+    ...view,
     async (req, res) => {
       const query = parseDailyRadarQuery(req.query as Record<string, unknown>);
       if (
@@ -570,8 +570,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
   );
 
   const dailyRadarExportGuard = [
-    auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_CASH_FLOW_EXPORT_PERMISSIONS]),
+    ...view,
   ] as const;
 
   function parseDailyRadarExportOrRespond(
@@ -594,7 +593,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
     ...dailyRadarExportGuard,
     async (req, res) => {
       try {
-        const user = await auth.getCurrentAppUser(req);
+        const user = await getCurrentAppUser(req);
         if (!user) {
           return res.status(401).json({ error: "Não autenticado." });
         }
@@ -632,7 +631,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
     ...dailyRadarExportGuard,
     async (req, res) => {
       try {
-        const user = await auth.getCurrentAppUser(req);
+        const user = await getCurrentAppUser(req);
         if (!user) {
           return res.status(401).json({ error: "Não autenticado." });
         }

@@ -2,6 +2,16 @@
  * Parse/normalização de IDs Nomus no vínculo AppUser ↔ vendedor.
  */
 
+/** Perfis que podem vincular IDs Nomus / responsável comercial no Admin → Usuários. */
+export function roleAllowsSellerNomusLink(role: string | null | undefined): boolean {
+  return role === "SELLER" || role === "COMMERCIAL_MANAGER";
+}
+
+/** Vendedor exige responsável + ao menos 1 ID Nomus; gestor comercial é opcional. */
+export function roleRequiresSellerNomusLink(role: string | null | undefined): boolean {
+  return role === "SELLER";
+}
+
 export function parseExternalSellerIdsInput(raw: unknown): number[] {
   const out: number[] = [];
   const push = (value: unknown) => {

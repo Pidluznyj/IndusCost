@@ -422,7 +422,7 @@ export function ProjectPricingSection({
 
       {computedItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Nenhum produto/item simulado elegível para precificação neste projeto.
+          Nenhum produto, componente oficial ou simulação elegível para precificação neste projeto.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border">

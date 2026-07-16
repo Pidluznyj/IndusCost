@@ -37,13 +37,12 @@ describe("financePortfolioReconciliationPermissions", () => {
     );
   });
 
-  it("legado finance.view continua liberando helpers de módulo/abas (canAccessModule exige chave dedicada)", () => {
+  it("P17: finance.view NÃO libera helpers de portfolio (chave própria)", () => {
     const auth = checker(["finance.view"]);
-    assert.equal(canViewFinancePortfolioReconciliation(auth), true);
-    assert.equal(canViewPortfolioConciliationTab(auth), true);
-    assert.equal(canViewPortfolioIntelligenceTab(auth), true);
-    assert.equal(canViewPortfolioOrderToCashAuditTab(auth), true);
-    // P11/P12: path/módulo sidebar usa DTO + chaves dedicadas — finance.view não basta
+    assert.equal(canViewFinancePortfolioReconciliation(auth), false);
+    assert.equal(canViewPortfolioConciliationTab(auth), false);
+    assert.equal(canViewPortfolioIntelligenceTab(auth), false);
+    assert.equal(canViewPortfolioOrderToCashAuditTab(auth), false);
     assert.equal(canAccessModule("portfolio-reconciliation", auth), false);
   });
 
@@ -85,7 +84,7 @@ describe("financePortfolioReconciliationPermissions", () => {
     assert.equal(canAccessModule("portfolio-reconciliation", auth), false);
   });
 
-  it("APIs por aba incluem chave dedicada + módulo + legado", () => {
+  it("APIs por aba incluem chave dedicada + módulo (sem legado/AP)", () => {
     assert.ok(
       FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS.includes(
         "finance.portfolioReconciliation.conciliation.view"
@@ -101,8 +100,17 @@ describe("financePortfolioReconciliationPermissions", () => {
         "finance.portfolioReconciliation.orderToCashAudit.view"
       )
     );
-    assert.ok(
-      FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS.includes("finance.view")
+    assert.equal(
+      (FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS as readonly string[]).includes(
+        "finance.view"
+      ),
+      false
+    );
+    assert.equal(
+      (
+        FINANCE_PORTFOLIO_RECONCILIATION_CONCILIATION_API_PERMISSIONS as readonly string[]
+      ).includes("finance.accountsPayable.view"),
+      false
     );
   });
 });

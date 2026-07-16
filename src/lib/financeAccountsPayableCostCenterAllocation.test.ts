@@ -445,7 +445,7 @@ describe("financeAccountsPayableCostCenterAllocation", () => {
     assert.equal(state.auditLogs.length, 0);
   });
 
-  it("14. endpoints aplicam permissões", () => {
+  it("14. endpoints aplicam requireResource AP", () => {
     const routes = readFileSync(
       join(process.cwd(), "src/lib/financeAccountsPayableCostCenterAllocationRoutes.ts"),
       "utf8"
@@ -457,12 +457,9 @@ describe("financeAccountsPayableCostCenterAllocation", () => {
     assert.match(routes, /classify-batch-preview", \.\.\.batchApplyGuard/);
     assert.match(routes, /classify-batch-apply", \.\.\.batchApplyGuard/);
     assert.match(routes, /\/api\/finance\/accounts-payable\/:id\/cost-center-allocation/);
-    assert.match(routes, /FINANCE_AP_ALLOCATION_VIEW_PERMISSIONS/);
-    assert.match(routes, /finance\.ap_allocations\.view/);
-    assert.match(routes, /FINANCE_AP_ALLOCATION_MANAGE_PERMISSIONS/);
-    assert.match(routes, /finance\.ap_allocations\.manage/);
-    assert.match(routes, /FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS/);
-    assert.match(routes, /finance\.ap_allocations\.apply_batch/);
+    assert.match(routes, /requireResource/);
+    assert.match(routes, /FINANCE_AP_RESOURCE_KEY/);
+    assert.match(routes, /FINANCE_AP_ACTIONS/);
     assert.match(server, /registerFinanceAccountsPayableCostCenterAllocationRoutes/);
   });
 
@@ -922,13 +919,15 @@ describe("importação de classificações AP — integração segura", () => {
     assert.doesNotMatch(lib, /nomusAccountsPayable\.(update|create|delete|upsert)/);
   });
 
-  it("endpoints de export/import estão registrados com permissões", () => {
+  it("endpoints de export/import estão registrados com requireResource AP", () => {
     const routes = read("src/lib/financeUnclassifiedImportRoutes.ts");
     const server = read("server.ts");
     assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/export/);
     assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/import\/preview/);
     assert.match(routes, /\/api\/finance\/cost-centers\/unclassified\/import\/apply/);
-    assert.match(routes, /FINANCE_AP_ALLOCATION_BATCH_APPLY_PERMISSIONS/);
+    assert.match(routes, /requireResource/);
+    assert.match(routes, /FINANCE_AP_RESOURCE_KEY/);
+    assert.match(routes, /FINANCE_AP_ACTIONS/);
     assert.match(routes, /upload\.single\("file"\)/);
     assert.match(server, /registerFinanceUnclassifiedImportRoutes/);
   });

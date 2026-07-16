@@ -437,7 +437,7 @@ describe("projectsExecutiveReport — montagem", () => {
 
   it("resultado econômico calcula retorno da amortização por produto", () => {
     const detail = buildDetailFixture();
-    // Precificação comercial considera apenas SIMULATION.
+    // Precificação comercial inclui SIMULATION e produtos oficiais.
     detail.simulatedItems[1]!.notes =
       "guided-origin:SIMULATION\nguided-simulation-id:22222222-2222-2222-2222-222222222222";
     detail.costAmortizations = buildSavedAmortization(detail);

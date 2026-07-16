@@ -161,7 +161,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "finance",
     sortOrder: 27,
     isSystem: true,
-    legacyAliasKeys: [],
+    legacyAliasKeys: ["finance.cashFlow.view"],
   },
   {
     key: "financeiro.relatorio_presidencial",

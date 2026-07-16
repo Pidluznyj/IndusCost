@@ -160,7 +160,8 @@ export const SellerNomusPicker: React.FC<SellerNomusPickerProps> = ({
     <div className="space-y-3" data-testid="seller-nomus-picker">
       <div className="space-y-1.5">
         <label className="text-xs font-semibold text-muted-foreground">
-          Responsável comercial <span className="text-destructive">*</span>
+          Responsável comercial
+          {requireNomusIds ? <span className="text-destructive"> *</span> : null}
         </label>
         <SearchableSelect
           options={responsibleOptions}

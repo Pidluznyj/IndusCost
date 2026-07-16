@@ -15,7 +15,10 @@ import {
   buildFinanceBillingNfeExportCsv,
   financeBillingNfeExportFilename,
 } from "@/src/lib/financeBillingNfeExport.js";
-import { FINANCE_BILLING_VIEW_PERMISSIONS } from "@/src/lib/financeBillingPermissions.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 import {
   getNomusNfesSyncStatus,
   NomusNfesSyncConflictError,
@@ -25,15 +28,26 @@ import { financeApiErrorJson } from "@/src/lib/financeTabLoadError.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
 export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_BILLING_VIEW_PERMISSIONS])] as const;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const viewGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.billing, FINANCE_MODULE_ACTIONS.view),
+  ] as const;
+  const exportGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.billing, FINANCE_MODULE_ACTIONS.export),
+  ] as const;
+  const executeGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.billing, FINANCE_MODULE_ACTIONS.execute),
+  ] as const;
 
-  app.get("/api/finance/billing/dashboard", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/dashboard", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -50,7 +64,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/nfes", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/nfes", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -66,7 +80,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/horizon/orders", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/horizon/orders", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -88,7 +102,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/export", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/export", ...exportGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -110,7 +124,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/audit", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/audit", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -129,7 +143,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/audit/export", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/audit/export", ...exportGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -154,7 +168,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.get("/api/finance/billing/comparison", ...guard, async (req, res) => {
+  app.get("/api/finance/billing/comparison", ...viewGuard, async (req, res) => {
     try {
       const user = await getCurrentAppUser(req);
       if (!user) {
@@ -170,17 +184,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  const billingSyncViewGuard = [
-    requireAppAuth,
-    requireAnyPermission(["settings.nomus.view", "settings.view", ...FINANCE_BILLING_VIEW_PERMISSIONS]),
-  ] as const;
-
-  const billingSyncRunGuard = [
-    requireAppAuth,
-    requireAnyPermission(["settings.nomus.sync"]),
-  ] as const;
-
-  app.get("/api/finance/billing/sync-status", ...billingSyncViewGuard, async (_req, res) => {
+  app.get("/api/finance/billing/sync-status", ...viewGuard, async (_req, res) => {
     try {
       const status = await getNomusNfesSyncStatus();
       return res.json(status);
@@ -190,7 +194,7 @@ export function registerFinanceBillingRoutes(app: express.Express, auth: AuthGua
     }
   });
 
-  app.post("/api/finance/billing/sync", ...billingSyncRunGuard, async (_req, res) => {
+  app.post("/api/finance/billing/sync", ...executeGuard, async (_req, res) => {
     try {
       const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
       const result = await startNomusNfesSyncApply(projectRoot);

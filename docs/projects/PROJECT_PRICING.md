@@ -12,7 +12,7 @@ Projetos → [projeto] → Custos do Projeto → Precificação comercial
 
 ## Como funciona
 
-1. O sistema lista apenas **itens simulados** (referências de Simulações) elegíveis.
+1. O sistema lista os **itens comerciais raiz** elegíveis: simulações e produtos/componentes oficiais referenciados no projeto.
 2. Para cada item, usa o **custo final unitário** já calculado na aba Custos (base + amortização).
 3. Aplica a **regra fiscal** selecionada (mesma tabela `TaxRule` do sistema).
 4. Aplica a **margem desejada** (padrão = margem do projeto, editável por item).
@@ -57,7 +57,7 @@ O endpoint `GET /api/projects/:id/pricing` retorna as regras fiscais ativas para
 | Tabela | Conteúdo |
 |--------|----------|
 | `ProjectPricingConfig` | Regra fiscal padrão, margem padrão |
-| `ProjectPricingItem` | Snapshot por item simulado: custos, impostos, margem, preço |
+| `ProjectPricingItem` | Snapshot por item elegível: custos, impostos, margem, preço |
 
 Não altera produto oficial, simulação original, Formação de Preço nem cadastro mestre.
 
@@ -85,6 +85,6 @@ Análise comercial pendente de definição de preço e margem.
 
 ## Limitações (v1)
 
-- Somente itens `SIMULATION` (referência de Simulações)
+- Itens elegíveis: `SIMULATION`, `OFFICIAL_PRODUCT` e `OFFICIAL_COMPONENT` (não inclui LEGACY / MP avulsa)
 - Não inclui comissão, frete nem outras variáveis da formação de preço completa (apenas imposto + margem, conforme escopo do projeto)
 - Requer migration `20260622120000_project_pricing`

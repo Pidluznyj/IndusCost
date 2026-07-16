@@ -5,18 +5,24 @@ import {
   parseFinanceSalesOrdersFilters,
 } from "./financeSalesOrdersDashboard.js";
 import { buildFinanceSalesOrdersExportCsv } from "./financeSalesOrdersExport.js";
-import { FINANCE_SALES_ORDERS_VIEW_PERMISSIONS } from "./financeSalesOrdersPermissions.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "./financeModulesAccess.js";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 export function registerFinanceSalesOrdersRoutes(app: express.Express, auth: AuthGuards) {
   const guard = [
     auth.requireAppAuth,
-    auth.requireAnyPermission([...FINANCE_SALES_ORDERS_VIEW_PERMISSIONS]),
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.salesOrders,
+      FINANCE_MODULE_ACTIONS.view
+    ),
   ];
 
   app.get("/api/finance/sales-orders/dashboard", ...guard, async (req, res) => {

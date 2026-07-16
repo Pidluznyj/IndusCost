@@ -38,26 +38,26 @@ import {
 } from "@/src/lib/financeAccountsReceivableTitles.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requireAnyPermission: (permissions: string[]) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
-/** Permissões do dashboard AR — ver docs/generated/finance-accounts-receivable-dashboard-report.md */
+/** @deprecated Use FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable + requireResource view. */
 export const FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS = [
   "finance.accountsReceivable.view",
   "finance.view",
-  "reports.view",
-  "settings.nomus.view",
-  "settings.view",
 ] as const;
 
-/** Exportação CSV — preferencial; fallback para view documentado. */
+/** @deprecated Use requireResource export — sem soft view. */
 export const FINANCE_AR_EXPORT_PERMISSIONS = [
   "finance.accountsReceivable.export",
-  ...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS,
 ] as const;
 
 async function loadFinanceArRows(filters: FinanceArDashboardFilters) {
@@ -110,9 +110,15 @@ function parseFinanceArHorizonExportOrRespond(
 }
 
 export function registerFinanceAccountsReceivableRoutes(app: express.Express, auth: AuthGuards) {
-  const { requireAppAuth, requireAnyPermission, getCurrentAppUser } = auth;
-  const guard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_DASHBOARD_VIEW_PERMISSIONS])] as const;
-  const exportGuard = [requireAppAuth, requireAnyPermission([...FINANCE_AR_EXPORT_PERMISSIONS])] as const;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const guard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable, FINANCE_MODULE_ACTIONS.view),
+  ] as const;
+  const exportGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable, FINANCE_MODULE_ACTIONS.export),
+  ] as const;
 
   app.get("/api/finance/accounts-receivable/dashboard", ...guard, async (req, res) => {
     try {
@@ -300,5 +306,5 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
     }
   });
 
-  registerFinanceAccountsReceivableOverdueRoutes(app, { requireAppAuth, requireAnyPermission });
+  registerFinanceAccountsReceivableOverdueRoutes(app, { requireAppAuth, requireResource });
 }

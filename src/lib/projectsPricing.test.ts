@@ -245,10 +245,61 @@ describe("projectsPricing — integração", () => {
     assert.match(section, /Precifica/);
   });
 
-  it("lista apenas produtos/itens simulados raiz", () => {
-    const targets = listProjectPricingEligibleTargets(buildDetailFixture());
-    assert.equal(targets.length, 1);
-    assert.equal(targets[0]?.displayName, "Haste IRIS");
+  it("lista simulações e produtos oficiais (não só SIMULATION)", () => {
+    const detail = buildDetailFixture();
+    detail.simulatedProducts = [
+      {
+        id: "eeeeeeee-eeee-4111-8111-eeeeeeeeeeee",
+        provisionalCode: "EGM30",
+        description: "Torneira EGM30 Direita",
+        unit: "UN",
+        estimatedWeight: null,
+        expectedVolume: 1000,
+        batchSize: null,
+        notes: "guided-origin:REFERENCE",
+      },
+    ];
+    const targets = listProjectPricingEligibleTargets(detail);
+    assert.ok(targets.some((t) => t.targetItemType === "SIMULATION" && t.displayName === "Haste IRIS"));
+    assert.ok(
+      targets.some(
+        (t) => t.targetItemType === "OFFICIAL_PRODUCT" && t.displayName === "Torneira EGM30 Direita"
+      )
+    );
+    assert.equal(
+      targets.some((t) => t.displayName === "Polímero"),
+      false,
+      "matéria-prima LEGACY não deve entrar na precificação"
+    );
+    assert.equal(
+      targets.some((t) => t.displayName === "Torneira IRIS"),
+      false,
+      "item LEGACY criado no projeto sem origem oficial/simulação não entra"
+    );
+  });
+
+  it("grid de precificação inclui produto oficial junto com simulações", () => {
+    const detail = buildDetailFixture();
+    detail.simulatedProducts = [
+      {
+        id: "eeeeeeee-eeee-4111-8111-eeeeeeeeeeee",
+        provisionalCode: "EGM30",
+        description: "Torneira EGM30 Direita",
+        unit: "UN",
+        estimatedWeight: null,
+        expectedVolume: 1000,
+        batchSize: null,
+        notes: "guided-origin:REFERENCE",
+      },
+    ];
+    const view = buildProjectPricingView({
+      detail,
+      taxRules: TAX_RULES,
+      config: { fiscalRuleId: "tax-1", defaultMarginPercent: 30 },
+    });
+    assert.ok(view.items.some((item) => item.displayName === "Torneira EGM30 Direita"));
+    assert.ok(view.items.some((item) => item.displayName === "Haste IRIS"));
+    assert.equal(view.items.some((item) => item.displayName === "Polímero"), false);
   });
 
   it("não lista matérias-primas", () => {

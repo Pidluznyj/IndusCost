@@ -784,6 +784,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isDetailScreen: false,
     relationalResourceKeys: ["financeiro"],
     moduleId: "finance",
+    notes:
+      "P17: finance.view canônico só neste parent (filhos usam aliases 1:1 dedicados).",
   },
   {
     resourceKey: "finance.cash_flow",
@@ -794,6 +796,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     sortOrder: 41,
     actions: [
       V([
+        "finance.cashFlow.view",
         "finance.view",
         "reports.view",
       ]),
@@ -805,6 +808,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: ["financeiro.fluxo_caixa"],
+    notes: "P17: finance.cashFlow.view 1:1; finance.view/reports.view secundários.",
   },
   {
     resourceKey: "finance.accounts_receivable",
@@ -869,9 +873,9 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     route: "/finance/billing",
     sortOrder: 44,
     actions: [
-      V(["sales_orders.view", "finance.view"]),
+      V(["finance.billing.view", "sales_orders.view", "finance.view"]),
       E(["settings.nomus.sync"], "sync NF / billing"),
-      X(["sales_orders.view"], "export lista — sem chave .export dedicada"),
+      X(["finance.billing.view", "sales_orders.view"], "export lista — sem chave .export dedicada"),
     ],
     relatedEndpoints: ["/api/finance/billing"],
     sensitivity: "critical",
@@ -880,7 +884,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
-    notes: "NF: sem delete. Sync não é delete/estorno.",
+    notes:
+      "NF: sem delete. Sync não é delete/estorno. P17: finance.billing.view 1:1; sales_orders.view secundário (não projeta multi-owner).",
   },
   {
     resourceKey: "finance.sales_orders",
@@ -889,7 +894,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "finance",
     route: "/finance/sales-orders",
     sortOrder: 45,
-    actions: [V(["sales_orders.view", "finance.view"])],
+    actions: [V(["finance.salesOrders.view", "sales_orders.view", "finance.view"])],
     relatedEndpoints: [],
     sensitivity: "medium",
     appearsInSidebar: false,
@@ -897,6 +902,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
+    notes: "P17: chave dedicada 1:1; sales_orders.view permanece no UI como OR de transição.",
   },
   {
     resourceKey: "finance.cost_centers",
@@ -924,7 +930,13 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "finance",
     route: "/finance/executive-report",
     sortOrder: 47,
-    actions: [V(["reports.view", "finance.view"])],
+    actions: [
+      V([
+        "finance.executiveReport.view",
+        "reports.view",
+        "finance.view",
+      ]),
+    ],
     relatedEndpoints: ["/api/finance/executive-report"],
     sensitivity: "high",
     appearsInSidebar: false,
@@ -932,6 +944,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: ["financeiro.relatorio_presidencial"],
+    notes: "P17: finance.executiveReport.view 1:1; reports.view/finance.view secundários.",
   },
   {
     resourceKey: "finance.suppliers",
@@ -1137,7 +1150,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "finance",
     route: "/reports",
     sortOrder: 53,
-    actions: [V(["reports.view"])],
+    actions: [V(["finance.reports.view", "reports.view"])],
     relatedEndpoints: ["/api/reports/data"],
     sensitivity: "medium",
     appearsInSidebar: true,
@@ -1146,7 +1159,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isDetailScreen: false,
     relationalResourceKeys: [],
     moduleId: "reports",
-    notes: "Sem dashboard.view — evita roubar canônico 1:1 de dashboard (P08).",
+    notes:
+      "P17: finance.reports.view 1:1. Sem dashboard.view. reports.view permanece secundário (mega).",
   },
 
   // ─── Operations ────────────────────────────────────────────

@@ -19,14 +19,10 @@ export const FINANCE_PORTFOLIO_RECONCILIATION_ORDER_TO_CASH_AUDIT_VIEW =
   "finance.portfolioReconciliation.orderToCashAudit.view" as const;
 
 /**
- * OR legado residual — sem AP (P09). Preferir chaves dedicadas / DTO.
+ * OR legado residual — esvaziado em P17 (chave própria obrigatória).
+ * Mantido export vazio para imports de teste que assertam ausência de AP.
  */
-export const FINANCE_PORTFOLIO_RECONCILIATION_LEGACY_VIEW_PERMISSIONS = [
-  "finance.view",
-  "finance.accountsReceivable.view",
-  "reports.view",
-  "settings.nomus.view",
-] as const;
+export const FINANCE_PORTFOLIO_RECONCILIATION_LEGACY_VIEW_PERMISSIONS = [] as const;
 
 /**
  * @deprecated Preferir `FINANCE_PORTFOLIO_RECONCILIATION_MODULE_API_PERMISSIONS`.

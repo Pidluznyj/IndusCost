@@ -2,7 +2,10 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconciliationApi.js";
-import { PermissionResourceKeys } from "./security/permissionsCatalog.js";
+import {
+  FINANCE_MODULE_ACTIONS,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "./financeModulesAccess.js";
 import {
   listPortfolioReconciliationRuns,
   loadPortfolioIntelligenceList,
@@ -31,8 +34,7 @@ import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityI
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  /** Motor relacional: requirePermission(resourceKey, action) */
-  requirePermission: (resourceKey: string, action?: "view" | "execute" | "manage" | "admin") => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 export function registerFinancePortfolioReconciliationRoutes(
@@ -41,34 +43,28 @@ export function registerFinancePortfolioReconciliationRoutes(
 ) {
   const moduleGuard = [
     auth.requireAppAuth,
-    auth.requirePermission(PermissionResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA, "view"),
+    auth.requireResource(FINANCE_MODULE_RESOURCE_KEYS.portfolio, FINANCE_MODULE_ACTIONS.view),
   ];
   const conciliationGuard = [
     auth.requireAppAuth,
-    auth.requirePermission(
-      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_CONCILIACAO,
-      "view"
-    ),
+    auth.requireResource(FINANCE_MODULE_RESOURCE_KEYS.portfolio, FINANCE_MODULE_ACTIONS.view),
   ];
   const intelligenceGuard = [
     auth.requireAppAuth,
-    auth.requirePermission(
-      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_INTELIGENCIA,
-      "view"
-    ),
+    auth.requireResource(FINANCE_MODULE_RESOURCE_KEYS.portfolio, FINANCE_MODULE_ACTIONS.view),
   ];
   const orderToCashAuditGuard = [
     auth.requireAppAuth,
-    auth.requirePermission(
-      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_AUDITORIA_PEDIDO_CAIXA,
-      "view"
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.portfolioOrderToCashAudit,
+      FINANCE_MODULE_ACTIONS.view
     ),
   ];
   const orderStatusPedidosGuard = [
     auth.requireAppAuth,
-    auth.requirePermission(
-      PermissionResourceKeys.FINANCEIRO_CONCILIACAO_TAB_STATUS_PEDIDOS,
-      "view"
+    auth.requireResource(
+      FINANCE_MODULE_RESOURCE_KEYS.portfolioOrderStatus,
+      FINANCE_MODULE_ACTIONS.view
     ),
   ];
 
