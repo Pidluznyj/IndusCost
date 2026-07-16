@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * OP-14.2 — Repara datas de NomusProductionOrder a partir do rawJson local.
+ * OP-14.1/14.2 — Repara datas + empresa de NomusProductionOrder a partir do rawJson local.
  *
  * Não consulta Nomus. Não altera closedAt, rawJson, payloadHash nem timestamps de sync.
  * Usa lock compartilhado com backfill/incremental.
@@ -40,34 +40,23 @@ async function main() {
           skippedInvalid: result.counters.skippedInvalid,
           invalidDates: result.counters.invalidDates,
           errors: result.counters.errors,
-          openedAtToFill: result.counters.fieldsToFill.openedAt,
-          releasedAtToFill: result.counters.fieldsToFill.releasedAt,
-          plannedAtToFill: result.counters.fieldsToFill.plannedAt,
-          deliveryAtToFill: result.counters.fieldsToFill.deliveryAt,
-          nomusUpdatedAtToFill: result.counters.fieldsToFill.nomusUpdatedAt,
-          openedAtFilled: result.counters.fieldsFilled.openedAt,
-          releasedAtFilled: result.counters.fieldsFilled.releasedAt,
-          plannedAtFilled: result.counters.fieldsFilled.plannedAt,
-          deliveryAtFilled: result.counters.fieldsFilled.deliveryAt,
-          nomusUpdatedAtFilled: result.counters.fieldsFilled.nomusUpdatedAt,
+          fieldsToFill: result.counters.fieldsToFill,
+          fieldsFilled: result.counters.fieldsFilled,
         },
         checkpointFile: result.checkpointFile,
         lastProcessedExternalId: result.lastProcessedExternalId,
         samples: result.samples,
-        note: "closedAt nunca é alterado por este reparo.",
+        note: "closedAt / rawJson / payloadHash / vínculos nunca são alterados por este reparo.",
       },
       null,
       2
     )
   );
+
   process.exitCode = result.exitCode;
 }
 
-main()
-  .catch((err) => {
-    console.error(err instanceof Error ? err.message : err);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+});
