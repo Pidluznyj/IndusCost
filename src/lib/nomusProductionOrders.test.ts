@@ -4,6 +4,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Prisma } from "@prisma/client";
 import {
+  NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE,
+} from "@/src/lib/fixtures/nomusProductionOrderOp05800";
+import {
   mapNomusProductionOrderPayload,
   mapNomusProductionOrderSalesLink,
   parseNomusProductionQuantity,
@@ -23,26 +26,7 @@ import {
 } from "@/src/lib/nomusProductionOrdersSyncLogic";
 
 /** Payload comprovado: OP 05800 - 003 / PD 02534. */
-const OP_05800_PAYLOAD = {
-  id: 30347,
-  nome: "OP 05800 - 003",
-  status: "Encerrada",
-  tipo: "Injeção",
-  produto: "311.32AA",
-  quantidade: "15.400",
-  unidade: "PC",
-  idProduto: 391,
-  empresa: "KOPPETEL",
-  itensPedido: [
-    {
-      id: 11324,
-      idPedido: 2530,
-      item: "00010",
-      nomeCliente: "Esmaltec S/A",
-      quantidade: "15.000",
-    },
-  ],
-};
+const OP_05800_PAYLOAD = NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE;
 
 describe("nomusProductionOrdersMapper", () => {
   it("parseNomusProductionQuantity trata milhar Nomus", () => {

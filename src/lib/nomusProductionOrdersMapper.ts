@@ -1,19 +1,27 @@
 /**
  * Mapper puro: payload Nomus `/rest/ordens` → stage local (OP-02 schema).
- * Quantidades Nomus: "15.400" → 15400; "15.000" → 15000.
+ * Parsers/normalização: `nomusProductionOrdersParsers` (OP-03).
  * Vínculo oficial somente via itensPedido[].idPedido e itensPedido[].id.
  */
 
-import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
-  asString,
-  parseNomusBrDateTime,
-  toInt,
-} from "@/src/lib/nomusAccountsReceivableParser.js";
-import { parseNomusPtBrNumber } from "@/scripts/nomusNumberParser.js";
+  asNomusProductionOrderObject,
+  normalizeNomusProductionOrderCode,
+  normalizeNomusProductionOrderInt,
+  normalizeNomusProductionOrderString,
+  parseNomusProductionOrderDateTime,
+  parseNomusProductionQuantity,
+  stableNomusProductionOrderPayloadHash,
+  type JsonObject,
+  type NomusProductionOrderDateParseResult,
+} from "@/src/lib/nomusProductionOrdersParsers.js";
 
-export type JsonObject = Record<string, unknown>;
+export type { JsonObject };
+export {
+  parseNomusProductionQuantity,
+  stableNomusProductionOrderPayloadHash,
+} from "@/src/lib/nomusProductionOrdersParsers.js";
 
 export type MappedNomusProductionOrderSalesLink = {
   externalSalesOrderId: number;
@@ -50,26 +58,29 @@ export type MappedNomusProductionOrder = {
   salesLinks: MappedNomusProductionOrderSalesLink[];
 };
 
+export type MapProductionOrderFieldError = {
+  field: string;
+  error: string;
+  raw: string;
+};
+
 export type MapProductionOrderResult =
-  | { ok: true; row: MappedNomusProductionOrder }
+  | {
+      ok: true;
+      row: MappedNomusProductionOrder;
+      fieldErrors: MapProductionOrderFieldError[];
+    }
   | { ok: false; reasons: string[]; externalId: number | null };
 
-function asObject(value: unknown): JsonObject | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as JsonObject;
-}
-
-export function stableNomusProductionOrderPayloadHash(raw: JsonObject): string {
-  return createHash("sha256").update(JSON.stringify(raw)).digest("hex");
-}
-
-/** Quantidade Nomus pt-BR (milhar com ponto): "15.400" → 15400. */
-export function parseNomusProductionQuantity(input: unknown): number | null {
-  if (input == null) return null;
-  if (typeof input === "number" && Number.isFinite(input)) return input;
-  if (typeof input === "string" && !input.trim()) return null;
-  const parsed = parseNomusPtBrNumber(input);
-  return Number.isFinite(parsed) ? parsed : null;
+function mapDateField(
+  field: string,
+  input: unknown,
+  fieldErrors: MapProductionOrderFieldError[]
+): Date | null {
+  const parsed: NomusProductionOrderDateParseResult = parseNomusProductionOrderDateTime(input);
+  if (parsed.ok) return parsed.value;
+  fieldErrors.push({ field, error: parsed.error, raw: parsed.raw });
+  return null;
 }
 
 export function pickItensPedidoFromOrdem(doc: JsonObject): unknown[] {
@@ -77,7 +88,7 @@ export function pickItensPedidoFromOrdem(doc: JsonObject): unknown[] {
     doc.itensPedido,
     doc.itensPedidos,
     doc.itensDoPedido,
-    asObject(doc.pedido)?.itensPedido,
+    asNomusProductionOrderObject(doc.pedido)?.itensPedido,
   ];
   for (const candidate of candidates) {
     if (Array.isArray(candidate)) return candidate;
@@ -88,12 +99,16 @@ export function pickItensPedidoFromOrdem(doc: JsonObject): unknown[] {
 export function mapNomusProductionOrderSalesLink(
   raw: unknown
 ): MappedNomusProductionOrderSalesLink | null {
-  const item = asObject(raw);
+  const item = asNomusProductionOrderObject(raw);
   if (!item) return null;
 
-  const externalSalesOrderId = toInt(item.idPedido) ?? toInt(item.idPedidoVenda);
+  const externalSalesOrderId =
+    normalizeNomusProductionOrderInt(item.idPedido) ??
+    normalizeNomusProductionOrderInt(item.idPedidoVenda);
   const externalSalesOrderItemId =
-    toInt(item.id) ?? toInt(item.idItemPedido) ?? toInt(item.idItem);
+    normalizeNomusProductionOrderInt(item.id) ??
+    normalizeNomusProductionOrderInt(item.idItemPedido) ??
+    normalizeNomusProductionOrderInt(item.idItem);
   if (externalSalesOrderId == null || externalSalesOrderItemId == null) return null;
 
   const qty = parseNomusProductionQuantity(item.quantidade ?? item.qtde ?? item.qtd);
@@ -101,8 +116,14 @@ export function mapNomusProductionOrderSalesLink(
   return {
     externalSalesOrderId,
     externalSalesOrderItemId,
-    itemNumber: asString(item.item) ?? asString(item.sequencia) ?? null,
-    customerName: asString(item.nomeCliente) ?? asString(item.cliente) ?? null,
+    itemNumber:
+      normalizeNomusProductionOrderCode(item.item) ??
+      normalizeNomusProductionOrderCode(item.sequencia) ??
+      null,
+    customerName:
+      normalizeNomusProductionOrderString(item.nomeCliente) ??
+      normalizeNomusProductionOrderString(item.cliente) ??
+      null,
     linkedQuantity: qty != null ? new Prisma.Decimal(qty) : null,
     rawJson: item,
   };
@@ -116,46 +137,49 @@ function resolveProductFields(raw: JsonObject): {
   productConfigId: number | null;
   productConfigCode: string | null;
 } {
-  const produto = asObject(raw.produto);
+  const produto = asNomusProductionOrderObject(raw.produto);
   const config =
-    asObject(raw.configuracaoProduto) ??
-    asObject(raw.configuracao) ??
-    asObject(produto?.configuracao) ??
-    asObject(produto?.configuracaoProduto);
+    asNomusProductionOrderObject(raw.configuracaoProduto) ??
+    asNomusProductionOrderObject(raw.configuracao) ??
+    asNomusProductionOrderObject(produto?.configuracao) ??
+    asNomusProductionOrderObject(produto?.configuracaoProduto);
 
   const productCode =
-    asString(raw.codigoProduto) ??
-    asString(raw.productCode) ??
-    asString(produto?.codigo) ??
-    asString(produto?.nome) ??
-    asString(raw.produto) ??
+    normalizeNomusProductionOrderCode(raw.codigoProduto) ??
+    normalizeNomusProductionOrderCode(raw.productCode) ??
+    normalizeNomusProductionOrderCode(produto?.codigo) ??
+    normalizeNomusProductionOrderCode(produto?.nome) ??
+    normalizeNomusProductionOrderCode(raw.produto) ??
     null;
 
   return {
     externalProductId:
-      toInt(raw.idProduto) ?? toInt(raw.produtoId) ?? toInt(produto?.id) ?? null,
+      normalizeNomusProductionOrderInt(raw.idProduto) ??
+      normalizeNomusProductionOrderInt(raw.produtoId) ??
+      normalizeNomusProductionOrderInt(produto?.id) ??
+      null,
     productCode,
     productDescription:
-      asString(raw.descricaoProduto) ??
-      asString(produto?.descricao) ??
-      asString(produto?.nome) ??
+      normalizeNomusProductionOrderString(raw.descricaoProduto) ??
+      normalizeNomusProductionOrderString(produto?.descricao) ??
+      normalizeNomusProductionOrderString(produto?.nome) ??
       null,
     productAdditionalInfo:
-      asString(raw.informacaoAdicionalProduto) ??
-      asString(raw.infoAdicionalProduto) ??
-      asString(produto?.informacaoAdicional) ??
-      asString(produto?.infoAdicional) ??
+      normalizeNomusProductionOrderString(raw.informacaoAdicionalProduto) ??
+      normalizeNomusProductionOrderString(raw.infoAdicionalProduto) ??
+      normalizeNomusProductionOrderString(produto?.informacaoAdicional) ??
+      normalizeNomusProductionOrderString(produto?.infoAdicional) ??
       null,
     productConfigId:
-      toInt(raw.idConfiguracaoProduto) ??
-      toInt(raw.idConfiguracao) ??
-      toInt(config?.id) ??
+      normalizeNomusProductionOrderInt(raw.idConfiguracaoProduto) ??
+      normalizeNomusProductionOrderInt(raw.idConfiguracao) ??
+      normalizeNomusProductionOrderInt(config?.id) ??
       null,
     productConfigCode:
-      asString(raw.codigoConfiguracaoProduto) ??
-      asString(raw.codigoConfiguracao) ??
-      asString(config?.codigo) ??
-      asString(config?.nome) ??
+      normalizeNomusProductionOrderCode(raw.codigoConfiguracaoProduto) ??
+      normalizeNomusProductionOrderCode(raw.codigoConfiguracao) ??
+      normalizeNomusProductionOrderCode(config?.codigo) ??
+      normalizeNomusProductionOrderCode(config?.nome) ??
       null,
   };
 }
@@ -164,23 +188,30 @@ function resolveCompanyFields(raw: JsonObject): {
   externalCompanyId: number | null;
   companyName: string | null;
 } {
-  const empresa = asObject(raw.empresa);
+  const empresa = asNomusProductionOrderObject(raw.empresa);
   return {
-    externalCompanyId: toInt(raw.idEmpresa) ?? toInt(empresa?.id) ?? null,
+    externalCompanyId:
+      normalizeNomusProductionOrderInt(raw.idEmpresa) ??
+      normalizeNomusProductionOrderInt(empresa?.id) ??
+      null,
     companyName:
-      asString(raw.empresaNome) ??
-      asString(raw.companyName) ??
-      asString(empresa?.nome) ??
-      asString(empresa?.razaoSocial) ??
-      asString(raw.empresa) ??
+      normalizeNomusProductionOrderString(raw.empresaNome) ??
+      normalizeNomusProductionOrderString(raw.companyName) ??
+      normalizeNomusProductionOrderString(empresa?.nome) ??
+      normalizeNomusProductionOrderString(empresa?.razaoSocial) ??
+      normalizeNomusProductionOrderString(raw.empresa) ??
       null,
   };
 }
 
 function resolvePriority(raw: JsonObject): string | null {
-  const asText = asString(raw.prioridade) ?? asString(raw.priority);
+  const asText =
+    normalizeNomusProductionOrderString(raw.prioridade) ??
+    normalizeNomusProductionOrderString(raw.priority);
   if (asText) return asText;
-  const n = toInt(raw.prioridade) ?? toInt(raw.priority);
+  const n =
+    normalizeNomusProductionOrderInt(raw.prioridade) ??
+    normalizeNomusProductionOrderInt(raw.priority);
   return n != null ? String(n) : null;
 }
 
@@ -188,13 +219,18 @@ function resolvePriority(raw: JsonObject): string | null {
  * Mapeia um objeto OP do Nomus. Exige `id` externo.
  * Não infere vínculo pedido/item — só lê itensPedido oficiais.
  * OP sem itensPedido → salesLinks vazio (permitido).
+ * Datas inválidas → campo null + fieldErrors (erro controlado).
  */
 export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOrderResult {
-  const externalId = toInt(raw.id) ?? toInt(raw.idOrdem) ?? toInt(raw.idOrdemProducao);
+  const externalId =
+    normalizeNomusProductionOrderInt(raw.id) ??
+    normalizeNomusProductionOrderInt(raw.idOrdem) ??
+    normalizeNomusProductionOrderInt(raw.idOrdemProducao);
   if (externalId == null) {
     return { ok: false, reasons: ["MISSING_EXTERNAL_ID"], externalId: null };
   }
 
+  const fieldErrors: MapProductionOrderFieldError[] = [];
   const product = resolveProductFields(raw);
   const company = resolveCompanyFields(raw);
   const qty = parseNomusProductionQuantity(
@@ -212,36 +248,60 @@ export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOr
 
   return {
     ok: true,
+    fieldErrors,
     row: {
       externalId,
-      name: asString(raw.nome) ?? asString(raw.name) ?? asString(raw.codigo) ?? null,
-      status: asString(raw.status) ?? asString(raw.situacao) ?? null,
-      tipo: asString(raw.tipo) ?? asString(raw.tipoOrdem) ?? null,
+      name:
+        normalizeNomusProductionOrderString(raw.nome) ??
+        normalizeNomusProductionOrderString(raw.name) ??
+        normalizeNomusProductionOrderCode(raw.codigo) ??
+        null,
+      status:
+        normalizeNomusProductionOrderString(raw.status) ??
+        normalizeNomusProductionOrderString(raw.situacao) ??
+        null,
+      tipo:
+        normalizeNomusProductionOrderString(raw.tipo) ??
+        normalizeNomusProductionOrderString(raw.tipoOrdem) ??
+        null,
       priority: resolvePriority(raw),
       ...product,
       ...company,
       quantity: qty != null ? new Prisma.Decimal(qty) : null,
       unit:
-        asString(raw.unidade) ??
-        asString(raw.unit) ??
-        asString(asObject(raw.produto)?.unidade) ??
+        normalizeNomusProductionOrderCode(raw.unidade) ??
+        normalizeNomusProductionOrderCode(raw.unit) ??
+        normalizeNomusProductionOrderCode(
+          asNomusProductionOrderObject(raw.produto)?.unidade
+        ) ??
         null,
       stockSector:
-        asString(raw.setorEstoque) ??
-        asString(raw.setor) ??
-        asString(asObject(raw.setorEstoque)?.nome) ??
+        normalizeNomusProductionOrderString(raw.setorEstoque) ??
+        normalizeNomusProductionOrderString(raw.setor) ??
+        normalizeNomusProductionOrderString(
+          asNomusProductionOrderObject(raw.setorEstoque)?.nome
+        ) ??
         null,
-      openedAt: parseNomusBrDateTime(
-        raw.dataAbertura ?? raw.dataInicio ?? raw.dataCriacao
+      openedAt: mapDateField(
+        "openedAt",
+        raw.dataAbertura ?? raw.dataInicio ?? raw.dataCriacao,
+        fieldErrors
       ),
-      closedAt: parseNomusBrDateTime(
-        raw.dataEncerramento ?? raw.dataFim ?? raw.dataConclusao
+      closedAt: mapDateField(
+        "closedAt",
+        raw.dataEncerramento ?? raw.dataFim ?? raw.dataConclusao,
+        fieldErrors
       ),
-      plannedAt: parseNomusBrDateTime(
-        raw.dataPrevista ?? raw.dataPrevisao ?? raw.dataEntregaPrevista
+      plannedAt: mapDateField(
+        "plannedAt",
+        raw.dataPrevista ?? raw.dataPrevisao ?? raw.dataEntregaPrevista,
+        fieldErrors
       ),
-      nomusUpdatedAt: parseNomusBrDateTime(
-        raw.dataAlteracao ?? raw.dataAtualizacao ?? raw.updatedAt
+      // Não usar timestamps locais do stage; só campos Nomus oficiais.
+      nomusUpdatedAt: mapDateField(
+        "nomusUpdatedAt",
+        raw.dataAlteracao ?? raw.dataAtualizacao,
+        fieldErrors
       ),
       rawJson: raw,
       payloadHash: stableNomusProductionOrderPayloadHash(raw),
