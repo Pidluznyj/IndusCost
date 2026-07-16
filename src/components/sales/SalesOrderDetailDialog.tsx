@@ -6,12 +6,15 @@ import { Copy, ExternalLink, Loader2, Printer, X } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
+import { useAuth } from "@/src/contexts/AuthContext";
 import {
   getSalesOrderDetailUrl,
   type SalesOrderDetailPayload,
   type SalesOrderDetailResponse,
 } from "@/src/lib/sales-orders/salesOrderDetailClient";
+import { canViewSalesOrderFiscalTaxes } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions";
 import { SalesOrderDetailView } from "./SalesOrderDetailView";
+import { SalesOrderTributosTab } from "./SalesOrderTributosTab";
 
 const DETAIL_PRINT_BODY_CLASS = "sales-order-detail-print-route";
 
@@ -25,10 +28,12 @@ type Props = {
 
 const AUDIT_360_ENABLED = true;
 
+type DetailTabId = "geral" | "tributos";
+
 /**
  * Modal grande (quase fullscreen) para o Detalhe do Pedido de Venda.
  * Renderiza o componente compartilhado `SalesOrderDetailView` com o payload
- * oficial (mesmo consumido pelo PDF/impressão).
+ * oficial (mesmo consumido pelo PDF/impressão) e a aba executiva Tributos.
  *
  * Filtros da tela Comercial > Pedidos de venda são preservados: o modal é
  * portalizado no `document.body`, não altera a rota nem desmonta a lista.
@@ -40,20 +45,25 @@ export function SalesOrderDetailDialog({
   onClose,
   onOpenFullAudit,
 }: Props): JSX.Element | null {
+  const auth = useAuth();
+  const canTributos = canViewSalesOrderFiscalTaxes(auth);
   const [payload, setPayload] = useState<SalesOrderDetailPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [activeTab, setActiveTab] = useState<DetailTabId>("geral");
 
   useEffect(() => {
     if (!open || !salesOrderId) {
       setPayload(null);
       setError(null);
+      setActiveTab("geral");
       return;
     }
     const ac = new AbortController();
     setLoading(true);
     setError(null);
+    setActiveTab("geral");
     fetchJsonOk<SalesOrderDetailResponse>(getSalesOrderDetailUrl(salesOrderId), {
       signal: ac.signal,
     })
@@ -169,7 +179,7 @@ export function SalesOrderDetailDialog({
             <button
               type="button"
               onClick={handlePrint}
-              disabled={!payload}
+              disabled={!payload || activeTab !== "geral"}
               className="inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-50"
               data-testid="sales-order-detail-print"
               title="Imprimir / Gerar PDF"
@@ -217,6 +227,44 @@ export function SalesOrderDetailDialog({
           </div>
         </header>
 
+        {/* Abas Gerais / Tributos */}
+        <nav
+          className="so-detail-no-print print-no-print flex flex-wrap items-center gap-1 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-2"
+          role="tablist"
+          data-testid="sales-order-detail-tabs"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "geral"}
+            onClick={() => setActiveTab("geral")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+              activeTab === "geral"
+                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                : "text-[#4B5563] hover:bg-[#F3F4F6]"
+            )}
+            data-testid="sales-order-detail-tab-geral"
+          >
+            Geral
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "tributos"}
+            onClick={() => setActiveTab("tributos")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+              activeTab === "tributos"
+                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                : "text-[#4B5563] hover:bg-[#F3F4F6]"
+            )}
+            data-testid="sales-order-detail-tab-tributos"
+          >
+            Tributos
+          </button>
+        </nav>
+
         {/* Body com scroll interno — conteúdo liberado no @media print */}
         <div className="so-detail-dialog-body flex-1 overflow-y-auto bg-[#f8fafc] px-4 py-4">
           {loading ? (
@@ -235,9 +283,16 @@ export function SalesOrderDetailDialog({
               {error}
             </div>
           ) : payload ? (
-            <div id="sales-order-detail-print-root">
-              <SalesOrderDetailView payload={payload} />
-            </div>
+            activeTab === "geral" ? (
+              <div id="sales-order-detail-print-root">
+                <SalesOrderDetailView payload={payload} />
+              </div>
+            ) : (
+              <SalesOrderTributosTab
+                fiscalTaxes={payload.fiscalTaxes}
+                denied={!canTributos}
+              />
+            )
           ) : (
             <div className="so-detail-no-print text-[12px] text-[#6b7280]">
               Nenhum pedido selecionado.

@@ -24,7 +24,7 @@ import {
   loadPortfolioOrderStatusList,
   PortfolioOrderStatusApiParseError,
 } from "./financePortfolioOrderStatusApi.server.js";
-import { loadOrderFullAudit } from "./finance/orderFullAuditService.js";
+import { getOrderFullAudit } from "./finance/orderFullAuditService.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
@@ -478,11 +478,20 @@ export function registerFinancePortfolioReconciliationRoutes(
           ? req.query.orderCode.trim() || null
           : null;
         const includeRaw = req.query.includeRaw === "true" || req.query.includeRaw === "1";
-        const payload = await loadOrderFullAudit({
+        const appAuth = (
+          req as { appAuth?: { userId?: string; permissions?: string[] } }
+        ).appAuth;
+        const payload = await getOrderFullAudit({
           salesOrderId,
           runId,
           orderCode,
           includeRaw,
+          userContext: appAuth
+            ? {
+                userId: appAuth.userId ?? null,
+                permissions: appAuth.permissions ?? [],
+              }
+            : null,
         });
         if ("ok" in payload && payload.ok) {
           res.json(payload);

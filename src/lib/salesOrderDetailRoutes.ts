@@ -50,9 +50,18 @@ export function registerSalesOrderDetailRoutes(
           typeof req.query.orderCode === "string"
             ? req.query.orderCode.trim() || null
             : null;
+        const appAuth = (
+          req as { appAuth?: { userId?: string; permissions?: string[] } }
+        ).appAuth;
         const payload = await getSalesOrderDetail({
           salesOrderId,
           orderCode,
+          userContext: appAuth
+            ? {
+                userId: appAuth.userId ?? null,
+                permissions: appAuth.permissions ?? [],
+              }
+            : null,
         });
         if (!("ok" in payload) || payload.ok !== true) {
           res

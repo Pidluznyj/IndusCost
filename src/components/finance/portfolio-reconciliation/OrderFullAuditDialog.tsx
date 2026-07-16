@@ -46,6 +46,7 @@ import {
   formatOrderToCashConfidence,
 } from "@/src/lib/finance/orderToCashAuditLabels";
 import { OrderToCashAuditItemsGrid } from "./OrderToCashAuditItemsGrid";
+import { SalesOrderTributosTab } from "@/src/components/sales/SalesOrderTributosTab";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -308,6 +309,9 @@ export function OrderFullAuditDialog({
                   activeOrderValue={payload.summary.activeOrderValue}
                   alerts={payload.alerts}
                 />
+              )}
+              {activeTab === "tributos" && (
+                <SalesOrderTributosTab fiscalTaxes={payload.fiscalTaxes} />
               )}
               {activeTab === "financial" && (
                 <FinancialTab

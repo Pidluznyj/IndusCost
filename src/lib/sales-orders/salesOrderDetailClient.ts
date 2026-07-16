@@ -26,6 +26,7 @@ import type {
   OrderFullAuditReceivable,
   OrderFullAuditAlert,
 } from "@/src/lib/finance/orderFullAuditClient";
+import type { SalesOrderFiscalTaxesPayload } from "./salesOrderFiscalTaxesClient";
 
 // ---------------------------------------------------------------------------
 // Header
@@ -216,6 +217,11 @@ export type SalesOrderDetailPayload = {
   financial: SalesOrderDetailFinancial;
   pricingMargin: SalesOrderDetailPricingMargin;
   alerts: SalesOrderDetailAlert[];
+  /**
+   * Aba Tributos (camada A — destacados na NF).
+   * null quando o usuário não tem permissão de faturamento/NF ou quando omitido.
+   */
+  fiscalTaxes: SalesOrderFiscalTaxesPayload | null;
   technicalInfo: {
     sources: string[];
     sourceTables: string[];

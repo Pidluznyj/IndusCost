@@ -17,6 +17,8 @@
  *   - Nada é gravado nem alterado — read-only.
  */
 import { prisma } from "@/src/lib/prisma.js";
+import { buildSalesOrderFiscalTaxesPayload } from "@/src/lib/sales-orders/salesOrderFiscalTaxes.server.js";
+import { canViewSalesOrderFiscalTaxesFromPermissions } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -3367,13 +3369,30 @@ export async function getOrderFullAudit(input: {
 }): Promise<
   OrderFullAuditPayload | { ok: false; status: number; error: string }
 > {
-  void input.userContext;
-  return loadOrderFullAudit({
+  const loaded = await loadOrderFullAudit({
     salesOrderId: input.salesOrderId,
     runId: input.runId ?? null,
     orderCode: input.orderCode ?? null,
     includeRaw: Boolean(input.includeRaw),
   });
+  if (!("ok" in loaded) || loaded.ok !== true) {
+    return loaded;
+  }
+
+  const allowFiscal = canViewSalesOrderFiscalTaxesFromPermissions(
+    input.userContext?.permissions ?? null
+  );
+  if (!allowFiscal) {
+    return { ...loaded, fiscalTaxes: null };
+  }
+
+  try {
+    const fiscalTaxes = await buildSalesOrderFiscalTaxesPayload(prisma, loaded);
+    return { ...loaded, fiscalTaxes };
+  } catch (err) {
+    console.error("getOrderFullAudit fiscalTaxes", err);
+    return { ...loaded, fiscalTaxes: null };
+  }
 }
 
 function emptyProposalBlock(

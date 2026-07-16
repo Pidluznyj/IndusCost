@@ -279,6 +279,7 @@ export type OrderFullAuditAlert = {
     | "items"
     | "documents"
     | "nfes"
+    | "tributos"
     | "financial"
     | "delivery"
     | "marginPricing"
@@ -1029,6 +1030,11 @@ export type OrderFullAuditPayload = {
   commissions: OrderFullAuditCommissionBlock;
   divergences: OrderFullAuditDivergenceBlock;
   technicalAudit: OrderFullAuditTechnicalAuditBlock;
+  /**
+   * Tributos documentais (camada A) — mesmo DTO da aba Tributos do detalhe do PV.
+   * null quando omitido por permissão ou falha não-bloqueante.
+   */
+  fiscalTaxes?: import("../sales-orders/salesOrderFiscalTaxesClient.js").SalesOrderFiscalTaxesPayload | null;
 };
 
 /**
@@ -1042,6 +1048,7 @@ export const ORDER_FULL_AUDIT_TABS = [
   { id: "items", label: "Itens do Pedido" },
   { id: "documents", label: "Documentos de Saída" },
   { id: "nfes", label: "NF-e" },
+  { id: "tributos", label: "Tributos" },
   { id: "financial", label: "Financeiro" },
   { id: "delivery", label: "Entrega / Produção / Frete" },
   { id: "marginPricing", label: "Margem, Preço e Custo" },

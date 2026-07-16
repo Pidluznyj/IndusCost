@@ -49,6 +49,11 @@ import type {
   OrderFullAuditNfe,
   OrderFullAuditStockDocument,
 } from "../finance/orderFullAuditClient.js";
+import { prisma as defaultPrisma } from "@/src/lib/prisma.js";
+import { buildSalesOrderFiscalTaxesPayload } from "./salesOrderFiscalTaxes.server.js";
+import {
+  canViewSalesOrderFiscalTaxesFromPermissions,
+} from "./salesOrderFiscalTaxesPermissions.js";
 import type {
   SalesOrderDetailAlert,
   SalesOrderDetailFinancial,
@@ -374,9 +379,8 @@ export type GetSalesOrderDetailInput = {
  */
 export async function getSalesOrderDetail(
   input: GetSalesOrderDetailInput,
-  _prisma?: PrismaClient
+  prismaClient: PrismaClient = defaultPrisma
 ): Promise<SalesOrderDetailResponse> {
-  void _prisma;
   const salesOrderId = input.salesOrderId?.trim();
   if (!salesOrderId) {
     return { ok: false, status: 400, error: "salesOrderId é obrigatório." };
@@ -427,6 +431,14 @@ export async function getSalesOrderDetail(
   const pricingMargin = mapPricingMargin(audit);
   const alerts = mapAlerts(audit);
 
+  const allowFiscal = canViewSalesOrderFiscalTaxesFromPermissions(
+    input.userContext?.permissions ?? null
+  );
+  const fiscalTaxes = allowFiscal
+    ? (audit.fiscalTaxes ??
+      (await buildSalesOrderFiscalTaxesPayload(prismaClient, audit)))
+    : null;
+
   const now = new Date().toISOString();
   const payload: SalesOrderDetailPayload = {
     ok: true,
@@ -441,6 +453,7 @@ export async function getSalesOrderDetail(
     financial,
     pricingMargin,
     alerts,
+    fiscalTaxes,
     technicalInfo: {
       sources: [
         "SalesOrder + SalesOrderItem (Prisma)",
@@ -451,6 +464,7 @@ export async function getSalesOrderDetail(
         "salesOrderMarginService.calculateSalesOrderMarginsForOrders",
         "orderReceivablesResolver → buildSalesOrderPlannedReceivables + NomusAccountsReceivable",
         "nomusSalesOrderItemStatus.parseNomusSalesOrderItemStatusFromRawItem",
+        "NomusNfeFiscalSummary + NomusNfeTaxLine (aba Tributos)",
       ],
       sourceTables: audit.technicalAudit.sourceTables ?? [],
       salesOrderId: audit.salesOrderId,
