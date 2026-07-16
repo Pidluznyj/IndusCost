@@ -43,7 +43,8 @@ export type AuditOutputDocumentsDbMode =
   | "stage-inventory"
   | "rawjson-sample"
   | "link-audit"
-  | "financial-audit";
+  | "financial-audit"
+  | "examples-audit";
 
 export type FieldCoverageStat = {
   field: string;
@@ -117,6 +118,7 @@ export type AuditOutputDocumentsDbSections = {
   allocations: import("./auditOutputDocumentsFinancial.js").AllocationsSection | null;
   accountsReceivableLinks: import("./auditOutputDocumentsFinancial.js").AccountsReceivableLinksSection | null;
   financialEvidence: import("./auditOutputDocumentsFinancial.js").FinancialEvidenceSection | null;
+  examples: import("./auditOutputDocumentsExamples.js").ExamplesSection | null;
   counts: Record<string, unknown>;
   documentFocus: unknown;
   orderFocus: unknown;
@@ -402,6 +404,7 @@ export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
     allocations: null,
     accountsReceivableLinks: null,
     financialEvidence: null,
+    examples: null,
     counts: {},
     documentFocus: null,
     orderFocus: null,
@@ -800,6 +803,69 @@ function formatFinancialEvidenceMarkdown(
   return lines;
 }
 
+function formatExampleLookupMarkdown(
+  title: string,
+  lookup: {
+    found: boolean;
+    query: Record<string, string | number | null>;
+    strategies: Array<{
+      strategy: string;
+      key: string;
+      attempted: boolean;
+      matched: boolean;
+      bound?: string;
+    }>;
+    notes: string[];
+  } | null
+): string[] {
+  const lines: string[] = [`### ${title}`, ""];
+  if (!lookup) {
+    lines.push("_Não disponível._", "");
+    return lines;
+  }
+  lines.push(
+    `| found | ${lookup.found ? "true" : "false"} |`,
+    `| query | ${JSON.stringify(lookup.query)} |`,
+    ""
+  );
+  if (lookup.strategies.length > 0) {
+    lines.push(
+      "| Estratégia | key | attempted | matched | bound |",
+      "|---|---|---|---|---|"
+    );
+    for (const s of lookup.strategies) {
+      lines.push(
+        `| ${s.strategy} | ${s.key} | ${s.attempted} | ${s.matched} | ${s.bound ?? "—"} |`
+      );
+    }
+    lines.push("");
+  }
+  for (const note of lookup.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
+function formatExamplesMarkdown(
+  section: import("./auditOutputDocumentsExamples.js").ExamplesSection | null
+): string[] {
+  const lines: string[] = ["## examples", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  lines.push(
+    ...formatExampleLookupMarkdown(
+      "examples.outputDocument",
+      section.outputDocument
+    )
+  );
+  lines.push(
+    ...formatExampleLookupMarkdown("examples.salesOrder", section.salesOrder)
+  );
+  lines.push(...formatExampleLookupMarkdown("examples.nfe", section.nfe));
+  return lines;
+}
+
 export function formatAuditOutputDocumentsDbMarkdown(
   result: AuditOutputDocumentsDbResult
 ): string {
@@ -860,6 +926,7 @@ export function formatAuditOutputDocumentsDbMarkdown(
   lines.push(
     ...formatFinancialEvidenceMarkdown(result.sections.financialEvidence)
   );
+  lines.push(...formatExamplesMarkdown(result.sections.examples));
 
   if (result.sections.notes.length > 0) {
     lines.push("## Notas", "");

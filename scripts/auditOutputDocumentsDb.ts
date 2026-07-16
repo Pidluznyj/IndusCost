@@ -31,6 +31,7 @@ import { loadStageInventoryAndCoverage } from "../src/lib/output-documents/audit
 import { loadRawJsonSampleAnalysis } from "../src/lib/output-documents/auditOutputDocumentsRawJson.server.ts";
 import { loadDocumentLinkAudit } from "../src/lib/output-documents/auditOutputDocumentsLinks.server.ts";
 import { loadDocumentFinancialAudit } from "../src/lib/output-documents/auditOutputDocumentsFinancial.server.ts";
+import { loadParameterizedExamplesAudit } from "../src/lib/output-documents/auditOutputDocumentsExamples.server.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -103,6 +104,15 @@ async function main(): Promise<void> {
       sampleLimit: options.sampleLimit,
     });
 
+    console.warn(
+      `${LOG} investigando exemplos document=${options.document} order=${options.order} nfe=${options.nfe}…`
+    );
+    const examples = await loadParameterizedExamplesAudit(prisma, {
+      document: options.document,
+      order: options.order,
+      nfe: options.nfe,
+    });
+
     const sections = buildEmptyAuditSections();
     sections.inventory = loaded.inventory;
     sections.fieldCoverage = loaded.fieldCoverage;
@@ -114,6 +124,10 @@ async function main(): Promise<void> {
     sections.allocations = financial.allocations;
     sections.accountsReceivableLinks = financial.accountsReceivableLinks;
     sections.financialEvidence = financial.financialEvidence;
+    sections.examples = examples;
+    sections.documentFocus = examples.outputDocument;
+    sections.orderFocus = examples.salesOrder;
+    sections.nfeFocus = examples.nfe;
     sections.counts = {
       documents: loaded.inventory.documents.total,
       documentoSaida: loaded.inventory.documents.documentoSaida,
@@ -141,6 +155,9 @@ async function main(): Promise<void> {
       titlesOverdue: financial.accountsReceivableLinks.metrics.titlesOverdue,
       doubleCountPrevented:
         financial.financialEvidence.metrics.doubleCountPrevented,
+      exampleDocumentFound: examples.outputDocument.found,
+      exampleOrderFound: examples.salesOrder.found,
+      exampleNfeFound: examples.nfe.found,
     };
     sections.samples = {
       documentsWithoutItemsExternalIds:
@@ -164,6 +181,7 @@ async function main(): Promise<void> {
       "DS-02.4: matriz amostral de rawJson + evidências hipotéticas de pagamento/parcelas.",
       "DS-02.5: vínculos Documento↔NF-e↔Pedido classificados (persistido/derivado/inferido/conflitante/nao_resolvido).",
       "DS-02.6: alocação financeira, Contas a Receber e evidência sem dupla contagem (CR > Documento > Pedido).",
+      "DS-02.7: exemplos parametrizados (document/order/nfe); ausência → found=false, sem erro técnico.",
       "Este auditor não cria nem corrige vínculos; O2C/SalesOrderNfeLink/NF/Pedido/CR não são modificados.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ];
@@ -175,14 +193,14 @@ async function main(): Promise<void> {
       options,
       database,
       status: "ok",
-      mode: "financial-audit",
+      mode: "examples-audit",
       sections,
     });
 
     writeOutputs(result, options.jsonOutput, options.markdownOutput);
     console.log(JSON.stringify(result, null, 2));
     console.warn(
-      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} withIdNfe=${links.nfeLinks.metrics.documentsWithIdNfe} unallocated=${financial.allocations.metrics.unallocated} durationMs=${result.meta.durationMs}`
+      `${LOG} concluído status=${result.status} mode=${result.meta.mode} exampleDoc=${examples.outputDocument.found} exampleOrder=${examples.salesOrder.found} exampleNfe=${examples.nfe.found} durationMs=${result.meta.durationMs}`
     );
   } catch (error) {
     const finishedAt = new Date();
@@ -195,7 +213,7 @@ async function main(): Promise<void> {
         database,
         status: "unavailable",
         error: message,
-        mode: "financial-audit",
+        mode: "examples-audit",
       });
       try {
         writeOutputs(result, options.jsonOutput, options.markdownOutput);
@@ -219,7 +237,7 @@ async function main(): Promise<void> {
       database,
       status: "error",
       error: message,
-      mode: "financial-audit",
+      mode: "examples-audit",
     });
     try {
       writeOutputs(result, options.jsonOutput, options.markdownOutput);

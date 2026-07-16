@@ -38,6 +38,14 @@ import {
   buildEmptyFinancialEvidenceSection,
 } from "./auditOutputDocumentsFinancial.js";
 import {
+  buildEmptyExamplesSection,
+  buildFoundExampleLookup,
+  buildNotFoundExampleLookup,
+  buildOutputDocumentExampleFromFixture,
+  markStrategy,
+  planDocumentLookupStrategies,
+} from "./auditOutputDocumentsExamples.js";
+import {
   buildEmptyNfeLinksSection,
   buildEmptySalesOrderLinksSection,
 } from "./auditOutputDocumentsLinks.js";
@@ -63,6 +71,10 @@ const LINKS_SERVER_PATH = join(HERE, "auditOutputDocumentsLinks.server.ts");
 const FINANCIAL_SERVER_PATH = join(
   HERE,
   "auditOutputDocumentsFinancial.server.ts"
+);
+const EXAMPLES_SERVER_PATH = join(
+  HERE,
+  "auditOutputDocumentsExamples.server.ts"
 );
 
 describe("parseAuditOutputDocumentsDbArgs", () => {
@@ -254,7 +266,7 @@ describe("cobertura e percentuais", () => {
 });
 
 describe("estrutura básica do resultado", () => {
-  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys, paymentTermsEvidence, nfeLinks, salesOrderLinks, allocations, accountsReceivableLinks e financialEvidence", () => {
+  it("monta contrato com inventory … financialEvidence e examples", () => {
     const startedAt = new Date("2026-07-16T12:00:00.000Z");
     const finishedAt = new Date("2026-07-16T12:00:01.250Z");
     const options = parseAuditOutputDocumentsDbArgs([]);
@@ -314,6 +326,34 @@ describe("estrutura básica do resultado", () => {
     sections.financialEvidence = buildEmptyFinancialEvidenceSection();
     sections.financialEvidence.metrics.doubleCountPrevented = 1;
 
+    const examples = buildEmptyExamplesSection();
+    examples.outputDocument = buildFoundExampleLookup({
+      query: { document: 8451 },
+      strategies: markStrategy(
+        planDocumentLookupStrategies(8451),
+        "NomusStockDocument.externalId",
+        true
+      ),
+      data: buildOutputDocumentExampleFromFixture({
+        externalId: 8451,
+        idNfe: 7208,
+        tipoDocumentoEstoque: "DocumentoSaida",
+        items: [{ estimatedTotalValue: 100 }],
+      }),
+    });
+    examples.salesOrder = buildNotFoundExampleLookup({
+      query: { order: "PD02590" },
+      strategies: [],
+    });
+    examples.nfe = buildNotFoundExampleLookup({
+      query: { nfe: 7208 },
+      strategies: [],
+    });
+    sections.examples = examples;
+    sections.documentFocus = examples.outputDocument;
+    sections.orderFocus = examples.salesOrder;
+    sections.nfeFocus = examples.nfe;
+
     const result = buildAuditResult({
       startedAt,
       finishedAt,
@@ -322,11 +362,11 @@ describe("estrutura básica do resultado", () => {
         "postgresql://u:p@localhost:5432/induscost"
       ),
       status: "ok",
-      mode: "financial-audit",
+      mode: "examples-audit",
       sections,
     });
 
-    assert.equal(result.meta.mode, "financial-audit");
+    assert.equal(result.meta.mode, "examples-audit");
     assert.equal(result.meta.readOnly, true);
     assert.equal(result.meta.durationMs, 1250);
     assert.ok(result.sections.inventory);
@@ -340,6 +380,9 @@ describe("estrutura básica do resultado", () => {
     assert.ok(result.sections.allocations);
     assert.ok(result.sections.accountsReceivableLinks);
     assert.ok(result.sections.financialEvidence);
+    assert.ok(result.sections.examples);
+    assert.equal(result.sections.examples!.outputDocument.found, true);
+    assert.equal(result.sections.examples!.salesOrder.found, false);
     assert.equal(result.sections.paymentTermsEvidence!.hypothesisOnly, true);
 
     const markdown = formatAuditOutputDocumentsDbMarkdown(result);
@@ -353,10 +396,12 @@ describe("estrutura básica do resultado", () => {
     assert.match(markdown, /allocations/);
     assert.match(markdown, /accountsReceivableLinks/);
     assert.match(markdown, /financialEvidence/);
+    assert.match(markdown, /examples/);
+    assert.match(markdown, /examples\.outputDocument/);
     assert.match(markdown, /DocumentoSaida/);
     assert.match(markdown, /idNfe/);
     assert.match(markdown, /productCode/);
-    assert.match(markdown, /financial-audit/);
+    assert.match(markdown, /examples-audit/);
     assert.ok(!markdown.includes("12345678000190"));
   });
 });
@@ -421,6 +466,7 @@ describe("garantia read-only", () => {
       RAWJSON_SERVER_PATH,
       LINKS_SERVER_PATH,
       FINANCIAL_SERVER_PATH,
+      EXAMPLES_SERVER_PATH,
     ]) {
       const source = readFileSync(path, "utf8");
       for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
@@ -437,5 +483,6 @@ describe("garantia read-only", () => {
     assert.match(script, /loadRawJsonSampleAnalysis/);
     assert.match(script, /loadDocumentLinkAudit/);
     assert.match(script, /loadDocumentFinancialAudit/);
+    assert.match(script, /loadParameterizedExamplesAudit/);
   });
 });
