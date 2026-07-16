@@ -184,6 +184,18 @@ export function buildProductionOrderNameQuery(name: string): string {
   return `nome=="${escapeNomusRsqlQuotedValue(trimmed)}"`;
 }
 
+/** Consulta pontual por id externo (`id==N`) — suportado pelo contrato `/rest/ordens`. */
+export function buildProductionOrderExternalIdQuery(externalId: number): string {
+  const id = Math.trunc(externalId);
+  if (!Number.isFinite(id) || id <= 0) {
+    throw new NomusProductionOrdersClientError(
+      "INVALID_ARGUMENT",
+      `externalId inválido para consulta RSQL: ${externalId}`
+    );
+  }
+  return `id==${id}`;
+}
+
 function toPageItems(payload: unknown): JsonObject[] {
   assertProductionOrdersPayloadShape(payload);
   return pickProductionOrdersArray(payload)
@@ -373,6 +385,17 @@ export class NomusProductionOrdersClient {
     return this.traversePages({
       ...args,
       query: buildProductionOrderNameQuery(name),
+    });
+  }
+
+  /** Consulta pontual por id externo (`id==N`) com paginação limitada. */
+  async fetchByExternalId(
+    externalId: number,
+    args: { pageSize?: number; maxPages?: number; startPage?: number } = {}
+  ): Promise<ProductionOrdersTraverseResult> {
+    return this.traversePages({
+      ...args,
+      query: buildProductionOrderExternalIdQuery(externalId),
     });
   }
 

@@ -187,6 +187,7 @@ export async function reconcilePendingNomusProductionOrderSalesLinks(
     limit?: number;
     productionOrderExternalIds?: number[];
     externalSalesOrderIds?: number[];
+    externalSalesOrderItemIds?: number[];
   }
 ): Promise<ReconcilePendingNomusProductionOrderSalesLinksResult> {
   const limit =
@@ -202,6 +203,9 @@ export async function reconcilePendingNomusProductionOrderSalesLinks(
         : {}),
       ...(options?.externalSalesOrderIds?.length
         ? { externalSalesOrderId: { in: options.externalSalesOrderIds } }
+        : {}),
+      ...(options?.externalSalesOrderItemIds?.length
+        ? { externalSalesOrderItemId: { in: options.externalSalesOrderItemIds } }
         : {}),
     },
     select: {
