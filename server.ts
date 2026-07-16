@@ -214,6 +214,8 @@ import {
   EmployeeRegistrationError,
   prepareEmployeePersistedFields,
 } from "./src/lib/employeeRegistration.js";
+import { mergeEmployeeWriteData } from "./src/lib/employeeHrWriteMerge.js";
+import { syncPersonIdentityFromAppliedForm } from "./src/lib/canonicalPersonService.server.js";
 import {
   auditPersonalHrSummary,
   prepareEmployeePersonalHrFields,
@@ -2950,10 +2952,8 @@ function buildEmployeeHrProfileData(
       emergencyContactPhone: personal.emergencyContactPhone,
       emergencyContactRelationship: personal.emergencyContactRelationship,
       address: personal.address,
-      admissionDate: normalizeOptionalDate(body.admissionDate),
-      terminationDate: normalizeOptionalDate(body.terminationDate),
-      contractType: normalizeOptionalText(body.contractType),
-      managerName: normalizeOptionalText(body.managerName),
+      // admissionDate / terminationDate / contractType / managerName vêm só de
+      // prepareEmployeePersistedFields — não incluir aqui (spread apagaria os valores).
       professionalNotes: notes.professionalNotes,
       adminNotes: notes.adminNotes,
       shirtSize: epi.shirtSize,
@@ -3073,10 +3073,6 @@ app.post("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_CR
       personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
       cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
       phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
-      admissionDate: undefined,
-      terminationDate: undefined,
-      contractType: undefined,
-      managerName: undefined,
     } as Record<string, unknown>);
     const hrProfile = hrBuilt.data;
 
@@ -3085,24 +3081,28 @@ app.post("/api/employees", requireAppAuth, requireAnyPermission([...EMPLOYEES_CR
 
     const employee = await prisma.employee.create({
       data: {
-        name: resolvedName,
-        roleId: cleanRoleId,
-        department: normalizeRequiredText(department),
-        costCenter: persisted.costCenterLabel,
-        costCenterId: persisted.costCenterId,
-        classification: persisted.classification,
-        salary: adminRef.salary,
-        monthlyHours: adminRef.monthlyHours,
-        productivity: adminRef.productivity,
-        status: persisted.status,
-        corporateEmail: persisted.corporateEmail,
-        managerId: persisted.managerId,
-        managerName: persisted.managerName,
-        contractType: persisted.contractType,
-        admissionDate: persisted.admissionDate,
-        terminationDate: persisted.terminationDate,
-        personId: personResolve.personId,
-        ...hrProfile,
+        ...mergeEmployeeWriteData(
+          {
+            name: resolvedName,
+            roleId: cleanRoleId,
+            department: normalizeRequiredText(department),
+            costCenter: persisted.costCenterLabel,
+            costCenterId: persisted.costCenterId,
+            classification: persisted.classification,
+            salary: adminRef.salary,
+            monthlyHours: adminRef.monthlyHours,
+            productivity: adminRef.productivity,
+            status: persisted.status,
+            corporateEmail: persisted.corporateEmail,
+            managerId: persisted.managerId,
+            managerName: persisted.managerName,
+            contractType: persisted.contractType,
+            admissionDate: persisted.admissionDate,
+            terminationDate: persisted.terminationDate,
+            personId: personResolve.personId,
+          },
+          hrProfile as Record<string, unknown>
+        ),
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {
@@ -3302,10 +3302,6 @@ app.put("/api/employees/:id", requireAppAuth, requireAnyPermission([...EMPLOYEES
         personalEmail: personResolve.appliedForm.personalEmail ?? hrProfileBody.personalEmail,
         cpf: personResolve.appliedForm.cpfNormalized ?? hrProfileBody.cpf,
         phone: personResolve.appliedForm.phoneNormalized ?? hrProfileBody.phone,
-        admissionDate: undefined,
-        terminationDate: undefined,
-        contractType: undefined,
-        managerName: undefined,
       } as Record<string, unknown>,
       {
         allowLegacyPersonal: true,
@@ -3336,30 +3332,54 @@ app.put("/api/employees/:id", requireAppAuth, requireAnyPermission([...EMPLOYEES
         ? personResolve.personId
         : existingEmployee.personId;
 
+    // Vínculo já existente sem reenvio de personId: ainda assim sincroniza identidade.
+    if (nextPersonId && personResolve.personId === null) {
+      try {
+        await syncPersonIdentityFromAppliedForm(
+          prisma,
+          nextPersonId,
+          personResolve.appliedForm
+        );
+      } catch (linkErr) {
+        if (linkErr instanceof CanonicalPersonError) {
+          return res.status(linkErr.status).json({
+            error: linkErr.message,
+            code: linkErr.code,
+            conflicts: linkErr.conflicts,
+          });
+        }
+        throw linkErr;
+      }
+    }
+
     const resolvedName =
       (personResolve.appliedForm.displayName || "").trim() || cleanName;
 
     const employee = await prisma.employee.update({
       where: { id },
       data: {
-        name: resolvedName,
-        roleId: cleanRoleId,
-        department: normalizeRequiredText(department),
-        costCenter: persisted.costCenterLabel,
-        costCenterId: persisted.costCenterId,
-        classification: persisted.classification,
-        salary: adminRef.salary,
-        monthlyHours: adminRef.monthlyHours,
-        productivity: adminRef.productivity,
-        status: persisted.status,
-        corporateEmail: persisted.corporateEmail,
-        managerId: persisted.managerId,
-        managerName: persisted.managerName,
-        contractType: persisted.contractType,
-        admissionDate: persisted.admissionDate,
-        terminationDate: persisted.terminationDate,
-        personId: nextPersonId,
-        ...hrProfile,
+        ...mergeEmployeeWriteData(
+          {
+            name: resolvedName,
+            roleId: cleanRoleId,
+            department: normalizeRequiredText(department),
+            costCenter: persisted.costCenterLabel,
+            costCenterId: persisted.costCenterId,
+            classification: persisted.classification,
+            salary: adminRef.salary,
+            monthlyHours: adminRef.monthlyHours,
+            productivity: adminRef.productivity,
+            status: persisted.status,
+            corporateEmail: persisted.corporateEmail,
+            managerId: persisted.managerId,
+            managerName: persisted.managerName,
+            contractType: persisted.contractType,
+            admissionDate: persisted.admissionDate,
+            terminationDate: persisted.terminationDate,
+            personId: nextPersonId,
+          },
+          hrProfile as Record<string, unknown>
+        ),
         EmployeePayrollComponent:
           cleanComponentIds.length > 0
             ? {

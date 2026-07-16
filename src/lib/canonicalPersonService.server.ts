@@ -215,6 +215,30 @@ export async function createCanonicalPerson(
   return { id: created.id, displayName: created.displayName };
 }
 
+/** Atualiza a Pessoa canônica com o snapshot já resolvido (form vs person). */
+export async function syncPersonIdentityFromAppliedForm(
+  prisma: PrismaClient,
+  personId: string,
+  applied: PersonIdentitySnapshot
+): Promise<void> {
+  const { updatePersonCore } = await import("@/src/lib/canonicalPersonCore.server.js");
+  const displayName = (applied.displayName ?? "").trim();
+  if (!displayName) {
+    throw new CanonicalPersonError(
+      "NAME_REQUIRED",
+      "Informe o nome canônico da pessoa."
+    );
+  }
+  await updatePersonCore(prisma, personId, {
+    displayName,
+    socialName: applied.socialName,
+    corporateEmail: applied.corporateEmail,
+    personalEmail: applied.personalEmail,
+    cpf: applied.cpfNormalized,
+    phone: applied.phoneNormalized,
+  });
+}
+
 export async function previewLinkEmployeeToPerson(
   prisma: PrismaClient,
   input: {
@@ -329,6 +353,7 @@ export async function resolveEmployeePersonIdForPersist(
       preview.person,
       input.fieldResolutions ?? {}
     );
+    await syncPersonIdentityFromAppliedForm(prisma, preview.personId, applied);
     return {
       personId: preview.personId,
       appliedForm: applied,
