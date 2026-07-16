@@ -312,10 +312,9 @@ export function mapNomusProductionOrderPayload(raw: JsonObject): MapProductionOr
 }
 
 /**
- * Mapper do cabeçalho OP (OP-05): valida payload, converte datas/quantidades e hash.
- * `salesLinks` fica vazio — vínculos itensPedido não entram na persistência deste prompt.
+ * Mapper validado para persistência (cabeçalho + vínculos oficiais itensPedido).
  */
-export function mapNomusProductionOrderHeader(raw: unknown): MapProductionOrderResult {
+export function mapNomusProductionOrderForPersist(raw: unknown): MapProductionOrderResult {
   const validated = validateNomusProductionOrderPayload(raw);
   if (!validated.ok || !validated.payload) {
     return {
@@ -324,14 +323,13 @@ export function mapNomusProductionOrderHeader(raw: unknown): MapProductionOrderR
       externalId: validated.externalId,
     };
   }
-  const mapped = mapNomusProductionOrderPayload(validated.payload);
-  if (!mapped.ok) return mapped;
-  return {
-    ok: true,
-    fieldErrors: mapped.fieldErrors,
-    row: {
-      ...mapped.row,
-      salesLinks: [],
-    },
-  };
+  return mapNomusProductionOrderPayload(validated.payload);
+}
+
+/**
+ * @deprecated Prefer `mapNomusProductionOrderForPersist` (inclui itensPedido).
+ * Mantido para compat: equivalente ao persist completo.
+ */
+export function mapNomusProductionOrderHeader(raw: unknown): MapProductionOrderResult {
+  return mapNomusProductionOrderForPersist(raw);
 }

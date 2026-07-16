@@ -1,11 +1,15 @@
 /**
- * Persistência idempotente do cabeçalho de Ordens de Produção Nomus (OP-05).
- * Identidade: `externalId`. Sem soft-delete por ausência no lote.
- * Vínculos `itensPedido` / salesLinks: fora deste módulo (OP-06+).
+ * Persistência idempotente do cabeçalho de Ordens de Produção Nomus + vínculos oficiais (OP-05/OP-06).
+ * Identidade da OP: `externalId`. Sem soft-delete por ausência no lote.
+ * Vínculos: itensPedido via `syncNomusProductionOrderSalesLinks` (não altera SalesOrder/Item).
  */
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { MappedNomusProductionOrder } from "@/src/lib/nomusProductionOrdersMapper.js";
+import {
+  syncNomusProductionOrderSalesLinks,
+  type SyncNomusProductionOrderSalesLinksResult,
+} from "@/src/lib/nomusProductionOrdersSalesLinks.server.js";
 
 type DbClient = Prisma.TransactionClient | PrismaClient;
 
@@ -17,17 +21,8 @@ export type UpsertNomusProductionOrderHeaderResult = {
   payloadUnchanged: boolean;
 };
 
-/** @deprecated Prefer UpsertNomusProductionOrderHeaderResult; links zerados até OP-06. */
-export type UpsertNomusProductionOrderResult = {
-  action: "create" | "update" | "unchanged";
-  productionOrderId: string;
-  linksCreated: number;
-  linksUpdated: number;
-  linksMarkedAbsent: number;
-  salesOrderResolved: number;
-  salesOrderItemResolved: number;
-  payloadUnchanged: boolean;
-};
+export type UpsertNomusProductionOrderResult = UpsertNomusProductionOrderHeaderResult &
+  SyncNomusProductionOrderSalesLinksResult;
 
 function buildHeaderWriteData(
   row: MappedNomusProductionOrder,
@@ -68,7 +63,6 @@ function buildHeaderWriteData(
  * - Hash igual → atualiza apenas `syncedAt` / `lastSeenAt` (sem reescrever payload).
  * - Hash diferente → atualiza campos + `rawJson` + `lastChangedAt`.
  * - Não apaga OP ausente do lote.
- * - Não escreve `NomusProductionOrderSalesLink`.
  */
 export async function upsertNomusProductionOrderHeader(
   db: DbClient,
@@ -130,8 +124,8 @@ export async function upsertNomusProductionOrderHeader(
 }
 
 /**
- * Persistência do cabeçalho (OP-05). Não processa itensPedido.
- * Mantido para o sync V1 até o service ser o caminho único.
+ * Cabeçalho + vínculos oficiais itensPedido (OP-06).
+ * Sempre reconcilia links (mesmo com hash inalterado) para permitir resolução local posterior.
  */
 export async function upsertNomusProductionOrder(
   db: DbClient,
@@ -139,14 +133,14 @@ export async function upsertNomusProductionOrder(
   syncedAt: Date
 ): Promise<UpsertNomusProductionOrderResult> {
   const header = await upsertNomusProductionOrderHeader(db, row, syncedAt);
-  return {
-    action: header.action,
+  const links = await syncNomusProductionOrderSalesLinks(db, {
     productionOrderId: header.productionOrderId,
-    linksCreated: 0,
-    linksUpdated: 0,
-    linksMarkedAbsent: 0,
-    salesOrderResolved: 0,
-    salesOrderItemResolved: 0,
-    payloadUnchanged: header.payloadUnchanged,
+    productionOrderExternalId: row.externalId,
+    salesLinks: row.salesLinks,
+    syncedAt,
+  });
+  return {
+    ...header,
+    ...links,
   };
 }

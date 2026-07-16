@@ -1,16 +1,15 @@
 /**
- * Service de persistência idempotente do cabeçalho de OP Nomus (OP-05).
- * Fluxo: validar → mapear → localizar por externalId → hash → create/update/unchanged.
+ * Service de persistência idempotente de OP Nomus (OP-05 cabeçalho + OP-06 vínculos).
  * Lote: transação pequena por OP; falha isolada não corrompe as demais.
- * Não persiste itensPedido / salesLinks.
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
-  mapNomusProductionOrderHeader,
+  mapNomusProductionOrderForPersist,
   type MapProductionOrderFieldError,
 } from "@/src/lib/nomusProductionOrdersMapper.js";
-import { upsertNomusProductionOrderHeader } from "@/src/lib/nomusProductionOrdersRepository.server.js";
+import { upsertNomusProductionOrder } from "@/src/lib/nomusProductionOrdersRepository.server.js";
+import type { SyncNomusProductionOrderSalesLinksResult } from "@/src/lib/nomusProductionOrdersSalesLinks.server.js";
 
 export type PersistNomusProductionOrderOutcome =
   | "created"
@@ -27,6 +26,7 @@ export type PersistNomusProductionOrderResult = {
   reasons: string[];
   fieldErrors: MapProductionOrderFieldError[];
   error: string | null;
+  links: SyncNomusProductionOrderSalesLinksResult | null;
 };
 
 export type PersistNomusProductionOrdersBatchSummary = {
@@ -44,6 +44,15 @@ export type PersistNomusProductionOrdersBatchResult = {
 
 type DbWithOptionalTransaction = PrismaClient | Prisma.TransactionClient;
 
+const EMPTY_LINKS: SyncNomusProductionOrderSalesLinksResult = {
+  linksCreated: 0,
+  linksUpdated: 0,
+  linksReactivated: 0,
+  linksMarkedAbsent: 0,
+  salesOrderResolved: 0,
+  salesOrderItemResolved: 0,
+};
+
 function emptyResult(
   partial: Partial<PersistNomusProductionOrderResult> &
     Pick<PersistNomusProductionOrderResult, "outcome">
@@ -56,6 +65,7 @@ function emptyResult(
     reasons: partial.reasons ?? [],
     fieldErrors: partial.fieldErrors ?? [],
     error: partial.error ?? null,
+    links: partial.links ?? null,
   };
 }
 
@@ -79,7 +89,7 @@ async function runInSmallTransaction<T>(
 }
 
 /**
- * Persiste uma OP (somente cabeçalho) a partir do payload Nomus validável.
+ * Persiste OP (cabeçalho + vínculos oficiais itensPedido).
  */
 export async function persistNomusProductionOrder(
   db: DbWithOptionalTransaction,
@@ -87,24 +97,27 @@ export async function persistNomusProductionOrder(
   options?: { syncedAt?: Date; useTransaction?: boolean }
 ): Promise<PersistNomusProductionOrderResult> {
   const syncedAt = options?.syncedAt ?? new Date();
-  const mapped = mapNomusProductionOrderHeader(raw);
+  const mapped = mapNomusProductionOrderForPersist(raw);
 
   if (!mapped.ok) {
     return emptyResult({
       outcome: "invalid",
       externalId: mapped.externalId,
       reasons: mapped.reasons,
+      links: EMPTY_LINKS,
     });
   }
 
   const write = async (tx: Prisma.TransactionClient) => {
-    const header = await upsertNomusProductionOrderHeader(tx, mapped.row, syncedAt);
+    const result = await upsertNomusProductionOrder(tx, mapped.row, syncedAt);
+    const { action, productionOrderId, payloadUnchanged: _payloadUnchanged, ...links } = result;
     return emptyResult({
-      outcome: outcomeFromHeaderAction(header.action),
+      outcome: outcomeFromHeaderAction(action),
       externalId: mapped.row.externalId,
-      productionOrderId: header.productionOrderId,
+      productionOrderId,
       payloadHash: mapped.row.payloadHash,
       fieldErrors: mapped.fieldErrors,
+      links,
     });
   };
 
@@ -120,13 +133,13 @@ export async function persistNomusProductionOrder(
       payloadHash: mapped.row.payloadHash,
       fieldErrors: mapped.fieldErrors,
       error: error instanceof Error ? error.message : String(error),
+      links: EMPTY_LINKS,
     });
   }
 }
 
 /**
  * Persiste um lote de OPs com isolamento por item (transação pequena cada).
- * Falha / invalid de uma não impede as demais.
  */
 export async function persistNomusProductionOrdersBatch(
   db: DbWithOptionalTransaction,

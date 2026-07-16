@@ -33,9 +33,14 @@ function cloneFixture(overrides: Record<string, unknown> = {}) {
 
 function createMemoryPrisma(options?: { failExternalIds?: Set<number> }) {
   const store = new Map<number, StoredOp>();
+  const linkStore = new Map<string, Record<string, unknown>>();
   let idSeq = 0;
+  let linkSeq = 0;
   const failExternalIds = options?.failExternalIds ?? new Set<number>();
   const calls: Array<{ op: string; externalId?: number; dataKeys?: string[] }> = [];
+
+  const linkKey = (productionOrderExternalId: number, externalSalesOrderItemId: number) =>
+    `${productionOrderExternalId}:${externalSalesOrderItemId}`;
 
   const nomusProductionOrder = {
     findUnique: async (args: {
@@ -119,10 +124,85 @@ function createMemoryPrisma(options?: { failExternalIds?: Set<number> }) {
     },
   };
 
+  const nomusProductionOrderSalesLink = {
+    findUnique: async (args: {
+      where: {
+        productionOrderExternalId_externalSalesOrderItemId: {
+          productionOrderExternalId: number;
+          externalSalesOrderItemId: number;
+        };
+      };
+      select?: Record<string, boolean>;
+    }) => {
+      const key = linkKey(
+        args.where.productionOrderExternalId_externalSalesOrderItemId.productionOrderExternalId,
+        args.where.productionOrderExternalId_externalSalesOrderItemId.externalSalesOrderItemId
+      );
+      const row = linkStore.get(key) ?? null;
+      if (!row) return null;
+      if (!args.select) return { ...row };
+      const picked: Record<string, unknown> = {};
+      for (const k of Object.keys(args.select)) {
+        if (args.select[k]) picked[k] = row[k];
+      }
+      return picked;
+    },
+    create: async (args: { data: Record<string, unknown> }) => {
+      const id = `link-${++linkSeq}`;
+      const row = { id, isCurrent: true, ...args.data };
+      linkStore.set(
+        linkKey(
+          args.data.productionOrderExternalId as number,
+          args.data.externalSalesOrderItemId as number
+        ),
+        row
+      );
+      return row;
+    },
+    update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
+      for (const [key, row] of linkStore) {
+        if (row.id === args.where.id) {
+          const next = { ...row, ...args.data };
+          linkStore.set(key, next);
+          return next;
+        }
+      }
+      throw new Error(`link not found ${args.where.id}`);
+    },
+    updateMany: async (args: {
+      where: {
+        productionOrderId: string;
+        isCurrent?: boolean;
+        externalSalesOrderItemId?: { notIn: number[] };
+      };
+      data: Record<string, unknown>;
+    }) => {
+      let count = 0;
+      for (const [key, row] of linkStore) {
+        if (row.productionOrderId !== args.where.productionOrderId) continue;
+        if (args.where.isCurrent != null && row.isCurrent !== args.where.isCurrent) continue;
+        const notIn = args.where.externalSalesOrderItemId?.notIn;
+        if (notIn && notIn.includes(row.externalSalesOrderItemId as number)) continue;
+        linkStore.set(key, { ...row, ...args.data });
+        count += 1;
+      }
+      return { count };
+    },
+    findMany: async () => [...linkStore.values()],
+  };
+
   const prisma = {
     nomusProductionOrder,
+    nomusProductionOrderSalesLink,
+    salesOrder: {
+      findFirst: async () => null,
+    },
+    salesOrderItem: {
+      findFirst: async () => null,
+    },
     $transaction: async <T>(fn: (tx: typeof prisma) => Promise<T>) => fn(prisma),
     __store: store,
+    __linkStore: linkStore,
     __calls: calls,
   };
 
@@ -130,14 +210,16 @@ function createMemoryPrisma(options?: { failExternalIds?: Set<number> }) {
 }
 
 describe("mapNomusProductionOrderHeader", () => {
-  it("converte datas/quantidades e zera salesLinks", () => {
+  it("converte datas/quantidades e mapeia vínculos oficiais itensPedido", () => {
     const mapped = mapNomusProductionOrderHeader(NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE);
     assert.equal(mapped.ok, true);
     if (!mapped.ok) return;
     assert.equal(mapped.row.externalId, 30347);
     assert.ok(mapped.row.quantity?.equals(new Prisma.Decimal(15400)));
     assert.ok(mapped.row.openedAt);
-    assert.equal(mapped.row.salesLinks.length, 0);
+    assert.equal(mapped.row.salesLinks.length, 1);
+    assert.equal(mapped.row.salesLinks[0]!.externalSalesOrderId, 2530);
+    assert.equal(mapped.row.salesLinks[0]!.externalSalesOrderItemId, 11324);
     assert.equal(
       mapped.row.payloadHash,
       stableNomusProductionOrderPayloadHash(NOMUS_PRODUCTION_ORDER_OP_05800_FIXTURE)

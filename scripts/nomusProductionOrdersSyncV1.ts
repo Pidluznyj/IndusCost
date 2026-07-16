@@ -36,6 +36,7 @@ import {
   type ProductionOrdersSyncCliOptions,
 } from "../src/lib/nomusProductionOrdersSyncLogic.ts";
 import { upsertNomusProductionOrder } from "../src/lib/nomusProductionOrdersRepository.server.ts";
+import { reconcilePendingNomusProductionOrderSalesLinks } from "../src/lib/nomusProductionOrdersSalesLinks.server.ts";
 import { readSalesOrdersPageCursor } from "../src/lib/nomusSalesOrdersPaginationCursor.ts";
 import {
   buildNomusUrl,
@@ -264,9 +265,9 @@ export async function runNomusProductionOrdersSync(args: {
     const syncedAt = new Date();
     for (const row of rows) {
       try {
-        // OP-05: somente cabeçalho (itensPedido / salesLinks em OP-06+).
+        // OP-05/OP-06: cabeçalho + vínculos oficiais itensPedido.
         const result = await args.prisma.$transaction(async (tx) =>
-          upsertNomusProductionOrder(tx, { ...row, salesLinks: [] }, syncedAt)
+          upsertNomusProductionOrder(tx, row, syncedAt)
         );
         if (result.action === "create") created += 1;
         else if (result.action === "update") updated += 1;
@@ -353,7 +354,26 @@ export async function runNomusProductionOrdersAfterSalesOrdersSync(
           `--page-size=${NOMUS_PRODUCTION_ORDERS_DEFAULT_PAGE_SIZE}`,
         ];
 
-  return runNomusProductionOrdersSync({ prisma, argv });
+  const summary = await runNomusProductionOrdersSync({ prisma, argv });
+
+  // Após pedidos sincronizados: preenche FKs locais em vínculos ainda pendentes.
+  try {
+    const reconciled = await reconcilePendingNomusProductionOrderSalesLinks(prisma, {
+      externalSalesOrderIds:
+        salesOrderExternalIds.length > 0 ? salesOrderExternalIds : undefined,
+      limit: 2000,
+    });
+    console.warn(
+      `${LOG_PREFIX} reconcile vínculos pendentes: scanned=${reconciled.scanned} updated=${reconciled.updated} salesOrderResolved=${reconciled.salesOrderResolved} salesOrderItemResolved=${reconciled.salesOrderItemResolved}`
+    );
+  } catch (error) {
+    console.error(
+      `${LOG_PREFIX} falha ao reconciliar vínculos pendentes (soft-fail):`,
+      error instanceof Error ? error.message : error
+    );
+  }
+
+  return summary;
 }
 
 async function main(): Promise<void> {
