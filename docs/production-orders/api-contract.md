@@ -7,7 +7,7 @@
 | **Status** | Confirmado com amostra real (2026-07) |
 | **Prompt** | OP-01 |
 
-Relacionados: [`current-state.md`](./current-state.md) · [`target-architecture.md`](./target-architecture.md) · [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md)
+Relacionados: [`current-state.md`](./current-state.md) · [`target-architecture.md`](./target-architecture.md) · [`operations.md`](./operations.md) · [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md)
 
 ---
 

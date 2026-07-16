@@ -4,10 +4,12 @@
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Endpoint** | `GET /rest/ordens` |
-| **Status** | Stage local oficial (v1) — sync script + pós Pedidos de Venda |
+| **Status** | Stage local oficial + operações (OP-03…OP-12) |
 | **Data** | 2026-07-16 |
 
-> Descoberta prévia: [`nomus-production-orders-api-discovery.md`](./nomus-production-orders-api-discovery.md)
+> Runbook operacional completo: [`../production-orders/operations.md`](../production-orders/operations.md)  
+> Descoberta prévia: [`nomus-production-orders-api-discovery.md`](./nomus-production-orders-api-discovery.md)  
+> Contrato: [`../production-orders/api-contract.md`](../production-orders/api-contract.md)
 
 ---
 
@@ -37,36 +39,40 @@ Migration aditiva: `prisma/migrations/20260728120000_nomus_production_orders/`.
 
 ---
 
-## 3. Sync
+## 3. Sync e operações
 
 | Artefato | Função |
 |----------|--------|
-| `src/lib/nomusProductionOrdersMapper.ts` | Parse puro (ex.: `"15.400"` → 15400) |
-| `src/lib/nomusProductionOrdersSyncLogic.ts` | CLI, RSQL, paginação, planos |
-| `src/lib/nomusProductionOrdersRepository.server.ts` | Upsert idempotente |
-| `scripts/nomusProductionOrdersSyncV1.ts` | Preview / apply / incremental / backfill / pontual |
+| `nomusProductionOrdersMapper.ts` | Parse puro |
+| `nomusProductionOrdersClient.ts` | HTTP `/rest/ordens` |
+| `nomusProductionOrdersPersist.server.ts` | Persistência idempotente |
+| `nomusProductionOrdersSalesLinks.server.ts` | Vínculos + reconcile |
+| `nomusProductionOrdersBackfill*.ts` | Backfill + checkpoint |
+| `nomusProductionOrdersIncremental*.ts` | Incremental + overlap 72h |
+| `nomusProductionOrdersLookup*.ts` | Consulta pontual + reconcile |
+| `nomusProductionOrdersSyncLock*.ts` | Lock + auditoria + IntegrationRun |
+| `scripts/runNomusProductionOrdersSync.sh` | Runner shell (flock), padrão AR/NF-e |
 
-### Comandos
+### Comandos oficiais
 
 ```bash
-npm run sync:nomus:production-orders:preview -- --strategy=incremental
-npm run sync:nomus:production-orders:apply -- --strategy=backfill
-npm run sync:nomus:production-orders:preview -- --externalId=30347
-npm run sync:nomus:production-orders:preview -- --name="OP 05800 - 003"
-npm run sync:nomus:production-orders:apply -- --salesOrderExternalId=2530
+npm run sync:nomus:production-orders:preview
+npm run sync:nomus:production-orders:apply
+npm run sync:nomus:production-orders:backfill:preview
+npm run sync:nomus:production-orders:backfill:apply
+npm run sync:nomus:production-orders:incremental:preview
+npm run sync:nomus:production-orders:incremental:apply
+npm run sync:nomus:production-orders:reconcile
+
+# pontual / suporte
+npm run sync:nomus:production-orders:lookup:preview -- --name="OP 05800 - 003"
+npm run sync:nomus:production-orders:lookup:apply -- --external-id=30347
+
+# shell
+bash scripts/runNomusProductionOrdersSync.sh incremental apply
 ```
 
-### Estratégias
-
-| Estratégia | Comportamento |
-|------------|---------------|
-| `incremental` | Páginas iniciais (`pagina`/`tamanhoPagina`), máx. páginas limitado |
-| `backfill` | Janelas rotativas + cursor em `NOMUS_PRODUCTION_ORDERS_PAGE_CURSOR_FILE` |
-| `point` | `--externalId`, `--name` e/ou `--salesOrderExternalId` |
-
-Rate limit / retries: `fetchNomusJson` (`NOMUS_MAX_RETRIES`, 429 + `Retry-After` / `tempoAteLiberar`).
-
-Concorrência: o sync de pedidos usa o lock global Nomus (`flock`); o pós-sync de OP roda **dentro** desse fluxo apply — não abre consulta Nomus em UI.
+Filtros pontuais SyncV1 (legado unificado): `--externalId`, `--name`, `--salesOrderExternalId`.
 
 ---
 
@@ -93,11 +99,11 @@ Desligar: `NOMUS_PRODUCTION_ORDERS_AFTER_SYNC=false`.
 
 ---
 
-## 6. Fora de escopo (v1)
+## 6. Fora de escopo (sync v1)
 
 - Alterar Pedido / item / NF-e / AR / AP / Fluxo / Comissões / Formação de Preço / Relatório Presidencial / BOM  
 - Migration ou backfill em produção a partir do Cursor  
-- UI consumindo a tabela (próximo prompt)  
+- UI consumindo a tabela (próximo prompt de produto)  
 - Tornar OP obrigatória no funil Pedido → Caixa  
 
 ---

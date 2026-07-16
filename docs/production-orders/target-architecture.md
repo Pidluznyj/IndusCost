@@ -33,10 +33,12 @@
 | Preview/apply | estilo stock/AR (`preview`\|`apply`) | Já no CLI OP |
 | Pós-hook Pedidos | bloco final `nomusSalesOrdersSyncV1.ts` | Já chama OP após apply |
 | Lock global | flock sales-orders / daily | OP herda quando encadeado |
-| Ledger | `IntegrationRun` | **Reutilizar** (ainda não wired na OP) |
+| Ledger | `IntegrationRun` | **Wired** (`persistProductionOrdersIntegrationRun`, OP-11) |
 | Resolução Pedido/Item | lookup por `externalSalesOrderId` / `nomusItemExternalId` | Já no repository OP |
-| Testes puros | fixture OP 05800 + wiring source | Já em `nomusProductionOrders.test.ts` |
+| Testes puros | fixture OP 05800 + wiring source | Suite `test:nomus:production-orders` |
 | Stage models | `NomusProductionOrder`, `NomusProductionOrderSalesLink` | **Já landados** — não recriar |
+| Lock OP | `nomusProductionOrdersSyncLock` + shell `.flock` | **Feito (OP-11)** |
+| Operações | [`operations.md`](./operations.md) | **Feito (OP-12)** |
 
 ---
 
@@ -44,8 +46,9 @@
 
 | Item | Motivo | Prioridade |
 |------|--------|------------|
-| Persistência `IntegrationRun` no sync OP | Observabilidade alinhada a AR/NF-e | Alta |
-| Shell `runNomusProductionOrdersSync.sh` (+ opcional flock dedicado ou reuso global) | Operação/cron sem depender só do pós-pedido | Alta |
+| Persistência `IntegrationRun` no sync OP | Observabilidade alinhada a AR/NF-e | **Feito (OP-11)** |
+| Shell `runNomusProductionOrdersSync.sh` (+ flock dedicado) | Operação/cron sem depender só do pós-pedido | **Feito (OP-11/OP-12)** |
+| Runbook / comandos npm consolidados | Operação e deploy | **Feito (OP-12)** — [`operations.md`](./operations.md) |
 | API IndusCost read-only (lista/detalhe OP + links) | UI sem Nomus | Alta |
 | UI (funil / gestão) lendo stage local | Substituir “OP indisponível” / raw embutido | Média |
 | Unificar HTTP legado V1 → `nomusRestClient` | Dívida; **fora do caminho crítico OP** | Baixa |

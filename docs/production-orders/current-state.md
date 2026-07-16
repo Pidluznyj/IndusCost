@@ -11,7 +11,8 @@ Documentos irmãos:
 
 - [`target-architecture.md`](./target-architecture.md)
 - [`api-contract.md`](./api-contract.md)
-- Integração já landada: [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md)
+- [`operations.md`](./operations.md) — **runbook e comandos (OP-12)**
+- Integração: [`../integrations/nomus-production-orders-sync.md`](../integrations/nomus-production-orders-sync.md)
 - Descoberta: [`../integrations/nomus-production-orders-api-discovery.md`](../integrations/nomus-production-orders-api-discovery.md)
 
 ---
