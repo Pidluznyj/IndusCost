@@ -6,8 +6,11 @@ import {
   OverlayBadge,
   OverlayBody,
   OverlayHeader,
+  OverlayKpiCard,
+  OverlayKpiCardGrid,
   OverlaySection,
   OverlayTable,
+  OverlayTabs,
 } from "@/src/components/ui/overlay";
 import {
   fetchProductionOrderDetail,
@@ -26,6 +29,8 @@ type Props = {
   onClose: () => void;
 };
 
+type ProductionOrderDetailTab = "geral" | "auditoria";
+
 export function ProductionOrderQuickDetailOverlay({
   productionOrderId,
   onClose,
@@ -34,18 +39,21 @@ export function ProductionOrderQuickDetailOverlay({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<ProductionOrderDetailTab>("geral");
 
   useEffect(() => {
     if (!productionOrderId) {
       setDetail(null);
       setError(null);
       setCopyFeedback(null);
+      setActiveTab("geral");
       return;
     }
     const controller = new AbortController();
     setDetail(null);
     setLoading(true);
     setError(null);
+    setActiveTab("geral");
     void fetchProductionOrderDetail(productionOrderId, controller.signal)
       .then((payload) => {
         if (!controller.signal.aborted) setDetail(payload);
@@ -80,20 +88,24 @@ export function ProductionOrderQuickDetailOverlay({
     <Overlay
       open={productionOrderId != null}
       onClose={onClose}
-      size="xl"
+      size="full"
       ariaLabelledBy={titleId}
       ariaDescribedBy="production-order-audit-description"
       testId="production-order-audit-drawer"
-      className="ml-auto h-full max-h-[calc(100vh-2rem)]"
+      className="h-[calc(100vh-2rem)] !max-w-[1400px] sm:h-[92vh]"
     >
       <OverlayHeader
         titleId={titleId}
         eyebrow={
           detail
-            ? `Operações · Ordem de Produção · Nomus #${detail.identification.externalId}`
+            ? `Operações · Ordens de Produção · Nomus #${detail.identification.externalId}`
             : "Operações · Ordem de Produção"
         }
-        title={detail?.identification.name ?? "Auditoria da Ordem de Produção"}
+        title={
+          detail
+            ? `Detalhe da Ordem — ${detail.identification.name ?? `#${detail.identification.externalId}`}`
+            : "Detalhe da Ordem de Produção"
+        }
         subtitle={
           <span id="production-order-audit-description">
             {detail
@@ -118,9 +130,24 @@ export function ProductionOrderQuickDetailOverlay({
         }
         onClose={onClose}
         closeLabel="Fechar auditoria"
-        density="prominent"
+        density="default"
       />
-      <OverlayBody>
+      <OverlayTabs
+        tabs={[
+          { id: "geral", label: "Geral" },
+          {
+            id: "auditoria",
+            label: "Auditoria",
+            count: detail == null ? undefined : detail.auditSummary.pendingLinkCount + detail.auditSummary.removedLinkCount,
+          },
+        ]}
+        active={activeTab}
+        onChange={setActiveTab}
+        variant="pill"
+        testId="production-order-detail-tabs"
+        ariaLabel="Seções do detalhe da Ordem de Produção"
+      />
+      <OverlayBody className="bg-[color:var(--color-overlay-surface-muted)] px-4 py-4">
         {loading ? (
           <DrawerState testId="production-order-detail-loading">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -140,6 +167,7 @@ export function ProductionOrderQuickDetailOverlay({
             technicalJson={technicalJson}
             copyFeedback={copyFeedback}
             onCopy={() => void copyTechnicalJson()}
+            activeTab={activeTab}
           />
         ) : null}
       </OverlayBody>
@@ -189,44 +217,86 @@ export function ProductionOrderAuditContent({
   technicalJson,
   copyFeedback,
   onCopy,
+  activeTab = "geral",
 }: {
   detail: ProductionOrderDetailResponse;
   technicalJson: string;
   copyFeedback: string | null;
   onCopy: () => void;
+  activeTab?: ProductionOrderDetailTab;
 }) {
+  if (activeTab === "auditoria") {
+    return (
+      <div id="overlay-panel-auditoria" role="tabpanel" className="space-y-4" data-testid="production-order-detail-audit-panel">
+        <OverlaySection title="Auditoria interna">
+          <AuditFieldGrid>
+            <AuditField label="Vínculos atuais" value={String(detail.auditSummary.currentLinkCount)} />
+            <AuditField label="Vínculos históricos" value={String(detail.auditSummary.removedLinkCount)} />
+            <AuditField label="Vínculos resolvidos" value={String(detail.auditSummary.resolvedLinkCount)} />
+            <AuditField label="Vínculos pendentes" value={String(detail.auditSummary.pendingLinkCount)} />
+            <AuditField label="Payload hash" value={detail.payloadHash} mono wide />
+            <DateField label="Primeiro registro" value={detail.dates.firstSeenAt} />
+            <DateField label="Último registro" value={detail.dates.lastSeenAt} />
+            <DateField label="Última alteração" value={detail.dates.lastChangedAt} />
+            <DateField label="Sincronização" value={detail.dates.syncedAt} />
+          </AuditFieldGrid>
+        </OverlaySection>
+        <OverlaySection title="Dados técnicos do Nomus">
+          <details className="rounded-lg border border-border bg-card" data-testid="production-order-raw-json">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Payload original do Nomus</summary>
+            <div className="space-y-3 border-t border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">Evidência técnica somente leitura. O conteúdo é exibido como texto e não executa HTML.</p>
+                <button type="button" onClick={onCopy} className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-muted" data-testid="production-order-copy-json">
+                  {copyFeedback === "JSON copiado." ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+                  Copiar JSON
+                </button>
+              </div>
+              <p className="sr-only" aria-live="polite">{copyFeedback}</p>
+              <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-100">{technicalJson}</pre>
+            </div>
+          </details>
+        </OverlaySection>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-5" data-testid="production-order-detail-content">
-      <dl className="grid grid-cols-2 gap-3 sm:hidden">
-        <div>
-          <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Situação
-          </dt>
-          <dd className="mt-1">
+    <div id="overlay-panel-geral" role="tabpanel" className="space-y-4" data-testid="production-order-detail-content">
+      <OverlaySection title="Detalhe da Ordem">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs text-muted-foreground">Ordem de Produção Nomus · {detail.company.companyName ?? "Empresa não informada"}</p>
+            <h2 className="mt-0.5 text-lg font-bold text-foreground">{detail.identification.name ?? `OP #${detail.identification.externalId}`}</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
             <OverlayBadge
               tone={productionOrderStatusOverlayTone(detail.identification.status)}
               emphasized
             >
               {detail.identification.status ?? "Sem status"}
             </OverlayBadge>
-          </dd>
+            {detail.identification.tipo ? <OverlayBadge tone="slate">{detail.identification.tipo}</OverlayBadge> : null}
+          </div>
         </div>
-        <DateField label="Abertura" value={detail.dates.openedAt} />
-      </dl>
-
-      <OverlaySection title="Resumo">
-        <AuditFieldGrid>
+        <AuditFieldGrid className="mt-4">
           <AuditField label="Ordem" value={detail.identification.name} />
+          <AuditField label="ID Nomus" value={String(detail.identification.externalId)} mono />
           <AuditField label="Tipo" value={detail.identification.tipo} />
           <AuditField label="Prioridade" value={detail.identification.priority} />
           <AuditField label="Empresa" value={detail.company.companyName} />
-          <AuditField
-            label="Quantidade"
-            value={formatProductionOrderQuantity(detail.product.quantity, null)}
-          />
-          <AuditField label="Unidade" value={detail.product.unit} />
           <AuditField label="Setor de estoque" value={detail.product.stockSector} />
         </AuditFieldGrid>
+      </OverlaySection>
+
+      <OverlaySection title="Resumo executivo">
+        <OverlayKpiCardGrid columns={5}>
+          <OverlayKpiCard label="Quantidade" value={formatProductionOrderQuantity(detail.product.quantity, detail.product.unit)} tone="info" size="sm" />
+          <OverlayKpiCard label="Status" value={detail.identification.status ?? "—"} tone={detail.identification.status?.toLowerCase().includes("cancel") ? "negative" : "positive"} size="sm" />
+          <OverlayKpiCard label="Prioridade" value={detail.identification.priority ?? "—"} size="sm" />
+          <OverlayKpiCard label="Pedidos vinculados" value={String(detail.auditSummary.currentLinkCount)} tone={detail.auditSummary.pendingLinkCount > 0 ? "warning" : "neutral"} size="sm" />
+          <OverlayKpiCard label="Entrega planejada" value={formatProductionOrderDateTime(detail.dates.deliveryAt)} size="sm" />
+        </OverlayKpiCardGrid>
       </OverlaySection>
 
       <OverlaySection title="Produto">
@@ -248,7 +318,7 @@ export function ProductionOrderAuditContent({
         </AuditFieldGrid>
       </OverlaySection>
 
-      <OverlaySection title="Datas">
+      <OverlaySection title="Datas operacionais">
         <AuditFieldGrid>
           <DateField label="Abertura" value={detail.dates.openedAt} />
           <DateField label="Liberação" value={detail.dates.releasedAt} />
@@ -256,9 +326,6 @@ export function ProductionOrderAuditContent({
           <DateField label="Entrega" value={detail.dates.deliveryAt} />
           <DateField label="Encerramento" value={detail.dates.closedAt} />
           <DateField label="Última alteração no Nomus" value={detail.dates.nomusUpdatedAt} />
-          <DateField label="Primeira visualização pelo IndusCost" value={detail.dates.firstSeenAt} />
-          <DateField label="Última visualização" value={detail.dates.lastSeenAt} />
-          <DateField label="Última alteração de payload" value={detail.dates.lastChangedAt} />
           <DateField label="Sincronização mais recente" value={detail.dates.syncedAt} />
         </AuditFieldGrid>
       </OverlaySection>
@@ -267,65 +334,6 @@ export function ProductionOrderAuditContent({
         <SalesLinksTable links={detail.salesLinks} />
       </OverlaySection>
 
-      <OverlaySection title="Auditoria interna">
-        <AuditFieldGrid>
-          <AuditField label="Vínculos atuais" value={String(detail.auditSummary.currentLinkCount)} />
-          <AuditField
-            label="Vínculos históricos"
-            value={String(detail.auditSummary.removedLinkCount)}
-          />
-          <AuditField
-            label="Vínculos resolvidos"
-            value={String(detail.auditSummary.resolvedLinkCount)}
-          />
-          <AuditField
-            label="Vínculos pendentes"
-            value={String(detail.auditSummary.pendingLinkCount)}
-          />
-          <AuditField label="Payload hash" value={detail.payloadHash} mono wide />
-          <DateField label="First seen" value={detail.dates.firstSeenAt} />
-          <DateField label="Last seen" value={detail.dates.lastSeenAt} />
-          <DateField label="Last changed" value={detail.dates.lastChangedAt} />
-          <DateField label="Synced at" value={detail.dates.syncedAt} />
-        </AuditFieldGrid>
-      </OverlaySection>
-
-      <OverlaySection title="Dados técnicos do Nomus">
-        <details
-          className="rounded-lg border border-border bg-card"
-          data-testid="production-order-raw-json"
-        >
-          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
-            Payload original do Nomus
-          </summary>
-          <div className="space-y-3 border-t border-border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                Evidência técnica somente leitura. O conteúdo é exibido como texto e não executa HTML.
-              </p>
-              <button
-                type="button"
-                onClick={onCopy}
-                className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-muted"
-                data-testid="production-order-copy-json"
-              >
-                {copyFeedback === "JSON copiado." ? (
-                  <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-                Copiar JSON
-              </button>
-            </div>
-            <p className="sr-only" aria-live="polite">
-              {copyFeedback}
-            </p>
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-100">
-              {technicalJson}
-            </pre>
-          </div>
-        </details>
-      </OverlaySection>
     </div>
   );
 }
@@ -412,8 +420,8 @@ function LinkStateBadge({ link }: { link: ProductionOrderDetailSalesLink }) {
   return <OverlayBadge tone="emerald">Atual</OverlayBadge>;
 }
 
-function AuditFieldGrid({ children }: { children: React.ReactNode }) {
-  return <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">{children}</dl>;
+function AuditFieldGrid({ children, className }: { children: React.ReactNode; className?: string }) {
+  return <dl className={`grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 ${className ?? ""}`}>{children}</dl>;
 }
 
 function AuditField({

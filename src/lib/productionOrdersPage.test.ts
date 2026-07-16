@@ -205,7 +205,7 @@ function detailResponse(
   };
 }
 
-function renderAuditContent(detail: ProductionOrderDetailResponse): string {
+function renderAuditContent(detail: ProductionOrderDetailResponse, activeTab: "geral" | "auditoria" = "geral"): string {
   const technicalJson = stringifyProductionOrderTechnicalEvidence(detail);
   return renderToStaticMarkup(
     React.createElement(
@@ -216,6 +216,7 @@ function renderAuditContent(detail: ProductionOrderDetailResponse): string {
         technicalJson,
         copyFeedback: null,
         onCopy: () => {},
+        activeTab,
       })
     )
   );
@@ -464,7 +465,7 @@ describe("ProductionOrderGridTableRow", () => {
     assert.match(html, /15\.400 PC/);
     assert.doesNotMatch(html, /15400\.000000/);
     assert.match(html, /Encerrada/);
-    assert.match(html, /KOPPETEL/);
+    assert.doesNotMatch(html, /KOPPETEL/);
     assert.match(html, /PD 02534/);
     assert.match(html, /\/sales-orders\/00000000-0000-4000-8000-000000000301/);
   });
@@ -478,7 +479,6 @@ describe("ProductionOrderGridTableRow", () => {
         companyName: "02 - KOPPETEL",
       })
     );
-    assert.match(html, /02 - KOPPETEL/);
     // formatProductionOrderDateTime — não lê rawJson
     assert.match(html, /23\/06\/2026|23\/06/);
     assert.match(html, /24\/06\/2026|24\/06/);
@@ -489,6 +489,13 @@ describe("ProductionOrderGridTableRow", () => {
     const html = renderRow(gridRow({ quantity: "0.002925", unit: "KG" }));
     assert.match(html, /0,002925 KG/);
     assert.doesNotMatch(html, />0 KG</);
+  });
+
+  it("não exibe empresa na linha e oferece rolagem horizontal superior sincronizada", () => {
+    assert.doesNotMatch(renderRow(gridRow({ companyName: "02 - KOPPETEL" })), /02 - KOPPETEL/);
+    const moduleSource = read("src/components/operations/ProductionOrdersModule.tsx");
+    assert.match(moduleSource, /production-orders-grid-top-scroll/);
+    assert.match(moduleSource, /topGridScrollRef/);
   });
 
   it("badges representativos mantêm contraste suave por situação", () => {
@@ -564,21 +571,19 @@ describe("ProductionOrderGridTableRow", () => {
 });
 
 describe("ProductionOrderAuditContent", () => {
-  it("renderiza as seis seções e campos executivos completos", () => {
+  it("renderiza o detalhe geral no padrão executivo do popup", () => {
     const html = renderAuditContent(detailResponse());
     for (const section of [
-      "Resumo",
+      "Detalhe da Ordem",
+      "Resumo executivo",
       "Produto",
-      "Datas",
+      "Datas operacionais",
       "Pedidos de Venda vinculados",
-      "Auditoria interna",
-      "Dados técnicos do Nomus",
     ]) {
       assert.match(html, new RegExp(section));
     }
     assert.match(html, /OP 05800 - 003/);
     assert.match(html, /15\.400/);
-    assert.match(html, /sha256:op-05800/);
   });
 
   it("OP sem vínculo exibe estado explícito", () => {
@@ -644,7 +649,7 @@ describe("ProductionOrderAuditContent", () => {
     const detail = detailResponse();
     const evidence = buildProductionOrderTechnicalEvidence(detail);
     const text = stringifyProductionOrderTechnicalEvidence(detail);
-    const html = renderAuditContent(detail);
+    const html = renderAuditContent(detail, "auditoria");
     assert.equal(evidence.salesLinks.length, 1);
     assert.match(text, /"productionOrder"/);
     assert.match(text, /"salesLinks"/);
@@ -685,14 +690,18 @@ describe("ProductionOrderAuditContent", () => {
     assert.match(html, /—/);
   });
 
-  it("drawer amplo preserva auditoria completa, fechamento e acessibilidade", () => {
+  it("modal quase fullscreen segue o padrão visual do detalhe de Pedido de Venda", () => {
     const drawer = read(
       "src/components/operations/ProductionOrderQuickDetailOverlay.tsx"
     );
     const overlay = read("src/components/ui/overlay/Overlay.tsx");
-    assert.match(drawer, /size="xl"/);
-    assert.match(drawer, /ml-auto h-full/);
-    assert.match(drawer, /max-h-\[calc\(100vh-2rem\)\]/);
+    assert.match(drawer, /size="full"/);
+    assert.match(drawer, /!max-w-\[1400px\]/);
+    assert.match(drawer, /sm:h-\[92vh\]/);
+    assert.match(drawer, /Detalhe da Ordem —/);
+    assert.match(drawer, /OverlayTabs/);
+    assert.match(drawer, /production-order-detail-tabs/);
+    assert.match(drawer, /OverlayKpiCardGrid/);
     assert.match(drawer, /OverlayTable/);
     assert.match(drawer, /Primeiro registro/);
     assert.match(drawer, /Último registro/);

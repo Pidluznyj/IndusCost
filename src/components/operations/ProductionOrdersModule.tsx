@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Loader2, Search } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -71,6 +71,9 @@ export function ProductionOrdersModule() {
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const topGridScrollRef = useRef<HTMLDivElement>(null);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const [gridScrollWidth, setGridScrollWidth] = useState(1280);
   const dateRangeInvalid = isProductionOrdersDateRangeInvalid(from, to);
 
   useEffect(() => {
@@ -180,6 +183,22 @@ export function ProductionOrdersModule() {
       from ||
       to
   );
+
+  useEffect(() => {
+    const viewport = gridScrollRef.current;
+    if (!viewport) return;
+    const updateWidth = () => setGridScrollWidth(Math.max(viewport.scrollWidth, viewport.clientWidth));
+    updateWidth();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
+    observer?.observe(viewport);
+    const table = viewport.querySelector("table");
+    if (table) observer?.observe(table);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [rows]);
 
   if (!canView) {
     return (
@@ -414,7 +433,28 @@ export function ProductionOrdersModule() {
             Nenhum resultado para os filtros aplicados.
           </div>
           ) : (
-          <div className="max-w-full overflow-x-auto">
+          <>
+          <div
+            ref={topGridScrollRef}
+            className="max-w-full overflow-x-auto overflow-y-hidden"
+            data-testid="production-orders-grid-top-scroll"
+            aria-label="Rolagem horizontal superior da tabela"
+            onScroll={(event) => {
+              const grid = gridScrollRef.current;
+              if (grid && grid.scrollLeft !== event.currentTarget.scrollLeft) grid.scrollLeft = event.currentTarget.scrollLeft;
+            }}
+          >
+            <div className="h-px" style={{ width: gridScrollWidth }} aria-hidden="true" />
+          </div>
+          <div
+            ref={gridScrollRef}
+            className="max-w-full overflow-x-auto"
+            data-testid="production-orders-grid-scroll"
+            onScroll={(event) => {
+              const top = topGridScrollRef.current;
+              if (top && top.scrollLeft !== event.currentTarget.scrollLeft) top.scrollLeft = event.currentTarget.scrollLeft;
+            }}
+          >
             <table className="min-w-[1280px] text-left text-sm">
               <caption className="sr-only">
                 Ordens de Produção sincronizadas do Nomus. Ative uma linha para abrir a auditoria.
@@ -424,7 +464,6 @@ export function ProductionOrdersModule() {
                   {[
                     "Ordem",
                     "Tipo",
-                    "Empresa",
                     "Produto",
                     "Quantidade",
                     "Prioridade",
@@ -453,6 +492,7 @@ export function ProductionOrdersModule() {
               </tbody>
             </table>
           </div>
+          </>
           )}
         </div>
       ) : null}
@@ -574,7 +614,6 @@ export function ProductionOrderGridTableRow({
         <div className="text-xs text-muted-foreground">#{row.externalId}</div>
       </td>
       <td className="px-3 py-2">{row.tipo ?? "—"}</td>
-      <td className="px-3 py-2">{row.companyName ?? "—"}</td>
       <td className="px-3 py-2">
         <div className="font-medium text-foreground">{row.productCode ?? "—"}</div>
         <div
