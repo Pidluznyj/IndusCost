@@ -33,6 +33,11 @@ import {
   finalizeRawJsonKeyMatrix,
 } from "./auditOutputDocumentsRawJson.js";
 import {
+  buildEmptyAccountsReceivableLinksSection,
+  buildEmptyAllocationsSection,
+  buildEmptyFinancialEvidenceSection,
+} from "./auditOutputDocumentsFinancial.js";
+import {
   buildEmptyNfeLinksSection,
   buildEmptySalesOrderLinksSection,
 } from "./auditOutputDocumentsLinks.js";
@@ -55,6 +60,10 @@ const RAWJSON_SERVER_PATH = join(
   "auditOutputDocumentsRawJson.server.ts"
 );
 const LINKS_SERVER_PATH = join(HERE, "auditOutputDocumentsLinks.server.ts");
+const FINANCIAL_SERVER_PATH = join(
+  HERE,
+  "auditOutputDocumentsFinancial.server.ts"
+);
 
 describe("parseAuditOutputDocumentsDbArgs", () => {
   it("aplica valores padrão quando argv está vazio", () => {
@@ -245,7 +254,7 @@ describe("cobertura e percentuais", () => {
 });
 
 describe("estrutura básica do resultado", () => {
-  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys, paymentTermsEvidence, nfeLinks e salesOrderLinks", () => {
+  it("monta contrato com inventory, fieldCoverage, itemCoverage, rawJsonKeys, paymentTermsEvidence, nfeLinks, salesOrderLinks, allocations, accountsReceivableLinks e financialEvidence", () => {
     const startedAt = new Date("2026-07-16T12:00:00.000Z");
     const finishedAt = new Date("2026-07-16T12:00:01.250Z");
     const options = parseAuditOutputDocumentsDbArgs([]);
@@ -298,6 +307,12 @@ describe("estrutura básica do resultado", () => {
     sections.nfeLinks.metrics.documentsWithIdNfe = 2;
     sections.salesOrderLinks = buildEmptySalesOrderLinksSection();
     sections.salesOrderLinks.metrics.documentsWithOneOrder = 1;
+    sections.allocations = buildEmptyAllocationsSection();
+    sections.allocations.metrics.partial = 1;
+    sections.accountsReceivableLinks = buildEmptyAccountsReceivableLinksSection();
+    sections.accountsReceivableLinks.metrics.titlesOpen = 2;
+    sections.financialEvidence = buildEmptyFinancialEvidenceSection();
+    sections.financialEvidence.metrics.doubleCountPrevented = 1;
 
     const result = buildAuditResult({
       startedAt,
@@ -307,11 +322,11 @@ describe("estrutura básica do resultado", () => {
         "postgresql://u:p@localhost:5432/induscost"
       ),
       status: "ok",
-      mode: "link-audit",
+      mode: "financial-audit",
       sections,
     });
 
-    assert.equal(result.meta.mode, "link-audit");
+    assert.equal(result.meta.mode, "financial-audit");
     assert.equal(result.meta.readOnly, true);
     assert.equal(result.meta.durationMs, 1250);
     assert.ok(result.sections.inventory);
@@ -322,6 +337,9 @@ describe("estrutura básica do resultado", () => {
     assert.ok(result.sections.paymentTermsEvidence);
     assert.ok(result.sections.nfeLinks);
     assert.ok(result.sections.salesOrderLinks);
+    assert.ok(result.sections.allocations);
+    assert.ok(result.sections.accountsReceivableLinks);
+    assert.ok(result.sections.financialEvidence);
     assert.equal(result.sections.paymentTermsEvidence!.hypothesisOnly, true);
 
     const markdown = formatAuditOutputDocumentsDbMarkdown(result);
@@ -332,10 +350,13 @@ describe("estrutura básica do resultado", () => {
     assert.match(markdown, /paymentTermsEvidence/);
     assert.match(markdown, /nfeLinks/);
     assert.match(markdown, /salesOrderLinks/);
+    assert.match(markdown, /allocations/);
+    assert.match(markdown, /accountsReceivableLinks/);
+    assert.match(markdown, /financialEvidence/);
     assert.match(markdown, /DocumentoSaida/);
     assert.match(markdown, /idNfe/);
     assert.match(markdown, /productCode/);
-    assert.match(markdown, /link-audit/);
+    assert.match(markdown, /financial-audit/);
     assert.ok(!markdown.includes("12345678000190"));
   });
 });
@@ -399,6 +420,7 @@ describe("garantia read-only", () => {
       INVENTORY_SERVER_PATH,
       RAWJSON_SERVER_PATH,
       LINKS_SERVER_PATH,
+      FINANCIAL_SERVER_PATH,
     ]) {
       const source = readFileSync(path, "utf8");
       for (const pattern of AUDIT_OUTPUT_DOCUMENTS_DB_FORBIDDEN_WRITE_PATTERNS) {
@@ -414,5 +436,6 @@ describe("garantia read-only", () => {
     assert.match(script, /loadStageInventoryAndCoverage/);
     assert.match(script, /loadRawJsonSampleAnalysis/);
     assert.match(script, /loadDocumentLinkAudit/);
+    assert.match(script, /loadDocumentFinancialAudit/);
   });
 });

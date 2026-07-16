@@ -30,6 +30,7 @@ import {
 import { loadStageInventoryAndCoverage } from "../src/lib/output-documents/auditOutputDocumentsDbInventory.server.ts";
 import { loadRawJsonSampleAnalysis } from "../src/lib/output-documents/auditOutputDocumentsRawJson.server.ts";
 import { loadDocumentLinkAudit } from "../src/lib/output-documents/auditOutputDocumentsLinks.server.ts";
+import { loadDocumentFinancialAudit } from "../src/lib/output-documents/auditOutputDocumentsFinancial.server.ts";
 
 const LOG = AUDIT_OUTPUT_DOCUMENTS_DB_LOG_PREFIX;
 
@@ -97,6 +98,11 @@ async function main(): Promise<void> {
       sampleLimit: options.sampleLimit,
     });
 
+    console.warn(`${LOG} auditando alocação financeira e Contas a Receber…`);
+    const financial = await loadDocumentFinancialAudit(prisma, {
+      sampleLimit: options.sampleLimit,
+    });
+
     const sections = buildEmptyAuditSections();
     sections.inventory = loaded.inventory;
     sections.fieldCoverage = loaded.fieldCoverage;
@@ -105,6 +111,9 @@ async function main(): Promise<void> {
     sections.paymentTermsEvidence = rawSample.paymentTermsEvidence;
     sections.nfeLinks = links.nfeLinks;
     sections.salesOrderLinks = links.salesOrderLinks;
+    sections.allocations = financial.allocations;
+    sections.accountsReceivableLinks = financial.accountsReceivableLinks;
+    sections.financialEvidence = financial.financialEvidence;
     sections.counts = {
       documents: loaded.inventory.documents.total,
       documentoSaida: loaded.inventory.documents.documentoSaida,
@@ -124,6 +133,14 @@ async function main(): Promise<void> {
       documentsWithMultipleOrders:
         links.salesOrderLinks.metrics.documentsWithMultipleOrders,
       linkConflicts: links.salesOrderLinks.metrics.conflictsBetweenSources,
+      unallocatedDocuments: financial.allocations.metrics.unallocated,
+      partialAllocations: financial.allocations.metrics.partial,
+      overAllocatedDocuments: financial.allocations.metrics.overAllocated,
+      documentsWithReceivables:
+        financial.accountsReceivableLinks.metrics.documentsWithReceivables,
+      titlesOverdue: financial.accountsReceivableLinks.metrics.titlesOverdue,
+      doubleCountPrevented:
+        financial.financialEvidence.metrics.doubleCountPrevented,
     };
     sections.samples = {
       documentsWithoutItemsExternalIds:
@@ -135,12 +152,19 @@ async function main(): Promise<void> {
       multiDocumentNfeIds: links.nfeLinks.samples.multiDocumentNfeIds,
       multiOrderDocumentExternalIds:
         links.salesOrderLinks.samples.multiOrderDocumentExternalIds,
+      unallocatedDocumentExternalIds:
+        financial.allocations.samples.unallocatedDocumentExternalIds,
+      overAllocatedDocumentExternalIds:
+        financial.allocations.samples.overAllocatedDocumentExternalIds,
+      divergentNfeIds:
+        financial.accountsReceivableLinks.samples.divergentNfeIds,
     };
     sections.notes = [
       "DS-02.3: inventário e cobertura do stage NomusStockDocument / NomusStockDocumentItem.",
       "DS-02.4: matriz amostral de rawJson + evidências hipotéticas de pagamento/parcelas.",
       "DS-02.5: vínculos Documento↔NF-e↔Pedido classificados (persistido/derivado/inferido/conflitante/nao_resolvido).",
-      "Este auditor não cria nem corrige vínculos; O2C/SalesOrderNfeLink/NF/Pedido não são modificados.",
+      "DS-02.6: alocação financeira, Contas a Receber e evidência sem dupla contagem (CR > Documento > Pedido).",
+      "Este auditor não cria nem corrige vínculos; O2C/SalesOrderNfeLink/NF/Pedido/CR não são modificados.",
       "Este auditor é estritamente read-only — não executa create, update, upsert ou delete.",
     ];
 
@@ -151,14 +175,14 @@ async function main(): Promise<void> {
       options,
       database,
       status: "ok",
-      mode: "link-audit",
+      mode: "financial-audit",
       sections,
     });
 
     writeOutputs(result, options.jsonOutput, options.markdownOutput);
     console.log(JSON.stringify(result, null, 2));
     console.warn(
-      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} withIdNfe=${links.nfeLinks.metrics.documentsWithIdNfe} durationMs=${result.meta.durationMs}`
+      `${LOG} concluído status=${result.status} mode=${result.meta.mode} docs=${loaded.inventory.documents.total} withIdNfe=${links.nfeLinks.metrics.documentsWithIdNfe} unallocated=${financial.allocations.metrics.unallocated} durationMs=${result.meta.durationMs}`
     );
   } catch (error) {
     const finishedAt = new Date();
@@ -171,7 +195,7 @@ async function main(): Promise<void> {
         database,
         status: "unavailable",
         error: message,
-        mode: "link-audit",
+        mode: "financial-audit",
       });
       try {
         writeOutputs(result, options.jsonOutput, options.markdownOutput);
@@ -195,7 +219,7 @@ async function main(): Promise<void> {
       database,
       status: "error",
       error: message,
-      mode: "link-audit",
+      mode: "financial-audit",
     });
     try {
       writeOutputs(result, options.jsonOutput, options.markdownOutput);

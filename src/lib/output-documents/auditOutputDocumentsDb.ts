@@ -42,7 +42,8 @@ export type AuditOutputDocumentsDbMode =
   | "scaffold"
   | "stage-inventory"
   | "rawjson-sample"
-  | "link-audit";
+  | "link-audit"
+  | "financial-audit";
 
 export type FieldCoverageStat = {
   field: string;
@@ -113,6 +114,9 @@ export type AuditOutputDocumentsDbSections = {
   paymentTermsEvidence: import("./auditOutputDocumentsRawJson.js").PaymentTermsEvidence | null;
   nfeLinks: import("./auditOutputDocumentsLinks.js").NfeLinksSection | null;
   salesOrderLinks: import("./auditOutputDocumentsLinks.js").SalesOrderLinksSection | null;
+  allocations: import("./auditOutputDocumentsFinancial.js").AllocationsSection | null;
+  accountsReceivableLinks: import("./auditOutputDocumentsFinancial.js").AccountsReceivableLinksSection | null;
+  financialEvidence: import("./auditOutputDocumentsFinancial.js").FinancialEvidenceSection | null;
   counts: Record<string, unknown>;
   documentFocus: unknown;
   orderFocus: unknown;
@@ -395,6 +399,9 @@ export function buildEmptyAuditSections(): AuditOutputDocumentsDbSections {
     paymentTermsEvidence: null,
     nfeLinks: null,
     salesOrderLinks: null,
+    allocations: null,
+    accountsReceivableLinks: null,
+    financialEvidence: null,
     counts: {},
     documentFocus: null,
     orderFocus: null,
@@ -701,6 +708,98 @@ function formatSalesOrderLinksMarkdown(
   return lines;
 }
 
+function formatAllocationsMarkdown(
+  section: import("./auditOutputDocumentsFinancial.js").AllocationsSection | null
+): string[] {
+  const lines: string[] = ["## allocations", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  const m = section.metrics;
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| documentsTotal | ${m.documentsTotal} |`,
+    `| documentsWithItemValue | ${m.documentsWithItemValue} |`,
+    `| documentsWithoutItemValue | ${m.documentsWithoutItemValue} |`,
+    `| unallocated | ${m.unallocated} |`,
+    `| partial | ${m.partial} |`,
+    `| complete | ${m.complete} |`,
+    `| overAllocated | ${m.overAllocated} |`,
+    `| roundingTolerance | ${m.roundingTolerance} |`,
+    `| totalDocumentValueCents | ${m.totalDocumentValueCents} |`,
+    `| totalAllocatedToOrdersCents | ${m.totalAllocatedToOrdersCents} |`,
+    `| totalDifferenceCents | ${m.totalDifferenceCents} |`,
+    "",
+    `Cobertura: ${formatClassificationCountsMarkdown(m.coverageCounts)}`,
+    ""
+  );
+  for (const note of section.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
+function formatAccountsReceivableLinksMarkdown(
+  section: import("./auditOutputDocumentsFinancial.js").AccountsReceivableLinksSection | null
+): string[] {
+  const lines: string[] = ["## accountsReceivableLinks", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  const m = section.metrics;
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| documentsWithIdNfe | ${m.documentsWithIdNfe} |`,
+    `| documentsWithReceivables | ${m.documentsWithReceivables} |`,
+    `| documentsWithoutReceivables | ${m.documentsWithoutReceivables} |`,
+    `| titlesOpen | ${m.titlesOpen} |`,
+    `| titlesPartial | ${m.titlesPartial} |`,
+    `| titlesReceived | ${m.titlesReceived} |`,
+    `| titlesOverdue | ${m.titlesOverdue} |`,
+    `| titlesWithoutDueDate | ${m.titlesWithoutDueDate} |`,
+    `| nfeWithMultipleTitles | ${m.nfeWithMultipleTitles} |`,
+    `| nfeReceivableSumDivergent | ${m.nfeReceivableSumDivergent} |`,
+    `| nfeReceivableSumRounding | ${m.nfeReceivableSumRounding} |`,
+    "",
+    `Quitação: ${formatClassificationCountsMarkdown(m.settlementCounts)}`,
+    ""
+  );
+  for (const note of section.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
+function formatFinancialEvidenceMarkdown(
+  section: import("./auditOutputDocumentsFinancial.js").FinancialEvidenceSection | null
+): string[] {
+  const lines: string[] = ["## financialEvidence", ""];
+  if (!section) {
+    lines.push("_Não disponível nesta execução._", "");
+    return lines;
+  }
+  const m = section.metrics;
+  lines.push(
+    "| Métrica | Valor |",
+    "|---|---:|",
+    `| documentsEvaluated | ${m.documentsEvaluated} |`,
+    `| evidenceByReceivable | ${m.evidenceByReceivable} |`,
+    `| evidenceByDocument | ${m.evidenceByDocument} |`,
+    `| evidenceByOrderPlan | ${m.evidenceByOrderPlan} |`,
+    `| evidenceMixed | ${m.evidenceMixed} |`,
+    `| evidenceNone | ${m.evidenceNone} |`,
+    `| doubleCountPrevented | ${m.doubleCountPrevented} |`,
+    "",
+    `Fontes: ${formatClassificationCountsMarkdown(m.sourceCounts)}`,
+    ""
+  );
+  for (const note of section.notes) lines.push(`- ${note}`);
+  lines.push("");
+  return lines;
+}
+
 export function formatAuditOutputDocumentsDbMarkdown(
   result: AuditOutputDocumentsDbResult
 ): string {
@@ -752,6 +851,15 @@ export function formatAuditOutputDocumentsDbMarkdown(
   );
   lines.push(...formatNfeLinksMarkdown(result.sections.nfeLinks));
   lines.push(...formatSalesOrderLinksMarkdown(result.sections.salesOrderLinks));
+  lines.push(...formatAllocationsMarkdown(result.sections.allocations));
+  lines.push(
+    ...formatAccountsReceivableLinksMarkdown(
+      result.sections.accountsReceivableLinks
+    )
+  );
+  lines.push(
+    ...formatFinancialEvidenceMarkdown(result.sections.financialEvidence)
+  );
 
   if (result.sections.notes.length > 0) {
     lines.push("## Notas", "");
