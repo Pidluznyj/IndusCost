@@ -27,6 +27,11 @@ import type {
   UserPermissionOverrideGrant,
 } from "@/src/lib/security/permissionTypes.js";
 import {
+  PermissionOverrideValidationError,
+  validateAndNormalizeOverrideInputs,
+} from "@/src/lib/security/permissionOverrideValidate.js";
+import type { OverridePersistMode } from "@/src/lib/security/permissionOverrideState.js";
+import {
   buildOverrideSaveAuditPlans,
   buildPresetApplyAuditPlans,
   overridesUnchanged,
@@ -67,6 +72,10 @@ export type OverrideInput = {
   canView?: boolean | null;
   canExecute?: boolean | null;
   canManage?: boolean | null;
+  /** Alternativa tipada (P05); se presente, tem precedência sobre can*. */
+  view?: "INHERIT" | "ALLOW" | "DENY";
+  execute?: "INHERIT" | "ALLOW" | "DENY";
+  manage?: "INHERIT" | "ALLOW" | "DENY";
   reason?: string | null;
 };
 
@@ -118,24 +127,21 @@ export function buildEditablePermissionTree(
 export function normalizeOverrideInputs(
   inputs: readonly OverrideInput[]
 ): UserPermissionOverrideGrant[] {
-  const known = new Set(PERMISSION_RESOURCE_SEEDS.map((s) => s.key));
-  const out: UserPermissionOverrideGrant[] = [];
-  for (const input of inputs) {
-    if (!known.has(input.resourceKey)) continue;
-    const canView = input.canView ?? null;
-    const canExecute = input.canExecute ?? null;
-    const canManage = input.canManage ?? null;
-    if (canView === null && canExecute === null && canManage === null) continue;
-    out.push({
+  try {
+    return validateAndNormalizeOverrideInputs(inputs).map((o) => ({
       userId: "",
-      resourceKey: input.resourceKey,
-      canView,
-      canExecute,
-      canManage,
-      reason: input.reason ?? null,
-    });
+      resourceKey: o.resourceKey,
+      canView: o.canView,
+      canExecute: o.canExecute,
+      canManage: o.canManage,
+      reason: o.reason ?? null,
+    }));
+  } catch (error) {
+    if (error instanceof PermissionOverrideValidationError) {
+      throw new UserPermissionAdminError(error.code, error.message, error.details);
+    }
+    throw error;
   }
-  return out;
 }
 
 export function assertCanChangeSuperAdminRole(args: {
@@ -430,6 +436,13 @@ export async function saveUserPermissionOverrides(
     overrides: readonly OverrideInput[];
     isEditingSelf: boolean;
     reason?: string | null;
+    /** differential (default) | absolute — ver permissionOverrideState. */
+    mode?: OverridePersistMode;
+    /**
+     * Concorrência otimista: se informado e ≠ count atual, falha com CONFLICT.
+     * Rollback: não grava; cliente recarrega.
+     */
+    ifMatchOverrideCount?: number;
   }
 ) {
   const user = await prisma.appUser.findUnique({ where: { id: args.userId } });
@@ -441,11 +454,47 @@ export async function saveUserPermissionOverrides(
     );
   }
 
-  const normalized = normalizeOverrideInputs(args.overrides).map((o) => ({
+  const beforeOverrides = await loadOverrides(prisma, args.userId);
+
+  if (
+    typeof args.ifMatchOverrideCount === "number" &&
+    args.ifMatchOverrideCount !== beforeOverrides.length
+  ) {
+    throw new UserPermissionAdminError(
+      "CONFLICT",
+      "Overrides foram alterados por outra sessão. Recarregue e tente novamente.",
+      {
+        expected: args.ifMatchOverrideCount,
+        actual: beforeOverrides.length,
+      }
+    );
+  }
+
+  let normalized = normalizeOverrideInputs(args.overrides).map((o) => ({
     ...o,
     userId: args.userId,
   }));
-  const beforeOverrides = await loadOverrides(prisma, args.userId);
+
+  // Modo absoluto a partir de um draft parcial: completa DENY nos baselines allow não enviados.
+  if (args.mode === "absolute") {
+    const byKey = new Map(normalized.map((o) => [o.resourceKey, o]));
+    const preset = getOfficialRolePreset(user.role);
+    for (const row of preset.resources) {
+      const existing = byKey.get(row.resourceKey);
+      if (existing) continue;
+      const flags = row.flags;
+      if (!flags.canView && !flags.canExecute && !flags.canManage) continue;
+      byKey.set(row.resourceKey, {
+        userId: args.userId,
+        resourceKey: row.resourceKey,
+        canView: flags.canView ? false : null,
+        canExecute: flags.canExecute ? false : null,
+        canManage: flags.canManage ? false : null,
+        reason: "absolute-restriction",
+      });
+    }
+    normalized = [...byKey.values()];
+  }
 
   // Sem mudança real → não grava DB nem auditoria (evita ruído).
   if (overridesUnchanged(beforeOverrides, normalized)) {

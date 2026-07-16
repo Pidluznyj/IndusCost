@@ -76,7 +76,8 @@ function handleError(res: express.Response, error: unknown, label: string) {
             error.code === "CANNOT_REMOVE_OWN_USERS_MANAGE" ||
             error.code === "SUPER_ADMIN_READONLY" ||
             error.code === "PERMISSION_SCHEMA_MISSING" ||
-            error.code === "PERMISSION_CATALOG_MISSING"
+            error.code === "PERMISSION_CATALOG_MISSING" ||
+            error.code === "CONFLICT"
           ? 409
           : 400;
     return res.status(status).json({
@@ -170,12 +171,23 @@ export function registerUserPermissionAdminRoutes(
           : [];
         const reason =
           typeof req.body?.reason === "string" ? req.body.reason : undefined;
+        const modeRaw = req.body?.mode;
+        const mode =
+          modeRaw === "absolute" || modeRaw === "differential"
+            ? modeRaw
+            : undefined;
+        const ifMatchOverrideCount =
+          typeof req.body?.ifMatchOverrideCount === "number"
+            ? req.body.ifMatchOverrideCount
+            : undefined;
         const payload = await saveUserPermissionOverrides(prisma, {
           userId: id,
           actorUserId: actorId(req),
           overrides,
           isEditingSelf: isEditingSelf(req, id),
           reason,
+          mode,
+          ifMatchOverrideCount,
         });
         return res.json(payload);
       } catch (error) {

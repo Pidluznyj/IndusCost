@@ -138,12 +138,25 @@ export async function saveUserPermissionOverrides(
     canView?: boolean | null;
     canExecute?: boolean | null;
     canManage?: boolean | null;
-  }>
+    view?: "INHERIT" | "ALLOW" | "DENY";
+    execute?: "INHERIT" | "ALLOW" | "DENY";
+    manage?: "INHERIT" | "ALLOW" | "DENY";
+  }>,
+  options?: {
+    mode?: "differential" | "absolute";
+    ifMatchOverrideCount?: number;
+    reason?: string;
+  }
 ): Promise<UserPermissionsPayload> {
   return fetchJsonOk<UserPermissionsPayload>(`/api/admin/users/${userId}/permission-overrides`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ overrides }),
+    body: JSON.stringify({
+      overrides,
+      mode: options?.mode,
+      ifMatchOverrideCount: options?.ifMatchOverrideCount,
+      reason: options?.reason,
+    }),
   });
 }
 

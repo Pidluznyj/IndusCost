@@ -146,8 +146,10 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Deps:** P01.
 - **Risco:** médio (muitos overrides).
 - **Aceite:** VIEWER + deny comercial → dual-write sem `crm.view`.
-- **Rollback:** feature flag modo restrição.
-- **Migration:** não.
+- **Rollback:** limpar overrides / restore-role-default; modo `absolute` só sob demanda.
+- **Migration:** não (Boolean? já modela INHERIT/ALLOW/DENY).
+- **Status:** implementado (2026-07-16).
+- **Docs:** `permissions-override-persist.md`
 
 ### P06 — Correção dual-write
 

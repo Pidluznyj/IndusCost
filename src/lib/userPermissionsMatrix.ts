@@ -279,10 +279,11 @@ export function hasCriticalPermissionChanges(
 
 export function buildSaveOverridesFromMatrix(
   matrixDraft: PermissionMatrixDraft,
-  roleDefaults: UserPermissionsPayload["roleDefaults"]
+  roleDefaults: UserPermissionsPayload["roleDefaults"],
+  mode: "differential" | "absolute" = "differential"
 ) {
   const flagDraft = draftOverrideMapFromMatrixDraft(matrixDraft);
-  return overridesPayloadFromDraft(flagDraft, roleDefaults);
+  return overridesPayloadFromDraft(flagDraft, roleDefaults, mode);
 }
 
 export function wouldMatrixRemoveOwnUsersManage(args: {

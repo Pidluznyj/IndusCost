@@ -9,6 +9,8 @@ import type {
   MatrixCellStatus,
   PermissionFlagsDto,
 } from "@/src/lib/userPermissionsAdminClient";
+import { buildPersistableOverridesFromDraft } from "@/src/lib/security/permissionOverrideValidate";
+import type { OverridePersistMode } from "@/src/lib/security/permissionOverrideState";
 
 export type AdminUsersListFilters = {
   search: string;
@@ -57,33 +59,22 @@ export function draftFromPayloadTree(tree: EditableTreeNodeDto[]): DraftOverride
 
 export function overridesPayloadFromDraft(
   draft: DraftOverrideMap,
-  roleDefaults: Array<{ resourceKey: string; flags: PermissionFlagsDto }>
+  roleDefaults: Array<{ resourceKey: string; flags: PermissionFlagsDto }>,
+  mode: OverridePersistMode = "differential"
 ): Array<{
   resourceKey: string;
   canView: boolean | null;
   canExecute: boolean | null;
   canManage: boolean | null;
 }> {
-  const defaults = new Map(roleDefaults.map((r) => [r.resourceKey, r.flags]));
-  const out: Array<{
-    resourceKey: string;
-    canView: boolean | null;
-    canExecute: boolean | null;
-    canManage: boolean | null;
-  }> = [];
-  for (const [resourceKey, flags] of Object.entries(draft)) {
-    const base = defaults.get(resourceKey) ?? {
-      canView: false,
-      canExecute: false,
-      canManage: false,
-    };
-    const canView = flags.canView === base.canView ? null : flags.canView;
-    const canExecute = flags.canExecute === base.canExecute ? null : flags.canExecute;
-    const canManage = flags.canManage === base.canManage ? null : flags.canManage;
-    if (canView === null && canExecute === null && canManage === null) continue;
-    out.push({ resourceKey, canView, canExecute, canManage });
-  }
-  return out;
+  return buildPersistableOverridesFromDraft({
+    draft,
+    roleDefaults: roleDefaults.map((r) => ({
+      resourceKey: r.resourceKey,
+      flags: r.flags,
+    })),
+    mode,
+  });
 }
 
 export function isPermissionDraftDirty(
