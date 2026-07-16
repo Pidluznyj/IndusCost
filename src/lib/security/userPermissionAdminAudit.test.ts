@@ -36,6 +36,7 @@ function makePrismaMock(args: {
     isActive: true,
     lastLoginAt: null as Date | null,
     permissions: args.permissions ?? [],
+    permissionsVersion: 0,
   };
 
   const prisma = {
@@ -46,10 +47,27 @@ function makePrismaMock(args: {
       async count() {
         return user.role === "SUPER_ADMIN" ? 1 : 0;
       },
-      async update(_args: { data: { role?: AppUserRole; permissions?: string[] } }) {
+      async update(_args: {
+        data: {
+          role?: AppUserRole;
+          permissions?: string[];
+          permissionsVersion?: { increment: number };
+        };
+      }) {
         if (_args.data.role) user.role = _args.data.role;
         if (_args.data.permissions) user.permissions = _args.data.permissions;
-        return user;
+        if (_args.data.permissionsVersion?.increment) {
+          user.permissionsVersion += _args.data.permissionsVersion.increment;
+        }
+        return { ...user, permissionsVersion: user.permissionsVersion };
+      },
+    },
+    appSession: {
+      async updateMany() {
+        return { count: 0 };
+      },
+      async update() {
+        return {};
       },
     },
     permissionResource: {
@@ -245,6 +263,14 @@ describe("userPermissionAdminService — auditoria", () => {
             },
           },
           appUser: {
+            async update() {
+              return { permissionsVersion: 0 };
+            },
+          },
+          appSession: {
+            async updateMany() {
+              return { count: 0 };
+            },
             async update() {
               return {};
             },

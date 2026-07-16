@@ -337,6 +337,7 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 - **Risco:** baixo.
 - **Aceite:** CI verde; zero DIAG “bleed esperado”.
 - **Rollback:** N/A.
+- **Status (2026-07-16):** implementado — `permissionHardening.test.ts`, Leticia na matriz, `test:permission-hardening`, checklist deploy/homolog, gates strict + compare + backfill preview.
 
 ### P24 — Release candidate
 

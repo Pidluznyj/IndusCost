@@ -150,6 +150,11 @@ c51d3c86ada1,VIEWER,,persona:financeiro_operacional,finance.sales_orders,view,me
 1db85bf88376,VIEWER,,persona:RH,commercial.sales_orders,view,new_legitimate_access,false,true,ROLE,0,0
 d63c9b96d240,VIEWER,,persona:viewer,commercial,view,new_legitimate_access,false,true,ROLE,0,0
 d63c9b96d240,VIEWER,,persona:viewer,commercial.sales_orders,view,new_legitimate_access,false,true,ROLE,0,0
+459f92694ec1,VIEWER,,persona:leticia_ap_only,commercial,view,new_legitimate_access,false,true,ROLE,0,0
+459f92694ec1,VIEWER,,persona:leticia_ap_only,commercial.sales_orders,view,new_legitimate_access,false,true,ROLE,0,0
+459f92694ec1,VIEWER,,persona:leticia_ap_only,finance,view,mega_key_bleed,true,false,DENY_DEFAULT,1,0
+459f92694ec1,VIEWER,,persona:leticia_ap_only,finance.cash_flow,view,mega_key_bleed,true,false,DENY_DEFAULT,1,0
+459f92694ec1,VIEWER,,persona:leticia_ap_only,finance.portfolio_reconciliation,view,mega_key_bleed,true,false,DENY_DEFAULT,1,0
 d678f791cff8,VIEWER,,persona:usuario_com_deny,commercial,view,new_legitimate_access,true,true,ROLE,1,0
 d678f791cff8,VIEWER,,persona:usuario_com_deny,commercial.sales_orders,view,new_legitimate_access,true,true,LEGACY_PROJECTED,1,0
 d678f791cff8,VIEWER,,persona:usuario_com_deny,commercial.sales_orders,export,mega_key_bleed,true,false,DENY_DEFAULT,1,0

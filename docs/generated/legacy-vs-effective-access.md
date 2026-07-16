@@ -1,11 +1,11 @@
 # Comparação legado × novo (requireResource)
 
-| Gerado | 2026-07-16T16:57:37.214Z |
+| Gerado | 2026-07-16T18:05:27.461Z |
 | Dry-run | true |
-| Subjects | 16 |
+| Subjects | 17 |
 | Probes (recurso×ação migrados) | 144 |
 | Lockout risk | 2 |
-| Mega-key bleed removido | 75 |
+| Mega-key bleed removido | 78 |
 | Sem mapeamento | 0 |
 | Conflito | 0 |
 
@@ -13,13 +13,13 @@
 
 | Categoria | Count |
 |-----------|-------|
-| both_denied | 1836 |
+| both_denied | 1974 |
 | conflict | 0 |
 | lockout_risk | 2 |
-| mega_key_bleed | 75 |
-| new_legitimate_access | 93 |
+| mega_key_bleed | 78 |
+| new_legitimate_access | 95 |
 | permissive_fallback | 0 |
-| preserved_intentional | 298 |
+| preserved_intentional | 299 |
 | removed_by_deny | 0 |
 | unmapped_resource | 0 |
 

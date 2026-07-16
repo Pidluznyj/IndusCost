@@ -1,6 +1,6 @@
 {
   "dryRun": true,
-  "generatedAt": "2026-07-16T16:57:37.214Z",
+  "generatedAt": "2026-07-16T18:05:27.461Z",
   "migratedModuleScope": [
     "finance (P17+P18 AP)",
     "commercial (P19)",
@@ -11,40 +11,40 @@
     "admin.settings.security (P14)"
   ],
   "probeCount": 144,
-  "subjectCount": 16,
+  "subjectCount": 17,
   "categoryCounts": {
-    "preserved_intentional": 298,
-    "new_legitimate_access": 93,
+    "preserved_intentional": 299,
+    "new_legitimate_access": 95,
     "removed_by_deny": 0,
-    "mega_key_bleed": 75,
+    "mega_key_bleed": 78,
     "permissive_fallback": 0,
     "unmapped_resource": 0,
     "conflict": 0,
     "lockout_risk": 2,
-    "both_denied": 1836
+    "both_denied": 1974
   },
   "lockoutRiskCount": 2,
-  "megaKeyBleedCount": 75,
+  "megaKeyBleedCount": 78,
   "unmappedResourceCount": 0,
   "conflictCount": 0,
   "note": "Read-only. Bleed/mega-key histórico nunca classificado como preservado intencional. Sem escrita em AppUser/overrides.",
   "byProfile": [
     {
       "accessProfileRef": "none",
-      "subjectCount": 16,
+      "subjectCount": 17,
       "categoryCounts": {
-        "preserved_intentional": 298,
-        "new_legitimate_access": 93,
+        "preserved_intentional": 299,
+        "new_legitimate_access": 95,
         "removed_by_deny": 0,
-        "mega_key_bleed": 75,
+        "mega_key_bleed": 78,
         "permissive_fallback": 0,
         "unmapped_resource": 0,
         "conflict": 0,
         "lockout_risk": 2,
-        "both_denied": 1836
+        "both_denied": 1974
       },
       "lockoutRiskCount": 2,
-      "megaKeyBleedCount": 75
+      "megaKeyBleedCount": 78
     }
   ],
   "users": [
@@ -1939,6 +1939,81 @@
           "newAllow": true,
           "newSource": "ROLE",
           "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        }
+      ]
+    },
+    {
+      "subjectRef": "459f92694ec1",
+      "role": "VIEWER",
+      "accessProfileRef": null,
+      "scenarioTag": "persona:leticia_ap_only",
+      "legacyCompatMode": true,
+      "legacyPermissionCount": 1,
+      "overrideResourceCount": 0,
+      "probeCount": 144,
+      "categoryCounts": {
+        "preserved_intentional": 1,
+        "new_legitimate_access": 2,
+        "removed_by_deny": 0,
+        "mega_key_bleed": 3,
+        "permissive_fallback": 0,
+        "unmapped_resource": 0,
+        "conflict": 0,
+        "lockout_risk": 0,
+        "both_denied": 138
+      },
+      "lockoutRiskCount": 0,
+      "megaKeyBleedCount": 3,
+      "diffs": [
+        {
+          "resourceKey": "commercial",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "commercial.sales_orders",
+          "action": "view",
+          "category": "new_legitimate_access",
+          "legacyAllow": false,
+          "newAllow": true,
+          "newSource": "ROLE",
+          "legacyBleedKeyCount": 0,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.cash_flow",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
+          "legacyDedicatedKeyCount": 0
+        },
+        {
+          "resourceKey": "finance.portfolio_reconciliation",
+          "action": "view",
+          "category": "mega_key_bleed",
+          "legacyAllow": true,
+          "newAllow": false,
+          "newSource": "DENY_DEFAULT",
+          "legacyBleedKeyCount": 1,
           "legacyDedicatedKeyCount": 0
         }
       ]

@@ -5,8 +5,6 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AuthUser } from "@/src/lib/appAuthClient.js";
-import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import { canAccessModule } from "@/src/lib/modulePermissions.js";
 import { ResourceKeys } from "@/src/lib/permissionsClient.js";
 import {
@@ -14,53 +12,11 @@ import {
   canViewModule,
   canViewResource,
   evaluatePathViewAccess,
-  type NavigationAccessContext,
 } from "@/src/lib/resourceNavigationAccess.js";
 import {
+  buildPersonaContext,
   PERMISSION_PERSONA_MATRIX,
-  type PersonaSpec,
 } from "@/src/lib/security/permissionPersonaMatrix.js";
-
-function checker(perms: string[]): PermissionChecker {
-  const set = new Set(perms);
-  return {
-    hasPermission: (p) => set.has(p),
-    hasAnyPermission: (list) => list.some((p) => set.has(p)),
-    authUser: { effectivePermissions: perms },
-  };
-}
-
-function user(role: AuthUser["role"], permissions: string[]): AuthUser {
-  return {
-    id: `persona-${role}`,
-    name: "Persona",
-    email: "persona@example.com",
-    role,
-    permissions,
-    effectivePermissions: permissions,
-    accessProfileId: null,
-    accessProfileName: null,
-    employeeId: null,
-    employeeName: null,
-    employeeDepartment: null,
-    isActive: true,
-    externalSellerId: null,
-    externalSellerIds: [],
-    sellerResponsibleName: null,
-    lastLoginAt: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function ctx(role: AuthUser["role"], permissions: string[]): NavigationAccessContext {
-  const u = user(role, permissions);
-  return { user: u, checker: checker(permissions) };
-}
-
-export function buildPersonaContext(spec: PersonaSpec): NavigationAccessContext {
-  return ctx(spec.role, spec.permissions);
-}
 
 describe("permissionPersonaMatrix — navegação por persona", () => {
   for (const persona of PERMISSION_PERSONA_MATRIX) {
@@ -104,7 +60,9 @@ describe("permissionPersonaMatrix — navegação por persona", () => {
   });
 
   it("parent negado: bag sem finance.view não abre /finance", () => {
-    const c = ctx("VIEWER", ["dashboard.view", "sales_orders.view"]);
+    const c = buildPersonaContext(
+      PERMISSION_PERSONA_MATRIX.find((p) => p.id === "usuario_com_deny")!
+    );
     assert.equal(canViewModule("finance", c), false);
     assert.equal(canAccessPath("/finance", c), false);
   });

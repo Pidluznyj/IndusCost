@@ -287,25 +287,25 @@ describe("MI route smoke — server.ts inline registration", () => {
 
   it("home / monitored", () => {
     assertRouteBlock("/api/materials/market-intelligence/monitored", [
-      /require(Permission|ResourcePermission)\([^)]*(materials\.view|SUPRIMENTOS_MI_TAB_HOME)/,
+      /requireResource\("engineering\.materials\.market_intelligence\.home", "view"\)/,
     ]);
   });
 
   it("detail / 360", () => {
     assertRouteBlock("/api/materials/market-intelligence/:materialId", [
-      /requirePermission\("materials\.view"\)/,
+      /requireResource\("engineering\.materials", "view"\)/,
     ]);
   });
 
   it("quotes GET", () => {
     assertRouteBlock("/api/materials/market-intelligence/:materialId/quotes", [
-      /requirePermission\("materials\.view"\)/,
+      /requireResource\("engineering\.materials", "view"\)/,
     ]);
   });
 
   it("alerts list", () => {
     assertRouteBlock("/api/materials/market-intelligence/alerts", [
-      /require(Permission|ResourcePermission)\([^)]*(materials\.view|SUPRIMENTOS_MI_TAB_ALERTAS)/,
+      /requireResource\("engineering\.materials\.market_intelligence", "view"\)/,
     ]);
   });
 
@@ -322,7 +322,7 @@ describe("MI route smoke — server.ts inline registration", () => {
     const block = src.slice(Math.max(0, second - 80), second + 420);
     assert.match(block, /app\.post\s*\(/);
     assert.match(block, /requireAppAuth/);
-    assert.match(block, /requirePermission\("materials\.edit"\)/);
+    assert.match(block, /requireResource\("engineering\.materials", "update"\)/);
   });
 
   it("alert-config canonical (server.ts only)", () => {

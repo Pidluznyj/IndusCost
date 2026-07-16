@@ -41,9 +41,25 @@ Seed deve ser **idempotente** (reaplicar sem duplicar resources).
 npm run permissions:seed:contract:dry
 npm run permissions:dual-write:report
 npm run permissions:compare:legacy-vs-resource
+npm run permissions:compare:legacy-vs-effective
+npm run permissions:backfill:preview
 npm run audit:permission-contract:strict
+npm run check:permission-consistency:strict
 npm run permissions:qa
+npm run test:permission-hardening
 ```
+
+Ver também: `docs/security/permissions-deploy-homolog-checklist.md` (checklist completo P23/P24).
+
+## Migration P21 (permissionsVersion)
+
+```bash
+# Após backup — homolog primeiro:
+npx prisma migrate deploy   # inclui 20260729120000_app_user_permissions_version
+npx prisma validate
+```
+
+Ver: `docs/security/permissions-version-runbook.md`
 
 ## Smoke tests (pós-restart)
 

@@ -30,7 +30,12 @@ export type ModuleCompareRow = {
   resourceKey: string | null;
   legacy: boolean;
   effective: boolean;
-  status: "match" | "expected_role_overlay" | "involuntary_revocation" | "both_denied";
+  status:
+    | "match"
+    | "expected_role_overlay"
+    | "involuntary_revocation"
+    | "intentional_bleed_removal"
+    | "both_denied";
 };
 
 function checker(perms: string[]): PermissionChecker {
@@ -62,12 +67,12 @@ function user(role: AuthUser["role"], permissions: string[]): AuthUser {
 }
 
 function classify(
-  role: AuthUser["role"],
+  spec: PersonaSpec,
+  moduleId: AppModuleId,
   legacy: boolean,
   effective: boolean
 ): ModuleCompareRow["status"] {
-  if (role === "SUPER_ADMIN") {
-    // canAccessModule ignora role; canViewModule bypassa — não é revogação.
+  if (spec.role === "SUPER_ADMIN") {
     return legacy === effective
       ? legacy
         ? "match"
@@ -80,7 +85,13 @@ function classify(
   if (!legacy && effective) {
     return "expected_role_overlay";
   }
-  // legacy true, effective false
+  // legacy true, effective false — bleed removido pelo DTO (P10+) é intencional.
+  if (
+    spec.expectDenyModules.includes(moduleId) ||
+    !spec.expectViewModules.includes(moduleId)
+  ) {
+    return "intentional_bleed_removal";
+  }
   return "involuntary_revocation";
 }
 
@@ -101,7 +112,7 @@ export function comparePersonaModules(spec: PersonaSpec): ModuleCompareRow[] {
       resourceKey,
       legacy,
       effective,
-      status: classify(spec.role, legacy, effective),
+      status: classify(spec, moduleId, legacy, effective),
     });
   }
   return rows;

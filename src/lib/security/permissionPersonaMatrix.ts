@@ -4,7 +4,9 @@
 
 import type { AuthUser } from "@/src/lib/appAuthClient.js";
 import type { AppModuleId } from "@/src/lib/modulePermissions.js";
+import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import { SIDEBAR_MODULE_ORDER } from "@/src/lib/modulePermissions.js";
+import type { NavigationAccessContext } from "@/src/lib/resourceNavigationAccess.js";
 
 export type PersonaId =
   | "SUPER_ADMIN"
@@ -16,6 +18,7 @@ export type PersonaId =
   | "engenharia"
   | "RH"
   | "viewer"
+  | "leticia_ap_only"
   | "usuario_com_deny"
   | "legado_sem_grants_estruturados";
 
@@ -164,6 +167,30 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     notes: "P07: bag vazia ⇒ nenhum módulo (sem ROLE_MATRIX.VIEWER).",
   },
   {
+    id: "leticia_ap_only",
+    label: "Leticia — somente Contas a Pagar",
+    role: "VIEWER",
+    permissions: ["finance.accountsPayable.view"],
+    expectViewModules: ["finance"],
+    expectDenyModules: [
+      "employees",
+      "crm-commercial",
+      "products",
+      "sales-orders",
+      "settings",
+      "inventory",
+      "proposals",
+    ],
+    expectDenyPaths: [
+      "/finance/portfolio-reconciliation",
+      "/employees",
+      "/machines",
+      "/crm-commercial",
+      "/settings",
+    ],
+    notes: "P18/P23: alias 1:1 AP; mega-key e finance shell não abrem AR/conciliação.",
+  },
+  {
     id: "usuario_com_deny",
     label: "Usuário com deny (pai)",
     role: "VIEWER",
@@ -189,3 +216,42 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     notes: "P10: projeção primary/1:1 no DTO sidebar (sem canAccessModule).",
   },
 ];
+
+function personaChecker(perms: string[]): PermissionChecker {
+  const set = new Set(perms);
+  return {
+    hasPermission: (p) => set.has(p),
+    hasAnyPermission: (list) => list.some((p) => set.has(p)),
+    authUser: { effectivePermissions: perms },
+  };
+}
+
+function personaUser(role: AuthUser["role"], permissions: string[]): AuthUser {
+  return {
+    id: `persona-${role}`,
+    name: "Persona",
+    email: "persona@example.com",
+    role,
+    permissions,
+    effectivePermissions: permissions,
+    permissionsVersion: 0,
+    accessProfileId: null,
+    accessProfileName: null,
+    employeeId: null,
+    employeeName: null,
+    employeeDepartment: null,
+    isActive: true,
+    externalSellerId: null,
+    externalSellerIds: [],
+    sellerResponsibleName: null,
+    lastLoginAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+/** Contexto de navegação para testes e comparações (P16/P23). */
+export function buildPersonaContext(spec: PersonaSpec): NavigationAccessContext {
+  const u = personaUser(spec.role, spec.permissions);
+  return { user: u, checker: personaChecker(spec.permissions) };
+}
