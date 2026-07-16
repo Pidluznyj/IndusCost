@@ -119,12 +119,13 @@ Cada prompt futuro: analisar → propor → implementar → avaliar → corrigir
 ### P03 — Resolvedor backend único (shadow)
 
 - **Objetivo:** `resolveEffectiveAccess` + comparação com bag/aliases; log divergências.
-- **Escopo:** `effectiveAccessResolver.ts`, wire opcional em `/me` campo `effectiveShadow`.
+- **Escopo:** `src/lib/security/effectiveAccess/*` (sem wire em `/me` ainda).
 - **Deps:** P01.
-- **Risco:** médio (perf).
-- **Aceite:** shadow bate com matriz para fixtures; não muda 403.
-- **Rollback:** flag off.
+- **Risco:** médio (perf quando wired).
+- **Aceite:** fixtures role/perfil/allow/deny/parent/Leticia/alias/mega-key; shadow Leticia `next_stricter` em bleed.
+- **Rollback:** módulo não referenciado pelo runtime.
 - **Migration:** não.
+- **Status:** implementado (2026-07-16) — **sem** substituir login/sidebar/APIs.
 
 ### P04 — DTO de sessão
 

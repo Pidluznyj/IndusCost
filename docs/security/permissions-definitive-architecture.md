@@ -1,8 +1,9 @@
 # Arquitetura definitiva — Usuários e Permissões
 
-**Status:** contrato de solução (sem implementação neste documento).  
-**Base:** diagnóstico `48ef617` — `permissions-runtime-diagnosis.md`, `permissions-test-user-trace.md`, `permissions-definitive-solution-options.md`.  
-**Princípio:** o frontend **nunca** é autoridade de segurança; o backend resolve e valida.
+**Status:** contrato de solução + **P03 `resolveEffectiveAccess` implementado (shadow)**.  
+**Base:** diagnóstico `48ef617`; P01 contrato; P02 validador.  
+**Princípio:** o frontend **nunca** é autoridade de segurança; o backend resolve e valida.  
+**P03:** módulo puro em `src/lib/security/effectiveAccess/` — **ainda não** substitui login, sidebar nem APIs.
 
 ---
 
@@ -117,7 +118,55 @@
 
 Cada célula efetiva deve expor `source`:
 
-`SUPER_ADMIN | ROLE | PROFILE | OVERRIDE_ALLOW | OVERRIDE_DENY | LEGACY_PROJECTED | DENY_DEFAULT`
+`SUPER_ADMIN | ROLE | PROFILE | STRUCTURED_GRANT | OVERRIDE_ALLOW | OVERRIDE_DENY | LEGACY_PROJECTED | DENY_DEFAULT | ANCESTOR_VIEW_DENY | UNKNOWN_RESOURCE | UNSUPPORTED_ACTION`
+
+---
+
+## 3.5 Assinatura real — `resolveEffectiveAccess` (P03)
+
+**Path:** `src/lib/security/effectiveAccess/resolveEffectiveAccess.ts`  
+**Status:** implementado; consumidores de produção **não** trocados (shadow/testes).
+
+### Entrada (`EffectiveAccessInput`)
+
+| Campo | Semântica |
+|-------|-----------|
+| `userId` | Identidade |
+| `role` | `SUPER_ADMIN` → bypass; demais usam baseline |
+| `permissionsVersion` | Pass-through (invalidação futura) |
+| `profileSnapshot` | Se **definido** (mesmo `{}`), **substitui** o preset da role |
+| `structuredGrants` | OR sobre o baseline (permissões diretas estruturadas) |
+| `overrides` | `allow` \| `deny` por `resourceKey` × ação do contrato |
+| `legacyPermissions` | Bag `AppUser.permissions[]` |
+| `legacyCompatMode` | Default `false` — bag **ignorada**; `true` projeta só aliases **1:1** |
+| `legacySkipMegaKeys` | Default `true` — `costs.view` etc. não projetam |
+
+### Saída (`EffectiveAccessResult`)
+
+| Campo | Conteúdo |
+|-------|----------|
+| `byResourceAction` | allow/deny + `source` por ação canônica |
+| `byResource` | compacto `canView/canExecute/canManage` + sources |
+| `allowed` / `denied` | listas com origem |
+| `blockedByParent` | filhos com allow local bloqueados por ancestral deny(view) |
+| `navigationReveal` | perform view **ou** parent virtual (descendente allow) |
+| `warnings` | mega-key skip, bag ignorada, profile replaces role, … |
+| `permissionsVersion` | eco da entrada |
+| `baselineUsed` | baseline após profile/role + structured + legacyCompat |
+
+### Precedência (implementada)
+
+1. `SUPER_ADMIN` → ALLOW em ações **suportadas** do contrato (unsupported → DENY).
+2. resource/action desconhecido ou não suportado → DENY.
+3. Ancestral com override/baseline **deny** em `view` → DENY (`ANCESTOR_VIEW_DENY`).
+4. Override local `deny` → DENY.
+5. Override local `allow` → ALLOW.
+6. Baseline (`PROFILE` \| `ROLE` + `STRUCTURED_GRANT` + opcional `LEGACY_PROJECTED`) → ALLOW.
+7. Default → DENY.
+
+**VIEWER:** não amplia via bag sem `legacyCompatMode`; preset oficial do seed só se `profileSnapshot` omitido.
+
+**Comparação shadow:** `compareEffectiveAccessWithCurrent` — diferenças Leticia (FE bleed finance/conciliação) reportadas como `next_stricter`, não ocultadas.
 
 ---
 
