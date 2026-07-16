@@ -9,6 +9,7 @@
  *   npx tsx scripts/nomusProductionOrdersSyncV1.ts apply --strategy=backfill
  *   npx tsx scripts/nomusProductionOrdersSyncV1.ts preview --externalId=30347
  *   npx tsx scripts/nomusProductionOrdersSyncV1.ts preview --name="OP 05800 - 003"
+ *   npx tsx scripts/nomusProductionOrdersSyncV1.ts preview --from=2026-01-01 --to=2026-07-16
  *   npx tsx scripts/nomusProductionOrdersSyncV1.ts apply --salesOrderExternalId=2530
  */
 import "dotenv/config";
@@ -20,8 +21,8 @@ import {
   type JsonObject,
 } from "../src/lib/nomusProductionOrdersMapper.ts";
 import {
-  buildProductionOrderPointQueries,
   buildProductionOrdersPageParams,
+  buildProductionOrdersSyncQueries,
   hasNextProductionOrdersPage,
   isProductionOrdersAfterSalesSyncEnabled,
   NOMUS_PRODUCTION_ORDERS_DEFAULT_INCREMENTAL_MAX_PAGES,
@@ -37,6 +38,8 @@ import {
 } from "../src/lib/nomusProductionOrdersSyncLogic.ts";
 import { upsertNomusProductionOrder } from "../src/lib/nomusProductionOrdersRepository.server.ts";
 import { reconcilePendingNomusProductionOrderSalesLinks } from "../src/lib/nomusProductionOrdersSalesLinks.server.ts";
+import { runNomusProductionOrdersPreviewWithPrisma } from "../src/lib/nomusProductionOrdersPreview.server.ts";
+import { PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER } from "../src/lib/nomusProductionOrdersPreview.ts";
 import { readSalesOrdersPageCursor } from "../src/lib/nomusSalesOrdersPaginationCursor.ts";
 import {
   buildNomusUrl,
@@ -179,9 +182,22 @@ export async function runNomusProductionOrdersSync(args: {
   prisma: PrismaClient;
   argv?: string[];
   baseUrl?: string;
-}): Promise<NomusProductionOrdersSyncSummary> {
-  const startedMs = Date.now();
+}): Promise<NomusProductionOrdersSyncSummary | Record<string, unknown>> {
   const options = parseProductionOrdersSyncCli(args.argv ?? process.argv.slice(2));
+
+  // OP-07: preview dedicado — consulta API e planeja efeitos sem gravar.
+  if (!shouldWriteProductionOrders(options.mode)) {
+    const preview = await runNomusProductionOrdersPreviewWithPrisma({
+      prisma: args.prisma,
+      argv: args.argv ?? process.argv.slice(2),
+      baseUrl: args.baseUrl,
+    });
+    console.warn(`${LOG_PREFIX} ${PRODUCTION_ORDERS_PREVIEW_DRY_RUN_BANNER}`);
+    console.log(JSON.stringify({ ok: true, ...preview }, null, 2));
+    return preview;
+  }
+
+  const startedMs = Date.now();
   const baseUrl = args.baseUrl ?? getRequiredEnv("NOMUS_BASE_URL");
   const startPage = resolveStartPage(options);
 
@@ -201,14 +217,11 @@ export async function runNomusProductionOrdersSync(args: {
     token: describeNomusCredential(process.env.NOMUS_TOKEN),
   });
 
-  const queries =
-    options.strategy === "point"
-      ? buildProductionOrderPointQueries(options)
-      : [null as string | null];
+  const queries = buildProductionOrdersSyncQueries(options);
 
   if (options.strategy === "point" && queries.length === 0) {
     throw new Error(
-      "Consulta pontual exige --externalId, --name ou --salesOrderExternalId."
+      "Consulta pontual exige --externalId, --name, --salesOrderExternalId e/ou --from/--to."
     );
   }
 

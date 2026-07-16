@@ -99,6 +99,8 @@ export type FetchNomusJsonOptions = {
   timeoutMs?: number;
   /** Injetável em testes (ex.: sleep mock). */
   sleepFn?: (ms: number) => Promise<void>;
+  /** Chamado quando um status recuperável dispara retry (ex.: 429). */
+  onRetryableStatus?: (info: { status: number; attempt: number }) => void;
 };
 
 function resolveNomusHttpTimeoutMs(optionsTimeout?: number): number {
@@ -147,6 +149,7 @@ export async function fetchNomusJson(
 
       const body = await res.text().catch(() => "");
       if (res.status === 429 && attempt < maxRetries) {
+        options.onRetryableStatus?.({ status: 429, attempt });
         let waitMs: number | null = null;
         try {
           const parsed = JSON.parse(body) as { tempoAteLiberar?: unknown };
@@ -177,6 +180,7 @@ export async function fetchNomusJson(
           `Falha HTTP ${res.status} em ${redactNomusUrlForLog(url)}: ${safeBody || "(sem corpo)"}`
         );
       }
+      options.onRetryableStatus?.({ status: res.status, attempt });
       await sleepFn(retryBaseMs * Math.pow(2, attempt));
     } catch (error) {
       if (isAbortError(error)) {

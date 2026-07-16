@@ -28,6 +28,12 @@ export type ProductionOrdersSyncCliOptions = {
   externalIds: number[];
   names: string[];
   salesOrderExternalIds: number[];
+  /** ISO YYYY-MM-DD — filtro RSQL por data (opcional). */
+  from: string | null;
+  /** ISO YYYY-MM-DD — filtro RSQL por data (opcional). */
+  to: string | null;
+  /** Campo Nomus usado no intervalo (default dataAlteracao). */
+  dateField: "dataAlteracao" | "dataAbertura";
 };
 
 export type ProductionOrderPersistPlan = {
@@ -50,6 +56,25 @@ function parsePositiveIntList(raw: string, label: string): number[] {
     });
 }
 
+function parseIsoDateArg(raw: string, label: string): string {
+  const trimmed = raw.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error(`${label} inválida: "${raw}". Use YYYY-MM-DD.`);
+  }
+  const [y, m, d] = trimmed.split("-").map((part) => Number.parseInt(part, 10));
+  const date = new Date(y!, m! - 1, d!);
+  if (date.getFullYear() !== y || date.getMonth() !== m! - 1 || date.getDate() !== d) {
+    throw new Error(`${label} inválida: "${raw}".`);
+  }
+  return trimmed;
+}
+
+/** YYYY-MM-DD → dd/MM/yyyy (filtro RSQL Nomus). */
+export function isoDateToNomusBrDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
 export function parseProductionOrdersSyncCli(argv: string[]): ProductionOrdersSyncCliOptions {
   const mode: ProductionOrdersSyncMode =
     argv.includes("apply") || argv.includes("--apply") ? "apply" : "preview";
@@ -63,6 +88,9 @@ export function parseProductionOrdersSyncCli(argv: string[]): ProductionOrdersSy
   const externalIds: number[] = [];
   const names: string[] = [];
   const salesOrderExternalIds: number[] = [];
+  let from: string | null = null;
+  let to: string | null = null;
+  let dateField: "dataAlteracao" | "dataAbertura" = "dataAlteracao";
 
   for (const arg of argv) {
     if (arg === "preview" || arg === "apply" || arg === "--apply") continue;
@@ -111,6 +139,22 @@ export function parseProductionOrdersSyncCli(argv: string[]): ProductionOrdersSy
       );
       continue;
     }
+    if (arg.startsWith("--from=")) {
+      from = parseIsoDateArg(arg.slice("--from=".length), "--from");
+      continue;
+    }
+    if (arg.startsWith("--to=")) {
+      to = parseIsoDateArg(arg.slice("--to=".length), "--to");
+      continue;
+    }
+    if (arg.startsWith("--date-field=")) {
+      const raw = arg.slice("--date-field=".length).trim();
+      if (raw !== "dataAlteracao" && raw !== "dataAbertura") {
+        throw new Error(`--date-field inválido: ${raw}. Use dataAlteracao|dataAbertura.`);
+      }
+      dateField = raw;
+      continue;
+    }
   }
 
   if (externalIds.length > 0 || names.length > 0 || salesOrderExternalIds.length > 0) {
@@ -126,6 +170,10 @@ export function parseProductionOrdersSyncCli(argv: string[]): ProductionOrdersSy
           : 5;
   }
 
+  if ((from && !to) || (!from && to)) {
+    throw new Error("Informe --from=YYYY-MM-DD e --to=YYYY-MM-DD juntos (intervalo completo).");
+  }
+
   return {
     mode,
     strategy,
@@ -136,6 +184,9 @@ export function parseProductionOrdersSyncCli(argv: string[]): ProductionOrdersSy
     externalIds: [...new Set(externalIds)],
     names: [...new Set(names)],
     salesOrderExternalIds: [...new Set(salesOrderExternalIds)],
+    from,
+    to,
+    dateField,
   };
 }
 
@@ -161,6 +212,52 @@ export function buildProductionOrderPointQueries(options: {
     queries.push(`itensPedido.idPedido==${idPedido}`);
   }
   return queries;
+}
+
+/** Intervalo de datas RSQL (dd/MM/yyyy). Combinável com filtros pontuais via `;`. */
+export function buildProductionOrdersDateRangeRsql(options: {
+  from: string;
+  to: string;
+  dateField?: "dataAlteracao" | "dataAbertura";
+}): string {
+  const field = options.dateField ?? "dataAlteracao";
+  return `${field}>=${isoDateToNomusBrDate(options.from)};${field}<=${isoDateToNomusBrDate(options.to)}`;
+}
+
+/**
+ * Monta queries efetivas do sync/preview:
+ * - point: id / nome / idPedido (+ intervalo se informado)
+ * - incremental/backfill: null ou só intervalo
+ */
+export function buildProductionOrdersSyncQueries(
+  options: Pick<
+    ProductionOrdersSyncCliOptions,
+    | "strategy"
+    | "externalIds"
+    | "names"
+    | "salesOrderExternalIds"
+    | "from"
+    | "to"
+    | "dateField"
+  >
+): Array<string | null> {
+  const dateRsql =
+    options.from && options.to
+      ? buildProductionOrdersDateRangeRsql({
+          from: options.from,
+          to: options.to,
+          dateField: options.dateField,
+        })
+      : null;
+
+  if (options.strategy === "point") {
+    const point = buildProductionOrderPointQueries(options);
+    if (point.length === 0) return dateRsql ? [dateRsql] : [];
+    if (!dateRsql) return point;
+    return point.map((q) => `${q};${dateRsql}`);
+  }
+
+  return [dateRsql];
 }
 
 export function buildProductionOrdersPageParams(
