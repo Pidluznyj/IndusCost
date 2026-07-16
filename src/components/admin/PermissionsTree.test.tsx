@@ -97,4 +97,23 @@ describe("PermissionsTree component", () => {
     assert.ok(html.includes("permissions-tree"));
     assert.ok(elapsed < 3000, `render too slow: ${elapsed}ms`);
   });
+
+  it("barra de lote no ramo selecionável (PERM-34)", () => {
+    const nodes = buildPermissionsTreeFixture();
+    const decisions = buildPermissionsTreeFixtureDecisions();
+    const html = renderToStaticMarkup(
+      <PermissionsTree
+        nodes={nodes}
+        decisions={decisions}
+        onDecisionsChange={() => undefined}
+        enableBranchBatch
+        configuredColumnLabel="Estado configurado"
+        resultColumnLabel="Resultado do perfil"
+      />
+    );
+    assert.ok(html.includes("permissions-tree-batch-bar"));
+    assert.ok(html.includes("Estado configurado"));
+    assert.ok(html.includes("Resultado do perfil"));
+    assert.ok(html.includes("Selecionar") || html.includes("Lote"));
+  });
 });

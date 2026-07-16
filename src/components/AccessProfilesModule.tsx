@@ -16,7 +16,7 @@ import { cn } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { APP_USER_ROLE_OPTIONS, type AppUserRole } from "@/src/lib/appAuthClient";
-import { PermissionMatrix } from "@/src/components/admin/PermissionMatrix";
+import { PermissionsTree } from "@/src/components/admin/PermissionsTree";
 import {
   canManageAccessProfiles,
   canViewAccessProfiles,
@@ -32,7 +32,6 @@ import {
 import { summarizePermissionSelection } from "@/src/lib/permissionCatalogUtils";
 import {
   ACCESS_PROFILE_SNAPSHOT_NOTICE,
-  accessProfileMatrixDirty,
   accessProfileMatrixImpact,
   buildAccessProfileMatrixModel,
   diffLegacyPermissionBags,
@@ -40,7 +39,17 @@ import {
   materializeAccessProfilePermissionsFromDraft,
   needsBroadChangeConfirmation,
 } from "@/src/lib/accessProfilesMatrix";
+import {
+  accessProfileTreeDecisionsDirty,
+  buildAccessProfileTreeModel,
+  countAccessProfileTreeDecisionChanges,
+  draftFromAccessProfileDecisions,
+} from "@/src/lib/accessProfilesTree";
 import type { PermissionMatrixDraft } from "@/src/lib/security/permissionMatrixUi/index.ts";
+import type {
+  PermissionTreeDecisions,
+  PermissionTreeNode,
+} from "@/src/lib/security/permissionsTreeUi/index.ts";
 
 export const AccessProfilesModule: React.FC = () => {
   const auth = useAuth();
@@ -57,8 +66,14 @@ export const AccessProfilesModule: React.FC = () => {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingUserCount, setEditingUserCount] = useState(0);
+  const [editingIsSystem, setEditingIsSystem] = useState(false);
+  const [editingSystemKey, setEditingSystemKey] = useState<string | null>(null);
   const [form, setForm] = useState<AccessProfileFormState>(EMPTY_ACCESS_PROFILE_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const [treeNodes, setTreeNodes] = useState<PermissionTreeNode[]>([]);
+  const [treeDecisions, setTreeDecisions] = useState<PermissionTreeDecisions>({});
+  const [treeBaseline, setTreeBaseline] = useState<PermissionTreeDecisions>({});
   const [matrixDraft, setMatrixDraft] = useState<PermissionMatrixDraft>({});
   const [matrixBaseline, setMatrixBaseline] = useState<PermissionMatrixDraft>({});
   const [showAliases, setShowAliases] = useState(false);
@@ -109,24 +124,68 @@ export const AccessProfilesModule: React.FC = () => {
     return buildAccessProfileMatrixModel(form.permissions, form.roleBase);
   }, [form.permissions, form.roleBase]);
 
-  // Sync draft when opening editor / changing roleBase baseline permissions bag
-  const hydrateMatrix = useCallback(
+  const hydrateTree = useCallback(
     (permissions: string[], roleBase: AppUserRole | "") => {
       if (roleBase === "SUPER_ADMIN") {
+        setTreeNodes([]);
+        setTreeDecisions({});
+        setTreeBaseline({});
         setMatrixDraft({});
         setMatrixBaseline({});
         return;
       }
-      const model = buildAccessProfileMatrixModel(permissions, roleBase);
+      const model = buildAccessProfileTreeModel(
+        permissions,
+        roleBase,
+        "Snapshot do perfil"
+      );
+      setTreeNodes(model.nodes);
+      setTreeDecisions(model.decisions);
+      setTreeBaseline(model.baselineDecisions);
       setMatrixBaseline(model.baseline);
       setMatrixDraft(model.draft);
     },
     []
   );
 
+  const applyEditorProfile = useCallback(
+    (profile: AccessProfileRecord) => {
+      setEditingId(profile.id);
+      setEditingUserCount(profile.userCount);
+      setEditingIsSystem(profile.isSystem);
+      setEditingSystemKey(profile.systemKey);
+      const nextForm: AccessProfileFormState = {
+        name: profile.name,
+        description: profile.description ?? "",
+        roleBase: profile.roleBase ?? "",
+        permissions: [...profile.permissions],
+        isActive: profile.isActive,
+      };
+      setForm(nextForm);
+      hydrateTree(nextForm.permissions, nextForm.roleBase);
+    },
+    [hydrateTree]
+  );
+
   const dirty = useMemo(
-    () => accessProfileMatrixDirty(matrixDraft, matrixBaseline),
-    [matrixDraft, matrixBaseline]
+    () => accessProfileTreeDecisionsDirty(treeDecisions, treeBaseline),
+    [treeDecisions, treeBaseline]
+  );
+
+  const changeCount = useMemo(
+    () => countAccessProfileTreeDecisionChanges(treeDecisions, treeBaseline),
+    [treeDecisions, treeBaseline]
+  );
+
+  const handleTreeDecisionsChange = useCallback(
+    (next: PermissionTreeDecisions) => {
+      setTreeDecisions(next);
+      setMatrixDraft((prev) =>
+        draftFromAccessProfileDecisions(treeNodes, next, prev)
+      );
+      setSaveSuccess(null);
+    },
+    [treeNodes]
   );
 
   const previewPermissions = useMemo(() => {
@@ -162,26 +221,20 @@ export const AccessProfilesModule: React.FC = () => {
   const openCreate = () => {
     setEditingId(null);
     setEditingUserCount(0);
+    setEditingIsSystem(false);
+    setEditingSystemKey(null);
     setForm(EMPTY_ACCESS_PROFILE_FORM);
-    hydrateMatrix([], "");
+    hydrateTree([], "");
     setFormError(null);
+    setSaveSuccess(null);
     setConfirmBroadOpen(false);
     setEditorOpen(true);
   };
 
   const openEdit = (profile: AccessProfileRecord) => {
-    setEditingId(profile.id);
-    setEditingUserCount(profile.userCount);
-    const nextForm: AccessProfileFormState = {
-      name: profile.name,
-      description: profile.description ?? "",
-      roleBase: profile.roleBase ?? "",
-      permissions: [...profile.permissions],
-      isActive: profile.isActive,
-    };
-    setForm(nextForm);
-    hydrateMatrix(nextForm.permissions, nextForm.roleBase);
+    applyEditorProfile(profile);
     setFormError(null);
+    setSaveSuccess(null);
     setConfirmBroadOpen(false);
     setEditorOpen(true);
   };
@@ -271,6 +324,7 @@ export const AccessProfilesModule: React.FC = () => {
   const persistProfile = async () => {
     setSaving(true);
     setFormError(null);
+    setSaveSuccess(null);
     try {
       const payload = {
         name: form.name.trim(),
@@ -279,21 +333,35 @@ export const AccessProfilesModule: React.FC = () => {
         permissions: form.roleBase === "SUPER_ADMIN" ? [] : previewPermissions,
         isActive: form.isActive,
       };
+      let saved: AccessProfileRecord;
       if (editingId) {
-        await fetchJsonOk(`/api/access-profiles/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+        const res = await fetchJsonOk<{ profile: AccessProfileRecord }>(
+          `/api/access-profiles/${editingId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        saved = res.profile;
       } else {
-        await fetchJsonOk("/api/access-profiles", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
+        const res = await fetchJsonOk<{ profile: AccessProfileRecord }>(
+          "/api/access-profiles",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        saved = res.profile;
       }
-      setEditorOpen(false);
+      applyEditorProfile(saved);
       setConfirmBroadOpen(false);
+      setSaveSuccess(
+        saved.userCount > 0
+          ? `Perfil “${saved.name}” salvo. Snapshot atualizado — ${saved.userCount} usuário(s) vinculado(s) não foram alterados.`
+          : `Perfil “${saved.name}” salvo com sucesso. Dados recarregados.`
+      );
       await loadData();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Não foi possível salvar o perfil.");
@@ -528,15 +596,18 @@ export const AccessProfilesModule: React.FC = () => {
       )}
 
       {editorOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
-          <div className="bg-card w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl border border-border shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-border bg-card/95 backdrop-blur px-5 py-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+          data-testid="access-profile-editor"
+        >
+          <div className="bg-card flex w-full max-w-6xl max-h-[94vh] flex-col overflow-hidden rounded-2xl border border-border shadow-2xl">
+            <div className="shrink-0 flex items-start justify-between gap-3 border-b border-border bg-card/95 px-5 py-4">
               <div>
                 <h4 className="text-lg font-bold">
                   {editingId ? "Editar perfil de acesso" : "Novo perfil de acesso"}
                 </h4>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Matriz única de permissões. Snapshot: usuários vinculados não mudam ao salvar.
+                  Árvore de recursos. Snapshot: usuários vinculados não mudam ao salvar.
                 </p>
               </div>
               <button
@@ -547,220 +618,290 @@ export const AccessProfilesModule: React.FC = () => {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <form onSubmit={(e) => void handleSave(e)} className="p-5 space-y-4">
-              {formError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
-                  {formError}
-                </div>
-              ) : null}
 
-              <div
-                className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"
-                data-testid="access-profile-snapshot-notice"
-              >
-                <strong>Snapshot:</strong> {ACCESS_PROFILE_SNAPSHOT_NOTICE}
-                {editingUserCount > 0 ? (
-                  <span className="block mt-1 font-semibold">
-                    {editingUserCount} usuário(s) vinculado(s) a este perfil — não serão
-                    atualizados ao salvar.
-                  </span>
+            <form
+              onSubmit={(e) => void handleSave(e)}
+              className="flex min-h-0 flex-1 flex-col"
+            >
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 pb-3">
+                {formError ? (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                    {formError}
+                  </div>
+                ) : null}
+
+                {saveSuccess ? (
+                  <div
+                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+                    data-testid="access-profile-save-success"
+                    role="status"
+                  >
+                    {saveSuccess}
+                  </div>
+                ) : null}
+
+                <div
+                  className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950"
+                  data-testid="access-profile-snapshot-notice"
+                >
+                  <strong>Snapshot:</strong> {ACCESS_PROFILE_SNAPSHOT_NOTICE}
+                  {editingUserCount > 0 ? (
+                    <span className="block mt-1 font-semibold">
+                      {editingUserCount} usuário(s) vinculado(s) a este perfil — não serão
+                      atualizados ao salvar.
+                    </span>
+                  ) : null}
+                </div>
+
+                <div
+                  className="grid gap-4 sm:grid-cols-2"
+                  data-testid="access-profile-editor-header"
+                >
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      Nome
+                    </label>
+                    <input
+                      required
+                      value={form.name}
+                      onChange={(e) => {
+                        setSaveSuccess(null);
+                        setForm((f) => ({ ...f, name: e.target.value }));
+                      }}
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                      disabled={editingIsSystem}
+                    />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      Descrição
+                    </label>
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => {
+                        setSaveSuccess(null);
+                        setForm((f) => ({ ...f, description: e.target.value }));
+                      }}
+                      rows={2}
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      Role base
+                    </label>
+                    <select
+                      value={form.roleBase}
+                      onChange={(e) => {
+                        const roleBase = e.target.value as AppUserRole | "";
+                        setSaveSuccess(null);
+                        setForm((f) => ({ ...f, roleBase }));
+                        if (roleBase === "SUPER_ADMIN") {
+                          hydrateTree([], roleBase);
+                          return;
+                        }
+                        const preserved =
+                          materializeAccessProfilePermissionsFromDraft(
+                            matrixDraft,
+                            form.permissions,
+                            { compatibleClamp: false }
+                          );
+                        hydrateTree(preserved, roleBase);
+                      }}
+                      className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                      disabled={editingIsSystem}
+                    >
+                      <option value="">Nenhum (somente permissões)</option>
+                      {APP_USER_ROLE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap items-end gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={form.isActive}
+                        onChange={(e) => {
+                          setSaveSuccess(null);
+                          setForm((f) => ({ ...f, isActive: e.target.checked }));
+                        }}
+                      />
+                      Ativo
+                    </label>
+                    {editingIsSystem ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-700"
+                        data-testid="access-profile-system-badge"
+                      >
+                        Perfil de sistema
+                        {editingSystemKey ? ` · ${editingSystemKey}` : ""}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {permissionSummary.critical.length > 0 ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    <strong>Atenção:</strong> este perfil inclui permissões críticas/sensíveis:{" "}
+                    {permissionSummary.critical.map((c) => c.label).join(", ")}
+                  </div>
+                ) : null}
+
+                {form.roleBase !== "SUPER_ADMIN" && treeNodes.length > 0 ? (
+                  <div className="space-y-3">
+                    {dirty ? (
+                      <div
+                        className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950"
+                        data-testid="access-profile-dirty"
+                      >
+                        {changeCount} alteração(ões) na árvore.{" "}
+                        {impact ? formatAccessProfileImpact(impact) : null}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-muted-foreground">
+                        Sem alterações na árvore em relação ao snapshot carregado.
+                      </div>
+                    )}
+
+                    <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px]">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <strong>Preview legado</strong>
+                        <button
+                          type="button"
+                          className="rounded-md border border-border bg-background px-2 py-1 font-medium hover:bg-accent"
+                          onClick={() => setShowAliases((v) => !v)}
+                        >
+                          {showAliases ? "Ocultar aliases" : "Ver aliases"}
+                        </button>
+                      </div>
+                      <p className="mt-1 text-muted-foreground">
+                        Antes: {form.permissions.length} · Depois:{" "}
+                        {previewPermissions.length}
+                        {!legacyDiff.unchanged
+                          ? ` · +${legacyDiff.gained.length} / −${legacyDiff.lost.length}`
+                          : " · sem mudança de chaves"}
+                      </p>
+                      {showAliases ? (
+                        <div
+                          className="mt-2 grid gap-2 sm:grid-cols-2"
+                          data-testid="access-profile-aliases"
+                        >
+                          <div>
+                            <p className="font-semibold">Ganhas</p>
+                            <ul className="mt-1 max-h-28 overflow-auto text-muted-foreground">
+                              {legacyDiff.gained.length === 0 ? (
+                                <li>—</li>
+                              ) : (
+                                legacyDiff.gained.map((k) => <li key={k}>{k}</li>)
+                              )}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="font-semibold">Removidas</p>
+                            <ul className="mt-1 max-h-28 overflow-auto text-muted-foreground">
+                              {legacyDiff.lost.length === 0 ? (
+                                <li>—</li>
+                              ) : (
+                                legacyDiff.lost.map((k) => <li key={k}>{k}</li>)
+                              )}
+                            </ul>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <PermissionsTree
+                      nodes={treeNodes}
+                      decisions={treeDecisions}
+                      onDecisionsChange={handleTreeDecisionsChange}
+                      readOnly={!canManage}
+                      enableBranchBatch={canManage}
+                      configuredColumnLabel="Estado configurado"
+                      resultColumnLabel="Resultado do perfil"
+                      className="max-h-[min(52vh,560px)]"
+                    />
+                  </div>
+                ) : form.roleBase === "SUPER_ADMIN" ? (
+                  <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
+                    Role Super administrador concede todas as permissões automaticamente.
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
+                    Defina a role base ou aguarde o carregamento da árvore de recursos.
+                  </p>
+                )}
+
+                {confirmBroadOpen ? (
+                  <div
+                    className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950 space-y-2"
+                    data-testid="access-profile-broad-confirm"
+                  >
+                    <p className="font-semibold">
+                      Confirmar alterações amplas no snapshot?
+                    </p>
+                    <p className="text-xs">
+                      {legacyDiff.gained.length + legacyDiff.lost.length} chave(s)
+                      legada(s) alterada(s)
+                      {editingUserCount > 0
+                        ? ` · ${editingUserCount} usuário(s) vinculado(s) NÃO serão atualizados automaticamente`
+                        : ""}
+                      .
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold"
+                        onClick={() => setConfirmBroadOpen(false)}
+                      >
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                        onClick={() => void persistProfile()}
+                      >
+                        Confirmar e salvar snapshot
+                      </button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Nome do perfil
-                  </label>
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-xs font-semibold text-muted-foreground">Descrição</label>
-                  <textarea
-                    value={form.description}
-                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                    rows={2}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-muted-foreground">
-                    Role base (opcional)
-                  </label>
-                  <select
-                    value={form.roleBase}
-                    onChange={(e) => {
-                      const roleBase = e.target.value as AppUserRole | "";
-                      setForm((f) => ({ ...f, roleBase }));
-                      if (roleBase === "SUPER_ADMIN") {
-                        hydrateMatrix([], roleBase);
-                        return;
-                      }
-                      // P28: preservar seleções do draft (não o bag stale form.permissions).
-                      const preserved = materializeAccessProfilePermissionsFromDraft(
-                        matrixDraft,
-                        form.permissions,
-                        { compatibleClamp: false }
-                      );
-                      hydrateMatrix(preserved, roleBase);
-                    }}
-                    className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  >
-                    <option value="">Nenhum (somente permissões)</option>
-                    {APP_USER_ROLE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1 flex items-end">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={form.isActive}
-                      onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                    />
-                    Perfil ativo
-                  </label>
-                </div>
-              </div>
-
-              {permissionSummary.critical.length > 0 ? (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  <strong>Atenção:</strong> este perfil inclui permissões críticas/sensíveis:{" "}
-                  {permissionSummary.critical.map((c) => c.label).join(", ")}
-                </div>
-              ) : null}
-
-              {form.roleBase !== "SUPER_ADMIN" && matrixModel ? (
-                <div className="space-y-3">
-                  {dirty ? (
-                    <div
-                      className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950"
-                      data-testid="access-profile-dirty"
-                    >
-                      Alterações não salvas.{" "}
-                      {impact ? formatAccessProfileImpact(impact) : null}
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-muted-foreground">
-                      Sem alterações na matriz em relação ao snapshot carregado.
-                    </div>
-                  )}
-
-                  <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px]">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <strong>Preview legado</strong>
-                      <button
-                        type="button"
-                        className="rounded-md border border-border bg-background px-2 py-1 font-medium hover:bg-accent"
-                        onClick={() => setShowAliases((v) => !v)}
-                      >
-                        {showAliases ? "Ocultar aliases" : "Ver aliases"}
-                      </button>
-                    </div>
-                    <p className="mt-1 text-muted-foreground">
-                      Antes: {form.permissions.length} · Depois: {previewPermissions.length}
-                      {!legacyDiff.unchanged
-                        ? ` · +${legacyDiff.gained.length} / −${legacyDiff.lost.length}`
-                        : " · sem mudança de chaves"}
-                    </p>
-                    {showAliases ? (
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2" data-testid="access-profile-aliases">
-                        <div>
-                          <p className="font-semibold">Ganhas</p>
-                          <ul className="mt-1 max-h-28 overflow-auto text-muted-foreground">
-                            {legacyDiff.gained.length === 0 ? (
-                              <li>—</li>
-                            ) : (
-                              legacyDiff.gained.map((k) => <li key={k}>{k}</li>)
-                            )}
-                          </ul>
-                        </div>
-                        <div>
-                          <p className="font-semibold">Removidas</p>
-                          <ul className="mt-1 max-h-28 overflow-auto text-muted-foreground">
-                            {legacyDiff.lost.length === 0 ? (
-                              <li>—</li>
-                            ) : (
-                              legacyDiff.lost.map((k) => <li key={k}>{k}</li>)
-                            )}
-                          </ul>
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <PermissionMatrix
-                    rows={matrixModel.rows}
-                    draft={matrixDraft}
-                    baseline={matrixBaseline}
-                    onDraftChange={setMatrixDraft}
-                    readOnly={!canManage}
-                  />
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground rounded-lg border border-dashed border-border px-3 py-2">
-                  Role Super administrador concede todas as permissões automaticamente.
+              <div
+                className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-3"
+                data-testid="access-profile-editor-footer"
+              >
+                <p
+                  className="text-xs font-semibold text-muted-foreground"
+                  data-testid="access-profile-change-count"
+                >
+                  {form.roleBase === "SUPER_ADMIN"
+                    ? "Sem árvore (Super administrador)"
+                    : changeCount === 0
+                      ? "Nenhuma alteração na árvore"
+                      : `${changeCount} alteração(ões) na árvore`}
                 </p>
-              )}
-
-              {confirmBroadOpen ? (
-                <div
-                  className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-950 space-y-2"
-                  data-testid="access-profile-broad-confirm"
-                >
-                  <p className="font-semibold">Confirmar alterações amplas no snapshot?</p>
-                  <p className="text-xs">
-                    {legacyDiff.gained.length + legacyDiff.lost.length} chave(s) legada(s)
-                    alterada(s)
-                    {editingUserCount > 0
-                      ? ` · ${editingUserCount} usuário(s) vinculado(s) NÃO serão atualizados automaticamente`
-                      : ""}
-                    .
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold"
-                      onClick={() => setConfirmBroadOpen(false)}
-                    >
-                      Voltar
-                    </button>
-                    <button
-                      type="button"
-                      disabled={saving}
-                      className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
-                      onClick={() => void persistProfile()}
-                    >
-                      Confirmar e salvar snapshot
-                    </button>
-                  </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditorOpen(false)}
+                    className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving || !canManage}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
+                  >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    Salvar perfil
+                  </button>
                 </div>
-              ) : null}
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditorOpen(false)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-accent"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Salvar
-                </button>
               </div>
             </form>
           </div>

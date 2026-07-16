@@ -9,14 +9,17 @@ export type {
 } from "./types.ts";
 
 export {
+  applyPermissionTreeDecisionToSubtree,
   collapseAllPermissionTreeKeys,
   collectExpandableIds,
   collectPermissionTreeIds,
+  collectPermissionTreeSubtreeIds,
   countPermissionTreeDecisions,
   decisionLabel,
   effectiveLabel,
   expandAllPermissionTreeKeys,
   filterPermissionTreeNodes,
+  findPermissionTreeNode,
   getNodeDecision,
   kindLabel,
   mapPermissionTreeEffectives,

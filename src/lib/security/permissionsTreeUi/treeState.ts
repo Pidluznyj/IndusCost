@@ -141,6 +141,46 @@ export function setPermissionTreeDecision(
   return { ...decisions, [id]: decision };
 }
 
+export function findPermissionTreeNode(
+  nodes: readonly PermissionTreeNode[],
+  id: string
+): PermissionTreeNode | null {
+  for (const n of nodes) {
+    if (n.id === id) return n;
+    const hit = findPermissionTreeNode(n.children, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export function collectPermissionTreeSubtreeIds(
+  nodes: readonly PermissionTreeNode[],
+  rootId: string
+): string[] {
+  const root = findPermissionTreeNode(nodes, rootId);
+  if (!root) return [];
+  const ids: string[] = [];
+  const walk = (n: PermissionTreeNode) => {
+    ids.push(n.id);
+    for (const c of n.children) walk(c);
+  };
+  walk(root);
+  return ids;
+}
+
+export function applyPermissionTreeDecisionToSubtree(
+  decisions: PermissionTreeDecisions,
+  nodeIds: readonly string[],
+  decision: PermissionTreeDecision
+): PermissionTreeDecisions {
+  const next = { ...decisions };
+  for (const id of nodeIds) {
+    if (decision === "inherit") delete next[id];
+    else next[id] = decision;
+  }
+  return next;
+}
+
 export function expandAllPermissionTreeKeys(
   nodes: readonly PermissionTreeNode[]
 ): Set<string> {

@@ -4,7 +4,7 @@
 |---|---|
 | **Projeto** | IndusCost / My Industry |
 | **Data** | 2026-07-16 |
-| **Status** | Componente compartilhado — **ainda não** liga telas finais |
+| **Status** | Componente compartilhado — ligado em Perfis de Acesso (PERM-34) |
 | **UI** | `src/components/admin/PermissionsTree.tsx` |
 | **Lógica** | `src/lib/security/permissionsTreeUi/` |
 | **Exemplos** | `src/components/admin/PermissionsTree.examples.tsx` |
@@ -58,8 +58,13 @@ Evidências estáticas (preview HTML + capturas):
 npm run test:permissions-tree
 ```
 
+## Integração
+
+- `AccessProfilesModule` (PERM-34) — ver `docs/security/access-profiles-editor.md`
+- `AdminUsersModule` — ainda na matriz (fora deste passo)
+
 ## Fora de escopo neste passo
 
-- Ligar `AccessProfilesModule` / `AdminUsersModule`
+- Ligar `AdminUsersModule`
 - Alterar guards / autorização efetiva
 - Storybook (não existe no repo; examples + testes fazem o papel)

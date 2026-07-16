@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PERM-34 — Editor Perfis de Acesso</title>
+  <style>
+    :root {
+      --bg: #eef2f7;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --muted: #64748b;
+      --text: #0f172a;
+      --primary: #0f766e;
+      --emerald: #ecfdf5;
+      --emerald-text: #065f46;
+      --amber: #fffbeb;
+      --amber-text: #92400e;
+      --sky: #e0f2fe;
+      --sky-text: #075985;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    .meta { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+    .editor {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgb(15 23 42 / 10%);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 720px;
+    }
+    .titlebar {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .titlebar h2 { margin: 0; font-size: 17px; }
+    .titlebar p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+    .body { padding: 20px; flex: 1; }
+    .notice {
+      background: var(--amber);
+      color: var(--amber-text);
+      border: 1px solid #fde68a;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
+    .success {
+      background: var(--emerald);
+      color: var(--emerald-text);
+      border: 1px solid #a7f3d0;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; }
+    input, textarea, select {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      background: #f1f5f9;
+      color: #334155;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      align-self: end;
+    }
+    .tree {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #f8fafc;
+      overflow: hidden;
+    }
+    .tree-head {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
+    }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .search { flex: 1; min-width: 180px; }
+    .btn {
+      border: 1px solid var(--border);
+      background: white;
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .batch {
+      margin-top: 8px;
+      background: var(--sky);
+      color: var(--sky-text);
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .cols {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr auto auto;
+      gap: 8px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .mod {
+      margin: 8px;
+      border: 1px solid #7dd3fc;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 0 2px #e0f2fe;
+    }
+    .mod-h {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #f0f9ff;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .chip {
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #e0f2fe;
+      color: #075985;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1.4fr 0.9fr auto auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 12px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 13px;
+      background: #f0f9ff;
+    }
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+      background: #f8fafc;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .seg span { padding: 4px 8px; border-radius: 4px; color: #475569; }
+    .seg .on { background: #d1fae5; color: #065f46; }
+    .eff {
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--emerald);
+      color: var(--emerald-text);
+      border-radius: 999px;
+      padding: 2px 8px;
+    }
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: white;
+    }
+    .footer .count { font-size: 12px; font-weight: 700; color: var(--muted); }
+    .footer .actions { display: flex; gap: 8px; }
+    .primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    @media (max-width: 720px) {
+      .grid, .cols, .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>PERM-34 — Editor de Perfis de Acesso</h1>
+  <p class="meta">Topo (metadados) · árvore PERM-33 · lote por ramo · rodapé fixo · snapshot preservado</p>
+
+  <div class="editor" data-testid="access-profile-editor">
+    <div class="titlebar">
+      <h2>Editar perfil de acesso</h2>
+      <p>Árvore de recursos. Snapshot: usuários vinculados não mudam ao salvar.</p>
+    </div>
+    <div class="body">
+      <div class="success" data-testid="access-profile-save-success">
+        Perfil “Vendedor comercial” salvo. Snapshot atualizado — 12 usuário(s) vinculado(s) não foram alterados.
+      </div>
+      <div class="notice" data-testid="access-profile-snapshot-notice">
+        <strong>Snapshot:</strong> Editar o perfil não atualiza automaticamente os usuários que já o receberam.
+      </div>
+      <div class="grid" data-testid="access-profile-editor-header">
+        <div class="field full">
+          <label>Nome</label>
+          <input value="Vendedor comercial" readonly />
+        </div>
+        <div class="field full">
+          <label>Descrição</label>
+          <textarea rows="2" readonly>Acesso comercial padrão (snapshot).</textarea>
+        </div>
+        <div class="field">
+          <label>Role base</label>
+          <select disabled><option>Vendedor</option></select>
+        </div>
+        <div class="field" style="flex-direction:row;gap:16px;align-items:end;">
+          <label style="text-transform:none;font-size:13px;font-weight:500;color:var(--text);">
+            <input type="checkbox" checked disabled /> Ativo
+          </label>
+          <span class="badge" data-testid="access-profile-system-badge">Perfil de sistema · SELLER</span>
+        </div>
+      </div>
+
+      <div class="tree" data-testid="permissions-tree">
+        <div class="tree-head">
+          <div class="toolbar">
+            <input class="search" placeholder="Buscar por nome ou chave…" readonly />
+            <button class="btn" type="button">Expandir tudo</button>
+            <button class="btn" type="button">Recolher tudo</button>
+          </div>
+          <div class="batch" data-testid="permissions-tree-batch-confirm">
+            Aplicar “Permitir” a 8 item(ns) em “CRM”? · Confirmar lote
+          </div>
+          <div class="cols">
+            <span>Recurso</span>
+            <span>Origem/perfil</span>
+            <span>Estado configurado</span>
+            <span>Resultado do perfil</span>
+          </div>
+        </div>
+        <div class="mod">
+          <div class="mod-h">
+            <span class="chip">Módulo</span>
+            CRM
+            <span style="margin-left:auto;font-size:11px;color:var(--muted);">Snapshot do perfil</span>
+            <span class="eff">Permitido</span>
+            <button class="btn" type="button">Ramo</button>
+          </div>
+          <div class="row">
+            <div><span class="chip" style="background:#eef2ff;color:#3730a3;">Página</span> Clientes</div>
+            <div style="font-size:12px;color:var(--muted);">Snapshot do perfil</div>
+            <div class="seg"><span>Herdar</span><span class="on">Permitir</span><span>Negar</span></div>
+            <div class="eff">Permitido</div>
+          </div>
+          <div class="row" style="padding-left:28px;">
+            <div><span class="chip" style="background:#f5f3ff;color:#5b21b6;">Aba</span> Dados</div>
+            <div style="font-size:12px;color:var(--muted);">Snapshot do perfil</div>
+            <div class="seg"><span>Herdar</span><span class="on">Permitir</span><span>Negar</span></div>
+            <div class="eff">Permitido</div>
+          </div>
+          <div class="row" style="padding-left:40px;background:#f8fafc;">
+            <div><span class="chip" style="background:#f1f5f9;color:#334155;">Ação</span> Visualizar</div>
+            <div style="font-size:12px;color:var(--muted);">Snapshot do perfil</div>
+            <div class="seg"><span>Herdar</span><span class="on">Permitir</span><span>Negar</span></div>
+            <div class="eff">Permitido</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="footer" data-testid="access-profile-editor-footer">
+      <span class="count" data-testid="access-profile-change-count">3 alteração(ões) na árvore</span>
+      <div class="actions">
+        <button class="btn" type="button">Cancelar</button>
+        <button class="primary" type="button">Salvar perfil</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
