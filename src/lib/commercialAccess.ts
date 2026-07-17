@@ -18,6 +18,8 @@ export const COMMERCIAL_RESOURCE_KEYS = {
   salesOrders: "commercial.sales_orders",
   salesOrdersDetail: "commercial.sales_orders.detail",
   salesOrdersInvoice: "commercial.sales_orders.invoice",
+  /** Canônica DS-07; rotas DS-04.1 usam bag provisória até o seed. */
+  outputDocuments: "commercial.output_documents",
   pricing: "commercial.pricing",
   commissions: "commercial.commissions",
   commissionsMonthlyClosing: "commercial.commissions.monthly_closing",
@@ -73,6 +75,9 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/sales-orders/:id", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/detail", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/intelligence", resourceKey: "commercial.sales_orders.detail", action: "view" },
+
+  { method: "GET", path: "/api/commercial/output-documents/summary", resourceKey: "commercial.output_documents", action: "view" },
+  { method: "GET", path: "/api/commercial/output-documents", resourceKey: "commercial.output_documents", action: "view" },
 
   { method: "GET", path: "/api/pricing", resourceKey: "commercial.pricing", action: "view" },
   { method: "POST", path: "/api/pricing/simulate*", resourceKey: "commercial.pricing", action: "execute" },

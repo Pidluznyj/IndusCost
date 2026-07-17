@@ -373,6 +373,7 @@ import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.j
 import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
 import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
+import { registerOutputDocumentsRoutes } from "./src/lib/outputDocumentsRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCashFunnelRoutes.js";
@@ -15179,6 +15180,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerSalesProductRankingRoutes(app, {
+    requireAppAuth,
+    requireAnyPermission,
+    getCurrentAppUser,
+  });
+
+  registerOutputDocumentsRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
     getCurrentAppUser,
