@@ -53,6 +53,8 @@ export type RecomputeSalesOrderFlowOptions = {
    */
   evidencePack?: Awaited<ReturnType<typeof loadSalesOrderFlowEvidence>>;
   itemFinancials?: readonly { salesOrderItemId: string; plannedNetValue: unknown }[];
+  /** Preview: calcula e planeja sem persistir snapshots/eventos. */
+  dryRun?: boolean;
 };
 
 export type RecomputeSalesOrderFlowResult = {
@@ -231,6 +233,28 @@ export async function recomputeSalesOrderFlow(
         deleted: 0,
       },
       events: { attempted: 0, created: 0, duplicates: 0 },
+      skippedWrite: true,
+    };
+  }
+
+  if (options.dryRun) {
+    return {
+      ...baseResult,
+      action: plan.reason === "first_run" ? "created" : "updated",
+      reason: plan.reason,
+      computedAt: null,
+      items: {
+        total: draft.itemWrites.length,
+        upserted: draft.itemWrites.length,
+        created: existingItemRows.length === 0 ? draft.itemWrites.length : 0,
+        updated: existingItemRows.length === 0 ? 0 : draft.itemWrites.length,
+        deleted: 0,
+      },
+      events: {
+        attempted: plan.draft.events.length,
+        created: plan.draft.events.length,
+        duplicates: 0,
+      },
       skippedWrite: true,
     };
   }

@@ -299,7 +299,10 @@
     "test:sales-order:taxes-rc": "tsx --test src/lib/sales-orders/salesOrderTributosReleaseCandidate.test.tsx src/lib/sales-orders/salesOrderTaxesAudit.test.ts src/lib/sales-orders/salesOrderFiscalTaxesContract.test.ts src/lib/sales-orders/salesOrderTributosTabUi.test.tsx",
     "test:output-documents:detail-api": "tsx --test src/lib/output-documents/outputDocumentsDetail.test.ts src/lib/outputDocumentsDetailRoutes.test.ts",
     "test:output-documents:permissions": "tsx --test src/lib/output-documents/outputDocumentsPermissions.test.ts",
-    "test:unit": "node scripts/run-unit-tests.mjs"
+    "test:unit": "node scripts/run-unit-tests.mjs",
+    "rebuild:sales-order-flow": "tsx scripts/rebuildSalesOrderFlow.ts",
+    "rebuild:sales-order-flow:preview": "tsx scripts/rebuildSalesOrderFlow.ts --preview",
+    "rebuild:sales-order-flow:apply": "tsx scripts/rebuildSalesOrderFlow.ts --apply"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
