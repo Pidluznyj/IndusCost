@@ -14,6 +14,7 @@ import {
   fetchSalesOrderFlowEvents,
   type SalesOrderFlowDetailPayload,
   type SalesOrderFlowEventsPayload,
+  type SalesOrderFlowManagementApi,
 } from "@/src/lib/salesOrderFlowClient";
 import {
   classifySalesOrderFlowDetailError,
@@ -27,7 +28,6 @@ import {
   formatSalesOrderFlowEventTypeLabel,
   formatSalesOrderFlowInconsistencyLabel,
   formatSalesOrderFlowInconsistencySeverityLabel,
-  formatSalesOrderFlowPriorityLabel,
   formatSalesOrderFlowStageLabel,
   resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailDaysInStage,
@@ -35,11 +35,15 @@ import {
   resolveSalesOrderFlowDetailInconsistencyRows,
   resolveSalesOrderFlowDetailItems,
   resolveSalesOrderFlowDetailShipmentViews,
+  resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
   SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
   type SalesOrderFlowDetailTab,
+  type SalesOrderFlowManagementUiCapabilities,
 } from "@/src/lib/salesOrderFlowDetailUi";
 import { SALES_ORDER_FLOW_EVENT_TYPES } from "@/src/lib/sales/salesOrderFlowTimeline";
+import { SalesOrderFlowManagementPanel } from "@/src/components/commercial/SalesOrderFlowManagementPanel";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -47,18 +51,34 @@ type Props = {
   salesOrderId: string | null;
   orderCode?: string | null;
   onClose: () => void;
+  onManagementUpdated?: (update: {
+    salesOrderId: string;
+    management: SalesOrderFlowManagementApi;
+  }) => void;
+  managementCapabilities?: SalesOrderFlowManagementUiCapabilities;
 };
 
 /**
- * Drawer largo do Fluxo de Pedidos (OP-69/OP-71): Resumo, Itens, evidências,
- * Timeline e Inconsistências. Overlay canônico; preserva filtros do Kanban.
+ * Drawer largo do Fluxo de Pedidos (OP-69/OP-72): evidências, timeline,
+ * inconsistências e ações de gestão. Overlay canônico; preserva filtros do Kanban.
  */
 export function SalesOrderFlowDetailDrawer({
   open,
   salesOrderId,
   orderCode,
   onClose,
+  onManagementUpdated,
+  managementCapabilities: managementCapabilitiesProp,
 }: Props) {
+  const permissions = usePermissions();
+  const managementCapabilities = useMemo(
+    () =>
+      managementCapabilitiesProp ??
+      resolveSalesOrderFlowManagementUiCapabilities(
+        permissions.canPerformAction
+      ),
+    [managementCapabilitiesProp, permissions.canPerformAction]
+  );
   const [detail, setDetail] = useState<SalesOrderFlowDetailPayload | null>(
     null
   );
@@ -223,6 +243,20 @@ export function SalesOrderFlowDetailDrawer({
             shipment={shipment}
             activeTab={activeTab}
             salesOrderId={salesOrderId}
+            managementCapabilities={managementCapabilities}
+            onDetailManagementChange={(management) => {
+              setDetail((current) =>
+                current ? { ...current, management } : current
+              );
+              if (salesOrderId) {
+                onManagementUpdated?.({ salesOrderId, management });
+              }
+            }}
+            onConflictReload={async () => {
+              if (!salesOrderId) return;
+              const payload = await fetchSalesOrderFlowDetail(salesOrderId);
+              setDetail(payload);
+            }}
           />
         ) : null}
       </OverlayBody>
@@ -236,12 +270,20 @@ export function SalesOrderFlowDetailContent({
   shipment,
   activeTab,
   salesOrderId,
+  managementCapabilities,
+  onDetailManagementChange,
+  onConflictReload,
 }: {
   detail: SalesOrderFlowDetailPayload;
   items: ReturnType<typeof resolveSalesOrderFlowDetailItems>;
   shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
   activeTab: SalesOrderFlowDetailTab;
   salesOrderId?: string | null;
+  managementCapabilities?: SalesOrderFlowManagementUiCapabilities;
+  onDetailManagementChange?: (
+    management: SalesOrderFlowManagementApi
+  ) => void;
+  onConflictReload?: () => Promise<void>;
 }) {
   if (activeTab === "itens") {
     return <ItemsTab detail={detail} items={items} />;
@@ -277,10 +319,36 @@ export function SalesOrderFlowDetailContent({
   if (activeTab === "inconsistencias") {
     return <InconsistenciesTab detail={detail} items={items} />;
   }
-  return <SummaryTab detail={detail} />;
+  return (
+    <SummaryTab
+      detail={detail}
+      managementCapabilities={
+        managementCapabilities ?? {
+          canUpdateManually: false,
+          canChangePriority: false,
+          canAssignResponsible: false,
+          canManageBlocking: false,
+        }
+      }
+      onDetailManagementChange={onDetailManagementChange}
+      onConflictReload={onConflictReload}
+    />
+  );
 }
 
-function SummaryTab({ detail }: { detail: SalesOrderFlowDetailPayload }) {
+function SummaryTab({
+  detail,
+  managementCapabilities,
+  onDetailManagementChange,
+  onConflictReload,
+}: {
+  detail: SalesOrderFlowDetailPayload;
+  managementCapabilities: SalesOrderFlowManagementUiCapabilities;
+  onDetailManagementChange?: (
+    management: SalesOrderFlowManagementApi
+  ) => void;
+  onConflictReload?: () => Promise<void>;
+}) {
   const daysInStage = resolveSalesOrderFlowDetailDaysInStage(detail);
   const valuesVisible = detail.valuesVisible;
   const financial = detail.financialSituation;
@@ -408,49 +476,16 @@ function SummaryTab({ detail }: { detail: SalesOrderFlowDetailPayload }) {
         </dl>
       </OverlaySection>
 
-      <OverlaySection title="Gestão">
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <InfoField
-            label="Prioridade"
-            value={formatSalesOrderFlowPriorityLabel(
-              detail.management?.priority
-            )}
-          />
-          <InfoField
-            label="Bloqueio"
-            value={
-              detail.management?.isBlocked
-                ? detail.management.blockReason?.trim() || "Bloqueado"
-                : "Não bloqueado"
-            }
-          />
-          <InfoField
-            label="Inconsistências"
-            value={
-              detail.inconsistenciesVisible
-                ? detail.inconsistencies.length > 0
-                  ? `${detail.inconsistencies.length}`
-                  : "Nenhuma"
-                : "Oculto"
-            }
-          />
-        </dl>
-        {detail.inconsistenciesVisible && detail.inconsistencies.length > 0 ? (
-          <ul className="mt-3 space-y-1.5 text-sm text-amber-950">
-            {detail.inconsistencies.map((item) => (
-              <li
-                key={`${item.code}-${item.detail ?? ""}`}
-                className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2"
-              >
-                <strong>
-                  {formatSalesOrderFlowInconsistencyLabel(item.code)}
-                </strong>
-                {item.detail ? ` — ${item.detail}` : null}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </OverlaySection>
+      <SalesOrderFlowManagementPanel
+        detail={detail}
+        capabilities={managementCapabilities}
+        onManagementSaved={(management) => {
+          onDetailManagementChange?.(management);
+        }}
+        onConflictReload={async () => {
+          await onConflictReload?.();
+        }}
+      />
     </div>
   );
 }
