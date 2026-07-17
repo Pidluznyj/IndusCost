@@ -42,7 +42,8 @@ export type StockDocumentItemsArrayInspection = {
 
 export type StockDocumentTotalValueSource = "raw" | "items_sum" | null;
 
-export type MappedNomusStockDocument = {
+/** Cabeçalho normalizado a partir do próprio payload do documento (sem Pedido/NF). */
+export type NormalizedStockDocumentHeader = {
   externalId: number;
   idNfe: number | null;
   tipoDocumentoEstoque: string | null;
@@ -61,7 +62,11 @@ export type MappedNomusStockDocument = {
   movementDate: Date | null;
   paymentTermsRaw: string | null;
   payloadHash: string;
+  /** Referência integral ao payload de origem — nunca mutado pelo mapper. */
   rawJson: JsonObject;
+};
+
+export type MappedNomusStockDocument = NormalizedStockDocumentHeader & {
   items: MappedNomusStockDocumentItem[];
   itemsArray: StockDocumentItemsArrayInspection;
   itemsDiscardedCount: number;
@@ -364,35 +369,34 @@ export function extractStockDocumentPaymentTermsRaw(raw: JsonObject): string | n
   );
 }
 
-export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentResult {
+/**
+ * Mapper canônico do cabeçalho (DS-03.4).
+ * - só lê o payload do próprio documento;
+ * - não infere cliente/empresa por Pedido ou NF;
+ * - ausência → null (zero explícito permanece zero);
+ * - rawJson preservado por referência;
+ * - payloadHash SHA-256 estável para o mesmo JSON.
+ */
+export function normalizeStockDocumentHeader(
+  raw: JsonObject,
+  items: readonly MappedNomusStockDocumentItem[] = []
+):
+  | { ok: true; header: NormalizedStockDocumentHeader }
+  | { ok: false; reasons: string[]; externalId: number | null } {
   const externalId = toInt(raw.id) ?? toInt(raw.idDocumentoEstoque);
   if (externalId == null) {
     return { ok: false, reasons: ["MISSING_EXTERNAL_ID"], externalId: null };
   }
 
-  const itemsArray = inspectStockDocumentItemsArray(raw);
-  const rawItems = pickItensDocumentoEstoque(raw);
-  const mappedOrNull = rawItems.map(mapNomusStockDocumentItem);
-  const mapped = mappedOrNull.filter(
-    (item): item is MappedNomusStockDocumentItem => item != null
-  );
-  const itemsDiscardedCount = mappedOrNull.length - mapped.length;
-  const deduped = dedupeMappedStockDocumentItems(mapped);
-  const itemsReliability = classifyStockDocumentItemsReliability({
-    itemsArrayPresent: itemsArray.present,
-    rawItemCount: itemsArray.rawCount,
-    mappedItemCount: deduped.items.length,
-  });
-
   const statusRaw = extractStockDocumentStatusRaw(raw);
   const cancellation = deriveStockDocumentCancellation(raw, statusRaw);
   const person = extractStockDocumentPerson(raw);
   const company = extractStockDocumentCompany(raw);
-  const total = resolveStockDocumentTotalValue(raw, deduped.items);
+  const total = resolveStockDocumentTotalValue(raw, items);
 
   return {
     ok: true,
-    row: {
+    header: {
       externalId,
       idNfe: toInt(raw.idNfe),
       tipoDocumentoEstoque: asString(raw.tipoDocumentoEstoque) ?? asString(raw.tipo),
@@ -414,6 +418,34 @@ export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentR
       paymentTermsRaw: extractStockDocumentPaymentTermsRaw(raw),
       payloadHash: stableNomusStockDocumentPayloadHash(raw),
       rawJson: raw,
+    },
+  };
+}
+
+export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentResult {
+  const itemsArray = inspectStockDocumentItemsArray(raw);
+  const rawItems = pickItensDocumentoEstoque(raw);
+  const mappedOrNull = rawItems.map(mapNomusStockDocumentItem);
+  const mapped = mappedOrNull.filter(
+    (item): item is MappedNomusStockDocumentItem => item != null
+  );
+  const itemsDiscardedCount = mappedOrNull.length - mapped.length;
+  const deduped = dedupeMappedStockDocumentItems(mapped);
+  const itemsReliability = classifyStockDocumentItemsReliability({
+    itemsArrayPresent: itemsArray.present,
+    rawItemCount: itemsArray.rawCount,
+    mappedItemCount: deduped.items.length,
+  });
+
+  const headerResult = normalizeStockDocumentHeader(raw, deduped.items);
+  if (!headerResult.ok) {
+    return headerResult;
+  }
+
+  return {
+    ok: true,
+    row: {
+      ...headerResult.header,
       items: deduped.items,
       itemsArray,
       itemsDiscardedCount,

@@ -160,9 +160,36 @@ async function runApply(
           where: { externalId: row.externalId },
           select: {
             id: true,
+            payloadHash: true,
             _count: { select: { items: true } },
           },
         });
+
+        const liveExistingItemCount = existing?._count.items ?? 0;
+        const livePlan = planStockDocumentPersist(
+          row,
+          existing == null
+            ? null
+            : {
+                externalId: row.externalId,
+                payloadHash: existing.payloadHash,
+                itemCount: liveExistingItemCount,
+              }
+        );
+
+        if (livePlan.headerAction === "unchanged" && existing != null) {
+          await tx.nomusStockDocument.update({
+            where: { externalId: row.externalId },
+            data: {
+              syncedAt,
+              lastSeenAt: syncedAt,
+              presentInLastPayload: true,
+            },
+            select: { id: true },
+          });
+          counters.documentsUnchanged += 1;
+          return;
+        }
 
         const headerData = {
           idNfe: row.idNfe,
@@ -211,13 +238,6 @@ async function runApply(
             `${LOG_PREFIX} totalValue derivado da soma dos itens externalId=${row.externalId} total=${row.totalValue?.toString() ?? "null"}`
           );
         }
-
-        const liveExistingItemCount = existing?._count.items ?? 0;
-        const livePlan = planStockDocumentPersist(
-          row,
-          existing == null ? new Set() : new Set([row.externalId]),
-          liveExistingItemCount
-        );
 
         if (livePlan.itemsAction === "preserve") {
           counters.itemsPreservedDueToPartialPayload += liveExistingItemCount;
@@ -312,19 +332,22 @@ async function main(): Promise<void> {
     where: { externalId: { in: rows.map((row) => row.externalId) } },
     select: {
       externalId: true,
+      payloadHash: true,
       _count: { select: { items: true } },
     },
   });
-  const existingIds = new Set(existing.map((row) => row.externalId));
-  const existingItemCountByExternalId = new Map(
-    existing.map((row) => [row.externalId, row._count.items] as const)
+  const existingByExternalId = new Map(
+    existing.map((row) => [
+      row.externalId,
+      {
+        externalId: row.externalId,
+        payloadHash: row.payloadHash,
+        itemCount: row._count.items,
+      },
+    ] as const)
   );
   const plans = rows.map((row) =>
-    planStockDocumentPersist(
-      row,
-      existingIds,
-      existingItemCountByExternalId.get(row.externalId) ?? 0
-    )
+    planStockDocumentPersist(row, existingByExternalId.get(row.externalId) ?? null)
   );
   const planSummary = summarizeStockDocumentPersistPlans(plans);
 
@@ -344,6 +367,7 @@ async function main(): Promise<void> {
     documentsReceived: rows.length,
     documentsCreated: planSummary.documentsToCreate,
     documentsUpdated: planSummary.documentsToUpdate,
+    documentsUnchanged: planSummary.documentsUnchanged,
     itemsReplaced: planSummary.itemsToWrite,
     itemsPreservedDueToPartialPayload: planSummary.itemsToPreserve,
     emptyPayloads: planSummary.emptyPayloads,
@@ -362,6 +386,7 @@ async function main(): Promise<void> {
     ...counters,
     plannedCreates: planSummary.documentsToCreate,
     plannedUpdates: planSummary.documentsToUpdate,
+    plannedUnchanged: planSummary.documentsUnchanged,
     plannedItemsReplace: planSummary.itemsToWrite,
     plannedItemsPreserve: planSummary.itemsToPreserve,
     durationMs,
@@ -371,7 +396,7 @@ async function main(): Promise<void> {
   if (exitCode !== 0) process.exitCode = exitCode;
 
   console.warn(
-    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — recebidos=${summary.documentsReceived} criados=${summary.documentsCreated} atualizados=${summary.documentsUpdated} itensSubstituidos=${summary.itemsReplaced} itensPreservados=${summary.itemsPreservedDueToPartialPayload} vazios=${summary.emptyPayloads} parciais=${summary.partialPayloads} invalidos=${summary.invalidPayloads} erros=${summary.errors}`
+    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — recebidos=${summary.documentsReceived} criados=${summary.documentsCreated} atualizados=${summary.documentsUpdated} inalterados=${summary.documentsUnchanged} itensSubstituidos=${summary.itemsReplaced} itensPreservados=${summary.itemsPreservedDueToPartialPayload} vazios=${summary.emptyPayloads} parciais=${summary.partialPayloads} invalidos=${summary.invalidPayloads} erros=${summary.errors}`
   );
 
   console.log(

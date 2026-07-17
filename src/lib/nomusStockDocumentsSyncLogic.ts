@@ -34,18 +34,27 @@ export type StockDocumentItemsDecision = {
 
 export type StockDocumentPersistPlan = {
   externalId: number;
-  action: "create" | "update";
+  action: "create" | "update" | "unchanged";
+  headerAction: "write" | "unchanged";
   itemsAction: StockDocumentItemsPersistAction;
   itemsReason: string;
   itemsReliability: StockDocumentItemsReliability;
   itemCount: number;
   existingItemCount: number;
+  payloadHash: string;
+};
+
+export type StockDocumentExistingSnapshot = {
+  externalId: number;
+  payloadHash: string | null;
+  itemCount: number;
 };
 
 export type StockDocumentsSyncCounters = {
   documentsReceived: number;
   documentsCreated: number;
   documentsUpdated: number;
+  documentsUnchanged: number;
   itemsReplaced: number;
   itemsPreservedDueToPartialPayload: number;
   emptyPayloads: number;
@@ -284,25 +293,91 @@ export function decideStockDocumentItemsAction(input: {
   };
 }
 
-/** Plano de escrita idempotente: upsert cabeçalho + decisão de itens. */
+/**
+ * Decisão de cabeçalho via payloadHash (DS-03.4):
+ * - sem registro → create/write
+ * - hash igual (não vazio) → unchanged (só presença/timestamps no sync)
+ * - hash diferente ou legado vazio → update/write
+ */
+export function decideStockDocumentHeaderAction(input: {
+  exists: boolean;
+  existingPayloadHash: string | null | undefined;
+  incomingPayloadHash: string;
+}): {
+  action: "create" | "update" | "unchanged";
+  headerAction: "write" | "unchanged";
+  reason: string;
+} {
+  if (!input.exists) {
+    return { action: "create", headerAction: "write", reason: "HEADER_CREATE" };
+  }
+  const existingHash = (input.existingPayloadHash ?? "").trim();
+  if (
+    existingHash.length > 0 &&
+    existingHash === input.incomingPayloadHash
+  ) {
+    return {
+      action: "unchanged",
+      headerAction: "unchanged",
+      reason: "PAYLOAD_HASH_UNCHANGED",
+    };
+  }
+  return {
+    action: "update",
+    headerAction: "write",
+    reason: existingHash.length === 0 ? "HEADER_BACKFILL_HASH" : "PAYLOAD_HASH_CHANGED",
+  };
+}
+
+/** Plano de escrita idempotente: hash + decisão de itens. */
 export function planStockDocumentPersist(
   row: MappedNomusStockDocument,
-  existingExternalIds: ReadonlySet<number>,
+  existing: StockDocumentExistingSnapshot | null | ReadonlySet<number>,
   existingItemCount = 0
 ): StockDocumentPersistPlan {
-  const decision = decideStockDocumentItemsAction({
-    reliability: row.itemsReliability,
-    existingItemCount,
+  // Compat: testes legados passam Set<number> de externalIds.
+  let snapshot: StockDocumentExistingSnapshot | null = null;
+  if (existing instanceof Set) {
+    snapshot = existing.has(row.externalId)
+      ? {
+          externalId: row.externalId,
+          payloadHash: null,
+          itemCount: existingItemCount,
+        }
+      : null;
+  } else {
+    snapshot = existing;
+  }
+
+  const headerDecision = decideStockDocumentHeaderAction({
+    exists: snapshot != null,
+    existingPayloadHash: snapshot?.payloadHash,
+    incomingPayloadHash: row.payloadHash,
   });
+
+  const itemCountExisting = snapshot?.itemCount ?? existingItemCount;
+  const itemsDecision =
+    headerDecision.headerAction === "unchanged"
+      ? {
+          action: "ignore" as const,
+          reason: "HEADER_UNCHANGED_SKIP_ITEMS",
+          reliability: row.itemsReliability,
+        }
+      : decideStockDocumentItemsAction({
+          reliability: row.itemsReliability,
+          existingItemCount: itemCountExisting,
+        });
 
   return {
     externalId: row.externalId,
-    action: existingExternalIds.has(row.externalId) ? "update" : "create",
-    itemsAction: decision.action,
-    itemsReason: decision.reason,
+    action: headerDecision.action,
+    headerAction: headerDecision.headerAction,
+    itemsAction: itemsDecision.action,
+    itemsReason: itemsDecision.reason,
     itemsReliability: row.itemsReliability,
     itemCount: row.items.length,
-    existingItemCount,
+    existingItemCount: itemCountExisting,
+    payloadHash: row.payloadHash,
   };
 }
 
@@ -311,6 +386,7 @@ export function emptyStockDocumentsSyncCounters(): StockDocumentsSyncCounters {
     documentsReceived: 0,
     documentsCreated: 0,
     documentsUpdated: 0,
+    documentsUnchanged: 0,
     itemsReplaced: 0,
     itemsPreservedDueToPartialPayload: 0,
     emptyPayloads: 0,
@@ -327,6 +403,7 @@ export function summarizeStockDocumentPersistPlans(
 ): {
   documentsToCreate: number;
   documentsToUpdate: number;
+  documentsUnchanged: number;
   itemsToWrite: number;
   documentsWithoutItems: number;
   itemsToPreserve: number;
@@ -336,6 +413,7 @@ export function summarizeStockDocumentPersistPlans(
   return {
     documentsToCreate: plans.filter((p) => p.action === "create").length,
     documentsToUpdate: plans.filter((p) => p.action === "update").length,
+    documentsUnchanged: plans.filter((p) => p.action === "unchanged").length,
     itemsToWrite: plans
       .filter((p) => p.itemsAction === "replace")
       .reduce((sum, p) => sum + p.itemCount, 0),

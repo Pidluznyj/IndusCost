@@ -273,11 +273,12 @@ Ver seção 7. Critério: **primeiro não destruir dados** (sync), depois **enri
 - Sync grava os novos campos + `firstSeenAt` (create) / `lastSeenAt` /
   `presentInLastPayload` (todo apply). Skip unchanged permanece em DS-03.4.
 
-### DS-03.4 — Proteção contra payload parcial
+### DS-03.4 — Proteção contra payload parcial / normalização de cabeçalho
 
-- Ativar `payloadHash` / presence no apply.
-- Bloquear `deleteMany` quando lista de itens mapeada estiver vazia e já houver filhos.
-- Testes: payload vazio preserva; payload com itens substitui; unchanged só toca timestamps.
+- **Status:** implementado (2026-07-17).
+- Mapper canônico `normalizeStockDocumentHeader` (puro, só do payload do documento).
+- Apply usa `payloadHash`: unchanged → só `syncedAt` / `lastSeenAt` / `presentInLastPayload`.
+- Preservação de itens em payload parcial permanece (DS-03.2); hash igual também pula rewrite de itens.
 
 ### DS-03.5 — Resolução direta stage / NF / pedido
 

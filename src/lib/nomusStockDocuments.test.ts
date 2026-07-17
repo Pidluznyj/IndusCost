@@ -10,6 +10,7 @@ import {
   inspectStockDocumentItemsArray,
   mapNomusStockDocumentItem,
   mapNomusStockDocumentPayload,
+  normalizeStockDocumentHeader,
   parseNomusStockQuantity,
   parseNomusStockUnitValue,
   pickItensDocumentoEstoque,
@@ -18,6 +19,7 @@ import {
 } from "./nomusStockDocumentsMapper.js";
 import {
   buildStockDocumentsQuery,
+  decideStockDocumentHeaderAction,
   decideStockDocumentItemsAction,
   isoDateToNomusBrDate,
   parseStockDocumentsSyncCli,
@@ -489,5 +491,180 @@ describe("nomusStockDocumentsSyncLogic", () => {
     assert.equal(resolveStockDocumentsSyncExitCode({ errors: 0, invalidPayloads: 0 }), 0);
     assert.equal(resolveStockDocumentsSyncExitCode({ errors: 1, invalidPayloads: 0 }), 1);
     assert.equal(resolveStockDocumentsSyncExitCode({ errors: 0, invalidPayloads: 2 }), 1);
+  });
+});
+
+describe("normalizeStockDocumentHeader (DS-03.4)", () => {
+  it("normaliza payload completo do próprio documento", () => {
+    const header = normalizeStockDocumentHeader(richDocumentoSaidaHeader);
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.documentNumber, "DS-8451");
+    assert.equal(header.header.statusRaw, "Cancelado");
+    assert.equal(header.header.isCancelled, true);
+    assert.ok(header.header.cancelledAt);
+    assert.equal(header.header.cancellationReason, "Solicitação do cliente");
+    assert.equal(Number(header.header.totalValue?.toString()), 1234.56);
+    assert.equal(header.header.personExternalId, 501);
+    assert.equal(header.header.companyExternalId, 2);
+    assert.equal(header.header.paymentTermsRaw, "28 DDL");
+    assert.equal(header.header.rawJson, richDocumentoSaidaHeader);
+  });
+
+  it("payload parcial preserva nulls sem inventar valores", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 10,
+      idNfe: 99,
+      tipoDocumentoEstoque: "DocumentoSaida",
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.documentNumber, null);
+    assert.equal(header.header.statusRaw, null);
+    assert.equal(header.header.totalValue, null);
+    assert.equal(header.header.personExternalId, null);
+    assert.equal(header.header.companyExternalId, null);
+    assert.equal(header.header.movementDate, null);
+    assert.equal(header.header.paymentTermsRaw, null);
+    assert.equal(header.header.isCancelled, false);
+  });
+
+  it("campos ausentes não viram zero", () => {
+    const header = normalizeStockDocumentHeader({ id: 11 });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.totalValue, null);
+    assert.equal(header.header.totalValueSource, null);
+  });
+
+  it("valor zero explícito é preservado (não vira null)", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 12,
+      valorTotal: "0,00",
+      itensDocumentoEstoque: [],
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.totalValueSource, "raw");
+    assert.equal(Number(header.header.totalValue?.toString()), 0);
+  });
+
+  it("documento cancelado com evidência explícita", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 13,
+      cancelado: true,
+      dataCancelamento: "01/02/2026",
+      motivoCancelamento: "Erro de emissão",
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.isCancelled, true);
+    assert.ok(header.header.cancelledAt);
+    assert.equal(header.header.cancellationReason, "Erro de emissão");
+  });
+
+  it("data inválida vira null", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 14,
+      data: "não-é-data",
+      dataMovimentacao: "99/99/9999",
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.dataDocumento, null);
+    assert.equal(header.header.movementDate, null);
+  });
+
+  it("cliente ausente permanece null (sem inferir de Pedido/NF)", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 15,
+      idNfe: 7208,
+      // sem idPessoa / nomeCliente / pessoa
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.personExternalId, null);
+    assert.equal(header.header.personName, null);
+  });
+
+  it("empresa ausente permanece null", () => {
+    const header = normalizeStockDocumentHeader({
+      id: 16,
+      idNfe: 7208,
+    });
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.companyExternalId, null);
+    assert.equal(header.header.companyName, null);
+  });
+
+  it("payloadHash é estável para o mesmo payload", () => {
+    const a = stableNomusStockDocumentPayloadHash(richDocumentoSaidaHeader);
+    const b = stableNomusStockDocumentPayloadHash(richDocumentoSaidaHeader);
+    assert.equal(a, b);
+    assert.equal(a.length, 64);
+    const header = normalizeStockDocumentHeader(richDocumentoSaidaHeader);
+    assert.equal(header.ok, true);
+    if (!header.ok) return;
+    assert.equal(header.header.payloadHash, a);
+  });
+
+  it("mudança real no payload altera o hash", () => {
+    const base = { id: 20, status: "Aberto", valorTotal: "10,00" };
+    const changed = { ...base, status: "Fechado" };
+    const hashA = stableNomusStockDocumentPayloadHash(base);
+    const hashB = stableNomusStockDocumentPayloadHash(changed);
+    assert.notEqual(hashA, hashB);
+  });
+
+  it("plano unchanged só com payloadHash igual (presença/timestamps no sync)", () => {
+    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+
+    const unchanged = planStockDocumentPersist(mapped.row, {
+      externalId: mapped.row.externalId,
+      payloadHash: mapped.row.payloadHash,
+      itemCount: 3,
+    });
+    assert.equal(unchanged.action, "unchanged");
+    assert.equal(unchanged.headerAction, "unchanged");
+    assert.equal(unchanged.itemsAction, "ignore");
+
+    const changed = planStockDocumentPersist(mapped.row, {
+      externalId: mapped.row.externalId,
+      payloadHash: "0".repeat(64),
+      itemCount: 3,
+    });
+    assert.equal(changed.action, "update");
+    assert.equal(changed.headerAction, "write");
+    assert.equal(changed.itemsAction, "replace");
+  });
+
+  it("decideStockDocumentHeaderAction cobre create/update/unchanged", () => {
+    assert.equal(
+      decideStockDocumentHeaderAction({
+        exists: false,
+        existingPayloadHash: null,
+        incomingPayloadHash: "abc",
+      }).action,
+      "create"
+    );
+    assert.equal(
+      decideStockDocumentHeaderAction({
+        exists: true,
+        existingPayloadHash: "abc",
+        incomingPayloadHash: "abc",
+      }).action,
+      "unchanged"
+    );
+    assert.equal(
+      decideStockDocumentHeaderAction({
+        exists: true,
+        existingPayloadHash: "",
+        incomingPayloadHash: "abc",
+      }).reason,
+      "HEADER_BACKFILL_HASH"
+    );
   });
 });

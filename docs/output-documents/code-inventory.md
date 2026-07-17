@@ -396,8 +396,9 @@ Em `apply`, cada documento roda em uma transação:
 **Importante:** payload parcial **não** executa `deleteMany`. Itens já
 sincronizados são preservados; o cabeçalho/`rawJson` ainda são atualizados.
 
-O cabeçalho continua idempotente por `externalId`. Ainda **não** há
-`payloadHash`/skip de unchanged (previsto em DS-03.4 + migration).
+O cabeçalho continua idempotente por `externalId`. Com DS-03.4, `payloadHash`
+igual ao persistido marca o documento como **unchanged**: o apply só atualiza
+`syncedAt`, `lastSeenAt` e `presentInLastPayload` (sem reescrever itens).
 
 Contadores separados no resumo: documentos recebidos/criados/atualizados,
 itens substituídos, itens preservados por payload parcial, payloads vazios,
