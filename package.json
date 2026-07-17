@@ -292,6 +292,8 @@
     "test:finance-ap-access": "tsx --test src/lib/financeAccountsPayableAccess.test.ts src/lib/financeAccountsPayablePermissions.test.ts src/lib/actionPermissionAccess.test.ts",
     "test:permissions-tree": "tsx --test src/lib/security/permissionsTreeUi/permissionsTreeUi.test.ts src/components/admin/PermissionsTree.test.tsx",
     "audit:sales-order:taxes": "tsx scripts/auditSalesOrderTaxes.ts",
+    "audit:sales-order:effective-schedule": "tsx scripts/auditEffectiveSalesOrderSchedule.ts",
+    "test:sales-order:effective-schedule-audit": "tsx --test src/lib/finance/effectiveSalesOrderScheduleAudit.test.ts",
     "test:sales-order:taxes-audit": "tsx --test src/lib/sales-orders/salesOrderTaxesAudit.test.ts",
     "test:sales-order:taxes-rc": "tsx --test src/lib/sales-orders/salesOrderTributosReleaseCandidate.test.tsx src/lib/sales-orders/salesOrderTaxesAudit.test.ts src/lib/sales-orders/salesOrderFiscalTaxesContract.test.ts src/lib/sales-orders/salesOrderTributosTabUi.test.tsx",
     "test:output-documents:detail-api": "tsx --test src/lib/output-documents/outputDocumentsDetail.test.ts src/lib/outputDocumentsDetailRoutes.test.ts",
