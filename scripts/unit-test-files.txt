@@ -78,6 +78,7 @@ src/lib/sales/salesOrderFlowAccessScope.test.ts
 src/lib/salesOrderFlowRoutes.test.ts
 src/lib/salesOrderFlowPage.test.ts
 src/lib/salesOrderFlowKanbanPagination.test.ts
+src/lib/salesOrderFlowDetailUi.test.ts
 src/lib/sales/salesOrderFlowList.test.ts
 src/lib/sales/salesOrderFlowList.server.test.ts
 src/lib/sales/salesOrderFlowDetail.test.ts

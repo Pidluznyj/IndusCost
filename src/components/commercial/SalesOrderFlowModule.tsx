@@ -23,7 +23,7 @@ import {
   buildSalesOrderFlowKanbanColumnViews,
   SalesOrderFlowKanbanBoard,
 } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
-import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
+import { SalesOrderFlowDetailDrawer } from "@/src/components/commercial/SalesOrderFlowDetailDrawer";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
@@ -78,8 +78,8 @@ const FILTER_CONTROL_CLASS =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
- * Fluxo de Pedidos Comercial (OP-64..OP-68).
- * Colunas read-only, paginadas de forma independente via cursor oficial.
+ * Fluxo de Pedidos Comercial (OP-64..OP-69).
+ * Colunas read-only, paginadas de forma independente; drawer de Resumo/Itens.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();
@@ -994,7 +994,7 @@ export function SalesOrderFlowModule() {
       ) : null}
 
       {selectedOrder ? (
-        <SalesOrderDetailDialog
+        <SalesOrderFlowDetailDrawer
           open
           salesOrderId={selectedOrder.id}
           orderCode={selectedOrder.code}

@@ -180,14 +180,26 @@ export async function loadSalesOrderFlowDetail(
     orderSnapshot as unknown as Record<string, unknown> | null,
     { canViewValues, canViewProduction, canViewInconsistencies, now }
   );
-  const mappedItems = itemSnapshots.map((row) =>
-    mapItemSnapshotForDetail(row as unknown as Record<string, unknown>, {
-      canViewValues,
-      canViewProduction,
-      canViewInconsistencies,
-      now,
-    })
-  );
+  const mappedItems = itemSnapshots.map((row) => {
+    const mapped = mapItemSnapshotForDetail(
+      row as unknown as Record<string, unknown>,
+      {
+        canViewValues,
+        canViewProduction,
+        canViewInconsistencies,
+        now,
+      }
+    );
+    const evidenceItem = evidence.items.find(
+      (item) => item.id === String(row.salesOrderItemId ?? "")
+    );
+    return {
+      ...mapped,
+      productCode: evidenceItem?.skuSnapshot?.trim() || null,
+      productName: evidenceItem?.productNameSnapshot?.trim() || null,
+      orderedQuantityDisplay: evidenceItem?.quantity ?? mapped.orderedQuantity,
+    };
+  });
 
   const columnExplanation = buildColumnExplanation({
     currentStage: orderSnapshot?.currentStage,

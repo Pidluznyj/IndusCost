@@ -3,6 +3,7 @@
  */
 import { fetchJsonOk } from "@/src/lib/http.js";
 import type { SalesOrderFlowListPayload } from "@/src/lib/sales/salesOrderFlowList.js";
+import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlowDetail.js";
 import type {
   SalesOrderFlowSummaryPayload,
   SalesOrderFlowSummaryPriority,
@@ -13,6 +14,7 @@ import { SALES_ORDER_FLOW_FEATURE_RESOURCE } from "@/src/lib/sales/salesOrderFlo
 export type {
   SalesOrderFlowListPayload,
   SalesOrderFlowSummaryPayload,
+  SalesOrderFlowDetailPayload,
 };
 
 export const SALES_ORDER_FLOW_LIST_API_PATH =
@@ -21,6 +23,10 @@ export const SALES_ORDER_FLOW_SUMMARY_API_PATH =
   "/api/commercial/sales-order-flow/summary";
 export const SALES_ORDER_FLOW_FEATURE_STATUS_API_PATH =
   "/api/commercial/sales-order-flow/feature-status";
+
+export function getSalesOrderFlowDetailApiPath(salesOrderId: string): string {
+  return `${SALES_ORDER_FLOW_LIST_API_PATH}/${encodeURIComponent(salesOrderId)}`;
+}
 
 export type SalesOrderFlowFeatureStatusPayload = {
   enabled: boolean;
@@ -130,6 +136,16 @@ export async function fetchSalesOrderFlowList(
 ): Promise<SalesOrderFlowListPayload> {
   return fetchJsonOk<SalesOrderFlowListPayload>(
     `${SALES_ORDER_FLOW_LIST_API_PATH}${buildSalesOrderFlowQueryString(query)}`,
+    { signal }
+  );
+}
+
+export async function fetchSalesOrderFlowDetail(
+  salesOrderId: string,
+  signal?: AbortSignal
+): Promise<SalesOrderFlowDetailPayload> {
+  return fetchJsonOk<SalesOrderFlowDetailPayload>(
+    getSalesOrderFlowDetailApiPath(salesOrderId),
     { signal }
   );
 }
