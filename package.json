@@ -44,6 +44,7 @@
     "test:output-documents:audit-db": "tsx --test src/lib/output-documents/auditOutputDocumentsDb.test.ts src/lib/output-documents/auditOutputDocumentsRawJson.test.ts src/lib/output-documents/auditOutputDocumentsLinks.test.ts src/lib/output-documents/auditOutputDocumentsFinancial.test.ts src/lib/output-documents/auditOutputDocumentsExamples.test.ts src/lib/output-documents/auditOutputDocumentsReports.test.ts src/lib/output-documents/auditOutputDocumentsReadOnlyGuard.test.ts",
     "test:output-documents:resolver": "tsx --test src/lib/output-documents/nomusOutputDocumentResolver.test.ts",
     "test:output-documents:allocation": "tsx --test src/lib/output-documents/outputDocumentAllocationProjection.test.ts",
+    "test:output-documents:financial-status": "tsx --test src/lib/output-documents/outputDocumentFinancialStatusResolver.test.ts",
     "sync:nomus:bom-compare": "tsx scripts/nomusBomCompareV1.ts",
     "sync:nomus:bom-report": "tsx scripts/nomusBomBatchReportV1.ts",
     "sync:nomus:bom-classify": "tsx scripts/nomusBomClassifyV1.ts",
