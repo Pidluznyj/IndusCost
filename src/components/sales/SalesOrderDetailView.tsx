@@ -355,7 +355,8 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
       <section className="so-detail-section" data-testid="sales-order-detail-financial">
         <h3 className="so-detail-section-title">Financeiro</h3>
         <p className="so-detail-section-subtitle">
-          Contas a Receber oficial prevalece sobre Documento de Saída e previsão do pedido.
+          Agenda efetiva: CR real &gt; Documento &gt; previsão residual do Pedido (motor
+          canônico).
         </p>
         <div className="so-detail-kpi-grid" style={{ marginBottom: 8 }}>
           <Kpi
@@ -369,11 +370,24 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={financial.totals.openAmount > 0.009 ? "warning" : "muted"}
           />
           <Kpi
-            label="CR recebido"
-            value={formatFinanceCurrency(financial.totals.receivedAmount)}
-            tone={financial.totals.receivedAmount > 0.009 ? "positive" : "muted"}
+            label="Agenda real/documental"
+            value={formatFinanceCurrency(
+              financial.coverageSummary?.realOrDocumentAgendaTotal ??
+                (financial.totals.totalAmount || 0)
+            )}
+            tone={
+              (financial.coverageSummary?.realOrDocumentAgendaTotal ?? 0) > 0.009
+                ? "positive"
+                : "muted"
+            }
           />
           <PlannedForecastKpi financial={financial} />
+          <Kpi
+            label="Corte comercial"
+            value={formatFinanceCurrency(financial.cutAmount ?? 0)}
+            hint="Não entra no Contas a Receber"
+            tone={(financial.cutAmount ?? 0) > 0.009 ? "muted" : "muted"}
+          />
           <Kpi
             label="Próximo vencimento"
             value={
@@ -385,9 +399,11 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
         </div>
 
         {financial.realReceivables.length === 0 &&
+        (financial.documentSchedule?.length ?? 0) === 0 &&
         financial.plannedReceivables.length === 0 ? (
           <div className="so-detail-empty">
-            Sem CR real e sem recebível planejado ativo para este pedido.
+            Sem CR real, sem agenda documental e sem previsão residual ativa para este
+            pedido.
           </div>
         ) : (
           <div className="so-detail-scroll">
@@ -448,11 +464,68 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                     <td>{cr.sourceInvoiceNumber ? "Sim" : "—"}</td>
                   </tr>
                 ))}
+                {(financial.documentSchedule ?? []).map((doc) =>
+                  doc.kind === "DOCUMENT_AWAITING_FINANCIAL_SCHEDULE" ? (
+                    <tr key={`doc-await-${doc.documentKey}`}>
+                      <td>
+                        <span className="so-detail-badge so-detail-badge--warning">
+                          Documento
+                        </span>
+                      </td>
+                      <td className="font-semibold">{doc.documentKey}</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td className="so-detail-money">
+                        {formatFinanceCurrency(doc.allocatedByOrderPrice)}
+                      </td>
+                      <td className="so-detail-money">
+                        {formatFinanceCurrency(doc.allocatedByOrderPrice)}
+                      </td>
+                      <td className="so-detail-money">{formatFinanceCurrency(0)}</td>
+                      <td>
+                        <span className="so-detail-badge so-detail-badge--warning">
+                          Aguardando agenda/CR
+                        </span>
+                      </td>
+                      <td>{doc.sourceInvoiceId != null ? "Sim" : "—"}</td>
+                    </tr>
+                  ) : (
+                    doc.installments.map((inst) => (
+                      <tr
+                        key={`doc-${doc.documentKey}-${inst.installmentNumber}`}
+                      >
+                        <td>
+                          <span className="so-detail-badge so-detail-badge--warning">
+                            Documento
+                          </span>
+                        </td>
+                        <td className="font-semibold">{doc.documentKey}</td>
+                        <td>{inst.installmentNumber}</td>
+                        <td>
+                          {inst.dueDate ? formatFinanceDate(inst.dueDate) : "—"}
+                        </td>
+                        <td className="so-detail-money">
+                          {formatFinanceCurrency(inst.amount)}
+                        </td>
+                        <td className="so-detail-money">
+                          {formatFinanceCurrency(inst.amount)}
+                        </td>
+                        <td className="so-detail-money">{formatFinanceCurrency(0)}</td>
+                        <td>
+                          <span className="so-detail-badge so-detail-badge--info">
+                            Condição documental
+                          </span>
+                        </td>
+                        <td>{doc.sourceInvoiceId != null ? "Sim" : "—"}</td>
+                      </tr>
+                    ))
+                  )
+                )}
                 {financial.plannedReceivables.map((p) => (
                   <tr key={`planned-${p.key}`}>
                     <td>
                       <span className="so-detail-badge so-detail-badge--info">
-                        Previsão do pedido
+                        Previsão residual
                       </span>
                     </td>
                     <td className="font-semibold">{p.reference}</td>
@@ -698,18 +771,40 @@ function PlannedForecastKpi({
 }: {
   financial: SalesOrderDetailPayload["financial"];
 }): JSX.Element {
-  const applicable = financial.plannedTotals.applicableExpected ?? 0;
+  const applicable =
+    financial.coverageSummary?.activeOrderResidualTotal ??
+    financial.plannedTotals.applicableExpected ??
+    0;
   const covered =
-    (financial.plannedTotals.coveredByRealReceivables ?? 0) +
-    (financial.plannedTotals.coveredByDocumentsWithoutRealReceivable ?? 0);
-  const original = financial.plannedTotals.totalExpected ?? 0;
+    (financial.coverageSummary?.coveredByRealReceivables ??
+      financial.plannedTotals.coveredByRealReceivables ??
+      0) +
+    (financial.coverageSummary?.coveredByDocumentsWithoutCr ??
+      financial.plannedTotals.coveredByDocumentsWithoutRealReceivable ??
+      0);
+  const original =
+    financial.coverageSummary?.plannedNetTotal ??
+    financial.plannedTotals.totalExpected ??
+    0;
+  const cut = financial.cutAmount ?? financial.coverageSummary?.cutAmount ?? 0;
   const fully = Boolean(financial.plannedTotals.fullySuperseded);
   const partial = Boolean(financial.plannedTotals.partiallySuperseded);
+
+  if (cut > 0.009 && applicable <= 0.009) {
+    return (
+      <Kpi
+        label="Previsão residual"
+        value={formatFinanceCurrency(0)}
+        hint={`Corte comercial: ${formatFinanceCurrency(cut)}`}
+        tone="muted"
+      />
+    );
+  }
 
   if (fully || (original > 0.009 && applicable <= 0.009 && covered > 0.009)) {
     return (
       <Kpi
-        label="Previsão do pedido"
+        label="Previsão residual"
         value="Substituída"
         hint={original > 0.009 ? `Original: ${formatFinanceCurrency(original)}` : null}
         tone="muted"
@@ -734,7 +829,7 @@ function PlannedForecastKpi({
 
   return (
     <Kpi
-      label="Previsão do pedido"
+      label="Previsão residual"
       value={formatFinanceCurrency(applicable > 0.009 ? applicable : original)}
       tone={applicable > 0.009 || original > 0.009 ? "info" : "muted"}
     />

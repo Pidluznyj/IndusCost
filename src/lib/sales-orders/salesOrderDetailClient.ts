@@ -14,8 +14,9 @@
  *   - salesOrderLinkedNfe.loadSalesOrderLinkedNfeContextMap
  *   - salesOrderListBillingStatus.resolveSalesOrderBillingStatus
  *   - salesOrderMarginService.calculateSalesOrderMarginsForOrders
- *   - orderReceivablesResolver.resolveReceivablesForSalesOrder
- *     (via getOrderFullAudit → CR real + planned + receipts)
+ *   - salesOrderEffectiveFinancialSchedule (FIN-05) via
+ *     salesOrderDetailEffectiveFinancial (FIN-06)
+ *   - NomusAccountsReceivable (CR real no audit)
  *   - nomusSalesOrderItemStatus.parseNomusSalesOrderItemStatusFromRawItem
  */
 
@@ -152,14 +153,70 @@ export type SalesOrderDetailStockDocument = {
 };
 
 // ---------------------------------------------------------------------------
-// Financeiro (real + planejado)
+// Financeiro (agenda efetiva FIN-05/FIN-06)
 // ---------------------------------------------------------------------------
 
+export type SalesOrderDetailDocumentScheduleEntry =
+  | {
+      kind: "DOCUMENT_SCHEDULE";
+      documentKey: string;
+      sourceInvoiceId: number | null;
+      allocatedByOrderPrice: number;
+      installments: Array<{
+        installmentNumber: number;
+        dueDate: string | null;
+        amount: number;
+      }>;
+    }
+  | {
+      kind: "DOCUMENT_AWAITING_FINANCIAL_SCHEDULE";
+      documentKey: string;
+      sourceInvoiceId: number | null;
+      allocatedByOrderPrice: number;
+      dueDate: null;
+      installments: [];
+    };
+
+export type SalesOrderDetailCoverageSummary = {
+  plannedNetTotal: number;
+  itemActiveResidualTotal: number;
+  coveredByRealReceivables: number;
+  coveredByDocumentsWithoutCr: number;
+  documentAwaitingAmount: number;
+  activeOrderResidualTotal: number;
+  supersededOrderTotal: number;
+  cutAmount: number;
+  canceledAmount: number;
+  unresolvedAmount: number;
+  /** Agenda real/documental (CR + Doc sem CR), sem somar residual/corte. */
+  realOrDocumentAgendaTotal: number;
+  precedenceSource:
+    | "REAL_RECEIVABLE"
+    | "OUTPUT_DOCUMENT"
+    | "ORDER_PLAN"
+    | "MIXED"
+    | "NONE";
+};
+
+export type SalesOrderDetailEffectiveAlert = {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  documentKey?: string;
+  salesOrderItemId?: string;
+  installmentNumber?: number;
+};
+
 export type SalesOrderDetailFinancial = {
+  /** Motor canônico da agenda efetiva. */
+  engine: "salesOrderEffectiveFinancialSchedule";
+  /** CR real (NomusAccountsReceivable). */
   realReceivables: OrderFullAuditReceivable[];
-  /** Parcelas vigentes (previsão residual ativa). */
+  /** Condição vigente do Documento (ou awaiting sem datas do Pedido). */
+  documentSchedule: SalesOrderDetailDocumentScheduleEntry[];
+  /** Previsão residual ativa (itens ainda ativos; datas originais do Pedido). */
   plannedReceivables: OrderFullAuditPlannedReceivable[];
-  /** Previsão original substituída (histórico/auditoria). */
+  /** Previsão original substituída (histórico — nunca status "Vencido"). */
   supersededPlannedReceivables: OrderFullAuditPlannedReceivable[];
   receipts: OrderFullAuditReceipt[];
   totals: {
@@ -171,6 +228,14 @@ export type SalesOrderDetailFinancial = {
     maxAmount: number;
     totalCount: number;
   };
+  /** Valor cortado (não é saldo financeiro). */
+  cutAmount: number;
+  /** Valor cancelado. */
+  canceledAmount: number;
+  /** Valor não resolvido (status UNKNOWN). */
+  unresolvedAmount: number;
+  coverageSummary: SalesOrderDetailCoverageSummary;
+  /** Totais legados alinhados ao residual efetivo (compat UI). */
   plannedTotals: {
     totalCount: number;
     totalExpected: number;
@@ -186,10 +251,19 @@ export type SalesOrderDetailFinancial = {
     remainingPlannedValue?: number;
     fullySuperseded?: boolean;
     partiallySuperseded?: boolean;
-    precedenceSource?: "REAL_RECEIVABLE" | "OUTPUT_DOCUMENT" | "ORDER_PLAN" | "MIXED";
+    precedenceSource?:
+      | "REAL_RECEIVABLE"
+      | "OUTPUT_DOCUMENT"
+      | "ORDER_PLAN"
+      | "MIXED"
+      | "NONE";
   };
-  /** Próximo vencimento da agenda efetiva (CR aberto + previsão residual). */
+  /**
+   * Próximo vencimento somente de entradas efetivas
+   * (CR aberto + Doc comprovado + residual ativo).
+   */
   effectiveNextDueDate: string | null;
+  effectiveAlerts: SalesOrderDetailEffectiveAlert[];
 };
 
 // ---------------------------------------------------------------------------

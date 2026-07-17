@@ -17,20 +17,20 @@
  *   - `crmCustomerCommercialOwner.loadManualCommercialOwnersForCustomers`
  *   - `salesOrderLinkedNfe.loadSalesOrderLinkedNfeContextMap`
  *   - `salesOrderMarginService.calculateSalesOrderMarginsForOrders`
- *   - `buildSalesOrderPlannedReceivables` +
- *     `resolveSalesOrderListPaymentSummary`
  *   - `NomusStockDocument` / `NomusStockDocumentItem`
  *   - `nomusSalesOrderItemStatus.parseNomusSalesOrderItemStatusFromRawItem`
  *
  * Motores oficiais consumidos diretamente:
+ *   - `buildSalesOrderDetailFinancialFromAudit` → FIN-05
+ *     (`salesOrderEffectiveFinancialSchedule`) — agenda financeira efetiva.
  *   - `resolveSalesOrderBillingStatus` (fonte única do status de faturamento).
  *   - `salesOrderBillingStatusLabel`.
  *   - `formatNomusItemStatusNormalized` (label PT-BR do status do item).
  *
  * Regras:
  *   - Read-only.
- *   - Não recalcula margem, CR, NF ou billing — apenas compõe.
- *   - CR real prevalece sobre planejado (mantido pelo audit resolver).
+ *   - Não recalcula margem, NF ou billing — apenas compõe.
+ *   - Financeiro do detalhe = motor canônico FIN-05 (não Pedido−CR).
  *   - Item cancelado nunca é reportado como pendente.
  *   - Status de faturamento sempre vem do `linkedNfe`, nunca do
  *     `SalesOrder.status` bruto.
@@ -53,6 +53,7 @@ import { prisma as defaultPrisma } from "@/src/lib/prisma.js";
 import { buildSalesOrderFiscalTaxesPayload } from "./salesOrderFiscalTaxes.server.js";
 import { buildSalesOrderFiscalTaxesErrorPayload } from "./salesOrderFiscalTaxesContract.js";
 import { canViewSalesOrderFiscalTaxesFromAuth } from "./salesOrderFiscalTaxesPermissions.js";
+import { buildSalesOrderDetailFinancialFromAudit } from "./salesOrderDetailEffectiveFinancial.js";
 import type {
   SalesOrderDetailAlert,
   SalesOrderDetailFinancial,
@@ -285,44 +286,7 @@ function mapStockDocuments(
 }
 
 function mapFinancial(audit: OrderFullAuditPayload): SalesOrderDetailFinancial {
-  const activePlanned = audit.plannedReceivables.filter((p) => !p.replacedByRealCr);
-  const supersededPlanned = audit.plannedReceivables.filter((p) => p.replacedByRealCr);
-  const crNext = audit.receivablesTotal.nextDueDate;
-  const plannedNext = audit.plannedReceivablesTotal.nextDueDate;
-  const effectiveNextDueDate =
-    crNext && plannedNext
-      ? crNext < plannedNext
-        ? crNext
-        : plannedNext
-      : crNext ?? plannedNext ?? null;
-
-  return {
-    realReceivables: audit.receivables,
-    plannedReceivables: activePlanned,
-    supersededPlannedReceivables: supersededPlanned,
-    receipts: audit.receipts,
-    totals: audit.receivablesTotal,
-    plannedTotals: {
-      totalCount: audit.plannedReceivablesTotal.totalCount,
-      totalExpected: audit.plannedReceivablesTotal.totalExpected,
-      applicableExpected: audit.plannedReceivablesTotal.applicableExpected,
-      openExpected: audit.plannedReceivablesTotal.openExpected,
-      overdueExpected: audit.plannedReceivablesTotal.overdueExpected,
-      overdueCount: audit.plannedReceivablesTotal.overdueCount,
-      nextDueDate: audit.plannedReceivablesTotal.nextDueDate,
-      replacedCount: audit.plannedReceivablesTotal.replacedCount,
-      replacedAmount: audit.plannedReceivablesTotal.replacedAmount,
-      coveredByRealReceivables:
-        audit.plannedReceivablesTotal.coveredByRealReceivables,
-      coveredByDocumentsWithoutRealReceivable:
-        audit.plannedReceivablesTotal.coveredByDocumentsWithoutRealReceivable,
-      remainingPlannedValue: audit.plannedReceivablesTotal.remainingPlannedValue,
-      fullySuperseded: audit.plannedReceivablesTotal.fullySuperseded,
-      partiallySuperseded: audit.plannedReceivablesTotal.partiallySuperseded,
-      precedenceSource: audit.plannedReceivablesTotal.precedenceSource,
-    },
-    effectiveNextDueDate,
-  };
+  return buildSalesOrderDetailFinancialFromAudit(audit);
 }
 
 function mapPricingMargin(
@@ -498,7 +462,8 @@ export async function getSalesOrderDetail(
         "salesOrderLinkedNfe.loadSalesOrderLinkedNfeContextMap",
         "salesOrderListBillingStatus.resolveSalesOrderBillingStatus",
         "salesOrderMarginService.calculateSalesOrderMarginsForOrders",
-        "orderReceivablesResolver → buildSalesOrderPlannedReceivables + NomusAccountsReceivable",
+        "salesOrderEffectiveFinancialSchedule (FIN-05) via salesOrderDetailEffectiveFinancial",
+        "NomusAccountsReceivable (CR real)",
         "nomusSalesOrderItemStatus.parseNomusSalesOrderItemStatusFromRawItem",
         "NomusNfeFiscalSummary + NomusNfeTaxLine (aba Tributos)",
       ],
