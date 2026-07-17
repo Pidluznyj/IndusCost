@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-17T14:19:51.550Z",
+  "generatedAt": "2026-07-17T19:49:14.372Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -226,6 +226,18 @@
     },
     {
       "order": 19,
+      "itemId": "sales-order-flow",
+      "label": "Fluxo de Pedidos",
+      "path": "/commercial/sales-order-flow",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "sales_orders.flow.view"
+      ]
+    },
+    {
+      "order": 20,
       "itemId": "output-documents",
       "label": "Documentos de Saída",
       "path": "/output-documents",
@@ -237,7 +249,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -249,7 +261,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -265,7 +277,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -286,7 +298,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -298,7 +310,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -311,7 +323,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -328,7 +340,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -342,7 +354,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -358,7 +370,7 @@
       ]
     },
     {
-      "order": 28,
+      "order": 29,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -371,7 +383,7 @@
       ]
     },
     {
-      "order": 29,
+      "order": 30,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -403,6 +415,7 @@
     "pricing": true,
     "proposals": true,
     "sales-orders": true,
+    "sales-order-flow": true,
     "output-documents": true,
     "customers": true,
     "crm-commercial": true,
@@ -446,6 +459,9 @@
     ],
     "sales-orders": [
       "sales_orders.view"
+    ],
+    "sales-order-flow": [
+      "sales_orders.flow.view"
     ],
     "output-documents": [
       "output_documents.view"
