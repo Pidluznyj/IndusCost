@@ -376,6 +376,7 @@ import { registerSettingsSalesOrderFlowRoutes } from "./src/lib/settingsSalesOrd
 import { buildSalesOrderFlowEngineStatus } from "./src/lib/sales/salesOrderFlowStatus.server.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerOutputDocumentsRoutes } from "./src/lib/outputDocumentsRoutes.js";
+import { registerSalesOrderFlowRoutes } from "./src/lib/salesOrderFlowRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCashFunnelRoutes.js";
@@ -15175,6 +15176,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerOutputDocumentsRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  registerSalesOrderFlowRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,

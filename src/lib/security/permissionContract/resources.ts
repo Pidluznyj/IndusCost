@@ -584,7 +584,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       V(["sales_orders.view"]),
       X(["sales_orders.view"], "export UI hoje usa acesso ao módulo; sem chave .export dedicada"),
     ],
-    relatedEndpoints: ["/api/sales-orders"],
+    relatedEndpoints: [
+      "/api/sales-orders",
+      "/api/commercial/sales-order-flow/summary",
+    ],
     sensitivity: "critical",
     appearsInSidebar: true,
     isTab: false,
