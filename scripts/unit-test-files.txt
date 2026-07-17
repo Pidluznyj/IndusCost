@@ -147,6 +147,8 @@ src/lib/finance/financeAccountsReceivableEffectiveTitles.test.ts
 src/lib/sales-orders/salesOrderDetailEffectiveFinancial.test.ts
 src/lib/finance/orderToCashAuditToPortfolioFactsAdapter.test.ts
 src/lib/finance/orderToCashAuditUi.test.ts
+src/lib/finance/orderFullAuditProduction.test.ts
+src/lib/finance/orderFullAuditDocuments.test.ts
 src/components/shared/BomCostDetailRow.test.tsx
 src/components/NewProductSimulationReport.test.tsx
 src/components/contextual/ModuleIndicatorsButton.test.tsx
