@@ -458,11 +458,11 @@ describe("FIN-13 motor — cenários obrigatórios", () => {
         },
       ],
     });
-    // Residual de itens permanece 200k; na agenda, CR 101.500 além do Doc 100k
-    // desconta 1.500 (FIN-02: CR substitui previsão — evita CR+previsão).
+    // FIN-13: residual comercial fica na base dos itens (200k); CR > Doc não
+    // aumenta consumo nem zera saldo das posições restantes.
     assertMoney(schedule.coverageSummary.itemActiveResidualTotal, "200000.00");
-    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "198500.00");
-    assertMoney(schedule.coverageSummary.activeOrderResidualTotal, "198500.00");
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "200000.00");
+    assertMoney(schedule.coverageSummary.activeOrderResidualTotal, "200000.00");
     assertMoney(schedule.realReceivables[0]!.amountReceivable, "101500.00");
   });
 

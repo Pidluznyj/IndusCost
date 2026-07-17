@@ -268,3 +268,89 @@ describe("CR sem Documento não duplica previsão (PD 02740)", () => {
     assert.equal(schedule.activeOrderResidualSchedule.length, 0);
   });
 });
+
+describe("Entrega parcial com Documento+CR não zera saldo (PD 02719)", () => {
+  it("2 entregas em 3 parcelas → posições 1–2 ocupadas; residual na 3ª", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(
+      fixtureOrder10000Base({
+        orderCode: "PD 02719",
+        originalInstallments: [
+          { installmentNumber: 1, dueDate: "2026-09-10", amount: "155530.00" },
+          { installmentNumber: 2, dueDate: "2026-09-20", amount: "155530.00" },
+          { installmentNumber: 3, dueDate: "2026-09-30", amount: "155530.00" },
+        ],
+        items: [
+          {
+            salesOrderItemId: "item-1",
+            plannedNetValue: "466590.00",
+            status: 3,
+            orderedQuantity: 30,
+            fulfilledQuantity: 20,
+            documentAllocations: [
+              { allocationKey: "d1", allocatedByOrderPrice: "158505.00" },
+              { allocationKey: "d2", allocatedByOrderPrice: "146974.00" },
+            ],
+          },
+        ],
+        documents: [
+          {
+            documentKey: "doc-7311",
+            sourceInvoiceId: 7311,
+            allocatedByOrderPrice: "158505.00",
+            documentDate: "2026-07-10",
+            provenInstallments: [
+              { installmentNumber: 1, dueDate: "2026-09-10", amount: "158505.00" },
+            ],
+          },
+          {
+            documentKey: "doc-7382",
+            sourceInvoiceId: 7382,
+            allocatedByOrderPrice: "146974.00",
+            documentDate: "2026-07-17",
+            provenInstallments: [
+              { installmentNumber: 1, dueDate: "2026-09-20", amount: "146974.00" },
+            ],
+          },
+        ],
+        realReceivables: [
+          {
+            externalId: 1,
+            sourceInvoiceId: 7311,
+            dueDate: "2026-09-10",
+            amountReceivable: "158505.00",
+            amountReceived: "0",
+            balanceReceivable: "158505.00",
+          },
+          {
+            externalId: 2,
+            sourceInvoiceId: 7382,
+            dueDate: "2026-09-20",
+            amountReceivable: "146974.00",
+            amountReceived: "0",
+            balanceReceivable: "146974.00",
+          },
+        ],
+      })
+    );
+
+    assert.equal(schedule.coverageSummary.materializationMode, "STAGED_AUTOMATIC");
+    assert.ok(schedule.activeOrderResidualSchedule.length >= 1);
+    assert.ok(
+      Number(schedule.coverageSummary.activeOrderResidualTotal.toFixed(2)) > 0.009,
+      "saldo da 3ª parcela não pode zerar só porque há CR das 2 NFs"
+    );
+    assert.ok(
+      !schedule.supersededOrderSchedule.every((l) => l.installmentNumber <= 3) ||
+        schedule.activeOrderResidualSchedule.some((l) => l.installmentNumber === 3),
+      "parcela 3 deve permanecer ativa (residual), não substituída integral"
+    );
+    // Residual = min(saldo qty, não coberto por Doc) — não pode ser zerado pelo CR.
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "155530.00");
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
+    assert.equal(
+      schedule.supersededOrderSchedule.filter((l) => l.installmentNumber === 3).length,
+      0,
+      "parcela 3 não entra como substituída enquanto houver residual"
+    );
+  });
+});

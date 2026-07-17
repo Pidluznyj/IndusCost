@@ -404,21 +404,26 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     .reduce((s, a) => s.add(a), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
 
-  // FIN-04 só desconta Documento do residual do item; CR fica em realReceivables.
-  // Política FIN-02: CR substitui a previsão do Pedido na parte coberta.
-  // Evita CR+previsão do mesmo valor (ex.: CR pré-NF sem Documento nos itens).
-  // Não desconta de novo a fatia já coberta por Doc nos itens (CR da mesma cadeia).
+  // Residual comercial = FIN-04 (já líquido de Documento nos itens).
+  // FIN-13: com Documento/entrega, NÃO abater CR de novo — CR pode divergir
+  // (frete/imposto) e zeraria o saldo da 3ª parcela (regressão PD 02719).
+  // Exceção: CR sem qualquer Documento (ex. CR pré-NF / PD 02740) — aí o CR
+  // sozinho substitui a previsão na parte coberta.
   const itemDocCoverageTotal = itemAmounts
     .reduce((s, item) => s.add(item.coveredByValidDocuments), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
-  const crBeyondDocumentCoverage = maxMoney(
-    ZERO,
-    coveredByRealReceivables.sub(itemDocCoverageTotal)
-  ).toDecimalPlaces(MONEY_DP, ROUND);
+  const hasDocumentCoverage =
+    itemDocCoverageTotal.gt(0) ||
+    (input.documents ?? []).some(
+      (d) => d.isValid !== false && money(d.allocatedByOrderPrice).gt(0)
+    );
+  const crOnlyCoverage = !hasDocumentCoverage
+    ? coveredByRealReceivables
+    : ZERO;
 
   const residualToSchedule = maxMoney(
     ZERO,
-    itemActiveResidualTotal.sub(crBeyondDocumentCoverage)
+    itemActiveResidualTotal.sub(crOnlyCoverage)
   ).toDecimalPlaces(MONEY_DP, ROUND);
 
   const stagedDeliveryBlocks = buildStagedDeliveryBlocks({
