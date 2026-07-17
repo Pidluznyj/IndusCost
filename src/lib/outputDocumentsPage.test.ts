@@ -25,8 +25,14 @@ import {
 import {
   canAccessOutputDocumentsModule,
   canViewOutputDocuments,
+  classifyOutputDocumentsDetailError,
   classifyOutputDocumentsListError,
+  formatOutputDocumentCancellation,
   formatOutputDocumentFinancialStatusLabel,
+  formatOutputDocumentItemCode,
+  formatOutputDocumentItemDescription,
+  formatOutputDocumentItemLinkStatusLabel,
+  formatOutputDocumentItemLocalProduct,
   formatOutputDocumentMoney,
   formatOutputDocumentNfe,
   formatOutputDocumentNumber,
@@ -45,7 +51,9 @@ import {
 import { COMMERCIAL_RESOURCE_KEYS } from "@/src/lib/commercialAccess.js";
 import { HttpError } from "@/src/lib/http.js";
 import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDocumentGridTableRow.js";
+import { OutputDocumentDetailContent } from "@/src/components/commercial/OutputDocumentDetailOverlay.js";
 import type { OutputDocumentsListItem } from "@/src/lib/output-documents/outputDocumentsListTypes.js";
+import type { OutputDocumentDetailPayload } from "@/src/lib/output-documents/outputDocumentsDetailTypes.js";
 
 function read(path: string): string {
   return readFileSync(join(process.cwd(), path), "utf8");
@@ -373,5 +381,280 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /output-documents-page-next/);
     assert.match(source, /Página \{page\} de \{totalPages\}/);
     assert.match(source, /totalPages > 1/);
+  });
+});
+
+describe("output documents detail drawer", () => {
+  function detailPayload(
+    overrides: Partial<OutputDocumentDetailPayload> = {}
+  ): OutputDocumentDetailPayload {
+    return {
+      document: {
+        id: "00000000-0000-4000-8000-000000000301",
+        externalId: 8451,
+        documentNumber: "DS-8451",
+        tipoDocumentoEstoque: "DocumentoSaida",
+        statusRaw: "Emitido",
+        cancellation: {
+          isCancelled: false,
+          cancelledAt: null,
+          reason: null,
+        },
+        company: { externalId: 1, name: "KOPPETEL" },
+        customer: { externalId: 55, name: "Cliente X" },
+        dataDocumento: "2026-06-01T00:00:00.000Z",
+        movementDate: "2026-06-02T00:00:00.000Z",
+        idNfe: 7208,
+        paymentTermsRaw: "30 dias",
+        totalValue: 100,
+        sync: {
+          syncedAt: "2026-07-10T10:00:00.000Z",
+          firstSeenAt: "2026-07-01T10:00:00.000Z",
+          lastSeenAt: "2026-07-10T10:00:00.000Z",
+          presentInLastPayload: true,
+        },
+      },
+      items: [
+        {
+          id: "item-resolved",
+          externalItemId: 10,
+          externalProductId: 100,
+          quantity: 10,
+          unitValue: 5,
+          totalValue: 50,
+          allocatedValue: 50,
+          unallocatedBalance: 0,
+          linkStatus: "resolved",
+          linkOrigin: "ITEM_EVIDENCE",
+          productLink: { externalProductId: 100, hasProductId: true },
+          links: [
+            {
+              salesOrderId: "order-a",
+              salesOrderItemId: "soi-a1",
+              orderCode: "PD-100",
+              allocatedValue: 50,
+              quantityUsedForOrder: 10,
+              source: "order_to_cash_fact",
+            },
+          ],
+          alerts: [],
+        },
+        {
+          id: "item-unresolved",
+          externalItemId: 11,
+          externalProductId: null,
+          quantity: 2,
+          unitValue: 25,
+          totalValue: 50,
+          allocatedValue: 0,
+          unallocatedBalance: 50,
+          linkStatus: "unresolved",
+          linkOrigin: "UNRESOLVED",
+          productLink: { externalProductId: null, hasProductId: false },
+          links: [],
+          alerts: ["Sem produto no stage"],
+        },
+      ],
+      values: {
+        totalValue: 100,
+        totalValueSource: "stage_header",
+        itemsSum: 100,
+        allocatedToOrders: 50,
+        unallocatedBalance: 50,
+        overAllocation: 0,
+        coverageStatus: "partial",
+      },
+      resolution: {
+        listedFromStage: true,
+        dependsOnO2cForListing: false,
+        itemCount: 2,
+        itemsResolved: 1,
+        itemsUnresolved: 1,
+        itemsPartial: 0,
+        itemsConflict: 0,
+      },
+      orders: [],
+      allocations: {
+        documentTotalValue: 100,
+        allocatedToOrders: 50,
+        unallocatedBalance: 50,
+        overAllocation: 0,
+        coveragePercent: 50,
+        coverageStatus: "partial",
+        orderShares: [],
+      },
+      nfes: [
+        {
+          externalId: 7208,
+          numero: "98765",
+          serie: "1",
+          status: 100,
+          isCancelled: false,
+          dataEmissao: "2026-06-01T00:00:00.000Z",
+          dataProcessamento: null,
+          totalValue: 100,
+          chaveMasked: "****",
+          foundLocally: true,
+          isPrimary: true,
+          sources: [],
+        },
+      ],
+      financial: {
+        status: "cr_em_aberto",
+        statusReasons: [],
+        financialOrigin: "REAL_RECEIVABLE",
+        financialOriginReasons: [],
+        receivableTotal: 100,
+        open: 100,
+        received: 0,
+        nextDueDate: null,
+        installmentCount: 1,
+        titles: [],
+        documentPaymentTermsRaw: "30 dias",
+        alerts: [],
+      },
+      audit: null,
+      inconsistencies: [],
+      permissions: {
+        canViewFinancial: true,
+        canViewAudit: false,
+        canViewRaw: false,
+      },
+      generatedAt: "2026-07-17T12:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("módulo abre o drawer ao selecionar documento", () => {
+    const source = read(
+      "src/components/commercial/OutputDocumentsModule.tsx"
+    );
+    assert.match(source, /OutputDocumentDetailOverlay/);
+    assert.match(source, /outputDocumentId=\{selectedDocumentId\}/);
+    assert.match(source, /setSelectedDocumentId\(null\)/);
+  });
+
+  it("preserva dimensões, scroll e cabeçalho do padrão de OP", () => {
+    const source = read(
+      "src/components/commercial/OutputDocumentDetailOverlay.tsx"
+    );
+    assert.match(source, /size="full"/);
+    assert.match(
+      source,
+      /h-\[calc\(100vh-2rem\)\] !max-w-\[1400px\] sm:h-\[92vh\]/
+    );
+    assert.match(source, /OverlayHeader/);
+    assert.match(source, /OverlayBody/);
+    assert.match(source, /OverlayTabs/);
+    assert.match(source, /output-document-detail-drawer/);
+    assert.match(source, /output-document-detail-loading/);
+    assert.match(source, /output-document-detail-error/);
+    assert.match(source, /output-document-detail-not-found/);
+    assert.match(source, /fetchOutputDocumentDetail/);
+  });
+
+  it("aba Geral renderiza campos e valores principais", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: detailPayload(),
+        activeTab: "geral",
+      })
+    );
+    assert.match(html, /output-document-detail-general-panel/);
+    for (const label of [
+      "Documento",
+      "Status",
+      "Empresa",
+      "Cliente",
+      "Emissão",
+      "Cancelamento",
+      "NF-e",
+      "Situação financeira",
+      "Sincronização",
+      "Valor total",
+      "Valor dos itens",
+      "Valor alocado",
+      "Saldo não alocado",
+    ]) {
+      assert.match(html, new RegExp(label));
+    }
+    assert.match(html, /DS-8451/);
+    assert.match(html, /KOPPETEL/);
+    assert.match(html, /Cliente X/);
+    assert.match(html, /98765/);
+    assert.match(html, /CR em aberto/);
+  });
+
+  it("aba Itens mostra resolvidos e não resolvidos", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: detailPayload(),
+        activeTab: "itens",
+      })
+    );
+    assert.match(html, /output-document-detail-items-panel/);
+    assert.match(html, /output-document-detail-items-table/);
+    for (const label of [
+      "Código",
+      "Descrição",
+      "Quantidade",
+      "Unidade",
+      "Valor unitário",
+      "Valor total",
+      "Pedido",
+      "Item do pedido",
+      "Produto local",
+      "Estado do vínculo",
+    ]) {
+      assert.match(html, new RegExp(label));
+    }
+    assert.match(html, /data-link-status="resolved"/);
+    assert.match(html, /data-link-status="unresolved"/);
+    assert.match(html, /Não resolvido/);
+    assert.match(html, /PD-100/);
+    assert.match(html, /Sem produto no stage|Sem descrição no stage|Produto Nomus/);
+  });
+
+  it("classifica 404 como documento inexistente", () => {
+    const classified = classifyOutputDocumentsDetailError(
+      new HttpError(404, "not found")
+    );
+    assert.equal(classified.kind, "not_found");
+    assert.match(classified.message, /não encontrado/i);
+  });
+
+  it("helpers de item cobrem código, descrição e vínculo local", () => {
+    assert.equal(
+      formatOutputDocumentItemCode({
+        externalProductId: 100,
+        externalItemId: 10,
+      }),
+      "100"
+    );
+    assert.equal(
+      formatOutputDocumentItemDescription({
+        externalProductId: null,
+        alerts: ["Sem produto no stage"],
+      }),
+      "Sem produto no stage"
+    );
+    assert.equal(
+      formatOutputDocumentItemLocalProduct({
+        productLink: { externalProductId: null, hasProductId: false },
+      }),
+      "Não vinculado"
+    );
+    assert.equal(
+      formatOutputDocumentItemLinkStatusLabel("unresolved"),
+      "Não resolvido"
+    );
+    assert.equal(
+      formatOutputDocumentCancellation({
+        isCancelled: false,
+        cancelledAt: null,
+        reason: null,
+      }),
+      "Não"
+    );
   });
 });

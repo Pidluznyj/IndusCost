@@ -36,6 +36,7 @@ import {
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDocumentGridTableRow";
+import { OutputDocumentDetailOverlay } from "@/src/components/commercial/OutputDocumentDetailOverlay";
 import { cn } from "@/src/lib/utils";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -695,6 +696,11 @@ export function OutputDocumentsModule() {
           </div>
         </div>
       ) : null}
+
+      <OutputDocumentDetailOverlay
+        outputDocumentId={selectedDocumentId}
+        onClose={() => setSelectedDocumentId(null)}
+      />
     </div>
   );
 }
