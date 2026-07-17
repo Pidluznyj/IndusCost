@@ -42,12 +42,18 @@ export function getNodeDecision(
   return decisions[id] ?? "inherit";
 }
 
+/**
+ * Resultado efetivo na árvore admin.
+ * Alinhado ao resolvedor: só DENY explícito do ancestral bloqueia filhos
+ * (ALLOW filho vence pai sem grant / baseline Negado).
+ */
 export function resolvePermissionTreeEffective(
   decision: PermissionTreeDecision,
   baselineEffective: PermissionTreeEffective,
-  parentEffective: PermissionTreeEffective | null
+  parentEffective: PermissionTreeEffective | null,
+  parentBlockedByExplicitDeny = false
 ): PermissionTreeEffective {
-  if (parentEffective === "denied") return "denied";
+  if (parentBlockedByExplicitDeny) return "denied";
   if (decision === "allow") return "allowed";
   if (decision === "deny") return "denied";
   if (parentEffective === "allowed" && baselineEffective === "inherited") {
@@ -59,25 +65,28 @@ export function resolvePermissionTreeEffective(
 export function mapPermissionTreeEffectives(
   nodes: readonly PermissionTreeNode[],
   decisions: PermissionTreeDecisions,
-  parentEffective: PermissionTreeEffective | null = null
+  parentEffective: PermissionTreeEffective | null = null,
+  parentBlockedByExplicitDeny = false
 ): Map<string, PermissionTreeEffective> {
   const map = new Map<string, PermissionTreeEffective>();
   const walk = (
     list: readonly PermissionTreeNode[],
-    parent: PermissionTreeEffective | null
+    parent: PermissionTreeEffective | null,
+    blockedByExplicitDeny: boolean
   ) => {
     for (const n of list) {
       const decision = getNodeDecision(decisions, n.id);
       const effective = resolvePermissionTreeEffective(
         decision,
         n.baselineEffective,
-        parent
+        parent,
+        blockedByExplicitDeny
       );
       map.set(n.id, effective);
-      walk(n.children, effective);
+      walk(n.children, effective, blockedByExplicitDeny || decision === "deny");
     }
   };
-  walk(nodes, parentEffective);
+  walk(nodes, parentEffective, parentBlockedByExplicitDeny);
   return map;
 }
 

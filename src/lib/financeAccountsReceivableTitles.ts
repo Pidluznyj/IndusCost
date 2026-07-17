@@ -49,9 +49,20 @@ import {
 import type {
   FinanceTitlesBucketTotals,
 } from "./financeAgingBucketDrilldownTypes.js";
+import {
+  buildFinanceArEffectiveTitles,
+  FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL,
+  type FinanceArEffectiveLineKind,
+  type FinanceArEffectiveOrderContext,
+} from "./finance/financeAccountsReceivableEffectiveTitles.js";
 
 export type FinanceArTitlesOriginFilter = "all" | "withNfe" | "withoutNfe";
 export type FinanceArTitlesDelayFilter = "all" | "overdue" | "upcoming" | "dueToday" | "settled";
+
+export type {
+  FinanceArEffectiveLineKind,
+  FinanceArEffectiveOrderContext,
+} from "./finance/financeAccountsReceivableEffectiveTitles.js";
 
 export type FinanceArTitlesExtendedFilters = {
   issueDateFrom?: Date;
@@ -125,6 +136,16 @@ export type FinanceArTitleListItem = {
   suspendCollection: boolean | null;
   origin: FinanceArReceivableOrigin;
   syncedAt: string;
+  /** FIN-08 — origem na agenda efetiva. */
+  lineKind: FinanceArEffectiveLineKind;
+  lineKindLabel: string;
+  orderCode: string | null;
+  salesOrderId: string | null;
+};
+
+export type BuildFinanceArTitlesPayloadOptions = {
+  /** Agendas FIN-05 dos pedidos no contexto (cliente/pedido). */
+  orderContexts?: FinanceArEffectiveOrderContext[];
 };
 
 export type FinanceArTitlesPayload = {
@@ -446,7 +467,24 @@ export function mapRowToTitleListItem(
     suspendCollection: row.suspendCollection,
     origin: classifyFinanceArReceivableOrigin(row),
     syncedAt: row.syncedAt.toISOString(),
+    lineKind: "CR_REAL",
+    lineKindLabel: FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL.CR_REAL,
+    orderCode: null,
+    salesOrderId: null,
   };
+}
+
+/** Extrai hint de Pedido (PD…) de search/documento. */
+export function extractFinanceArOrderCodeHint(
+  ...parts: Array<string | null | undefined>
+): string | null {
+  for (const part of parts) {
+    const raw = (part ?? "").trim();
+    if (!raw) continue;
+    const m = raw.match(/\bPD\s*[-/]?\s*\d+\b/i);
+    if (m) return m[0]!.replace(/\s+/g, " ").toUpperCase().replace(/PD\s*/, "PD ");
+  }
+  return null;
 }
 
 export function isFinanceArHorizonTitlesQuery(query: Pick<FinanceArTitlesQuery, "agingBucket">): boolean {
@@ -491,7 +529,8 @@ export function buildFinanceArTitlesPayload(
   rows: FinanceArDashboardRow[],
   query: FinanceArTitlesQuery,
   referenceDate: Date = new Date(),
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: BuildFinanceArTitlesPayloadOptions
 ): FinanceArTitlesPayload {
   const isHorizonDrilldown = isFinanceArHorizonTitlesQuery(query);
 
@@ -532,8 +571,33 @@ export function buildFinanceArTitlesPayload(
     );
   }
 
-  const mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
-  const summary = computeFinanceArTitlesSummary(mapped, referenceDate);
+  const orderContexts = options?.orderContexts ?? [];
+  const orderCodeHint =
+    extractFinanceArOrderCodeHint(query.search, query.extended?.document) ?? undefined;
+
+  let mapped: FinanceArTitleListItem[];
+  let summary: FinanceArTitlesSummary;
+
+  if (orderContexts.length > 0 || orderCodeHint) {
+    // FIN-08 — agenda efetiva no contexto Pedido/cliente.
+    // Quando há hint de Pedido mas ainda sem contexts, filtra CR por Pedido
+    // e marca lineKind; contexts vazios não inventam residual.
+    const effective = buildFinanceArEffectiveTitles({
+      nomusRows: filtered,
+      orderContexts,
+      orderCode: orderCodeHint,
+      customerPersonId: query.extended?.customerId,
+      customerName: query.extended?.customerName,
+      customerCnpj: query.extended?.customerCnpj,
+      referenceDate,
+    });
+    mapped = effective.items;
+    summary = effective.summary;
+  } else {
+    mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
+    summary = computeFinanceArTitlesSummary(mapped, referenceDate);
+  }
+
   mapped.sort((a, b) => compareTitles(a, b, query.sortBy, query.sortDirection));
 
   const bucketTotals: FinanceTitlesBucketTotals | undefined = query.agingBucket

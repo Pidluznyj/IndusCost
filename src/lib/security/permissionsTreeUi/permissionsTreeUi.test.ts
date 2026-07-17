@@ -43,7 +43,7 @@ describe("permissionsTreeUi — estado puro", () => {
     assert.ok(!filtered.some((n) => n.id === "dashboard"));
   });
 
-  it("pai negado força efetivo denied nos filhos", () => {
+  it("pai com DENY explícito força efetivo denied nos filhos", () => {
     const nodes = buildPermissionsTreeFixture();
     const decisions = setPermissionTreeDecision({}, "finance", "deny");
     const map = mapPermissionTreeEffectives(nodes, decisions);
@@ -52,7 +52,16 @@ describe("permissionsTreeUi — estado puro", () => {
     assert.equal(map.get("finance.suppliers.view"), "denied");
   });
 
-  it("resolvePermissionTreeEffective — herdar usa baseline", () => {
+  it("pai só baseline Negado NÃO bloqueia filho com ALLOW (alinha resolvedor)", () => {
+    const nodes = buildPermissionsTreeFixture();
+    const decisions = setPermissionTreeDecision({}, "finance.suppliers", "allow");
+    const map = mapPermissionTreeEffectives(nodes, decisions);
+    // finance herda baseline denied do fixture sem DENY explícito
+    assert.equal(map.get("finance"), "denied");
+    assert.equal(map.get("finance.suppliers"), "allowed");
+  });
+
+  it("resolvePermissionTreeEffective — herdar usa baseline; DENY explícito do pai bloqueia", () => {
     assert.equal(
       resolvePermissionTreeEffective("inherit", "allowed", null),
       "allowed"
@@ -62,7 +71,15 @@ describe("permissionsTreeUi — estado puro", () => {
       "allowed"
     );
     assert.equal(
-      resolvePermissionTreeEffective("inherit", "allowed", "denied"),
+      resolvePermissionTreeEffective("inherit", "allowed", "denied", false),
+      "allowed"
+    );
+    assert.equal(
+      resolvePermissionTreeEffective("inherit", "allowed", "denied", true),
+      "denied"
+    );
+    assert.equal(
+      resolvePermissionTreeEffective("allow", "denied", "denied", true),
       "denied"
     );
   });

@@ -1,40 +1,22 @@
 /**
  * Resolver oficial de recebíveis do Pedido de Venda.
  *
- * Este arquivo é uma **façade de leitura** que codifica o padrão oficial
- * "CR real (Nomus) + Recebíveis planejados (pedido) com dedup automático".
+ * Façade de leitura: CR real (Nomus) + previsão residual efetiva (FIN-05).
  *
- * Consumidores esperados (read-only):
- *   - Auditoria 360º do Pedido (`orderFullAuditService`)
- *   - Contas a Receber filtrado por pedido (deep-link via `?search=<orderCode>`)
- *   - Fluxo de Caixa quando precisar do saldo consolidado por pedido
- *   - Scripts de QA / inspects
+ * Consumidores (read-only):
+ *   - Contas a Receber filtrado por pedido / cliente (FIN-08)
+ *   - Auditoria 360º / scripts de QA
  *
- * Motores oficiais reutilizados (sem duplicar lógica):
- *   - **CR real**: `NomusAccountsReceivable` via `getOrderFullAudit`
- *     (loader oficial da Auditoria 360º) — mesmo motor usado pela aba
- *     Financeiro/Contas a Receber, com dedup por `externalId`.
- *   - **Recebíveis planejados**: `buildSalesOrderPlannedReceivables`
- *     (`src/lib/finance/salesOrderPlannedReceivables.ts`) que reusa
- *     `resolveSalesOrderListPaymentSummary` — o mesmo motor que já
- *     materializa "Pedido PD XXXXX - Parcela N" no grid Comercial e no
- *     Fluxo de Caixa.
- *   - **Baixas/recebimentos**: derivados dos CRs oficiais via
- *     `getOrderFullAudit().receipts`.
- *   - **Divergências financeiras**: filtradas do array oficial
- *     `alerts[]` da Auditoria 360º por `linkedTab === "financial"`.
+ * Regras:
+ *   1. CR real deduplicado só por `externalId` (nunca só valor+vencimento).
+ *   2. Previsão integral substituída não permanece ativa.
+ *   3. Corte comercial não entra como recebível.
+ *   4. Documento coberto por CR da mesma NF não vira segundo título.
  *
- * Regras oficiais preservadas:
- *   1. CR real prevalece sobre planejado — dedup por (dueDate ± 3 dias) +
- *      (valor ± R$ 0,01). Ver `buildSalesOrderPlannedReceivables`.
- *   2. Planejado não altera `NomusAccountsReceivable` (append-only).
- *   3. Pedido sem NF pode ter planejado.
- *   4. Empty state só quando não há CR real **e** não há planejado.
- *   5. Cabeçalho NF não infla financeiro — dedup por `receivableExternalId`.
- *
- * O resolver **não** grava nada. Somente lê e compõe.
+ * O resolver **não** grava nada.
  */
 import { getOrderFullAudit } from "./orderFullAuditService.js";
+import { buildSalesOrderDetailFinancialFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import type {
   OrderFullAuditAlert,
   OrderFullAuditPayload,
@@ -75,13 +57,13 @@ export type OrderReceivablesResolverPayload = {
   orderCode: string | null;
   /** CR real do Nomus, deduplicado por `externalId`. */
   realReceivables: OrderFullAuditReceivable[];
-  /** Parcelas planejadas ativas (`replacedByRealCr === false`). */
+  /** Previsão residual ativa (FIN-05) — sem previsão integral substituída. */
   plannedReceivables: OrderFullAuditPlannedReceivable[];
   /** Baixas/recebimentos oficiais derivados dos CRs. */
   receipts: OrderFullAuditReceipt[];
   /** Totais oficiais do CR real (`receivablesTotal` do payload). */
   totals: ResolveReceivablesTotals;
-  /** Totais dos planejados (inclui `replacedCount`/`replacedAmount`). */
+  /** Totais do residual efetivo (FIN-05 / FIN-06). */
   plannedTotals: OrderFullAuditPlannedReceivablesTotal;
   /** Divergências oficiais da aba Financeiro (`linkedTab === "financial"`). */
   divergences: OrderFullAuditAlert[];
@@ -100,11 +82,7 @@ export type OrderReceivablesResolverError = {
 };
 
 /**
- * Retorna a fatia financeira oficial do pedido — CR real + planejado +
- * baixas + divergências — pronta para consumir por qualquer UI executiva.
- *
- * Wrapper sobre `getOrderFullAudit`. Não reimplementa nada:
- * apenas filtra a fatia financeira e formaliza o contrato público.
+ * Retorna CR real + previsão residual efetiva (FIN-05) + baixas + divergências.
  */
 export async function resolveReceivablesForSalesOrder(
   input: ResolveReceivablesInput
@@ -127,14 +105,33 @@ export async function resolveReceivablesForSalesOrder(
   const includeReal = input.includeReal !== false;
   const includePlanned = input.includePlanned !== false;
 
-  const realReceivables = includeReal ? audit.receivables : [];
-  const activePlanned = includePlanned
-    ? audit.plannedReceivables.filter((p) => !p.replacedByRealCr)
-    : [];
-  const receipts = includeReal ? audit.receipts : [];
+  const effective = buildSalesOrderDetailFinancialFromAudit(audit);
+  const realReceivables = includeReal ? effective.realReceivables : [];
+  const activePlanned = includePlanned ? effective.plannedReceivables : [];
+  const receipts = includeReal ? effective.receipts : [];
   const financialDivergences = audit.alerts.filter(
     (alert) => alert.linkedTab === "financial"
   );
+
+  const plannedTotals: OrderFullAuditPlannedReceivablesTotal = {
+    ...audit.plannedReceivablesTotal,
+    totalCount: effective.plannedTotals.totalCount,
+    totalExpected: effective.plannedTotals.totalExpected,
+    applicableExpected: effective.plannedTotals.applicableExpected,
+    openExpected: effective.plannedTotals.openExpected,
+    overdueExpected: effective.plannedTotals.overdueExpected,
+    overdueCount: effective.plannedTotals.overdueCount,
+    nextDueDate: effective.plannedTotals.nextDueDate,
+    replacedCount: effective.plannedTotals.replacedCount,
+    replacedAmount: effective.plannedTotals.replacedAmount,
+    coveredByRealReceivables: effective.plannedTotals.coveredByRealReceivables,
+    coveredByDocumentsWithoutRealReceivable:
+      effective.plannedTotals.coveredByDocumentsWithoutRealReceivable,
+    remainingPlannedValue: effective.plannedTotals.remainingPlannedValue,
+    fullySuperseded: effective.plannedTotals.fullySuperseded,
+    partiallySuperseded: effective.plannedTotals.partiallySuperseded,
+    precedenceSource: effective.plannedTotals.precedenceSource,
+  };
 
   return {
     ok: true,
@@ -143,13 +140,13 @@ export async function resolveReceivablesForSalesOrder(
     realReceivables,
     plannedReceivables: activePlanned,
     receipts,
-    totals: audit.receivablesTotal,
-    plannedTotals: audit.plannedReceivablesTotal,
+    totals: effective.totals,
+    plannedTotals,
     divergences: financialDivergences,
     sources: {
       realCr: "NomusAccountsReceivable (via getOrderFullAudit)",
       plannedForecast:
-        "buildSalesOrderPlannedReceivables → resolveSalesOrderListPaymentSummary",
+        "buildSalesOrderEffectiveFinancialSchedule (FIN-05) → residual ativo",
       receipts: "NomusAccountsReceivable.settlementDate/amountReceived",
     },
   };

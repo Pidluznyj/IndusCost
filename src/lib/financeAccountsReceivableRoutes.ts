@@ -36,6 +36,7 @@ import {
   isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "@/src/lib/financeAccountsReceivableTitles.js";
+import { loadFinanceArEffectiveOrderContexts } from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
 import {
@@ -162,7 +163,19 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
         ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
         : await loadFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
-      const payload = buildFinanceArTitlesPayload(rows, query, referenceDate, syncCutoff);
+      const orderContexts = await loadFinanceArEffectiveOrderContexts(prisma, {
+        search: query.search,
+        document: query.extended?.document,
+        customerPersonId: query.extended?.customerId,
+        customerName: query.extended?.customerName,
+      }, referenceDate);
+      const payload = buildFinanceArTitlesPayload(
+        rows,
+        query,
+        referenceDate,
+        syncCutoff,
+        { orderContexts }
+      );
       return res.json(payload);
     } catch (error) {
       console.error("GET /api/finance/accounts-receivable/titles", error);
@@ -207,13 +220,26 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         prisma,
         financeArTitlesPrismaFilters(query)
       );
+      const orderContexts = await loadFinanceArEffectiveOrderContexts(prisma, {
+        search: query.search,
+        document: query.extended?.document,
+        customerPersonId: query.extended?.customerId,
+        customerName: query.extended?.customerName,
+      }, referenceDate);
       const exportQuery = { ...query, page: 1, limit: 50_000 };
-      const payload = buildFinanceArTitlesPayload(rows, exportQuery, referenceDate, syncCutoff);
+      const payload = buildFinanceArTitlesPayload(
+        rows,
+        exportQuery,
+        referenceDate,
+        syncCutoff,
+        { orderContexts }
+      );
       const allPayload = buildFinanceArTitlesPayload(
         rows,
         { ...exportQuery, limit: Math.max(payload.total, 1) },
         referenceDate,
-        syncCutoff
+        syncCutoff,
+        { orderContexts }
       );
       const generatedAt = new Date().toISOString();
       const buffer = buildFinanceArTitlesExportBuffer(allPayload, allPayload.items, generatedAt);

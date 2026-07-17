@@ -72,8 +72,23 @@ const SORT_OPTIONS: Array<{ value: FinanceArTitlesSortBy; label: string }> = [
   { value: "daysOverdue", label: "Dias em atraso" },
 ];
 
-function originLabel(origin: string): string {
-  return origin === "WITH_NFE" ? "Com NF" : "Sem NF";
+function originLabel(row: {
+  lineKind?: string | null;
+  lineKindLabel?: string | null;
+  origin: string;
+  orderCode?: string | null;
+}): string {
+  if (row.lineKindLabel) {
+    return row.orderCode
+      ? `${row.lineKindLabel} · ${row.orderCode}`
+      : row.lineKindLabel;
+  }
+  if (row.lineKind === "CR_REAL") return "CR REAL";
+  if (row.lineKind === "DOCUMENT_AWAITING_CR") return "DOCUMENTO AGUARDANDO CR";
+  if (row.lineKind === "ORDER_RESIDUAL_FORECAST") {
+    return "PREVISÃO RESIDUAL DO PEDIDO";
+  }
+  return row.origin === "WITH_NFE" ? "Com NF" : "Sem NF";
 }
 
 export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean }) {
@@ -646,7 +661,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
                     {formatFinanceCurrency(row.balanceReceivable)}
                   </td>
                   <td className="p-2">{displayFinanceText(row.paymentMethodName)}</td>
-                  <td className="p-2">{originLabel(row.origin)}</td>
+                  <td className="p-2">{originLabel(row)}</td>
                   <td className="p-2 max-w-[140px] truncate" title={row.comments ?? undefined}>
                     {displayFinanceText(row.comments)}
                   </td>

@@ -186,22 +186,24 @@ const EMPTY_NAV: SidebarAccessibleNavigation = {
   flatAccessibleItems: [],
 };
 
-function revealSet(dto: EffectiveAccessMeDto): ReadonlySet<string> {
-  return new Set([...dto.navigationReveal, ...dto.allowedResources]);
-}
-
-/** View efetivo no DTO (capabilities ou actionsByResource.view). */
+/**
+ * View efetivo no DTO para item de menu.
+ * Usa allow real (capabilities / actions / allowedResources).
+ * Não usa `navigationReveal` sozinho — o reveal virtual de ancestral
+ * (ex.: `finance` quando só `finance.suppliers` está allowed) não deve
+ * abrir a página-irmão/pai na sidebar.
+ */
 export function dtoAllowsView(dto: EffectiveAccessMeDto, contractKey: string): boolean {
   if (dto.isSuperAdmin) return true;
   const cap = dto.capabilities[contractKey];
   if (cap?.canView) return true;
   const actions = dto.actionsByResource[contractKey];
   if (actions?.includes("view")) return true;
-  return dto.navigationReveal.includes(contractKey);
+  return dto.allowedResources.includes(contractKey);
 }
 
 /**
- * Item da sidebar visível se alguma chave de contrato estiver revelada/allowed.
+ * Item da sidebar visível se alguma chave de contrato tiver view efetivo.
  * Sem mapeamento → negado (pendente de correção).
  */
 export function canViewSidebarModuleFromDto(
@@ -212,8 +214,7 @@ export function canViewSidebarModuleFromDto(
   if (dto.isSuperAdmin) return true;
   const keys = SIDEBAR_MODULE_CONTRACT_KEYS[moduleId];
   if (!keys?.length) return false;
-  const revealed = revealSet(dto);
-  return keys.some((k) => revealed.has(k) || dtoAllowsView(dto, k));
+  return keys.some((k) => dtoAllowsView(dto, k));
 }
 
 export function listSidebarModulesMissingContractMap(

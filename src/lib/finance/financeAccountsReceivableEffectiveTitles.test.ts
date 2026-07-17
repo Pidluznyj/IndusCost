@@ -1,0 +1,359 @@
+/**
+ * FIN-08 — Contas a Receber com agenda efetiva (sem duplicar Pedido × CR).
+ */
+
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
+import type { BuildSalesOrderEffectiveFinancialScheduleInput } from "./salesOrderEffectiveFinancialSchedule.js";
+import {
+  buildFinanceArEffectiveTitles,
+  dedupeFinanceArCrByExternalId,
+  FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL,
+} from "./financeAccountsReceivableEffectiveTitles.js";
+
+const REF = new Date(2026, 6, 17, 12, 0, 0, 0);
+const CUSTOMER_ID = 88001;
+const CUSTOMER_NAME = "Cliente Dois Pedidos Ltda";
+const CUSTOMER_CNPJ = "11222333000181";
+
+function nomusCr(
+  partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">
+): FinanceArDashboardRow {
+  return {
+    companyName: "Empresa A",
+    personId: CUSTOMER_ID,
+    personName: CUSTOMER_NAME,
+    personCnpj: CUSTOMER_CNPJ,
+    description: null,
+    comments: null,
+    dueDate: new Date(2026, 7, 15),
+    competenceDate: new Date(2026, 6, 1),
+    settlementDate: null,
+    amountReceivable: 10000,
+    amountReceived: 0,
+    balanceReceivable: 10000,
+    paymentMethodName: "Boleto",
+    bankAccountName: "Bradesco",
+    sourceInvoiceId: 100,
+    sourceInvoiceNumber: "NF-100",
+    suspendCollection: false,
+    nomusStatus: true,
+    syncedAt: REF,
+    ...partial,
+  };
+}
+
+/** Pedido A — CR total da NF-A; previsão integral substituída (sem residual). */
+function fixtureOrderAFullyCoveredByCr(): BuildSalesOrderEffectiveFinancialScheduleInput {
+  return {
+    salesOrderId: "so-fin08-a",
+    orderCode: "PD 01001",
+    originalInstallments: [
+      { installmentNumber: 1, dueDate: "2026-08-01", amount: "5000.00" },
+      { installmentNumber: 2, dueDate: "2026-09-01", amount: "5000.00" },
+    ],
+    items: [
+      {
+        salesOrderItemId: "item-a",
+        plannedNetValue: "10000.00",
+        status: 4,
+        orderedQuantity: 10,
+        fulfilledQuantity: 10,
+        documentAllocations: [
+          { allocationKey: "doc-a", allocatedByOrderPrice: "10000.00" },
+        ],
+        crAllocations: [
+          {
+            allocationKey: "cr-a",
+            amountReceivable: "10000.00",
+            amountReceived: "2000.00",
+            balanceReceivable: "8000.00",
+          },
+        ],
+      },
+    ],
+    documents: [
+      {
+        documentKey: "doc-a",
+        sourceInvoiceId: 91001,
+        allocatedByOrderPrice: "10000.00",
+        provenInstallments: [
+          { installmentNumber: 1, dueDate: "2026-07-20", amount: "10000.00" },
+        ],
+      },
+    ],
+    realReceivables: [
+      {
+        externalId: 71001,
+        sourceInvoiceId: 91001,
+        dueDate: "2026-07-20",
+        amountReceivable: "10000.00",
+        amountReceived: "2000.00",
+        balanceReceivable: "8000.00",
+      },
+    ],
+    referenceDate: REF,
+  };
+}
+
+/** Pedido B — Doc/NF parcial + residual ativo R$ 1.000. */
+function fixtureOrderBPartialResidual(): BuildSalesOrderEffectiveFinancialScheduleInput {
+  return {
+    salesOrderId: "so-fin08-b",
+    orderCode: "PD 01002",
+    originalInstallments: [
+      { installmentNumber: 1, dueDate: "2026-08-01", amount: "5000.00" },
+      { installmentNumber: 2, dueDate: "2026-09-01", amount: "5000.00" },
+    ],
+    items: [
+      {
+        salesOrderItemId: "item-b",
+        plannedNetValue: "10000.00",
+        status: 3,
+        orderedQuantity: 10,
+        fulfilledQuantity: 9,
+        documentAllocations: [
+          { allocationKey: "doc-b", allocatedByOrderPrice: "9000.00" },
+        ],
+        crAllocations: [
+          {
+            allocationKey: "cr-b",
+            amountReceivable: "9000.00",
+            amountReceived: "0",
+            balanceReceivable: "9000.00",
+          },
+        ],
+      },
+    ],
+    documents: [
+      {
+        documentKey: "doc-b",
+        sourceInvoiceId: 91002,
+        allocatedByOrderPrice: "9000.00",
+        provenInstallments: [
+          { installmentNumber: 1, dueDate: "2026-07-25", amount: "9000.00" },
+        ],
+      },
+    ],
+    realReceivables: [
+      {
+        externalId: 71002,
+        sourceInvoiceId: 91002,
+        dueDate: "2026-07-25",
+        amountReceivable: "9000.00",
+        amountReceived: "0",
+        balanceReceivable: "9000.00",
+      },
+    ],
+    referenceDate: REF,
+  };
+}
+
+describe("FIN-08 — cliente com dois pedidos / duas NF-es", () => {
+  const scheduleA = buildSalesOrderEffectiveFinancialSchedule(
+    fixtureOrderAFullyCoveredByCr()
+  );
+  const scheduleB = buildSalesOrderEffectiveFinancialSchedule(
+    fixtureOrderBPartialResidual()
+  );
+
+  const nomusRows = [
+    nomusCr({
+      externalId: 71001,
+      sourceInvoiceId: 91001,
+      sourceInvoiceNumber: "NF-A",
+      description: "Pedido PD 01001",
+      amountReceivable: 10000,
+      amountReceived: 2000,
+      balanceReceivable: 8000,
+      dueDate: new Date(2026, 6, 20),
+    }),
+    nomusCr({
+      externalId: 71002,
+      sourceInvoiceId: 91002,
+      sourceInvoiceNumber: "NF-B",
+      description: "Pedido PD 01002",
+      amountReceivable: 9000,
+      amountReceived: 0,
+      balanceReceivable: 9000,
+      dueDate: new Date(2026, 6, 25),
+    }),
+  ];
+
+  const orderContexts = [
+    {
+      schedule: scheduleA,
+      personId: CUSTOMER_ID,
+      personName: CUSTOMER_NAME,
+      personCnpj: CUSTOMER_CNPJ,
+    },
+    {
+      schedule: scheduleB,
+      personId: CUSTOMER_ID,
+      personName: CUSTOMER_NAME,
+      personCnpj: CUSTOMER_CNPJ,
+    },
+  ];
+
+  it("filtro por cliente: dois CR reais de NF distintas + residual parcial; sem previsão substituída", () => {
+    const { items, summary } = buildFinanceArEffectiveTitles({
+      nomusRows,
+      orderContexts,
+      customerPersonId: CUSTOMER_ID,
+      referenceDate: REF,
+    });
+
+    const kinds = items.map((i) => i.lineKind);
+    assert.ok(kinds.includes("CR_REAL"));
+    assert.ok(kinds.includes("ORDER_RESIDUAL_FORECAST"));
+    assert.ok(!kinds.includes("DOCUMENT_AWAITING_CR"), "Doc coberto por CR não aparece");
+
+    const crs = items.filter((i) => i.lineKind === "CR_REAL");
+    assert.equal(crs.length, 2);
+    assert.ok(crs.some((c) => c.externalId === 71001 && c.orderCode === "PD 01001"));
+    assert.ok(crs.some((c) => c.externalId === 71002 && c.orderCode === "PD 01002"));
+
+    const residuals = items.filter((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST");
+    assert.ok(residuals.length >= 1);
+    assert.ok(residuals.every((r) => r.orderCode === "PD 01002"));
+    const residualSum = residuals.reduce((s, r) => s + r.balanceReceivable, 0);
+    assert.equal(Math.round(residualSum * 100) / 100, 1000);
+
+    // Pedido A: previsão substituída — sem residual ativo.
+    assert.ok(!residuals.some((r) => r.orderCode === "PD 01001"));
+
+    assert.equal(summary.totalTitles, items.length);
+    assert.equal(summary.totalOriginalValue, 10000 + 9000 + 1000);
+    assert.equal(summary.totalReceivedValue, 2000);
+    assert.equal(summary.totalOpenValue, 8000 + 9000 + 1000);
+  });
+
+  it("filtro por Pedido A: só CR da NF-A; sem residual nem Doc", () => {
+    const { items, summary } = buildFinanceArEffectiveTitles({
+      nomusRows,
+      orderContexts,
+      orderCode: "PD 01001",
+      referenceDate: REF,
+    });
+
+    assert.ok(items.every((i) => i.orderCode === "PD 01001"));
+    assert.equal(items.filter((i) => i.lineKind === "CR_REAL").length, 1);
+    assert.equal(items.filter((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST").length, 0);
+    assert.equal(items.filter((i) => i.lineKind === "DOCUMENT_AWAITING_CR").length, 0);
+    assert.equal(summary.totalTitles, 1);
+    assert.equal(summary.totalOriginalValue, 10000);
+    assert.equal(summary.totalOpenValue, 8000);
+  });
+
+  it("filtro por Pedido B: CR + previsão residual; Doc da mesma NF não duplica", () => {
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows,
+      orderContexts,
+      orderCode: "PD 01002",
+      referenceDate: REF,
+    });
+
+    assert.ok(items.every((i) => i.orderCode === "PD 01002"));
+    assert.equal(items.filter((i) => i.lineKind === "CR_REAL").length, 1);
+    assert.ok(items.some((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST"));
+    assert.ok(!items.some((i) => i.lineKind === "DOCUMENT_AWAITING_CR"));
+  });
+
+  it("rótulos oficiais das linhas", () => {
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows,
+      orderContexts,
+      customerPersonId: CUSTOMER_ID,
+      referenceDate: REF,
+    });
+    for (const item of items) {
+      assert.equal(
+        item.lineKindLabel,
+        FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL[item.lineKind]
+      );
+    }
+  });
+
+  it("dedup de CR só por externalId — mesmo valor/vencimento com IDs distintos permanece", () => {
+    const twin = nomusCr({
+      externalId: 71099,
+      sourceInvoiceId: 91999,
+      sourceInvoiceNumber: "NF-TWIN",
+      description: "Outro título mesmo valor",
+      amountReceivable: 10000,
+      amountReceived: 0,
+      balanceReceivable: 10000,
+      dueDate: new Date(2026, 6, 20),
+      personId: CUSTOMER_ID,
+    });
+    const deduped = dedupeFinanceArCrByExternalId([...nomusRows, twin, twin]);
+    assert.equal(deduped.length, 3);
+    assert.ok(deduped.some((r) => r.externalId === 71099));
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [...nomusRows, twin],
+      orderContexts,
+      customerPersonId: CUSTOMER_ID,
+      referenceDate: REF,
+    });
+    assert.ok(items.some((i) => i.externalId === 71099 && i.lineKind === "CR_REAL"));
+  });
+
+  it("corte não aparece como título/previsão", () => {
+    const cutInput: BuildSalesOrderEffectiveFinancialScheduleInput = {
+      salesOrderId: "so-cut",
+      orderCode: "PD 01003",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-08-01", amount: "10000.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-cut",
+          plannedNetValue: "10000.00",
+          status: 5,
+          orderedQuantity: 10,
+          fulfilledQuantity: 9,
+          documentAllocations: [
+            { allocationKey: "d", allocatedByOrderPrice: "9000.00" },
+          ],
+        },
+      ],
+      documents: [
+        {
+          documentKey: "doc-cut",
+          sourceInvoiceId: 91003,
+          allocatedByOrderPrice: "9000.00",
+          provenInstallments: null,
+        },
+      ],
+      realReceivables: [],
+      referenceDate: REF,
+    };
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(cutInput);
+    assert.ok(Number(schedule.cutAmount.toFixed(2)) > 0);
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      orderCode: "PD 01003",
+      referenceDate: REF,
+    });
+
+    assert.ok(items.every((i) => i.lineKind !== "ORDER_RESIDUAL_FORECAST" || i.balanceReceivable > 0));
+    assert.ok(!items.some((i) => /corte/i.test(i.description ?? "")));
+    assert.equal(
+      items.filter((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST").length,
+      0
+    );
+    assert.ok(items.some((i) => i.lineKind === "DOCUMENT_AWAITING_CR"));
+  });
+});
