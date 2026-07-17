@@ -303,6 +303,7 @@ describe("sales order flow detail drawer (OP-69)", () => {
     const drawer = read(
       "src/components/commercial/SalesOrderFlowDetailDrawer.tsx"
     );
+    const ui = read("src/lib/salesOrderFlowDetailUi.ts");
     assert.match(mod, /SalesOrderFlowDetailDrawer/);
     assert.doesNotMatch(mod, /SalesOrderDetailDialog/);
     assert.match(drawer, /sales-order-flow-detail-drawer/);
@@ -312,8 +313,8 @@ describe("sales order flow detail drawer (OP-69)", () => {
     assert.match(drawer, /sales-order-flow-detail-denied/);
     assert.match(drawer, /sales-order-flow-detail-error/);
     assert.match(drawer, /fetchSalesOrderFlowDetail/);
-    assert.match(drawer, /Resumo/);
-    assert.match(drawer, /Itens/);
+    assert.match(ui, /label: "Resumo"/);
+    assert.match(ui, /label: "Itens"/);
   });
 });
 
