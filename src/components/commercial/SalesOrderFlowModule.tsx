@@ -12,6 +12,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { SalesOrderFlowKanbanBoard } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
+import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
@@ -54,8 +56,8 @@ const FILTER_CONTROL_CLASS =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
- * Shell + filtros + indicadores do Kanban Comercial (OP-64..OP-66).
- * Sem cards de pedido/drawer; summary e list alimentam KPIs e cabeçalhos.
+ * Fluxo de Pedidos Comercial (OP-64..OP-67).
+ * A coluna é read-only e vem exclusivamente da API; sem drag-and-drop.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();
@@ -95,6 +97,10 @@ export function SalesOrderFlowModule() {
     "access_denied" | "feature_disabled" | "api_unavailable" | "generic" | null
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<{
+    id: string;
+    code: string;
+  } | null>(null);
 
   const dateRangesInvalid = areSalesOrderFlowFilterDateRangesInvalid(filters);
 
@@ -258,7 +264,9 @@ export function SalesOrderFlowModule() {
 
   const filtersActive = hasActiveSalesOrderFlowFilters(filters);
   const totalOrders =
-    summary?.columns.reduce((sum, column) => sum + column.orderCount, 0) ?? 0;
+    list?.columns.reduce((sum, column) => sum + column.total, 0) ??
+    summary?.columns.reduce((sum, column) => sum + column.orderCount, 0) ??
+    0;
   const showEmptyCatalog =
     hasLoadedOnce &&
     !loading &&
@@ -663,72 +671,6 @@ export function SalesOrderFlowModule() {
         </section>
       ) : null}
 
-      {indicators ? (
-        <section
-          className="space-y-2"
-          aria-label="Totais por coluna do Fluxo de Pedidos"
-          data-testid="sales-order-flow-column-headers"
-        >
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {indicators.columns.map((column) => (
-              <article
-                key={column.stage}
-                className={cn(
-                  "min-w-[220px] flex-1 rounded-xl border p-3 shadow-sm",
-                  salesOrderFlowColumnHeaderClass(column.stage)
-                )}
-                data-testid={`sales-order-flow-column-header-${column.stage}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    {column.label}
-                  </h3>
-                  <span className="rounded-full border border-current/15 bg-white/70 px-2 py-0.5 text-xs font-semibold">
-                    {column.orderCount}
-                  </span>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span>Valor</span>
-                  <strong className="text-right text-foreground">
-                    {formatFlowColumnMoney(
-                      column.orderValue,
-                      indicators.valuesVisible
-                    )}
-                  </strong>
-                  <span>Saldo</span>
-                  <strong className="text-right text-foreground">
-                    {formatFlowColumnMoney(
-                      column.activeResidualValue,
-                      indicators.valuesVisible
-                    )}
-                  </strong>
-                  <span>Atrasados</span>
-                  <strong className="text-right text-foreground">
-                    {column.overdueCount}
-                  </strong>
-                  <span>Bloqueados</span>
-                  <strong className="text-right text-foreground">
-                    {column.blockedCount}
-                  </strong>
-                  <span>Inconsistentes</span>
-                  <strong className="text-right text-foreground">
-                    {column.inconsistentCount ?? "Oculto"}
-                  </strong>
-                  <span>Parcialmente enviados</span>
-                  <strong className="text-right text-foreground">
-                    {column.partiallyShippedCount}
-                  </strong>
-                  <span>Com corte</span>
-                  <strong className="text-right text-foreground">
-                    {column.withCutCount}
-                  </strong>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
       {initialLoading && !showIndicators ? (
         <div
           className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card p-12 text-sm text-muted-foreground"
@@ -793,24 +735,26 @@ export function SalesOrderFlowModule() {
       ) : null}
 
       {!initialLoading &&
-      !errorMessage &&
-      !showEmptyCatalog &&
-      !showEmptyFilters &&
       !dateRangesInvalid &&
       featureEnabled === true &&
-      summary ? (
-        <div
-          className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground"
-          data-testid="sales-order-flow-shell-ready"
-        >
-          {totalOrders === 1
-            ? "1 pedido no fluxo."
-            : `${totalOrders} pedidos no fluxo.`}
-          {list
-            ? ` ${list.columns.length} colunas carregadas com os filtros atuais.`
-            : null}{" "}
-          O quadro Kanban será disponibilizado em seguida.
-        </div>
+      list &&
+      indicators &&
+      !showEmptyCatalog &&
+      !showEmptyFilters ? (
+        <SalesOrderFlowKanbanBoard
+          payload={list}
+          columnIndicators={indicators.columns}
+          onOpenOrder={(id, code) => setSelectedOrder({ id, code })}
+        />
+      ) : null}
+
+      {selectedOrder ? (
+        <SalesOrderDetailDialog
+          open
+          salesOrderId={selectedOrder.id}
+          orderCode={selectedOrder.code}
+          onClose={() => setSelectedOrder(null)}
+        />
       ) : null}
     </div>
   );
@@ -854,31 +798,4 @@ function BooleanFilter({
       {label}
     </label>
   );
-}
-
-function formatFlowColumnMoney(
-  amount: number | null,
-  valuesVisible: boolean
-): string {
-  if (!valuesVisible || amount == null) return "Oculto";
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
-function salesOrderFlowColumnHeaderClass(stage: SalesOrderFlowStage): string {
-  switch (stage) {
-    case "SHIPPED_COMPLETED":
-      return "border-emerald-200 bg-emerald-50/50 text-emerald-800";
-    case "CANCELED":
-      return "border-rose-200 bg-rose-50/50 text-rose-800";
-    case "WAITING_RELEASE":
-    case "WAITING_OUTPUT_DOCUMENT":
-    case "WAITING_NFE":
-      return "border-amber-200 bg-amber-50/50 text-amber-800";
-    default:
-      return "border-border bg-card text-foreground";
-  }
 }

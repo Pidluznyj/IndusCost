@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildGroupedNavigationStructure,
   getModulePath,
@@ -15,6 +17,16 @@ import {
 import { ResourceKeys } from "@/src/lib/permissionsClient.js";
 import { resolveSidebarModuleResourceKey } from "@/src/lib/sidebarMenuResources.js";
 import { SIDEBAR_MODULE_CONTRACT_KEYS } from "@/src/lib/sidebarEffectiveAccess.js";
+import {
+  clampProgress,
+  SALES_ORDER_FLOW_OPERATIONAL_STAGES,
+  SalesOrderFlowKanbanBoard,
+  SalesOrderFlowKanbanCard,
+} from "@/src/components/commercial/SalesOrderFlowKanbanBoard.js";
+import type {
+  SalesOrderFlowListCard,
+  SalesOrderFlowListPayload,
+} from "@/src/lib/sales/salesOrderFlowList.js";
 import {
   buildSalesOrderFlowQueryString,
   SALES_ORDER_FLOW_FEATURE_STATUS_API_PATH,
@@ -534,7 +546,7 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(mod, /SystemTotalizerCard/);
     assert.match(mod, /SummaryKpiGrid/);
     assert.match(mod, /sales-order-flow-indicators/);
-    assert.match(mod, /sales-order-flow-column-headers/);
+    assert.match(mod, /SalesOrderFlowKanbanBoard/);
     assert.match(mod, /loading=\{indicatorsLoading\}/);
     assert.match(mod, /Promise\.all\(\[/);
     assert.equal(
@@ -546,5 +558,183 @@ describe("sales order flow indicators (OP-66)", () => {
       1
     );
     assert.match(mod, /Mantém o último Kanban\/indicadores válidos/);
+  });
+});
+
+describe("sales order flow operational kanban (OP-67)", () => {
+  const card: SalesOrderFlowListCard = {
+    orderId: "order-67",
+    orderCode: "PV-0067",
+    customerName: "Cliente Industrial",
+    sellerName: "Ana Comercial",
+    companyIssuer: "Koppetel",
+    stage: "IN_PRODUCTION",
+    stageEnteredAt: "2026-07-10T12:00:00.000Z",
+    daysInStage: 7,
+    issueDate: "2026-07-01T12:00:00.000Z",
+    promisedDeliveryAt: "2026-07-15T12:00:00.000Z",
+    isOverdue: true,
+    orderValue: 12_345.67,
+    fulfilledValue: 3_000,
+    activeResidualValue: 9_345.67,
+    cutValue: 500,
+    canceledValue: 0,
+    totalItems: 10,
+    activeItems: 10,
+    completedItems: 4,
+    pendingItems: 6,
+    inconsistentItems: 1,
+    canceledItems: 0,
+    progressProductionOrder: 100,
+    progressProduced: 42.5,
+    progressDocumented: 30,
+    progressInvoiced: 20,
+    progressShipped: 10,
+    nextAction: "Finalizar produção",
+    responsibleArea: "Produção",
+    priority: "HIGH",
+    isBlocked: true,
+    blockReason: "Material pendente",
+    inconsistencies: [
+      {
+        code: "MISSING_PRODUCTION_ORDER",
+        severity: "WARNING",
+        detail: null,
+      },
+    ],
+    badges: ["CUT", "PARTIAL", "OVERDUE"],
+  };
+
+  it("define exclusivamente as seis colunas operacionais", () => {
+    assert.deepEqual(SALES_ORDER_FLOW_OPERATIONAL_STAGES, [
+      "WAITING_RELEASE",
+      "WAITING_PRODUCTION_ORDER",
+      "IN_PRODUCTION",
+      "WAITING_OUTPUT_DOCUMENT",
+      "WAITING_NFE",
+      "SHIPPED_COMPLETED",
+    ]);
+    assert.equal(SALES_ORDER_FLOW_OPERATIONAL_STAGES.includes("CANCELED"), false);
+  });
+
+  it("renderiza card compacto com dados, progressos e estados operacionais", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderFlowKanbanCard, {
+        card,
+        valuesVisible: true,
+        inconsistenciesVisible: true,
+        onOpen: () => {},
+      })
+    );
+    for (const expected of [
+      "PV-0067",
+      "Cliente Industrial",
+      "Ana Comercial",
+      "Koppetel",
+      "7 dias",
+      "R$ 12.345,67",
+      "4 concluídos · 6 pendentes",
+      "Produção",
+      "42,5%",
+      "Documento",
+      "Faturado",
+      "Enviado",
+      "Finalizar produção",
+      "Material pendente",
+      "Corte",
+      "Parcial",
+      "Atraso",
+    ]) {
+      assert.ok(html.includes(expected), `deveria renderizar ${expected}`);
+    }
+    assert.match(html, /role="progressbar"/);
+    assert.match(html, /aria-label="Abrir detalhe do pedido PV-0067"/);
+  });
+
+  it("oculta valores e inconsistências sem permissão", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderFlowKanbanCard, {
+        card,
+        valuesVisible: false,
+        inconsistenciesVisible: false,
+        onOpen: () => {},
+      })
+    );
+    assert.match(html, /Valores ocultos por permissão/);
+    assert.doesNotMatch(html, /12\.345,67/);
+    assert.doesNotMatch(html, /inconsistência\(s\)/);
+  });
+
+  it("preserva progresso parcial e limita valores inválidos", () => {
+    assert.equal(clampProgress(42.5), 42.5);
+    assert.equal(clampProgress(-5), 0);
+    assert.equal(clampProgress(150), 100);
+    assert.equal(clampProgress(Number.NaN), 0);
+  });
+
+  it("exclui a coluna cancelada recebida pela API e mantém cabeçalho fixo", () => {
+    const payload = {
+      filters: { stages: [], limit: 20 } as SalesOrderFlowListPayload["filters"],
+      valuesVisible: true,
+      productionVisible: true,
+      inconsistenciesVisible: true,
+      generatedAt: "2026-07-17T12:00:00.000Z",
+      columns: [
+        {
+          stage: "IN_PRODUCTION" as const,
+          total: 1,
+          cards: [card],
+          hasMore: false,
+          nextCursor: null,
+          sortIndexTruncated: false,
+          totals: {
+            overdueCount: 1,
+            blockedCount: 1,
+            inconsistentCount: 1,
+            partiallyShippedCount: 1,
+            withCutCount: 1,
+          },
+        },
+        {
+          stage: "CANCELED" as const,
+          total: 1,
+          cards: [{ ...card, orderId: "canceled", stage: "CANCELED" as const }],
+          hasMore: false,
+          nextCursor: null,
+          sortIndexTruncated: false,
+          totals: {
+            overdueCount: 0,
+            blockedCount: 0,
+            inconsistentCount: 0,
+            partiallyShippedCount: 0,
+            withCutCount: 0,
+          },
+        },
+      ],
+    } satisfies SalesOrderFlowListPayload;
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderFlowKanbanBoard, {
+        payload,
+        columnIndicators: [
+          {
+            stage: "IN_PRODUCTION",
+            label: "Em produção",
+            orderCount: 1,
+            orderValue: 12_345.67,
+            activeResidualValue: 9_345.67,
+            overdueCount: 1,
+            blockedCount: 1,
+            inconsistentCount: 1,
+            partiallyShippedCount: 1,
+            withCutCount: 1,
+          },
+        ],
+        onOpenOrder: () => {},
+      })
+    );
+    assert.match(html, /sales-order-flow-kanban-column-IN_PRODUCTION/);
+    assert.doesNotMatch(html, /sales-order-flow-kanban-column-CANCELED/);
+    assert.match(html, /sticky top-0/);
+    assert.doesNotMatch(html, /draggable/);
   });
 });
