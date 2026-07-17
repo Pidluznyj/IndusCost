@@ -4054,7 +4054,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/alert-config",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4148,7 +4148,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/ptax-preview",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.quotes", "view"),
     async (req, res) => {
       try {
         const authUser = await getCurrentAppUser(req);
@@ -4181,7 +4181,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/savings",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4229,7 +4229,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/financial-impact",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4294,7 +4294,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/simulate",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4337,7 +4337,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/impacted-products",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4369,7 +4369,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/purchase-links",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4406,7 +4406,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/timeline",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4449,7 +4449,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/purchase-links",
     requireAppAuth,
-    requireResource("engineering.materials", "update"),
+    requireResource("engineering.materials.market_intelligence.quotes", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4575,7 +4575,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/quotes",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.quotes", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4622,7 +4622,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/price-history",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4681,7 +4681,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/comparative-chart",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4757,7 +4757,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes",
     requireAppAuth,
-    requireResource("engineering.materials", "update"),
+    requireResource("engineering.materials.market_intelligence.quotes", "update"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4892,7 +4892,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/analytics",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -4947,7 +4947,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/fx-decomposition",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -5005,7 +5005,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/suppliers",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -5064,7 +5064,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId/alerts",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -5143,7 +5143,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/materials/market-intelligence/:materialId",
     requireAppAuth,
-    requireResource("engineering.materials", "view"),
+    requireResource("engineering.materials.market_intelligence.material_360", "view"),
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -7860,17 +7860,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerBrentCommodityRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   });
 
   registerPtaxSnapshotRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   });
 
   registerMaterialMarketQuoteGovernanceRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   }, {
     prisma,
     getCurrentAppUser,
@@ -7878,7 +7878,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerMaterialMarketAuditRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   }, {
     prisma,
     getCurrentAppUser,
@@ -7892,7 +7892,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     app,
     {
       requireAppAuth,
-      requirePermission,
+      requireResource,
       getCurrentAppUser,
       hasPermission,
     },
@@ -7910,12 +7910,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerMarketGlobalIndicatorsRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   });
 
   registerMaterialMarketIntelligenceExportRoutes(app, {
     requireAppAuth,
-    requirePermission,
+    requireResource,
   }, {
     prisma,
   });

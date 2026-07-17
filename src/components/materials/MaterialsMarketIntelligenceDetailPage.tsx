@@ -7,6 +7,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
+import { canEditMarketQuotes } from "@/src/lib/commercialEngineeringPermissions";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
 import type { MaterialIntelligenceDetailItem } from "@/src/lib/materialMarketIntelligenceDetail";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
@@ -47,7 +49,11 @@ const PLACEHOLDER_ICONS: Record<string, React.ReactNode> = {
 export function MaterialsMarketIntelligenceDetailPage() {
   const { materialId } = useParams<{ materialId: string }>();
   const auth = useAuth();
-  const canEditQuotes = auth.hasPermission("materials.edit");
+  const permissions = usePermissions();
+  const canEditQuotes = canEditMarketQuotes({
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  });
   const [item, setItem] = useState<MaterialIntelligenceDetailItem | null>(null);
   const [quotes, setQuotes] = useState<MaterialMarketQuoteApiItem[]>([]);
   const [quotesLoading, setQuotesLoading] = useState(false);

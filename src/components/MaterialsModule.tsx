@@ -1,8 +1,6 @@
 import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
-import { canAccessModule } from "@/src/lib/modulePermissions";
 import {
   getMaterialsDefaultPath,
   isMaterialsCanonicalPath,
@@ -32,10 +30,10 @@ function MaterialsCanonicalRedirect() {
 }
 
 export function MaterialsModule() {
-  const auth = useAuth();
   const permissions = usePermissions();
   const location = useLocation();
-  const canViewModule = canAccessModule("materials", auth);
+  /** PERM-40 — view via DTO/sidebar oficial (não bag canAccessModule). */
+  const canViewModule = permissions.canViewModule("materials");
   const requestedId = parseMaterialsSectionFromPath(location.pathname);
   const { visibleTabs, isEmpty, activeId } = useAuthorizedTabs({
     tabs: MATERIALS_UI_SECTIONS,

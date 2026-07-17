@@ -39,6 +39,7 @@ import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canEditMaterials } from "@/src/lib/commercialEngineeringPermissions";
 import { MATERIAL_TOUR_STEPS } from "@/src/tours/materialTourSteps";
 
@@ -50,7 +51,11 @@ const MATERIAL_CATEGORY_OPTIONS = [
 
 export const MaterialModule = () => {
   const auth = useAuth();
-  const allowEditMaterials = canEditMaterials(auth);
+  const permissions = usePermissions();
+  const allowEditMaterials = canEditMaterials({
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  });
   const [materials, setMaterials] = useState<Material[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");

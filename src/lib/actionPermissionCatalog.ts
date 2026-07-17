@@ -41,11 +41,41 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
   },
   {
     id: "materials",
-    label: "Materiais",
+    label: "Matérias-primas",
     resourceKey: ENGINEERING_RESOURCE_KEYS.materials,
-    actions: ["edit", "approve", "export"],
+    actions: ["edit", "export"],
     writeEndpoints: [
+      { method: "POST", path: "/api/materials", action: "update" },
       { method: "PUT", path: "/api/materials/:id", action: "update" },
+      { method: "DELETE", path: "/api/materials/:id", action: "update" },
+    ],
+  },
+  {
+    id: "materials-mi-quotes",
+    label: "Inteligência de Mercado — cotações",
+    resourceKey: ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    actions: ["edit", "approve", "export", "execute"],
+    writeEndpoints: [
+      {
+        method: "POST",
+        path: "/api/materials/market-intelligence/:materialId/quotes",
+        action: "update",
+      },
+      {
+        method: "POST",
+        path: "/api/materials/market-intelligence/:materialId/quotes/:quoteId/approve",
+        action: "approve",
+      },
+    ],
+  },
+  {
+    id: "simulations",
+    label: "Simulações",
+    resourceKey: ENGINEERING_RESOURCE_KEYS.simulations,
+    actions: ["create"],
+    writeEndpoints: [
+      { method: "POST", path: "/api/simulations", action: "create" },
+      { method: "POST", path: "/api/new-product-simulations", action: "create" },
     ],
   },
   {

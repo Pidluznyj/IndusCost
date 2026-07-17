@@ -1,5 +1,6 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import { ENGINEERING_RESOURCE_KEYS } from "./engineeringAccess.js";
 import {
   collectPtaxSnapshot,
   getLatestPtaxSnapshot,
@@ -9,17 +10,23 @@ import { startPtaxSnapshotScheduledJob } from "./ptaxSnapshotJob.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 export function registerPtaxSnapshotRoutes(app: express.Application, guards: AuthGuards): void {
-  const { requireAppAuth, requirePermission } = guards;
+  const { requireAppAuth, requireResource } = guards;
   startPtaxSnapshotScheduledJob();
+
+  const viewMi = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceHome,
+    "view"
+  );
+  const updateMaterials = requireResource(ENGINEERING_RESOURCE_KEYS.materials, "update");
 
   app.get(
     "/api/market-intelligence/ptax/latest",
     requireAppAuth,
-    requirePermission("materials.view"),
+    viewMi,
     async (_req, res) => {
       try {
         const snapshot = await getLatestPtaxSnapshot();
@@ -35,7 +42,7 @@ export function registerPtaxSnapshotRoutes(app: express.Application, guards: Aut
   app.post(
     "/api/market-intelligence/ptax/collect",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateMaterials,
     async (_req, res) => {
       try {
         const outcome = await collectPtaxSnapshot({ trigger: "MANUAL" });

@@ -15,8 +15,13 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchOk } from "@/src/lib/http";
 import type { MaterialMarketQuoteApiItem } from "@/src/lib/materialMarketQuote";
+import {
+  canApproveMarketQuote,
+  canEditMarketQuotes,
+} from "@/src/lib/commercialEngineeringPermissions";
 import {
   canApproveMaterialMarketQuote,
   canShowApproveRejectActions,
@@ -357,8 +362,14 @@ export function MaterialIntelligenceRecentQuotesSection({
   onEditQuote,
 }: Props) {
   const auth = useAuth();
-  const canEdit = auth.hasPermission("materials.edit");
-  const canApprove = canApproveMaterialMarketQuote(auth);
+  const permissions = usePermissions();
+  const actionCheck = {
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  };
+  const canEdit = canEditMarketQuotes(actionCheck);
+  const canApprove =
+    canApproveMarketQuote(actionCheck) || canApproveMaterialMarketQuote(auth);
   const canAdjustReliability =
     auth.authUser != null &&
     canAdjustMaterialMarketQuoteReliability({

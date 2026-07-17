@@ -35,7 +35,14 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   dashboard: ["dashboard"],
   employees: ["admin.employees"],
   machines: ["operations.machines"],
-  materials: ["engineering.materials"],
+  /** Shell Suprimentos: catálogo e/ou qualquer folha de Inteligência de Mercado. */
+  materials: [
+    "engineering.materials",
+    "engineering.materials.market_intelligence",
+    "engineering.materials.market_intelligence.home",
+    "engineering.materials.market_intelligence.material_360",
+    "engineering.materials.market_intelligence.quotes",
+  ],
   purchases: ["operations.purchases"],
   maintenance: ["operations.maintenance"],
   inventory: ["operations.inventory"],

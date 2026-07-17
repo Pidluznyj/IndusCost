@@ -2,6 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { PrismaClient } from "@prisma/client";
 import multer from "multer";
+import { ENGINEERING_RESOURCE_KEYS } from "./engineeringAccess.js";
 import {
   deleteMaterialMarketQuoteAttachment,
   listMaterialMarketQuoteAttachments,
@@ -12,7 +13,7 @@ import { MaterialMarketQuoteAttachmentError } from "./materialMarketQuoteAttachm
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<{ id: string } | null>;
   hasPermission: (user: { id: string }, permission: string) => boolean;
 };
@@ -50,11 +51,19 @@ export function registerMaterialMarketQuoteAttachmentRoutes(
   guards: AuthGuards,
   deps: RouteDeps
 ): void {
-  const { requireAppAuth, requirePermission, getCurrentAppUser, hasPermission } = guards;
+  const { requireAppAuth, requireResource, getCurrentAppUser, hasPermission } = guards;
+  const viewQuotes = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    "view"
+  );
+  const updateQuotes = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    "update"
+  );
   const base =
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId/attachments";
 
-  app.get(base, requireAppAuth, requirePermission("materials.view"), async (req, res) => {
+  app.get(base, requireAppAuth, viewQuotes, async (req, res) => {
     try {
       const scope = parseQuoteScope(req, deps);
       if (!scope.ok) {
@@ -73,7 +82,7 @@ export function registerMaterialMarketQuoteAttachmentRoutes(
   app.post(
     base,
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateQuotes,
     quoteAttachmentUpload.single("file"),
     async (req, res) => {
       try {
@@ -124,7 +133,7 @@ export function registerMaterialMarketQuoteAttachmentRoutes(
   app.get(
     `${base}/:attachmentId/download`,
     requireAppAuth,
-    requirePermission("materials.view"),
+    viewQuotes,
     async (req, res) => {
       try {
         const scope = parseQuoteScope(req, deps);

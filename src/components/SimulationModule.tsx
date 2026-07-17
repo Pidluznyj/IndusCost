@@ -35,6 +35,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { canCreateSimulations } from "@/src/lib/commercialEngineeringPermissions";
 import { SIMULATION_TOUR_STEPS } from "@/src/tours/simulationTourSteps";
 import {
@@ -113,7 +114,11 @@ function parseProductCostAnalysisPayload(
 
 export const SimulationModule = () => {
   const auth = useAuth();
-  const allowCreateSimulation = canCreateSimulations(auth);
+  const permissions = usePermissions();
+  const allowCreateSimulation = canCreateSimulations({
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  });
   const [searchParams, setSearchParams] = useSearchParams();
   const [workspaceTab, setWorkspaceTab] = useState<"SCENARIOS" | "NEW_PRODUCT">(() =>
     parseSimulationsWorkspaceTabParam(searchParams.get("tab"))

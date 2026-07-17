@@ -2,9 +2,9 @@ import type express from "express";
 import type { PrismaClient } from "@prisma/client";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import { ENGINEERING_RESOURCE_KEYS } from "@/src/lib/engineeringAccess.js";
 import {
   buildMaterialMarketQuoteGovernanceAuditRecord,
-  MATERIAL_MARKET_QUOTE_APPROVE_PERMISSION,
   validateApproveMaterialMarketQuote,
   validateRejectMaterialMarketQuote,
   validateSetMaterialMarketQuoteOfficial,
@@ -17,7 +17,7 @@ import { recordGovernanceAuditEvent } from "@/src/lib/materialMarketAudit.server
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 type RouteDeps = {
@@ -68,13 +68,21 @@ export function registerMaterialMarketQuoteGovernanceRoutes(
   guards: AuthGuards,
   deps: RouteDeps
 ): void {
-  const { requireAppAuth, requirePermission } = guards;
+  const { requireAppAuth, requireResource } = guards;
   const { prisma, getCurrentAppUser } = deps;
+  const updateQuotes = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    "update"
+  );
+  const approveQuotes = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    "approve"
+  );
 
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId/submit-approval",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;
@@ -153,7 +161,7 @@ export function registerMaterialMarketQuoteGovernanceRoutes(
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId/approve",
     requireAppAuth,
-    requirePermission(MATERIAL_MARKET_QUOTE_APPROVE_PERMISSION),
+    approveQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;
@@ -290,7 +298,7 @@ export function registerMaterialMarketQuoteGovernanceRoutes(
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId/reject",
     requireAppAuth,
-    requirePermission(MATERIAL_MARKET_QUOTE_APPROVE_PERMISSION),
+    approveQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;
@@ -376,7 +384,7 @@ export function registerMaterialMarketQuoteGovernanceRoutes(
   app.post(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId/set-official",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;

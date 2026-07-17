@@ -1,5 +1,6 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import { ENGINEERING_RESOURCE_KEYS } from "@/src/lib/engineeringAccess.js";
 import { collectBrentCommoditySnapshot } from "@/src/lib/brentCommodityCollection.js";
 import { loadMarketGlobalIndicators } from "@/src/lib/marketGlobalIndicators.server.js";
 import {
@@ -14,11 +15,8 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
-
-const VIEW_PERMISSION = "materials.view";
-const EDIT_PERMISSION = "materials.edit";
 
 export async function refreshMarketGlobalIndicators(): Promise<MarketGlobalIndicatorsRefreshResponse> {
   const [brentOutcome, ptaxOutcome] = await Promise.all([
@@ -41,7 +39,12 @@ export function registerMarketGlobalIndicatorsRoutes(
   app: express.Application,
   guards: AuthGuards
 ): void {
-  const { requireAppAuth, requirePermission } = guards;
+  const { requireAppAuth, requireResource } = guards;
+  const viewMi = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceHome,
+    "view"
+  );
+  const updateMaterials = requireResource(ENGINEERING_RESOURCE_KEYS.materials, "update");
 
   app.get(
     MARKET_HEADER_TICKER_API,
@@ -63,7 +66,7 @@ export function registerMarketGlobalIndicatorsRoutes(
   app.get(
     "/api/market-intelligence/global-indicators",
     requireAppAuth,
-    requirePermission(VIEW_PERMISSION),
+    viewMi,
     async (_req, res) => {
       try {
         const payload = await loadMarketGlobalIndicators();
@@ -81,7 +84,7 @@ export function registerMarketGlobalIndicatorsRoutes(
   app.post(
     "/api/market-intelligence/global-indicators/refresh",
     requireAppAuth,
-    requirePermission(EDIT_PERMISSION),
+    updateMaterials,
     async (_req, res) => {
       try {
         const payload = await refreshMarketGlobalIndicators();

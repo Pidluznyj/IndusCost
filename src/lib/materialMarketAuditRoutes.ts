@@ -2,6 +2,7 @@ import type express from "express";
 import type { PrismaClient } from "@prisma/client";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import { ENGINEERING_RESOURCE_KEYS } from "@/src/lib/engineeringAccess.js";
 import {
   buildMaterialMarketAuditEventData,
   buildMaterialMarketAuditListResponse,
@@ -28,7 +29,7 @@ import {
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 type RouteDeps = {
@@ -49,13 +50,21 @@ export function registerMaterialMarketAuditRoutes(
   guards: AuthGuards,
   deps: RouteDeps
 ): void {
-  const { requireAppAuth, requirePermission } = guards;
+  const { requireAppAuth, requireResource } = guards;
   const { prisma, getCurrentAppUser, hasPermission, evaluateMarketAlerts } = deps;
+  const view360 = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceMaterial360,
+    "view"
+  );
+  const updateQuotes = requireResource(
+    ENGINEERING_RESOURCE_KEYS.marketIntelligenceQuotes,
+    "update"
+  );
 
   app.get(
     "/api/materials/market-intelligence/:materialId/audit",
     requireAppAuth,
-    requirePermission("materials.view"),
+    view360,
     async (req, res) => {
       try {
         const { materialId } = req.params;
@@ -98,7 +107,7 @@ export function registerMaterialMarketAuditRoutes(
   app.patch(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;
@@ -276,7 +285,7 @@ export function registerMaterialMarketAuditRoutes(
   app.delete(
     "/api/materials/market-intelligence/:materialId/quotes/:quoteId",
     requireAppAuth,
-    requirePermission("materials.edit"),
+    updateQuotes,
     async (req, res) => {
       try {
         const { materialId, quoteId } = req.params;

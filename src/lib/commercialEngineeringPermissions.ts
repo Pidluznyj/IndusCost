@@ -14,20 +14,27 @@ import { ResourceKeys } from "@/src/lib/permissionsClient.js";
 /** Evita import circular com commercialAccess / engineeringAccess. */
 const CUSTOMERS_RESOURCE = "commercial.customers";
 const PRODUCTS_RESOURCE = "engineering.products";
+const MATERIALS_RESOURCE = "engineering.materials";
+const MI_QUOTES_RESOURCE = "engineering.materials.market_intelligence.quotes";
+const SIMULATIONS_RESOURCE = "engineering.simulations";
 
 export type ResourceAwareChecker = PermissionChecker & {
   canViewResource?: (resourceKey: string) => boolean;
-  /** PERM-38 — preferir DTO quando presente. */
+  /** PERM-38/40 — preferir DTO quando presente. */
   canPerformAction?: (resourceKey: string, action: string) => boolean;
 };
 
+/**
+ * Com `canViewResource` (DTO), a decisão é autoritativa — sem fallback de bag
+ * que reabriria OR legado (ex.: products.view → simulador).
+ */
 function legacyOrResource(
   check: ResourceAwareChecker,
   resourceKey: string | null | undefined,
   legacy: () => boolean
 ): boolean {
   if (resourceKey && typeof check.canViewResource === "function") {
-    if (check.canViewResource(resourceKey)) return true;
+    return check.canViewResource(resourceKey);
   }
   return legacy();
 }
@@ -183,7 +190,10 @@ export function canViewSimulations(check: ResourceAwareChecker): boolean {
   );
 }
 
-export function canCreateSimulations(check: PermissionChecker): boolean {
+export function canCreateSimulations(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(SIMULATIONS_RESOURCE, "create");
+  }
   return check.hasPermission("simulations.create");
 }
 
@@ -193,10 +203,32 @@ export function canViewProjectsModule(check: ResourceAwareChecker): boolean {
   );
 }
 
-export function canEditMaterials(check: PermissionChecker): boolean {
+/** Matérias-primas — mutação via contrato (PERM-40). */
+export function canEditMaterials(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction(MATERIALS_RESOURCE, "update") ||
+      check.canPerformAction(MATERIALS_RESOURCE, "edit")
+    );
+  }
   return check.hasPermission("materials.edit");
 }
 
-export function canApproveMarketQuote(check: PermissionChecker): boolean {
+/** Cotações MI — approve via contrato (PERM-40). */
+export function canApproveMarketQuote(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(MI_QUOTES_RESOURCE, "approve");
+  }
   return check.hasPermission("materials.market_quote.approve");
+}
+
+/** Cotações MI — create/update via contrato (PERM-40). */
+export function canEditMarketQuotes(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction(MI_QUOTES_RESOURCE, "update") ||
+      check.canPerformAction(MI_QUOTES_RESOURCE, "edit")
+    );
+  }
+  return check.hasPermission("materials.edit");
 }

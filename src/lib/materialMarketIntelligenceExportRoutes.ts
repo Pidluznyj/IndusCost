@@ -1,6 +1,7 @@
 import type express from "express";
 import type { PrismaClient } from "@prisma/client";
 import type { RequestHandler } from "express";
+import { ENGINEERING_RESOURCE_KEYS } from "./engineeringAccess.js";
 import {
   buildMaterialMarketIntelligenceExportDocumentForRequest,
   parseMaterialMarketIntelligenceExportRequest,
@@ -9,7 +10,7 @@ import { renderMaterialMarketIntelligenceExport } from "./materialMarketIntellig
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
-  requirePermission: (permission: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 type RouteDeps = {
@@ -62,8 +63,11 @@ export function registerMaterialMarketIntelligenceExportRoutes(
   guards: AuthGuards,
   deps: RouteDeps
 ): void {
-  const { requireAppAuth, requirePermission } = guards;
-  const guard = [requireAppAuth, requirePermission("materials.view")] as const;
+  const { requireAppAuth, requireResource } = guards;
+  const guard = [
+    requireAppAuth,
+    requireResource(ENGINEERING_RESOURCE_KEYS.marketIntelligence, "view"),
+  ] as const;
 
   app.get(
     "/api/materials/market-intelligence/export",

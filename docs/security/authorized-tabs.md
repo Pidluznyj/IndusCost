@@ -34,7 +34,7 @@ useAuthorizedTabs({ tabs, requestedId, parentResourceKey?, requireParentView? })
 | Conciliação de Carteira | `PORTFOLIO_RECONCILIATION_UI_TABS` (whitelist) | `FinancePortfolioReconciliationPage` |
 | CRM gestão | `CRM_UI_TABS` | `CrmCommercialManagementTabs` / `CrmModule` |
 | Comissões | `COMMISSIONS_LIVE_UI_TABS` | `CommissionsModule` |
-| Suprimentos | `MATERIALS_UI_SECTIONS` | `MaterialsModule` |
+| Suprimentos | `MATERIALS_UI_SECTIONS` | `MaterialsModule` (PERM-40: DTO + folhas MI) |
 | Estoque | `INVENTORY_UI_TABS` | `InventoryModule` |
 | Produtos (modal) | `PRODUCT_UI_TABS` | `ProductModule` |
 | Configurações (hub) | `SETTINGS_HUB_UI_SECTIONS` | `SettingsModule` |

@@ -119,9 +119,10 @@ function createMiModularApp(): express.Application {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
+  const requireResource = () => denyPermission("engineering.materials");
   const guards = {
     requireAppAuth: denyAuth,
-    requirePermission: denyPermission,
+    requireResource,
     getCurrentAppUser: async () => null,
     hasPermission: () => false,
   };
@@ -130,19 +131,19 @@ function createMiModularApp(): express.Application {
 
   registerBrentCommodityRoutes(app, {
     requireAppAuth: guards.requireAppAuth,
-    requirePermission: guards.requirePermission,
+    requireResource: guards.requireResource,
   });
 
   registerPtaxSnapshotRoutes(app, {
     requireAppAuth: guards.requireAppAuth,
-    requirePermission: guards.requirePermission,
+    requireResource: guards.requireResource,
   });
 
   registerMaterialMarketQuoteGovernanceRoutes(
     app,
     {
       requireAppAuth: guards.requireAppAuth,
-      requirePermission: guards.requirePermission,
+      requireResource: guards.requireResource,
     },
     { prisma, getCurrentAppUser: guards.getCurrentAppUser }
   );
@@ -151,7 +152,7 @@ function createMiModularApp(): express.Application {
     app,
     {
       requireAppAuth: guards.requireAppAuth,
-      requirePermission: guards.requirePermission,
+      requireResource: guards.requireResource,
     },
     { prisma, getCurrentAppUser: guards.getCurrentAppUser }
   );
@@ -160,7 +161,7 @@ function createMiModularApp(): express.Application {
     app,
     {
       requireAppAuth: guards.requireAppAuth,
-      requirePermission: guards.requirePermission,
+      requireResource: guards.requireResource,
       getCurrentAppUser: guards.getCurrentAppUser,
       hasPermission: guards.hasPermission,
     },
@@ -178,14 +179,14 @@ function createMiModularApp(): express.Application {
 
   registerMarketGlobalIndicatorsRoutes(app, {
     requireAppAuth: guards.requireAppAuth,
-    requirePermission: guards.requirePermission,
+    requireResource: guards.requireResource,
   });
 
   registerMaterialMarketIntelligenceExportRoutes(
     app,
     {
       requireAppAuth: guards.requireAppAuth,
-      requirePermission: guards.requirePermission,
+      requireResource: guards.requireResource,
     },
     { prisma }
   );
@@ -293,13 +294,13 @@ describe("MI route smoke — server.ts inline registration", () => {
 
   it("detail / 360", () => {
     assertRouteBlock("/api/materials/market-intelligence/:materialId", [
-      /requireResource\("engineering\.materials", "view"\)/,
+      /requireResource\("engineering\.materials\.market_intelligence\.material_360", "view"\)/,
     ]);
   });
 
   it("quotes GET", () => {
     assertRouteBlock("/api/materials/market-intelligence/:materialId/quotes", [
-      /requireResource\("engineering\.materials", "view"\)/,
+      /requireResource\("engineering\.materials\.market_intelligence\.quotes", "view"\)/,
     ]);
   });
 
@@ -322,7 +323,10 @@ describe("MI route smoke — server.ts inline registration", () => {
     const block = src.slice(Math.max(0, second - 80), second + 420);
     assert.match(block, /app\.post\s*\(/);
     assert.match(block, /requireAppAuth/);
-    assert.match(block, /requireResource\("engineering\.materials", "update"\)/);
+    assert.match(
+      block,
+      /requireResource\("engineering\.materials\.market_intelligence\.quotes", "update"\)/
+    );
   });
 
   it("alert-config canonical (server.ts only)", () => {
