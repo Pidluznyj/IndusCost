@@ -370,7 +370,7 @@
   }
 
   #sales-orders-print-root .sales-orders-print-summary-card-value {
-    font-size: 10px;
+    font-size: 11.5px;
     font-weight: 700;
     color: #0f172a;
     margin: 0;
@@ -447,9 +447,10 @@
     word-break: keep-all !important;
     overflow-wrap: normal !important;
     word-wrap: normal !important;
-    /* ~corpo do documento: valores devem ocupar a célula, sem quebrar linha */
-    font-size: 8px;
-    letter-spacing: -0.015em;
+    /* Valores maiores para preencher a célula e melhorar leitura no PDF */
+    font-size: 10.5px;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
     padding-left: 2px !important;
     padding-right: 3px !important;
     overflow: hidden !important;
@@ -477,17 +478,17 @@
 
   #sales-orders-print-root .sales-orders-print-money--total {
     font-weight: 700;
-    font-size: 8.5px;
+    font-size: 11px;
   }
 
   /*
    * Larguras da tabela analítica (A4 paisagem).
    * Datas precisam caber "DD/MM/YYYY" inteiro sem invadir Vendedor.
-   * Monetários com nowrap + fonte ~8px: um pouco mais de largura.
+   * Monetários com nowrap + fonte ~10.5px: um pouco mais de largura.
    * `.col-company` permanece para retrocompatibilidade.
    */
   #sales-orders-print-root .col-client {
-    width: 10.5%;
+    width: 9.5%;
   }
 
   #sales-orders-print-root .col-company {
@@ -510,7 +511,7 @@
   }
 
   #sales-orders-print-root .col-seller {
-    width: 9%;
+    width: 8%;
   }
 
   #sales-orders-print-root .col-status {
@@ -523,9 +524,9 @@
     white-space: nowrap;
   }
 
-  /* 4×12% = 48% — cabe "R$ 1.237.111,00" em 8–8.5px sem wrap */
+  /* 4×12.5% = 50% — cabe "R$ 1.237.111,00" em ~10.5–11px sem wrap */
   #sales-orders-print-root .col-money {
-    width: 12%;
+    width: 12.5%;
   }
 
   #sales-orders-print-root .sales-orders-print-client-text,
