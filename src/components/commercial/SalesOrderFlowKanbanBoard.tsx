@@ -3,18 +3,17 @@ import {
   Ban,
   CalendarClock,
   Factory,
+  Loader2,
   PackageCheck,
   Truck,
 } from "lucide-react";
-import type {
-  SalesOrderFlowListCard,
-  SalesOrderFlowListPayload,
-} from "@/src/lib/sales/salesOrderFlowList";
+import type { SalesOrderFlowListCard } from "@/src/lib/sales/salesOrderFlowList";
 import {
   SALES_ORDER_FLOW_INCONSISTENCY_LABELS,
   type SalesOrderFlowInconsistencyCode,
   type SalesOrderFlowStage,
 } from "@/src/lib/sales/salesOrderFlowCatalog";
+import type { SalesOrderFlowColumnPageState } from "@/src/lib/salesOrderFlowKanbanPagination";
 import type { SalesOrderFlowColumnIndicator } from "@/src/lib/salesOrderFlowUi";
 import { cn, formatCurrency } from "@/src/lib/utils";
 
@@ -28,24 +27,29 @@ export const SALES_ORDER_FLOW_OPERATIONAL_STAGES: readonly SalesOrderFlowStage[]
     "SHIPPED_COMPLETED",
   ];
 
+export type SalesOrderFlowKanbanColumnView = SalesOrderFlowColumnPageState & {
+  label: string;
+  orderValue: number | null;
+  activeResidualValue: number | null;
+};
+
 type Props = {
-  payload: SalesOrderFlowListPayload;
-  columnIndicators: readonly SalesOrderFlowColumnIndicator[];
+  columns: readonly SalesOrderFlowKanbanColumnView[];
+  valuesVisible: boolean;
+  inconsistenciesVisible: boolean;
   onOpenOrder: (orderId: string, orderCode: string) => void;
+  onLoadMore: (stage: SalesOrderFlowStage) => void;
+  onRetryColumn: (stage: SalesOrderFlowStage) => void;
 };
 
 export function SalesOrderFlowKanbanBoard({
-  payload,
-  columnIndicators,
+  columns,
+  valuesVisible,
+  inconsistenciesVisible,
   onOpenOrder,
+  onLoadMore,
+  onRetryColumn,
 }: Props) {
-  const indicatorByStage = new Map(
-    columnIndicators.map((column) => [column.stage, column] as const)
-  );
-  const columns = payload.columns.filter((column) =>
-    SALES_ORDER_FLOW_OPERATIONAL_STAGES.includes(column.stage)
-  );
-
   if (columns.length === 0) {
     return (
       <div
@@ -64,82 +68,163 @@ export function SalesOrderFlowKanbanBoard({
       data-testid="sales-order-flow-kanban"
     >
       <div className="flex min-w-max items-start gap-3">
-        {columns.map((column) => {
-          const totals = indicatorByStage.get(column.stage);
-          return (
-            <section
-              key={column.stage}
-              className="w-[300px] shrink-0 rounded-xl border border-border bg-muted/20 shadow-sm"
-              data-testid={`sales-order-flow-kanban-column-${column.stage}`}
+        {columns.map((column) => (
+          <section
+            key={column.stage}
+            className="w-[300px] shrink-0 rounded-xl border border-border bg-muted/20 shadow-sm"
+            data-testid={`sales-order-flow-kanban-column-${column.stage}`}
+          >
+            <header
+              className={cn(
+                "sticky top-0 z-10 rounded-t-xl border-b px-3 py-2.5 backdrop-blur-sm",
+                salesOrderFlowKanbanHeaderClass(column.stage)
+              )}
             >
-              <header
-                className={cn(
-                  "sticky top-0 z-10 rounded-t-xl border-b px-3 py-2.5 backdrop-blur-sm",
-                  salesOrderFlowKanbanHeaderClass(column.stage)
-                )}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-sm font-semibold leading-tight">
-                    {totals?.label ?? column.stage}
-                  </h3>
-                  <span className="rounded-full border border-current/15 bg-white/75 px-2 py-0.5 text-xs font-semibold">
-                    {column.total}
-                  </span>
-                </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                  <span>Valor</span>
-                  <strong className="text-right text-foreground">
-                    {formatColumnMoney(
-                      totals?.orderValue ?? null,
-                      payload.valuesVisible
-                    )}
-                  </strong>
-                  <span>Saldo ativo</span>
-                  <strong className="text-right text-foreground">
-                    {formatColumnMoney(
-                      totals?.activeResidualValue ?? null,
-                      payload.valuesVisible
-                    )}
-                  </strong>
-                  <span>Atrasados / bloqueados</span>
-                  <strong className="text-right text-foreground">
-                    {column.totals.overdueCount} / {column.totals.blockedCount}
-                  </strong>
-                </div>
-              </header>
-
-              <div className="space-y-2 p-2">
-                {column.cards.length === 0 ? (
-                  <div
-                    className="rounded-lg border border-dashed border-border bg-background/70 p-5 text-center text-xs text-muted-foreground"
-                    data-testid={`sales-order-flow-kanban-column-empty-${column.stage}`}
-                  >
-                    Nenhum pedido nesta etapa.
-                  </div>
-                ) : (
-                  column.cards.map((card) => (
-                    <div key={card.orderId}>
-                      <SalesOrderFlowKanbanCard
-                        card={card}
-                        valuesVisible={payload.valuesVisible}
-                        inconsistenciesVisible={payload.inconsistenciesVisible}
-                        onOpen={() => onOpenOrder(card.orderId, card.orderCode)}
-                      />
-                    </div>
-                  ))
-                )}
-                {column.hasMore ? (
-                  <p className="px-2 py-1 text-center text-[11px] text-muted-foreground">
-                    Há mais pedidos disponíveis nesta coluna.
-                  </p>
-                ) : null}
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-sm font-semibold leading-tight">
+                  {column.label}
+                </h3>
+                <span className="rounded-full border border-current/15 bg-white/75 px-2 py-0.5 text-xs font-semibold">
+                  {column.total}
+                </span>
               </div>
-            </section>
-          );
-        })}
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                <span>Valor</span>
+                <strong className="text-right text-foreground">
+                  {formatColumnMoney(column.orderValue, valuesVisible)}
+                </strong>
+                <span>Saldo ativo</span>
+                <strong className="text-right text-foreground">
+                  {formatColumnMoney(column.activeResidualValue, valuesVisible)}
+                </strong>
+                <span>Atrasados / bloqueados</span>
+                <strong className="text-right text-foreground">
+                  {column.totals.overdueCount} / {column.totals.blockedCount}
+                </strong>
+              </div>
+            </header>
+
+            <div className="space-y-2 p-2">
+              {column.status === "loading" ? (
+                <div
+                  className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-background/70 p-6 text-xs text-muted-foreground"
+                  data-testid={`sales-order-flow-kanban-column-loading-${column.stage}`}
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Carregando coluna…
+                </div>
+              ) : null}
+
+              {column.status === "error" && column.cards.length === 0 ? (
+                <div
+                  className="space-y-2 rounded-lg border border-rose-200 bg-rose-50/60 p-4 text-center text-xs text-rose-800"
+                  data-testid={`sales-order-flow-kanban-column-error-${column.stage}`}
+                  role="alert"
+                >
+                  <p>{column.errorMessage ?? "Falha ao carregar a coluna."}</p>
+                  <button
+                    type="button"
+                    className="inline-flex rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-900 hover:bg-rose-50"
+                    data-testid={`sales-order-flow-kanban-column-retry-${column.stage}`}
+                    onClick={() => onRetryColumn(column.stage)}
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : null}
+
+              {column.status !== "loading" &&
+              column.cards.length === 0 &&
+              column.status !== "error" ? (
+                <div
+                  className="rounded-lg border border-dashed border-border bg-background/70 p-5 text-center text-xs text-muted-foreground"
+                  data-testid={`sales-order-flow-kanban-column-empty-${column.stage}`}
+                >
+                  Nenhum pedido nesta etapa.
+                </div>
+              ) : null}
+
+              {column.cards.map((card) => (
+                <div key={card.orderId}>
+                  <SalesOrderFlowKanbanCard
+                    card={card}
+                    valuesVisible={valuesVisible}
+                    inconsistenciesVisible={inconsistenciesVisible}
+                    onOpen={() => onOpenOrder(card.orderId, card.orderCode)}
+                  />
+                </div>
+              ))}
+
+              {column.errorMessage && column.cards.length > 0 ? (
+                <div
+                  className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-center text-[11px] text-amber-900"
+                  role="alert"
+                >
+                  <p>{column.errorMessage}</p>
+                  <button
+                    type="button"
+                    className="inline-flex rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-50"
+                    onClick={() =>
+                      column.hasMore
+                        ? onLoadMore(column.stage)
+                        : onRetryColumn(column.stage)
+                    }
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : null}
+
+              {column.hasMore && column.status === "ready" ? (
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+                  data-testid={`sales-order-flow-kanban-load-more-${column.stage}`}
+                  disabled={column.loadingMore}
+                  onClick={() => onLoadMore(column.stage)}
+                >
+                  {column.loadingMore ? (
+                    <>
+                      <Loader2
+                        className="h-3.5 w-3.5 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Carregando…
+                    </>
+                  ) : (
+                    `Carregar mais (${column.cards.length}/${column.total})`
+                  )}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        ))}
       </div>
     </section>
   );
+}
+
+export function buildSalesOrderFlowKanbanColumnViews(input: {
+  stages: readonly SalesOrderFlowStage[];
+  columns: Readonly<Record<string, SalesOrderFlowColumnPageState>>;
+  indicators: readonly SalesOrderFlowColumnIndicator[];
+}): SalesOrderFlowKanbanColumnView[] {
+  const indicatorByStage = new Map(
+    input.indicators.map((column) => [column.stage, column] as const)
+  );
+  return input.stages
+    .map((stage) => {
+      const state = input.columns[stage];
+      if (!state) return null;
+      const indicator = indicatorByStage.get(stage);
+      return {
+        ...state,
+        label: indicator?.label ?? stage,
+        orderValue: indicator?.orderValue ?? null,
+        activeResidualValue: indicator?.activeResidualValue ?? null,
+      };
+    })
+    .filter((column): column is SalesOrderFlowKanbanColumnView => column != null);
 }
 
 export function SalesOrderFlowKanbanCard({

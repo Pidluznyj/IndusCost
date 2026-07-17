@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Ban,
@@ -12,7 +19,10 @@ import {
   WalletCards,
 } from "lucide-react";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
-import { SalesOrderFlowKanbanBoard } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
+import {
+  buildSalesOrderFlowKanbanColumnViews,
+  SalesOrderFlowKanbanBoard,
+} from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
 import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import {
@@ -28,9 +38,21 @@ import {
   fetchSalesOrderFlowFeatureStatus,
   fetchSalesOrderFlowList,
   fetchSalesOrderFlowSummary,
-  type SalesOrderFlowListPayload,
+  type SalesOrderFlowClientQuery,
   type SalesOrderFlowSummaryPayload,
 } from "@/src/lib/salesOrderFlowClient";
+import {
+  applySalesOrderFlowColumnError,
+  applySalesOrderFlowColumnPage,
+  buildSalesOrderFlowIndicatorListFromColumns,
+  createSalesOrderFlowColumnLoadingState,
+  createSalesOrderFlowColumnStates,
+  markSalesOrderFlowColumnLoadingMore,
+  resolveSalesOrderFlowVisibleKanbanStages,
+  SALES_ORDER_FLOW_COLUMN_PAGE_SIZE,
+  salesOrderFlowColumnStatesAllSettled,
+  type SalesOrderFlowColumnPageState,
+} from "@/src/lib/salesOrderFlowKanbanPagination";
 import {
   areSalesOrderFlowFilterDateRangesInvalid,
   buildSalesOrderFlowSearchParams,
@@ -56,8 +78,8 @@ const FILTER_CONTROL_CLASS =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
- * Fluxo de Pedidos Comercial (OP-64..OP-67).
- * A coluna é read-only e vem exclusivamente da API; sem drag-and-drop.
+ * Fluxo de Pedidos Comercial (OP-64..OP-68).
+ * Colunas read-only, paginadas de forma independente via cursor oficial.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();
@@ -88,10 +110,18 @@ export function SalesOrderFlowModule() {
   const [summary, setSummary] = useState<SalesOrderFlowSummaryPayload | null>(
     null
   );
-  const [list, setList] = useState<SalesOrderFlowListPayload | null>(null);
+  const [columnStates, setColumnStates] = useState<
+    Record<string, SalesOrderFlowColumnPageState>
+  >({});
+  const [valuesVisible, setValuesVisible] = useState(true);
+  const [inconsistenciesVisible, setInconsistenciesVisible] = useState(true);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  const [columnRetry, setColumnRetry] = useState<{
+    stage: SalesOrderFlowStage;
+    token: number;
+  } | null>(null);
   const [featureEnabled, setFeatureEnabled] = useState<boolean | null>(null);
   const [errorKind, setErrorKind] = useState<
     "access_denied" | "feature_disabled" | "api_unavailable" | "generic" | null
@@ -102,7 +132,18 @@ export function SalesOrderFlowModule() {
     code: string;
   } | null>(null);
 
+  const filterGenerationRef = useRef(0);
+  const columnAbortRef = useRef<Map<SalesOrderFlowStage, AbortController>>(
+    new Map()
+  );
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
   const dateRangesInvalid = areSalesOrderFlowFilterDateRangesInvalid(filters);
+  const visibleStages = useMemo(
+    () => resolveSalesOrderFlowVisibleKanbanStages(filters.stages),
+    [filters.stages]
+  );
 
   // Debounce de campos de texto livre.
   useEffect(() => {
@@ -153,7 +194,7 @@ export function SalesOrderFlowModule() {
             "Fluxo de Pedidos não está habilitado neste ambiente."
           );
           setSummary(null);
-          setList(null);
+          setColumnStates({});
           setHasLoadedOnce(true);
           setLoading(false);
         }
@@ -194,7 +235,103 @@ export function SalesOrderFlowModule() {
     return () => controller.abort();
   }, [canView]);
 
-  // Summary + list com os mesmos filtros (uma chamada conjunta por mudança).
+  const abortAllColumnRequests = useCallback(() => {
+    for (const controller of columnAbortRef.current.values()) {
+      controller.abort();
+    }
+    columnAbortRef.current.clear();
+  }, []);
+
+  const loadColumnPage = useCallback(
+    async (input: {
+      stage: SalesOrderFlowStage;
+      generation: number;
+      cursor: string | null;
+      mode: "replace" | "append";
+      baseQuery: SalesOrderFlowClientQuery;
+    }) => {
+      const previous = columnAbortRef.current.get(input.stage);
+      previous?.abort();
+      const controller = new AbortController();
+      columnAbortRef.current.set(input.stage, controller);
+
+      try {
+        const payload = await fetchSalesOrderFlowList(
+          {
+            ...input.baseQuery,
+            stages: [input.stage],
+            limit: SALES_ORDER_FLOW_COLUMN_PAGE_SIZE,
+            cursor: input.cursor,
+          },
+          controller.signal
+        );
+        if (
+          controller.signal.aborted ||
+          input.generation !== filterGenerationRef.current
+        ) {
+          return;
+        }
+        setValuesVisible(payload.valuesVisible);
+        setInconsistenciesVisible(payload.inconsistenciesVisible);
+        const page = payload.columns[0];
+        if (!page) {
+          setColumnStates((current) => {
+            const state = current[input.stage];
+            if (!state) return current;
+            const next = applySalesOrderFlowColumnError({
+              state,
+              expectedGeneration: input.generation,
+              message: "Coluna sem dados na resposta.",
+              keepCards: input.mode === "append",
+            });
+            if (!next) return current;
+            return { ...current, [input.stage]: next };
+          });
+          return;
+        }
+        setColumnStates((current) => {
+          const state = current[input.stage];
+          if (!state) return current;
+          const next = applySalesOrderFlowColumnPage({
+            state,
+            page,
+            expectedGeneration: input.generation,
+            mode: input.mode,
+          });
+          if (!next) return current;
+          return { ...current, [input.stage]: next };
+        });
+      } catch (error: unknown) {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError") ||
+          input.generation !== filterGenerationRef.current
+        ) {
+          return;
+        }
+        const classified = classifySalesOrderFlowListError(error);
+        setColumnStates((current) => {
+          const state = current[input.stage];
+          if (!state) return current;
+          const next = applySalesOrderFlowColumnError({
+            state,
+            expectedGeneration: input.generation,
+            message: classified.message,
+            keepCards: input.mode === "append",
+          });
+          if (!next) return current;
+          return { ...current, [input.stage]: next };
+        });
+      } finally {
+        if (columnAbortRef.current.get(input.stage) === controller) {
+          columnAbortRef.current.delete(input.stage);
+        }
+      }
+    },
+    []
+  );
+
+  // Summary + carga inicial limitada por coluna (isolada).
   useEffect(() => {
     if (!canView || featureEnabled !== true) return;
     if (dateRangesInvalid) {
@@ -203,26 +340,35 @@ export function SalesOrderFlowModule() {
       setErrorMessage(null);
       return;
     }
-    const controller = new AbortController();
-    const query = salesOrderFlowFiltersToClientQuery(filters);
+
+    const generation = filterGenerationRef.current + 1;
+    filterGenerationRef.current = generation;
+
+    const summaryController = new AbortController();
+    const baseQuery = salesOrderFlowFiltersToClientQuery(filters);
+    const stages = resolveSalesOrderFlowVisibleKanbanStages(filters.stages);
+
     setLoading(true);
     setErrorKind(null);
     setErrorMessage(null);
+    setColumnStates(createSalesOrderFlowColumnStates(stages, generation));
 
-    void Promise.all([
-      fetchSalesOrderFlowSummary(query, controller.signal),
-      fetchSalesOrderFlowList(query, controller.signal),
-    ])
-      .then(([summaryPayload, listPayload]) => {
-        if (controller.signal.aborted) return;
+    void fetchSalesOrderFlowSummary(baseQuery, summaryController.signal)
+      .then((summaryPayload) => {
+        if (
+          summaryController.signal.aborted ||
+          generation !== filterGenerationRef.current
+        ) {
+          return;
+        }
         setSummary(summaryPayload);
-        setList(listPayload);
         setHasLoadedOnce(true);
       })
       .catch((error: unknown) => {
         if (
-          controller.signal.aborted ||
-          (error instanceof DOMException && error.name === "AbortError")
+          summaryController.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError") ||
+          generation !== filterGenerationRef.current
         ) {
           return;
         }
@@ -233,11 +379,81 @@ export function SalesOrderFlowModule() {
         setHasLoadedOnce(true);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (
+          !summaryController.signal.aborted &&
+          generation === filterGenerationRef.current
+        ) {
+          setLoading(false);
+        }
       });
 
-    return () => controller.abort();
-  }, [canView, featureEnabled, filters, dateRangesInvalid, retryToken]);
+    for (const stage of stages) {
+      void loadColumnPage({
+        stage,
+        generation,
+        cursor: null,
+        mode: "replace",
+        baseQuery,
+      });
+    }
+
+    return () => {
+      summaryController.abort();
+      abortAllColumnRequests();
+    };
+  }, [
+    canView,
+    featureEnabled,
+    filters,
+    dateRangesInvalid,
+    retryToken,
+    abortAllColumnRequests,
+    loadColumnPage,
+  ]);
+
+  // Retry isolado de uma coluna (não recarrega as demais).
+  useEffect(() => {
+    if (!columnRetry || featureEnabled !== true) return;
+    const generation = filterGenerationRef.current;
+    const baseQuery = salesOrderFlowFiltersToClientQuery(filtersRef.current);
+    setColumnStates((current) => ({
+      ...current,
+      [columnRetry.stage]: createSalesOrderFlowColumnLoadingState(
+        columnRetry.stage,
+        generation
+      ),
+    }));
+    void loadColumnPage({
+      stage: columnRetry.stage,
+      generation,
+      cursor: null,
+      mode: "replace",
+      baseQuery,
+    });
+  }, [columnRetry, featureEnabled, loadColumnPage]);
+
+  const handleLoadMore = useCallback(
+    (stage: SalesOrderFlowStage) => {
+      const generation = filterGenerationRef.current;
+      const state = columnStates[stage];
+      if (!state) return;
+      const marked = markSalesOrderFlowColumnLoadingMore(state, generation);
+      if (!marked || !marked.nextCursor) return;
+      setColumnStates((current) => ({ ...current, [stage]: marked }));
+      void loadColumnPage({
+        stage,
+        generation,
+        cursor: marked.nextCursor,
+        mode: "append",
+        baseQuery: salesOrderFlowFiltersToClientQuery(filtersRef.current),
+      });
+    },
+    [columnStates, loadColumnPage]
+  );
+
+  const handleRetryColumn = useCallback((stage: SalesOrderFlowStage) => {
+    setColumnRetry({ stage, token: Date.now() });
+  }, []);
 
   const clearFilters = () => {
     setQDraft("");
@@ -263,13 +479,25 @@ export function SalesOrderFlowModule() {
   }
 
   const filtersActive = hasActiveSalesOrderFlowFilters(filters);
+  const indicatorList = buildSalesOrderFlowIndicatorListFromColumns({
+    stages: visibleStages,
+    columns: columnStates,
+    inconsistenciesVisible,
+  });
   const totalOrders =
-    list?.columns.reduce((sum, column) => sum + column.total, 0) ??
-    summary?.columns.reduce((sum, column) => sum + column.orderCount, 0) ??
+    indicatorList.columns.reduce((sum, column) => sum + column.total, 0) ||
+    summary?.columns
+      .filter((column) => visibleStages.includes(column.stage))
+      .reduce((sum, column) => sum + column.orderCount, 0) ||
     0;
+  const columnsSettled = salesOrderFlowColumnStatesAllSettled(
+    visibleStages,
+    columnStates
+  );
   const showEmptyCatalog =
     hasLoadedOnce &&
     !loading &&
+    columnsSettled &&
     !errorMessage &&
     featureEnabled === true &&
     totalOrders === 0 &&
@@ -277,6 +505,7 @@ export function SalesOrderFlowModule() {
   const showEmptyFilters =
     hasLoadedOnce &&
     !loading &&
+    columnsSettled &&
     !errorMessage &&
     featureEnabled === true &&
     totalOrders === 0 &&
@@ -285,14 +514,30 @@ export function SalesOrderFlowModule() {
   const stageSelectValue =
     filters.stages.length === 1 ? filters.stages[0] : "";
   const indicators =
-    summary && list
-      ? resolveSalesOrderFlowExecutiveIndicators(summary, list)
+    summary != null
+      ? resolveSalesOrderFlowExecutiveIndicators(summary, indicatorList)
       : null;
   const indicatorsLoading = loading || featureEnabled === null;
   const showIndicators =
     featureEnabled !== false &&
     !dateRangesInvalid &&
     (indicatorsLoading || indicators != null);
+  const kanbanColumns =
+    indicators != null
+      ? buildSalesOrderFlowKanbanColumnViews({
+          stages: visibleStages,
+          columns: columnStates,
+          indicators: indicators.columns,
+        })
+      : [];
+  const showKanban =
+    !initialLoading &&
+    !dateRangesInvalid &&
+    featureEnabled === true &&
+    indicators != null &&
+    !showEmptyCatalog &&
+    !showEmptyFilters &&
+    kanbanColumns.length > 0;
 
   return (
     <div className="space-y-4" data-testid="sales-order-flow-module">
@@ -737,14 +982,14 @@ export function SalesOrderFlowModule() {
       {!initialLoading &&
       !dateRangesInvalid &&
       featureEnabled === true &&
-      list &&
-      indicators &&
-      !showEmptyCatalog &&
-      !showEmptyFilters ? (
+      showKanban ? (
         <SalesOrderFlowKanbanBoard
-          payload={list}
-          columnIndicators={indicators.columns}
+          columns={kanbanColumns}
+          valuesVisible={valuesVisible}
+          inconsistenciesVisible={inconsistenciesVisible}
           onOpenOrder={(id, code) => setSelectedOrder({ id, code })}
+          onLoadMore={handleLoadMore}
+          onRetryColumn={handleRetryColumn}
         />
       ) : null}
 

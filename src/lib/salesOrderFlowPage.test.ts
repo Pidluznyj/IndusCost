@@ -25,7 +25,6 @@ import {
 } from "@/src/components/commercial/SalesOrderFlowKanbanBoard.js";
 import type {
   SalesOrderFlowListCard,
-  SalesOrderFlowListPayload,
 } from "@/src/lib/sales/salesOrderFlowList.js";
 import {
   buildSalesOrderFlowQueryString,
@@ -220,7 +219,8 @@ describe("salesOrderFlowClient", () => {
     assert.match(mod, /sales-order-flow-loading/);
     assert.match(mod, /sales-order-flow-empty/);
     assert.match(mod, /sales-order-flow-feature-disabled/);
-    assert.doesNotMatch(mod, /\bDrawer\b|KanbanColumn/);
+    assert.match(mod, /SalesOrderFlowKanbanBoard/);
+    assert.doesNotMatch(mod, /\bDrawer\b/);
   });
 });
 
@@ -254,7 +254,8 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(mod, /setSearchParams\(next, \{ replace: true \}\)/);
     assert.match(mod, /fetchSalesOrderFlowSummary/);
     assert.match(mod, /fetchSalesOrderFlowList/);
-    assert.match(mod, /Promise\.all/);
+    assert.match(mod, /loadColumnPage/);
+    assert.match(mod, /filterGenerationRef/);
     assert.equal(SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS, 300);
   });
 
@@ -541,22 +542,15 @@ describe("sales order flow indicators (OP-66)", () => {
     );
   });
 
-  it("reutiliza chamadas existentes, skeleton e erro sem limpar dados", () => {
+  it("reutiliza summary e pagina colunas sem derrubar o Kanban", () => {
     const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
     assert.match(mod, /SystemTotalizerCard/);
     assert.match(mod, /SummaryKpiGrid/);
     assert.match(mod, /sales-order-flow-indicators/);
     assert.match(mod, /SalesOrderFlowKanbanBoard/);
     assert.match(mod, /loading=\{indicatorsLoading\}/);
-    assert.match(mod, /Promise\.all\(\[/);
-    assert.equal(
-      (mod.match(/fetchSalesOrderFlowSummary\(query/g) ?? []).length,
-      1
-    );
-    assert.equal(
-      (mod.match(/fetchSalesOrderFlowList\(query/g) ?? []).length,
-      1
-    );
+    assert.match(mod, /fetchSalesOrderFlowSummary/);
+    assert.match(mod, /loadColumnPage/);
     assert.match(mod, /Mantém o último Kanban\/indicadores válidos/);
   });
 });
@@ -673,68 +667,124 @@ describe("sales order flow operational kanban (OP-67)", () => {
   });
 
   it("exclui a coluna cancelada recebida pela API e mantém cabeçalho fixo", () => {
-    const payload = {
-      filters: { stages: [], limit: 20 } as SalesOrderFlowListPayload["filters"],
-      valuesVisible: true,
-      productionVisible: true,
-      inconsistenciesVisible: true,
-      generatedAt: "2026-07-17T12:00:00.000Z",
-      columns: [
-        {
-          stage: "IN_PRODUCTION" as const,
-          total: 1,
-          cards: [card],
-          hasMore: false,
-          nextCursor: null,
-          sortIndexTruncated: false,
-          totals: {
-            overdueCount: 1,
-            blockedCount: 1,
-            inconsistentCount: 1,
-            partiallyShippedCount: 1,
-            withCutCount: 1,
-          },
-        },
-        {
-          stage: "CANCELED" as const,
-          total: 1,
-          cards: [{ ...card, orderId: "canceled", stage: "CANCELED" as const }],
-          hasMore: false,
-          nextCursor: null,
-          sortIndexTruncated: false,
-          totals: {
-            overdueCount: 0,
-            blockedCount: 0,
-            inconsistentCount: 0,
-            partiallyShippedCount: 0,
-            withCutCount: 0,
-          },
-        },
-      ],
-    } satisfies SalesOrderFlowListPayload;
     const html = renderToStaticMarkup(
       React.createElement(SalesOrderFlowKanbanBoard, {
-        payload,
-        columnIndicators: [
+        columns: [
           {
             stage: "IN_PRODUCTION",
+            status: "ready",
+            cards: [card],
+            total: 1,
+            hasMore: false,
+            nextCursor: null,
+            loadingMore: false,
+            errorMessage: null,
+            generation: 1,
             label: "Em produção",
-            orderCount: 1,
             orderValue: 12_345.67,
             activeResidualValue: 9_345.67,
-            overdueCount: 1,
-            blockedCount: 1,
-            inconsistentCount: 1,
-            partiallyShippedCount: 1,
-            withCutCount: 1,
+            totals: {
+              overdueCount: 1,
+              blockedCount: 1,
+              inconsistentCount: 1,
+              partiallyShippedCount: 1,
+              withCutCount: 1,
+            },
           },
         ],
+        valuesVisible: true,
+        inconsistenciesVisible: true,
         onOpenOrder: () => {},
+        onLoadMore: () => {},
+        onRetryColumn: () => {},
       })
     );
     assert.match(html, /sales-order-flow-kanban-column-IN_PRODUCTION/);
     assert.doesNotMatch(html, /sales-order-flow-kanban-column-CANCELED/);
     assert.match(html, /sticky top-0/);
     assert.doesNotMatch(html, /draggable/);
+  });
+
+  it("exibe carregar mais e loading/erro isolados por coluna", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderFlowKanbanBoard, {
+        columns: [
+          {
+            stage: "WAITING_RELEASE",
+            status: "loading",
+            cards: [],
+            total: 0,
+            hasMore: false,
+            nextCursor: null,
+            loadingMore: false,
+            errorMessage: null,
+            generation: 1,
+            label: "Aguardando liberação",
+            orderValue: null,
+            activeResidualValue: null,
+            totals: {
+              overdueCount: 0,
+              blockedCount: 0,
+              inconsistentCount: 0,
+              partiallyShippedCount: 0,
+              withCutCount: 0,
+            },
+          },
+          {
+            stage: "IN_PRODUCTION",
+            status: "ready",
+            cards: [card],
+            total: 8,
+            hasMore: true,
+            nextCursor: "cursor-2",
+            loadingMore: false,
+            errorMessage: null,
+            generation: 1,
+            label: "Em produção",
+            orderValue: 100,
+            activeResidualValue: 50,
+            totals: {
+              overdueCount: 1,
+              blockedCount: 0,
+              inconsistentCount: 0,
+              partiallyShippedCount: 0,
+              withCutCount: 0,
+            },
+          },
+          {
+            stage: "WAITING_NFE",
+            status: "error",
+            cards: [],
+            total: 0,
+            hasMore: false,
+            nextCursor: null,
+            loadingMore: false,
+            errorMessage: "Falha isolada",
+            generation: 1,
+            label: "Aguardando NF-e",
+            orderValue: null,
+            activeResidualValue: null,
+            totals: {
+              overdueCount: 0,
+              blockedCount: 0,
+              inconsistentCount: 0,
+              partiallyShippedCount: 0,
+              withCutCount: 0,
+            },
+          },
+        ],
+        valuesVisible: true,
+        inconsistenciesVisible: true,
+        onOpenOrder: () => {},
+        onLoadMore: () => {},
+        onRetryColumn: () => {},
+      })
+    );
+    assert.match(html, /sales-order-flow-kanban-column-loading-WAITING_RELEASE/);
+    assert.match(html, /sales-order-flow-kanban-load-more-IN_PRODUCTION/);
+    assert.match(html, /Carregar mais \(1\/8\)/);
+    assert.match(html, /sales-order-flow-kanban-column-error-WAITING_NFE/);
+    assert.match(html, /Falha isolada/);
+    assert.match(html, /sales-order-flow-kanban-column-retry-WAITING_NFE/);
   });
 });

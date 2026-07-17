@@ -48,6 +48,10 @@ export type SalesOrderFlowClientQuery = {
   priority?: SalesOrderFlowSummaryPriority | null;
   stages?: readonly SalesOrderFlowStage[] | null;
   limit?: number | null;
+  /** Cursor único (válido quando `stages` tem exatamente uma etapa). */
+  cursor?: string | null;
+  /** Cursors por etapa (`cursor.STAGE`). */
+  cursors?: Partial<Record<SalesOrderFlowStage, string | null>> | null;
 };
 
 function setOptionalText(
@@ -91,6 +95,12 @@ export function buildSalesOrderFlowQueryString(
   if (query.priority) params.set("priority", query.priority);
   if (query.stages?.length) params.set("stages", query.stages.join(","));
   if (query.limit != null) params.set("limit", String(query.limit));
+  if (query.cursor?.trim()) params.set("cursor", query.cursor.trim());
+  if (query.cursors) {
+    for (const [stage, cursor] of Object.entries(query.cursors)) {
+      if (cursor?.trim()) params.set(`cursor.${stage}`, cursor.trim());
+    }
+  }
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }
