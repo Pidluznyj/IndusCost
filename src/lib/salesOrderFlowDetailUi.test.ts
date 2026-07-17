@@ -27,7 +27,13 @@ import type { SalesOrderFlowDetailTab } from "@/src/lib/salesOrderFlowDetailUi.j
 
 function renderDetailTab(
   payload: SalesOrderFlowDetailPayload,
-  activeTab: SalesOrderFlowDetailTab
+  activeTab: SalesOrderFlowDetailTab,
+  managementCapabilities?: {
+    canUpdateManually: boolean;
+    canChangePriority: boolean;
+    canAssignResponsible: boolean;
+    canManageBlocking: boolean;
+  }
 ) {
   return renderToStaticMarkup(
     React.createElement(SalesOrderFlowDetailContent, {
@@ -36,6 +42,12 @@ function renderDetailTab(
       shipment: resolveSalesOrderFlowDetailShipmentViews(payload),
       activeTab,
       salesOrderId: payload.salesOrderId,
+      managementCapabilities: managementCapabilities ?? {
+        canUpdateManually: false,
+        canChangePriority: false,
+        canAssignResponsible: false,
+        canManageBlocking: false,
+      },
     })
   );
 }
@@ -765,5 +777,127 @@ describe("sales order flow timeline and inconsistencies (OP-71)", () => {
     assert.match(html, /Timeline do ciclo de vida/);
     assert.match(html, /sales-order-flow-timeline-item-filter/);
     assert.doesNotMatch(html, /rawJson/);
+  });
+});
+
+describe("sales order flow management actions (OP-72)", () => {
+  it("expõe path tipado de management e monta patch com expectedUpdatedAt", () => {
+    assert.equal(
+      getSalesOrderFlowManagementApiPath("abc"),
+      "/api/commercial/sales-order-flow/abc/management"
+    );
+    const caps = resolveSalesOrderFlowManagementUiCapabilities(() => true);
+    assert.equal(caps.canUpdateManually, true);
+    assert.equal(caps.canChangePriority, true);
+    const baseline = salesOrderFlowManagementToFormState({
+      priority: "NORMAL",
+      responsibleUserId: null,
+      responsibleName: null,
+      responsibleArea: null,
+      isBlocked: false,
+      blockReason: null,
+      reason: null,
+      expectedResolutionAt: null,
+      internalNote: null,
+      updatedAt: "2026-07-17T12:00:00.000Z",
+    });
+    const draft = {
+      ...baseline,
+      priority: "HIGH",
+      isBlocked: true,
+      blockReason: "Falta material",
+      expectedResolutionAt: "2026-07-20",
+      internalNote: "aguardar PCP",
+    };
+    const built = buildSalesOrderFlowManagementPatchBody({
+      expectedUpdatedAt: "2026-07-17T12:00:00.000Z",
+      baseline,
+      draft,
+      capabilities: caps,
+    });
+    assert.equal(built.validationError, null);
+    assert.equal(built.body.expectedUpdatedAt, "2026-07-17T12:00:00.000Z");
+    assert.equal(built.body.priority, "HIGH");
+    assert.equal(built.body.isBlocked, true);
+    assert.equal(built.body.blockReason, "Falta material");
+    assert.match(built.body.expectedResolutionAt ?? "", /2026-07-20/);
+    assert.equal(built.body.internalNote, "aguardar PCP");
+  });
+
+  it("valida bloqueio sem motivo e respeita autorização granular", () => {
+    const caps = resolveSalesOrderFlowManagementUiCapabilities((resource) =>
+      resource === "commercial.sales_orders.flow_management"
+        ? true
+        : resource.includes("priority")
+    );
+    assert.equal(caps.canChangePriority, true);
+    assert.equal(caps.canManageBlocking, false);
+    assert.equal(caps.canAssignResponsible, false);
+
+    const baseline = salesOrderFlowManagementToFormState(null);
+    const built = buildSalesOrderFlowManagementPatchBody({
+      expectedUpdatedAt: null,
+      baseline,
+      draft: {
+        ...baseline,
+        isBlocked: true,
+        blockReason: "",
+        priority: "URGENT",
+      },
+      capabilities: {
+        canUpdateManually: true,
+        canChangePriority: true,
+        canAssignResponsible: true,
+        canManageBlocking: true,
+      },
+    });
+    assert.match(built.validationError ?? "", /motivo/i);
+
+    const conflict = classifySalesOrderFlowManagementError(
+      new HttpError(409, "conflito", "MANAGEMENT_UPDATE_CONFLICT")
+    );
+    assert.equal(conflict.kind, "conflict");
+  });
+
+  it("filtra áreas e preserva auditoria textual sem raw", () => {
+    assert.ok(
+      filterSalesOrderFlowManagementAreaOptions("pcp").some(
+        (row) => row.value === "PCP_PRODUCAO"
+      )
+    );
+    const html = renderDetailTab(detailFixture(), "resumo", {
+      canUpdateManually: true,
+      canChangePriority: true,
+      canAssignResponsible: true,
+      canManageBlocking: true,
+    });
+    assert.match(html, /sales-order-flow-management-panel/);
+    assert.match(html, /não alteram a coluna automática/i);
+    assert.match(html, /sales-order-flow-management-priority/);
+    assert.match(html, /sales-order-flow-management-save/);
+    assert.doesNotMatch(html, /rawJson/);
+
+    const readOnly = renderDetailTab(detailFixture(), "resumo", {
+      canUpdateManually: false,
+      canChangePriority: false,
+      canAssignResponsible: false,
+      canManageBlocking: false,
+    });
+    assert.match(readOnly, /sales-order-flow-management-panel/);
+    assert.doesNotMatch(readOnly, /sales-order-flow-management-save/);
+  });
+
+  it("módulo atualiza card após gestão e rota de lookup existe", () => {
+    const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
+    const routes = read("src/lib/salesOrderFlowRoutes.ts");
+    const client = read("src/lib/salesOrderFlowClient.ts");
+    assert.match(mod, /onManagementUpdated/);
+    assert.match(mod, /patchSalesOrderFlowKanbanCard/);
+    assert.match(
+      routes,
+      /\/api\/commercial\/sales-order-flow\/lookup\/responsible-users/
+    );
+    assert.match(client, /patchSalesOrderFlowManagement/);
+    assert.match(client, /fetchSalesOrderFlowResponsibleUsers/);
   });
 });

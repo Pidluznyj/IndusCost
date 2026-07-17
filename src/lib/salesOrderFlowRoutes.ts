@@ -205,13 +205,24 @@ export function registerSalesOrderFlowRoutes(
     ),
     async (req, res) => {
       try {
+        const scoped = await resolveScopedUser(req);
+        if (!scoped.ok) {
+          if (scoped.status === 401) {
+            return res.status(401).json({ error: "Não autenticado." });
+          }
+          return res.status(scoped.status).json(scoped.body);
+        }
+        if (!scoped.capabilities.canAssignResponsible) {
+          return res.status(403).json({
+            error: "Sem permissão para atribuir responsável.",
+            code: "FORBIDDEN",
+          });
+        }
         const query = String(req.query.q ?? req.query.query ?? "").trim();
         if (query.length < 2) {
           return res.json({ rows: [] });
         }
-        const prisma = (req as express.Request & { prisma?: import("@prisma/client").PrismaClient }).prisma
-          ?? (await import("@/src/lib/prisma.js")).prisma;
-        const rows = await prisma.appUser.findMany({
+        const rows = await scoped.prisma.appUser.findMany({
           where: {
             isActive: true,
             OR: [
