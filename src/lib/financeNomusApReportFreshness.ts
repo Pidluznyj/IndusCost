@@ -4,6 +4,7 @@ import {
   isFinanceApExcludedFromManagement,
   type FinanceDataSanitization,
 } from "./financeInternalGroupExclusions.js";
+import { isFinanceApExcludedBySourcePresence } from "./nomus/nomusSourcePresencePolicy.js";
 
 /**
  * Fallback técnico enquanto o stage não persiste `lastSeenAt` / `lastSeenSyncRunId`.
@@ -100,14 +101,27 @@ type FinanceApReportRow = NomusApReportFreshnessRow & {
   personCnpj?: string | null;
   description?: string | null;
   type?: number | null;
+  balancePayable?: unknown;
+  sourcePresenceStatus?: string | null;
 };
 
-/** Exclusões de relatório financeiro: intercompany, pedido de compra e stale Nomus. */
+/** Exclusões de relatório financeiro: intercompany, pedido de compra, stale Nomus e ausência confirmada. */
 export function isFinanceApExcludedFromReports(
   row: FinanceApReportRow,
   syncCutoff: NomusApReportSyncCutoff | null | undefined
 ): boolean {
   if (isFinanceApExcludedFromManagement(row)) return true;
+  if (
+    isFinanceApExcludedBySourcePresence({
+      sourcePresenceStatus: row.sourcePresenceStatus,
+      balancePayable:
+        typeof row.balancePayable === "number"
+          ? row.balancePayable
+          : Number(row.balancePayable ?? 0),
+    })
+  ) {
+    return true;
+  }
   return isNomusApStaleForReports(row, syncCutoff);
 }
 

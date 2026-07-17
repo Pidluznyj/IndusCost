@@ -162,6 +162,7 @@ export const FINANCE_CASH_FLOW_AR_SELECT = {
   suspendCollection: true,
   status: true,
   syncedAt: true,
+  sourcePresenceStatus: true,
 } as const;
 
 export const FINANCE_CASH_FLOW_AP_SELECT = {
@@ -186,6 +187,7 @@ export const FINANCE_CASH_FLOW_AP_SELECT = {
   suspendPayment: true,
   status: true,
   syncedAt: true,
+  sourcePresenceStatus: true,
 } as const;
 
 const MONTH_LABELS = [
@@ -333,6 +335,7 @@ export function mapPrismaRowToFinanceCashFlowArRow(row: {
   suspendCollection: boolean | null;
   status?: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceCashFlowArRow {
   return {
     ...mapPrismaRowToFinanceArDashboardRow(row),
@@ -360,6 +363,7 @@ export function mapPrismaRowToFinanceCashFlowApRow(row: {
   suspendPayment: boolean | null;
   status?: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceCashFlowApRow {
   return {
     ...mapPrismaRowToFinanceApDashboardRow(row),

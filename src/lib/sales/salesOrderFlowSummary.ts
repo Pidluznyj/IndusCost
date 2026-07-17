@@ -10,6 +10,7 @@ import {
   type SalesOrderFlowStage,
 } from "./salesOrderFlowCatalog.js";
 import { buildSalesOrderSearchOr } from "@/src/lib/salesOrdersListSummary.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 
 export const SALES_ORDER_FLOW_SUMMARY_PRIORITIES = [
   "LOW",
@@ -313,8 +314,11 @@ export function buildSalesOrderFlowSummarySnapshotWhere(input: {
   }
 
   const snapshotAnd: Prisma.SalesOrderFlowSnapshotWhereInput[] = [];
-  if (orderAnd.length > 0) {
-    snapshotAnd.push({ salesOrder: { AND: orderAnd } });
+  const orderWhere = mergeSalesOrderOperationalPresenceWhere(
+    orderAnd.length > 0 ? { AND: orderAnd } : {}
+  );
+  if (Object.keys(orderWhere).length > 0) {
+    snapshotAnd.push({ salesOrder: orderWhere });
   }
   if (filters.promisedFrom || filters.promisedTo) {
     snapshotAnd.push({

@@ -22,6 +22,7 @@ import {
   resolveNomusArReportSyncCutoffFromPrisma,
   type NomusArReportSyncCutoff,
 } from "./financeNomusArReportFreshness.js";
+import { mergeAccountsReceivableOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 
 export const FINANCE_AR_OPEN_HORIZON_TITLE = "Horizonte financeiro — carteira aberta";
 export const FINANCE_AR_OPEN_HORIZON_SUBTITLE = "Próximos 60 dias a partir de hoje";
@@ -118,7 +119,13 @@ const BUCKET_TOOLTIPS: Record<Exclude<AccountsReceivableOpenHorizonBucketKey, "t
 export function buildFinanceArPrismaWhereForOpenHorizon(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): Prisma.NomusAccountsReceivableWhereInput {
-  return mergeFinanceArPrismaWhereWithSyncCutoff({ balanceReceivable: { gt: 0 } }, syncCutoff);
+  const withCutoff = mergeFinanceArPrismaWhereWithSyncCutoff(
+    { balanceReceivable: { gt: 0 } },
+    syncCutoff
+  );
+  return mergeAccountsReceivableOperationalPresenceWhere(withCutoff, {
+    openOperationalUniverse: true,
+  });
 }
 
 export async function loadFinanceArOpenHorizonRowsFromPrisma(

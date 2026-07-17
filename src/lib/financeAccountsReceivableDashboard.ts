@@ -16,6 +16,7 @@ import {
 } from "./financeNomusArReportFreshness.js";
 import { isFinanceArGhostTitle, isFinanceInternalGroupPerson } from "./financeInternalGroupExclusions.js";
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
+import { mergeAccountsReceivableOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 import {
   buildAccountsReceivableOpenHorizon,
   type AccountsReceivableOpenHorizon,
@@ -80,6 +81,7 @@ export type FinanceArDashboardRow = {
   suspendCollection: boolean | null;
   nomusStatus: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -135,6 +137,7 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
   suspendCollection: boolean | null;
   status?: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceArDashboardRow {
   return {
     externalId: row.externalId,
@@ -157,6 +160,7 @@ export function mapPrismaRowToFinanceArDashboardRow(row: {
     suspendCollection: row.suspendCollection,
     nomusStatus: row.status ?? null,
     syncedAt: row.syncedAt,
+    sourcePresenceStatus: row.sourcePresenceStatus ?? null,
   };
 }
 
@@ -521,10 +525,13 @@ export function buildFinanceArPrismaWhere(
     });
   }
 
-  return mergeFinanceArPrismaWhereWithSyncCutoff(
+  const withCutoff = mergeFinanceArPrismaWhereWithSyncCutoff(
     and.length > 0 ? { AND: and } : {},
     syncCutoff
   );
+  return mergeAccountsReceivableOperationalPresenceWhere(withCutoff, {
+    openOperationalUniverse: openStatuses.has(filters.status),
+  });
 }
 
 export function matchesFinanceArDashboardFilters(

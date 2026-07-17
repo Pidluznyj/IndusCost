@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 import {
   buildSalesOrderLifecycleSummary,
   type SalesOrderLifecycleInput,
@@ -217,13 +218,13 @@ export function buildSalesOrderManagementWhere(
     q: filters.q,
   });
 
-  if (filters.companyIssuer) {
-    return {
-      ...base,
-      companyIssuer: { contains: filters.companyIssuer, mode: "insensitive" },
-    };
-  }
-  return base;
+  const withCompany = filters.companyIssuer
+    ? {
+        ...base,
+        companyIssuer: { contains: filters.companyIssuer, mode: "insensitive" as const },
+      }
+    : base;
+  return mergeSalesOrderOperationalPresenceWhere(withCompany);
 }
 
 function matchesManagementFilters(

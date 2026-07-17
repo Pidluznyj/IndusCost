@@ -39,6 +39,7 @@ import {
   resolveNomusApReportSyncCutoffFromPrisma,
   type NomusApReportSyncCutoff,
 } from "./financeNomusApReportFreshness.js";
+import { mergeAccountsPayableOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 import {
   isFinanceApCancelledTitle,
   isFinanceApOpenByRules,
@@ -105,6 +106,7 @@ export type FinanceApDashboardRow = {
   suspendPayment: boolean | null;
   nomusStatus: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -160,6 +162,7 @@ export function mapPrismaRowToFinanceApDashboardRow(row: {
   suspendPayment: boolean | null;
   status?: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceApDashboardRow {
   return {
     externalId: row.externalId,
@@ -182,6 +185,7 @@ export function mapPrismaRowToFinanceApDashboardRow(row: {
     suspendPayment: row.suspendPayment,
     nomusStatus: row.status ?? null,
     syncedAt: row.syncedAt,
+    sourcePresenceStatus: row.sourcePresenceStatus ?? null,
   };
 }
 
@@ -429,10 +433,13 @@ export function buildFinanceApPrismaWhere(
     and.push({ OR: [{ suspendPayment: false }, { suspendPayment: null }] });
   }
 
-  return mergeFinanceApPrismaWhereWithSyncCutoff(
+  const withCutoff = mergeFinanceApPrismaWhereWithSyncCutoff(
     and.length > 0 ? { AND: and } : {},
     syncCutoff
   );
+  return mergeAccountsPayableOperationalPresenceWhere(withCutoff, {
+    openOperationalUniverse: openStatuses.has(filters.status),
+  });
 }
 
 function parseSuspendPaymentFilter(value: unknown): FinanceApSuspendPaymentFilter {

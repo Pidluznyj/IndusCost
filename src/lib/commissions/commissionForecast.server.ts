@@ -15,6 +15,7 @@ import {
   isCommissionRecordWithoutResolvedSeller,
   resolveCommissionSellerDisplay,
 } from "./commissionSellerDisplay.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 
 export type CommissionForecastCards = {
   totalForecastAmount: number;
@@ -326,7 +327,7 @@ async function resolveSalesOrderMap(orderCodes: string[]) {
     nomusSellerName: string | null;
   }>();
   const orders = await prisma.salesOrder.findMany({
-    where: { orderCode: { in: unique } },
+    where: mergeSalesOrderOperationalPresenceWhere({ orderCode: { in: unique } }),
     select: {
       id: true,
       orderCode: true,

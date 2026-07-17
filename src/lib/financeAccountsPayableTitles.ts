@@ -401,6 +401,7 @@ export const FINANCE_AP_TITLE_SELECT = {
   suspendPayment: true,
   status: true,
   syncedAt: true,
+  sourcePresenceStatus: true,
 } as const;
 
 export function mapPrismaRowToFinanceApTitleRow(row: {
@@ -424,6 +425,7 @@ export function mapPrismaRowToFinanceApTitleRow(row: {
   suspendPayment: boolean | null;
   status: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceApDashboardRow {
   const base = mapPrismaRowToFinanceApDashboardRow(row);
   return {

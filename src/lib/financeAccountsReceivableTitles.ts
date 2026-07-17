@@ -682,6 +682,7 @@ export const FINANCE_AR_TITLE_SELECT = {
   suspendCollection: true,
   status: true,
   syncedAt: true,
+  sourcePresenceStatus: true,
 } as const;
 
 export function mapPrismaRowToFinanceArTitleRow(row: {
@@ -705,6 +706,7 @@ export function mapPrismaRowToFinanceArTitleRow(row: {
   suspendCollection: boolean | null;
   status: boolean | null;
   syncedAt: Date;
+  sourcePresenceStatus?: string | null;
 }): FinanceArDashboardRow {
   const base = mapPrismaRowToFinanceArDashboardRow(row);
   return {

@@ -4,6 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import { crmOrderHasFollowUpExistsSql } from "@/src/lib/crmOrderFollowUp";
+import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 
 export const CRM_VALID_PURCHASE_STATUS_SQL = Prisma.sql`so.status::text IN ('READY_TO_SEND', 'SENT_TO_NOMUS')`;
 
@@ -29,9 +30,10 @@ export function crmOrderIsInvoicedSql(alias: string) {
   `;
 }
 
-/** Pedido válido para métricas: exclui CANCELLED e ERROR. */
+/** Pedido válido para métricas: exclui CANCELLED, ERROR e ausência confirmada (flag). */
 export function crmValidMetricsOrderSql(alias: string) {
-  return Prisma.sql`${Prisma.raw(`${alias}.status::text`)} NOT IN ('CANCELLED', 'ERROR')`;
+  return Prisma.sql`${Prisma.raw(`${alias}.status::text`)} NOT IN ('CANCELLED', 'ERROR')
+    AND ${salesOrderOperationalPresenceSql(alias)}`;
 }
 
 /** Carteira aberta: pedido válido sem NF processada. */

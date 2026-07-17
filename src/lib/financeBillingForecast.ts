@@ -20,6 +20,7 @@ import {
   toPgDateYmd,
 } from "@/src/lib/salesOrderInvoicingSql.js";
 import { endOfYear, startOfYear } from "@/src/lib/executiveDashboardWorkdays.js";
+import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 const MARKET_CUSTOMER = billingMarketCustomerFilterSql("c");
@@ -113,6 +114,7 @@ export async function queryBillingForecastHorizonOrders(
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
+        AND ${salesOrderOperationalPresenceSql("so")}
         AND ${MARKET_CUSTOMER}
         AND ${orderNotInvoicedSql("so")}
         AND so."expectedDeliveryDate" IS NOT NULL
@@ -143,6 +145,7 @@ async function queryOpenForecastOrders(year: number): Promise<RawForecastOrder[]
       FROM "SalesOrder" so
       INNER JOIN "Customer" c ON c.id = so."customerId"
       WHERE ${NOT_CANCELLED}
+        AND ${salesOrderOperationalPresenceSql("so")}
         AND ${MARKET_CUSTOMER}
         AND ${orderNotInvoicedSql("so")}
         AND (
@@ -251,6 +254,7 @@ async function queryRealizedByDayInMonth(
         FROM ${nomusNfesElementsSql("so")}
       ) inv ON inv.invoice_date IS NOT NULL
       WHERE ${NOT_CANCELLED}
+        AND ${salesOrderOperationalPresenceSql("so")}
         AND ${MARKET_CUSTOMER}
         AND inv.invoice_date >= ${fromYmd}::date
         AND inv.invoice_date <= ${toYmd}::date

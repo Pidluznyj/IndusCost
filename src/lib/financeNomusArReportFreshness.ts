@@ -4,6 +4,7 @@ import {
   isFinanceArExcludedFromManagement,
   type FinanceDataSanitization,
 } from "./financeInternalGroupExclusions.js";
+import { isFinanceArExcludedBySourcePresence } from "./nomus/nomusSourcePresencePolicy.js";
 
 /**
  * Fallback técnico enquanto o stage não persiste `lastSeenAt` / `lastSeenSyncRunId`.
@@ -100,14 +101,26 @@ type FinanceArReportRow = NomusArReportFreshnessRow & {
   amountReceivable?: unknown;
   amountReceived?: unknown;
   balanceReceivable?: unknown;
+  sourcePresenceStatus?: string | null;
 };
 
-/** Exclusões de relatório financeiro: grupo interno, fantasma e stale Nomus. */
+/** Exclusões de relatório financeiro: grupo interno, fantasma, stale Nomus e ausência confirmada. */
 export function isFinanceArExcludedFromReports(
   row: FinanceArReportRow,
   syncCutoff: NomusArReportSyncCutoff | null | undefined
 ): boolean {
   if (isFinanceArExcludedFromManagement(row)) return true;
+  if (
+    isFinanceArExcludedBySourcePresence({
+      sourcePresenceStatus: row.sourcePresenceStatus,
+      balanceReceivable:
+        typeof row.balanceReceivable === "number"
+          ? row.balanceReceivable
+          : Number(row.balanceReceivable ?? 0),
+    })
+  ) {
+    return true;
+  }
   return isNomusArStaleForReports(row, syncCutoff);
 }
 

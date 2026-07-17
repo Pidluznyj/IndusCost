@@ -10,6 +10,7 @@ import { buildManagementRowsFromOrders } from "./salesOrderManagement.js";
 import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
 import type { ManagementStatusCardId } from "./salesOrderManagementStatus.js";
 import { isCancelledSalesOrderStatus } from "./salesOrderDashboardRules.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
 
 export const SALES_ORDER_METRICS_ENGINE_VERSION = "1.0.0";
 
@@ -297,7 +298,7 @@ export async function loadSalesOrderEnrichedMetricsFromDb(
   referenceDate = new Date()
 ): Promise<SalesOrderEnrichedMetrics[]> {
   const orders = await prisma.salesOrder.findMany({
-    where,
+    where: mergeSalesOrderOperationalPresenceWhere(where),
     select: DEFAULT_ORDER_SELECT,
   });
   const map = await loadSalesOrderEnrichedMetricsMap(orders, referenceDate);
