@@ -14,6 +14,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   "portfolio-reconciliation": ResourceKeys.FINANCEIRO_CONCILIACAO_CARTEIRA,
   "crm-commercial": ResourceKeys.COMERCIAL_CRM,
   "sales-orders": ResourceKeys.COMERCIAL_PEDIDOS_VENDA,
+  "sales-order-flow": ResourceKeys.COMERCIAL_FLUXO_PEDIDOS,
   "output-documents": ResourceKeys.COMERCIAL_DOCUMENTOS_SAIDA,
   commissions: ResourceKeys.COMISSOES,
   materials: ResourceKeys.SUPRIMENTOS,

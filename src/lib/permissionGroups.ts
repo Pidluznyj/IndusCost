@@ -62,6 +62,8 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   customers: "comercial",
   proposals: "comercial",
   "sales-orders": "comercial",
+  "sales-order-flow": "comercial",
+  "output-documents": "comercial",
   pricing: "comercial",
   commissions: "comercial",
   finance: "financeiro",

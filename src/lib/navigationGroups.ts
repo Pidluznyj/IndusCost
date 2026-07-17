@@ -94,6 +94,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   customers: ["customers.view"],
   proposals: ["proposals.view"],
   "sales-orders": ["sales_orders.view"],
+  "sales-order-flow": ["sales_orders.flow.view"],
   "output-documents": ["output_documents.view"],
   products: ["products.view"],
   "transformation-simulator": ["products.view", "simulations.view"],
@@ -167,6 +168,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
       "customers",
       "proposals",
       "sales-orders",
+      "sales-order-flow",
       "output-documents",
       "pricing",
       "commissions",
@@ -220,6 +222,7 @@ const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
 export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
+  if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
   return `/${moduleId}`;
 }
 

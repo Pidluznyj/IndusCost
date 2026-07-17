@@ -9,7 +9,11 @@ import {
   COMMERCIAL_ACTIONS,
   COMMERCIAL_RESOURCE_KEYS,
 } from "@/src/lib/commercialAccess.js";
-import { requireSalesOrderFlowEnabled } from "@/src/lib/sales/salesOrderFlowFeatureFlags.js";
+import {
+  isSalesOrderFlowEnabled,
+  requireSalesOrderFlowEnabled,
+  SALES_ORDER_FLOW_FEATURE_RESOURCE,
+} from "@/src/lib/sales/salesOrderFlowFeatureFlags.js";
 import { loadSalesOrderFlowSummary } from "@/src/lib/sales/salesOrderFlowSummary.server.js";
 import { SalesOrderFlowSummaryQueryError } from "@/src/lib/sales/salesOrderFlowSummary.js";
 import { loadSalesOrderFlowList } from "@/src/lib/sales/salesOrderFlowList.server.js";
@@ -56,6 +60,18 @@ export function registerSalesOrderFlowRoutes(
       COMMERCIAL_ACTIONS.view
     ),
   ] as const;
+
+  /** Status da feature para menu/rota — sem requireSalesOrderFlowEnabled (senão 404). */
+  app.get(
+    "/api/commercial/sales-order-flow/feature-status",
+    requireAppAuth,
+    (_req, res) => {
+      res.json({
+        enabled: isSalesOrderFlowEnabled(),
+        resource: SALES_ORDER_FLOW_FEATURE_RESOURCE,
+      });
+    }
+  );
 
   async function resolveScopedUser(req: express.Request) {
     const user = await getCurrentAppUser(req);

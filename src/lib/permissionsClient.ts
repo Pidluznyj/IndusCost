@@ -43,6 +43,7 @@ export const ResourceKeys = {
   FINANCEIRO_CONTAS_RECEBER: "financeiro.contas_receber",
   COMERCIAL: "comercial",
   COMERCIAL_PEDIDOS_VENDA: "comercial.pedidos_venda",
+  COMERCIAL_FLUXO_PEDIDOS: "comercial.fluxo_pedidos",
   COMERCIAL_DOCUMENTOS_SAIDA: "comercial.documentos_saida",
   COMERCIAL_CRM: "comercial.crm",
   COMERCIAL_CRM_TAB_GESTAO_GERAL: "comercial.crm.tab.gestao_geral",
@@ -284,6 +285,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "SUBMENU",
     parentKey: ResourceKeys.COMERCIAL,
     legacyAliasKeys: ["sales_orders.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_FLUXO_PEDIDOS,
+    label: "Fluxo de Pedidos",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
+    legacyAliasKeys: ["sales_orders.flow.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_CRM,

@@ -44,6 +44,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   pricing: "Preço",
   proposals: "Prop.",
   "sales-orders": "Pedidos",
+  "sales-order-flow": "Fluxo",
   "output-documents": "Doc. saída",
   customers: "Clientes",
   "crm-commercial": "CRM",

@@ -23,6 +23,7 @@ export type AppModuleId =
   | "pricing"
   | "proposals"
   | "sales-orders"
+  | "sales-order-flow"
   | "output-documents"
   | "customers"
   | "crm-commercial"
@@ -64,6 +65,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "pricing",
   "proposals",
   "sales-orders",
+  "sales-order-flow",
   "output-documents",
   "customers",
   "crm-commercial",
@@ -104,6 +106,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("proposals.view");
     case "sales-orders":
       return check.hasPermission("sales_orders.view");
+    case "sales-order-flow":
+      return check.hasPermission("sales_orders.flow.view");
     case "output-documents":
       return check.hasPermission("output_documents.view");
     case "products":
@@ -311,6 +315,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   if (normalized === "/crm" || normalized.startsWith("/crm/")) {
     return "crm-commercial";
   }
+  if (
+    normalized === "/commercial/sales-order-flow" ||
+    normalized.startsWith("/commercial/sales-order-flow/")
+  ) {
+    return "sales-order-flow";
+  }
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
@@ -347,6 +357,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   pricing: "Formação de Preço",
   proposals: "Propostas",
   "sales-orders": "Pedidos de venda",
+  "sales-order-flow": "Fluxo de Pedidos",
   "output-documents": "Documentos de Saída",
   customers: "Clientes",
   "crm-commercial": "CRM Comercial",

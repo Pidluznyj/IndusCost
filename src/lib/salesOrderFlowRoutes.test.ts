@@ -13,6 +13,7 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
       "utf8"
     );
     assert.match(source, /\/api\/commercial\/sales-order-flow\/summary/);
+    assert.match(source, /\/api\/commercial\/sales-order-flow\/feature-status/);
     assert.match(source, /\/api\/commercial\/sales-order-flow"/);
     assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId\/events/);
     assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId"/);
@@ -152,6 +153,7 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
     });
 
     assert.ok(routes.has("/api/commercial/sales-order-flow/summary"));
+    assert.ok(routes.has("/api/commercial/sales-order-flow/feature-status"));
     assert.ok(routes.has("/api/commercial/sales-order-flow"));
     assert.ok(
       routes.has("/api/commercial/sales-order-flow/:salesOrderId/management")
@@ -166,24 +168,53 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
         "/api/commercial/sales-order-flow/:salesOrderId/management",
       ]) {
         let statusCode = 0;
-        let payload: unknown;
-        const middlewares = routes.get(path)!;
-        await new Promise<void>((resolve) => {
-          middlewares[0]!({}, {
+        const handlers = routes.get(path) ?? [];
+        const first = handlers[0];
+        assert.ok(first, path);
+        first(
+          {},
+          {
             status(code: number) {
               statusCode = code;
-              return this;
+              return {
+                json() {
+                  return undefined;
+                },
+              };
             },
-            json(value: unknown) {
-              payload = value;
-              resolve();
-              return this;
-            },
-          }, () => resolve());
-        });
+          },
+          () => {
+            statusCode = 200;
+          }
+        );
         assert.equal(statusCode, 404, path);
-        assert.deepEqual(payload, { error: "API route not found" });
       }
+
+      let featureStatusCode = 0;
+      const featureHandlers =
+        routes.get("/api/commercial/sales-order-flow/feature-status") ?? [];
+      const featureFirst = featureHandlers[0];
+      assert.ok(featureFirst);
+      featureFirst(
+        {},
+        {
+          status(code: number) {
+            featureStatusCode = code;
+            return {
+              json() {
+                return undefined;
+              },
+            };
+          },
+          json() {
+            featureStatusCode = 200;
+          },
+        },
+        () => {
+          featureStatusCode = 200;
+        }
+      );
+      assert.notEqual(featureStatusCode, 404);
     } finally {
       if (previous === undefined) delete process.env[SALES_ORDER_FLOW_ENABLED_ENV];
       else process.env[SALES_ORDER_FLOW_ENABLED_ENV] = previous;

@@ -50,6 +50,9 @@ import {
 } from "@/src/lib/modulePermissions";
 import type { NavigationGroupId, NavigationGroupedItem } from "@/src/lib/navigationGroups";
 import { buildResourceAwareSidebarNavigation } from "@/src/lib/resourceNavigationAccess";
+import { fetchSalesOrderFlowFeatureStatus } from "@/src/lib/salesOrderFlowClient";
+import { filterSalesOrderFlowMenuNavigation } from "@/src/lib/salesOrderFlowNavigation";
+import { canViewSalesOrderFlow } from "@/src/lib/salesOrderFlowUi";
 import {
   getSidebarGroupButtonId,
   getSidebarGroupPanelId,
@@ -103,6 +106,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   pricing: Calculator,
   proposals: FileText,
   "sales-orders": ClipboardList,
+  "sales-order-flow": FolderKanban,
   "output-documents": FileText,
   customers: Users,
   "crm-commercial": Contact,
@@ -438,7 +442,7 @@ export const Sidebar = () => {
   ].join("::");
 
   // PERM-36: filtro só via DTO /me + catálogo oficial (sem regras locais de auth).
-  const navigation = React.useMemo(
+  const baseNavigation = React.useMemo(
     () =>
       buildResourceAwareSidebarNavigation({
         user: permissions.authUser,
@@ -449,6 +453,59 @@ export const Sidebar = () => {
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [permissionKey]
+  );
+
+  const [salesOrderFlowFeatureEnabled, setSalesOrderFlowFeatureEnabled] =
+    React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    if (permissions.authLoading || !permissions.authUser) {
+      setSalesOrderFlowFeatureEnabled(null);
+      return;
+    }
+    const hasFlowView = canViewSalesOrderFlow({
+      canPerformAction: permissions.canPerformAction,
+      hasPermission: auth.hasPermission,
+    });
+    if (!hasFlowView) {
+      setSalesOrderFlowFeatureEnabled(false);
+      return;
+    }
+    const controller = new AbortController();
+    void fetchSalesOrderFlowFeatureStatus(controller.signal)
+      .then((status) => {
+        if (!controller.signal.aborted) {
+          setSalesOrderFlowFeatureEnabled(status.enabled);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSalesOrderFlowFeatureEnabled(false);
+        }
+      });
+    return () => controller.abort();
+  }, [
+    permissions.authLoading,
+    permissions.authUser,
+    permissions.canPerformAction,
+    auth.hasPermission,
+  ]);
+
+  const navigation = React.useMemo(
+    () =>
+      filterSalesOrderFlowMenuNavigation(baseNavigation, {
+        featureEnabled: salesOrderFlowFeatureEnabled,
+        hasFlowViewAccess: canViewSalesOrderFlow({
+          canPerformAction: permissions.canPerformAction,
+          hasPermission: auth.hasPermission,
+        }),
+      }),
+    [
+      baseNavigation,
+      salesOrderFlowFeatureEnabled,
+      permissions.canPerformAction,
+      auth.hasPermission,
+    ]
   );
 
   const [expandedGroups, setExpandedGroups] = React.useState<Set<NavigationGroupId>>(() =>

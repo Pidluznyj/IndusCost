@@ -56,6 +56,11 @@ import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/Sale
 import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
 import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
 import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
+import { SalesOrderFlowModule } from "@/src/components/commercial/SalesOrderFlowModule";
+import {
+  SALES_ORDER_FLOW_PAGE_SUBTITLE,
+  SALES_ORDER_FLOW_PAGE_TITLE,
+} from "@/src/lib/salesOrderFlowUi";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
@@ -897,6 +902,17 @@ export default function App() {
               }
             >
               <SalesOrdersModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/sales-order-flow"
+          element={
+            <ModulePageShell
+              title={SALES_ORDER_FLOW_PAGE_TITLE}
+              description={SALES_ORDER_FLOW_PAGE_SUBTITLE}
+            >
+              <SalesOrderFlowModule />
             </ModulePageShell>
           }
         />
