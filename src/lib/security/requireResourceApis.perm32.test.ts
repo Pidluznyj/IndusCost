@@ -78,6 +78,36 @@ const CASES: Array<{
     allowBag: ["sales_orders.detail.view"],
   },
   {
+    label: "output documents list",
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.outputDocuments,
+    action: "view",
+    allowBag: ["output_documents.view"],
+  },
+  {
+    label: "output documents detail",
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.outputDocumentsDetail,
+    action: "view",
+    allowBag: ["output_documents.detail.view"],
+  },
+  {
+    label: "output documents financial",
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.outputDocumentsFinancial,
+    action: "view",
+    allowBag: ["output_documents.financial.view"],
+  },
+  {
+    label: "output documents audit",
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.outputDocumentsAudit,
+    action: "view",
+    allowBag: ["output_documents.audit.view"],
+  },
+  {
+    label: "output documents raw",
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.outputDocumentsRaw,
+    action: "view",
+    allowBag: ["output_documents.raw.view"],
+  },
+  {
     label: "engineering BOM tab",
     resourceKey: "engineering.products.tab.bom",
     action: "view",

@@ -1,5 +1,5 @@
-/**
- * DS-04.2 — Contrato da rota de detalhe e cenários 404/id inválido.
+﻿/**
+ * DS-04.4 — Contrato da rota de detalhe, requireResource e raw gate.
  */
 
 import assert from "node:assert/strict";
@@ -8,12 +8,13 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { parseOutputDocumentDetailIdParam } from "./output-documents/outputDocumentsDetail.js";
 
-describe("outputDocumentsRoutes — detalhe :id", () => {
+describe("outputDocumentsRoutes — detalhe :id DS-04.4", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src/lib/outputDocumentsRoutes.ts"),
+    "utf8"
+  );
+
   it("registra :id depois de summary/lista e trata 404", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/lib/outputDocumentsRoutes.ts"),
-      "utf8"
-    );
     assert.match(source, /\/api\/commercial\/output-documents\/:id/);
     assert.match(source, /loadOutputDocumentDetail/);
     assert.match(source, /status\(404\)/);
@@ -27,7 +28,21 @@ describe("outputDocumentsRoutes — detalhe :id", () => {
     assert.ok(summaryIdx > 0 && listIdx > summaryIdx && detailIdx > listIdx);
   });
 
-  it("não seleciona rawJson no loader de detalhe e carrega relações", () => {
+  it("detalhe exige requireResource.detail e gate de raw", () => {
+    assert.match(
+      source,
+      /requireResource\(\s*COMMERCIAL_RESOURCE_KEYS\.outputDocumentsDetail/
+    );
+    assert.match(source, /decideOutputDocumentRawAccess/);
+    assert.match(source, /parseIncludeRawFlag/);
+    assert.match(source, /COMMERCIAL_RESOURCE_KEYS\.outputDocumentsFinancial/);
+    assert.match(source, /COMMERCIAL_RESOURCE_KEYS\.outputDocumentsAudit/);
+    assert.match(source, /COMMERCIAL_RESOURCE_KEYS\.outputDocumentsRaw/);
+    assert.match(source, /isOutputDocumentInPortfolio/);
+    assert.doesNotMatch(source, /requireAnyPermission/);
+  });
+
+  it("loader de detalhe só seleciona rawJson quando includeRaw autorizado", () => {
     const server = readFileSync(
       join(
         process.cwd(),
@@ -35,11 +50,12 @@ describe("outputDocumentsRoutes — detalhe :id", () => {
       ),
       "utf8"
     );
-    assert.doesNotMatch(server, /rawJson:\s*true/);
+    assert.match(server, /includeRaw === true && canViewRaw/);
     assert.match(server, /loadOutputDocumentByExternalId/);
     assert.match(server, /projectOutputDocumentAllocation/);
     assert.match(server, /resolveOutputDocumentFinancialStatus/);
     assert.match(server, /payloadHash/);
+    assert.match(server, /if \(includeRaw\)/);
   });
 
   it("piloto comercial inclui endpoint :id", () => {

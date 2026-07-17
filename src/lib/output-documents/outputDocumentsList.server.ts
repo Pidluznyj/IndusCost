@@ -411,13 +411,18 @@ function toStageRows(
 
 async function loadFilteredStageRows(
   db: PrismaLike,
-  filters: OutputDocumentsListFilters
+  filters: OutputDocumentsListFilters,
+  scopeWhere?: Prisma.NomusStockDocumentWhereInput | null
 ): Promise<OutputDocumentListStageRow[]> {
   const where = await buildStageWhere(db, filters);
   if (!where) return [];
 
+  const finalWhere: Prisma.NomusStockDocumentWhereInput = scopeWhere
+    ? { AND: [where, scopeWhere] }
+    : where;
+
   const rows = await db.nomusStockDocument.findMany({
-    where,
+    where: finalWhere,
     select: STAGE_SELECT,
   });
   return toStageRows(rows);
@@ -445,6 +450,8 @@ export type LoadOutputDocumentsListOptions = {
   prisma?: PrismaLike;
   referenceDate?: Date;
   now?: Date;
+  /** Filtro adicional de escopo comercial (carteira). */
+  scopeWhere?: Prisma.NomusStockDocumentWhereInput | null;
 };
 
 /**
@@ -458,7 +465,7 @@ export async function loadOutputDocumentsList(
   const filters = parseOutputDocumentsListQuery(query);
   const generatedAt = (options.now ?? new Date()).toISOString();
 
-  const stageRows = await loadFilteredStageRows(db, filters);
+  const stageRows = await loadFilteredStageRows(db, filters, options.scopeWhere);
   const enrichment = await loadEnrichment(
     db,
     stageRows,
@@ -493,7 +500,7 @@ export async function loadOutputDocumentsSummary(
   const filters = parseOutputDocumentsListQuery(query);
   const generatedAt = (options.now ?? new Date()).toISOString();
 
-  const stageRows = await loadFilteredStageRows(db, filters);
+  const stageRows = await loadFilteredStageRows(db, filters, options.scopeWhere);
   const enrichment = await loadEnrichment(
     db,
     stageRows,

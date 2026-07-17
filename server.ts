@@ -15187,7 +15187,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerOutputDocumentsRoutes(app, {
     requireAppAuth,
-    requireAnyPermission,
+    requireResource,
     getCurrentAppUser,
   });
 

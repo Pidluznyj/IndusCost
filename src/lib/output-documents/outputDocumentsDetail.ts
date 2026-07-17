@@ -93,6 +93,12 @@ export function buildOutputDocumentDetailPayload(input: {
   nfeEnrichments?: ReadonlyArray<OutputDocumentDetailNfeEnrichment>;
   financial?: OutputDocumentFinancialStatusResult | null;
   now?: Date;
+  permissions?: {
+    canViewFinancial?: boolean;
+    canViewAudit?: boolean;
+    canViewRaw?: boolean;
+  };
+  raw?: { document: unknown; items: unknown[] } | null;
 }): OutputDocumentDetailPayload {
   const { resolved, projection, sync } = input;
   const doc = resolved.document;
@@ -100,6 +106,9 @@ export function buildOutputDocumentDetailPayload(input: {
   const orderById = new Map(
     (input.orderEnrichments ?? []).map((o) => [o.salesOrderId, o])
   );
+  const canViewFinancial = input.permissions?.canViewFinancial === true;
+  const canViewAudit = input.permissions?.canViewAudit === true;
+  const canViewRaw = input.permissions?.canViewRaw === true;
 
   const items: OutputDocumentDetailItem[] = projection.items.map((item) => ({
     id: item.stockDocumentItemId,
@@ -134,12 +143,14 @@ export function buildOutputDocumentDetailPayload(input: {
   const orders = buildLinkedOrders(resolved, projection, orderById);
   const allocations = buildAllocationsSection(projection);
   const nfes = buildNfeSection(resolved, input.nfeEnrichments ?? []);
-  const financial = mapFinancialSection(input.financial ?? null);
-  const audit = buildAuditSection(resolved, sync);
+  const financial = canViewFinancial
+    ? mapFinancialSection(input.financial ?? null)
+    : null;
+  const audit = canViewAudit ? buildAuditSection(resolved, sync) : null;
   const inconsistencies = collectInconsistencies({
     resolved,
     projection,
-    financial: input.financial ?? null,
+    financial: canViewFinancial ? input.financial ?? null : null,
     nfes,
   });
 
@@ -196,6 +207,12 @@ export function buildOutputDocumentDetailPayload(input: {
     financial,
     audit,
     inconsistencies,
+    raw: canViewRaw ? input.raw ?? null : null,
+    permissions: {
+      canViewFinancial,
+      canViewAudit,
+      canViewRaw,
+    },
     generatedAt,
   };
 }

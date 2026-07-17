@@ -213,7 +213,17 @@ export type OutputDocumentDetailPayload = {
   allocations: OutputDocumentDetailAllocations;
   nfes: OutputDocumentDetailNfe[];
   financial: OutputDocumentDetailFinancial | null;
-  audit: OutputDocumentDetailAudit;
+  audit: OutputDocumentDetailAudit | null;
   inconsistencies: OutputDocumentDetailInconsistency[];
+  /** Presente somente com permissão raw + includeRaw=true. */
+  raw?: {
+    document: unknown;
+    items: unknown[];
+  } | null;
+  permissions: {
+    canViewFinancial: boolean;
+    canViewAudit: boolean;
+    canViewRaw: boolean;
+  };
   generatedAt: string;
 };

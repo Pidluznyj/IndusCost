@@ -57,6 +57,7 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:projects.manage","reason":"Alias legado em múltiplos recursos do contrato: projects.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:crm.view","reason":"Alias legado em múltiplos recursos do contrato: crm.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:sales_orders.view","reason":"Alias legado em múltiplos recursos do contrato: sales_orders.view"},
+  {"code":"ALIAS_DUPLICATE","subject":"contract:output_documents.view","reason":"DS-04.4: output_documents.view em lista + detalhe (mesmo padrão sales_orders.view)."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:proposals.view","reason":"Alias legado em múltiplos recursos do contrato: proposals.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:customers.view","reason":"Alias legado em múltiplos recursos do contrato: customers.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:commissions.view","reason":"Alias legado em múltiplos recursos do contrato: commissions.view"},

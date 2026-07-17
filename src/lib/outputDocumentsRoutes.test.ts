@@ -1,5 +1,5 @@
-/**
- * DS-04.1 — Contrato de rotas e autorização provisória.
+﻿/**
+ * DS-04.4 — Contrato de rotas e requireResource granular.
  */
 
 import assert from "node:assert/strict";
@@ -8,33 +8,60 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { COMMERCIAL_RESOURCE_KEYS } from "./commercialAccess.js";
 
-describe("outputDocumentsRoutes — contrato e auth provisória", () => {
-  it("chave canônica commercial.output_documents existe na matriz", () => {
+describe("outputDocumentsRoutes — contrato DS-04.4", () => {
+  const source = readFileSync(
+    join(process.cwd(), "src/lib/outputDocumentsRoutes.ts"),
+    "utf8"
+  );
+
+  it("chaves comercial.output_documents* na matriz", () => {
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.outputDocuments,
       "commercial.output_documents"
     );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsDetail,
+      "commercial.output_documents.detail"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsFinancial,
+      "commercial.output_documents.financial"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsAudit,
+      "commercial.output_documents.audit"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsRaw,
+      "commercial.output_documents.raw"
+    );
   });
 
-  it("registra summary antes da lista e exige auth provisória", () => {
-    const source = readFileSync(
-      join(process.cwd(), "src/lib/outputDocumentsRoutes.ts"),
-      "utf8"
-    );
+  it("summary/lista usam requireResource na lista", () => {
     assert.match(source, /\/api\/commercial\/output-documents\/summary/);
     assert.match(source, /\/api\/commercial\/output-documents"/);
     assert.match(source, /requireAppAuth/);
-    assert.match(source, /requireAnyPermission/);
-    assert.match(source, /OUTPUT_DOCUMENTS_VIEW_PERMISSIONS/);
-    assert.match(source, /sales_orders\.view/);
-    assert.match(source, /loadOutputDocumentsSummary/);
-    assert.match(source, /loadOutputDocumentsList/);
+    assert.match(source, /requireResource/);
+    assert.match(
+      source,
+      /requireResource\(\s*COMMERCIAL_RESOURCE_KEYS\.outputDocuments/
+    );
+    assert.doesNotMatch(source, /requireAnyPermission/);
+    assert.doesNotMatch(source, /OUTPUT_DOCUMENTS_VIEW_PERMISSIONS/);
+    assert.doesNotMatch(source, /sales_orders\.view/);
 
     const summaryIdx = source.indexOf(
       "/api/commercial/output-documents/summary"
     );
     const listIdx = source.indexOf('"/api/commercial/output-documents"');
     assert.ok(summaryIdx > 0 && listIdx > summaryIdx);
+  });
+
+  it("escopo comercial oficial na listagem", () => {
+    assert.match(source, /resolveOutputDocumentsAccessScope/);
+    assert.match(source, /portfolioKeysToDocumentWhere/);
+    assert.match(source, /loadOutputDocumentsSummary/);
+    assert.match(source, /loadOutputDocumentsList/);
   });
 
   it("está registrado no server.ts", () => {

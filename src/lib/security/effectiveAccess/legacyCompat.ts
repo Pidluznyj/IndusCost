@@ -52,6 +52,18 @@ function buildOneToOneLegacyIndex(
     });
   }
 
+  for (const [legacy, list] of owners) {
+    if (oneToOne.has(legacy)) continue;
+    const resourceKeys = new Set(list.map((l) => l.resourceKey));
+    if (resourceKeys.size !== 1) continue;
+    const preferred =
+      list.find((l) => l.action === "view") ?? list[0]!;
+    oneToOne.set(legacy, {
+      resourceKey: preferred.resourceKey,
+      action: preferred.action,
+    });
+  }
+
   return oneToOne;
 }
 

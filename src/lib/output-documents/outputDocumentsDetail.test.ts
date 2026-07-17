@@ -23,6 +23,11 @@ const ORDER_A = "00000000-0000-4000-8000-0000000000a1";
 const SOI_A1 = "soi-a1";
 const NOW = new Date("2026-07-17T12:00:00.000Z");
 
+const DETAIL_VIEW_PERMS = {
+  canViewFinancial: true,
+  canViewAudit: true,
+} as const;
+
 function syncMeta(
   partial: Partial<OutputDocumentDetailSyncMeta> = {}
 ): OutputDocumentDetailSyncMeta {
@@ -182,6 +187,7 @@ describe("buildOutputDocumentDetailPayload", () => {
       projection: projectFromResolved(resolved),
       sync: syncMeta(),
       now: NOW,
+      permissions: DETAIL_VIEW_PERMS,
     });
 
     assert.equal(payload.document.externalId, 8451);
@@ -241,6 +247,7 @@ describe("buildOutputDocumentDetailPayload", () => {
       projection: projectFromResolved(resolved),
       sync: syncMeta(),
       now: NOW,
+      permissions: DETAIL_VIEW_PERMS,
     });
 
     assert.equal(payload.items.length, 2);
@@ -264,6 +271,7 @@ describe("buildOutputDocumentDetailPayload", () => {
         cancelledAt: new Date("2026-06-15T00:00:00.000Z"),
         cancellationReason: "Cliente desistiu",
       }),
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
 
@@ -284,6 +292,7 @@ describe("buildOutputDocumentDetailPayload", () => {
       projection: projectFromResolved(resolved),
       sync: syncMeta(),
       now: NOW,
+      permissions: DETAIL_VIEW_PERMS,
     });
 
     assert.equal(payload.items.length, 0);
@@ -310,6 +319,7 @@ describe("buildOutputDocumentDetailPayload", () => {
       projection: projectFromResolved(resolved),
       sync: syncMeta(),
       now: NOW,
+      permissions: DETAIL_VIEW_PERMS,
     });
 
     assert.equal(payload.items[0]!.linkStatus, "unresolved");
@@ -411,6 +421,7 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
           totalNetValue: "300.00",
         },
       ],
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
 
@@ -480,6 +491,7 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
           isPrimary: false,
         },
       ],
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
 
@@ -544,6 +556,7 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
         nfeVsReceivables: "ok",
         alerts: [],
       },
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
 
@@ -582,14 +595,15 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
       resolved,
       projection: projectFromResolved(resolved),
       sync: syncMeta({ payloadHash: "deadbeef" }),
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
 
     assert.equal(payload.orders.length, 0);
     assert.equal(payload.nfes.length, 0);
     assert.equal(payload.financial, null);
-    assert.equal(payload.audit.payloadHash, "deadbeef");
-    assert.equal(payload.audit.nfeLink.classification, "nao_resolvido");
+    assert.equal(payload.audit!.payloadHash, "deadbeef");
+    assert.equal(payload.audit!.nfeLink.classification, "nao_resolvido");
     assert.ok(payload.inconsistencies.some((i) => i.code === "NFE_UNRESOLVED"));
     assert.ok(payload.inconsistencies.some((i) => i.code === "ORDER_UNRESOLVED"));
     assert.ok(!JSON.stringify(payload).includes("rawJson"));
@@ -628,9 +642,10 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
       projection: projectFromResolved(resolved),
       sync: syncMeta(),
       now: NOW,
+      permissions: DETAIL_VIEW_PERMS,
     });
 
-    assert.ok(payload.audit.conflicts.length >= 2);
+    assert.ok(payload.audit!.conflicts.length >= 2);
     assert.ok(
       payload.inconsistencies.some((i) => i.code === "ORDER_LINK_CONFLICT")
     );
@@ -648,11 +663,82 @@ describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
         cancelledAt: new Date("2026-06-15T00:00:00.000Z"),
         cancellationReason: "Cliente desistiu",
       }),
+      permissions: DETAIL_VIEW_PERMS,
       now: NOW,
     });
     assert.equal(payload.document.cancellation.isCancelled, true);
     assert.ok(
       payload.inconsistencies.some((i) => i.code === "DOCUMENT_CANCELLED")
     );
+  });
+});
+
+describe("buildOutputDocumentDetailPayload — permissões DS-04.4", () => {
+  it("sem permissão financeira/auditoria mantém seções nulas", () => {
+    const resolved = baseResolved({});
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta({ payloadHash: "deadbeef" }),
+      financial: {
+        stockDocumentExternalId: 8451,
+        status: "cr_em_aberto",
+        statusReasons: [],
+        financialOrigin: "REAL_RECEIVABLE",
+        financialOriginReasons: [],
+        nfeExternalId: 7208,
+        nfeCancelled: false,
+        documentCancelled: false,
+        receivableTotalCents: 10000,
+        receivableTotal: 100,
+        openCents: 10000,
+        open: 100,
+        receivedCents: 0,
+        received: 0,
+        nextDueDate: null,
+        titles: [],
+        installmentCount: 0,
+        documentPaymentTermsRaw: null,
+        hasDocumentPaymentTermsEvidence: false,
+        orderForecastCents: 0,
+        orderForecast: 0,
+        dominantCoverageCents: 0,
+        dominantCoverage: 0,
+        nfeVsReceivables: "ok",
+        alerts: [],
+      },
+      now: NOW,
+      permissions: { canViewFinancial: false, canViewAudit: false },
+    });
+
+    assert.equal(payload.financial, null);
+    assert.equal(payload.audit, null);
+    assert.equal(payload.permissions.canViewFinancial, false);
+    assert.equal(payload.permissions.canViewAudit, false);
+  });
+
+  it("raw só aparece com canViewRaw e raw fornecido", () => {
+    const resolved = baseResolved({});
+    const rawPayload = { document: { id: 1 }, items: [{ id: "i1" }] };
+    const denied = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      raw: rawPayload,
+      now: NOW,
+      permissions: { ...DETAIL_VIEW_PERMS, canViewRaw: false },
+    });
+    assert.equal(denied.raw, null);
+
+    const allowed = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      raw: rawPayload,
+      now: NOW,
+      permissions: { ...DETAIL_VIEW_PERMS, canViewRaw: true },
+    });
+    assert.deepEqual(allowed.raw, rawPayload);
+    assert.equal(allowed.permissions.canViewRaw, true);
   });
 });

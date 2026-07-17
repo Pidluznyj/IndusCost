@@ -71,6 +71,12 @@ export type LoadOutputDocumentDetailOptions = {
   onlySaida?: boolean;
   now?: Date;
   referenceDate?: Date;
+  permissions?: {
+    canViewFinancial?: boolean;
+    canViewAudit?: boolean;
+    canViewRaw?: boolean;
+  };
+  includeRaw?: boolean;
 };
 
 async function findStageLookup(
@@ -358,6 +364,30 @@ export async function loadOutputDocumentDetail(
     options.referenceDate ?? options.now
   );
 
+  const canViewRaw = options.permissions?.canViewRaw === true;
+  const includeRaw = options.includeRaw === true && canViewRaw;
+  let raw: { document: unknown; items: unknown[] } | null = null;
+  if (includeRaw) {
+    const [docRaw, itemRaws] = await Promise.all([
+      options.prisma.nomusStockDocument.findUnique({
+        where: { id: lookup.id },
+        select: { rawJson: true },
+      }),
+      options.prisma.nomusStockDocumentItem.findMany({
+        where: { stockDocumentId: lookup.id },
+        select: { id: true, rawJson: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    ]);
+    raw = {
+      document: docRaw?.rawJson ?? null,
+      items: itemRaws.map((row) => ({
+        id: row.id,
+        rawJson: row.rawJson,
+      })),
+    };
+  }
+
   return buildOutputDocumentDetailPayload({
     resolved,
     projection,
@@ -366,6 +396,12 @@ export async function loadOutputDocumentDetail(
     nfeEnrichments,
     financial,
     now: options.now,
+    permissions: {
+      canViewFinancial: options.permissions?.canViewFinancial === true,
+      canViewAudit: options.permissions?.canViewAudit === true,
+      canViewRaw,
+    },
+    raw,
   });
 }
 
