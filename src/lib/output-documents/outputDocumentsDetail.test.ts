@@ -33,6 +33,7 @@ function syncMeta(
     presentInLastPayload: true,
     cancelledAt: null,
     cancellationReason: null,
+    payloadHash: "hash-abc",
     ...partial,
   };
 }
@@ -41,9 +42,12 @@ function baseResolved(
   partial: Partial<ResolvedOutputDocument["document"]> & {
     items?: ResolvedOutputDocument["items"];
     o2cLines?: ResolvedOutputDocument["o2c"]["allocationLines"];
+    orders?: ResolvedOutputDocument["orders"];
+    nfe?: ResolvedOutputDocument["nfe"];
+    receivables?: ResolvedOutputDocument["receivables"];
   } = {}
 ): ResolvedOutputDocument {
-  const { items, o2cLines, ...docPartial } = partial;
+  const { items, o2cLines, orders, nfe, receivables, ...docPartial } = partial;
   return {
     document: {
       id: DOC_ID,
@@ -75,7 +79,7 @@ function baseResolved(
     ],
     listedFromStage: true,
     dependsOnO2cForListing: false,
-    nfe: {
+    nfe: nfe ?? {
       externalId: 7208,
       link: {
         classification: "persistido",
@@ -86,12 +90,12 @@ function baseResolved(
         externalId: 7208,
         id: "nfe-1",
         numero: "7208",
-        chave: null,
+        chave: "35260612345678901234550010007208123456789012",
         status: 6,
         foundLocally: true,
       },
     },
-    orders: {
+    orders: orders ?? {
       link: {
         classification: "nao_resolvido",
         sources: [],
@@ -105,7 +109,7 @@ function baseResolved(
       allocationLines: o2cLines ?? [],
       usedForAllocationOnly: true,
     },
-    receivables: {
+    receivables: receivables ?? {
       link: {
         classification: "nao_resolvido",
         sources: [],
@@ -192,6 +196,11 @@ describe("buildOutputDocumentDetailPayload", () => {
     assert.equal(payload.resolution.listedFromStage, true);
     assert.equal(payload.resolution.dependsOnO2cForListing, false);
     assert.equal(payload.values.totalValue, 100);
+    assert.ok(Array.isArray(payload.orders));
+    assert.ok(payload.allocations);
+    assert.ok(Array.isArray(payload.nfes));
+    assert.ok(payload.audit);
+    assert.ok(Array.isArray(payload.inconsistencies));
     assert.ok(!JSON.stringify(payload).includes("rawJson"));
   });
 
@@ -322,5 +331,328 @@ describe("summarizeItemResolution", () => {
     assert.equal(summary.itemsUnresolved, 1);
     assert.equal(summary.itemsPartial, 1);
     assert.equal(summary.itemsConflict, 1);
+  });
+});
+
+describe("buildOutputDocumentDetailPayload — relações DS-04.3", () => {
+  const ORDER_B = "00000000-0000-4000-8000-0000000000b2";
+  const SOI_B1 = "soi-b1";
+
+  it("múltiplos pedidos com alocação, vendedor e cobertura", () => {
+    const resolved = baseResolved({
+      o2cLines: [
+        {
+          stockDocumentItemId: ITEM_1,
+          salesOrderId: ORDER_A,
+          salesOrderItemId: SOI_A1,
+          allocatedValueByDocumentPrice: "60.00",
+          quantityUsedForOrder: "6",
+          runId: "run-1",
+        },
+        {
+          stockDocumentItemId: ITEM_1,
+          salesOrderId: ORDER_B,
+          salesOrderItemId: SOI_B1,
+          allocatedValueByDocumentPrice: "40.00",
+          quantityUsedForOrder: "4",
+          runId: "run-1",
+        },
+      ],
+      orders: {
+        link: {
+          classification: "derivado",
+          sources: ["sales_order_nfe_link", "order_to_cash_fact"],
+          reasons: [],
+        },
+        orders: [
+          {
+            salesOrderId: ORDER_A,
+            orderCode: "PD-A",
+            status: "SENT_TO_NOMUS",
+            linkIds: ["l1"],
+            sources: ["sales_order_nfe_link", "order_to_cash_fact"],
+            items: [],
+          },
+          {
+            salesOrderId: ORDER_B,
+            orderCode: "PD-B",
+            status: "SENT_TO_NOMUS",
+            linkIds: ["l2"],
+            sources: ["order_to_cash_fact"],
+            items: [],
+          },
+        ],
+      },
+    });
+
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      orderEnrichments: [
+        {
+          salesOrderId: ORDER_A,
+          orderCode: "PD-A",
+          issueDate: new Date("2026-05-01T00:00:00.000Z"),
+          status: "SENT_TO_NOMUS",
+          externalSellerId: 464,
+          nomusSellerName: "GISLENE LIMA",
+          responsible: null,
+          totalNetValue: "500.00",
+        },
+        {
+          salesOrderId: ORDER_B,
+          orderCode: "PD-B",
+          issueDate: new Date("2026-05-02T00:00:00.000Z"),
+          status: "SENT_TO_NOMUS",
+          externalSellerId: 100,
+          nomusSellerName: "VENDEDOR B",
+          responsible: null,
+          totalNetValue: "300.00",
+        },
+      ],
+      now: NOW,
+    });
+
+    assert.equal(payload.orders.length, 2);
+    assert.equal(payload.orders[0]!.orderCode, "PD-A");
+    assert.equal(payload.orders[0]!.officialSeller.name, "GISLENE LIMA");
+    assert.equal(payload.orders[0]!.allocatedValue, 60);
+    assert.equal(payload.orders[0]!.coveragePercent, 60);
+    assert.equal(payload.orders[1]!.allocatedValue, 40);
+    assert.equal(payload.allocations.allocatedToOrders, 100);
+    assert.equal(payload.allocations.orderShares.length, 2);
+  });
+
+  it("múltiplas NF-es com chave mascarada e cancelamento", () => {
+    const resolved = baseResolved({
+      nfe: {
+        externalId: 7208,
+        link: {
+          classification: "conflitante",
+          sources: ["stock_document_idNfe", "order_to_cash_fact"],
+          reasons: ["Conflito idNfe: stage=7208, o2c=[9999]"],
+        },
+        record: {
+          externalId: 7208,
+          id: "nfe-1",
+          numero: "7208",
+          chave: "35260612345678901234550010007208123456789012",
+          status: 6,
+          foundLocally: true,
+        },
+      },
+    });
+
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      nfeEnrichments: [
+        {
+          externalId: 7208,
+          id: "nfe-1",
+          numero: "7208",
+          serie: "1",
+          status: 6,
+          chave: "35260612345678901234550010007208123456789012",
+          xmlDhEmi: new Date("2026-06-01T12:00:00.000Z"),
+          dataProcessamento: new Date("2026-06-01T13:00:00.000Z"),
+          valorLiquido: "100.00",
+          xmlVNF: "100.00",
+          foundLocally: true,
+          sources: ["stock_document_idNfe"],
+          isPrimary: true,
+        },
+        {
+          externalId: 9999,
+          id: "nfe-2",
+          numero: "9999",
+          serie: "1",
+          status: 7,
+          chave: "35260699999999999999950010009999123456789012",
+          xmlDhEmi: new Date("2026-06-03T12:00:00.000Z"),
+          dataProcessamento: null,
+          valorLiquido: "50.00",
+          xmlVNF: "50.00",
+          foundLocally: true,
+          sources: ["order_to_cash_fact"],
+          isPrimary: false,
+        },
+      ],
+      now: NOW,
+    });
+
+    assert.equal(payload.nfes.length, 2);
+    assert.equal(payload.nfes[0]!.isPrimary, true);
+    assert.ok(payload.nfes[0]!.chaveMasked?.includes("…"));
+    assert.ok(!payload.nfes[0]!.chaveMasked?.includes("1234567890123455"));
+    assert.equal(payload.nfes[1]!.isCancelled, true);
+    assert.ok(
+      payload.inconsistencies.some((i) => i.code === "NFE_LINK_CONFLICT")
+    );
+    assert.ok(payload.inconsistencies.some((i) => i.code === "NFE_CANCELLED"));
+    assert.ok(payload.inconsistencies.some((i) => i.code === "MULTIPLE_NFES"));
+  });
+
+  it("financeiro com CR e títulos", () => {
+    const resolved = baseResolved({});
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      financial: {
+        stockDocumentExternalId: 8451,
+        status: "cr_em_aberto",
+        statusReasons: ["Títulos CR em aberto sem recebimento."],
+        financialOrigin: "REAL_RECEIVABLE",
+        financialOriginReasons: ["CR oficial."],
+        nfeExternalId: 7208,
+        nfeCancelled: false,
+        documentCancelled: false,
+        receivableTotalCents: 10000,
+        receivableTotal: 100,
+        openCents: 10000,
+        open: 100,
+        receivedCents: 0,
+        received: 0,
+        nextDueDate: "2026-08-01T00:00:00.000Z",
+        titles: [
+          {
+            receivableExternalId: 1,
+            sourceInvoiceId: 7208,
+            amountReceivableCents: 10000,
+            amountReceivable: 100,
+            amountReceivedCents: 0,
+            amountReceived: 0,
+            balanceReceivableCents: 10000,
+            balanceReceivable: 100,
+            dueDate: "2026-08-01T00:00:00.000Z",
+            settlementDate: null,
+            settlement: "aberto",
+            dueStatus: "a_vencer",
+            alerts: [],
+          },
+        ],
+        installmentCount: 1,
+        documentPaymentTermsRaw: "30 dias",
+        hasDocumentPaymentTermsEvidence: true,
+        orderForecastCents: 0,
+        orderForecast: 0,
+        dominantCoverageCents: 10000,
+        dominantCoverage: 100,
+        nfeVsReceivables: "ok",
+        alerts: [],
+      },
+      now: NOW,
+    });
+
+    assert.ok(payload.financial);
+    assert.equal(payload.financial!.status, "cr_em_aberto");
+    assert.equal(payload.financial!.receivableTotal, 100);
+    assert.equal(payload.financial!.open, 100);
+    assert.equal(payload.financial!.titles.length, 1);
+    assert.equal(payload.financial!.financialOrigin, "REAL_RECEIVABLE");
+  });
+
+  it("ausência de relações e auditoria com hash", () => {
+    const resolved = baseResolved({
+      idNfe: null,
+      nfe: {
+        externalId: null,
+        link: {
+          classification: "nao_resolvido",
+          sources: [],
+          reasons: ["Nenhuma evidência oficial de NF."],
+        },
+        record: null,
+      },
+      orders: {
+        link: {
+          classification: "nao_resolvido",
+          sources: [],
+          reasons: [],
+        },
+        orders: [],
+      },
+      o2cLines: [],
+    });
+
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta({ payloadHash: "deadbeef" }),
+      now: NOW,
+    });
+
+    assert.equal(payload.orders.length, 0);
+    assert.equal(payload.nfes.length, 0);
+    assert.equal(payload.financial, null);
+    assert.equal(payload.audit.payloadHash, "deadbeef");
+    assert.equal(payload.audit.nfeLink.classification, "nao_resolvido");
+    assert.ok(payload.inconsistencies.some((i) => i.code === "NFE_UNRESOLVED"));
+    assert.ok(payload.inconsistencies.some((i) => i.code === "ORDER_UNRESOLVED"));
+    assert.ok(!JSON.stringify(payload).includes("rawJson"));
+  });
+
+  it("vínculos conflitantes entram em inconsistências e auditoria", () => {
+    const resolved = baseResolved({
+      orders: {
+        link: {
+          classification: "conflitante",
+          sources: ["sales_order_nfe_link", "order_to_cash_fact"],
+          reasons: ["Fontes discordam sobre pedidos"],
+        },
+        orders: [],
+      },
+      nfe: {
+        externalId: 7208,
+        link: {
+          classification: "conflitante",
+          sources: ["stock_document_idNfe", "order_to_cash_fact"],
+          reasons: ["Conflito idNfe"],
+        },
+        record: {
+          externalId: 7208,
+          id: "nfe-1",
+          numero: "7208",
+          chave: null,
+          status: 6,
+          foundLocally: true,
+        },
+      },
+    });
+
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta(),
+      now: NOW,
+    });
+
+    assert.ok(payload.audit.conflicts.length >= 2);
+    assert.ok(
+      payload.inconsistencies.some((i) => i.code === "ORDER_LINK_CONFLICT")
+    );
+    assert.ok(
+      payload.inconsistencies.some((i) => i.code === "NFE_LINK_CONFLICT")
+    );
+  });
+
+  it("cancelamento do documento aparece nas inconsistências", () => {
+    const resolved = baseResolved({ isCancelled: true, statusRaw: "Cancelado" });
+    const payload = buildOutputDocumentDetailPayload({
+      resolved,
+      projection: projectFromResolved(resolved),
+      sync: syncMeta({
+        cancelledAt: new Date("2026-06-15T00:00:00.000Z"),
+        cancellationReason: "Cliente desistiu",
+      }),
+      now: NOW,
+    });
+    assert.equal(payload.document.cancellation.isCancelled, true);
+    assert.ok(
+      payload.inconsistencies.some((i) => i.code === "DOCUMENT_CANCELLED")
+    );
   });
 });

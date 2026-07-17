@@ -27,7 +27,7 @@ describe("outputDocumentsRoutes — detalhe :id", () => {
     assert.ok(summaryIdx > 0 && listIdx > summaryIdx && detailIdx > listIdx);
   });
 
-  it("não seleciona rawJson no loader de detalhe", () => {
+  it("não seleciona rawJson no loader de detalhe e carrega relações", () => {
     const server = readFileSync(
       join(
         process.cwd(),
@@ -38,6 +38,8 @@ describe("outputDocumentsRoutes — detalhe :id", () => {
     assert.doesNotMatch(server, /rawJson:\s*true/);
     assert.match(server, /loadOutputDocumentByExternalId/);
     assert.match(server, /projectOutputDocumentAllocation/);
+    assert.match(server, /resolveOutputDocumentFinancialStatus/);
+    assert.match(server, /payloadHash/);
   });
 
   it("piloto comercial inclui endpoint :id", () => {
