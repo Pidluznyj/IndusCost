@@ -44,6 +44,10 @@ export function filterSalesOrderFlowMenuNavigation(
           items: filterGroupItems(navigation.fallbackGroup.items, includeFlow),
         }
       : null,
-    flatItems: filterGroupItems(navigation.flatItems, includeFlow),
+    flatAccessibleItems: includeFlow
+      ? [...navigation.flatAccessibleItems]
+      : navigation.flatAccessibleItems.filter(
+          (item) => item.id !== SALES_ORDER_FLOW_MODULE_ID
+        ),
   };
 }

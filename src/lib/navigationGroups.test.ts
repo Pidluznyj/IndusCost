@@ -85,6 +85,9 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       if (moduleId === "portfolio-reconciliation") {
         expected = "/finance/portfolio-reconciliation";
       }
+      if (moduleId === "sales-order-flow") {
+        expected = "/commercial/sales-order-flow";
+      }
       assert.equal(getModulePath(moduleId), expected);
     }
     for (const item of flattenGroupedNavigationItems()) {

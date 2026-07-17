@@ -153,7 +153,9 @@ describe("validação final — rotas preservadas", () => {
           ? "/finance/suppliers"
           : moduleId === "portfolio-reconciliation"
             ? "/finance/portfolio-reconciliation"
-            : `/${moduleId}`;
+            : moduleId === "sales-order-flow"
+              ? "/commercial/sales-order-flow"
+              : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
         assert.match(appTsx, /path=["']finance\/suppliers["']/);
@@ -163,6 +165,11 @@ describe("validação final — rotas preservadas", () => {
       }
       if (moduleId === "portfolio-reconciliation") {
         assert.match(appTsx, /path=["']finance\/portfolio-reconciliation["']/);
+        continue;
+      }
+      if (moduleId === "sales-order-flow") {
+        assert.match(appTsx, /path=["']commercial\/sales-order-flow["']/);
+        assert.match(appTsx, /SalesOrderFlowModule/);
         continue;
       }
       const escaped = moduleId.replace(/-/g, "\\-");

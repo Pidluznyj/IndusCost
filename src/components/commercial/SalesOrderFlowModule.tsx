@@ -15,7 +15,7 @@ import {
 
 /**
  * Shell da página Comercial → Fluxo de Pedidos (OP-64).
- * Sem kanban/cards/drawer — só estados de página + carga do resumo.
+ * Sem kanban/cards/painel lateral — só estados de página + carga do resumo.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();

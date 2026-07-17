@@ -53,8 +53,13 @@ describe("sales order flow navigation (OP-64)", () => {
     const app = read("src/App.tsx");
     assert.match(app, /path="commercial\/sales-order-flow"/);
     assert.match(app, /SalesOrderFlowModule/);
-    assert.match(app, new RegExp(SALES_ORDER_FLOW_PAGE_TITLE));
-    assert.match(app, new RegExp(SALES_ORDER_FLOW_PAGE_SUBTITLE));
+    assert.match(app, /SALES_ORDER_FLOW_PAGE_TITLE/);
+    assert.match(app, /SALES_ORDER_FLOW_PAGE_SUBTITLE/);
+    assert.equal(SALES_ORDER_FLOW_PAGE_TITLE, "Fluxo de Pedidos");
+    assert.equal(
+      SALES_ORDER_FLOW_PAGE_SUBTITLE,
+      "Kanban operacional dos pedidos de venda."
+    );
   });
 
   it("inclui Fluxo de Pedidos no grupo Comercial", () => {
@@ -109,15 +114,15 @@ describe("sales order flow navigation (OP-64)", () => {
       featureEnabled: false,
       hasFlowViewAccess: true,
     });
-    assert.ok(
-      !hidden.flatItems.some((item) => item.itemId === "sales-order-flow")
-    );
     const shown = filterSalesOrderFlowMenuNavigation(nav, {
       featureEnabled: true,
       hasFlowViewAccess: true,
     });
     assert.ok(
-      shown.flatItems.some((item) => item.itemId === "sales-order-flow")
+      shown.flatAccessibleItems.some((item) => item.id === "sales-order-flow")
+    );
+    assert.ok(
+      !hidden.flatAccessibleItems.some((item) => item.id === "sales-order-flow")
     );
   });
 });
