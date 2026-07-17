@@ -116,7 +116,7 @@ describe("commissions frontend wiring", () => {
   it("Sidebar inclui item Comissões", () => {
     const sidebar = read("src/components/layout/Sidebar.tsx");
     assert.match(sidebar, /commissions:\s*HandCoins/);
-    assert.match(sidebar, /buildAccessibleSidebarNavigation/);
+    assert.match(sidebar, /buildResourceAwareSidebarNavigation/);
   });
 });
 

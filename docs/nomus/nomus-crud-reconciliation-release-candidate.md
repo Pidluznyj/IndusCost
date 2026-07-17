@@ -93,3 +93,23 @@ npm run test:nomus:source-rc
 ```
 
 Consolida matriz Pedidos/CR/CP, falhas, auditoria de delete, performance e runbook.
+
+### Gate de qualidade (SYNC-10)
+
+Executar antes da ativação gradual (sem apply real nesta validação):
+
+```bash
+npm run test:nomus:source-rc
+npm run test:nomus:sales-orders-sync
+npm run test:nomus:accounts-receivable
+npm run test:nomus:accounts-payable
+npm run test:finance:cash-flow
+npm run test:commissions
+npm run test:portfolio-reconciliation
+npm run test:require-resource
+npm run test:action-permissions
+npm test
+npm run build
+npx prisma validate
+git diff --check
+```

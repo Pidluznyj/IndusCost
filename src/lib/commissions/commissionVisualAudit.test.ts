@@ -91,7 +91,14 @@ describe("commissionVisualAudit", () => {
   });
 
   it("buildVisualAuditRow calcula comissão pendente e base rateada", () => {
-    const row = buildVisualAuditRow(baseInput({ commissionExpected: 12.5, commissionReleased: 5 }));
+    const row = buildVisualAuditRow(
+      baseInput({
+        commissionExpected: 12.5,
+        commissionReleased: 5,
+        // Vencimento futuro: evita BLOQUEADA_INADIMPLENCIA quando o relógio do CI passa da dueDate fixa.
+        dueDate: "2099-07-10T00:00:00.000Z",
+      })
+    );
     assert.equal(row.commissionPending, 7.5);
     assert.equal(row.allocatedBaseAmount, 500);
     assert.equal(row.commissionStatus, "PARCIALMENTE_LIBERADA");

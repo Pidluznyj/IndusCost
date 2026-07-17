@@ -52,6 +52,7 @@ describe("module tab permissions", () => {
           "crm.view",
           "crm.general.view",
           "crm.seller.view",
+          "crm.customer_cockpit.view",
           "commissions.view",
           "materials.view",
         ],
@@ -78,7 +79,8 @@ describe("module tab permissions", () => {
     const api = createPermissionsApi(
       user({
         role: "SELLER",
-        permissions: ["crm.seller.own"],
+        // Aba exige crm.seller.view; crm.seller.own é só escopo de dados.
+        permissions: ["crm.seller.view", "crm.seller.own"],
       })
     );
     assert.ok(api.canView(ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_VENDEDOR));

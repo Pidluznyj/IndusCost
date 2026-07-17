@@ -87,7 +87,9 @@ describe("PERM-36 — filterOfficialSidebarByEffectiveAccess", () => {
   it("vários filhos comerciais: ordem = catálogo oficial", () => {
     const dto = effectiveAccessDtoFromAllowedResources([
       "commercial.commissions",
-      "commercial.crm",
+      // CRM: aba útil + escopo (shell commercial.crm sozinho não revela menu).
+      "commercial.crm.seller",
+      "commercial.crm.scope.own",
       "commercial.customers",
       "commercial.sales_orders",
     ]);
