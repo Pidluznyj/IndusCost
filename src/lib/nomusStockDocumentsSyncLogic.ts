@@ -101,7 +101,10 @@ function parseIdNfeList(raw: string): number[] {
     });
 }
 
-export function parseStockDocumentsSyncCli(argv: string[]): StockDocumentsSyncCliOptions {
+export function parseStockDocumentsSyncCli(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env
+): StockDocumentsSyncCliOptions {
   const mode: StockDocumentsSyncMode =
     argv.includes("apply") || argv.includes("--apply") ? "apply" : "preview";
 
@@ -142,8 +145,14 @@ export function parseStockDocumentsSyncCli(argv: string[]): StockDocumentsSyncCl
     }
   }
 
-  if (idNfes.length === 0 && (!from || !to)) {
-    throw new Error("Informe --from=YYYY-MM-DD e --to=YYYY-MM-DD, ou --idNfe=... para teste pontual.");
+  const incremental =
+    (env.NOMUS_STOCK_DOCUMENTS_INCREMENTAL ?? "").trim() === "1" ||
+    (env.NOMUS_STOCK_DOCUMENTS_INCREMENTAL ?? "").trim().toLowerCase() === "true";
+
+  if (idNfes.length === 0 && (!from || !to) && !incremental) {
+    throw new Error(
+      "Informe --from=YYYY-MM-DD e --to=YYYY-MM-DD, ou --idNfe=... para teste pontual (ou NOMUS_STOCK_DOCUMENTS_INCREMENTAL=1)."
+    );
   }
 
   return {

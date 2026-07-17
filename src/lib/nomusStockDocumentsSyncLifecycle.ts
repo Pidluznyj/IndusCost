@@ -9,6 +9,10 @@ import type {
   StockDocumentsSyncMode,
 } from "./nomusStockDocumentsSyncLogic.js";
 import { emptyStockDocumentsSyncCounters } from "./nomusStockDocumentsSyncLogic.js";
+import {
+  NOMUS_STOCK_DOCUMENTS_INCREMENTAL_LOOKBACK_DAYS,
+  NOMUS_STOCK_DOCUMENTS_INCREMENTAL_OVERLAP_DAYS,
+} from "./nomusStockDocumentsSyncConstants.js";
 
 export type StockDocumentsSyncRunCompleteness =
   | "complete"
@@ -158,6 +162,66 @@ export function serializeStockDocumentsCheckpoint(
   checkpoint: StockDocumentsSyncCheckpoint
 ): string {
   return `${JSON.stringify(checkpoint, null, 2)}\n`;
+}
+
+function toIsoDateOnlyUtc(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseIsoDateOnlyUtc(value: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = new Date(date.getTime());
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+/**
+ * Janela incremental a partir do checkpoint (ou lookback inicial).
+ * Nunca é backfill amplo — só overlap curto + até hoje.
+ */
+export function computeStockDocumentsIncrementalWindow(input: {
+  checkpointTo?: string | null;
+  now?: Date;
+  overlapDays?: number;
+  lookbackDays?: number;
+}): { from: string; to: string; source: "checkpoint_overlap" | "initial_lookback" } {
+  const now = input.now ?? new Date();
+  const to = toIsoDateOnlyUtc(now);
+  const overlapDays =
+    input.overlapDays ?? NOMUS_STOCK_DOCUMENTS_INCREMENTAL_OVERLAP_DAYS;
+  const lookbackDays =
+    input.lookbackDays ?? NOMUS_STOCK_DOCUMENTS_INCREMENTAL_LOOKBACK_DAYS;
+
+  const checkpointDate = input.checkpointTo
+    ? parseIsoDateOnlyUtc(input.checkpointTo)
+    : null;
+  if (checkpointDate) {
+    const fromDate = addUtcDays(checkpointDate, -Math.max(0, overlapDays));
+    let from = toIsoDateOnlyUtc(fromDate);
+    if (from > to) from = to;
+    return { from, to, source: "checkpoint_overlap" };
+  }
+
+  const fromDate = addUtcDays(now, -Math.max(1, lookbackDays));
+  return {
+    from: toIsoDateOnlyUtc(fromDate),
+    to,
+    source: "initial_lookback",
+  };
 }
 
 export function buildStockDocumentsSyncAuditRecord(input: {

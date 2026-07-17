@@ -1,21 +1,20 @@
 /**
- * Sync manual Nomus documentosEstoque → NomusStockDocument / NomusStockDocumentItem.
+ * Sync Nomus documentosEstoque → NomusStockDocument / NomusStockDocumentItem.
+ *
+ * Incremental (orquestrado): NOMUS_STOCK_DOCUMENTS_INCREMENTAL=1 resolve janela
+ * a partir do checkpoint (overlap) ou lookback inicial — sem backfill automático.
+ * Backfill amplo permanece manual com --from/--to explícitos.
  *
  * Isolado: não altera AR, Faturamento, Fluxo de Caixa, Comissões, SalesOrder, NomusNfe.
- * Sem cron / sem rotina automática.
- *
- * Regra de itens (DS-03.2):
- * - payload completo com itens → substitui itens (deleteMany + createMany)
- * - payload completo sem itens (array explícito vazio) → substitui (fica sem itens)
- * - payload parcial / array ausente / itens não mapeáveis → preserva itens existentes
  *
  * Uso:
  *   npx tsx scripts/nomusStockDocumentsSync.ts preview --from=2025-07-01 --to=2026-07-10
  *   npx tsx scripts/nomusStockDocumentsSync.ts apply --from=2025-07-01 --to=2026-07-10 --tipo=DocumentoSaida
  *   npx tsx scripts/nomusStockDocumentsSync.ts preview --idNfe=6937,7188,7377
+ *   NOMUS_STOCK_DOCUMENTS_INCREMENTAL=1 npx tsx scripts/nomusStockDocumentsSync.ts apply
  */
 import "dotenv/config";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   mapNomusStockDocumentPayload,
@@ -37,6 +36,7 @@ import {
   type StockDocumentsSyncCounters,
 } from "../src/lib/nomusStockDocumentsSyncLogic.ts";
 import {
+  isStockDocumentsIncrementalEnabled,
   NOMUS_STOCK_DOCUMENTS_LOG_PREFIX,
   resolveStockDocumentsSyncCheckpointFile,
 } from "../src/lib/nomusStockDocumentsSyncConstants.ts";
@@ -48,6 +48,8 @@ import {
   buildStockDocumentsCheckpoint,
   buildStockDocumentsSyncAuditRecord,
   classifyStockDocumentsSyncCompleteness,
+  computeStockDocumentsIncrementalWindow,
+  parseStockDocumentsCheckpoint,
   resolveStockDocumentsLifecycleExitCode,
   serializeStockDocumentsCheckpoint,
   shouldAdvanceStockDocumentsCheckpoint,
@@ -317,7 +319,40 @@ async function runApply(
 
 async function main(): Promise<void> {
   const startedAt = new Date();
-  const options = parseStockDocumentsSyncCli(process.argv.slice(2));
+  let options = parseStockDocumentsSyncCli(process.argv.slice(2));
+
+  if (
+    options.idNfes.length === 0 &&
+    (!options.from || !options.to) &&
+    isStockDocumentsIncrementalEnabled()
+  ) {
+    const checkpointPath = resolveStockDocumentsSyncCheckpointFile();
+    let checkpointTo: string | null = null;
+    try {
+      if (existsSync(checkpointPath)) {
+        checkpointTo =
+          parseStockDocumentsCheckpoint(readFileSync(checkpointPath, "utf8"))?.to ??
+          null;
+      }
+    } catch {
+      checkpointTo = null;
+    }
+    const window = computeStockDocumentsIncrementalWindow({
+      checkpointTo,
+      now: startedAt,
+    });
+    options = { ...options, from: window.from, to: window.to };
+    console.warn(
+      `${LOG_PREFIX} janela incremental (${window.source}): from=${window.from} to=${window.to}`
+    );
+  }
+
+  if (options.idNfes.length === 0 && (!options.from || !options.to)) {
+    throw new Error(
+      "Informe --from/--to, --idNfe=... ou NOMUS_STOCK_DOCUMENTS_INCREMENTAL=1."
+    );
+  }
+
   let lockToken: string | null = null;
   let lockFile: string | null = null;
   let rateLimit429 = 0;

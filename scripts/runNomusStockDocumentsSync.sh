@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Runner manual do sync de Documentos de Saída (sem cron nesta etapa).
-# Usa flock no servidor Linux; o script TS também aplica lock por PID.
+# Runner oficial do sync de Documentos de Saída (incremental + soft-fail).
+# Cadência: mesma frequência do ecossistema financeiro (2h), com offset próprio.
+# Backfill amplo: somente manual com --from/--to explícitos (não use este runner).
 set -Eeuo pipefail
 
 APP_DIR="${INDUSCOST_APP_DIR:-/opt/induscost}"
@@ -34,7 +35,6 @@ echo "APP_DIR=$APP_DIR"
 echo "LOCK_FILE=$LOCK_FILE"
 echo "RUN_LOG=$RUN_LOG"
 echo "STARTED_AT=$(date -Iseconds)"
-echo "NOTE=sem cron nesta etapa (execução manual)"
 
 cd "$APP_DIR"
 
@@ -51,12 +51,37 @@ echo "[nomus-stock-documents-runner] Lock adquirido: $LOCK_FILE"
 
 export NOMUS_STOCK_DOCUMENTS_UNDER_SHELL_LOCK=1
 export NOMUS_STOCK_DOCUMENTS_RUNNER_LOG="$RUN_LOG"
+export NOMUS_SYNC_LOG_DIR="$LOG_DIR"
+
+# Incremental por padrão no runner; args explícitos (--from/--to/--idNfe) têm precedência no CLI.
+shift || true
+EXTRA_ARGS=("$@")
+HAS_EXPLICIT_WINDOW=0
+for arg in "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"; do
+  case "$arg" in
+    --from=*|--to=*|--idNfe=*)
+      HAS_EXPLICIT_WINDOW=1
+      ;;
+  esac
+done
+
+if [[ "$HAS_EXPLICIT_WINDOW" -eq 0 ]]; then
+  export NOMUS_STOCK_DOCUMENTS_INCREMENTAL="${NOMUS_STOCK_DOCUMENTS_INCREMENTAL:-1}"
+else
+  export NOMUS_STOCK_DOCUMENTS_INCREMENTAL="${NOMUS_STOCK_DOCUMENTS_INCREMENTAL:-0}"
+fi
+
+echo
+echo "=== CONFIGURAÇÃO ==="
+echo "NOMUS_STOCK_DOCUMENTS_INCREMENTAL=$NOMUS_STOCK_DOCUMENTS_INCREMENTAL"
+echo "SYNC_STRATEGY=incremental_window_upsert"
+echo "BACKFILL=manual_only"
+echo "SCHEDULE_HINT=cron: 23 */2 * * * (a cada 2 horas; offset NF-e/AR)"
 
 echo
 echo "=== EXECUÇÃO ==="
 set +e
-shift || true
-npm run "sync:nomus:stock-documents:${MODE}" -- "$@"
+npm run "sync:nomus:stock-documents:${MODE}" -- "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 EXIT_CODE=$?
 set -e
 

@@ -620,7 +620,8 @@ type NomusSyncTarget =
   | "sales-orders"
   | "accounts-receivable"
   | "accounts-payable"
-  | "nfes";
+  | "nfes"
+  | "stock-documents";
 type NomusSyncStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "UNKNOWN";
 
 const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
@@ -632,12 +633,14 @@ const NOMUS_SYNC_TARGETS: readonly NomusSyncTarget[] = [
   "accounts-receivable",
   "accounts-payable",
   "nfes",
+  "stock-documents",
 ];
 const NOMUS_HEALTH_STALE_MS: Record<NomusSyncTarget, number> = {
   "sales-orders": 2 * 60 * 60 * 1000,
   "accounts-receivable": 2 * 60 * 60 * 1000,
   "accounts-payable": 2 * 60 * 60 * 1000,
   nfes: 2 * 60 * 60 * 1000,
+  "stock-documents": 2 * 60 * 60 * 1000,
   customers: 26 * 60 * 60 * 1000,
   products: 26 * 60 * 60 * 1000,
   "bom-components": 30 * 60 * 60 * 1000,
@@ -783,6 +786,16 @@ function parseNomusSyncFileName(fileName: string): { kind: NomusSyncKind; mode: 
       kind: "runner",
       target: "nfes",
       mode: nfeMatch[1].toLowerCase() as NomusSyncMode,
+    };
+  }
+  const stockDocsMatch =
+    /^runner-stock-documents_(apply|dry|preview)_.+\.log$/i.exec(fileName);
+  if (stockDocsMatch) {
+    const rawMode = stockDocsMatch[1].toLowerCase();
+    return {
+      kind: "runner",
+      target: "stock-documents",
+      mode: (rawMode === "preview" ? "dry" : rawMode) as NomusSyncMode,
     };
   }
   const m =
@@ -1180,9 +1193,14 @@ async function startServer() {
       Object.keys(dbBlocked).length > 0 ? { ...summary.blockedReasons, ...dbBlocked } : summary.blockedReasons;
     const runKind = run.kind === "runner" || run.kind === "sync" ? run.kind : summary.kind;
     const runMode = run.mode === "apply" || run.mode === "dry" ? run.mode : summary.mode;
-    const runTarget = NOMUS_SYNC_TARGETS.includes(run.target as NomusSyncTarget)
-      ? (run.target as NomusSyncTarget)
-      : summary.target;
+    const runTarget = (() => {
+      const raw = String(run.target || "");
+      if (raw === "stock_documents") return "stock-documents" as NomusSyncTarget;
+      if (NOMUS_SYNC_TARGETS.includes(raw as NomusSyncTarget)) {
+        return raw as NomusSyncTarget;
+      }
+      return summary.target;
+    })();
 
     return {
       ...summary,
@@ -1390,7 +1408,9 @@ async function startServer() {
               ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para contas a receber)."
               : target === "accounts-payable"
                 ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado para contas a pagar)."
-                : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
+                : target === "nfes" || target === "stock-documents"
+                  ? "Última conclusão com sucesso há mais de 2 horas (prazo esperado do sync financeiro)."
+                  : "Última conclusão com sucesso há mais de 24 horas (prazo esperado).",
         warning: null,
       };
     }
@@ -1461,6 +1481,7 @@ async function startServer() {
       "accounts-receivable": "Contas a receber",
       "accounts-payable": "Contas a pagar",
       nfes: "NF-e / Faturamento",
+      "stock-documents": "Documentos de Saída",
     };
     const select = {
       createdAt: true,
@@ -1500,8 +1521,16 @@ async function startServer() {
     }> = [];
 
     for (const target of NOMUS_SYNC_TARGETS) {
+      const targetAliases =
+        target === "stock-documents"
+          ? (["stock-documents", "stock_documents"] as const)
+          : ([target] as const);
       const row = await prisma.integrationRun.findFirst({
-        where: { sourceSystem: "NOMUS", target, mode: "apply" },
+        where: {
+          sourceSystem: "NOMUS",
+          target: { in: [...targetAliases] },
+          mode: "apply",
+        },
         orderBy: { createdAt: "desc" },
         select,
       });

@@ -22,6 +22,11 @@ import {
   startNomusNfesSyncApply,
 } from "@/src/lib/nomusNfesSyncRunner.js";
 import {
+  getNomusStockDocumentsSyncStatus,
+  NomusStockDocumentsSyncConflictError,
+  startNomusStockDocumentsSyncApply,
+} from "@/src/lib/nomusStockDocumentsSyncRunner.js";
+import {
   FINANCE_AP_ACTIONS,
   FINANCE_AP_RESOURCE_KEY,
 } from "@/src/lib/financeAccountsPayableAccess.js";
@@ -384,6 +389,51 @@ export function registerSettingsNomusSyncRoutes(
         console.error("POST /api/settings/nomus-sync/nfes-run:", error);
         return res.status(500).json({
           error: "Não foi possível iniciar a sincronização de NF-e. Verifique logs do servidor.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/settings/nomus-sync/stock-documents-status",
+    nomusView,
+    async (_req, res) => {
+      try {
+        const status = await getNomusStockDocumentsSyncStatus();
+        return res.json(status);
+      } catch (error) {
+        console.error("GET /api/settings/nomus-sync/stock-documents-status:", error);
+        return res.status(500).json({
+          error: "Erro ao consultar status de Documentos de Saída Nomus.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/settings/nomus-sync/stock-documents-run",
+    auth.requireBootstrapOrResource(
+      isBootstrap,
+      ADMIN_SETTINGS_RESOURCE_KEYS.nomusSync,
+      ADMIN_SETTINGS_ACTIONS.execute
+    ),
+    async (_req, res) => {
+      try {
+        const projectRoot = process.env.INDUSCOST_APP_DIR || process.cwd();
+        const result = await startNomusStockDocumentsSyncApply(projectRoot);
+        return res.status(202).json(result);
+      } catch (error) {
+        if (error instanceof NomusStockDocumentsSyncConflictError) {
+          return res.status(409).json({
+            error: error.message,
+            message:
+              "Já existe uma sincronização de Documentos de Saída em andamento. Aguarde finalizar.",
+          });
+        }
+        console.error("POST /api/settings/nomus-sync/stock-documents-run:", error);
+        return res.status(500).json({
+          error:
+            "Não foi possível iniciar a sincronização de Documentos de Saída. Verifique logs do servidor.",
         });
       }
     }
