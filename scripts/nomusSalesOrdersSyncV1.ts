@@ -26,6 +26,10 @@ import {
   formatProductionOrdersAfterSalesOrdersLogLine,
   runNomusProductionOrdersAfterSalesOrdersSync,
 } from "../src/lib/nomusProductionOrdersAfterSalesOrders.server.ts";
+import {
+  buildSalesOrderFlowRecomputeAfterSyncTrigger,
+  runSalesOrderFlowRecomputeAfterNomusSync,
+} from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
 import { extractNomusSellerFromPedido } from "../src/lib/salesOrderNomusSeller.ts";
 import {
   formatSalesOrdersPaginationNote,
@@ -1801,6 +1805,24 @@ async function main(): Promise<void> {
     } catch (err) {
       console.error(
         "[nomusSalesOrdersSyncV1] production-orders sync falhou (sync de pedidos segue):",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    // OP-57: recomputa fluxo após persistência de pedidos (+ OP pós-sync). Soft-fail.
+    // Cobre também corte/atendimento/cancelamento gravados no apply de itens.
+    try {
+      await runSalesOrderFlowRecomputeAfterNomusSync(
+        prisma,
+        buildSalesOrderFlowRecomputeAfterSyncTrigger({
+          source: "sales-orders",
+          syncMode: "apply",
+          salesOrderIds: applied?.affectedSalesOrderIds ?? [],
+        })
+      );
+    } catch (err) {
+      console.error(
+        "[nomusSalesOrdersSyncV1] sales-order-flow recompute falhou (sync de pedidos segue):",
         err instanceof Error ? err.message : err
       );
     }

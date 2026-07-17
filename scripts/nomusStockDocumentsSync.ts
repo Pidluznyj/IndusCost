@@ -17,6 +17,10 @@ import "dotenv/config";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
+  buildSalesOrderFlowRecomputeAfterSyncTrigger,
+  runSalesOrderFlowRecomputeAfterNomusSync,
+} from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
+import {
   mapNomusStockDocumentPayload,
   type MappedNomusStockDocument,
   type JsonObject,
@@ -265,6 +269,11 @@ async function runApply(
 
         if (existing == null) counters.documentsCreated += 1;
         else counters.documentsUpdated += 1;
+
+        counters.affectedStockDocumentExternalIds.push(row.externalId);
+        if (row.idNfe != null && Number.isFinite(row.idNfe) && row.idNfe > 0) {
+          counters.affectedNfeIds.push(row.idNfe);
+        }
 
         if (row.totalValueSource === "items_sum") {
           console.warn(
@@ -558,6 +567,31 @@ async function main(): Promise<void> {
     errorMessage: fatalError,
   });
   await persistStockDocumentsIntegrationRun({ audit });
+
+  if (
+    options.mode === "apply" &&
+    (counters.affectedStockDocumentExternalIds.length > 0 ||
+      counters.affectedNfeIds.length > 0)
+  ) {
+    try {
+      await runSalesOrderFlowRecomputeAfterNomusSync(
+        prisma,
+        buildSalesOrderFlowRecomputeAfterSyncTrigger({
+          source: "stock-documents",
+          syncMode: "apply",
+          stockDocumentExternalIds: [
+            ...new Set(counters.affectedStockDocumentExternalIds),
+          ],
+          nfeIds: [...new Set(counters.affectedNfeIds)],
+        })
+      );
+    } catch (err) {
+      console.error(
+        `${LOG_PREFIX} sales-order-flow recompute falhou (sync de documentos segue):`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
 
   const durationMs = audit.durationMs;
   console.warn(

@@ -3,6 +3,10 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { buildNomusSyncMaterializationTrigger } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.ts";
 import { runCommissionMaterializationAfterNomusSync } from "../src/lib/commissions/commissionMaterializationAfterNomusSync.server.ts";
 import {
+  buildSalesOrderFlowRecomputeAfterSyncTrigger,
+  runSalesOrderFlowRecomputeAfterNomusSync,
+} from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
+import {
   NFE_DISCARD_REASON_LABELS,
   summarizeNfeBillingPreview,
   type NfeDiscardReasonCode,
@@ -385,6 +389,22 @@ async function main(): Promise<void> {
         nfeIds: applied.affectedNfeIds,
       })
     );
+
+    try {
+      await runSalesOrderFlowRecomputeAfterNomusSync(
+        prisma,
+        buildSalesOrderFlowRecomputeAfterSyncTrigger({
+          source: "nfes",
+          syncMode: "apply",
+          nfeIds: applied.affectedNfeIds,
+        })
+      );
+    } catch (err) {
+      console.error(
+        `${LOG_PREFIX} sales-order-flow recompute falhou (sync de NF-e segue):`,
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   if (options.mode === "apply") {

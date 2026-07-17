@@ -64,6 +64,10 @@ export type StockDocumentsSyncCounters = {
   duplicateItemsCollapsed: number;
   rateLimit429: number;
   errors: number;
+  /** OP-57: documentos com create/update (para recompute incremental). */
+  affectedStockDocumentExternalIds: number[];
+  /** OP-57: idNfe dos documentos afetados. */
+  affectedNfeIds: number[];
 };
 
 function parseIsoDateArg(raw: string, label: string): string {
@@ -406,6 +410,8 @@ export function emptyStockDocumentsSyncCounters(): StockDocumentsSyncCounters {
     duplicateItemsCollapsed: 0,
     rateLimit429: 0,
     errors: 0,
+    affectedStockDocumentExternalIds: [],
+    affectedNfeIds: [],
   };
 }
 

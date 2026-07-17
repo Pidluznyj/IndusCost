@@ -16,6 +16,10 @@ import "dotenv/config";
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
 import {
+  buildSalesOrderFlowRecomputeAfterSyncTrigger,
+  runSalesOrderFlowRecomputeAfterNomusSync,
+} from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
+import {
   mapNomusProductionOrderPayload,
   type MappedNomusProductionOrder,
   type JsonObject,
@@ -270,6 +274,7 @@ export async function runNomusProductionOrdersSync(args: {
   let created = 0;
   let updated = 0;
   let unchanged = 0;
+  const affectedProductionOrderExternalIds: number[] = [];
 
   if (shouldWriteProductionOrders(options.mode)) {
     const syncedAt = new Date();
@@ -282,6 +287,9 @@ export async function runNomusProductionOrdersSync(args: {
         if (result.action === "create") created += 1;
         else if (result.action === "update") updated += 1;
         else unchanged += 1;
+        if (result.action === "create" || result.action === "update") {
+          affectedProductionOrderExternalIds.push(row.externalId);
+        }
         linksCreated += result.linksCreated;
         linksUpdated += result.linksUpdated;
         linksMarkedAbsent += result.linksMarkedAbsent;
@@ -329,6 +337,30 @@ export async function runNomusProductionOrdersSync(args: {
   };
 
   console.log(JSON.stringify({ ok: true, ...summary }, null, 2));
+
+  if (
+    shouldWriteProductionOrders(options.mode) &&
+    affectedProductionOrderExternalIds.length > 0
+  ) {
+    try {
+      await runSalesOrderFlowRecomputeAfterNomusSync(
+        args.prisma,
+        buildSalesOrderFlowRecomputeAfterSyncTrigger({
+          source: "production-orders",
+          syncMode: "apply",
+          productionOrderExternalIds: [
+            ...new Set(affectedProductionOrderExternalIds),
+          ],
+        })
+      );
+    } catch (err) {
+      console.error(
+        `${LOG_PREFIX} sales-order-flow recompute falhou (sync de OP segue):`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   return summary;
 }
 
