@@ -2,7 +2,6 @@ import React from "react";
 import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { getFirstAllowedModulePath } from "@/src/lib/modulePermissions";
 import { LandingPage } from "@/src/components/LandingPage";
 
 /** Rota pública inicial: landing para visitantes; redireciona usuários já autenticados. */
@@ -19,8 +18,7 @@ export const PublicLandingRoute: React.FC = () => {
   }
 
   if (auth.authenticated) {
-    const target = getFirstAllowedModulePath(auth) ?? "/dashboard";
-    return <Navigate to={target} replace />;
+    return <Navigate to="/home" replace />;
   }
 
   return <LandingPage />;

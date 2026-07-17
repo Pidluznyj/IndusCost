@@ -41,6 +41,7 @@ import { FleetPublicReservationShortLinkPage } from "./components/fleet/FleetPub
 import { SystemGuideModule } from "./components/SystemGuideModule";
 import { PublicLandingRoute } from "./components/PublicLandingRoute";
 import { PublicLoginRoute } from "./components/PublicLoginRoute";
+import { HomePage } from "./components/HomePage";
 import { EVENT_OPEN_PROPOSAL } from "@/src/lib/salesFunnel";
 import { ModuleIndicatorsButton } from "@/src/components/contextual/ModuleIndicatorsButton";
 import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/PurchaseIndicatorsDashboard";
@@ -377,6 +378,7 @@ export default function App() {
       <Route path="/projects/:projectId/client-report" element={<ProjectClientReportPage />} />
       </Route>
       <Route element={<Layout />}>
+        <Route path="home" element={<HomePage />} />
         <Route
           path="dashboard"
           element={

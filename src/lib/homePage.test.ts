@@ -39,5 +39,6 @@ describe("home autenticada", () => {
     assert.match(home, /Petróleo Brent/);
     assert.match(home, /Abrir guia do sistema/);
     assert.match(home, /availableFeatures/);
+    assert.match(home, /Curiosidades do sistema/);
   });
 });

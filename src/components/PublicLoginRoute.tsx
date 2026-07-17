@@ -2,7 +2,6 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { getFirstAllowedModulePath } from "@/src/lib/modulePermissions";
 import { AuthLoginPage } from "@/src/components/AuthLoginPage";
 
 type LoginLocationState = {
@@ -27,10 +26,15 @@ export const PublicLoginRoute: React.FC = () => {
 
   if (auth.authenticated) {
     const from = state?.from;
-    const target = from
-      ? `${from.pathname}${from.search ?? ""}${from.hash ?? ""}`
-      : getFirstAllowedModulePath(auth) ?? "/dashboard";
-    return <Navigate to={target} replace />;
+    if (from) {
+      return (
+        <Navigate
+          to={`${from.pathname}${from.search ?? ""}${from.hash ?? ""}`}
+          replace
+        />
+      );
+    }
+    return <Navigate to="/home" replace />;
   }
 
   return (

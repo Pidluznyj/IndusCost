@@ -344,6 +344,58 @@ export const AdminUsersModule: React.FC = () => {
     return isMatrixDraftDirty(matrixDraft, loadedSnapshot);
   }, [matrixDraft, loadedSnapshot]);
 
+  const closePermissionsEditor = useCallback(() => {
+    if (pending) {
+      const discard = window.confirm(
+        "Há alterações de permissão não salvas. Fechar e descartar?"
+      );
+      if (!discard) return;
+    }
+    setSelectedId(null);
+    setDetail(null);
+    setDetailError(null);
+    setConfirmCriticalOpen(false);
+    setConfirmBroadOpen(false);
+    setSaveSuccess(null);
+  }, [pending]);
+
+  const selectUser = useCallback(
+    (userId: string) => {
+      if (userId === selectedId) return;
+      if (pending && selectedId) {
+        const discard = window.confirm(
+          "Há alterações de permissão não salvas. Descartar e abrir outro usuário?"
+        );
+        if (!discard) return;
+      }
+      setSelectedId(userId);
+    },
+    [pending, selectedId]
+  );
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Não fechar se outro overlay (criar/senha/excluir) estiver aberto.
+      if (createOpen || resetOpen || deleteOpen || confirmCriticalOpen || confirmBroadOpen) {
+        return;
+      }
+      event.preventDefault();
+      closePermissionsEditor();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    selectedId,
+    closePermissionsEditor,
+    createOpen,
+    resetOpen,
+    deleteOpen,
+    confirmCriticalOpen,
+    confirmBroadOpen,
+  ]);
+
   const changeCount = useMemo(
     () => countUserPermissionTreeChanges(treeDecisions, treeBaselineDecisions),
     [treeDecisions, treeBaselineDecisions]

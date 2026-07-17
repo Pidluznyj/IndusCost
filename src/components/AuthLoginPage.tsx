@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, LogIn, RefreshCw, TrendingUp } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { getFirstAllowedModulePath } from "@/src/lib/modulePermissions";
 
 type AuthLoginPageProps = {
   networkError?: string | null;
@@ -29,10 +28,14 @@ export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
     setSubmitting(true);
     try {
       await login(email, password);
-      const target = redirectAfterLogin
-        ? `${redirectAfterLogin.pathname}${redirectAfterLogin.search ?? ""}${redirectAfterLogin.hash ?? ""}`
-        : getFirstAllowedModulePath(auth) ?? "/dashboard";
-      navigate(target, { replace: true });
+      if (redirectAfterLogin) {
+        navigate(
+          `${redirectAfterLogin.pathname}${redirectAfterLogin.search ?? ""}${redirectAfterLogin.hash ?? ""}`,
+          { replace: true }
+        );
+      } else {
+        navigate("/home", { replace: true });
+      }
     } catch (err) {
       setFormError(
         err instanceof Error ? err.message : "Não foi possível entrar. Verifique e-mail e senha."

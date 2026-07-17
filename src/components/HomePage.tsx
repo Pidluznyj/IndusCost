@@ -265,6 +265,46 @@ export function HomePage() {
         </div>
       </section>
 
+      <section aria-labelledby="home-curiosities-title">
+        <div className="max-w-2xl">
+          <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">
+            Curiosidades do sistema
+          </p>
+          <h2 id="home-curiosities-title" className="mt-1 text-xl font-bold">
+            Informações relevantes para navegar melhor
+          </h2>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <article className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-primary">
+              Mercado na tela
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              O dólar PTAX e o petróleo Brent desta home usam a mesma fonte do ticker do
+              cabeçalho — útil para contextualizar custo de material importado e energia.
+            </p>
+          </article>
+          <article className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-primary">
+              Acesso por módulo
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Os atalhos abaixo só mostram o que o seu perfil pode abrir. Se faltar algo,
+              o administrador libera o módulo correspondente nas permissões.
+            </p>
+          </article>
+          <article className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-primary">
+              Guia integrado
+            </p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              O guia do sistema explica o fluxo custo → preço → venda → financeiro e
+              ajuda a escolher por onde começar no IndusCost.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section aria-labelledby="home-features-title">
         <div className="max-w-2xl">
           <p className="text-xs font-bold uppercase tracking-[0.08em] text-primary">

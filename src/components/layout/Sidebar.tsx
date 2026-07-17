@@ -535,7 +535,7 @@ export const Sidebar = () => {
         )}
       >
         <Link
-          to="/"
+          to="/home"
           title="Página inicial"
           className={cn(
             "rounded-lg outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring/50",

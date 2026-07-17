@@ -20,9 +20,11 @@ export const PUBLIC_ROUTE_PATH_PREFIXES: readonly string[] = [
 
 /**
  * Rotas autenticadas sem resourceKey de módulo.
- * Vazio por política P11 — sessão não basta para abrir URL sem módulo mapeado.
+ * Home pós-login: landing autenticada (mercado + atalhos), não exige módulo.
  */
-export const AUTHENTICATED_ALLOWLIST_PATH_PREFIXES: readonly string[] = [];
+export const AUTHENTICATED_ALLOWLIST_PATH_PREFIXES: readonly string[] = [
+  "/home",
+];
 
 function normalizePathname(pathname: string): string {
   const trimmed = pathname.trim();
