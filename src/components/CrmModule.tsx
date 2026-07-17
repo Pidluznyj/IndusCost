@@ -92,7 +92,6 @@ import {
   type CrmManagementTabId,
 } from "@/src/components/CrmCommercialManagementTabs";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { CRM_UI_TABS, TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { ProtectedTab } from "@/src/components/security/ProtectedTab";
@@ -104,6 +103,7 @@ import {
   canFilterAllCrmSellers,
   isCrmOwnSellerOnly,
   isCrmSellerLinked,
+  resolveCrmPersonaForChecker,
 } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
@@ -1450,20 +1450,11 @@ export const CrmModule = () => {
   const [managementDashboardError, setManagementDashboardError] = useState<string | null>(null);
 
   const auth = useAuth();
-  const permissions = usePermissions();
-  const canCrmGeneral =
-    permissions.canView(TabResourceKeys.CRM_GESTAO_GERAL) || canAccessCrmGeneral(auth);
-  const canCrmSeller =
-    permissions.canView(TabResourceKeys.CRM_GESTAO_VENDEDOR) || canAccessCrmSeller(auth);
-  const canCrmPortfolio =
-    permissions.canView(TabResourceKeys.CRM_CARTEIRA) || canAccessCrmPortfolio(auth);
-  const canCrmCliente360 =
-    permissions.canView(TabResourceKeys.CRM_CLIENTE_360) ||
-    auth.hasAnyPermission([
-      "crm.customer_cockpit.view",
-      "customers.commercial360.view",
-      "customers.view",
-    ]);
+  const crmPersona = resolveCrmPersonaForChecker(auth);
+  const canCrmGeneral = canAccessCrmGeneral(auth);
+  const canCrmSeller = canAccessCrmSeller(auth);
+  const canCrmPortfolio = canAccessCrmPortfolio(auth);
+  const canCrmCliente360 = crmPersona.canViewCustomer360;
   const canCrmAny = canAccessCrmAny(auth) || canCrmGeneral || canCrmSeller || canCrmPortfolio;
   const canFilterAllSellers = canFilterAllCrmSellers(auth);
   const isOwnSellerOnly = isCrmOwnSellerOnly(auth);

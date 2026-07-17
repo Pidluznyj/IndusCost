@@ -23,6 +23,7 @@ function mockAuth(overrides: {
   externalSellerId?: number | null;
   sellerResponsibleName?: string | null;
   sellerIdentityKey?: string | null;
+  canonicalViewResources?: string[];
 }): AppAuthContext {
   const permissions = overrides.permissions ?? [];
   const role = overrides.role ?? "SELLER";
@@ -44,6 +45,9 @@ function mockAuth(overrides: {
       overrides.externalSellerId != null ? [overrides.externalSellerId] : [],
     sellerResponsibleName: overrides.sellerResponsibleName ?? null,
     sellerIdentityKey: overrides.sellerIdentityKey ?? null,
+    canonicalAccess: overrides.canonicalViewResources
+      ? { viewResources: overrides.canonicalViewResources }
+      : undefined,
     lastLoginAt: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -72,6 +76,57 @@ describe("crmCommercialAccessScope", () => {
     assert.equal(scope.sellerLocked, false);
     assert.equal(canFilterAllCrmSellers(checkerFromPermissions(auth.permissions)), true);
     assert.equal(getDefaultCrmManagementTab(checkerFromPermissions(auth.permissions)), "general");
+  });
+
+  it("perfil gestor (role VIEWER) com crm.seller.all/general vê carteira de todos", () => {
+    const auth = mockAuth({
+      role: "VIEWER",
+      permissions: [
+        "crm.view",
+        "crm.general.view",
+        "crm.seller.view",
+        "crm.seller.all",
+      ],
+    });
+    const scope = resolveCrmCommercialAccessScope(auth);
+    assert.equal(scope.dataScope, "global");
+    assert.equal(scope.sellerLocked, false);
+    assert.equal(scope.canViewCommercialGeneral, true);
+  });
+
+  it("perfil VIEWER incoerente com own + all permanece own sem Gestão Geral", () => {
+    const scope = resolveCrmCommercialAccessScope(
+      mockAuth({
+        role: "VIEWER",
+        permissions: [
+          "crm.view",
+          "crm.seller.view",
+          "crm.seller.own",
+          "crm.seller.all",
+        ],
+        externalSellerId: 464,
+      })
+    );
+    assert.equal(scope.dataScope, "own");
+    assert.equal(scope.canViewAllSellers, false);
+  });
+
+  it("fotografia canônica prevalece sobre bag AppUser desatualizada", () => {
+    const scope = resolveCrmCommercialAccessScope(
+      mockAuth({
+        role: "VIEWER",
+        permissions: ["crm.view", "crm.seller.view", "crm.seller.all"],
+        canonicalViewResources: [
+          "commercial.crm",
+          "commercial.crm.seller",
+          "commercial.crm.portfolio",
+          "commercial.crm.scope.own",
+        ],
+        externalSellerId: 464,
+      })
+    );
+    assert.equal(scope.dataScope, "own");
+    assert.equal(scope.canViewAllSellers, false);
   });
 
   it("SELLER com crm.seller.all/general na bag ainda fica locked na própria carteira", () => {
@@ -250,9 +305,12 @@ describe("crmCommercialAccessScope", () => {
 
   it("CrmModule só carrega gestão geral quando canCrmGeneral", () => {
     const src = readFileSync(join(process.cwd(), "src/components/CrmModule.tsx"), "utf8");
-    assert.match(src, /if \(canCrmGeneral\) \{[\s\S]*loadManagementDashboard/);
+    assert.match(
+      src,
+      /activeCrmManagementTab === "general" && canCrmGeneral[\s\S]*loadManagementDashboard/
+    );
     assert.match(src, /activeCrmManagementTab === "portfolio"/);
-    assert.match(src, /getDefaultCrmManagementTab\(/);
+    assert.match(src, /canAccessCrmGeneral/);
     assert.doesNotMatch(src, /Indicadores da carteira/);
   });
 
@@ -260,7 +318,7 @@ describe("crmCommercialAccessScope", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
     assert.match(
       server,
-      /\/api\/crm\/seller-dashboard[\s\S]*?COMERCIAL_CRM_TAB_GESTAO_VENDEDOR/
+      /\/api\/crm\/seller-dashboard[\s\S]*?requireResource\("commercial\.crm\.seller", "view"\)/
     );
     assert.match(server, /requireCrmCommercialDataScope/);
     assert.match(server, /requireCrmCommercialGeneralScope/);

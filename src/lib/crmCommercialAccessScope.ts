@@ -5,8 +5,13 @@
  * Vendedor Nomus do pedido = auditoria/comissão (não define escopo de acesso).
  */
 import { Prisma } from "@prisma/client";
-import { hasPermission, type AppAuthContext } from "@/src/lib/appAuth.js";
+import {
+  canViewCanonicalResource,
+  hasPermission,
+  type AppAuthContext,
+} from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
+import { resolveCrmCommercialPersona } from "@/src/lib/crmCommercialPersona.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
 import { buildCrmSellerFilterSql } from "@/src/lib/crmSellerMatchSql.js";
 import {
@@ -97,19 +102,34 @@ export function resolveSellerIdentityKeyForAuth(auth: {
 }
 
 export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommercialAccessScope {
-  const canViewCommercialGeneralPerm = hasPermission(auth, "crm.general.view");
-  const canViewAllSellersPerm = hasPermission(auth, "crm.seller.all");
-  const canViewOwnSellerData = hasPermission(auth, "crm.seller.own");
-  const canViewSellerTab =
-    canViewOwnSellerData ||
-    canViewAllSellersPerm ||
-    hasPermission(auth, "crm.seller.view") ||
-    hasPermission(auth, "crm.view");
-
-  const roleUnrestricted = auth.role === "SUPER_ADMIN" || auth.role === "ADMIN";
-  /** Papel Vendedor: nunca visão global — mesmo com crm.seller.all/general na bag (grant indevido). */
-  const forceOwnForSellerRole = auth.role === "SELLER";
-  const commercialManagerFallback = auth.role === "COMMERCIAL_MANAGER";
+  const grant = (legacyPermission: string, resourceKey: string): boolean =>
+    canViewCanonicalResource(auth, resourceKey) ?? hasPermission(auth, legacyPermission);
+  const canViewShell = grant("crm.view", "commercial.crm");
+  const canViewCommercialGeneralPerm = grant(
+    "crm.general.view",
+    "commercial.crm.general"
+  );
+  const canViewSellerTab = grant("crm.seller.view", "commercial.crm.seller");
+  const canViewPortfolio = grant(
+    "crm.customer_cockpit.view",
+    "commercial.crm.portfolio"
+  );
+  const canViewCustomer360 = grant(
+    "customers.commercial360.view",
+    "commercial.crm.customer_360"
+  );
+  const canViewOwnSellerData = grant("crm.seller.own", "commercial.crm.scope.own");
+  const canViewAllSellersPerm = grant("crm.seller.all", "commercial.crm.scope.all");
+  const persona = resolveCrmCommercialPersona({
+    role: auth.role,
+    canViewShell,
+    canViewGeneral: canViewCommercialGeneralPerm,
+    canViewSellerTab,
+    canViewPortfolio,
+    canViewCustomer360,
+    canViewOwn: canViewOwnSellerData,
+    canViewAll: canViewAllSellersPerm,
+  });
 
   const externalSellerId = auth.externalSellerId;
   const responsible = auth.sellerResponsibleName?.trim() || null;
@@ -120,35 +140,24 @@ export function resolveCrmCommercialAccessScope(auth: AppAuthContext): CrmCommer
   let blockedMessage: string | null = null;
   let commercialManagerUsesTeamFallback = false;
 
-  if (roleUnrestricted) {
-    dataScope = "global";
-  } else if (forceOwnForSellerRole && canViewSellerTab) {
-    dataScope = "own";
-    if (!sellerLinked) {
-      blockedReason = "SELLER_NOT_LINKED";
-      blockedMessage = CRM_SELLER_NOT_LINKED_MESSAGE;
-    }
-  } else if (canViewAllSellersPerm || canViewCommercialGeneralPerm) {
-    dataScope = "global";
-  } else if (commercialManagerFallback) {
-    // Fallback documentado: sem hierarquia formal, gestor vê todos os responsáveis.
-    dataScope = "global";
-    commercialManagerUsesTeamFallback = true;
-  } else if (canViewOwnSellerData) {
+  dataScope = persona.dataScope;
+  commercialManagerUsesTeamFallback =
+    auth.role === "COMMERCIAL_MANAGER" && dataScope === "global";
+
+  if (dataScope === "own") {
     // Carteira própria: com ou sem vínculo. Sem vínculo → carteira vazia
     // (nunca 500; UI trata mensagem amigável via blockedReason).
-    dataScope = "own";
     if (!sellerLinked) {
       blockedReason = "SELLER_NOT_LINKED";
       blockedMessage = CRM_SELLER_NOT_LINKED_MESSAGE;
     }
-  } else {
+  } else if (dataScope === "none") {
     blockedReason = "FORBIDDEN";
     blockedMessage = CRM_NO_COMMERCIAL_ACCESS_MESSAGE;
   }
 
   const canViewCommercialGeneral = dataScope === "global";
-  const canViewAllSellers = dataScope === "global";
+  const canViewAllSellers = persona.canFilterAllSellers;
 
   const sellerLocked = dataScope === "own";
   const ownName = dataScope === "own" ? responsible : null;

@@ -26,7 +26,8 @@ export const PERMISSION_TEMPLATES: Record<
 > = {
   seller: {
     label: "Vendedor",
-    description: "CRM, clientes, propostas e pedidos do vendedor.",
+    description:
+      "CRM e pedidos da própria carteira; comissões próprias (vendedor Nomus do pedido).",
     suggestedRole: "SELLER",
     permissions: [
       "dashboard.view",
@@ -50,11 +51,16 @@ export const PERMISSION_TEMPLATES: Record<
       "sales_orders.flow.inconsistencies.view",
       "sales_orders.flow.timeline.view",
       "output_documents.view",
+      "commissions.view",
+      "commissions.seller.own",
+      "commissions.dashboard.view",
+      "commissions.payments.view",
+      "commissions.audit.view",
     ],
   },
   commercial_manager: {
     label: "Gestor Comercial",
-    description: "Visão comercial ampla, CRM geral e indicadores.",
+    description: "Visão comercial ampla, CRM geral, comissões de todos e indicadores.",
     suggestedRole: "COMMERCIAL_MANAGER",
     permissions: [
       "dashboard.view",
@@ -92,6 +98,12 @@ export const PERMISSION_TEMPLATES: Record<
       "sales_orders.flow_management.blocking.manage",
       "output_documents.view",
       "reports.view",
+      "commissions.view",
+      "commissions.seller.all",
+      "commissions.dashboard.view",
+      "commissions.payments.view",
+      "commissions.rules.view",
+      "commissions.audit.view",
     ],
   },
   purchases: {

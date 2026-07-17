@@ -218,6 +218,47 @@ export function salesOrderFlowColumnStatesHaveCards(
   return Object.values(columns).some((column) => column.cards.length > 0);
 }
 
+/**
+ * Atualiza priority/bloqueio do card no quadro após PATCH de gestão.
+ * Não altera a coluna automática (currentStage).
+ */
+export function patchSalesOrderFlowKanbanCard(
+  columns: Readonly<Record<string, SalesOrderFlowColumnPageState>>,
+  salesOrderId: string,
+  patch: Partial<
+    Pick<SalesOrderFlowListCard, "priority" | "isBlocked" | "blockReason">
+  >
+): Record<string, SalesOrderFlowColumnPageState> {
+  const next: Record<string, SalesOrderFlowColumnPageState> = { ...columns };
+  for (const [stage, state] of Object.entries(columns)) {
+    const index = state.cards.findIndex((card) => card.orderId === salesOrderId);
+    if (index < 0) continue;
+    const cards = state.cards.slice();
+    const previous = cards[index]!;
+    const wasBlocked = previous.isBlocked === true;
+    const nextBlocked =
+      patch.isBlocked !== undefined ? patch.isBlocked === true : wasBlocked;
+    cards[index] = {
+      ...previous,
+      ...(patch.priority !== undefined ? { priority: patch.priority } : {}),
+      ...(patch.isBlocked !== undefined ? { isBlocked: patch.isBlocked } : {}),
+      ...(patch.blockReason !== undefined
+        ? { blockReason: patch.blockReason }
+        : {}),
+    };
+    let totals = state.totals;
+    if (wasBlocked !== nextBlocked) {
+      const blockedCount = Math.max(
+        0,
+        (totals.blockedCount ?? 0) + (nextBlocked ? 1 : -1)
+      );
+      totals = { ...totals, blockedCount };
+    }
+    next[stage] = { ...state, cards, totals };
+  }
+  return next;
+}
+
 export function salesOrderFlowColumnStatesAllSettled(
   stages: readonly SalesOrderFlowStage[],
   columns: Readonly<Record<string, SalesOrderFlowColumnPageState>>

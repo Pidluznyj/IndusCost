@@ -1,6 +1,7 @@
 /** Mapa módulo → permissões (Fase 1K-D / 1K-D.2). Usa ids reais do Sidebar/App.tsx. */
 
 import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
+import { resolveCrmCommercialPersona } from "@/src/lib/crmCommercialPersona.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
 import { PRODUCT_TAB_RESOURCE_KEYS } from "@/src/lib/moduleTabResources.js";
 
@@ -79,14 +80,6 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "settings",
 ];
 
-const CRM_MENU_PERMISSIONS = [
-  "crm.view",
-  "crm.general.view",
-  "crm.seller.view",
-  "crm.seller.own",
-  "crm.seller.all",
-] as const;
-
 const SETTINGS_MENU_PERMISSIONS = ["settings.view", "users.manage"] as const;
 
 /** Legado P09: costs.view só em opex (camada identificada). Cross-module removido. */
@@ -97,7 +90,7 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "dashboard":
       return check.hasPermission("dashboard.view");
     case "crm-commercial":
-      return check.hasAnyPermission([...CRM_MENU_PERMISSIONS]);
+      return canAccessCrmAny(check);
     case "commissions":
       return canAccessCommissionsModule(check);
     case "customers":
@@ -187,25 +180,38 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
   }
 }
 
+export function resolveCrmPersonaForChecker(check: PermissionChecker) {
+  return resolveCrmCommercialPersona({
+    role: check.authUser?.role ?? "VIEWER",
+    canViewShell: check.hasPermission("crm.view"),
+    canViewGeneral: check.hasPermission("crm.general.view"),
+    canViewSellerTab: check.hasPermission("crm.seller.view"),
+    canViewPortfolio: check.hasPermission("crm.customer_cockpit.view"),
+    canViewCustomer360: check.hasAnyPermission([
+      "customers.commercial360.view",
+      "customers.view",
+    ]),
+    canViewOwn: check.hasPermission("crm.seller.own"),
+    canViewAll: check.hasPermission("crm.seller.all"),
+  });
+}
+
 export function canAccessCrmGeneral(check: PermissionChecker): boolean {
-  return check.hasPermission("crm.general.view");
+  return resolveCrmPersonaForChecker(check).canViewGeneral;
 }
 
 export function canAccessCrmSeller(check: PermissionChecker): boolean {
-  return (
-    check.hasPermission("crm.seller.all") || check.hasPermission("crm.seller.own")
-  );
+  return resolveCrmPersonaForChecker(check).canViewSeller;
 }
 
 /** Carteira de clientes / cockpit comercial (gestor ou vendedor). */
 export function canAccessCrmPortfolio(check: PermissionChecker): boolean {
-  return canAccessCrmGeneral(check) || canAccessCrmSeller(check);
+  return resolveCrmPersonaForChecker(check).canViewPortfolio;
 }
 
 /** Pode filtrar qualquer vendedor na gestão comercial (gestor). Role SELLER nunca. */
 export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
-  if (check.authUser?.role === "SELLER") return false;
-  return check.hasPermission("crm.seller.all");
+  return resolveCrmPersonaForChecker(check).canFilterAllSellers;
 }
 
 /**
@@ -213,15 +219,7 @@ export function canFilterAllCrmSellers(check: PermissionChecker): boolean {
  * Role SELLER é sempre own — mesmo se a bag tiver crm.seller.all por engano.
  */
 export function isCrmOwnSellerOnly(check: PermissionChecker): boolean {
-  if (check.authUser?.role === "SELLER") {
-    return (
-      check.hasPermission("crm.seller.own") ||
-      check.hasPermission("crm.seller.all") ||
-      check.hasPermission("crm.seller.view") ||
-      check.hasPermission("crm.view")
-    );
-  }
-  return check.hasPermission("crm.seller.own") && !check.hasPermission("crm.seller.all");
+  return resolveCrmPersonaForChecker(check).sellerLocked;
 }
 
 export function isCrmSellerLinked(user: {
@@ -232,7 +230,7 @@ export function isCrmSellerLinked(user: {
 }
 
 export function canAccessCrmAny(check: PermissionChecker): boolean {
-  return check.hasAnyPermission([...CRM_MENU_PERMISSIONS]);
+  return resolveCrmPersonaForChecker(check).canUseCrm;
 }
 
 export function canAccessSettingsMenu(check: PermissionChecker): boolean {

@@ -7,6 +7,7 @@ import type {
   SalesOrderFlowDetailPayload,
   SalesOrderFlowEventsPayload,
 } from "@/src/lib/sales/salesOrderFlowDetail.js";
+import type { SalesOrderFlowManagementApi } from "@/src/lib/sales/salesOrderFlowManagement.js";
 import type {
   SalesOrderFlowSummaryPayload,
   SalesOrderFlowSummaryPriority,
@@ -20,6 +21,7 @@ export type {
   SalesOrderFlowSummaryPayload,
   SalesOrderFlowDetailPayload,
   SalesOrderFlowEventsPayload,
+  SalesOrderFlowManagementApi,
 };
 
 export const SALES_ORDER_FLOW_LIST_API_PATH =
@@ -36,6 +38,37 @@ export function getSalesOrderFlowDetailApiPath(salesOrderId: string): string {
 export function getSalesOrderFlowEventsApiPath(salesOrderId: string): string {
   return `${getSalesOrderFlowDetailApiPath(salesOrderId)}/events`;
 }
+
+export function getSalesOrderFlowManagementApiPath(salesOrderId: string): string {
+  return `${getSalesOrderFlowDetailApiPath(salesOrderId)}/management`;
+}
+
+export const SALES_ORDER_FLOW_RESPONSIBLE_USERS_LOOKUP_API_PATH =
+  `${SALES_ORDER_FLOW_LIST_API_PATH}/lookup/responsible-users`;
+
+export type SalesOrderFlowResponsibleUserLookupItem = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+export type SalesOrderFlowManagementPatchBody = {
+  expectedUpdatedAt: string | null;
+  priority?: string;
+  responsibleUserId?: string | null;
+  responsibleArea?: string | null;
+  isBlocked?: boolean;
+  blockReason?: string | null;
+  expectedResolutionAt?: string | null;
+  internalNote?: string | null;
+};
+
+export type SalesOrderFlowManagementPatchResult = {
+  salesOrderId: string;
+  management: SalesOrderFlowManagementApi;
+  changedFields: string[];
+  eventId: string;
+};
 
 export type SalesOrderFlowEventsClientQuery = {
   page?: number;
@@ -189,4 +222,36 @@ export async function fetchSalesOrderFlowEvents(
     `${getSalesOrderFlowEventsApiPath(salesOrderId)}${buildSalesOrderFlowEventsQueryString(query)}`,
     { signal }
   );
+}
+
+export async function patchSalesOrderFlowManagement(
+  salesOrderId: string,
+  body: SalesOrderFlowManagementPatchBody,
+  signal?: AbortSignal
+): Promise<SalesOrderFlowManagementPatchResult> {
+  return fetchJsonOk<SalesOrderFlowManagementPatchResult>(
+    getSalesOrderFlowManagementApiPath(salesOrderId),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    }
+  );
+}
+
+export async function fetchSalesOrderFlowResponsibleUsers(
+  query: string,
+  signal?: AbortSignal
+): Promise<SalesOrderFlowResponsibleUserLookupItem[]> {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  const qs = params.toString();
+  const payload = await fetchJsonOk<{
+    rows: SalesOrderFlowResponsibleUserLookupItem[];
+  }>(
+    `${SALES_ORDER_FLOW_RESPONSIBLE_USERS_LOOKUP_API_PATH}${qs ? `?${qs}` : ""}`,
+    { signal }
+  );
+  return Array.isArray(payload.rows) ? payload.rows : [];
 }

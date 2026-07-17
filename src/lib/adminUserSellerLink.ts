@@ -1,13 +1,23 @@
 /**
  * Parse/normalização de IDs Nomus no vínculo AppUser ↔ vendedor.
+ *
+ * Fluxo operacional:
+ * 1. Criar usuário (nasce VIEWER, sem perfil/vínculo).
+ * 2. Definir role técnica SELLER ou COMMERCIAL_MANAGER (ou manter VIEWER com perfil).
+ * 3. Vincular nome + ID(s) Nomus do vendedor do pedido — obrigatório para SELLER.
  */
 
-/** Perfis que podem vincular IDs Nomus / responsável comercial no Admin → Usuários. */
+/** Roles que podem receber vínculo Nomus no Admin → Usuários. */
 export function roleAllowsSellerNomusLink(role: string | null | undefined): boolean {
-  return role === "SELLER" || role === "COMMERCIAL_MANAGER";
+  return (
+    role === "SELLER" ||
+    role === "COMMERCIAL_MANAGER" ||
+    // VIEWER com perfil comercial: vínculo opcional após criação fail-closed.
+    role === "VIEWER"
+  );
 }
 
-/** Vendedor exige responsável + ao menos 1 ID Nomus; gestor comercial é opcional. */
+/** Vendedor exige responsável + ao menos 1 ID Nomus; gestor/VIEWER são opcionais. */
 export function roleRequiresSellerNomusLink(role: string | null | undefined): boolean {
   return role === "SELLER";
 }

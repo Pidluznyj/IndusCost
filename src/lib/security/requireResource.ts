@@ -336,7 +336,7 @@ export function requireResource(
           (await guardOptions.loadProfileSnapshot(auth.id)) ?? undefined;
       }
 
-      const decision = authorizeRequireResource(auth, resourceKey, action, {
+      const resolvedOptions = {
         ...guardOptions,
         overrides,
         profileSnapshot,
@@ -344,7 +344,23 @@ export function requireResource(
           guardOptions?.permissionsVersion ??
           (auth as AppAuthContext | null)?.permissionsVersion ??
           null,
-      });
+      };
+
+      // Compartilha a mesma decisão canônica com regras de escopo de dados
+      // executadas depois deste guard (ex.: own/all do CRM).
+      if (auth) {
+        const canonicalResult = resolveCanonicalEffectiveAccess(
+          buildRequireResourceInput(auth, resolvedOptions)
+        );
+        auth.canonicalAccess = {
+          viewResources: canonicalResult.allowed
+            .filter((entry) => entry.action === "view")
+            .map((entry) => entry.resourceKey)
+            .sort(),
+        };
+      }
+
+      const decision = authorizeRequireResource(auth, resourceKey, action, resolvedOptions);
 
       if (!decision.ok) {
         if (decision.status === 403 && decision.resourceKey) {
@@ -419,6 +435,23 @@ export function createRequireResourceGuards(
           : options.loadProfileSnapshot && auth?.id
             ? ((await options.loadProfileSnapshot(auth.id)) ?? undefined)
             : undefined;
+      if (auth) {
+        const canonicalResult = resolveCanonicalEffectiveAccess(
+          buildRequireResourceInput(auth, {
+            ...options,
+            overrides,
+            profileSnapshot,
+            permissionsVersion:
+              options.permissionsVersion ?? auth.permissionsVersion ?? null,
+          })
+        );
+        auth.canonicalAccess = {
+          viewResources: canonicalResult.allowed
+            .filter((entry) => entry.action === "view")
+            .map((entry) => entry.resourceKey)
+            .sort(),
+        };
+      }
       return { auth, overrides, profileSnapshot };
     })();
     requestContextCache.set(req, loading);

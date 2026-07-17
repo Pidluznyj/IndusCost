@@ -29,6 +29,12 @@ function isSellerLinked(auth: AppAuthContext): boolean {
   return auth.externalSellerId != null || Boolean(auth.sellerResponsibleName?.trim());
 }
 
+/**
+ * Escopo de dados de comissões.
+ * - own = vendedor Nomus do pedido (`externalSellerId` / CommissionPerson SELLER)
+ * - global = admin, commissions.seller.all ou role COMMERCIAL_MANAGER
+ * Não usar carteira CRM (Responsável Comercial) como filtro de comissão.
+ */
 export function resolveCommissionAccessScope(auth: AppAuthContext): CommissionAccessScope {
   if (isAdminRole(auth)) {
     return {
@@ -41,7 +47,7 @@ export function resolveCommissionAccessScope(auth: AppAuthContext): CommissionAc
     };
   }
 
-  if (hasPermission(auth, "commissions.seller.all")) {
+  if (hasPermission(auth, "commissions.seller.all") || auth.role === "COMMERCIAL_MANAGER") {
     return {
       dataScope: "global",
       sellerLocked: false,
@@ -63,7 +69,8 @@ export function resolveCommissionAccessScope(auth: AppAuthContext): CommissionAc
         nomusSellerId: null,
         sellerResponsibleName: null,
         blockedReason: "SELLER_NOT_LINKED",
-        blockedMessage: "Seu usuário não está vinculado a um vendedor Nomus.",
+        blockedMessage:
+          "Seu usuário não está vinculado a um vendedor Nomus. Peça ao administrador o vínculo em Usuários (nome + ID Nomus).",
       };
     }
     return {
@@ -76,33 +83,14 @@ export function resolveCommissionAccessScope(auth: AppAuthContext): CommissionAc
     };
   }
 
-  const canViewGlobalAnalysis =
-    hasPermission(auth, "commissions.view") ||
-    hasPermission(auth, "commissions.dashboard.view") ||
-    hasPermission(auth, "commissions.forecast.view") ||
-    hasPermission(auth, "commissions.confirmed.view") ||
-    hasPermission(auth, "commissions.release.view") ||
-    hasPermission(auth, "commissions.payments.view") ||
-    hasPermission(auth, "commissions.audit.view");
-
-  if (canViewGlobalAnalysis) {
-    return {
-      dataScope: "global",
-      sellerLocked: false,
-      nomusSellerId: null,
-      sellerResponsibleName: null,
-      blockedReason: null,
-      blockedMessage: null,
-    };
-  }
-
+  // Sem seller.own / seller.all: ter só commissions.view no menu NÃO abre visão global.
   return {
     dataScope: "none",
     sellerLocked: false,
     nomusSellerId: null,
     sellerResponsibleName: null,
     blockedReason: "FORBIDDEN",
-    blockedMessage: "Permissão insuficiente para consultar comissões.",
+    blockedMessage: "Sem permissão de escopo de comissões (próprias ou de todos).",
   };
 }
 
@@ -118,7 +106,8 @@ export function requireCommissionDataScope(
         body: {
           error: "SELLER_NOT_LINKED",
           message:
-            scope.blockedMessage ?? "Seu usuário não está vinculado a um vendedor Nomus.",
+            scope.blockedMessage ??
+            "Seu usuário não está vinculado a um vendedor Nomus.",
         },
       };
     }
@@ -129,7 +118,6 @@ export function requireCommissionDataScope(
         error: "FORBIDDEN",
         message: scope.blockedMessage ?? "Permissão insuficiente para comissões.",
         requiredPermissions: [
-          "commissions.view",
           "commissions.seller.own",
           "commissions.seller.all",
         ],
@@ -213,11 +201,7 @@ export function applyCommissionRecordScope(
   }
 
   if (query.commissionPersonId) {
-    if (scope.dataScope === "own") {
-      and.push({ commissionPersonId: query.commissionPersonId });
-    } else {
-      and.push({ commissionPersonId: query.commissionPersonId });
-    }
+    and.push({ commissionPersonId: query.commissionPersonId });
   }
 
   if (and.length === 0) return {};

@@ -15,12 +15,14 @@ import {
 } from "@/src/lib/adminSellerOptionsTypes";
 
 describe("adminUserSellerLink", () => {
-  it("roleAllowsSellerNomusLink cobre vendedor e gestor comercial", () => {
+  it("roleAllowsSellerNomusLink cobre vendedor, gestor e VIEWER (pós-criação)", () => {
     assert.equal(roleAllowsSellerNomusLink("SELLER"), true);
     assert.equal(roleAllowsSellerNomusLink("COMMERCIAL_MANAGER"), true);
+    assert.equal(roleAllowsSellerNomusLink("VIEWER"), true);
     assert.equal(roleAllowsSellerNomusLink("ADMIN"), false);
     assert.equal(roleRequiresSellerNomusLink("SELLER"), true);
     assert.equal(roleRequiresSellerNomusLink("COMMERCIAL_MANAGER"), false);
+    assert.equal(roleRequiresSellerNomusLink("VIEWER"), false);
   });
 
   it("parseExternalSellerIdsInput normaliza e deduplica", () => {
@@ -90,12 +92,14 @@ describe("flattenAdminSellerOptionsToNomusPicks", () => {
 });
 
 describe("AdminUsersModule seller Nomus link", () => {
-  it("permite vínculo Nomus para vendedor e gestor comercial", () => {
+  it("permite vínculo Nomus para vendedor, gestor e VIEWER", () => {
     const src = readFileSync(join(process.cwd(), "src/components/AdminUsersModule.tsx"), "utf8");
     assert.match(src, /roleAllowsSellerNomusLink/);
     assert.match(src, /roleRequiresSellerNomusLink/);
     assert.match(src, /admin-user-seller-nomus-link/);
-    assert.match(src, /Gestor comercial/);
+    assert.match(src, /Identidade comercial e vínculo Nomus/);
+    assert.match(src, /Carteira CRM/);
+    assert.match(src, /Pedidos e Comissões/);
     assert.match(src, /Salvar vínculo Nomus/);
   });
 });

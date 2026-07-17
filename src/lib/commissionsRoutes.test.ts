@@ -142,13 +142,13 @@ describe("commissionsRoutes", () => {
     assert.match(routes(), /\/api\/commissions\/audit\/rerun/);
   });
 
-  it("receipt-closing apply/reprocess exige COMMISSIONS_PAYMENTS_MANAGE_PERMISSIONS", () => {
+  it("receipt-closing apply/reprocess exige guard de manage (close)", () => {
     const src = routes();
     assert.match(src, /\/api\/commissions\/receipt-closing\/apply/);
     assert.match(src, /\/api\/commissions\/receipt-closing\/reprocess-apply/);
     const applyIdx = src.indexOf('"/api/commissions/receipt-closing/apply"');
     const applySlice = src.slice(applyIdx, applyIdx + 200);
-    assert.match(applySlice, /paymentsManageGuard/);
+    assert.match(applySlice, /receiptClosingApplyGuard/);
   });
 
   it("payment-batches mark-paid usa markCommissionPaymentBatchPaid", () => {
@@ -413,6 +413,45 @@ describe("commissionAccessScope", () => {
     );
     assert.equal(scope.dataScope, "none");
     assert.equal(scope.blockedReason, "SELLER_NOT_LINKED");
+  });
+
+  it("só commissions.view não abre escopo global", () => {
+    const scope = resolveCommissionAccessScope(
+      authStub({
+        role: "VIEWER",
+        permissions: ["commissions.view", "commissions.dashboard.view"],
+        effectivePermissions: ["commissions.view", "commissions.dashboard.view"],
+      })
+    );
+    assert.equal(scope.dataScope, "none");
+    assert.equal(scope.blockedReason, "FORBIDDEN");
+  });
+
+  it("perfil vendedor (VIEWER + seller.own) com vínculo Nomus → own", () => {
+    const scope = resolveCommissionAccessScope(
+      authStub({
+        role: "VIEWER",
+        permissions: ["commissions.view", "commissions.seller.own"],
+        effectivePermissions: ["commissions.view", "commissions.seller.own"],
+        externalSellerId: 2737,
+        sellerResponsibleName: "GISLENE LIMA",
+      })
+    );
+    assert.equal(scope.dataScope, "own");
+    assert.equal(scope.nomusSellerId, 2737);
+    assert.equal(scope.sellerLocked, true);
+  });
+
+  it("commissions.seller.all → global", () => {
+    const scope = resolveCommissionAccessScope(
+      authStub({
+        role: "VIEWER",
+        permissions: ["commissions.view", "commissions.seller.all"],
+        effectivePermissions: ["commissions.view", "commissions.seller.all"],
+      })
+    );
+    assert.equal(scope.dataScope, "global");
+    assert.equal(scope.sellerLocked, false);
   });
 });
 

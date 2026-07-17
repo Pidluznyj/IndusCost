@@ -1303,11 +1303,13 @@ export const AdminUsersModule: React.FC = () => {
                     >
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden">
                         <span className="min-w-0">
-                          Vínculo Nomus / responsável comercial
+                          Identidade comercial e vínculo Nomus
                           <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
                             {roleRequiresSellerNomusLink(selectedListUser.role)
-                              ? "Obrigatório para o perfil Vendedor filtrar a carteira."
-                              : "Opcional no Gestor comercial — IDs Nomus da carteira."}
+                              ? "Obrigatório para Vendedor: responsável da carteira + ID Nomus do vendedor dos pedidos."
+                              : selectedListUser.role === "VIEWER"
+                                ? "Necessário para acessar dados quando o perfil VIEWER usa escopo próprio."
+                                : "Opcional no Gestor comercial; o perfil define o escopo global."}
                             {sellerLinkDraft.externalSellerIds.length > 0
                               ? ` · ${sellerLinkDraft.externalSellerIds.length} ID(s)`
                               : ""}
@@ -1317,6 +1319,16 @@ export const AdminUsersModule: React.FC = () => {
                         <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition group-open:rotate-180" />
                       </summary>
                       <div className="space-y-3 border-t border-border px-3 py-3">
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-lg border border-border bg-background px-3 py-2 text-[11px] text-muted-foreground">
+                            <strong className="block text-foreground">Carteira CRM</strong>
+                            O nome do responsável comercial identifica os clientes da carteira.
+                          </div>
+                          <div className="rounded-lg border border-border bg-background px-3 py-2 text-[11px] text-muted-foreground">
+                            <strong className="block text-foreground">Pedidos e Comissões</strong>
+                            Os IDs Nomus identificam o vendedor dos pedidos usados nas comissões próprias.
+                          </div>
+                        </div>
                         {sellerLinkError ? (
                           <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
                             {sellerLinkError}

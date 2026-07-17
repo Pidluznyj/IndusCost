@@ -779,3 +779,232 @@ export function filterSalesOrderFlowDetailInconsistencyRows(
 }
 
 export { SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES };
+
+export type SalesOrderFlowManagementUiCapabilities = {
+  canUpdateManually: boolean;
+  canChangePriority: boolean;
+  canAssignResponsible: boolean;
+  canManageBlocking: boolean;
+};
+
+export const SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS: ReadonlyArray<{
+  value: string;
+  label: string;
+}> = [
+  { value: "COMERCIAL", label: "Comercial" },
+  { value: "PCP_PRODUCAO", label: "PCP / Produção" },
+  { value: "EXPEDICAO_FATURAMENTO", label: "Expedição / Faturamento" },
+  { value: "FISCAL", label: "Fiscal" },
+  { value: "TI", label: "TI" },
+  { value: "NENHUMA", label: "Nenhuma" },
+];
+
+export function resolveSalesOrderFlowManagementUiCapabilities(
+  canPerformAction: (resourceKey: string, action: string) => boolean
+): SalesOrderFlowManagementUiCapabilities {
+  const canUpdateManually = canPerformAction(
+    "commercial.sales_orders.flow_management",
+    "manage"
+  );
+  return {
+    canUpdateManually,
+    canChangePriority:
+      canUpdateManually &&
+      canPerformAction(
+        "commercial.sales_orders.flow_management.priority",
+        "manage"
+      ),
+    canAssignResponsible:
+      canUpdateManually &&
+      canPerformAction(
+        "commercial.sales_orders.flow_management.responsibility",
+        "manage"
+      ),
+    canManageBlocking:
+      canUpdateManually &&
+      canPerformAction(
+        "commercial.sales_orders.flow_management.blocking",
+        "manage"
+      ),
+  };
+}
+
+export function classifySalesOrderFlowManagementError(error: unknown): {
+  kind: "conflict" | "validation" | "access_denied" | "generic";
+  message: string;
+} {
+  if (error instanceof HttpError) {
+    if (error.status === 409 || error.code === "MANAGEMENT_UPDATE_CONFLICT") {
+      return {
+        kind: "conflict",
+        message:
+          error.message ||
+          "A gestão foi alterada por outro usuário. Recarregamos os dados.",
+      };
+    }
+    if (error.status === 403) {
+      return {
+        kind: "access_denied",
+        message: "Você não possui permissão para alterar a gestão deste pedido.",
+      };
+    }
+    if (error.status === 400) {
+      return {
+        kind: "validation",
+        message: error.message || "Dados de gestão inválidos.",
+      };
+    }
+    return {
+      kind: "generic",
+      message: error.message || "Erro ao salvar a gestão do pedido.",
+    };
+  }
+  return {
+    kind: "generic",
+    message:
+      error instanceof Error
+        ? error.message
+        : "Erro ao salvar a gestão do pedido.",
+  };
+}
+
+export type SalesOrderFlowManagementFormState = {
+  priority: string;
+  responsibleUserId: string;
+  responsibleName: string;
+  responsibleArea: string;
+  isBlocked: boolean;
+  blockReason: string;
+  expectedResolutionAt: string;
+  internalNote: string;
+};
+
+export function salesOrderFlowManagementToFormState(
+  management: SalesOrderFlowDetailPayload["management"]
+): SalesOrderFlowManagementFormState {
+  const iso = management?.expectedResolutionAt ?? null;
+  const dateOnly =
+    iso && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10) : "";
+  return {
+    priority: management?.priority?.trim() || "NORMAL",
+    responsibleUserId: management?.responsibleUserId ?? "",
+    responsibleName: management?.responsibleName ?? "",
+    responsibleArea: management?.responsibleArea ?? "",
+    isBlocked: management?.isBlocked === true,
+    blockReason: management?.blockReason ?? "",
+    expectedResolutionAt: dateOnly,
+    internalNote: management?.internalNote ?? "",
+  };
+}
+
+export function buildSalesOrderFlowManagementPatchBody(input: {
+  expectedUpdatedAt: string | null;
+  baseline: SalesOrderFlowManagementFormState;
+  draft: SalesOrderFlowManagementFormState;
+  capabilities: SalesOrderFlowManagementUiCapabilities;
+}): {
+  body: {
+    expectedUpdatedAt: string | null;
+    priority?: string;
+    responsibleUserId?: string | null;
+    responsibleArea?: string | null;
+    isBlocked?: boolean;
+    blockReason?: string | null;
+    expectedResolutionAt?: string | null;
+    internalNote?: string | null;
+  };
+  validationError: string | null;
+} {
+  const { baseline, draft, capabilities } = input;
+  const body: {
+    expectedUpdatedAt: string | null;
+    priority?: string;
+    responsibleUserId?: string | null;
+    responsibleArea?: string | null;
+    isBlocked?: boolean;
+    blockReason?: string | null;
+    expectedResolutionAt?: string | null;
+    internalNote?: string | null;
+  } = { expectedUpdatedAt: input.expectedUpdatedAt };
+
+  if (capabilities.canChangePriority && draft.priority !== baseline.priority) {
+    body.priority = draft.priority;
+  }
+  if (capabilities.canAssignResponsible) {
+    if (draft.responsibleUserId !== baseline.responsibleUserId) {
+      body.responsibleUserId = draft.responsibleUserId.trim() || null;
+    }
+    if (draft.responsibleArea.trim() !== baseline.responsibleArea.trim()) {
+      body.responsibleArea = draft.responsibleArea.trim() || null;
+    }
+  }
+  if (capabilities.canManageBlocking) {
+    if (draft.isBlocked !== baseline.isBlocked) {
+      body.isBlocked = draft.isBlocked;
+      if (draft.isBlocked) {
+        body.blockReason = draft.blockReason.trim() || null;
+        body.expectedResolutionAt = draft.expectedResolutionAt.trim()
+          ? `${draft.expectedResolutionAt.trim()}T12:00:00.000Z`
+          : null;
+      }
+    } else if (draft.isBlocked) {
+      if (draft.blockReason.trim() !== baseline.blockReason.trim()) {
+        body.blockReason = draft.blockReason.trim() || null;
+      }
+      if (
+        draft.expectedResolutionAt.trim() !==
+        baseline.expectedResolutionAt.trim()
+      ) {
+        body.expectedResolutionAt = draft.expectedResolutionAt.trim()
+          ? `${draft.expectedResolutionAt.trim()}T12:00:00.000Z`
+          : null;
+      }
+    }
+  }
+  if (
+    capabilities.canUpdateManually &&
+    draft.internalNote.trim() !== baseline.internalNote.trim()
+  ) {
+    body.internalNote = draft.internalNote.trim() || null;
+  }
+
+  const mutableKeys = Object.keys(body).filter(
+    (key) => key !== "expectedUpdatedAt"
+  );
+  if (mutableKeys.length === 0) {
+    return {
+      body,
+      validationError: "Nenhuma alteração para salvar.",
+    };
+  }
+  if (body.isBlocked === true && !draft.blockReason.trim()) {
+    return {
+      body,
+      validationError: "Informe o motivo do bloqueio.",
+    };
+  }
+  if (
+    draft.isBlocked &&
+    body.blockReason !== undefined &&
+    !String(body.blockReason ?? "").trim()
+  ) {
+    return {
+      body,
+      validationError: "Informe o motivo do bloqueio.",
+    };
+  }
+
+  return { body, validationError: null };
+}
+
+export function filterSalesOrderFlowManagementAreaOptions(
+  query: string
+): Array<{ value: string; label: string }> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [...SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS];
+  return SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS.filter(
+    (option) =>
+      option.label.toLowerCase().includes(q) ||
+      option.value.toLowerCase().includes(q)
+  );
+}

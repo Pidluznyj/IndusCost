@@ -183,7 +183,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "comercial",
     sortOrder: 30,
     isSystem: true,
-    legacyAliasKeys: ["crm.view", "sales_orders.view"],
+    legacyAliasKeys: ["sales_orders.view"],
   },
   {
     key: "comercial.pedidos_venda",
@@ -227,7 +227,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "crm-commercial",
     sortOrder: 32,
     isSystem: true,
-    legacyAliasKeys: ["crm.view", "crm.general.view", "crm.seller.view"],
+    legacyAliasKeys: ["crm.view"],
   },
   {
     key: "comercial.crm.tab.gestao_geral",
@@ -249,7 +249,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "crm-commercial",
     sortOrder: 34,
     isSystem: true,
-    legacyAliasKeys: ["crm.seller.own", "crm.seller.all", "crm.seller.view"],
+    legacyAliasKeys: ["crm.seller.view"],
   },
   {
     key: "comercial.crm.tab.carteira_clientes",
@@ -260,7 +260,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "crm-commercial",
     sortOrder: 35,
     isSystem: true,
-    legacyAliasKeys: ["crm.general.view", "crm.seller.own", "crm.seller.all", "crm.view"],
+    legacyAliasKeys: ["crm.customer_cockpit.view"],
   },
   {
     key: "comercial.crm.tab.cliente_360",
@@ -272,7 +272,6 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     sortOrder: 36,
     isSystem: true,
     legacyAliasKeys: [
-      "crm.customer_cockpit.view",
       "customers.commercial360.view",
       "customers.view",
     ],
@@ -298,10 +297,10 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     sortOrder: 41,
     isSystem: true,
     legacyAliasKeys: [
-      "commissions.view",
-      "commissions.dashboard.view",
       "commissions.payments.view",
+      "commissions.dashboard.view",
       "commissions.release.view",
+      "commissions.view",
     ],
   },
   {
@@ -314,10 +313,10 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     sortOrder: 42,
     isSystem: true,
     legacyAliasKeys: [
-      "commissions.view",
       "commissions.dashboard.view",
       "commissions.payments.view",
       "commissions.audit.view",
+      "commissions.view",
     ],
   },
   {
@@ -340,7 +339,7 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     module: "commissions",
     sortOrder: 44,
     isSystem: true,
-    legacyAliasKeys: ["commissions.view", "commissions.dashboard.view", "commissions.audit.view"],
+    legacyAliasKeys: ["commissions.dashboard.view", "commissions.audit.view", "commissions.view"],
   },
   {
     key: "comissoes.tab.reprocessar",
@@ -352,10 +351,11 @@ const LEGACY_PERMISSION_RESOURCE_SEEDS: readonly PermissionResourceSeed[] = [
     sortOrder: 45,
     isSystem: true,
     legacyAliasKeys: [
-      "commissions.view",
+      "commissions.rules.view",
       "commissions.payments.manage",
       "commissions.rules.manage",
       "commissions.audit.view",
+      "commissions.view",
     ],
   },
   {
@@ -903,7 +903,7 @@ const ROLE_MATRIX: Record<Exclude<AppUserRole, "SUPER_ADMIN">, Record<string, Ro
     "comissoes.tab.fechamentos": V,
     "comissoes.tab.excecoes_cliente": NONE,
     "comissoes.tab.relatorios": V,
-    "comissoes.tab.reprocessar": V,
+    "comissoes.tab.reprocessar": NONE,
     "comissoes.tab.dashboard": V,
     "comissoes.tab.previstas": V,
     "comissoes.tab.confirmadas": V,

@@ -51,7 +51,22 @@ export type AppAuthContext = SafeAppUser & {
   sessionPermissionsVersionAtIssue: number;
   /** Chave de identidade consolidada (sessão) — filtra todos os IDs Nomus com mesmo nome. */
   sellerIdentityKey?: string | null;
+  /**
+   * Fotografia canônica anexada pelo requireResource no request atual.
+   * Não é serializada no /me e não substitui o DTO público.
+   */
+  canonicalAccess?: {
+    viewResources: string[];
+  };
 };
+
+export function canViewCanonicalResource(
+  user: Pick<AppAuthContext, "canonicalAccess">,
+  resourceKey: string
+): boolean | null {
+  if (!user.canonicalAccess) return null;
+  return user.canonicalAccess.viewResources.includes(resourceKey);
+}
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();

@@ -64,8 +64,21 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   "sales-order-flow": ["commercial.sales_orders.flow"],
   "output-documents": ["commercial.output_documents"],
   customers: ["commercial.customers"],
-  "crm-commercial": ["commercial.crm"],
-  commissions: ["commercial.commissions"],
+  /** CRM: shell isolado não revela menu; exige aba útil + escopo de dados. */
+  "crm-commercial": [
+    "commercial.crm.general",
+    "commercial.crm.seller",
+    "commercial.crm.portfolio",
+    "commercial.crm.customer_360",
+    "commercial.crm.scope.own",
+    "commercial.crm.scope.all",
+  ],
+  commissions: [
+    "commercial.commissions",
+    "commercial.commissions.monthly_closing",
+    "commercial.commissions.closings",
+    "commercial.commissions.reports",
+  ],
   simulations: ["engineering.simulations"],
   reports: ["finance.reports"],
   finance: [
@@ -217,6 +230,18 @@ export function canViewSidebarModuleFromDto(
 ): boolean {
   if (!dto) return false;
   if (dto.isSuperAdmin) return true;
+  if (moduleId === "crm-commercial") {
+    const general = dtoAllowsView(dto, "commercial.crm.general");
+    const seller = dtoAllowsView(dto, "commercial.crm.seller");
+    const portfolio = dtoAllowsView(dto, "commercial.crm.portfolio");
+    const customer360 = dtoAllowsView(dto, "commercial.crm.customer_360");
+    const scoped =
+      general ||
+      dtoAllowsView(dto, "commercial.crm.scope.own") ||
+      dtoAllowsView(dto, "commercial.crm.scope.all");
+    // Gestão Geral sozinha já é visão útil; demais abas exigem escopo de dados.
+    return general || (scoped && (seller || portfolio || customer360));
+  }
   const keys = SIDEBAR_MODULE_CONTRACT_KEYS[moduleId];
   if (!keys?.length) return false;
   return keys.some((k) => dtoAllowsView(dto, k));

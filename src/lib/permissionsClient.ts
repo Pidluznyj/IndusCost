@@ -277,7 +277,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "Comercial",
     type: "MENU",
     parentKey: null,
-    legacyAliasKeys: ["crm.view", "sales_orders.view"],
+    legacyAliasKeys: ["sales_orders.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_PEDIDOS_VENDA,
@@ -298,7 +298,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "CRM",
     type: "SUBMENU",
     parentKey: ResourceKeys.COMERCIAL,
-    legacyAliasKeys: ["crm.view", "crm.general.view", "crm.seller.view"],
+    legacyAliasKeys: ["crm.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_CRM_TAB_GESTAO_GERAL,
@@ -312,14 +312,14 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "Gestão por Responsável",
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_CRM,
-    legacyAliasKeys: ["crm.seller.own", "crm.seller.all", "crm.seller.view"],
+    legacyAliasKeys: ["crm.seller.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_CRM_TAB_CARTEIRA_CLIENTES,
     label: "Carteira de Clientes",
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_CRM,
-    legacyAliasKeys: ["crm.general.view", "crm.seller.own", "crm.seller.all", "crm.view"],
+    legacyAliasKeys: ["crm.customer_cockpit.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_CRM_TAB_CLIENTE_360,
@@ -327,7 +327,6 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_CRM,
     legacyAliasKeys: [
-      "crm.customer_cockpit.view",
       "customers.commercial360.view",
       "customers.view",
     ],
@@ -345,10 +344,10 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMISSOES,
     legacyAliasKeys: [
-      "commissions.view",
-      "commissions.dashboard.view",
       "commissions.payments.view",
+      "commissions.dashboard.view",
       "commissions.release.view",
+      "commissions.view",
     ],
   },
   {
@@ -357,10 +356,10 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMISSOES,
     legacyAliasKeys: [
-      "commissions.view",
       "commissions.dashboard.view",
       "commissions.payments.view",
       "commissions.audit.view",
+      "commissions.view",
     ],
   },
   {
@@ -375,7 +374,7 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "Relatórios",
     type: "TAB",
     parentKey: ResourceKeys.COMISSOES,
-    legacyAliasKeys: ["commissions.view", "commissions.dashboard.view", "commissions.audit.view"],
+    legacyAliasKeys: ["commissions.dashboard.view", "commissions.audit.view", "commissions.view"],
   },
   {
     key: ResourceKeys.COMISSOES_TAB_REPROCESSAR,
@@ -383,10 +382,11 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMISSOES,
     legacyAliasKeys: [
-      "commissions.view",
+      "commissions.rules.view",
       "commissions.payments.manage",
       "commissions.rules.manage",
       "commissions.audit.view",
+      "commissions.view",
     ],
   },
   {

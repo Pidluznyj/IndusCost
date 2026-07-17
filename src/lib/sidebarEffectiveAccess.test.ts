@@ -221,6 +221,92 @@ describe("sidebarEffectiveAccess — personas", () => {
     assert.equal(canViewSidebarModuleFromDto(dto, "finance"), true);
   });
 
+  it("gestor comercial: aba geral e escopo global abrem CRM no menu", () => {
+    const keys = projectSidebarContractKeysFromLegacyBag([
+      "dashboard.view",
+      "crm.view",
+      "crm.general.view",
+      "crm.seller.view",
+      "crm.seller.all",
+    ]);
+    assert.ok(keys.includes("commercial.crm"), "crm.view deve projetar commercial.crm");
+    const c = ctx("VIEWER", [
+      "dashboard.view",
+      "crm.view",
+      "crm.general.view",
+      "crm.seller.view",
+      "crm.seller.all",
+    ]);
+    assert.equal(canViewModule("crm-commercial", c), true);
+    const nav = buildResourceAwareSidebarNavigation(c);
+    assert.ok(nav.flatAccessibleItems.some((i) => i.id === "crm-commercial"));
+  });
+
+  it("crm.view isolado não exibe menu sem aba e escopo utilizáveis", () => {
+    const c = ctx("VIEWER", ["crm.view"]);
+    assert.equal(canViewModule("crm-commercial", c), false);
+    const dto = resolveSidebarEffectiveAccessDto({ user: c.user });
+    assert.equal(canViewSidebarModuleFromDto(dto, "crm-commercial"), false);
+  });
+
+  it("perfil vendedor com aba, carteira e own exibe CRM", () => {
+    const c = ctx("VIEWER", [
+      "crm.view",
+      "crm.seller.view",
+      "crm.seller.own",
+      "crm.customer_cockpit.view",
+    ]);
+    assert.equal(canViewModule("crm-commercial", c), true);
+    const dto = resolveSidebarEffectiveAccessDto({ user: c.user });
+    assert.equal(canViewSidebarModuleFromDto(dto, "crm-commercial"), true);
+  });
+
+  it("vendedor: commissions.view projeta commercial.commissions e abre Comissões no menu", () => {
+    const keys = projectSidebarContractKeysFromLegacyBag([
+      "commissions.view",
+      "commissions.seller.own",
+      "commissions.dashboard.view",
+    ]);
+    assert.ok(
+      keys.includes("commercial.commissions"),
+      "commissions.view deve projetar commercial.commissions"
+    );
+    const c = ctx("VIEWER", [
+      "commissions.view",
+      "commissions.seller.own",
+      "commissions.dashboard.view",
+      "commissions.payments.view",
+    ]);
+    assert.equal(canViewModule("commissions", c), true);
+    const nav = buildResourceAwareSidebarNavigation(c);
+    assert.ok(nav.flatAccessibleItems.some((i) => i.id === "commissions"));
+  });
+
+  it("DTO /me com commercial.crm.general (filho) também revela CRM na sidebar", () => {
+    const dto: EffectiveAccessMeDto = {
+      permissionsVersion: 1,
+      role: "VIEWER",
+      isSuperAdmin: false,
+      allowedResources: ["commercial.crm.general"],
+      actionsByResource: { "commercial.crm.general": ["view"] },
+      navigationReveal: ["commercial", "commercial.crm", "commercial.crm.general"],
+      capabilities: {
+        "commercial.crm.general": {
+          canView: true,
+          canExecute: false,
+          canManage: false,
+        },
+      },
+      compatibility: {
+        mode: "canonical",
+        legacyBagAuthoritative: false,
+        legacyPermissionsPresent: true,
+        legacyCompatApplied: false,
+      },
+    };
+    assert.equal(canViewSidebarModuleFromDto(dto, "crm-commercial"), true);
+  });
+
   it("grupo só aparece com filho visível; sales_orders não abre finance shell", () => {
     const c = ctx("VIEWER", ["sales_orders.view"]);
     assert.equal(canViewModule("sales-orders", c), true);
