@@ -47,8 +47,10 @@ import {
 } from "@/src/lib/commercial/orderSellerIdentityResolver.js";
 import { loadCommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.server.js";
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
-import type { SalesOrderListReceivableInput } from "@/src/lib/salesOrderListPaymentSchedule.js";
-import { buildSalesOrderPlannedReceivables } from "./salesOrderPlannedReceivables.js";
+import {
+  buildEffectiveScheduleConsumerAlerts,
+  projectEffectiveScheduleForOrderAudit,
+} from "./effectiveScheduleAuditProjection.js";
 import {
   buildLinkedNfeFiscalAmounts,
 } from "@/src/lib/sales/orderFiscalFinancialMetrics.js";
@@ -3006,53 +3008,28 @@ export async function loadOrderFullAudit(
   const receivablesTotal = summarizeReceivables(dedupReceivables);
 
   /* -------------------------------------------------------------------- */
-  /*  Bloco 8b — Recebíveis planejados (forecast pela condição de pagto)  */
-  /*  Regra oficial: CR real prevalece; forecast só complementa/apoia.     */
+  /*  Bloco 8b — Agenda financeira efetiva (FIN-05 / FIN-09)               */
+  /*  CR > Documento > residual do Pedido. Sem dupla contagem.             */
   /* -------------------------------------------------------------------- */
-  const realReceivablesForForecast: SalesOrderListReceivableInput[] =
-    dedupReceivables.map((r) => ({
-      externalId: r.receivableExternalId,
-      sourceInvoiceId: r.sourceInvoiceId,
-      sourceInvoiceNumber: r.sourceInvoiceNumber,
-      dueDate: r.dueDate ? new Date(r.dueDate) : null,
-      amountReceivable: r.amountReceivable ?? 0,
-      amountReceived: r.amountReceived ?? 0,
-      balanceReceivable: r.balanceReceivable ?? 0,
-      settlementDate: r.settlementDate ? new Date(r.settlementDate) : null,
-    }));
-
-  const validDocumentAllocatedValue = round2(
-    [...stockMap.values()]
-      .filter((doc) => {
-        const st = (doc.status ?? "").toLowerCase();
-        if (!st) return true;
-        return !(
-          st.includes("cancel") ||
-          st.includes("estorno") ||
-          st.includes("anulado") ||
-          st.includes("inutil")
-        );
-      })
-      .reduce((sum, doc) => sum + (doc.allocatedValue ?? 0), 0)
-  );
-
-  const plannedForecast = buildSalesOrderPlannedReceivables({
+  const plannedProjection = projectEffectiveScheduleForOrderAudit({
     salesOrderId,
     orderCode: order.orderCode ?? "SO",
     issueDate: order.issueDate,
-    totalActiveValue:
-      decimalToNumber(order.totalNetValue) ?? decimalToNumber(order.totalGrossValue) ?? 0,
     paymentTerms: order.paymentTerms,
     paymentMethod: order.paymentMethod,
     nomusRawResponse: order.nomusRawResponse,
-    realReceivables: realReceivablesForForecast,
-    nfeDocuments: [...nfeMap.values()]
+    totalActiveValue:
+      decimalToNumber(order.totalNetValue) ?? decimalToNumber(order.totalGrossValue) ?? 0,
+    items,
+    receivables: dedupReceivables,
+    stockDocuments: [...stockMap.values()],
+    nfeNumbers: [...nfeMap.values()]
       .map((nfe) => nfe.numero)
       .filter((num): num is string => Boolean(num?.trim())),
-    validDocumentAllocatedValue,
   });
-  const plannedReceivables = plannedForecast.planned;
-  const plannedReceivablesTotal = plannedForecast.totals;
+  const plannedReceivables = plannedProjection.plannedReceivables;
+  const plannedReceivablesTotal = plannedProjection.plannedReceivablesTotal;
+  const effectiveScheduleForAlerts = plannedProjection.schedule;
 
   // Summary base (alertCount preenchido logo abaixo após buildAlerts).
   const summary = buildSummary({
@@ -3175,6 +3152,7 @@ export async function loadOrderFullAudit(
     orderSeller: orderSellerResolved,
     receivables: dedupReceivables,
     plannedReceivables,
+    effectiveSchedule: effectiveScheduleForAlerts,
     stockDocuments: [...stockMap.values()],
     stockDocumentItems,
     nfes: [...nfeMap.values()],

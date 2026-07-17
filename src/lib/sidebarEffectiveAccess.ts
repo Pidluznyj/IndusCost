@@ -30,6 +30,10 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
  * Parent `finance`: shell se `finance` ou filho operacional (AP/AR/CC) —
  * sem billing/sales_orders (evita bleed de `sales_orders.view`).
  * Conciliação/opex/taxes/reports/suppliers têm listas próprias.
+ *
+ * Importante: a visibilidade usa allow real (`allowedResources` /
+ * capabilities), não o `navigationReveal` virtual de ancestral — senão
+ * Fornecedores liberaria o item "Financeiro" só porque o pai entra no reveal.
  */
 export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]> = {
   dashboard: ["dashboard"],

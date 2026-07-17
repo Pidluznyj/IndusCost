@@ -232,4 +232,69 @@ describe("sidebarEffectiveAccess — personas", () => {
       false
     );
   });
+
+  it("Fornecedores allow NÃO abre menu Financeiro via navigationReveal do pai", () => {
+    const dto: EffectiveAccessMeDto = {
+      permissionsVersion: 1,
+      role: "ADMIN",
+      isSuperAdmin: false,
+      allowedResources: ["finance.suppliers"],
+      actionsByResource: { "finance.suppliers": ["view"] },
+      // Reveal virtual do ancestral (como o resolvedor emite) — não deve liberar shell.
+      navigationReveal: ["finance", "finance.suppliers"],
+      capabilities: {
+        "finance.suppliers": {
+          canView: true,
+          canExecute: false,
+          canManage: false,
+        },
+      },
+      compatibility: {
+        mode: "shadow",
+        legacyBagAuthoritative: false,
+        legacyPermissionsPresent: false,
+        legacyCompatApplied: false,
+      },
+    };
+    assert.equal(canViewSidebarModuleFromDto(dto, "suppliers"), true);
+    assert.equal(canViewSidebarModuleFromDto(dto, "finance"), false);
+    const nav = buildSidebarNavigationFromEffectiveAccess(dto);
+    assert.ok(nav.flatAccessibleItems.some((i) => i.id === "suppliers"));
+    assert.equal(
+      nav.flatAccessibleItems.some((i) => i.id === "finance"),
+      false
+    );
+  });
+
+  it("Suprimentos allow NÃO abre Produtos via reveal de engineering", () => {
+    const dto: EffectiveAccessMeDto = {
+      permissionsVersion: 1,
+      role: "ADMIN",
+      isSuperAdmin: false,
+      allowedResources: ["engineering.materials"],
+      actionsByResource: { "engineering.materials": ["view"] },
+      navigationReveal: ["engineering", "engineering.materials"],
+      capabilities: {
+        "engineering.materials": {
+          canView: true,
+          canExecute: false,
+          canManage: false,
+        },
+      },
+      compatibility: {
+        mode: "shadow",
+        legacyBagAuthoritative: false,
+        legacyPermissionsPresent: false,
+        legacyCompatApplied: false,
+      },
+    };
+    assert.equal(canViewSidebarModuleFromDto(dto, "materials"), true);
+    assert.equal(canViewSidebarModuleFromDto(dto, "products"), false);
+    const nav = buildSidebarNavigationFromEffectiveAccess(dto);
+    assert.ok(nav.flatAccessibleItems.some((i) => i.id === "materials"));
+    assert.equal(
+      nav.flatAccessibleItems.some((i) => i.id === "products"),
+      false
+    );
+  });
 });
