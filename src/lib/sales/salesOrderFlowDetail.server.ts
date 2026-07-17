@@ -50,6 +50,7 @@ export type LoadSalesOrderFlowDetailOptions = {
   canViewFiscal?: boolean;
   canViewFinancial?: boolean;
   canViewInconsistencies?: boolean;
+  canViewTimeline?: boolean;
   scopeCustomerIds?: string[] | null;
   now?: () => Date;
 };
@@ -227,6 +228,7 @@ export async function loadSalesOrderFlowDetail(
   const canViewFiscal = options.canViewFiscal === true;
   const canViewFinancial = options.canViewFinancial === true;
   const canViewInconsistencies = options.canViewInconsistencies !== false;
+  const canViewTimeline = options.canViewTimeline !== false;
   const now = options.now?.() ?? new Date();
 
   const orderMeta = await options.prisma.salesOrder.findUnique({
@@ -423,6 +425,7 @@ export async function loadSalesOrderFlowDetail(
     fiscalVisible: canViewFiscal,
     financialVisible: canViewFinancial,
     inconsistenciesVisible: canViewInconsistencies,
+    timelineVisible: canViewTimeline,
     generatedAt: now.toISOString(),
   };
 

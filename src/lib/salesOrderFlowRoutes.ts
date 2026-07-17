@@ -261,6 +261,7 @@ export function registerSalesOrderFlowRoutes(
             canViewFinancial: scoped.capabilities.canViewFinancial,
             canViewInconsistencies:
               scoped.capabilities.canViewInconsistencies,
+            canViewTimeline: scoped.capabilities.canViewTimeline,
           }
         );
         if (!result.ok) {

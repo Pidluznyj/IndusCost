@@ -130,6 +130,7 @@ export type SalesOrderFlowDetailPayload = {
   fiscalVisible: boolean;
   financialVisible: boolean;
   inconsistenciesVisible: boolean;
+  timelineVisible: boolean;
   generatedAt: string;
 };
 

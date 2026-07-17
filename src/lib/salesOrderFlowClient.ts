@@ -3,18 +3,23 @@
  */
 import { fetchJsonOk } from "@/src/lib/http.js";
 import type { SalesOrderFlowListPayload } from "@/src/lib/sales/salesOrderFlowList.js";
-import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlowDetail.js";
+import type {
+  SalesOrderFlowDetailPayload,
+  SalesOrderFlowEventsPayload,
+} from "@/src/lib/sales/salesOrderFlowDetail.js";
 import type {
   SalesOrderFlowSummaryPayload,
   SalesOrderFlowSummaryPriority,
 } from "@/src/lib/sales/salesOrderFlowSummary.js";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog.js";
+import type { SalesOrderFlowEventType } from "@/src/lib/sales/salesOrderFlowTimeline.js";
 import { SALES_ORDER_FLOW_FEATURE_RESOURCE } from "@/src/lib/sales/salesOrderFlowFeatureFlags.js";
 
 export type {
   SalesOrderFlowListPayload,
   SalesOrderFlowSummaryPayload,
   SalesOrderFlowDetailPayload,
+  SalesOrderFlowEventsPayload,
 };
 
 export const SALES_ORDER_FLOW_LIST_API_PATH =
@@ -26,6 +31,31 @@ export const SALES_ORDER_FLOW_FEATURE_STATUS_API_PATH =
 
 export function getSalesOrderFlowDetailApiPath(salesOrderId: string): string {
   return `${SALES_ORDER_FLOW_LIST_API_PATH}/${encodeURIComponent(salesOrderId)}`;
+}
+
+export function getSalesOrderFlowEventsApiPath(salesOrderId: string): string {
+  return `${getSalesOrderFlowDetailApiPath(salesOrderId)}/events`;
+}
+
+export type SalesOrderFlowEventsClientQuery = {
+  page?: number;
+  pageSize?: number;
+  eventType?: SalesOrderFlowEventType | null;
+  salesOrderItemId?: string | null;
+};
+
+export function buildSalesOrderFlowEventsQueryString(
+  query: SalesOrderFlowEventsClientQuery = {}
+): string {
+  const params = new URLSearchParams();
+  if (query.page != null) params.set("page", String(query.page));
+  if (query.pageSize != null) params.set("pageSize", String(query.pageSize));
+  if (query.eventType) params.set("eventType", query.eventType);
+  if (query.salesOrderItemId?.trim()) {
+    params.set("salesOrderItemId", query.salesOrderItemId.trim());
+  }
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 }
 
 export type SalesOrderFlowFeatureStatusPayload = {
@@ -146,6 +176,17 @@ export async function fetchSalesOrderFlowDetail(
 ): Promise<SalesOrderFlowDetailPayload> {
   return fetchJsonOk<SalesOrderFlowDetailPayload>(
     getSalesOrderFlowDetailApiPath(salesOrderId),
+    { signal }
+  );
+}
+
+export async function fetchSalesOrderFlowEvents(
+  salesOrderId: string,
+  query: SalesOrderFlowEventsClientQuery = {},
+  signal?: AbortSignal
+): Promise<SalesOrderFlowEventsPayload> {
+  return fetchJsonOk<SalesOrderFlowEventsPayload>(
+    `${getSalesOrderFlowEventsApiPath(salesOrderId)}${buildSalesOrderFlowEventsQueryString(query)}`,
     { signal }
   );
 }

@@ -8,17 +8,26 @@ import { HttpError } from "@/src/lib/http.js";
 import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlowDetail.js";
 import {
   classifySalesOrderFlowDetailError,
+  dedupeSalesOrderFlowDetailEventsByKey,
+  filterSalesOrderFlowDetailInconsistencyRows,
   formatSalesOrderFlowFulfillmentClassification,
   resolveSalesOrderFlowDetailAvailableTabs,
+  resolveSalesOrderFlowDetailEventView,
+  resolveSalesOrderFlowDetailInconsistencyRows,
   resolveSalesOrderFlowDetailItems,
   resolveSalesOrderFlowDetailShipmentViews,
+  salesOrderFlowInconsistencySeverityClassName,
 } from "@/src/lib/salesOrderFlowDetailUi.js";
 import { SalesOrderFlowDetailContent } from "@/src/components/commercial/SalesOrderFlowDetailDrawer.js";
-import { getSalesOrderFlowDetailApiPath } from "@/src/lib/salesOrderFlowClient.js";
+import {
+  getSalesOrderFlowDetailApiPath,
+  getSalesOrderFlowEventsApiPath,
+} from "@/src/lib/salesOrderFlowClient.js";
+import type { SalesOrderFlowDetailTab } from "@/src/lib/salesOrderFlowDetailUi.js";
 
 function renderDetailTab(
   payload: SalesOrderFlowDetailPayload,
-  activeTab: "resumo" | "itens" | "producao" | "documentos" | "nfe_envio"
+  activeTab: SalesOrderFlowDetailTab
 ) {
   return renderToStaticMarkup(
     React.createElement(SalesOrderFlowDetailContent, {
@@ -26,6 +35,7 @@ function renderDetailTab(
       items: resolveSalesOrderFlowDetailItems(payload),
       shipment: resolveSalesOrderFlowDetailShipmentViews(payload),
       activeTab,
+      salesOrderId: payload.salesOrderId,
     })
   );
 }
@@ -181,6 +191,7 @@ function detailFixture(
     fiscalVisible: true,
     financialVisible: true,
     inconsistenciesVisible: true,
+    timelineVisible: true,
     generatedAt: "2026-07-17T12:00:00.000Z",
     ...overrides,
   };
@@ -478,7 +489,15 @@ describe("sales order flow detail drawer tabs (OP-70)", () => {
     );
     assert.deepEqual(
       all.map((tab) => tab.id),
-      ["resumo", "itens", "producao", "documentos", "nfe_envio"]
+      [
+        "resumo",
+        "itens",
+        "producao",
+        "documentos",
+        "nfe_envio",
+        "timeline",
+        "inconsistencias",
+      ]
     );
     assert.equal(all.find((tab) => tab.id === "documentos")?.count, 1);
     assert.equal(all.find((tab) => tab.id === "nfe_envio")?.count, 1);
@@ -569,5 +588,182 @@ describe("sales order flow detail drawer tabs (OP-70)", () => {
     assert.match(drawer, /sales-order-flow-detail-nfe-shipment/);
     assert.doesNotMatch(drawer, /fetchNomus|NomusClient|nomusRest/i);
     assert.doesNotMatch(ui, /fetchNomus|NomusClient|nomusRest/i);
+  });
+});
+
+describe("sales order flow timeline and inconsistencies (OP-71)", () => {
+  it("expõe path tipado de eventos", () => {
+    assert.equal(
+      getSalesOrderFlowEventsApiPath("abc"),
+      "/api/commercial/sales-order-flow/abc/events"
+    );
+  });
+
+  it("mapeia retorno de etapa, corte e cancelamento sem rawJson", () => {
+    const returned = resolveSalesOrderFlowDetailEventView({
+      id: "e1",
+      eventType: "STAGE_RETURNED",
+      fromStage: "WAITING_NFE",
+      toStage: "WAITING_OUTPUT_DOCUMENT",
+      salesOrderItemId: "item-1",
+      dedupeKey: "item|item-1|STAGE_RETURNED|WAITING_NFE|WAITING_OUTPUT_DOCUMENT|fp",
+      details: {
+        scope: "ITEM",
+        direction: "RETURN",
+        fingerprint: "fp",
+      },
+      actorId: null,
+      occurredAt: "2026-07-10T12:00:00.000Z",
+      observedAt: "2026-07-10T12:05:00.000Z",
+      createdAt: "2026-07-10T12:05:00.000Z",
+    }, new Map([["item-1", "SKU-1 · Peça A"]]));
+
+    assert.equal(returned.isStageReturn, true);
+    assert.equal(returned.isCut, false);
+    assert.equal(returned.isCancellation, false);
+    assert.match(returned.fromStageLabel, /documento|NF|saída|aguardando/i);
+    assert.equal(returned.originLabel.includes("Item"), true);
+    assert.equal(returned.relatedDocument, null);
+    assert.doesNotMatch(JSON.stringify(returned), /rawJson|fingerprint/);
+
+    const cut = resolveSalesOrderFlowDetailEventView({
+      id: "e2",
+      eventType: "CUT_DETECTED",
+      fromStage: "IN_PRODUCTION",
+      toStage: "IN_PRODUCTION",
+      salesOrderItemId: null,
+      dedupeKey: "order|x|CUT_DETECTED|||fp2",
+      details: {
+        scope: "ORDER",
+        fulfillmentClassification: "FULFILLED_WITH_CUT",
+      },
+      actorId: null,
+      occurredAt: "2026-07-11T12:00:00.000Z",
+      observedAt: null,
+      createdAt: "2026-07-11T12:00:00.000Z",
+    });
+    assert.equal(cut.isCut, true);
+    assert.match(cut.reason ?? "", /corte|Atendido/i);
+
+    const canceled = resolveSalesOrderFlowDetailEventView({
+      id: "e3",
+      eventType: "CANCELED",
+      fromStage: "IN_PRODUCTION",
+      toStage: "CANCELED",
+      salesOrderItemId: null,
+      dedupeKey: "order|x|CANCELED|IN_PRODUCTION|CANCELED|fp3",
+      details: { scope: "ORDER" },
+      actorId: null,
+      occurredAt: "2026-07-12T12:00:00.000Z",
+      observedAt: "2026-07-12T12:00:00.000Z",
+      createdAt: "2026-07-12T12:00:00.000Z",
+    });
+    assert.equal(canceled.isCancellation, true);
+  });
+
+  it("deduplica eventos pela dedupeKey ao paginar", () => {
+    const deduped = dedupeSalesOrderFlowDetailEventsByKey([
+      { id: "a", dedupeKey: "k1" },
+      { id: "b", dedupeKey: "k1" },
+      { id: "c", dedupeKey: "k2" },
+      { id: "d", dedupeKey: null },
+      { id: "d", dedupeKey: null },
+    ]);
+    assert.deepEqual(
+      deduped.map((row) => row.id),
+      ["a", "c", "d"]
+    );
+  });
+
+  it("resolve severidades e não marca resolução sem evidência", () => {
+    const payload = detailFixture({
+      inconsistencies: [
+        {
+          code: "DUPLICATE_TRUTH_RISK",
+          severity: "CRITICAL",
+          detail: "Duas fontes conflitantes",
+        },
+        {
+          code: "DOCUMENT_WITHOUT_NFE",
+          severity: "INFO",
+          detail: "DS sem NF",
+        },
+      ],
+      orderSnapshot: {
+        daysInStage: 4,
+        currentStage: "IN_PRODUCTION",
+        computedAt: "2026-07-15T10:00:00.000Z",
+      },
+    });
+    const items = resolveSalesOrderFlowDetailItems(payload);
+    const rows = resolveSalesOrderFlowDetailInconsistencyRows(payload, items);
+    const critical = rows.find((row) => row.code === "DUPLICATE_TRUTH_RISK");
+    const info = rows.find((row) => row.code === "DOCUMENT_WITHOUT_NFE");
+    assert.ok(critical);
+    assert.ok(info);
+    assert.equal(critical?.severity, "CRITICAL");
+    assert.equal(info?.severity, "INFO");
+    assert.match(critical?.conclusionEffect ?? "", /evidência/i);
+    assert.doesNotMatch(critical?.conclusionEffect ?? "", /resolvid/i);
+    assert.match(
+      salesOrderFlowInconsistencySeverityClassName("CRITICAL"),
+      /rose-50/
+    );
+    assert.match(
+      salesOrderFlowInconsistencySeverityClassName("WARNING"),
+      /amber-50/
+    );
+    assert.match(
+      salesOrderFlowInconsistencySeverityClassName("INFO"),
+      /muted/
+    );
+
+    const filtered = filterSalesOrderFlowDetailInconsistencyRows(rows, {
+      severity: "CRITICAL",
+    });
+    assert.equal(filtered.length, 1);
+    assert.equal(filtered[0]?.code, "DUPLICATE_TRUTH_RISK");
+
+    const byItem = filterSalesOrderFlowDetailInconsistencyRows(rows, {
+      salesOrderItemId: "item-1",
+    });
+    assert.ok(byItem.every((row) => row.salesOrderItemId === "item-1"));
+  });
+
+  it("respeita permissões de Timeline e Inconsistências nas abas", () => {
+    const all = resolveSalesOrderFlowDetailAvailableTabs(detailFixture());
+    assert.ok(all.some((tab) => tab.id === "timeline"));
+    assert.ok(all.some((tab) => tab.id === "inconsistencias"));
+
+    const hidden = resolveSalesOrderFlowDetailAvailableTabs(
+      detailFixture({
+        timelineVisible: false,
+        inconsistenciesVisible: false,
+        inconsistencies: [],
+      })
+    );
+    assert.equal(
+      hidden.some(
+        (tab) => tab.id === "timeline" || tab.id === "inconsistencias"
+      ),
+      false
+    );
+  });
+
+  it("renderiza Inconsistências com severidade e filtros", () => {
+    const html = renderDetailTab(detailFixture(), "inconsistencias");
+    assert.match(html, /sales-order-flow-detail-inconsistencies/);
+    assert.match(html, /MISSING_PRODUCTION_ORDER|Inconsistente|Produção/i);
+    assert.match(html, /sales-order-flow-inconsistency-item-filter/);
+    assert.match(html, /sales-order-flow-inconsistency-severity-filter/);
+    assert.doesNotMatch(html, /rawJson/);
+  });
+
+  it("renderiza Timeline (estado vazio inicial sem fetch no SSR)", () => {
+    const html = renderDetailTab(detailFixture(), "timeline");
+    assert.match(html, /sales-order-flow-detail-timeline/);
+    assert.match(html, /Timeline do ciclo de vida/);
+    assert.match(html, /sales-order-flow-timeline-item-filter/);
+    assert.doesNotMatch(html, /rawJson/);
   });
 });

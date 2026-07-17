@@ -4,13 +4,24 @@
 import { HttpError } from "@/src/lib/http.js";
 import {
   SALES_ORDER_FLOW_INCONSISTENCY_LABELS,
+  SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
+  SALES_ORDER_FLOW_INCONSISTENCY_SEVERITY_BY_CODE,
   SALES_ORDER_FLOW_STAGE_LABELS,
+  isSalesOrderFlowInconsistencyCode,
   isSalesOrderFlowStage,
   type SalesOrderFlowInconsistencyCode,
+  type SalesOrderFlowInconsistencySeverity,
   type SalesOrderFlowStage,
 } from "@/src/lib/sales/salesOrderFlowCatalog.js";
-import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlowDetail.js";
+import type {
+  SalesOrderFlowDetailPayload,
+  SalesOrderFlowEventsPayload,
+} from "@/src/lib/sales/salesOrderFlowDetail.js";
 import type { SalesOrderFlowListInconsistency } from "@/src/lib/sales/salesOrderFlowList.js";
+import {
+  SALES_ORDER_FLOW_EVENT_TYPES,
+  type SalesOrderFlowEventType,
+} from "@/src/lib/sales/salesOrderFlowTimeline.js";
 import { formatCurrency } from "@/src/lib/utils.js";
 
 export type SalesOrderFlowDetailTab =
@@ -18,7 +29,9 @@ export type SalesOrderFlowDetailTab =
   | "itens"
   | "producao"
   | "documentos"
-  | "nfe_envio";
+  | "nfe_envio"
+  | "timeline"
+  | "inconsistencias";
 
 export type SalesOrderFlowDetailItemView = {
   salesOrderItemId: string;
@@ -475,5 +488,294 @@ export function resolveSalesOrderFlowDetailAvailableTabs(
       count: views.activeNfeCount,
     });
   }
+  if (payload.timelineVisible) {
+    base.push({ id: "timeline", label: "Timeline" });
+  }
+  if (payload.inconsistenciesVisible) {
+    const items = resolveSalesOrderFlowDetailItems(payload);
+    base.push({
+      id: "inconsistencias",
+      label: "Inconsistências",
+      count: resolveSalesOrderFlowDetailInconsistencyRows(payload, items)
+        .length,
+    });
+  }
   return base;
 }
+
+export const SALES_ORDER_FLOW_EVENT_TYPE_LABELS: Record<
+  SalesOrderFlowEventType,
+  string
+> = {
+  SNAPSHOT_CREATED: "Snapshot criado",
+  STAGE_CHANGED: "Mudança de etapa",
+  STAGE_RETURNED: "Retorno de etapa",
+  STAGE_COMPLETED: "Etapa concluída",
+  CUT_DETECTED: "Corte detectado",
+  CANCELED: "Cancelamento",
+  INCONSISTENCY_CRITICAL: "Inconsistência crítica",
+  INCONSISTENCY_RESOLVED: "Inconsistência crítica sanada por evidência",
+  MANAGEMENT_UPDATED: "Gestão atualizada",
+};
+
+export type SalesOrderFlowDetailEventView = {
+  id: string;
+  dedupeKey: string;
+  eventType: string;
+  eventLabel: string;
+  fromStage: string | null;
+  toStage: string | null;
+  fromStageLabel: string;
+  toStageLabel: string;
+  occurredAt: string | null;
+  observedAt: string | null;
+  originLabel: string;
+  relatedDocument: string | null;
+  reason: string | null;
+  isStageReturn: boolean;
+  isCut: boolean;
+  isCancellation: boolean;
+  salesOrderItemId: string | null;
+  itemLabel: string | null;
+};
+
+export type SalesOrderFlowDetailInconsistencyRow = {
+  key: string;
+  code: string;
+  label: string;
+  severity: SalesOrderFlowInconsistencySeverity;
+  explanation: string | null;
+  entityLabel: string;
+  evidence: string | null;
+  responsibleArea: string | null;
+  conclusionEffect: string;
+  detectedAt: string | null;
+  salesOrderItemId: string | null;
+};
+
+export function formatSalesOrderFlowEventTypeLabel(eventType: string): string {
+  if (
+    (SALES_ORDER_FLOW_EVENT_TYPES as readonly string[]).includes(eventType)
+  ) {
+    return SALES_ORDER_FLOW_EVENT_TYPE_LABELS[
+      eventType as SalesOrderFlowEventType
+    ];
+  }
+  return eventType;
+}
+
+export function formatSalesOrderFlowInconsistencySeverityLabel(
+  severity: string
+): string {
+  const key = severity.trim().toUpperCase();
+  if (key === "CRITICAL") return "Crítica";
+  if (key === "ERROR") return "Erro";
+  if (key === "WARNING") return "Alerta";
+  if (key === "INFO") return "Informação";
+  return severity;
+}
+
+export function salesOrderFlowInconsistencySeverityClassName(
+  severity: string
+): string {
+  const key = severity.trim().toUpperCase();
+  if (key === "CRITICAL") {
+    return "border-rose-200 bg-rose-50 text-rose-950";
+  }
+  if (key === "WARNING") {
+    return "border-amber-200/80 bg-amber-50/70 text-amber-950";
+  }
+  if (key === "ERROR") {
+    return "border-rose-100 bg-rose-50/40 text-rose-900";
+  }
+  return "border-border bg-muted/40 text-foreground";
+}
+
+function normalizeInconsistencySeverity(
+  code: string,
+  severityRaw: string | null | undefined
+): SalesOrderFlowInconsistencySeverity {
+  const upper = String(severityRaw ?? "").trim().toUpperCase();
+  if (
+    (SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES as readonly string[]).includes(
+      upper
+    )
+  ) {
+    return upper as SalesOrderFlowInconsistencySeverity;
+  }
+  if (isSalesOrderFlowInconsistencyCode(code)) {
+    return SALES_ORDER_FLOW_INCONSISTENCY_SEVERITY_BY_CODE[code];
+  }
+  return "WARNING";
+}
+
+function conclusionEffectForSeverity(
+  severity: SalesOrderFlowInconsistencySeverity
+): string {
+  if (severity === "CRITICAL") {
+    return "Impede concluir o fluxo com segurança até nova evidência.";
+  }
+  if (severity === "ERROR") {
+    return "Pode bloquear a conclusão operacional.";
+  }
+  if (severity === "WARNING") {
+    return "Exige atenção; não indica resolução automática.";
+  }
+  return "Informativo; não altera a conclusão por si só.";
+}
+
+function asDetailsRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+export function resolveSalesOrderFlowDetailEventView(
+  event: SalesOrderFlowEventsPayload["items"][number],
+  itemLookup: Map<string, string> = new Map()
+): SalesOrderFlowDetailEventView {
+  const details = asDetailsRecord(event.details);
+  const scope = asString(details.scope);
+  const direction = asString(details.direction);
+  const codes = Array.isArray(details.codes)
+    ? details.codes
+        .map((code) => asString(code))
+        .filter((code): code is string => Boolean(code))
+    : [];
+  const fulfillment = asString(details.fulfillmentClassification);
+  const relatedDocument =
+    asString(details.documentNumber) ??
+    asString(details.relatedDocument) ??
+    asString(details.nfeNumero);
+
+  let reason: string | null = null;
+  if (codes.length > 0) {
+    reason = codes.map((code) => formatSalesOrderFlowInconsistencyLabel(code)).join(" · ");
+  } else if (fulfillment) {
+    reason = formatSalesOrderFlowFulfillmentClassification(fulfillment);
+  } else if (Array.isArray(details.changedFields) && details.changedFields.length) {
+    reason = `Campos alterados: ${details.changedFields
+      .map((field) => asString(field))
+      .filter(Boolean)
+      .join(", ")}`;
+  } else if (direction === "RETURN") {
+    reason = "Retorno de etapa";
+  }
+
+  const isStageReturn =
+    event.eventType === "STAGE_RETURNED" || direction === "RETURN";
+  const isCut = event.eventType === "CUT_DETECTED";
+  const isCancellation = event.eventType === "CANCELED";
+
+  const itemId = asString(event.salesOrderItemId);
+  const originLabel =
+    scope === "ITEM" || itemId
+      ? itemId
+        ? `Item · ${itemLookup.get(itemId) ?? itemId}`
+        : "Item"
+      : "Pedido";
+
+  return {
+    id: event.id,
+    dedupeKey: event.dedupeKey,
+    eventType: event.eventType,
+    eventLabel: formatSalesOrderFlowEventTypeLabel(event.eventType),
+    fromStage: event.fromStage,
+    toStage: event.toStage,
+    fromStageLabel: formatSalesOrderFlowStageLabel(event.fromStage),
+    toStageLabel: formatSalesOrderFlowStageLabel(event.toStage),
+    occurredAt: event.occurredAt,
+    observedAt: event.observedAt,
+    originLabel,
+    relatedDocument,
+    reason,
+    isStageReturn,
+    isCut,
+    isCancellation,
+    salesOrderItemId: itemId,
+    itemLabel: itemId ? itemLookup.get(itemId) ?? null : null,
+  };
+}
+
+export function dedupeSalesOrderFlowDetailEventsByKey<
+  T extends { id: string; dedupeKey?: string | null },
+>(events: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const event of events) {
+    const key = event.dedupeKey?.trim() || event.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(event);
+  }
+  return out;
+}
+
+export function resolveSalesOrderFlowDetailInconsistencyRows(
+  payload: SalesOrderFlowDetailPayload,
+  items: SalesOrderFlowDetailItemView[]
+): SalesOrderFlowDetailInconsistencyRow[] {
+  if (!payload.inconsistenciesVisible) return [];
+
+  const detectedAt =
+    asString(payload.orderSnapshot?.computedAt) ?? payload.generatedAt;
+  const orderArea =
+    asString(payload.responsibleArea) ??
+    asString(payload.columnExplanation.responsibleArea);
+  const rows: SalesOrderFlowDetailInconsistencyRow[] = [];
+
+  for (const [index, row] of payload.inconsistencies.entries()) {
+    const severity = normalizeInconsistencySeverity(row.code, row.severity);
+    rows.push({
+      key: `order:${row.code}:${index}`,
+      code: row.code,
+      label: formatSalesOrderFlowInconsistencyLabel(row.code),
+      severity,
+      explanation: row.detail,
+      entityLabel: "Pedido",
+      evidence: row.detail,
+      responsibleArea: orderArea,
+      conclusionEffect: conclusionEffectForSeverity(severity),
+      detectedAt,
+      salesOrderItemId: null,
+    });
+  }
+
+  for (const item of items) {
+    for (const [index, row] of item.inconsistencies.entries()) {
+      const severity = normalizeInconsistencySeverity(row.code, row.severity);
+      rows.push({
+        key: `item:${item.salesOrderItemId}:${row.code}:${index}`,
+        code: row.code,
+        label: formatSalesOrderFlowInconsistencyLabel(row.code),
+        severity,
+        explanation: row.detail,
+        entityLabel: `Item · ${item.productLabel}`,
+        evidence: row.detail,
+        responsibleArea: orderArea,
+        conclusionEffect: conclusionEffectForSeverity(severity),
+        detectedAt,
+        salesOrderItemId: item.salesOrderItemId,
+      });
+    }
+  }
+
+  return rows;
+}
+
+export function filterSalesOrderFlowDetailInconsistencyRows(
+  rows: SalesOrderFlowDetailInconsistencyRow[],
+  filters: {
+    salesOrderItemId?: string | null;
+    severity?: string | null;
+  }
+): SalesOrderFlowDetailInconsistencyRow[] {
+  const itemId = filters.salesOrderItemId?.trim() || null;
+  const severity = filters.severity?.trim().toUpperCase() || null;
+  return rows.filter((row) => {
+    if (itemId && row.salesOrderItemId !== itemId) return false;
+    if (severity && row.severity !== severity) return false;
+    return true;
+  });
+}
+
+export { SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES };

@@ -294,6 +294,7 @@ describe("salesOrderFlowDetail.server (OP-61)", () => {
     assert.equal(result.payload.fiscalVisible, false);
     assert.equal(result.payload.financialVisible, false);
     assert.equal(result.payload.inconsistenciesVisible, false);
+    assert.equal(result.payload.timelineVisible, true);
     assert.deepEqual(result.payload.productionOrders, []);
     assert.deepEqual(result.payload.nfes, []);
     assert.equal(result.payload.financialSituation, null);
@@ -302,6 +303,16 @@ describe("salesOrderFlowDetail.server (OP-61)", () => {
       result.payload.orderSnapshot?.progressProductionOrder,
       null
     );
+  });
+
+  it("oculta timeline quando canViewTimeline=false", async () => {
+    const result = await loadSalesOrderFlowDetail(ORDER_ID, {
+      prisma: createDb(),
+      canViewTimeline: false,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.payload.timelineVisible, false);
   });
 
   it("timeline pagina e filtra eventos", async () => {

@@ -11,24 +11,35 @@ import {
 } from "@/src/components/ui/overlay";
 import {
   fetchSalesOrderFlowDetail,
+  fetchSalesOrderFlowEvents,
   type SalesOrderFlowDetailPayload,
+  type SalesOrderFlowEventsPayload,
 } from "@/src/lib/salesOrderFlowClient";
 import {
   classifySalesOrderFlowDetailError,
+  dedupeSalesOrderFlowDetailEventsByKey,
+  filterSalesOrderFlowDetailInconsistencyRows,
   formatSalesOrderFlowDetailDate,
   formatSalesOrderFlowDetailDays,
   formatSalesOrderFlowDetailMoney,
   formatSalesOrderFlowDetailPercent,
   formatSalesOrderFlowDetailQuantity,
+  formatSalesOrderFlowEventTypeLabel,
   formatSalesOrderFlowInconsistencyLabel,
+  formatSalesOrderFlowInconsistencySeverityLabel,
   formatSalesOrderFlowPriorityLabel,
   formatSalesOrderFlowStageLabel,
   resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailDaysInStage,
+  resolveSalesOrderFlowDetailEventView,
+  resolveSalesOrderFlowDetailInconsistencyRows,
   resolveSalesOrderFlowDetailItems,
   resolveSalesOrderFlowDetailShipmentViews,
+  salesOrderFlowInconsistencySeverityClassName,
+  SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
   type SalesOrderFlowDetailTab,
 } from "@/src/lib/salesOrderFlowDetailUi";
+import { SALES_ORDER_FLOW_EVENT_TYPES } from "@/src/lib/sales/salesOrderFlowTimeline";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -39,8 +50,8 @@ type Props = {
 };
 
 /**
- * Drawer largo do Fluxo de Pedidos (OP-69/OP-70): Resumo, Itens, Produção,
- * Documentos e NF-e/Envio. Overlay canônico; preserva filtros do Kanban.
+ * Drawer largo do Fluxo de Pedidos (OP-69/OP-71): Resumo, Itens, evidências,
+ * Timeline e Inconsistências. Overlay canônico; preserva filtros do Kanban.
  */
 export function SalesOrderFlowDetailDrawer({
   open,
@@ -211,6 +222,7 @@ export function SalesOrderFlowDetailDrawer({
             items={items}
             shipment={shipment}
             activeTab={activeTab}
+            salesOrderId={salesOrderId}
           />
         ) : null}
       </OverlayBody>
@@ -223,11 +235,13 @@ export function SalesOrderFlowDetailContent({
   items,
   shipment,
   activeTab,
+  salesOrderId,
 }: {
   detail: SalesOrderFlowDetailPayload;
   items: ReturnType<typeof resolveSalesOrderFlowDetailItems>;
   shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
   activeTab: SalesOrderFlowDetailTab;
+  salesOrderId?: string | null;
 }) {
   if (activeTab === "itens") {
     return <ItemsTab detail={detail} items={items} />;
@@ -250,6 +264,18 @@ export function SalesOrderFlowDetailContent({
         valuesVisible={detail.valuesVisible}
       />
     );
+  }
+  if (activeTab === "timeline") {
+    return (
+      <TimelineTab
+        salesOrderId={salesOrderId ?? detail.salesOrderId}
+        items={items}
+        timelineVisible={detail.timelineVisible}
+      />
+    );
+  }
+  if (activeTab === "inconsistencias") {
+    return <InconsistenciesTab detail={detail} items={items} />;
   }
   return <SummaryTab detail={detail} />;
 }
@@ -825,6 +851,418 @@ function NfeTable({
         ))}
       </tbody>
     </OverlayTable>
+  );
+}
+
+function TimelineTab({
+  salesOrderId,
+  items,
+  timelineVisible,
+}: {
+  salesOrderId: string;
+  items: ReturnType<typeof resolveSalesOrderFlowDetailItems>;
+  timelineVisible: boolean;
+}) {
+  const [page, setPage] = useState(0);
+  const [events, setEvents] = useState<
+    SalesOrderFlowEventsPayload["items"]
+  >([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [itemFilter, setItemFilter] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+
+  const itemLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of items) {
+      map.set(item.salesOrderItemId, item.productLabel);
+    }
+    return map;
+  }, [items]);
+
+  useEffect(() => {
+    if (!timelineVisible) return;
+    const controller = new AbortController();
+    setLoading(true);
+    setErrorMessage(null);
+    setPage(0);
+    void fetchSalesOrderFlowEvents(
+      salesOrderId,
+      {
+        page: 0,
+        pageSize: 30,
+        eventType: (eventTypeFilter || null) as
+          | (typeof SALES_ORDER_FLOW_EVENT_TYPES)[number]
+          | null,
+        salesOrderItemId: itemFilter || null,
+      },
+      controller.signal
+    )
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setEvents(dedupeSalesOrderFlowDetailEventsByKey(payload.items));
+        setHasMore(payload.hasMore);
+        setTotal(payload.total);
+        setPage(payload.page);
+      })
+      .catch((cause: unknown) => {
+        if (
+          controller.signal.aborted ||
+          (cause instanceof DOMException && cause.name === "AbortError")
+        ) {
+          return;
+        }
+        setErrorMessage(classifySalesOrderFlowDetailError(cause).message);
+        setEvents([]);
+        setHasMore(false);
+        setTotal(0);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [salesOrderId, timelineVisible, itemFilter, eventTypeFilter]);
+
+  const views = useMemo(
+    () =>
+      events.map((event) =>
+        resolveSalesOrderFlowDetailEventView(event, itemLookup)
+      ),
+    [events, itemLookup]
+  );
+
+  const loadMore = () => {
+    if (!hasMore || loadingMore || loading) return;
+    const nextPage = page + 1;
+    setLoadingMore(true);
+    void fetchSalesOrderFlowEvents(salesOrderId, {
+      page: nextPage,
+      pageSize: 30,
+      eventType: (eventTypeFilter || null) as
+        | (typeof SALES_ORDER_FLOW_EVENT_TYPES)[number]
+        | null,
+      salesOrderItemId: itemFilter || null,
+    })
+      .then((payload) => {
+        setEvents((prev) =>
+          dedupeSalesOrderFlowDetailEventsByKey([...prev, ...payload.items])
+        );
+        setHasMore(payload.hasMore);
+        setTotal(payload.total);
+        setPage(payload.page);
+      })
+      .catch((cause: unknown) => {
+        setErrorMessage(classifySalesOrderFlowDetailError(cause).message);
+      })
+      .finally(() => setLoadingMore(false));
+  };
+
+  if (!timelineVisible) {
+    return (
+      <div
+        id="overlay-panel-timeline"
+        role="tabpanel"
+        data-testid="sales-order-flow-detail-timeline"
+      >
+        <EmptyPanel text="Sem permissão para ver a timeline deste pedido." />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id="overlay-panel-timeline"
+      role="tabpanel"
+      data-testid="sales-order-flow-detail-timeline"
+      className="space-y-4"
+    >
+      <OverlaySection
+        title="Timeline do ciclo de vida"
+        description={`${total} evento(s) · linguagem clara · paginação server-side.`}
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Item
+            <select
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+              value={itemFilter}
+              data-testid="sales-order-flow-timeline-item-filter"
+              onChange={(event) => setItemFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              {items.map((item) => (
+                <option key={item.salesOrderItemId} value={item.salesOrderItemId}>
+                  {item.productLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Tipo de evento
+            <select
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+              value={eventTypeFilter}
+              data-testid="sales-order-flow-timeline-type-filter"
+              onChange={(event) => setEventTypeFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              {SALES_ORDER_FLOW_EVENT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {formatSalesOrderFlowEventTypeLabel(type)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Carregando timeline…</p>
+        ) : null}
+        {errorMessage ? (
+          <p role="alert" className="text-sm text-destructive">
+            {errorMessage}
+          </p>
+        ) : null}
+        {!loading && !errorMessage && views.length === 0 ? (
+          <EmptyPanel text="Nenhum evento de timeline materializado." />
+        ) : null}
+        {!loading && views.length > 0 ? (
+          <OverlayTable>
+            <thead>
+              <tr>
+                <th>Etapa anterior</th>
+                <th>Etapa nova</th>
+                <th>Data do evento</th>
+                <th>Observação</th>
+                <th>Origem</th>
+                <th>Documento</th>
+                <th>Motivo</th>
+                <th>Retorno</th>
+                <th>Corte</th>
+                <th>Cancelamento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {views.map((event) => (
+                <tr
+                  key={event.id}
+                  data-testid={`sales-order-flow-detail-event-${event.id}`}
+                  className={cn(
+                    event.isStageReturn && "bg-amber-50/50",
+                    event.isCancellation && "bg-rose-50/50"
+                  )}
+                >
+                  <td>{event.fromStageLabel}</td>
+                  <td>
+                    <div className="font-medium">{event.toStageLabel}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {event.eventLabel}
+                    </div>
+                  </td>
+                  <td>{formatSalesOrderFlowDetailDate(event.occurredAt)}</td>
+                  <td>{formatSalesOrderFlowDetailDate(event.observedAt)}</td>
+                  <td>{event.originLabel}</td>
+                  <td>{event.relatedDocument?.trim() || "—"}</td>
+                  <td>{event.reason?.trim() || "—"}</td>
+                  <td>{event.isStageReturn ? "Sim" : "—"}</td>
+                  <td>{event.isCut ? "Sim" : "—"}</td>
+                  <td>{event.isCancellation ? "Sim" : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </OverlayTable>
+        ) : null}
+        {hasMore ? (
+          <button
+            type="button"
+            className="mt-3 inline-flex rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+            data-testid="sales-order-flow-timeline-load-more"
+            disabled={loadingMore}
+            onClick={loadMore}
+          >
+            {loadingMore ? "Carregando…" : "Carregar mais"}
+          </button>
+        ) : null}
+      </OverlaySection>
+    </div>
+  );
+}
+
+function InconsistenciesTab({
+  detail,
+  items,
+}: {
+  detail: SalesOrderFlowDetailPayload;
+  items: ReturnType<typeof resolveSalesOrderFlowDetailItems>;
+}) {
+  const [itemFilter, setItemFilter] = useState("");
+  const [severityFilter, setSeverityFilter] = useState("");
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+
+  const allRows = useMemo(
+    () => resolveSalesOrderFlowDetailInconsistencyRows(detail, items),
+    [detail, items]
+  );
+  const filtered = useMemo(
+    () =>
+      filterSalesOrderFlowDetailInconsistencyRows(allRows, {
+        salesOrderItemId: itemFilter || null,
+        severity: severityFilter || null,
+      }),
+    [allRows, itemFilter, severityFilter]
+  );
+
+  useEffect(() => {
+    setPage(0);
+  }, [itemFilter, severityFilter]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageRows = filtered.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize
+  );
+
+  if (!detail.inconsistenciesVisible) {
+    return (
+      <div
+        id="overlay-panel-inconsistencias"
+        role="tabpanel"
+        data-testid="sales-order-flow-detail-inconsistencies"
+      >
+        <EmptyPanel text="Sem permissão para ver inconsistências deste pedido." />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id="overlay-panel-inconsistencias"
+      role="tabpanel"
+      data-testid="sales-order-flow-detail-inconsistencies"
+      className="space-y-4"
+    >
+      <OverlaySection
+        title="Inconsistências detectadas"
+        description="Não marcamos resolução sem evidência do motor. Críticas em vermelho claro; alertas em âmbar suave."
+      >
+        <div className="mb-3 flex flex-wrap gap-2">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Item
+            <select
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+              value={itemFilter}
+              data-testid="sales-order-flow-inconsistency-item-filter"
+              onChange={(event) => setItemFilter(event.target.value)}
+            >
+              <option value="">Todos</option>
+              {items.map((item) => (
+                <option key={item.salesOrderItemId} value={item.salesOrderItemId}>
+                  {item.productLabel}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Severidade
+            <select
+              className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground"
+              value={severityFilter}
+              data-testid="sales-order-flow-inconsistency-severity-filter"
+              onChange={(event) => setSeverityFilter(event.target.value)}
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES.map((severity) => (
+                <option key={severity} value={severity}>
+                  {formatSalesOrderFlowInconsistencySeverityLabel(severity)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {filtered.length === 0 ? (
+          <EmptyPanel text="Nenhuma inconsistência no filtro atual." />
+        ) : (
+          <>
+            <OverlayTable>
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Severidade</th>
+                  <th>Explicação</th>
+                  <th>Entidade</th>
+                  <th>Evidência</th>
+                  <th>Área responsável</th>
+                  <th>Efeito na conclusão</th>
+                  <th>Detecção</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((row) => (
+                  <tr
+                    key={row.key}
+                    data-testid={`sales-order-flow-detail-inconsistency-${row.code}`}
+                    className={salesOrderFlowInconsistencySeverityClassName(
+                      row.severity
+                    )}
+                  >
+                    <td>
+                      <div className="font-medium">{row.code}</div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {row.label}
+                      </div>
+                    </td>
+                    <td>
+                      {formatSalesOrderFlowInconsistencySeverityLabel(
+                        row.severity
+                      )}
+                    </td>
+                    <td>{row.explanation?.trim() || row.label}</td>
+                    <td>{row.entityLabel}</td>
+                    <td>{row.evidence?.trim() || "—"}</td>
+                    <td>{row.responsibleArea?.trim() || "—"}</td>
+                    <td>{row.conclusionEffect}</td>
+                    <td>{formatSalesOrderFlowDetailDate(row.detectedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </OverlayTable>
+            {pageCount > 1 ? (
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <button
+                  type="button"
+                  className="rounded-lg border border-border bg-background px-3 py-1.5 disabled:opacity-50"
+                  disabled={safePage <= 0}
+                  data-testid="sales-order-flow-inconsistency-prev"
+                  onClick={() => setPage((value) => Math.max(0, value - 1))}
+                >
+                  Anterior
+                </button>
+                <span className="text-muted-foreground">
+                  Página {safePage + 1} de {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-lg border border-border bg-background px-3 py-1.5 disabled:opacity-50"
+                  disabled={safePage >= pageCount - 1}
+                  data-testid="sales-order-flow-inconsistency-next"
+                  onClick={() =>
+                    setPage((value) => Math.min(pageCount - 1, value + 1))
+                  }
+                >
+                  Próxima
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
+      </OverlaySection>
+    </div>
   );
 }
 
