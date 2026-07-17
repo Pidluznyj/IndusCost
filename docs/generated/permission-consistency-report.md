@@ -2,18 +2,18 @@
 
 | | |
 |---|---|
-| Gerado | 2026-07-16T18:05:16.374Z |
-| Modo | strict |
+| Gerado | 2026-07-17T01:00:16.480Z |
+| Modo | report |
 | OK | sim |
 | Novos gaps | 0 |
-| Baselined | 72 |
+| Baselined | 77 |
 | Stale baseline | 0 |
 
 ## Fontes
-- Contrato: 83
-- Seed: 127
-- Frontend: 83
-- Catálogo legado: 203
+- Contrato: 84
+- Seed: 128
+- Frontend: 84
+- Catálogo legado: 204
 
 ## Novos gaps
 _Nenhum._
@@ -56,6 +56,9 @@ _Nenhum._
 - `ALIAS_WIDE` / `simulations.view`
 - `ALIAS_WIDE` / `users.manage`
 - `ALIAS_DUPLICATE` / `contract:products.view`
+- `ALIAS_DUPLICATE` / `contract:products.edit`
+- `ALIAS_DUPLICATE` / `contract:products.tab.bom`
+- `ALIAS_DUPLICATE` / `contract:costs.view`
 - `ALIAS_DUPLICATE` / `contract:simulations.view`
 - `ALIAS_DUPLICATE` / `contract:materials.view`
 - `ALIAS_DUPLICATE` / `contract:materials.edit`
@@ -76,10 +79,7 @@ _Nenhum._
 - `ALIAS_DUPLICATE` / `contract:commissions.rules.manage`
 - `ALIAS_DUPLICATE` / `contract:finance.view`
 - `ALIAS_DUPLICATE` / `contract:reports.view`
-- `ALIAS_DUPLICATE` / `contract:settings.nomus.sync`
-- `ALIAS_DUPLICATE` / `contract:taxes.view`
-- `ALIAS_DUPLICATE` / `contract:finance.tax_apuration.view`
-- … +12
+- … +17
 
 ## Limitações
 - Baseline temporário documenta gaps históricos; strict só falha em findings novos (code+subject).
