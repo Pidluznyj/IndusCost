@@ -19,6 +19,8 @@ import {
   type OrderFullAuditNfe,
   type OrderFullAuditNfeItem,
   type OrderFullAuditPayload,
+  type OrderFullAuditProductionLink,
+  type OrderFullAuditProductionOrder,
   type OrderFullAuditProposalBlock,
   type OrderFullAuditProposalOrderComparison,
   type OrderFullAuditPlannedReceivable,
@@ -47,6 +49,10 @@ import {
 } from "@/src/lib/finance/orderToCashAuditLabels";
 import { OrderToCashAuditItemsGrid } from "./OrderToCashAuditItemsGrid";
 import { SalesOrderTributosTab } from "@/src/components/sales/SalesOrderTributosTab";
+import {
+  buildOutputDocumentAuditHref,
+  formatOutputDocumentCoverageStatus,
+} from "@/src/lib/outputDocumentsUi";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -269,6 +275,7 @@ export function OrderFullAuditDialog({
                 <SummaryTab
                   summary={payload.summary}
                   timeline={payload.timeline}
+                  stockDocuments={payload.stockDocuments}
                   alerts={payload.alerts}
                 />
               )}
@@ -292,6 +299,14 @@ export function OrderFullAuditDialog({
                   itemFacts={payload.itemFacts as unknown as OrderToCashAuditListRow[]}
                   runId={payload.runId}
                   orderCode={payload.orderCode}
+                  alerts={payload.alerts}
+                />
+              )}
+              {activeTab === "productionOrders" && (
+                <ProductionOrdersTab
+                  productionOrders={payload.productionOrders ?? []}
+                  productionLinks={payload.productionLinks ?? []}
+                  items={payload.items}
                   alerts={payload.alerts}
                 />
               )}
@@ -330,6 +345,8 @@ export function OrderFullAuditDialog({
                   delivery={payload.delivery}
                   freight={payload.freight}
                   items={payload.items}
+                  productionOrders={payload.productionOrders ?? []}
+                  stockDocuments={payload.stockDocuments}
                   alerts={payload.alerts}
                 />
               )}
@@ -371,10 +388,12 @@ export function OrderFullAuditDialog({
 function SummaryTab({
   summary,
   timeline,
+  stockDocuments = [],
   alerts,
 }: {
   summary: OrderFullAuditSummary;
   timeline: OrderFullAuditTimelinePoint[];
+  stockDocuments?: OrderFullAuditStockDocument[];
   alerts: OrderFullAuditAlert[];
 }): JSX.Element {
   const temperatureLabel = TEMPERATURE_LABEL[summary.temperature ?? ""] ??
@@ -507,20 +526,40 @@ function SummaryTab({
         </div>
       </section>
 
-      {/* Seção 3 — Documentos, NF-e e Financeiro */}
+      {/* Seção 3 — Produção, Documentos, NF-e e Financeiro */}
       <section
         className="rounded-[14px] border border-[#E5E7EB] bg-white p-3"
         data-testid="order-full-audit-summary-section-downstream-values"
       >
         <SectionHeader
-          title="Documentos, NF-e e financeiro"
-          subtitle="Valores oficiais deduplicados por documento / NF / título."
+          title="Produção, documentos, NF-e e financeiro"
+          subtitle="Cadeia OP → Documento de Saída → NF → CR — valores oficiais deduplicados."
         />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           <Kpi
+            label="Ordens de Produção"
+            value={String(summary.productionOrderCount ?? 0)}
+            tone={
+              (summary.productionOrderCount ?? 0) > 0 ? "info" : "warning"
+            }
+            help={
+              summary.productionPlannedQuantity != null
+                ? `Planejado: ${formatFinanceInteger(summary.productionPlannedQuantity)}${
+                    summary.productionLinkedQuantity != null
+                      ? ` · Vinculado: ${formatFinanceInteger(summary.productionLinkedQuantity)}`
+                      : ""
+                  }`
+                : "Sem OP vinculada no stage"
+            }
+          />
+          <Kpi
             label="Documento de saída"
             value={formatFinanceCurrency(summary.stockDocumentsTotalValue)}
-            help={`Alocado ao pedido: ${formatFinanceCurrency(summary.stockDocumentsAllocatedValue)}`}
+            help={`Alocado: ${formatFinanceCurrency(summary.stockDocumentsAllocatedValue)} · ${stockDocuments.length} doc(s)${
+              stockDocuments.some((d) => d.isCancelled)
+                ? ` · ${stockDocuments.filter((d) => d.isCancelled).length} cancelado(s)`
+                : ""
+            }`}
           />
           <Kpi
             label="NF-e válida (faturamento)"
@@ -2443,7 +2482,285 @@ const DOCUMENT_ALERT_CODES = new Set([
   "DOCUMENT_QUANTITY_MISMATCH",
   "DOCUMENT_ALLOCATED_TO_CANCELED_ITEM",
   "DOCUMENT_ALLOCATED_BY_HEADER_ONLY",
+  "DOCUMENT_OVER_ALLOCATED",
+  "DOCUMENT_ITEM_LINK_CONFLICT",
+  "DOCUMENT_CANCELLED",
 ]);
+
+const PRODUCTION_ALERT_CODES = new Set([
+  "ORDER_WITHOUT_PRODUCTION_ORDER",
+  "ACTIVE_ITEMS_WITHOUT_PRODUCTION_LINK",
+  "PRODUCTION_LINK_ITEM_MISMATCH",
+]);
+
+function ProductionOrdersTab({
+  productionOrders,
+  productionLinks,
+  items,
+  alerts,
+}: {
+  productionOrders: OrderFullAuditProductionOrder[];
+  productionLinks: OrderFullAuditProductionLink[];
+  items: OrderFullAuditItem[];
+  alerts: OrderFullAuditAlert[];
+}): JSX.Element {
+  const tabAlerts = alerts.filter(
+    (alert) =>
+      PRODUCTION_ALERT_CODES.has(alert.code) ||
+      alert.linkedTab === "productionOrders"
+  );
+  const itemById = new Map(
+    items.map((item) => [item.salesOrderItemId, item] as const)
+  );
+  const plannedSum = productionOrders.reduce(
+    (sum, op) => sum + (op.plannedQuantity ?? 0),
+    0
+  );
+  const linkedSum = productionOrders.reduce(
+    (sum, op) => sum + (op.linkedQuantity ?? 0),
+    0
+  );
+  const conflictCount = productionOrders.filter(
+    (op) => op.inconsistencies.length > 0
+  ).length;
+  const currentLinks = productionLinks.filter((link) => link.isCurrent);
+
+  return (
+    <div className="space-y-4" data-testid="order-full-audit-production-tab">
+      <section
+        className="rounded-[14px] border border-[#E5E7EB] bg-white p-3"
+        data-testid="order-full-audit-production-cards"
+      >
+        <SectionHeader
+          title="Resumo das Ordens de Produção"
+          subtitle="Vínculos oficiais NomusProductionOrderSalesLink (isCurrent). Produzido da OP permanece nulo até contrato Nomus."
+        />
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <Kpi
+            label="OPs vinculadas"
+            value={String(productionOrders.length)}
+            tone={productionOrders.length > 0 ? "info" : "warning"}
+          />
+          <Kpi
+            label="Vínculos current"
+            value={String(currentLinks.length)}
+          />
+          <Kpi
+            label="Qtde planejada"
+            value={
+              productionOrders.some((op) => op.plannedQuantity != null)
+                ? formatFinanceInteger(plannedSum)
+                : "—"
+            }
+          />
+          <Kpi
+            label="Qtde vinculada"
+            value={
+              productionOrders.some((op) => op.linkedQuantity != null)
+                ? formatFinanceInteger(linkedSum)
+                : "—"
+            }
+          />
+          <Kpi
+            label="Conflitos de vínculo"
+            value={String(conflictCount)}
+            tone={conflictCount > 0 ? "danger" : "muted"}
+          />
+        </div>
+      </section>
+
+      {tabAlerts.length > 0 ? (
+        <section
+          className="rounded-[14px] border border-amber-200 bg-amber-50/60 p-3"
+          data-testid="order-full-audit-production-alerts"
+        >
+          <SectionHeader
+            title="Alertas de produção"
+            subtitle={`${tabAlerts.length} sinal(is) relacionados a OP.`}
+          />
+          <ul className="space-y-1.5 text-[12px] text-[#92400E]">
+            {tabAlerts.map((alert) => (
+              <li key={`${alert.code}-${alert.entityId ?? alert.reference}`}>
+                <strong>{alert.title}</strong>
+                <span className="text-[#B45309]"> — {alert.description}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section
+        className="rounded-[14px] border border-[#E5E7EB] bg-white p-3"
+        data-testid="order-full-audit-production-section-orders"
+      >
+        <SectionHeader
+          title="Ordens de Produção vinculadas"
+          subtitle="Clique no número da OP para abrir Produção com a mesma busca."
+        />
+        {productionOrders.length === 0 ? (
+          <p className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280]">
+            Nenhuma Ordem de Produção vinculada a este pedido no stage.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table
+              className="min-w-[1100px] w-full text-left text-[11px]"
+              data-testid="order-full-audit-production-orders-table"
+            >
+              <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="py-1.5 pr-2 font-semibold">OP</th>
+                  <th className="py-1.5 pr-2 font-semibold">Status</th>
+                  <th className="py-1.5 pr-2 font-semibold">SKU / produto</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Planejada
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Vinculada
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Produzida
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold">Abertura</th>
+                  <th className="py-1.5 pr-2 font-semibold">Fechamento</th>
+                  <th className="py-1.5 pr-2 font-semibold">Vínculos</th>
+                  <th className="py-1.5 pr-2 font-semibold">Inconsistências</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productionOrders.map((op) => (
+                  <tr
+                    key={op.id}
+                    className="border-b border-[#F3F4F6]"
+                    data-testid={`order-full-audit-production-order-${op.externalId}`}
+                  >
+                    <td className="py-1.5 pr-2 font-semibold text-[#111827]">
+                      <a
+                        href={op.href}
+                        className="inline-flex items-center gap-1 text-primary hover:underline"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {op.externalId}
+                        <ExternalLink className="h-3 w-3 opacity-70" />
+                      </a>
+                    </td>
+                    <td className="py-1.5 pr-2">{op.status?.trim() || "—"}</td>
+                    <td className="py-1.5 pr-2 font-mono text-[10px]">
+                      {op.productCode?.trim() || "—"}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                      {op.plannedQuantity != null
+                        ? formatFinanceInteger(op.plannedQuantity)
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                      {op.linkedQuantity != null
+                        ? formatFinanceInteger(op.linkedQuantity)
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums text-[#6B7280]">
+                      —
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {op.openedAt ? formatFinanceDate(op.openedAt) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {op.closedAt ? formatFinanceDate(op.closedAt) : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2">
+                      {op.linkCount}
+                      {op.isCurrentLink ? " · current" : ""}
+                    </td>
+                    <td className="py-1.5 pr-2 text-[10px] text-[#B45309]">
+                      {op.inconsistencies.length > 0
+                        ? op.inconsistencies
+                            .map((entry) => entry.code)
+                            .join(", ")
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section
+        className="rounded-[14px] border border-[#E5E7EB] bg-white p-3"
+        data-testid="order-full-audit-production-section-links"
+      >
+        <SectionHeader
+          title="Vínculos item × OP"
+          subtitle="Linhas de NomusProductionOrderSalesLink usadas nesta auditoria."
+        />
+        {productionLinks.length === 0 ? (
+          <p className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280]">
+            Sem vínculos de produção para este pedido.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table
+              className="min-w-[960px] w-full text-left text-[11px]"
+              data-testid="order-full-audit-production-links-table"
+            >
+              <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="py-1.5 pr-2 font-semibold">OP</th>
+                  <th className="py-1.5 pr-2 font-semibold">Item do pedido</th>
+                  <th className="py-1.5 pr-2 font-semibold">SKU</th>
+                  <th className="py-1.5 pr-2 font-semibold">ID item Nomus</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">
+                    Qtde vínculo
+                  </th>
+                  <th className="py-1.5 pr-2 font-semibold">Current</th>
+                </tr>
+              </thead>
+              <tbody>
+                {productionLinks.map((link) => {
+                  const item = link.salesOrderItemId
+                    ? itemById.get(link.salesOrderItemId)
+                    : undefined;
+                  return (
+                    <tr
+                      key={link.id}
+                      className="border-b border-[#F3F4F6]"
+                      data-testid={`order-full-audit-production-link-${link.id}`}
+                    >
+                      <td className="py-1.5 pr-2 font-mono">
+                        {link.productionOrderExternalId}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {item?.itemSequence?.trim() ||
+                          item?.sku?.trim() ||
+                          link.salesOrderItemId ||
+                          "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 font-mono text-[10px]">
+                        {item?.sku?.trim() || item?.productCode?.trim() || "—"}
+                      </td>
+                      <td className="py-1.5 pr-2 font-mono">
+                        {link.externalSalesOrderItemId}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        {link.linkedQuantity != null
+                          ? formatFinanceInteger(link.linkedQuantity)
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        {link.isCurrent ? "Sim" : "Não"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
 
 function StockDocumentsTab({
   docs,
@@ -2463,6 +2780,13 @@ function StockDocumentsTab({
   const excessQtyTotal = docs.reduce((s, d) => s + d.excessQuantity, 0);
   const outsideItemsCount = docs.filter((d) => d.hasOutside).length;
   const withoutNfeCount = docs.filter((d) => d.idNfe == null).length;
+  const cancelledCount = docs.filter((d) => d.isCancelled).length;
+  const coverageCompleteCount = docs.filter(
+    (d) => d.coverageStatus === "completo"
+  ).length;
+  const coveragePartialCount = docs.filter(
+    (d) => d.coverageStatus === "parcial" || d.coverageStatus === "nao_alocado"
+  ).length;
   const withPriceMismatchCount = new Set(
     docItems
       .filter((i) => i.alerts.includes("DOCUMENT_PRICE_MISMATCH"))
@@ -2474,7 +2798,10 @@ function StockDocumentsTab({
       ? docItems
       : docItems.filter((i) => i.stockDocumentExternalId === docFilter);
 
-  const tabAlerts = alerts.filter((a) => DOCUMENT_ALERT_CODES.has(a.code));
+  const tabAlerts = alerts.filter(
+    (a) =>
+      DOCUMENT_ALERT_CODES.has(a.code) || a.linkedTab === "documents"
+  );
 
   return (
     <div className="space-y-4" data-testid="order-full-audit-documents-tab">
@@ -2485,9 +2812,9 @@ function StockDocumentsTab({
       >
         <SectionHeader
           title="Resumo dos documentos de saída"
-          subtitle="Cabeçalhos deduplicados por documento; valores não inflam o pedido sem alerta."
+          subtitle="Cabeçalhos deduplicados; alocação e cobertura deste pedido. Deep link abre Comercial · Documentos de Saída."
         />
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           <Kpi label="Total documentos" value={String(totalDocs)} />
           <Kpi
             label="Valor total"
@@ -2497,6 +2824,16 @@ function StockDocumentsTab({
           <Kpi
             label="Alocado ao pedido"
             value={formatFinanceCurrency(allocatedValue)}
+          />
+          <Kpi
+            label="Cobertura completa"
+            value={String(coverageCompleteCount)}
+            tone={coverageCompleteCount > 0 ? "success" : "muted"}
+          />
+          <Kpi
+            label="Cobertura parcial/vazia"
+            value={String(coveragePartialCount)}
+            tone={coveragePartialCount > 0 ? "warning" : "muted"}
           />
           <Kpi
             label="Valor excedente"
@@ -2519,12 +2856,37 @@ function StockDocumentsTab({
             tone={withoutNfeCount > 0 ? "warning" : "muted"}
           />
           <Kpi
+            label="Cancelados"
+            value={String(cancelledCount)}
+            tone={cancelledCount > 0 ? "danger" : "muted"}
+          />
+          <Kpi
             label="Divergência de preço"
             value={String(withPriceMismatchCount)}
             tone={withPriceMismatchCount > 0 ? "warning" : "muted"}
           />
         </div>
       </section>
+
+      {tabAlerts.length > 0 ? (
+        <section
+          className="rounded-[14px] border border-amber-200 bg-amber-50/60 p-3"
+          data-testid="order-full-audit-documents-alerts"
+        >
+          <SectionHeader
+            title="Alertas de Documentos de Saída"
+            subtitle={`${tabAlerts.length} sinal(is) de alocação, NF ou cancelamento.`}
+          />
+          <ul className="space-y-1.5 text-[12px] text-[#92400E]">
+            {tabAlerts.slice(0, 12).map((alert) => (
+              <li key={`${alert.code}-${alert.entityId ?? alert.reference}`}>
+                <strong>{alert.title}</strong>
+                <span className="text-[#B45309]"> — {alert.description}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {/* Tabela de documentos */}
       <section
@@ -2533,7 +2895,7 @@ function StockDocumentsTab({
       >
         <SectionHeader
           title="Documentos de saída vinculados"
-          subtitle="Clique em um documento para filtrar os itens abaixo."
+          subtitle="Clique na linha para filtrar itens. O ícone abre o documento no módulo Comercial."
         />
         {docs.length === 0 ? (
           <p className="rounded-[10px] border border-dashed border-[#E5E7EB] bg-[#F9FAFB] px-3 py-3 text-[12px] text-[#6B7280]">
@@ -2542,7 +2904,7 @@ function StockDocumentsTab({
         ) : (
           <div className="overflow-x-auto">
             <table
-              className="min-w-[1400px] w-full text-left text-[11px]"
+              className="min-w-[1600px] w-full text-left text-[11px]"
               data-testid="order-full-audit-documents-table"
             >
               <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
@@ -2557,6 +2919,7 @@ function StockDocumentsTab({
                   <th className="py-1.5 pr-2 font-semibold">NF vinculada</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Valor total</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Alocado</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Cobertura</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Excedente</th>
                   <th className="py-1.5 pr-2 font-semibold">Status</th>
                   <th className="py-1.5 pr-2 font-semibold">Origem vínculo</th>
@@ -2566,6 +2929,15 @@ function StockDocumentsTab({
               <tbody>
                 {docs.map((d) => {
                   const isSelected = docFilter === d.stockDocumentExternalId;
+                  const docLabel =
+                    d.documentNumber?.trim() || String(d.stockDocumentExternalId);
+                  const docHref =
+                    d.href?.trim() ||
+                    buildOutputDocumentAuditHref({
+                      stockDocumentId: d.stockDocumentId,
+                      documentNumber: d.documentNumber,
+                      stockDocumentExternalId: d.stockDocumentExternalId,
+                    });
                   return (
                     <tr
                       key={d.stockDocumentExternalId}
@@ -2573,11 +2945,13 @@ function StockDocumentsTab({
                         "border-b border-[#F3F4F6] cursor-pointer transition-colors",
                         isSelected
                           ? "bg-sky-50/80 ring-1 ring-inset ring-sky-200"
-                          : d.hasOutside
-                            ? "bg-red-50/40 hover:bg-red-50/70"
-                            : d.hasExcess
-                              ? "bg-amber-50/40 hover:bg-amber-50/70"
-                              : "hover:bg-[#F9FAFB]"
+                          : d.isCancelled
+                            ? "bg-rose-50/40 hover:bg-rose-50/70"
+                            : d.hasOutside
+                              ? "bg-red-50/40 hover:bg-red-50/70"
+                              : d.hasExcess
+                                ? "bg-amber-50/40 hover:bg-amber-50/70"
+                                : "hover:bg-[#F9FAFB]"
                       )}
                       onClick={() =>
                         setDocFilter(
@@ -2588,7 +2962,15 @@ function StockDocumentsTab({
                       title="Clique para filtrar os itens deste documento abaixo"
                     >
                       <td className="py-1.5 pr-2 font-semibold text-[#111827]">
-                        {d.stockDocumentExternalId}
+                        <a
+                          href={docHref}
+                          className="inline-flex items-center gap-1 text-primary hover:underline"
+                          onClick={(event) => event.stopPropagation()}
+                          data-testid={`order-full-audit-documents-link-${d.stockDocumentExternalId}`}
+                        >
+                          {docLabel}
+                          <ExternalLink className="h-3 w-3 opacity-70" />
+                        </a>
                       </td>
                       <td className="py-1.5 pr-2 tabular-nums text-[#6B7280]">
                         {d.stockDocumentExternalId}
@@ -2627,15 +3009,42 @@ function StockDocumentsTab({
                       <td className="py-1.5 pr-2 text-right tabular-nums">
                         {formatFinanceCurrency(d.allocatedValue)}
                       </td>
+                      <td className="py-1.5 pr-2 text-right tabular-nums">
+                        <span
+                          className={cn(
+                            "rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                            d.coverageStatus === "completo"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : d.coverageStatus === "superalocado"
+                                ? "border-red-200 bg-red-50 text-red-800"
+                                : d.coverageStatus === "parcial" ||
+                                    d.coverageStatus === "nao_alocado"
+                                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                                  : "border-[#D0D5DD] bg-white text-[#4B5563]"
+                          )}
+                        >
+                          {formatOutputDocumentCoverageStatus(d.coverageStatus)}
+                          {d.coveragePercent != null
+                            ? ` · ${d.coveragePercent.toFixed(0)}%`
+                            : ""}
+                        </span>
+                      </td>
                       <td className="py-1.5 pr-2 text-right tabular-nums text-amber-800">
                         {d.outsideOrderValue > 0.009
                           ? formatFinanceCurrency(d.outsideOrderValue)
                           : "—"}
                       </td>
                       <td className="py-1.5 pr-2">
-                        <span className="rounded border border-[#D0D5DD] bg-white px-1.5 py-0.5 text-[10px] text-[#4B5563]">
-                          {d.status ?? "—"}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          <span className="rounded border border-[#D0D5DD] bg-white px-1.5 py-0.5 text-[10px] text-[#4B5563]">
+                            {d.status ?? "—"}
+                          </span>
+                          {d.isCancelled ? (
+                            <span className="rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-rose-800">
+                              Cancelado
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-1.5 pr-2">
                         <span
@@ -2664,7 +3073,9 @@ function StockDocumentsTab({
                                 className={cn(
                                   "rounded border px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
                                   code === "DOCUMENT_EXTRA_ITEM" ||
-                                    code === "DOCUMENT_ALLOCATED_TO_CANCELED_ITEM"
+                                    code === "DOCUMENT_ALLOCATED_TO_CANCELED_ITEM" ||
+                                    code === "DOCUMENT_CANCELLED" ||
+                                    code === "DOCUMENT_OVER_ALLOCATED"
                                     ? "border-red-200 bg-red-50 text-red-800"
                                     : code === "DOCUMENT_WITH_EXCESS" ||
                                         code === "DOCUMENT_WITHOUT_NFE" ||
@@ -2717,6 +3128,7 @@ function StockDocumentsTab({
                   <th className="py-1.5 pr-2 font-semibold">Doc</th>
                   <th className="py-1.5 pr-2 font-semibold">Item doc.</th>
                   <th className="py-1.5 pr-2 font-semibold">Produto / SKU</th>
+                  <th className="py-1.5 pr-2 font-semibold">Un.</th>
                   <th className="py-1.5 pr-2 font-semibold">ID produto</th>
                   <th className="py-1.5 pr-2 font-semibold">Descrição</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Qtd doc.</th>
@@ -2724,6 +3136,7 @@ function StockDocumentsTab({
                   <th className="py-1.5 pr-2 font-semibold text-right">Excedente</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Vlr un. doc.</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Vlr total doc.</th>
+                  <th className="py-1.5 pr-2 font-semibold text-right">Alocado</th>
                   <th className="py-1.5 pr-2 font-semibold">Pedido</th>
                   <th className="py-1.5 pr-2 font-semibold">Item pedido</th>
                   <th className="py-1.5 pr-2 font-semibold text-right">Preço un. pedido</th>
@@ -2761,6 +3174,9 @@ function StockDocumentsTab({
                     <td className="py-1.5 pr-2 font-semibold text-[#111827]">
                       {i.productSku ?? "—"}
                     </td>
+                    <td className="py-1.5 pr-2 text-[#6B7280]">
+                      {i.unit?.trim() || "—"}
+                    </td>
                     <td className="py-1.5 pr-2 tabular-nums text-[#6B7280]">
                       {i.productExternalId ?? "—"}
                     </td>
@@ -2793,6 +3209,11 @@ function StockDocumentsTab({
                     <td className="py-1.5 pr-2 text-right tabular-nums">
                       {i.totalValue != null
                         ? formatFinanceCurrency(i.totalValue)
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 pr-2 text-right tabular-nums">
+                      {i.allocatedValue != null
+                        ? formatFinanceCurrency(i.allocatedValue)
                         : "—"}
                     </td>
                     <td className="py-1.5 pr-2 font-semibold text-[#111827]">
@@ -3533,6 +3954,9 @@ const DELIVERY_ALERT_CODES = new Set([
   "CUT_ITEM_MARKED_AS_PENDING",
   "FREIGHT_CONDITION_MISMATCH",
   "DELIVERY_DATE_OVERDUE",
+  "ORDER_WITHOUT_PRODUCTION_ORDER",
+  "ACTIVE_ITEMS_WITHOUT_PRODUCTION_LINK",
+  "PRODUCTION_LINK_ITEM_MISMATCH",
 ]);
 
 function DeliveryTab({
@@ -3540,12 +3964,16 @@ function DeliveryTab({
   delivery,
   freight,
   items,
+  productionOrders = [],
+  stockDocuments = [],
   alerts,
 }: {
   summary: OrderFullAuditSummary;
   delivery: OrderFullAuditPayload["delivery"];
   freight?: OrderFullAuditFreightBlock;
   items: OrderFullAuditItem[];
+  productionOrders?: OrderFullAuditProductionOrder[];
+  stockDocuments?: OrderFullAuditStockDocument[];
   alerts: OrderFullAuditAlert[];
 }): JSX.Element {
   const tabAlerts = alerts.filter((a) => DELIVERY_ALERT_CODES.has(a.code));
@@ -3726,12 +4154,22 @@ function DeliveryTab({
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Kpi
+            label="OPs vinculadas"
+            value={String(summary.productionOrderCount ?? productionOrders.length)}
+            tone={
+              (summary.productionOrderCount ?? productionOrders.length) > 0
+                ? "info"
+                : "warning"
+            }
+          />
+          <Kpi
             label="Qtd pedida"
             value={formatFinanceInteger(delivery.totals.quantityOrdered)}
           />
           <Kpi
-            label="Qtd produzida"
+            label="Qtd produzida (item)"
             value={formatFinanceInteger(delivery.totals.quantityProduced)}
+            help="Soma do raw do item (qtdeProduzida) — distinta da OP stage"
           />
           <Kpi
             label="Qtd faturada"
@@ -3746,6 +4184,125 @@ function DeliveryTab({
             value={formatFinanceInteger(delivery.totals.saldoPronto)}
           />
         </div>
+        {productionOrders.length > 0 ? (
+          <div
+            className="mt-3 overflow-x-auto"
+            data-testid="order-full-audit-delivery-production-mini"
+          >
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+              OPs do pedido (mesmo payload da aba Ordens de Produção)
+            </p>
+            <table className="min-w-[720px] w-full text-left text-[11px]">
+              <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="py-1 pr-2 font-semibold">OP</th>
+                  <th className="py-1 pr-2 font-semibold">Status</th>
+                  <th className="py-1 pr-2 font-semibold">SKU</th>
+                  <th className="py-1 pr-2 font-semibold text-right">
+                    Planejada
+                  </th>
+                  <th className="py-1 pr-2 font-semibold text-right">
+                    Vinculada
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {productionOrders.slice(0, 8).map((op) => (
+                  <tr key={op.id} className="border-b border-[#F3F4F6]">
+                    <td className="py-1 pr-2">
+                      <a
+                        href={op.href}
+                        className="font-semibold text-primary hover:underline"
+                      >
+                        {op.externalId}
+                      </a>
+                    </td>
+                    <td className="py-1 pr-2">{op.status?.trim() || "—"}</td>
+                    <td className="py-1 pr-2 font-mono text-[10px]">
+                      {op.productCode?.trim() || "—"}
+                    </td>
+                    <td className="py-1 pr-2 text-right tabular-nums">
+                      {op.plannedQuantity != null
+                        ? formatFinanceInteger(op.plannedQuantity)
+                        : "—"}
+                    </td>
+                    <td className="py-1 pr-2 text-right tabular-nums">
+                      {op.linkedQuantity != null
+                        ? formatFinanceInteger(op.linkedQuantity)
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+        {stockDocuments.length > 0 ? (
+          <div
+            className="mt-3 overflow-x-auto"
+            data-testid="order-full-audit-delivery-documents-mini"
+          >
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-[#6B7280]">
+              Documentos de saída (mesmo payload da aba Documentos)
+            </p>
+            <table className="min-w-[780px] w-full text-left text-[11px]">
+              <thead className="text-[9px] uppercase tracking-wide text-[#6B7280] border-b border-[#E5E7EB]">
+                <tr>
+                  <th className="py-1 pr-2 font-semibold">Documento</th>
+                  <th className="py-1 pr-2 font-semibold">NF</th>
+                  <th className="py-1 pr-2 font-semibold">Cobertura</th>
+                  <th className="py-1 pr-2 font-semibold text-right">Total</th>
+                  <th className="py-1 pr-2 font-semibold text-right">Alocado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockDocuments.slice(0, 8).map((doc) => {
+                  const label =
+                    doc.documentNumber?.trim() ||
+                    String(doc.stockDocumentExternalId);
+                  const docHref =
+                    doc.href?.trim() ||
+                    buildOutputDocumentAuditHref({
+                      stockDocumentId: doc.stockDocumentId,
+                      documentNumber: doc.documentNumber,
+                      stockDocumentExternalId: doc.stockDocumentExternalId,
+                    });
+                  return (
+                    <tr
+                      key={doc.stockDocumentExternalId}
+                      className="border-b border-[#F3F4F6]"
+                    >
+                      <td className="py-1 pr-2">
+                        <a
+                          href={docHref}
+                          className="font-semibold text-primary hover:underline"
+                        >
+                          {label}
+                          {doc.isCancelled ? " · canc." : ""}
+                        </a>
+                      </td>
+                      <td className="py-1 pr-2 tabular-nums text-[#6B7280]">
+                        {doc.idNfe ?? "—"}
+                      </td>
+                      <td className="py-1 pr-2">
+                        {formatOutputDocumentCoverageStatus(doc.coverageStatus)}
+                        {doc.coveragePercent != null
+                          ? ` · ${doc.coveragePercent.toFixed(0)}%`
+                          : ""}
+                      </td>
+                      <td className="py-1 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(doc.totalValue)}
+                      </td>
+                      <td className="py-1 pr-2 text-right tabular-nums">
+                        {formatFinanceCurrency(doc.allocatedValue)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
 
       {/* Seção 3 — Frete */}
@@ -6184,8 +6741,10 @@ const DIVERGENCE_TAB_LABEL: Record<
   proposal: "Proposta",
   salesOrder: "Pedido de Venda",
   items: "Itens do Pedido",
+  productionOrders: "Ordens de Produção",
   documents: "Documentos de Saída",
   nfes: "NF-e",
+  tributos: "Tributos",
   financial: "Financeiro",
   delivery: "Entrega / Frete",
   marginPricing: "Margem, Preço e Custo",
@@ -6537,6 +7096,7 @@ const TECHNICAL_SOURCE_CATEGORY_LABEL: Record<
   SALES_ORDER: "Pedido de Venda",
   PROPOSAL: "Proposta",
   NOMUS_STOCK_DOCUMENT: "Documento Nomus",
+  NOMUS_PRODUCTION_ORDER: "Ordem de Produção Nomus",
   NOMUS_NFE: "NF-e Nomus",
   NOMUS_RECEIVABLE: "Contas a Receber Nomus",
   AUDIT_FACT: "Auditoria (facts)",
@@ -6551,6 +7111,7 @@ const TECHNICAL_RULE_CATEGORY_LABEL: Record<
 > = {
   ORDER_ITEM: "Item do pedido",
   DOCUMENT_ALLOCATION: "Alocação documento → pedido",
+  PRODUCTION_ORDER: "Ordem de Produção",
   NFE: "NF-e",
   RECEIVABLE: "Contas a Receber",
   COMMISSION: "Comissão",
@@ -6863,6 +7424,21 @@ function TechnicalAuditTab({
             <span className="font-mono text-[#4B5563]">
               {technicalAudit.identifiers.stockDocumentExternalIds.length > 0
                 ? technicalAudit.identifiers.stockDocumentExternalIds.join(", ")
+                : "—"}
+            </span>
+          </p>
+          <p>
+            <strong>
+              Ordens de Produção (
+              {(technicalAudit.identifiers.productionOrderExternalIds ?? []).length}
+              ):
+            </strong>{" "}
+            <span className="font-mono text-[#4B5563]">
+              {(technicalAudit.identifiers.productionOrderExternalIds ?? [])
+                .length > 0
+                ? technicalAudit.identifiers.productionOrderExternalIds!.join(
+                    ", "
+                  )
                 : "—"}
             </span>
           </p>

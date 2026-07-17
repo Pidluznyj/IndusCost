@@ -60,6 +60,21 @@ import {
   type NormalizedNfeStatus,
 } from "./nfeStatus.js";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import { loadSalesOrderFlowEvidence } from "@/src/lib/sales/salesOrderFlowEvidence.server.js";
+import {
+  buildOrderFullAuditProductionAlerts,
+  mapOrderFullAuditProduction,
+  type OrderFullAuditProductionBlock,
+  type OrderFullAuditProductionLink,
+  type OrderFullAuditProductionOrder,
+} from "@/src/lib/finance/orderFullAuditProduction.js";
+import { NOMUS_STOCK_DOCUMENT_TIPO_SAIDA } from "@/src/lib/output-documents/auditOutputDocumentsDb.js";
+import { buildOutputDocumentAuditHref } from "@/src/lib/outputDocumentsUi.js";
+import { extractOutputDocumentItemProductIdentity } from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
+import {
+  buildOrderFullAuditDocumentHeaderAlertDrafts,
+  emptyOrderFullAuditStockDocument,
+} from "./orderFullAuditDocuments.js";
 
 const MONEY_TOLERANCE = 0.01;
 
@@ -351,6 +366,8 @@ export type OrderFullAuditNfeItem = {
 
 export type OrderFullAuditStockDocument = {
   stockDocumentExternalId: number;
+  stockDocumentId: string | null;
+  documentNumber: string | null;
   tipoDocumentoEstoque: string | null;
   dataDocumento: string | null;
   dataMovimentacao: string | null;
@@ -382,6 +399,7 @@ export type OrderFullAuditStockDocument = {
   hasOutside: boolean;
   productLines: number;
   status: string | null;
+  isCancelled: boolean;
   /** Origem oficial do vínculo com o pedido: link explícito (FactRecord.salesOrderItemId) × só cabeçalho. */
   linkOrigin:
     | "ITEM_EVIDENCE"
@@ -398,8 +416,16 @@ export type OrderFullAuditStockDocument = {
     allocatedValue: number;
     linkOrigin: string;
   }>;
+  href: string;
   alerts: string[];
 };
+
+function emptyStockDocumentEntry(
+  externalId: number,
+  partial: Partial<OrderFullAuditStockDocument> = {}
+): OrderFullAuditStockDocument {
+  return emptyOrderFullAuditStockDocument(externalId, partial);
+}
 
 export type OrderFullAuditStockDocumentItem = {
   stockDocumentExternalId: number;
@@ -512,6 +538,7 @@ export type OrderFullAuditAlert = {
     | "proposal"
     | "salesOrder"
     | "items"
+    | "productionOrders"
     | "documents"
     | "nfes"
     | "financial"
@@ -1124,6 +1151,7 @@ export type OrderFullAuditTechnicalSource = {
     | "SALES_ORDER"
     | "PROPOSAL"
     | "NOMUS_STOCK_DOCUMENT"
+    | "NOMUS_PRODUCTION_ORDER"
     | "NOMUS_NFE"
     | "NOMUS_RECEIVABLE"
     | "AUDIT_FACT"
@@ -1150,6 +1178,7 @@ export type OrderFullAuditTechnicalIdentifiers = {
   externalSellerId: number | null;
   externalCompanyId: number | null;
   stockDocumentExternalIds: number[];
+  productionOrderExternalIds: number[];
   nfeExternalIds: number[];
   receivableExternalIds: number[];
   commissionSnapshotId: string | null;
@@ -1166,6 +1195,7 @@ export type OrderFullAuditTechnicalRule = {
   category:
     | "ORDER_ITEM"
     | "DOCUMENT_ALLOCATION"
+    | "PRODUCTION_ORDER"
     | "NFE"
     | "RECEIVABLE"
     | "COMMISSION"
@@ -1292,6 +1322,9 @@ export type OrderFullAuditPayload = {
     stockDocumentsTotalValue: number;
     /** Parcela dos documentos efetivamente alocada ao pedido (dedup). */
     stockDocumentsAllocatedValue: number;
+    productionOrderCount: number;
+    productionPlannedQuantity: number | null;
+    productionLinkedQuantity: number | null;
     /**
      * Valor total histórico do cabeçalho das NFs vinculadas (inclui canceladas).
      * Dedup por `nfeExternalId`.
@@ -1353,6 +1386,8 @@ export type OrderFullAuditPayload = {
   plannedReceivablesTotal: OrderFullAuditPlannedReceivablesTotal;
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
+  productionOrders: OrderFullAuditProductionOrder[];
+  productionLinks: OrderFullAuditProductionLink[];
   nfes: OrderFullAuditNfe[];
   nfeItems: OrderFullAuditNfeItem[];
   delivery: OrderFullAuditDeliveryBlock;
@@ -1642,34 +1677,14 @@ export async function loadOrderFullAudit(
       // O fact traz nfeExternalId (na dsl) via join implícito — usar stockDocumentId como fallback.
     }
     if (fact.stockDocumentExternalId != null) {
-      const cur = stockMap.get(fact.stockDocumentExternalId) ?? {
-        stockDocumentExternalId: fact.stockDocumentExternalId,
-        tipoDocumentoEstoque: null,
-        dataDocumento: toIso(fact.stockDocumentDate),
-        dataMovimentacao: toIso(fact.stockDocumentDate),
-        customerName: fact.customerName ?? null,
-        companyName: null,
-        idNfe: null,
-        totalValue: 0,
-        allocatedValue: 0,
-        allocatedToAllOrders: 0,
-        unallocatedBalance: 0,
-        overAllocation: 0,
-        coveragePercent: null,
-        coverageStatus: null,
-        outsideOrderValue: 0,
-        quantityDocument: 0,
-        quantityUsedForOrder: 0,
-        excessQuantity: 0,
-        outsideOrderQuantity: 0,
-        hasExcess: false,
-        hasOutside: false,
-        productLines: 0,
-        status: null,
-        linkOrigin: "ITEM_EVIDENCE" as const,
-        linkedOrders: [],
-        alerts: [] as string[],
-      };
+      const cur =
+        stockMap.get(fact.stockDocumentExternalId) ??
+        emptyStockDocumentEntry(fact.stockDocumentExternalId, {
+          dataDocumento: toIso(fact.stockDocumentDate),
+          dataMovimentacao: toIso(fact.stockDocumentDate),
+          customerName: fact.customerName ?? null,
+          linkOrigin: "ITEM_EVIDENCE",
+        });
       // DS-03.8: não somar stockDocumentItemTotalValue (infla em rateios).
       // totalValue vem do stage; allocatedValue é recalculado na projeção.
       cur.quantityUsedForOrder += fact.quantityUsedForOrder ?? 0;
@@ -1811,6 +1826,30 @@ export async function loadOrderFullAudit(
 
   // Complementa NF com dados oficiais (`NomusNfe`) e stock document (`NomusStockDocument`).
   const realNfeIds = [...nfeMap.keys()].filter((id) => id > 0);
+
+  // Overlay: Documentos de Saída ligados só via NF (SalesOrderNfeLink → idNfe),
+  // mesmo sem fato O2C — mesmo critério de loadOutputDocumentsForSalesOrder.
+  if (realNfeIds.length > 0) {
+    const nfeLinkedDocs = await prisma.nomusStockDocument.findMany({
+      where: {
+        idNfe: { in: realNfeIds },
+        tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
+      },
+      select: { externalId: true, idNfe: true },
+    });
+    for (const doc of nfeLinkedDocs) {
+      if (stockMap.has(doc.externalId)) continue;
+      stockMap.set(
+        doc.externalId,
+        emptyStockDocumentEntry(doc.externalId, {
+          idNfe: doc.idNfe ?? null,
+          linkOrigin: "SALES_ORDER_NFE_LINK",
+          tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
+        })
+      );
+    }
+  }
+
   const stockIds = [...stockMap.keys()].filter((id) => id > 0);
   const [nfeRows, stockRows] = await Promise.all([
     realNfeIds.length > 0
@@ -1841,6 +1880,7 @@ export async function loadOrderFullAudit(
           select: {
             id: true,
             externalId: true,
+            documentNumber: true,
             tipoDocumentoEstoque: true,
             dataDocumento: true,
             idNfe: true,
@@ -1848,6 +1888,7 @@ export async function loadOrderFullAudit(
             personName: true,
             companyName: true,
             statusRaw: true,
+            isCancelled: true,
             movementDate: true,
             rawJson: true,
             items: {
@@ -1927,6 +1968,9 @@ export async function loadOrderFullAudit(
   for (const doc of stockRows) {
     const entry = stockMap.get(doc.externalId);
     if (!entry) continue;
+    entry.stockDocumentId = doc.id;
+    entry.documentNumber = doc.documentNumber?.trim() || null;
+    entry.isCancelled = doc.isCancelled === true;
     entry.tipoDocumentoEstoque = doc.tipoDocumentoEstoque ?? null;
     entry.dataDocumento = entry.dataDocumento ?? toIso(doc.dataDocumento);
     entry.idNfe = doc.idNfe ?? null;
@@ -1960,6 +2004,14 @@ export async function loadOrderFullAudit(
       doc.statusRaw ??
       readNomusRawString(doc.rawJson, ["status", "situacao", "statusDocumento"]) ??
       entry.status;
+    if (entry.isCancelled && !entry.alerts.includes("DOCUMENT_CANCELLED")) {
+      entry.alerts.push("DOCUMENT_CANCELLED");
+    }
+    entry.href = buildOutputDocumentAuditHref({
+      stockDocumentId: entry.stockDocumentId,
+      documentNumber: entry.documentNumber,
+      stockDocumentExternalId: entry.stockDocumentExternalId,
+    });
   }
 
   // Recebíveis: por NF vinculada (sourceInvoiceId) — deduplicado por externalId.
@@ -2270,34 +2322,25 @@ export async function loadOrderFullAudit(
     let docEntry = stockMap.get(doc.externalId);
     if (!docEntry) {
       // Documento no stage mas sem fact O2C — ainda listável após DS-03.7/03.8.
-      docEntry = {
-        stockDocumentExternalId: doc.externalId,
+      docEntry = emptyStockDocumentEntry(doc.externalId, {
+        stockDocumentId: doc.id,
+        documentNumber: doc.documentNumber?.trim() || null,
         tipoDocumentoEstoque: doc.tipoDocumentoEstoque ?? null,
         dataDocumento: toIso(doc.dataDocumento),
         dataMovimentacao: toIso(doc.movementDate),
         customerName: doc.personName ?? null,
         companyName: doc.companyName ?? null,
         idNfe: doc.idNfe ?? null,
-        totalValue: 0,
-        allocatedValue: 0,
-        allocatedToAllOrders: 0,
-        unallocatedBalance: 0,
-        overAllocation: 0,
-        coveragePercent: null,
-        coverageStatus: null,
-        outsideOrderValue: 0,
-        quantityDocument: 0,
-        quantityUsedForOrder: 0,
-        excessQuantity: 0,
-        outsideOrderQuantity: 0,
-        hasExcess: false,
-        hasOutside: false,
-        productLines: 0,
         status: doc.statusRaw ?? null,
+        isCancelled: doc.isCancelled === true,
         linkOrigin: "HEADER_ONLY",
-        linkedOrders: [],
-        alerts: [],
-      };
+        href: buildOutputDocumentAuditHref({
+          stockDocumentId: doc.id,
+          documentNumber: doc.documentNumber,
+          stockDocumentExternalId: doc.externalId,
+        }),
+        alerts: doc.isCancelled === true ? ["DOCUMENT_CANCELLED"] : [],
+      });
       stockMap.set(doc.externalId, docEntry);
     }
 
@@ -2450,30 +2493,40 @@ export async function loadOrderFullAudit(
           ? factsForDoc.find((f) => f.salesOrderItemId === primarySoi) ?? null
           : factsForDoc[0] ?? null;
 
+      const productIdentity = stockItem
+        ? extractOutputDocumentItemProductIdentity(stockItem.rawJson)
+        : { sku: null, productName: null, unitCode: null };
+
       stockDocumentItems.push({
         stockDocumentExternalId: doc.externalId,
         stockDocumentItemId: projected.stockDocumentItemId,
         externalItemId: projected.externalItemId,
-        productSku: stockItem
-          ? readNomusRawString(stockItem.rawJson, [
-              "codigoProduto",
-              "sku",
-              "codigo",
-              "productSku",
-            ])
-          : null,
-        productName: stockItem
-          ? readNomusRawString(stockItem.rawJson, [
-              "descricaoProduto",
-              "descricao",
-              "productName",
-              "nomeProduto",
-            ])
-          : null,
+        productSku:
+          productIdentity.sku ??
+          (stockItem
+            ? readNomusRawString(stockItem.rawJson, [
+                "codigoProduto",
+                "sku",
+                "codigo",
+                "productSku",
+              ])
+            : null),
+        productName:
+          productIdentity.productName ??
+          (stockItem
+            ? readNomusRawString(stockItem.rawJson, [
+                "descricaoProduto",
+                "descricao",
+                "productName",
+                "nomeProduto",
+              ])
+            : null),
         productExternalId: projected.externalProductId,
-        unit: stockItem
-          ? readNomusRawString(stockItem.rawJson, ["unidade", "un", "unit"])
-          : null,
+        unit:
+          productIdentity.unitCode ??
+          (stockItem
+            ? readNomusRawString(stockItem.rawJson, ["unidade", "un", "unit"])
+            : null),
         quantityDocument: docQty,
         quantityUsedForOrder: usedQty,
         excessQuantity: excessQty,
@@ -3031,6 +3084,32 @@ export async function loadOrderFullAudit(
   const plannedReceivablesTotal = plannedProjection.plannedReceivablesTotal;
   const effectiveScheduleForAlerts = plannedProjection.schedule;
 
+  // Ordens de Produção — evidence pack canônico do Fluxo (sem fiscal duplicado).
+  let productionBlock: OrderFullAuditProductionBlock = {
+    productionOrders: [],
+    productionLinks: [],
+    totals: {
+      productionOrderCount: 0,
+      currentLinkCount: 0,
+      plannedQuantitySum: null,
+      linkedQuantitySum: null,
+    },
+  };
+  let productionEvidenceGap: string | null = null;
+  try {
+    const evidence = await loadSalesOrderFlowEvidence(prisma, salesOrderId, {
+      includeFiscalEvidence: false,
+      includeProductionEvidence: true,
+    });
+    if (evidence) {
+      productionBlock = mapOrderFullAuditProduction(evidence);
+    }
+  } catch (err) {
+    console.error("loadOrderFullAudit production evidence", err);
+    productionEvidenceGap =
+      "Falha ao carregar evidências de Ordem de Produção";
+  }
+
   // Summary base (alertCount preenchido logo abaixo após buildAlerts).
   const summary = buildSummary({
     order,
@@ -3044,6 +3123,7 @@ export async function loadOrderFullAudit(
     commercialResponsible,
     orderSeller: orderSellerResolved,
     alertCount: 0,
+    productionTotals: productionBlock.totals,
   });
 
   // Comparativos Proposta × Pedido — só existem quando há proposta carregada.
@@ -3164,6 +3244,28 @@ export async function loadOrderFullAudit(
     marginPricing: marginPricingBlock,
     commissions: commissionsBlock,
   });
+  const activeItemIds = items
+    .filter(
+      (item) =>
+        !isInactiveSalesOrderItemNomusFlags({
+          nomusIsCanceled: item.nomusIsCanceled,
+          nomusIsStale: item.nomusIsStale,
+          nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+        }) &&
+        !isFulfilledWithCutSalesOrderItem({
+          nomusIsCut: item.nomusIsCut,
+          nomusItemStatusNormalized: item.nomusItemStatusNormalized,
+        })
+    )
+    .map((item) => item.salesOrderItemId);
+  for (const alert of buildOrderFullAuditProductionAlerts({
+    salesOrderId,
+    orderCode: order.orderCode ?? null,
+    activeItemIds,
+    production: productionBlock,
+  })) {
+    alerts.push(alert);
+  }
   summary.alertCount = alerts.length;
 
   // Bloco 3 — Pedido de Venda (cabeçalho + counts oficiais).
@@ -3249,6 +3351,7 @@ export async function loadOrderFullAudit(
   if (!commercialResponsibleName) {
     gaps.push("CrmCustomerCommercialOwner ausente para o cliente");
   }
+  if (productionEvidenceGap) gaps.push(productionEvidenceGap);
   const sourceTables = [
     "SalesOrder",
     "SalesOrderItem",
@@ -3256,6 +3359,9 @@ export async function loadOrderFullAudit(
     ...(order.proposalId ? ["Proposal", "ProposalItem"] : []),
     ...(facts.length > 0 ? ["OrderToCashAuditFact"] : []),
     ...(stockMap.size > 0 ? ["NomusStockDocument"] : []),
+    ...(productionBlock.productionOrders.length > 0
+      ? ["NomusProductionOrder", "NomusProductionOrderSalesLink"]
+      : []),
     ...(nfeMap.size > 0 ? ["NomusNfe"] : []),
     ...(dedupReceivables.length > 0 ? ["NomusAccountsReceivable"] : []),
     ...(commercialResponsibleName ? ["CrmCustomerCommercialOwner"] : []),
@@ -3267,6 +3373,8 @@ export async function loadOrderFullAudit(
     proposal,
     salesOrderItems: items,
     stockDocuments: [...stockMap.values()],
+    productionOrders: productionBlock.productionOrders,
+    productionLinks: productionBlock.productionLinks,
     nfes: [...nfeMap.values()],
     receivables: dedupReceivables,
     receipts,
@@ -3314,6 +3422,8 @@ export async function loadOrderFullAudit(
         a.stockDocumentExternalId - b.stockDocumentExternalId
     ),
     stockDocumentItems,
+    productionOrders: productionBlock.productionOrders,
+    productionLinks: productionBlock.productionLinks,
     nfes: [...nfeMap.values()].sort(
       (a, b) =>
         (a.dataEmissao ?? a.dataProcessamento ?? "").localeCompare(
@@ -4084,6 +4194,8 @@ function buildTechnicalAuditBlock(input: {
   proposal: OrderFullAuditProposalBlock;
   salesOrderItems: OrderFullAuditItem[];
   stockDocuments: OrderFullAuditStockDocument[];
+  productionOrders: OrderFullAuditProductionOrder[];
+  productionLinks: OrderFullAuditProductionLink[];
   nfes: OrderFullAuditNfe[];
   receivables: OrderFullAuditReceivable[];
   receipts: OrderFullAuditReceipt[];
@@ -4112,6 +4224,8 @@ function buildTechnicalAuditBlock(input: {
     proposal,
     salesOrderItems,
     stockDocuments,
+    productionOrders,
+    productionLinks,
     nfes,
     receivables,
     receipts,
@@ -4182,6 +4296,21 @@ function buildTechnicalAuditBlock(input: {
       "Itens dos documentos",
       "NOMUS_STOCK_DOCUMENT",
       stockDocuments.reduce((s, d) => s + (d.productLines ?? 0), 0)
+    ),
+    source(
+      "NomusProductionOrder",
+      "Ordens de produção",
+      "NOMUS_PRODUCTION_ORDER",
+      productionOrders.length
+    ),
+    source(
+      "NomusProductionOrderSalesLink",
+      "Vínculos OP × pedido",
+      "NOMUS_PRODUCTION_ORDER",
+      productionLinks.length,
+      productionLinks.some((link) => link.isCurrent)
+        ? "inclui vínculos current"
+        : null
     ),
     source("NomusNfe", "NF-e", "NOMUS_NFE", nfes.length),
     source(
@@ -4265,6 +4394,9 @@ function buildTechnicalAuditBlock(input: {
     stockDocumentExternalIds: stockDocuments
       .map((d) => d.stockDocumentExternalId)
       .filter((x) => x > 0),
+    productionOrderExternalIds: productionOrders
+      .map((op) => op.externalId)
+      .filter((x) => x > 0),
     nfeExternalIds: nfes.map((n) => n.nfeExternalId).filter((x) => x > 0),
     receivableExternalIds: receivables.map((r) => r.receivableExternalId),
     commissionSnapshotId: commissions.snapshotId,
@@ -4283,6 +4415,13 @@ function buildTechnicalAuditBlock(input: {
       description:
         "Cada `SalesOrderItem.id` mantém status independente. SKU repetido não herda status entre linhas.",
       category: "ORDER_ITEM",
+    },
+    {
+      code: "PRODUCTION_FROM_EVIDENCE_PACK",
+      label: "OP via evidence pack do Fluxo",
+      description:
+        "Ordens de Produção vêm de `NomusProductionOrder` + `NomusProductionOrderSalesLink` (isCurrent). Quantidade produzida da OP permanece null até contrato Nomus.",
+      category: "PRODUCTION_ORDER",
     },
     {
       code: "CANCELED_ITEM_IGNORED",
@@ -5401,6 +5540,7 @@ function buildSummary(input: {
   commercialResponsible: ResolvedCommercialResponsibleDisplay;
   orderSeller: ResolvedOrderSellerIdentity;
   alertCount: number;
+  productionTotals?: OrderFullAuditProductionBlock["totals"];
 }): OrderFullAuditPayload["summary"] {
   const order = input.order;
   const orderNetValue = decimalToNumber(order?.totalNetValue) ?? 0;
@@ -5561,6 +5701,9 @@ function buildSummary(input: {
     receivableOverdueValue: receivableOverdue,
     stockDocumentsTotalValue,
     stockDocumentsAllocatedValue,
+    productionOrderCount: input.productionTotals?.productionOrderCount ?? 0,
+    productionPlannedQuantity: input.productionTotals?.plannedQuantitySum ?? null,
+    productionLinkedQuantity: input.productionTotals?.linkedQuantitySum ?? null,
     nfeTotalValue,
     nfeTotalValueAll,
     nfeValidValue,
@@ -5787,86 +5930,34 @@ function buildAlerts(input: {
 }): OrderFullAuditAlert[] {
   const alerts: OrderFullAuditAlert[] = [];
 
+  type AlertDraft = Pick<
+    OrderFullAuditAlert,
+    | "code"
+    | "severity"
+    | "title"
+    | "description"
+    | "origin"
+    | "action"
+    | "financialImpact"
+  >;
+
   const seen = new Set<string>();
-  const push = (a: OrderFullAuditAlert): void => {
+  const push = (a: AlertDraft): void => {
     const key = `${a.code}:${a.description}`;
     if (seen.has(key)) return;
     seen.add(key);
-    alerts.push(a);
+    // Campos category/entity*/linkedTab/status são preenchidos no pós-processamento.
+    alerts.push(a as OrderFullAuditAlert);
   };
 
   // -------------------------------------------------------------------
   // Divergências oficiais da aba Documentos de Saída
   // (renomeadas dos códigos legados DOCUMENTO_COM_EXCEDENTE/PRODUTO_FORA_DO_PEDIDO)
   // -------------------------------------------------------------------
-  for (const doc of input.stockDocuments) {
-    if (doc.hasExcess) {
-      push({
-        code: "DOCUMENT_WITH_EXCESS",
-        severity: "warning",
-        title: "Documento com excedente",
-        description: `Documento ${doc.stockDocumentExternalId} tem quantidade excedente ao pedido.`,
-        origin: "Documento de saída",
-        action: "Revisar alocação item × documento.",
-        financialImpact: doc.outsideOrderValue > 0 ? round2(doc.outsideOrderValue) : null,
-      });
-    }
-    if (doc.hasOutside) {
-      push({
-        code: "DOCUMENT_EXTRA_ITEM",
-        severity: "warning",
-        title: "Produto fora do pedido no documento",
-        description: `Documento ${doc.stockDocumentExternalId} contém produto não pertencente ao pedido.`,
-        origin: "Documento de saída",
-        action: "Confirmar se o vínculo é intencional ou emitir documento separado.",
-        financialImpact: round2(doc.outsideOrderValue),
-      });
-    }
-    if (doc.idNfe == null) {
-      push({
-        code: "DOCUMENT_WITHOUT_NFE",
-        severity: "warning",
-        title: "Documento sem NF-e vinculada",
-        description: `Documento de saída ${doc.stockDocumentExternalId} sem NF-e vinculada.`,
-        origin: "Documento de saída",
-        action: "Confirmar emissão da NF ou vínculo com o pedido.",
-        financialImpact: null,
-      });
-    }
-    if (doc.linkOrigin === "HEADER_ONLY" || doc.linkOrigin === "SALES_ORDER_NFE_LINK") {
-      push({
-        code: "DOCUMENT_ALLOCATED_BY_HEADER_ONLY",
-        severity: "info",
-        title: "Documento vinculado só pelo cabeçalho",
-        description: `Documento ${doc.stockDocumentExternalId} não possui evidência linha a linha do pedido (${doc.linkOrigin}).`,
-        origin: "Documento de saída",
-        action:
-          "Rever mapper para produzir evidência item × documento (linha, não header).",
-        financialImpact: null,
-      });
-    }
-    if (doc.alerts.includes("DOCUMENT_ALLOCATED_TO_CANCELED_ITEM")) {
-      push({
-        code: "DOCUMENT_ALLOCATED_TO_CANCELED_ITEM",
-        severity: "warning",
-        title: "Documento alocado em item cancelado",
-        description: `Documento ${doc.stockDocumentExternalId} tem item alocado a linha do pedido cancelada/stale.`,
-        origin: "Documento de saída × SalesOrderItem",
-        action: "Reprocessar alocação ou reverter documento no Nomus.",
-        financialImpact: null,
-      });
-    }
-    if (doc.alerts.includes("DOCUMENT_WITHOUT_ORDER_ITEM")) {
-      push({
-        code: "DOCUMENT_WITHOUT_ORDER_ITEM",
-        severity: "warning",
-        title: "Documento sem item de pedido",
-        description: `Documento ${doc.stockDocumentExternalId} não casou com nenhum SalesOrderItem.`,
-        origin: "Documento de saída",
-        action: "Verificar sync do documento ou vínculo com o pedido.",
-        financialImpact: null,
-      });
-    }
+  for (const draft of buildOrderFullAuditDocumentHeaderAlertDrafts(
+    input.stockDocuments
+  )) {
+    push(draft);
   }
 
   // Divergências por linha do documento (preço/quantidade). Deduplicamos por doc+item.
@@ -7377,6 +7468,16 @@ function getAlertMetadata(code: string): AlertMetadata | null {
     DOCUMENT_ALLOCATED_BY_HEADER_ONLY: {
       category: "STOCK_DOCUMENT",
       severity: "info",
+      linkedTab: "documents",
+    },
+    DOCUMENT_CANCELLED: {
+      category: "STOCK_DOCUMENT",
+      severity: "high",
+      linkedTab: "documents",
+    },
+    DOCUMENT_OVER_ALLOCATED: {
+      category: "STOCK_DOCUMENT",
+      severity: "high",
       linkedTab: "documents",
     },
     // NFE

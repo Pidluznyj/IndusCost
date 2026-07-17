@@ -27,6 +27,7 @@ import type {
   OrderFullAuditReceivable,
   OrderFullAuditStockDocument,
 } from "./orderFullAuditClient.js";
+import { emptyOrderFullAuditStockDocument } from "./orderFullAuditDocuments.js";
 
 const REF = new Date(2026, 6, 17, 12, 0, 0, 0);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -177,8 +178,7 @@ describe("FIN-09 — Auditoria 360° / projeção", () => {
       } as OrderFullAuditItem,
     ];
     const stockDocuments: OrderFullAuditStockDocument[] = [
-      {
-        stockDocumentExternalId: 1,
+      emptyOrderFullAuditStockDocument(1, {
         idNfe: 5001,
         allocatedValue: 9000,
         totalValue: 9000,
@@ -192,12 +192,7 @@ describe("FIN-09 — Auditoria 360° / projeção", () => {
         productLines: 1,
         status: null,
         linkOrigin: "ITEM_EVIDENCE",
-        tipoDocumentoEstoque: null,
-        dataDocumento: null,
-        dataMovimentacao: null,
-        customerName: null,
-        companyName: null,
-      } as OrderFullAuditStockDocument,
+      }),
     ];
     const result = projectEffectiveScheduleForOrderAudit({
       salesOrderId: "so-1",

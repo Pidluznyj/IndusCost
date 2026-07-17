@@ -1,5 +1,17 @@
 /** Contratos client (sem Prisma) da Auditoria Completa do Pedido. */
 
+import type {
+  OrderFullAuditProductionLink,
+  OrderFullAuditProductionOrder,
+} from "./orderFullAuditProduction.js";
+
+export type {
+  OrderFullAuditProductionBlock,
+  OrderFullAuditProductionInconsistency,
+  OrderFullAuditProductionLink,
+  OrderFullAuditProductionOrder,
+} from "./orderFullAuditProduction.js";
+
 export type OrderFullAuditItem = {
   salesOrderItemId: string;
   externalSalesOrderItemId: number | null;
@@ -165,6 +177,10 @@ export type OrderFullAuditNfeItem = {
 
 export type OrderFullAuditStockDocument = {
   stockDocumentExternalId: number;
+  /** UUID local do stage — usado no deep link `?documentId=`. */
+  stockDocumentId: string | null;
+  /** Número comercial Nomus, quando distinto do externalId. */
+  documentNumber: string | null;
   tipoDocumentoEstoque: string | null;
   dataDocumento: string | null;
   dataMovimentacao: string | null;
@@ -193,6 +209,7 @@ export type OrderFullAuditStockDocument = {
   hasOutside: boolean;
   productLines: number;
   status: string | null;
+  isCancelled: boolean;
   linkOrigin:
     | "ITEM_EVIDENCE"
     | "HEADER_ONLY"
@@ -207,6 +224,8 @@ export type OrderFullAuditStockDocument = {
     allocatedValue: number;
     linkOrigin: string;
   }>;
+  /** Deep link Comercial · Documentos de Saída. */
+  href: string;
   alerts: string[];
 };
 
@@ -308,6 +327,7 @@ export type OrderFullAuditAlert = {
     | "proposal"
     | "salesOrder"
     | "items"
+    | "productionOrders"
     | "documents"
     | "nfes"
     | "tributos"
@@ -365,6 +385,12 @@ export type OrderFullAuditSummary = {
   receivableOverdueValue: number;
   stockDocumentsTotalValue: number;
   stockDocumentsAllocatedValue: number;
+  /** Quantidade de OPs vinculadas ao pedido (evidence pack). */
+  productionOrderCount: number;
+  /** Soma das quantidades planejadas das OPs (null se nenhuma OP informar). */
+  productionPlannedQuantity: number | null;
+  /** Soma das quantidades vinculadas item×OP (null se nenhuma informar). */
+  productionLinkedQuantity: number | null;
   nfeTotalValue: number;
   nfeTotalValueAll: number;
   nfeValidValue: number;
@@ -942,6 +968,7 @@ export type OrderFullAuditTechnicalSource = {
     | "SALES_ORDER"
     | "PROPOSAL"
     | "NOMUS_STOCK_DOCUMENT"
+    | "NOMUS_PRODUCTION_ORDER"
     | "NOMUS_NFE"
     | "NOMUS_RECEIVABLE"
     | "AUDIT_FACT"
@@ -965,6 +992,7 @@ export type OrderFullAuditTechnicalIdentifiers = {
   externalSellerId: number | null;
   externalCompanyId: number | null;
   stockDocumentExternalIds: number[];
+  productionOrderExternalIds: number[];
   nfeExternalIds: number[];
   receivableExternalIds: number[];
   commissionSnapshotId: string | null;
@@ -981,6 +1009,7 @@ export type OrderFullAuditTechnicalRule = {
   category:
     | "ORDER_ITEM"
     | "DOCUMENT_ALLOCATION"
+    | "PRODUCTION_ORDER"
     | "NFE"
     | "RECEIVABLE"
     | "COMMISSION"
@@ -1067,6 +1096,9 @@ export type OrderFullAuditPayload = {
   plannedReceivablesTotal: OrderFullAuditPlannedReceivablesTotal;
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
+  /** Ordens de Produção vinculadas (evidence pack do Fluxo). */
+  productionOrders: OrderFullAuditProductionOrder[];
+  productionLinks: OrderFullAuditProductionLink[];
   nfeItems: OrderFullAuditNfeItem[];
   nfes: OrderFullAuditNfe[];
   delivery: OrderFullAuditDeliveryBlock;
@@ -1096,6 +1128,7 @@ export const ORDER_FULL_AUDIT_TABS = [
   { id: "proposal", label: "Proposta / Origem Comercial" },
   { id: "salesOrder", label: "Pedido de Venda" },
   { id: "items", label: "Itens do Pedido" },
+  { id: "productionOrders", label: "Ordens de Produção" },
   { id: "documents", label: "Documentos de Saída" },
   { id: "nfes", label: "NF-e" },
   { id: "tributos", label: "Tributos" },

@@ -220,6 +220,51 @@ export function buildOutputDocumentNfeSearchHref(nfe: {
   return `${OUTPUT_DOCUMENTS_ROUTE_PATH}?search=${encodeURIComponent(label)}`;
 }
 
+/**
+ * Deep link da Auditoria 360º → Comercial · Documentos de Saída.
+ * Prefere `documentId` (UUID local); senão busca por número/externalId.
+ */
+export function buildOutputDocumentAuditHref(doc: {
+  stockDocumentId?: string | null;
+  documentNumber?: string | null;
+  stockDocumentExternalId: number;
+}): string {
+  const id = doc.stockDocumentId?.trim();
+  if (id) {
+    return `${OUTPUT_DOCUMENTS_ROUTE_PATH}?documentId=${encodeURIComponent(id)}`;
+  }
+  const search =
+    doc.documentNumber?.trim() || String(doc.stockDocumentExternalId);
+  return `${OUTPUT_DOCUMENTS_ROUTE_PATH}?search=${encodeURIComponent(search)}`;
+}
+
+export function formatOutputDocumentCoverageStatus(
+  status:
+    | "nao_alocado"
+    | "parcial"
+    | "completo"
+    | "superalocado"
+    | "arredondamento"
+    | string
+    | null
+    | undefined
+): string {
+  switch (status) {
+    case "completo":
+      return "Completo";
+    case "parcial":
+      return "Parcial";
+    case "nao_alocado":
+      return "Não alocado";
+    case "superalocado":
+      return "Superalocado";
+    case "arredondamento":
+      return "Arredondamento";
+    default:
+      return status?.trim() || "—";
+  }
+}
+
 export function canViewOutputDocumentsFinancial(check: {
   canPerformAction?: (resourceKey: string, action: string) => boolean;
   hasPermission?: (permission: string) => boolean;

@@ -132,6 +132,8 @@ function baseAudit(
     },
     stockDocuments: [],
     stockDocumentItems: [],
+    productionOrders: [],
+    productionLinks: [],
     nfeItems: [
       {
         nfeExternalId: 2457,
