@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Building2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
@@ -38,6 +39,7 @@ import { getFinanceSectionPath } from "@/src/lib/financeNavigation";
  */
 export function FinanceSuppliersPage() {
   const auth = useAuth();
+  const permissions = usePermissions();
   const navigate = useNavigate();
   const abortRef = useRef<AbortController | null>(null);
   const [dashboard, setDashboard] = useState<FinanceCostCenterDashboardPayload | null>(null);
@@ -50,8 +52,12 @@ export function FinanceSuppliersPage() {
     [appliedFilters]
   );
 
-  const canViewSuppliers = canViewFinanceSuppliers(auth);
-  const canManageSuppliers = canManageFinanceSuppliers(auth);
+  const supplierCheck = {
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  };
+  const canViewSuppliers = canViewFinanceSuppliers(supplierCheck);
+  const canManageSuppliers = canManageFinanceSuppliers(supplierCheck);
   const canDeleteSupplier = canDeleteFinanceSupplier(auth);
   const canReclassifyTitles = canManageFinanceApAllocations(auth);
 

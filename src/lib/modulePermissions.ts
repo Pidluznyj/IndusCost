@@ -394,19 +394,44 @@ export function getVisibleProductTabs(
   });
 }
 
-export function canCreateProposal(check: PermissionChecker): boolean {
+export type ActionAwarePermissionChecker = PermissionChecker & {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+};
+
+export function canCreateProposal(check: ActionAwarePermissionChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction("commercial.proposals", "create") ||
+      check.canPerformAction("commercial.proposals", "update")
+    );
+  }
   return check.hasPermission("proposals.create") || check.hasPermission("proposals.edit");
 }
 
-export function canEditProposal(check: PermissionChecker): boolean {
+export function canEditProposal(check: ActionAwarePermissionChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction("commercial.proposals", "update") ||
+      check.canPerformAction("commercial.proposals", "edit")
+    );
+  }
   return check.hasPermission("proposals.edit");
 }
 
-export function canDeleteProposal(check: PermissionChecker): boolean {
+export function canDeleteProposal(check: ActionAwarePermissionChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction("commercial.proposals", "delete");
+  }
   return check.hasPermission("proposals.delete");
 }
 
-export function canPrintProposal(check: PermissionChecker): boolean {
+export function canPrintProposal(check: ActionAwarePermissionChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction("commercial.proposals", "export") ||
+      check.canPerformAction("commercial.proposals", "print")
+    );
+  }
   return check.hasPermission("proposals.print");
 }
 

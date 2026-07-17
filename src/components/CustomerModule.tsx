@@ -63,6 +63,7 @@ export const CustomerModule = () => {
   const resourceCheck = {
     ...auth,
     canViewResource: permissions.canView,
+    canPerformAction: permissions.canPerformAction,
   };
   const allowCreate = canCreateCustomers(resourceCheck);
   const allowEdit = canEditCustomers(resourceCheck);

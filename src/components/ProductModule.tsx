@@ -67,8 +67,15 @@ import {
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { type ProductTabId } from "@/src/lib/modulePermissions";
+import {
+  canCreateProducts,
+  canDeleteProducts,
+  canEditProducts,
+  canExportProductsEngineering,
+} from "@/src/lib/commercialEngineeringPermissions";
 import { PRODUCT_UI_TABS } from "@/src/lib/moduleTabResources";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import {
   GRID_CIU_COLUMN_LABEL,
@@ -184,12 +191,17 @@ const PRODUCTS_MAIN_TABS: { id: ProductsMainTab; label: string }[] = [
 
 export const ProductModule = () => {
   const auth = useAuth();
-  const canCreateProduct = auth.hasPermission("products.create");
-  const canEditProduct = auth.hasPermission("products.edit");
-  const canDeleteProduct = auth.hasPermission("products.delete");
-  const canExportEngineering = auth.hasPermission("products.export.engineering");
+  const permissions = usePermissions();
+  const productActionCheck = {
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  };
+  const canCreateProduct = canCreateProducts(productActionCheck);
+  const canEditProduct = canEditProducts(productActionCheck);
+  const canDeleteProduct = canDeleteProducts(productActionCheck);
+  const canExportEngineering = canExportProductsEngineering(productActionCheck);
   const canRefreshFrozenCost =
-    auth.hasPermission("pricing.generate_tables") || auth.hasPermission("products.edit");
+    auth.hasPermission("pricing.generate_tables") || canEditProduct;
   const canPublishProductionCost = auth.hasAnyPermission([
     ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
   ]);

@@ -29,7 +29,17 @@ export function canManageFinanceCostCenterRules(auth: FinanceCostCentersPermissi
   return auth.hasPermission("finance.cost_center_rules.manage");
 }
 
-export function canViewFinanceSuppliers(auth: FinanceCostCentersPermissionCheck): boolean {
+export type FinanceCostCentersActionCheck = FinanceCostCentersPermissionCheck & {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+};
+
+export function canViewFinanceSuppliers(auth: FinanceCostCentersActionCheck): boolean {
+  if (
+    typeof auth.canPerformAction === "function" &&
+    auth.canPerformAction("finance.suppliers", "view")
+  ) {
+    return true;
+  }
   return (
     auth.hasPermission("finance.suppliers.view") ||
     auth.hasPermission("finance.cost_centers.view") ||
@@ -37,7 +47,13 @@ export function canViewFinanceSuppliers(auth: FinanceCostCentersPermissionCheck)
   );
 }
 
-export function canManageFinanceSuppliers(auth: FinanceCostCentersPermissionCheck): boolean {
+export function canManageFinanceSuppliers(auth: FinanceCostCentersActionCheck): boolean {
+  if (typeof auth.canPerformAction === "function") {
+    return (
+      auth.canPerformAction("finance.suppliers", "manage") ||
+      auth.canPerformAction("finance.suppliers", "configure")
+    );
+  }
   return auth.hasPermission("finance.suppliers.manage");
 }
 

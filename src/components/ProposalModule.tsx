@@ -48,6 +48,7 @@ import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysi
 import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
 import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   canCreateProposal,
   canDeleteProposal,
@@ -441,10 +442,15 @@ function NumericInputCell({
 
 export const ProposalModule = () => {
   const auth = useAuth();
-  const allowCreate = canCreateProposal(auth);
-  const allowEdit = canEditProposal(auth);
-  const allowDelete = canDeleteProposal(auth);
-  const allowPrint = canPrintProposal(auth);
+  const permissions = usePermissions();
+  const proposalCheck = {
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  };
+  const allowCreate = canCreateProposal(proposalCheck);
+  const allowEdit = canEditProposal(proposalCheck);
+  const allowDelete = canDeleteProposal(proposalCheck);
+  const allowPrint = canPrintProposal(proposalCheck);
   const allowIndicators = canViewProposalIndicators(auth);
 
   const navigate = useNavigate();

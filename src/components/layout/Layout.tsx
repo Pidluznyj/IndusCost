@@ -42,7 +42,7 @@ function SidebarMobileBackdrop() {
 function LayoutShell() {
   const { openMobileSidebar, isMobile } = useSidebarLayout();
   const auth = useAuth();
-  const { authUser } = auth;
+  const { authUser, permissionsChangedNotice, clearPermissionsChangedNotice } = auth;
   const location = useLocation();
   const [lastSyncAt, setLastSyncAt] = React.useState<string>("—");
   const [lastSyncStatus, setLastSyncStatus] = React.useState<HeaderSyncStatus>("—");
@@ -111,6 +111,22 @@ function LayoutShell() {
         />
 
         <div className="flex-1 overflow-y-auto p-8 scroll-smooth">
+          {permissionsChangedNotice ? (
+            <div
+              className="mx-auto mb-4 flex max-w-7xl items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+              role="status"
+              data-testid="permissions-changed-notice"
+            >
+              <p>{permissionsChangedNotice}</p>
+              <button
+                type="button"
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                onClick={clearPermissionsChangedNotice}
+              >
+                Entendi
+              </button>
+            </div>
+          ) : null}
           <AnimatePresence mode="wait">
             <motion.div
               initial={{ opacity: 0, y: 10 }}

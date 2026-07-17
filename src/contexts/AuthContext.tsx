@@ -18,6 +18,7 @@ import type {
   AuthUser,
   EffectiveAccessMeDto,
 } from "@/src/lib/appAuthClient";
+import { PERMISSIONS_CHANGED_SESSION_MESSAGE } from "@/src/lib/actionPermissionCatalog";
 
 const SESSION_EXPIRED_MESSAGE = "Sessão expirada. Faça login novamente.";
 const PERMISSIONS_POLL_MS = 60_000;
@@ -29,6 +30,9 @@ export type AuthContextValue = {
   authError: string | null;
   /** Bloco shadow `/me.effectiveAccess` quando o servidor anexa (P04/P10). */
   effectiveAccess: EffectiveAccessMeDto | null;
+  /** PERM-38 — aviso quando permissões mudam durante a sessão. */
+  permissionsChangedNotice: string | null;
+  clearPermissionsChangedNotice: () => void;
   loadMe: () => Promise<void>;
   refreshPermissions: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
@@ -46,8 +50,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [effectiveAccess, setEffectiveAccess] = useState<EffectiveAccessMeDto | null>(null);
+  const [permissionsChangedNotice, setPermissionsChangedNotice] = useState<string | null>(
+    null
+  );
   const loadSeq = useRef(0);
   const authUserRef = useRef<AuthUser | null>(null);
+
+  const clearPermissionsChangedNotice = useCallback(() => {
+    setPermissionsChangedNotice(null);
+  }, []);
 
   useEffect(() => {
     authUserRef.current = authUser;
@@ -92,18 +103,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [applyMePayload]);
 
-  const refreshPermissions = useCallback(async () => {
-    try {
-      const data = await fetchJsonOk<AuthMeResponse>("/api/auth/sync-session-permissions", {
-        method: "POST",
-        suppressAuthEvent: true,
-      });
-      applyMePayload(data);
-      setAuthError(null);
-    } catch {
-      await loadMe();
-    }
-  }, [applyMePayload, loadMe]);
+  const refreshPermissions = useCallback(
+    async (opts?: { announceChange?: boolean }) => {
+      try {
+        const data = await fetchJsonOk<AuthMeResponse>(
+          "/api/auth/sync-session-permissions",
+          {
+            method: "POST",
+            suppressAuthEvent: true,
+          }
+        );
+        applyMePayload(data);
+        setAuthError(null);
+        if (opts?.announceChange) {
+          setPermissionsChangedNotice(PERMISSIONS_CHANGED_SESSION_MESSAGE);
+        }
+      } catch {
+        await loadMe();
+      }
+    },
+    [applyMePayload, loadMe]
+  );
 
   const pollPermissionsVersion = useCallback(async () => {
     if (!authUserRef.current) return;
@@ -115,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!data.authenticated) return;
       const current = authUserRef.current.permissionsVersion ?? 0;
       if (data.permissionsVersion !== current) {
-        await refreshPermissions();
+        await refreshPermissions({ announceChange: true });
       }
     } catch {
       // 401 tratado pelo próximo request protegido ou poll seguinte.
@@ -136,7 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthError((prev) => prev ?? SESSION_EXPIRED_MESSAGE);
     };
     const handlePermissionsStale = () => {
-      void refreshPermissions();
+      void refreshPermissions({ announceChange: true });
     };
     window.addEventListener(APP_AUTH_REQUIRED_EVENT, handleAuthRequired);
     window.addEventListener(APP_PERMISSIONS_STALE_EVENT, handlePermissionsStale);
@@ -188,6 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuthenticated(false);
     setEffectiveAccess(null);
     setAuthError(null);
+    setPermissionsChangedNotice(null);
     setAuthLoading(false);
   }, []);
 
@@ -219,8 +240,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authLoading,
       authError,
       effectiveAccess,
+      permissionsChangedNotice,
+      clearPermissionsChangedNotice,
       loadMe,
-      refreshPermissions,
+      refreshPermissions: () => refreshPermissions(),
       login,
       logout,
       hasPermission,
@@ -233,6 +256,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       authLoading,
       authError,
       effectiveAccess,
+      permissionsChangedNotice,
+      clearPermissionsChangedNotice,
       loadMe,
       refreshPermissions,
       login,

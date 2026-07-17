@@ -93,6 +93,8 @@ describe("commercialEngineeringPermissions — engenharia", () => {
       "products.view",
       "projects.view",
       "simulations.view",
+      // contrato: primary de engineering.transformation_simulator
+      "transformation_simulator.view",
     ];
     const u = user("ADMIN", bag);
     const ctx = { user: u, checker: checker(bag) };

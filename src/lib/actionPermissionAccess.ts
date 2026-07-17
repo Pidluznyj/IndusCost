@@ -22,6 +22,11 @@ export const UI_PERMISSION_ACTIONS = [
   "reverse",
   "publish",
   "synchronize",
+  /** Aliases de inventário / UX (PERM-38). */
+  "edit",
+  "print",
+  "configure",
+  "audit",
 ] as const;
 
 export type UiPermissionAction = (typeof UI_PERMISSION_ACTIONS)[number];
@@ -46,6 +51,10 @@ export const UI_ACTION_TO_DTO_ACTION: Record<
   reverse: "execute",
   publish: "manage",
   synchronize: "execute",
+  edit: "update",
+  print: "export",
+  configure: "manage",
+  audit: "view",
 };
 
 export type ContractActionMap = Record<

@@ -93,6 +93,10 @@ describe("actionPermissionAccess — projection", () => {
     assert.equal(UI_ACTION_TO_DTO_ACTION.cancel, "manage");
     assert.equal(UI_ACTION_TO_DTO_ACTION.publish, "manage");
     assert.equal(UI_ACTION_TO_DTO_ACTION.reverse, "execute");
+    assert.equal(UI_ACTION_TO_DTO_ACTION.edit, "update");
+    assert.equal(UI_ACTION_TO_DTO_ACTION.print, "export");
+    assert.equal(UI_ACTION_TO_DTO_ACTION.configure, "manage");
+    assert.equal(UI_ACTION_TO_DTO_ACTION.audit, "view");
   });
 
   it("capabilitiesFromActions não marca canExecute só com view", () => {

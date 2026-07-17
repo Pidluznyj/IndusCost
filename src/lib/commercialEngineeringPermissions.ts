@@ -11,8 +11,14 @@ import {
 } from "@/src/lib/modulePermissions.js";
 import { ResourceKeys } from "@/src/lib/permissionsClient.js";
 
+/** Evita import circular com commercialAccess / engineeringAccess. */
+const CUSTOMERS_RESOURCE = "commercial.customers";
+const PRODUCTS_RESOURCE = "engineering.products";
+
 export type ResourceAwareChecker = PermissionChecker & {
   canViewResource?: (resourceKey: string) => boolean;
+  /** PERM-38 — preferir DTO quando presente. */
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
 };
 
 function legacyOrResource(
@@ -34,17 +40,58 @@ export function canViewCustomers(check: ResourceAwareChecker): boolean {
   );
 }
 
-export function canCreateCustomers(check: PermissionChecker): boolean {
+export function canCreateCustomers(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(CUSTOMERS_RESOURCE, "create");
+  }
   return check.hasPermission("customers.create");
 }
 
 /** Edição e exclusão no legado usam customers.edit (sem customers.delete). */
-export function canEditCustomers(check: PermissionChecker): boolean {
+export function canEditCustomers(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction(CUSTOMERS_RESOURCE, "update") ||
+      check.canPerformAction(CUSTOMERS_RESOURCE, "edit")
+    );
+  }
   return check.hasPermission("customers.edit");
 }
 
-export function canImportCustomers(check: PermissionChecker): boolean {
-  return check.hasPermission("customers.edit") || check.hasPermission("customers.create");
+export function canImportCustomers(check: ResourceAwareChecker): boolean {
+  return canEditCustomers(check) || canCreateCustomers(check);
+}
+
+/** Produtos — CRUD via contrato (PERM-38). */
+export function canCreateProducts(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(PRODUCTS_RESOURCE, "create");
+  }
+  return check.hasPermission("products.create");
+}
+
+export function canEditProducts(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return (
+      check.canPerformAction(PRODUCTS_RESOURCE, "update") ||
+      check.canPerformAction(PRODUCTS_RESOURCE, "edit")
+    );
+  }
+  return check.hasPermission("products.edit");
+}
+
+export function canDeleteProducts(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(PRODUCTS_RESOURCE, "delete");
+  }
+  return check.hasPermission("products.delete");
+}
+
+export function canExportProductsEngineering(check: ResourceAwareChecker): boolean {
+  if (typeof check.canPerformAction === "function") {
+    return check.canPerformAction(PRODUCTS_RESOURCE, "export");
+  }
+  return check.hasPermission("products.export.engineering");
 }
 
 // ─── Comercial: Propostas (helpers já em modulePermissions; espelho resource) ─
