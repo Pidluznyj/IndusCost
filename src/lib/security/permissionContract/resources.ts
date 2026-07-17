@@ -586,6 +586,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     ],
     relatedEndpoints: [
       "/api/sales-orders",
+      "/api/commercial/sales-order-flow",
       "/api/commercial/sales-order-flow/summary",
     ],
     sensitivity: "critical",

@@ -7,12 +7,13 @@ import { registerSalesOrderFlowRoutes } from "./salesOrderFlowRoutes.js";
 import { SALES_ORDER_FLOW_ENABLED_ENV } from "./sales/salesOrderFlowFeatureFlags.js";
 
 describe("salesOrderFlowRoutes (OP-59)", () => {
-  it("registra summary com flag + requireResource commercial.sales_orders", () => {
+  it("registra summary e lista com flag + requireResource commercial.sales_orders", () => {
     const source = readFileSync(
       join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
       "utf8"
     );
     assert.match(source, /\/api\/commercial\/sales-order-flow\/summary/);
+    assert.match(source, /\/api\/commercial\/sales-order-flow"/);
     assert.match(source, /requireSalesOrderFlowEnabled/);
     assert.match(source, /requireAppAuth/);
     assert.match(
@@ -21,6 +22,7 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
     );
     assert.match(source, /resolveSalesOrderFlowAccessScope/);
     assert.match(source, /canViewSalesOrderFlowMonetaryValues/);
+    assert.match(source, /loadSalesOrderFlowList/);
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
       "commercial.sales_orders"
@@ -35,16 +37,21 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
     );
     assert.match(server, /registerSalesOrderFlowRoutes/);
     assert.match(access, /\/api\/commercial\/sales-order-flow\/summary/);
+    assert.match(access, /\/api\/commercial\/sales-order-flow"/);
   });
 
   it("bloqueia com 404 quando feature flag ausente", async () => {
-    let path = "";
-    let middlewares: Array<(req: unknown, res: unknown, next: () => void) => unknown> = [];
+    const routes = new Map<
+      string,
+      Array<(req: unknown, res: unknown, next: () => void) => unknown>
+    >();
 
     const app = {
-      get(routePath: string, ...handlers: Array<(req: unknown, res: unknown, next: () => void) => unknown>) {
-        path = routePath;
-        middlewares = handlers.slice(0, -1);
+      get(
+        routePath: string,
+        ...handlers: Array<(req: unknown, res: unknown, next: () => void) => unknown>
+      ) {
+        routes.set(routePath, handlers.slice(0, -1));
       },
     };
 
@@ -54,28 +61,35 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
       getCurrentAppUser: async () => null,
     });
 
-    assert.equal(path, "/api/commercial/sales-order-flow/summary");
+    assert.ok(routes.has("/api/commercial/sales-order-flow/summary"));
+    assert.ok(routes.has("/api/commercial/sales-order-flow"));
 
     const previous = process.env[SALES_ORDER_FLOW_ENABLED_ENV];
     delete process.env[SALES_ORDER_FLOW_ENABLED_ENV];
     try {
-      let statusCode = 0;
-      let payload: unknown;
-      await new Promise<void>((resolve) => {
-        middlewares[0]!({}, {
-          status(code: number) {
-            statusCode = code;
-            return this;
-          },
-          json(value: unknown) {
-            payload = value;
-            resolve();
-            return this;
-          },
-        }, () => resolve());
-      });
-      assert.equal(statusCode, 404);
-      assert.deepEqual(payload, { error: "API route not found" });
+      for (const path of [
+        "/api/commercial/sales-order-flow/summary",
+        "/api/commercial/sales-order-flow",
+      ]) {
+        let statusCode = 0;
+        let payload: unknown;
+        const middlewares = routes.get(path)!;
+        await new Promise<void>((resolve) => {
+          middlewares[0]!({}, {
+            status(code: number) {
+              statusCode = code;
+              return this;
+            },
+            json(value: unknown) {
+              payload = value;
+              resolve();
+              return this;
+            },
+          }, () => resolve());
+        });
+        assert.equal(statusCode, 404, path);
+        assert.deepEqual(payload, { error: "API route not found" });
+      }
     } finally {
       if (previous === undefined) delete process.env[SALES_ORDER_FLOW_ENABLED_ENV];
       else process.env[SALES_ORDER_FLOW_ENABLED_ENV] = previous;
