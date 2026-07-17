@@ -1,3 +1,8 @@
+/**
+ * Fluxo de Caixa oficial — entradas/saídas de AR/AP Nomus.
+ * FIN-09: não importa previsão residual do Pedido (agenda efetiva).
+ * Se no futuro incluir forecast de pedido, usar somente FIN-05.
+ */
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,

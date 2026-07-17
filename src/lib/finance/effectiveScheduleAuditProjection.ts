@@ -42,6 +42,8 @@ export type ProjectEffectiveScheduleForAuditInput = {
   stockDocuments: OrderFullAuditStockDocument[];
   nfeNumbers?: string[];
   referenceDate?: Date;
+  /** Opcional — quando informado, prevalece sobre a condição do Pedido. */
+  originalInstallments?: BuildSalesOrderEffectiveFinancialScheduleInput["originalInstallments"];
 };
 
 export type ProjectEffectiveScheduleForAuditResult = {
@@ -283,15 +285,18 @@ export function projectEffectiveScheduleForOrderAudit(
     salesOrderId: input.salesOrderId,
     orderCode: input.orderCode,
     items,
-    originalInstallments: buildOriginalInstallmentsFromPaymentTerms({
-      paymentTerms: input.paymentTerms,
-      paymentMethod: input.paymentMethod,
-      issueDate: input.issueDate,
-      totalActiveValue: input.totalActiveValue,
-      nomusRawResponse: input.nomusRawResponse,
-      nfeNumbers: input.nfeNumbers,
-      referenceDate,
-    }),
+    originalInstallments:
+      input.originalInstallments && input.originalInstallments.length > 0
+        ? input.originalInstallments
+        : buildOriginalInstallmentsFromPaymentTerms({
+            paymentTerms: input.paymentTerms,
+            paymentMethod: input.paymentMethod,
+            issueDate: input.issueDate,
+            totalActiveValue: input.totalActiveValue,
+            nomusRawResponse: input.nomusRawResponse,
+            nfeNumbers: input.nfeNumbers,
+            referenceDate,
+          }),
     realReceivables: input.receivables.map((r) => ({
       externalId: r.receivableExternalId,
       sourceInvoiceId: r.sourceInvoiceId,
@@ -438,6 +443,27 @@ export function buildEffectiveScheduleConsumerAlerts(input: {
       description: `${replaced.length} parcela(s) da previsão original foram substituídas por CR/Documento (agenda efetiva FIN-05).`,
       origin: "Agenda efetiva FIN-05",
       action: "Nenhuma ação — CR/Documento prevalecem; previsão substituída não gera cobrança.",
+      financialImpact: null,
+    });
+  }
+
+  // Divergência de vencimento: CR real vs data original da parcela substituída.
+  const originalDueDates = new Set(
+    replaced.map((p) => p.dueDate).filter((d): d is string => Boolean(d))
+  );
+  const crDueDates = input.schedule.realReceivables
+    .map((cr) => cr.dueDate)
+    .filter((d): d is string => Boolean(d));
+  const divergentCrDue = crDueDates.find((d) => !originalDueDates.has(d));
+  if (divergentCrDue && originalDueDates.size > 0) {
+    const sampleOriginal = [...originalDueDates][0]!;
+    alerts.push({
+      code: "PLANNED_VS_CR_DUE_DATE_DIVERGENCE",
+      severity: "info",
+      title: "Divergência de vencimento (previsão × CR)",
+      description: `Previsão original (${sampleOriginal}) difere do CR vigente (${divergentCrDue}). Prevalece o vencimento do CR.`,
+      origin: "Agenda efetiva FIN-05",
+      action: "Usar vencimento do CR real para cobrança e fluxo.",
       financialImpact: null,
     });
   }

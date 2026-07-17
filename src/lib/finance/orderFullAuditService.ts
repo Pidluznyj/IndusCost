@@ -5773,6 +5773,7 @@ function buildAlerts(input: {
   orderSeller: ResolvedOrderSellerIdentity;
   receivables: OrderFullAuditReceivable[];
   plannedReceivables: OrderFullAuditPlannedReceivable[];
+  effectiveSchedule: import("./salesOrderEffectiveFinancialSchedule.js").SalesOrderEffectiveFinancialSchedule;
   stockDocuments: OrderFullAuditStockDocument[];
   stockDocumentItems: OrderFullAuditStockDocumentItem[];
   nfes: OrderFullAuditNfe[];
@@ -6296,59 +6297,24 @@ function buildAlerts(input: {
     }
   }
   // -------------------------------------------------------------------
-  // Divergências oficiais dos Recebíveis Planejados (forecast)
-  // Só emitidas quando não existe CR real para a mesma parcela — a linha
-  // "replacedByRealCr" é mantida no payload para auditoria mas não gera alerta.
+  // Agenda efetiva FIN-05 (FIN-09) — residual / aguardando / classificação
+  // Previsão substituída e corte NÃO geram alerta de vencimento financeiro.
   // -------------------------------------------------------------------
-  const hasAnyRealCr = input.receivables.length > 0;
-  const pendingPlannedForAlerts = input.plannedReceivables.filter(
-    (p) => !p.replacedByRealCr
-  );
-  for (const planned of pendingPlannedForAlerts) {
-    const dueLabel = planned.dueDate ?? "sem vencimento";
-    if (planned.statusLabel === "Vencido") {
-      push({
-        code: "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
-        severity: "critical",
-        title: planned.entryKind === "RESIDUAL_ORDER_PLAN"
-          ? "Previsão residual vencida sem cobertura"
-          : "Parcela planejada vencida sem CR real",
-        description: `${planned.reference} venceu em ${dueLabel} sem cobertura vigente (${formatMoneyShort(
-          planned.openAmount
-        )}).`,
-        origin: "Pedido de Venda / Condição de pagamento",
-        action:
-          "Confirmar emissão da NF e sync do Contas a Receber para regularizar o CR real.",
-        financialImpact: round2(planned.openAmount),
-      });
-    } else {
-      push({
-        code: "PLANNED_RECEIVABLE_WITHOUT_REAL_CR",
-        severity: "warning",
-        title: "Recebível planejado sem CR real",
-        description: `${planned.reference} previsto para ${dueLabel} — ainda sem NF/CR real (${formatMoneyShort(
-          planned.openAmount
-        )}).`,
-        origin: "Pedido de Venda / Condição de pagamento",
-        action:
-          "Emitir NF-e ou aguardar sincronismo do Contas a Receber para gerar CR real.",
-        financialImpact: round2(planned.openAmount),
-      });
-    }
-  }
-  // Substituição por CR real — informativo, ajuda a auditar dedup.
-  const replacedPlanned = input.plannedReceivables.filter(
-    (p) => p.replacedByRealCr
-  );
-  if (replacedPlanned.length > 0 && hasAnyRealCr) {
+  for (const consumerAlert of buildEffectiveScheduleConsumerAlerts({
+    schedule: input.effectiveSchedule,
+    plannedReceivables: input.plannedReceivables,
+  })) {
     push({
-      code: "PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR",
-      severity: "info",
-      title: "Recebível planejado substituído por CR real",
-      description: `${replacedPlanned.length} parcela(s) planejada(s) foram substituída(s) pelo CR real (dedup automático por valor/vencimento).`,
-      origin: "Auditoria 360º / dedup",
-      action: "Nenhuma ação — CR real prevalece.",
-      financialImpact: null,
+      code: consumerAlert.code,
+      severity:
+        consumerAlert.severity === "error"
+          ? "critical"
+          : consumerAlert.severity,
+      title: consumerAlert.title,
+      description: consumerAlert.description,
+      origin: consumerAlert.origin,
+      action: consumerAlert.action,
+      financialImpact: consumerAlert.financialImpact,
     });
   }
 
@@ -7536,6 +7502,21 @@ function getAlertMetadata(code: string): AlertMetadata | null {
       linkedTab: "financial",
     },
     PLANNED_RECEIVABLE_REPLACED_BY_REAL_CR: {
+      category: "RECEIVABLE",
+      severity: "info",
+      linkedTab: "financial",
+    },
+    DOCUMENT_AWAITING_FINANCIAL_SCHEDULE: {
+      category: "RECEIVABLE",
+      severity: "warning",
+      linkedTab: "financial",
+    },
+    ITEM_CLASSIFICATION_PENDING: {
+      category: "ORDER_ITEM",
+      severity: "warning",
+      linkedTab: "items",
+    },
+    PLANNED_VS_CR_DUE_DATE_DIVERGENCE: {
       category: "RECEIVABLE",
       severity: "info",
       linkedTab: "financial",
