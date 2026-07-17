@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import {
   authorizeRequireResource,
+  createRequireResourceGuards,
   listRequireResourceLegacyBacklog,
   normalizeRequireResourceAction,
   requireResource,
@@ -131,6 +132,42 @@ describe("requireResource — resolução", () => {
 });
 
 describe("requireResource — auth / personas", () => {
+  it("decisão por request aplica perfil e override oficiais", async () => {
+    const user = auth({ role: "VIEWER", permissions: [] });
+    const guards = createRequireResourceGuards(async () => user, {
+      loadProfileSnapshot: async () => ({
+        "commercial.sales_orders.flow.values": { view: true },
+      }),
+      loadOverrides: async () => [],
+    });
+    const req = {} as Parameters<typeof guards.authorizeRequest>[0];
+    const allowed = await guards.authorizeRequest(
+      req,
+      "commercial.sales_orders.flow.values",
+      "view"
+    );
+    assert.equal(allowed.ok, true);
+
+    const deniedGuards = createRequireResourceGuards(async () => user, {
+      loadProfileSnapshot: async () => ({
+        "commercial.sales_orders.flow.values": { view: true },
+      }),
+      loadOverrides: async () => [
+        {
+          resourceKey: "commercial.sales_orders.flow.values",
+          canView: false,
+        },
+      ],
+    });
+    const denied = await deniedGuards.authorizeRequest(
+      {} as Parameters<typeof deniedGuards.authorizeRequest>[0],
+      "commercial.sales_orders.flow.values",
+      "view"
+    );
+    assert.equal(denied.ok, false);
+    if (!denied.ok) assert.equal(denied.source, "OVERRIDE_DENY");
+  });
+
   it("chamada direta sem sessão → 401", async () => {
     const decision = authorizeRequireResource(null, REQUIRE_RESOURCE_ADMIN_KEYS.security, "manage");
     assert.equal(decision.ok, false);

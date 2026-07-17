@@ -156,4 +156,36 @@ describe("salesOrderFlowSummary (OP-59)", () => {
     assert.equal(waiting?.orderValue, null);
     assert.equal(waiting?.activeResidualValue, null);
   });
+
+  it("oculta total de inconsistências sem ocultar colunas operacionais", () => {
+    const payload = buildSalesOrderFlowSummaryPayload({
+      filters: parseSalesOrderFlowSummaryQuery({}),
+      aggregates: [
+        {
+          stage: "IN_PRODUCTION",
+          orderCount: 2,
+          orderValue: 0,
+          activeResidualValue: 0,
+        },
+      ],
+      totals: {
+        overdueCount: 0,
+        blockedCount: 0,
+        inconsistentCount: 2,
+        partiallyShippedCount: 0,
+        completedWithCutCount: 0,
+        canceledCount: 0,
+      },
+      lastUpdatedAt: null,
+      canViewValues: false,
+      canViewInconsistencies: false,
+    });
+    assert.equal(
+      payload.columns.find((column) => column.stage === "IN_PRODUCTION")
+        ?.orderCount,
+      2
+    );
+    assert.equal(payload.totals.inconsistentCount, null);
+    assert.equal(payload.inconsistenciesVisible, false);
+  });
 });

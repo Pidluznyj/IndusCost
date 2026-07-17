@@ -83,6 +83,7 @@ export const PERMISSION_TEMPLATES: Record<
       "sales_orders.invoice.view",
       "sales_orders.flow.view",
       "sales_orders.flow.values.view",
+      "sales_orders.flow.financial.view",
       "sales_orders.flow.inconsistencies.view",
       "sales_orders.flow.timeline.view",
       "sales_orders.flow_management.manage",

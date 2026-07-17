@@ -10,7 +10,6 @@ import {
   COMMERCIAL_ACTIONS,
   COMMERCIAL_RESOURCE_KEYS,
 } from "@/src/lib/commercialAccess.js";
-import { FINANCE_MODULE_RESOURCE_KEYS } from "@/src/lib/financeModulesAccess.js";
 import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
@@ -40,7 +39,7 @@ export const SALES_ORDER_FLOW_RESOURCE_MATRIX = {
     action: COMMERCIAL_ACTIONS.view,
   },
   financial: {
-    resourceKey: FINANCE_MODULE_RESOURCE_KEYS.salesOrders,
+    resourceKey: COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowFinancial,
     action: COMMERCIAL_ACTIONS.view,
   },
   inconsistencies: {
@@ -143,6 +142,54 @@ export function resolveSalesOrderFlowCapabilities(
       user,
       SALES_ORDER_FLOW_RESOURCE_MATRIX.rebuild
     ),
+  };
+}
+
+export async function resolveSalesOrderFlowCapabilitiesWith(
+  authorize: (
+    requirement: SalesOrderFlowResourceRequirement
+  ) => Promise<boolean>
+): Promise<SalesOrderFlowCapabilities> {
+  const [
+    canViewKanban,
+    canViewValues,
+    canViewProduction,
+    canViewFiscal,
+    canViewFinancial,
+    canViewInconsistencies,
+    canViewTimeline,
+    canUpdateManually,
+    canChangePriority,
+    canAssignResponsible,
+    canManageBlocking,
+    canExecuteRebuild,
+  ] = await Promise.all([
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.kanban),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.values),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.production),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.fiscal),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.financial),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.inconsistencies),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.timeline),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.manualUpdate),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.priority),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.responsibility),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.blocking),
+    authorize(SALES_ORDER_FLOW_RESOURCE_MATRIX.rebuild),
+  ]);
+  return {
+    canViewKanban,
+    canViewValues,
+    canViewProduction,
+    canViewFiscal,
+    canViewFinancial,
+    canViewInconsistencies,
+    canViewTimeline,
+    canUpdateManually,
+    canChangePriority,
+    canAssignResponsible,
+    canManageBlocking,
+    canExecuteRebuild,
   };
 }
 

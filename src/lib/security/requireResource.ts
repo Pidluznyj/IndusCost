@@ -387,6 +387,63 @@ export function createRequireResourceGuards(
   getCurrentAppUser: ReadAppUserFn,
   defaults?: RequireResourceGuardOptions
 ) {
+  const requestContextCache = new WeakMap<
+    Request,
+    Promise<{
+      auth: AppAuthContext | null;
+      overrides: AuthorizeRequireResourceOptions["overrides"];
+      profileSnapshot: EffectiveAccessBaselineMap | null | undefined;
+    }>
+  >();
+
+  const loadRequestContext = (
+    req: Request,
+    options: RequireResourceGuardOptions
+  ) => {
+    const cached = requestContextCache.get(req);
+    if (cached) return cached;
+    const loading = (async () => {
+      let auth = (req as { appAuth?: AppAuthContext }).appAuth ?? null;
+      if (!auth) {
+        auth = await getCurrentAppUser(req);
+        if (auth) (req as { appAuth?: AppAuthContext }).appAuth = auth;
+      }
+      const overrides =
+        options.overrides ??
+        (options.loadOverrides && auth?.id
+          ? ((await options.loadOverrides(auth.id)) ?? undefined)
+          : undefined);
+      const profileSnapshot =
+        options.profileSnapshot !== undefined
+          ? options.profileSnapshot
+          : options.loadProfileSnapshot && auth?.id
+            ? ((await options.loadProfileSnapshot(auth.id)) ?? undefined)
+            : undefined;
+      return { auth, overrides, profileSnapshot };
+    })();
+    requestContextCache.set(req, loading);
+    return loading;
+  };
+
+  const authorizeRequest = async (
+    req: Request,
+    resourceKey: string,
+    action: RequireResourceAction | string = "view",
+    options?: RequireResourceGuardOptions
+  ): Promise<RequireResourceDecision> => {
+    const merged = { ...defaults, ...options };
+    const { auth, overrides, profileSnapshot } =
+      await loadRequestContext(req, merged);
+
+    return authorizeRequireResource(auth, resourceKey, action, {
+      ...merged,
+      overrides,
+      profileSnapshot,
+      permissionsVersion:
+        merged.permissionsVersion ?? auth?.permissionsVersion ?? null,
+    });
+  };
+
   return {
     requireResource: (
       resourceKey: string,
@@ -414,6 +471,8 @@ export function createRequireResourceGuards(
       };
     },
 
+    /** Decisão sem side-effect HTTP, com perfil/overrides oficiais carregados. */
+    authorizeRequest,
     authorizeRequireResource,
   };
 }

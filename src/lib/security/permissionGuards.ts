@@ -201,6 +201,7 @@ export function createResourcePermissionGuards(
     ): RequestHandler => official.requireResource(resourceKey, action),
 
     requireBootstrapOrResource: official.requireBootstrapOrResource,
+    authorizeResourceRequest: official.authorizeRequest,
 
     /** Bootstrap cookie OU permissão de recurso (seed path legado). */
     requireBootstrapOrPermission: (

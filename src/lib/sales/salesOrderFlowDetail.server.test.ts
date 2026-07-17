@@ -215,6 +215,7 @@ describe("salesOrderFlowDetail.server (OP-61)", () => {
     const result = await loadSalesOrderFlowDetail(ORDER_ID, {
       prisma: createDb(),
       canViewValues: true,
+      canViewFinancial: true,
       canViewFiscal: true,
       now: () => new Date("2026-07-17T12:00:00Z"),
     });
@@ -266,6 +267,7 @@ describe("salesOrderFlowDetail.server (OP-61)", () => {
     const result = await loadSalesOrderFlowDetail(ORDER_ID, {
       prisma: createDb(),
       canViewValues: false,
+      canViewFinancial: true,
       canViewFiscal: false,
     });
     assert.equal(result.ok, true);
@@ -273,6 +275,33 @@ describe("salesOrderFlowDetail.server (OP-61)", () => {
     assert.equal(result.payload.valuesVisible, false);
     assert.equal(result.payload.financialSituation?.orderValue, null);
     assert.equal(result.payload.orderSnapshot?.orderValue, null);
+  });
+
+  it("oculta seções granulares sem ocultar etapa operacional", async () => {
+    const result = await loadSalesOrderFlowDetail(ORDER_ID, {
+      prisma: createDb(),
+      canViewValues: false,
+      canViewProduction: false,
+      canViewFiscal: false,
+      canViewFinancial: false,
+      canViewInconsistencies: false,
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.payload.orderSnapshot?.currentStage, "IN_PRODUCTION");
+    assert.equal(result.payload.valuesVisible, false);
+    assert.equal(result.payload.productionVisible, false);
+    assert.equal(result.payload.fiscalVisible, false);
+    assert.equal(result.payload.financialVisible, false);
+    assert.equal(result.payload.inconsistenciesVisible, false);
+    assert.deepEqual(result.payload.productionOrders, []);
+    assert.deepEqual(result.payload.nfes, []);
+    assert.equal(result.payload.financialSituation, null);
+    assert.deepEqual(result.payload.inconsistencies, []);
+    assert.equal(
+      result.payload.orderSnapshot?.progressProductionOrder,
+      null
+    );
   });
 
   it("timeline pagina e filtra eventos", async () => {

@@ -6,7 +6,7 @@ import { COMMERCIAL_RESOURCE_KEYS } from "./commercialAccess.js";
 import { registerSalesOrderFlowRoutes } from "./salesOrderFlowRoutes.js";
 import { SALES_ORDER_FLOW_ENABLED_ENV } from "./sales/salesOrderFlowFeatureFlags.js";
 
-describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
+describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
   it("registra summary, lista, detalhe, events e management", () => {
     const source = readFileSync(
       join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
@@ -25,7 +25,8 @@ describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
     assert.match(source, /loadSalesOrderFlowEvents/);
     assert.match(source, /applySalesOrderFlowManagement/);
     assert.match(source, /salesOrdersFlowManagement/);
-    assert.match(source, /canViewSalesOrderFiscalTaxesFromAuth/);
+    assert.match(source, /resolveSalesOrderFlowCapabilities/);
+    assert.match(source, /salesOrdersFlowTimeline/);
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
       "commercial.sales_orders"
@@ -33,6 +34,14 @@ describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowManagement,
       "commercial.sales_orders.flow_management"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
+      "commercial.sales_orders.flow"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowTimeline,
+      "commercial.sales_orders.flow.timeline"
     );
   });
 
@@ -69,6 +78,48 @@ describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
       source,
       /app\.patch\(\s*"\/api\/commercial\/sales-order-flow\/:salesOrderId\/management"/
     );
+    assert.match(source, /resolveSalesOrderFlowManagementRequirements/);
+  });
+
+  it("APIs usam recursos granulares oficiais", () => {
+    const required: Array<{ resourceKey: string; action: string }> = [];
+    const app = {
+      get() {},
+      patch() {},
+    };
+    registerSalesOrderFlowRoutes(app as never, {
+      requireAppAuth: (_req, _res, next) => next(),
+      requireResource: (resourceKey, action = "view") => {
+        required.push({ resourceKey, action });
+        return (_req, _res, next) => next();
+      },
+      authorizeResource: async () =>
+        ({ ok: true, resourceKey: "test", action: "view", source: "SUPER_ADMIN" }) as never,
+      getCurrentAppUser: async () => null,
+    });
+
+    assert.ok(
+      required.some(
+        (entry) =>
+          entry.resourceKey === "commercial.sales_orders.flow" &&
+          entry.action === "view"
+      )
+    );
+    assert.ok(
+      required.some(
+        (entry) =>
+          entry.resourceKey === "commercial.sales_orders.flow.timeline" &&
+          entry.action === "view"
+      )
+    );
+    assert.ok(
+      required.some(
+        (entry) =>
+          entry.resourceKey ===
+            "commercial.sales_orders.flow_management" &&
+          entry.action === "manage"
+      )
+    );
   });
 
   it("bloqueia com 404 quando feature flag ausente", async () => {
@@ -95,6 +146,8 @@ describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
     registerSalesOrderFlowRoutes(app as never, {
       requireAppAuth: (_req, _res, next) => next(),
       requireResource: () => (_req, _res, next) => next(),
+      authorizeResource: async () =>
+        ({ ok: true, resourceKey: "test", action: "view", source: "SUPER_ADMIN" }) as never,
       getCurrentAppUser: async () => null,
     });
 

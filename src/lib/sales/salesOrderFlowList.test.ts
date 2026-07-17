@@ -167,8 +167,8 @@ describe("salesOrderFlowList (OP-60)", () => {
         pendingItems: 2,
         inconsistentItems: 1,
         canceledItems: 0,
-        progressProductionOrder: 0,
-        progressProduced: null,
+        progressProductionOrder: 50,
+        progressProduced: 25,
         progressDocumented: 0,
         progressInvoiced: 0,
         progressShipped: 0,
@@ -179,7 +179,9 @@ describe("salesOrderFlowList (OP-60)", () => {
         canceledValue: 0,
         promisedDeliveryAt: null,
         isOverdue: false,
-        inconsistenciesJson: [],
+        inconsistenciesJson: [
+          { code: "TEST", severity: "WARNING", detail: "restrito" },
+        ],
         badgesJson: ["OVERDUE"],
         stageEnteredAt: new Date("2026-07-01T00:00:00Z"),
         salesOrder: {
@@ -196,13 +198,22 @@ describe("salesOrderFlowList (OP-60)", () => {
           },
         },
       },
-      { canViewValues: false, now: new Date("2026-07-10T00:00:00Z") }
+      {
+        canViewValues: false,
+        canViewProduction: false,
+        canViewInconsistencies: false,
+        now: new Date("2026-07-10T00:00:00Z"),
+      }
     );
     assert.equal(card.orderValue, null);
     assert.equal(card.activeResidualValue, null);
     assert.equal(card.isBlocked, true);
     assert.equal(card.priority, "HIGH");
     assert.equal(card.daysInStage, 9);
+    assert.equal(card.progressProductionOrder, null);
+    assert.equal(card.progressProduced, null);
+    assert.equal(card.inconsistentItems, null);
+    assert.deepEqual(card.inconsistencies, []);
     assert.deepEqual(card.badges, ["OVERDUE"]);
   });
 });

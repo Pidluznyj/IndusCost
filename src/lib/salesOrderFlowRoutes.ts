@@ -21,14 +21,20 @@ import {
 } from "@/src/lib/sales/salesOrderFlowDetail.server.js";
 import { applySalesOrderFlowManagement } from "@/src/lib/sales/salesOrderFlowManagement.server.js";
 import {
-  resolveSalesOrderFlowCapabilities,
+  resolveSalesOrderFlowCapabilitiesWith,
   resolveSalesOrderFlowManagementRequirements,
 } from "@/src/lib/sales/salesOrderFlowPermissions.js";
 import { resolveSalesOrderFlowAccessScope } from "@/src/lib/sales/salesOrderFlowAccessScope.js";
+import type { RequireResourceDecision } from "@/src/lib/security/requireResource.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
+  authorizeResource: (
+    req: express.Request,
+    resourceKey: string,
+    action?: string
+  ) => Promise<RequireResourceDecision>;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
@@ -69,7 +75,16 @@ export function registerSalesOrderFlowRoutes(
       ok: true as const,
       user,
       prisma,
-      capabilities: resolveSalesOrderFlowCapabilities(user),
+      capabilities: await resolveSalesOrderFlowCapabilitiesWith(
+        async (requirement) =>
+          (
+            await auth.authorizeResource(
+              req,
+              requirement.resourceKey,
+              requirement.action
+            )
+          ).ok
+      ),
       scopeCustomerIds:
         scope.mode === "own_portfolio" ? scope.allowedCustomerIds : null,
     };

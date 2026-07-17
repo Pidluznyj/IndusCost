@@ -1771,6 +1771,7 @@ async function startServer() {
     requirePermission: requireResourcePermission,
     requireResource,
     requireBootstrapOrResource,
+    authorizeResourceRequest,
   } = createResourcePermissionGuards(getCurrentAppUser, {
     loadOverrides: canonicalAccessLoaders.loadOverrides,
     loadProfileSnapshot: canonicalAccessLoaders.loadProfileSnapshot,
@@ -15184,6 +15185,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerSalesOrderFlowRoutes(app, {
     requireAppAuth,
     requireResource,
+    authorizeResource: authorizeResourceRequest,
     getCurrentAppUser,
   });
 
