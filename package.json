@@ -167,7 +167,7 @@
     "test:nomus-sync": "tsx --test scripts/nomusNumberParser.test.ts",
     "test:nomus:products-sync": "tsx --test src/lib/nomusProductsSyncMap.test.ts",
     "test:nomus:accounts-receivable": "tsx --test src/lib/nomusAccountsReceivable.test.ts src/lib/nomusAccountsReceivableSyncLogParse.test.ts src/lib/nomus/nomusAccountsReceivableSourceReconciliation.test.ts",
-    "test:nomus:accounts-payable": "tsx --test src/lib/nomusAccountsPayable.test.ts src/lib/nomusAccountsPayableSyncLogParse.test.ts",
+    "test:nomus:accounts-payable": "tsx --test src/lib/nomusAccountsPayable.test.ts src/lib/nomusAccountsPayableSyncLogParse.test.ts src/lib/nomus/nomusAccountsPayableSourceReconciliation.test.ts",
     "test:nomus:nfes": "tsx --test src/lib/nomusNfes.test.ts src/lib/nomusNfesSyncLogParse.test.ts src/lib/nfeFiscalXmlParser.test.ts src/lib/nfeFiscalPersist.test.ts src/lib/nfeFiscalBackfill.test.ts src/lib/nfeFiscalBackfill.server.test.ts src/lib/sales-orders/salesOrderFiscalTaxes.test.ts src/lib/sales-orders/salesOrderFiscalTaxesContract.test.ts src/lib/sales-orders/salesOrderTributosTabUi.test.tsx src/lib/sales-orders/salesOrderDocumentaryTaxes.test.ts src/lib/sales-orders/salesOrderRelatedNfeResolver.test.ts src/lib/sales-orders/salesOrderTaxesAudit.test.ts src/lib/sales-orders/salesOrderTributosReleaseCandidate.test.tsx src/lib/finance/fiscalSettlement.test.ts src/lib/finance/fiscalTaxIntelligence.test.ts",
     "test:finance:order-planned": "tsx --test src/lib/finance/salesOrderPlannedReceivables.test.ts",
     "test:finance:fiscal-tax-intel": "tsx --test src/lib/finance/fiscalTaxIntelligence.test.ts src/lib/finance/fiscalSettlement.test.ts",
