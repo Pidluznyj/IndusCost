@@ -38,6 +38,7 @@ import {
   SALES_ORDER_FLOW_PAGE_TITLE,
   SALES_ORDER_FLOW_ROUTE_PATH,
   SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS,
+  resolveSalesOrderFlowExecutiveIndicators,
   salesOrderFlowFiltersToClientQuery,
 } from "@/src/lib/salesOrderFlowUi.js";
 import { filterSalesOrderFlowMenuNavigation } from "@/src/lib/salesOrderFlowNavigation.js";
@@ -358,5 +359,192 @@ describe("sales order flow filters (OP-65)", () => {
     const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
     assert.match(mod, /sales-order-flow-empty-filters/);
     assert.match(mod, /sales-order-flow-date-range-invalid/);
+  });
+});
+
+describe("sales order flow indicators (OP-66)", () => {
+  const summary = {
+    valuesVisible: true,
+    inconsistenciesVisible: true,
+    columns: [
+      {
+        stage: "WAITING_RELEASE" as const,
+        label: "Aguardando liberação",
+        isCanceledColumn: false,
+        orderCount: 3,
+        orderValue: 1_000,
+        activeResidualValue: 600,
+      },
+      {
+        stage: "IN_PRODUCTION" as const,
+        label: "Em produção",
+        isCanceledColumn: false,
+        orderCount: 2,
+        orderValue: 2_000,
+        activeResidualValue: 800,
+      },
+      {
+        stage: "SHIPPED_COMPLETED" as const,
+        label: "Enviado / concluído",
+        isCanceledColumn: false,
+        orderCount: 4,
+        orderValue: 4_000,
+        activeResidualValue: 0,
+      },
+      {
+        stage: "CANCELED" as const,
+        label: "Cancelado",
+        isCanceledColumn: true,
+        orderCount: 1,
+        orderValue: 500,
+        activeResidualValue: 0,
+      },
+    ],
+  };
+
+  const list = {
+    inconsistenciesVisible: true,
+    columns: [
+      {
+        stage: "WAITING_RELEASE" as const,
+        total: 3,
+        totals: {
+          overdueCount: 2,
+          blockedCount: 1,
+          inconsistentCount: 1,
+          partiallyShippedCount: 0,
+          withCutCount: 0,
+        },
+      },
+      {
+        stage: "IN_PRODUCTION" as const,
+        total: 2,
+        totals: {
+          overdueCount: 1,
+          blockedCount: 0,
+          inconsistentCount: 1,
+          partiallyShippedCount: 1,
+          withCutCount: 1,
+        },
+      },
+      {
+        stage: "SHIPPED_COMPLETED" as const,
+        total: 4,
+        totals: {
+          overdueCount: 0,
+          blockedCount: 0,
+          inconsistentCount: 0,
+          partiallyShippedCount: 2,
+          withCutCount: 1,
+        },
+      },
+      {
+        stage: "CANCELED" as const,
+        total: 1,
+        totals: {
+          overdueCount: 0,
+          blockedCount: 0,
+          inconsistentCount: 0,
+          partiallyShippedCount: 0,
+          withCutCount: 0,
+        },
+      },
+    ],
+  };
+
+  it("deriva os sete indicadores dos payloads já filtrados", () => {
+    const result = resolveSalesOrderFlowExecutiveIndicators(summary, list);
+    assert.equal(result.activeOrderCount, 5);
+    assert.equal(result.processValue, 3_000);
+    assert.equal(result.activeResidualValue, 1_400);
+    assert.equal(result.overdueCount, 3);
+    assert.equal(result.blockedCount, 1);
+    assert.equal(result.inconsistentCount, 2);
+    assert.equal(result.partiallyShippedCount, 3);
+    assert.equal(result.columns.length, 4);
+  });
+
+  it("respeita filtro de etapa usando somente colunas retornadas pela lista", () => {
+    const result = resolveSalesOrderFlowExecutiveIndicators(summary, {
+      ...list,
+      columns: [list.columns[1]!],
+    });
+    assert.equal(result.activeOrderCount, 2);
+    assert.equal(result.processValue, 2_000);
+    assert.equal(result.activeResidualValue, 800);
+    assert.equal(result.columns[0]?.stage, "IN_PRODUCTION");
+  });
+
+  it("oculta valores e inconsistências sem permissão", () => {
+    const result = resolveSalesOrderFlowExecutiveIndicators(
+      {
+        ...summary,
+        valuesVisible: false,
+        inconsistenciesVisible: false,
+        columns: summary.columns.map((column) => ({
+          ...column,
+          orderValue: null,
+          activeResidualValue: null,
+        })),
+      },
+      {
+        ...list,
+        inconsistenciesVisible: false,
+        columns: list.columns.map((column) => ({
+          ...column,
+          totals: { ...column.totals, inconsistentCount: null },
+        })),
+      }
+    );
+    assert.equal(result.processValue, null);
+    assert.equal(result.activeResidualValue, null);
+    assert.equal(result.inconsistentCount, null);
+    assert.equal(result.columns[0]?.orderValue, null);
+  });
+
+  it("mantém zeros explícitos no estado vazio", () => {
+    const result = resolveSalesOrderFlowExecutiveIndicators(
+      { valuesVisible: true, inconsistenciesVisible: true, columns: [] },
+      { inconsistenciesVisible: true, columns: [] }
+    );
+    assert.deepEqual(
+      {
+        active: result.activeOrderCount,
+        value: result.processValue,
+        residual: result.activeResidualValue,
+        overdue: result.overdueCount,
+        blocked: result.blockedCount,
+        inconsistent: result.inconsistentCount,
+        partial: result.partiallyShippedCount,
+      },
+      {
+        active: 0,
+        value: 0,
+        residual: 0,
+        overdue: 0,
+        blocked: 0,
+        inconsistent: 0,
+        partial: 0,
+      }
+    );
+  });
+
+  it("reutiliza chamadas existentes, skeleton e erro sem limpar dados", () => {
+    const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
+    assert.match(mod, /SystemTotalizerCard/);
+    assert.match(mod, /SummaryKpiGrid/);
+    assert.match(mod, /sales-order-flow-indicators/);
+    assert.match(mod, /sales-order-flow-column-headers/);
+    assert.match(mod, /loading=\{indicatorsLoading\}/);
+    assert.match(mod, /Promise\.all\(\[/);
+    assert.equal(
+      (mod.match(/fetchSalesOrderFlowSummary\(query/g) ?? []).length,
+      1
+    );
+    assert.equal(
+      (mod.match(/fetchSalesOrderFlowList\(query/g) ?? []).length,
+      1
+    );
+    assert.match(mod, /Mantém o último Kanban\/indicadores válidos/);
   });
 });

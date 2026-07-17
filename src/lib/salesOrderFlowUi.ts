@@ -35,6 +35,60 @@ export const SALES_ORDER_FLOW_UI_PRIORITIES = [
 export type SalesOrderFlowUiPriority =
   (typeof SALES_ORDER_FLOW_UI_PRIORITIES)[number];
 
+export type SalesOrderFlowIndicatorSummary = {
+  valuesVisible: boolean;
+  inconsistenciesVisible: boolean;
+  columns: Array<{
+    stage: SalesOrderFlowStage;
+    label: string;
+    isCanceledColumn: boolean;
+    orderCount: number;
+    orderValue: number | null;
+    activeResidualValue: number | null;
+  }>;
+};
+
+export type SalesOrderFlowIndicatorList = {
+  inconsistenciesVisible: boolean;
+  columns: Array<{
+    stage: SalesOrderFlowStage;
+    total: number;
+    totals: {
+      overdueCount: number;
+      blockedCount: number;
+      inconsistentCount: number | null;
+      partiallyShippedCount: number;
+      withCutCount: number;
+    };
+  }>;
+};
+
+export type SalesOrderFlowColumnIndicator = {
+  stage: SalesOrderFlowStage;
+  label: string;
+  orderCount: number;
+  orderValue: number | null;
+  activeResidualValue: number | null;
+  overdueCount: number;
+  blockedCount: number;
+  inconsistentCount: number | null;
+  partiallyShippedCount: number;
+  withCutCount: number;
+};
+
+export type SalesOrderFlowExecutiveIndicators = {
+  activeOrderCount: number;
+  processValue: number | null;
+  activeResidualValue: number | null;
+  overdueCount: number;
+  blockedCount: number;
+  inconsistentCount: number | null;
+  partiallyShippedCount: number;
+  valuesVisible: boolean;
+  inconsistenciesVisible: boolean;
+  columns: SalesOrderFlowColumnIndicator[];
+};
+
 export type SalesOrderFlowUiFilters = {
   q: string;
   customerId: string;
@@ -95,6 +149,84 @@ export const SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS: ReadonlyArray<{
   value: stage,
   label: SALES_ORDER_FLOW_STAGE_LABELS[stage],
 }));
+
+const TERMINAL_SALES_ORDER_FLOW_STAGES = new Set<SalesOrderFlowStage>([
+  "SHIPPED_COMPLETED",
+  "CANCELED",
+]);
+
+/**
+ * Deriva cards e cabeçalhos somente dos payloads já carregados.
+ * `list.columns` define as etapas filtradas; `summary.columns` fornece valores.
+ */
+export function resolveSalesOrderFlowExecutiveIndicators(
+  summary: SalesOrderFlowIndicatorSummary,
+  list: SalesOrderFlowIndicatorList
+): SalesOrderFlowExecutiveIndicators {
+  const summaryByStage = new Map(
+    summary.columns.map((column) => [column.stage, column] as const)
+  );
+  const columns = list.columns.map((column) => {
+    const summaryColumn = summaryByStage.get(column.stage);
+    return {
+      stage: column.stage,
+      label: summaryColumn?.label ?? SALES_ORDER_FLOW_STAGE_LABELS[column.stage],
+      orderCount: column.total,
+      orderValue: summary.valuesVisible
+        ? (summaryColumn?.orderValue ?? 0)
+        : null,
+      activeResidualValue: summary.valuesVisible
+        ? (summaryColumn?.activeResidualValue ?? 0)
+        : null,
+      overdueCount: column.totals.overdueCount,
+      blockedCount: column.totals.blockedCount,
+      inconsistentCount:
+        list.inconsistenciesVisible && summary.inconsistenciesVisible
+          ? (column.totals.inconsistentCount ?? 0)
+          : null,
+      partiallyShippedCount: column.totals.partiallyShippedCount,
+      withCutCount: column.totals.withCutCount,
+    };
+  });
+  const activeColumns = columns.filter(
+    (column) => !TERMINAL_SALES_ORDER_FLOW_STAGES.has(column.stage)
+  );
+  const sum = (
+    selector: (column: SalesOrderFlowColumnIndicator) => number
+  ): number => columns.reduce((total, column) => total + selector(column), 0);
+
+  return {
+    activeOrderCount: activeColumns.reduce(
+      (total, column) => total + column.orderCount,
+      0
+    ),
+    processValue: summary.valuesVisible
+      ? activeColumns.reduce(
+          (total, column) => total + (column.orderValue ?? 0),
+          0
+        )
+      : null,
+    activeResidualValue: summary.valuesVisible
+      ? activeColumns.reduce(
+          (total, column) => total + (column.activeResidualValue ?? 0),
+          0
+        )
+      : null,
+    overdueCount: sum((column) => column.overdueCount),
+    blockedCount: sum((column) => column.blockedCount),
+    inconsistentCount:
+      list.inconsistenciesVisible && summary.inconsistenciesVisible
+        ? sum((column) => column.inconsistentCount ?? 0)
+        : null,
+    partiallyShippedCount: sum(
+      (column) => column.partiallyShippedCount
+    ),
+    valuesVisible: summary.valuesVisible,
+    inconsistenciesVisible:
+      list.inconsistenciesVisible && summary.inconsistenciesVisible,
+    columns,
+  };
+}
 
 export function canViewSalesOrderFlow(check: {
   canPerformAction?: (resourceKey: string, action: string) => boolean;

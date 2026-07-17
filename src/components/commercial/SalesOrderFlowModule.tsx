@@ -1,7 +1,22 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Loader2, Search } from "lucide-react";
+import {
+  Ban,
+  CircleDollarSign,
+  Clock3,
+  Loader2,
+  PackageCheck,
+  Search,
+  ShieldAlert,
+  Truck,
+  WalletCards,
+} from "lucide-react";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -23,6 +38,7 @@ import {
   hasActiveSalesOrderFlowFilters,
   isSalesOrderFlowDateRangeInvalid,
   parseSalesOrderFlowFiltersFromSearchParams,
+  resolveSalesOrderFlowExecutiveIndicators,
   SALES_ORDER_FLOW_BREADCRUMB,
   SALES_ORDER_FLOW_PRIORITY_OPTIONS,
   SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS,
@@ -38,8 +54,8 @@ const FILTER_CONTROL_CLASS =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
- * Shell + filtros do Kanban Comercial (OP-64/OP-65).
- * Sem cards/drawer — filtros alimentam summary e list para as colunas.
+ * Shell + filtros + indicadores do Kanban Comercial (OP-64..OP-66).
+ * Sem cards de pedido/drawer; summary e list alimentam KPIs e cabeçalhos.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();
@@ -120,6 +136,7 @@ export function SalesOrderFlowModule() {
   useEffect(() => {
     if (!canView) return;
     const controller = new AbortController();
+    setLoading(true);
     void fetchSalesOrderFlowFeatureStatus(controller.signal)
       .then((status) => {
         if (controller.signal.aborted) return;
@@ -206,8 +223,7 @@ export function SalesOrderFlowModule() {
         const classified = classifySalesOrderFlowListError(error);
         setErrorKind(classified.kind);
         setErrorMessage(classified.message);
-        setSummary(null);
-        setList(null);
+        // Mantém o último Kanban/indicadores válidos durante falha de atualização.
         setHasLoadedOnce(true);
       })
       .finally(() => {
@@ -260,6 +276,15 @@ export function SalesOrderFlowModule() {
   const initialLoading = loading && !hasLoadedOnce;
   const stageSelectValue =
     filters.stages.length === 1 ? filters.stages[0] : "";
+  const indicators =
+    summary && list
+      ? resolveSalesOrderFlowExecutiveIndicators(summary, list)
+      : null;
+  const indicatorsLoading = loading || featureEnabled === null;
+  const showIndicators =
+    featureEnabled !== false &&
+    !dateRangesInvalid &&
+    (indicatorsLoading || indicators != null);
 
   return (
     <div className="space-y-4" data-testid="sales-order-flow-module">
@@ -533,7 +558,178 @@ export function SalesOrderFlowModule() {
         ) : null}
       </section>
 
-      {initialLoading ? (
+      {showIndicators ? (
+        <section
+          className="space-y-3"
+          aria-label="Indicadores do Fluxo de Pedidos"
+          data-testid="sales-order-flow-indicators"
+        >
+          <SummaryKpiGrid
+            minColumnWidth={150}
+            className={SYSTEM_TOTALIZER_GRID_CLASS}
+            testId="sales-order-flow-indicator-grid"
+          >
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-active-orders"
+              label="Pedidos ativos"
+              amount={indicators?.activeOrderCount ?? 0}
+              amountFormat="number"
+              icon={PackageCheck}
+              tone="info"
+              loading={indicatorsLoading}
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-process-value"
+              label="Valor em processo"
+              amount={indicators?.processValue ?? undefined}
+              amountFormat="currency"
+              value={indicators?.valuesVisible === false ? "Oculto" : undefined}
+              subtitle={
+                indicators?.valuesVisible === false
+                  ? "Sem permissão para valores"
+                  : undefined
+              }
+              icon={CircleDollarSign}
+              tone="money"
+              loading={indicatorsLoading}
+              valueSize={indicators?.valuesVisible === false ? "text" : "default"}
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-active-residual"
+              label="Saldo ativo"
+              amount={indicators?.activeResidualValue ?? undefined}
+              amountFormat="currency"
+              value={indicators?.valuesVisible === false ? "Oculto" : undefined}
+              subtitle={
+                indicators?.valuesVisible === false
+                  ? "Sem permissão para valores"
+                  : undefined
+              }
+              icon={WalletCards}
+              tone="money"
+              loading={indicatorsLoading}
+              valueSize={indicators?.valuesVisible === false ? "text" : "default"}
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-overdue"
+              label="Atrasados"
+              amount={indicators?.overdueCount ?? 0}
+              amountFormat="number"
+              icon={Clock3}
+              tone="warning"
+              loading={indicatorsLoading}
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-blocked"
+              label="Bloqueados"
+              amount={indicators?.blockedCount ?? 0}
+              amountFormat="number"
+              icon={Ban}
+              tone="danger"
+              loading={indicatorsLoading}
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-inconsistent"
+              label="Inconsistentes"
+              amount={indicators?.inconsistentCount ?? undefined}
+              amountFormat="number"
+              value={
+                indicators?.inconsistenciesVisible === false
+                  ? "Oculto"
+                  : undefined
+              }
+              subtitle={
+                indicators?.inconsistenciesVisible === false
+                  ? "Sem permissão para inconsistências"
+                  : undefined
+              }
+              icon={ShieldAlert}
+              tone="danger"
+              loading={indicatorsLoading}
+              valueSize={
+                indicators?.inconsistenciesVisible === false ? "text" : "default"
+              }
+            />
+            <SystemTotalizerCard
+              testId="sales-order-flow-indicator-partially-shipped"
+              label="Parcialmente enviados"
+              amount={indicators?.partiallyShippedCount ?? 0}
+              amountFormat="number"
+              icon={Truck}
+              tone="warning"
+              loading={indicatorsLoading}
+            />
+          </SummaryKpiGrid>
+        </section>
+      ) : null}
+
+      {indicators ? (
+        <section
+          className="space-y-2"
+          aria-label="Totais por coluna do Fluxo de Pedidos"
+          data-testid="sales-order-flow-column-headers"
+        >
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {indicators.columns.map((column) => (
+              <article
+                key={column.stage}
+                className={cn(
+                  "min-w-[220px] flex-1 rounded-xl border p-3 shadow-sm",
+                  salesOrderFlowColumnHeaderClass(column.stage)
+                )}
+                data-testid={`sales-order-flow-column-header-${column.stage}`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    {column.label}
+                  </h3>
+                  <span className="rounded-full border border-current/15 bg-white/70 px-2 py-0.5 text-xs font-semibold">
+                    {column.orderCount}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                  <span>Valor</span>
+                  <strong className="text-right text-foreground">
+                    {formatFlowColumnMoney(
+                      column.orderValue,
+                      indicators.valuesVisible
+                    )}
+                  </strong>
+                  <span>Saldo</span>
+                  <strong className="text-right text-foreground">
+                    {formatFlowColumnMoney(
+                      column.activeResidualValue,
+                      indicators.valuesVisible
+                    )}
+                  </strong>
+                  <span>Atrasados</span>
+                  <strong className="text-right text-foreground">
+                    {column.overdueCount}
+                  </strong>
+                  <span>Bloqueados</span>
+                  <strong className="text-right text-foreground">
+                    {column.blockedCount}
+                  </strong>
+                  <span>Inconsistentes</span>
+                  <strong className="text-right text-foreground">
+                    {column.inconsistentCount ?? "Oculto"}
+                  </strong>
+                  <span>Parcialmente enviados</span>
+                  <strong className="text-right text-foreground">
+                    {column.partiallyShippedCount}
+                  </strong>
+                  <span>Com corte</span>
+                  <strong className="text-right text-foreground">
+                    {column.withCutCount}
+                  </strong>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {initialLoading && !showIndicators ? (
         <div
           className="flex items-center justify-center gap-2 rounded-xl border border-border bg-card p-12 text-sm text-muted-foreground"
           data-testid="sales-order-flow-loading"
@@ -658,4 +854,31 @@ function BooleanFilter({
       {label}
     </label>
   );
+}
+
+function formatFlowColumnMoney(
+  amount: number | null,
+  valuesVisible: boolean
+): string {
+  if (!valuesVisible || amount == null) return "Oculto";
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function salesOrderFlowColumnHeaderClass(stage: SalesOrderFlowStage): string {
+  switch (stage) {
+    case "SHIPPED_COMPLETED":
+      return "border-emerald-200 bg-emerald-50/50 text-emerald-800";
+    case "CANCELED":
+      return "border-rose-200 bg-rose-50/50 text-rose-800";
+    case "WAITING_RELEASE":
+    case "WAITING_OUTPUT_DOCUMENT":
+    case "WAITING_NFE":
+      return "border-amber-200 bg-amber-50/50 text-amber-800";
+    default:
+      return "border-border bg-card text-foreground";
+  }
 }
