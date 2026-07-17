@@ -12,6 +12,7 @@ import {
   detectSalesOrderHeaderItemDrift,
   sumSalesOrderItemsNetValue,
 } from "../src/lib/salesOrderNomusSync.server.ts";
+import { parseNomusPtBrNumber } from "./nomusNumberParser.ts";
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -21,9 +22,9 @@ function parseArg(name: string): string | undefined {
   return undefined;
 }
 
+/** Usa o parser oficial Nomus — Number("117.000,00") é incorreto. */
 function money(value: unknown): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
+  return parseNomusPtBrNumber(value);
 }
 
 function parsePdNumber(orderCode: string): number | null {
