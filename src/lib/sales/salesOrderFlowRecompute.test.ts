@@ -426,6 +426,8 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
         { salesOrderItemId: ITEM_A, plannedNetValue: 100 },
         { salesOrderItemId: ITEM_B, plannedNetValue: 100 },
       ],
+      source: "manual",
+      emitObservabilityLog: false,
     });
 
     assert.equal(result.action, "created");
@@ -437,6 +439,13 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     assert.equal(items.size, 2);
     assert.equal(orders.size, 1);
     assert.equal(orders.get(ORDER_ID)!.computedAt.toISOString(), FIXED_NOW.toISOString());
+    assert.equal(result.observability.source, "manual");
+    assert.equal(result.observability.metrics.snapshotsCreated > 0, true);
+    assert.ok(result.observability.sourceFingerprint.length <= 12);
+    assert.doesNotMatch(
+      JSON.stringify(result.observability),
+      /rawJson|password|token|nomusRaw/i
+    );
 
     const orderSnap = await findSalesOrderFlowSnapshotByOrderId(db, ORDER_ID);
     assert.ok(orderSnap);
@@ -456,6 +465,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
         { salesOrderItemId: ITEM_A, plannedNetValue: 100 },
         { salesOrderItemId: ITEM_B, plannedNetValue: 100 },
       ],
+      emitObservabilityLog: false,
     };
 
     const first = await recomputeSalesOrderFlow(db as never, ORDER_ID, opts);
@@ -467,6 +477,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     const second = await recomputeSalesOrderFlow(db as never, ORDER_ID, {
       ...opts,
       now: () => new Date("2026-07-17T16:00:00.000Z"),
+      emitObservabilityLog: false,
     });
 
     assert.equal(second.action, "unchanged");
@@ -495,6 +506,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
       evidencePack: packWaiting,
       now: () => FIXED_NOW,
       itemFinancials: financials,
+      emitObservabilityLog: false,
     });
     assert.equal(first.action, "created");
     const itemABefore = (await findSalesOrderItemFlowSnapshotsByOrderId(db, ORDER_ID)).find(
@@ -515,6 +527,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
       evidencePack: packShippedA,
       now: () => new Date("2026-07-17T16:00:00.000Z"),
       itemFinancials: financials,
+      emitObservabilityLog: false,
     });
 
     assert.equal(second.action, "updated");
@@ -552,6 +565,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
       evidencePack: buildPack(),
       now: () => FIXED_NOW,
       itemFinancials: financials,
+      emitObservabilityLog: false,
     });
     const fpBBefore = items.get(ITEM_B)!.fingerprint;
 
@@ -565,6 +579,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
       evidencePack: packPartial,
       now: () => new Date("2026-07-17T17:00:00.000Z"),
       itemFinancials: financials,
+      emitObservabilityLog: false,
     });
 
     assert.equal(result.action, "updated");
@@ -585,6 +600,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
             { salesOrderItemId: ITEM_A, plannedNetValue: 100 },
             { salesOrderItemId: ITEM_B, plannedNetValue: 100 },
           ],
+          emitObservabilityLog: false,
         }),
       /TRANSACIONAL_FAIL/
     );
@@ -599,6 +615,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
       () =>
         recomputeSalesOrderFlow(db as never, ORDER_ID, {
           evidencePack: null,
+          emitObservabilityLog: false,
         }),
       (err: unknown) => {
         assert.ok(err instanceof SalesOrderFlowOrderNotFoundError);

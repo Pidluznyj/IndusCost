@@ -55,6 +55,24 @@ export type SalesOrderFlowRecomputeResult = {
   previousOrderStage: string | null;
   skippedWrite: boolean;
   computedAt: string | null;
+  computationVersion?: string;
+  observability?: {
+    sourceFingerprint: string;
+    durationMs: number;
+    metrics: {
+      ordersEvaluated: number;
+      itemsEvaluated: number;
+      snapshotsCreated: number;
+      snapshotsUpdated: number;
+      unchanged: number;
+      eventsCreated: number;
+      inconsistencies: number;
+      failures: number;
+      durationMs: number;
+      computationVersion: string;
+      source: string;
+    };
+  };
 };
 
 export const SALES_ORDER_FLOW_RESPONSIBLE_USERS_LOOKUP_API_PATH =

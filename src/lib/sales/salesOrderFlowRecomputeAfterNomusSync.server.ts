@@ -25,6 +25,7 @@ import {
   type SalesOrderFlowRecomputeAfterSyncResult,
   type SalesOrderFlowRecomputeAfterSyncTrigger,
 } from "./salesOrderFlowRecomputeAfterNomusSync.js";
+import type { SalesOrderFlowRecomputeObservabilityLog } from "./salesOrderFlowObservability.js";
 
 export type SalesOrderFlowRecomputeAfterSyncDb = SalesOrderFlowRecomputeDb &
   Pick<
@@ -193,7 +194,8 @@ async function persistAuditBestEffort(
 }
 
 const defaultDeps: SalesOrderFlowRecomputeAfterSyncDeps = {
-  recompute: (db, salesOrderId) => recomputeSalesOrderFlow(db, salesOrderId),
+  recompute: (db, salesOrderId) =>
+    recomputeSalesOrderFlow(db, salesOrderId, { source: "post-sync" }),
   resolveOrderIds: resolveSalesOrderFlowAffectedOrderIds,
   persistAudit: persistAuditBestEffort,
 };
@@ -266,6 +268,7 @@ export async function runSalesOrderFlowRecomputeAfterNomusSync(
       return result;
     }
 
+    const observabilityLogs: SalesOrderFlowRecomputeObservabilityLog[] = [];
     for (const salesOrderId of orderIds) {
       try {
         const outcome = await resolved.recompute(db, salesOrderId);
@@ -273,6 +276,9 @@ export async function runSalesOrderFlowRecomputeAfterNomusSync(
         if (outcome.action === "created") summary.created += 1;
         else if (outcome.action === "updated") summary.updated += 1;
         else summary.unchanged += 1;
+        if (outcome.observability) {
+          observabilityLogs.push(outcome.observability);
+        }
       } catch (error) {
         summary.errors += 1;
         summary.failures.push({
@@ -283,6 +289,30 @@ export async function runSalesOrderFlowRecomputeAfterNomusSync(
     }
 
     summary.durationMs = nowFn().getTime() - startedAt.getTime();
+    summary.observability = {
+      ordersEvaluated: observabilityLogs.length + summary.errors,
+      itemsEvaluated: observabilityLogs.reduce(
+        (sum, log) => sum + log.metrics.itemsEvaluated,
+        0
+      ),
+      snapshotsCreated: observabilityLogs.reduce(
+        (sum, log) => sum + log.metrics.snapshotsCreated,
+        0
+      ),
+      snapshotsUpdated: observabilityLogs.reduce(
+        (sum, log) => sum + log.metrics.snapshotsUpdated,
+        0
+      ),
+      eventsCreated: observabilityLogs.reduce(
+        (sum, log) => sum + log.metrics.eventsCreated,
+        0
+      ),
+      inconsistencies: observabilityLogs.reduce(
+        (sum, log) => sum + log.metrics.inconsistencies,
+        0
+      ),
+      computationVersion: observabilityLogs[0]?.computationVersion ?? null,
+    };
     const result: SalesOrderFlowRecomputeAfterSyncResult = {
       enabled: true,
       skipped: false,

@@ -34,6 +34,16 @@ export type SalesOrderFlowRecomputeOrderFailure = {
   message: string;
 };
 
+export type SalesOrderFlowRecomputeAfterSyncObservability = {
+  ordersEvaluated: number;
+  itemsEvaluated: number;
+  snapshotsCreated: number;
+  snapshotsUpdated: number;
+  eventsCreated: number;
+  inconsistencies: number;
+  computationVersion: string | null;
+};
+
 export type SalesOrderFlowRecomputeAfterSyncSummary = {
   ordersSelected: number;
   ordersProcessed: number;
@@ -43,6 +53,8 @@ export type SalesOrderFlowRecomputeAfterSyncSummary = {
   errors: number;
   failures: SalesOrderFlowRecomputeOrderFailure[];
   durationMs: number;
+  /** Contadores agregados do motor (OP-74). */
+  observability?: SalesOrderFlowRecomputeAfterSyncObservability;
 };
 
 export type SalesOrderFlowRecomputeAfterSyncResult = {

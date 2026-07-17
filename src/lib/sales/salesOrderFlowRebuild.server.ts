@@ -26,6 +26,12 @@ import {
   type SalesOrderFlowRebuildCliOptions,
   type SalesOrderFlowRebuildSummary,
 } from "./salesOrderFlowRebuild.js";
+import {
+  aggregateSalesOrderFlowRecomputeObservabilityMetrics,
+  type SalesOrderFlowRecomputeObservabilityLog,
+} from "./salesOrderFlowObservability.js";
+import { persistSalesOrderFlowRecomputeObservabilityBestEffort } from "./salesOrderFlowObservability.server.js";
+import { SALES_ORDER_FLOW_COMPUTATION_VERSION } from "./salesOrderFlowFingerprint.js";
 
 export type SalesOrderFlowRebuildCandidate = {
   id: string;
@@ -35,7 +41,8 @@ export type SalesOrderFlowRebuildCandidate = {
 export type SalesOrderFlowRebuildListDb = Pick<PrismaClient, "salesOrder">;
 
 export type SalesOrderFlowRebuildRunDb = SalesOrderFlowRebuildListDb &
-  SalesOrderFlowRecomputeDb;
+  SalesOrderFlowRecomputeDb &
+  Pick<PrismaClient, "integrationRun">;
 
 export type SalesOrderFlowRebuildIo = {
   readCheckpoint?: (path: string) => string | null;
@@ -44,8 +51,9 @@ export type SalesOrderFlowRebuildIo = {
   recompute?: (
     db: SalesOrderFlowRecomputeDb,
     salesOrderId: string,
-    options: { dryRun?: boolean }
+    options: { dryRun?: boolean; source?: "rebuild" | "rebuild-preview" }
   ) => Promise<RecomputeSalesOrderFlowResult>;
+  persistObservability?: typeof persistSalesOrderFlowRecomputeObservabilityBestEffort;
   acquireLock?: typeof acquireSalesOrderFlowRebuildLock;
   releaseLock?: typeof releaseSalesOrderFlowRebuildLock;
   /** Se retornar true no meio do lote, aborta sem avançar checkpoint. */
@@ -144,8 +152,28 @@ export async function runSalesOrderFlowRebuild(
     });
 
   const recompute = io.recompute ?? recomputeSalesOrderFlow;
+  const persistObservability =
+    io.persistObservability ??
+    (async (observabilityDb, input) => {
+      if (
+        !observabilityDb ||
+        typeof (observabilityDb as { integrationRun?: unknown }).integrationRun !==
+          "object" ||
+        (observabilityDb as { integrationRun?: unknown }).integrationRun == null
+      ) {
+        return;
+      }
+      await persistSalesOrderFlowRecomputeObservabilityBestEffort(
+        observabilityDb,
+        input
+      );
+    });
   const acquireLock = io.acquireLock ?? acquireSalesOrderFlowRebuildLock;
   const releaseLock = io.releaseLock ?? releaseSalesOrderFlowRebuildLock;
+  const recomputeSource =
+    options.mode === "preview" ? ("rebuild-preview" as const) : ("rebuild" as const);
+  const observabilityLogs: SalesOrderFlowRecomputeObservabilityLog[] = [];
+  const startedAt = nowFn();
 
   let lockToken: string | null = null;
 
@@ -200,11 +228,15 @@ export async function runSalesOrderFlowRebuild(
           try {
             const result = await recompute(db, candidate.id, {
               dryRun: options.mode === "preview",
+              source: recomputeSource,
             });
             summary.ordersProcessed += 1;
             if (result.action === "created") summary.created += 1;
             else if (result.action === "updated") summary.updated += 1;
             else summary.unchanged += 1;
+            if (result.observability) {
+              observabilityLogs.push(result.observability);
+            }
             lastCandidate = candidate;
             cursorAfterId = candidate.id;
           } catch (error) {
@@ -276,5 +308,33 @@ export async function runSalesOrderFlowRebuild(
 
   summary.durationMs = nowFn().getTime() - started;
   summary.exitCode = exitCodeForSalesOrderFlowRebuildSummary(summary);
+
+  const finishedAt = nowFn();
+  const metrics = aggregateSalesOrderFlowRecomputeObservabilityMetrics(
+    observabilityLogs,
+    {
+      source: recomputeSource,
+      computationVersion: SALES_ORDER_FLOW_COMPUTATION_VERSION,
+      durationMs: summary.durationMs,
+    }
+  );
+  metrics.failures = Math.max(metrics.failures, summary.errors);
+  metrics.ordersEvaluated = Math.max(
+    metrics.ordersEvaluated,
+    summary.ordersProcessed + summary.errors
+  );
+  await persistObservability(db, {
+    source: recomputeSource,
+    metrics,
+    logs: observabilityLogs,
+    startedAt,
+    finishedAt,
+    mode: options.mode,
+    errorMessage:
+      summary.errors > 0
+        ? `${summary.errors} pedido(s) com falha no rebuild`
+        : null,
+  });
+
   return summary;
 }

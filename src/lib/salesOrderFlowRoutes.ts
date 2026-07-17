@@ -28,6 +28,7 @@ import {
   recomputeSalesOrderFlow,
   SalesOrderFlowOrderNotFoundError,
 } from "@/src/lib/sales/salesOrderFlowRecompute.server.js";
+import { persistSalesOrderFlowRecomputeObservabilityBestEffort } from "@/src/lib/sales/salesOrderFlowObservability.server.js";
 import { assertSalesOrderFlowDetailId } from "@/src/lib/sales/salesOrderFlowDetail.js";
 import {
   resolveSalesOrderFlowCapabilitiesWith,
@@ -503,9 +504,23 @@ export function registerSalesOrderFlowRoutes(
           });
         }
 
+        const startedAt = new Date();
         const result = await recomputeSalesOrderFlow(
           scoped.prisma,
-          salesOrderId
+          salesOrderId,
+          { source: "http" }
+        );
+        const finishedAt = new Date();
+        await persistSalesOrderFlowRecomputeObservabilityBestEffort(
+          scoped.prisma,
+          {
+            source: "http",
+            metrics: result.observability.metrics,
+            logs: [result.observability],
+            startedAt,
+            finishedAt,
+            mode: "http",
+          }
         );
         res.setHeader("Cache-Control", "no-store");
         return res.json({
@@ -516,6 +531,12 @@ export function registerSalesOrderFlowRoutes(
           previousOrderStage: result.previousOrderStage,
           skippedWrite: result.skippedWrite,
           computedAt: result.computedAt,
+          computationVersion: result.computationVersion,
+          observability: {
+            sourceFingerprint: result.observability.sourceFingerprint,
+            durationMs: result.observability.durationMs,
+            metrics: result.observability.metrics,
+          },
         });
       } catch (error) {
         if (error instanceof SalesOrderFlowOrderNotFoundError) {

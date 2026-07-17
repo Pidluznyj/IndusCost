@@ -24,7 +24,10 @@ const ORDER_C = "33333333-3333-4333-8333-333333333333";
 function recomputeResult(
   partial: Partial<RecomputeSalesOrderFlowResult> & { salesOrderId: string }
 ): RecomputeSalesOrderFlowResult {
+  const salesOrderId = partial.salesOrderId;
+  const action = partial.action ?? "unchanged";
   return {
+    orderCode: null,
     action: "unchanged",
     reason: "fingerprint_match",
     computationVersion: "sales-order-flow/v1",
@@ -35,6 +38,31 @@ function recomputeResult(
     items: { total: 0, upserted: 0, created: 0, updated: 0, deleted: 0 },
     events: { attempted: 0, created: 0, duplicates: 0 },
     skippedWrite: true,
+    observability: {
+      salesOrderId,
+      orderCode: null,
+      previousStage: null,
+      currentStage: "WAITING_NFE",
+      reason: "fingerprint_match",
+      computationVersion: "sales-order-flow/v1",
+      sourceFingerprint: "fp",
+      action,
+      source: "rebuild",
+      durationMs: 1,
+      metrics: {
+        ordersEvaluated: 1,
+        itemsEvaluated: 0,
+        snapshotsCreated: action === "created" ? 1 : 0,
+        snapshotsUpdated: action === "updated" ? 1 : 0,
+        unchanged: action === "unchanged" ? 1 : 0,
+        eventsCreated: 0,
+        inconsistencies: 0,
+        failures: 0,
+        durationMs: 1,
+        computationVersion: "sales-order-flow/v1",
+        source: "rebuild",
+      },
+    },
     ...partial,
   };
 }
