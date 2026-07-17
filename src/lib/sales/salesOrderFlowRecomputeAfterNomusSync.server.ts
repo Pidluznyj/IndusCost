@@ -15,6 +15,8 @@ import {
   type RecomputeSalesOrderFlowResult,
   type SalesOrderFlowRecomputeDb,
 } from "./salesOrderFlowRecompute.server.js";
+import { loadSalesOrderFlowEvidenceBatch } from "./salesOrderFlowEvidence.server.js";
+import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import {
   buildSalesOrderFlowRecomputeAfterSyncTrigger,
   emptySalesOrderFlowRecomputeAfterSyncSummary,
@@ -40,8 +42,13 @@ export type SalesOrderFlowRecomputeAfterSyncDb = SalesOrderFlowRecomputeDb &
 export type SalesOrderFlowRecomputeAfterSyncDeps = {
   recompute: (
     db: SalesOrderFlowRecomputeDb,
-    salesOrderId: string
+    salesOrderId: string,
+    options?: {
+      source?: "post-sync";
+      evidencePack?: SalesOrderFlowEvidencePack | null;
+    }
   ) => Promise<RecomputeSalesOrderFlowResult>;
+  loadEvidenceBatch: typeof loadSalesOrderFlowEvidenceBatch;
   resolveOrderIds: (
     db: SalesOrderFlowRecomputeAfterSyncDb,
     trigger: SalesOrderFlowRecomputeAfterSyncTrigger
@@ -194,8 +201,12 @@ async function persistAuditBestEffort(
 }
 
 const defaultDeps: SalesOrderFlowRecomputeAfterSyncDeps = {
-  recompute: (db, salesOrderId) =>
-    recomputeSalesOrderFlow(db, salesOrderId, { source: "post-sync" }),
+  recompute: (db, salesOrderId, options) =>
+    recomputeSalesOrderFlow(db, salesOrderId, {
+      source: "post-sync",
+      ...options,
+    }),
+  loadEvidenceBatch: loadSalesOrderFlowEvidenceBatch,
   resolveOrderIds: resolveSalesOrderFlowAffectedOrderIds,
   persistAudit: persistAuditBestEffort,
 };
@@ -268,10 +279,25 @@ export async function runSalesOrderFlowRecomputeAfterNomusSync(
       return result;
     }
 
+    // OP-75: uma carga de evidências para todos os IDs resolvidos (evita N× pipeline).
+    let evidenceBatchLoaded = false;
+    let evidenceByOrderId = new Map<string, SalesOrderFlowEvidencePack>();
+    try {
+      evidenceByOrderId = await resolved.loadEvidenceBatch(db, orderIds);
+      evidenceBatchLoaded = true;
+    } catch {
+      evidenceBatchLoaded = false;
+    }
+
     const observabilityLogs: SalesOrderFlowRecomputeObservabilityLog[] = [];
     for (const salesOrderId of orderIds) {
       try {
-        const outcome = await resolved.recompute(db, salesOrderId);
+        const pack = evidenceByOrderId.get(salesOrderId);
+        const outcome = await resolved.recompute(db, salesOrderId, {
+          ...(evidenceBatchLoaded
+            ? { evidencePack: pack ?? null }
+            : {}),
+        });
         summary.ordersProcessed += 1;
         if (outcome.action === "created") summary.created += 1;
         else if (outcome.action === "updated") summary.updated += 1;

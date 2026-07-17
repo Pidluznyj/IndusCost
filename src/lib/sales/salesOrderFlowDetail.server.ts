@@ -258,7 +258,11 @@ export async function loadSalesOrderFlowDetail(
   }
 
   const [evidence, orderSnapshot, itemSnapshots, management] = await Promise.all([
-    loadSalesOrderFlowEvidence(options.prisma, salesOrderId),
+    loadSalesOrderFlowEvidence(options.prisma, salesOrderId, {
+      // Detalhe: não busca superfícies sem permissão (OP-75).
+      includeFiscalEvidence: canViewFiscal,
+      includeProductionEvidence: canViewProduction,
+    }),
     findSalesOrderFlowSnapshotByOrderId(options.prisma, salesOrderId),
     findSalesOrderItemFlowSnapshotsByOrderId(options.prisma, salesOrderId),
     findSalesOrderFlowManagementByOrderId(options.prisma, salesOrderId),

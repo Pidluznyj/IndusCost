@@ -12,6 +12,8 @@ import {
   type RecomputeSalesOrderFlowResult,
   type SalesOrderFlowRecomputeDb,
 } from "./salesOrderFlowRecompute.server.js";
+import { loadSalesOrderFlowEvidenceBatch } from "./salesOrderFlowEvidence.server.js";
+import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import {
   acquireSalesOrderFlowRebuildLock,
   emptySalesOrderFlowRebuildSummary,
@@ -51,8 +53,13 @@ export type SalesOrderFlowRebuildIo = {
   recompute?: (
     db: SalesOrderFlowRecomputeDb,
     salesOrderId: string,
-    options: { dryRun?: boolean; source?: "rebuild" | "rebuild-preview" }
+    options: {
+      dryRun?: boolean;
+      source?: "rebuild" | "rebuild-preview";
+      evidencePack?: SalesOrderFlowEvidencePack | null;
+    }
   ) => Promise<RecomputeSalesOrderFlowResult>;
+  loadEvidenceBatch?: typeof loadSalesOrderFlowEvidenceBatch;
   persistObservability?: typeof persistSalesOrderFlowRecomputeObservabilityBestEffort;
   acquireLock?: typeof acquireSalesOrderFlowRebuildLock;
   releaseLock?: typeof releaseSalesOrderFlowRebuildLock;
@@ -152,6 +159,7 @@ export async function runSalesOrderFlowRebuild(
     });
 
   const recompute = io.recompute ?? recomputeSalesOrderFlow;
+  const loadEvidenceBatch = io.loadEvidenceBatch ?? loadSalesOrderFlowEvidenceBatch;
   const persistObservability =
     io.persistObservability ??
     (async (observabilityDb, input) => {
@@ -221,14 +229,31 @@ export async function runSalesOrderFlowRebuild(
       let batchComplete = false;
 
       try {
+        // OP-75: uma carga de evidências por lote (evita N× pipeline).
+        let evidenceBatchLoaded = false;
+        let evidenceByOrderId = new Map<string, SalesOrderFlowEvidencePack>();
+        try {
+          evidenceByOrderId = await loadEvidenceBatch(
+            db,
+            batch.map((candidate) => candidate.id)
+          );
+          evidenceBatchLoaded = true;
+        } catch {
+          // DB de teste / parcial: recompute carrega evidência sob demanda.
+          evidenceBatchLoaded = false;
+        }
         for (const candidate of batch) {
           if (io.shouldAbortBatch?.()) {
             throw new Error("BATCH_INCOMPLETE");
           }
           try {
+            const pack = evidenceByOrderId.get(candidate.id);
             const result = await recompute(db, candidate.id, {
               dryRun: options.mode === "preview",
               source: recomputeSource,
+              ...(evidenceBatchLoaded
+                ? { evidencePack: pack ?? null }
+                : {}),
             });
             summary.ordersProcessed += 1;
             if (result.action === "created") summary.created += 1;

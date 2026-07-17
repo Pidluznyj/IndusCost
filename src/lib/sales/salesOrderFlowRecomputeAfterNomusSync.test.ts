@@ -264,4 +264,40 @@ describe("salesOrderFlowRecomputeAfterNomusSync (OP-57)", () => {
     assert.equal(result.skipped, true);
     assert.equal(result.skipReason, "not_apply_mode");
   });
+
+  it("OP-75: carrega evidências uma vez e injeta evidencePack no recompute", async () => {
+    const batchLoads: string[][] = [];
+    const packsPassed: boolean[] = [];
+
+    const result = await runSalesOrderFlowRecomputeAfterNomusSync(
+      {} as never,
+      buildSalesOrderFlowRecomputeAfterSyncTrigger({
+        source: "sales-orders",
+        syncMode: "apply",
+        salesOrderIds: [ORDER_A, ORDER_B],
+      }),
+      {
+        env: { [SALES_ORDER_FLOW_RECOMPUTE_AFTER_SYNC_ENV]: "true" },
+        resolveOrderIds: async () => [ORDER_A, ORDER_B],
+        loadEvidenceBatch: async (_db, ids) => {
+          batchLoads.push([...ids]);
+          const map = new Map();
+          for (const id of ids) {
+            map.set(id, { meta: { source: "LOCAL_STAGE" }, order: { id } });
+          }
+          return map as never;
+        },
+        recompute: async (_db, id, options) => {
+          packsPassed.push(options?.evidencePack != null);
+          return okResult(id);
+        },
+        persistAudit: async () => {},
+      }
+    );
+
+    assert.equal(result.skipped, false);
+    assert.equal(batchLoads.length, 1);
+    assert.deepEqual(batchLoads[0], [ORDER_A, ORDER_B]);
+    assert.deepEqual(packsPassed, [true, true]);
+  });
 });

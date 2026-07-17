@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loadSalesOrderFlowSummary } from "./salesOrderFlowSummary.server.js";
 import type { SalesOrderFlowSummaryDb } from "./salesOrderFlowSummary.server.js";
+import { SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET } from "./salesOrderFlowPerformance.js";
 
 function createDb(options?: {
   groups?: Array<{
@@ -117,6 +118,12 @@ describe("salesOrderFlowSummary.server (OP-59)", () => {
     assert.match(groupWhere, /"c1"/);
     assert.match(groupWhere, /"c2"/);
     assert.match(groupWhere, /"isOverdue":true/);
+
+    // OP-75: orçamento de query count (1 groupBy + 6 counts + 1 aggregate).
+    assert.equal(calls.length, SALES_ORDER_FLOW_SUMMARY_QUERY_BUDGET);
+    assert.equal(calls.filter((c) => c.kind === "groupBy").length, 1);
+    assert.equal(calls.filter((c) => c.kind === "count").length, 6);
+    assert.equal(calls.filter((c) => c.kind === "aggregate").length, 1);
   });
 
   it("oculta valores quando canViewValues=false", async () => {

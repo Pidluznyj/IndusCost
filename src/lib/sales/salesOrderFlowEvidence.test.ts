@@ -8,6 +8,7 @@ import {
   loadSalesOrderFlowEvidenceBatch,
   type SalesOrderFlowEvidencePrisma,
 } from "./salesOrderFlowEvidence.server.js";
+import { SALES_ORDER_FLOW_EVIDENCE_BATCH_PIPELINE_STEPS } from "./salesOrderFlowPerformance.js";
 
 const ORDER_A = "11111111-1111-1111-1111-111111111111";
 const ORDER_B = "22222222-2222-2222-2222-222222222222";
@@ -468,17 +469,23 @@ describe("salesOrderFlowEvidence (assembler)", () => {
 });
 
 describe("salesOrderFlowEvidence.server (batch loader)", () => {
-  function createMemoryPrisma(seed: {
-    orders: Array<Record<string, unknown>>;
-    products?: Array<Record<string, unknown>>;
-    nfeLinks?: Array<Record<string, unknown>>;
-    nomusNfes?: Array<Record<string, unknown>>;
-    productionLinks?: Array<Record<string, unknown>>;
-    productionOrders?: Array<Record<string, unknown>>;
-    allocations?: Array<Record<string, unknown>>;
-    stockDocuments?: Array<Record<string, unknown>>;
-    stockDocumentItems?: Array<Record<string, unknown>>;
-  }): SalesOrderFlowEvidencePrisma {
+  function createMemoryPrisma(
+    seed: {
+      orders: Array<Record<string, unknown>>;
+      products?: Array<Record<string, unknown>>;
+      nfeLinks?: Array<Record<string, unknown>>;
+      nomusNfes?: Array<Record<string, unknown>>;
+      productionLinks?: Array<Record<string, unknown>>;
+      productionOrders?: Array<Record<string, unknown>>;
+      allocations?: Array<Record<string, unknown>>;
+      stockDocuments?: Array<Record<string, unknown>>;
+      stockDocumentItems?: Array<Record<string, unknown>>;
+    },
+    trackCalls?: string[]
+  ): SalesOrderFlowEvidencePrisma {
+    const track = (name: string) => {
+      trackCalls?.push(name);
+    };
     const inFilter = (where: Record<string, unknown>, field: string) => {
       const clause = where[field];
       if (clause && typeof clause === "object" && "in" in (clause as object)) {
@@ -516,17 +523,22 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
 
     return {
       salesOrder: {
-        findMany: async (args: { where: { id: { in: string[] } } }) =>
-          seed.orders.filter((o) => args.where.id.in.includes(String(o.id))),
+        findMany: async (args: { where: { id: { in: string[] } } }) => {
+          track("salesOrder.findMany");
+          return seed.orders.filter((o) => args.where.id.in.includes(String(o.id)));
+        },
       },
       product: {
-        findMany: async (args: { where: { id: { in: string[] } } }) =>
-          (seed.products ?? []).filter((p) =>
+        findMany: async (args: { where: { id: { in: string[] } } }) => {
+          track("product.findMany");
+          return (seed.products ?? []).filter((p) =>
             args.where.id.in.includes(String(p.id))
-          ),
+          );
+        },
       },
       salesOrderNfeLink: {
         findMany: async (args: { where: Record<string, unknown> }) => {
+          track("salesOrderNfeLink.findMany");
           const ids = inFilter(args.where, "salesOrderId") as string[] | null;
           return (seed.nfeLinks ?? []).filter(
             (l) => !ids || ids.includes(String(l.salesOrderId))
@@ -535,6 +547,7 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
       },
       nomusNfe: {
         findMany: async (args: { where: Record<string, unknown> }) => {
+          track("nomusNfe.findMany");
           const ids = inFilter(args.where, "externalId") as number[] | null;
           return (seed.nomusNfes ?? []).filter(
             (n) => !ids || ids.includes(Number(n.externalId))
@@ -543,6 +556,7 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
       },
       nomusProductionOrderSalesLink: {
         findMany: async (args: { where: Record<string, unknown> }) => {
+          track("nomusProductionOrderSalesLink.findMany");
           let rows = [...(seed.productionLinks ?? [])];
           const ids = inFilter(args.where, "salesOrderId") as string[] | null;
           if (ids) rows = rows.filter((r) => ids.includes(String(r.salesOrderId)));
@@ -553,11 +567,14 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
         },
       },
       nomusProductionOrder: {
-        findMany: async (args: { where: Record<string, unknown> }) =>
-          matchOr(seed.productionOrders ?? [], args.where),
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          track("nomusProductionOrder.findMany");
+          return matchOr(seed.productionOrders ?? [], args.where);
+        },
       },
       orderToCashAuditFact: {
         findMany: async (args: { where: Record<string, unknown> }) => {
+          track("orderToCashAuditFact.findMany");
           const ids = inFilter(args.where, "salesOrderId") as string[] | null;
           return (seed.allocations ?? []).filter(
             (a) => !ids || ids.includes(String(a.salesOrderId))
@@ -565,11 +582,14 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
         },
       },
       nomusStockDocument: {
-        findMany: async (args: { where: Record<string, unknown> }) =>
-          matchOr(seed.stockDocuments ?? [], args.where),
+        findMany: async (args: { where: Record<string, unknown> }) => {
+          track("nomusStockDocument.findMany");
+          return matchOr(seed.stockDocuments ?? [], args.where);
+        },
       },
       nomusStockDocumentItem: {
         findMany: async (args: { where: Record<string, unknown> }) => {
+          track("nomusStockDocumentItem.findMany");
           const ids = inFilter(args.where, "stockDocumentId") as string[] | null;
           return (seed.stockDocumentItems ?? []).filter(
             (i) => !ids || ids.includes(String(i.stockDocumentId))
@@ -711,5 +731,118 @@ describe("salesOrderFlowEvidence.server (batch loader)", () => {
     const prisma = createMemoryPrisma({ orders: [] });
     const map = await loadSalesOrderFlowEvidenceBatch(prisma, []);
     assert.equal(map.size, 0);
+  });
+
+  it("OP-75: pipeline em lote respeita orçamento e omite superfícies sem permissão", async () => {
+    const minimalSeed = {
+      orders: [
+        {
+          id: ORDER_A,
+          orderCode: "PD-A",
+          status: "SENT_TO_NOMUS",
+          customerId: CUSTOMER,
+          issueDate: new Date("2026-06-01"),
+          Customer: {
+            id: CUSTOMER,
+            companyName: "Cliente SA",
+            tradeName: "Cliente",
+            taxId: "1",
+          },
+          items: [
+            {
+              id: ITEM_A1,
+              salesOrderId: ORDER_A,
+              productId: PRODUCT_1,
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "P1",
+              quantity: 1,
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemStatusRaw: "2",
+              nomusIsCanceled: false,
+              nomusIsStale: false,
+              nomusIsCut: false,
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: PRODUCT_1,
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          _count: { ProductRouting: 0, ProductBOM: 0 },
+        },
+      ],
+      nfeLinks: [
+        {
+          id: "link-1",
+          salesOrderId: ORDER_A,
+          nfeExternalId: 99,
+          nfeNumber: "1",
+          nfeKey: null,
+          nfeStatus: "AUTHORIZED",
+          nomusNfeId: NFE_ID,
+        },
+      ],
+      nomusNfes: [
+        {
+          id: NFE_ID,
+          externalId: 99,
+          numero: "1",
+          serie: "1",
+          chave: null,
+          status: "AUTHORIZED",
+          xmlDhEmi: null,
+        },
+      ],
+      productionLinks: [
+        {
+          id: "oplink-1",
+          productionOrderId: OP_1,
+          productionOrderExternalId: 8001,
+          salesOrderId: ORDER_A,
+          salesOrderItemId: ITEM_A1,
+          linkedQuantity: 1,
+          isCurrent: true,
+        },
+      ],
+      productionOrders: [
+        {
+          id: OP_1,
+          externalId: 8001,
+          status: "Liberada",
+          quantity: 1,
+          productCode: "SKU-1",
+        },
+      ],
+      allocations: [],
+      stockDocuments: [],
+      stockDocumentItems: [],
+    };
+
+    const fullCalls: string[] = [];
+    const fullPrisma = createMemoryPrisma(minimalSeed, fullCalls);
+    await loadSalesOrderFlowEvidenceBatch(fullPrisma, [ORDER_A]);
+    assert.ok(fullCalls.length <= SALES_ORDER_FLOW_EVIDENCE_BATCH_PIPELINE_STEPS);
+    assert.ok(fullCalls.includes("salesOrder.findMany"));
+    assert.ok(fullCalls.includes("salesOrderNfeLink.findMany"));
+    assert.ok(fullCalls.includes("nomusProductionOrderSalesLink.findMany"));
+    assert.equal(fullCalls.filter((c) => c === "salesOrder.findMany").length, 1);
+
+    const slimCalls: string[] = [];
+    const slimPrisma = createMemoryPrisma(minimalSeed, slimCalls);
+    await loadSalesOrderFlowEvidenceBatch(slimPrisma, [ORDER_A], {
+      includeFiscalEvidence: false,
+      includeProductionEvidence: false,
+    });
+    assert.equal(slimCalls.includes("salesOrderNfeLink.findMany"), false);
+    assert.equal(slimCalls.includes("nomusNfe.findMany"), false);
+    assert.equal(slimCalls.includes("nomusStockDocument.findMany"), false);
+    assert.equal(
+      slimCalls.includes("nomusProductionOrderSalesLink.findMany"),
+      false
+    );
+    assert.equal(slimCalls.includes("nomusProductionOrder.findMany"), false);
+    assert.ok(slimCalls.includes("orderToCashAuditFact.findMany"));
   });
 });

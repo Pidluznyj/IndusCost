@@ -549,4 +549,50 @@ describe("runSalesOrderFlowRebuild (OP-56)", () => {
       [ORDER_B, ORDER_C]
     );
   });
+
+  it("OP-75: carrega evidências uma vez por lote e injeta evidencePack", async () => {
+    const batchLoads: string[][] = [];
+    const packsPassed: boolean[] = [];
+    const stubPack = { meta: { source: "LOCAL_STAGE", queryMode: "BATCH" } };
+
+    const summary = await runSalesOrderFlowRebuild(
+      createListDb([
+        { id: ORDER_A, orderCode: "PD A" },
+        { id: ORDER_B, orderCode: "PD B" },
+      ]) as never,
+      parseSalesOrderFlowRebuildCli([
+        "--preview",
+        "--batch-size=10",
+        "--checkpoint-file=tmp/evidence-batch.ckpt",
+        "--max-batches=1",
+      ]),
+      {
+        loadEvidenceBatch: async (_db, ids) => {
+          batchLoads.push([...ids]);
+          const map = new Map();
+          for (const id of ids) {
+            map.set(id, { ...stubPack, order: { id } });
+          }
+          return map as never;
+        },
+        recompute: async (_db, id, options) => {
+          packsPassed.push(options.evidencePack != null);
+          return recomputeResult({
+            salesOrderId: id,
+            action: "unchanged",
+          });
+        },
+        readCheckpoint: () => null,
+        writeCheckpoint: () => undefined,
+        acquireLock: () => {
+          throw new Error("lock não deve ser chamado em preview");
+        },
+      }
+    );
+
+    assert.equal(summary.ordersProcessed, 2);
+    assert.equal(batchLoads.length, 1);
+    assert.deepEqual(batchLoads[0]!.sort(), [ORDER_A, ORDER_B].sort());
+    assert.deepEqual(packsPassed, [true, true]);
+  });
 });

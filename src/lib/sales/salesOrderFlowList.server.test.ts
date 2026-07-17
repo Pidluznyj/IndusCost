@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { loadSalesOrderFlowList } from "./salesOrderFlowList.server.js";
 import type { SalesOrderFlowListDb } from "./salesOrderFlowList.server.js";
 import { encodeSalesOrderFlowListCursor } from "./salesOrderFlowList.js";
+import { SALES_ORDER_FLOW_LIST_QUERIES_PER_STAGE_BUDGET } from "./salesOrderFlowPerformance.js";
 
 function createDb() {
   const lightCalls: unknown[] = [];
@@ -185,7 +186,7 @@ function createDb() {
 
 describe("salesOrderFlowList.server (OP-60)", () => {
   it("pagina cards sem carregar todos de uma vez e ordena com crítica primeiro", async () => {
-    const { db, fullCalls } = createDb();
+    const { db, fullCalls, lightCalls, itemCalls } = createDb();
     const first = await loadSalesOrderFlowList(
       { stages: "WAITING_RELEASE", limit: "1" },
       {
@@ -207,6 +208,15 @@ describe("salesOrderFlowList.server (OP-60)", () => {
     assert.equal(col.totals.withCutCount, 1);
     assert.deepEqual(fullCalls[0], ["o2"]);
 
+    // OP-75: ≤3 finds por coluna; full só com IDs da página.
+    assert.equal(lightCalls.length, 1);
+    assert.equal(itemCalls.length, 1);
+    assert.equal(fullCalls.length, 1);
+    assert.equal(
+      lightCalls.length + itemCalls.length + fullCalls.length,
+      SALES_ORDER_FLOW_LIST_QUERIES_PER_STAGE_BUDGET
+    );
+
     const second = await loadSalesOrderFlowList(
       {
         stages: "WAITING_RELEASE",
@@ -220,6 +230,7 @@ describe("salesOrderFlowList.server (OP-60)", () => {
       }
     );
     assert.equal(second.columns[0]!.cards[0]!.orderId, "o1"); // overdue next
+    assert.deepEqual(fullCalls[1], ["o1"]);
   });
 
   it("aplica escopo de clientes no where leve", async () => {

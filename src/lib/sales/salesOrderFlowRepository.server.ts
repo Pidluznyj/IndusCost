@@ -529,6 +529,21 @@ export async function findSalesOrderFlowEventsByOrderId(
       orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
       skip,
       take: pageSize,
+      // OP-75: evita over-fetch; payloadJson é o alias details (já sanitizado).
+      select: {
+        id: true,
+        salesOrderId: true,
+        salesOrderItemId: true,
+        eventType: true,
+        fromStage: true,
+        toStage: true,
+        dedupeKey: true,
+        payloadJson: true,
+        actorId: true,
+        occurredAt: true,
+        observedAt: true,
+        createdAt: true,
+      },
     }),
   ]);
 

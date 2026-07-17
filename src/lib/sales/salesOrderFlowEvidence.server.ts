@@ -42,6 +42,16 @@ export type SalesOrderFlowEvidencePrisma = Pick<
 export type LoadSalesOrderFlowEvidenceBatchOptions = {
   /** Quando true, inclui vínculos OP com isCurrent=false (default: só atuais). */
   includeNonCurrentProductionLinks?: boolean;
+  /**
+   * Quando false, omite NF-e / documentos de saída (detalhe sem permissão fiscal).
+   * Recompute deve manter default true.
+   */
+  includeFiscalEvidence?: boolean;
+  /**
+   * Quando false, omite vínculos/ordens de produção (detalhe sem permissão de OP).
+   * Recompute deve manter default true.
+   */
+  includeProductionEvidence?: boolean;
 };
 
 const ORDER_SELECT = {
@@ -117,6 +127,8 @@ export async function loadSalesOrderFlowEvidenceBatch(
   const ids = [...new Set(orderIds.filter((id) => typeof id === "string" && id.length > 0))];
   if (ids.length === 0) return new Map();
 
+  const includeFiscalEvidence = options.includeFiscalEvidence !== false;
+  const includeProductionEvidence = options.includeProductionEvidence !== false;
   const loadedAt = new Date().toISOString();
 
   // 1) Pedidos + cliente + itens
@@ -162,21 +174,23 @@ export async function loadSalesOrderFlowEvidenceBatch(
   }));
 
   // 3) Vínculos NF-e do pedido
-  const nfeLinksRaw = await prisma.salesOrderNfeLink.findMany({
-    where: { salesOrderId: { in: ids } },
-    select: {
-      id: true,
-      salesOrderId: true,
-      nfeExternalId: true,
-      nfeNumber: true,
-      nfeKey: true,
-      nfeStatus: true,
-      nomusNfeId: true,
-    },
-  });
+  const nfeLinksRaw = includeFiscalEvidence
+    ? await prisma.salesOrderNfeLink.findMany({
+        where: { salesOrderId: { in: ids } },
+        select: {
+          id: true,
+          salesOrderId: true,
+          nfeExternalId: true,
+          nfeNumber: true,
+          nfeKey: true,
+          nfeStatus: true,
+          nomusNfeId: true,
+        },
+      })
+    : [];
   const nfeLinks: SalesOrderFlowEvidenceNfeLinkRow[] = nfeLinksRaw;
 
-  // 4) Alocações O2C materializadas
+  // 4) Alocações O2C materializadas (sempre — progresso/corte do motor)
   const allocationsRaw = await prisma.orderToCashAuditFact.findMany({
     where: { salesOrderId: { in: ids } },
     select: {
@@ -199,14 +213,16 @@ export async function loadSalesOrderFlowEvidenceBatch(
     salesOrderId: row.salesOrderId,
   }));
 
-  const nfeExternalIds = uniqueNumbers([
-    ...nfeLinks.map((l) => l.nfeExternalId),
-    ...allocations.map((a) => a.nfeExternalId),
-  ]);
+  const nfeExternalIds = includeFiscalEvidence
+    ? uniqueNumbers([
+        ...nfeLinks.map((l) => l.nfeExternalId),
+        ...allocations.map((a) => a.nfeExternalId),
+      ])
+    : [];
 
   // 5) NF-e stage
   const nomusNfesRaw =
-    nfeExternalIds.length > 0
+    includeFiscalEvidence && nfeExternalIds.length > 0
       ? await prisma.nomusNfe.findMany({
           where: { externalId: { in: nfeExternalIds } },
           select: {
@@ -223,24 +239,29 @@ export async function loadSalesOrderFlowEvidenceBatch(
   const nomusNfes: SalesOrderFlowEvidenceNomusNfeRow[] = nomusNfesRaw;
 
   // 6) Vínculos OP oficiais
-  const productionLinksRaw = await prisma.nomusProductionOrderSalesLink.findMany({
-    where: {
-      salesOrderId: { in: ids },
-      ...(options.includeNonCurrentProductionLinks ? {} : { isCurrent: true }),
-    },
-    select: {
-      id: true,
-      productionOrderId: true,
-      productionOrderExternalId: true,
-      salesOrderId: true,
-      salesOrderItemId: true,
-      externalSalesOrderId: true,
-      externalSalesOrderItemId: true,
-      linkedQuantity: true,
-      isCurrent: true,
-    },
-  });
-  const productionLinks: SalesOrderFlowEvidenceProductionLinkRow[] = productionLinksRaw;
+  const productionLinksRaw = includeProductionEvidence
+    ? await prisma.nomusProductionOrderSalesLink.findMany({
+        where: {
+          salesOrderId: { in: ids },
+          ...(options.includeNonCurrentProductionLinks
+            ? {}
+            : { isCurrent: true }),
+        },
+        select: {
+          id: true,
+          productionOrderId: true,
+          productionOrderExternalId: true,
+          salesOrderId: true,
+          salesOrderItemId: true,
+          externalSalesOrderId: true,
+          externalSalesOrderItemId: true,
+          linkedQuantity: true,
+          isCurrent: true,
+        },
+      })
+    : [];
+  const productionLinks: SalesOrderFlowEvidenceProductionLinkRow[] =
+    productionLinksRaw;
 
   const productionOrderIds = uniqueStrings(
     productionLinks.map((l) => l.productionOrderId)
@@ -251,7 +272,8 @@ export async function loadSalesOrderFlowEvidenceBatch(
 
   // 7) OPs (quantidade planejada; produzida permanece null)
   const productionOrdersRaw =
-    productionOrderIds.length > 0 || productionOrderExternalIds.length > 0
+    includeProductionEvidence &&
+    (productionOrderIds.length > 0 || productionOrderExternalIds.length > 0)
       ? await prisma.nomusProductionOrder.findMany({
           where: {
             OR: [
@@ -277,13 +299,14 @@ export async function loadSalesOrderFlowEvidenceBatch(
   const productionOrders: SalesOrderFlowEvidenceProductionOrderRow[] =
     productionOrdersRaw;
 
-  const stockExternalFromAlloc = uniqueNumbers(
-    allocations.map((a) => a.stockDocumentExternalId)
-  );
+  const stockExternalFromAlloc = includeFiscalEvidence
+    ? uniqueNumbers(allocations.map((a) => a.stockDocumentExternalId))
+    : [];
 
   // 8) Documentos de saída: por externalId (O2C) e por idNfe (NF oficial)
   const stockDocumentsRaw =
-    stockExternalFromAlloc.length > 0 || nfeExternalIds.length > 0
+    includeFiscalEvidence &&
+    (stockExternalFromAlloc.length > 0 || nfeExternalIds.length > 0)
       ? await prisma.nomusStockDocument.findMany({
           where: {
             OR: [
@@ -321,7 +344,7 @@ export async function loadSalesOrderFlowEvidenceBatch(
 
   // 9) Itens de documento
   const stockDocumentItemsRaw =
-    stockDocumentIds.length > 0
+    includeFiscalEvidence && stockDocumentIds.length > 0
       ? await prisma.nomusStockDocumentItem.findMany({
           where: { stockDocumentId: { in: stockDocumentIds } },
           select: {
