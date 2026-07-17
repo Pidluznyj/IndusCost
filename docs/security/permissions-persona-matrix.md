@@ -16,6 +16,7 @@ Comparador: `npm run permissions:compare:legacy-vs-resource`
 | Viewer | VIEWER | matrix default | dashboard, pedidos, clientes, propostas, produtos | CRM gestao, financeiro, settings |
 | Usuário com deny | VIEWER | só dashboard + pedidos | dashboard, pedidos | financeiro, CRM, settings |
 | Legado sem grants estruturados | VIEWER | opex/taxes/reports/materials | esses módulos (fallback legado onde sem resourceKey) | settings |
+| **Analista de Compras** (PERM-43) | VIEWER | fixture `analistaComprasPersona.ts` (sem perfil prod obrigatório) | Dashboard, Suprimentos/MI, AP+CC+Fornecedores, Estoque/Compras/Manutenção/Frota | Comercial, Produtos/Simulações/Projetos, demais finance/ops |
 
 ## Casos transversais cobertos nos testes
 
