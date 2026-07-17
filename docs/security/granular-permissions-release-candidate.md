@@ -6,7 +6,7 @@
 | **Ticket** | PERM-44 |
 | **Data** | 2026-07-16 |
 | **Escopo** | Revisão integral PERM-25 → PERM-43 |
-| **HEAD deste RC** | commit PERM-44 nesta branch (`main`) |
+| **HEAD deste RC** | `3abcbe4257ddb3cf607b2613bc634c61cdf4c4e4` |
 | **Produção** | Código liberado para homologação; migrate/seed/smoke autenticado no servidor **fora** deste run |
 
 ---
@@ -58,7 +58,7 @@
 | PERM-41 | `bc7a661` | Comercial + Financeiro |
 | PERM-42 | `a51c505` | Operações + Admin |
 | PERM-43 | `70d7189` | Fixture + aceite Analista de Compras |
-| PERM-44 | *(este commit)* | RC consolidado |
+| PERM-44 | `3abcbe4` | RC consolidado |
 
 ---
 
