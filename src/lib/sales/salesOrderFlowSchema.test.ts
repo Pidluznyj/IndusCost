@@ -62,7 +62,7 @@ describe("salesOrderFlow Prisma schema (OP-52)", () => {
     );
   });
 
-  it("evento é append-only com dedupeKey única e sem updatedAt", () => {
+  it("evento é append-only com dedupeKey única, sem updatedAt, com observedAt", () => {
     const eventBlock = SCHEMA.match(
       /model SalesOrderFlowEvent \{[\s\S]*?\n\}/
     )?.[0];
@@ -70,6 +70,7 @@ describe("salesOrderFlow Prisma schema (OP-52)", () => {
     assert.match(eventBlock!, /dedupeKey\s+String\s+@unique/);
     assert.doesNotMatch(eventBlock!, /updatedAt/);
     assert.match(eventBlock!, /occurredAt\s+DateTime/);
+    assert.match(eventBlock!, /observedAt\s+DateTime\?/);
   });
 
   it("management guarda prioridade, bloqueio e nota interna (1:1 pedido)", () => {
@@ -144,5 +145,17 @@ describe("salesOrderFlow Prisma schema (OP-52)", () => {
     assert.doesNotMatch(MIGRATION, /ALTER TABLE "SalesOrder" ADD COLUMN/);
     assert.doesNotMatch(MIGRATION, /ALTER TABLE "SalesOrderItem" ADD COLUMN/);
     assert.match(MIGRATION, /Sem backfill/i);
+  });
+
+  it("migration OP-55 adiciona observedAt no evento", () => {
+    const observedMigration = readFileSync(
+      join(
+        process.cwd(),
+        "prisma/migrations/20260802120000_sales_order_flow_event_observed_at/migration.sql"
+      ),
+      "utf8"
+    );
+    assert.match(observedMigration, /ADD COLUMN "observedAt"/);
+    assert.doesNotMatch(observedMigration, /ALTER TABLE "SalesOrder" ADD COLUMN/);
   });
 });

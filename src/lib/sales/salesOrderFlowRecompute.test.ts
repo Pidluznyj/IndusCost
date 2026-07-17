@@ -433,6 +433,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     assert.equal(result.items.created, 2);
     assert.equal(result.items.deleted, 0);
     assert.equal(result.computedAt, FIXED_NOW.toISOString());
+    assert.ok(result.events.created >= 3); // 2 itens + pedido SNAPSHOT_CREATED
     assert.equal(items.size, 2);
     assert.equal(orders.size, 1);
     assert.equal(orders.get(ORDER_ID)!.computedAt.toISOString(), FIXED_NOW.toISOString());
@@ -440,6 +441,9 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     const orderSnap = await findSalesOrderFlowSnapshotByOrderId(db, ORDER_ID);
     assert.ok(orderSnap);
     assert.equal(orderSnap!.fingerprint, result.orderFingerprint);
+
+    const page = await findSalesOrderFlowEventsByOrderId(db, ORDER_ID, { pageSize: 50 });
+    assert.ok(page.items.some((e) => e.eventType === "SNAPSHOT_CREATED"));
   });
 
   it("segunda execução idêntica não escreve (idempotente)", async () => {
@@ -456,6 +460,7 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
 
     const first = await recomputeSalesOrderFlow(db as never, ORDER_ID, opts);
     const itemFpBefore = items.get(ITEM_A)!.fingerprint;
+    const stageEnteredBefore = items.get(ITEM_A)!.stageEnteredAt;
     const orderComputedBefore = orders.get(ORDER_ID)!.computedAt;
     const eventCountBefore = events.size;
 
@@ -469,6 +474,10 @@ describe("recomputeSalesOrderFlow (OP-54)", () => {
     assert.equal(second.computedAt, null);
     assert.equal(second.orderFingerprint, first.orderFingerprint);
     assert.equal(items.get(ITEM_A)!.fingerprint, itemFpBefore);
+    assert.equal(
+      items.get(ITEM_A)!.stageEnteredAt?.toISOString(),
+      stageEnteredBefore?.toISOString()
+    );
     assert.equal(orders.get(ORDER_ID)!.computedAt.toISOString(), orderComputedBefore.toISOString());
     assert.equal(events.size, eventCountBefore);
     assert.equal(second.items.upserted, 0);

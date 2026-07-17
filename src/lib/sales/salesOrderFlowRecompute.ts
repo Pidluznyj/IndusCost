@@ -1,9 +1,9 @@
 /**
- * OP-54 — Planejamento puro da recomputação do Fluxo de Pedidos.
- * Sem I/O: mapeia motores → writes / eventos / decisão de skip.
+ * OP-54/OP-55 — Planejamento puro da recomputação do Fluxo de Pedidos.
+ * Sem I/O: mapeia motores → writes / eventos de timeline / decisão de skip.
  */
 
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import type { ResolveSalesOrderFlowResult } from "./salesOrderFlowEngine.js";
 import type { ResolveSalesOrderItemFlowResult } from "./salesOrderItemFlowEngine.js";
 import {
@@ -16,17 +16,34 @@ import type {
   SalesOrderFlowSnapshotWrite,
   SalesOrderItemFlowSnapshotWrite,
 } from "./salesOrderFlowRepository.server.js";
+import {
+  buildSalesOrderFlowTimelineEvents,
+  buildSalesOrderItemFlowTimelineEvents,
+  extractInconsistencyCodesFromJson,
+  itemStateFromFlowResult,
+  orderStateFromFlowResult,
+  resolveSalesOrderFlowOccurredAt,
+  resolveSalesOrderFlowStageEnteredAt,
+  type SalesOrderFlowTimelineEvidenceTimes,
+  type SalesOrderFlowTimelineItemState,
+  type SalesOrderFlowTimelineOrderState,
+} from "./salesOrderFlowTimeline.js";
 
 export type ExistingItemFlowSnapshotRef = {
   salesOrderItemId: string;
   currentStage: string;
   fingerprint: string;
   stageEnteredAt: Date | null;
+  fulfillmentClassification?: string | null;
+  cutQuantity?: Prisma.Decimal | string | number | null;
+  canceledQuantity?: Prisma.Decimal | string | number | null;
+  inconsistenciesJson?: unknown;
 };
 
 export type ExistingOrderFlowSnapshotRef = {
   currentStage: string;
   fingerprint: string;
+  inconsistenciesJson?: unknown;
 } | null;
 
 export type SalesOrderFlowRecomputeDraft = {
@@ -59,6 +76,12 @@ function parseIsoDate(value: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function toDecimal(value: Prisma.Decimal | string | number | null | undefined): Prisma.Decimal {
+  if (value instanceof Prisma.Decimal) return value;
+  if (value == null || value === "") return new Prisma.Decimal(0);
+  return new Prisma.Decimal(value);
+}
+
 function progressJson(
   progress: ResolveSalesOrderItemFlowResult["progress"]
 ): Prisma.InputJsonValue {
@@ -81,13 +104,29 @@ function inconsistenciesJson(
   }));
 }
 
+function existingItemTimelineState(
+  row: ExistingItemFlowSnapshotRef
+): SalesOrderFlowTimelineItemState {
+  return {
+    salesOrderItemId: row.salesOrderItemId,
+    currentStage: row.currentStage,
+    fingerprint: row.fingerprint,
+    fulfillmentClassification: row.fulfillmentClassification ?? "UNKNOWN",
+    cutQuantity: toDecimal(row.cutQuantity),
+    canceledQuantity: toDecimal(row.canceledQuantity),
+    inconsistencyCodes: extractInconsistencyCodesFromJson(row.inconsistenciesJson),
+  };
+}
+
 export function buildSalesOrderFlowRecomputeDraft(input: {
   salesOrderId: string;
   itemResults: readonly ResolveSalesOrderItemFlowResult[];
   orderResult: ResolveSalesOrderFlowResult;
   existingItems: readonly ExistingItemFlowSnapshotRef[];
+  existingOrder?: ExistingOrderFlowSnapshotRef;
   computedAt?: Date;
   computationVersion?: string;
+  evidenceTimes?: SalesOrderFlowTimelineEvidenceTimes;
 }): SalesOrderFlowRecomputeDraft {
   const computedAt = input.computedAt ?? new Date();
   const computationVersion =
@@ -98,6 +137,7 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
 
   const itemFingerprints = new Map<string, string>();
   const itemWrites: SalesOrderItemFlowSnapshotWrite[] = [];
+  const events: SalesOrderFlowEventWrite[] = [];
 
   for (const result of input.itemResults) {
     const fingerprint = buildSalesOrderItemFlowFingerprint(
@@ -105,11 +145,20 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
       computationVersion
     );
     itemFingerprints.set(result.salesOrderItemId, fingerprint);
-    const prev = existingByItem.get(result.salesOrderItemId);
-    const stageChanged = !prev || prev.currentStage !== result.currentStage;
-    const stageEnteredAt = stageChanged
-      ? computedAt
-      : (prev?.stageEnteredAt ?? computedAt);
+    const prev = existingByItem.get(result.salesOrderItemId) ?? null;
+    const evidenceAt =
+      input.evidenceTimes?.itemOccurredAt?.get(result.salesOrderItemId) ?? null;
+    const occurredAt = resolveSalesOrderFlowOccurredAt({
+      observedAt: computedAt,
+      evidenceAt,
+    });
+    const stageEnteredAt = resolveSalesOrderFlowStageEnteredAt({
+      previousStage: prev?.currentStage,
+      nextStage: result.currentStage,
+      previousStageEnteredAt: prev?.stageEnteredAt,
+      occurredAt,
+      observedAt: computedAt,
+    });
 
     itemWrites.push({
       salesOrderId: input.salesOrderId,
@@ -146,6 +195,16 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
       computationVersion,
       computedAt,
     });
+
+    events.push(
+      ...buildSalesOrderItemFlowTimelineEvents({
+        salesOrderId: input.salesOrderId,
+        previous: prev ? existingItemTimelineState(prev) : null,
+        next: itemStateFromFlowResult(result, fingerprint),
+        observedAt: computedAt,
+        evidenceOccurredAt: evidenceAt,
+      })
+    );
   }
 
   const orderFingerprint = buildSalesOrderFlowFingerprint(
@@ -193,33 +252,25 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
     computedAt,
   };
 
-  const events: SalesOrderFlowEventWrite[] = [];
+  const previousOrder: SalesOrderFlowTimelineOrderState | null = input.existingOrder
+    ? {
+        currentStage: input.existingOrder.currentStage,
+        fingerprint: input.existingOrder.fingerprint,
+        inconsistencyCodes: extractInconsistencyCodesFromJson(
+          input.existingOrder.inconsistenciesJson
+        ),
+      }
+    : null;
 
-  for (const write of itemWrites) {
-    const prev = existingByItem.get(write.salesOrderItemId);
-    if (prev && prev.currentStage !== write.currentStage) {
-      events.push({
-        salesOrderId: input.salesOrderId,
-        salesOrderItemId: write.salesOrderItemId,
-        eventType: "STAGE_CHANGED",
-        fromStage: prev.currentStage,
-        toStage: write.currentStage,
-        dedupeKey: [
-          "item",
-          write.salesOrderItemId,
-          "STAGE_CHANGED",
-          prev.currentStage,
-          write.currentStage,
-          write.fingerprint,
-        ].join("|"),
-        payloadJson: {
-          scope: "ITEM",
-          fingerprint: write.fingerprint,
-        },
-        occurredAt: computedAt,
-      });
-    }
-  }
+  events.push(
+    ...buildSalesOrderFlowTimelineEvents({
+      salesOrderId: input.salesOrderId,
+      previous: previousOrder,
+      next: orderStateFromFlowResult(order, orderFingerprint),
+      observedAt: computedAt,
+      evidenceOccurredAt: input.evidenceTimes?.orderOccurredAt ?? null,
+    })
+  );
 
   return {
     computationVersion,
@@ -242,8 +293,6 @@ export function planSalesOrderFlowRecompute(input: {
   const { draft, existingOrder, existingItems } = input;
 
   if (!existingOrder) {
-    // First run: also emit order STAGE_CHANGED from null → stage if useful?
-    // YAGNI: only transitions from an existing snapshot.
     return { action: "persist", draft, reason: "first_run" };
   }
 
@@ -261,33 +310,9 @@ export function planSalesOrderFlowRecompute(input: {
     return { action: "unchanged", draft, reason: "fingerprint_match" };
   }
 
-  const events = [...draft.events];
-  // Order-level stage change event (only when previous snapshot exists).
-  if (existingOrder.currentStage !== draft.orderWrite.currentStage) {
-    events.push({
-      salesOrderId: draft.orderWrite.salesOrderId,
-      eventType: "STAGE_CHANGED",
-      fromStage: existingOrder.currentStage,
-      toStage: draft.orderWrite.currentStage,
-      dedupeKey: [
-        "order",
-        draft.orderWrite.salesOrderId,
-        "STAGE_CHANGED",
-        existingOrder.currentStage,
-        draft.orderWrite.currentStage,
-        draft.orderFingerprint,
-      ].join("|"),
-      payloadJson: {
-        scope: "ORDER",
-        fingerprint: draft.orderFingerprint,
-      },
-      occurredAt: draft.computedAt,
-    });
-  }
-
   return {
     action: "persist",
-    draft: { ...draft, events },
+    draft,
     reason: "fingerprint_changed",
   };
 }

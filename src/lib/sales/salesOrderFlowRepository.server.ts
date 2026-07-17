@@ -435,9 +435,15 @@ export type SalesOrderFlowEventWrite = {
   fromStage?: string | null;
   toStage?: string | null;
   dedupeKey: string;
+  /** Alias sanitizado — persiste em payloadJson. */
+  detailsJson?: Prisma.InputJsonValue | null;
+  /** @deprecated Preferir detailsJson (mesmo destino). */
   payloadJson?: Prisma.InputJsonValue | null;
   actorId?: string | null;
+  /** Melhor evidência real do fato. */
   occurredAt?: Date;
+  /** Quando o IndusCost observou/materializou. */
+  observedAt?: Date | null;
 };
 
 export type AppendSalesOrderFlowEventResult = {
@@ -457,6 +463,8 @@ export async function appendSalesOrderFlowEvent(
     return { action: "duplicate", id: existing.id };
   }
 
+  const details = row.detailsJson !== undefined ? row.detailsJson : row.payloadJson;
+
   const created = await db.salesOrderFlowEvent.create({
     data: {
       salesOrderId: row.salesOrderId,
@@ -465,9 +473,10 @@ export async function appendSalesOrderFlowEvent(
       fromStage: row.fromStage ?? null,
       toStage: row.toStage ?? null,
       dedupeKey: row.dedupeKey,
-      payloadJson: asJsonInput(row.payloadJson),
+      payloadJson: asJsonInput(details),
       actorId: row.actorId ?? null,
       ...(row.occurredAt ? { occurredAt: row.occurredAt } : {}),
+      ...(row.observedAt !== undefined ? { observedAt: row.observedAt } : {}),
     },
     select: { id: true },
   });

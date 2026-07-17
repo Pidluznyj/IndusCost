@@ -144,25 +144,68 @@ export async function recomputeSalesOrderFlow(
     currentStage: r.currentStage,
     fingerprint: r.fingerprint,
     stageEnteredAt: r.stageEnteredAt,
+    fulfillmentClassification: r.fulfillmentClassification,
+    cutQuantity: r.cutQuantity,
+    canceledQuantity: r.canceledQuantity,
+    inconsistenciesJson: r.inconsistenciesJson,
   }));
+
+  const existingOrder = existingOrderRow
+    ? {
+        currentStage: existingOrderRow.currentStage,
+        fingerprint: existingOrderRow.fingerprint,
+        inconsistenciesJson: existingOrderRow.inconsistenciesJson,
+      }
+    : null;
+
+  const itemOccurredAt = new Map<string, Date | null>();
+  for (const item of pack.items) {
+    const docs = pack.allocations
+      .filter((a) => a.salesOrderItemId === item.id && a.stockDocumentExternalId != null)
+      .map((a) =>
+        pack.stockDocuments.find((d) => d.externalId === a.stockDocumentExternalId)
+      )
+      .filter((d): d is NonNullable<typeof d> => d != null);
+    let best: Date | null = null;
+    for (const doc of docs) {
+      if (doc.dataDocumento == null) continue;
+      const d =
+        doc.dataDocumento instanceof Date
+          ? doc.dataDocumento
+          : new Date(doc.dataDocumento);
+      if (Number.isNaN(d.getTime())) continue;
+      if (!best || d.getTime() < best.getTime()) best = d;
+    }
+    itemOccurredAt.set(item.id, best);
+  }
+
+  const orderOccurredAt =
+    orderResult.completedAt != null
+      ? new Date(orderResult.completedAt)
+      : pack.order.issueDate != null
+        ? new Date(pack.order.issueDate)
+        : null;
 
   const draft = buildSalesOrderFlowRecomputeDraft({
     salesOrderId,
     itemResults,
     orderResult,
     existingItems,
+    existingOrder,
     computedAt,
     computationVersion: SALES_ORDER_FLOW_COMPUTATION_VERSION,
+    evidenceTimes: {
+      itemOccurredAt,
+      orderOccurredAt:
+        orderOccurredAt && !Number.isNaN(orderOccurredAt.getTime())
+          ? orderOccurredAt
+          : null,
+    },
   });
 
   const plan = planSalesOrderFlowRecompute({
     draft,
-    existingOrder: existingOrderRow
-      ? {
-          currentStage: existingOrderRow.currentStage,
-          fingerprint: existingOrderRow.fingerprint,
-        }
-      : null,
+    existingOrder,
     existingItems,
   });
 
