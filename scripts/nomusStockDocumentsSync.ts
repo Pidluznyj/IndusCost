@@ -363,84 +363,84 @@ async function main(): Promise<void> {
     try {
       const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
 
-    const envForLog = redactHeadersForLog(
-      Object.fromEntries(
-        Object.entries(process.env)
-          .filter(([key]) => key.startsWith("NOMUS_"))
-          .map(([key, value]) => [key, value ?? ""])
-      )
-    );
-
-    console.warn(
-      `${LOG_PREFIX} modo=${options.mode} from=${options.from ?? "-"} to=${options.to ?? "-"} tipo=${options.tipo} pageSize=${options.pageSize} maxPages=${options.maxPages ?? "∞"} idNfes=${options.idNfes.join(",") || "-"}`
-    );
-    console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
-    console.warn(
-      `${LOG_PREFIX} credencial: ${JSON.stringify(
-        describeNomusCredential(
-          process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN || process.env.NOMUS_AUTH
+      const envForLog = redactHeadersForLog(
+        Object.fromEntries(
+          Object.entries(process.env)
+            .filter(([key]) => key.startsWith("NOMUS_"))
+            .map(([key, value]) => [key, value ?? ""])
         )
-      )}`
-    );
+      );
 
-    const onRetryableStatus = (info: { status: number }) => {
-      if (info.status === 429) rateLimit429 += 1;
-    };
+      console.warn(
+        `${LOG_PREFIX} modo=${options.mode} from=${options.from ?? "-"} to=${options.to ?? "-"} tipo=${options.tipo} pageSize=${options.pageSize} maxPages=${options.maxPages ?? "∞"} idNfes=${options.idNfes.join(",") || "-"}`
+      );
+      console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
+      console.warn(
+        `${LOG_PREFIX} credencial: ${JSON.stringify(
+          describeNomusCredential(
+            process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN || process.env.NOMUS_AUTH
+          )
+        )}`
+      );
 
-    const queries = buildQueries(options);
-    const allRows: MappedNomusStockDocument[] = [];
-    fetchComplete = true;
+      const onRetryableStatus = (info: { status: number }) => {
+        if (info.status === 429) rateLimit429 += 1;
+      };
 
-    for (const query of queries) {
-      const fetched = await fetchAllForQuery(baseUrl, query, options, onRetryableStatus);
-      pagesRead += fetched.pagesRead;
-      recordsRead += fetched.recordsRead;
-      invalidPayloads += fetched.invalidPayloads;
-      itemsDiscardedByMapper += fetched.itemsDiscardedByMapper;
-      duplicateItemsCollapsed += fetched.duplicateItemsCollapsed;
-      allRows.push(...fetched.rows);
-      if (!fetched.fetchComplete) fetchComplete = false;
-    }
+      const queries = buildQueries(options);
+      const allRows: MappedNomusStockDocument[] = [];
+      fetchComplete = true;
 
-    rows = dedupeByExternalId(allRows);
-    const existing = await prisma.nomusStockDocument.findMany({
-      where: { externalId: { in: rows.map((row) => row.externalId) } },
-      select: {
-        externalId: true,
-        payloadHash: true,
-        _count: { select: { items: true } },
-      },
-    });
-    const existingByExternalId = new Map(
-      existing.map((row) => [
-        row.externalId,
-        {
-          externalId: row.externalId,
-          payloadHash: row.payloadHash,
-          itemCount: row._count.items,
+      for (const query of queries) {
+        const fetched = await fetchAllForQuery(baseUrl, query, options, onRetryableStatus);
+        pagesRead += fetched.pagesRead;
+        recordsRead += fetched.recordsRead;
+        invalidPayloads += fetched.invalidPayloads;
+        itemsDiscardedByMapper += fetched.itemsDiscardedByMapper;
+        duplicateItemsCollapsed += fetched.duplicateItemsCollapsed;
+        allRows.push(...fetched.rows);
+        if (!fetched.fetchComplete) fetchComplete = false;
+      }
+
+      rows = dedupeByExternalId(allRows);
+      const existing = await prisma.nomusStockDocument.findMany({
+        where: { externalId: { in: rows.map((row) => row.externalId) } },
+        select: {
+          externalId: true,
+          payloadHash: true,
+          _count: { select: { items: true } },
         },
-      ] as const)
-    );
-    const plans = rows.map((row) =>
-      planStockDocumentPersist(row, existingByExternalId.get(row.externalId) ?? null)
-    );
-    planSummary = summarizeStockDocumentPersistPlans(plans);
+      });
+      const existingByExternalId = new Map(
+        existing.map((row) => [
+          row.externalId,
+          {
+            externalId: row.externalId,
+            payloadHash: row.payloadHash,
+            itemCount: row._count.items,
+          },
+        ] as const)
+      );
+      const plans = rows.map((row) =>
+        planStockDocumentPersist(row, existingByExternalId.get(row.externalId) ?? null)
+      );
+      planSummary = summarizeStockDocumentPersistPlans(plans);
 
-    if (shouldWriteStockDocuments(options.mode)) {
-      applied = await runApply(rows, new Date());
-      applied.invalidPayloads = invalidPayloads;
-      applied.itemsDiscardedByMapper = itemsDiscardedByMapper;
-      applied.duplicateItemsCollapsed = duplicateItemsCollapsed;
-      applied.rateLimit429 = rateLimit429;
-    } else {
-      console.warn(`${LOG_PREFIX} preview — nenhuma escrita no banco`);
+      if (shouldWriteStockDocuments(options.mode)) {
+        applied = await runApply(rows, new Date());
+        applied.invalidPayloads = invalidPayloads;
+        applied.itemsDiscardedByMapper = itemsDiscardedByMapper;
+        applied.duplicateItemsCollapsed = duplicateItemsCollapsed;
+        applied.rateLimit429 = rateLimit429;
+      } else {
+        console.warn(`${LOG_PREFIX} preview — nenhuma escrita no banco`);
+      }
+    } catch (error) {
+      fatalError = error instanceof Error ? error.message : String(error);
+      console.error(`${LOG_PREFIX} falha`, fatalError);
     }
-  } catch (error) {
-    fatalError = error instanceof Error ? error.message : String(error);
-    console.error(`${LOG_PREFIX} falha`, fatalError);
-  }
 
-  const finishedAt = new Date();
+    const finishedAt = new Date();
   const counters: StockDocumentsSyncCounters = applied ?? {
     ...emptyStockDocumentsSyncCounters(),
     documentsReceived: rows.length,
@@ -572,9 +572,10 @@ async function main(): Promise<void> {
       2
     )
   );
-
-  if (lockFile && lockToken) {
-    releaseStockDocumentsSyncLock({ lockFile, token: lockToken });
+  } finally {
+    if (lockFile && lockToken) {
+      releaseStockDocumentsSyncLock({ lockFile, token: lockToken });
+    }
   }
 }
 

@@ -280,26 +280,36 @@ Ver seção 7. Critério: **primeiro não destruir dados** (sync), depois **enri
 - Apply usa `payloadHash`: unchanged → só `syncedAt` / `lastSeenAt` / `presentInLastPayload`.
 - Preservação de itens em payload parcial permanece (DS-03.2); hash igual também pula rewrite de itens.
 
-### DS-03.5 — Resolução direta stage / NF / pedido
+### DS-03.5 — Controle de execução do sync
+
+- **Status:** implementado (2026-07-17).
+- Lock PID (Node) + runner shell opcional com flock (manual, **sem cron**).
+- `IntegrationRun` best-effort (`target=stock_documents`).
+- Contadores + duração + 429 + completeness (`complete`/`partial`/`failed`/`lock_skipped`).
+- Checkpoint só avança em apply completo com exit 0.
+- Presence: `firstSeenAt` no create; `lastSeenAt`/`presentInLastPayload` a cada presença;
+  hash igual → só presença/syncedAt; **nunca** mark-absent em parcial/falha.
+
+### DS-03.6 — Resolução direta stage / NF / pedido
 
 - Serviço de leitura: documento por `externalId`/`idNfe`/período a partir do stage.
 - Join lógico NF + `SalesOrderNfeLink` sem exigir O2C.
 - Ajustar detalhe do Pedido / Audit 360 para **descobrir** documentos pelo stage e enriquecer com O2C.
 
-### DS-03.6 — Correção das alocações e duplicidades
+### DS-03.7 — Correção das alocações e duplicidades
 
 - Agregar facts por item (não `find` primeiro).
 - Total do documento uma vez; alocado por pedido separado.
 - Revisar builder se facts ainda repetirem total cheio em splits.
 - Testes de rateio multi-pedido e multi-linha.
 
-### DS-03.7 — Resolução financeira
+### DS-03.8 — Resolução financeira
 
 - Preencher CR via NF (`sourceInvoiceId`); remover `receivableExternalId: null` fixo.
 - Aplicar precedência CR > condição do documento > previsão.
 - Sem nova tabela financeira.
 
-### DS-03.8 — Revisão final do stage
+### DS-03.9 — Revisão final do stage
 
 - Checklist das 15 perguntas; permissão `includeRaw`; índices; cobertura servidor; riscos remanescentes (Comissões).
 - Gate para APIs/tela Comercial → Documentos de Saída.
