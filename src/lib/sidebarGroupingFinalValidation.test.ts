@@ -75,6 +75,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.customers,
     MODULE_LABELS.proposals,
     MODULE_LABELS["sales-orders"],
+    MODULE_LABELS["output-documents"],
     MODULE_LABELS.pricing,
     MODULE_LABELS.commissions,
   ],

@@ -633,7 +633,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     label: "Documentos de Saída",
     parentKey: "commercial",
     groupId: "commercial",
-    route: "/commercial/output-documents",
+    route: "/output-documents",
     sortOrder: 343,
     actions: [V(["output_documents.view"])],
     relatedEndpoints: [
@@ -654,7 +654,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     label: "Documentos de Saída — detalhe",
     parentKey: "commercial.output_documents",
     groupId: "commercial",
-    route: "/commercial/output-documents/:id",
+    route: "/output-documents/:id",
     sortOrder: 344,
     actions: [V(["output_documents.detail.view", "output_documents.view"])],
     relatedEndpoints: ["/api/commercial/output-documents/:id"],

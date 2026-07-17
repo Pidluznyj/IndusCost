@@ -103,6 +103,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   pricing: Calculator,
   proposals: FileText,
   "sales-orders": ClipboardList,
+  "output-documents": FileText,
   customers: Users,
   "crm-commercial": Contact,
   commissions: HandCoins,

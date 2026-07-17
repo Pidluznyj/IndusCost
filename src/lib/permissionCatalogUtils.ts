@@ -45,6 +45,7 @@ export const PERMISSION_TEMPLATES: Record<
       "sales_orders.view",
       "sales_orders.detail.view",
       "sales_orders.invoice.view",
+      "output_documents.view",
     ],
   },
   commercial_manager: {

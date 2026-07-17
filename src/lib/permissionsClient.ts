@@ -43,6 +43,7 @@ export const ResourceKeys = {
   FINANCEIRO_CONTAS_RECEBER: "financeiro.contas_receber",
   COMERCIAL: "comercial",
   COMERCIAL_PEDIDOS_VENDA: "comercial.pedidos_venda",
+  COMERCIAL_DOCUMENTOS_SAIDA: "comercial.documentos_saida",
   COMERCIAL_CRM: "comercial.crm",
   COMERCIAL_CRM_TAB_GESTAO_GERAL: "comercial.crm.tab.gestao_geral",
   COMERCIAL_CRM_TAB_GESTAO_VENDEDOR: "comercial.crm.tab.gestao_vendedor",

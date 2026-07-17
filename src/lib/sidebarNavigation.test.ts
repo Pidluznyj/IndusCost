@@ -17,7 +17,10 @@ import {
   toggleExpandedGroupInSet,
   SIDEBAR_GROUP_UI_LABELS,
 } from "./sidebarNavigation.js";
-import { buildGroupedNavigationStructure } from "./navigationGroups.js";
+import {
+  buildGroupedNavigationStructure,
+  getModulePath,
+} from "./navigationGroups.js";
 import {
   canAccessModule,
   MODULE_LABELS,
@@ -51,7 +54,7 @@ describe("sidebarNavigation — filtro por permissão", () => {
   it("oculta grupos sem nenhum item acessível", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
     assert.equal(nav.directItems.length, 0);
-    assert.equal(nav.groups.length, 2);
+    assert.equal(nav.groups.length, 1);
     assert.equal(nav.groups[0]?.id, "engenharia");
     assert.deepEqual(
       nav.groups[0]?.items.map((item) => item.itemId),
@@ -62,21 +65,20 @@ describe("sidebarNavigation — filtro por permissão", () => {
   it("não expõe item que usuário não tinha acesso antes", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
     const ids = nav.flatAccessibleItems.map((item) => item.id);
-    assert.deepEqual(ids, ["dashboard", "reports", "guide"]);
+    assert.deepEqual(ids, ["dashboard", "reports"]);
     assert.equal(canAccessModule("products", checker(["dashboard.view"])), false);
     assert.ok(!ids.includes("products"));
+    assert.ok(!ids.includes("guide"));
   });
 
   it("preserva paths canônicos nos links acessíveis", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     for (const item of nav.flatAccessibleItems) {
-      const expected = item.id === "suppliers" ? "/finance/suppliers" : `/${item.id}`;
-      assert.equal(item.path, expected);
+      assert.equal(item.path, getModulePath(item.id));
     }
     for (const group of nav.groups) {
       for (const item of group.items) {
-        const expected = item.itemId === "suppliers" ? "/finance/suppliers" : `/${item.itemId}`;
-        assert.equal(item.path, expected);
+        assert.equal(item.path, getModulePath(item.itemId));
       }
     }
   });
@@ -101,7 +103,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Comercial contém CRM, Clientes, Propostas, Pedidos, Formação de Preço e Comissões", () => {
+  it("Comercial contém CRM, Clientes, Propostas, Pedidos, Documentos de Saída, Formação de Preço e Comissões", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "comercial");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
@@ -109,24 +111,26 @@ describe("sidebarNavigation — grupos oficiais", () => {
       "customers",
       "proposals",
       "sales-orders",
+      "output-documents",
       "pricing",
       "commissions",
     ]);
   });
 
-  it("Financeiro contém Financeiro, Fornecedores, Custos Indiretos, Tributos e Relatórios", () => {
+  it("Financeiro contém Financeiro, Fornecedores, Conciliação, Custos Indiretos, Tributos e Relatórios", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "financeiro");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "finance",
       "suppliers",
+      "portfolio-reconciliation",
       "opex",
       "taxes",
       "reports",
     ]);
   });
 
-  it("Operações contém Estoque, Compras, Máquinas, Performance, Manutenção e Frota", () => {
+  it("Operações contém Estoque, Compras, Máquinas, Performance, Ordens de Produção, Manutenção e Frota", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "operacoes");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
@@ -134,6 +138,7 @@ describe("sidebarNavigation — grupos oficiais", () => {
       "purchases",
       "machines",
       "operations-performance",
+      "production-orders",
       "maintenance",
       "fleet",
     ]);

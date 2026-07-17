@@ -57,6 +57,7 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   pricing: ["commercial.pricing"],
   proposals: ["commercial.proposals"],
   "sales-orders": ["commercial.sales_orders"],
+  "output-documents": ["commercial.output_documents"],
   customers: ["commercial.customers"],
   "crm-commercial": ["commercial.crm"],
   commissions: ["commercial.commissions"],

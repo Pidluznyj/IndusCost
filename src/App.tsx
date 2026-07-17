@@ -55,6 +55,7 @@ import { CustomerIndicatorsDashboard } from "@/src/components/contextual/Custome
 import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
 import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
+import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
@@ -896,6 +897,17 @@ export default function App() {
               }
             >
               <SalesOrdersModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="output-documents"
+          element={
+            <ModulePageShell
+              title="Documentos de Saída"
+              description="Consulta read-only dos documentos sincronizados do Nomus."
+            >
+              <OutputDocumentsModule />
             </ModulePageShell>
           }
         />

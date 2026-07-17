@@ -23,6 +23,7 @@ export type AppModuleId =
   | "pricing"
   | "proposals"
   | "sales-orders"
+  | "output-documents"
   | "customers"
   | "crm-commercial"
   | "commissions"
@@ -63,6 +64,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "pricing",
   "proposals",
   "sales-orders",
+  "output-documents",
   "customers",
   "crm-commercial",
   "commissions",
@@ -102,6 +104,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("proposals.view");
     case "sales-orders":
       return check.hasPermission("sales_orders.view");
+    case "output-documents":
+      return check.hasPermission("output_documents.view");
     case "products":
       return check.hasPermission("products.view");
     case "transformation-simulator":
@@ -307,7 +311,6 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   if (normalized === "/crm" || normalized.startsWith("/crm/")) {
     return "crm-commercial";
   }
-
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
@@ -344,6 +347,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   pricing: "Formação de Preço",
   proposals: "Propostas",
   "sales-orders": "Pedidos de venda",
+  "output-documents": "Documentos de Saída",
   customers: "Clientes",
   "crm-commercial": "CRM Comercial",
   commissions: "Comissões",
