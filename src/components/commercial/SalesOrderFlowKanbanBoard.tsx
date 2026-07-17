@@ -71,28 +71,29 @@ export function SalesOrderFlowKanbanBoard({
       aria-label="Kanban operacional de pedidos"
       data-testid="sales-order-flow-kanban"
     >
-      <div className="flex min-w-max items-start gap-3">
+      {/* min-w-max: scroll horizontal em 1366×768; colunas 300px × 6 ≈ 1848px */}
+      <div className="flex min-w-max items-stretch gap-3">
         {columns.map((column) => (
           <section
             key={column.stage}
-            className="w-[300px] shrink-0 rounded-xl border border-border bg-muted/20 shadow-sm"
+            className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/20 shadow-sm max-h-[min(70vh,640px)]"
             data-testid={`sales-order-flow-kanban-column-${column.stage}`}
           >
             <header
               className={cn(
-                "sticky top-0 z-10 rounded-t-xl border-b px-3 py-2.5 backdrop-blur-sm",
+                "z-10 shrink-0 rounded-t-xl border-b px-3 py-2.5",
                 salesOrderFlowKanbanHeaderClass(column.stage)
               )}
             >
               <div className="flex items-start justify-between gap-2">
-                <h3 className="text-sm font-semibold leading-tight">
+                <h3 className="text-sm font-semibold leading-tight text-foreground">
                   {column.label}
                 </h3>
-                <span className="rounded-full border border-current/15 bg-white/75 px-2 py-0.5 text-xs font-semibold">
+                <span className="rounded-full border border-slate-300/80 bg-white/90 px-2 py-0.5 text-xs font-semibold text-slate-800">
                   {column.total}
                 </span>
               </div>
-              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+              <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-slate-600">
                 <span>Valor</span>
                 <strong className="text-right text-foreground">
                   {formatColumnMoney(column.orderValue, valuesVisible)}
@@ -108,7 +109,10 @@ export function SalesOrderFlowKanbanBoard({
               </div>
             </header>
 
-            <div className="space-y-2 p-2">
+            <div
+              className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-y-contain p-2"
+              data-testid={`sales-order-flow-kanban-column-scroll-${column.stage}`}
+            >
               {column.status === "loading" ? (
                 <div
                   className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-background/70 p-6 text-xs text-muted-foreground"
@@ -264,16 +268,16 @@ export function SalesOrderFlowKanbanCard({
         <PriorityBadge priority={card.priority} />
       </div>
 
-      <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-[11px]">
-        <span className="text-muted-foreground">Vendedor</span>
+      <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
+        <span className="text-slate-600">Vendedor</span>
         <strong className="truncate text-right font-medium text-foreground">
           {card.sellerName?.trim() || "—"}
         </strong>
-        <span className="text-muted-foreground">Empresa</span>
+        <span className="text-slate-600">Empresa</span>
         <strong className="truncate text-right font-medium text-foreground">
           {card.companyIssuer?.trim() || "—"}
         </strong>
-        <span className="text-muted-foreground">Entrega</span>
+        <span className="text-slate-600">Entrega</span>
         <strong
           className={cn(
             "text-right font-medium",
@@ -282,33 +286,33 @@ export function SalesOrderFlowKanbanCard({
         >
           {formatFlowDate(card.promisedDeliveryAt)}
         </strong>
-        <span className="text-muted-foreground">Na etapa</span>
+        <span className="text-slate-600">Na etapa</span>
         <strong className="text-right font-medium text-foreground">
           {formatDaysInStage(card.daysInStage)}
         </strong>
       </div>
 
-      <div className="mt-2 rounded-md border border-border/70 bg-muted/25 px-2 py-1.5 text-[11px]">
+      <div className="mt-2 rounded-md border border-border/70 bg-muted/25 px-2 py-1.5 text-xs">
         {valuesVisible ? (
           <div className="grid grid-cols-2 gap-x-2">
-            <span className="text-muted-foreground">Valor</span>
+            <span className="text-slate-600">Valor</span>
             <strong className="text-right text-foreground">
               {formatNullableMoney(card.orderValue)}
             </strong>
-            <span className="text-muted-foreground">Saldo ativo</span>
+            <span className="text-slate-600">Saldo ativo</span>
             <strong className="text-right text-foreground">
               {formatNullableMoney(card.activeResidualValue)}
             </strong>
           </div>
         ) : (
-          <p className="text-center text-muted-foreground">
+          <p className="text-center text-slate-600">
             Valores ocultos por permissão
           </p>
         )}
       </div>
 
-      <div className="mt-2 flex items-center justify-between text-[11px]">
-        <span className="text-muted-foreground">Itens</span>
+      <div className="mt-2 flex items-center justify-between text-xs">
+        <span className="text-slate-600">Itens</span>
         <strong className="text-foreground">
           {card.completedItems} concluídos · {card.pendingItems} pendentes
         </strong>
@@ -346,12 +350,12 @@ export function SalesOrderFlowKanbanCard({
         />
       </div>
 
-      <div className="mt-2 border-t border-border/70 pt-2 text-[11px]">
-        <p className="text-muted-foreground">Próxima ação</p>
+      <div className="mt-2 border-t border-border/70 pt-2 text-xs">
+        <p className="text-slate-600">Próxima ação</p>
         <p className="font-medium text-foreground">
           {card.nextAction?.trim() || "Sem ação definida"}
         </p>
-        <p className="mt-1 text-muted-foreground">
+        <p className="mt-1 text-slate-600">
           Área:{" "}
           <span className="font-medium text-foreground">
             {card.responsibleArea?.trim() || "Não definida"}
@@ -360,7 +364,7 @@ export function SalesOrderFlowKanbanCard({
       </div>
 
       {card.isBlocked ? (
-        <div className="mt-2 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1.5 text-[11px] text-rose-800">
+        <div className="mt-2 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1.5 text-xs text-rose-900">
           <span className="inline-flex items-center gap-1 font-semibold">
             <Ban className="h-3 w-3" /> Bloqueado
           </span>
@@ -369,7 +373,7 @@ export function SalesOrderFlowKanbanCard({
       ) : null}
 
       {inconsistenciesVisible && card.inconsistencies.length > 0 ? (
-        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-[11px] text-amber-900">
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">
           <p className="inline-flex items-center gap-1 font-semibold">
             <AlertTriangle className="h-3 w-3" />
             {card.inconsistencies.length} inconsistência(s)
@@ -389,7 +393,7 @@ export function SalesOrderFlowKanbanCard({
             <span
               key={badge.key}
               className={cn(
-                "rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                "rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
                 badge.className
               )}
             >

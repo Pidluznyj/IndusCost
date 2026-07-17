@@ -87,6 +87,11 @@ src/lib/sales/salesOrderFlowTimeline.test.ts
 src/lib/sales/salesOrderFlowManagement.test.ts
 src/lib/sales/salesOrderFlowManagement.server.test.ts
 src/lib/sales/salesOrderFlowPermissions.test.ts
+src/lib/sales/salesOrderFlowLifecycleMatrix.test.ts
+src/lib/sales/salesOrderFlowPerformance.test.ts
+src/lib/sales/salesOrderFlowObservability.test.ts
+src/lib/sales/salesOrderFlowApiValidationMatrix.test.ts
+src/lib/salesOrderFlowUiValidationMatrix.test.ts
 src/lib/sales/salesOrderToCashFunnelAnalytics.test.ts
 src/lib/sales/salesOrderToCashFunnelApi.test.ts
 src/lib/sales/salesOrderToCashFunnelUi.test.ts

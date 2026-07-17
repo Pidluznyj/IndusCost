@@ -705,7 +705,9 @@ describe("sales order flow operational kanban (OP-67)", () => {
     );
     assert.match(html, /sales-order-flow-kanban-column-IN_PRODUCTION/);
     assert.doesNotMatch(html, /sales-order-flow-kanban-column-CANCELED/);
-    assert.match(html, /sticky top-0/);
+    assert.match(html, /max-h-\[min\(70vh,640px\)\]/);
+    assert.match(html, /overflow-y-auto/);
+    assert.match(html, /sales-order-flow-kanban-column-scroll-IN_PRODUCTION/);
     assert.doesNotMatch(html, /draggable/);
   });
 

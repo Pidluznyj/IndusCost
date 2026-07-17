@@ -24,6 +24,18 @@ export const SALES_ORDER_FLOW_VIEW_LEGACY_PERMISSION =
   "sales_orders.flow.view" as const;
 export const SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS = 300;
 
+/** Viewports de validação visual OP-77 (zoom 100%). */
+export const SALES_ORDER_FLOW_VIEWPORTS = [
+  { id: "1366" as const, width: 1366, height: 768, label: "1366×768" },
+  { id: "1920" as const, width: 1920, height: 1080, label: "1920×1080" },
+] as const;
+
+export function salesOrderFlowViewportClass(
+  viewport: "1366" | "1920"
+): string {
+  return viewport === "1366" ? "w-[1366px] max-w-full" : "w-[1920px] max-w-full";
+}
+
 /** Espelha SALES_ORDER_FLOW_SUMMARY_PRIORITIES sem importar módulo de contrato/server. */
 export const SALES_ORDER_FLOW_UI_PRIORITIES = [
   "LOW",
