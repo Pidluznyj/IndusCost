@@ -9,6 +9,7 @@ import {
   sortPermissionResourcesForInsert,
   validatePermissionResourceCatalog,
 } from "@/src/lib/permissionResourceSeedData.js";
+import { listPermissionSeedsForAdminUi } from "@/src/lib/permissionAdminUiSeeds.js";
 import { filterKnownPermissions } from "@/src/lib/appAuth.js";
 import { bumpPermissionsVersionAndSyncSessions } from "@/src/lib/permissionsVersion.js";
 import {
@@ -126,10 +127,12 @@ export function buildEditablePermissionTree(
 ): EditablePermissionTreeNode[] {
   const overrideByKey = new Map(overrides.map((o) => [o.resourceKey, o]));
   const nodes = new Map<string, EditablePermissionTreeNode>();
+  const uiSeeds = listPermissionSeedsForAdminUi();
 
-  for (const seed of PERMISSION_RESOURCE_SEEDS) {
+  for (const seed of uiSeeds) {
     const roleFlags =
-      baselineFlagsByKey?.[seed.key] ?? getOfficialRolePermissionFlags(role, seed.key);
+      baselineFlagsByKey?.[seed.key] ??
+      getOfficialRolePermissionFlags(role, seed.key);
     const ov = overrideByKey.get(seed.key);
     const override = ov
       ? {
@@ -153,7 +156,7 @@ export function buildEditablePermissionTree(
   }
 
   const roots: EditablePermissionTreeNode[] = [];
-  for (const seed of [...PERMISSION_RESOURCE_SEEDS].sort(
+  for (const seed of [...uiSeeds].sort(
     (a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key)
   )) {
     const node = nodes.get(seed.key)!;

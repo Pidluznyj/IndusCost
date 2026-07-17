@@ -43,6 +43,8 @@ function axisToActions(
     ...(into[resourceKey] ?? {}),
   } as Record<PermissionContractAction, "allow" | "deny">;
   for (const a of targets) {
+    // Deny wins quando aliases legado/canônico colidem no mesmo contrato.
+    if (bucket[a] === "deny") continue;
     bucket[a] = decision;
   }
   (into as Record<string, typeof bucket>)[resourceKey] = bucket;

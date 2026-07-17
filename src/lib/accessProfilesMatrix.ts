@@ -6,7 +6,7 @@
 
 import type { AppUserRole } from "@/src/lib/appAuthClient";
 import { ALL_PERMISSION_KEYS } from "@/src/lib/permissionCatalog";
-import { PERMISSION_RESOURCE_SEEDS } from "@/src/lib/permissionResourceSeedData";
+import { listPermissionSeedsForAdminUi } from "@/src/lib/permissionAdminUiSeeds";
 import {
   materializeStructuredToLegacy,
   projectLegacyToStructured,
@@ -23,6 +23,7 @@ import {
   type PermissionMatrixImpactSummary,
   type PermissionMatrixRow,
 } from "@/src/lib/security/permissionMatrixUi/index.ts";
+import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/index.js";
 import type { EditableTreeNodeDto } from "@/src/lib/userPermissionsAdminClient";
 
 const CATALOG_SET = new Set(ALL_PERMISSION_KEYS);
@@ -40,14 +41,43 @@ export type AccessProfileMatrixModel = {
   unmappedLegacyKeys: string[];
 };
 
-function emptyFlags() {
+type AxisFlags = { canView: boolean; canExecute: boolean; canManage: boolean };
+
+function emptyFlags(): AxisFlags {
   return { canView: false, canExecute: false, canManage: false };
 }
 
-/** Esqueleto da árvore a partir do seed PT (sem role inheritance). */
+function orFlags(a: AxisFlags, b: AxisFlags): AxisFlags {
+  return {
+    canView: a.canView || b.canView,
+    canExecute: a.canExecute || b.canExecute,
+    canManage: a.canManage || b.canManage,
+  };
+}
+
+/** Une flags do canônico com aliases PT ocultos na UI (ex.: comercial.crm → commercial.crm). */
+function flagsForUiResourceKey(
+  resourceKey: string,
+  projectedFlags: Readonly<Record<string, AxisFlags>>
+): AxisFlags {
+  let flags = projectedFlags[resourceKey] ?? emptyFlags();
+  const contract = PERMISSION_CONTRACT_RESOURCES.find(
+    (r) => r.resourceKey === resourceKey
+  );
+  if (!contract) return flags;
+  for (const rel of contract.relationalResourceKeys ?? []) {
+    if (!rel || rel === resourceKey) continue;
+    const aliasFlags = projectedFlags[rel];
+    if (aliasFlags) flags = orFlags(flags, aliasFlags);
+  }
+  return flags;
+}
+
+/** Esqueleto da árvore UI (sem aliases legado duplicados). */
 function buildEmptySeedTree(): EditableTreeNodeDto[] {
+  const seeds = listPermissionSeedsForAdminUi();
   const nodes = new Map<string, EditableTreeNodeDto>();
-  for (const seed of PERMISSION_RESOURCE_SEEDS) {
+  for (const seed of seeds) {
     nodes.set(seed.key, {
       key: seed.key,
       label: seed.label,
@@ -62,7 +92,7 @@ function buildEmptySeedTree(): EditableTreeNodeDto[] {
     });
   }
   const roots: EditableTreeNodeDto[] = [];
-  for (const seed of [...PERMISSION_RESOURCE_SEEDS].sort(
+  for (const seed of [...seeds].sort(
     (a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key)
   )) {
     const node = nodes.get(seed.key)!;
@@ -98,7 +128,7 @@ export function buildAccessProfileMatrixTree(
   const skeleton = buildEmptySeedTree();
   const walk = (nodes: EditableTreeNodeDto[]) => {
     for (const n of nodes) {
-      const flags = projected.projectedFlags[n.key] ?? emptyFlags();
+      const flags = flagsForUiResourceKey(n.key, projected.projectedFlags);
       n.roleFlags = emptyFlags();
       const hasAny = flags.canView || flags.canExecute || flags.canManage;
       n.override = hasAny
@@ -130,7 +160,11 @@ export function projectAccessProfileResourceFlags(
     legacyPermissions: permissions,
     elevateAncestors: false,
   });
-  return projected.projectedFlags;
+  const out: Record<string, AxisFlags> = { ...projected.projectedFlags };
+  for (const seed of listPermissionSeedsForAdminUi()) {
+    out[seed.key] = flagsForUiResourceKey(seed.key, projected.projectedFlags);
+  }
+  return out;
 }
 
 export function buildAccessProfileMatrixModel(
@@ -172,8 +206,17 @@ export function materializeAccessProfilePermissionsFromDraft(
 ): string[] {
   const effectiveByResourceKey: StructuredGrantMap = {};
   for (const [resourceKey, values] of Object.entries(draft)) {
-    effectiveByResourceKey[resourceKey] =
-      legacyFlagsFromMatrixDraftValues(values);
+    const flags = legacyFlagsFromMatrixDraftValues(values);
+    effectiveByResourceKey[resourceKey] = flags;
+    // Espelha no alias PT: o índice 1:1 ainda aponta crm.view → comercial.crm.
+    const contract = PERMISSION_CONTRACT_RESOURCES.find(
+      (r) => r.resourceKey === resourceKey
+    );
+    for (const rel of contract?.relationalResourceKeys ?? []) {
+      if (!rel || rel === resourceKey) continue;
+      const prev = effectiveByResourceKey[rel] ?? emptyFlags();
+      effectiveByResourceKey[rel] = orFlags(prev, flags);
+    }
   }
   const result = materializeStructuredToLegacy({
     effectiveByResourceKey,

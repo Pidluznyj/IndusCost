@@ -19,6 +19,7 @@ import type {
   EffectiveAccessMeDto,
 } from "@/src/lib/appAuthClient";
 import { PERMISSIONS_CHANGED_SESSION_MESSAGE } from "@/src/lib/actionPermissionCatalog";
+import { legacyPermissionGrantedByDto } from "@/src/lib/canAccessFromEffectiveAccess";
 
 const SESSION_EXPIRED_MESSAGE = "Sessão expirada. Faça login novamente.";
 const PERMISSIONS_POLL_MS = 60_000;
@@ -217,18 +218,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!authUser) return false;
       // PERM-31: SUPER_ADMIN não recebe catálogo na bag — bypass por role.
       if (authUser.role === "SUPER_ADMIN") return true;
+      // Com DTO canônico, a bag não amplia acesso além do perfil/overrides.
+      if (effectiveAccess) {
+        return legacyPermissionGrantedByDto(effectiveAccess, permission);
+      }
       return authUser.effectivePermissions.includes(permission);
     },
-    [authUser]
+    [authUser, effectiveAccess]
   );
 
   const hasAnyPermission = useCallback(
     (permissions: string[]) => {
       if (!authUser) return false;
       if (authUser.role === "SUPER_ADMIN") return true;
+      if (effectiveAccess) {
+        return permissions.some((p) =>
+          legacyPermissionGrantedByDto(effectiveAccess, p)
+        );
+      }
       return permissions.some((p) => authUser.effectivePermissions.includes(p));
     },
-    [authUser]
+    [authUser, effectiveAccess]
   );
 
   const isSuperAdmin = useCallback(() => authUser?.role === "SUPER_ADMIN", [authUser]);

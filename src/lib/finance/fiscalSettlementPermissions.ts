@@ -39,6 +39,7 @@ export function canManageFiscalAllocations(
 export function canViewFiscalSettlementsFromPermissions(
   permissions: readonly string[] | null | undefined
 ): boolean {
-  if (!permissions || permissions.length === 0) return true;
+  // Fail-closed: bag vazia/ausente não libera apuração fiscal.
+  if (!permissions || permissions.length === 0) return false;
   return FISCAL_SETTLEMENT_VIEW_PERMISSIONS.some((k) => permissions.includes(k));
 }

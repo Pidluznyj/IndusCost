@@ -1,6 +1,8 @@
 /**
  * PERM-30 — Carrega overrides + snapshot de perfil para o resolvedor canônico.
  * Não usa AppUser.permissions[] na decisão.
+ * Fail-closed: erros de leitura propagam (guard → 500); perfil vinculado sem
+ * row → snapshot vazio (deny-by-default), nunca fallback silencioso para role.
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -15,42 +17,43 @@ export async function loadUserPermissionOverrides(
   prisma: PrismaLike,
   userId: string
 ): Promise<SeedAxisOverride[]> {
-  try {
-    const rows = await prisma.userPermissionOverride.findMany({
-      where: { userId },
-      select: {
-        resourceKey: true,
-        canView: true,
-        canExecute: true,
-        canManage: true,
-      },
-    });
-    return rows;
-  } catch {
-    return [];
-  }
+  const rows = await prisma.userPermissionOverride.findMany({
+    where: { userId },
+    orderBy: [{ updatedAt: "desc" }, { resourceKey: "asc" }],
+    select: {
+      resourceKey: true,
+      canView: true,
+      canExecute: true,
+      canManage: true,
+    },
+  });
+  return rows;
 }
 
 export async function loadUserAccessProfileSnapshot(
   prisma: PrismaLike,
   userId: string
 ): Promise<EffectiveAccessBaselineMap | undefined> {
-  try {
-    const user = await prisma.appUser.findUnique({
-      where: { id: userId },
-      select: {
-        accessProfile: {
-          select: { permissions: true },
-        },
+  const user = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: {
+      accessProfileId: true,
+      accessProfile: {
+        select: { permissions: true },
       },
-    });
-    if (!user?.accessProfile) return undefined;
+    },
+  });
+  if (!user) return undefined;
+  // Perfil vinculado: snapshot (mesmo vazio) substitui role — nunca falha aberta.
+  if (user.accessProfileId) {
+    if (!user.accessProfile) {
+      return {};
+    }
     return projectAccessProfilePermissionsToSnapshot(
       filterKnownPermissions(user.accessProfile.permissions)
     );
-  } catch {
-    return undefined;
   }
+  return undefined;
 }
 
 /** Loaders prontos para `createRequireResourceGuards` / middleware. */

@@ -52,8 +52,8 @@ export type AuthorizeRequireResourceOptions = {
   /** Snapshot do AccessProfile (substitui role quando definido). */
   profileSnapshot?: EffectiveAccessBaselineMap | null;
   /**
-   * Ponte bag → contrato. Default: true na transição (REQUIRE_RESOURCE_LEGACY_COMPAT).
-   * Com overrides/profile carregados, preferir false.
+   * Ponte bag → contrato. Default: false (REQUIRE_RESOURCE_LEGACY_COMPAT).
+   * Perfil + overrides são a autoridade; bag só com flag explícita.
    */
   legacyCompatMode?: boolean;
   permissionsVersion?: number | null;
@@ -107,12 +107,15 @@ export function normalizeRequireResourceAction(
   return null;
 }
 
-/** Legacy bag projection on by default until module cutovers complete. */
+/**
+ * Ponte bag→contrato. Default OFF: decisão = perfil + overrides (+ role se sem perfil).
+ * Reativar só com REQUIRE_RESOURCE_LEGACY_COMPAT=1 (migração/debug).
+ */
 export function isRequireResourceLegacyCompatEnabled(
   env: NodeJS.ProcessEnv = process.env
 ): boolean {
   if (env.REQUIRE_RESOURCE_LEGACY_COMPAT == null || env.REQUIRE_RESOURCE_LEGACY_COMPAT === "") {
-    return true;
+    return false;
   }
   return parseEnvFlag(env.REQUIRE_RESOURCE_LEGACY_COMPAT);
 }
