@@ -1052,6 +1052,10 @@ model SalesOrder {
   productionOrderSalesLinks     NomusProductionOrderSalesLink[]
   commissionOrderSnapshots      CommissionOrderSnapshot[]
   commissionReceivableSchedules CommissionReceivableSchedule[]
+  flowSnapshot                  SalesOrderFlowSnapshot?
+  flowEvents                    SalesOrderFlowEvent[]
+  flowManagement                SalesOrderFlowManagement?
+  flowItemSnapshots             SalesOrderItemFlowSnapshot[]
 
   @@index([customerId])
   @@index([status])
@@ -1144,6 +1148,8 @@ model SalesOrderItem {
   SalesOrder                SalesOrder                      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   productionOrderSalesLinks NomusProductionOrderSalesLink[]
   commissionItemSnapshots   CommissionOrderItemSnapshot[]
+  flowItemSnapshot          SalesOrderItemFlowSnapshot?
+  flowEvents                SalesOrderFlowEvent[]
 
   @@index([salesOrderId])
   @@index([proposalItemId])
@@ -6062,6 +6068,207 @@ model CommissionReceivableSchedule {
   @@index([customerId])
   @@index([canonicalSellerId])
   @@index([status])
+}
+
+/// Snapshot derivado do Fluxo de Pedidos (Kanban) por item — reconstruível (OP-52).
+/// Não altera SalesOrder / SalesOrderItem oficiais. Quantidades em Decimal.
+model SalesOrderItemFlowSnapshot {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  salesOrderId     String @db.Uuid
+  salesOrderItemId String @unique @db.Uuid
+
+  /// Coluna operacional (SalesOrderItemFlowStage).
+  currentStage String
+  stageReason  String?
+
+  /// Classificação FIN-03 / atendimento.
+  fulfillmentClassification String
+
+  /// REQUIRED | NOT_REQUIRED | UNKNOWN (null = não informado).
+  requiresProductionClassification String?
+  requiresProduction               Boolean?
+
+  orderedQuantity         Decimal? @db.Decimal(20, 6)
+  productionOrderQuantity Decimal  @default(0) @db.Decimal(20, 6)
+  producedQuantity        Decimal? @db.Decimal(20, 6)
+  documentedQuantity      Decimal  @default(0) @db.Decimal(20, 6)
+  invoicedQuantity        Decimal  @default(0) @db.Decimal(20, 6)
+  shippedQuantity         Decimal  @default(0) @db.Decimal(20, 6)
+  activeRemainingQuantity Decimal? @db.Decimal(20, 6)
+  shipTargetQuantity      Decimal  @default(0) @db.Decimal(20, 6)
+  cutQuantity             Decimal  @default(0) @db.Decimal(20, 6)
+  canceledQuantity        Decimal  @default(0) @db.Decimal(20, 6)
+
+  /// Progressos 0–100 (capados no motor).
+  progressProductionOrder Decimal  @default(0) @db.Decimal(10, 2)
+  progressProduced        Decimal? @db.Decimal(10, 2)
+  progressDocumented      Decimal  @default(0) @db.Decimal(10, 2)
+  progressInvoiced        Decimal  @default(0) @db.Decimal(10, 2)
+  progressShipped         Decimal  @default(0) @db.Decimal(10, 2)
+  progressJson            Json?
+
+  inconsistenciesJson Json?
+  nextAction          String?
+  responsibleArea     String?
+
+  stageEnteredAt     DateTime? @db.Timestamptz(6)
+  promisedDeliveryAt DateTime? @db.Timestamptz(6)
+  isOverdue          Boolean   @default(false)
+  isActiveForKanban  Boolean   @default(true)
+
+  /// Hash do input/evidence para idempotência de materialização.
+  fingerprint        String
+  computationVersion String
+  computedAt         DateTime @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  salesOrder     SalesOrder     @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salesOrderItem SalesOrderItem @relation(fields: [salesOrderItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([salesOrderId])
+  @@index([currentStage])
+  @@index([isActiveForKanban])
+  @@index([isOverdue])
+  @@index([responsibleArea])
+  @@index([promisedDeliveryAt])
+  @@index([computedAt])
+  @@index([fingerprint])
+  @@index([salesOrderId, currentStage])
+  @@index([currentStage, isActiveForKanban])
+}
+
+/// Snapshot derivado do Fluxo de Pedidos (Kanban) por pedido — reconstruível (OP-52).
+model SalesOrderFlowSnapshot {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  salesOrderId String @unique @db.Uuid
+
+  currentStage               String
+  /// Estágio do gargalo (primeira obrigação).
+  bottleneckStage            String?
+  bottleneckSalesOrderItemId String? @db.Uuid
+  bottleneckReason           String?
+
+  nextAction      String?
+  responsibleArea String?
+
+  totalItems        Int @default(0)
+  activeItems       Int @default(0)
+  completedItems    Int @default(0)
+  pendingItems      Int @default(0)
+  inconsistentItems Int @default(0)
+  canceledItems     Int @default(0)
+
+  progressProductionOrder Decimal  @default(0) @db.Decimal(10, 2)
+  progressProduced        Decimal? @db.Decimal(10, 2)
+  progressDocumented      Decimal  @default(0) @db.Decimal(10, 2)
+  progressInvoiced        Decimal  @default(0) @db.Decimal(10, 2)
+  progressShipped         Decimal  @default(0) @db.Decimal(10, 2)
+  progressJson            Json?
+
+  orderValue          Decimal @default(0) @db.Decimal(20, 6)
+  fulfilledValue      Decimal @default(0) @db.Decimal(20, 6)
+  activeResidualValue Decimal @default(0) @db.Decimal(20, 6)
+  cutValue            Decimal @default(0) @db.Decimal(20, 6)
+  canceledValue       Decimal @default(0) @db.Decimal(20, 6)
+
+  firstShippedAt     DateTime? @db.Timestamptz(6)
+  lastShippedAt      DateTime? @db.Timestamptz(6)
+  completedAt        DateTime? @db.Timestamptz(6)
+  promisedDeliveryAt DateTime? @db.Timestamptz(6)
+  isOverdue          Boolean   @default(false)
+
+  /// Pedido fora das colunas operacionais ativas (cancelado / sem ativos).
+  isInActiveOperationalColumn Boolean @default(true)
+
+  inconsistenciesJson Json?
+  badgesJson          Json?
+
+  fingerprint        String
+  computationVersion String
+  computedAt         DateTime @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([currentStage])
+  @@index([isOverdue])
+  @@index([isInActiveOperationalColumn])
+  @@index([responsibleArea])
+  @@index([promisedDeliveryAt])
+  @@index([completedAt])
+  @@index([computedAt])
+  @@index([fingerprint])
+  @@index([currentStage, isInActiveOperationalColumn])
+  @@index([isOverdue, currentStage])
+}
+
+/// Evento append-only do Fluxo de Pedidos (transições / materialização).
+/// Sem updatedAt. Idempotência via dedupeKey única.
+model SalesOrderFlowEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  salesOrderId     String  @db.Uuid
+  salesOrderItemId String? @db.Uuid
+
+  eventType String
+  fromStage String?
+  toStage   String?
+
+  /// Chave estável de deduplicação (única).
+  dedupeKey String @unique
+
+  payloadJson Json?
+  actorId     String?
+
+  occurredAt DateTime @default(now()) @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  salesOrder     SalesOrder      @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  salesOrderItem SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([salesOrderId, occurredAt(sort: Desc)])
+  @@index([salesOrderItemId])
+  @@index([eventType])
+  @@index([toStage])
+  @@index([occurredAt])
+}
+
+/// Overlay de gestão humana do Fluxo de Pedidos (não é fonte operacional Nomus).
+/// 1:1 com SalesOrder. Campos editáveis; snapshots derivados permanecem reconstruíveis.
+model SalesOrderFlowManagement {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  salesOrderId String @unique @db.Uuid
+
+  /// Prioridade gerencial (ex.: LOW | NORMAL | HIGH | URGENT).
+  priority String @default("NORMAL")
+
+  responsibleUserId String? @db.Uuid
+  responsibleName   String?
+  responsibleArea   String?
+
+  isBlocked            Boolean   @default(false)
+  blockReason          String?
+  reason               String?
+  expectedResolutionAt DateTime? @db.Timestamptz(6)
+  internalNote         String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([priority])
+  @@index([isBlocked])
+  @@index([responsibleArea])
+  @@index([responsibleUserId])
+  @@index([expectedResolutionAt])
 }
 
 /// Metadados de uma materialização Order-to-Cash (auditoria Pedido → Caixa).
