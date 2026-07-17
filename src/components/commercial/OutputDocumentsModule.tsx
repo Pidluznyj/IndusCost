@@ -1,5 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { FileText, Loader2, Search } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import {
+  Ban,
+  FileText,
+  FileWarning,
+  Loader2,
+  Receipt,
+  Search,
+  Wallet,
+} from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -11,9 +20,22 @@ import {
   classifyOutputDocumentsListError,
   hasActiveOutputDocumentsFilters,
   isOutputDocumentsDateRangeInvalid,
+  OUTPUT_DOCUMENT_FINANCIAL_STATUS_OPTIONS,
   OUTPUT_DOCUMENTS_BREADCRUMB,
+  OUTPUT_DOCUMENTS_PAGE_SIZE,
+  parseOutputDocumentsFinancialStatusParam,
 } from "@/src/lib/outputDocumentsUi";
-import type { OutputDocumentsListSummary } from "@/src/lib/output-documents/outputDocumentsListTypes";
+import type { OutputDocumentFinancialStatus } from "@/src/lib/output-documents/outputDocumentFinancialStatusResolver";
+import type {
+  OutputDocumentsListItem,
+  OutputDocumentsListSummary,
+} from "@/src/lib/output-documents/outputDocumentsListTypes";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
+import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDocumentGridTableRow";
 import { cn } from "@/src/lib/utils";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -29,27 +51,66 @@ const EMPTY_SUMMARY: OutputDocumentsListSummary = {
   cancelled: 0,
 };
 
+function initialParam(params: URLSearchParams, key: string): string {
+  return params.get(key)?.trim() ?? "";
+}
+
+function initialPage(params: URLSearchParams): number {
+  const parsed = Number.parseInt(params.get("page") ?? "1", 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
+
 export function OutputDocumentsModule() {
   const auth = useAuth();
   const permissions = usePermissions();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canView = canViewOutputDocuments({
     canPerformAction: permissions.canPerformAction,
     hasPermission: auth.hasPermission,
   });
 
-  const [searchDraft, setSearchDraft] = useState("");
-  const [companyDraft, setCompanyDraft] = useState("");
-  const [customerDraft, setCustomerDraft] = useState("");
-  const [search, setSearch] = useState("");
-  const [company, setCompany] = useState("");
-  const [customer, setCustomer] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [searchDraft, setSearchDraft] = useState(() =>
+    initialParam(searchParams, "search")
+  );
+  const [companyDraft, setCompanyDraft] = useState(() =>
+    initialParam(searchParams, "company")
+  );
+  const [customerDraft, setCustomerDraft] = useState(() =>
+    initialParam(searchParams, "customer")
+  );
+  const [statusDraft, setStatusDraft] = useState(() =>
+    initialParam(searchParams, "status")
+  );
+  const [orderDraft, setOrderDraft] = useState(() =>
+    initialParam(searchParams, "order")
+  );
+  const [nfeDraft, setNfeDraft] = useState(() => initialParam(searchParams, "nfe"));
+  const [search, setSearch] = useState(searchDraft);
+  const [company, setCompany] = useState(companyDraft);
+  const [customer, setCustomer] = useState(customerDraft);
+  const [status, setStatus] = useState(statusDraft);
+  const [order, setOrder] = useState(orderDraft);
+  const [nfe, setNfe] = useState(nfeDraft);
+  const [from, setFrom] = useState(() => initialParam(searchParams, "from"));
+  const [to, setTo] = useState(() => initialParam(searchParams, "to"));
+  const [financialStatus, setFinancialStatus] =
+    useState<OutputDocumentFinancialStatus | null>(() =>
+      parseOutputDocumentsFinancialStatusParam(
+        searchParams.get("financialStatus")
+      )
+    );
+  const [page, setPage] = useState(() => initialPage(searchParams));
+  const [items, setItems] = useState<OutputDocumentsListItem[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [summary, setSummary] =
     useState<OutputDocumentsListSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
+    null
+  );
   const [errorKind, setErrorKind] = useState<
     "access_denied" | "api_unavailable" | "generic" | null
   >(null);
@@ -57,26 +118,96 @@ export function OutputDocumentsModule() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setSearch(searchDraft.trim());
-      setCompany(companyDraft.trim());
-      setCustomer(customerDraft.trim());
+      const nextSearch = searchDraft.trim();
+      const nextCompany = companyDraft.trim();
+      const nextCustomer = customerDraft.trim();
+      const nextStatus = statusDraft.trim();
+      const nextOrder = orderDraft.trim();
+      const nextNfe = nfeDraft.trim();
+      if (
+        nextSearch === search &&
+        nextCompany === company &&
+        nextCustomer === customer &&
+        nextStatus === status &&
+        nextOrder === order &&
+        nextNfe === nfe
+      ) {
+        return;
+      }
+      setPage(1);
+      setSearch(nextSearch);
+      setCompany(nextCompany);
+      setCustomer(nextCustomer);
+      setStatus(nextStatus);
+      setOrder(nextOrder);
+      setNfe(nextNfe);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, companyDraft, customerDraft]);
+  }, [
+    searchDraft,
+    companyDraft,
+    customerDraft,
+    statusDraft,
+    orderDraft,
+    nfeDraft,
+    search,
+    company,
+    customer,
+    status,
+    order,
+    nfe,
+  ]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (page > 1) next.set("page", String(page));
+    if (search) next.set("search", search);
+    if (company) next.set("company", company);
+    if (customer) next.set("customer", customer);
+    if (status) next.set("status", status);
+    if (order) next.set("order", order);
+    if (nfe) next.set("nfe", nfe);
+    if (from) next.set("from", from);
+    if (to) next.set("to", to);
+    if (financialStatus) next.set("financialStatus", financialStatus);
+    setSearchParams(next, { replace: true });
+  }, [
+    page,
+    search,
+    company,
+    customer,
+    status,
+    order,
+    nfe,
+    from,
+    to,
+    financialStatus,
+    setSearchParams,
+  ]);
 
   const dateRangeInvalid = isOutputDocumentsDateRangeInvalid(from, to);
 
   useEffect(() => {
-    if (!canView || dateRangeInvalid) return;
+    if (!canView) return;
+    if (dateRangeInvalid) {
+      setLoading(false);
+      setErrorKind(null);
+      setErrorMessage(null);
+      return;
+    }
     const controller = new AbortController();
     const query = {
-      page: 1,
-      pageSize: 1,
+      page,
+      pageSize: OUTPUT_DOCUMENTS_PAGE_SIZE,
       search,
       company,
       customer,
+      status,
+      order,
+      nfe,
       from,
       to,
+      financialStatus: financialStatus ?? undefined,
     };
     setLoading(true);
     setErrorKind(null);
@@ -86,9 +217,19 @@ export function OutputDocumentsModule() {
       fetchOutputDocumentsSummary(query, controller.signal),
       fetchOutputDocumentsList(query, controller.signal),
     ])
-      .then(([summaryPayload]) => {
+      .then(([summaryPayload, listPayload]) => {
         if (controller.signal.aborted) return;
+        if (
+          listPayload.pagination.totalItems > 0 &&
+          listPayload.pagination.page > listPayload.pagination.totalPages
+        ) {
+          setPage(listPayload.pagination.totalPages);
+          return;
+        }
         setSummary(summaryPayload.summary);
+        setItems(listPayload.items);
+        setTotalItems(listPayload.pagination.totalItems);
+        setTotalPages(listPayload.pagination.totalPages);
         setHasLoadedOnce(true);
       })
       .catch((error: unknown) => {
@@ -102,6 +243,9 @@ export function OutputDocumentsModule() {
         setErrorKind(classified.kind);
         setErrorMessage(classified.message);
         setSummary(EMPTY_SUMMARY);
+        setItems([]);
+        setTotalItems(0);
+        setTotalPages(1);
         setHasLoadedOnce(true);
       })
       .finally(() => {
@@ -112,11 +256,16 @@ export function OutputDocumentsModule() {
   }, [
     canView,
     dateRangeInvalid,
+    page,
     search,
     company,
     customer,
+    status,
+    order,
+    nfe,
     from,
     to,
+    financialStatus,
     retryToken,
   ]);
 
@@ -137,26 +286,45 @@ export function OutputDocumentsModule() {
     customer,
     from,
     to,
+    status,
+    order,
+    nfe,
+    financialStatus,
   });
   const draftsActive = Boolean(
     searchDraft.trim() ||
       companyDraft.trim() ||
       customerDraft.trim() ||
+      statusDraft.trim() ||
+      orderDraft.trim() ||
+      nfeDraft.trim() ||
       from ||
-      to
+      to ||
+      financialStatus
   );
-  const initialLoading = loading && !hasLoadedOnce;
-  const empty = hasLoadedOnce && !loading && !errorMessage && summary.documentCount === 0;
+  const initialLoading = loading && (!hasLoadedOnce || items.length === 0);
+  const showEmptyCatalog =
+    hasLoadedOnce && !loading && !errorMessage && totalItems === 0 && !filtersActive;
+  const showEmptyFilters =
+    hasLoadedOnce && !loading && !errorMessage && totalItems === 0 && filtersActive;
 
   const clearFilters = () => {
     setSearchDraft("");
     setCompanyDraft("");
     setCustomerDraft("");
+    setStatusDraft("");
+    setOrderDraft("");
+    setNfeDraft("");
     setSearch("");
     setCompany("");
     setCustomer("");
+    setStatus("");
+    setOrder("");
+    setNfe("");
     setFrom("");
     setTo("");
+    setFinancialStatus(null);
+    setPage(1);
   };
 
   return (
@@ -173,7 +341,7 @@ export function OutputDocumentsModule() {
         data-testid="output-documents-filters"
         aria-label="Filtros de Documentos de Saída"
       >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(16rem,1fr)_12rem_12rem_9.5rem_9.5rem_auto]">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <FilterField label="Busca geral">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -185,6 +353,32 @@ export function OutputDocumentsModule() {
                 onChange={(event) => setSearchDraft(event.target.value)}
               />
             </div>
+          </FilterField>
+          <FilterField label="Emissão de">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-from"
+              aria-invalid={dateRangeInvalid}
+              value={from}
+              onChange={(event) => {
+                setPage(1);
+                setFrom(event.target.value);
+              }}
+            />
+          </FilterField>
+          <FilterField label="Emissão até">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-to"
+              aria-invalid={dateRangeInvalid}
+              value={to}
+              onChange={(event) => {
+                setPage(1);
+                setTo(event.target.value);
+              }}
+            />
           </FilterField>
           <FilterField label="Empresa">
             <input
@@ -204,27 +398,54 @@ export function OutputDocumentsModule() {
               onChange={(event) => setCustomerDraft(event.target.value)}
             />
           </FilterField>
-          <FilterField label="Documento de">
+          <FilterField label="Status">
             <input
-              type="date"
               className={FILTER_CONTROL_CLASS}
-              data-testid="output-documents-from"
-              aria-invalid={dateRangeInvalid}
-              value={from}
-              onChange={(event) => setFrom(event.target.value)}
+              data-testid="output-documents-status"
+              placeholder="Ex.: Emitido"
+              value={statusDraft}
+              onChange={(event) => setStatusDraft(event.target.value)}
             />
           </FilterField>
-          <FilterField label="Documento até">
+          <FilterField label="Pedido">
             <input
-              type="date"
               className={FILTER_CONTROL_CLASS}
-              data-testid="output-documents-to"
-              aria-invalid={dateRangeInvalid}
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
+              data-testid="output-documents-order"
+              placeholder="Código ou ID do pedido"
+              value={orderDraft}
+              onChange={(event) => setOrderDraft(event.target.value)}
             />
           </FilterField>
-          <div className="flex items-end">
+          <FilterField label="NF-e">
+            <input
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-nfe"
+              placeholder="Número ou ID da NF-e"
+              value={nfeDraft}
+              onChange={(event) => setNfeDraft(event.target.value)}
+            />
+          </FilterField>
+          <FilterField label="Situação financeira">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-financial-status"
+              value={financialStatus ?? ""}
+              onChange={(event) => {
+                setPage(1);
+                setFinancialStatus(
+                  parseOutputDocumentsFinancialStatusParam(event.target.value)
+                );
+              }}
+            >
+              <option value="">Todas</option>
+              {OUTPUT_DOCUMENT_FINANCIAL_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+          <div className="flex items-end sm:col-span-2 xl:col-span-1">
             <button
               type="button"
               className="w-full rounded-lg border border-border px-4 py-2 text-sm text-foreground hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -243,16 +464,82 @@ export function OutputDocumentsModule() {
         ) : null}
       </section>
 
-      <div
-        className="flex flex-wrap gap-2"
-        data-testid="output-documents-status-chips"
-        aria-label="Resumo por situação"
+      <section
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+        data-testid="output-documents-cards"
+        aria-label="Resumo do período filtrado"
       >
-        <StatusChip label={`Todos (${summary.documentCount})`} />
-        <StatusChip label={`Com NF-e (${summary.withNfe})`} />
-        <StatusChip label={`Com CR (${summary.withReceivable})`} />
-        <StatusChip label={`Aguardando CR (${summary.awaitingReceivable})`} />
-        <StatusChip label={`Cancelados (${summary.cancelled})`} />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-documents"
+          label="Documentos"
+          amount={summary.documentCount}
+          amountFormat="number"
+          tone="neutral"
+          icon={FileText}
+          loading={loading && !hasLoadedOnce}
+        />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-total-value"
+          label="Valor total"
+          amount={summary.validTotalValue}
+          amountFormat="currency"
+          tone="money"
+          icon={Wallet}
+          helperText="Exclui cancelados"
+          loading={loading && !hasLoadedOnce}
+        />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-with-nfe"
+          label="Com NF-e"
+          amount={summary.withNfe}
+          amountFormat="number"
+          tone="info"
+          icon={Receipt}
+          loading={loading && !hasLoadedOnce}
+        />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-with-receivable"
+          label="Com CR"
+          amount={summary.withReceivable}
+          amountFormat="number"
+          tone="success"
+          icon={Wallet}
+          loading={loading && !hasLoadedOnce}
+        />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-awaiting-receivable"
+          label="Aguardando CR"
+          amount={summary.awaitingReceivable}
+          amountFormat="number"
+          tone="warning"
+          icon={FileWarning}
+          loading={loading && !hasLoadedOnce}
+        />
+        <SystemTotalizerCard
+          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+          testId="output-documents-card-cancelled"
+          label="Cancelados"
+          amount={summary.cancelled}
+          amountFormat="number"
+          tone="danger"
+          icon={Ban}
+          loading={loading && !hasLoadedOnce}
+        />
+      </section>
+
+      <div
+        className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+        data-testid="output-documents-meta"
+      >
+        <span>
+          Total filtrado:{" "}
+          <strong className="text-foreground">{totalItems}</strong>
+        </span>
       </div>
 
       {errorMessage ? (
@@ -288,9 +575,18 @@ export function OutputDocumentsModule() {
       {!errorMessage ? (
         <section
           className="relative overflow-hidden rounded-xl border border-border bg-card"
-          data-testid="output-documents-grid-shell"
+          data-testid="output-documents-grid"
           aria-busy={loading}
         >
+          {loading && hasLoadedOnce ? (
+            <div
+              className="absolute right-3 top-2 z-10 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-2.5 py-1 text-xs text-muted-foreground shadow-sm"
+              role="status"
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              Atualizando…
+            </div>
+          ) : null}
           {initialLoading ? (
             <div
               className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground"
@@ -301,41 +597,103 @@ export function OutputDocumentsModule() {
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Carregando Documentos de Saída…
             </div>
-          ) : empty ? (
+          ) : showEmptyCatalog ? (
             <div
               className="p-10 text-center text-sm text-muted-foreground"
-              data-testid={
-                filtersActive
-                  ? "output-documents-empty-filters"
-                  : "output-documents-empty"
-              }
+              data-testid="output-documents-empty"
             >
-              {filtersActive
-                ? "Nenhum resultado para os filtros aplicados."
-                : "Nenhum Documento de Saída sincronizado ainda."}
+              Nenhum Documento de Saída sincronizado ainda.
+            </div>
+          ) : showEmptyFilters ? (
+            <div
+              className="p-10 text-center text-sm text-muted-foreground"
+              data-testid="output-documents-empty-filters"
+            >
+              Nenhum resultado para os filtros aplicados.
             </div>
           ) : (
-            <div
-              className="flex flex-col items-center justify-center gap-3 p-10 text-center"
-              data-testid="output-documents-ready"
-            >
-              <span className="rounded-full bg-primary/10 p-3 text-primary">
-                <FileText className="h-6 w-6" aria-hidden="true" />
-              </span>
-              <div>
-                <p className="font-medium text-foreground">
-                  {summary.documentCount}{" "}
-                  {summary.documentCount === 1
-                    ? "documento disponível"
-                    : "documentos disponíveis"}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  A grade detalhada será adicionada na próxima etapa.
-                </p>
-              </div>
+            <div className="max-w-full overflow-x-auto" data-testid="output-documents-grid-scroll">
+              <table className="w-full min-w-[64rem] text-left text-sm">
+                <caption className="sr-only">
+                  Documentos de Saída sincronizados do Nomus. Ative uma linha para
+                  abrir o detalhe.
+                </caption>
+                <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    {[
+                      "Documento",
+                      "Emissão",
+                      "Cliente",
+                      "Empresa",
+                      "Status",
+                      "Valor",
+                      "Pedido",
+                      "NF-e",
+                      "Financeiro",
+                      "Valor aberto",
+                      "Última sincronização",
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        className={cn(
+                          "whitespace-nowrap px-3 py-2 font-medium",
+                          label === "Valor" || label === "Valor aberto"
+                            ? "text-right"
+                            : undefined
+                        )}
+                      >
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <OutputDocumentGridTableRow
+                      key={item.id}
+                      item={item}
+                      selected={selectedDocumentId === item.id}
+                      onOpen={() => setSelectedDocumentId(item.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
+      ) : null}
+
+      {totalPages > 1 ? (
+        <div
+          className="flex items-center justify-between gap-3 text-sm"
+          data-testid="output-documents-pagination"
+          role="navigation"
+          aria-label="Paginação dos Documentos de Saída"
+        >
+          <span className="text-muted-foreground">
+            Página {page} de {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40"
+              data-testid="output-documents-page-prev"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Anterior
+            </button>
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-1.5 disabled:opacity-40"
+              data-testid="output-documents-page-next"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
       ) : null}
     </div>
   );
@@ -349,17 +707,9 @@ function FilterField({
   children: ReactNode;
 }) {
   return (
-    <label className="space-y-1 text-xs font-medium text-muted-foreground">
-      <span>{label}</span>
+    <label className="flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      {label}
       {children}
     </label>
-  );
-}
-
-function StatusChip({ label }: { label: string }) {
-  return (
-    <span className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground">
-      {label}
-    </span>
   );
 }
