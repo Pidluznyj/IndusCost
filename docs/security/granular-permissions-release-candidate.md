@@ -6,7 +6,7 @@
 | **Ticket** | PERM-44 |
 | **Data** | 2026-07-16 |
 | **Escopo** | Revisão integral PERM-25 → PERM-43 |
-| **HEAD deste RC** | `76856fe7c7900bdf137b9ff5048730c9d03ab6e7` |
+| **HEAD deste RC** | tip `main` após commits PERM-44 (`3abcbe4` + stamps) — ver hash no push |
 | **Produção** | Código liberado para homologação; migrate/seed/smoke autenticado no servidor **fora** deste run |
 
 ---
