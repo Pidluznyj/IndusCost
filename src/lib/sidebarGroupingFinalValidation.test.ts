@@ -206,6 +206,7 @@ describe("validação final — permissões por perfil de role", () => {
     assert.ok(ids.includes("customers"));
     assert.ok(ids.includes("proposals"));
     assert.ok(ids.includes("sales-orders"));
+    assert.ok(ids.includes("output-documents"));
     assert.equal(canAccessModule("commissions", check), false);
     assert.equal(canAccessModule("pricing", check), false);
     assert.ok(!ids.includes("commissions"));
@@ -233,6 +234,7 @@ describe("validação final — permissões por perfil de role", () => {
     assert.ok(ids.includes("customers"));
     assert.ok(ids.includes("proposals"));
     assert.ok(ids.includes("sales-orders"));
+    assert.ok(ids.includes("output-documents"));
   });
 
   it("VIEWER (perfil Visualizador) não ganha Configurações, Comissões ou Compras", () => {
@@ -264,14 +266,13 @@ describe("validação final — permissões por perfil de role", () => {
       assert.equal(canAccessModule("finance", check), false);
     }
     const admin = nav.groups.find((g) => g.id === "administracao");
-    if (admin) {
-      assert.deepEqual(
-        admin.items.map((i) => i.itemId),
-        ["guide"],
-        "SELLER só entra em Administração via guide.view/dashboard.view legado"
-      );
-      assert.equal(canAccessModule("settings", check), false);
-    }
+    assert.equal(
+      admin,
+      undefined,
+      "SELLER sem guide.view não entra em Administração (PERM-42)"
+    );
+    assert.equal(canAccessModule("settings", check), false);
+    assert.equal(canAccessModule("guide", check), false);
   });
 });
 

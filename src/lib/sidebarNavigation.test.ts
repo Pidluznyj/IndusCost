@@ -261,8 +261,7 @@ describe("Sidebar.tsx — renderização agrupada", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
       const flat = nav.flatAccessibleItems.find((item) => item.id === moduleId);
-      const expected = moduleId === "suppliers" ? "/finance/suppliers" : `/${moduleId}`;
-      assert.equal(flat?.path, expected);
+      assert.equal(flat?.path, getModulePath(moduleId));
     }
   });
 
@@ -346,7 +345,7 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
 
   it("grupos vazios não aparecem para usuário sem permissões", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["products.view"]));
-    assert.equal(nav.groups.length, 2);
+    assert.equal(nav.groups.length, 1);
     assert.equal(nav.groups[0]?.id, "engenharia");
     assert.equal(nav.directItems.length, 0);
   });
@@ -354,9 +353,10 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
   it("usuário com permissão parcial vê somente itens permitidos", () => {
     const nav = buildAccessibleSidebarNavigation(checker(["dashboard.view"]));
     const ids = nav.flatAccessibleItems.map((item) => item.id);
-    assert.deepEqual(ids, ["dashboard", "reports", "guide"]);
-    assert.equal(nav.groups.length, 2);
+    assert.deepEqual(ids, ["dashboard", "reports"]);
+    assert.equal(nav.groups.length, 1);
     assert.ok(!ids.includes("products"));
+    assert.ok(!ids.includes("guide"));
   });
 
   it("tooltip no modo colapsado é complemento, não única identificação", () => {

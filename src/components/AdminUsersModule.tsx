@@ -1098,20 +1098,17 @@ export const AdminUsersModule: React.FC = () => {
             }
           }}
         >
-          <div className="bg-card flex h-[94vh] w-full max-w-[min(96vw,1440px)] flex-col overflow-hidden rounded-2xl border border-border shadow-2xl">
+          <div className="bg-card flex h-[94vh] w-full max-w-[min(96vw,1280px)] flex-col overflow-hidden rounded-xl border border-border shadow-xl">
             <div
-              className="shrink-0 flex min-h-14 items-center justify-between gap-3 border-b border-border bg-card px-4 py-2.5"
+              className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2"
               data-testid="user-permission-compact-header"
             >
               <div className="flex min-w-0 items-center gap-3">
-                <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:flex">
-                  <Shield className="h-4 w-4 text-primary" aria-hidden />
-                </div>
                 <div className="min-w-0">
-                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                     <h4
                       id="user-permission-editor-title"
-                      className="truncate text-base font-bold"
+                      className="truncate text-[15px] font-semibold tracking-tight"
                     >
                       {detail?.user.name ??
                         selectedListUser?.name ??
@@ -1121,21 +1118,21 @@ export const AdminUsersModule: React.FC = () => {
                       <>
                         <span
                           className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                            "text-[11px] font-medium",
                             detail.user.isActive
-                              ? "bg-emerald-50 text-emerald-800"
-                              : "bg-slate-100 text-slate-600"
+                              ? "text-emerald-700"
+                              : "text-muted-foreground"
                           )}
                         >
                           {detail.user.isActive ? "Ativo" : "Inativo"}
                         </span>
-                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                        <span className="text-[11px] text-muted-foreground">
                           {formatRoleLabel(detail.user.role)}
                         </span>
                       </>
                     ) : null}
                   </div>
-                  <p className="truncate text-[11px] text-muted-foreground">
+                  <p className="truncate text-[12px] text-muted-foreground">
                     {detail?.user.email ?? selectedListUser?.email ?? "Carregando…"}
                     {selectedListUser?.employeeName
                       ? ` · ${selectedListUser.employeeName}${
@@ -1214,84 +1211,65 @@ export const AdminUsersModule: React.FC = () => {
             ) : detail ? (
               <>
                 <div
-                  className="shrink-0 border-b border-border bg-muted/20 px-4 py-3"
+                  className="shrink-0 border-b border-border px-4 py-3"
                   data-testid="user-permission-profile-bar"
                 >
-                  <div className="grid items-end gap-3 lg:grid-cols-[minmax(280px,420px)_minmax(220px,1fr)_auto]">
-                    <label className="block min-w-0">
-                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-primary">
-                        1. Selecione o perfil de acesso
-                      </span>
-                      <select
-                        value={detail.accessProfile?.id ?? ""}
-                        disabled={saving || detail.warnings.isLastSuperAdmin}
-                        title={
-                          detail.warnings.isLastSuperAdmin
-                            ? "Não é possível alterar o único Super Administrador ativo"
-                            : undefined
-                        }
-                        onChange={(e) => {
-                          const next = e.target.value.trim();
-                          void handleAccessProfileChange(next ? next : null);
-                        }}
-                        className="h-10 w-full rounded-lg border-2 border-primary/35 bg-background px-3 text-sm font-semibold shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                        data-testid="user-permission-access-profile-select"
-                      >
-                        <option value="">Sem perfil de acesso</option>
-                        {accessProfiles.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                            {p.roleBase ? ` · ${formatRoleLabel(p.roleBase)}` : ""}
-                          </option>
-                        ))}
-                        {detail.accessProfile &&
-                        !accessProfiles.some((p) => p.id === detail.accessProfile!.id) ? (
-                          <option value={detail.accessProfile.id}>
-                            {detail.accessProfile.name} (inativo)
-                          </option>
-                        ) : null}
-                      </select>
-                      <p className="mt-1 text-[10px] text-muted-foreground">
-                        Role técnica:{" "}
-                        <span className="font-semibold text-foreground">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-[minmax(220px,320px)_minmax(0,1fr)]">
+                      <label className="block min-w-0">
+                        <span className="mb-1 block text-[11px] font-medium text-muted-foreground">
+                          Perfil de acesso
+                        </span>
+                        <select
+                          value={detail.accessProfile?.id ?? ""}
+                          disabled={saving || detail.warnings.isLastSuperAdmin}
+                          title={
+                            detail.warnings.isLastSuperAdmin
+                              ? "Não é possível alterar o único Super Administrador ativo"
+                              : undefined
+                          }
+                          onChange={(e) => {
+                            const next = e.target.value.trim();
+                            void handleAccessProfileChange(next ? next : null);
+                          }}
+                          className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
+                          data-testid="user-permission-access-profile-select"
+                        >
+                          <option value="">Sem perfil de acesso</option>
+                          {accessProfiles.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                              {p.roleBase ? ` · ${formatRoleLabel(p.roleBase)}` : ""}
+                            </option>
+                          ))}
+                          {detail.accessProfile &&
+                          !accessProfiles.some((p) => p.id === detail.accessProfile!.id) ? (
+                            <option value={detail.accessProfile.id}>
+                              {detail.accessProfile.name} (inativo)
+                            </option>
+                          ) : null}
+                        </select>
+                      </label>
+
+                      <div className="min-w-0 self-end pb-0.5 text-[12px] text-muted-foreground">
+                        <span className="text-foreground">
                           {formatRoleLabel(detail.user.role)}
                         </span>
-                        {" · "}
-                        altere via preset abaixo se necessário.
-                      </p>
-                    </label>
-
-                    <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        Configuração atual
-                      </p>
-                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
-                        <span className="font-semibold">
-                          {detail.accessProfile?.name ??
-                            selectedListUser?.accessProfileName ??
-                            "Sem perfil vinculado"}
-                        </span>
-                        <span className="text-muted-foreground">·</span>
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            detail.hasCustomPermissions
-                              ? "text-amber-800"
-                              : "text-emerald-700"
-                          )}
-                        >
+                        <span className="mx-1.5 text-border">·</span>
+                        <span>
                           {detail.hasCustomPermissions
-                            ? `${exceptionCounts.allow + exceptionCounts.deny} exceção(ões)`
+                            ? `${exceptionCounts.allow + exceptionCounts.deny} exceções`
                             : "Sem exceções"}
                         </span>
-                        <span className="text-muted-foreground">
-                          · último acesso {formatDateTimePt(detail.user.lastLoginAt)}
+                        <span className="mx-1.5 text-border">·</span>
+                        <span>
+                          Último acesso {formatDateTimePt(detail.user.lastLoginAt)}
                         </span>
                       </div>
                     </div>
 
                     <div
-                      className="flex h-10 items-center gap-1 rounded-lg border border-border bg-background p-1"
+                      className="flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
                       role="tablist"
                       aria-label="Seções da gestão de permissões"
                     >
@@ -1311,10 +1289,10 @@ export const AdminUsersModule: React.FC = () => {
                           aria-selected={innerTab === id}
                           onClick={() => setInnerTab(id)}
                           className={cn(
-                            "h-8 rounded-md px-3 text-[11px] font-semibold transition",
+                            "h-8 rounded-[5px] px-3 text-[12px] font-medium transition",
                             innerTab === id
-                              ? "bg-primary text-primary-foreground shadow-sm"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                              ? "bg-background text-foreground shadow-sm"
+                              : "text-muted-foreground hover:text-foreground"
                           )}
                         >
                           {label}
@@ -1389,108 +1367,46 @@ export const AdminUsersModule: React.FC = () => {
                   {innerTab === "permissions" ? (
                     <>
                       <div
-                        className="flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        className="flex flex-wrap items-center justify-between gap-2"
                         data-testid="user-permission-context"
                       >
-                        <div className="min-w-0">
-                          <p className="text-sm font-bold text-sky-950">
-                            2. Ajuste apenas o que for diferente do perfil
-                          </p>
-                          <p className="mt-0.5 text-[11px] leading-relaxed text-sky-900/80">
-                            Use <strong>Herdar</strong> para manter o padrão selecionado,
-                            <strong> Permitir</strong> para liberar e <strong>Negar</strong>{" "}
-                            para bloquear. O resultado aparece na última coluna.
-                          </p>
-                          <p className="sr-only" data-testid="user-permission-version">
-                            permissionsVersion: {detail.user.permissionsVersion}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-wrap gap-2 text-[10px] font-bold">
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">
-                            {exceptionCounts.allow} permitido(s)
+                        <p className="text-[12px] text-muted-foreground">
+                          Exceções individuais sobre o perfil.{" "}
+                          <span className="text-foreground">
+                            {exceptionCounts.allow + exceptionCounts.deny} ativas
                           </span>
-                          <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-900">
-                            {exceptionCounts.deny} negado(s)
-                          </span>
-                          <span
-                            className={cn(
-                              "rounded-full px-2.5 py-1",
-                              pending
-                                ? "bg-amber-100 text-amber-950"
-                                : "bg-white text-slate-600"
-                            )}
-                          >
-                            {pending ? `${changeCount} não salva(s)` : "Tudo salvo"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {saveSuccess ? (
+                          {pending ? (
+                            <span
+                              className="ml-2 text-amber-700"
+                              data-testid="user-permission-unsaved"
+                            >
+                              · {changeCount} não salva(s)
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="sr-only" data-testid="user-permission-version">
+                          permissionsVersion: {detail.user.permissionsVersion}
+                        </p>
                         <div
-                          className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900"
-                          data-testid="user-permission-save-success"
-                          role="status"
+                          className="flex flex-wrap items-center gap-1.5"
+                          data-testid="user-permission-quick-actions"
                         >
-                          {saveSuccess}
-                        </div>
-                      ) : null}
-
-                      {pending ? (
-                        <div
-                          className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-[11px] text-amber-950"
-                          data-testid="user-permission-unsaved"
-                        >
-                          Há mudanças ainda não salvas ({changeCount} na árvore).
-                        </div>
-                      ) : null}
-
-                      {profileDrift ? (
-                        <div
-                          className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-950"
-                          data-testid="user-permission-profile-drift"
-                        >
-                          O perfil de acesso parece ter sido alterado depois do snapshot
-                          aplicado a este usuário. Use <strong>Reaplicar perfil</strong>{" "}
-                          para sincronizar o baseline.
-                        </div>
-                      ) : null}
-
-                      <div
-                        className="rounded-xl border border-border bg-muted/15 p-3"
-                        data-testid="user-permission-quick-actions"
-                      >
-                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-bold">Ações rápidas</p>
-                            <p className="text-[10px] text-muted-foreground">
-                              Use para redefinir conjuntos inteiros de acesso.
-                            </p>
-                          </div>
-                          <button
-                            type="button"
-                            className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                            onClick={() => setShowEffectivePreview((v) => !v)}
-                          >
-                            {showEffectivePreview ? "Ocultar resultado" : "Ver resultado efetivo"}
-                          </button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
                             disabled={detail.treeReadOnly || detail.warnings.isLastSuperAdmin}
-                            className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                            className="h-8 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium hover:bg-muted disabled:opacity-50"
                             title="Aplica o padrão da role técnica (limpa exceções)"
                             onClick={() =>
                               void handleApplyRolePreset(detail.user.role, true)
                             }
                             data-testid="user-permission-apply-profile"
                           >
-                            Aplicar preset da role
+                            Preset da role
                           </button>
                           <button
                             type="button"
                             disabled={detail.treeReadOnly}
-                            className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                            className="h-8 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium hover:bg-muted disabled:opacity-50"
                             onClick={() => void handleRestoreDefault()}
                             data-testid="user-permission-reapply-profile"
                             title="Restaura o snapshot do perfil de acesso vinculado (ou o preset da role)"
@@ -1500,17 +1416,17 @@ export const AdminUsersModule: React.FC = () => {
                           <button
                             type="button"
                             disabled={detail.treeReadOnly}
-                            className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                            className="h-8 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium hover:bg-muted disabled:opacity-50"
                             onClick={() => void handleClearCustom()}
                             data-testid="user-permission-clear-exceptions"
                           >
-                            Limpar exceções individuais
+                            Limpar exceções
                           </button>
                           <button
                             type="button"
                             disabled={detail.treeReadOnly}
                             title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
-                            className="rounded-lg border border-dashed border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-accent disabled:opacity-50"
+                            className="h-8 rounded-md px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
                             onClick={() => {
                               const next = liberateFirstMenuInMatrixDraft(
                                 detail.tree,
@@ -1525,8 +1441,36 @@ export const AdminUsersModule: React.FC = () => {
                           >
                             Liberar 1º menu
                           </button>
+                          <button
+                            type="button"
+                            className="h-8 rounded-md px-2.5 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+                            onClick={() => setShowEffectivePreview((v) => !v)}
+                          >
+                            {showEffectivePreview ? "Ocultar preview" : "Preview efetivo"}
+                          </button>
                         </div>
                       </div>
+
+                      {saveSuccess ? (
+                        <div
+                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-foreground"
+                          data-testid="user-permission-save-success"
+                          role="status"
+                        >
+                          {saveSuccess}
+                        </div>
+                      ) : null}
+
+                      {profileDrift ? (
+                        <div
+                          className="rounded-md border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground"
+                          data-testid="user-permission-profile-drift"
+                        >
+                          O perfil de acesso foi alterado depois do snapshot deste usuário.
+                          Use <strong className="text-foreground">Reaplicar perfil</strong>{" "}
+                          para sincronizar.
+                        </div>
+                      ) : null}
 
                       {showEffectivePreview && effectivePreview ? (
                         <div
@@ -1802,22 +1746,18 @@ export const AdminUsersModule: React.FC = () => {
                     className="shrink-0 border-t border-border p-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between bg-muted/20"
                     data-testid="user-permission-editor-footer"
                   >
-                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
                       {pending ? (
                         <span
-                          className="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 font-semibold text-amber-950"
+                          className="font-medium text-foreground"
                           data-testid="user-permission-pending-count"
                         >
                           {changeCount} alteração(ões) pendente(s)
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">
-                          Sem alterações pendentes
-                        </span>
+                        <span>Sem alterações pendentes</span>
                       )}
-                      <span className="text-muted-foreground">
-                        · v{detail.user.permissionsVersion}
-                      </span>
+                      <span>· v{detail.user.permissionsVersion}</span>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button

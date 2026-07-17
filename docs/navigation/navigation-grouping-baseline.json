@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-16T18:48:15.173Z",
+  "generatedAt": "2026-07-17T14:19:51.550Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -226,6 +226,18 @@
     },
     {
       "order": 19,
+      "itemId": "output-documents",
+      "label": "Documentos de Saída",
+      "path": "/output-documents",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "output_documents.view"
+      ]
+    },
+    {
+      "order": 20,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -237,7 +249,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -253,7 +265,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -274,7 +286,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -286,7 +298,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -299,7 +311,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -316,7 +328,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -330,7 +342,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -346,7 +358,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -359,7 +371,7 @@
       ]
     },
     {
-      "order": 28,
+      "order": 29,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -391,6 +403,7 @@
     "pricing": true,
     "proposals": true,
     "sales-orders": true,
+    "output-documents": true,
     "customers": true,
     "crm-commercial": true,
     "commissions": true,
@@ -433,6 +446,9 @@
     ],
     "sales-orders": [
       "sales_orders.view"
+    ],
+    "output-documents": [
+      "output_documents.view"
     ],
     "products": [
       "products.view"

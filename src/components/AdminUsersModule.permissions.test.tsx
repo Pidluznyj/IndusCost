@@ -94,7 +94,7 @@ describe("AdminUsers PermissionsTree smoke (PERM-35)", () => {
       /data-testid="user-permission-role-select"/,
       "seletor principal nao deve mais ser role"
     );
-    assert.match(src, /1\. Selecione o perfil de acesso/);
+    assert.match(src, /Perfil de acesso/);
   });
 
   it("SUPER_ADMIN readOnly", () => {

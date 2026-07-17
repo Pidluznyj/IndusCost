@@ -1,11 +1,17 @@
 /**
- * Árvore de permissões reutilizável (PERM-33 / PERM-34).
- * Módulo (accordion) → Página → Aba → Ação com Herdar | Permitir | Negar.
- * Ações em lote apenas no ramo selecionado (confirmação visual).
+ * Árvore de permissões — matriz administrativa (padrão IAM / Okta Admin).
+ * Colunas alinhadas, hierarquia por indentação, exceções por acento lateral.
+ * Ações em lote só no ramo selecionado (barra superior).
  */
 
 import React, { useEffect, useId, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Loader2, Search } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Search,
+} from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import {
   applyPermissionTreeDecisionToSubtree,
@@ -39,14 +45,8 @@ export type PermissionsTreeProps = {
   error?: string | null;
   emptyMessage?: string;
   className?: string;
-  /** Presets para validação visual 1366×768 e 1920×1080. */
   viewportPreset?: PermissionsTreeViewport;
-  /** Exibe seleção de ramo + barra de ações em lote (PERM-34). */
   enableBranchBatch?: boolean;
-  /**
-   * Destaca exceções vs valor do perfil (PERM-35):
-   * DENY/ALLOW sobrepondo perfil e estado “Herdando”.
-   */
   highlightExceptions?: boolean;
   resourceColumnLabel?: string;
   originColumnLabel?: string;
@@ -59,6 +59,10 @@ const DECISIONS: readonly PermissionTreeDecision[] = [
   "allow",
   "deny",
 ];
+
+/** Grid fixo: recurso | perfil | exceção | resultado */
+const COL_GRID =
+  "grid-cols-1 md:grid-cols-[minmax(0,1fr)_7.5rem_13.5rem_6.5rem]";
 
 function DecisionSegmented({
   value,
@@ -78,7 +82,7 @@ function DecisionSegmented({
       role="radiogroup"
       aria-label={ariaLabel}
       data-testid={testId}
-      className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-100/80 p-1"
+      className="inline-flex h-8 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-muted/40"
     >
       {DECISIONS.map((d) => {
         const active = value === d;
@@ -92,19 +96,15 @@ function DecisionSegmented({
             data-testid={`${testId}-${d}`}
             onClick={() => onChange(d)}
             className={cn(
-              "rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300",
+              "min-w-[4.25rem] px-2 text-[11px] font-medium transition-colors",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
               disabled && "cursor-not-allowed opacity-50",
-              active &&
-                d === "allow" &&
-                "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20",
-              active &&
-                d === "deny" &&
-                "bg-rose-600 text-white shadow-sm ring-1 ring-rose-700/20",
+              active && d === "allow" && "bg-foreground text-background",
+              active && d === "deny" && "bg-destructive text-destructive-foreground",
               active &&
                 d === "inherit" &&
-                "bg-amber-100 text-amber-950 shadow-sm ring-1 ring-amber-300",
-              !active && "bg-white text-slate-600 hover:bg-slate-50"
+                "bg-background text-foreground shadow-sm",
+              !active && "text-muted-foreground hover:bg-background/80 hover:text-foreground"
             )}
           >
             {decisionLabel(d)}
@@ -125,10 +125,10 @@ function EffectiveBadge({
       data-testid="permissions-tree-effective"
       data-effective={effective}
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        effective === "allowed" && "bg-emerald-50 text-emerald-800",
-        effective === "denied" && "bg-rose-50 text-rose-800",
-        effective === "inherited" && "bg-slate-100 text-slate-700"
+        "inline-flex items-center text-[12px] font-medium tabular-nums",
+        effective === "allowed" && "text-emerald-700",
+        effective === "denied" && "text-destructive",
+        effective === "inherited" && "text-muted-foreground"
       )}
     >
       {effectiveLabel(effective)}
@@ -147,8 +147,8 @@ function ProfileValueBadge({
       data-testid="permissions-tree-profile-value"
       data-profile={allowed ? "allowed" : "denied"}
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        allowed ? "bg-sky-50 text-sky-800" : "bg-slate-100 text-slate-600"
+        "text-[12px] font-medium",
+        allowed ? "text-foreground" : "text-muted-foreground"
       )}
     >
       {allowed ? "Permitido" : "Negado"}
@@ -167,7 +167,8 @@ function ExceptionOverlayChip({
     return (
       <span
         data-testid="permissions-tree-exception-deny"
-        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-rose-100 text-rose-900"
+        className="text-[10px] font-medium text-destructive"
+        title="Exceção: nega o valor do perfil"
       >
         DENY sobrepõe
       </span>
@@ -177,7 +178,8 @@ function ExceptionOverlayChip({
     return (
       <span
         data-testid="permissions-tree-exception-allow"
-        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-900"
+        className="text-[10px] font-medium text-emerald-700"
+        title="Exceção: libera além do perfil"
       >
         ALLOW sobrepõe
       </span>
@@ -187,7 +189,7 @@ function ExceptionOverlayChip({
     return (
       <span
         data-testid="permissions-tree-exception-inherit"
-        className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-50 text-amber-900"
+        className="sr-only"
       >
         Herdando
       </span>
@@ -196,24 +198,8 @@ function ExceptionOverlayChip({
   return null;
 }
 
-function KindChip({ kind }: { kind: PermissionTreeNode["kind"] }) {
-  return (
-    <span
-      className={cn(
-        "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-        kind === "module" && "bg-sky-100 text-sky-800",
-        kind === "page" && "bg-indigo-50 text-indigo-800",
-        kind === "tab" && "bg-violet-50 text-violet-800",
-        kind === "action" && "bg-slate-100 text-slate-700"
-      )}
-    >
-      {kindLabel(kind)}
-    </span>
-  );
-}
-
-function indentClass(kind: PermissionTreeNode["kind"]): string {
-  if (kind === "page") return "pl-3";
+function depthPad(kind: PermissionTreeNode["kind"]): string {
+  if (kind === "page") return "pl-4";
   if (kind === "tab") return "pl-8";
   if (kind === "action") return "pl-12";
   return "";
@@ -284,10 +270,7 @@ export function PermissionsTree({
 
   const selectedAncestorIds = useMemo(() => {
     if (!selectedBranchId) return new Set<string>();
-    const ids = new Set<string>(
-      collectPermissionTreeSubtreeIds(nodes, selectedBranchId)
-    );
-    return ids;
+    return new Set(collectPermissionTreeSubtreeIds(nodes, selectedBranchId));
   }, [nodes, selectedBranchId]);
 
   const viewportClass =
@@ -315,7 +298,7 @@ export function PermissionsTree({
       <div
         data-testid="permissions-tree-loading"
         className={cn(
-          "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-8 text-sm text-slate-600",
+          "flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-8 text-sm text-muted-foreground",
           className
         )}
       >
@@ -330,7 +313,7 @@ export function PermissionsTree({
       <div
         data-testid="permissions-tree-error"
         className={cn(
-          "rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800",
+          "rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive",
           className
         )}
         role="alert"
@@ -345,7 +328,7 @@ export function PermissionsTree({
       <div
         data-testid="permissions-tree-empty"
         className={cn(
-          "rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600",
+          "rounded-lg border border-dashed border-border bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground",
           className
         )}
       >
@@ -366,7 +349,6 @@ export function PermissionsTree({
     const decision = getNodeDecision(decisions, node.id);
     const effective = effectives.get(node.id) ?? "inherited";
     const isModule = node.kind === "module";
-    const isAction = node.kind === "action";
     const inSelectedBranch = selectedAncestorIds.has(node.id);
     const isBranchRoot = selectedBranchId === node.id;
     const canSelectBranch =
@@ -380,223 +362,168 @@ export function PermissionsTree({
           : "allow"
         : null;
 
-    if (isModule) {
-      return (
-        <section
-          key={node.id}
-          data-testid={`permissions-tree-module-${node.id}`}
-          data-branch-selected={isBranchRoot ? "true" : undefined}
-          data-exception={exceptionKind ?? undefined}
-          className={cn(
-            "overflow-hidden rounded-lg border bg-white",
-            isBranchRoot
-              ? "border-sky-500 ring-2 ring-sky-300 shadow-md"
-              : inSelectedBranch
-                ? "border-sky-200"
-                : exceptionKind === "deny"
-                  ? "border-rose-300"
-                  : exceptionKind === "allow"
-                    ? "border-emerald-300"
-                    : "border-slate-200"
-          )}
-        >
-          <div
+    const rowShell = cn(
+      "grid items-center gap-x-3 gap-y-2 border-b border-border/60 px-3 py-2",
+      COL_GRID,
+      !isModule && depthPad(node.kind),
+      isBranchRoot && "bg-accent/60",
+      !isBranchRoot && inSelectedBranch && "bg-muted/30",
+      exceptionKind === "deny" && "border-l-2 border-l-destructive",
+      exceptionKind === "allow" && "border-l-2 border-l-emerald-600",
+      !exceptionKind && "border-l-2 border-l-transparent",
+      "hover:bg-muted/40"
+    );
+
+    const resourceCell = (
+      <div className="flex min-w-0 items-center gap-2">
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-expanded={isOpen}
+            data-testid={
+              isModule
+                ? `permissions-tree-accordion-${node.id}`
+                : `permissions-tree-expand-${node.id}`
+            }
+            onClick={() =>
+              setExpanded((prev) => togglePermissionTreeExpanded(prev, node.id))
+            }
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            {isOpen ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span className="w-7 shrink-0" aria-hidden />
+        )}
+
+        {canSelectBranch ? (
+          <button
+            type="button"
+            data-testid={`permissions-tree-select-branch-${node.id}`}
+            aria-pressed={isBranchRoot}
+            aria-label={
+              isBranchRoot
+                ? `Ramo selecionado: ${node.label}`
+                : `Selecionar ramo ${node.label}`
+            }
+            title={isBranchRoot ? "Selecionado — clique para limpar" : "Selecionar ramo"}
+            onClick={() => selectBranch(node.id)}
             className={cn(
-              "flex w-full items-center gap-2 bg-slate-50/90 px-3 py-2.5",
-              inSelectedBranch && "bg-sky-100/90",
-              exceptionKind === "deny" && "bg-rose-50/70",
-              exceptionKind === "allow" && "bg-emerald-50/70"
+              "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition",
+              isBranchRoot
+                ? "border-foreground bg-foreground text-background"
+                : "border-muted-foreground/40 bg-background hover:border-foreground"
             )}
           >
-            <button
-              type="button"
-              data-testid={`permissions-tree-accordion-${node.id}`}
-              aria-expanded={isOpen}
-              onClick={() =>
-                setExpanded((prev) =>
-                  togglePermissionTreeExpanded(prev, node.id)
-                )
-              }
-              className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-90"
+            {isBranchRoot ? <Check className="h-2.5 w-2.5" aria-hidden /> : null}
+            <span className="sr-only">
+              {isBranchRoot ? "Selecionado" : "Selecionar ramo"}
+            </span>
+          </button>
+        ) : (
+          <span className="w-4 shrink-0" aria-hidden />
+        )}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span
+              className={cn(
+                "truncate text-sm text-foreground",
+                (isModule || node.kind === "page") && "font-medium"
+              )}
             >
-              {isOpen ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
-              )}
-              <KindChip kind="module" />
-              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-                {node.label}
-              </span>
-              {highlightExceptions ? (
-                <>
-                  <ProfileValueBadge baseline={node.baselineEffective} />
-                  <ExceptionOverlayChip
-                    decision={decision}
-                    baseline={node.baselineEffective}
-                  />
-                </>
-              ) : (
-                <span className="hidden text-xs text-slate-500 sm:inline">
-                  {node.originLabel}
-                </span>
-              )}
-              <EffectiveBadge effective={effective} />
-            </button>
-            {canSelectBranch ? (
-              <button
-                type="button"
-                data-testid={`permissions-tree-select-branch-${node.id}`}
-                aria-pressed={isBranchRoot}
-                onClick={() => selectBranch(node.id)}
-                className={cn(
-                  "shrink-0 rounded-md border px-2.5 py-1.5 text-[10px] font-bold",
-                  isBranchRoot
-                    ? "border-sky-600 bg-sky-600 text-white shadow-sm"
-                    : "border-sky-200 bg-white text-sky-700 hover:border-sky-400 hover:bg-sky-50"
-                )}
-              >
-                {isBranchRoot ? "Selecionado" : "Selecionar ramo"}
-              </button>
+              {node.label}
+            </span>
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/80">
+              {kindLabel(node.kind)}
+            </span>
+            {highlightExceptions ? (
+              <ExceptionOverlayChip
+                decision={decision}
+                baseline={node.baselineEffective}
+              />
             ) : null}
           </div>
-          {isOpen ? (
-            <div className="border-t border-slate-100">
-              <div className="divide-y divide-slate-100">
-                {node.children.map((child) => renderNode(child))}
-              </div>
-              {hasChildren ? null : (
-                <p className="px-3 py-2 text-xs text-slate-500">
-                  Sem páginas neste módulo.
-                </p>
-              )}
-            </div>
-          ) : null}
-        </section>
-      );
-    }
+          <p className="truncate font-mono text-[10px] text-muted-foreground/70">
+            {node.resourceKey}
+          </p>
+        </div>
+      </div>
+    );
 
-    return (
-      <div key={node.id} data-testid={`permissions-tree-row-${node.id}`}>
+    const row = (
+      <div
+        key={node.id}
+        data-testid={
+          isModule
+            ? `permissions-tree-module-${node.id}`
+            : `permissions-tree-row-${node.id}`
+        }
+        data-branch-selected={isBranchRoot ? "true" : undefined}
+        data-exception={exceptionKind ?? undefined}
+        className={rowShell}
+      >
+        {resourceCell}
+
         <div
-          data-branch-selected={isBranchRoot ? "true" : undefined}
-          data-exception={exceptionKind ?? undefined}
-          className={cn(
-            "grid grid-cols-1 items-center gap-3 px-3 py-2 md:grid-cols-[minmax(260px,1.5fr)_minmax(100px,0.6fr)_minmax(250px,auto)_minmax(90px,0.5fr)]",
-            indentClass(node.kind),
-            isAction && "bg-slate-50/40",
-            node.kind === "page" && "bg-white",
-            node.kind === "tab" && "bg-slate-50/30",
-            inSelectedBranch && "bg-sky-50/70",
-            isBranchRoot && "bg-sky-100 ring-2 ring-inset ring-sky-400",
-            exceptionKind === "deny" && "bg-rose-50/80",
-            exceptionKind === "allow" && "bg-emerald-50/80"
-          )}
+          data-testid={`permissions-tree-origin-${node.id}`}
+          className="md:justify-self-start"
+          title={node.originLabel}
         >
-          <div className="flex min-w-0 items-start gap-2">
-            {hasChildren ? (
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                data-testid={`permissions-tree-expand-${node.id}`}
-                onClick={() =>
-                  setExpanded((prev) =>
-                    togglePermissionTreeExpanded(prev, node.id)
-                  )
-                }
-                className="mt-0.5 rounded p-0.5 text-slate-500 hover:bg-slate-100"
-              >
-                {isOpen ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
-                )}
-              </button>
-            ) : (
-              <span className="mt-0.5 w-4 shrink-0" aria-hidden />
-            )}
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <KindChip kind={node.kind} />
-                <span
-                  className={cn(
-                    "truncate text-sm text-slate-900",
-                    node.kind === "page" && "font-semibold",
-                    isAction && "font-medium"
-                  )}
-                >
-                  {node.label}
-                </span>
-                {highlightExceptions ? (
-                  <ExceptionOverlayChip
-                    decision={decision}
-                    baseline={node.baselineEffective}
-                  />
-                ) : null}
-                {canSelectBranch ? (
-                  <button
-                    type="button"
-                    data-testid={`permissions-tree-select-branch-${node.id}`}
-                    aria-pressed={isBranchRoot}
-                    onClick={() => selectBranch(node.id)}
-                    className={cn(
-                      "rounded-md border px-2 py-1 text-[9px] font-bold",
-                      isBranchRoot
-                        ? "border-sky-600 bg-sky-600 text-white"
-                        : "border-sky-200 bg-white text-sky-700 hover:border-sky-400"
-                    )}
-                  >
-                    {isBranchRoot ? "Selecionado" : "Selecionar"}
-                  </button>
-                ) : null}
-              </div>
-              <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400">
-                {node.resourceKey}
-              </p>
-            </div>
-          </div>
-
-          <div
-            data-testid={`permissions-tree-origin-${node.id}`}
-            className="truncate text-xs text-slate-600"
-            title={node.originLabel}
-          >
-            {highlightExceptions ? (
-              <ProfileValueBadge baseline={node.baselineEffective} />
-            ) : (
-              node.originLabel || "—"
-            )}
-          </div>
-
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">
-              {configuredColumnLabel}
+          <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
+            {originColumnLabel}
+          </span>
+          {highlightExceptions ? (
+            <ProfileValueBadge baseline={node.baselineEffective} />
+          ) : (
+            <span className="truncate text-xs text-muted-foreground">
+              {node.originLabel || "—"}
             </span>
-            <DecisionSegmented
-              value={decision}
-              disabled={readOnly}
-              ariaLabel={`Exceção do usuário para ${node.label}`}
-              testId={`permissions-tree-decision-${node.id}`}
-              onChange={(next) =>
-                onDecisionsChange(
-                  setPermissionTreeDecision(decisions, node.id, next)
-                )
-              }
-            />
-          </div>
-
-          <div className="justify-self-start md:justify-self-end">
-            <span className="mb-0.5 block text-[9px] font-semibold uppercase tracking-wide text-slate-400 md:hidden">
-              {resultColumnLabel}
-            </span>
-            <EffectiveBadge effective={effective} />
-          </div>
+          )}
         </div>
 
+        <div className="md:justify-self-start">
+          <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
+            {configuredColumnLabel}
+          </span>
+          <DecisionSegmented
+            value={decision}
+            disabled={readOnly}
+            ariaLabel={`Exceção do usuário para ${node.label}`}
+            testId={`permissions-tree-decision-${node.id}`}
+            onChange={(next) =>
+              onDecisionsChange(
+                setPermissionTreeDecision(decisions, node.id, next)
+              )
+            }
+          />
+        </div>
+
+        <div className="md:justify-self-end">
+          <span className="mb-0.5 block text-[10px] text-muted-foreground md:hidden">
+            {resultColumnLabel}
+          </span>
+          <EffectiveBadge effective={effective} />
+        </div>
+      </div>
+    );
+
+    return (
+      <React.Fragment key={node.id}>
+        {row}
         {hasChildren && isOpen
           ? node.children.map((child) => renderNode(child))
           : null}
-      </div>
+        {isModule && isOpen && !hasChildren ? (
+          <p className="border-b border-border/60 px-3 py-2 pl-14 text-xs text-muted-foreground">
+            Sem páginas neste módulo.
+          </p>
+        ) : null}
+      </React.Fragment>
     );
   };
 
@@ -606,22 +533,22 @@ export function PermissionsTree({
       data-viewport={viewportPreset}
       data-branch-batch={enableBranchBatch ? "true" : undefined}
       className={cn(
-        "flex max-h-[min(72vh,720px)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-[#f8fafc] shadow-sm",
+        "flex h-[min(56vh,640px)] min-h-[360px] max-h-none flex-col overflow-hidden rounded-lg border border-border bg-card",
         viewportClass,
         className
       )}
     >
       <header
         data-testid="permissions-tree-header"
-        className="sticky top-0 z-10 shrink-0 border-b border-slate-200 bg-white/95 px-3 py-2.5 backdrop-blur"
+        className="sticky top-0 z-10 shrink-0 border-b border-border bg-card"
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2.5">
           <label htmlFor={searchId} className="sr-only">
             Buscar recurso
           </label>
           <div className="relative min-w-[200px] flex-1">
             <Search
-              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
               aria-hidden
             />
             <input
@@ -631,78 +558,69 @@ export function PermissionsTree({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nome ou chave…"
-              className="w-full rounded-md border border-slate-200 bg-white py-1.5 pl-8 pr-3 text-sm text-slate-800 placeholder:text-slate-400 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-100"
+              className="h-8 w-full rounded-md border border-border bg-background py-1.5 pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30"
             />
           </div>
           <button
             type="button"
             data-testid="permissions-tree-expand-all"
             onClick={() => setExpanded(expandAllPermissionTreeKeys(nodes))}
-            className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            className="h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted"
           >
-            Expandir tudo
+            Expandir
           </button>
           <button
             type="button"
             data-testid="permissions-tree-collapse-all"
             onClick={() => setExpanded(collapseAllPermissionTreeKeys())}
-            className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            className="h-8 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted"
           >
-            Recolher tudo
+            Recolher
           </button>
-        </div>
-
-        <div
-          data-testid="permissions-tree-counters"
-          className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold"
-        >
-          <span
-            data-testid="permissions-tree-counter-allowed"
-            className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-800"
+          <div
+            data-testid="permissions-tree-counters"
+            className="flex items-center gap-3 text-[11px] text-muted-foreground"
           >
-            {counters.allowed} permitidos
-          </span>
-          <span
-            data-testid="permissions-tree-counter-denied"
-            className="rounded-full bg-rose-50 px-2 py-0.5 text-rose-800"
-          >
-            {counters.denied} negados
-          </span>
-          <span
-            data-testid="permissions-tree-counter-inherited"
-            className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-900"
-          >
-            {counters.inherited} herdados
-          </span>
+            <span data-testid="permissions-tree-counter-allowed">
+              <span className="font-semibold text-foreground">
+                {counters.allowed}
+              </span>{" "}
+              permitidos
+            </span>
+            <span data-testid="permissions-tree-counter-denied">
+              <span className="font-semibold text-foreground">
+                {counters.denied}
+              </span>{" "}
+              negados
+            </span>
+            <span data-testid="permissions-tree-counter-inherited">
+              <span className="font-semibold text-foreground">
+                {counters.inherited}
+              </span>{" "}
+              herdados
+            </span>
+          </div>
         </div>
 
         {enableBranchBatch && !readOnly ? (
           <div
             data-testid="permissions-tree-batch-bar"
             className={cn(
-              "mt-2 rounded-lg border px-3 py-2.5 text-xs",
-              selectedBranch
-                ? "border-sky-400 bg-sky-100 text-sky-950 shadow-sm"
-                : "border-dashed border-sky-200 bg-sky-50/60 text-sky-900"
+              "flex flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-xs",
+              selectedBranch ? "bg-muted/40" : "bg-muted/20"
             )}
           >
             {!selectedBranch ? (
-              <div className="flex items-center gap-2">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
-                  1
-                </span>
-                <p>
-                  Clique em <strong>Selecionar ramo</strong> para alterar um módulo,
-                  página ou aba inteira de uma vez.
-                </p>
-              </div>
+              <p className="text-muted-foreground">
+                Selecione o círculo ao lado de um módulo, página ou aba para aplicar
+                a mesma decisão a todo o ramo.
+              </p>
             ) : pendingBatchDecision ? (
               <div
                 data-testid="permissions-tree-batch-confirm"
                 className="flex flex-wrap items-center gap-2"
               >
-                <Check className="h-3.5 w-3.5 text-sky-700" aria-hidden />
-                <span className="font-semibold">
+                <span className="font-medium text-foreground">
                   Aplicar “{decisionLabel(pendingBatchDecision)}” a{" "}
                   {selectedSubtreeCount} item(ns) em “{selectedBranch.label}”?
                 </span>
@@ -710,68 +628,61 @@ export function PermissionsTree({
                   type="button"
                   data-testid="permissions-tree-batch-confirm-yes"
                   onClick={confirmBatch}
-                  className="rounded-md bg-sky-700 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-sky-800"
+                  className="h-7 rounded-md bg-foreground px-2.5 text-[11px] font-medium text-background hover:opacity-90"
                 >
-                  Confirmar lote
+                  Confirmar
                 </button>
                 <button
                   type="button"
                   data-testid="permissions-tree-batch-confirm-no"
                   onClick={() => setPendingBatchDecision(null)}
-                  className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700"
+                  className="h-7 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium"
                 >
                   Cancelar
                 </button>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-sky-700" aria-hidden />
-                  <span className="font-semibold">
-                    Selecionado: {selectedBranch.label} ({selectedSubtreeCount} itens)
+              <>
+                <span className="font-medium text-foreground">
+                  Ramo: {selectedBranch.label}
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    ({selectedSubtreeCount})
                   </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-sky-800">2. Aplicar ao ramo:</span>
-                  {DECISIONS.map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      data-testid={`permissions-tree-batch-${d}`}
-                      onClick={() => setPendingBatchDecision(d)}
-                      className={cn(
-                        "rounded-md border px-2.5 py-1.5 text-[11px] font-bold shadow-sm",
-                        d === "allow" &&
-                          "border-emerald-300 bg-emerald-100 text-emerald-950",
-                        d === "deny" &&
-                          "border-rose-300 bg-rose-100 text-rose-950",
-                        d === "inherit" &&
-                          "border-amber-300 bg-amber-100 text-amber-950"
-                      )}
-                    >
-                      {decisionLabel(d)}
-                    </button>
-                  ))}
+                </span>
+                <span className="text-muted-foreground">Aplicar:</span>
+                {DECISIONS.map((d) => (
                   <button
+                    key={d}
                     type="button"
-                    data-testid="permissions-tree-batch-clear"
-                    onClick={() => {
-                      setSelectedBranchId(null);
-                      setPendingBatchDecision(null);
-                    }}
-                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600"
+                    data-testid={`permissions-tree-batch-${d}`}
+                    onClick={() => setPendingBatchDecision(d)}
+                    className="h-7 rounded-md border border-border bg-background px-2.5 text-[11px] font-medium hover:bg-muted"
                   >
-                    Cancelar seleção
+                    {decisionLabel(d)}
                   </button>
-                </div>
-              </div>
+                ))}
+                <button
+                  type="button"
+                  data-testid="permissions-tree-batch-clear"
+                  onClick={() => {
+                    setSelectedBranchId(null);
+                    setPendingBatchDecision(null);
+                  }}
+                  className="h-7 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                >
+                  Limpar seleção
+                </button>
+              </>
             )}
           </div>
         ) : null}
 
         <div
           data-testid="permissions-tree-columns"
-          className="mt-2 hidden grid-cols-[minmax(260px,1.5fr)_minmax(100px,0.6fr)_minmax(250px,auto)_minmax(90px,0.5fr)] gap-3 border-t border-slate-100 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 md:grid"
+          className={cn(
+            "hidden gap-x-3 border-t border-border bg-muted/30 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground md:grid",
+            COL_GRID
+          )}
         >
           <span>{resourceColumnLabel}</span>
           <span>{originColumnLabel}</span>
@@ -782,12 +693,12 @@ export function PermissionsTree({
 
       <div
         data-testid="permissions-tree-body"
-        className="flex-1 space-y-2 overflow-auto p-2"
+        className="min-h-0 flex-1 overflow-auto"
       >
         {filtered.length === 0 ? (
           <p
             data-testid="permissions-tree-no-matches"
-            className="px-2 py-6 text-center text-sm text-slate-500"
+            className="px-3 py-10 text-center text-sm text-muted-foreground"
           >
             Nenhum recurso corresponde à busca.
           </p>
