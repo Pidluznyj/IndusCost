@@ -266,9 +266,12 @@ Ver seção 7. Critério: **primeiro não destruir dados** (sync), depois **enri
 
 ### DS-03.3 — Campos de cabeçalho
 
-- Migration aditiva + mapper extraindo campos §4.1.
-- Testes de parse/fallback; campos ausentes → `null`.
-- Sem alterar consumers de UI ainda (exceto se necessário para compilar).
+- **Status:** implementado (2026-07-17) — migration aditiva
+  `20260731120000_nomus_stock_document_header_enrichment`.
+- Mapper extrai campos nullable; `isCancelled` só com evidência explícita;
+  `totalValue` preferindo raw e fallback na soma dos itens; `payloadHash` SHA-256.
+- Sync grava os novos campos + `firstSeenAt` (create) / `lastSeenAt` /
+  `presentInLastPayload` (todo apply). Skip unchanged permanece em DS-03.4.
 
 ### DS-03.4 — Proteção contra payload parcial
 

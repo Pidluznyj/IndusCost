@@ -4,6 +4,7 @@
  */
 import { Prisma } from "@prisma/client";
 import {
+  NOMUS_STOCK_DOCUMENT_COVERAGE_FIELDS,
   NOMUS_STOCK_DOCUMENT_ITEM_ABSENT_SCHEMA_FIELDS,
   NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
   buildEmptyStageInventory,
@@ -182,7 +183,23 @@ async function loadDocumentAggregates(
       filled_id_nfe: unknown;
       filled_tipo: unknown;
       filled_data: unknown;
+      filled_document_number: unknown;
+      filled_status_raw: unknown;
+      filled_is_cancelled: unknown;
+      filled_cancelled_at: unknown;
+      filled_cancellation_reason: unknown;
+      filled_total_value: unknown;
+      filled_person_external_id: unknown;
+      filled_person_name: unknown;
+      filled_company_external_id: unknown;
+      filled_company_name: unknown;
+      filled_movement_date: unknown;
+      filled_payment_terms_raw: unknown;
       filled_raw_json: unknown;
+      filled_payload_hash: unknown;
+      filled_first_seen_at: unknown;
+      filled_last_seen_at: unknown;
+      filled_present_in_last_payload: unknown;
       filled_synced_at: unknown;
       filled_created_at: unknown;
       filled_updated_at: unknown;
@@ -214,7 +231,25 @@ async function loadDocumentAggregates(
       COUNT("idNfe")::bigint AS filled_id_nfe,
       COUNT("tipoDocumentoEstoque")::bigint AS filled_tipo,
       COUNT("dataDocumento")::bigint AS filled_data,
+      COUNT("documentNumber")::bigint AS filled_document_number,
+      COUNT("statusRaw")::bigint AS filled_status_raw,
+      COUNT("isCancelled")::bigint AS filled_is_cancelled,
+      COUNT("cancelledAt")::bigint AS filled_cancelled_at,
+      COUNT("cancellationReason")::bigint AS filled_cancellation_reason,
+      COUNT("totalValue")::bigint AS filled_total_value,
+      COUNT("personExternalId")::bigint AS filled_person_external_id,
+      COUNT("personName")::bigint AS filled_person_name,
+      COUNT("companyExternalId")::bigint AS filled_company_external_id,
+      COUNT("companyName")::bigint AS filled_company_name,
+      COUNT("movementDate")::bigint AS filled_movement_date,
+      COUNT("paymentTermsRaw")::bigint AS filled_payment_terms_raw,
       COUNT("rawJson")::bigint AS filled_raw_json,
+      COUNT(*) FILTER (
+        WHERE "payloadHash" IS NOT NULL AND "payloadHash" <> ''
+      )::bigint AS filled_payload_hash,
+      COUNT("firstSeenAt")::bigint AS filled_first_seen_at,
+      COUNT("lastSeenAt")::bigint AS filled_last_seen_at,
+      COUNT("presentInLastPayload")::bigint AS filled_present_in_last_payload,
       COUNT("syncedAt")::bigint AS filled_synced_at,
       COUNT("createdAt")::bigint AS filled_created_at,
       COUNT("updatedAt")::bigint AS filled_updated_at
@@ -281,7 +316,23 @@ async function loadDocumentAggregates(
       idNfe: toAuditNumber(summary?.filled_id_nfe),
       tipoDocumentoEstoque: toAuditNumber(summary?.filled_tipo),
       dataDocumento: toAuditNumber(summary?.filled_data),
+      documentNumber: toAuditNumber(summary?.filled_document_number),
+      statusRaw: toAuditNumber(summary?.filled_status_raw),
+      isCancelled: toAuditNumber(summary?.filled_is_cancelled),
+      cancelledAt: toAuditNumber(summary?.filled_cancelled_at),
+      cancellationReason: toAuditNumber(summary?.filled_cancellation_reason),
+      totalValue: toAuditNumber(summary?.filled_total_value),
+      personExternalId: toAuditNumber(summary?.filled_person_external_id),
+      personName: toAuditNumber(summary?.filled_person_name),
+      companyExternalId: toAuditNumber(summary?.filled_company_external_id),
+      companyName: toAuditNumber(summary?.filled_company_name),
+      movementDate: toAuditNumber(summary?.filled_movement_date),
+      paymentTermsRaw: toAuditNumber(summary?.filled_payment_terms_raw),
       rawJson: toAuditNumber(summary?.filled_raw_json),
+      payloadHash: toAuditNumber(summary?.filled_payload_hash),
+      firstSeenAt: toAuditNumber(summary?.filled_first_seen_at),
+      lastSeenAt: toAuditNumber(summary?.filled_last_seen_at),
+      presentInLastPayload: toAuditNumber(summary?.filled_present_in_last_payload),
       syncedAt: toAuditNumber(summary?.filled_synced_at),
       createdAt: toAuditNumber(summary?.filled_created_at),
       updatedAt: toAuditNumber(summary?.filled_updated_at),
@@ -385,70 +436,33 @@ export function buildDocumentFieldCoverage(
   fieldFilled: Record<string, number>
 ): FieldCoverageStat[] {
   const requiredNote = "Coluna NOT NULL no schema — cobertura esperada ~100%.";
-  return [
+  const fieldNotes: Record<string, string | undefined> = {
+    externalId: requiredNote,
+    idNfe: "Vínculo lógico com NomusNfe.externalId.",
+    rawJson: requiredNote,
+    payloadHash: "Hash SHA-256 do payload; vazio até o próximo sync após migration.",
+    firstSeenAt: requiredNote,
+    lastSeenAt: requiredNote,
+    presentInLastPayload: requiredNote,
+    syncedAt: requiredNote,
+    createdAt: requiredNote,
+    updatedAt: requiredNote,
+    isCancelled: requiredNote,
+    personExternalId: "Somente do raw do documento — sem inferência fuzzy.",
+    companyExternalId: "Somente do raw do documento — sem inferência fuzzy.",
+    totalValue: "Preferência: total do raw; fallback: soma dos itens.",
+  };
+
+  return NOMUS_STOCK_DOCUMENT_COVERAGE_FIELDS.map((field) =>
     buildFieldCoverageStat({
-      field: "externalId",
+      field,
       model: "NomusStockDocument",
       presentInSchema: true,
       total,
-      filled: fieldFilled.externalId ?? 0,
-      notes: requiredNote,
-    }),
-    buildFieldCoverageStat({
-      field: "idNfe",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.idNfe ?? 0,
-      notes: "Vínculo lógico com NomusNfe.externalId.",
-    }),
-    buildFieldCoverageStat({
-      field: "tipoDocumentoEstoque",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.tipoDocumentoEstoque ?? 0,
-    }),
-    buildFieldCoverageStat({
-      field: "dataDocumento",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.dataDocumento ?? 0,
-    }),
-    buildFieldCoverageStat({
-      field: "rawJson",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.rawJson ?? 0,
-      notes: requiredNote,
-    }),
-    buildFieldCoverageStat({
-      field: "syncedAt",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.syncedAt ?? 0,
-      notes: requiredNote,
-    }),
-    buildFieldCoverageStat({
-      field: "createdAt",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.createdAt ?? 0,
-      notes: requiredNote,
-    }),
-    buildFieldCoverageStat({
-      field: "updatedAt",
-      model: "NomusStockDocument",
-      presentInSchema: true,
-      total,
-      filled: fieldFilled.updatedAt ?? 0,
-      notes: requiredNote,
-    }),
-  ];
+      filled: fieldFilled[field] ?? 0,
+      notes: fieldNotes[field],
+    })
+  );
 }
 
 export function buildItemFieldCoverage(

@@ -2444,19 +2444,19 @@ model NomusStockDocument {
   /// Número comercial Nomus, quando distinto de `externalId` (best-effort do raw).
   documentNumber String?
 
-  statusRaw           String?
-  isCancelled         Boolean   @default(false)
-  cancelledAt         DateTime?
-  cancellationReason  String?
-  totalValue          Decimal?  @db.Decimal(20, 2)
+  statusRaw          String?
+  isCancelled        Boolean   @default(false)
+  cancelledAt        DateTime?
+  cancellationReason String?
+  totalValue         Decimal?  @db.Decimal(20, 2)
 
   personExternalId  Int?
   personName        String?
   companyExternalId Int?
   companyName       String?
 
-  movementDate     DateTime?
-  paymentTermsRaw  String?
+  movementDate    DateTime?
+  paymentTermsRaw String?
 
   rawJson     Json
   payloadHash String

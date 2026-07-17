@@ -5,12 +5,16 @@ import {
   classifyStockDocumentItemsReliability,
   computeEstimatedTotalValue,
   dedupeMappedStockDocumentItems,
+  deriveStockDocumentCancellation,
+  extractStockDocumentNumber,
   inspectStockDocumentItemsArray,
   mapNomusStockDocumentItem,
   mapNomusStockDocumentPayload,
   parseNomusStockQuantity,
   parseNomusStockUnitValue,
   pickItensDocumentoEstoque,
+  resolveStockDocumentTotalValue,
+  stableNomusStockDocumentPayloadHash,
 } from "./nomusStockDocumentsMapper.js";
 import {
   buildStockDocumentsQuery,
@@ -22,6 +26,9 @@ import {
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
 } from "./nomusStockDocumentsSyncLogic.js";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const sampleDocumentoSaida6937 = {
   id: 7951,
@@ -32,6 +39,27 @@ const sampleDocumentoSaida6937 = {
     { id: 1, idProduto: 456, qtde: "3.000", valorUnitario: "4,92" },
     { id: 2, idProduto: 452, qtde: "9.000", valorUnitario: "4,92" },
     { id: 3, idProduto: 455, qtde: "10.000", valorUnitario: "4,92" },
+  ],
+};
+
+const richDocumentoSaidaHeader = {
+  id: 8451,
+  numero: "DS-8451",
+  idNfe: 7208,
+  tipoDocumentoEstoque: "DocumentoSaida",
+  data: "10/07/2026 09:00:00",
+  dataMovimentacao: "11/07/2026 14:30:00",
+  status: "Cancelado",
+  dataCancelamento: "12/07/2026 10:00:00",
+  motivoCancelamento: "Solicitação do cliente",
+  valorTotal: "1.234,56",
+  idPessoa: 501,
+  nomeCliente: "Cliente Exemplo LTDA",
+  idEmpresa: 2,
+  razaoSocialEmpresa: "Empresa Emissora SA",
+  condicaoPagamento: "28 DDL",
+  itensDocumentoEstoque: [
+    { id: 1, idProduto: 100, qtde: "1", valorUnitario: "100,00" },
   ],
 };
 
@@ -77,6 +105,91 @@ describe("nomusStockDocumentsMapper", () => {
     );
     assert.equal(total.toString(), "108240");
     assert.equal(typeof mapped.row.rawJson.id, "number");
+    assert.equal(mapped.row.totalValueSource, "items_sum");
+    assert.equal(Number(mapped.row.totalValue?.toString()), 108240);
+    assert.equal(mapped.row.isCancelled, false);
+    assert.equal(mapped.row.documentNumber, null);
+    assert.ok(mapped.row.payloadHash.length === 64);
+  });
+
+  it("normaliza cabeçalho enriquecido (DS-03.3) sem inferência insegura", () => {
+    const mapped = mapNomusStockDocumentPayload(richDocumentoSaidaHeader);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.documentNumber, "DS-8451");
+    assert.equal(mapped.row.statusRaw, "Cancelado");
+    assert.equal(mapped.row.isCancelled, true);
+    assert.ok(mapped.row.cancelledAt);
+    assert.equal(mapped.row.cancellationReason, "Solicitação do cliente");
+    assert.equal(mapped.row.totalValueSource, "raw");
+    assert.equal(Number(mapped.row.totalValue?.toString()), 1234.56);
+    assert.equal(mapped.row.personExternalId, 501);
+    assert.equal(mapped.row.personName, "Cliente Exemplo LTDA");
+    assert.equal(mapped.row.companyExternalId, 2);
+    assert.equal(mapped.row.companyName, "Empresa Emissora SA");
+    assert.ok(mapped.row.movementDate);
+    assert.equal(mapped.row.movementDate!.getDate(), 11);
+    assert.equal(mapped.row.paymentTermsRaw, "28 DDL");
+    assert.equal(
+      mapped.row.payloadHash,
+      stableNomusStockDocumentPayloadHash(richDocumentoSaidaHeader)
+    );
+  });
+
+  it("documentNumber fica null quando igual ao externalId", () => {
+    assert.equal(extractStockDocumentNumber({ numero: "8451" }, 8451), null);
+    assert.equal(extractStockDocumentNumber({ numero: "DS-1" }, 8451), "DS-1");
+  });
+
+  it("não marca cancelado sem evidência explícita", () => {
+    const none = deriveStockDocumentCancellation({ id: 1 }, "Aberto");
+    assert.equal(none.isCancelled, false);
+    const byFlag = deriveStockDocumentCancellation({ cancelado: true }, null);
+    assert.equal(byFlag.isCancelled, true);
+  });
+
+  it("totalValue usa soma dos itens quando raw não traz total", () => {
+    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    const resolved = resolveStockDocumentTotalValue(
+      sampleDocumentoSaida6937,
+      mapped.row.items
+    );
+    assert.equal(resolved.totalValueSource, "items_sum");
+    assert.equal(Number(resolved.totalValue?.toString()), 108240);
+  });
+
+  it("campos ausentes do cabeçalho permanecem null", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 1,
+      itensDocumentoEstoque: [],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.documentNumber, null);
+    assert.equal(mapped.row.statusRaw, null);
+    assert.equal(mapped.row.personExternalId, null);
+    assert.equal(mapped.row.personName, null);
+    assert.equal(mapped.row.companyExternalId, null);
+    assert.equal(mapped.row.companyName, null);
+    assert.equal(mapped.row.movementDate, null);
+    assert.equal(mapped.row.paymentTermsRaw, null);
+    assert.equal(mapped.row.totalValue, null);
+    assert.equal(mapped.row.totalValueSource, null);
+  });
+
+  it("schema Prisma contém campos DS-03.3 do NomusStockDocument", () => {
+    const schemaPath = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../../prisma/schema.prisma"
+    );
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model NomusStockDocument \{[\s\S]*documentNumber/);
+    assert.match(schema, /model NomusStockDocument \{[\s\S]*payloadHash/);
+    assert.match(schema, /model NomusStockDocument \{[\s\S]*presentInLastPayload/);
+    assert.match(schema, /model NomusStockDocument \{[\s\S]*@@index\(\[documentNumber\]\)/);
+    assert.doesNotMatch(schema, /model OutputDocument /);
   });
 
   it("classifica payload completo com itens", () => {

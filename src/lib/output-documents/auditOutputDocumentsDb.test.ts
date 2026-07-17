@@ -231,11 +231,29 @@ describe("cobertura e percentuais", () => {
       idNfe: 7,
       tipoDocumentoEstoque: 10,
       dataDocumento: 9,
+      documentNumber: 2,
+      statusRaw: 3,
+      isCancelled: 10,
+      cancelledAt: 1,
+      cancellationReason: 1,
+      totalValue: 8,
+      personExternalId: 4,
+      personName: 4,
+      companyExternalId: 5,
+      companyName: 5,
+      movementDate: 6,
+      paymentTermsRaw: 2,
       rawJson: 10,
+      payloadHash: 10,
+      firstSeenAt: 10,
+      lastSeenAt: 10,
+      presentInLastPayload: 10,
       syncedAt: 10,
       createdAt: 10,
       updatedAt: 10,
     });
+    assert.ok(fieldCoverage.some((row) => row.field === "payloadHash"));
+    assert.ok(fieldCoverage.some((row) => row.field === "personExternalId"));
     const idNfe = fieldCoverage.find((row) => row.field === "idNfe");
     assert.ok(idNfe);
     assert.equal(idNfe!.filled, 7);

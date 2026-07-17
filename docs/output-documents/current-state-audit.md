@@ -110,10 +110,10 @@ Arquivos-chave:
 | Finalidade | Stage Nomus `documentosEstoque` para conciliação Pedido × NF × saída |
 | PK | `id` (text uuid) |
 | ID Nomus | `externalId` Int `@unique` |
-| Campos | `idNfe?`, `tipoDocumentoEstoque?`, `dataDocumento?`, `rawJson`, `syncedAt`, `createdAt`, `updatedAt` |
+| Campos | `idNfe?`, `tipoDocumentoEstoque?`, `dataDocumento?`, `documentNumber?`, `statusRaw?`, `isCancelled`, `cancelledAt?`, `cancellationReason?`, `totalValue?`, `personExternalId?`, `personName?`, `companyExternalId?`, `companyName?`, `movementDate?`, `paymentTermsRaw?`, `rawJson`, `payloadHash`, `firstSeenAt`, `lastSeenAt`, `presentInLastPayload`, `syncedAt`, `createdAt`, `updatedAt` |
 | Relações | `items` → `NomusStockDocumentItem[]` |
-| Índices | `idNfe`, `tipoDocumentoEstoque`, `dataDocumento`, `syncedAt` |
-| Origem | migration `20260710180000_nomus_stock_documents` |
+| Índices | `idNfe`, `tipoDocumentoEstoque`, `dataDocumento`, `syncedAt`, `documentNumber`, `isCancelled`, `personExternalId`, `companyExternalId`, `movementDate`, `payloadHash`, `presentInLastPayload`, `lastSeenAt` |
+| Origem | migrations `20260710180000_nomus_stock_documents` + `20260731120000_nomus_stock_document_header_enrichment` |
 | Sync | `scripts/nomusStockDocumentsSync.ts` |
 | Cobertura DB | **não medida nesta sessão** (P1001) |
 
