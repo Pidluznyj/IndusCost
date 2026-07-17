@@ -81,6 +81,22 @@ describe("AdminUsers PermissionsTree smoke (PERM-35)", () => {
     assert.match(html, /user-permission-editor-footer/);
   });
 
+  it("AdminUsersModule seleciona AccessProfile (nao roles) no seletor principal", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(new URL("./AdminUsersModule.tsx", import.meta.url), "utf8")
+    );
+    assert.match(src, /user-permission-access-profile-select/);
+    assert.match(src, /create-user-access-profile-select/);
+    assert.match(src, /fetchAccessProfilesList/);
+    assert.match(src, /handleAccessProfileChange/);
+    assert.doesNotMatch(
+      src,
+      /data-testid="user-permission-role-select"/,
+      "seletor principal nao deve mais ser role"
+    );
+    assert.match(src, /1\. Selecione o perfil de acesso/);
+  });
+
   it("SUPER_ADMIN readOnly", () => {
     const tree: EditableTreeNodeDto[] = [
       {

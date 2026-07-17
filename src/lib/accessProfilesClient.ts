@@ -62,6 +62,22 @@ export type AccessProfileApplyPreview = {
   customizedCount: number;
 };
 
+export async function fetchAccessProfilesList(options?: {
+  activeOnly?: boolean;
+  includeInactive?: boolean;
+  search?: string;
+}): Promise<AccessProfileRecord[]> {
+  const params = new URLSearchParams();
+  if (options?.activeOnly) params.set("activeOnly", "1");
+  if (options?.includeInactive) params.set("includeInactive", "1");
+  if (options?.search?.trim()) params.set("search", options.search.trim());
+  const qs = params.toString();
+  const res = await fetchJsonOk<{ profiles: AccessProfileRecord[] }>(
+    `/api/access-profiles${qs ? `?${qs}` : ""}`
+  );
+  return Array.isArray(res.profiles) ? res.profiles : [];
+}
+
 export async function fetchAccessProfileLinkedUsers(profileId: string) {
   return fetchJsonOk<{
     profile: AccessProfileRecord;

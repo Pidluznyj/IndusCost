@@ -190,10 +190,12 @@ export const AccessProfilesModule: React.FC = () => {
 
   const previewPermissions = useMemo(() => {
     if (form.roleBase === "SUPER_ADMIN") return [] as string[];
+    // Clamp só faz sentido com bag já carregado (edição sem dirty).
+    // Em create / após rehydrate com bag vazio, clamp apagaria a seleção da árvore.
     return materializeAccessProfilePermissionsFromDraft(
       matrixDraft,
       form.permissions,
-      { compatibleClamp: !dirty }
+      { compatibleClamp: !dirty && form.permissions.length > 0 }
     );
   }, [form.roleBase, form.permissions, matrixDraft, dirty]);
 
@@ -695,8 +697,8 @@ export const AccessProfilesModule: React.FC = () => {
                       onChange={(e) => {
                         const roleBase = e.target.value as AppUserRole | "";
                         setSaveSuccess(null);
-                        setForm((f) => ({ ...f, roleBase }));
                         if (roleBase === "SUPER_ADMIN") {
+                          setForm((f) => ({ ...f, roleBase, permissions: [] }));
                           hydrateTree([], roleBase);
                           return;
                         }
@@ -706,6 +708,13 @@ export const AccessProfilesModule: React.FC = () => {
                             form.permissions,
                             { compatibleClamp: false }
                           );
+                        // Sincroniza o bag do form — senão o preview com clamp
+                        // (dirty=false após rehydrate) zera as permissões no create.
+                        setForm((f) => ({
+                          ...f,
+                          roleBase,
+                          permissions: preserved,
+                        }));
                         hydrateTree(preserved, roleBase);
                       }}
                       className="w-full rounded-lg border border-border px-3 py-2 text-sm"

@@ -477,6 +477,53 @@ describe("PERM-28 access profile save", () => {
     );
   });
 
+  it("P28 FIX D2 — create com bag vazio nao zera draft apos rehydrate (clamp)", () => {
+    const emptyModel = buildAccessProfileMatrixModel([], "");
+    const draftWithSelection = setMatrixDraftAction(
+      emptyModel.draft,
+      "dashboard",
+      "view",
+      true
+    );
+    const preserved = materializeAccessProfilePermissionsFromDraft(
+      draftWithSelection,
+      [],
+      { compatibleClamp: false }
+    );
+    // Simula create: form.permissions ainda [], dirty=false apos rehydrate.
+    // Clamp com bag vazio NAO pode ser aplicado.
+    const wiped = materializeAccessProfilePermissionsFromDraft(
+      buildAccessProfileMatrixModel(preserved, "VIEWER").draft,
+      [],
+      { compatibleClamp: true }
+    );
+    assert.equal(
+      wiped.includes("dashboard.view"),
+      false,
+      "clamp com bag vazio apaga grants — regressao conhecida"
+    );
+    const safe = materializeAccessProfilePermissionsFromDraft(
+      buildAccessProfileMatrixModel(preserved, "VIEWER").draft,
+      [],
+      { compatibleClamp: false }
+    );
+    assert.ok(safe.includes("dashboard.view"), "sem clamp (ou bag sincronizado) preserva");
+  });
+
+  it("P28 FIX D3 — AccessProfilesModule sincroniza form.permissions ao trocar roleBase", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(
+        new URL("../components/AccessProfilesModule.tsx", import.meta.url),
+        "utf8"
+      )
+    );
+    assert.match(src, /permissions:\s*preserved/);
+    assert.match(
+      src,
+      /compatibleClamp:\s*!dirty\s*&&\s*form\.permissions\.length\s*>\s*0/
+    );
+  });
+
   it("reaplicacao explicita: apply exige confirm e e separado do save", async () => {
     const profile: AccessProfile = {
       id: "p-apply",

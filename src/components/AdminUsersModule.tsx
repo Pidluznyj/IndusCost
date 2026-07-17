@@ -46,6 +46,10 @@ import {
   type RoleMatrixRowDto,
   type UserPermissionsPayload,
 } from "@/src/lib/userPermissionsAdminClient";
+import {
+  fetchAccessProfilesList,
+  type AccessProfileRecord,
+} from "@/src/lib/accessProfilesClient";
 import { evaluateAppUserDeleteGuard } from "@/src/lib/adminUserDelete";
 import {
   filterAdminUsersList,
@@ -91,6 +95,7 @@ type CreateForm = {
   employeeId: string;
   name: string;
   email: string;
+  accessProfileId: string;
   role: AppUserRole;
   isActive: boolean;
   password: string;
@@ -103,6 +108,7 @@ const EMPTY_CREATE: CreateForm = {
   employeeId: "",
   name: "",
   email: "",
+  accessProfileId: "",
   role: "VIEWER",
   isActive: true,
   password: "",
@@ -155,6 +161,7 @@ export const AdminUsersModule: React.FC = () => {
   const currentUserId = authUser?.id ?? null;
 
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
+  const [accessProfiles, setAccessProfiles] = useState<AccessProfileRecord[]>([]);
   const [sellerOptions, setSellerOptions] = useState<AdminSellerOption[]>([]);
   const [eligibleEmployees, setEligibleEmployees] = useState<EligibleEmployeeForUserDto[]>([]);
   const [eligibleEmployeesLoading, setEligibleEmployeesLoading] = useState(false);
@@ -229,14 +236,16 @@ export const AdminUsersModule: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const [list, sellers] = await Promise.all([
+      const [list, sellers, profiles] = await Promise.all([
         fetchAdminUsersList(),
         fetchJsonOk<{ sellers: AdminSellerOption[] }>("/api/admin/seller-options").catch(() => ({
           sellers: [] as AdminSellerOption[],
         })),
+        fetchAccessProfilesList({ activeOnly: true }).catch(() => [] as AccessProfileRecord[]),
       ]);
       setUsers(list);
       setSellerOptions(Array.isArray(sellers.sellers) ? sellers.sellers : []);
+      setAccessProfiles(profiles);
       if (selectedId && !list.some((u) => u.id === selectedId)) {
         setSelectedId(null);
         setDetail(null);
@@ -604,8 +613,8 @@ export const AdminUsersModule: React.FC = () => {
       !confirmClearIfNeeded(
         detail.hasCustomPermissions,
         forceSameRole && role === detail.user.role
-          ? "Aplicar o perfil remove as exceções individuais e reaplica o padrão. Continuar?"
-          : "Trocar o perfil aplica o padrão do novo perfil e remove personalizações. Continuar?"
+          ? "Aplicar o preset da role remove as exceções individuais e reaplica o padrão. Continuar?"
+          : "Trocar a role aplica o padrão do novo perfil e remove personalizações. Continuar?"
       )
     ) {
       return;
@@ -620,18 +629,62 @@ export const AdminUsersModule: React.FC = () => {
       setDetail(payload);
       hydrateMatrixFromPayload(payload);
       setSaveSuccess(
-        `Perfil aplicado. permissionsVersion → ${payload.user.permissionsVersion}.`
+        `Preset da role aplicado. permissionsVersion → ${payload.user.permissionsVersion}.`
       );
       await loadUsers();
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : "Falha ao alterar perfil.");
+      setDetailError(e instanceof Error ? e.message : "Falha ao alterar role.");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleRoleChange = async (role: AppUserRole) => {
-    await handleApplyRolePreset(role, false);
+  const handleAccessProfileChange = async (accessProfileId: string | null) => {
+    if (!detail || !selectedId) return;
+    const currentId = detail.accessProfile?.id ?? null;
+    if (accessProfileId === currentId) return;
+    if (detail.warnings.isLastSuperAdmin && accessProfileId) {
+      const next = accessProfiles.find((p) => p.id === accessProfileId);
+      if (next?.roleBase && next.roleBase !== "SUPER_ADMIN") {
+        setDetailError(
+          "Não é possível vincular um perfil que rebaixa o único Super Administrador ativo."
+        );
+        return;
+      }
+    }
+    if (
+      !confirmClearIfNeeded(
+        detail.hasCustomPermissions || Boolean(currentId),
+        accessProfileId
+          ? "Vincular o perfil de acesso aplica o snapshot e remove as exceções individuais. Continuar?"
+          : "Desvincular o perfil de acesso? As exceções e a role atual serão preservadas."
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setSaveSuccess(null);
+    setDetailError(null);
+    try {
+      await fetchJsonOk(`/api/admin/users/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessProfileId }),
+      });
+      await loadDetail(selectedId);
+      await loadUsers();
+      setSaveSuccess(
+        accessProfileId
+          ? "Perfil de acesso vinculado e snapshot aplicado."
+          : "Perfil de acesso desvinculado."
+      );
+    } catch (e) {
+      setDetailError(
+        e instanceof Error ? e.message : "Falha ao vincular perfil de acesso."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveSellerLink = async () => {
@@ -721,6 +774,7 @@ export const AdminUsersModule: React.FC = () => {
           email: createForm.email.trim(),
           password: createForm.password,
           role: createForm.role,
+          accessProfileId: createForm.accessProfileId.trim() || null,
           permissions: [],
           isActive: createForm.isActive,
           externalSellerId: createForm.externalSellerId.trim()
@@ -1166,26 +1220,45 @@ export const AdminUsersModule: React.FC = () => {
                   <div className="grid items-end gap-3 lg:grid-cols-[minmax(280px,420px)_minmax(220px,1fr)_auto]">
                     <label className="block min-w-0">
                       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-primary">
-                        1. Selecione o perfil base
+                        1. Selecione o perfil de acesso
                       </span>
                       <select
-                        value={detail.user.role}
+                        value={detail.accessProfile?.id ?? ""}
                         disabled={saving || detail.warnings.isLastSuperAdmin}
                         title={
                           detail.warnings.isLastSuperAdmin
                             ? "Não é possível alterar o único Super Administrador ativo"
                             : undefined
                         }
-                        onChange={(e) => void handleRoleChange(e.target.value as AppUserRole)}
+                        onChange={(e) => {
+                          const next = e.target.value.trim();
+                          void handleAccessProfileChange(next ? next : null);
+                        }}
                         className="h-10 w-full rounded-lg border-2 border-primary/35 bg-background px-3 text-sm font-semibold shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
-                        data-testid="user-permission-role-select"
+                        data-testid="user-permission-access-profile-select"
                       >
-                        {APP_USER_ROLE_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
+                        <option value="">Sem perfil de acesso</option>
+                        {accessProfiles.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                            {p.roleBase ? ` · ${formatRoleLabel(p.roleBase)}` : ""}
                           </option>
                         ))}
+                        {detail.accessProfile &&
+                        !accessProfiles.some((p) => p.id === detail.accessProfile!.id) ? (
+                          <option value={detail.accessProfile.id}>
+                            {detail.accessProfile.name} (inativo)
+                          </option>
+                        ) : null}
                       </select>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        Role técnica:{" "}
+                        <span className="font-semibold text-foreground">
+                          {formatRoleLabel(detail.user.role)}
+                        </span>
+                        {" · "}
+                        altere via preset abaixo se necessário.
+                      </p>
                     </label>
 
                     <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
@@ -1196,7 +1269,7 @@ export const AdminUsersModule: React.FC = () => {
                         <span className="font-semibold">
                           {detail.accessProfile?.name ??
                             selectedListUser?.accessProfileName ??
-                            "Padrão do perfil"}
+                            "Sem perfil vinculado"}
                         </span>
                         <span className="text-muted-foreground">·</span>
                         <span
@@ -1406,13 +1479,13 @@ export const AdminUsersModule: React.FC = () => {
                             type="button"
                             disabled={detail.treeReadOnly || detail.warnings.isLastSuperAdmin}
                             className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                            title="Aplica o padrão da role selecionada acima (limpa exceções)"
+                            title="Aplica o padrão da role técnica (limpa exceções)"
                             onClick={() =>
                               void handleApplyRolePreset(detail.user.role, true)
                             }
                             data-testid="user-permission-apply-profile"
                           >
-                            Aplicar perfil
+                            Aplicar preset da role
                           </button>
                           <button
                             type="button"
@@ -1420,6 +1493,7 @@ export const AdminUsersModule: React.FC = () => {
                             className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
                             onClick={() => void handleRestoreDefault()}
                             data-testid="user-permission-reapply-profile"
+                            title="Restaura o snapshot do perfil de acesso vinculado (ou o preset da role)"
                           >
                             Reaplicar perfil
                           </button>
@@ -1859,19 +1933,57 @@ export const AdminUsersModule: React.FC = () => {
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
-              <select
-                value={createForm.role}
-                onChange={(e) =>
-                  setCreateForm((f) => ({ ...f, role: e.target.value as AppUserRole }))
-                }
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-              >
-                {APP_USER_ROLE_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  Perfil de acesso
+                </span>
+                <select
+                  value={createForm.accessProfileId}
+                  onChange={(e) => {
+                    const accessProfileId = e.target.value;
+                    const profile = accessProfiles.find((p) => p.id === accessProfileId);
+                    setCreateForm((f) => ({
+                      ...f,
+                      accessProfileId,
+                      role:
+                        profile?.roleBase && profile.roleBase !== "SUPER_ADMIN"
+                          ? profile.roleBase
+                          : profile?.roleBase === "SUPER_ADMIN"
+                            ? "SUPER_ADMIN"
+                            : f.role,
+                    }));
+                  }}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  data-testid="create-user-access-profile-select"
+                >
+                  <option value="">Sem perfil (usar role abaixo)</option>
+                  {accessProfiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.roleBase ? ` · ${formatRoleLabel(p.roleBase)}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-[11px] font-semibold text-muted-foreground">
+                  Role técnica
+                </span>
+                <select
+                  value={createForm.role}
+                  onChange={(e) =>
+                    setCreateForm((f) => ({ ...f, role: e.target.value as AppUserRole }))
+                  }
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
+                  data-testid="create-user-role-select"
+                >
+                  {APP_USER_ROLE_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {roleAllowsSellerNomusLink(createForm.role) ? (
                 <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
