@@ -126,6 +126,12 @@
   border-color: hsl(215 20% 65% / 0.4);
 }
 
+.finance-ar-titles-list-table .ar-kind-badge--plan {
+  background: hsl(173 50% 40% / 0.12);
+  color: hsl(173 55% 22%);
+  border-color: hsl(173 50% 40% / 0.35);
+}
+
 .finance-ar-titles-list-table .ar-status-badge {
   display: inline-flex;
   align-items: center;

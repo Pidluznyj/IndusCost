@@ -190,6 +190,11 @@ export type SalesOrderDetailCoverageSummary = {
   unresolvedAmount: number;
   /** Agenda real/documental (CR + Doc sem CR), sem somar residual/corte. */
   realOrDocumentAgendaTotal: number;
+  /**
+   * NO_MATERIALIZATION = previsão integral do Pedido (não é residual pós-NF).
+   * Demais modos: residual/substituição após Documento/CR.
+   */
+  materializationMode?: string;
   precedenceSource:
     | "REAL_RECEIVABLE"
     | "OUTPUT_DOCUMENT"

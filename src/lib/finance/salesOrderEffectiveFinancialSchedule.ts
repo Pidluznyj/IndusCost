@@ -404,8 +404,22 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     .reduce((s, a) => s.add(a), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
 
-  // Residual ativo do pedido (itens parciais / não atendidos). Corte/cancelado fora.
-  const residualToSchedule = itemActiveResidualTotal;
+  // FIN-04 só desconta Documento do residual do item; CR fica em realReceivables.
+  // Política FIN-02: CR substitui a previsão do Pedido na parte coberta.
+  // Evita CR+previsão do mesmo valor (ex.: CR pré-NF sem Documento nos itens).
+  // Não desconta de novo a fatia já coberta por Doc nos itens (CR da mesma cadeia).
+  const itemDocCoverageTotal = itemAmounts
+    .reduce((s, item) => s.add(item.coveredByValidDocuments), ZERO)
+    .toDecimalPlaces(MONEY_DP, ROUND);
+  const crBeyondDocumentCoverage = maxMoney(
+    ZERO,
+    coveredByRealReceivables.sub(itemDocCoverageTotal)
+  ).toDecimalPlaces(MONEY_DP, ROUND);
+
+  const residualToSchedule = maxMoney(
+    ZERO,
+    itemActiveResidualTotal.sub(crBeyondDocumentCoverage)
+  ).toDecimalPlaces(MONEY_DP, ROUND);
 
   const stagedDeliveryBlocks = buildStagedDeliveryBlocks({
     documents: input.documents,

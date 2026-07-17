@@ -3,7 +3,7 @@
  *
  * Consome o motor FIN-05. Dedup de CR só por `externalId`.
  * Não inclui previsão integral substituída nem saldo de corte.
- * Linhas: CR REAL | DOCUMENTO AGUARDANDO CR | PREVISÃO RESIDUAL DO PEDIDO.
+ * Linhas: CR REAL | DOCUMENTO AGUARDANDO CR | PREVISÃO DO PEDIDO | PREVISÃO RESIDUAL.
  */
 
 import type {
@@ -27,7 +27,9 @@ import type { SalesOrderEffectiveFinancialSchedule } from "./salesOrderEffective
 export type FinanceArEffectiveLineKind =
   | "CR_REAL"
   | "DOCUMENT_AWAITING_CR"
-  | "ORDER_RESIDUAL_FORECAST";
+  | "ORDER_RESIDUAL_FORECAST"
+  /** Previsão original do Pedido sem materialização (não é residual pós-entrega). */
+  | "ORDER_PLAN_FORECAST";
 
 export const FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL: Record<
   FinanceArEffectiveLineKind,
@@ -36,6 +38,7 @@ export const FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL: Record<
   CR_REAL: "CR REAL",
   DOCUMENT_AWAITING_CR: "DOCUMENTO AGUARDANDO CR",
   ORDER_RESIDUAL_FORECAST: "PREVISÃO RESIDUAL DO PEDIDO",
+  ORDER_PLAN_FORECAST: "PREVISÃO DO PEDIDO",
 };
 
 export type FinanceArEffectiveTitlesSummary = {
@@ -359,6 +362,31 @@ export function buildFinanceArEffectiveTitles(
     }
   }
 
+  // CR Nomus que menciona Pedido do contexto, mesmo fora de schedule.realReceivables
+  // (vínculo só por descrição) — usado para não emitir previsão duplicada.
+  const nomusCrCoverageByOrder = new Map<string, number>();
+  for (const row of nomusByExternalId.values()) {
+    let linkedCode: string | null = crToOrder.get(row.externalId)?.orderCode ?? null;
+    if (!linkedCode) {
+      for (const ctx of input.orderContexts) {
+        if (descriptionMentionsOrder(row.description, ctx.schedule.orderCode)) {
+          linkedCode = ctx.schedule.orderCode;
+          crToOrder.set(row.externalId, {
+            orderCode: ctx.schedule.orderCode,
+            salesOrderId: ctx.schedule.salesOrderId,
+          });
+          break;
+        }
+      }
+    }
+    if (!linkedCode) continue;
+    const key = normalizeOrderCode(linkedCode);
+    nomusCrCoverageByOrder.set(
+      key,
+      roundMoney((nomusCrCoverageByOrder.get(key) ?? 0) + row.amountReceivable)
+    );
+  }
+
   const items: FinanceArEffectiveTitleListItem[] = [];
   const emittedCrIds = new Set<number>();
 
@@ -385,6 +413,20 @@ export function buildFinanceArEffectiveTitles(
       emittedCrIds.add(cr.externalId);
       items.push(
         mapNomusToEffectiveItem(nomus, referenceDate, {
+          orderCode: schedule.orderCode,
+          salesOrderId: schedule.salesOrderId,
+        })
+      );
+    }
+
+    // CR Nomus vinculado ao Pedido por descrição (ainda não emitido).
+    for (const row of nomusByExternalId.values()) {
+      if (emittedCrIds.has(row.externalId)) continue;
+      const meta = crToOrder.get(row.externalId);
+      if (!meta || !orderCodesMatch(meta.orderCode, schedule.orderCode)) continue;
+      emittedCrIds.add(row.externalId);
+      items.push(
+        mapNomusToEffectiveItem(row, referenceDate, {
           orderCode: schedule.orderCode,
           salesOrderId: schedule.salesOrderId,
         })
@@ -442,20 +484,45 @@ export function buildFinanceArEffectiveTitles(
       }
     }
 
+    const scheduleCrCoverage = schedule.realReceivables.reduce(
+      (s, r) => s + decimalToNumber(r.amountReceivable),
+      0
+    );
+    const nomusCoverage =
+      nomusCrCoverageByOrder.get(normalizeOrderCode(schedule.orderCode)) ?? 0;
+    // Cobertura CR já refletida no motor + CR só-Nomus; evita previsão + CR do mesmo valor.
+    let forecastCoverageLeft = roundMoney(
+      Math.max(0, nomusCoverage - scheduleCrCoverage)
+    );
+
+    const isOriginalPlan =
+      schedule.coverageSummary.materializationMode === "NO_MATERIALIZATION";
+    const forecastKind: FinanceArEffectiveLineKind = isOriginalPlan
+      ? "ORDER_PLAN_FORECAST"
+      : "ORDER_RESIDUAL_FORECAST";
+
     for (const line of schedule.activeOrderResidualSchedule) {
-      const amount = decimalToNumber(line.residualAmount);
+      let amount = decimalToNumber(line.residualAmount);
+      if (amount <= 0.009) continue;
+      if (forecastCoverageLeft > 0.009) {
+        const consumed = Math.min(amount, forecastCoverageLeft);
+        amount = roundMoney(amount - consumed);
+        forecastCoverageLeft = roundMoney(forecastCoverageLeft - consumed);
+      }
       if (amount <= 0.009) continue;
       items.push(
         buildSyntheticRow({
-          key: `residual:${schedule.orderCode}:${line.installmentNumber}:${line.dueDate ?? "x"}`,
-          lineKind: "ORDER_RESIDUAL_FORECAST",
+          key: `forecast:${schedule.orderCode}:${line.installmentNumber}:${line.dueDate ?? "x"}`,
+          lineKind: forecastKind,
           orderCode: schedule.orderCode,
           salesOrderId: schedule.salesOrderId,
           personId,
           personName,
           personCnpj,
           companyName,
-          description: `Previsão residual · Pedido ${schedule.orderCode} · Parcela ${line.installmentNumber}`,
+          description: isOriginalPlan
+            ? `Previsão do Pedido ${schedule.orderCode} · Parcela ${line.installmentNumber}`
+            : `Previsão residual · Pedido ${schedule.orderCode} · Parcela ${line.installmentNumber}`,
           sourceInvoiceId: null,
           sourceInvoiceNumber: null,
           dueDateIso: line.dueDate,

@@ -359,6 +359,110 @@ describe("FIN-08 — cliente com dois pedidos / duas NF-es", () => {
   });
 });
 
+describe("FIN-08 — CR só Nomus não duplica previsão do Pedido (PD 02740)", () => {
+  it("CR por descrição + agenda sem CR: emite só CR, sem residual/previsão", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-pd-02740",
+      orderCode: "PD 02740",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-10-20", amount: "175600.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "175600.00",
+          status: 2,
+          orderedQuantity: 30,
+          fulfilledQuantity: 0,
+        },
+      ],
+      documents: [],
+      realReceivables: [],
+      referenceDate: REF,
+    });
+    assert.ok(Number(schedule.coverageSummary.activeOrderResidualTotal.toFixed(2)) > 0);
+
+    const { items, summary } = buildFinanceArEffectiveTitles({
+      nomusRows: [
+        nomusCr({
+          externalId: 17754,
+          sourceInvoiceId: null,
+          sourceInvoiceNumber: null,
+          description: "Pedido PD 02740 — Depósito Bancário",
+          amountReceivable: 175600,
+          amountReceived: 0,
+          balanceReceivable: 175600,
+          dueDate: new Date(2026, 9, 20),
+          paymentMethodName: "Depósito Bancário",
+        }),
+      ],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      orderCode: "PD 02740",
+      referenceDate: REF,
+    });
+
+    assert.equal(items.filter((i) => i.lineKind === "CR_REAL").length, 1);
+    assert.equal(
+      items.filter(
+        (i) =>
+          i.lineKind === "ORDER_RESIDUAL_FORECAST" ||
+          i.lineKind === "ORDER_PLAN_FORECAST"
+      ).length,
+      0
+    );
+    assert.equal(summary.totalOriginalValue, 175600);
+    assert.equal(summary.totalOpenValue, 175600);
+  });
+
+  it("sem CR: previsão sem materialização usa ORDER_PLAN_FORECAST", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-plan",
+      orderCode: "PD 02799",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-10-20", amount: "1000.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "1000.00",
+          status: 2,
+          orderedQuantity: 1,
+          fulfilledQuantity: 0,
+        },
+      ],
+      documents: [],
+      realReceivables: [],
+      referenceDate: REF,
+    });
+    assert.equal(schedule.coverageSummary.materializationMode, "NO_MATERIALIZATION");
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      orderCode: "PD 02799",
+      referenceDate: REF,
+    });
+
+    assert.equal(items.length, 1);
+    assert.equal(items[0]!.lineKind, "ORDER_PLAN_FORECAST");
+    assert.equal(items[0]!.lineKindLabel, "PREVISÃO DO PEDIDO");
+  });
+});
+
 describe("FIN-08 — filtro Em aberto não reinsere CR liquidado", () => {
   it("CR só na agenda (fora do Nomus filtrado) não volta como título", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule(

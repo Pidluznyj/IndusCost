@@ -242,3 +242,29 @@ describe("contrato de saída e soma exata", () => {
     assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "5000.00");
   });
 });
+
+describe("CR sem Documento não duplica previsão (PD 02740)", () => {
+  it("CR integral sem NF/Doc zera residual — não conta CR + parcela do Pedido", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(
+      fixtureOrder10000Base({
+        originalInstallments: [
+          { installmentNumber: 1, dueDate: "2026-10-20", amount: "10000.00" },
+        ],
+        realReceivables: [
+          {
+            externalId: 17754,
+            sourceInvoiceId: null,
+            dueDate: "2026-10-20",
+            amountReceivable: "10000.00",
+            amountReceived: "0",
+            balanceReceivable: "10000.00",
+          },
+        ],
+      })
+    );
+    assertMoney(schedule.coverageSummary.coveredByRealReceivables, "10000.00");
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "0.00");
+    assert.equal(schedule.realReceivables.length, 1);
+    assert.equal(schedule.activeOrderResidualSchedule.length, 0);
+  });
+});

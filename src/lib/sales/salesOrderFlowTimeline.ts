@@ -24,6 +24,7 @@ export const SALES_ORDER_FLOW_EVENT_TYPES = [
   "CANCELED",
   "INCONSISTENCY_CRITICAL",
   "INCONSISTENCY_RESOLVED",
+  "MANAGEMENT_UPDATED",
 ] as const;
 
 export type SalesOrderFlowEventType = (typeof SALES_ORDER_FLOW_EVENT_TYPES)[number];

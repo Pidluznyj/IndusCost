@@ -166,6 +166,8 @@ function mapActiveResidualToPlanned(
   referenceDate: Date
 ): OrderFullAuditPlannedReceivable[] {
   const total = schedule.activeOrderResidualSchedule.length;
+  const isOriginalPlan =
+    schedule.coverageSummary.materializationMode === "NO_MATERIALIZATION";
   return schedule.activeOrderResidualSchedule.map((line) => {
     const amount = decimalToNumber(line.residualAmount);
     const statusLabel = classifyResidualStatus(line.dueDate, referenceDate);
@@ -175,16 +177,24 @@ function mapActiveResidualToPlanned(
       salesOrderId: schedule.salesOrderId,
       installmentNumber: line.installmentNumber,
       totalInstallments: total,
-      reference: `Pedido ${schedule.orderCode} - Parcela ${line.installmentNumber} de ${total} (residual)`,
+      reference: isOriginalPlan
+        ? `Pedido ${schedule.orderCode} - Parcela ${line.installmentNumber} de ${total}`
+        : `Pedido ${schedule.orderCode} - Parcela ${line.installmentNumber} de ${total} (residual)`,
       dueDate: line.dueDate,
       originalExpectedAmount: decimalToNumber(line.originalAmount),
       expectedAmount: amount,
       openAmount: amount,
       statusLabel,
-      paymentConditionLabel: "Condição do Pedido (residual efetivo)",
+      paymentConditionLabel: isOriginalPlan
+        ? "Condição do Pedido"
+        : "Condição do Pedido (residual efetivo)",
       paymentMethodLabel: null,
-      origin: "Pedido de Venda / residual efetivo (FIN-05)",
-      note: "Previsão residual ativa — datas originais do Pedido; itens ainda ativos.",
+      origin: isOriginalPlan
+        ? "Pedido de Venda / previsão vigente (FIN-05)"
+        : "Pedido de Venda / residual efetivo (FIN-05)",
+      note: isOriginalPlan
+        ? "Previsão do Pedido — sem Documento/CR; datas e valores da condição original."
+        : "Previsão residual ativa — datas originais do Pedido; itens ainda ativos.",
       replacedByRealCr: false,
       replacedByReceivableExternalId: null,
       replacedBySource: null,
@@ -484,6 +494,7 @@ export function mapEffectiveScheduleToDetailFinancial(
       canceledAmount,
       unresolvedAmount,
       realOrDocumentAgendaTotal: round2(coveredCr + coveredDoc),
+      materializationMode: schedule.coverageSummary.materializationMode,
       precedenceSource: schedule.coverageSummary.precedenceSource,
     },
     plannedTotals: {

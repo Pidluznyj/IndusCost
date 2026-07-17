@@ -355,8 +355,9 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
       <section className="so-detail-section" data-testid="sales-order-detail-financial">
         <h3 className="so-detail-section-title">Financeiro</h3>
         <p className="so-detail-section-subtitle">
-          Contas a Receber oficial, condição documental vigente e previsão residual
-          ativa — uma única agenda efetiva.
+          {financial.coverageSummary?.materializationMode === "NO_MATERIALIZATION"
+            ? "Contas a Receber oficial e previsão do Pedido vigente — uma única agenda efetiva."
+            : "Contas a Receber oficial, condição documental vigente e previsão residual ativa — uma única agenda efetiva."}
         </p>
         <div
           className="so-detail-kpi-grid"
@@ -379,7 +380,11 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={financial.totals.receivedAmount > 0.009 ? "positive" : "muted"}
           />
           <Kpi
-            label="Previsão residual ativa"
+            label={
+              financial.coverageSummary?.materializationMode === "NO_MATERIALIZATION"
+                ? "Previsão do Pedido"
+                : "Previsão residual ativa"
+            }
             value={formatFinanceCurrency(
               financial.coverageSummary?.activeOrderResidualTotal ??
                 financial.plannedTotals.applicableExpected ??
@@ -552,7 +557,10 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                   <tr key={`planned-${p.key}`}>
                     <td>
                       <span className="so-detail-badge so-detail-badge--info">
-                        Previsão residual
+                        {financial.coverageSummary?.materializationMode ===
+                        "NO_MATERIALIZATION"
+                          ? "Previsão do Pedido"
+                          : "Previsão residual"}
                       </span>
                     </td>
                     <td className="font-semibold">{p.reference}</td>

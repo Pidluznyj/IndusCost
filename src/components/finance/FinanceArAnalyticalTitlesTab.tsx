@@ -71,7 +71,7 @@ const SORT_OPTIONS: Array<{ value: FinanceArTitlesSortBy; label: string }> = [
   { value: "daysOverdue", label: "Dias em atraso" },
 ];
 
-type ArTitleKindTone = "cr" | "doc" | "residual";
+type ArTitleKindTone = "cr" | "doc" | "residual" | "plan";
 
 function resolveArTitleKind(row: FinanceArTitleListItem): {
   tone: ArTitleKindTone;
@@ -83,6 +83,13 @@ function resolveArTitleKind(row: FinanceArTitleListItem): {
       tone: "doc",
       shortLabel: "DOC",
       fullLabel: row.lineKindLabel ?? "DOCUMENTO AGUARDANDO CR",
+    };
+  }
+  if (row.lineKind === "ORDER_PLAN_FORECAST") {
+    return {
+      tone: "plan",
+      shortLabel: "PEDIDO",
+      fullLabel: row.lineKindLabel ?? "PREVISÃO DO PEDIDO",
     };
   }
   if (row.lineKind === "ORDER_RESIDUAL_FORECAST") {
@@ -101,6 +108,7 @@ function resolveArTitleKind(row: FinanceArTitleListItem): {
 
 function resolveArTitlePrimary(row: FinanceArTitleListItem): string {
   if (row.lineKind === "DOCUMENT_AWAITING_CR") return "Documento";
+  if (row.lineKind === "ORDER_PLAN_FORECAST") return "Pedido";
   if (row.lineKind === "ORDER_RESIDUAL_FORECAST") return "Residual";
   return row.externalId > 0 ? String(row.externalId) : "CR";
 }

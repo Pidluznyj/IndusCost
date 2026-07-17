@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import { buildSalesOrderEffectiveFinancialSchedule } from "@/src/lib/finance/salesOrderEffectiveFinancialSchedule.js";
 import {
   fixtureCut10000Doc9000,
+  fixtureOrder10000Base,
   fixturePartialWithDoc9000Awaiting,
   fixturePartialWithDoc9000Proven,
 } from "@/src/lib/finance/salesOrderEffectiveFinancialSchedule.fixtures.js";
@@ -428,5 +429,42 @@ describe("FIN-07 — apresentação financeira do Detalhe do Pedido", () => {
     assert.equal(financial.coverageSummary.coveredByDocumentsWithoutCr, 9000);
     // Próximo vencimento efetivo: doc 2026-07-20 (antes do CR 25 e residual 08).
     assert.equal(financial.effectiveNextDueDate, "2026-07-20");
+  });
+
+  it("sem Doc/CR: rótulo de previsão do Pedido (não residual pós-NF)", () => {
+    const financial = project(fixtureOrder10000Base());
+    assert.equal(
+      financial.coverageSummary.materializationMode,
+      "NO_MATERIALIZATION"
+    );
+    assert.ok(financial.plannedReceivables.length >= 1);
+    for (const p of financial.plannedReceivables) {
+      assert.ok(!/\(residual\)/i.test(p.reference), p.reference);
+      assert.match(p.origin, /previsão vigente/i);
+      assert.equal(p.paymentConditionLabel, "Condição do Pedido");
+    }
+  });
+
+  it("CR integral sem Doc: residual zero no detalhe (não CR + parcela)", () => {
+    const financial = project(
+      fixtureOrder10000Base({
+        originalInstallments: [
+          { installmentNumber: 1, dueDate: "2026-10-20", amount: "10000.00" },
+        ],
+        realReceivables: [
+          {
+            externalId: 17754,
+            sourceInvoiceId: null,
+            dueDate: "2026-10-20",
+            amountReceivable: "10000.00",
+            amountReceived: "0",
+            balanceReceivable: "10000.00",
+          },
+        ],
+      })
+    );
+    assert.equal(financial.coverageSummary.activeOrderResidualTotal, 0);
+    assert.equal(financial.plannedReceivables.length, 0);
+    assert.equal(financial.coverageSummary.coveredByRealReceivables, 10000);
   });
 });

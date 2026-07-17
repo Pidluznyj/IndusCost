@@ -218,7 +218,11 @@ function assertScreensAndApisCoherent(schedule: SalesOrderEffectiveFinancialSche
   });
 
   const arResidual = items
-    .filter((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST")
+    .filter(
+      (i) =>
+        i.lineKind === "ORDER_RESIDUAL_FORECAST" ||
+        i.lineKind === "ORDER_PLAN_FORECAST"
+    )
     .reduce((s, i) => s + i.balanceReceivable, 0);
   assert.equal(
     Math.round(arResidual * 100) / 100,
