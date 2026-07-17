@@ -184,6 +184,80 @@ export function registerSalesOrderFlowRoutes(
   });
 
   app.get(
+    "/api/commercial/sales-order-flow/lookup/responsible-users",
+    requireSalesOrderFlowEnabled(),
+    requireAppAuth,
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrders,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowManagement,
+      COMMERCIAL_ACTIONS.manage
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowResponsibility,
+      COMMERCIAL_ACTIONS.manage
+    ),
+    async (req, res) => {
+      try {
+        const query = String(req.query.q ?? req.query.query ?? "").trim();
+        if (query.length < 2) {
+          return res.json({ rows: [] });
+        }
+        const prisma = (req as express.Request & { prisma?: import("@prisma/client").PrismaClient }).prisma
+          ?? (await import("@/src/lib/prisma.js")).prisma;
+        const rows = await prisma.appUser.findMany({
+          where: {
+            isActive: true,
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { email: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          take: 20,
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            person: { select: { displayName: true, socialName: true } },
+            employee: { select: { name: true, socialName: true } },
+          },
+        });
+        res.setHeader("Cache-Control", "no-store");
+        return res.json({
+          rows: rows.map((row) => {
+            const fromPerson =
+              row.person?.socialName?.trim() ||
+              row.person?.displayName?.trim();
+            const fromEmployee =
+              row.employee?.socialName?.trim() ||
+              row.employee?.name?.trim();
+            return {
+              id: row.id,
+              name: fromPerson || fromEmployee || row.name,
+              email: row.email ?? null,
+            };
+          }),
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/commercial/sales-order-flow/lookup/responsible-users:",
+          error
+        );
+        return res.status(500).json({
+          error: "Não foi possível buscar responsáveis do Fluxo de Pedidos.",
+        });
+      }
+    }
+  );
+
+  app.get(
     "/api/commercial/sales-order-flow/:salesOrderId/events",
     requireSalesOrderFlowEnabled(),
     requireAppAuth,

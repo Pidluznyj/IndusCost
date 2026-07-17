@@ -48,6 +48,7 @@ import {
   createSalesOrderFlowColumnLoadingState,
   createSalesOrderFlowColumnStates,
   markSalesOrderFlowColumnLoadingMore,
+  patchSalesOrderFlowKanbanCard,
   resolveSalesOrderFlowVisibleKanbanStages,
   SALES_ORDER_FLOW_COLUMN_PAGE_SIZE,
   salesOrderFlowColumnStatesAllSettled,
@@ -999,6 +1000,15 @@ export function SalesOrderFlowModule() {
           salesOrderId={selectedOrder.id}
           orderCode={selectedOrder.code}
           onClose={() => setSelectedOrder(null)}
+          onManagementUpdated={({ salesOrderId, management }) => {
+            setColumnStates((current) =>
+              patchSalesOrderFlowKanbanCard(current, salesOrderId, {
+                priority: management.priority,
+                isBlocked: management.isBlocked,
+                blockReason: management.blockReason,
+              })
+            );
+          }}
         />
       ) : null}
     </div>
