@@ -19,7 +19,11 @@ import {
   type SalesOrderEffectiveFinancialSchedule,
 } from "@/src/lib/finance/salesOrderEffectiveFinancialSchedule.js";
 import type { ComputeSalesOrderItemFinancialAmountsInput } from "@/src/lib/finance/salesOrderItemFinancialAmounts.js";
-import type { SalesOrderDetailFinancial } from "./salesOrderDetailClient.js";
+import type {
+  SalesOrderDetailFinancial,
+  SalesOrderDetailOriginalForecastHistoryRow,
+  SalesOrderDetailOriginalForecastHistoryStatus,
+} from "./salesOrderDetailClient.js";
 
 function round2(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -187,41 +191,153 @@ function mapActiveResidualToPlanned(
   });
 }
 
-function mapSupersededToPlanned(
+function buildOriginalForecastHistory(
   schedule: SalesOrderEffectiveFinancialSchedule
+): SalesOrderDetailOriginalForecastHistoryRow[] {
+  const residualByNum = new Map(
+    schedule.activeOrderResidualSchedule.map((l) => [
+      l.installmentNumber,
+      l,
+    ] as const)
+  );
+  const supersededByNum = new Map(
+    schedule.supersededOrderSchedule.map((l) => [l.installmentNumber, l] as const)
+  );
+  const installmentNumbers = [
+    ...new Set([
+      ...schedule.activeOrderResidualSchedule.map((l) => l.installmentNumber),
+      ...schedule.supersededOrderSchedule.map((l) => l.installmentNumber),
+    ]),
+  ].sort((a, b) => a - b);
+
+  const totalInstallments = Math.max(installmentNumbers.length, 1);
+  const rows: SalesOrderDetailOriginalForecastHistoryRow[] = [];
+
+  for (const num of installmentNumbers) {
+    const residualLine = residualByNum.get(num);
+    const supersededLine = supersededByNum.get(num);
+    const originalAmount = decimalToNumber(
+      residualLine?.originalAmount ?? supersededLine?.originalAmount ?? 0
+    );
+    const residualAmount = decimalToNumber(residualLine?.residualAmount ?? 0);
+    const substitutedAmount = round2(Math.max(0, originalAmount - residualAmount));
+    const dueDate = residualLine?.dueDate ?? supersededLine?.dueDate ?? null;
+
+    // Histórico só inclui parcelas tocadas por substituição/cobertura.
+    if (substitutedAmount <= 0.009) continue;
+
+    let status: SalesOrderDetailOriginalForecastHistoryStatus = "Substituída";
+    if (residualAmount > 0.009) status = "Parcialmente substituída";
+
+    rows.push({
+      key: `history-installment:${schedule.orderCode}:${num}`,
+      kind: "installment",
+      installmentNumber: num,
+      totalInstallments,
+      dueDate,
+      originalAmount,
+      residualAmount,
+      substitutedAmount,
+      status,
+      note:
+        status === "Parcialmente substituída"
+          ? `Parcela residual ${formatHistoryMoney(residualAmount)}; substituída ${formatHistoryMoney(substitutedAmount)}.`
+          : "Parcela original substituída por CR/Documento.",
+    });
+  }
+
+  const cutAmount = decimalToNumber(schedule.cutAmount);
+  if (cutAmount > 0.009) {
+    rows.push({
+      key: `history-cut:${schedule.orderCode}`,
+      kind: "cut_summary",
+      installmentNumber: null,
+      totalInstallments: null,
+      dueDate: null,
+      originalAmount: cutAmount,
+      residualAmount: 0,
+      substitutedAmount: 0,
+      status: "Encerrada por corte",
+      note: "Valor encerrado por atendimento com corte — não é saldo financeiro.",
+    });
+  }
+
+  const canceledAmount = decimalToNumber(schedule.canceledAmount);
+  if (canceledAmount > 0.009) {
+    rows.push({
+      key: `history-canceled:${schedule.orderCode}`,
+      kind: "canceled_summary",
+      installmentNumber: null,
+      totalInstallments: null,
+      dueDate: null,
+      originalAmount: canceledAmount,
+      residualAmount: 0,
+      substitutedAmount: 0,
+      status: "Cancelada",
+      note: "Valor de itens cancelados — residual zero.",
+    });
+  }
+
+  return rows;
+}
+
+function formatHistoryMoney(value: number): string {
+  return value.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function mapSupersededToPlanned(
+  schedule: SalesOrderEffectiveFinancialSchedule,
+  history: SalesOrderDetailOriginalForecastHistoryRow[]
 ): OrderFullAuditPlannedReceivable[] {
+  const statusByNum = new Map(
+    history
+      .filter((h) => h.kind === "installment" && h.installmentNumber != null)
+      .map((h) => [h.installmentNumber!, h.status] as const)
+  );
   const total = Math.max(
     schedule.supersededOrderSchedule.length,
     schedule.activeOrderResidualSchedule.length,
     1
   );
-  return schedule.supersededOrderSchedule.map((line) => ({
-    key: `effective-superseded:${schedule.orderCode}:${line.installmentNumber}`,
-    orderCode: schedule.orderCode,
-    salesOrderId: schedule.salesOrderId,
-    installmentNumber: line.installmentNumber,
-    totalInstallments: total,
-    reference: `Pedido ${schedule.orderCode} - Parcela ${line.installmentNumber} (substituída)`,
-    dueDate: line.dueDate,
-    originalExpectedAmount: decimalToNumber(line.originalAmount),
-    expectedAmount: decimalToNumber(line.originalAmount),
-    openAmount: 0,
-    // Nunca "Vencido" — substituída não gera alerta de vencimento.
-    statusLabel: "Substituída" as const,
-    paymentConditionLabel: "Condição do Pedido (substituída)",
-    paymentMethodLabel: null,
-    origin: "Pedido de Venda / substituída (FIN-05)",
-    note: "Previsão original substituída por CR/Documento — evidência histórica.",
-    replacedByRealCr: true,
-    replacedByReceivableExternalId: null,
-    replacedBySource:
-      schedule.coverageSummary.coveredByRealReceivables.gt(0)
-        ? "REAL_RECEIVABLE"
-        : schedule.coverageSummary.coveredByDocumentsWithoutCr.gt(0)
-          ? "OUTPUT_DOCUMENT"
-          : "VALUE_COVERAGE",
-    entryKind: "SUPERSEDED_ORDER_PLAN",
-  }));
+  return schedule.supersededOrderSchedule.map((line) => {
+    const historyStatus = statusByNum.get(line.installmentNumber) ?? "Substituída";
+    const statusLabel =
+      historyStatus === "Parcialmente substituída"
+        ? ("Parcialmente substituída" as const)
+        : ("Substituída" as const);
+    return {
+      key: `effective-superseded:${schedule.orderCode}:${line.installmentNumber}`,
+      orderCode: schedule.orderCode,
+      salesOrderId: schedule.salesOrderId,
+      installmentNumber: line.installmentNumber,
+      totalInstallments: total,
+      reference: `Pedido ${schedule.orderCode} - Parcela ${line.installmentNumber} (substituída)`,
+      dueDate: line.dueDate,
+      originalExpectedAmount: decimalToNumber(line.originalAmount),
+      expectedAmount: decimalToNumber(line.originalAmount),
+      openAmount: 0,
+      // Nunca "Vencido" — substituída/cortada não gera alerta de vencimento.
+      statusLabel,
+      paymentConditionLabel: "Condição do Pedido (substituída)",
+      paymentMethodLabel: null,
+      origin: "Pedido de Venda / substituída (FIN-05)",
+      note: "Previsão original substituída por CR/Documento — evidência histórica.",
+      replacedByRealCr: true,
+      replacedByReceivableExternalId: null,
+      replacedBySource:
+        schedule.coverageSummary.coveredByRealReceivables.gt(0)
+          ? "REAL_RECEIVABLE"
+          : schedule.coverageSummary.coveredByDocumentsWithoutCr.gt(0)
+            ? "OUTPUT_DOCUMENT"
+            : "VALUE_COVERAGE",
+      entryKind: "SUPERSEDED_ORDER_PLAN" as const,
+    };
+  });
 }
 
 function computeEffectiveNextDueDate(
@@ -298,7 +414,11 @@ export function mapEffectiveScheduleToDetailFinancial(
   referenceDate: Date = new Date()
 ): SalesOrderDetailFinancial {
   const plannedReceivables = mapActiveResidualToPlanned(schedule, referenceDate);
-  const supersededPlannedReceivables = mapSupersededToPlanned(schedule);
+  const originalForecastHistory = buildOriginalForecastHistory(schedule);
+  const supersededPlannedReceivables = mapSupersededToPlanned(
+    schedule,
+    originalForecastHistory
+  );
 
   const activeResidualTotal = decimalToNumber(
     schedule.coverageSummary.activeOrderResidualTotal
@@ -340,6 +460,7 @@ export function mapEffectiveScheduleToDetailFinancial(
     documentSchedule,
     plannedReceivables,
     supersededPlannedReceivables,
+    originalForecastHistory,
     receipts: auditReceipts,
     totals: auditTotals,
     cutAmount,

@@ -207,6 +207,28 @@ export type SalesOrderDetailEffectiveAlert = {
   installmentNumber?: number;
 };
 
+/** Status permitidos no histórico da previsão original (FIN-07). */
+export type SalesOrderDetailOriginalForecastHistoryStatus =
+  | "Substituída"
+  | "Parcialmente substituída"
+  | "Encerrada por corte"
+  | "Cancelada";
+
+export type SalesOrderDetailOriginalForecastHistoryRow = {
+  key: string;
+  kind: "installment" | "cut_summary" | "canceled_summary";
+  installmentNumber: number | null;
+  totalInstallments: number | null;
+  dueDate: string | null;
+  originalAmount: number;
+  /** Parte ainda residual (ativa na tabela principal). */
+  residualAmount: number;
+  /** Parte substituída por CR/Documento. */
+  substitutedAmount: number;
+  status: SalesOrderDetailOriginalForecastHistoryStatus;
+  note: string;
+};
+
 export type SalesOrderDetailFinancial = {
   /** Motor canônico da agenda efetiva. */
   engine: "salesOrderEffectiveFinancialSchedule";
@@ -218,6 +240,11 @@ export type SalesOrderDetailFinancial = {
   plannedReceivables: OrderFullAuditPlannedReceivable[];
   /** Previsão original substituída (histórico — nunca status "Vencido"). */
   supersededPlannedReceivables: OrderFullAuditPlannedReceivable[];
+  /**
+   * Histórico da previsão original para a seção recolhida (FIN-07).
+   * Status apenas: Substituída | Parcialmente substituída | Encerrada por corte | Cancelada.
+   */
+  originalForecastHistory: SalesOrderDetailOriginalForecastHistoryRow[];
   receipts: OrderFullAuditReceipt[];
   totals: {
     totalAmount: number;

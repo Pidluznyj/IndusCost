@@ -351,14 +351,18 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
         ) : null}
       </section>
 
-      {/* 5 — Financeiro (CR real + planejado) */}
+      {/* 5 — Financeiro (contrato FIN-06 / apresentação FIN-07) */}
       <section className="so-detail-section" data-testid="sales-order-detail-financial">
         <h3 className="so-detail-section-title">Financeiro</h3>
         <p className="so-detail-section-subtitle">
-          Agenda efetiva: CR real &gt; Documento &gt; previsão residual do Pedido (motor
-          canônico).
+          Contas a Receber oficial, condição documental vigente e previsão residual
+          ativa — uma única agenda efetiva.
         </p>
-        <div className="so-detail-kpi-grid" style={{ marginBottom: 8 }}>
+        <div
+          className="so-detail-kpi-grid"
+          style={{ marginBottom: 8 }}
+          data-testid="sales-order-detail-financial-kpis"
+        >
           <Kpi
             label="CR real total"
             value={formatFinanceCurrency(financial.totals.totalAmount)}
@@ -370,23 +374,24 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={financial.totals.openAmount > 0.009 ? "warning" : "muted"}
           />
           <Kpi
-            label="Agenda real/documental"
+            label="CR recebido"
+            value={formatFinanceCurrency(financial.totals.receivedAmount)}
+            tone={financial.totals.receivedAmount > 0.009 ? "positive" : "muted"}
+          />
+          <Kpi
+            label="Previsão residual ativa"
             value={formatFinanceCurrency(
-              financial.coverageSummary?.realOrDocumentAgendaTotal ??
-                (financial.totals.totalAmount || 0)
+              financial.coverageSummary?.activeOrderResidualTotal ??
+                financial.plannedTotals.applicableExpected ??
+                0
             )}
             tone={
-              (financial.coverageSummary?.realOrDocumentAgendaTotal ?? 0) > 0.009
-                ? "positive"
+              (financial.coverageSummary?.activeOrderResidualTotal ??
+                financial.plannedTotals.applicableExpected ??
+                0) > 0.009
+                ? "info"
                 : "muted"
             }
-          />
-          <PlannedForecastKpi financial={financial} />
-          <Kpi
-            label="Corte comercial"
-            value={formatFinanceCurrency(financial.cutAmount ?? 0)}
-            hint="Não entra no Contas a Receber"
-            tone={(financial.cutAmount ?? 0) > 0.009 ? "muted" : "muted"}
           />
           <Kpi
             label="Próximo vencimento"
@@ -398,16 +403,38 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
           />
         </div>
 
+        <div
+          className="so-detail-financial-meta"
+          data-testid="sales-order-detail-financial-meta"
+        >
+          <span>
+            Coberto por Documento:{" "}
+            {formatFinanceCurrency(
+              financial.coverageSummary?.coveredByDocumentsWithoutCr ?? 0
+            )}
+          </span>
+          <span>
+            Valor cortado: {formatFinanceCurrency(financial.cutAmount ?? 0)}
+          </span>
+          {(financial.unresolvedAmount ?? 0) > 0.009 ? (
+            <span>
+              Não resolvido: {formatFinanceCurrency(financial.unresolvedAmount)}
+            </span>
+          ) : null}
+        </div>
+
         {financial.realReceivables.length === 0 &&
         (financial.documentSchedule?.length ?? 0) === 0 &&
         financial.plannedReceivables.length === 0 ? (
           <div className="so-detail-empty">
-            Sem CR real, sem agenda documental e sem previsão residual ativa para este
-            pedido.
+            Sem CR real, sem condição documental vigente e sem previsão residual ativa.
           </div>
         ) : (
           <div className="so-detail-scroll">
-            <table className="so-detail-table">
+            <table
+              className="so-detail-table"
+              data-testid="sales-order-detail-financial-table"
+            >
               <thead>
                 <tr>
                   <th>Origem</th>
@@ -560,59 +587,77 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
           </div>
         )}
 
-        {(financial.supersededPlannedReceivables?.length ?? 0) > 0 ? (
+        {(financial.originalForecastHistory?.length ?? 0) > 0 ||
+        (financial.supersededPlannedReceivables?.length ?? 0) > 0 ||
+        (financial.cutAmount ?? 0) > 0.009 ||
+        (financial.canceledAmount ?? 0) > 0.009 ? (
           <details
             className="so-detail-superseded-plan"
             data-testid="sales-order-detail-superseded-plan"
           >
-            <summary>
-              {financial.plannedTotals.partiallySuperseded
-                ? "Previsão original do pedido — parcialmente substituída"
-                : "Previsão original do pedido — substituída"}
-            </summary>
+            <summary>Previsão original do pedido — substituída</summary>
             <div className="so-detail-scroll" style={{ marginTop: 8 }}>
               <table className="so-detail-table">
                 <thead>
                   <tr>
-                    <th>Origem</th>
-                    <th>Referência</th>
                     <th>Parcela</th>
                     <th>Vencimento</th>
                     <th className="so-detail-num">Valor original</th>
+                    <th className="so-detail-num">Substituída</th>
+                    <th className="so-detail-num">Residual</th>
                     <th>Status</th>
-                    <th>Fonte</th>
+                    <th>Observação</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {financial.supersededPlannedReceivables.map((p) => (
-                    <tr key={`superseded-${p.key}`}>
+                  {(financial.originalForecastHistory?.length
+                    ? financial.originalForecastHistory
+                    : financial.supersededPlannedReceivables.map((p) => ({
+                        key: p.key,
+                        kind: "installment" as const,
+                        installmentNumber: p.installmentNumber,
+                        totalInstallments: p.totalInstallments,
+                        dueDate: p.dueDate,
+                        originalAmount: p.originalExpectedAmount ?? p.expectedAmount,
+                        residualAmount: 0,
+                        substitutedAmount: p.originalExpectedAmount ?? p.expectedAmount,
+                        status:
+                          p.statusLabel === "Parcialmente substituída"
+                            ? ("Parcialmente substituída" as const)
+                            : ("Substituída" as const),
+                        note: p.note,
+                      }))
+                  ).map((row) => (
+                    <tr key={row.key}>
                       <td>
-                        <span className="so-detail-badge so-detail-badge--muted">
-                          Previsão histórica
-                        </span>
+                        {row.kind === "installment" && row.installmentNumber != null
+                          ? `${row.installmentNumber}${
+                              row.totalInstallments != null
+                                ? `/${row.totalInstallments}`
+                                : ""
+                            }`
+                          : row.kind === "cut_summary"
+                            ? "Corte"
+                            : "Cancelamento"}
                       </td>
-                      <td className="font-semibold">{p.reference}</td>
-                      <td>{`${p.installmentNumber}/${p.totalInstallments}`}</td>
-                      <td>{p.dueDate ? formatFinanceDate(p.dueDate) : "—"}</td>
+                      <td>
+                        {row.dueDate ? formatFinanceDate(row.dueDate) : "—"}
+                      </td>
                       <td className="so-detail-money">
-                        {formatFinanceCurrency(
-                          p.originalExpectedAmount ?? p.expectedAmount
-                        )}
+                        {formatFinanceCurrency(row.originalAmount)}
+                      </td>
+                      <td className="so-detail-money">
+                        {formatFinanceCurrency(row.substitutedAmount)}
+                      </td>
+                      <td className="so-detail-money">
+                        {formatFinanceCurrency(row.residualAmount)}
                       </td>
                       <td>
                         <span className="so-detail-badge so-detail-badge--muted">
-                          {p.statusLabel === "Parcialmente substituída"
-                            ? "Parcialmente substituída"
-                            : "Substituída"}
+                          {row.status}
                         </span>
                       </td>
-                      <td className="text-[11px] text-[#64748b]">
-                        {p.replacedBySource === "OUTPUT_DOCUMENT"
-                          ? "Documento de saída"
-                          : p.replacedBySource === "REAL_RECEIVABLE"
-                            ? "CR real"
-                            : p.note}
-                      </td>
+                      <td className="text-[11px] text-[#64748b]">{row.note}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -763,76 +808,6 @@ function Kpi({
       <p className="so-detail-kpi-value">{value ?? "—"}</p>
       {hint ? <p className="so-detail-kpi-hint">{hint}</p> : null}
     </div>
-  );
-}
-
-function PlannedForecastKpi({
-  financial,
-}: {
-  financial: SalesOrderDetailPayload["financial"];
-}): JSX.Element {
-  const applicable =
-    financial.coverageSummary?.activeOrderResidualTotal ??
-    financial.plannedTotals.applicableExpected ??
-    0;
-  const covered =
-    (financial.coverageSummary?.coveredByRealReceivables ??
-      financial.plannedTotals.coveredByRealReceivables ??
-      0) +
-    (financial.coverageSummary?.coveredByDocumentsWithoutCr ??
-      financial.plannedTotals.coveredByDocumentsWithoutRealReceivable ??
-      0);
-  const original =
-    financial.coverageSummary?.plannedNetTotal ??
-    financial.plannedTotals.totalExpected ??
-    0;
-  const cut = financial.cutAmount ?? financial.coverageSummary?.cutAmount ?? 0;
-  const fully = Boolean(financial.plannedTotals.fullySuperseded);
-  const partial = Boolean(financial.plannedTotals.partiallySuperseded);
-
-  if (cut > 0.009 && applicable <= 0.009) {
-    return (
-      <Kpi
-        label="Previsão residual"
-        value={formatFinanceCurrency(0)}
-        hint={`Corte comercial: ${formatFinanceCurrency(cut)}`}
-        tone="muted"
-      />
-    );
-  }
-
-  if (fully || (original > 0.009 && applicable <= 0.009 && covered > 0.009)) {
-    return (
-      <Kpi
-        label="Previsão residual"
-        value="Substituída"
-        hint={original > 0.009 ? `Original: ${formatFinanceCurrency(original)}` : null}
-        tone="muted"
-      />
-    );
-  }
-
-  if (partial && applicable > 0.009) {
-    return (
-      <Kpi
-        label="Previsão residual"
-        value={formatFinanceCurrency(applicable)}
-        hint={
-          covered > 0.009
-            ? `${formatFinanceCurrency(covered)} já cobertos por documento/CR`
-            : null
-        }
-        tone="info"
-      />
-    );
-  }
-
-  return (
-    <Kpi
-      label="Previsão residual"
-      value={formatFinanceCurrency(applicable > 0.009 ? applicable : original)}
-      tone={applicable > 0.009 || original > 0.009 ? "info" : "muted"}
-    />
   );
 }
 

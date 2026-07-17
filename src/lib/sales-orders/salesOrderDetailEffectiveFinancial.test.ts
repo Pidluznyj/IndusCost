@@ -88,9 +88,11 @@ describe("FIN-06 — contrato Detalhe do Pedido", () => {
 
   it("previsão substituída nunca fica como Vencido", () => {
     const financial = project(fixturePartialWithDoc9000Proven());
+    const allowed = new Set(["Substituída", "Parcialmente substituída"]);
     for (const p of financial.supersededPlannedReceivables) {
-      assert.equal(p.statusLabel, "Substituída");
+      assert.ok(allowed.has(p.statusLabel), `status inesperado: ${p.statusLabel}`);
       assert.notEqual(p.statusLabel, "Vencido");
+      assert.notEqual(p.statusLabel, "Vencida");
       assert.equal(p.openAmount, 0);
     }
   });
@@ -298,5 +300,132 @@ describe("FIN-06 — build a partir de audit mínimo", () => {
     assert.equal(financial.cutAmount, 1000);
     assert.equal(financial.coverageSummary.activeOrderResidualTotal, 0);
     assert.equal(financial.coverageSummary.realOrDocumentAgendaTotal, 9000);
+  });
+});
+
+const HISTORY_STATUSES = new Set([
+  "Substituída",
+  "Parcialmente substituída",
+  "Encerrada por corte",
+  "Cancelada",
+]);
+
+describe("FIN-07 — apresentação financeira do Detalhe do Pedido", () => {
+  it("expõe histórico da previsão original com status permitidos", () => {
+    const financial = project(fixturePartialWithDoc9000Proven());
+    assert.ok(Array.isArray(financial.originalForecastHistory));
+    assert.ok(financial.originalForecastHistory.length > 0);
+    for (const row of financial.originalForecastHistory) {
+      assert.ok(
+        HISTORY_STATUSES.has(row.status),
+        `status histórico inválido: ${row.status}`
+      );
+      assert.notEqual(row.status, "Vencido");
+      assert.notEqual(row.status, "Vencida");
+    }
+  });
+
+  it("parcial → histórico Parcialmente substituída com residual e substituída", () => {
+    const financial = project(fixturePartialWithDoc9000Proven());
+    const installments = financial.originalForecastHistory.filter(
+      (r) => r.kind === "installment"
+    );
+    assert.ok(installments.length > 0);
+    assert.ok(
+      installments.every((r) => r.status === "Parcialmente substituída")
+    );
+    const sumResidual = installments.reduce((s, r) => s + r.residualAmount, 0);
+    const sumSub = installments.reduce((s, r) => s + r.substitutedAmount, 0);
+    assert.equal(Math.round(sumResidual * 100) / 100, 1000);
+    assert.equal(Math.round(sumSub * 100) / 100, 9000);
+    assert.ok(
+      installments.every(
+        (r) => r.dueDate === "2026-08-01" || r.dueDate === "2026-09-01"
+      )
+    );
+  });
+
+  it("corte → Encerrada por corte no histórico; sem Vencida", () => {
+    const financial = project(fixtureCut10000Doc9000());
+    const cutRow = financial.originalForecastHistory.find(
+      (r) => r.kind === "cut_summary"
+    );
+    assert.ok(cutRow);
+    assert.equal(cutRow!.status, "Encerrada por corte");
+    assert.equal(cutRow!.originalAmount, 1000);
+    for (const row of financial.originalForecastHistory) {
+      assert.ok(HISTORY_STATUSES.has(row.status));
+      assert.ok(
+        !/[Vv]encid/.test(row.status),
+        `status não pode ser vencido: ${row.status}`
+      );
+    }
+    assert.equal(financial.plannedReceivables.length, 0);
+    assert.equal(financial.coverageSummary.coveredByDocumentsWithoutCr, 9000);
+    assert.equal(financial.cutAmount, 1000);
+  });
+
+  it("agenda efetiva = CR + Doc sem CR + residual; não inclui previsão integral", () => {
+    const financial = project(fixturePartialWithDoc9000Proven());
+    const residualOpen = financial.plannedReceivables.reduce(
+      (s, p) => s + p.openAmount,
+      0
+    );
+    assert.equal(Math.round(residualOpen * 100) / 100, 1000);
+    // Tabela principal não lista a previsão original integral (só residual).
+    assert.ok(
+      financial.plannedReceivables.every(
+        (p) => (p.originalExpectedAmount ?? 0) >= p.expectedAmount
+      )
+    );
+    assert.ok(
+      financial.plannedReceivables.every((p) => p.entryKind === "RESIDUAL_ORDER_PLAN")
+    );
+    // Histórico separado carrega a previsão original tocada.
+    assert.ok(
+      financial.originalForecastHistory.some((r) => r.kind === "installment")
+    );
+  });
+
+  it("cards: totais CR, residual ativo e próximo vencimento efetivo", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(
+      fixturePartialWithDoc9000Proven()
+    );
+    const financial = mapEffectiveScheduleToDetailFinancial(
+      schedule,
+      [
+        {
+          receivableExternalId: 10,
+          searchReference: "CR-10",
+          installmentNumber: 1,
+          totalInstallments: 1,
+          dueDate: "2026-07-25",
+          amountReceivable: 2000,
+          balanceReceivable: 500,
+          amountReceived: 1500,
+          status: "PARTIALLY_RECEIVED",
+          sourceInvoiceNumber: "100",
+          sourceInvoiceId: null,
+        } as never,
+      ],
+      [],
+      {
+        totalAmount: 2000,
+        openAmount: 500,
+        receivedAmount: 1500,
+        overdueCount: 0,
+        nextDueDate: "2026-07-25",
+        maxAmount: 2000,
+        totalCount: 1,
+      },
+      new Date(2026, 6, 17)
+    );
+    assert.equal(financial.totals.totalAmount, 2000);
+    assert.equal(financial.totals.openAmount, 500);
+    assert.equal(financial.totals.receivedAmount, 1500);
+    assert.equal(financial.coverageSummary.activeOrderResidualTotal, 1000);
+    assert.equal(financial.coverageSummary.coveredByDocumentsWithoutCr, 9000);
+    // Próximo vencimento efetivo: doc 2026-07-20 (antes do CR 25 e residual 08).
+    assert.equal(financial.effectiveNextDueDate, "2026-07-20");
   });
 });

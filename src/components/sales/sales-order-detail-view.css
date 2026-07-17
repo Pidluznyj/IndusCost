@@ -93,6 +93,28 @@
   text-overflow: ellipsis;
 }
 
+/* FIN-07 — metadados neutros (não competem com os 5 cards) */
+.so-detail-view .so-detail-financial-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0 0 10px;
+  padding: 6px 2px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.so-detail-view .so-detail-financial-meta > span {
+  white-space: nowrap;
+}
+
+@media (max-width: 1365px) {
+  .so-detail-view .so-detail-financial-meta {
+    gap: 6px 12px;
+  }
+}
+
 .so-detail-view .so-detail-superseded-plan {
   margin-top: 10px;
   border: 1px solid #E5E7EB;
