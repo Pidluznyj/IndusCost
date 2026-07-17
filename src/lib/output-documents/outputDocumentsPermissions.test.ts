@@ -21,6 +21,7 @@ function auth(partial: {
     role: partial.role,
     permissions: partial.permissions ?? [],
     effectivePermissions: partial.permissions ?? [],
+    permissionsVersion: 1,
     accessProfileId: null,
     accessProfileName: null,
     employeeId: null,
@@ -34,6 +35,7 @@ function auth(partial: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-od",
+    sessionPermissionsVersionAtIssue: 1,
   };
 }
 
@@ -79,7 +81,7 @@ describe("outputDocumentsPermissions — authorizeRequireResource", () => {
 
     it(`${c.label}: deny without permission`, () => {
       const decision = authorizeRequireResource(
-        auth({ role: "USER", permissions: ["dashboard.view"] }),
+        auth({ role: "VIEWER", permissions: ["dashboard.view"] }),
         c.resourceKey,
         "view",
         { legacyCompatMode: true }

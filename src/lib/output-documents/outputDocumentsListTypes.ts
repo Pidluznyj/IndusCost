@@ -86,7 +86,7 @@ export type OutputDocumentsListPagination = {
 };
 
 export type OutputDocumentsListPayload = {
-  filters: Omit<OutputDocumentsListFilters, "skip"> & {
+  filters: Omit<OutputDocumentsListFilters, "skip" | "from" | "to"> & {
     from: string | null;
     to: string | null;
   };

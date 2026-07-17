@@ -82,7 +82,9 @@ export function registerOutputDocumentsRoutes(
 
         const { prisma } = await import("@/src/lib/prisma.js");
         const scope = await resolveOutputDocumentsAccessScope(user, prisma);
-        if (!scope.ok) return res.status(scope.status).json(scope.body);
+        if (scope.ok === false) {
+          return res.status(scope.status).json(scope.body);
+        }
 
         let scopeWhere = null;
         if (scope.mode === "own_portfolio") {
@@ -117,7 +119,9 @@ export function registerOutputDocumentsRoutes(
 
       const { prisma } = await import("@/src/lib/prisma.js");
       const scope = await resolveOutputDocumentsAccessScope(user, prisma);
-      if (!scope.ok) return res.status(scope.status).json(scope.body);
+      if (scope.ok === false) {
+        return res.status(scope.status).json(scope.body);
+      }
 
       let scopeWhere = null;
       if (scope.mode === "own_portfolio") {
@@ -160,14 +164,16 @@ export function registerOutputDocumentsRoutes(
             user,
             includeRaw: true,
           });
-          if (!rawDecision.allowed) {
+          if (rawDecision.allowed === false) {
             return res.status(rawDecision.status).json(rawDecision.body);
           }
         }
 
         const { prisma } = await import("@/src/lib/prisma.js");
         const scope = await resolveOutputDocumentsAccessScope(user, prisma);
-        if (!scope.ok) return res.status(scope.status).json(scope.body);
+        if (scope.ok === false) {
+          return res.status(scope.status).json(scope.body);
+        }
 
         const canViewFinancial = canViewResource(
           user,

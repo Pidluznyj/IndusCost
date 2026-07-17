@@ -197,7 +197,7 @@ export function parseOutputDocumentsListQuery(
 
 export function serializeOutputDocumentsListFilters(
   filters: OutputDocumentsListFilters
-): Omit<OutputDocumentsListFilters, "skip"> & {
+): Omit<OutputDocumentsListFilters, "skip" | "from" | "to"> & {
   from: string | null;
   to: string | null;
 } {

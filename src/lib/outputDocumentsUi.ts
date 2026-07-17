@@ -5,7 +5,12 @@ import { COMMERCIAL_ACTIONS, COMMERCIAL_RESOURCE_KEYS } from "@/src/lib/commerci
 import { HttpError } from "@/src/lib/http.js";
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
 import type { OutputDocumentFinancialStatus } from "@/src/lib/output-documents/outputDocumentFinancialStatusResolver.js";
-import type { OutputDocumentsListItem } from "@/src/lib/output-documents/outputDocumentsListTypes.js";
+import type {
+  OutputDocumentsListItem,
+  OutputDocumentsSortBy,
+  OutputDocumentsSortDir,
+  OutputDocumentsTriState,
+} from "@/src/lib/output-documents/outputDocumentsListTypes.js";
 import type { OutputDocumentDetailItem } from "@/src/lib/output-documents/outputDocumentsDetailTypes.js";
 import type { OverlayBadgeTone } from "@/src/components/ui/overlay";
 import { formatCurrency } from "@/src/lib/utils.js";
@@ -69,6 +74,7 @@ export type OutputDocumentsActiveFiltersInput = {
   nfe?: string;
   financialStatus?: string | null;
   cancelled?: string | null;
+  hasReceivable?: string | null;
 };
 
 export function hasActiveOutputDocumentsFilters(
@@ -84,8 +90,166 @@ export function hasActiveOutputDocumentsFilters(
       input.order?.trim() ||
       input.nfe?.trim() ||
       input.financialStatus?.trim() ||
-      (input.cancelled && input.cancelled !== "all")
+      (input.cancelled && input.cancelled !== "all") ||
+      (input.hasReceivable && input.hasReceivable !== "all")
   );
+}
+
+export const OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS: ReadonlyArray<{
+  value: OutputDocumentsTriState;
+  label: string;
+}> = [
+  { value: "all", label: "Todos" },
+  { value: "yes", label: "Sim" },
+  { value: "no", label: "Não" },
+];
+
+export function parseOutputDocumentsTriStateParam(
+  value: string | null | undefined
+): OutputDocumentsTriState {
+  const trimmed = value?.trim().toLowerCase();
+  if (trimmed === "yes" || trimmed === "no") return trimmed;
+  return "all";
+}
+
+export const OUTPUT_DOCUMENTS_SORTABLE_COLUMNS: ReadonlyArray<{
+  key: OutputDocumentsSortBy;
+  label: string;
+  align?: "left" | "right";
+}> = [
+  { key: "documentNumber", label: "Documento" },
+  { key: "dataDocumento", label: "Emissão" },
+  { key: "personName", label: "Cliente" },
+  { key: "companyName", label: "Empresa" },
+  { key: "statusRaw", label: "Status" },
+  { key: "totalValue", label: "Valor", align: "right" },
+  { key: "syncedAt", label: "Última sincronização" },
+];
+
+export function parseOutputDocumentsSortByParam(
+  value: string | null | undefined
+): OutputDocumentsSortBy {
+  const trimmed = value?.trim() as OutputDocumentsSortBy | undefined;
+  if (
+    trimmed &&
+    OUTPUT_DOCUMENTS_SORTABLE_COLUMNS.some((column) => column.key === trimmed)
+  ) {
+    return trimmed;
+  }
+  return "dataDocumento";
+}
+
+export function parseOutputDocumentsSortDirParam(
+  value: string | null | undefined
+): OutputDocumentsSortDir {
+  return value?.trim() === "asc" ? "asc" : "desc";
+}
+
+export function nextOutputDocumentsSortDir(
+  currentSortBy: OutputDocumentsSortBy,
+  currentSortDir: OutputDocumentsSortDir,
+  nextSortBy: OutputDocumentsSortBy
+): OutputDocumentsSortDir {
+  if (currentSortBy !== nextSortBy) return "desc";
+  return currentSortDir === "desc" ? "asc" : "desc";
+}
+
+export type OutputDocumentsKpiFilterPreset =
+  | "all"
+  | "with_nfe"
+  | "with_receivable"
+  | "awaiting_receivable"
+  | "cancelled";
+
+export function applyOutputDocumentsKpiPreset(preset: OutputDocumentsKpiFilterPreset): {
+  cancelled: OutputDocumentsTriState;
+  hasReceivable: OutputDocumentsTriState;
+  financialStatus: OutputDocumentFinancialStatus | null;
+} {
+  switch (preset) {
+    case "with_receivable":
+      return {
+        cancelled: "all",
+        hasReceivable: "yes",
+        financialStatus: null,
+      };
+    case "awaiting_receivable":
+      return {
+        cancelled: "all",
+        hasReceivable: "all",
+        financialStatus: "aguardando_cr",
+      };
+    case "cancelled":
+      return {
+        cancelled: "yes",
+        hasReceivable: "all",
+        financialStatus: null,
+      };
+    case "with_nfe":
+      // Sem filtro dedicado hasNfe na API — limpa filtros financeiros/cancelamento.
+      return {
+        cancelled: "no",
+        hasReceivable: "all",
+        financialStatus: null,
+      };
+    default:
+      return {
+        cancelled: "all",
+        hasReceivable: "all",
+        financialStatus: null,
+      };
+  }
+}
+
+export function buildOutputDocumentSalesOrderHref(order: {
+  salesOrderId: string;
+  orderCode: string | null;
+}): string {
+  const code = order.orderCode?.trim();
+  if (code) {
+    return `/commercial/sales-order-flow?search=${encodeURIComponent(code)}`;
+  }
+  return `/sales-orders?search=${encodeURIComponent(order.salesOrderId)}`;
+}
+
+export function buildOutputDocumentNfeSearchHref(nfe: {
+  numero: string | null;
+  externalId: number;
+}): string {
+  const label = nfe.numero?.trim() || String(nfe.externalId);
+  return `${OUTPUT_DOCUMENTS_ROUTE_PATH}?search=${encodeURIComponent(label)}`;
+}
+
+export function canViewOutputDocumentsFinancial(check: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  hasPermission?: (permission: string) => boolean;
+}): boolean {
+  return Boolean(
+    check.canPerformAction?.(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsFinancial,
+      COMMERCIAL_ACTIONS.view
+    ) || check.hasPermission?.("output_documents.financial.view")
+  );
+}
+
+export function canViewOutputDocumentsAudit(check: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  hasPermission?: (permission: string) => boolean;
+}): boolean {
+  return Boolean(
+    check.canPerformAction?.(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsAudit,
+      COMMERCIAL_ACTIONS.view
+    ) || check.hasPermission?.("output_documents.audit.view")
+  );
+}
+
+export function outputDocumentInconsistencyTone(
+  severity: "info" | "warning" | "error" | string
+): OverlayBadgeTone {
+  if (severity === "error") return "rose";
+  if (severity === "warning") return "amber";
+  return "sky";
 }
 
 export function classifyOutputDocumentsListError(error: unknown): {
@@ -207,16 +371,36 @@ export function outputDocumentItemLinkStatusTone(
 }
 
 export function formatOutputDocumentItemCode(
-  item: Pick<OutputDocumentDetailItem, "externalProductId" | "externalItemId">
+  item: Pick<
+    OutputDocumentDetailItem,
+    "sku" | "externalProductId" | "externalItemId"
+  >
 ): string {
+  if (item.sku?.trim()) return item.sku.trim();
   if (item.externalProductId != null) return String(item.externalProductId);
   if (item.externalItemId != null) return `Item ${item.externalItemId}`;
   return "—";
 }
 
-export function formatOutputDocumentItemDescription(
-  item: Pick<OutputDocumentDetailItem, "externalProductId" | "alerts">
+export function formatOutputDocumentItemSkuLabel(
+  item: Pick<
+    OutputDocumentDetailItem,
+    "sku" | "externalProductId" | "externalItemId"
+  >
 ): string {
+  const code = formatOutputDocumentItemCode(item);
+  if (code === "—") return "—";
+  if (item.sku?.trim()) return code;
+  return `SKU ${code}`;
+}
+
+export function formatOutputDocumentItemDescription(
+  item: Pick<
+    OutputDocumentDetailItem,
+    "productName" | "externalProductId" | "alerts"
+  >
+): string {
+  if (item.productName?.trim()) return item.productName.trim();
   if (item.externalProductId != null) {
     return `Produto Nomus #${item.externalProductId}`;
   }
@@ -224,9 +408,16 @@ export function formatOutputDocumentItemDescription(
   return alert?.trim() || "Sem descrição no stage";
 }
 
-export function formatOutputDocumentItemLocalProduct(
-  item: Pick<OutputDocumentDetailItem, "productLink">
+export function formatOutputDocumentItemUnit(
+  item: Pick<OutputDocumentDetailItem, "unitCode">
 ): string {
+  return item.unitCode?.trim() || "—";
+}
+
+export function formatOutputDocumentItemLocalProduct(
+  item: Pick<OutputDocumentDetailItem, "productLink" | "sku">
+): string {
+  if (item.sku?.trim()) return `SKU ${item.sku.trim()}`;
   return item.productLink.hasProductId
     ? `ID ${item.productLink.externalProductId}`
     : "Não vinculado";
@@ -395,4 +586,62 @@ export function parseOutputDocumentsFinancialStatusParam(
   )
     ? (trimmed as OutputDocumentFinancialStatus)
     : null;
+}
+
+function csvEscape(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** CSV da página atual (exportação leve no browser). */
+export function buildOutputDocumentsPageCsv(
+  items: ReadonlyArray<OutputDocumentsListItem>
+): string {
+  const headers = [
+    "Documento",
+    "Emissão",
+    "Cliente",
+    "Empresa",
+    "Status",
+    "Valor",
+    "Pedidos",
+    "NF-e",
+    "Financeiro",
+    "Valor aberto",
+    "Última sincronização",
+    "ExternalId",
+  ];
+  const rows = items.map((item) =>
+    [
+      formatOutputDocumentNumber(item),
+      formatOutputDocumentDate(item.dataDocumento),
+      item.customerName?.trim() || "",
+      item.companyName?.trim() || "",
+      formatOutputDocumentStatusLabel(item),
+      item.totalValue == null ? "" : String(item.totalValue),
+      String(item.allocatedOrdersCount),
+      formatOutputDocumentNfe(item),
+      formatOutputDocumentFinancialStatusLabel(item.financialStatus),
+      item.receivableOpenValue == null ? "" : String(item.receivableOpenValue),
+      formatOutputDocumentDateTime(item.syncedAt),
+      String(item.externalId),
+    ]
+      .map((cell) => csvEscape(cell))
+      .join(",")
+  );
+  return `\uFEFF${[headers.join(","), ...rows].join("\r\n")}`;
+}
+
+export function downloadOutputDocumentsPageCsv(
+  items: ReadonlyArray<OutputDocumentsListItem>,
+  fileName = "documentos-de-saida.csv"
+): void {
+  const csv = buildOutputDocumentsPageCsv(items);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

@@ -74,6 +74,12 @@ export type OutputDocumentDetailItem = {
   id: string;
   externalItemId: number | null;
   externalProductId: number | null;
+  /** SKU comercial quando presente no payload Nomus do item. */
+  sku: string | null;
+  /** Descrição/nome do produto quando presente no payload Nomus. */
+  productName: string | null;
+  /** Unidade de medida (ex.: UN, KG) quando presente no payload Nomus. */
+  unitCode: string | null;
   quantity: number;
   unitValue: number;
   /** Total do item (uma vez). */

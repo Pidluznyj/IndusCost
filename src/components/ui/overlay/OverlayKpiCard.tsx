@@ -67,7 +67,7 @@ export function OverlayKpiCard({
   className,
   testId,
   onClick,
-}: OverlayKpiCardProps): JSX.Element {
+}: OverlayKpiCardProps): React.ReactElement {
   const Wrapper = onClick ? "button" : "div";
   return (
     <Wrapper
@@ -113,7 +113,7 @@ export function OverlayKpiCardGrid({
   children: React.ReactNode;
   className?: string;
   columns?: 2 | 3 | 4 | 5 | 6;
-}): JSX.Element {
+}): React.ReactElement {
   const columnsClass: Record<number, string> = {
     2: "sm:grid-cols-2",
     3: "sm:grid-cols-2 md:grid-cols-3",

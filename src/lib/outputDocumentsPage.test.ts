@@ -47,6 +47,11 @@ import {
   OUTPUT_DOCUMENTS_ROUTE_PATH,
   outputDocumentFinancialStatusTone,
   parseOutputDocumentsFinancialStatusParam,
+  applyOutputDocumentsKpiPreset,
+  buildOutputDocumentsPageCsv,
+  nextOutputDocumentsSortDir,
+  parseOutputDocumentsSortByParam,
+  parseOutputDocumentsTriStateParam,
 } from "@/src/lib/outputDocumentsUi.js";
 import { COMMERCIAL_RESOURCE_KEYS } from "@/src/lib/commercialAccess.js";
 import { HttpError } from "@/src/lib/http.js";
@@ -194,6 +199,24 @@ describe("outputDocumentsUi", () => {
     );
   });
 
+  it("presets de KPI, sort e CSV da página", () => {
+    assert.deepEqual(applyOutputDocumentsKpiPreset("cancelled"), {
+      cancelled: "yes",
+      hasReceivable: "all",
+      financialStatus: null,
+    });
+    assert.equal(parseOutputDocumentsTriStateParam("yes"), "yes");
+    assert.equal(parseOutputDocumentsSortByParam("totalValue"), "totalValue");
+    assert.equal(
+      nextOutputDocumentsSortDir("totalValue", "desc", "totalValue"),
+      "asc"
+    );
+    const csv = buildOutputDocumentsPageCsv([gridItem()]);
+    assert.match(csv, /Documento/);
+    assert.match(csv, /DS-9001/);
+    assert.match(csv, /Cliente Fixture/);
+  });
+
   it("classifica erros e valida filtros básicos", () => {
     assert.equal(
       classifyOutputDocumentsListError(new HttpError(403, "forbidden")).kind,
@@ -330,7 +353,10 @@ describe("output documents page filters cards and grid", () => {
       "output-documents-order",
       "output-documents-nfe",
       "output-documents-financial-status",
+      "output-documents-cancelled",
+      "output-documents-has-receivable",
       "output-documents-clear-filters",
+      "output-documents-export-csv",
       "output-documents-card-documents",
       "output-documents-card-total-value",
       "output-documents-card-with-nfe",
@@ -348,7 +374,12 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /fetchOutputDocumentsList/);
     assert.match(source, /fetchOutputDocumentsSummary/);
     assert.match(source, /selectedDocumentId/);
+    assert.match(source, /documentId/);
     assert.match(source, /SystemTotalizerCard/);
+    assert.match(source, /SummaryKpiGrid/);
+    assert.match(source, /applyOutputDocumentsKpiPreset/);
+    assert.match(source, /sortBy/);
+    assert.match(source, /sortDir/);
   });
 
   it("grid renderiza colunas principais e marca cancelados", () => {
@@ -419,6 +450,9 @@ describe("output documents detail drawer", () => {
           id: "item-resolved",
           externalItemId: 10,
           externalProductId: 100,
+          sku: "SKU-100",
+          productName: "Produto Fixture",
+          unitCode: "UN",
           quantity: 10,
           unitValue: 5,
           totalValue: 50,
@@ -443,6 +477,9 @@ describe("output documents detail drawer", () => {
           id: "item-unresolved",
           externalItemId: 11,
           externalProductId: null,
+          sku: null,
+          productName: null,
+          unitCode: null,
           quantity: 2,
           unitValue: 25,
           totalValue: 50,
@@ -595,7 +632,7 @@ describe("output documents detail drawer", () => {
     assert.match(html, /output-document-detail-items-panel/);
     assert.match(html, /output-document-detail-items-table/);
     for (const label of [
-      "Código",
+      "SKU",
       "Descrição",
       "Quantidade",
       "Unidade",
@@ -612,6 +649,8 @@ describe("output documents detail drawer", () => {
     assert.match(html, /data-link-status="unresolved"/);
     assert.match(html, /Não resolvido/);
     assert.match(html, /PD-100/);
+    assert.match(html, /SKU-100/);
+    assert.match(html, /Produto Fixture/);
     assert.match(html, /Sem produto no stage|Sem descrição no stage|Produto Nomus/);
   });
 
@@ -623,9 +662,18 @@ describe("output documents detail drawer", () => {
     assert.match(classified.message, /não encontrado/i);
   });
 
-  it("helpers de item cobrem código, descrição e vínculo local", () => {
+  it("helpers de item cobrem SKU, descrição e vínculo local", () => {
     assert.equal(
       formatOutputDocumentItemCode({
+        sku: "ABC-01",
+        externalProductId: 100,
+        externalItemId: 10,
+      }),
+      "ABC-01"
+    );
+    assert.equal(
+      formatOutputDocumentItemCode({
+        sku: null,
         externalProductId: 100,
         externalItemId: 10,
       }),
@@ -633,6 +681,7 @@ describe("output documents detail drawer", () => {
     );
     assert.equal(
       formatOutputDocumentItemDescription({
+        productName: null,
         externalProductId: null,
         alerts: ["Sem produto no stage"],
       }),
@@ -640,6 +689,7 @@ describe("output documents detail drawer", () => {
     );
     assert.equal(
       formatOutputDocumentItemLocalProduct({
+        sku: null,
         productLink: { externalProductId: null, hasProductId: false },
       }),
       "Não vinculado"
@@ -656,5 +706,66 @@ describe("output documents detail drawer", () => {
       }),
       "Não"
     );
+  });
+
+  it("abas Pedidos, NF-e e Financeiro consomem o payload do motor", () => {
+    const withOrders = detailPayload({
+      orders: [
+        {
+          salesOrderId: "order-a",
+          orderCode: "PD-100",
+          issueDate: "2026-06-01T00:00:00.000Z",
+          status: "Faturado",
+          officialSeller: { externalSellerId: 9, name: "Vendedor X" },
+          orderValue: 200,
+          allocatedValue: 50,
+          coveragePercent: 50,
+          sources: ["order_to_cash_fact"],
+        },
+      ],
+      allocations: {
+        documentTotalValue: 100,
+        allocatedToOrders: 50,
+        unallocatedBalance: 50,
+        overAllocation: 0,
+        coveragePercent: 50,
+        coverageStatus: "partial",
+        orderShares: [
+          {
+            salesOrderId: "order-a",
+            orderCode: "PD-100",
+            allocatedValue: 50,
+            shareOfDocumentPercent: 50,
+          },
+        ],
+      },
+    });
+
+    const pedidos = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: withOrders,
+        activeTab: "pedidos",
+      })
+    );
+    assert.match(pedidos, /output-document-detail-orders-panel/);
+    assert.match(pedidos, /PD-100/);
+
+    const nfes = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: withOrders,
+        activeTab: "nfes",
+      })
+    );
+    assert.match(nfes, /output-document-detail-nfes-panel/);
+    assert.match(nfes, /98765/);
+
+    const financeiro = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: withOrders,
+        activeTab: "financeiro",
+      })
+    );
+    assert.match(financeiro, /output-document-detail-financial-panel/);
+    assert.match(financeiro, /CR em aberto/);
   });
 });

@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   }
 
   const dbUrl = readDatabaseUrlSafe(process.env);
-  if (!dbUrl.ok) {
+  if (dbUrl.ok === false) {
     console.error(`${LOG} ${dbUrl.error}`);
     process.exitCode = resolveAuditProcessExitCode("error");
     return;

@@ -1,7 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { createElement, useEffect, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
+  ArrowDown,
+  ArrowUp,
   Ban,
+  Download,
   FileText,
   FileWarning,
   Loader2,
@@ -16,25 +19,37 @@ import {
   fetchOutputDocumentsSummary,
 } from "@/src/lib/outputDocumentsClient";
 import {
+  applyOutputDocumentsKpiPreset,
   canViewOutputDocuments,
   classifyOutputDocumentsListError,
+  downloadOutputDocumentsPageCsv,
   hasActiveOutputDocumentsFilters,
   isOutputDocumentsDateRangeInvalid,
+  nextOutputDocumentsSortDir,
   OUTPUT_DOCUMENT_FINANCIAL_STATUS_OPTIONS,
   OUTPUT_DOCUMENTS_BREADCRUMB,
   OUTPUT_DOCUMENTS_PAGE_SIZE,
+  OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS,
   parseOutputDocumentsFinancialStatusParam,
+  parseOutputDocumentsSortByParam,
+  parseOutputDocumentsSortDirParam,
+  parseOutputDocumentsTriStateParam,
+  type OutputDocumentsKpiFilterPreset,
 } from "@/src/lib/outputDocumentsUi";
 import type { OutputDocumentFinancialStatus } from "@/src/lib/output-documents/outputDocumentFinancialStatusResolver";
 import type {
   OutputDocumentsListItem,
   OutputDocumentsListSummary,
+  OutputDocumentsSortBy,
+  OutputDocumentsSortDir,
+  OutputDocumentsTriState,
 } from "@/src/lib/output-documents/outputDocumentsListTypes";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
   SystemTotalizerCard,
 } from "@/src/components/ui/SystemTotalizerCard";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDocumentGridTableRow";
 import { OutputDocumentDetailOverlay } from "@/src/components/commercial/OutputDocumentDetailOverlay";
 import { cn } from "@/src/lib/utils";
@@ -51,6 +66,26 @@ const EMPTY_SUMMARY: OutputDocumentsListSummary = {
   awaitingReceivable: 0,
   cancelled: 0,
 };
+
+type GridColumn = {
+  label: string;
+  sortKey?: OutputDocumentsSortBy;
+  align?: "left" | "right";
+};
+
+const GRID_COLUMNS: ReadonlyArray<GridColumn> = [
+  { label: "Documento", sortKey: "documentNumber" },
+  { label: "Emissão", sortKey: "dataDocumento" },
+  { label: "Cliente", sortKey: "personName" },
+  { label: "Empresa", sortKey: "companyName" },
+  { label: "Status", sortKey: "statusRaw" },
+  { label: "Valor", sortKey: "totalValue", align: "right" },
+  { label: "Pedido" },
+  { label: "NF-e" },
+  { label: "Financeiro" },
+  { label: "Valor aberto", align: "right" },
+  { label: "Última sincronização", sortKey: "syncedAt" },
+];
 
 function initialParam(params: URLSearchParams, key: string): string {
   return params.get(key)?.trim() ?? "";
@@ -100,6 +135,18 @@ export function OutputDocumentsModule() {
         searchParams.get("financialStatus")
       )
     );
+  const [cancelled, setCancelled] = useState<OutputDocumentsTriState>(() =>
+    parseOutputDocumentsTriStateParam(searchParams.get("cancelled"))
+  );
+  const [hasReceivable, setHasReceivable] = useState<OutputDocumentsTriState>(
+    () => parseOutputDocumentsTriStateParam(searchParams.get("hasReceivable"))
+  );
+  const [sortBy, setSortBy] = useState<OutputDocumentsSortBy>(() =>
+    parseOutputDocumentsSortByParam(searchParams.get("sortBy"))
+  );
+  const [sortDir, setSortDir] = useState<OutputDocumentsSortDir>(() =>
+    parseOutputDocumentsSortDirParam(searchParams.get("sortDir"))
+  );
   const [page, setPage] = useState(() => initialPage(searchParams));
   const [items, setItems] = useState<OutputDocumentsListItem[]>([]);
   const [totalItems, setTotalItems] = useState(0);
@@ -110,7 +157,10 @@ export function OutputDocumentsModule() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
-    null
+    () => {
+      const id = initialParam(searchParams, "documentId");
+      return id || null;
+    }
   );
   const [errorKind, setErrorKind] = useState<
     "access_denied" | "api_unavailable" | "generic" | null
@@ -171,6 +221,11 @@ export function OutputDocumentsModule() {
     if (from) next.set("from", from);
     if (to) next.set("to", to);
     if (financialStatus) next.set("financialStatus", financialStatus);
+    if (cancelled !== "all") next.set("cancelled", cancelled);
+    if (hasReceivable !== "all") next.set("hasReceivable", hasReceivable);
+    if (sortBy !== "dataDocumento") next.set("sortBy", sortBy);
+    if (sortDir !== "desc") next.set("sortDir", sortDir);
+    if (selectedDocumentId) next.set("documentId", selectedDocumentId);
     setSearchParams(next, { replace: true });
   }, [
     page,
@@ -183,6 +238,11 @@ export function OutputDocumentsModule() {
     from,
     to,
     financialStatus,
+    cancelled,
+    hasReceivable,
+    sortBy,
+    sortDir,
+    selectedDocumentId,
     setSearchParams,
   ]);
 
@@ -209,6 +269,10 @@ export function OutputDocumentsModule() {
       from,
       to,
       financialStatus: financialStatus ?? undefined,
+      cancelled,
+      hasReceivable,
+      sortBy,
+      sortDir,
     };
     setLoading(true);
     setErrorKind(null);
@@ -267,6 +331,10 @@ export function OutputDocumentsModule() {
     from,
     to,
     financialStatus,
+    cancelled,
+    hasReceivable,
+    sortBy,
+    sortDir,
     retryToken,
   ]);
 
@@ -291,6 +359,8 @@ export function OutputDocumentsModule() {
     order,
     nfe,
     financialStatus,
+    cancelled,
+    hasReceivable,
   });
   const draftsActive = Boolean(
     searchDraft.trim() ||
@@ -301,7 +371,9 @@ export function OutputDocumentsModule() {
       nfeDraft.trim() ||
       from ||
       to ||
-      financialStatus
+      financialStatus ||
+      cancelled !== "all" ||
+      hasReceivable !== "all"
   );
   const initialLoading = loading && (!hasLoadedOnce || items.length === 0);
   const showEmptyCatalog =
@@ -325,6 +397,25 @@ export function OutputDocumentsModule() {
     setFrom("");
     setTo("");
     setFinancialStatus(null);
+    setCancelled("all");
+    setHasReceivable("all");
+    setSortBy("dataDocumento");
+    setSortDir("desc");
+    setPage(1);
+  };
+
+  const applyKpiPreset = (preset: OutputDocumentsKpiFilterPreset) => {
+    const next = applyOutputDocumentsKpiPreset(preset);
+    setCancelled(next.cancelled);
+    setHasReceivable(next.hasReceivable);
+    setFinancialStatus(next.financialStatus);
+    setPage(1);
+  };
+
+  const toggleSort = (column: OutputDocumentsSortBy) => {
+    const nextDir = nextOutputDocumentsSortDir(sortBy, sortDir, column);
+    setSortBy(column);
+    setSortDir(nextDir);
     setPage(1);
   };
 
@@ -349,7 +440,7 @@ export function OutputDocumentsModule() {
               <input
                 className={cn(FILTER_CONTROL_CLASS, "pl-8")}
                 data-testid="output-documents-search"
-                placeholder="Documento, pedido, NF-e ou status…"
+                placeholder="Documento, pedido, NF-e, SKU ou status…"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
               />
@@ -446,6 +537,44 @@ export function OutputDocumentsModule() {
               ))}
             </select>
           </FilterField>
+          <FilterField label="Cancelado">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-cancelled"
+              value={cancelled}
+              onChange={(event) => {
+                setPage(1);
+                setCancelled(
+                  parseOutputDocumentsTriStateParam(event.target.value)
+                );
+              }}
+            >
+              {OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+          <FilterField label="Com CR">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-has-receivable"
+              value={hasReceivable}
+              onChange={(event) => {
+                setPage(1);
+                setHasReceivable(
+                  parseOutputDocumentsTriStateParam(event.target.value)
+                );
+              }}
+            >
+              {OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
           <div className="flex items-end sm:col-span-2 xl:col-span-1">
             <button
               type="button"
@@ -465,21 +594,31 @@ export function OutputDocumentsModule() {
         ) : null}
       </section>
 
-      <section
+      <SummaryKpiGrid
+        minColumnWidth={168}
         className={SYSTEM_TOTALIZER_GRID_CLASS}
-        data-testid="output-documents-cards"
-        aria-label="Resumo do período filtrado"
+        testId="output-documents-cards"
       >
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+        <KpiPresetButton
+          preset="all"
+          active={
+            cancelled === "all" &&
+            hasReceivable === "all" &&
+            financialStatus == null
+          }
+          onSelect={applyKpiPreset}
           testId="output-documents-card-documents"
-          label="Documentos"
-          amount={summary.documentCount}
-          amountFormat="number"
-          tone="neutral"
-          icon={FileText}
-          loading={loading && !hasLoadedOnce}
-        />
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Documentos"
+            amount={summary.documentCount}
+            amountFormat="number"
+            tone="neutral"
+            icon={FileText}
+            loading={loading && !hasLoadedOnce}
+          />
+        </KpiPresetButton>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           testId="output-documents-card-total-value"
@@ -491,47 +630,72 @@ export function OutputDocumentsModule() {
           helperText="Exclui cancelados"
           loading={loading && !hasLoadedOnce}
         />
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+        <KpiPresetButton
+          preset="with_nfe"
+          active={cancelled === "no" && hasReceivable === "all" && financialStatus == null}
+          onSelect={applyKpiPreset}
           testId="output-documents-card-with-nfe"
-          label="Com NF-e"
-          amount={summary.withNfe}
-          amountFormat="number"
-          tone="info"
-          icon={Receipt}
-          loading={loading && !hasLoadedOnce}
-        />
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Com NF-e"
+            amount={summary.withNfe}
+            amountFormat="number"
+            tone="info"
+            icon={Receipt}
+            helperText="Filtro aproximado: exclui cancelados"
+            loading={loading && !hasLoadedOnce}
+          />
+        </KpiPresetButton>
+        <KpiPresetButton
+          preset="with_receivable"
+          active={hasReceivable === "yes"}
+          onSelect={applyKpiPreset}
           testId="output-documents-card-with-receivable"
-          label="Com CR"
-          amount={summary.withReceivable}
-          amountFormat="number"
-          tone="success"
-          icon={Wallet}
-          loading={loading && !hasLoadedOnce}
-        />
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Com CR"
+            amount={summary.withReceivable}
+            amountFormat="number"
+            tone="success"
+            icon={Wallet}
+            loading={loading && !hasLoadedOnce}
+          />
+        </KpiPresetButton>
+        <KpiPresetButton
+          preset="awaiting_receivable"
+          active={financialStatus === "aguardando_cr"}
+          onSelect={applyKpiPreset}
           testId="output-documents-card-awaiting-receivable"
-          label="Aguardando CR"
-          amount={summary.awaitingReceivable}
-          amountFormat="number"
-          tone="warning"
-          icon={FileWarning}
-          loading={loading && !hasLoadedOnce}
-        />
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Aguardando CR"
+            amount={summary.awaitingReceivable}
+            amountFormat="number"
+            tone="warning"
+            icon={FileWarning}
+            loading={loading && !hasLoadedOnce}
+          />
+        </KpiPresetButton>
+        <KpiPresetButton
+          preset="cancelled"
+          active={cancelled === "yes"}
+          onSelect={applyKpiPreset}
           testId="output-documents-card-cancelled"
-          label="Cancelados"
-          amount={summary.cancelled}
-          amountFormat="number"
-          tone="danger"
-          icon={Ban}
-          loading={loading && !hasLoadedOnce}
-        />
-      </section>
+        >
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Cancelados"
+            amount={summary.cancelled}
+            amountFormat="number"
+            tone="danger"
+            icon={Ban}
+            loading={loading && !hasLoadedOnce}
+          />
+        </KpiPresetButton>
+      </SummaryKpiGrid>
 
       <div
         className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
@@ -540,7 +704,28 @@ export function OutputDocumentsModule() {
         <span>
           Total filtrado:{" "}
           <strong className="text-foreground">{totalItems}</strong>
+          {sortBy !== "dataDocumento" || sortDir !== "desc" ? (
+            <>
+              {" "}
+              · Ordenado por{" "}
+              <strong className="text-foreground">
+                {GRID_COLUMNS.find((column) => column.sortKey === sortBy)?.label ??
+                  sortBy}
+              </strong>{" "}
+              ({sortDir === "asc" ? "crescente" : "decrescente"})
+            </>
+          ) : null}
         </span>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-foreground hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-40"
+          data-testid="output-documents-export-csv"
+          disabled={items.length === 0 || loading}
+          onClick={() => downloadOutputDocumentsPageCsv(items)}
+        >
+          <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          Exportar página (CSV)
+        </button>
       </div>
 
       {errorMessage ? (
@@ -621,42 +806,57 @@ export function OutputDocumentsModule() {
                 </caption>
                 <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
                   <tr>
-                    {[
-                      "Documento",
-                      "Emissão",
-                      "Cliente",
-                      "Empresa",
-                      "Status",
-                      "Valor",
-                      "Pedido",
-                      "NF-e",
-                      "Financeiro",
-                      "Valor aberto",
-                      "Última sincronização",
-                    ].map((label) => (
+                    {GRID_COLUMNS.map((column) => (
                       <th
-                        key={label}
+                        key={column.label}
                         className={cn(
                           "whitespace-nowrap px-3 py-2 font-medium",
-                          label === "Valor" || label === "Valor aberto"
-                            ? "text-right"
-                            : undefined
+                          column.align === "right" ? "text-right" : undefined
                         )}
+                        aria-sort={
+                          column.sortKey && sortBy === column.sortKey
+                            ? sortDir === "asc"
+                              ? "ascending"
+                              : "descending"
+                            : undefined
+                        }
                       >
-                        {label}
+                        {column.sortKey ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded px-0.5 py-0.5 hover:text-foreground",
+                              column.align === "right" && "ml-auto",
+                              sortBy === column.sortKey && "text-foreground"
+                            )}
+                            data-testid={`output-documents-sort-${column.sortKey}`}
+                            onClick={() => toggleSort(column.sortKey!)}
+                          >
+                            {column.label}
+                            {sortBy === column.sortKey ? (
+                              sortDir === "asc" ? (
+                                <ArrowUp className="h-3 w-3" aria-hidden="true" />
+                              ) : (
+                                <ArrowDown className="h-3 w-3" aria-hidden="true" />
+                              )
+                            ) : null}
+                          </button>
+                        ) : (
+                          column.label
+                        )}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
-                    <OutputDocumentGridTableRow
-                      key={item.id}
-                      item={item}
-                      selected={selectedDocumentId === item.id}
-                      onOpen={() => setSelectedDocumentId(item.id)}
-                    />
-                  ))}
+                  {items.map((item) =>
+                    createElement(OutputDocumentGridTableRow, {
+                      key: item.id,
+                      item,
+                      selected: selectedDocumentId === item.id,
+                      onOpen: () => setSelectedDocumentId(item.id),
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
@@ -702,6 +902,36 @@ export function OutputDocumentsModule() {
         onClose={() => setSelectedDocumentId(null)}
       />
     </div>
+  );
+}
+
+function KpiPresetButton({
+  children,
+  preset,
+  active,
+  onSelect,
+  testId,
+}: {
+  children: ReactNode;
+  preset: OutputDocumentsKpiFilterPreset;
+  active: boolean;
+  onSelect: (preset: OutputDocumentsKpiFilterPreset) => void;
+  testId: string;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-kpi-preset={preset}
+      data-kpi-active={active ? "true" : "false"}
+      className={cn(
+        "rounded-xl text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+        active ? "ring-2 ring-primary/25" : "hover:opacity-95"
+      )}
+      onClick={() => onSelect(preset)}
+    >
+      {children}
+    </button>
   );
 }
 

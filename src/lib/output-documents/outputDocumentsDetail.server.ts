@@ -25,6 +25,7 @@ import {
 } from "@/src/lib/output-documents/outputDocumentsDetail.js";
 import type { OutputDocumentDetailPayload } from "@/src/lib/output-documents/outputDocumentsDetailTypes.js";
 import type { ResolvedOutputDocument } from "@/src/lib/output-documents/nomusOutputDocumentResolver.js";
+import { extractOutputDocumentItemProductIdentity } from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
 
 type PrismaLike = Pick<
   PrismaClient,
@@ -366,19 +367,25 @@ export async function loadOutputDocumentDetail(
 
   const canViewRaw = options.permissions?.canViewRaw === true;
   const includeRaw = options.includeRaw === true && canViewRaw;
+
+  const itemRaws = await options.prisma.nomusStockDocumentItem.findMany({
+    where: { stockDocumentId: lookup.id },
+    select: { id: true, rawJson: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const itemProductHints = new Map(
+    itemRaws.map((row) => [
+      row.id,
+      extractOutputDocumentItemProductIdentity(row.rawJson),
+    ])
+  );
+
   let raw: { document: unknown; items: unknown[] } | null = null;
   if (includeRaw) {
-    const [docRaw, itemRaws] = await Promise.all([
-      options.prisma.nomusStockDocument.findUnique({
-        where: { id: lookup.id },
-        select: { rawJson: true },
-      }),
-      options.prisma.nomusStockDocumentItem.findMany({
-        where: { stockDocumentId: lookup.id },
-        select: { id: true, rawJson: true },
-        orderBy: { createdAt: "asc" },
-      }),
-    ]);
+    const docRaw = await options.prisma.nomusStockDocument.findUnique({
+      where: { id: lookup.id },
+      select: { rawJson: true },
+    });
     raw = {
       document: docRaw?.rawJson ?? null,
       items: itemRaws.map((row) => ({
@@ -402,6 +409,7 @@ export async function loadOutputDocumentDetail(
       canViewRaw,
     },
     raw,
+    itemProductHints,
   });
 }
 

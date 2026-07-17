@@ -99,6 +99,18 @@ export function buildOutputDocumentDetailPayload(input: {
     canViewRaw?: boolean;
   };
   raw?: { document: unknown; items: unknown[] } | null;
+  /**
+   * Identidade comercial do produto (SKU/descrição/unidade) por item stage.
+   * Extraída do rawJson do item — nunca inventada.
+   */
+  itemProductHints?: ReadonlyMap<
+    string,
+    {
+      sku: string | null;
+      productName: string | null;
+      unitCode: string | null;
+    }
+  >;
 }): OutputDocumentDetailPayload {
   const { resolved, projection, sync } = input;
   const doc = resolved.document;
@@ -110,32 +122,38 @@ export function buildOutputDocumentDetailPayload(input: {
   const canViewAudit = input.permissions?.canViewAudit === true;
   const canViewRaw = input.permissions?.canViewRaw === true;
 
-  const items: OutputDocumentDetailItem[] = projection.items.map((item) => ({
-    id: item.stockDocumentItemId,
-    externalItemId: item.externalItemId,
-    externalProductId: item.externalProductId,
-    quantity: item.quantityDocument,
-    unitValue: item.unitValue,
-    totalValue: item.totalValue,
-    allocatedValue: item.allocatedValue,
-    unallocatedBalance: moneyCentsToNumber(item.unallocatedBalanceCents),
-    linkStatus: item.linkStatus,
-    linkOrigin: item.linkOrigin,
-    productLink: {
+  const items: OutputDocumentDetailItem[] = projection.items.map((item) => {
+    const hint = input.itemProductHints?.get(item.stockDocumentItemId);
+    return {
+      id: item.stockDocumentItemId,
+      externalItemId: item.externalItemId,
       externalProductId: item.externalProductId,
-      hasProductId:
-        item.externalProductId != null && item.externalProductId > 0,
-    },
-    links: item.links.map((link) => ({
-      salesOrderId: link.salesOrderId,
-      salesOrderItemId: link.salesOrderItemId,
-      orderCode: link.orderCode,
-      allocatedValue: moneyCentsToNumber(link.allocatedValueCents),
-      quantityUsedForOrder: link.quantityUsedForOrder,
-      source: link.source,
-    })),
-    alerts: [...item.alerts],
-  }));
+      sku: hint?.sku ?? null,
+      productName: hint?.productName ?? null,
+      unitCode: hint?.unitCode ?? null,
+      quantity: item.quantityDocument,
+      unitValue: item.unitValue,
+      totalValue: item.totalValue,
+      allocatedValue: item.allocatedValue,
+      unallocatedBalance: moneyCentsToNumber(item.unallocatedBalanceCents),
+      linkStatus: item.linkStatus,
+      linkOrigin: item.linkOrigin,
+      productLink: {
+        externalProductId: item.externalProductId,
+        hasProductId:
+          item.externalProductId != null && item.externalProductId > 0,
+      },
+      links: item.links.map((link) => ({
+        salesOrderId: link.salesOrderId,
+        salesOrderItemId: link.salesOrderItemId,
+        orderCode: link.orderCode,
+        allocatedValue: moneyCentsToNumber(link.allocatedValueCents),
+        quantityUsedForOrder: link.quantityUsedForOrder,
+        source: link.source,
+      })),
+      alerts: [...item.alerts],
+    };
+  });
 
   const resolution = summarizeItemResolution(items);
   const itemsSum = items.reduce((s, i) => s + i.totalValue, 0);

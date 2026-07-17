@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { OverlayBadge } from "@/src/components/ui/overlay";
 import type { OutputDocumentsListItem } from "@/src/lib/output-documents/outputDocumentsListTypes";
 import {
@@ -23,7 +24,7 @@ export function OutputDocumentGridTableRow({
   item: OutputDocumentsListItem;
   selected: boolean;
   onOpen: () => void;
-}) {
+}): ReactElement {
   const documentLabel = formatOutputDocumentNumber(item);
   return (
     <tr
