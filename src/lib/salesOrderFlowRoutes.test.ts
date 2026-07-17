@@ -28,6 +28,10 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
     assert.match(source, /salesOrdersFlowManagement/);
     assert.match(source, /resolveSalesOrderFlowCapabilities/);
     assert.match(source, /salesOrdersFlowTimeline/);
+    assert.match(
+      source,
+      /\/api\/commercial\/sales-order-flow\/lookup\/responsible-users/
+    );
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
       "commercial.sales_orders"
