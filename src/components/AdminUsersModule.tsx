@@ -62,7 +62,6 @@ import {
   liberateFirstMenuInMatrixDraft,
   resetMatrixDraftToBaseline,
   sessionAffectedMessage,
-  USER_PERMISSION_PRECEDENCE_NOTICE,
   userMatrixImpact,
   wouldMatrixRemoveOwnUsersManage,
 } from "@/src/lib/userPermissionsMatrix";
@@ -187,7 +186,7 @@ export const AdminUsersModule: React.FC = () => {
   const [confirmBroadOpen, setConfirmBroadOpen] = useState(false);
   const [saveReason, setSaveReason] = useState("");
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [showEffectivePreview, setShowEffectivePreview] = useState(true);
+  const [showEffectivePreview, setShowEffectivePreview] = useState(false);
   const [audit, setAudit] = useState<PermissionAuditEntry[]>([]);
   const [auditError, setAuditError] = useState<string | null>(null);
   const [matrix, setMatrix] = useState<RoleMatrixRowDto[]>([]);
@@ -1045,30 +1044,112 @@ export const AdminUsersModule: React.FC = () => {
             }
           }}
         >
-          <div className="bg-card flex w-full max-w-6xl max-h-[94vh] flex-col overflow-hidden rounded-2xl border border-border shadow-2xl">
-            <div className="shrink-0 flex items-start justify-between gap-3 border-b border-border bg-card/95 px-4 py-3 sm:px-5 sm:py-4">
-              <div className="min-w-0">
-                <h4
-                  id="user-permission-editor-title"
-                  className="text-lg font-bold truncate"
-                >
-                  {detail?.user.name ??
-                    selectedListUser?.name ??
-                    "Gestão de permissões"}
-                </h4>
-                <p className="text-xs text-muted-foreground truncate">
-                  {detail?.user.email ?? selectedListUser?.email ?? "Carregando…"}
-                </p>
+          <div className="bg-card flex h-[94vh] w-full max-w-[min(96vw,1440px)] flex-col overflow-hidden rounded-2xl border border-border shadow-2xl">
+            <div
+              className="shrink-0 flex min-h-14 items-center justify-between gap-3 border-b border-border bg-card px-4 py-2.5"
+              data-testid="user-permission-compact-header"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:flex">
+                  <Shield className="h-4 w-4 text-primary" aria-hidden />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                    <h4
+                      id="user-permission-editor-title"
+                      className="truncate text-base font-bold"
+                    >
+                      {detail?.user.name ??
+                        selectedListUser?.name ??
+                        "Gestão de permissões"}
+                    </h4>
+                    {detail ? (
+                      <>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                            detail.user.isActive
+                              ? "bg-emerald-50 text-emerald-800"
+                              : "bg-slate-100 text-slate-600"
+                          )}
+                        >
+                          {detail.user.isActive ? "Ativo" : "Inativo"}
+                        </span>
+                        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                          {formatRoleLabel(detail.user.role)}
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {detail?.user.email ?? selectedListUser?.email ?? "Carregando…"}
+                    {selectedListUser?.employeeName
+                      ? ` · ${selectedListUser.employeeName}${
+                          selectedListUser.employeeDepartment
+                            ? ` / ${selectedListUser.employeeDepartment}`
+                            : ""
+                        }`
+                      : ""}
+                  </p>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={closePermissionsEditor}
-                className="p-2 rounded-full hover:bg-accent shrink-0"
-                aria-label="Fechar gestão de permissões"
-                data-testid="user-permission-editor-close"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {detail ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetPassword("");
+                        setResetConfirm("");
+                        setResetError(null);
+                        setResetOpen(true);
+                      }}
+                      className="hidden items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent sm:inline-flex"
+                    >
+                      <KeyRound className="h-3 w-3" />
+                      Redefinir senha
+                    </button>
+                    <button
+                      type="button"
+                      disabled={
+                        saving ||
+                        selectedId === currentUserId ||
+                        (deleteGuardPreview != null && !deleteGuardPreview.ok)
+                      }
+                      title={
+                        selectedId === currentUserId
+                          ? "Você não pode excluir o próprio usuário"
+                          : deleteGuardPreview && !deleteGuardPreview.ok
+                            ? deleteGuardPreview.message
+                            : "Excluir usuário permanentemente"
+                      }
+                      onClick={() => {
+                        setDeleteConfirmEmail("");
+                        setDeleteError(
+                          deleteGuardPreview && !deleteGuardPreview.ok
+                            ? deleteGuardPreview.message
+                            : null
+                        );
+                        setDeleteOpen(true);
+                      }}
+                      className="hidden items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50 sm:inline-flex"
+                      data-testid="admin-user-delete-open"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Excluir
+                    </button>
+                  </>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={closePermissionsEditor}
+                  className="rounded-full p-2 hover:bg-accent"
+                  aria-label="Fechar gestão de permissões"
+                  data-testid="user-permission-editor-close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
 
             <div className="min-h-0 flex-1 flex flex-col overflow-hidden bg-card">
@@ -1078,77 +1159,100 @@ export const AdminUsersModule: React.FC = () => {
               </div>
             ) : detail ? (
               <>
-                <div className="shrink-0 border-b border-border p-4 space-y-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Último acesso: {formatDateTimePt(detail.user.lastLoginAt)}
-                      </p>
-                      {selectedListUser?.employeeName ? (
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Pessoas / RH:{" "}
-                          <span className="font-medium text-foreground">
-                            {selectedListUser.employeeName}
-                          </span>
-                          {selectedListUser.employeeDepartment
-                            ? ` · ${selectedListUser.employeeDepartment}`
-                            : ""}
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-amber-800 mt-1">
-                          Usuário legado sem vínculo com Pessoas / RH.
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setResetPassword("");
-                          setResetConfirm("");
-                          setResetError(null);
-                          setResetOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                      >
-                        <KeyRound className="h-3 w-3" />
-                        Redefinir senha
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          saving ||
-                          selectedId === currentUserId ||
-                          (deleteGuardPreview != null && !deleteGuardPreview.ok)
-                        }
+                <div
+                  className="shrink-0 border-b border-border bg-muted/20 px-4 py-3"
+                  data-testid="user-permission-profile-bar"
+                >
+                  <div className="grid items-end gap-3 lg:grid-cols-[minmax(280px,420px)_minmax(220px,1fr)_auto]">
+                    <label className="block min-w-0">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-primary">
+                        1. Selecione o perfil base
+                      </span>
+                      <select
+                        value={detail.user.role}
+                        disabled={saving || detail.warnings.isLastSuperAdmin}
                         title={
-                          selectedId === currentUserId
-                            ? "Você não pode excluir o próprio usuário"
-                            : deleteGuardPreview && !deleteGuardPreview.ok
-                              ? deleteGuardPreview.message
-                              : "Excluir usuário permanentemente"
+                          detail.warnings.isLastSuperAdmin
+                            ? "Não é possível alterar o único Super Administrador ativo"
+                            : undefined
                         }
-                        onClick={() => {
-                          setDeleteConfirmEmail("");
-                          setDeleteError(
-                            deleteGuardPreview && !deleteGuardPreview.ok
-                              ? deleteGuardPreview.message
-                              : null
-                          );
-                          setDeleteOpen(true);
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-semibold text-red-800 hover:bg-red-100 disabled:opacity-50"
-                        data-testid="admin-user-delete-open"
+                        onChange={(e) => void handleRoleChange(e.target.value as AppUserRole)}
+                        className="h-10 w-full rounded-lg border-2 border-primary/35 bg-background px-3 text-sm font-semibold shadow-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15"
+                        data-testid="user-permission-role-select"
                       >
-                        <Trash2 className="h-3 w-3" />
-                        Excluir
-                      </button>
+                        {APP_USER_ROLE_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                        Configuração atual
+                      </p>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-xs">
+                        <span className="font-semibold">
+                          {detail.accessProfile?.name ??
+                            selectedListUser?.accessProfileName ??
+                            "Padrão do perfil"}
+                        </span>
+                        <span className="text-muted-foreground">·</span>
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            detail.hasCustomPermissions
+                              ? "text-amber-800"
+                              : "text-emerald-700"
+                          )}
+                        >
+                          {detail.hasCustomPermissions
+                            ? `${exceptionCounts.allow + exceptionCounts.deny} exceção(ões)`
+                            : "Sem exceções"}
+                        </span>
+                        <span className="text-muted-foreground">
+                          · último acesso {formatDateTimePt(detail.user.lastLoginAt)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div
+                      className="flex h-10 items-center gap-1 rounded-lg border border-border bg-background p-1"
+                      role="tablist"
+                      aria-label="Seções da gestão de permissões"
+                    >
+                      {(
+                        [
+                          ["permissions", "Permissões"],
+                          ["summary", "Resumo"],
+                          ...(canViewPermissionAudit
+                            ? ([["audit", "Auditoria"]] as const)
+                            : []),
+                        ] as const
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="tab"
+                          aria-selected={innerTab === id}
+                          onClick={() => setInnerTab(id)}
+                          className={cn(
+                            "h-8 rounded-md px-3 text-[11px] font-semibold transition",
+                            innerTab === id
+                              ? "bg-primary text-primary-foreground shadow-sm"
+                              : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   {detail.warnings.editingSuperAdmin ? (
-                    <div className="rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 flex gap-2">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <div className="mt-2 flex gap-2 rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                       <span>
                         Este usuário é Super Administrador: o acesso é total e a árvore fica somente
                         leitura.
@@ -1158,29 +1262,6 @@ export const AdminUsersModule: React.FC = () => {
                       </span>
                     </div>
                   ) : null}
-
-                  <div className="space-y-1">
-                    <label className="text-[11px] font-semibold text-muted-foreground">
-                      Perfil de acesso
-                    </label>
-                    <select
-                      value={detail.user.role}
-                      disabled={saving || detail.warnings.isLastSuperAdmin}
-                      title={
-                        detail.warnings.isLastSuperAdmin
-                          ? "Não é possível alterar o único Super Administrador ativo"
-                          : undefined
-                      }
-                      onChange={(e) => void handleRoleChange(e.target.value as AppUserRole)}
-                      className="w-full max-w-md rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    >
-                      {APP_USER_ROLE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
 
                   {selectedListUser && roleAllowsSellerNomusLink(selectedListUser.role) ? (
                     <div
@@ -1223,31 +1304,6 @@ export const AdminUsersModule: React.FC = () => {
                     </div>
                   ) : null}
 
-                  <div className="flex gap-1 rounded-lg border border-border bg-muted/20 p-0.5 w-fit">
-                    {(
-                      [
-                        ["permissions", "Permissões"],
-                        ["summary", "Resumo"],
-                        ...(canViewPermissionAudit
-                          ? ([["audit", "Auditoria"]] as const)
-                          : []),
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setInnerTab(id)}
-                        className={cn(
-                          "rounded-md px-2.5 py-1 text-[11px] font-semibold",
-                          innerTab === id
-                            ? "bg-card text-foreground shadow-sm"
-                            : "text-muted-foreground"
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {detailError ? (
@@ -1260,42 +1316,40 @@ export const AdminUsersModule: React.FC = () => {
                   {innerTab === "permissions" ? (
                     <>
                       <div
-                        className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-[11px] space-y-1.5"
+                        className="flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
                         data-testid="user-permission-context"
                       >
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          <p>
-                            <strong>Role atual:</strong>{" "}
-                            {formatRoleLabel(detail.user.role)}
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-sky-950">
+                            2. Ajuste apenas o que for diferente do perfil
                           </p>
-                          <p>
-                            <strong>Perfil aplicado:</strong>{" "}
-                            {detail.accessProfile?.name ??
-                              selectedListUser?.accessProfileName ??
-                              "Nenhum (só role / exceções)"}
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-sky-900/80">
+                            Use <strong>Herdar</strong> para manter o padrão selecionado,
+                            <strong> Permitir</strong> para liberar e <strong>Negar</strong>{" "}
+                            para bloquear. O resultado aparece na última coluna.
                           </p>
-                          <p data-testid="user-permission-version">
-                            <strong>permissionsVersion:</strong>{" "}
-                            {detail.user.permissionsVersion}
-                          </p>
-                          <p>
-                            <strong>Status:</strong>{" "}
-                            {detail.user.isActive ? "Ativo" : "Inativo"}
-                            {detail.hasCustomPermissions
-                              ? " · com exceções individuais"
-                              : " · sem exceções"}
+                          <p className="sr-only" data-testid="user-permission-version">
+                            permissionsVersion: {detail.user.permissionsVersion}
                           </p>
                         </div>
-                        <p className="text-muted-foreground">
-                          {USER_PERMISSION_PRECEDENCE_NOTICE}
-                        </p>
-                        <p className="text-muted-foreground">
-                          Exceções: {exceptionCounts.allow} ALLOW ·{" "}
-                          {exceptionCounts.deny} DENY
-                          {pending
-                            ? ` · ${changeCount} alteração(ões) não salvas`
-                            : ""}
-                        </p>
+                        <div className="flex shrink-0 flex-wrap gap-2 text-[10px] font-bold">
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">
+                            {exceptionCounts.allow} permitido(s)
+                          </span>
+                          <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-900">
+                            {exceptionCounts.deny} negado(s)
+                          </span>
+                          <span
+                            className={cn(
+                              "rounded-full px-2.5 py-1",
+                              pending
+                                ? "bg-amber-100 text-amber-950"
+                                : "bg-white text-slate-600"
+                            )}
+                          >
+                            {pending ? `${changeCount} não salva(s)` : "Tudo salvo"}
+                          </span>
+                        </div>
                       </div>
 
                       {saveSuccess ? (
@@ -1328,63 +1382,76 @@ export const AdminUsersModule: React.FC = () => {
                         </div>
                       ) : null}
 
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={detail.treeReadOnly || detail.warnings.isLastSuperAdmin}
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                          title="Aplica o padrão da role selecionada acima (limpa exceções)"
-                          onClick={() =>
-                            void handleApplyRolePreset(detail.user.role, true)
-                          }
-                          data-testid="user-permission-apply-profile"
-                        >
-                          Aplicar perfil
-                        </button>
-                        <button
-                          type="button"
-                          disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                          onClick={() => void handleRestoreDefault()}
-                          data-testid="user-permission-reapply-profile"
-                        >
-                          Reaplicar perfil
-                        </button>
-                        <button
-                          type="button"
-                          disabled={detail.treeReadOnly}
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
-                          onClick={() => void handleClearCustom()}
-                          data-testid="user-permission-clear-exceptions"
-                        >
-                          Limpar exceções individuais
-                        </button>
-                        <button
-                          type="button"
-                          disabled={detail.treeReadOnly}
-                          title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
-                          className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-accent disabled:opacity-50"
-                          onClick={() => {
-                            const next = liberateFirstMenuInMatrixDraft(
-                              detail.tree,
-                              matrixDraft
-                            );
-                            setMatrixDraft(next);
-                            setTreeDecisions(
-                              decisionsFromUserDraft(treeNodes, next, roleBaseline)
-                            );
-                            setSaveSuccess(null);
-                          }}
-                        >
-                          Liberar 1º menu
-                        </button>
-                        <button
-                          type="button"
-                          className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
-                          onClick={() => setShowEffectivePreview((v) => !v)}
-                        >
-                          {showEffectivePreview ? "Ocultar preview" : "Preview efetivo"}
-                        </button>
+                      <div
+                        className="rounded-xl border border-border bg-muted/15 p-3"
+                        data-testid="user-permission-quick-actions"
+                      >
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-bold">Ações rápidas</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              Use para redefinir conjuntos inteiros de acesso.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold hover:bg-accent"
+                            onClick={() => setShowEffectivePreview((v) => !v)}
+                          >
+                            {showEffectivePreview ? "Ocultar resultado" : "Ver resultado efetivo"}
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={detail.treeReadOnly || detail.warnings.isLastSuperAdmin}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                            title="Aplica o padrão da role selecionada acima (limpa exceções)"
+                            onClick={() =>
+                              void handleApplyRolePreset(detail.user.role, true)
+                            }
+                            data-testid="user-permission-apply-profile"
+                          >
+                            Aplicar perfil
+                          </button>
+                          <button
+                            type="button"
+                            disabled={detail.treeReadOnly}
+                            className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                            onClick={() => void handleRestoreDefault()}
+                            data-testid="user-permission-reapply-profile"
+                          >
+                            Reaplicar perfil
+                          </button>
+                          <button
+                            type="button"
+                            disabled={detail.treeReadOnly}
+                            className="rounded-lg border border-border bg-background px-3 py-1.5 text-[11px] font-semibold hover:bg-accent disabled:opacity-50"
+                            onClick={() => void handleClearCustom()}
+                            data-testid="user-permission-clear-exceptions"
+                          >
+                            Limpar exceções individuais
+                          </button>
+                          <button
+                            type="button"
+                            disabled={detail.treeReadOnly}
+                            title="Concede Ver/Executar/Gerenciar no primeiro menu e filhos"
+                            className="rounded-lg border border-dashed border-border bg-background px-3 py-1.5 text-[11px] font-semibold text-muted-foreground hover:bg-accent disabled:opacity-50"
+                            onClick={() => {
+                              const next = liberateFirstMenuInMatrixDraft(
+                                detail.tree,
+                                matrixDraft
+                              );
+                              setMatrixDraft(next);
+                              setTreeDecisions(
+                                decisionsFromUserDraft(treeNodes, next, roleBaseline)
+                              );
+                              setSaveSuccess(null);
+                            }}
+                          >
+                            Liberar 1º menu
+                          </button>
+                        </div>
                       </div>
 
                       {showEffectivePreview && effectivePreview ? (
@@ -1550,7 +1617,7 @@ export const AdminUsersModule: React.FC = () => {
                         configuredColumnLabel="Exceção do usuário"
                         resultColumnLabel="Resultado efetivo"
                         emptyMessage="Nenhuma área de acesso disponível."
-                        className="max-h-[min(52vh,560px)]"
+                        className="h-[min(56vh,640px)] min-h-[360px] max-h-none"
                       />
                     </>
                   ) : null}

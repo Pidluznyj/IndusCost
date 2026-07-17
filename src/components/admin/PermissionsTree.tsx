@@ -78,7 +78,7 @@ function DecisionSegmented({
       role="radiogroup"
       aria-label={ariaLabel}
       data-testid={testId}
-      className="inline-flex shrink-0 rounded-md border border-slate-200 bg-slate-50/80 p-0.5"
+      className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-slate-100/80 p-1"
     >
       {DECISIONS.map((d) => {
         const active = value === d;
@@ -92,17 +92,19 @@ function DecisionSegmented({
             data-testid={`${testId}-${d}`}
             onClick={() => onChange(d)}
             className={cn(
-              "rounded px-2 py-1 text-[11px] font-semibold transition-colors",
+              "rounded-md px-3 py-1.5 text-[11px] font-semibold transition-all",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300",
               disabled && "cursor-not-allowed opacity-50",
               active &&
                 d === "allow" &&
-                "bg-emerald-100 text-emerald-900 shadow-sm",
-              active && d === "deny" && "bg-rose-100 text-rose-900 shadow-sm",
+                "bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-700/20",
+              active &&
+                d === "deny" &&
+                "bg-rose-600 text-white shadow-sm ring-1 ring-rose-700/20",
               active &&
                 d === "inherit" &&
-                "bg-amber-50 text-amber-900 shadow-sm",
-              !active && "text-slate-600 hover:bg-white/80"
+                "bg-amber-100 text-amber-950 shadow-sm ring-1 ring-amber-300",
+              !active && "bg-white text-slate-600 hover:bg-slate-50"
             )}
           >
             {decisionLabel(d)}
@@ -388,7 +390,7 @@ export function PermissionsTree({
           className={cn(
             "overflow-hidden rounded-lg border bg-white",
             isBranchRoot
-              ? "border-sky-400 ring-2 ring-sky-200"
+              ? "border-sky-500 ring-2 ring-sky-300 shadow-md"
               : inSelectedBranch
                 ? "border-sky-200"
                 : exceptionKind === "deny"
@@ -401,7 +403,7 @@ export function PermissionsTree({
           <div
             className={cn(
               "flex w-full items-center gap-2 bg-slate-50/90 px-3 py-2.5",
-              inSelectedBranch && "bg-sky-50/80",
+              inSelectedBranch && "bg-sky-100/90",
               exceptionKind === "deny" && "bg-rose-50/70",
               exceptionKind === "allow" && "bg-emerald-50/70"
             )}
@@ -448,13 +450,13 @@ export function PermissionsTree({
                 aria-pressed={isBranchRoot}
                 onClick={() => selectBranch(node.id)}
                 className={cn(
-                  "shrink-0 rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+                  "shrink-0 rounded-md border px-2.5 py-1.5 text-[10px] font-bold",
                   isBranchRoot
-                    ? "border-sky-400 bg-sky-100 text-sky-900"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    ? "border-sky-600 bg-sky-600 text-white shadow-sm"
+                    : "border-sky-200 bg-white text-sky-700 hover:border-sky-400 hover:bg-sky-50"
                 )}
               >
-                {isBranchRoot ? "Ramo" : "Selecionar"}
+                {isBranchRoot ? "Selecionado" : "Selecionar ramo"}
               </button>
             ) : null}
           </div>
@@ -480,13 +482,13 @@ export function PermissionsTree({
           data-branch-selected={isBranchRoot ? "true" : undefined}
           data-exception={exceptionKind ?? undefined}
           className={cn(
-            "grid grid-cols-1 items-center gap-2 px-3 py-2 md:grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_auto_auto]",
+            "grid grid-cols-1 items-center gap-3 px-3 py-2 md:grid-cols-[minmax(260px,1.5fr)_minmax(100px,0.6fr)_minmax(250px,auto)_minmax(90px,0.5fr)]",
             indentClass(node.kind),
             isAction && "bg-slate-50/40",
             node.kind === "page" && "bg-white",
             node.kind === "tab" && "bg-slate-50/30",
             inSelectedBranch && "bg-sky-50/70",
-            isBranchRoot && "ring-1 ring-inset ring-sky-300",
+            isBranchRoot && "bg-sky-100 ring-2 ring-inset ring-sky-400",
             exceptionKind === "deny" && "bg-rose-50/80",
             exceptionKind === "allow" && "bg-emerald-50/80"
           )}
@@ -538,13 +540,13 @@ export function PermissionsTree({
                     aria-pressed={isBranchRoot}
                     onClick={() => selectBranch(node.id)}
                     className={cn(
-                      "rounded border px-1.5 py-0.5 text-[9px] font-bold uppercase",
+                      "rounded-md border px-2 py-1 text-[9px] font-bold",
                       isBranchRoot
-                        ? "border-sky-400 bg-sky-100 text-sky-900"
-                        : "border-slate-200 text-slate-500 hover:bg-white"
+                        ? "border-sky-600 bg-sky-600 text-white"
+                        : "border-sky-200 bg-white text-sky-700 hover:border-sky-400"
                     )}
                   >
-                    {isBranchRoot ? "Ramo" : "Lote"}
+                    {isBranchRoot ? "Selecionado" : "Selecionar"}
                   </button>
                 ) : null}
               </div>
@@ -678,16 +680,22 @@ export function PermissionsTree({
           <div
             data-testid="permissions-tree-batch-bar"
             className={cn(
-              "mt-2 rounded-lg border px-3 py-2 text-xs",
+              "mt-2 rounded-lg border px-3 py-2.5 text-xs",
               selectedBranch
-                ? "border-sky-200 bg-sky-50 text-sky-950"
-                : "border-dashed border-slate-200 bg-slate-50 text-slate-600"
+                ? "border-sky-400 bg-sky-100 text-sky-950 shadow-sm"
+                : "border-dashed border-sky-200 bg-sky-50/60 text-sky-900"
             )}
           >
             {!selectedBranch ? (
-              <p>
-                Selecione um módulo, página ou aba para ações em lote no ramo.
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                  1
+                </span>
+                <p>
+                  Clique em <strong>Selecionar ramo</strong> para alterar um módulo,
+                  página ou aba inteira de uma vez.
+                </p>
+              </div>
             ) : pendingBatchDecision ? (
               <div
                 data-testid="permissions-tree-batch-confirm"
@@ -716,40 +724,46 @@ export function PermissionsTree({
                 </button>
               </div>
             ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">
-                  Ramo: {selectedBranch.label} ({selectedSubtreeCount} itens)
-                </span>
-                {DECISIONS.map((d) => (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Check className="h-4 w-4 text-sky-700" aria-hidden />
+                  <span className="font-semibold">
+                    Selecionado: {selectedBranch.label} ({selectedSubtreeCount} itens)
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-sky-800">2. Aplicar ao ramo:</span>
+                  {DECISIONS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      data-testid={`permissions-tree-batch-${d}`}
+                      onClick={() => setPendingBatchDecision(d)}
+                      className={cn(
+                        "rounded-md border px-2.5 py-1.5 text-[11px] font-bold shadow-sm",
+                        d === "allow" &&
+                          "border-emerald-300 bg-emerald-100 text-emerald-950",
+                        d === "deny" &&
+                          "border-rose-300 bg-rose-100 text-rose-950",
+                        d === "inherit" &&
+                          "border-amber-300 bg-amber-100 text-amber-950"
+                      )}
+                    >
+                      {decisionLabel(d)}
+                    </button>
+                  ))}
                   <button
-                    key={d}
                     type="button"
-                    data-testid={`permissions-tree-batch-${d}`}
-                    onClick={() => setPendingBatchDecision(d)}
-                    className={cn(
-                      "rounded-md border px-2 py-1 text-[11px] font-semibold",
-                      d === "allow" &&
-                        "border-emerald-200 bg-emerald-50 text-emerald-900",
-                      d === "deny" &&
-                        "border-rose-200 bg-rose-50 text-rose-900",
-                      d === "inherit" &&
-                        "border-amber-200 bg-amber-50 text-amber-900"
-                    )}
+                    data-testid="permissions-tree-batch-clear"
+                    onClick={() => {
+                      setSelectedBranchId(null);
+                      setPendingBatchDecision(null);
+                    }}
+                    className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-600"
                   >
-                    Lote: {decisionLabel(d)}
+                    Cancelar seleção
                   </button>
-                ))}
-                <button
-                  type="button"
-                  data-testid="permissions-tree-batch-clear"
-                  onClick={() => {
-                    setSelectedBranchId(null);
-                    setPendingBatchDecision(null);
-                  }}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600"
-                >
-                  Limpar seleção
-                </button>
+                </div>
               </div>
             )}
           </div>
@@ -757,7 +771,7 @@ export function PermissionsTree({
 
         <div
           data-testid="permissions-tree-columns"
-          className="mt-2 hidden grid-cols-[minmax(0,1.4fr)_minmax(0,0.9fr)_auto_auto] gap-2 border-t border-slate-100 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 md:grid"
+          className="mt-2 hidden grid-cols-[minmax(260px,1.5fr)_minmax(100px,0.6fr)_minmax(250px,auto)_minmax(90px,0.5fr)] gap-3 border-t border-slate-100 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-500 md:grid"
         >
           <span>{resourceColumnLabel}</span>
           <span>{originColumnLabel}</span>

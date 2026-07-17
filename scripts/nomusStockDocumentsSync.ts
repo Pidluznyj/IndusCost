@@ -15,6 +15,7 @@
  *   npx tsx scripts/nomusStockDocumentsSync.ts preview --idNfe=6937,7188,7377
  */
 import "dotenv/config";
+import { writeFileSync } from "node:fs";
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
   mapNomusStockDocumentPayload,
@@ -30,12 +31,32 @@ import {
   parseStockDocumentsSyncCli,
   pickStockDocumentsArray,
   planStockDocumentPersist,
-  resolveStockDocumentsSyncExitCode,
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
   type StockDocumentsSyncCliOptions,
   type StockDocumentsSyncCounters,
 } from "../src/lib/nomusStockDocumentsSyncLogic.ts";
+import {
+  NOMUS_STOCK_DOCUMENTS_LOG_PREFIX,
+  resolveStockDocumentsSyncCheckpointFile,
+} from "../src/lib/nomusStockDocumentsSyncConstants.ts";
+import {
+  acquireStockDocumentsSyncLock,
+  releaseStockDocumentsSyncLock,
+} from "../src/lib/nomusStockDocumentsSyncLock.ts";
+import {
+  buildStockDocumentsCheckpoint,
+  buildStockDocumentsSyncAuditRecord,
+  classifyStockDocumentsSyncCompleteness,
+  resolveStockDocumentsLifecycleExitCode,
+  serializeStockDocumentsCheckpoint,
+  shouldAdvanceStockDocumentsCheckpoint,
+  shouldMarkStockDocumentsAbsent,
+} from "../src/lib/nomusStockDocumentsSyncLifecycle.ts";
+import {
+  disconnectStockDocumentsIntegrationPrisma,
+  persistStockDocumentsIntegrationRun,
+} from "../src/lib/nomusStockDocumentsIntegrationRun.ts";
 import {
   buildNomusUrl,
   describeNomusCredential,
@@ -45,7 +66,7 @@ import {
 } from "../src/lib/nomusRestClient.ts";
 
 const prisma = new PrismaClient();
-const LOG_PREFIX = "[nomus-stock-documents]";
+const LOG_PREFIX = NOMUS_STOCK_DOCUMENTS_LOG_PREFIX;
 
 function getRequiredEnv(name: string): string {
   const value = (process.env[name] ?? "").trim();
@@ -76,7 +97,8 @@ function buildQueries(options: StockDocumentsSyncCliOptions): string[] {
 async function fetchAllForQuery(
   baseUrl: string,
   query: string,
-  options: StockDocumentsSyncCliOptions
+  options: StockDocumentsSyncCliOptions,
+  onRetryableStatus?: (info: { status: number; attempt: number }) => void
 ): Promise<{
   pagesRead: number;
   recordsRead: number;
@@ -84,6 +106,7 @@ async function fetchAllForQuery(
   invalidPayloads: number;
   itemsDiscardedByMapper: number;
   duplicateItemsCollapsed: number;
+  fetchComplete: boolean;
 }> {
   const rows: MappedNomusStockDocument[] = [];
   let pagesRead = 0;
@@ -91,6 +114,7 @@ async function fetchAllForQuery(
   let invalidPayloads = 0;
   let itemsDiscardedByMapper = 0;
   let duplicateItemsCollapsed = 0;
+  let fetchComplete = false;
   const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
 
   for (let page = 1; page <= maxPages; page += 1) {
@@ -100,7 +124,10 @@ async function fetchAllForQuery(
       buildStockDocumentsPageParams(page, options.pageSize, query)
     );
     console.warn(`${LOG_PREFIX} GET ${redactNomusUrlForLog(url)}`);
-    const payload = await fetchNomusJson(url, { logPrefix: LOG_PREFIX });
+    const payload = await fetchNomusJson(url, {
+      logPrefix: LOG_PREFIX,
+      onRetryableStatus,
+    });
     const items = pickStockDocumentsArray(payload).filter(
       (item): item is JsonObject => !!item && typeof item === "object" && !Array.isArray(item)
     );
@@ -119,7 +146,10 @@ async function fetchAllForQuery(
       rows.push(mapped.row);
     }
 
-    if (!hasNextStockDocumentsPage(payload, page, items.length, options.pageSize)) break;
+    if (!hasNextStockDocumentsPage(payload, page, items.length, options.pageSize)) {
+      fetchComplete = true;
+      break;
+    }
   }
 
   return {
@@ -129,6 +159,7 @@ async function fetchAllForQuery(
     invalidPayloads,
     itemsDiscardedByMapper,
     duplicateItemsCollapsed,
+    fetchComplete,
   };
 }
 
@@ -285,83 +316,131 @@ async function runApply(
 }
 
 async function main(): Promise<void> {
-  const startedMs = Date.now();
+  const startedAt = new Date();
   const options = parseStockDocumentsSyncCli(process.argv.slice(2));
-  const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
-
-  const envForLog = redactHeadersForLog(
-    Object.fromEntries(
-      Object.entries(process.env)
-        .filter(([key]) => key.startsWith("NOMUS_"))
-        .map(([key, value]) => [key, value ?? ""])
-    )
-  );
-
-  console.warn(
-    `${LOG_PREFIX} modo=${options.mode} from=${options.from ?? "-"} to=${options.to ?? "-"} tipo=${options.tipo} pageSize=${options.pageSize} maxPages=${options.maxPages ?? "∞"} idNfes=${options.idNfes.join(",") || "-"}`
-  );
-  console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
-  console.warn(
-    `${LOG_PREFIX} credencial: ${JSON.stringify(
-      describeNomusCredential(
-        process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN || process.env.NOMUS_AUTH
-      )
-    )}`
-  );
-
-  const queries = buildQueries(options);
+  let lockToken: string | null = null;
+  let lockFile: string | null = null;
+  let rateLimit429 = 0;
+  let fetchComplete = true;
+  let fatalError: string | null = null;
+  let rows: MappedNomusStockDocument[] = [];
   let pagesRead = 0;
   let recordsRead = 0;
   let invalidPayloads = 0;
   let itemsDiscardedByMapper = 0;
   let duplicateItemsCollapsed = 0;
-  const allRows: MappedNomusStockDocument[] = [];
-
-  for (const query of queries) {
-    const fetched = await fetchAllForQuery(baseUrl, query, options);
-    pagesRead += fetched.pagesRead;
-    recordsRead += fetched.recordsRead;
-    invalidPayloads += fetched.invalidPayloads;
-    itemsDiscardedByMapper += fetched.itemsDiscardedByMapper;
-    duplicateItemsCollapsed += fetched.duplicateItemsCollapsed;
-    allRows.push(...fetched.rows);
-  }
-
-  const rows = dedupeByExternalId(allRows);
-  const existing = await prisma.nomusStockDocument.findMany({
-    where: { externalId: { in: rows.map((row) => row.externalId) } },
-    select: {
-      externalId: true,
-      payloadHash: true,
-      _count: { select: { items: true } },
-    },
-  });
-  const existingByExternalId = new Map(
-    existing.map((row) => [
-      row.externalId,
-      {
-        externalId: row.externalId,
-        payloadHash: row.payloadHash,
-        itemCount: row._count.items,
-      },
-    ] as const)
-  );
-  const plans = rows.map((row) =>
-    planStockDocumentPersist(row, existingByExternalId.get(row.externalId) ?? null)
-  );
-  const planSummary = summarizeStockDocumentPersistPlans(plans);
-
   let applied: StockDocumentsSyncCounters | null = null;
-  if (shouldWriteStockDocuments(options.mode)) {
-    applied = await runApply(rows, new Date());
-    applied.invalidPayloads = invalidPayloads;
-    applied.itemsDiscardedByMapper = itemsDiscardedByMapper;
-    applied.duplicateItemsCollapsed = duplicateItemsCollapsed;
-  } else {
-    console.warn(`${LOG_PREFIX} preview — nenhuma escrita no banco`);
+  let planSummary = summarizeStockDocumentPersistPlans([]);
+
+  const lock = acquireStockDocumentsSyncLock({ mode: options.mode });
+  if (!lock.ok) {
+    console.warn(lock.message);
+    const finishedAt = new Date();
+    const audit = buildStockDocumentsSyncAuditRecord({
+      mode: options.mode,
+      options,
+      startedAt,
+      finishedAt,
+      exitCode: 0,
+      completeness: "lock_skipped",
+      lockAcquired: false,
+      lockSkipped: true,
+      checkpointAdvanced: false,
+      rateLimit429: 0,
+      counters: emptyStockDocumentsSyncCounters(),
+      errorMessage: lock.message,
+    });
+    await persistStockDocumentsIntegrationRun({ audit });
+    console.log(JSON.stringify({ mode: options.mode, audit }, null, 2));
+    process.exitCode = 0;
+    return;
+  }
+  lockToken = lock.token;
+  lockFile = lock.lockFile;
+  console.warn(`${LOG_PREFIX} lock adquirido: ${lockFile}`);
+
+  try {
+    try {
+      const baseUrl = getRequiredEnv("NOMUS_BASE_URL");
+
+    const envForLog = redactHeadersForLog(
+      Object.fromEntries(
+        Object.entries(process.env)
+          .filter(([key]) => key.startsWith("NOMUS_"))
+          .map(([key, value]) => [key, value ?? ""])
+      )
+    );
+
+    console.warn(
+      `${LOG_PREFIX} modo=${options.mode} from=${options.from ?? "-"} to=${options.to ?? "-"} tipo=${options.tipo} pageSize=${options.pageSize} maxPages=${options.maxPages ?? "∞"} idNfes=${options.idNfes.join(",") || "-"}`
+    );
+    console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
+    console.warn(
+      `${LOG_PREFIX} credencial: ${JSON.stringify(
+        describeNomusCredential(
+          process.env.NOMUS_AUTH_HEADER_VALUE || process.env.NOMUS_TOKEN || process.env.NOMUS_AUTH
+        )
+      )}`
+    );
+
+    const onRetryableStatus = (info: { status: number }) => {
+      if (info.status === 429) rateLimit429 += 1;
+    };
+
+    const queries = buildQueries(options);
+    const allRows: MappedNomusStockDocument[] = [];
+    fetchComplete = true;
+
+    for (const query of queries) {
+      const fetched = await fetchAllForQuery(baseUrl, query, options, onRetryableStatus);
+      pagesRead += fetched.pagesRead;
+      recordsRead += fetched.recordsRead;
+      invalidPayloads += fetched.invalidPayloads;
+      itemsDiscardedByMapper += fetched.itemsDiscardedByMapper;
+      duplicateItemsCollapsed += fetched.duplicateItemsCollapsed;
+      allRows.push(...fetched.rows);
+      if (!fetched.fetchComplete) fetchComplete = false;
+    }
+
+    rows = dedupeByExternalId(allRows);
+    const existing = await prisma.nomusStockDocument.findMany({
+      where: { externalId: { in: rows.map((row) => row.externalId) } },
+      select: {
+        externalId: true,
+        payloadHash: true,
+        _count: { select: { items: true } },
+      },
+    });
+    const existingByExternalId = new Map(
+      existing.map((row) => [
+        row.externalId,
+        {
+          externalId: row.externalId,
+          payloadHash: row.payloadHash,
+          itemCount: row._count.items,
+        },
+      ] as const)
+    );
+    const plans = rows.map((row) =>
+      planStockDocumentPersist(row, existingByExternalId.get(row.externalId) ?? null)
+    );
+    planSummary = summarizeStockDocumentPersistPlans(plans);
+
+    if (shouldWriteStockDocuments(options.mode)) {
+      applied = await runApply(rows, new Date());
+      applied.invalidPayloads = invalidPayloads;
+      applied.itemsDiscardedByMapper = itemsDiscardedByMapper;
+      applied.duplicateItemsCollapsed = duplicateItemsCollapsed;
+      applied.rateLimit429 = rateLimit429;
+    } else {
+      console.warn(`${LOG_PREFIX} preview — nenhuma escrita no banco`);
+    }
+  } catch (error) {
+    fatalError = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} falha`, fatalError);
   }
 
-  const durationMs = Date.now() - startedMs;
+  const finishedAt = new Date();
   const counters: StockDocumentsSyncCounters = applied ?? {
     ...emptyStockDocumentsSyncCounters(),
     documentsReceived: rows.length,
@@ -375,35 +454,96 @@ async function main(): Promise<void> {
     partialPayloads: planSummary.partialPayloads,
     itemsDiscardedByMapper,
     duplicateItemsCollapsed,
-    errors: 0,
+    rateLimit429,
+    errors: fatalError ? 1 : 0,
   };
+  if (applied) counters.rateLimit429 = rateLimit429;
 
-  const summary = {
+  const completeness = classifyStockDocumentsSyncCompleteness({
+    fetchComplete: fetchComplete && !fatalError,
+    errors: counters.errors,
+    fatalError: Boolean(fatalError),
+  });
+  const exitCode = resolveStockDocumentsLifecycleExitCode({
+    lockSkipped: false,
+    completeness,
+    errors: counters.errors,
+    invalidPayloads: counters.invalidPayloads,
+  });
+  process.exitCode = exitCode;
+
+  const checkpointAdvanced = shouldAdvanceStockDocumentsCheckpoint({
     mode: options.mode,
-    pagesRead,
-    recordsRead,
-    mapped: rows.length,
-    ...counters,
-    plannedCreates: planSummary.documentsToCreate,
-    plannedUpdates: planSummary.documentsToUpdate,
-    plannedUnchanged: planSummary.documentsUnchanged,
-    plannedItemsReplace: planSummary.itemsToWrite,
-    plannedItemsPreserve: planSummary.itemsToPreserve,
-    durationMs,
-  };
+    completeness,
+    exitCode,
+  });
+  if (checkpointAdvanced) {
+    const checkpoint = buildStockDocumentsCheckpoint({
+      mode: options.mode,
+      options,
+      counters,
+      completedAt: finishedAt,
+    });
+    const checkpointFile = resolveStockDocumentsSyncCheckpointFile();
+    try {
+      writeFileSync(checkpointFile, serializeStockDocumentsCheckpoint(checkpoint), "utf8");
+      console.warn(`${LOG_PREFIX} checkpoint avançado: ${checkpointFile}`);
+    } catch (error) {
+      console.error(
+        `${LOG_PREFIX} falha ao gravar checkpoint:`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  } else {
+    console.warn(
+      `${LOG_PREFIX} checkpoint NÃO avançado (completeness=${completeness} mode=${options.mode} exit=${exitCode})`
+    );
+  }
 
-  const exitCode = resolveStockDocumentsSyncExitCode(counters);
-  if (exitCode !== 0) process.exitCode = exitCode;
+  const markAbsent = shouldMarkStockDocumentsAbsent({
+    mode: options.mode,
+    completeness,
+  });
+  if (markAbsent) {
+    console.warn(`${LOG_PREFIX} mark-absent não aplicável a sync por janela`);
+  }
 
+  const audit = buildStockDocumentsSyncAuditRecord({
+    mode: options.mode,
+    options,
+    startedAt,
+    finishedAt,
+    exitCode,
+    completeness,
+    lockAcquired: true,
+    lockSkipped: false,
+    checkpointAdvanced,
+    rateLimit429,
+    counters,
+    errorMessage: fatalError,
+  });
+  await persistStockDocumentsIntegrationRun({ audit });
+
+  const durationMs = audit.durationMs;
   console.warn(
-    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — recebidos=${summary.documentsReceived} criados=${summary.documentsCreated} atualizados=${summary.documentsUpdated} inalterados=${summary.documentsUnchanged} itensSubstituidos=${summary.itemsReplaced} itensPreservados=${summary.itemsPreservedDueToPartialPayload} vazios=${summary.emptyPayloads} parciais=${summary.partialPayloads} invalidos=${summary.invalidPayloads} erros=${summary.errors}`
+    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — recebidos=${counters.documentsReceived} criados=${counters.documentsCreated} atualizados=${counters.documentsUpdated} inalterados=${counters.documentsUnchanged} 429=${rateLimit429} completeness=${completeness} exit=${exitCode}`
   );
 
   console.log(
     JSON.stringify(
       {
         mode: options.mode,
-        summary,
+        audit,
+        summary: {
+          pagesRead,
+          recordsRead,
+          mapped: rows.length,
+          ...counters,
+          plannedCreates: planSummary.documentsToCreate,
+          plannedUpdates: planSummary.documentsToUpdate,
+          plannedUnchanged: planSummary.documentsUnchanged,
+          durationMs,
+        },
         preview: rows.slice(0, 5).map((row) => ({
           externalId: row.externalId,
           documentNumber: row.documentNumber,
@@ -432,6 +572,10 @@ async function main(): Promise<void> {
       2
     )
   );
+
+  if (lockFile && lockToken) {
+    releaseStockDocumentsSyncLock({ lockFile, token: lockToken });
+  }
 }
 
 main()
@@ -441,4 +585,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await disconnectStockDocumentsIntegrationPrisma();
   });

@@ -62,6 +62,7 @@ export type StockDocumentsSyncCounters = {
   partialPayloads: number;
   itemsDiscardedByMapper: number;
   duplicateItemsCollapsed: number;
+  rateLimit429: number;
   errors: number;
 };
 
@@ -394,6 +395,7 @@ export function emptyStockDocumentsSyncCounters(): StockDocumentsSyncCounters {
     partialPayloads: 0,
     itemsDiscardedByMapper: 0,
     duplicateItemsCollapsed: 0,
+    rateLimit429: 0,
     errors: 0,
   };
 }
