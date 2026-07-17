@@ -6,13 +6,11 @@ import { useAuth } from "@/src/contexts/AuthContext";
 type AuthLoginPageProps = {
   networkError?: string | null;
   onRetry?: () => void;
-  redirectAfterLogin?: { pathname: string; search?: string; hash?: string };
 };
 
 export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
   networkError,
   onRetry,
-  redirectAfterLogin,
 }) => {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -28,14 +26,8 @@ export const AuthLoginPage: React.FC<AuthLoginPageProps> = ({
     setSubmitting(true);
     try {
       await login(email, password);
-      if (redirectAfterLogin) {
-        navigate(
-          `${redirectAfterLogin.pathname}${redirectAfterLogin.search ?? ""}${redirectAfterLogin.hash ?? ""}`,
-          { replace: true }
-        );
-      } else {
-        navigate("/home", { replace: true });
-      }
+      // Sempre a home autenticada — não retorna à URL anterior.
+      navigate("/home", { replace: true });
     } catch (err) {
       setFormError(
         err instanceof Error ? err.message : "Não foi possível entrar. Verifique e-mail e senha."

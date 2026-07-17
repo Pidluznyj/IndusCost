@@ -25,9 +25,13 @@ describe("home autenticada", () => {
     const login = read("src/components/AuthLoginPage.tsx");
     const loginRoute = read("src/components/PublicLoginRoute.tsx");
     const landingRoute = read("src/components/PublicLandingRoute.tsx");
+    const defaultRedirect = read("src/components/DefaultModuleRedirect.tsx");
     assert.match(login, /navigate\("\/home", \{ replace: true \}\)/);
+    assert.doesNotMatch(login, /redirectAfterLogin/);
     assert.match(loginRoute, /Navigate to="\/home" replace/);
+    assert.doesNotMatch(loginRoute, /state\?\.from|redirectAfterLogin/);
     assert.match(landingRoute, /Navigate to="\/home" replace/);
+    assert.match(defaultRedirect, /Navigate to="\/home" replace/);
   });
 
   it("home apresenta mercado, guia e funcionalidades", () => {

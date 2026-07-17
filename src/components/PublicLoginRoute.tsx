@@ -5,11 +5,10 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { AuthLoginPage } from "@/src/components/AuthLoginPage";
 
 type LoginLocationState = {
-  from?: { pathname: string; search?: string; hash?: string };
   authError?: string | null;
 };
 
-/** Rota pública de login; redireciona se a sessão já estiver ativa. */
+/** Rota pública de login; sessão ativa ou pós-login → sempre /home. */
 export const PublicLoginRoute: React.FC = () => {
   const auth = useAuth();
   const location = useLocation();
@@ -25,15 +24,6 @@ export const PublicLoginRoute: React.FC = () => {
   }
 
   if (auth.authenticated) {
-    const from = state?.from;
-    if (from) {
-      return (
-        <Navigate
-          to={`${from.pathname}${from.search ?? ""}${from.hash ?? ""}`}
-          replace
-        />
-      );
-    }
     return <Navigate to="/home" replace />;
   }
 
@@ -41,7 +31,6 @@ export const PublicLoginRoute: React.FC = () => {
     <AuthLoginPage
       networkError={state?.authError ?? auth.authError}
       onRetry={() => void auth.loadMe()}
-      redirectAfterLogin={state?.from}
     />
   );
 };
