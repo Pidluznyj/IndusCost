@@ -1044,6 +1044,17 @@ model SalesOrder {
   updatedAt                     DateTime                        @default(now()) @updatedAt
   sentToNomusAt                 DateTime?
   nomusRawResponse              Json?
+  /// SYNC-02 — hash do payload Nomus (Pedido ainda não persistia).
+  payloadHash                   String?
+  /// SYNC-02 — ciclo de vida na origem (inicialização técnica = PRESENT).
+  sourcePresenceStatus          NomusSourcePresenceStatus       @default(PRESENT)
+  presentInLastPayload          Boolean                         @default(true)
+  firstSeenAt                   DateTime                        @default(now())
+  lastSeenAt                    DateTime                        @default(now())
+  missingSince                  DateTime?
+  missingConsecutiveRuns        Int                             @default(0)
+  sourceRemovedAt               DateTime?
+  lastSyncRunId                 String?                         @db.Uuid
   Customer                      Customer                        @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Proposal                      Proposal?                       @relation(fields: [proposalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items                         SalesOrderItem[]
@@ -1056,10 +1067,16 @@ model SalesOrder {
   flowEvents                    SalesOrderFlowEvent[]
   flowManagement                SalesOrderFlowManagement?
   flowItemSnapshots             SalesOrderItemFlowSnapshot[]
+  lastSourceSyncRun             NomusSourceSyncRun?             @relation("SalesOrderLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([customerId])
   @@index([status])
   @@index([issueDate])
+  @@index([sourcePresenceStatus])
+  @@index([lastSeenAt])
+  @@index([lastSyncRunId])
+  @@index([externalSalesOrderId])
+  @@index([payloadHash])
 }
 
 /// Vínculo normalizado Pedido de Venda → NF-e Nomus (chave: nfes.id → NomusNfe.externalId).
@@ -2233,6 +2250,17 @@ model NomusAccountsReceivable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// SYNC-02 — ciclo de vida na origem (payloadHash já existia; não duplicar).
+  sourcePresenceStatus   NomusSourcePresenceStatus @default(PRESENT)
+  presentInLastPayload   Boolean                   @default(true)
+  firstSeenAt            DateTime                  @default(now())
+  lastSeenAt             DateTime                  @default(now())
+  missingSince           DateTime?
+  missingConsecutiveRuns Int                       @default(0)
+  sourceRemovedAt        DateTime?
+  lastSyncRunId          String?                   @db.Uuid
+  lastSourceSyncRun      NomusSourceSyncRun?       @relation("ArLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
   @@index([dueDate])
   @@index([status])
   @@index([companyName])
@@ -2242,6 +2270,9 @@ model NomusAccountsReceivable {
   @@index([sourceInvoiceNumber])
   @@index([syncedAt])
   @@index([payloadHash])
+  @@index([sourcePresenceStatus])
+  @@index([lastSeenAt])
+  @@index([lastSyncRunId])
 }
 
 /// Stage local de Contas a Pagar Nomus (read-only sync). Base para dashboards financeiros futuros.
@@ -2300,6 +2331,17 @@ model NomusAccountsPayable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// SYNC-02 — ciclo de vida na origem (payloadHash já existia; não duplicar).
+  sourcePresenceStatus   NomusSourcePresenceStatus @default(PRESENT)
+  presentInLastPayload   Boolean                   @default(true)
+  firstSeenAt            DateTime                  @default(now())
+  lastSeenAt             DateTime                  @default(now())
+  missingSince           DateTime?
+  missingConsecutiveRuns Int                       @default(0)
+  sourceRemovedAt        DateTime?
+  lastSyncRunId          String?                   @db.Uuid
+  lastSourceSyncRun      NomusSourceSyncRun?       @relation("ApLastSourceSyncRun", fields: [lastSyncRunId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
   @@index([dueDate])
   @@index([status])
   @@index([companyName])
@@ -2310,6 +2352,74 @@ model NomusAccountsPayable {
   @@index([sourceInvoiceNumber])
   @@index([syncedAt])
   @@index([payloadHash])
+  @@index([sourcePresenceStatus])
+  @@index([lastSeenAt])
+  @@index([lastSyncRunId])
+}
+
+/// SYNC-02 — presença do registro na origem Nomus (campos nas entidades oficiais).
+enum NomusSourcePresenceStatus {
+  PRESENT
+  MISSING_CANDIDATE
+  MISSING_CONFIRMED
+}
+
+enum NomusSourceSyncEntityType {
+  SALES_ORDER
+  ACCOUNTS_RECEIVABLE
+  ACCOUNTS_PAYABLE
+}
+
+enum NomusSourceSyncRunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  INCONCLUSIVE
+}
+
+/// SYNC-02 — execução tipada de sync Nomus para reconciliação de presença.
+/// Complementa IntegrationRun (operacional genérico); não substitui syncers ainda.
+model NomusSourceSyncRun {
+  id              String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType      NomusSourceSyncEntityType
+  strategy        String
+  /// Universo coberto (JSON canônico: kind, from, to, onlyPending, etc.).
+  scope           Json
+  startedAt       DateTime
+  finishedAt      DateTime?
+  status          NomusSourceSyncRunStatus  @default(RUNNING)
+  /// Só SUCCESS + payloadComplete=true autoriza reconciliação de ausências.
+  payloadComplete Boolean                   @default(false)
+
+  pagesRead             Int @default(0)
+  rowsRead              Int @default(0)
+  createdCount          Int @default(0)
+  updatedCount          Int @default(0)
+  unchangedCount        Int @default(0)
+  missingCandidateCount Int @default(0)
+  missingConfirmedCount Int @default(0)
+  reactivatedCount      Int @default(0)
+  http429Count          Int @default(0)
+  errors                Int @default(0)
+
+  coveredFrom DateTime?
+  coveredTo   DateTime?
+
+  errorMessage String?
+  summaryJson  Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  salesOrdersLastSeen        SalesOrder[]              @relation("SalesOrderLastSourceSyncRun")
+  accountsReceivableLastSeen NomusAccountsReceivable[] @relation("ArLastSourceSyncRun")
+  accountsPayableLastSeen    NomusAccountsPayable[]    @relation("ApLastSourceSyncRun")
+
+  @@index([entityType, status, startedAt])
+  @@index([status])
+  @@index([payloadComplete])
+  @@index([startedAt])
+  @@index([entityType, coveredFrom, coveredTo])
 }
 
 enum NomusNfeBillingClassification {
