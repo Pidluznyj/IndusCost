@@ -2441,7 +2441,29 @@ model NomusStockDocument {
   tipoDocumentoEstoque String?
   dataDocumento        DateTime?
 
-  rawJson Json
+  /// Número comercial Nomus, quando distinto de `externalId` (best-effort do raw).
+  documentNumber String?
+
+  statusRaw           String?
+  isCancelled         Boolean   @default(false)
+  cancelledAt         DateTime?
+  cancellationReason  String?
+  totalValue          Decimal?  @db.Decimal(20, 2)
+
+  personExternalId  Int?
+  personName        String?
+  companyExternalId Int?
+  companyName       String?
+
+  movementDate     DateTime?
+  paymentTermsRaw  String?
+
+  rawJson     Json
+  payloadHash String
+
+  firstSeenAt          DateTime @default(now())
+  lastSeenAt           DateTime @default(now())
+  presentInLastPayload Boolean  @default(true)
 
   syncedAt  DateTime
   createdAt DateTime @default(now())
@@ -2453,6 +2475,14 @@ model NomusStockDocument {
   @@index([tipoDocumentoEstoque])
   @@index([dataDocumento])
   @@index([syncedAt])
+  @@index([documentNumber])
+  @@index([isCancelled])
+  @@index([personExternalId])
+  @@index([companyExternalId])
+  @@index([movementDate])
+  @@index([payloadHash])
+  @@index([presentInLastPayload])
+  @@index([lastSeenAt])
 }
 
 model NomusStockDocumentItem {

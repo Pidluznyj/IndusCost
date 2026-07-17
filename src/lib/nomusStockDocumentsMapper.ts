@@ -1,5 +1,6 @@
 /** Mapper puro: payload Nomus `documentosEstoque` → stage local. */
 
+import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import {
   asString,
@@ -21,7 +22,7 @@ export type MappedNomusStockDocumentItem = {
 };
 
 /**
- * Confiabilidade da lista de itens no payload Nomus (sem migration / hash).
+ * Confiabilidade da lista de itens no payload Nomus.
  * - complete_with_items: array reconhecido e ao menos 1 item mapeado
  * - complete_empty: array reconhecido e explicitamente vazio
  * - partial_absent_array: nenhuma chave de itens conhecida no payload
@@ -39,11 +40,27 @@ export type StockDocumentItemsArrayInspection = {
   rawCount: number;
 };
 
+export type StockDocumentTotalValueSource = "raw" | "items_sum" | null;
+
 export type MappedNomusStockDocument = {
   externalId: number;
   idNfe: number | null;
   tipoDocumentoEstoque: string | null;
   dataDocumento: Date | null;
+  documentNumber: string | null;
+  statusRaw: string | null;
+  isCancelled: boolean;
+  cancelledAt: Date | null;
+  cancellationReason: string | null;
+  totalValue: Prisma.Decimal | null;
+  totalValueSource: StockDocumentTotalValueSource;
+  personExternalId: number | null;
+  personName: string | null;
+  companyExternalId: number | null;
+  companyName: string | null;
+  movementDate: Date | null;
+  paymentTermsRaw: string | null;
+  payloadHash: string;
   rawJson: JsonObject;
   items: MappedNomusStockDocumentItem[];
   itemsArray: StockDocumentItemsArrayInspection;
@@ -77,6 +94,10 @@ export function parseNomusStockUnitValue(input: unknown): number | null {
 
 export function computeEstimatedTotalValue(quantity: number, unitValue: number): number {
   return Number((quantity * unitValue).toFixed(6));
+}
+
+export function stableNomusStockDocumentPayloadHash(raw: JsonObject): string {
+  return createHash("sha256").update(JSON.stringify(raw)).digest("hex");
 }
 
 const ITEM_ARRAY_KEYS = [
@@ -182,6 +203,167 @@ export function classifyStockDocumentItemsReliability(input: {
   return "partial_unmapped";
 }
 
+/** Número comercial só quando distinto do externalId. */
+export function extractStockDocumentNumber(
+  raw: JsonObject,
+  externalId: number
+): string | null {
+  const candidates = [
+    asString(raw.numero),
+    asString(raw.numeroDocumento),
+    asString(raw.numeroDocumentoEstoque),
+    asString(raw.documentNumber),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (candidate === String(externalId)) continue;
+    return candidate;
+  }
+  return null;
+}
+
+export function extractStockDocumentStatusRaw(raw: JsonObject): string | null {
+  return (
+    asString(raw.status) ??
+    asString(raw.situacao) ??
+    asString(raw.statusDocumento) ??
+    asString(raw.situacaoDocumento)
+  );
+}
+
+/**
+ * Cancelamento só com evidência explícita no raw (não inferir por ausência).
+ * Cancelamento da NF não cancela o documento automaticamente.
+ */
+export function deriveStockDocumentCancellation(raw: JsonObject, statusRaw: string | null): {
+  isCancelled: boolean;
+  cancelledAt: Date | null;
+  cancellationReason: string | null;
+} {
+  const statusLower = (statusRaw ?? "").trim().toLowerCase();
+  const explicitFlag =
+    raw.cancelado === true ||
+    raw.cancelled === true ||
+    raw.isCancelled === true ||
+    raw.isCancelado === true;
+  const statusLooksCancelled =
+    statusLower.length > 0 &&
+    /(cancelad|cancelado|cancelled|cancelada)/i.test(statusLower);
+
+  const isCancelled = explicitFlag || statusLooksCancelled;
+  if (!isCancelled) {
+    return { isCancelled: false, cancelledAt: null, cancellationReason: null };
+  }
+
+  return {
+    isCancelled: true,
+    cancelledAt: parseNomusBrDateTime(
+      raw.dataCancelamento ?? raw.dataHoraCancelamento ?? raw.cancelledAt
+    ),
+    cancellationReason:
+      asString(raw.motivoCancelamento) ??
+      asString(raw.justificativaCancelamento) ??
+      asString(raw.cancellationReason) ??
+      null,
+  };
+}
+
+export function resolveStockDocumentTotalValue(
+  raw: JsonObject,
+  items: readonly MappedNomusStockDocumentItem[]
+): {
+  totalValue: Prisma.Decimal | null;
+  totalValueSource: StockDocumentTotalValueSource;
+} {
+  const rawTotal = parseNomusOptionalMoney(
+    raw.valorTotal ??
+      raw.valorDocumento ??
+      raw.totalDocumento ??
+      raw.vTotal ??
+      raw.valor
+  );
+  if (rawTotal != null && Number.isFinite(rawTotal)) {
+    return {
+      totalValue: new Prisma.Decimal(Number(rawTotal.toFixed(2))),
+      totalValueSource: "raw",
+    };
+  }
+
+  if (items.length === 0) {
+    return { totalValue: null, totalValueSource: null };
+  }
+
+  const sum = items.reduce(
+    (acc, item) => acc.add(item.estimatedTotalValue),
+    new Prisma.Decimal(0)
+  );
+  return {
+    totalValue: new Prisma.Decimal(sum.toFixed(2)),
+    totalValueSource: "items_sum",
+  };
+}
+
+export function extractStockDocumentPerson(raw: JsonObject): {
+  personExternalId: number | null;
+  personName: string | null;
+} {
+  const pessoa = asObject(raw.pessoa) ?? asObject(raw.cliente);
+  const personExternalId =
+    toInt(raw.idPessoa) ??
+    toInt(raw.personId) ??
+    toInt(raw.idCliente) ??
+    toInt(pessoa?.id);
+
+  const personName =
+    asString(raw.nomeCliente) ??
+    asString(raw.razaoSocialCliente) ??
+    asString(raw.customerName) ??
+    asString(raw.personName) ??
+    asString(pessoa?.nome) ??
+    asString(pessoa?.razaoSocial) ??
+    asString(pessoa?.name) ??
+    null;
+
+  return { personExternalId, personName };
+}
+
+export function extractStockDocumentCompany(raw: JsonObject): {
+  companyExternalId: number | null;
+  companyName: string | null;
+} {
+  const empresaObj = asObject(raw.empresa);
+  const companyExternalId =
+    toInt(raw.idEmpresa) ??
+    toInt(raw.companyId) ??
+    toInt(empresaObj?.id);
+
+  const companyName =
+    (typeof raw.empresa === "string" ? asString(raw.empresa) : null) ??
+    asString(raw.razaoSocialEmpresa) ??
+    asString(raw.companyName) ??
+    asString(empresaObj?.nome) ??
+    asString(empresaObj?.razaoSocial) ??
+    asString(empresaObj?.name) ??
+    null;
+
+  return { companyExternalId, companyName };
+}
+
+export function extractStockDocumentMovementDate(raw: JsonObject): Date | null {
+  return parseNomusBrDateTime(
+    raw.dataMovimentacao ?? raw.dataMov ?? raw.movementDate
+  );
+}
+
+export function extractStockDocumentPaymentTermsRaw(raw: JsonObject): string | null {
+  return (
+    asString(raw.condicaoPagamento) ??
+    asString(raw.descricaoCondicaoPagamento) ??
+    asString(raw.textoCondicaoPagamento) ??
+    asString(raw.paymentTerms)
+  );
+}
+
 export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentResult {
   const externalId = toInt(raw.id) ?? toInt(raw.idDocumentoEstoque);
   if (externalId == null) {
@@ -202,6 +384,12 @@ export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentR
     mappedItemCount: deduped.items.length,
   });
 
+  const statusRaw = extractStockDocumentStatusRaw(raw);
+  const cancellation = deriveStockDocumentCancellation(raw, statusRaw);
+  const person = extractStockDocumentPerson(raw);
+  const company = extractStockDocumentCompany(raw);
+  const total = resolveStockDocumentTotalValue(raw, deduped.items);
+
   return {
     ok: true,
     row: {
@@ -211,6 +399,20 @@ export function mapNomusStockDocumentPayload(raw: JsonObject): MapStockDocumentR
       dataDocumento: parseNomusBrDateTime(
         raw.data ?? raw.dataDocumento ?? raw.dataEmissao ?? raw.dataMovimento
       ),
+      documentNumber: extractStockDocumentNumber(raw, externalId),
+      statusRaw,
+      isCancelled: cancellation.isCancelled,
+      cancelledAt: cancellation.cancelledAt,
+      cancellationReason: cancellation.cancellationReason,
+      totalValue: total.totalValue,
+      totalValueSource: total.totalValueSource,
+      personExternalId: person.personExternalId,
+      personName: person.personName,
+      companyExternalId: company.companyExternalId,
+      companyName: company.companyName,
+      movementDate: extractStockDocumentMovementDate(raw),
+      paymentTermsRaw: extractStockDocumentPaymentTermsRaw(raw),
+      payloadHash: stableNomusStockDocumentPayloadHash(raw),
       rawJson: raw,
       items: deduped.items,
       itemsArray,

@@ -168,6 +168,21 @@ async function runApply(
           idNfe: row.idNfe,
           tipoDocumentoEstoque: row.tipoDocumentoEstoque,
           dataDocumento: row.dataDocumento,
+          documentNumber: row.documentNumber,
+          statusRaw: row.statusRaw,
+          isCancelled: row.isCancelled,
+          cancelledAt: row.cancelledAt,
+          cancellationReason: row.cancellationReason,
+          totalValue: row.totalValue,
+          personExternalId: row.personExternalId,
+          personName: row.personName,
+          companyExternalId: row.companyExternalId,
+          companyName: row.companyName,
+          movementDate: row.movementDate,
+          paymentTermsRaw: row.paymentTermsRaw,
+          payloadHash: row.payloadHash,
+          lastSeenAt: syncedAt,
+          presentInLastPayload: true,
           rawJson: row.rawJson as Prisma.InputJsonValue,
           syncedAt,
         };
@@ -177,6 +192,7 @@ async function runApply(
             ? await tx.nomusStockDocument.create({
                 data: {
                   externalId: row.externalId,
+                  firstSeenAt: syncedAt,
                   ...headerData,
                 },
                 select: { id: true },
@@ -189,6 +205,12 @@ async function runApply(
 
         if (existing == null) counters.documentsCreated += 1;
         else counters.documentsUpdated += 1;
+
+        if (row.totalValueSource === "items_sum") {
+          console.warn(
+            `${LOG_PREFIX} totalValue derivado da soma dos itens externalId=${row.externalId} total=${row.totalValue?.toString() ?? "null"}`
+          );
+        }
 
         const liveExistingItemCount = existing?._count.items ?? 0;
         const livePlan = planStockDocumentPersist(
@@ -359,9 +381,18 @@ async function main(): Promise<void> {
         summary,
         preview: rows.slice(0, 5).map((row) => ({
           externalId: row.externalId,
+          documentNumber: row.documentNumber,
           idNfe: row.idNfe,
           tipoDocumentoEstoque: row.tipoDocumentoEstoque,
           dataDocumento: row.dataDocumento?.toISOString() ?? null,
+          movementDate: row.movementDate?.toISOString() ?? null,
+          statusRaw: row.statusRaw,
+          isCancelled: row.isCancelled,
+          totalValue: row.totalValue?.toString() ?? null,
+          totalValueSource: row.totalValueSource,
+          personExternalId: row.personExternalId,
+          companyExternalId: row.companyExternalId,
+          payloadHash: row.payloadHash.slice(0, 12),
           itemsReliability: row.itemsReliability,
           items: row.items.length,
           itemSample: row.items.slice(0, 3).map((item) => ({

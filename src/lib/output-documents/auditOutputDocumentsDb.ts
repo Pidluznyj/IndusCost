@@ -323,15 +323,30 @@ export function buildFieldCoverageStat(input: {
 }
 
 /**
- * Campos normalizados de NomusStockDocument conforme schema atual.
- * Não inventa colunas ausentes (cliente/empresa/status/total etc.).
+ * Campos normalizados de NomusStockDocument conforme schema atual (DS-03.3).
  */
 export const NOMUS_STOCK_DOCUMENT_COVERAGE_FIELDS = [
   "externalId",
   "idNfe",
   "tipoDocumentoEstoque",
   "dataDocumento",
+  "documentNumber",
+  "statusRaw",
+  "isCancelled",
+  "cancelledAt",
+  "cancellationReason",
+  "totalValue",
+  "personExternalId",
+  "personName",
+  "companyExternalId",
+  "companyName",
+  "movementDate",
+  "paymentTermsRaw",
   "rawJson",
+  "payloadHash",
+  "firstSeenAt",
+  "lastSeenAt",
+  "presentInLastPayload",
   "syncedAt",
   "createdAt",
   "updatedAt",

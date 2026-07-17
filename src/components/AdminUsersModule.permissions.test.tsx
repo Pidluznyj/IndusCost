@@ -57,6 +57,30 @@ describe("AdminUsers PermissionsTree smoke (PERM-35)", () => {
     assert.ok(html.includes("permissionsVersion"));
   });
 
+  it("editor de permissões abre em modal dialog", () => {
+    const html = renderToStaticMarkup(
+      <div
+        data-testid="user-permission-editor-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-permission-editor-title"
+      >
+        <h4 id="user-permission-editor-title">Leticia</h4>
+        <button type="button" data-testid="user-permission-editor-close">
+          Fechar
+        </button>
+        <div data-testid="user-permission-editor-footer">
+          <button type="button">Salvar permissões</button>
+        </div>
+      </div>
+    );
+    assert.match(html, /role="dialog"/);
+    assert.match(html, /aria-modal="true"/);
+    assert.match(html, /user-permission-editor-modal/);
+    assert.match(html, /user-permission-editor-close/);
+    assert.match(html, /user-permission-editor-footer/);
+  });
+
   it("SUPER_ADMIN readOnly", () => {
     const tree: EditableTreeNodeDto[] = [
       {
