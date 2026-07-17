@@ -11,6 +11,7 @@ import {
   createSalesOrderFlowColumnLoadingState,
   createSalesOrderFlowColumnStates,
   markSalesOrderFlowColumnLoadingMore,
+  patchSalesOrderFlowKanbanCard,
   resolveSalesOrderFlowVisibleKanbanStages,
   SALES_ORDER_FLOW_COLUMN_PAGE_SIZE,
   SALES_ORDER_FLOW_KANBAN_STAGES,
@@ -257,6 +258,33 @@ describe("sales order flow kanban pagination (OP-68)", () => {
     assert.equal(list.columns[0]?.total, 4);
     assert.equal(list.columns[0]?.totals.overdueCount, 2);
     assert.equal(list.columns[1]?.total, 0);
+  });
+
+  it("atualiza prioridade/bloqueio do card sem mudar a coluna", () => {
+    const columns = createSalesOrderFlowColumnStates(["IN_PRODUCTION"], 1);
+    columns.IN_PRODUCTION = {
+      ...columns.IN_PRODUCTION!,
+      status: "ready",
+      cards: [card("ord-1"), card("ord-2")],
+      totals: {
+        overdueCount: 0,
+        blockedCount: 0,
+        inconsistentCount: 0,
+        partiallyShippedCount: 0,
+        withCutCount: 0,
+      },
+    };
+    const next = patchSalesOrderFlowKanbanCard(columns, "ord-1", {
+      priority: "URGENT",
+      isBlocked: true,
+      blockReason: "Aguardando peça",
+    });
+    assert.equal(next.IN_PRODUCTION?.cards[0]?.priority, "URGENT");
+    assert.equal(next.IN_PRODUCTION?.cards[0]?.isBlocked, true);
+    assert.equal(next.IN_PRODUCTION?.cards[0]?.blockReason, "Aguardando peça");
+    assert.equal(next.IN_PRODUCTION?.cards[0]?.stage, "IN_PRODUCTION");
+    assert.equal(next.IN_PRODUCTION?.totals.blockedCount, 1);
+    assert.equal(next.IN_PRODUCTION?.cards[1]?.priority, "NORMAL");
   });
 
   it("módulo usa carga por coluna com cursor, retry e cancelamento", () => {

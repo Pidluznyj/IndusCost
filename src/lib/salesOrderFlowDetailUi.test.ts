@@ -10,18 +10,24 @@ import {
   classifySalesOrderFlowDetailError,
   dedupeSalesOrderFlowDetailEventsByKey,
   filterSalesOrderFlowDetailInconsistencyRows,
+  filterSalesOrderFlowManagementAreaOptions,
   formatSalesOrderFlowFulfillmentClassification,
+  buildSalesOrderFlowManagementPatchBody,
+  classifySalesOrderFlowManagementError,
   resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailEventView,
   resolveSalesOrderFlowDetailInconsistencyRows,
   resolveSalesOrderFlowDetailItems,
   resolveSalesOrderFlowDetailShipmentViews,
+  resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
+  salesOrderFlowManagementToFormState,
 } from "@/src/lib/salesOrderFlowDetailUi.js";
 import { SalesOrderFlowDetailContent } from "@/src/components/commercial/SalesOrderFlowDetailDrawer.js";
 import {
   getSalesOrderFlowDetailApiPath,
   getSalesOrderFlowEventsApiPath,
+  getSalesOrderFlowManagementApiPath,
 } from "@/src/lib/salesOrderFlowClient.js";
 import type { SalesOrderFlowDetailTab } from "@/src/lib/salesOrderFlowDetailUi.js";
 
