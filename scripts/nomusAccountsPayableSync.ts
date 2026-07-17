@@ -44,6 +44,12 @@ import {
   isAccountsPayableAbsenceReconcileEnabled,
   loadAccountsPayableLifecycleLocals,
 } from "@/src/lib/nomus/nomusAccountsPayableSourceReconciliation.server.js";
+import type { NomusCanonicalSyncExecution } from "@/src/lib/nomus/nomusCanonicalSyncContract.js";
+import {
+  resolveSourceTriggerFromEnv,
+  runNomusAccountsPayableSync,
+  type NomusCanonicalSyncDelegateResult,
+} from "@/src/lib/nomus/nomusCanonicalSync.server.js";
 
 const prisma = new PrismaClient();
 const LOG_PREFIX = "[nomus-accounts-payable]";
@@ -269,7 +275,10 @@ function parseBrDateBound(value: string, endOfDay: boolean): Date {
   return new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0));
 }
 
-async function main(): Promise<void> {
+/** Implementação canônica CP — somente via runNomusAccountsPayableSync. */
+export async function executeNomusAccountsPayableSync(
+  execution?: NomusCanonicalSyncExecution
+): Promise<NomusCanonicalSyncDelegateResult> {
   const runStartedAt = new Date();
   const startedMs = Date.now();
   const options = parseAccountsPayableSyncCli(process.argv.slice(2));
@@ -334,11 +343,14 @@ async function main(): Promise<void> {
     mode: options.mode === "apply" ? "apply" : "preview",
   });
   if (!lock.ok) {
-    throw new Error(
-      lock.code === "LOCK_HELD"
-        ? lock.message
-        : "Lock de reconciliação de Contas a Pagar indisponível."
-    );
+    if (lock.code === "LOCK_HELD") {
+      return {
+        status: "SKIPPED_LOCKED",
+        message: lock.message,
+        hooksAlreadyRan: [],
+      };
+    }
+    throw new Error("Lock de reconciliação de Contas a Pagar indisponível.");
   }
 
   try {
@@ -364,7 +376,10 @@ async function main(): Promise<void> {
       fetchFailed: exitCode !== 0,
     });
 
-    const reconcileEnabled = isAccountsPayableAbsenceReconcileEnabled();
+    const reconcileEnabled =
+      isAccountsPayableAbsenceReconcileEnabled() &&
+      (execution?.allowMissingDetection === true ||
+        (process.env.NOMUS_CANONICAL_ALLOW_MISSING_DETECTION ?? "").trim() === "1");
     let sourceSyncRunId: string | null = null;
     const syncedAt = new Date();
 
@@ -545,12 +560,61 @@ async function main(): Promise<void> {
     if (exitCode !== 0) {
       process.exitCode = exitCode;
     }
+
+    return {
+      status:
+        exitCode !== 0
+          ? "FAILED"
+          : completeness.payloadComplete
+            ? "SUCCESS"
+            : "INCONCLUSIVE",
+      runId: sourceSyncRunId,
+      payloadComplete: completeness.payloadComplete,
+      hasRelevantChanges: Boolean(
+        (applied?.created ?? 0) + (applied?.updated ?? 0)
+      ),
+      counters: {
+        pagesRead: summary.pagesRead,
+        rowsRead: summary.recordsRead,
+        created: applied?.created ?? 0,
+        updated: applied?.updated ?? 0,
+        unchanged: applied?.unchanged ?? 0,
+        reactivated: 0,
+        missingCandidates: 0,
+        missingConfirmed: 0,
+        errors: (applied?.errors ?? 0) + summary.mapErrors,
+        http429: fetched.http429Count,
+      },
+      hooksAlreadyRan: [],
+    };
   } finally {
     lock.release();
   }
+
+  return { status: "FAILED", message: "AP sync ended unexpectedly", hooksAlreadyRan: [] };
 }
 
-main()
+async function mainCli(): Promise<void> {
+  const options = parseAccountsPayableSyncCli(process.argv.slice(2));
+  const result = await runNomusAccountsPayableSync(
+    {
+      strategy: "FULL_RECONCILIATION",
+      mode: options.mode === "apply" ? "apply" : "preview",
+      sourceTrigger: resolveSourceTriggerFromEnv(),
+      scope: { kind: "accounts_payable_cli", syncStrategy: options.syncStrategy },
+      allowMissingDetection: false,
+      allowMissingConfirmation: false,
+      requestedBy: "cli:nomusAccountsPayableSync",
+    },
+    (execution) => executeNomusAccountsPayableSync(execution)
+  );
+  if (result.status === "SKIPPED_LOCKED") {
+    console.warn(`${LOG_PREFIX} ${result.message ?? "SKIPPED_LOCKED"}`);
+    process.exitCode = 0;
+  }
+}
+
+mainCli()
   .catch((error) => {
     console.error(`${LOG_PREFIX} falha`, error instanceof Error ? error.message : error);
     process.exitCode = 1;

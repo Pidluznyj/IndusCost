@@ -47,6 +47,12 @@ import {
   isAccountsReceivableAbsenceReconcileEnabled,
   loadAccountsReceivableLifecycleLocals,
 } from "@/src/lib/nomus/nomusAccountsReceivableSourceReconciliation.server.js";
+import type { NomusCanonicalSyncExecution } from "@/src/lib/nomus/nomusCanonicalSyncContract.js";
+import {
+  resolveSourceTriggerFromEnv,
+  runNomusAccountsReceivableSync,
+  type NomusCanonicalSyncDelegateResult,
+} from "@/src/lib/nomus/nomusCanonicalSync.server.js";
 
 const prisma = new PrismaClient();
 const LOG_PREFIX = "[nomus-accounts-receivable]";
@@ -281,7 +287,10 @@ function parseBrDateBound(value: string, endOfDay: boolean): Date {
   return new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0));
 }
 
-async function main(): Promise<void> {
+/** Implementação canônica CR — somente via runNomusAccountsReceivableSync. */
+export async function executeNomusAccountsReceivableSync(
+  execution?: NomusCanonicalSyncExecution
+): Promise<NomusCanonicalSyncDelegateResult> {
   const runStartedAt = new Date();
   const startedMs = Date.now();
   const options = parseAccountsReceivableSyncCli(process.argv.slice(2));
@@ -346,11 +355,14 @@ async function main(): Promise<void> {
     mode: options.mode === "apply" ? "apply" : "preview",
   });
   if (!lock.ok) {
-    throw new Error(
-      lock.code === "LOCK_HELD"
-        ? lock.message
-        : "Lock de reconciliação de Contas a Receber indisponível."
-    );
+    if (lock.code === "LOCK_HELD") {
+      return {
+        status: "SKIPPED_LOCKED",
+        message: lock.message,
+        hooksAlreadyRan: [],
+      };
+    }
+    throw new Error("Lock de reconciliação de Contas a Receber indisponível.");
   }
 
   try {
@@ -376,7 +388,10 @@ async function main(): Promise<void> {
       fetchFailed: exitCode !== 0,
     });
 
-    const reconcileEnabled = isAccountsReceivableAbsenceReconcileEnabled();
+    const reconcileEnabled =
+      isAccountsReceivableAbsenceReconcileEnabled() &&
+      (execution?.allowMissingDetection === true ||
+        (process.env.NOMUS_CANONICAL_ALLOW_MISSING_DETECTION ?? "").trim() === "1");
     let sourceSyncRunId: string | null = null;
     const syncedAt = new Date();
 
@@ -584,12 +599,65 @@ async function main(): Promise<void> {
     if (exitCode !== 0) {
       process.exitCode = exitCode;
     }
+
+    return {
+      status:
+        exitCode !== 0
+          ? "FAILED"
+          : completeness.payloadComplete
+            ? "SUCCESS"
+            : "INCONCLUSIVE",
+      runId: sourceSyncRunId,
+      payloadComplete: completeness.payloadComplete,
+      hasRelevantChanges: Boolean(
+        (applied?.created ?? 0) + (applied?.updated ?? 0)
+      ),
+      counters: {
+        pagesRead: summary.pagesRead,
+        rowsRead: summary.recordsRead,
+        created: applied?.created ?? 0,
+        updated: applied?.updated ?? 0,
+        unchanged: applied?.unchanged ?? 0,
+        reactivated: 0,
+        missingCandidates: 0,
+        missingConfirmed: 0,
+        errors: (applied?.errors ?? 0) + summary.mapErrors,
+        http429: fetched.http429Count,
+      },
+      hooksAlreadyRan:
+        options.mode === "apply" && applied?.affectedReceivableIds?.length
+          ? ["commissionMaterialization"]
+          : [],
+    };
   } finally {
     lock.release();
   }
+
+  return { status: "FAILED", message: "AR sync ended unexpectedly", hooksAlreadyRan: [] };
 }
 
-main()
+async function mainCli(): Promise<void> {
+  const options = parseAccountsReceivableSyncCli(process.argv.slice(2));
+  const result = await runNomusAccountsReceivableSync(
+    {
+      strategy: "FULL_RECONCILIATION",
+      mode: options.mode === "apply" ? "apply" : "preview",
+      sourceTrigger: resolveSourceTriggerFromEnv(),
+      scope: { kind: "accounts_receivable_cli", syncStrategy: options.syncStrategy },
+      // Automático/admin: ausência só se flag canônica + env de reconciliação.
+      allowMissingDetection: false,
+      allowMissingConfirmation: false,
+      requestedBy: "cli:nomusAccountsReceivableSync",
+    },
+    (execution) => executeNomusAccountsReceivableSync(execution)
+  );
+  if (result.status === "SKIPPED_LOCKED") {
+    console.warn(`${LOG_PREFIX} ${result.message ?? "SKIPPED_LOCKED"}`);
+    process.exitCode = 0;
+  }
+}
+
+mainCli()
   .catch((error) => {
     console.error(`${LOG_PREFIX} falha`, error instanceof Error ? error.message : error);
     process.exitCode = 1;

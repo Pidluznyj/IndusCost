@@ -126,6 +126,7 @@
     "test:nomus:source-reconcile-cli": "tsx --test src/lib/nomus/nomusLifecycleBackfill.test.ts",
     "test:nomus:source-observability": "tsx --test src/lib/nomus/nomusSourceReconciliationObservability.test.ts",
     "test:nomus:source-rc": "tsx --test src/lib/nomus/nomusCrudReconciliationReleaseCandidate.test.ts",
+    "test:nomus:canonical-sync": "tsx --test src/lib/nomus/nomusCanonicalSyncContract.test.ts",
     "backfill:nomus:lifecycle:preview": "tsx scripts/nomusLifecycleBackfill.ts preview",
     "backfill:nomus:lifecycle:apply": "tsx scripts/nomusLifecycleBackfill.ts apply",
     "reconcile:nomus:sales-orders": "tsx scripts/nomusSalesOrdersSourceReconcile.ts",

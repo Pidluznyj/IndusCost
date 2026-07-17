@@ -67,6 +67,15 @@ import {
   isSalesOrderAbsenceReconcileEnabled,
   loadSalesOrderLifecycleLocals,
 } from "../src/lib/nomus/nomusSalesOrderSourceReconciliation.server.ts";
+import {
+  mapLegacySalesOrderStrategy,
+  type NomusCanonicalSyncExecution,
+} from "../src/lib/nomus/nomusCanonicalSyncContract.ts";
+import {
+  resolveSourceTriggerFromEnv,
+  runNomusSalesOrdersSync,
+  type NomusCanonicalSyncDelegateResult,
+} from "../src/lib/nomus/nomusCanonicalSync.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -1559,13 +1568,26 @@ function resolveSyncCoverageBounds(
   };
 }
 
-async function main(): Promise<void> {
+/**
+ * Implementação canônica de Pedidos (SYNC-07).
+ * Chamada apenas via runNomusSalesOrdersSync — não invocar regras paralelas.
+ */
+export async function executeNomusSalesOrdersSync(
+  execution?: NomusCanonicalSyncExecution
+): Promise<NomusCanonicalSyncDelegateResult> {
   const startedAt = Date.now();
   syncHttpStats.http429Count = 0;
-  const isApply = process.argv.includes("--apply");
-  const targetOrderCode = parseCliArg("orderCode");
-  const strategy = parseCliStrategy();
+  const isApply =
+    execution?.mode === "apply" ||
+    (execution == null && process.argv.includes("--apply"));
+  const targetOrderCode =
+    execution?.targetOrderCode ?? parseCliArg("orderCode");
+  const strategy: NomusSalesOrdersSyncStrategy =
+    execution != null
+      ? (execution.legacyStrategyLabel as NomusSalesOrdersSyncStrategy)
+      : parseCliStrategy();
   const referenceNow = new Date();
+  const hooksAlreadyRan: string[] = [];
 
   const nomusBaseUrl = getRequiredEnv("NOMUS_BASE_URL");
   const maxRetries = Math.max(0, toInt(process.env.NOMUS_MAX_RETRIES) ?? DEFAULT_MAX_RETRIES);
@@ -1787,7 +1809,16 @@ async function main(): Promise<void> {
     stoppedBecauseWindowExceeded: fetchResult.meta.stoppedBecauseWindowExceeded,
     http429Count: syncHttpStats.http429Count,
   });
-  const reconcileEnabled = isSalesOrderAbsenceReconcileEnabled();
+  const canonicalAllowsMissing =
+    (process.env.NOMUS_CANONICAL_ALLOW_MISSING_DETECTION ?? "").trim() === "1";
+  const reconcileEnabled =
+    isSalesOrderAbsenceReconcileEnabled() &&
+    (execution != null
+      ? execution.allowMissingDetection
+      : canonicalAllowsMissing || strategy === "full-reconciliation");
+  // RECENT_WINDOW: nunca ausência (contrato SYNC-07 / SYNC-04).
+  const reconcileEnabledFinal =
+    strategy === "recent-window" ? false : reconcileEnabled;
   const scope = buildSalesOrderSyncReconciliationScope({
     strategy,
     fromIso: coverage.fromIso,
@@ -1798,11 +1829,15 @@ async function main(): Promise<void> {
     mode: isApply ? "apply" : "preview",
   });
   if (!lock.ok) {
-    throw new Error(
-      lock.code === "LOCK_HELD"
-        ? lock.message
-        : "Não foi possível adquirir lock de reconciliação de Pedidos."
-    );
+    if (lock.code === "LOCK_HELD") {
+      return {
+        status: "SKIPPED_LOCKED",
+        message: lock.message,
+        payloadComplete: null,
+        hooksAlreadyRan: [],
+      };
+    }
+    throw new Error("Não foi possível adquirir lock de reconciliação de Pedidos.");
   }
 
   let sourceSyncRunId: string | null = null;
@@ -1810,6 +1845,18 @@ async function main(): Promise<void> {
   let directedConfirmPreview: ReturnType<
     typeof planDirectedSalesOrderAbsenceConfirmation
   > = null;
+  let reconciliationPlan = buildSalesOrderSourceReconciliationPlan({
+    strategy,
+    scope,
+    completeness,
+    reconciliationEnabled: false,
+    foundPedidos: [],
+    localRecords: [],
+    executedAt: new Date(),
+    mode: isApply ? "apply" : "preview",
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let applied: any = null;
 
   try {
     if (isApply) {
@@ -1855,11 +1902,11 @@ async function main(): Promise<void> {
       });
     }
 
-    const reconciliationPlan = buildSalesOrderSourceReconciliationPlan({
+    reconciliationPlan = buildSalesOrderSourceReconciliationPlan({
       strategy,
       scope,
       completeness,
-      reconciliationEnabled: reconcileEnabled,
+      reconciliationEnabled: reconcileEnabledFinal,
       foundPedidos,
       localRecords: lifecycleLocals,
       directedLookups:
@@ -1913,7 +1960,7 @@ async function main(): Promise<void> {
     timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
     const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
     const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
-    const applied = isApply
+    applied = isApply
       ? await runApply(eligible, existingIndexes, {
           runId: sourceSyncRunId,
           executedAt: new Date(),
@@ -1922,7 +1969,7 @@ async function main(): Promise<void> {
     timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
 
     // Ausências só em full-reconciliation (+ flag). recent-window nunca grava missing*.
-    if (isApply && reconcileEnabled && strategy === "full-reconciliation") {
+    if (isApply && reconcileEnabledFinal && strategy === "full-reconciliation") {
       const absencePatches = [
         ...reconciliationPlan.missingCandidates,
         ...reconciliationPlan.missingConfirmed,
@@ -2019,7 +2066,9 @@ async function main(): Promise<void> {
         applied,
         sourceLifecycle: {
           runId: sourceSyncRunId,
-          reconciliationEnabled: reconcileEnabled,
+          reconciliationEnabled: reconcileEnabledFinal,
+          correlationId: execution?.correlationId ?? process.env.NOMUS_CANONICAL_CORRELATION_ID ?? null,
+          sourceTrigger: execution?.sourceTrigger ?? process.env.NOMUS_CANONICAL_SOURCE_TRIGGER ?? null,
           fetchCompleteness: completeness,
           creates: reconciliationPreview.creates,
           updates: reconciliationPreview.updates,
@@ -2057,6 +2106,8 @@ async function main(): Promise<void> {
   );
 
   if (isApply && applied?.affectedSalesOrderIds?.length) {
+    // Hooks: uma vez por run (correlationId no env). Preview não chega aqui.
+    hooksAlreadyRan.push("commissionMaterialization");
     await runCommissionMaterializationAfterNomusSync(
       prisma,
       buildNomusSyncMaterializationTrigger({
@@ -2068,6 +2119,7 @@ async function main(): Promise<void> {
 
     // Carteira vazia: preenche Responsável Comercial a partir do vendedor do pedido (não substitui).
     try {
+      hooksAlreadyRan.push("crmCommercialOwnerAutoAssign");
       const ownerAssign = await autoAssignCommercialOwnersAfterNomusSync(
         prisma,
         applied.affectedSalesOrderIds
@@ -2099,6 +2151,7 @@ async function main(): Promise<void> {
       const salesOrderExternalIds = linked
         .map((row) => row.externalSalesOrderId)
         .filter((id): id is number => id != null && Number.isFinite(id) && id > 0);
+      hooksAlreadyRan.push("productionOrdersAfterSalesOrders");
       const opResult = await runNomusProductionOrdersAfterSalesOrdersSync({
         prisma,
         salesOrderExternalIds,
@@ -2126,6 +2179,7 @@ async function main(): Promise<void> {
     // OP-57: recomputa fluxo após persistência de pedidos (+ OP pós-sync). Soft-fail.
     // Cobre também corte/atendimento/cancelamento gravados no apply de itens.
     try {
+      hooksAlreadyRan.push("salesOrderFlowRecompute");
       await runSalesOrderFlowRecomputeAfterNomusSync(
         prisma,
         buildSalesOrderFlowRecomputeAfterSyncTrigger({
@@ -2144,9 +2198,69 @@ async function main(): Promise<void> {
   } finally {
     lock.release();
   }
+
+  return {
+    status: completeness.payloadComplete || strategy === "recent-window" ? "SUCCESS" : "INCONCLUSIVE",
+    runId: sourceSyncRunId,
+    payloadComplete: completeness.payloadComplete,
+    hasRelevantChanges: Boolean(
+      (applied?.created ?? 0) +
+        (applied?.updated ?? 0) +
+        (applied?.reactivatedSalesOrderIds?.length ?? 0)
+    ),
+    counters: {
+      pagesRead: Math.max(
+        0,
+        fetchResult.meta.lastPageFetched - fetchResult.meta.startPage + 1
+      ),
+      rowsRead: pedidos.length,
+      created: applied?.created ?? 0,
+      updated: applied?.updated ?? 0,
+      unchanged: reconciliationPlan.counters.unchanged,
+      reactivated:
+        (applied?.reactivatedSalesOrderIds.length ?? 0) ||
+        reconciliationPlan.counters.reactivated,
+      missingCandidates: reconciliationPlan.counters.missingCandidates,
+      missingConfirmed: reconciliationPlan.counters.missingConfirmed,
+      errors: 0,
+      http429: syncHttpStats.http429Count,
+    },
+    hooksAlreadyRan,
+  };
 }
 
-main()
+async function mainCli(): Promise<void> {
+  const isApply = process.argv.includes("--apply");
+  const targetOrderCode = parseCliArg("orderCode");
+  const legacyStrategy = parseCliStrategy();
+  const strategy = mapLegacySalesOrderStrategy(
+    targetOrderCode ? "targeted_lookup" : legacyStrategy
+  );
+  const result = await runNomusSalesOrdersSync(
+    {
+      strategy,
+      mode: isApply ? "apply" : "preview",
+      sourceTrigger: resolveSourceTriggerFromEnv(),
+      scope: { kind: "sales_orders_cli", strategy: legacyStrategy },
+      targetOrderCode,
+      allowMissingDetection: strategy !== "RECENT_WINDOW",
+      allowMissingConfirmation:
+        strategy === "TARGETED_LOOKUP" || strategy === "FULL_RECONCILIATION",
+      requestedBy: "cli:nomusSalesOrdersSyncV1",
+    },
+    (execution) => executeNomusSalesOrdersSync(execution)
+  );
+  if (result.status === "SKIPPED_LOCKED") {
+    console.warn(`[nomus-sales-orders-v1] ${result.message ?? "SKIPPED_LOCKED"}`);
+    process.exitCode = 0;
+    return;
+  }
+  if (!result.ok && result.status === "FAILED") {
+    process.exitCode = 1;
+  }
+}
+
+mainCli()
   .catch((err) => {
     console.error("[nomus-sales-orders-v1] erro:", err);
     process.exitCode = 1;

@@ -313,9 +313,22 @@ function runStep(target: SyncTarget, mode: SyncMode, logDir: string): StepExecut
   const logFile = join(logDir, `${target}_${mode}_${fileStamp()}.log`);
   const command = `npm run ${npmScript}`;
 
+  // SYNC-07 — Pedidos via orquestrador: estratégia explícita RECENT_WINDOW (sem ausência).
+  const childEnv =
+    target === "sales-orders"
+      ? {
+          ...process.env,
+          NOMUS_CANONICAL_SOURCE_TRIGGER: "ORCHESTRATOR",
+          NOMUS_CANONICAL_STRATEGY: "RECENT_WINDOW",
+          NOMUS_SALES_ORDERS_SYNC_STRATEGY: "recent-window",
+          NOMUS_CANONICAL_ALLOW_MISSING_DETECTION: "0",
+          NOMUS_CANONICAL_ALLOW_MISSING_CONFIRMATION: "0",
+        }
+      : { ...process.env, NOMUS_CANONICAL_SOURCE_TRIGGER: "ORCHESTRATOR" };
+
   const result = spawnSync("npm", ["run", npmScript], {
     cwd: process.cwd(),
-    env: process.env,
+    env: childEnv,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 50,
   });

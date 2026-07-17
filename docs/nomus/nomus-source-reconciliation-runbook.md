@@ -23,6 +23,21 @@
 
 ---
 
+## Rotinas automáticas (SYNC-07)
+
+Todas as entradas (cron shell, painel, CLI, orquestrador) devem chamar:
+
+- `runNomusSalesOrdersSync`
+- `runNomusAccountsReceivableSync`
+- `runNomusAccountsPayableSync`
+
+Detalhes: `docs/nomus/nomus-automatic-sync-routines.md`.
+
+Horária de Pedidos = `RECENT_WINDOW` (sem ausência).
+CR/CP automáticos: CREATE/UPDATE com ausência off até flag + completude.
+
+---
+
 ## Flags (fail-closed)
 
 Ausência / lifecycle de reconciliação:
