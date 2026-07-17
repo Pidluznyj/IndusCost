@@ -1,9 +1,10 @@
-# Operações e Administração — permissões (Prompt 15)
+# Operações e Administração — permissões (Prompt 15 → PERM-42)
 
 | | |
 |---|---|
-| **Padrão** | Comissões / Prompt 13 (`canViewResource` + legado) |
+| **Padrão** | PERM-42 DTO-first (`canPerformAction`) + legado só sem DTO |
 | **Fonte FE** | `operationsAdminPermissions.ts`, `permissionsClient` ResourceKeys, `sidebarMenuResources` |
+| **Matriz oficial** | [`operations-admin-permissions.md`](./operations-admin-permissions.md) |
 
 ---
 

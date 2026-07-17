@@ -135,10 +135,10 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "inventory":
       return check.hasPermission("inventory.view");
     case "operations-performance":
+      // PERM-42: sem bleed de products.view
       return check.hasAnyPermission([
         "operations.component-performance.view",
         "operations.component-performance.edit",
-        "products.view",
       ]);
     case "production-orders":
       return check.hasPermission("operations.production-orders.view");
@@ -161,11 +161,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("settings.view")
       );
     case "suppliers":
-      return (
-        check.hasPermission("finance.suppliers.view") ||
-        check.hasPermission("finance.cost_centers.view") ||
-        check.hasPermission("finance.view")
-      );
+      // PERM-41/42: Fornecedores isolado de Centros de Custo / finance.view
+      return check.hasPermission("finance.suppliers.view");
     case "portfolio-reconciliation":
       return (
         check.hasPermission("finance.portfolioReconciliation.view") ||
@@ -175,7 +172,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("finance.portfolioReconciliation.orderStatusPedidos.view")
       );
     case "guide":
-      return check.hasPermission("guide.view") || check.hasPermission("dashboard.view");
+      // PERM-42: sem bleed de dashboard.view
+      return check.hasPermission("guide.view");
     default:
       return false;
   }

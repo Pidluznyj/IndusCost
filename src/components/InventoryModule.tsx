@@ -3,11 +3,8 @@ import { RefreshCw } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
-import { canAccessModule } from "@/src/lib/modulePermissions";
-import { canViewInventory } from "@/src/lib/operationsAdminPermissions";
 import { INVENTORY_UI_TABS } from "@/src/lib/moduleTabResources";
 import { InventoryDashboardTab } from "@/src/components/inventory/InventoryDashboardTab";
 import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab";
@@ -37,13 +34,11 @@ type Props = {
 };
 
 export function InventoryModule({ initialTab }: Props = {}) {
-  const auth = useAuth();
   const permissions = usePermissions();
-  const resourceCheck = { ...auth, canViewResource: permissions.canView };
   const location = useLocation();
   const navigate = useNavigate();
-  const canView =
-    canViewInventory(resourceCheck) || canAccessModule("inventory", auth);
+  /** PERM-42 — view via DTO/sidebar oficial (não bag canAccessModule). */
+  const canView = permissions.canViewModule("inventory");
   const [tab, setTab] = useState<InventoryTabId>(
     initialTab ?? resolveInventoryTabFromPath(location.pathname)
   );

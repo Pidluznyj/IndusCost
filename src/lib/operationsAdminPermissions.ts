@@ -1,7 +1,7 @@
 /**
- * Permissões Operações + Administração (Prompt 15) — padrão Comissões / Prompt 13:
- * resourceKey (view/nav) + legado para mutações justificadas.
- * RH: salários e contatos de emergência exigem employees.edit (dados sensíveis).
+ * Permissões Operações + Administração (PERM-42: DTO-first).
+ * resourceKey oficial + legado só quando `canPerformAction` ausente.
+ * Regras de negócio de estoque/compras/manutenção/frota intactas.
  */
 
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
@@ -12,9 +12,12 @@ import {
   canViewAccessProfiles,
 } from "@/src/lib/modulePermissions.js";
 import { ResourceKeys } from "@/src/lib/permissionsClient.js";
+import { OPERATIONS_RESOURCE_KEYS } from "@/src/lib/operationsAccess.js";
+import { ADMIN_SETTINGS_RESOURCE_KEYS } from "@/src/lib/adminSettingsAccess.js";
 
 export type ResourceAwareChecker = PermissionChecker & {
   canViewResource?: (resourceKey: string) => boolean;
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
 };
 
 export type OpsInventoryTabId =
@@ -27,18 +30,26 @@ export type OpsInventoryTabId =
   | "reservations"
   | "audit";
 
-function legacyOrResource(
-  check: ResourceAwareChecker,
-  resourceKey: string | null | undefined,
+/**
+ * Com `canPerformAction` (DTO), a decisão é autoritativa — sem OR legado
+ * que misture products.view ↔ Performance ou dashboard.view ↔ Guia.
+ */
+function dtoOrLegacy(
+  auth: ResourceAwareChecker,
+  resourceKey: string,
+  action: string,
   legacy: () => boolean
 ): boolean {
-  if (resourceKey && typeof check.canViewResource === "function") {
-    if (check.canViewResource(resourceKey)) return true;
+  if (typeof auth.canPerformAction === "function") {
+    return auth.canPerformAction(resourceKey, action);
+  }
+  if (action === "view" && typeof auth.canViewResource === "function") {
+    if (auth.canViewResource(resourceKey)) return true;
   }
   return legacy();
 }
 
-/** Abas de estoque com recurso canônico fino (contrato). */
+/** Abas de estoque com recurso canônico fino (contrato). Almoxarifados = warehouses. */
 export const INVENTORY_TAB_RESOURCE_KEYS: Partial<Record<OpsInventoryTabId, string>> = {
   items: ResourceKeys.OPERACOES_ESTOQUE_ITENS,
   warehouses: ResourceKeys.OPERACOES_ESTOQUE_ALMOXARIFADOS,
@@ -48,188 +59,221 @@ export const INVENTORY_TAB_RESOURCE_KEYS: Partial<Record<OpsInventoryTabId, stri
 
 // ─── Operações: Estoque ──────────────────────────────────────
 
-export function canViewInventory(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_ESTOQUE, () =>
-    check.hasPermission("inventory.view")
+export function canViewInventory(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.inventory, "view", () =>
+    auth.hasPermission("inventory.view")
   );
 }
 
 export function canViewInventoryTab(
   tabId: OpsInventoryTabId,
-  check: ResourceAwareChecker
+  auth: ResourceAwareChecker
 ): boolean {
-  if (!canViewInventory(check)) return false;
+  if (!canViewInventory(auth)) return false;
   const resourceKey = INVENTORY_TAB_RESOURCE_KEYS[tabId];
   if (!resourceKey) {
     // overview / balances / reservations / audit — herdam view do módulo
     return true;
   }
-  return legacyOrResource(check, resourceKey, () => check.hasPermission("inventory.view"));
+  return dtoOrLegacy(auth, resourceKey, "view", () => auth.hasPermission("inventory.view"));
 }
 
 export function listVisibleInventoryTabIds(
   tabIds: readonly OpsInventoryTabId[],
-  check: ResourceAwareChecker
+  auth: ResourceAwareChecker
 ): OpsInventoryTabId[] {
-  return tabIds.filter((id) => canViewInventoryTab(id, check));
+  return tabIds.filter((id) => canViewInventoryTab(id, auth));
 }
 
 // ─── Operações: Compras / Máquinas / Performance / Manutenção / Frota ─
 
-export function canViewPurchases(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_COMPRAS, () =>
-    check.hasPermission("purchases.view")
+export function canViewPurchases(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.purchases, "view", () =>
+    auth.hasPermission("purchases.view")
   );
 }
 
-export function canCreatePurchases(check: PermissionChecker): boolean {
-  return check.hasPermission("purchases.create");
-}
-
-export function canEditPurchases(check: PermissionChecker): boolean {
-  return check.hasPermission("purchases.edit");
-}
-
-export function canViewMachines(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_MAQUINAS, () =>
-    check.hasPermission("machines.view")
+export function canCreatePurchases(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.purchases, "create", () =>
+    auth.hasPermission("purchases.create")
   );
 }
 
-export function canEditMachines(check: PermissionChecker): boolean {
-  return check.hasPermission("machines.edit");
-}
-
-export function canViewOperationsPerformance(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_PERFORMANCE, () =>
-    check.hasPermission("operations.component-performance.view") ||
-      check.hasPermission("operations.component-performance.edit") ||
-      check.hasPermission("products.view")
+export function canEditPurchases(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.purchases, "update", () =>
+    auth.hasPermission("purchases.edit")
   );
 }
 
-export function canEditOperationsPerformance(check: PermissionChecker): boolean {
-  return (
-    check.hasPermission("operations.component-performance.edit") ||
-    check.hasPermission("products.edit")
+export function canDeletePurchases(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.purchases, "delete", () =>
+    auth.hasPermission("purchases.delete") || auth.hasPermission("purchases.edit")
   );
 }
 
-export function canViewMaintenance(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_MANUTENCAO, () =>
-    check.hasPermission("maintenance.view")
+export function canViewMachines(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.machines, "view", () =>
+    auth.hasPermission("machines.view")
   );
 }
 
-export function canManageMaintenance(check: PermissionChecker): boolean {
-  return check.hasPermission("maintenance.manage");
+export function canEditMachines(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.machines, "update", () =>
+    auth.hasPermission("machines.edit")
+  );
 }
 
-export function canViewFleet(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.OPERACOES_FROTA, () => {
-    const held = check.authUser?.effectivePermissions;
+/** Performance — sem bleed de products.view (PERM-42). */
+export function canViewOperationsPerformance(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.performance, "view", () =>
+    auth.hasPermission("operations.component-performance.view") ||
+      auth.hasPermission("operations.component-performance.edit")
+  );
+}
+
+export function canEditOperationsPerformance(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.performance, "update", () =>
+    auth.hasPermission("operations.component-performance.edit")
+  );
+}
+
+export function canViewProductionOrders(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.productionOrders, "view", () =>
+    auth.hasPermission("operations.production-orders.view")
+  );
+}
+
+export function canViewMaintenance(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.maintenance, "view", () =>
+    auth.hasPermission("maintenance.view")
+  );
+}
+
+export function canManageMaintenance(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.maintenance, "manage", () =>
+    auth.hasPermission("maintenance.manage")
+  );
+}
+
+export function canViewFleet(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.fleet, "view", () => {
+    const held = auth.authUser?.effectivePermissions;
     if (held?.length) {
       return held.includes("fleet.view") || held.includes("fleet.manage");
     }
-    return check.hasPermission("fleet.view") || check.hasPermission("fleet.manage");
+    return auth.hasPermission("fleet.view") || auth.hasPermission("fleet.manage");
   });
 }
 
-export function canManageFleet(check: PermissionChecker): boolean {
-  return check.hasPermission("fleet.manage");
+export function canManageFleet(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, OPERATIONS_RESOURCE_KEYS.fleet, "manage", () =>
+    auth.hasPermission("fleet.manage")
+  );
 }
 
 // ─── Administração: RH ───────────────────────────────────────
 
-export function canViewEmployees(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS, () =>
-    check.hasPermission("employees.view")
+export function canViewEmployees(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS, "view", () =>
+    auth.hasPermission("employees.view")
   );
 }
 
-export function canEditEmployees(check: PermissionChecker): boolean {
-  return check.hasPermission("employees.edit");
+export function canEditEmployees(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS, "update", () =>
+    auth.hasPermission("employees.edit")
+  );
 }
 
-export function canCreateEmployees(check: PermissionChecker): boolean {
+export function canCreateEmployees(auth: ResourceAwareChecker): boolean {
+  if (typeof auth.canPerformAction === "function") {
+    return (
+      auth.canPerformAction(ResourceKeys.ADMIN_PESSOAS, "create") ||
+      auth.canPerformAction(ResourceKeys.ADMIN_PESSOAS, "update")
+    );
+  }
   return (
-    check.hasPermission("employees.create") || check.hasPermission("employees.edit")
+    auth.hasPermission("employees.create") || auth.hasPermission("employees.edit")
   );
 }
 
 /**
  * Dados sensíveis de RH (salário, encargos, contato de emergência).
- * Facetas finas OR legado employees.edit — costs.view não libera RH (P09/P15).
+ * Facetas finas OR legado employees.edit — costs.view não libera RH.
  */
-export function canViewEmployeeCompensation(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_SENSITIVE_DATA, () =>
-    check.hasPermission("employees.edit") ||
-      check.hasPermission("employees.sensitive_data.view")
+export function canViewEmployeeCompensation(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_SENSITIVE_DATA, "view", () =>
+    auth.hasPermission("employees.edit") ||
+      auth.hasPermission("employees.sensitive_data.view")
   );
 }
 
-export function canViewEmployeeEmergencyContacts(check: ResourceAwareChecker): boolean {
-  return canViewEmployeeCompensation(check);
+export function canViewEmployeeEmergencyContacts(auth: ResourceAwareChecker): boolean {
+  return canViewEmployeeCompensation(auth);
 }
 
-export function canViewEmployeePersonalData(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_PERSONAL_DATA, () =>
-    check.hasPermission("employees.edit") ||
-      check.hasPermission("employees.personal_data.view") ||
-      check.hasPermission("people.pii.view")
+export function canViewEmployeePersonalData(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_PERSONAL_DATA, "view", () =>
+    auth.hasPermission("employees.edit") ||
+      auth.hasPermission("employees.personal_data.view") ||
+      auth.hasPermission("people.pii.view")
   );
 }
 
-export function canViewEmployeeAdministrativeData(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_ADMINISTRATIVE_DATA, () =>
-    check.hasPermission("employees.edit") ||
-      check.hasPermission("employees.administrative_data.view")
+export function canViewEmployeeAdministrativeData(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_ADMINISTRATIVE_DATA, "view", () =>
+    auth.hasPermission("employees.edit") ||
+      auth.hasPermission("employees.administrative_data.view")
   );
 }
 
-export function canViewEmployeeLinks(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_PESSOAS_LINKS, () =>
-    check.hasPermission("employees.links.view") ||
-      check.hasPermission("employees.view") ||
-      check.hasPermission("employees.edit") ||
-      check.hasPermission("people.search")
+export function canViewEmployeeLinks(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_LINKS, "view", () =>
+    auth.hasPermission("employees.links.view") ||
+      auth.hasPermission("employees.view") ||
+      auth.hasPermission("employees.edit") ||
+      auth.hasPermission("people.search")
   );
 }
 
-export function canManageEmployeeLinks(check: PermissionChecker): boolean {
-  return (
-    check.hasPermission("employees.links.manage") ||
-    check.hasPermission("people.link.manage") ||
-    check.hasPermission("employees.edit") ||
-    check.hasPermission("users.manage")
+export function canManageEmployeeLinks(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_LINKS, "manage", () =>
+    auth.hasPermission("employees.links.manage") ||
+      auth.hasPermission("people.link.manage") ||
+      auth.hasPermission("employees.edit") ||
+      auth.hasPermission("users.manage")
   );
 }
 
-export function canManageEmployeeUserLink(check: PermissionChecker): boolean {
-  return (
-    check.hasPermission("employees.user_link.manage") ||
-    check.hasPermission("employees.edit") ||
-    check.hasPermission("users.manage")
+export function canManageEmployeeUserLink(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_USER_LINK, "manage", () =>
+    auth.hasPermission("employees.user_link.manage") ||
+      auth.hasPermission("employees.edit") ||
+      auth.hasPermission("users.manage")
   );
 }
 
-export function canManageEmployeeEpi(check: PermissionChecker): boolean {
-  return (
-    check.hasPermission("employees.epi.manage") || check.hasPermission("employees.edit")
+export function canManageEmployeeEpi(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_EPI, "manage", () =>
+    auth.hasPermission("employees.epi.manage") || auth.hasPermission("employees.edit")
   );
 }
 
 // ─── Administração: Configurações / Guia / ACL ───────────────
 
-export function canViewSettings(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.CONFIGURACOES, () =>
-    check.hasPermission("settings.view") || check.hasPermission("users.manage")
+export function canViewSettings(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ADMIN_SETTINGS_RESOURCE_KEYS.settings, "view", () =>
+    auth.hasPermission("settings.view") ||
+      auth.hasPermission("users.manage") ||
+      (typeof auth.canViewResource === "function" &&
+        auth.canViewResource(ResourceKeys.CONFIGURACOES))
   );
 }
 
-export function canViewGuide(check: ResourceAwareChecker): boolean {
-  return legacyOrResource(check, ResourceKeys.ADMIN_GUIA, () =>
-    check.hasPermission("guide.view") || check.hasPermission("dashboard.view")
+/** Guia — sem bleed de dashboard.view (PERM-42). */
+export function canViewGuide(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_GUIA, "view", () =>
+    auth.hasPermission("guide.view")
   );
 }
 

@@ -186,6 +186,53 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
     ],
   },
   {
+    id: "machines",
+    label: "Máquinas",
+    resourceKey: OPERATIONS_RESOURCE_KEYS.machines,
+    actions: ["edit"],
+    writeEndpoints: [
+      { method: "PUT", path: "/api/machines/:id", action: "update" },
+    ],
+  },
+  {
+    id: "operations-performance",
+    label: "Performance",
+    resourceKey: OPERATIONS_RESOURCE_KEYS.performance,
+    actions: ["edit"],
+    writeEndpoints: [
+      {
+        method: "PUT",
+        path: "/api/operations/component-performance/:id",
+        action: "update",
+      },
+    ],
+  },
+  {
+    id: "production-orders",
+    label: "Ordens de Produção",
+    resourceKey: OPERATIONS_RESOURCE_KEYS.productionOrders,
+    actions: [],
+    writeEndpoints: [],
+  },
+  {
+    id: "maintenance",
+    label: "Manutenção Predial",
+    resourceKey: OPERATIONS_RESOURCE_KEYS.maintenance,
+    actions: ["configure"],
+    writeEndpoints: [
+      { method: "POST", path: "/api/maintenance-requests", action: "configure" },
+    ],
+  },
+  {
+    id: "fleet",
+    label: "Gestão de Frota",
+    resourceKey: OPERATIONS_RESOURCE_KEYS.fleet,
+    actions: ["configure"],
+    writeEndpoints: [
+      { method: "POST", path: "/api/fleet/vehicles", action: "configure" },
+    ],
+  },
+  {
     id: "employees",
     label: "Pessoas / RH",
     resourceKey: EMPLOYEES_RESOURCE_KEYS.module,
@@ -221,14 +268,27 @@ export function resolveSurfaceAction(
   const surface = ACTION_PERMISSION_SURFACES.find((s) => s.id === surfaceId);
   if (!surface) return null;
   if (!surface.actions.includes(uiAction)) return null;
-  // Fornecedores: contrato usa manage (não create/update finos).
-  if (surface.id === "finance-suppliers") {
-    if (uiAction === "create" || uiAction === "edit" || uiAction === "configure") {
+  // Fornecedores / manutenção / frota: contrato usa manage (não create/update finos).
+  if (
+    surface.id === "finance-suppliers" ||
+    surface.id === "maintenance" ||
+    surface.id === "fleet"
+  ) {
+    if (
+      uiAction === "create" ||
+      uiAction === "edit" ||
+      uiAction === "configure" ||
+      uiAction === "delete"
+    ) {
       return { resourceKey: surface.resourceKey, action: "manage" };
     }
-    if (uiAction === "delete") {
-      return { resourceKey: surface.resourceKey, action: "manage" };
-    }
+  }
+  // Máquinas / Performance: UI edit → contrato update
+  if (
+    (surface.id === "machines" || surface.id === "operations-performance") &&
+    uiAction === "edit"
+  ) {
+    return { resourceKey: surface.resourceKey, action: "update" };
   }
   return { resourceKey: surface.resourceKey, action: uiAction };
 }
