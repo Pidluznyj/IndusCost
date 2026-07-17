@@ -1,14 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Building2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { fetchJsonOk } from "@/src/lib/http";
-import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
-import {
-  buildFinanceCostCentersDashboardQuery,
-  createDefaultFinanceCostCentersUiFilters,
-} from "@/src/lib/financeCostCentersPageTypes";
+import { createDefaultFinanceCostCentersUiFilters } from "@/src/lib/financeCostCentersPageTypes";
 import {
   canCreateSupplierServiceTermination,
   canDeleteFinanceSupplier,
@@ -25,32 +19,22 @@ import {
 } from "@/src/lib/financeModuleUiStandards";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
-import {
-  FinanceModuleEmptyState,
-  FinanceModuleErrorBanner,
-  FinanceModuleLoadingBlock,
-} from "@/src/components/finance/shared/FinanceModuleStates";
+import { FinanceModuleEmptyState } from "@/src/components/finance/shared/FinanceModuleStates";
 import { SuppliersManagementView } from "@/src/components/finance/cost-centers/SuppliersManagementView";
 import { useNavigate } from "react-router-dom";
 import { getFinanceSectionPath } from "@/src/lib/financeNavigation";
 
 /**
- * Financeiro > Fornecedores — mesmo cadastro/APIs da aba Centro de Custos > Fornecedores.
+ * Financeiro > Fornecedores — cadastro via APIs `finance.suppliers` (PERM-41).
+ * Não depende de Centros de Custo / dashboard CC.
  */
 export function FinanceSuppliersPage() {
   const auth = useAuth();
   const permissions = usePermissions();
   const navigate = useNavigate();
-  const abortRef = useRef<AbortController | null>(null);
-  const [dashboard, setDashboard] = useState<FinanceCostCenterDashboardPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const appliedFilters = useMemo(() => createDefaultFinanceCostCentersUiFilters(), []);
-  const queryString = useMemo(
-    () => buildFinanceCostCentersDashboardQuery(appliedFilters),
-    [appliedFilters]
-  );
 
   const supplierCheck = {
     ...auth,
@@ -59,38 +43,11 @@ export function FinanceSuppliersPage() {
   const canViewSuppliers = canViewFinanceSuppliers(supplierCheck);
   const canManageSuppliers = canManageFinanceSuppliers(supplierCheck);
   const canDeleteSupplier = canDeleteFinanceSupplier(auth);
-  const canReclassifyTitles = canManageFinanceApAllocations(auth);
+  const canReclassifyTitles = canManageFinanceApAllocations(supplierCheck);
 
-  const load = useCallback(async () => {
-    if (!canViewSuppliers) {
-      setLoading(false);
-      setDashboard(null);
-      return;
-    }
-    abortRef.current?.abort();
-    const ac = new AbortController();
-    abortRef.current = ac;
-    setLoading(true);
-    setError(null);
-    try {
-      const payload = await fetchJsonOk<FinanceCostCenterDashboardPayload>(
-        `/api/finance/cost-centers/dashboard?${queryString}`,
-        { signal: ac.signal, credentials: "include" }
-      );
-      setDashboard(payload);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(buildFinanceTabLoadError("Não foi possível carregar fornecedores.", e));
-      setDashboard(null);
-    } finally {
-      if (!ac.signal.aborted) setLoading(false);
-    }
-  }, [canViewSuppliers, queryString]);
-
-  useEffect(() => {
-    void load();
-    return () => abortRef.current?.abort();
-  }, [load]);
+  const bumpReload = useCallback(() => {
+    setReloadToken((n) => n + 1);
+  }, []);
 
   if (!canViewSuppliers) {
     return (
@@ -112,7 +69,7 @@ export function FinanceSuppliersPage() {
           {
             id: "refresh",
             label: FINANCE_HEADER_ACTION_REFRESH,
-            onClick: () => void load(),
+            onClick: bumpReload,
             icon: <RefreshCw className="h-4 w-4" />,
           },
         ]}
@@ -125,30 +82,27 @@ export function FinanceSuppliersPage() {
         <Building2 className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
           Esta é a mesma base utilizada em Centro de Custos &gt; Fornecedores.
+          O acesso a fornecedores é independente de Centros de Custo.
         </p>
       </div>
 
-      {error ? (
-        <FinanceModuleErrorBanner message={error} onRetry={() => void load()} onDismiss={() => setError(null)} />
-      ) : null}
-      {loading && !dashboard ? <FinanceModuleLoadingBlock label="Carregando fornecedores…" /> : null}
-
       <SuppliersManagementView
+        key={reloadToken}
         context="finance-menu"
-        dashboard={dashboard}
+        dashboard={null}
         appliedFilters={appliedFilters}
         canViewSuppliers={canViewSuppliers}
         canManageSuppliers={canManageSuppliers}
         canDeleteSupplier={canDeleteSupplier}
         canReclassifyTitles={canReclassifyTitles}
-        canViewServiceTermination={canViewSupplierServiceTermination(auth)}
-        canCreateServiceTermination={canCreateSupplierServiceTermination(auth)}
-        canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(auth)}
-        canExportServiceTermination={canExportSupplierServiceTermination(auth)}
+        canViewServiceTermination={canViewSupplierServiceTermination(supplierCheck)}
+        canCreateServiceTermination={canCreateSupplierServiceTermination(supplierCheck)}
+        canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(supplierCheck)}
+        canExportServiceTermination={canExportSupplierServiceTermination(supplierCheck)}
         onNavigateTab={(tab) => {
           navigate(`${getFinanceSectionPath("cost-centers")}?tab=${tab}`);
         }}
-        onSuppliersChanged={() => void load()}
+        onSuppliersChanged={bumpReload}
       />
       </FinanceBiDashboardShell>
     </div>

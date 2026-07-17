@@ -140,15 +140,19 @@ export function SuppliersManagementView({
     setLoading(true);
     setError(null);
     try {
+      // PERM-41: menu Financeiro > Fornecedores não depende de Centros de Custo.
+      const needsCostCenterRules = context === "cost-center-tab";
       const [previewPayload, rulesPayload, searchPayload] = await Promise.all([
         fetchJsonOk<FinanceSupplierRebuildPreviewPayload>(
           "/api/finance/suppliers/rebuild-from-ap-preview",
           { credentials: "include" }
         ),
-        fetchJsonOk<{ items: SupplierCostCenterRuleDto[] }>(
-          "/api/finance/supplier-cost-center-rules",
-          { credentials: "include" }
-        ),
+        needsCostCenterRules
+          ? fetchJsonOk<{ items: SupplierCostCenterRuleDto[] }>(
+              "/api/finance/supplier-cost-center-rules",
+              { credentials: "include" }
+            )
+          : Promise.resolve({ items: [] as SupplierCostCenterRuleDto[] }),
         fetchJsonOk<{ suppliers: FinanceSupplierSearchResult[] }>(
           "/api/finance/suppliers/search?includeInactive=true&limit=500",
           { credentials: "include" }
@@ -162,7 +166,7 @@ export function SuppliersManagementView({
     } finally {
       setLoading(false);
     }
-  }, [canViewSuppliers]);
+  }, [canViewSuppliers, context]);
 
   useEffect(() => {
     void load();
@@ -231,12 +235,16 @@ export function SuppliersManagementView({
       fromDashboard.map((row) => row.supplierId).filter((id): id is string => Boolean(id))
     );
 
-    const inactiveExtras: SupplierGridRow[] = [];
+    // Sem dashboard (menu Fornecedores): grade a partir do cadastro mestre.
+    // Com dashboard: só complementa INACTIVE ausentes (comportamento CC).
+    const masterExtras: SupplierGridRow[] = [];
     for (const master of masterSuppliers) {
-      if (!master.id || master.status !== "INACTIVE" || seenIds.has(master.id)) continue;
+      if (!master.id || seenIds.has(master.id)) continue;
+      const status = master.status ?? "ACTIVE";
+      if (bySupplier.length > 0 && status !== "INACTIVE") continue;
       const supplierRules = activeRulesBySupplier.get(master.id) ?? [];
       const hasActiveRule = supplierRules.length > 0;
-      inactiveExtras.push({
+      masterExtras.push({
         supplierKey: master.id,
         supplierId: master.id,
         name: master.name,
@@ -251,11 +259,11 @@ export function SuppliersManagementView({
           : "Sem regra",
         hasActiveRule,
         aliasesCount: 0,
-        status: "INACTIVE",
+        status,
       });
     }
 
-    return [...fromDashboard, ...inactiveExtras];
+    return [...fromDashboard, ...masterExtras];
   }, [dashboard, preview, rules, masterSuppliers]);
 
   const gridRows = useMemo(

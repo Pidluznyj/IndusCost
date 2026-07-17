@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceCostCenterDashboardPayload } from "@/src/lib/financeCostCenterDashboard";
@@ -132,6 +133,11 @@ function buildAuditSections(data: FinanceCostCenterDashboardPayload | null): Fin
 
 export function FinanceCostCentersPage() {
   const auth = useAuth();
+  const permissions = usePermissions();
+  const permCheck = {
+    ...auth,
+    canPerformAction: permissions.canPerformAction,
+  };
   const [searchParams] = useSearchParams();
   const abortRef = useRef<AbortController | null>(null);
   const initialTab = useMemo((): FinanceCostCentersTabId => {
@@ -165,16 +171,16 @@ export function FinanceCostCentersPage() {
   const [auditOpen, setAuditOpen] = useState(false);
   const [filtersExpanded, setFiltersExpanded] = useState(true);
 
-  const canManageCenters = canManageFinanceCostCenters(auth);
-  const canViewSuppliers = canViewFinanceSuppliers(auth);
-  const canManageSuppliers = canManageFinanceSuppliers(auth);
+  const canManageCenters = canManageFinanceCostCenters(permCheck);
+  const canViewSuppliers = canViewFinanceSuppliers(permCheck);
+  const canManageSuppliers = canManageFinanceSuppliers(permCheck);
   const canDeleteSupplier = canDeleteFinanceSupplier(auth);
-  const canManageRules = canManageFinanceCostCenterRules(auth);
-  const canViewRules = canViewFinanceCostCenterRules(auth);
-  const canApplyBatch = canApplyFinanceApAllocationsBatch(auth);
-  const canReclassifyTitles = canManageFinanceApAllocations(auth);
-  const canViewAllocations = canViewFinanceApAllocations(auth);
-  const canViewAudit = canViewFinanceCostCenterAudit(auth);
+  const canManageRules = canManageFinanceCostCenterRules(permCheck);
+  const canViewRules = canViewFinanceCostCenterRules(permCheck);
+  const canApplyBatch = canApplyFinanceApAllocationsBatch(permCheck);
+  const canReclassifyTitles = canManageFinanceApAllocations(permCheck);
+  const canViewAllocations = canViewFinanceApAllocations(permCheck);
+  const canViewAudit = canViewFinanceCostCenterAudit(permCheck);
 
   const queryString = useMemo(
     () => buildFinanceCostCentersDashboardQuery(appliedFilters),
@@ -366,10 +372,10 @@ export function FinanceCostCentersPage() {
           canManageSuppliers={canManageSuppliers}
           canDeleteSupplier={canDeleteSupplier}
           canReclassifyTitles={canReclassifyTitles}
-          canViewServiceTermination={canViewSupplierServiceTermination(auth)}
-          canCreateServiceTermination={canCreateSupplierServiceTermination(auth)}
-          canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(auth)}
-          canExportServiceTermination={canExportSupplierServiceTermination(auth)}
+          canViewServiceTermination={canViewSupplierServiceTermination(permCheck)}
+          canCreateServiceTermination={canCreateSupplierServiceTermination(permCheck)}
+          canFinalizeServiceTermination={canFinalizeSupplierServiceTermination(permCheck)}
+          canExportServiceTermination={canExportSupplierServiceTermination(permCheck)}
           onNavigateTab={setActiveTab}
           onSuppliersChanged={() => void load()}
         />
