@@ -1,16 +1,20 @@
 #!/usr/bin/env npx tsx
 /**
- * OP-81 — Auditoria read-only: pedidos locais NOMUS ausentes na origem.
+ * OP-81 — Auditoria Local × Nomus (órfãos) + SYNC-04 lifecycle preview/apply.
  *
  * Uso:
  *   npm run audit:nomus:sales-orders:orphans -- --from=2026-07-01 --to=2026-07-31
  *   npm run audit:nomus:sales-orders:orphans -- --orderCode="PD 02739" --from=2026-07-01 --to=2026-07-31 --confirm-candidates
+ *   npm run audit:nomus:sales-orders:orphans -- --from=... --to=... --lifecycle-preview
+ *   npm run audit:nomus:sales-orders:orphans -- --from=... --to=... --confirm-candidates --lifecycle-apply
  *
- * Não arquiva, desativa, exclui nem altera status. Não grava no banco.
+ * --apply/--write/--mutate continuam proibidos (não mutam dados comerciais).
+ * --lifecycle-apply grava somente campos oficiais de presença (SYNC-02/04).
  */
 import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PrismaClient } from "@prisma/client";
 import {
   applyDirectedConfirmation,
   assessAutoActionRisk,
@@ -23,6 +27,24 @@ import {
   fetchNomusPedidosForAudit,
   lookupNomusPedidoByOrderCode,
 } from "../src/lib/nomusSalesOrdersClient.ts";
+import {
+  assessSalesOrderSyncPayloadCompleteness,
+  buildSalesOrderSourceReconciliationPlan,
+  buildSalesOrderSyncReconciliationScope,
+  SALES_ORDER_PILOT_ABSENCE,
+  summarizeSalesOrderReconciliationPreview,
+  type SalesOrderLifecycleLocalSnapshot,
+} from "../src/lib/nomus/nomusSalesOrderSourceReconciliation.ts";
+import {
+  acquireSalesOrderReconcileLock,
+  applySalesOrderLifecyclePatches,
+  createSalesOrderSourceSyncRun,
+  finishSalesOrderSourceSyncRun,
+  isSalesOrderAbsenceReconcileEnabled,
+  loadSalesOrderLifecycleLocals,
+} from "../src/lib/nomus/nomusSalesOrderSourceReconciliation.server.ts";
+
+const prisma = new PrismaClient();
 
 function parseArg(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -109,7 +131,7 @@ function rowsToCsv(rows: OrphanCompareRow[]): string {
 async function main(): Promise<void> {
   if (hasFlag("apply") || hasFlag("write") || hasFlag("mutate")) {
     throw new Error(
-      "Auditoria estritamente read-only: flags --apply/--write/--mutate são proibidas."
+      "Flags --apply/--write/--mutate são proibidas. Use --lifecycle-apply para gravar só presença."
     );
   }
 
@@ -126,6 +148,8 @@ async function main(): Promise<void> {
 
   const orderCode = parseArg("orderCode")?.trim() || null;
   const confirmCandidates = hasFlag("confirm-candidates");
+  const lifecyclePreview = hasFlag("lifecycle-preview");
+  const lifecycleApply = hasFlag("lifecycle-apply");
   const maxConfirmations = Math.max(
     0,
     Number.parseInt(parseArg("max-confirmations") ?? "50", 10) || 50
@@ -239,15 +263,189 @@ async function main(): Promise<void> {
     };
   });
 
+  let sourceLifecycle: Record<string, unknown> | null = null;
+
+  if (lifecyclePreview || lifecycleApply) {
+    const reconcileEnabled = isSalesOrderAbsenceReconcileEnabled();
+    const lock = acquireSalesOrderReconcileLock({
+      mode: lifecycleApply ? "apply" : "preview",
+    });
+    if (!lock.ok) {
+      throw new Error(
+        lock.code === "LOCK_HELD"
+          ? lock.message
+          : "Lock de reconciliação de Pedidos indisponível."
+      );
+    }
+
+    try {
+      const scope = buildSalesOrderSyncReconciliationScope({
+        strategy: "full-reconciliation",
+        fromIso: fromRaw,
+        toIso: toRaw,
+      });
+      const completenessAssessment = assessSalesOrderSyncPayloadCompleteness({
+        strategy: "full-reconciliation",
+        startPage: completeness.startPage,
+        completedWindow: completeness.stoppedBecauseMaxPages,
+        stoppedBecauseEmpty: completeness.stoppedBecauseEmpty,
+        stoppedBecauseNoNext: completeness.stoppedBecauseNoNext,
+        http429Count: completeness.http429Count,
+        errors: completeness.errors,
+        fetchFailed: completeness.stopReason === "http_error",
+      });
+
+      const lifecycleLocals: SalesOrderLifecycleLocalSnapshot[] =
+        await loadSalesOrderLifecycleLocals({
+          prisma,
+          issueDateFrom: from,
+          issueDateTo: to,
+          orderCode,
+        });
+
+      const localHashByExternalId = new Map(
+        lifecycleLocals.map((l) => [l.externalSalesOrderId, l.payloadHash ?? ""] as const)
+      );
+      const foundPedidos = nomusPedidos
+        .filter((p) => p.externalSalesOrderId != null)
+        .map((p) => {
+          const id = p.externalSalesOrderId as number;
+          const existingHash = localHashByExternalId.get(id);
+          return {
+            externalSalesOrderId: id,
+            // Presença-only: reutiliza hash local para não inventar UPDATE comercial.
+            payloadHash:
+              existingHash && existingHash.length > 0
+                ? existingHash
+                : `audit-presence:${id}`,
+          };
+        });
+
+      const directedLookups = rows
+        .filter(
+          (r) =>
+            r.classification === "CONFIRMED_MISSING_IN_NOMUS" &&
+            r.local?.externalSalesOrderId != null
+        )
+        .map((r) => ({
+          externalSalesOrderId: r.local!.externalSalesOrderId as number,
+          found: false,
+        }));
+
+      let runId: string | null = null;
+      if (lifecycleApply) {
+        if (!reconcileEnabled) {
+          throw new Error(
+            "NOMUS_SOURCE_RECONCILE_SALES_ORDERS_ENABLED deve estar habilitado para --lifecycle-apply."
+          );
+        }
+        if (!completenessAssessment.payloadComplete) {
+          throw new Error(
+            "Coleta Nomus incompleta — --lifecycle-apply recusado (mesma prova OP-81)."
+          );
+        }
+        const run = await createSalesOrderSourceSyncRun({
+          prisma,
+          strategy: "full-reconciliation",
+          scope: scope as unknown as Record<string, unknown>,
+          startedAt: new Date(),
+          coveredFrom: from,
+          coveredTo: to,
+        });
+        runId = run.id;
+      }
+
+      const plan = buildSalesOrderSourceReconciliationPlan({
+        strategy: "full-reconciliation",
+        scope,
+        completeness: completenessAssessment,
+        reconciliationEnabled: reconcileEnabled,
+        foundPedidos,
+        localRecords: lifecycleLocals,
+        directedLookups,
+        executedAt: new Date(),
+        runId,
+        runStatus: completenessAssessment.payloadComplete ? "SUCCESS" : "INCONCLUSIVE",
+        mode: lifecycleApply ? "apply" : "preview",
+      });
+
+      const orderCodeByExternalId = new Map(
+        lifecycleLocals.map((l) => [String(l.externalSalesOrderId), l.orderCode] as const)
+      );
+      const preview = summarizeSalesOrderReconciliationPreview(
+        plan,
+        completenessAssessment,
+        orderCodeByExternalId
+      );
+
+      let lifecycleApplied = 0;
+      if (lifecycleApply && runId) {
+        const patches = [
+          ...plan.missingCandidates,
+          ...plan.missingConfirmed,
+        ]
+          .filter((i) => i.localId && i.lifecyclePatch)
+          .map((i) => ({ localId: i.localId as string, patch: i.lifecyclePatch! }));
+        const { applied } = await applySalesOrderLifecyclePatches({ prisma, patches });
+        lifecycleApplied = applied;
+        await finishSalesOrderSourceSyncRun({
+          prisma,
+          runId,
+          status: "SUCCESS",
+          payloadComplete: true,
+          finishedAt: new Date(),
+          counters: {
+            rowsRead: nomusPedidos.length,
+            missingCandidateCount: plan.counters.missingCandidates,
+            missingConfirmedCount: plan.counters.missingConfirmed,
+            http429Count: completeness.http429Count,
+          },
+          summaryJson: { preview, lifecycleApplied, source: "op-81-orphan-audit" },
+        });
+      }
+
+      sourceLifecycle = {
+        mode: lifecycleApply ? "apply" : "preview",
+        reconciliationEnabled: reconcileEnabled,
+        runId,
+        lifecycleApplied,
+        creates: preview.creates,
+        updates: preview.updates,
+        unchanged: preview.unchanged,
+        missingCandidates: preview.missingCandidates,
+        missingConfirmed: preview.missingConfirmed,
+        reactivated: preview.reactivated,
+        ignoredOutsideScope: preview.ignoredOutsideScope,
+        fetchCompleteness: preview.fetchCompleteness,
+        counters: preview.counters,
+        reasons: preview.reasons,
+        pilot: {
+          orderCode: SALES_ORDER_PILOT_ABSENCE.orderCode,
+          externalSalesOrderId: SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId,
+          inPreview:
+            preview.missingCandidates.some(
+              (r) => r.externalId === String(SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId)
+            ) ||
+            preview.missingConfirmed.some(
+              (r) => r.externalId === String(SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId)
+            ),
+        },
+      };
+    } finally {
+      lock.release();
+    }
+  }
+
   const report = {
     ok: completeness.complete,
     summary,
     fetchCompleteness: completeness,
     candidates: impactDetails,
     rows,
+    sourceLifecycle,
     exampleDocumented: {
-      orderCode: "PD 02739",
-      externalSalesOrderId: 2737,
+      orderCode: SALES_ORDER_PILOT_ABSENCE.orderCode,
+      externalSalesOrderId: SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId,
       expectedWhenAbsent: "CONFIRMED_MISSING_IN_NOMUS (com --confirm-candidates)",
     },
   };
@@ -287,6 +485,17 @@ async function main(): Promise<void> {
           http429Count: summary.http429Count,
           errors: summary.errors,
           reportPath: jsonPath,
+          sourceLifecycle: sourceLifecycle
+            ? {
+                mode: sourceLifecycle.mode,
+                missingCandidates: (sourceLifecycle.counters as { missingCandidates: number })
+                  .missingCandidates,
+                missingConfirmed: (sourceLifecycle.counters as { missingConfirmed: number })
+                  .missingConfirmed,
+                lifecycleApplied: sourceLifecycle.lifecycleApplied,
+                pilotInPreview: (sourceLifecycle.pilot as { inPreview: boolean }).inPreview,
+              }
+            : null,
         },
         null,
         2
@@ -295,7 +504,11 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

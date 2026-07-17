@@ -78,6 +78,8 @@ Opções:
 - `--json` — relatório completo no stdout
 - `--csv` — também grava CSV em `tmp/audits/`
 - `--confirm-candidates` — lookup direcionado dos candidatos
+- `--lifecycle-preview` — plano SYNC-04 (presença) sem gravar
+- `--lifecycle-apply` — grava só lifecycle (`MISSING_*` / presença); exige flag env + coleta COMPLETE; **não** usa `--apply`
 - `--max-confirmations=N` — teto de lookups (default 50)
 
 Saída resumida: `localCount`, `nomusCount`, `matchedCount`, `localOnlyCandidateCount`, `confirmedMissingCount`, `nomusOnlyCount`, `identityMismatchCount`, `inconclusiveCount`, `totalValueConfirmedMissing`, `fetchCompleteness`, `durationMs`, `http429Count`, `errors`.

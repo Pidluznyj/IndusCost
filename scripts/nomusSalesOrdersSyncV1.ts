@@ -48,6 +48,25 @@ import {
   type NomusSalesOrdersEmissaoWindow,
   type NomusSalesOrdersSyncStrategy,
 } from "../src/lib/nomusSalesOrdersSyncWindow.ts";
+import {
+  assessSalesOrderSyncPayloadCompleteness,
+  buildPresentLifecycleWriteData,
+  buildSalesOrderSourceReconciliationPlan,
+  buildSalesOrderSyncReconciliationScope,
+  planDirectedSalesOrderAbsenceConfirmation,
+  SALES_ORDER_PILOT_ABSENCE,
+  stableNomusSalesOrderPayloadHash,
+  summarizeSalesOrderReconciliationPreview,
+  type SalesOrderLifecycleLocalSnapshot,
+} from "../src/lib/nomus/nomusSalesOrderSourceReconciliation.ts";
+import {
+  acquireSalesOrderReconcileLock,
+  applySalesOrderLifecyclePatches,
+  createSalesOrderSourceSyncRun,
+  finishSalesOrderSourceSyncRun,
+  isSalesOrderAbsenceReconcileEnabled,
+  loadSalesOrderLifecycleLocals,
+} from "../src/lib/nomus/nomusSalesOrderSourceReconciliation.server.ts";
 
 const prisma = new PrismaClient();
 
@@ -402,6 +421,7 @@ type SalesOrdersFetchResultMeta = SalesOrdersFetchWindowMeta & {
   strategy: NomusSalesOrdersSyncStrategy;
   emissaoWindow: NomusSalesOrdersEmissaoWindow | null;
   stoppedBecauseWindowExceeded: boolean;
+  stoppedBecauseNoNext: boolean;
   excludedOlderThanWindow: number;
   dataEmissaoFilterApplied: boolean;
 };
@@ -437,6 +457,7 @@ async function fetchNomusPedidoPages(
   let page = startPage;
   let stoppedBecauseEmpty = false;
   let completedWindow = false;
+  let stoppedBecauseNoNext = false;
   let stoppedBecauseWindowExceeded = false;
   let excludedOlderThanWindow = 0;
   let lastPageFetched = startPage - 1;
@@ -499,7 +520,10 @@ async function fetchNomusPedidoPages(
       break;
     }
 
-    if (!hasNextPage(payload, page, pageSize, arr.length)) break;
+    if (!hasNextPage(payload, page, pageSize, arr.length)) {
+      stoppedBecauseNoNext = true;
+      break;
+    }
     page += 1;
   }
 
@@ -515,6 +539,7 @@ async function fetchNomusPedidoPages(
       strategy: fetchOpts.strategy,
       emissaoWindow: fetchOpts.emissaoWindow,
       stoppedBecauseWindowExceeded,
+      stoppedBecauseNoNext,
       excludedOlderThanWindow,
       dataEmissaoFilterApplied: fetchOpts.emissaoWindow != null,
     },
@@ -1241,7 +1266,8 @@ async function applyNomusSyncItemWritePlan(
 
 async function runApply(
   eligible: EligibleSalesOrderPlan[],
-  existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>
+  existingIndexes: ReturnType<typeof indexExistingSalesOrdersByNomusKey>,
+  lifecycleCtx: { runId: string | null; executedAt: Date }
 ): Promise<{
   created: number;
   updated: number;
@@ -1249,6 +1275,7 @@ async function runApply(
   itemsUpdated: number;
   itemsStale: number;
   affectedSalesOrderIds: string[];
+  reactivatedSalesOrderIds: string[];
 }> {
   let created = 0;
   let updated = 0;
@@ -1256,6 +1283,7 @@ async function runApply(
   let itemsUpdated = 0;
   let itemsStale = 0;
   const affectedSalesOrderIds: string[] = [];
+  const reactivatedSalesOrderIds: string[] = [];
 
   for (const plan of eligible) {
     await prisma.$transaction(async (tx) => {
@@ -1271,6 +1299,7 @@ async function runApply(
       const externalSellerId = plan.externalSellerId ?? toInt(pedido.idPessoaVendedor);
       const nomusSellerName = plan.nomusSellerName;
       const externalCompanyId = toInt(pedido.idEmpresa);
+      const payloadHash = stableNomusSalesOrderPayloadHash(pedido);
 
       const existingMatch = findExistingSalesOrderForNomusSync(existingIndexes, plan);
 
@@ -1290,6 +1319,13 @@ async function runApply(
           safeProposalId = null;
         }
       }
+
+      const lifecycleWrite = buildPresentLifecycleWriteData({
+        payloadHash,
+        executedAt: lifecycleCtx.executedAt,
+        runId: lifecycleCtx.runId,
+        isCreate: !existingMatch,
+      });
 
       const nomusHeader = {
         proposalId: safeProposalId,
@@ -1326,6 +1362,7 @@ async function runApply(
         totalFreight: decimalString(totalFreight),
         sentToNomusAt: parseNomusDateTime(pedido.dataCriacao),
         nomusRawResponse: jsonInput(pedido),
+        ...lifecycleWrite,
       };
 
       const plannedLines = plan.lines.map((line) => ({
@@ -1367,9 +1404,17 @@ async function runApply(
             totalCost: true,
             totalMarginValue: true,
             totalMarginPerc: true,
+            sourcePresenceStatus: true,
           },
         });
         existingForHeader = existingFull;
+
+        if (
+          existingFull?.sourcePresenceStatus === "MISSING_CANDIDATE" ||
+          existingFull?.sourcePresenceStatus === "MISSING_CONFIRMED"
+        ) {
+          reactivatedSalesOrderIds.push(existingMatch.id);
+        }
 
         const existingItems = await tx.salesOrderItem.findMany({
           where: { salesOrderId: existingMatch.id },
@@ -1475,6 +1520,42 @@ async function runApply(
     itemsUpdated,
     itemsStale,
     affectedSalesOrderIds: [...new Set(affectedSalesOrderIds)],
+    reactivatedSalesOrderIds: [...new Set(reactivatedSalesOrderIds)],
+  };
+}
+
+function parseIsoDateBound(value: string, endOfDay: boolean): Date {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim());
+  if (m) {
+    const dd = Number(m[1]);
+    const mm = Number(m[2]);
+    const yyyy = Number(m[3]);
+    if (endOfDay) return new Date(Date.UTC(yyyy, mm - 1, dd, 23, 59, 59, 999));
+    return new Date(Date.UTC(yyyy, mm - 1, dd, 0, 0, 0, 0));
+  }
+  const iso = new Date(value);
+  return Number.isNaN(iso.getTime()) ? new Date() : iso;
+}
+
+function resolveSyncCoverageBounds(
+  strategy: NomusSalesOrdersSyncStrategy,
+  emissaoWindow: NomusSalesOrdersEmissaoWindow | null
+): { from: Date; to: Date; fromIso: string; toIso: string } {
+  if (strategy === "recent-window" && emissaoWindow) {
+    return {
+      from: emissaoWindow.startDate,
+      to: emissaoWindow.endDate,
+      fromIso: formatNomusPedidoDateBr(emissaoWindow.startDate),
+      toIso: formatNomusPedidoDateBr(emissaoWindow.endDate),
+    };
+  }
+  const fromRaw = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_INICIAL", "01/01/2023");
+  const toRaw = getEnvOrDefault("NOMUS_PEDIDO_DATA_EMISSAO_FINAL", "31/12/2030");
+  return {
+    from: parseIsoDateBound(fromRaw, false),
+    to: parseIsoDateBound(toRaw, true),
+    fromIso: fromRaw,
+    toIso: toRaw,
   };
 }
 
@@ -1696,11 +1777,214 @@ async function main(): Promise<void> {
     criticalSchemaNote,
   };
 
-  timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
-  const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
-  const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
-  const applied = isApply ? await runApply(eligible, existingIndexes) : null;
-  timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
+  const coverage = resolveSyncCoverageBounds(strategy, fetchResult.meta.emissaoWindow);
+  const completeness = assessSalesOrderSyncPayloadCompleteness({
+    strategy,
+    startPage: fetchResult.meta.startPage,
+    completedWindow: fetchResult.meta.completedWindow,
+    stoppedBecauseEmpty: fetchResult.meta.stoppedBecauseEmpty,
+    stoppedBecauseNoNext: fetchResult.meta.stoppedBecauseNoNext,
+    stoppedBecauseWindowExceeded: fetchResult.meta.stoppedBecauseWindowExceeded,
+    http429Count: syncHttpStats.http429Count,
+  });
+  const reconcileEnabled = isSalesOrderAbsenceReconcileEnabled();
+  const scope = buildSalesOrderSyncReconciliationScope({
+    strategy,
+    fromIso: coverage.fromIso,
+    toIso: coverage.toIso,
+  });
+
+  const lock = acquireSalesOrderReconcileLock({
+    mode: isApply ? "apply" : "preview",
+  });
+  if (!lock.ok) {
+    throw new Error(
+      lock.code === "LOCK_HELD"
+        ? lock.message
+        : "Não foi possível adquirir lock de reconciliação de Pedidos."
+    );
+  }
+
+  let sourceSyncRunId: string | null = null;
+  let lifecycleApplied = 0;
+  let directedConfirmPreview: ReturnType<
+    typeof planDirectedSalesOrderAbsenceConfirmation
+  > = null;
+
+  try {
+    if (isApply) {
+      const run = await createSalesOrderSourceSyncRun({
+        prisma,
+        strategy,
+        scope: scope as unknown as Record<string, unknown>,
+        startedAt: new Date(startedAt),
+        coveredFrom: coverage.from,
+        coveredTo: coverage.to,
+      });
+      sourceSyncRunId = run.id;
+    }
+
+    const lifecycleLocals: SalesOrderLifecycleLocalSnapshot[] =
+      await loadSalesOrderLifecycleLocals({
+        prisma,
+        issueDateFrom: coverage.from,
+        issueDateTo: coverage.to,
+        orderCode: targetOrderCode,
+      });
+
+    const foundPedidos = pedidos
+      .map((p) => {
+        const id = toInt(p.id);
+        if (id == null) return null;
+        return {
+          externalSalesOrderId: id,
+          payloadHash: stableNomusSalesOrderPayloadHash(p),
+        };
+      })
+      .filter((row): row is { externalSalesOrderId: number; payloadHash: string } => row != null);
+
+    // Direcionado: --orderCode ausente no Nomus → confirma só esse candidato.
+    if (targetOrderCode && foundPedidos.length === 0 && lifecycleLocals.length === 1) {
+      directedConfirmPreview = planDirectedSalesOrderAbsenceConfirmation({
+        local: lifecycleLocals[0]!,
+        scope,
+        directedFound: false,
+        executedAt: new Date(),
+        runId: sourceSyncRunId,
+        mode: isApply ? "apply" : "preview",
+      });
+    }
+
+    const reconciliationPlan = buildSalesOrderSourceReconciliationPlan({
+      strategy,
+      scope,
+      completeness,
+      reconciliationEnabled: reconcileEnabled,
+      foundPedidos,
+      localRecords: lifecycleLocals,
+      directedLookups:
+        directedConfirmPreview != null
+          ? [
+              {
+                externalSalesOrderId: Number(directedConfirmPreview.externalId),
+                found: false,
+              },
+            ]
+          : undefined,
+      executedAt: new Date(),
+      runId: sourceSyncRunId,
+      runStatus:
+        completeness.status === "COMPLETE" || strategy === "recent-window"
+          ? "SUCCESS"
+          : syncHttpStats.http429Count > 0
+            ? "INCONCLUSIVE"
+            : "INCONCLUSIVE",
+      mode: isApply ? "apply" : "preview",
+    });
+
+    const orderCodeByExternalId = new Map(
+      lifecycleLocals.map((l) => [String(l.externalSalesOrderId), l.orderCode] as const)
+    );
+    for (const p of pedidos) {
+      const id = toInt(p.id);
+      const code = asString(p.codigoPedido);
+      if (id != null && code) orderCodeByExternalId.set(String(id), code);
+    }
+
+    const reconciliationPreview = summarizeSalesOrderReconciliationPreview(
+      reconciliationPlan,
+      completeness,
+      orderCodeByExternalId
+    );
+
+    // Garante PD 02739 visível no preview quando presente no plano.
+    const pilotInPreview =
+      reconciliationPreview.missingCandidates.some(
+        (r) =>
+          r.externalId === String(SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId) ||
+          r.orderCode === SALES_ORDER_PILOT_ABSENCE.orderCode
+      ) ||
+      reconciliationPreview.missingConfirmed.some(
+        (r) =>
+          r.externalId === String(SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId) ||
+          r.orderCode === SALES_ORDER_PILOT_ABSENCE.orderCode
+      );
+
+    timeLog(isApply ? "INICIO runApply" : "SKIP runApply dry-run");
+    const existingRowsForApply = await loadExistingSalesOrdersForNomusSync(eligible);
+    const existingIndexes = indexExistingSalesOrdersByNomusKey(existingRowsForApply);
+    const applied = isApply
+      ? await runApply(eligible, existingIndexes, {
+          runId: sourceSyncRunId,
+          executedAt: new Date(),
+        })
+      : null;
+    timeLog(isApply ? "FIM runApply" : "FIM dry-run sem apply");
+
+    // Ausências só em full-reconciliation (+ flag). recent-window nunca grava missing*.
+    if (isApply && reconcileEnabled && strategy === "full-reconciliation") {
+      const absencePatches = [
+        ...reconciliationPlan.missingCandidates,
+        ...reconciliationPlan.missingConfirmed,
+      ]
+        .filter((item) => item.localId && item.lifecyclePatch)
+        .map((item) => ({
+          localId: item.localId as string,
+          patch: item.lifecyclePatch!,
+        }));
+
+      if (
+        directedConfirmPreview?.localId &&
+        directedConfirmPreview.lifecyclePatch &&
+        !absencePatches.some((p) => p.localId === directedConfirmPreview!.localId)
+      ) {
+        absencePatches.push({
+          localId: directedConfirmPreview.localId,
+          patch: directedConfirmPreview.lifecyclePatch,
+        });
+      }
+
+      if (absencePatches.length > 0) {
+        const { applied: n } = await applySalesOrderLifecyclePatches({
+          prisma,
+          patches: absencePatches,
+        });
+        lifecycleApplied = n;
+      }
+    }
+
+    if (isApply && sourceSyncRunId) {
+      await finishSalesOrderSourceSyncRun({
+        prisma,
+        runId: sourceSyncRunId,
+        status:
+          completeness.status === "COMPLETE" || strategy === "recent-window"
+            ? "SUCCESS"
+            : "INCONCLUSIVE",
+        payloadComplete: completeness.payloadComplete,
+        finishedAt: new Date(),
+        counters: {
+          pagesRead:
+            fetchResult.meta.lastPageFetched - fetchResult.meta.startPage + 1,
+          rowsRead: pedidos.length,
+          createdCount: applied?.created ?? 0,
+          updatedCount: applied?.updated ?? 0,
+          unchangedCount: reconciliationPlan.counters.unchanged,
+          missingCandidateCount: reconciliationPlan.counters.missingCandidates,
+          missingConfirmedCount: reconciliationPlan.counters.missingConfirmed,
+          reactivatedCount:
+            (applied?.reactivatedSalesOrderIds.length ?? 0) ||
+            reconciliationPlan.counters.reactivated,
+          http429Count: syncHttpStats.http429Count,
+          errors: 0,
+        },
+        summaryJson: {
+          reconciliation: reconciliationPreview,
+          pilotPd02739InPreview: pilotInPreview,
+          lifecycleApplied,
+        },
+      });
+    }
 
   console.log(
     JSON.stringify(
@@ -1727,11 +2011,41 @@ async function main(): Promise<void> {
             maxPages: fetchResult.meta.maxPages,
             lastPageFetched: fetchResult.meta.lastPageFetched,
             stoppedBecauseEmpty: fetchResult.meta.stoppedBecauseEmpty,
+            stoppedBecauseNoNext: fetchResult.meta.stoppedBecauseNoNext,
             completedWindow: fetchResult.meta.completedWindow,
           },
         },
         summary: result,
         applied,
+        sourceLifecycle: {
+          runId: sourceSyncRunId,
+          reconciliationEnabled: reconcileEnabled,
+          fetchCompleteness: completeness,
+          creates: reconciliationPreview.creates,
+          updates: reconciliationPreview.updates,
+          unchanged: reconciliationPreview.unchanged,
+          missingCandidates: reconciliationPreview.missingCandidates,
+          missingConfirmed: reconciliationPreview.missingConfirmed,
+          reactivated: reconciliationPreview.reactivated,
+          ignoredOutsideScope: reconciliationPreview.ignoredOutsideScope,
+          counters: reconciliationPreview.counters,
+          reasons: reconciliationPreview.reasons,
+          absencesEvaluated: reconciliationPreview.absencesEvaluated,
+          lifecycleApplied,
+          dryRunWrites: false,
+          pilot: {
+            orderCode: SALES_ORDER_PILOT_ABSENCE.orderCode,
+            externalSalesOrderId: SALES_ORDER_PILOT_ABSENCE.externalSalesOrderId,
+            inPreview: pilotInPreview,
+          },
+          directedConfirm: directedConfirmPreview
+            ? {
+                externalId: directedConfirmPreview.externalId,
+                action: directedConfirmPreview.action,
+                reason: directedConfirmPreview.reason,
+              }
+            : null,
+        },
         http429Count: syncHttpStats.http429Count,
         durationMs: Date.now() - startedAt,
         commercialNote:
@@ -1826,6 +2140,9 @@ async function main(): Promise<void> {
         err instanceof Error ? err.message : err
       );
     }
+  }
+  } finally {
+    lock.release();
   }
 }
 
