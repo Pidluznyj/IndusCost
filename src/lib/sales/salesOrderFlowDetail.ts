@@ -360,8 +360,10 @@ export function mapNfeForDetail(
     externalId: number;
     nomusNfeId: string | null;
     numero: string | null;
+    serie?: string | null;
     chave: string | null;
     statusRaw: number | null;
+    issuedAt?: string | null;
     statusNormalized: {
       statusNormalized?: string;
       label?: string;
@@ -378,8 +380,10 @@ export function mapNfeForDetail(
     externalId: nfe.externalId,
     nomusNfeId: nfe.nomusNfeId,
     numero: nfe.numero,
+    serie: nfe.serie ?? null,
     chave: fiscalVisible ? nfe.chave : null,
     statusRaw: nfe.statusRaw,
+    issuedAt: nfe.issuedAt ?? null,
     statusNormalized: {
       code: nfe.statusNormalized.statusNormalized ?? null,
       label: nfe.statusNormalized.label ?? null,

@@ -13,7 +13,12 @@ import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlow
 import type { SalesOrderFlowListInconsistency } from "@/src/lib/sales/salesOrderFlowList.js";
 import { formatCurrency } from "@/src/lib/utils.js";
 
-export type SalesOrderFlowDetailTab = "resumo" | "itens";
+export type SalesOrderFlowDetailTab =
+  | "resumo"
+  | "itens"
+  | "producao"
+  | "documentos"
+  | "nfe_envio";
 
 export type SalesOrderFlowDetailItemView = {
   salesOrderItemId: string;
@@ -252,4 +257,223 @@ export function resolveSalesOrderFlowDetailDaysInStage(
   const fromSnapshot = asNumber(payload.orderSnapshot?.daysInStage);
   if (fromSnapshot != null) return fromSnapshot;
   return null;
+}
+
+export type SalesOrderFlowDetailProductionView = {
+  id: string;
+  externalId: number;
+  label: string;
+  status: string | null;
+  productCode: string | null;
+  linkedQuantity: number | null;
+  plannedQuantity: number | null;
+  producedQuantity: number | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  linkCount: number;
+  isCurrentLink: boolean;
+  inconsistencies: Array<{ code: string; detail: string }>;
+  href: string;
+};
+
+export type SalesOrderFlowDetailDocumentView = {
+  id: string;
+  externalId: number;
+  label: string;
+  statusRaw: string | null;
+  dataDocumento: string | null;
+  itemCount: number;
+  itemQuantity: number | null;
+  allocatedQuantity: number | null;
+  allocationCount: number;
+  totalValue: number | null;
+  isCancelled: boolean;
+  cancellationReason: string | null;
+  href: string;
+};
+
+export type SalesOrderFlowDetailNfeView = {
+  externalId: number;
+  label: string;
+  serie: string | null;
+  statusLabel: string;
+  issuedAt: string | null;
+  linkedQuantity: number | null;
+  linkedValue: number | null;
+  isCanceled: boolean;
+  href: string;
+};
+
+export type SalesOrderFlowDetailShipmentView = {
+  production: SalesOrderFlowDetailProductionView[];
+  documentsActive: SalesOrderFlowDetailDocumentView[];
+  documentsCanceled: SalesOrderFlowDetailDocumentView[];
+  nfesActive: SalesOrderFlowDetailNfeView[];
+  nfesCanceled: SalesOrderFlowDetailNfeView[];
+  firstShippedAt: string | null;
+  lastShippedAt: string | null;
+  progressShipped: number | null;
+  progressInvoiced: number | null;
+  activeDocumentCount: number;
+  activeNfeCount: number;
+};
+
+function asBoolean(value: unknown): boolean {
+  return value === true;
+}
+
+function asRecordArray(
+  value: unknown
+): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (row): row is Record<string, unknown> =>
+      Boolean(row) && typeof row === "object" && !Array.isArray(row)
+  );
+}
+
+export function resolveSalesOrderFlowDetailShipmentViews(
+  payload: SalesOrderFlowDetailPayload
+): SalesOrderFlowDetailShipmentView {
+  const production = payload.productionVisible
+    ? asRecordArray(payload.productionOrders).map((raw) => {
+        const externalId = asNumber(raw.externalId) ?? 0;
+        const inconsistencies = asRecordArray(raw.inconsistencies).map(
+          (row) => ({
+            code: asString(row.code) ?? "PRODUCTION_LINK_ITEM_MISMATCH",
+            detail: asString(row.detail) ?? "",
+          })
+        );
+        return {
+          id: asString(raw.id) ?? String(externalId),
+          externalId,
+          label: `OP ${externalId}`,
+          status: asString(raw.status),
+          productCode: asString(raw.productCode),
+          linkedQuantity: asNumber(raw.linkedQuantity),
+          plannedQuantity: asNumber(raw.plannedQuantity),
+          producedQuantity: asNumber(raw.producedQuantity),
+          openedAt: asString(raw.openedAt),
+          closedAt: asString(raw.closedAt),
+          linkCount: asNumber(raw.linkCount) ?? 0,
+          isCurrentLink: asBoolean(raw.isCurrentLink),
+          inconsistencies,
+          href:
+            asString(raw.href) ??
+            `/production-orders?search=${encodeURIComponent(String(externalId))}`,
+        };
+      })
+    : [];
+
+  const documents = payload.fiscalVisible
+    ? asRecordArray(payload.stockDocuments).map((raw) => {
+        const externalId = asNumber(raw.externalId) ?? 0;
+        const documentNumber = asString(raw.documentNumber);
+        return {
+          id: asString(raw.id) ?? String(externalId),
+          externalId,
+          label: documentNumber
+            ? `DS ${documentNumber}`
+            : `DS #${externalId}`,
+          statusRaw: asString(raw.statusRaw),
+          dataDocumento: asString(raw.dataDocumento),
+          itemCount: asNumber(raw.itemCount) ?? 0,
+          itemQuantity: asNumber(raw.itemQuantity),
+          allocatedQuantity: asNumber(raw.allocatedQuantity),
+          allocationCount: asNumber(raw.allocationCount) ?? 0,
+          totalValue: asNumber(raw.totalValue),
+          isCancelled: asBoolean(raw.isCancelled),
+          cancellationReason: asString(raw.cancellationReason),
+          href:
+            asString(raw.href) ??
+            `/output-documents?search=${encodeURIComponent(
+              documentNumber || String(externalId)
+            )}`,
+        };
+      })
+    : [];
+
+  const nfes = payload.fiscalVisible
+    ? asRecordArray(payload.nfes).map((raw) => {
+        const externalId = asNumber(raw.externalId) ?? 0;
+        const numero = asString(raw.numero);
+        const statusObj =
+          raw.statusNormalized &&
+          typeof raw.statusNormalized === "object" &&
+          !Array.isArray(raw.statusNormalized)
+            ? (raw.statusNormalized as Record<string, unknown>)
+            : {};
+        return {
+          externalId,
+          label: numero ? `NF-e ${numero}` : `NF-e #${externalId}`,
+          serie: asString(raw.serie),
+          statusLabel:
+            asString(statusObj.label) ??
+            (asBoolean(raw.isCanceled) ? "Cancelada" : "—"),
+          issuedAt: asString(raw.issuedAt),
+          linkedQuantity: asNumber(raw.linkedQuantity),
+          linkedValue: asNumber(raw.linkedValue),
+          isCanceled: asBoolean(raw.isCanceled),
+          href:
+            asString(raw.href) ??
+            (numero
+              ? `/output-documents?search=${encodeURIComponent(numero)}`
+              : "/output-documents"),
+        };
+      })
+    : [];
+
+  const documentsActive = documents.filter((doc) => !doc.isCancelled);
+  const documentsCanceled = documents.filter((doc) => doc.isCancelled);
+  const nfesActive = nfes.filter((nfe) => !nfe.isCanceled);
+  const nfesCanceled = nfes.filter((nfe) => nfe.isCanceled);
+
+  return {
+    production,
+    documentsActive,
+    documentsCanceled,
+    nfesActive,
+    nfesCanceled,
+    firstShippedAt: payload.shipmentDates?.firstShippedAt ?? null,
+    lastShippedAt: payload.shipmentDates?.lastShippedAt ?? null,
+    progressShipped: payload.progress?.shipped ?? null,
+    progressInvoiced: payload.progress?.invoiced ?? null,
+    activeDocumentCount: documentsActive.length,
+    activeNfeCount: nfesActive.length,
+  };
+}
+
+export function resolveSalesOrderFlowDetailAvailableTabs(
+  payload: SalesOrderFlowDetailPayload | null
+): Array<{ id: SalesOrderFlowDetailTab; label: string; count?: number }> {
+  const base: Array<{ id: SalesOrderFlowDetailTab; label: string; count?: number }> = [
+    { id: "resumo", label: "Resumo" },
+    {
+      id: "itens",
+      label: "Itens",
+      count: payload?.itemSnapshots.length,
+    },
+  ];
+  if (!payload) return base;
+  if (payload.productionVisible) {
+    base.push({
+      id: "producao",
+      label: "Produção",
+      count: payload.productionOrders.length,
+    });
+  }
+  if (payload.fiscalVisible) {
+    const views = resolveSalesOrderFlowDetailShipmentViews(payload);
+    base.push({
+      id: "documentos",
+      label: "Documentos de Saída",
+      count: views.activeDocumentCount,
+    });
+    base.push({
+      id: "nfe_envio",
+      label: "NF-e e Envio",
+      count: views.activeNfeCount,
+    });
+  }
+  return base;
 }

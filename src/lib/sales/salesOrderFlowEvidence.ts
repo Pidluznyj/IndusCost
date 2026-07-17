@@ -141,8 +141,12 @@ export type SalesOrderFlowEvidenceStockDocument = {
   idNfe: number | null;
   tipoDocumentoEstoque: string | null;
   dataDocumento: string | null;
+  documentNumber: string | null;
   totalValue: number | null;
   statusRaw: string | null;
+  isCancelled: boolean;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
   itemCount: number;
 };
 
@@ -173,8 +177,10 @@ export type SalesOrderFlowEvidenceNfe = {
   externalId: number;
   nomusNfeId: string | null;
   numero: string | null;
+  serie: string | null;
   chave: string | null;
   statusRaw: number | null;
+  issuedAt: string | null;
   statusNormalized: NormalizedNfeStatusResult;
   isCanceled: boolean;
   isValidForBilling: boolean;
@@ -306,8 +312,10 @@ export type SalesOrderFlowEvidenceNomusNfeRow = {
   id: string;
   externalId: number;
   numero?: string | null;
+  serie?: string | null;
   chave?: string | null;
   status?: number | null;
+  xmlDhEmi?: Date | string | null;
 };
 
 export type SalesOrderFlowEvidenceProductionLinkRow = {
@@ -338,8 +346,12 @@ export type SalesOrderFlowEvidenceStockDocumentRow = {
   idNfe?: number | null;
   tipoDocumentoEstoque?: string | null;
   dataDocumento?: Date | string | null;
+  documentNumber?: string | null;
   totalValue?: unknown;
   statusRaw?: string | null;
+  isCancelled?: boolean | null;
+  cancelledAt?: Date | string | null;
+  cancellationReason?: string | null;
 };
 
 export type SalesOrderFlowEvidenceStockDocumentItemRow = {
@@ -382,8 +394,10 @@ type NfeAccumulator = {
   externalId: number;
   nomusNfeId: string | null;
   numero: string | null;
+  serie: string | null;
   chave: string | null;
   statusRaw: number | null;
+  issuedAt: string | null;
   sources: Set<SalesOrderFlowEvidenceNfeSource>;
   linkedSalesOrderIds: Set<string>;
   statusSamples: Array<{ source: SalesOrderFlowEvidenceNfeSource; status: number | null }>;
@@ -397,8 +411,10 @@ function buildNfeEvidence(acc: NfeAccumulator): SalesOrderFlowEvidenceNfe {
     externalId: acc.externalId,
     nomusNfeId: acc.nomusNfeId,
     numero: acc.numero,
+    serie: acc.serie,
     chave: acc.chave,
     statusRaw: preferredStatus,
+    issuedAt: acc.issuedAt,
     statusNormalized,
     isCanceled: statusNormalized.isCanceled || isNomusNfeCancelled(preferredStatus),
     isValidForBilling: statusNormalized.isValidForBilling,
@@ -526,8 +542,10 @@ export function assembleSalesOrderFlowEvidenceBatch(
         externalId,
         nomusNfeId: row?.id ?? null,
         numero: row?.numero ?? null,
+        serie: row?.serie ?? null,
         chave: row?.chave ?? null,
         statusRaw: row?.status ?? null,
+        issuedAt: iso(row?.xmlDhEmi),
         sources: new Set(),
         linkedSalesOrderIds: new Set(),
         statusSamples: [],
@@ -754,8 +772,12 @@ export function assembleSalesOrderFlowEvidenceBatch(
         idNfe: doc.idNfe ?? null,
         tipoDocumentoEstoque: doc.tipoDocumentoEstoque ?? null,
         dataDocumento: iso(doc.dataDocumento),
+        documentNumber: doc.documentNumber?.trim() || null,
         totalValue: dec(doc.totalValue),
         statusRaw: doc.statusRaw ?? null,
+        isCancelled: doc.isCancelled === true,
+        cancelledAt: iso(doc.cancelledAt),
+        cancellationReason: doc.cancellationReason?.trim() || null,
         itemCount,
       });
     }

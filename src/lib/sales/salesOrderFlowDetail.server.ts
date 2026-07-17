@@ -94,32 +94,127 @@ function mapManagement(
 }
 
 function mapEvidenceProduction(pack: SalesOrderFlowEvidencePack) {
-  return pack.productionOrders.map((op) => ({
-    id: op.id,
-    externalId: op.externalId,
-    status: op.status,
-    plannedQuantity: op.plannedQuantity,
-    producedQuantity: op.producedQuantity,
-    productCode: op.productCode,
-    openedAt: op.openedAt,
-    closedAt: op.closedAt,
-  }));
+  const conflicts = pack.linkConflicts.filter(
+    (conflict) => conflict.code === "PRODUCTION_LINK_ITEM_MISMATCH"
+  );
+  return pack.productionOrders.map((op) => {
+    const links = pack.productionLinks.filter(
+      (link) => link.productionOrderExternalId === op.externalId
+    );
+    const linkedQuantity = links.reduce(
+      (sum, link) => sum + (link.linkedQuantity ?? 0),
+      0
+    );
+    const opConflicts = conflicts.filter((conflict) =>
+      conflict.detail.includes(String(op.externalId)) ||
+      links.some((link) => conflict.entityIds.includes(`oplink:${link.id}`))
+    );
+    return {
+      id: op.id,
+      externalId: op.externalId,
+      status: op.status,
+      plannedQuantity: op.plannedQuantity,
+      producedQuantity: op.producedQuantity,
+      productCode: op.productCode,
+      openedAt: op.openedAt,
+      closedAt: op.closedAt,
+      linkedQuantity: links.some((link) => link.linkedQuantity != null)
+        ? linkedQuantity
+        : null,
+      linkCount: links.length,
+      isCurrentLink: links.some((link) => link.isCurrent),
+      inconsistencies: opConflicts.map((conflict) => ({
+        code: conflict.code,
+        detail: conflict.detail,
+      })),
+      href: `/production-orders?search=${encodeURIComponent(String(op.externalId))}`,
+    };
+  });
 }
 
 function mapEvidenceDocuments(
   pack: SalesOrderFlowEvidencePack,
   canViewValues: boolean
 ) {
-  return pack.stockDocuments.map((doc) => ({
-    id: doc.id,
-    externalId: doc.externalId,
-    idNfe: doc.idNfe,
-    tipoDocumentoEstoque: doc.tipoDocumentoEstoque,
-    dataDocumento: doc.dataDocumento,
-    totalValue: canViewValues ? doc.totalValue : null,
-    statusRaw: doc.statusRaw,
-    itemCount: doc.itemCount,
-  }));
+  return pack.stockDocuments.map((doc) => {
+    const items = pack.stockDocumentItems.filter(
+      (item) => item.stockDocumentId === doc.id
+    );
+    const allocations = pack.allocations.filter(
+      (allocation) => allocation.stockDocumentExternalId === doc.externalId
+    );
+    const allocatedQuantity = allocations.reduce(
+      (sum, allocation) => sum + (allocation.quantityUsedForOrder ?? 0),
+      0
+    );
+    const itemQuantity = items.reduce(
+      (sum, item) => sum + (item.quantity ?? 0),
+      0
+    );
+    return {
+      id: doc.id,
+      externalId: doc.externalId,
+      documentNumber: doc.documentNumber,
+      idNfe: doc.idNfe,
+      tipoDocumentoEstoque: doc.tipoDocumentoEstoque,
+      dataDocumento: doc.dataDocumento,
+      totalValue: canViewValues ? doc.totalValue : null,
+      statusRaw: doc.statusRaw,
+      isCancelled: doc.isCancelled,
+      cancelledAt: doc.cancelledAt,
+      cancellationReason: doc.cancellationReason,
+      itemCount: doc.itemCount,
+      itemQuantity: items.some((item) => item.quantity != null)
+        ? itemQuantity
+        : null,
+      allocatedQuantity: allocations.some(
+        (allocation) => allocation.quantityUsedForOrder != null
+      )
+        ? allocatedQuantity
+        : null,
+      allocationCount: allocations.length,
+      href: `/output-documents?search=${encodeURIComponent(
+        doc.documentNumber || String(doc.externalId)
+      )}`,
+    };
+  });
+}
+
+function mapEvidenceNfes(
+  pack: SalesOrderFlowEvidencePack,
+  canViewValues: boolean,
+  fiscalVisible: boolean
+) {
+  return pack.nfes.map((nfe) => {
+    const allocations = pack.allocations.filter(
+      (allocation) => allocation.nfeExternalId === nfe.externalId
+    );
+    const linkedQuantity = allocations.reduce(
+      (sum, allocation) => sum + (allocation.quantityUsedForOrder ?? 0),
+      0
+    );
+    const linkedDocs = pack.stockDocuments.filter(
+      (doc) => doc.idNfe === nfe.externalId && !doc.isCancelled
+    );
+    const linkedValue = canViewValues
+      ? linkedDocs.reduce((sum, doc) => sum + (doc.totalValue ?? 0), 0)
+      : null;
+    return {
+      ...mapNfeForDetail(nfe, fiscalVisible),
+      serie: nfe.serie,
+      issuedAt: nfe.issuedAt,
+      linkedQuantity: allocations.some(
+        (allocation) => allocation.quantityUsedForOrder != null
+      )
+        ? linkedQuantity
+        : null,
+      linkedValue,
+      allocationCount: allocations.length,
+      href: nfe.numero
+        ? `/output-documents?search=${encodeURIComponent(nfe.numero)}`
+        : `/output-documents`,
+    };
+  });
 }
 
 export async function loadSalesOrderFlowDetail(
@@ -209,6 +304,10 @@ export async function loadSalesOrderFlowDetail(
     recomputable,
   });
 
+  const activeDocumentCount = evidence.stockDocuments.filter(
+    (doc) => !doc.isCancelled
+  ).length;
+
   const financialSituation = canViewValues
     ? {
         orderValue: orderSnapshot
@@ -224,7 +323,7 @@ export async function loadSalesOrderFlowDetail(
         canceledValue: orderSnapshot
           ? decimalNumber(orderSnapshot.canceledValue)
           : null,
-        documentCount: evidence.stockDocuments.length,
+        documentCount: activeDocumentCount,
         validNfeCount: evidence.validNfes.length,
         canceledNfeCount: evidence.canceledNfes.length,
       }
@@ -234,7 +333,7 @@ export async function loadSalesOrderFlowDetail(
         activeResidualValue: null,
         cutValue: null,
         canceledValue: null,
-        documentCount: evidence.stockDocuments.length,
+        documentCount: activeDocumentCount,
         validNfeCount: evidence.validNfes.length,
         canceledNfeCount: evidence.canceledNfes.length,
       };
@@ -306,7 +405,7 @@ export async function loadSalesOrderFlowDetail(
       ? mapEvidenceDocuments(evidence, canViewValues)
       : [],
     nfes: canViewFiscal
-      ? evidence.nfes.map((nfe) => mapNfeForDetail(nfe, true))
+      ? mapEvidenceNfes(evidence, canViewValues, true)
       : [],
     financialSituation: canViewFinancial ? financialSituation : null,
     inconsistencies: orderSnapshot

@@ -23,8 +23,10 @@ import {
   formatSalesOrderFlowInconsistencyLabel,
   formatSalesOrderFlowPriorityLabel,
   formatSalesOrderFlowStageLabel,
+  resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailDaysInStage,
   resolveSalesOrderFlowDetailItems,
+  resolveSalesOrderFlowDetailShipmentViews,
   type SalesOrderFlowDetailTab,
 } from "@/src/lib/salesOrderFlowDetailUi";
 import { cn } from "@/src/lib/utils";
@@ -37,8 +39,8 @@ type Props = {
 };
 
 /**
- * Drawer largo do Fluxo de Pedidos (OP-69): Resumo + Itens.
- * Reutiliza o Overlay canônico; não altera a URL nem desmonta o Kanban.
+ * Drawer largo do Fluxo de Pedidos (OP-69/OP-70): Resumo, Itens, Produção,
+ * Documentos e NF-e/Envio. Overlay canônico; preserva filtros do Kanban.
  */
 export function SalesOrderFlowDetailDrawer({
   open,
@@ -97,9 +99,23 @@ export function SalesOrderFlowDetailDrawer({
     () => (detail ? resolveSalesOrderFlowDetailItems(detail) : []),
     [detail]
   );
+  const shipment = useMemo(
+    () => (detail ? resolveSalesOrderFlowDetailShipmentViews(detail) : null),
+    [detail]
+  );
+  const tabs = useMemo(
+    () => resolveSalesOrderFlowDetailAvailableTabs(detail),
+    [detail]
+  );
   const titleId = "sales-order-flow-detail-title";
   const displayCode =
     detail?.order.orderCode ?? orderCode?.trim() ?? "Pedido";
+
+  useEffect(() => {
+    if (!tabs.some((tab) => tab.id === activeTab)) {
+      setActiveTab("resumo");
+    }
+  }, [tabs, activeTab]);
 
   return (
     <Overlay
@@ -142,10 +158,7 @@ export function SalesOrderFlowDetailDrawer({
         density="default"
       />
       <OverlayTabs
-        tabs={[
-          { id: "resumo", label: "Resumo" },
-          { id: "itens", label: "Itens", count: items.length },
-        ]}
+        tabs={tabs}
         active={activeTab}
         onChange={setActiveTab}
         variant="pill"
@@ -192,10 +205,11 @@ export function SalesOrderFlowDetailDrawer({
           </div>
         ) : null}
 
-        {!loading && !errorMessage && detail ? (
+        {!loading && !errorMessage && detail && shipment ? (
           <SalesOrderFlowDetailContent
             detail={detail}
             items={items}
+            shipment={shipment}
             activeTab={activeTab}
           />
         ) : null}
@@ -207,14 +221,35 @@ export function SalesOrderFlowDetailDrawer({
 export function SalesOrderFlowDetailContent({
   detail,
   items,
+  shipment,
   activeTab,
 }: {
   detail: SalesOrderFlowDetailPayload;
   items: ReturnType<typeof resolveSalesOrderFlowDetailItems>;
+  shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
   activeTab: SalesOrderFlowDetailTab;
 }) {
   if (activeTab === "itens") {
     return <ItemsTab detail={detail} items={items} />;
+  }
+  if (activeTab === "producao") {
+    return <ProductionTab shipment={shipment} />;
+  }
+  if (activeTab === "documentos") {
+    return (
+      <DocumentsTab
+        shipment={shipment}
+        valuesVisible={detail.valuesVisible}
+      />
+    );
+  }
+  if (activeTab === "nfe_envio") {
+    return (
+      <NfeShipmentTab
+        shipment={shipment}
+        valuesVisible={detail.valuesVisible}
+      />
+    );
   }
   return <SummaryTab detail={detail} />;
 }
@@ -497,6 +532,307 @@ function ItemsTab({
         )}
       </OverlaySection>
     </div>
+  );
+}
+
+function ProductionTab({
+  shipment,
+}: {
+  shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
+}) {
+  return (
+    <div
+      id="overlay-panel-producao"
+      role="tabpanel"
+      data-testid="sales-order-flow-detail-production"
+      className="space-y-4"
+    >
+      <OverlaySection title="Ordens de Produção">
+        {shipment.production.length === 0 ? (
+          <EmptyPanel text="Nenhuma OP vinculada oficialmente a este pedido." />
+        ) : (
+          <OverlayTable>
+            <thead>
+              <tr>
+                <th>OP</th>
+                <th>Status</th>
+                <th>Produto</th>
+                <th>Qtd. vinculada</th>
+                <th>Planejado</th>
+                <th>Produzido</th>
+                <th>Abertura</th>
+                <th>Fechamento</th>
+                <th>Vínculo</th>
+                <th>Inconsistências</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shipment.production.map((op) => (
+                <tr key={op.id} data-testid={`sales-order-flow-detail-op-${op.id}`}>
+                  <td className="font-medium">{op.label}</td>
+                  <td>{op.status?.trim() || "—"}</td>
+                  <td>{op.productCode?.trim() || "—"}</td>
+                  <td>{formatSalesOrderFlowDetailQuantity(op.linkedQuantity)}</td>
+                  <td>{formatSalesOrderFlowDetailQuantity(op.plannedQuantity)}</td>
+                  <td>{formatSalesOrderFlowDetailQuantity(op.producedQuantity)}</td>
+                  <td>{formatSalesOrderFlowDetailDate(op.openedAt)}</td>
+                  <td>{formatSalesOrderFlowDetailDate(op.closedAt)}</td>
+                  <td>
+                    {op.linkCount > 0
+                      ? `${op.linkCount}${op.isCurrentLink ? " · vigente" : ""}`
+                      : "—"}
+                  </td>
+                  <td>
+                    {op.inconsistencies.length > 0
+                      ? op.inconsistencies
+                          .map((row) => row.detail || row.code)
+                          .join(" · ")
+                      : "—"}
+                  </td>
+                  <td>
+                    <a
+                      href={op.href}
+                      className="text-primary underline-offset-2 hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Abrir OP
+                    </a>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </OverlayTable>
+        )}
+      </OverlaySection>
+    </div>
+  );
+}
+
+function DocumentsTab({
+  shipment,
+  valuesVisible,
+}: {
+  shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
+  valuesVisible: boolean;
+}) {
+  return (
+    <div
+      id="overlay-panel-documentos"
+      role="tabpanel"
+      data-testid="sales-order-flow-detail-documents"
+      className="space-y-4"
+    >
+      <OverlaySection
+        title="Documentos de Saída ativos"
+        description={`${shipment.activeDocumentCount} documento(s) contados (cancelados excluídos).`}
+      >
+        {shipment.documentsActive.length === 0 ? (
+          <EmptyPanel text="Nenhum documento de saída ativo vinculado." />
+        ) : (
+          <DocumentTable
+            rows={shipment.documentsActive}
+            valuesVisible={valuesVisible}
+          />
+        )}
+      </OverlaySection>
+      {shipment.documentsCanceled.length > 0 ? (
+        <OverlaySection
+          title="Documentos cancelados (não contados)"
+          description={`${shipment.documentsCanceled.length} documento(s) cancelados excluídos dos totais.`}
+        >
+          <DocumentTable
+            rows={shipment.documentsCanceled}
+            valuesVisible={valuesVisible}
+          />
+        </OverlaySection>
+      ) : null}
+    </div>
+  );
+}
+
+function DocumentTable({
+  rows,
+  valuesVisible,
+}: {
+  rows: ReturnType<
+    typeof resolveSalesOrderFlowDetailShipmentViews
+  >["documentsActive"];
+  valuesVisible: boolean;
+}) {
+  return (
+    <OverlayTable>
+      <thead>
+        <tr>
+          <th>Documento</th>
+          <th>Status</th>
+          <th>Data</th>
+          <th>Qtd. itens</th>
+          <th>Qtd. alocada</th>
+          <th>Valor</th>
+          <th>Itens</th>
+          <th>Alocações</th>
+          <th>Cancelamento</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((doc) => (
+          <tr
+            key={doc.id}
+            data-testid={`sales-order-flow-detail-doc-${doc.id}`}
+            className={cn(doc.isCancelled && "bg-rose-50/60")}
+          >
+            <td className="font-medium">{doc.label}</td>
+            <td>{doc.statusRaw?.trim() || "—"}</td>
+            <td>{formatSalesOrderFlowDetailDate(doc.dataDocumento)}</td>
+            <td>{formatSalesOrderFlowDetailQuantity(doc.itemQuantity)}</td>
+            <td>{formatSalesOrderFlowDetailQuantity(doc.allocatedQuantity)}</td>
+            <td>
+              {formatSalesOrderFlowDetailMoney(doc.totalValue, valuesVisible)}
+            </td>
+            <td>{doc.itemCount}</td>
+            <td>{doc.allocationCount}</td>
+            <td>
+              {doc.isCancelled
+                ? doc.cancellationReason?.trim() || "Cancelado"
+                : "—"}
+            </td>
+            <td>
+              <a
+                href={doc.href}
+                className="text-primary underline-offset-2 hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir DS
+              </a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </OverlayTable>
+  );
+}
+
+function NfeShipmentTab({
+  shipment,
+  valuesVisible,
+}: {
+  shipment: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>;
+  valuesVisible: boolean;
+}) {
+  return (
+    <div
+      id="overlay-panel-nfe_envio"
+      role="tabpanel"
+      data-testid="sales-order-flow-detail-nfe-shipment"
+      className="space-y-4"
+    >
+      <OverlaySection title="Envio">
+        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <InfoField
+            label="Primeira data de envio"
+            value={formatSalesOrderFlowDetailDate(shipment.firstShippedAt)}
+          />
+          <InfoField
+            label="Última data de envio"
+            value={formatSalesOrderFlowDetailDate(shipment.lastShippedAt)}
+          />
+          <InfoField
+            label="Progresso enviado"
+            value={formatSalesOrderFlowDetailPercent(shipment.progressShipped)}
+          />
+          <InfoField
+            label="Progresso faturado"
+            value={formatSalesOrderFlowDetailPercent(shipment.progressInvoiced)}
+          />
+        </dl>
+      </OverlaySection>
+
+      <OverlaySection
+        title="NF-e ativas"
+        description={`${shipment.activeNfeCount} NF-e contadas (canceladas excluídas).`}
+      >
+        {shipment.nfesActive.length === 0 ? (
+          <EmptyPanel text="Nenhuma NF-e ativa vinculada oficialmente." />
+        ) : (
+          <NfeTable rows={shipment.nfesActive} valuesVisible={valuesVisible} />
+        )}
+      </OverlaySection>
+
+      {shipment.nfesCanceled.length > 0 ? (
+        <OverlaySection
+          title="NF-e canceladas (não contadas)"
+          description={`${shipment.nfesCanceled.length} NF-e canceladas excluídas dos totais.`}
+        >
+          <NfeTable rows={shipment.nfesCanceled} valuesVisible={valuesVisible} />
+        </OverlaySection>
+      ) : null}
+    </div>
+  );
+}
+
+function NfeTable({
+  rows,
+  valuesVisible,
+}: {
+  rows: ReturnType<typeof resolveSalesOrderFlowDetailShipmentViews>["nfesActive"];
+  valuesVisible: boolean;
+}) {
+  return (
+    <OverlayTable>
+      <thead>
+        <tr>
+          <th>NF</th>
+          <th>Série</th>
+          <th>Status</th>
+          <th>Data</th>
+          <th>Qtd. vinculada</th>
+          <th>Valor vinculado</th>
+          <th>Cancelamento</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((nfe) => (
+          <tr
+            key={nfe.externalId}
+            data-testid={`sales-order-flow-detail-nfe-${nfe.externalId}`}
+            className={cn(nfe.isCanceled && "bg-rose-50/60")}
+          >
+            <td className="font-medium">{nfe.label}</td>
+            <td>{nfe.serie?.trim() || "—"}</td>
+            <td>{nfe.statusLabel}</td>
+            <td>{formatSalesOrderFlowDetailDate(nfe.issuedAt)}</td>
+            <td>{formatSalesOrderFlowDetailQuantity(nfe.linkedQuantity)}</td>
+            <td>
+              {formatSalesOrderFlowDetailMoney(nfe.linkedValue, valuesVisible)}
+            </td>
+            <td>{nfe.isCanceled ? "Cancelada" : "—"}</td>
+            <td>
+              <a
+                href={nfe.href}
+                className="text-primary underline-offset-2 hover:underline"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir
+              </a>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </OverlayTable>
+  );
+}
+
+function EmptyPanel({ text }: { text: string }) {
+  return (
+    <p className="rounded-xl border border-dashed border-border bg-background/70 p-6 text-center text-sm text-muted-foreground">
+      {text}
+    </p>
   );
 }
 

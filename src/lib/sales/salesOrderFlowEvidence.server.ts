@@ -213,8 +213,10 @@ export async function loadSalesOrderFlowEvidenceBatch(
             id: true,
             externalId: true,
             numero: true,
+            serie: true,
             chave: true,
             status: true,
+            xmlDhEmi: true,
           },
         })
       : [];
@@ -299,8 +301,12 @@ export async function loadSalesOrderFlowEvidenceBatch(
             idNfe: true,
             tipoDocumentoEstoque: true,
             dataDocumento: true,
+            documentNumber: true,
             totalValue: true,
             statusRaw: true,
+            isCancelled: true,
+            cancelledAt: true,
+            cancellationReason: true,
           },
         })
       : [];
