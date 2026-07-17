@@ -372,6 +372,8 @@ import {
 import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.js";
 import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
 import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
+import { registerSettingsSalesOrderFlowRoutes } from "./src/lib/settingsSalesOrderFlowRoutes.js";
+import { buildSalesOrderFlowEngineStatus } from "./src/lib/sales/salesOrderFlowStatus.server.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerOutputDocumentsRoutes } from "./src/lib/outputDocumentsRoutes.js";
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
@@ -15285,6 +15287,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       sanitizeLogContent,
       nomusSyncTargets: NOMUS_SYNC_TARGETS,
       maxNomusLogFilesScan: MAX_NOMUS_LOG_FILES_SCAN,
+    }
+  );
+
+  registerSettingsSalesOrderFlowRoutes(
+    app,
+    {
+      requireBootstrapOrResource,
+      isBootstrapAdminRequest,
+    },
+    {
+      buildStatus: () => buildSalesOrderFlowEngineStatus(prisma),
     }
   );
 

@@ -69,6 +69,9 @@ src/lib/sales/salesOrderFlowRepository.test.ts
 src/lib/sales/salesOrderFlowRecompute.test.ts
 src/lib/sales/salesOrderFlowRebuild.test.ts
 src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.test.ts
+src/lib/sales/salesOrderFlowFeatureFlags.test.ts
+src/lib/sales/salesOrderFlowStatus.test.ts
+src/lib/settingsSalesOrderFlowRoutes.test.ts
 src/lib/sales/salesOrderFlowTimeline.test.ts
 src/lib/sales/salesOrderToCashFunnelAnalytics.test.ts
 src/lib/sales/salesOrderToCashFunnelApi.test.ts

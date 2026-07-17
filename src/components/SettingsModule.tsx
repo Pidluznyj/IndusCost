@@ -113,6 +113,47 @@ type NomusHealthTargetRow = {
 
 type NomusHealthResponse = { targets: NomusHealthTargetRow[] };
 
+type SalesOrderFlowEngineStatusView = {
+  feature: {
+    resource: string;
+    enabled: boolean;
+    defaultWhenAbsent: boolean;
+  };
+  computation: {
+    expectedVersion: string;
+    latestRecomputedAt: string | null;
+    storedVersions: Array<{ version: string; count: number }>;
+    versionMismatchCount: number;
+  };
+  snapshots: {
+    orders: number;
+    items: number;
+    events: number;
+    ordersWithInconsistencies: number;
+    inconsistentItems: number;
+  };
+  latestKnownFailure: {
+    target: string;
+    status: string;
+    finishedAt: string | null;
+    errorMessage: string | null;
+    failedOrders: number;
+  } | null;
+  rebuild: {
+    available: boolean;
+    active: boolean;
+    mode: string | null;
+    startedAt: string | null;
+    checkpoint: {
+      lastOrderCode: string | null;
+      batchesCompleted: number;
+      ordersProcessed: number;
+      updatedAt: string;
+    } | null;
+  };
+  generatedAt: string;
+};
+
 type NomusSyncLogSummary = {
   fileName: string;
   kind: NomusSyncKind;
@@ -300,8 +341,8 @@ const HUB_SECTIONS: Array<{
     id: "system",
     title: "Sistema",
     description: "Operação técnica, saúde do ambiente e manutenção.",
-    status: "future",
-    note: "Em preparação",
+    status: "operational",
+    note: "Operacional hoje",
   },
 ];
 
@@ -398,6 +439,15 @@ export const SettingsModule = () => {
   const [nomusDetailLoadingFile, setNomusDetailLoadingFile] = useState<string | null>(null);
   const [nomusSelectedDetail, setNomusSelectedDetail] = useState<NomusSyncLogDetail | null>(null);
   const [nomusReloadSeq, setNomusReloadSeq] = useState(0);
+  const [salesOrderFlowStatus, setSalesOrderFlowStatus] =
+    useState<SalesOrderFlowEngineStatusView | null>(null);
+  const [salesOrderFlowStatusLoading, setSalesOrderFlowStatusLoading] =
+    useState(false);
+  const [salesOrderFlowStatusError, setSalesOrderFlowStatusError] = useState<
+    string | null
+  >(null);
+  const [salesOrderFlowStatusReloadSeq, setSalesOrderFlowStatusReloadSeq] =
+    useState(0);
   const [priceTables, setPriceTables] = useState<PriceTableView[]>([]);
   const [priceTablesLoading, setPriceTablesLoading] = useState(false);
   const [priceTablesError, setPriceTablesError] = useState<string | null>(null);
@@ -570,6 +620,30 @@ export const SettingsModule = () => {
     };
     load();
   }, [activeHubSection, nomusLimit, nomusTargetFilter, nomusModeFilter, nomusKindFilter, nomusStatusFilter, nomusReloadSeq]);
+
+  useEffect(() => {
+    if (activeHubSection !== "system") return;
+    const load = async () => {
+      setSalesOrderFlowStatusLoading(true);
+      setSalesOrderFlowStatusError(null);
+      try {
+        const status = await fetchJsonOk<SalesOrderFlowEngineStatusView>(
+          "/api/settings/system/sales-order-flow/status"
+        );
+        setSalesOrderFlowStatus(status);
+      } catch (error) {
+        setSalesOrderFlowStatus(null);
+        setSalesOrderFlowStatusError(
+          error instanceof Error
+            ? error.message
+            : "Não foi possível carregar o status do Fluxo de Pedidos."
+        );
+      } finally {
+        setSalesOrderFlowStatusLoading(false);
+      }
+    };
+    load();
+  }, [activeHubSection, salesOrderFlowStatusReloadSeq]);
 
   const loadPriceTables = async (options?: { keepSelection?: boolean; preferredVersionId?: string | null }) => {
     setPriceTablesLoading(true);
@@ -2416,13 +2490,13 @@ export const SettingsModule = () => {
             </div>
           )}
 
-          {(activeHubSection === "integrations" || activeHubSection === "system") && (
+          {activeHubSection === "integrations" && (
             <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-lg font-bold">{HUB_SECTIONS.find((s) => s.id === activeHubSection)?.title}</h3>
+                  <h3 className="text-lg font-bold">Integrações</h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {HUB_SECTIONS.find((s) => s.id === activeHubSection)?.description}
+                    Conexões externas e sincronizações com sistemas terceiros.
                   </p>
                 </div>
                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
@@ -2431,19 +2505,186 @@ export const SettingsModule = () => {
                 </span>
               </div>
               <div className="rounded-xl border border-dashed border-border bg-accent/20 p-4">
-                {activeHubSection === "integrations" && (
-                  <p className="text-sm text-muted-foreground">
-                    Integrações como Nomus e conectores externos serão habilitadas em etapa futura, com contrato técnico
-                    e validação operacional antes de liberar edição nesta tela.
-                  </p>
-                )}
-                {activeHubSection === "system" && (
-                  <p className="text-sm text-muted-foreground">
-                    Indicadores de saúde, jobs, logs e manutenção sistêmica serão incluídos em fases futuras conforme a
-                    evolução operacional do ambiente.
-                  </p>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Integrações como Nomus e conectores externos serão habilitadas em etapa futura, com contrato técnico
+                  e validação operacional antes de liberar edição nesta tela.
+                </p>
               </div>
+            </div>
+          )}
+
+          {activeHubSection === "system" && (
+            <div
+              className="rounded-2xl border border-border bg-card p-6 space-y-5"
+              data-testid="settings-sales-order-flow-status"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold">Sistema</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Monitoramento read-only do motor do Fluxo de Pedidos.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSalesOrderFlowStatusReloadSeq((prev) => prev + 1)
+                  }
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Atualizar
+                </button>
+              </div>
+
+              {salesOrderFlowStatusLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Carregando status do Fluxo de Pedidos...
+                </div>
+              )}
+
+              {salesOrderFlowStatusError && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  {salesOrderFlowStatusError}
+                </div>
+              )}
+
+              {salesOrderFlowStatus && !salesOrderFlowStatusLoading && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                    <MetricCard
+                      label="Feature flag"
+                      value={
+                        salesOrderFlowStatus.feature.enabled
+                          ? "Ligada"
+                          : "Desligada"
+                      }
+                      subtitle={salesOrderFlowStatus.feature.resource}
+                      valueWrap
+                    />
+                    <MetricCard
+                      label="Versão de cálculo"
+                      value={salesOrderFlowStatus.computation.expectedVersion}
+                      subtitle={
+                        salesOrderFlowStatus.computation.versionMismatchCount > 0
+                          ? `${salesOrderFlowStatus.computation.versionMismatchCount} snapshot(s) fora da versão`
+                          : "Sem mismatch de versão"
+                      }
+                      valueWrap
+                    />
+                    <MetricCard
+                      label="Última recomputação"
+                      value={
+                        salesOrderFlowStatus.computation.latestRecomputedAt
+                          ? new Date(
+                              salesOrderFlowStatus.computation.latestRecomputedAt
+                            ).toLocaleString("pt-BR")
+                          : "Sem dados"
+                      }
+                    />
+                    <MetricCard
+                      label="Inconsistências"
+                      value={String(
+                        salesOrderFlowStatus.snapshots.inconsistentItems
+                      )}
+                      subtitle={`${salesOrderFlowStatus.snapshots.ordersWithInconsistencies} pedido(s) com inconsistência`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <MetricCard
+                      label="Snapshots de pedido"
+                      value={String(salesOrderFlowStatus.snapshots.orders)}
+                    />
+                    <MetricCard
+                      label="Snapshots de item"
+                      value={String(salesOrderFlowStatus.snapshots.items)}
+                    />
+                    <MetricCard
+                      label="Eventos"
+                      value={String(salesOrderFlowStatus.snapshots.events)}
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-border bg-accent/20 p-4 space-y-2 text-sm">
+                    <p className="font-semibold">Rebuild</p>
+                    {!salesOrderFlowStatus.rebuild.available ? (
+                      <p className="text-muted-foreground">
+                        Nenhum checkpoint/lock disponível no momento.
+                      </p>
+                    ) : (
+                      <>
+                        <p>
+                          Estado:{" "}
+                          <span className="font-medium">
+                            {salesOrderFlowStatus.rebuild.active
+                              ? "Em execução"
+                              : "Inativo"}
+                          </span>
+                          {salesOrderFlowStatus.rebuild.mode
+                            ? ` (${salesOrderFlowStatus.rebuild.mode})`
+                            : ""}
+                        </p>
+                        {salesOrderFlowStatus.rebuild.checkpoint && (
+                          <p className="text-muted-foreground">
+                            Checkpoint:{" "}
+                            {salesOrderFlowStatus.rebuild.checkpoint
+                              .ordersProcessed}{" "}
+                            pedido(s) /{" "}
+                            {
+                              salesOrderFlowStatus.rebuild.checkpoint
+                                .batchesCompleted
+                            }{" "}
+                            lote(s)
+                            {salesOrderFlowStatus.rebuild.checkpoint
+                              .lastOrderCode
+                              ? ` · último ${salesOrderFlowStatus.rebuild.checkpoint.lastOrderCode}`
+                              : ""}
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-border bg-accent/20 p-4 space-y-2 text-sm">
+                    <p className="font-semibold">Última falha conhecida</p>
+                    {!salesOrderFlowStatus.latestKnownFailure ? (
+                      <p className="text-muted-foreground">
+                        Nenhuma falha PARTIAL/FAILED registrada nas recomputações
+                        pós-sync.
+                      </p>
+                    ) : (
+                      <>
+                        <p>
+                          {salesOrderFlowStatus.latestKnownFailure.status} ·{" "}
+                          {salesOrderFlowStatus.latestKnownFailure.target}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {salesOrderFlowStatus.latestKnownFailure.finishedAt
+                            ? new Date(
+                                salesOrderFlowStatus.latestKnownFailure.finishedAt
+                              ).toLocaleString("pt-BR")
+                            : "sem timestamp"}
+                          {" · "}
+                          {
+                            salesOrderFlowStatus.latestKnownFailure.failedOrders
+                          }{" "}
+                          pedido(s) com falha
+                        </p>
+                        {salesOrderFlowStatus.latestKnownFailure.errorMessage && (
+                          <p className="text-amber-800">
+                            {
+                              salesOrderFlowStatus.latestKnownFailure
+                                .errorMessage
+                            }
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -41,6 +41,7 @@ export const ADMIN_SETTINGS_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/settings/nomus-sync/logs*", resourceKey: "admin.settings.nomus_sync", action: "view" },
   { method: "GET", path: "/api/settings/nomus-sync/*-status", resourceKey: "admin.settings.nomus_sync", action: "view" },
   { method: "POST", path: "/api/settings/nomus-sync/*-run", resourceKey: "admin.settings.nomus_sync", action: "execute" },
+  { method: "GET", path: "/api/settings/system/sales-order-flow/status", resourceKey: "admin.settings", action: "view" },
 
   { method: "GET", path: "/guide", resourceKey: "admin.guide", action: "view" },
 ] as const;
