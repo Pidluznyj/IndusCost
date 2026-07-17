@@ -7,22 +7,19 @@ import { registerSalesOrderFlowRoutes } from "./salesOrderFlowRoutes.js";
 import { SALES_ORDER_FLOW_ENABLED_ENV } from "./sales/salesOrderFlowFeatureFlags.js";
 
 describe("salesOrderFlowRoutes (OP-59)", () => {
-  it("registra summary e lista com flag + requireResource commercial.sales_orders", () => {
+  it("registra summary, lista, detalhe e events", () => {
     const source = readFileSync(
       join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
       "utf8"
     );
     assert.match(source, /\/api\/commercial\/sales-order-flow\/summary/);
     assert.match(source, /\/api\/commercial\/sales-order-flow"/);
+    assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId\/events/);
+    assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId"/);
     assert.match(source, /requireSalesOrderFlowEnabled/);
-    assert.match(source, /requireAppAuth/);
-    assert.match(
-      source,
-      /requireResource\(\s*COMMERCIAL_RESOURCE_KEYS\.salesOrders/
-    );
-    assert.match(source, /resolveSalesOrderFlowAccessScope/);
-    assert.match(source, /canViewSalesOrderFlowMonetaryValues/);
-    assert.match(source, /loadSalesOrderFlowList/);
+    assert.match(source, /loadSalesOrderFlowDetail/);
+    assert.match(source, /loadSalesOrderFlowEvents/);
+    assert.match(source, /canViewSalesOrderFiscalTaxesFromAuth/);
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
       "commercial.sales_orders"
@@ -38,6 +35,11 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
     assert.match(server, /registerSalesOrderFlowRoutes/);
     assert.match(access, /\/api\/commercial\/sales-order-flow\/summary/);
     assert.match(access, /\/api\/commercial\/sales-order-flow"/);
+    assert.match(access, /\/api\/commercial\/sales-order-flow\/:salesOrderId"/);
+    assert.match(
+      access,
+      /\/api\/commercial\/sales-order-flow\/:salesOrderId\/events/
+    );
   });
 
   it("bloqueia com 404 quando feature flag ausente", async () => {

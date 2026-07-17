@@ -488,6 +488,10 @@ export type SalesOrderFlowEventPageOptions = {
   page?: number;
   /** Tamanho da página. Default 50. Cap 500. */
   pageSize?: number;
+  /** Filtro opcional por tipo de evento. */
+  eventType?: string | null;
+  /** Filtro opcional por item do pedido. */
+  salesOrderItemId?: string | null;
 };
 
 export type SalesOrderFlowEventPage = {
@@ -506,11 +510,22 @@ export async function findSalesOrderFlowEventsByOrderId(
   const page = Math.max(0, options.page ?? 0);
   const pageSize = Math.min(500, Math.max(1, options.pageSize ?? 50));
   const skip = page * pageSize;
+  const where: {
+    salesOrderId: string;
+    eventType?: string;
+    salesOrderItemId?: string | null;
+  } = { salesOrderId };
+  if (options.eventType?.trim()) {
+    where.eventType = options.eventType.trim();
+  }
+  if (options.salesOrderItemId?.trim()) {
+    where.salesOrderItemId = options.salesOrderItemId.trim();
+  }
 
   const [total, items] = await Promise.all([
-    db.salesOrderFlowEvent.count({ where: { salesOrderId } }),
+    db.salesOrderFlowEvent.count({ where }),
     db.salesOrderFlowEvent.findMany({
-      where: { salesOrderId },
+      where,
       orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
       skip,
       take: pageSize,

@@ -588,6 +588,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/sales-orders",
       "/api/commercial/sales-order-flow",
       "/api/commercial/sales-order-flow/summary",
+      "/api/commercial/sales-order-flow/:salesOrderId",
+      "/api/commercial/sales-order-flow/:salesOrderId/events",
     ],
     sensitivity: "critical",
     appearsInSidebar: true,
