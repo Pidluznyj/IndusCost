@@ -6,7 +6,7 @@
 | **Ticket** | PERM-44 |
 | **Data** | 2026-07-16 |
 | **Escopo** | Revisão integral PERM-25 → PERM-43 |
-| **HEAD deste RC** | `3abcbe4257ddb3cf607b2613bc634c61cdf4c4e4` |
+| **HEAD deste RC** | `c8b0c64d235a8c572181652981ff9d73045767d0` (doc RC: `3abcbe4`) |
 | **Produção** | Código liberado para homologação; migrate/seed/smoke autenticado no servidor **fora** deste run |
 
 ---
