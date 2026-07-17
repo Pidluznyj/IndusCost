@@ -1,5 +1,6 @@
 import "@/src/components/print/print-document.css";
 import "./finance-ar-titles-print.css";
+import "./finance-ar-analytical-titles-table.css";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,12 +11,9 @@ import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/F
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
-import { StatusBadge } from "@/src/components/finance/FinanceAccountsReceivableTabPanels";
 import {
   FinanceArErrorBanner,
   FinanceArLoadingBlock,
-  FinanceArScrollableTable,
-  FinanceArStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsReceivableUiShared";
 import { FinanceAccountsReceivableTitlesPrintDocument } from "@/src/components/finance/FinanceAccountsReceivableTitlesPrintDocument";
 import { financeArCustomerFieldsFromSelection } from "@/src/lib/customerSearch";
@@ -32,6 +30,7 @@ import {
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import {
   displayFinanceText,
+  formatFinanceCalculatedStatus,
   formatFinanceCurrency,
   formatFinanceDate,
   formatFinanceInteger,
@@ -42,8 +41,8 @@ import type {
   FinanceArTitlesPayload,
   FinanceArTitlesSortBy,
 } from "@/src/lib/financeAccountsReceivableTitles";
+import { resolveFinanceArTitleDocumentReference } from "@/src/lib/financeAccountsReceivableTitles";
 import { fetchJsonOk } from "@/src/lib/http";
-import { cn } from "@/src/lib/utils";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -72,23 +71,52 @@ const SORT_OPTIONS: Array<{ value: FinanceArTitlesSortBy; label: string }> = [
   { value: "daysOverdue", label: "Dias em atraso" },
 ];
 
-function originLabel(row: {
-  lineKind?: string | null;
-  lineKindLabel?: string | null;
-  origin: string;
-  orderCode?: string | null;
-}): string {
-  if (row.lineKindLabel) {
-    return row.orderCode
-      ? `${row.lineKindLabel} · ${row.orderCode}`
-      : row.lineKindLabel;
+type ArTitleKindTone = "cr" | "doc" | "residual";
+
+function resolveArTitleKind(row: FinanceArTitleListItem): {
+  tone: ArTitleKindTone;
+  shortLabel: string;
+  fullLabel: string;
+} {
+  if (row.lineKind === "DOCUMENT_AWAITING_CR") {
+    return {
+      tone: "doc",
+      shortLabel: "DOC",
+      fullLabel: row.lineKindLabel ?? "DOCUMENTO AGUARDANDO CR",
+    };
   }
-  if (row.lineKind === "CR_REAL") return "CR REAL";
-  if (row.lineKind === "DOCUMENT_AWAITING_CR") return "DOCUMENTO AGUARDANDO CR";
   if (row.lineKind === "ORDER_RESIDUAL_FORECAST") {
-    return "PREVISÃO RESIDUAL DO PEDIDO";
+    return {
+      tone: "residual",
+      shortLabel: "RESIDUAL",
+      fullLabel: row.lineKindLabel ?? "PREVISÃO RESIDUAL DO PEDIDO",
+    };
   }
-  return row.origin === "WITH_NFE" ? "Com NF" : "Sem NF";
+  return {
+    tone: "cr",
+    shortLabel: "CR",
+    fullLabel: row.lineKindLabel ?? "CR REAL",
+  };
+}
+
+function resolveArTitlePrimary(row: FinanceArTitleListItem): string {
+  if (row.lineKind === "DOCUMENT_AWAITING_CR") return "Documento";
+  if (row.lineKind === "ORDER_RESIDUAL_FORECAST") return "Residual";
+  return row.externalId > 0 ? String(row.externalId) : "CR";
+}
+
+function resolveArInvoiceLabel(row: FinanceArTitleListItem): string {
+  return resolveFinanceArTitleDocumentReference(row) ?? "—";
+}
+
+function arStatusBadgeClass(status: string): string {
+  if (status === "overdue") return "ar-status-badge ar-status-badge--overdue";
+  if (status === "dueToday") return "ar-status-badge ar-status-badge--dueToday";
+  if (status === "upcoming") return "ar-status-badge ar-status-badge--upcoming";
+  if (status === "settled") return "ar-status-badge ar-status-badge--settled";
+  if (status === "suspended") return "ar-status-badge ar-status-badge--suspended";
+  if (status === "open") return "ar-status-badge ar-status-badge--open";
+  return "ar-status-badge ar-status-badge--default";
 }
 
 export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean }) {
@@ -612,74 +640,149 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
 
       {data?.items.length ? (
         <>
-          <FinanceArScrollableTable tableClassName="min-w-[1400px]">
-            <FinanceArStickyTableHead>
-              <tr className="text-left text-[10px] font-bold uppercase text-muted-foreground">
-                <th className="p-2 min-w-[120px]">Cliente</th>
-                <th className="p-2 min-w-[100px]">Empresa</th>
-                <th className="p-2 whitespace-nowrap">Documento</th>
-                <th className="p-2 whitespace-nowrap">Pedido/NF</th>
-                <th className="p-2 min-w-[140px]">Descrição</th>
-                <th className="p-2 whitespace-nowrap">Emissão</th>
-                <th className="p-2 whitespace-nowrap">Vencimento</th>
-                <th className="p-2 whitespace-nowrap">Recebimento</th>
-                <th className="p-2">Status</th>
-                <th className="p-2 text-right">Dias atraso</th>
-                <th className="p-2 text-right">Original</th>
-                <th className="p-2 text-right">Recebido</th>
-                <th className="p-2 text-right">Em aberto</th>
-                <th className="p-2">Forma pag.</th>
-                <th className="p-2">Origem</th>
-                <th className="p-2 min-w-[120px]">Observação</th>
-              </tr>
-            </FinanceArStickyTableHead>
-            <tbody>
-              {data.items.map((row) => (
-                <tr key={row.externalId} className="border-b border-border/60 hover:bg-muted/20 text-xs">
-                  <td className="p-2">{displayFinanceText(row.personName)}</td>
-                  <td className="p-2">{displayFinanceText(row.companyName)}</td>
-                  <td className="p-2 font-mono">
-                    {displayFinanceText(
-                      row.sourceInvoiceNumber ??
-                        (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null)
-                    )}
-                  </td>
-                  <td className="p-2 font-mono">{displayFinanceText(row.sourceInvoiceNumber)}</td>
-                  <td className="p-2 max-w-[180px] truncate" title={row.description ?? undefined}>
-                    {displayFinanceText(row.description)}
-                  </td>
-                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.competenceDate)}</td>
-                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.dueDate)}</td>
-                  <td className="p-2 whitespace-nowrap">{formatFinanceDate(row.settlementDate)}</td>
-                  <td className="p-2">
-                    <StatusBadge status={row.calculatedStatus} />
-                  </td>
-                  <td className="p-2 text-right tabular-nums">{row.daysOverdue}</td>
-                  <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountReceivable)}</td>
-                  <td className="p-2 text-right tabular-nums">{formatFinanceCurrency(row.amountReceived)}</td>
-                  <td className="p-2 text-right tabular-nums font-semibold">
-                    {formatFinanceCurrency(row.balanceReceivable)}
-                  </td>
-                  <td className="p-2">{displayFinanceText(row.paymentMethodName)}</td>
-                  <td className="p-2">{originLabel(row)}</td>
-                  <td className="p-2 max-w-[140px] truncate" title={row.comments ?? undefined}>
-                    {displayFinanceText(row.comments)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t-2 border-border bg-muted/30 text-xs font-bold">
-                <td className="p-2" colSpan={10}>
-                  Total ({formatFinanceInteger(summary?.totalTitles ?? 0)} títulos)
-                </td>
-                <td className="p-2 text-right">{formatFinanceCurrency(summary?.totalOriginalValue ?? 0)}</td>
-                <td className="p-2 text-right">{formatFinanceCurrency(summary?.totalReceivedValue ?? 0)}</td>
-                <td className="p-2 text-right">{formatFinanceCurrency(summary?.totalOpenValue ?? 0)}</td>
-                <td className="p-2" colSpan={3} />
-              </tr>
-            </tfoot>
-          </FinanceArScrollableTable>
+          <div
+            className="finance-ar-titles-list-section"
+            data-testid="finance-ar-analytical-titles-table-wrap"
+          >
+            <div className="finance-ar-titles-list-grid-title">Títulos</div>
+            <div className="finance-ar-titles-list-table-wrap">
+              <table
+                className="finance-ar-titles-list-table"
+                data-testid="finance-ar-analytical-titles-table"
+              >
+                <thead>
+                  <tr>
+                    <th>Título</th>
+                    <th>Cliente</th>
+                    <th>Pedido</th>
+                    <th>Doc. / Pedido</th>
+                    <th>Emissão</th>
+                    <th>Vencimento</th>
+                    <th>Status</th>
+                    <th className="ar-value-cell">Original</th>
+                    <th className="ar-value-cell">Recebido</th>
+                    <th className="ar-value-cell">Em aberto</th>
+                    <th>Forma pag.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((row) => {
+                    const kind = resolveArTitleKind(row);
+                    const primary = resolveArTitlePrimary(row);
+                    const invoice = resolveArInvoiceLabel(row);
+                    const customerName = displayFinanceText(row.personName);
+                    const companyName = row.companyName?.trim() || null;
+                    const tooltip = [row.description, row.comments]
+                      .map((v) => v?.trim())
+                      .filter(Boolean)
+                      .join(" · ");
+
+                    return (
+                      <tr
+                        key={`${row.lineKind ?? "CR"}:${row.externalId}:${row.orderCode ?? ""}:${row.dueDate ?? ""}`}
+                        title={tooltip || undefined}
+                      >
+                        <td>
+                          <div className="ar-cell-title-code" title={kind.fullLabel}>
+                            {primary}
+                          </div>
+                          <div className="ar-cell-meta">
+                            <span
+                              className={`ar-kind-badge ar-kind-badge--${kind.tone}`}
+                              title={kind.fullLabel}
+                            >
+                              {kind.shortLabel}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="max-w-[14rem]">
+                          <span className="ar-cell-ellipsis block" title={customerName}>
+                            {customerName}
+                          </span>
+                          {companyName ? (
+                            <div className="ar-cell-meta ar-cell-ellipsis" title={companyName}>
+                              {companyName}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td>
+                          <span
+                            className="ar-cell-ellipsis block max-w-[9rem]"
+                            title={row.orderCode ?? undefined}
+                          >
+                            {displayFinanceText(row.orderCode)}
+                          </span>
+                        </td>
+                        <td>
+                          <span
+                            className="ar-cell-ellipsis block max-w-[8rem]"
+                            title={invoice === "—" ? undefined : invoice}
+                          >
+                            {invoice}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap tabular-nums">
+                          {formatFinanceDate(row.competenceDate)}
+                        </td>
+                        <td>
+                          <div className="whitespace-nowrap tabular-nums">
+                            {formatFinanceDate(row.dueDate)}
+                          </div>
+                          {row.daysOverdue > 0 ? (
+                            <div className="ar-cell-meta">{row.daysOverdue}d atraso</div>
+                          ) : null}
+                        </td>
+                        <td>
+                          <span className={arStatusBadgeClass(row.calculatedStatus)}>
+                            {formatFinanceCalculatedStatus(row.calculatedStatus)}
+                          </span>
+                          {row.settlementDate ? (
+                            <div className="ar-cell-meta">
+                              Rec. {formatFinanceDate(row.settlementDate)}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="ar-value-cell">
+                          {formatFinanceCurrency(row.amountReceivable)}
+                        </td>
+                        <td className="ar-value-cell">
+                          {formatFinanceCurrency(row.amountReceived)}
+                        </td>
+                        <td className="ar-value-cell ar-value-cell--emphasis">
+                          {formatFinanceCurrency(row.balanceReceivable)}
+                        </td>
+                        <td>
+                          <span
+                            className="ar-cell-ellipsis block max-w-[8rem]"
+                            title={row.paymentMethodName ?? undefined}
+                          >
+                            {displayFinanceText(row.paymentMethodName)}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={7}>
+                      Total ({formatFinanceInteger(summary?.totalTitles ?? 0)} títulos)
+                    </td>
+                    <td className="ar-value-cell">
+                      {formatFinanceCurrency(summary?.totalOriginalValue ?? 0)}
+                    </td>
+                    <td className="ar-value-cell">
+                      {formatFinanceCurrency(summary?.totalReceivedValue ?? 0)}
+                    </td>
+                    <td className="ar-value-cell">
+                      {formatFinanceCurrency(summary?.totalOpenValue ?? 0)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
 
           <div className="flex flex-wrap items-center justify-between gap-3 text-sm ar-titles-no-print">
             <p className="text-muted-foreground tabular-nums">

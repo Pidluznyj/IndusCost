@@ -5,6 +5,7 @@ import type {
   FinanceArTitlesPayload,
   FinanceArTitlesSummary,
 } from "./financeAccountsReceivableTitles.js";
+import { resolveFinanceArTitleDocumentReference } from "./financeAccountsReceivableTitles.js";
 
 function formatDateBr(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -51,8 +52,8 @@ export function buildFinanceArTitlesExportWorkbook(
         Cliente: row.personName ?? "",
         "CNPJ/CPF": row.personCnpj ?? "",
         Empresa: row.companyName ?? "",
-        Documento: row.sourceInvoiceNumber ?? (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : ""),
-        "Pedido/NF": row.sourceInvoiceNumber ?? "",
+        Documento: resolveFinanceArTitleDocumentReference(row) ?? "",
+        Pedido: row.orderCode?.trim() ?? "",
         Descrição: row.description ?? "",
         "Data emissão": formatDateBr(row.competenceDate),
         Vencimento: formatDateBr(row.dueDate),

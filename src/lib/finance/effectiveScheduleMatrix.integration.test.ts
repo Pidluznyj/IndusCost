@@ -179,8 +179,33 @@ function assertScreensAndApisCoherent(schedule: SalesOrderEffectiveFinancialSche
     Number(schedule.coverageSummary.activeOrderResidualTotal.toFixed(2))
   );
 
+  // CR oficiais no AR só via Nomus (não reinsere liquidado filtrado pela agenda).
+  const nomusFromSchedule = schedule.realReceivables.map((r) => ({
+    externalId: r.externalId,
+    companyName: "Empresa Matriz",
+    personId: 1,
+    personName: "Cliente Matriz FIN-11",
+    personCnpj: null,
+    description: `CR ${r.externalId}`,
+    comments: null,
+    dueDate: r.dueDate ? new Date(`${r.dueDate}T12:00:00`) : null,
+    competenceDate: null,
+    settlementDate: null,
+    amountReceivable: Number(r.amountReceivable.toFixed(2)),
+    amountReceived: Number(r.amountReceived.toFixed(2)),
+    balanceReceivable: Number(r.balanceReceivable.toFixed(2)),
+    paymentMethodName: null,
+    bankAccountName: null,
+    sourceInvoiceId: r.sourceInvoiceId,
+    sourceInvoiceNumber:
+      r.sourceInvoiceId != null ? String(r.sourceInvoiceId) : null,
+    suspendCollection: false,
+    nomusStatus: true,
+    syncedAt: REF,
+  }));
+
   const { items } = buildFinanceArEffectiveTitles({
-    nomusRows: [],
+    nomusRows: nomusFromSchedule,
     orderContexts: [
       {
         schedule,
@@ -202,6 +227,24 @@ function assertScreensAndApisCoherent(schedule: SalesOrderEffectiveFinancialSche
 
   const arCr = items.filter((i) => i.lineKind === "CR_REAL");
   assert.equal(arCr.length, schedule.realReceivables.length);
+
+  const withoutNomus = buildFinanceArEffectiveTitles({
+    nomusRows: [],
+    orderContexts: [
+      {
+        schedule,
+        personId: 1,
+        personName: "Cliente Matriz FIN-11",
+        personCnpj: null,
+      },
+    ],
+    referenceDate: REF,
+  });
+  assert.equal(
+    withoutNomus.items.filter((i) => i.lineKind === "CR_REAL").length,
+    0,
+    "sem Nomus filtrado, agenda não sintetiza CR"
+  );
 
   // Documentos aguardando: AR pode materializar DOCUMENT_AWAITING_CR.
   const awaitingDocs = schedule.documentSchedule.filter(

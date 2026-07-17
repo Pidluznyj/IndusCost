@@ -5,7 +5,9 @@ import {
   buildFinanceArTitlesPayload,
   isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
+  resolveFinanceArTitleDocumentReference,
 } from "./financeAccountsReceivableTitles.js";
+import { buildFinanceArTitlesExportWorkbook } from "./financeAccountsReceivableTitlesExport.js";
 import { buildAccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 
 function row(partial: Partial<FinanceArDashboardRow> & Pick<FinanceArDashboardRow, "externalId">): FinanceArDashboardRow {
@@ -343,5 +345,84 @@ describe("financeAccountsReceivableTitles", () => {
     );
     assert.ok(payload.summary.totalOverdueValue >= 0);
     assert.ok(payload.summary.totalDueValue >= 0);
+  });
+
+  it("referência de documento cai no Pedido quando não há NF", () => {
+    assert.equal(
+      resolveFinanceArTitleDocumentReference({
+        sourceInvoiceNumber: "NF-100",
+        sourceInvoiceId: 100,
+        orderCode: "PD 01002",
+        description: null,
+      }),
+      "NF-100"
+    );
+    assert.equal(
+      resolveFinanceArTitleDocumentReference({
+        sourceInvoiceNumber: null,
+        sourceInvoiceId: null,
+        orderCode: "PD 01002",
+        description: "Previsão residual · Pedido PD 01002",
+      }),
+      "PD 01002"
+    );
+    assert.equal(
+      resolveFinanceArTitleDocumentReference({
+        sourceInvoiceNumber: null,
+        sourceInvoiceId: null,
+        orderCode: null,
+        description: "Previsão residual · Pedido PD 02781 · Parcela 2",
+      }),
+      "PD 02781"
+    );
+    assert.equal(
+      resolveFinanceArTitleDocumentReference({
+        sourceInvoiceNumber: null,
+        sourceInvoiceId: null,
+        orderCode: "12345",
+        description: null,
+      }),
+      "Pedido 12345"
+    );
+  });
+
+  it("Excel de títulos usa Pedido na coluna Documento quando sem NF", () => {
+    const item = {
+      ...buildFinanceArTitlesPayload(
+        [row({ externalId: 9, sourceInvoiceId: null, sourceInvoiceNumber: null })],
+        {
+          page: 1,
+          limit: 50,
+          sortBy: "dueDate",
+          sortDirection: "asc",
+          filters: { status: "all" },
+          extended: {},
+          localFilter: "all",
+        },
+        REF
+      ).items[0]!,
+      orderCode: "PD 09999",
+      description: "Previsão residual · Pedido PD 09999",
+    };
+    const payload = buildFinanceArTitlesPayload(
+      [row({ externalId: 9, sourceInvoiceId: null, sourceInvoiceNumber: null })],
+      {
+        page: 1,
+        limit: 50,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: { status: "all" },
+        extended: {},
+        localFilter: "all",
+      },
+      REF
+    );
+    const wb = buildFinanceArTitlesExportWorkbook(payload, [item], REF.toISOString());
+    const sheet = wb.Sheets["Títulos"];
+    assert.ok(sheet);
+    const docCell = sheet["D2"];
+    const pedidoCell = sheet["E2"];
+    assert.equal(docCell?.v, "PD 09999");
+    assert.equal(pedidoCell?.v, "PD 09999");
   });
 });

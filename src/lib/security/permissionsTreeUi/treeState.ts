@@ -196,6 +196,15 @@ export function expandAllPermissionTreeKeys(
   return new Set(collectExpandableIds(nodes));
 }
 
+/** Só os módulos raiz — menus em sanfona (filhos recolhidos). */
+export function expandRootPermissionTreeKeys(
+  nodes: readonly PermissionTreeNode[]
+): Set<string> {
+  return new Set(
+    nodes.filter((n) => (n.children?.length ?? 0) > 0).map((n) => n.id)
+  );
+}
+
 export function collapseAllPermissionTreeKeys(): Set<string> {
   return new Set();
 }

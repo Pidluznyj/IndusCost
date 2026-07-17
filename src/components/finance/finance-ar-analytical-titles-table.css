@@ -1,0 +1,179 @@
+/* Alinhado ao padrão visual de Pedidos de venda (sales-order-list-table). */
+
+.finance-ar-titles-list-section {
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.finance-ar-titles-list-grid-title {
+  padding: 9px 10px 7px;
+  color: #1e3a8a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.finance-ar-titles-list-table-wrap {
+  overflow: auto;
+  max-height: min(70vh, 640px);
+}
+
+.finance-ar-titles-list-table {
+  width: 100%;
+  min-width: 960px;
+  border-collapse: collapse;
+  color: #111827;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.finance-ar-titles-list-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #dbeafe;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 1px 0 0 #cbd5e1;
+}
+
+.finance-ar-titles-list-table th {
+  padding: 6px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #1e3a8a;
+  text-align: left;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.finance-ar-titles-list-table td {
+  padding: 6px 8px;
+  vertical-align: top;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.finance-ar-titles-list-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.finance-ar-titles-list-table tbody tr:hover {
+  background: #eff6ff;
+}
+
+.finance-ar-titles-list-table .ar-cell-ellipsis {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finance-ar-titles-list-table .ar-cell-title-code {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: #1e3a8a;
+  white-space: nowrap;
+}
+
+.finance-ar-titles-list-table .ar-cell-meta {
+  font-size: 10px;
+  color: #6b7280;
+  margin-top: 0.125rem;
+}
+
+.finance-ar-titles-list-table .ar-value-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.finance-ar-titles-list-table .ar-value-cell--emphasis {
+  font-weight: 700;
+}
+
+.finance-ar-titles-list-table .ar-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+
+.finance-ar-titles-list-table .ar-kind-badge--cr {
+  background: hsl(221 83% 53% / 0.12);
+  color: hsl(221 70% 32%);
+  border-color: hsl(221 83% 53% / 0.35);
+}
+
+.finance-ar-titles-list-table .ar-kind-badge--doc {
+  background: hsl(38 92% 50% / 0.14);
+  color: hsl(32 95% 32%);
+  border-color: hsl(38 92% 50% / 0.4);
+}
+
+.finance-ar-titles-list-table .ar-kind-badge--residual {
+  background: hsl(215 20% 65% / 0.15);
+  color: hsl(215 25% 30%);
+  border-color: hsl(215 20% 65% / 0.4);
+}
+
+.finance-ar-titles-list-table .ar-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.finance-ar-titles-list-table .ar-status-badge--overdue {
+  background: hsl(0 84% 60% / 0.12);
+  color: hsl(0 74% 38%);
+  border-color: hsl(0 84% 60% / 0.35);
+}
+
+.finance-ar-titles-list-table .ar-status-badge--dueToday {
+  background: hsl(38 92% 50% / 0.14);
+  color: hsl(32 95% 32%);
+  border-color: hsl(38 92% 50% / 0.4);
+}
+
+.finance-ar-titles-list-table .ar-status-badge--upcoming {
+  background: hsl(221 83% 53% / 0.12);
+  color: hsl(221 70% 32%);
+  border-color: hsl(221 83% 53% / 0.35);
+}
+
+.finance-ar-titles-list-table .ar-status-badge--settled {
+  background: hsl(142 71% 45% / 0.12);
+  color: hsl(142 76% 24%);
+  border-color: hsl(142 71% 45% / 0.35);
+}
+
+.finance-ar-titles-list-table .ar-status-badge--suspended,
+.finance-ar-titles-list-table .ar-status-badge--open,
+.finance-ar-titles-list-table .ar-status-badge--default {
+  background: hsl(215 20% 65% / 0.15);
+  color: hsl(215 25% 30%);
+  border-color: hsl(215 20% 65% / 0.4);
+}
+
+.finance-ar-titles-list-table tfoot td {
+  padding: 7px 8px;
+  background: #f1f5f9;
+  border-top: 1px solid #cbd5e1;
+  font-weight: 700;
+  font-size: 11px;
+}

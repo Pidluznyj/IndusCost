@@ -21,6 +21,7 @@ import {
   decisionLabel,
   effectiveLabel,
   expandAllPermissionTreeKeys,
+  expandRootPermissionTreeKeys,
   filterPermissionTreeNodes,
   findPermissionTreeNode,
   getNodeDecision,
@@ -52,7 +53,23 @@ export type PermissionsTreeProps = {
   originColumnLabel?: string;
   configuredColumnLabel?: string;
   resultColumnLabel?: string;
+  /**
+   * Estado inicial da sanfona:
+   * - `all` — tudo expandido (padrão legado)
+   * - `roots` — só módulos raiz abertos
+   * - `collapsed` — menus fechados (sanfona; recomendado no admin de usuário)
+   */
+  initialExpandMode?: "all" | "roots" | "collapsed";
 };
+
+function initialExpandedKeys(
+  nodes: readonly PermissionTreeNode[],
+  mode: "all" | "roots" | "collapsed"
+): Set<string> {
+  if (mode === "collapsed") return collapseAllPermissionTreeKeys();
+  if (mode === "roots") return expandRootPermissionTreeKeys(nodes);
+  return expandAllPermissionTreeKeys(nodes);
+}
 
 const DECISIONS: readonly PermissionTreeDecision[] = [
   "inherit",
@@ -221,21 +238,22 @@ export function PermissionsTree({
   originColumnLabel = "Origem/perfil",
   configuredColumnLabel = "Decisão individual",
   resultColumnLabel = "Resultado efetivo",
+  initialExpandMode = "all",
 }: PermissionsTreeProps) {
   const searchId = useId();
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() =>
-    expandAllPermissionTreeKeys(nodes)
+    initialExpandedKeys(nodes, initialExpandMode)
   );
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
   const [pendingBatchDecision, setPendingBatchDecision] =
     useState<PermissionTreeDecision | null>(null);
 
   useEffect(() => {
-    setExpanded(expandAllPermissionTreeKeys(nodes));
+    setExpanded(initialExpandedKeys(nodes, initialExpandMode));
     setSelectedBranchId(null);
     setPendingBatchDecision(null);
-  }, [nodes]);
+  }, [nodes, initialExpandMode]);
 
   const filtered = useMemo(
     () => filterPermissionTreeNodes(nodes, { search }),

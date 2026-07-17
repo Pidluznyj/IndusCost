@@ -33,7 +33,7 @@ import {
   Eye,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
@@ -56,6 +56,10 @@ import {
   canPrintProposal,
   canViewProposalIndicators,
 } from "@/src/lib/modulePermissions";
+import {
+  canViewCustomers,
+  canViewProducts,
+} from "@/src/lib/commercialEngineeringPermissions";
 import {
   buildProposalInternalManagementPrintPath,
   PROPOSAL_INTERNAL_MANAGEMENT_PDF_BUTTON_LABEL,
@@ -446,8 +450,13 @@ export const ProposalModule = () => {
   const proposalCheck = {
     ...auth,
     canPerformAction: permissions.canPerformAction,
+    canViewResource: permissions.canViewResource,
   };
   const allowCreate = canCreateProposal(proposalCheck);
+  const allowViewProducts = canViewProducts(proposalCheck);
+  const allowViewCustomers = canViewCustomers(proposalCheck);
+  /** Criar/editar itens exige catálogo de produtos e clientes — sem isso, some o botão (sem alert 403). */
+  const allowCreateWithCatalog = allowCreate && allowViewProducts && allowViewCustomers;
   const allowEdit = canEditProposal(proposalCheck);
   const allowDelete = canDeleteProposal(proposalCheck);
   const allowPrint = canPrintProposal(proposalCheck);
@@ -510,27 +519,47 @@ export const ProposalModule = () => {
   });
 
   const fetchReferenceData = useCallback(async () => {
-    try {
-      const [c, pr, r] = await Promise.all([
-        fetchJsonOk<Customer[]>("/api/customers"),
-        fetchJsonOk<Product[]>("/api/products"),
-        fetchJsonOk<string[]>("/api/proposals/responsibles"),
-      ]);
-      setCustomers(Array.isArray(c) ? c : []);
-      setProducts(Array.isArray(pr) ? pr : []);
-      setResponsibleOptions(Array.isArray(r) ? r : []);
-      let pt: PriceTableListRow[] = [];
+    const loadOptional = async <T,>(
+      url: string,
+      fallback: T,
+      enabled: boolean
+    ): Promise<T> => {
+      if (!enabled) return fallback;
       try {
-        pt = await fetchJsonOk<PriceTableListRow[]>("/api/price-tables");
+        return await fetchJsonOk<T>(url);
       } catch (e) {
-        console.warn("GET /api/price-tables (propostas):", e);
+        // 403/401: usuário sem permissão do cadastro — não bloquear a lista de propostas.
+        if (e instanceof HttpError && (e.status === 403 || e.status === 401)) {
+          return fallback;
+        }
+        console.warn(`${url} (propostas):`, e);
+        return fallback;
       }
-      setPriceTables(Array.isArray(pt) ? pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE") : []);
-    } catch (error) {
-      console.error("Erro ao buscar cadastros:", error);
-      alert(error instanceof Error ? error.message : "Não foi possível carregar cadastros.");
+    };
+
+    try {
+      const r = await fetchJsonOk<string[]>("/api/proposals/responsibles");
+      setResponsibleOptions(Array.isArray(r) ? r : []);
+    } catch (e) {
+      if (!(e instanceof HttpError && (e.status === 403 || e.status === 401))) {
+        console.warn("GET /api/proposals/responsibles (propostas):", e);
+      }
+      setResponsibleOptions([]);
     }
-  }, []);
+
+    const [c, pr, pt] = await Promise.all([
+      loadOptional<Customer[]>("/api/customers", [], allowViewCustomers),
+      loadOptional<Product[]>("/api/products", [], allowViewProducts),
+      loadOptional<PriceTableListRow[]>("/api/price-tables", [], true),
+    ]);
+    setCustomers(Array.isArray(c) ? c : []);
+    setProducts(Array.isArray(pr) ? pr : []);
+    setPriceTables(
+      Array.isArray(pt)
+        ? pt.filter((t) => String(t.status).toUpperCase() === "ACTIVE")
+        : []
+    );
+  }, [allowViewCustomers, allowViewProducts]);
 
   const priceTableSelectOptions = useMemo((): SelectOption[] => {
     const opts: SelectOption[] = [
@@ -2424,7 +2453,7 @@ export const ProposalModule = () => {
         </div>
         <div className="flex items-center gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          {allowCreate ? (
+          {allowCreateWithCatalog ? (
             <button
               onClick={handleCreateNew}
               className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"

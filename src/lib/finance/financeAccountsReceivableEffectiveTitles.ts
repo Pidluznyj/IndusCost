@@ -6,11 +6,17 @@
  * Linhas: CR REAL | DOCUMENTO AGUARDANDO CR | PREVISÃO RESIDUAL DO PEDIDO.
  */
 
-import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import type {
+  FinanceArDashboardFilters,
+  FinanceArDashboardRow,
+} from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
   classifyFinanceArTitle,
   computeDaysOverdue,
+  isFinanceArReceivedOrSettled,
+  resolveFinanceArDueDateBounds,
   roundMoney,
+  startOfLocalDay,
 } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
   classifyFinanceArReceivableOrigin,
@@ -370,68 +376,19 @@ export function buildFinanceArEffectiveTitles(
     const personCnpj = ctx.personCnpj ?? null;
     const companyName = ctx.companyName ?? null;
 
+    // CR oficiais: só os que passaram no filtro Nomus (status/ano/etc.).
+    // Não reinsere CR liquidado via agenda do Pedido quando o grid pediu "Em aberto".
     for (const cr of schedule.realReceivables) {
       if (emittedCrIds.has(cr.externalId)) continue;
-      emittedCrIds.add(cr.externalId);
       const nomus = nomusByExternalId.get(cr.externalId);
-      if (nomus) {
-        items.push(
-          mapNomusToEffectiveItem(nomus, referenceDate, {
-            orderCode: schedule.orderCode,
-            salesOrderId: schedule.salesOrderId,
-          })
-        );
-      } else {
-        const amountReceivable = decimalToNumber(cr.amountReceivable);
-        const amountReceived = decimalToNumber(cr.amountReceived);
-        const balanceReceivable = decimalToNumber(cr.balanceReceivable);
-        const dueDate = parseIsoDateLocal(cr.dueDate);
-        const synthetic = buildSyntheticRow({
-          key: `cr:${schedule.orderCode}:${cr.externalId}`,
-          lineKind: "CR_REAL",
+      if (!nomus) continue;
+      emittedCrIds.add(cr.externalId);
+      items.push(
+        mapNomusToEffectiveItem(nomus, referenceDate, {
           orderCode: schedule.orderCode,
           salesOrderId: schedule.salesOrderId,
-          personId,
-          personName,
-          personCnpj,
-          companyName,
-          description: `CR ${cr.externalId} · Pedido ${schedule.orderCode}`,
-          sourceInvoiceId: cr.sourceInvoiceId,
-          sourceInvoiceNumber: null,
-          dueDateIso: cr.dueDate,
-          amount: amountReceivable,
-          referenceDate,
-        });
-        synthetic.externalId = cr.externalId;
-        synthetic.amountReceived = amountReceived;
-        synthetic.balanceReceivable = balanceReceivable;
-        synthetic.calculatedStatus = classifyFinanceArTitle(
-          {
-            externalId: cr.externalId,
-            companyName,
-            personId,
-            personName,
-            personCnpj,
-            description: synthetic.description,
-            comments: null,
-            dueDate,
-            competenceDate: null,
-            settlementDate: null,
-            amountReceivable,
-            amountReceived,
-            balanceReceivable,
-            paymentMethodName: null,
-            bankAccountName: null,
-            sourceInvoiceId: cr.sourceInvoiceId,
-            sourceInvoiceNumber: null,
-            suspendCollection: false,
-            nomusStatus: null,
-            syncedAt: referenceDate,
-          },
-          referenceDate
-        );
-        items.push(synthetic);
-      }
+        })
+      );
     }
 
     for (const doc of schedule.documentSchedule) {
@@ -548,6 +505,72 @@ export function buildFinanceArEffectiveTitles(
 
   const summary = computeFinanceArEffectiveTitlesSummary(filtered);
   return { items: filtered, summary };
+}
+
+/**
+ * Reaplica filtros de status/vencimento na agenda efetiva (residual/Doc/CR),
+ * para o grid de Títulos não ignorar "Em aberto" / ano / mês após o merge FIN-08.
+ */
+export function filterFinanceArEffectiveTitlesByDashboardFilters(
+  items: readonly FinanceArEffectiveTitleListItem[],
+  filters: FinanceArDashboardFilters,
+  referenceDate: Date = new Date()
+): FinanceArEffectiveTitleListItem[] {
+  const { from, toExclusive, empty } = resolveFinanceArDueDateBounds(filters);
+  if (empty) return [];
+
+  return items.filter((item) => {
+    const due = item.dueDate ? parseIsoDateLocal(item.dueDate) : null;
+    if (from && (!due || startOfLocalDay(due).getTime() < from.getTime())) {
+      return false;
+    }
+    if (
+      toExclusive &&
+      (!due || startOfLocalDay(due).getTime() >= toExclusive.getTime())
+    ) {
+      return false;
+    }
+
+    const invoiceFilter = filters.invoiceIssued ?? "all";
+    if (invoiceFilter !== "all") {
+      const hasInvoice =
+        item.sourceInvoiceId != null || Boolean(item.sourceInvoiceNumber?.trim());
+      if (invoiceFilter === "yes" && !hasInvoice) return false;
+      if (invoiceFilter === "no" && hasInvoice) return false;
+    }
+
+    if (filters.status === "all") return true;
+
+    const rowLike = {
+      balanceReceivable: item.balanceReceivable,
+      amountReceivable: item.amountReceivable,
+      amountReceived: item.amountReceived,
+      settlementDate: item.settlementDate ? parseIsoDateLocal(item.settlementDate) : null,
+      dueDate: due,
+      suspendCollection: item.suspendCollection === true,
+      // campos mínimos para classify
+      externalId: item.externalId,
+      companyName: item.companyName,
+      personId: item.personId,
+      personName: item.personName,
+      personCnpj: item.personCnpj,
+      description: item.description,
+      comments: item.comments,
+      competenceDate: null as Date | null,
+      paymentMethodName: item.paymentMethodName,
+      bankAccountName: item.bankAccountName,
+      sourceInvoiceId: item.sourceInvoiceId,
+      sourceInvoiceNumber: item.sourceInvoiceNumber,
+      nomusStatus: item.nomusStatus,
+      syncedAt: referenceDate,
+    } satisfies FinanceArDashboardRow;
+
+    if (filters.status === "open") return !isFinanceArReceivedOrSettled(rowLike);
+    if (filters.status === "settled") return isFinanceArReceivedOrSettled(rowLike);
+    const status = classifyFinanceArTitle(rowLike, referenceDate);
+    if (filters.status === "suspended") return status === "suspended";
+    return status === filters.status;
+  });
 }
 
 export function formatFinanceArEffectiveLineKind(

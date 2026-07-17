@@ -51,6 +51,8 @@ import type {
 } from "./financeAgingBucketDrilldownTypes.js";
 import {
   buildFinanceArEffectiveTitles,
+  computeFinanceArEffectiveTitlesSummary,
+  filterFinanceArEffectiveTitlesByDashboardFilters,
   FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL,
   type FinanceArEffectiveLineKind,
   type FinanceArEffectiveOrderContext,
@@ -487,6 +489,28 @@ export function extractFinanceArOrderCodeHint(
   return null;
 }
 
+/**
+ * Referência do título para PDF/Excel/grid:
+ * NF/documento quando existir; senão número do Pedido de venda
+ * (evita linha sem referência em residual/pré-NF).
+ */
+export function resolveFinanceArTitleDocumentReference(
+  row: Pick<
+    FinanceArTitleListItem,
+    "sourceInvoiceNumber" | "sourceInvoiceId" | "orderCode" | "description"
+  >
+): string | null {
+  const invoiceNumber = row.sourceInvoiceNumber?.trim();
+  if (invoiceNumber) return invoiceNumber;
+  if (row.sourceInvoiceId != null) return String(row.sourceInvoiceId);
+
+  const orderCode =
+    row.orderCode?.trim() || extractFinanceArOrderCodeHint(row.description);
+  if (!orderCode) return null;
+  if (/^(pedido|pd)\b/i.test(orderCode)) return orderCode;
+  return `Pedido ${orderCode}`;
+}
+
 export function isFinanceArHorizonTitlesQuery(query: Pick<FinanceArTitlesQuery, "agingBucket">): boolean {
   return query.agingBucket != null && isFinanceHorizonDrilldownBucketKey(query.agingBucket);
 }
@@ -591,8 +615,14 @@ export function buildFinanceArTitlesPayload(
       customerCnpj: query.extended?.customerCnpj,
       referenceDate,
     });
-    mapped = effective.items;
-    summary = effective.summary;
+    // Residual/Doc/CR da agenda não podem burlar status/ano/mês do grid.
+    const effectiveFiltered = filterFinanceArEffectiveTitlesByDashboardFilters(
+      effective.items,
+      query.filters,
+      referenceDate
+    );
+    mapped = effectiveFiltered;
+    summary = computeFinanceArEffectiveTitlesSummary(effectiveFiltered);
   } else {
     mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
     summary = computeFinanceArTitlesSummary(mapped, referenceDate);

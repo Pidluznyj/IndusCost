@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
+  ChevronDown,
   KeyRound,
   Loader2,
   Plus,
@@ -1286,47 +1287,6 @@ export const AdminUsersModule: React.FC = () => {
                     </div>
                   ) : null}
 
-                  {selectedListUser && roleAllowsSellerNomusLink(selectedListUser.role) ? (
-                    <div
-                      className="rounded-xl border border-border bg-muted/20 p-3 space-y-3"
-                      data-testid="admin-user-seller-nomus-link"
-                    >
-                      <div>
-                        <p className="text-xs font-semibold text-foreground">
-                          Vínculo Nomus / responsável comercial
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                          {roleRequiresSellerNomusLink(selectedListUser.role)
-                            ? "Obrigatório para o perfil Vendedor filtrar a carteira corretamente."
-                            : "Opcional no perfil Gestor comercial — use para vincular os IDs Nomus da carteira acompanhada."}
-                        </p>
-                      </div>
-                      {sellerLinkError ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-                          {sellerLinkError}
-                        </div>
-                      ) : null}
-                      <SellerNomusPicker
-                        sellers={sellerOptions}
-                        requireNomusIds={roleRequiresSellerNomusLink(selectedListUser.role)}
-                        disabled={sellerLinkSaving || saving}
-                        value={sellerLinkDraft}
-                        onChange={setSellerLinkDraft}
-                      />
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          disabled={!sellerLinkDirty || sellerLinkSaving || saving}
-                          onClick={() => void handleSaveSellerLink()}
-                          className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground disabled:opacity-50"
-                          data-testid="admin-user-seller-nomus-save"
-                        >
-                          {sellerLinkSaving ? "Salvando…" : "Salvar vínculo Nomus"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
                 </div>
 
                 {detailError ? (
@@ -1336,6 +1296,54 @@ export const AdminUsersModule: React.FC = () => {
                 ) : null}
 
                 <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-3">
+                  {selectedListUser && roleAllowsSellerNomusLink(selectedListUser.role) ? (
+                    <details
+                      className="group rounded-xl border border-border bg-muted/20 open:bg-muted/30"
+                      data-testid="admin-user-seller-nomus-link"
+                    >
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2.5 text-xs font-semibold text-foreground [&::-webkit-details-marker]:hidden">
+                        <span className="min-w-0">
+                          Vínculo Nomus / responsável comercial
+                          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
+                            {roleRequiresSellerNomusLink(selectedListUser.role)
+                              ? "Obrigatório para o perfil Vendedor filtrar a carteira."
+                              : "Opcional no Gestor comercial — IDs Nomus da carteira."}
+                            {sellerLinkDraft.externalSellerIds.length > 0
+                              ? ` · ${sellerLinkDraft.externalSellerIds.length} ID(s)`
+                              : ""}
+                            {sellerLinkDirty ? " · alterações não salvas" : ""}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition group-open:rotate-180" />
+                      </summary>
+                      <div className="space-y-3 border-t border-border px-3 py-3">
+                        {sellerLinkError ? (
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+                            {sellerLinkError}
+                          </div>
+                        ) : null}
+                        <SellerNomusPicker
+                          sellers={sellerOptions}
+                          requireNomusIds={roleRequiresSellerNomusLink(selectedListUser.role)}
+                          disabled={sellerLinkSaving || saving}
+                          value={sellerLinkDraft}
+                          onChange={setSellerLinkDraft}
+                        />
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            disabled={!sellerLinkDirty || sellerLinkSaving || saving}
+                            onClick={() => void handleSaveSellerLink()}
+                            className="rounded-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-primary-foreground disabled:opacity-50"
+                            data-testid="admin-user-seller-nomus-save"
+                          >
+                            {sellerLinkSaving ? "Salvando…" : "Salvar vínculo Nomus"}
+                          </button>
+                        </div>
+                      </div>
+                    </details>
+                  ) : null}
+
                   {innerTab === "permissions" ? (
                     <>
                       <div
@@ -1603,11 +1611,12 @@ export const AdminUsersModule: React.FC = () => {
                         readOnly={detail.treeReadOnly}
                         highlightExceptions
                         enableBranchBatch={!detail.treeReadOnly}
+                        initialExpandMode="collapsed"
                         originColumnLabel="Valor do perfil"
                         configuredColumnLabel="Exceção do usuário"
                         resultColumnLabel="Resultado efetivo"
                         emptyMessage="Nenhuma área de acesso disponível."
-                        className="h-[min(56vh,640px)] min-h-[360px] max-h-none"
+                        className="h-[min(62vh,720px)] min-h-[420px] max-h-none"
                       />
                     </>
                   ) : null}

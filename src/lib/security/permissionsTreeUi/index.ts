@@ -18,6 +18,7 @@ export {
   decisionLabel,
   effectiveLabel,
   expandAllPermissionTreeKeys,
+  expandRootPermissionTreeKeys,
   filterPermissionTreeNodes,
   findPermissionTreeNode,
   getNodeDecision,

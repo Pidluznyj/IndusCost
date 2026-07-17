@@ -21,6 +21,7 @@ import {
   financeArTitlesPrintTotalMoneyClass,
 } from "@/src/lib/financeArTitlesPrintStatus";
 import type { FinanceArTitleListItem, FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles";
+import { resolveFinanceArTitleDocumentReference } from "@/src/lib/financeAccountsReceivableTitles";
 
 function SummaryKpiCard({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
@@ -117,7 +118,7 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
                 <tr>
                   <th className="col-client">Cliente</th>
                   <th className="col-company">Empresa</th>
-                  <th className="col-doc">Documento</th>
+                  <th className="col-doc">Documento / Pedido</th>
                   <th className="col-date">Emissão</th>
                   <th className="col-date">Vencimento</th>
                   <th className="col-date">Recebimento</th>
@@ -134,10 +135,7 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
                     <td className="col-client">{displayFinanceText(row.personName)}</td>
                     <td className="col-company">{displayFinanceText(row.companyName)}</td>
                     <td className="col-doc">
-                      {displayFinanceText(
-                        row.sourceInvoiceNumber ??
-                          (row.sourceInvoiceId != null ? String(row.sourceInvoiceId) : null)
-                      )}
+                      {displayFinanceText(resolveFinanceArTitleDocumentReference(row))}
                     </td>
                     <td className="col-date">{formatFinanceDate(row.competenceDate)}</td>
                     <td className="col-date">{formatFinanceDate(row.dueDate)}</td>

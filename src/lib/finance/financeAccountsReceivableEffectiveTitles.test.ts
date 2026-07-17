@@ -10,6 +10,7 @@ import type { BuildSalesOrderEffectiveFinancialScheduleInput } from "./salesOrde
 import {
   buildFinanceArEffectiveTitles,
   dedupeFinanceArCrByExternalId,
+  filterFinanceArEffectiveTitlesByDashboardFilters,
   FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL,
 } from "./financeAccountsReceivableEffectiveTitles.js";
 
@@ -355,5 +356,80 @@ describe("FIN-08 — cliente com dois pedidos / duas NF-es", () => {
       0
     );
     assert.ok(items.some((i) => i.lineKind === "DOCUMENT_AWAITING_CR"));
+  });
+});
+
+describe("FIN-08 — filtro Em aberto não reinsere CR liquidado", () => {
+  it("CR só na agenda (fora do Nomus filtrado) não volta como título", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(
+      fixtureOrderAFullyCoveredByCr()
+    );
+    const { items } = buildFinanceArEffectiveTitles({
+      // Simula grid com status=open: CR liquidado já saiu do conjunto Nomus.
+      nomusRows: [],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      customerPersonId: CUSTOMER_ID,
+      referenceDate: REF,
+    });
+
+    assert.equal(items.filter((i) => i.lineKind === "CR_REAL").length, 0);
+    assert.ok(!items.some((i) => i.externalId === 71001));
+  });
+
+  it("pós-filtro status=open remove liquidado e mantém em aberto / residual", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule(
+      fixtureOrderBPartialResidual()
+    );
+    const openCr = nomusCr({
+      externalId: 71002,
+      sourceInvoiceId: 91002,
+      sourceInvoiceNumber: "NF-B",
+      amountReceivable: 9000,
+      amountReceived: 0,
+      balanceReceivable: 9000,
+      dueDate: new Date(2026, 6, 25),
+    });
+    const settledCr = nomusCr({
+      externalId: 71999,
+      sourceInvoiceId: 91999,
+      sourceInvoiceNumber: "NF-PAID",
+      amountReceivable: 5000,
+      amountReceived: 5000,
+      balanceReceivable: 0,
+      settlementDate: new Date(2026, 5, 1),
+      dueDate: new Date(2026, 5, 15),
+    });
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [openCr, settledCr],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      customerPersonId: CUSTOMER_ID,
+      referenceDate: REF,
+    });
+
+    const openOnly = filterFinanceArEffectiveTitlesByDashboardFilters(
+      items,
+      { status: "open" },
+      REF
+    );
+
+    assert.ok(openOnly.every((i) => i.balanceReceivable > 0));
+    assert.ok(!openOnly.some((i) => i.externalId === 71999));
+    assert.ok(openOnly.some((i) => i.externalId === 71002));
+    assert.ok(openOnly.some((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST"));
   });
 });
