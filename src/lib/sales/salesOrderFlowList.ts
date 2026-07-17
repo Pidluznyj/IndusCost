@@ -72,9 +72,9 @@ export type SalesOrderFlowListCard = {
   activeItems: number;
   completedItems: number;
   pendingItems: number;
-  inconsistentItems: number;
+  inconsistentItems: number | null;
   canceledItems: number;
-  progressProductionOrder: number;
+  progressProductionOrder: number | null;
   progressProduced: number | null;
   progressDocumented: number;
   progressInvoiced: number;
@@ -91,7 +91,7 @@ export type SalesOrderFlowListCard = {
 export type SalesOrderFlowListColumnTotals = {
   overdueCount: number;
   blockedCount: number;
-  inconsistentCount: number;
+  inconsistentCount: number | null;
   partiallyShippedCount: number;
   withCutCount: number;
 };
@@ -113,6 +113,8 @@ export type SalesOrderFlowListPayload = {
   };
   columns: SalesOrderFlowListColumn[];
   valuesVisible: boolean;
+  productionVisible: boolean;
+  inconsistenciesVisible: boolean;
   generatedAt: string;
 };
 
@@ -464,7 +466,12 @@ export type SalesOrderFlowCardSource = {
 
 export function mapSalesOrderFlowListCard(
   row: SalesOrderFlowCardSource,
-  options: { canViewValues: boolean; now?: Date }
+  options: {
+    canViewValues: boolean;
+    canViewProduction?: boolean;
+    canViewInconsistencies?: boolean;
+    now?: Date;
+  }
 ): SalesOrderFlowListCard {
   const stage = isSalesOrderFlowStage(row.currentStage)
     ? row.currentStage
@@ -479,6 +486,8 @@ export function mapSalesOrderFlowListCard(
     row.inconsistenciesJson
   );
   const values = options.canViewValues;
+  const production = options.canViewProduction !== false;
+  const inconsistencyDetails = options.canViewInconsistencies !== false;
   return {
     orderId: row.salesOrderId,
     orderCode: row.salesOrder.orderCode,
@@ -508,11 +517,13 @@ export function mapSalesOrderFlowListCard(
     activeItems: row.activeItems,
     completedItems: row.completedItems,
     pendingItems: row.pendingItems,
-    inconsistentItems: row.inconsistentItems,
+    inconsistentItems: inconsistencyDetails ? row.inconsistentItems : null,
     canceledItems: row.canceledItems,
-    progressProductionOrder: decimalNumber(row.progressProductionOrder),
+    progressProductionOrder: production
+      ? decimalNumber(row.progressProductionOrder)
+      : null,
     progressProduced:
-      row.progressProduced == null
+      !production || row.progressProduced == null
         ? null
         : decimalNumber(row.progressProduced),
     progressDocumented: decimalNumber(row.progressDocumented),
@@ -523,7 +534,7 @@ export function mapSalesOrderFlowListCard(
     priority: management?.priority ?? "NORMAL",
     isBlocked: management?.isBlocked === true,
     blockReason: management?.blockReason ?? null,
-    inconsistencies,
+    inconsistencies: inconsistencyDetails ? inconsistencies : [],
     badges: parseSalesOrderFlowBadges(row.badgesJson),
   };
 }

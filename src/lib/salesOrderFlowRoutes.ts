@@ -1,5 +1,5 @@
 /**
- * OP-59/OP-60/OP-61/OP-62 — Rotas HTTP do Fluxo de Pedidos (Kanban).
+ * OP-59..OP-63 — Rotas HTTP do Fluxo de Pedidos (Kanban).
  */
 
 import type express from "express";
@@ -20,26 +20,17 @@ import {
   SalesOrderFlowDetailQueryError,
 } from "@/src/lib/sales/salesOrderFlowDetail.server.js";
 import { applySalesOrderFlowManagement } from "@/src/lib/sales/salesOrderFlowManagement.server.js";
+import {
+  resolveSalesOrderFlowCapabilities,
+  resolveSalesOrderFlowManagementRequirements,
+} from "@/src/lib/sales/salesOrderFlowPermissions.js";
 import { resolveSalesOrderFlowAccessScope } from "@/src/lib/sales/salesOrderFlowAccessScope.js";
-import { authorizeRequireResource } from "@/src/lib/security/requireResource.js";
-import { canViewSalesOrderFiscalTaxesFromAuth } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
   getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
-
-export function canViewSalesOrderFlowMonetaryValues(
-  user: AppAuthContext
-): boolean {
-  return authorizeRequireResource(
-    user,
-    COMMERCIAL_RESOURCE_KEYS.salesOrders,
-    COMMERCIAL_ACTIONS.view,
-    { legacyCompatMode: true }
-  ).ok;
-}
 
 export function registerSalesOrderFlowRoutes(
   app: express.Express,
@@ -52,6 +43,10 @@ export function registerSalesOrderFlowRoutes(
     requireAppAuth,
     requireResource(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
       COMMERCIAL_ACTIONS.view
     ),
   ] as const;
@@ -74,6 +69,7 @@ export function registerSalesOrderFlowRoutes(
       ok: true as const,
       user,
       prisma,
+      capabilities: resolveSalesOrderFlowCapabilities(user),
       scopeCustomerIds:
         scope.mode === "own_portfolio" ? scope.allowedCustomerIds : null,
     };
@@ -97,7 +93,9 @@ export function registerSalesOrderFlowRoutes(
           {
             prisma: scoped.prisma,
             scopeCustomerIds: scoped.scopeCustomerIds,
-            canViewValues: canViewSalesOrderFlowMonetaryValues(scoped.user),
+            canViewValues: scoped.capabilities.canViewValues,
+            canViewInconsistencies:
+              scoped.capabilities.canViewInconsistencies,
           }
         );
         res.setHeader("Cache-Control", "no-store");
@@ -132,7 +130,10 @@ export function registerSalesOrderFlowRoutes(
         {
           prisma: scoped.prisma,
           scopeCustomerIds: scoped.scopeCustomerIds,
-          canViewValues: canViewSalesOrderFlowMonetaryValues(scoped.user),
+          canViewValues: scoped.capabilities.canViewValues,
+          canViewProduction: scoped.capabilities.canViewProduction,
+          canViewInconsistencies:
+            scoped.capabilities.canViewInconsistencies,
         }
       );
       res.setHeader("Cache-Control", "no-store");
@@ -153,7 +154,20 @@ export function registerSalesOrderFlowRoutes(
 
   app.get(
     "/api/commercial/sales-order-flow/:salesOrderId/events",
-    ...guards,
+    requireSalesOrderFlowEnabled(),
+    requireAppAuth,
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrders,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowTimeline,
+      COMMERCIAL_ACTIONS.view
+    ),
     async (req, res) => {
       try {
         const scoped = await resolveScopedUser(req);
@@ -210,12 +224,12 @@ export function registerSalesOrderFlowRoutes(
           {
             prisma: scoped.prisma,
             scopeCustomerIds: scoped.scopeCustomerIds,
-            canViewValues: canViewSalesOrderFlowMonetaryValues(scoped.user),
-            canViewFiscal: canViewSalesOrderFiscalTaxesFromAuth({
-              role: scoped.user.role,
-              permissions: scoped.user.permissions,
-              effectivePermissions: scoped.user.effectivePermissions,
-            }),
+            canViewValues: scoped.capabilities.canViewValues,
+            canViewProduction: scoped.capabilities.canViewProduction,
+            canViewFiscal: scoped.capabilities.canViewFiscal,
+            canViewFinancial: scoped.capabilities.canViewFinancial,
+            canViewInconsistencies:
+              scoped.capabilities.canViewInconsistencies,
           }
         );
         if (!result.ok) {
@@ -247,9 +261,36 @@ export function registerSalesOrderFlowRoutes(
       COMMERCIAL_ACTIONS.view
     ),
     requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
       COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowManagement,
       COMMERCIAL_ACTIONS.manage
     ),
+    (req, res, next) => {
+      const requirements = resolveSalesOrderFlowManagementRequirements(
+        req.body
+      );
+      let index = 0;
+      const runNext = (error?: unknown): void => {
+        if (error) {
+          next(error);
+          return;
+        }
+        const requirement = requirements[index++];
+        if (!requirement) {
+          next();
+          return;
+        }
+        requireResource(requirement.resourceKey, requirement.action)(
+          req,
+          res,
+          runNext
+        );
+      };
+      runNext();
+    },
     async (req, res) => {
       try {
         const scoped = await resolveScopedUser(req);

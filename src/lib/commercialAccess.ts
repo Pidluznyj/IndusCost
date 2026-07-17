@@ -18,7 +18,20 @@ export const COMMERCIAL_RESOURCE_KEYS = {
   salesOrders: "commercial.sales_orders",
   salesOrdersDetail: "commercial.sales_orders.detail",
   salesOrdersInvoice: "commercial.sales_orders.invoice",
+  salesOrdersFlow: "commercial.sales_orders.flow",
+  salesOrdersFlowValues: "commercial.sales_orders.flow.values",
+  salesOrdersFlowFinancial: "commercial.sales_orders.flow.financial",
+  salesOrdersFlowInconsistencies:
+    "commercial.sales_orders.flow.inconsistencies",
+  salesOrdersFlowTimeline: "commercial.sales_orders.flow.timeline",
   salesOrdersFlowManagement: "commercial.sales_orders.flow_management",
+  salesOrdersFlowPriority:
+    "commercial.sales_orders.flow_management.priority",
+  salesOrdersFlowResponsibility:
+    "commercial.sales_orders.flow_management.responsibility",
+  salesOrdersFlowBlocking:
+    "commercial.sales_orders.flow_management.blocking",
+  salesOrdersFlowRebuild: "commercial.sales_orders.flow_rebuild",
   /** Canônica — lista/resumo. */
   outputDocuments: "commercial.output_documents",
   outputDocumentsDetail: "commercial.output_documents.detail",
@@ -80,10 +93,10 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/sales-orders/:id", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/detail", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/intelligence", resourceKey: "commercial.sales_orders.detail", action: "view" },
-  { method: "GET", path: "/api/commercial/sales-order-flow/summary", resourceKey: "commercial.sales_orders", action: "view" },
-  { method: "GET", path: "/api/commercial/sales-order-flow", resourceKey: "commercial.sales_orders", action: "view" },
-  { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId", resourceKey: "commercial.sales_orders", action: "view" },
-  { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId/events", resourceKey: "commercial.sales_orders", action: "view" },
+  { method: "GET", path: "/api/commercial/sales-order-flow/summary", resourceKey: "commercial.sales_orders.flow", action: "view" },
+  { method: "GET", path: "/api/commercial/sales-order-flow", resourceKey: "commercial.sales_orders.flow", action: "view" },
+  { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId", resourceKey: "commercial.sales_orders.flow", action: "view" },
+  { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId/events", resourceKey: "commercial.sales_orders.flow.timeline", action: "view" },
   { method: "PATCH", path: "/api/commercial/sales-order-flow/:salesOrderId/management", resourceKey: "commercial.sales_orders.flow_management", action: "manage" },
 
   { method: "GET", path: "/api/commercial/output-documents/summary", resourceKey: "commercial.output_documents", action: "view" },

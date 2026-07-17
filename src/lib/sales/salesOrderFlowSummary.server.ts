@@ -31,6 +31,7 @@ export type LoadSalesOrderFlowSummaryOptions = {
   prisma: SalesOrderFlowSummaryDb;
   scopeCustomerIds?: string[] | null;
   canViewValues?: boolean;
+  canViewInconsistencies?: boolean;
   resolveSellerWhere?: (
     filters: SalesOrderFlowSummaryFilters
   ) => Promise<Prisma.SalesOrderWhereInput | null>;
@@ -157,6 +158,7 @@ export async function loadSalesOrderFlowSummary(
     totals,
     lastUpdatedAt: lastAggregate._max.computedAt,
     canViewValues,
+    canViewInconsistencies: options.canViewInconsistencies !== false,
     generatedAt: options.now?.() ?? new Date(),
   });
 }

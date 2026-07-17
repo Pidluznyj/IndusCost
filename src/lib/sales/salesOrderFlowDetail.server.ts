@@ -46,7 +46,10 @@ export type SalesOrderFlowDetailDb = Pick<
 export type LoadSalesOrderFlowDetailOptions = {
   prisma: SalesOrderFlowDetailDb;
   canViewValues?: boolean;
+  canViewProduction?: boolean;
   canViewFiscal?: boolean;
+  canViewFinancial?: boolean;
+  canViewInconsistencies?: boolean;
   scopeCustomerIds?: string[] | null;
   now?: () => Date;
 };
@@ -125,7 +128,10 @@ export async function loadSalesOrderFlowDetail(
 ): Promise<LoadSalesOrderFlowDetailResult> {
   const salesOrderId = assertSalesOrderFlowDetailId(salesOrderIdRaw);
   const canViewValues = options.canViewValues !== false;
+  const canViewProduction = options.canViewProduction !== false;
   const canViewFiscal = options.canViewFiscal === true;
+  const canViewFinancial = options.canViewFinancial === true;
+  const canViewInconsistencies = options.canViewInconsistencies !== false;
   const now = options.now?.() ?? new Date();
 
   const orderMeta = await options.prisma.salesOrder.findUnique({
@@ -172,11 +178,13 @@ export async function loadSalesOrderFlowDetail(
   const recomputable = orderSnapshot == null;
   const mappedOrderSnapshot = mapOrderSnapshotForDetail(
     orderSnapshot as unknown as Record<string, unknown> | null,
-    { canViewValues, now }
+    { canViewValues, canViewProduction, canViewInconsistencies, now }
   );
   const mappedItems = itemSnapshots.map((row) =>
     mapItemSnapshotForDetail(row as unknown as Record<string, unknown>, {
       canViewValues,
+      canViewProduction,
+      canViewInconsistencies,
       now,
     })
   );
@@ -279,12 +287,20 @@ export async function loadSalesOrderFlowDetail(
           promisedDeliveryAt: evidence.order.expectedDeliveryDate,
           isOverdue: null,
         },
-    productionOrders: mapEvidenceProduction(evidence),
-    stockDocuments: mapEvidenceDocuments(evidence, canViewValues),
-    nfes: evidence.nfes.map((nfe) => mapNfeForDetail(nfe, canViewFiscal)),
-    financialSituation,
+    productionOrders: canViewProduction
+      ? mapEvidenceProduction(evidence)
+      : [],
+    stockDocuments: canViewFiscal
+      ? mapEvidenceDocuments(evidence, canViewValues)
+      : [],
+    nfes: canViewFiscal
+      ? evidence.nfes.map((nfe) => mapNfeForDetail(nfe, true))
+      : [],
+    financialSituation: canViewFinancial ? financialSituation : null,
     inconsistencies: orderSnapshot
-      ? parseSalesOrderFlowInconsistencies(orderSnapshot.inconsistenciesJson)
+      ? canViewInconsistencies
+        ? parseSalesOrderFlowInconsistencies(orderSnapshot.inconsistenciesJson)
+        : []
       : [],
     badges: orderSnapshot
       ? parseSalesOrderFlowBadges(orderSnapshot.badgesJson)
@@ -292,7 +308,10 @@ export async function loadSalesOrderFlowDetail(
     management: mapManagement(management),
     officialLinks: buildSalesOrderFlowOfficialLinks(salesOrderId),
     valuesVisible: canViewValues,
+    productionVisible: canViewProduction,
     fiscalVisible: canViewFiscal,
+    financialVisible: canViewFinancial,
+    inconsistenciesVisible: canViewInconsistencies,
     generatedAt: now.toISOString(),
   };
 

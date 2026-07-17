@@ -55,7 +55,7 @@ export type SalesOrderFlowSummaryColumn = {
 export type SalesOrderFlowSummaryTotals = {
   overdueCount: number;
   blockedCount: number;
-  inconsistentCount: number;
+  inconsistentCount: number | null;
   partiallyShippedCount: number;
   completedWithCutCount: number;
   canceledCount: number;
@@ -86,6 +86,7 @@ export type SalesOrderFlowSummaryPayload = {
   totals: SalesOrderFlowSummaryTotals;
   lastUpdatedAt: string | null;
   valuesVisible: boolean;
+  inconsistenciesVisible: boolean;
   generatedAt: string;
 };
 
@@ -389,6 +390,7 @@ export function buildSalesOrderFlowSummaryPayload(input: {
   totals: SalesOrderFlowSummaryTotals;
   lastUpdatedAt: Date | string | null;
   canViewValues: boolean;
+  canViewInconsistencies?: boolean;
   generatedAt?: Date;
 }): SalesOrderFlowSummaryPayload {
   const generatedAt = input.generatedAt ?? new Date();
@@ -404,9 +406,16 @@ export function buildSalesOrderFlowSummaryPayload(input: {
       input.aggregates,
       input.canViewValues
     ),
-    totals: input.totals,
+    totals: {
+      ...input.totals,
+      inconsistentCount:
+        input.canViewInconsistencies === false
+          ? null
+          : input.totals.inconsistentCount,
+    },
     lastUpdatedAt: last && !Number.isNaN(Date.parse(last)) ? last : null,
     valuesVisible: input.canViewValues,
+    inconsistenciesVisible: input.canViewInconsistencies !== false,
     generatedAt: generatedAt.toISOString(),
   };
 }

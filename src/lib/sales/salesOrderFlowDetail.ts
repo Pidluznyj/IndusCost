@@ -126,7 +126,10 @@ export type SalesOrderFlowDetailPayload = {
   management: SalesOrderFlowDetailManagement | null;
   officialLinks: SalesOrderFlowDetailOfficialLinks;
   valuesVisible: boolean;
+  productionVisible: boolean;
   fiscalVisible: boolean;
+  financialVisible: boolean;
+  inconsistenciesVisible: boolean;
   generatedAt: string;
 };
 
@@ -237,11 +240,18 @@ export function buildColumnExplanation(input: {
 
 export function mapOrderSnapshotForDetail(
   row: Record<string, unknown> | null,
-  options: { canViewValues: boolean; now?: Date }
+  options: {
+    canViewValues: boolean;
+    canViewProduction?: boolean;
+    canViewInconsistencies?: boolean;
+    now?: Date;
+  }
 ): Record<string, unknown> | null {
   if (!row) return null;
   const stageEnteredAt = null;
   const values = options.canViewValues;
+  const production = options.canViewProduction !== false;
+  const inconsistencies = options.canViewInconsistencies !== false;
   return {
     currentStage: row.currentStage ?? null,
     bottleneckStage: row.bottleneckStage ?? null,
@@ -253,11 +263,15 @@ export function mapOrderSnapshotForDetail(
     activeItems: row.activeItems ?? 0,
     completedItems: row.completedItems ?? 0,
     pendingItems: row.pendingItems ?? 0,
-    inconsistentItems: row.inconsistentItems ?? 0,
+    inconsistentItems: inconsistencies ? (row.inconsistentItems ?? 0) : null,
     canceledItems: row.canceledItems ?? 0,
-    progressProductionOrder: decimalNumber(row.progressProductionOrder),
+    progressProductionOrder: production
+      ? decimalNumber(row.progressProductionOrder)
+      : null,
     progressProduced:
-      row.progressProduced == null ? null : decimalNumber(row.progressProduced),
+      !production || row.progressProduced == null
+        ? null
+        : decimalNumber(row.progressProduced),
     progressDocumented: decimalNumber(row.progressDocumented),
     progressInvoiced: decimalNumber(row.progressInvoiced),
     progressShipped: decimalNumber(row.progressShipped),
@@ -274,7 +288,9 @@ export function mapOrderSnapshotForDetail(
     promisedDeliveryAt: dateIso(row.promisedDeliveryAt as Date | string | null),
     isOverdue: row.isOverdue === true,
     isInActiveOperationalColumn: row.isInActiveOperationalColumn !== false,
-    inconsistencies: parseSalesOrderFlowInconsistencies(row.inconsistenciesJson),
+    inconsistencies: inconsistencies
+      ? parseSalesOrderFlowInconsistencies(row.inconsistenciesJson)
+      : [],
     badges: parseSalesOrderFlowBadges(row.badgesJson),
     fingerprint: row.fingerprint ?? null,
     computationVersion: row.computationVersion ?? null,
@@ -289,8 +305,15 @@ export function mapOrderSnapshotForDetail(
 
 export function mapItemSnapshotForDetail(
   row: Record<string, unknown>,
-  options: { canViewValues: boolean; now?: Date }
+  options: {
+    canViewValues: boolean;
+    canViewProduction?: boolean;
+    canViewInconsistencies?: boolean;
+    now?: Date;
+  }
 ): Record<string, unknown> {
+  const production = options.canViewProduction !== false;
+  const inconsistencies = options.canViewInconsistencies !== false;
   return {
     salesOrderItemId: row.salesOrderItemId,
     currentStage: row.currentStage ?? null,
@@ -303,9 +326,13 @@ export function mapItemSnapshotForDetail(
     cutQuantity: decimalNumber(row.cutQuantity),
     canceledQuantity: decimalNumber(row.canceledQuantity),
     shipTargetQuantity: decimalNumber(row.shipTargetQuantity),
-    progressProductionOrder: decimalNumber(row.progressProductionOrder),
+    progressProductionOrder: production
+      ? decimalNumber(row.progressProductionOrder)
+      : null,
     progressProduced:
-      row.progressProduced == null ? null : decimalNumber(row.progressProduced),
+      !production || row.progressProduced == null
+        ? null
+        : decimalNumber(row.progressProduced),
     progressDocumented: decimalNumber(row.progressDocumented),
     progressInvoiced: decimalNumber(row.progressInvoiced),
     progressShipped: decimalNumber(row.progressShipped),
@@ -319,7 +346,9 @@ export function mapItemSnapshotForDetail(
     promisedDeliveryAt: dateIso(row.promisedDeliveryAt as Date | string | null),
     isOverdue: row.isOverdue === true,
     isActiveForKanban: row.isActiveForKanban !== false,
-    inconsistencies: parseSalesOrderFlowInconsistencies(row.inconsistenciesJson),
+    inconsistencies: inconsistencies
+      ? parseSalesOrderFlowInconsistencies(row.inconsistenciesJson)
+      : [],
     fingerprint: row.fingerprint ?? null,
     computationVersion: row.computationVersion ?? null,
     computedAt: dateIso(row.computedAt as Date | string | null),

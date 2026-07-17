@@ -41,6 +41,8 @@ export type LoadSalesOrderFlowListOptions = {
   prisma: SalesOrderFlowListDb;
   scopeCustomerIds?: string[] | null;
   canViewValues?: boolean;
+  canViewProduction?: boolean;
+  canViewInconsistencies?: boolean;
   resolveSellerWhere?: (
     filters: SalesOrderFlowSummaryFilters
   ) => Promise<Prisma.SalesOrderWhereInput | null>;
@@ -146,6 +148,8 @@ async function loadStageColumn(
     cursor: string | null | undefined;
     limit: number;
     canViewValues: boolean;
+    canViewProduction: boolean;
+    canViewInconsistencies: boolean;
     now: Date;
   }
 ): Promise<SalesOrderFlowListColumn> {
@@ -282,9 +286,15 @@ async function loadStageColumn(
     .map((row) =>
       mapSalesOrderFlowListCard(row, {
         canViewValues: input.canViewValues,
+        canViewProduction: input.canViewProduction,
+        canViewInconsistencies: input.canViewInconsistencies,
         now: input.now,
       })
     );
+
+  if (!input.canViewInconsistencies) {
+    totals.inconsistentCount = null;
+  }
 
   return {
     stage: input.stage,
@@ -303,6 +313,8 @@ export async function loadSalesOrderFlowList(
 ): Promise<SalesOrderFlowListPayload> {
   const parsed = parseSalesOrderFlowListQuery(query);
   const canViewValues = options.canViewValues !== false;
+  const canViewProduction = options.canViewProduction !== false;
+  const canViewInconsistencies = options.canViewInconsistencies !== false;
   const now = options.now?.() ?? new Date();
   const sellerWhere = options.resolveSellerWhere
     ? await options.resolveSellerWhere(parsed.filters)
@@ -322,6 +334,8 @@ export async function loadSalesOrderFlowList(
         cursor: parsed.cursors[stage] ?? null,
         limit: parsed.limit,
         canViewValues,
+        canViewProduction,
+        canViewInconsistencies,
         now,
       })
     )
@@ -335,6 +349,8 @@ export async function loadSalesOrderFlowList(
     },
     columns,
     valuesVisible: canViewValues,
+    productionVisible: canViewProduction,
+    inconsistenciesVisible: canViewInconsistencies,
     generatedAt: now.toISOString(),
   };
 }
