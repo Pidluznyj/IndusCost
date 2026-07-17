@@ -69,6 +69,8 @@ export type SalesOrderFlowDetailManagement = {
   reason: string | null;
   expectedResolutionAt: string | null;
   internalNote: string | null;
+  /** Para concorrência otimista no PATCH de management. */
+  updatedAt: string | null;
 };
 
 export type SalesOrderFlowDetailPayload = {

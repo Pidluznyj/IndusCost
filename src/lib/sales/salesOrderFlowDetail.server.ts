@@ -86,6 +86,7 @@ function mapManagement(
     reason: row.reason,
     expectedResolutionAt: dateIso(row.expectedResolutionAt),
     internalNote: row.internalNote,
+    updatedAt: dateIso(row.updatedAt),
   };
 }
 

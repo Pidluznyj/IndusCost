@@ -81,6 +81,8 @@ src/lib/sales/salesOrderFlowList.server.test.ts
 src/lib/sales/salesOrderFlowDetail.test.ts
 src/lib/sales/salesOrderFlowDetail.server.test.ts
 src/lib/sales/salesOrderFlowTimeline.test.ts
+src/lib/sales/salesOrderFlowManagement.test.ts
+src/lib/sales/salesOrderFlowManagement.server.test.ts
 src/lib/sales/salesOrderToCashFunnelAnalytics.test.ts
 src/lib/sales/salesOrderToCashFunnelApi.test.ts
 src/lib/sales/salesOrderToCashFunnelUi.test.ts

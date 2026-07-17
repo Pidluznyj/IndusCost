@@ -1,5 +1,5 @@
 /**
- * OP-59/OP-60/OP-61 — Rotas HTTP do Fluxo de Pedidos (Kanban).
+ * OP-59/OP-60/OP-61/OP-62 — Rotas HTTP do Fluxo de Pedidos (Kanban).
  */
 
 import type express from "express";
@@ -19,6 +19,7 @@ import {
   loadSalesOrderFlowEvents,
   SalesOrderFlowDetailQueryError,
 } from "@/src/lib/sales/salesOrderFlowDetail.server.js";
+import { applySalesOrderFlowManagement } from "@/src/lib/sales/salesOrderFlowManagement.server.js";
 import { resolveSalesOrderFlowAccessScope } from "@/src/lib/sales/salesOrderFlowAccessScope.js";
 import { authorizeRequireResource } from "@/src/lib/security/requireResource.js";
 import { canViewSalesOrderFiscalTaxesFromAuth } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions.js";
@@ -232,6 +233,52 @@ export function registerSalesOrderFlowRoutes(
         );
         return res.status(500).json({
           error: "Não foi possível carregar o detalhe do Fluxo de Pedidos.",
+        });
+      }
+    }
+  );
+
+  app.patch(
+    "/api/commercial/sales-order-flow/:salesOrderId/management",
+    requireSalesOrderFlowEnabled(),
+    requireAppAuth,
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrders,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowManagement,
+      COMMERCIAL_ACTIONS.manage
+    ),
+    async (req, res) => {
+      try {
+        const scoped = await resolveScopedUser(req);
+        if (!scoped.ok) {
+          if (scoped.status === 401) {
+            return res.status(401).json({ error: "Não autenticado." });
+          }
+          return res.status(scoped.status).json(scoped.body);
+        }
+
+        const result = await applySalesOrderFlowManagement({
+          prisma: scoped.prisma,
+          salesOrderId: String(req.params.salesOrderId ?? ""),
+          body: req.body,
+          actor: { id: scoped.user.id, name: scoped.user.name },
+          scopeCustomerIds: scoped.scopeCustomerIds,
+        });
+        if (!result.ok) {
+          return res.status(result.status).json(result.body);
+        }
+        res.setHeader("Cache-Control", "no-store");
+        return res.json(result.payload);
+      } catch (error) {
+        console.error(
+          "PATCH /api/commercial/sales-order-flow/:salesOrderId/management:",
+          error
+        );
+        return res.status(500).json({
+          error: "Não foi possível atualizar a gestão do Fluxo de Pedidos.",
         });
       }
     }

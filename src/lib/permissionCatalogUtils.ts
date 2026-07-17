@@ -77,6 +77,7 @@ export const PERMISSION_TEMPLATES: Record<
       "sales_orders.view",
       "sales_orders.detail.view",
       "sales_orders.invoice.view",
+      "sales_orders.flow_management.manage",
       "output_documents.view",
       "reports.view",
     ],

@@ -172,6 +172,7 @@ function createDb(options?: {
         reason: null,
         expectedResolutionAt: null,
         internalNote: "nota",
+        updatedAt: new Date("2026-07-17T12:00:00Z"),
       }),
     },
     salesOrderFlowEvent: {

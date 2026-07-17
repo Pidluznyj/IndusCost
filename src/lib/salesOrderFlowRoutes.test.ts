@@ -6,8 +6,8 @@ import { COMMERCIAL_RESOURCE_KEYS } from "./commercialAccess.js";
 import { registerSalesOrderFlowRoutes } from "./salesOrderFlowRoutes.js";
 import { SALES_ORDER_FLOW_ENABLED_ENV } from "./sales/salesOrderFlowFeatureFlags.js";
 
-describe("salesOrderFlowRoutes (OP-59)", () => {
-  it("registra summary, lista, detalhe e events", () => {
+describe("salesOrderFlowRoutes (OP-59/OP-62)", () => {
+  it("registra summary, lista, detalhe, events e management", () => {
     const source = readFileSync(
       join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
       "utf8"
@@ -16,13 +16,23 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
     assert.match(source, /\/api\/commercial\/sales-order-flow"/);
     assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId\/events/);
     assert.match(source, /\/api\/commercial\/sales-order-flow\/:salesOrderId"/);
+    assert.match(
+      source,
+      /\/api\/commercial\/sales-order-flow\/:salesOrderId\/management/
+    );
     assert.match(source, /requireSalesOrderFlowEnabled/);
     assert.match(source, /loadSalesOrderFlowDetail/);
     assert.match(source, /loadSalesOrderFlowEvents/);
+    assert.match(source, /applySalesOrderFlowManagement/);
+    assert.match(source, /salesOrdersFlowManagement/);
     assert.match(source, /canViewSalesOrderFiscalTaxesFromAuth/);
     assert.equal(
       COMMERCIAL_RESOURCE_KEYS.salesOrders,
       "commercial.sales_orders"
+    );
+    assert.equal(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlowManagement,
+      "commercial.sales_orders.flow_management"
     );
   });
 
@@ -40,6 +50,25 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
       access,
       /\/api\/commercial\/sales-order-flow\/:salesOrderId\/events/
     );
+    assert.match(
+      access,
+      /\/api\/commercial\/sales-order-flow\/:salesOrderId\/management/
+    );
+  });
+
+  it("PATCH management exige manage além de view", () => {
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
+      "utf8"
+    );
+    assert.match(
+      source,
+      /salesOrdersFlowManagement[\s\S]*COMMERCIAL_ACTIONS\.manage/
+    );
+    assert.match(
+      source,
+      /app\.patch\(\s*"\/api\/commercial\/sales-order-flow\/:salesOrderId\/management"/
+    );
   });
 
   it("bloqueia com 404 quando feature flag ausente", async () => {
@@ -55,6 +84,12 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
       ) {
         routes.set(routePath, handlers.slice(0, -1));
       },
+      patch(
+        routePath: string,
+        ...handlers: Array<(req: unknown, res: unknown, next: () => void) => unknown>
+      ) {
+        routes.set(routePath, handlers.slice(0, -1));
+      },
     };
 
     registerSalesOrderFlowRoutes(app as never, {
@@ -65,6 +100,9 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
 
     assert.ok(routes.has("/api/commercial/sales-order-flow/summary"));
     assert.ok(routes.has("/api/commercial/sales-order-flow"));
+    assert.ok(
+      routes.has("/api/commercial/sales-order-flow/:salesOrderId/management")
+    );
 
     const previous = process.env[SALES_ORDER_FLOW_ENABLED_ENV];
     delete process.env[SALES_ORDER_FLOW_ENABLED_ENV];
@@ -72,6 +110,7 @@ describe("salesOrderFlowRoutes (OP-59)", () => {
       for (const path of [
         "/api/commercial/sales-order-flow/summary",
         "/api/commercial/sales-order-flow",
+        "/api/commercial/sales-order-flow/:salesOrderId/management",
       ]) {
         let statusCode = 0;
         let payload: unknown;

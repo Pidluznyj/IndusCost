@@ -660,6 +660,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     parentKey: "sales_orders.view",
     requires: ["sales_orders.view"],
   }),
+  perm({
+    key: "sales_orders.flow_management.manage",
+    label: "Pedidos — Gestão do fluxo",
+    group: SO,
+    module: "sales-orders",
+    description:
+      "Definir prioridade, responsável, área, bloqueio, previsão e nota interna do Fluxo de Pedidos (sem alterar estágio).",
+    type: "action",
+    parentKey: "sales_orders.view",
+    requires: ["sales_orders.view"],
+    risk: "sensitive",
+  }),
 
   // —— Documentos de Saída ——
   perm({
