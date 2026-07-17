@@ -182,11 +182,15 @@ export function attachSalesOrderFiscalTaxesContract(
     extraWarnings?: string[];
   }
 ): SalesOrderFiscalTaxesPayload {
+  // Somente NF elegíveis a totais — NF ativa inelegível (billing=false) não força partial.
+  const validNfeSources = payload.nfes
+    .filter((n) => n.isValidForTotals)
+    .map((n) => n.source);
   const resolved = resolveSalesOrderFiscalTaxesStatus({
     validNfeCount: payload.summary.validNfeCount,
     cancelledNfeCount: payload.summary.cancelledNfeCount,
     compositionIncomplete: payload.summary.compositionIncomplete,
-    validNfeSources: payload.nfes.map((n) => n.source),
+    validNfeSources,
   });
   const warnings = [
     ...resolved.warnings,

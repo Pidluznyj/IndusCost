@@ -236,10 +236,11 @@ describe("TRIB-07 — relatório fiscal e deduplicação", () => {
 });
 
 describe("TRIB-07 — proteção read-only", () => {
-  it("script e loader não contêm escrita Prisma nem chamadas Nomus", () => {
+  it("script e loaders não contêm escrita Prisma nem chamadas Nomus", () => {
     const files = [
       "scripts/auditSalesOrderTaxes.ts",
       "src/lib/sales-orders/salesOrderTaxesAudit.server.ts",
+      "src/lib/sales-orders/salesOrderRelatedNfeResolver.server.ts",
     ];
     for (const relative of files) {
       const source = readFileSync(join(REPO_ROOT, relative), "utf8");
