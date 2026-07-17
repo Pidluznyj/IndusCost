@@ -359,7 +359,8 @@ export async function lookupNomusAccountsPayableByExternalId(args: {
   const pageSize = resolveAccountsPayablePageSize(env);
   const maxPages = Math.max(
     1,
-    args.maxPages ?? Number.parseInt(env.NOMUS_AP_DIRECTED_MAX_PAGES ?? "50", 10) || 50
+    args.maxPages ??
+      (Number.parseInt(env.NOMUS_AP_DIRECTED_MAX_PAGES ?? "50", 10) || 50)
   );
   const fetchOpts: FetchNomusJsonOptions = {
     logPrefix: "[nomus-ap-directed-lookup]",
