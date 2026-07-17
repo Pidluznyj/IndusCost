@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import {
+  classifyStockDocumentItemsReliability,
   computeEstimatedTotalValue,
+  dedupeMappedStockDocumentItems,
+  inspectStockDocumentItemsArray,
+  mapNomusStockDocumentItem,
   mapNomusStockDocumentPayload,
   parseNomusStockQuantity,
   parseNomusStockUnitValue,
@@ -10,9 +14,11 @@ import {
 } from "./nomusStockDocumentsMapper.js";
 import {
   buildStockDocumentsQuery,
+  decideStockDocumentItemsAction,
   isoDateToNomusBrDate,
   parseStockDocumentsSyncCli,
   planStockDocumentPersist,
+  resolveStockDocumentsSyncExitCode,
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
 } from "./nomusStockDocumentsSyncLogic.js";
@@ -59,6 +65,8 @@ describe("nomusStockDocumentsMapper", () => {
     assert.equal(mapped.row.dataDocumento!.getMonth(), 4);
     assert.equal(mapped.row.dataDocumento!.getDate(), 13);
     assert.equal(mapped.row.items.length, 3);
+    assert.equal(mapped.row.itemsReliability, "complete_with_items");
+    assert.equal(mapped.row.itemsArray.present, true);
     assert.equal(mapped.row.items[0]!.externalProductId, 456);
     assert.equal(mapped.row.items[0]!.quantity.toString(), "3000");
     assert.equal(mapped.row.items[0]!.unitValue.toString(), "4.92");
@@ -69,6 +77,248 @@ describe("nomusStockDocumentsMapper", () => {
     );
     assert.equal(total.toString(), "108240");
     assert.equal(typeof mapped.row.rawJson.id, "number");
+  });
+
+  it("classifica payload completo com itens", () => {
+    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsReliability, "complete_with_items");
+    assert.equal(mapped.row.items.length, 3);
+  });
+
+  it("classifica payload completo sem itens (array explícito vazio)", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9001,
+      idNfe: 1,
+      tipoDocumentoEstoque: "DocumentoSaida",
+      itensDocumentoEstoque: [],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsArray.present, true);
+    assert.equal(mapped.row.itemsArray.rawCount, 0);
+    assert.equal(mapped.row.itemsReliability, "complete_empty");
+    assert.equal(mapped.row.items.length, 0);
+  });
+
+  it("classifica payload parcial sem chave de itens", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9002,
+      idNfe: 2,
+      tipoDocumentoEstoque: "DocumentoSaida",
+      data: "01/01/2026",
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsArray.present, false);
+    assert.equal(mapped.row.itemsReliability, "partial_absent_array");
+    assert.equal(mapped.row.items.length, 0);
+    assert.equal(inspectStockDocumentItemsArray(mapped.row.rawJson).present, false);
+  });
+
+  it("classifica payload parcial quando itens existem mas nenhum mapeia", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9003,
+      itensDocumentoEstoque: [{ id: 1, idProduto: 10 }, { id: 2, qtde: "x" }],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsArray.present, true);
+    assert.equal(mapped.row.itemsArray.rawCount, 2);
+    assert.equal(mapped.row.itemsDiscardedCount, 2);
+    assert.equal(mapped.row.itemsReliability, "partial_unmapped");
+    assert.equal(mapped.row.items.length, 0);
+  });
+
+  it("rejeita payload inválido sem externalId", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      idNfe: 99,
+      itensDocumentoEstoque: [],
+    });
+    assert.equal(mapped.ok, false);
+    if (mapped.ok) return;
+    assert.deepEqual(mapped.reasons, ["MISSING_EXTERNAL_ID"]);
+    assert.equal(mapped.externalId, null);
+  });
+
+  it("colapsa itens duplicados no mesmo payload (último vence)", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9004,
+      itensDocumentoEstoque: [
+        { id: 10, idProduto: 1, qtde: "1", valorUnitario: "10,00" },
+        { id: 10, idProduto: 1, qtde: "2", valorUnitario: "20,00" },
+        { id: 11, idProduto: 2, qtde: "1", valorUnitario: "5,00" },
+      ],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsDuplicateCollapsedCount, 1);
+    assert.equal(mapped.row.items.length, 2);
+    const dup = mapped.row.items.find((item) => item.externalItemId === 10);
+    assert.ok(dup);
+    assert.equal(dup!.quantity.toString(), "2");
+    assert.equal(dup!.unitValue.toString(), "20");
+  });
+
+  it("dedupeMappedStockDocumentItems colapsa fingerprint sem id", () => {
+    const a = mapNomusStockDocumentItem({
+      idProduto: 7,
+      qtde: "1",
+      valorUnitario: "3,00",
+    });
+    const b = mapNomusStockDocumentItem({
+      idProduto: 7,
+      qtde: "1",
+      valorUnitario: "3,00",
+    });
+    assert.ok(a && b);
+    const deduped = dedupeMappedStockDocumentItems([a!, b!]);
+    assert.equal(deduped.duplicatesCollapsed, 1);
+    assert.equal(deduped.items.length, 1);
+  });
+});
+
+describe("nomusStockDocumentsSyncLogic — decisão de itens", () => {
+  it("payload completo com itens → replace", () => {
+    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    const decision = decideStockDocumentItemsAction({
+      reliability: mapped.row.itemsReliability,
+      existingItemCount: 3,
+    });
+    assert.equal(decision.action, "replace");
+    assert.equal(decision.reason, "ITEMS_ARRAY_COMPLETE");
+
+    const plan = planStockDocumentPersist(mapped.row, new Set([7951]), 3);
+    assert.equal(plan.action, "update");
+    assert.equal(plan.itemsAction, "replace");
+    assert.equal(plan.itemCount, 3);
+  });
+
+  it("payload completo sem itens → replace (limpa itens)", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9001,
+      itensDocumentoEstoque: [],
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    const decision = decideStockDocumentItemsAction({
+      reliability: mapped.row.itemsReliability,
+      existingItemCount: 5,
+    });
+    assert.equal(decision.action, "replace");
+    assert.equal(decision.reason, "ITEMS_ARRAY_EXPLICITLY_EMPTY");
+  });
+
+  it("payload parcial sem itens preserva itens existentes", () => {
+    const mapped = mapNomusStockDocumentPayload({
+      id: 9002,
+      idNfe: 2,
+      tipoDocumentoEstoque: "DocumentoSaida",
+    });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    assert.equal(mapped.row.itemsReliability, "partial_absent_array");
+
+    const decision = decideStockDocumentItemsAction({
+      reliability: mapped.row.itemsReliability,
+      existingItemCount: 4,
+    });
+    assert.equal(decision.action, "preserve");
+    assert.equal(decision.reason, "UNRELIABLE_ITEMS_PAYLOAD_PRESERVE_EXISTING");
+
+    const plan = planStockDocumentPersist(mapped.row, new Set([9002]), 4);
+    assert.equal(plan.itemsAction, "preserve");
+    assert.equal(plan.existingItemCount, 4);
+  });
+
+  it("payload parcial sem itens existentes → ignore (nada a apagar)", () => {
+    const mapped = mapNomusStockDocumentPayload({ id: 9005 });
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+    const decision = decideStockDocumentItemsAction({
+      reliability: mapped.row.itemsReliability,
+      existingItemCount: 0,
+    });
+    assert.equal(decision.action, "ignore");
+  });
+
+  it("payload inválido → ignore", () => {
+    const decision = decideStockDocumentItemsAction({
+      reliability: "invalid",
+      existingItemCount: 2,
+    });
+    assert.equal(decision.action, "ignore");
+    assert.equal(decision.reason, "INVALID_PAYLOAD");
+  });
+
+  it("segunda execução idempotente mantém replace no payload completo", () => {
+    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    assert.equal(mapped.ok, true);
+    if (!mapped.ok) return;
+
+    const first = planStockDocumentPersist(mapped.row, new Set([7951]), 3);
+    const second = planStockDocumentPersist(mapped.row, new Set([7951]), 3);
+    assert.equal(first.itemsAction, "replace");
+    assert.equal(second.itemsAction, "replace");
+    assert.equal(first.itemCount, second.itemCount);
+    assert.deepEqual(
+      { action: first.action, itemsAction: first.itemsAction, itemCount: first.itemCount },
+      { action: second.action, itemsAction: second.itemsAction, itemCount: second.itemCount }
+    );
+  });
+
+  it("resumo separa itens a substituir dos preservados", () => {
+    const complete = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
+    const partial = mapNomusStockDocumentPayload({ id: 9002 });
+    assert.equal(complete.ok && partial.ok, true);
+    if (!complete.ok || !partial.ok) return;
+
+    const plans = [
+      planStockDocumentPersist(complete.row, new Set([7951]), 3),
+      planStockDocumentPersist(partial.row, new Set([9002]), 4),
+    ];
+    const summary = summarizeStockDocumentPersistPlans(plans);
+    assert.equal(summary.itemsToWrite, 3);
+    assert.equal(summary.itemsToPreserve, 4);
+    assert.equal(summary.partialPayloads, 1);
+  });
+
+  it("classifyStockDocumentItemsReliability cobre os quatro casos", () => {
+    assert.equal(
+      classifyStockDocumentItemsReliability({
+        itemsArrayPresent: true,
+        rawItemCount: 2,
+        mappedItemCount: 2,
+      }),
+      "complete_with_items"
+    );
+    assert.equal(
+      classifyStockDocumentItemsReliability({
+        itemsArrayPresent: true,
+        rawItemCount: 0,
+        mappedItemCount: 0,
+      }),
+      "complete_empty"
+    );
+    assert.equal(
+      classifyStockDocumentItemsReliability({
+        itemsArrayPresent: false,
+        rawItemCount: 0,
+        mappedItemCount: 0,
+      }),
+      "partial_absent_array"
+    );
+    assert.equal(
+      classifyStockDocumentItemsReliability({
+        itemsArrayPresent: true,
+        rawItemCount: 2,
+        mappedItemCount: 0,
+      }),
+      "partial_unmapped"
+    );
   });
 });
 
@@ -117,28 +367,14 @@ describe("nomusStockDocumentsSyncLogic", () => {
     );
   });
 
-  it("plano apply é upsert idempotente com replace de itens", () => {
-    const mapped = mapNomusStockDocumentPayload(sampleDocumentoSaida6937);
-    assert.equal(mapped.ok, true);
-    if (!mapped.ok) return;
-
-    const createPlan = planStockDocumentPersist(mapped.row, new Set());
-    assert.equal(createPlan.action, "create");
-    assert.equal(createPlan.replaceItems, true);
-    assert.equal(createPlan.itemCount, 3);
-
-    const updatePlan = planStockDocumentPersist(mapped.row, new Set([7951]));
-    assert.equal(updatePlan.action, "update");
-    assert.equal(updatePlan.replaceItems, true);
-
-    const summary = summarizeStockDocumentPersistPlans([createPlan, updatePlan]);
-    assert.equal(summary.documentsToCreate, 1);
-    assert.equal(summary.documentsToUpdate, 1);
-    assert.equal(summary.itemsToWrite, 6);
-  });
-
   it("preview não habilita escrita", () => {
     assert.equal(shouldWriteStockDocuments("preview"), false);
     assert.equal(shouldWriteStockDocuments("apply"), true);
+  });
+
+  it("exit code ≠ 0 com erros ou payloads inválidos", () => {
+    assert.equal(resolveStockDocumentsSyncExitCode({ errors: 0, invalidPayloads: 0 }), 0);
+    assert.equal(resolveStockDocumentsSyncExitCode({ errors: 1, invalidPayloads: 0 }), 1);
+    assert.equal(resolveStockDocumentsSyncExitCode({ errors: 0, invalidPayloads: 2 }), 1);
   });
 });

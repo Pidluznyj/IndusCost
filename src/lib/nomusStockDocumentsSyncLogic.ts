@@ -1,6 +1,9 @@
 /** Lógica pura de CLI/query/paginação/persistência para sync de documentosEstoque. */
 
-import type { MappedNomusStockDocument } from "./nomusStockDocumentsMapper.js";
+import type {
+  MappedNomusStockDocument,
+  StockDocumentItemsReliability,
+} from "./nomusStockDocumentsMapper.js";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -20,11 +23,37 @@ export type StockDocumentsSyncCliOptions = {
   idNfes: number[];
 };
 
+/** Decisão centralizada sobre a lista de itens do documento. */
+export type StockDocumentItemsPersistAction = "replace" | "preserve" | "ignore";
+
+export type StockDocumentItemsDecision = {
+  action: StockDocumentItemsPersistAction;
+  reason: string;
+  reliability: StockDocumentItemsReliability | "invalid";
+};
+
 export type StockDocumentPersistPlan = {
   externalId: number;
   action: "create" | "update";
-  replaceItems: true;
+  itemsAction: StockDocumentItemsPersistAction;
+  itemsReason: string;
+  itemsReliability: StockDocumentItemsReliability;
   itemCount: number;
+  existingItemCount: number;
+};
+
+export type StockDocumentsSyncCounters = {
+  documentsReceived: number;
+  documentsCreated: number;
+  documentsUpdated: number;
+  itemsReplaced: number;
+  itemsPreservedDueToPartialPayload: number;
+  emptyPayloads: number;
+  invalidPayloads: number;
+  partialPayloads: number;
+  itemsDiscardedByMapper: number;
+  duplicateItemsCollapsed: number;
+  errors: number;
 };
 
 function parseIsoDateArg(raw: string, label: string): string {
@@ -204,34 +233,138 @@ export function hasNextStockDocumentsPage(
   return currentLen >= pageSize;
 }
 
-/** Plano de escrita idempotente: upsert cabeçalho + replace total dos itens. */
-export function planStockDocumentPersist(
-  row: MappedNomusStockDocument,
-  existingExternalIds: ReadonlySet<number>
-): StockDocumentPersistPlan {
+/**
+ * Regra final de itens (DS-03.2, sem schema):
+ * - complete_with_items → replace (comportamento atual)
+ * - complete_empty → replace (documento comprovadamente sem itens)
+ * - partial_* → preserve se já houver itens; senão ignore (nada a apagar/escrever)
+ * - invalid → ignore (documento não entra no plano de persistência)
+ */
+export function decideStockDocumentItemsAction(input: {
+  reliability: StockDocumentItemsReliability | "invalid";
+  existingItemCount: number;
+}): StockDocumentItemsDecision {
+  if (input.reliability === "invalid") {
+    return {
+      action: "ignore",
+      reason: "INVALID_PAYLOAD",
+      reliability: "invalid",
+    };
+  }
+
+  if (input.reliability === "complete_with_items") {
+    return {
+      action: "replace",
+      reason: "ITEMS_ARRAY_COMPLETE",
+      reliability: input.reliability,
+    };
+  }
+
+  if (input.reliability === "complete_empty") {
+    return {
+      action: "replace",
+      reason: "ITEMS_ARRAY_EXPLICITLY_EMPTY",
+      reliability: input.reliability,
+    };
+  }
+
+  // partial_absent_array | partial_unmapped
+  if (input.existingItemCount > 0) {
+    return {
+      action: "preserve",
+      reason: "UNRELIABLE_ITEMS_PAYLOAD_PRESERVE_EXISTING",
+      reliability: input.reliability,
+    };
+  }
+
   return {
-    externalId: row.externalId,
-    action: existingExternalIds.has(row.externalId) ? "update" : "create",
-    replaceItems: true,
-    itemCount: row.items.length,
+    action: "ignore",
+    reason: "UNRELIABLE_ITEMS_PAYLOAD_NO_EXISTING",
+    reliability: input.reliability,
   };
 }
 
-export function summarizeStockDocumentPersistPlans(plans: StockDocumentPersistPlan[]): {
+/** Plano de escrita idempotente: upsert cabeçalho + decisão de itens. */
+export function planStockDocumentPersist(
+  row: MappedNomusStockDocument,
+  existingExternalIds: ReadonlySet<number>,
+  existingItemCount = 0
+): StockDocumentPersistPlan {
+  const decision = decideStockDocumentItemsAction({
+    reliability: row.itemsReliability,
+    existingItemCount,
+  });
+
+  return {
+    externalId: row.externalId,
+    action: existingExternalIds.has(row.externalId) ? "update" : "create",
+    itemsAction: decision.action,
+    itemsReason: decision.reason,
+    itemsReliability: row.itemsReliability,
+    itemCount: row.items.length,
+    existingItemCount,
+  };
+}
+
+export function emptyStockDocumentsSyncCounters(): StockDocumentsSyncCounters {
+  return {
+    documentsReceived: 0,
+    documentsCreated: 0,
+    documentsUpdated: 0,
+    itemsReplaced: 0,
+    itemsPreservedDueToPartialPayload: 0,
+    emptyPayloads: 0,
+    invalidPayloads: 0,
+    partialPayloads: 0,
+    itemsDiscardedByMapper: 0,
+    duplicateItemsCollapsed: 0,
+    errors: 0,
+  };
+}
+
+export function summarizeStockDocumentPersistPlans(
+  plans: readonly StockDocumentPersistPlan[]
+): {
   documentsToCreate: number;
   documentsToUpdate: number;
   itemsToWrite: number;
   documentsWithoutItems: number;
+  itemsToPreserve: number;
+  emptyPayloads: number;
+  partialPayloads: number;
 } {
   return {
     documentsToCreate: plans.filter((p) => p.action === "create").length,
     documentsToUpdate: plans.filter((p) => p.action === "update").length,
-    itemsToWrite: plans.reduce((sum, p) => sum + p.itemCount, 0),
-    documentsWithoutItems: plans.filter((p) => p.itemCount === 0).length,
+    itemsToWrite: plans
+      .filter((p) => p.itemsAction === "replace")
+      .reduce((sum, p) => sum + p.itemCount, 0),
+    documentsWithoutItems: plans.filter(
+      (p) => p.itemsReliability === "complete_empty"
+    ).length,
+    itemsToPreserve: plans
+      .filter((p) => p.itemsAction === "preserve")
+      .reduce((sum, p) => sum + p.existingItemCount, 0),
+    emptyPayloads: plans.filter((p) => p.itemsReliability === "complete_empty")
+      .length,
+    partialPayloads: plans.filter(
+      (p) =>
+        p.itemsReliability === "partial_absent_array" ||
+        p.itemsReliability === "partial_unmapped"
+    ).length,
   };
 }
 
 /** Preview nunca deve disparar persistência. */
 export function shouldWriteStockDocuments(mode: StockDocumentsSyncMode): boolean {
   return mode === "apply";
+}
+
+/** Exit code ≠ 0 quando houver erros de persistência ou payloads inválidos. */
+export function resolveStockDocumentsSyncExitCode(counters: {
+  errors: number;
+  invalidPayloads: number;
+}): number {
+  if (counters.errors > 0 || counters.invalidPayloads > 0) return 1;
+  return 0;
 }

@@ -258,9 +258,11 @@ Ver seção 7. Critério: **primeiro não destruir dados** (sync), depois **enri
 
 ### DS-03.2 — Endurecimento do sincronizador
 
-- Exit code ≠ 0 com erros; contadores honestos; logs sem credenciais.
-- Introduzir cálculo de `payloadHash` (mesmo antes da migration: preparar mapper/tests).
-- Documentar contrato de apply (unchanged / replace items / preserve).
+- **Status:** implementado sem migration (2026-07-17).
+- Classificação complete / partial / empty; decisão central `replace` | `preserve` | `ignore`.
+- Payload parcial não apaga itens existentes; contadores separados; exit code ≠ 0 com erros/inválidos.
+- Deduplicação de itens no payload; documentação da regra em `code-inventory.md` §4.3.
+- `payloadHash` / presence permanecem para DS-03.4 (dependem de migration).
 
 ### DS-03.3 — Campos de cabeçalho
 

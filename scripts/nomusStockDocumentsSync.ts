@@ -4,6 +4,11 @@
  * Isolado: não altera AR, Faturamento, Fluxo de Caixa, Comissões, SalesOrder, NomusNfe.
  * Sem cron / sem rotina automática.
  *
+ * Regra de itens (DS-03.2):
+ * - payload completo com itens → substitui itens (deleteMany + createMany)
+ * - payload completo sem itens (array explícito vazio) → substitui (fica sem itens)
+ * - payload parcial / array ausente / itens não mapeáveis → preserva itens existentes
+ *
  * Uso:
  *   npx tsx scripts/nomusStockDocumentsSync.ts preview --from=2025-07-01 --to=2026-07-10
  *   npx tsx scripts/nomusStockDocumentsSync.ts apply --from=2025-07-01 --to=2026-07-10 --tipo=DocumentoSaida
@@ -19,14 +24,17 @@ import {
 import {
   buildStockDocumentsPageParams,
   buildStockDocumentsQuery,
+  emptyStockDocumentsSyncCounters,
   hasNextStockDocumentsPage,
   NOMUS_STOCK_DOCUMENTS_RESOURCE,
   parseStockDocumentsSyncCli,
   pickStockDocumentsArray,
   planStockDocumentPersist,
+  resolveStockDocumentsSyncExitCode,
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
   type StockDocumentsSyncCliOptions,
+  type StockDocumentsSyncCounters,
 } from "../src/lib/nomusStockDocumentsSyncLogic.ts";
 import {
   buildNomusUrl,
@@ -73,12 +81,16 @@ async function fetchAllForQuery(
   pagesRead: number;
   recordsRead: number;
   rows: MappedNomusStockDocument[];
-  mapErrors: number;
+  invalidPayloads: number;
+  itemsDiscardedByMapper: number;
+  duplicateItemsCollapsed: number;
 }> {
   const rows: MappedNomusStockDocument[] = [];
   let pagesRead = 0;
   let recordsRead = 0;
-  let mapErrors = 0;
+  let invalidPayloads = 0;
+  let itemsDiscardedByMapper = 0;
+  let duplicateItemsCollapsed = 0;
   const maxPages = options.maxPages ?? Number.POSITIVE_INFINITY;
 
   for (let page = 1; page <= maxPages; page += 1) {
@@ -99,16 +111,25 @@ async function fetchAllForQuery(
     for (const item of items) {
       const mapped = mapNomusStockDocumentPayload(item);
       if (!mapped.ok) {
-        mapErrors += 1;
+        invalidPayloads += 1;
         continue;
       }
+      itemsDiscardedByMapper += mapped.row.itemsDiscardedCount;
+      duplicateItemsCollapsed += mapped.row.itemsDuplicateCollapsedCount;
       rows.push(mapped.row);
     }
 
     if (!hasNextStockDocumentsPage(payload, page, items.length, options.pageSize)) break;
   }
 
-  return { pagesRead, recordsRead, rows, mapErrors };
+  return {
+    pagesRead,
+    recordsRead,
+    rows,
+    invalidPayloads,
+    itemsDiscardedByMapper,
+    duplicateItemsCollapsed,
+  };
 }
 
 function dedupeByExternalId(rows: MappedNomusStockDocument[]): MappedNomusStockDocument[] {
@@ -117,19 +138,30 @@ function dedupeByExternalId(rows: MappedNomusStockDocument[]): MappedNomusStockD
   return [...byId.values()];
 }
 
-async function runApply(rows: MappedNomusStockDocument[], syncedAt: Date) {
-  let created = 0;
-  let updated = 0;
-  let itemsWritten = 0;
-  let documentsWithoutItems = 0;
-  let errors = 0;
+async function runApply(
+  rows: MappedNomusStockDocument[],
+  syncedAt: Date
+): Promise<StockDocumentsSyncCounters> {
+  const counters = emptyStockDocumentsSyncCounters();
+  counters.documentsReceived = rows.length;
 
   for (const row of rows) {
+    if (row.itemsReliability === "complete_empty") counters.emptyPayloads += 1;
+    if (
+      row.itemsReliability === "partial_absent_array" ||
+      row.itemsReliability === "partial_unmapped"
+    ) {
+      counters.partialPayloads += 1;
+    }
+
     try {
       await prisma.$transaction(async (tx) => {
         const existing = await tx.nomusStockDocument.findUnique({
           where: { externalId: row.externalId },
-          select: { id: true },
+          select: {
+            id: true,
+            _count: { select: { items: true } },
+          },
         });
 
         const headerData = {
@@ -155,15 +187,33 @@ async function runApply(rows: MappedNomusStockDocument[], syncedAt: Date) {
                 select: { id: true },
               });
 
-        if (existing == null) created += 1;
-        else updated += 1;
+        if (existing == null) counters.documentsCreated += 1;
+        else counters.documentsUpdated += 1;
+
+        const liveExistingItemCount = existing?._count.items ?? 0;
+        const livePlan = planStockDocumentPersist(
+          row,
+          existing == null ? new Set() : new Set([row.externalId]),
+          liveExistingItemCount
+        );
+
+        if (livePlan.itemsAction === "preserve") {
+          counters.itemsPreservedDueToPartialPayload += liveExistingItemCount;
+          console.warn(
+            `${LOG_PREFIX} preservando ${liveExistingItemCount} item(ns) externalId=${row.externalId} reason=${livePlan.itemsReason} reliability=${row.itemsReliability}`
+          );
+          return;
+        }
+
+        if (livePlan.itemsAction === "ignore") {
+          return;
+        }
 
         await tx.nomusStockDocumentItem.deleteMany({
           where: { stockDocumentId: document.id },
         });
 
         if (row.items.length === 0) {
-          documentsWithoutItems += 1;
           return;
         }
 
@@ -178,10 +228,10 @@ async function runApply(rows: MappedNomusStockDocument[], syncedAt: Date) {
             rawJson: item.rawJson as Prisma.InputJsonValue,
           })),
         });
-        itemsWritten += row.items.length;
+        counters.itemsReplaced += row.items.length;
       });
     } catch (error) {
-      errors += 1;
+      counters.errors += 1;
       console.error(
         `${LOG_PREFIX} erro ao persistir externalId=${row.externalId}:`,
         error instanceof Error ? error.message : error
@@ -189,7 +239,7 @@ async function runApply(rows: MappedNomusStockDocument[], syncedAt: Date) {
     }
   }
 
-  return { created, updated, itemsWritten, documentsWithoutItems, errors };
+  return counters;
 }
 
 async function main(): Promise<void> {
@@ -220,54 +270,86 @@ async function main(): Promise<void> {
   const queries = buildQueries(options);
   let pagesRead = 0;
   let recordsRead = 0;
-  let mapErrors = 0;
+  let invalidPayloads = 0;
+  let itemsDiscardedByMapper = 0;
+  let duplicateItemsCollapsed = 0;
   const allRows: MappedNomusStockDocument[] = [];
 
   for (const query of queries) {
     const fetched = await fetchAllForQuery(baseUrl, query, options);
     pagesRead += fetched.pagesRead;
     recordsRead += fetched.recordsRead;
-    mapErrors += fetched.mapErrors;
+    invalidPayloads += fetched.invalidPayloads;
+    itemsDiscardedByMapper += fetched.itemsDiscardedByMapper;
+    duplicateItemsCollapsed += fetched.duplicateItemsCollapsed;
     allRows.push(...fetched.rows);
   }
 
   const rows = dedupeByExternalId(allRows);
   const existing = await prisma.nomusStockDocument.findMany({
     where: { externalId: { in: rows.map((row) => row.externalId) } },
-    select: { externalId: true },
+    select: {
+      externalId: true,
+      _count: { select: { items: true } },
+    },
   });
   const existingIds = new Set(existing.map((row) => row.externalId));
-  const plans = rows.map((row) => planStockDocumentPersist(row, existingIds));
+  const existingItemCountByExternalId = new Map(
+    existing.map((row) => [row.externalId, row._count.items] as const)
+  );
+  const plans = rows.map((row) =>
+    planStockDocumentPersist(
+      row,
+      existingIds,
+      existingItemCountByExternalId.get(row.externalId) ?? 0
+    )
+  );
   const planSummary = summarizeStockDocumentPersistPlans(plans);
 
-  let applied: Awaited<ReturnType<typeof runApply>> | null = null;
+  let applied: StockDocumentsSyncCounters | null = null;
   if (shouldWriteStockDocuments(options.mode)) {
     applied = await runApply(rows, new Date());
+    applied.invalidPayloads = invalidPayloads;
+    applied.itemsDiscardedByMapper = itemsDiscardedByMapper;
+    applied.duplicateItemsCollapsed = duplicateItemsCollapsed;
   } else {
     console.warn(`${LOG_PREFIX} preview — nenhuma escrita no banco`);
   }
 
   const durationMs = Date.now() - startedMs;
+  const counters: StockDocumentsSyncCounters = applied ?? {
+    ...emptyStockDocumentsSyncCounters(),
+    documentsReceived: rows.length,
+    documentsCreated: planSummary.documentsToCreate,
+    documentsUpdated: planSummary.documentsToUpdate,
+    itemsReplaced: planSummary.itemsToWrite,
+    itemsPreservedDueToPartialPayload: planSummary.itemsToPreserve,
+    emptyPayloads: planSummary.emptyPayloads,
+    invalidPayloads,
+    partialPayloads: planSummary.partialPayloads,
+    itemsDiscardedByMapper,
+    duplicateItemsCollapsed,
+    errors: 0,
+  };
+
   const summary = {
     mode: options.mode,
     pagesRead,
     recordsRead,
     mapped: rows.length,
-    mapErrors,
-    documentsWithoutItems:
-      applied?.documentsWithoutItems ?? planSummary.documentsWithoutItems,
+    ...counters,
     plannedCreates: planSummary.documentsToCreate,
     plannedUpdates: planSummary.documentsToUpdate,
-    plannedItems: planSummary.itemsToWrite,
-    created: applied?.created ?? 0,
-    updated: applied?.updated ?? 0,
-    itemsWritten: applied?.itemsWritten ?? 0,
-    errors: applied?.errors ?? 0,
+    plannedItemsReplace: planSummary.itemsToWrite,
+    plannedItemsPreserve: planSummary.itemsToPreserve,
     durationMs,
   };
 
+  const exitCode = resolveStockDocumentsSyncExitCode(counters);
+  if (exitCode !== 0) process.exitCode = exitCode;
+
   console.warn(
-    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — lidos=${summary.recordsRead} mapeados=${summary.mapped} criados=${summary.created} atualizados=${summary.updated} itens=${summary.itemsWritten} semItens=${summary.documentsWithoutItems} erros=${summary.errors + summary.mapErrors}`
+    `${LOG_PREFIX} concluído em ${(durationMs / 1000).toFixed(1)}s — recebidos=${summary.documentsReceived} criados=${summary.documentsCreated} atualizados=${summary.documentsUpdated} itensSubstituidos=${summary.itemsReplaced} itensPreservados=${summary.itemsPreservedDueToPartialPayload} vazios=${summary.emptyPayloads} parciais=${summary.partialPayloads} invalidos=${summary.invalidPayloads} erros=${summary.errors}`
   );
 
   console.log(
@@ -280,6 +362,7 @@ async function main(): Promise<void> {
           idNfe: row.idNfe,
           tipoDocumentoEstoque: row.tipoDocumentoEstoque,
           dataDocumento: row.dataDocumento?.toISOString() ?? null,
+          itemsReliability: row.itemsReliability,
           items: row.items.length,
           itemSample: row.items.slice(0, 3).map((item) => ({
             externalProductId: item.externalProductId,

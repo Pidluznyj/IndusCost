@@ -368,26 +368,44 @@ próximo rebuild. Ele não possui FK para Pedido, Documento, NF ou CR; somente
   - `estimatedTotalValue` é calculado como quantidade × valor unitário com
     seis casas.
 
-### 4.3 Persistência
+### 4.3 Persistência e preservação de itens (DS-03.2)
 
 No começo de cada execução, os registros recebidos são deduplicados em memória
-por `externalId` (a última ocorrência vence). Em `apply`, cada documento roda
-em uma transação:
+por `externalId` (a última ocorrência vence). Itens duplicados **dentro** do
+mesmo payload também são colapsados (por `externalItemId` ou fingerprint
+produto+qtde+valor; última ocorrência vence).
 
-1. consulta por `externalId`;
+Em `apply`, cada documento roda em uma transação:
+
+1. consulta por `externalId` (e conta itens existentes);
 2. cria ou atualiza o cabeçalho;
 3. grava `rawJson` e o mesmo `syncedAt` da execução;
-4. remove todos os itens locais do documento;
-5. recria os itens mapeados com `createMany`.
+4. decide a ação de itens via `decideStockDocumentItemsAction` /
+   `planStockDocumentPersist` (lógica pura em `nomusStockDocumentsSyncLogic.ts`).
 
-O cabeçalho é idempotente quanto à identidade (`externalId`), mas não há
-`payloadHash`/skip de unchanged. A substituição integral dos itens torna o
-estado repetível para um payload completo, porém um payload parcial ou um array
-não reconhecido pode apagar itens já sincronizados.
+#### Regra final de substituição dos itens
 
-O script contabiliza erros por documento e continua. A conclusão imprime
-resumo de lidos, mapeados, creates/updates, itens, documentos sem itens e erros.
-O stage não altera AR, Pedido ou NF.
+| Classificação do payload | Como identificar | Ação nos itens |
+|---|---|---|
+| **Completo com itens** | chave de array reconhecida + ≥1 item mapeado | **replace** — `deleteMany` + `createMany` |
+| **Completo sem itens** | chave de array reconhecida e `[]` | **replace** — limpa itens (documento comprovadamente vazio) |
+| **Parcial (array ausente)** | nenhuma chave `itensDocumentoEstoque` / `itens` / `items` / … | **preserve** se já houver itens; senão **ignore** |
+| **Parcial (não mapeável)** | array presente, mas nenhum item com qtde/valor válidos | **preserve** se já houver itens; senão **ignore** |
+| **Inválido** | sem `id` / `idDocumentoEstoque` | **ignore** — documento não é persistido |
+
+**Importante:** payload parcial **não** executa `deleteMany`. Itens já
+sincronizados são preservados; o cabeçalho/`rawJson` ainda são atualizados.
+
+O cabeçalho continua idempotente por `externalId`. Ainda **não** há
+`payloadHash`/skip de unchanged (previsto em DS-03.4 + migration).
+
+Contadores separados no resumo: documentos recebidos/criados/atualizados,
+itens substituídos, itens preservados por payload parcial, payloads vazios,
+payloads parciais, payloads inválidos, itens descartados pelo mapper,
+duplicatas colapsadas e erros. `process.exitCode = 1` se `errors > 0` ou
+`invalidPayloads > 0`.
+
+O stage não altera AR, Pedido, NF, O2C, Comissões ou `InventoryMovement`.
 
 ### 4.4 Automação atual
 
@@ -618,29 +636,22 @@ Consequências:
 - parsing de valor unitário (`"4,92"` → 4,92);
 - cálculo de `estimatedTotalValue`;
 - mapeamento de documento/itens e preservação de `rawJson`;
+- classificação complete / empty / partial / unmapped / inválido;
+- deduplicação de itens no mesmo payload;
+- decisão `replace` | `preserve` | `ignore` (inclui preservação em parcial);
+- segunda execução idempotente no plano completo;
 - CLI preview/apply;
 - query RSQL por período e `idNfe`;
-- plano create/update com replace de itens;
+- exit code com erros/payloads inválidos;
 - garantia de que preview não escreve.
-
-### O2C e integrações derivadas
-
-Há testes para:
-
-- `orderToCashAuditBuilder` e rebuild;
-- API/UI/labels/itens do O2C;
-- allocation engine e rebuild de Conciliação de Carteira;
-- order trace, fulfillment map e maturity intelligence;
-- cenários de Documento de Saída em portfolio e funil O2C;
-- consumo indireto em fiscal/financeiro do Pedido.
 
 Limitações dos testes atuais:
 
 - não validam contagens/cobertura do banco real;
 - não provam que aliases de cliente/empresa/status existem em todos os
   payloads Nomus;
-- não simulam falha de payload parcial antes do delete/recreate de itens no
-  script real;
+- a preservação parcial é coberta na lógica pura / plano; apply com Prisma
+  real permanece a validar no servidor;
 - não há teste de integração com PostgreSQL de produção (por definição);
 - os casos reais e órfãos dependem de probe no servidor.
 
