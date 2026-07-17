@@ -121,6 +121,7 @@
     "audit:nomus:sales-orders:orphans": "tsx scripts/audit-nomus-sales-orders-orphans.ts",
     "test:nomus:sales-orders-orphans": "tsx --test src/lib/audit/nomusSalesOrderOrphanAudit.test.ts src/lib/nomusSalesOrdersClient.test.ts scripts/nomusNumberParser.test.ts",
     "test:nomus:source-lifecycle": "tsx --test src/lib/nomus/nomusSourceLifecycleContract.test.ts",
+    "test:nomus:source-reconciliation": "tsx --test src/lib/nomus/nomusSourceReconciliationEngine.test.ts",
     "audit:sales-order-cost-semantics": "tsx scripts/audit-sales-order-cost-semantics.ts",
     "audit:production-cost-versioning": "tsx scripts/audit-production-cost-versioning.ts",
     "audit:production-cost-publication-flow": "tsx scripts/audit-production-cost-publication-flow.ts",

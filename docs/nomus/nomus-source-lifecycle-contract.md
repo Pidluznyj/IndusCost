@@ -154,6 +154,7 @@ Documentar no PR operacional antes de executar em produção.
 - [x] Sem alteração de sincronizadores / consumidores / deletes
 - [x] Documentação + rollback lógico
 
-## 9. Próximo passo (fora desta etapa)
+## 9. Próximos passos
 
-Wiring nos syncers: tocar `lastSeenAt`/`PRESENT` no upsert; mark-absent só com `canMarkRecordMissingInRun` + flags on.
+- **SYNC-03** (motor puro): `docs/nomus/nomus-source-reconciliation-engine.md`
+- Wiring nos syncers: consumir o plano; mark-absent só com flags on + payload completo.
