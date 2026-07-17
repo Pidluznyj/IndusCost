@@ -43,6 +43,20 @@ export function getSalesOrderFlowManagementApiPath(salesOrderId: string): string
   return `${getSalesOrderFlowDetailApiPath(salesOrderId)}/management`;
 }
 
+export function getSalesOrderFlowRecomputeApiPath(salesOrderId: string): string {
+  return `${getSalesOrderFlowDetailApiPath(salesOrderId)}/recompute`;
+}
+
+export type SalesOrderFlowRecomputeResult = {
+  salesOrderId: string;
+  action: "unchanged" | "created" | "updated";
+  reason: "fingerprint_match" | "first_run" | "fingerprint_changed";
+  currentOrderStage: string;
+  previousOrderStage: string | null;
+  skippedWrite: boolean;
+  computedAt: string | null;
+};
+
 export const SALES_ORDER_FLOW_RESPONSIBLE_USERS_LOOKUP_API_PATH =
   `${SALES_ORDER_FLOW_LIST_API_PATH}/lookup/responsible-users`;
 
@@ -254,4 +268,19 @@ export async function fetchSalesOrderFlowResponsibleUsers(
     { signal }
   );
   return Array.isArray(payload.rows) ? payload.rows : [];
+}
+
+export async function recomputeSalesOrderFlowOrder(
+  salesOrderId: string,
+  signal?: AbortSignal
+): Promise<SalesOrderFlowRecomputeResult> {
+  return fetchJsonOk<SalesOrderFlowRecomputeResult>(
+    getSalesOrderFlowRecomputeApiPath(salesOrderId),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+      signal,
+    }
+  );
 }

@@ -32,6 +32,8 @@ export type SalesOrderFlowDetailOfficialLinks = {
   salesOrderIntelligenceApi: string;
   outputDocuments: string;
   productionOrders: string;
+  /** Auditoria 360° (Conciliação de Carteira). */
+  portfolioAudit360: string;
 };
 
 export type SalesOrderFlowDetailColumnExplanation = {
@@ -190,15 +192,22 @@ export function assertSalesOrderFlowDetailId(raw: string): string {
 }
 
 export function buildSalesOrderFlowOfficialLinks(
-  salesOrderId: string
+  salesOrderId: string,
+  orderCode?: string | null
 ): SalesOrderFlowDetailOfficialLinks {
+  const code = orderCode?.trim() || "";
   return {
     salesOrder: `/sales-orders/${salesOrderId}`,
     salesOrderPrint: `/sales-orders/${salesOrderId}/print`,
     salesOrderDetailApi: `/api/sales-orders/${salesOrderId}/detail`,
     salesOrderIntelligenceApi: `/api/sales-orders/${salesOrderId}/intelligence`,
-    outputDocuments: `/output-documents`,
-    productionOrders: `/production-orders`,
+    outputDocuments: code
+      ? `/output-documents?order=${encodeURIComponent(code)}`
+      : `/output-documents`,
+    productionOrders: code
+      ? `/production-orders?search=${encodeURIComponent(code)}`
+      : `/production-orders`,
+    portfolioAudit360: `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(salesOrderId)}`,
   };
 }
 

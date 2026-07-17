@@ -7,7 +7,7 @@ import { registerSalesOrderFlowRoutes } from "./salesOrderFlowRoutes.js";
 import { SALES_ORDER_FLOW_ENABLED_ENV } from "./sales/salesOrderFlowFeatureFlags.js";
 
 describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
-  it("registra summary, lista, detalhe, events e management", () => {
+  it("registra summary, lista, detalhe, events, management e recompute", () => {
     const source = readFileSync(
       join(process.cwd(), "src/lib/salesOrderFlowRoutes.ts"),
       "utf8"
@@ -21,11 +21,17 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
       source,
       /\/api\/commercial\/sales-order-flow\/:salesOrderId\/management/
     );
+    assert.match(
+      source,
+      /\/api\/commercial\/sales-order-flow\/:salesOrderId\/recompute/
+    );
     assert.match(source, /requireSalesOrderFlowEnabled/);
     assert.match(source, /loadSalesOrderFlowDetail/);
     assert.match(source, /loadSalesOrderFlowEvents/);
     assert.match(source, /applySalesOrderFlowManagement/);
+    assert.match(source, /recomputeSalesOrderFlow/);
     assert.match(source, /salesOrdersFlowManagement/);
+    assert.match(source, /canExecuteRebuild/);
     assert.match(source, /resolveSalesOrderFlowCapabilities/);
     assert.match(source, /salesOrdersFlowTimeline/);
     assert.match(
@@ -68,6 +74,10 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
       access,
       /\/api\/commercial\/sales-order-flow\/:salesOrderId\/management/
     );
+    assert.match(
+      access,
+      /\/api\/commercial\/sales-order-flow\/:salesOrderId\/recompute/
+    );
   });
 
   it("PATCH management exige manage além de view", () => {
@@ -91,6 +101,7 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
     const app = {
       get() {},
       patch() {},
+      post() {},
     };
     registerSalesOrderFlowRoutes(app as never, {
       requireAppAuth: (_req, _res, next) => next(),
@@ -125,6 +136,13 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
           entry.action === "manage"
       )
     );
+    assert.ok(
+      required.some(
+        (entry) =>
+          entry.resourceKey === "commercial.sales_orders.flow_rebuild" &&
+          entry.action === "execute"
+      )
+    );
   });
 
   it("bloqueia com 404 quando feature flag ausente", async () => {
@@ -146,6 +164,12 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
       ) {
         routes.set(routePath, handlers.slice(0, -1));
       },
+      post(
+        routePath: string,
+        ...handlers: Array<(req: unknown, res: unknown, next: () => void) => unknown>
+      ) {
+        routes.set(routePath, handlers.slice(0, -1));
+      },
     };
 
     registerSalesOrderFlowRoutes(app as never, {
@@ -161,6 +185,9 @@ describe("salesOrderFlowRoutes (OP-59/OP-63)", () => {
     assert.ok(routes.has("/api/commercial/sales-order-flow"));
     assert.ok(
       routes.has("/api/commercial/sales-order-flow/:salesOrderId/management")
+    );
+    assert.ok(
+      routes.has("/api/commercial/sales-order-flow/:salesOrderId/recompute")
     );
 
     const previous = process.env[SALES_ORDER_FLOW_ENABLED_ENV];

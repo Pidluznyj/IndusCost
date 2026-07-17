@@ -787,6 +787,129 @@ export type SalesOrderFlowManagementUiCapabilities = {
   canManageBlocking: boolean;
 };
 
+export type SalesOrderFlowDetailNavigationCapabilities = {
+  canOpenSalesOrder: boolean;
+  canOpenProductionOrders: boolean;
+  canOpenOutputDocuments: boolean;
+  canOpenPortfolioAudit360: boolean;
+  canExecuteRecompute: boolean;
+};
+
+export type SalesOrderFlowDetailHeaderLink = {
+  id:
+    | "sales_order"
+    | "production_orders"
+    | "output_documents"
+    | "portfolio_audit_360";
+  label: string;
+  href: string;
+  testId: string;
+};
+
+/**
+ * Links oficiais do header do drawer — só rotas com permissão.
+ * NF-e fica nas evidências; o atalho de auditoria cobre a visão 360°.
+ */
+export function resolveSalesOrderFlowDetailNavigationCapabilities(check: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  canViewModule?: (moduleId: string) => boolean;
+}): SalesOrderFlowDetailNavigationCapabilities {
+  const can = check.canPerformAction;
+  return {
+    canOpenSalesOrder: Boolean(
+      can?.("commercial.sales_orders", "view") ||
+        check.canViewModule?.("sales-orders")
+    ),
+    canOpenProductionOrders: Boolean(
+      can?.("operations.production_orders", "view")
+    ),
+    canOpenOutputDocuments: Boolean(
+      can?.("commercial.output_documents", "view")
+    ),
+    canOpenPortfolioAudit360: Boolean(
+      can?.("finance.portfolio_reconciliation", "view") ||
+        check.canViewModule?.("portfolio-reconciliation")
+    ),
+    canExecuteRecompute: Boolean(
+      can?.("commercial.sales_orders.flow_rebuild", "execute")
+    ),
+  };
+}
+
+export function resolveSalesOrderFlowDetailHeaderLinks(
+  payload: Pick<
+    SalesOrderFlowDetailPayload,
+    "officialLinks" | "productionVisible" | "fiscalVisible"
+  >,
+  capabilities: SalesOrderFlowDetailNavigationCapabilities
+): SalesOrderFlowDetailHeaderLink[] {
+  const links: SalesOrderFlowDetailHeaderLink[] = [];
+  if (capabilities.canOpenSalesOrder) {
+    links.push({
+      id: "sales_order",
+      label: "Pedido de Venda",
+      href: payload.officialLinks.salesOrder,
+      testId: "sales-order-flow-detail-open-sales-order",
+    });
+  }
+  if (capabilities.canOpenProductionOrders && payload.productionVisible) {
+    links.push({
+      id: "production_orders",
+      label: "Ordens de Produção",
+      href: payload.officialLinks.productionOrders,
+      testId: "sales-order-flow-detail-open-production-orders",
+    });
+  }
+  if (capabilities.canOpenOutputDocuments && payload.fiscalVisible) {
+    links.push({
+      id: "output_documents",
+      label: "Documentos de Saída",
+      href: payload.officialLinks.outputDocuments,
+      testId: "sales-order-flow-detail-open-output-documents",
+    });
+  }
+  if (capabilities.canOpenPortfolioAudit360) {
+    links.push({
+      id: "portfolio_audit_360",
+      label: "Auditoria 360°",
+      href: payload.officialLinks.portfolioAudit360,
+      testId: "sales-order-flow-detail-open-audit-360",
+    });
+  }
+  return links;
+}
+
+export function classifySalesOrderFlowRecomputeError(error: unknown): {
+  kind: "access_denied" | "not_found" | "generic";
+  message: string;
+} {
+  if (error instanceof HttpError) {
+    if (error.status === 403) {
+      return {
+        kind: "access_denied",
+        message: "Você não possui permissão para recomputar este pedido.",
+      };
+    }
+    if (error.status === 404) {
+      return {
+        kind: "not_found",
+        message: error.message || "Pedido não encontrado para recomputação.",
+      };
+    }
+    return {
+      kind: "generic",
+      message: error.message || "Não foi possível atualizar o pedido.",
+    };
+  }
+  return {
+    kind: "generic",
+    message:
+      error instanceof Error
+        ? error.message
+        : "Não foi possível atualizar o pedido.",
+  };
+}
+
 export const SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS: ReadonlyArray<{
   value: string;
   label: string;

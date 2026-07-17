@@ -156,6 +156,13 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /canViewModule\s*\(\s*"portfolio-reconciliation"\s*\)/);
   });
 
+  it("abre Auditoria 360º via deep link auditOrderId (OP-73)", () => {
+    const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
+    assert.match(page, /auditOrderId/);
+    assert.match(page, /OrderFullAuditDialog/);
+    assert.match(page, /useSearchParams/);
+  });
+
   it("whitelist visível declara somente Status Pedidos + Auditoria Pedido → Caixa (nessa ordem)", () => {
     const clientPerms = read("src/lib/permissionsClient.ts");
     const match = clientPerms.match(

@@ -419,7 +419,10 @@ export async function loadSalesOrderFlowDetail(
       ? parseSalesOrderFlowBadges(orderSnapshot.badgesJson)
       : [],
     management: mapManagement(management),
-    officialLinks: buildSalesOrderFlowOfficialLinks(salesOrderId),
+    officialLinks: buildSalesOrderFlowOfficialLinks(
+      salesOrderId,
+      evidence.order.orderCode
+    ),
     valuesVisible: canViewValues,
     productionVisible: canViewProduction,
     fiscalVisible: canViewFiscal,

@@ -113,9 +113,21 @@ describe("salesOrderFlowDetail (OP-61)", () => {
   });
 
   it("monta links oficiais sem raw", () => {
-    const links = buildSalesOrderFlowOfficialLinks(ORDER_ID);
+    const links = buildSalesOrderFlowOfficialLinks(ORDER_ID, "PV-100");
     assert.equal(links.salesOrder, `/sales-orders/${ORDER_ID}`);
     assert.equal(links.salesOrderPrint, `/sales-orders/${ORDER_ID}/print`);
+    assert.equal(
+      links.outputDocuments,
+      `/output-documents?order=${encodeURIComponent("PV-100")}`
+    );
+    assert.equal(
+      links.productionOrders,
+      `/production-orders?search=${encodeURIComponent("PV-100")}`
+    );
+    assert.equal(
+      links.portfolioAudit360,
+      `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(ORDER_ID)}`
+    );
     assert.doesNotMatch(JSON.stringify(links), /rawJson|nomusRaw/);
   });
 });

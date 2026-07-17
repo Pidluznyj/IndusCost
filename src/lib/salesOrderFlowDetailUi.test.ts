@@ -17,7 +17,9 @@ import {
   resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailEventView,
   resolveSalesOrderFlowDetailInconsistencyRows,
+  resolveSalesOrderFlowDetailHeaderLinks,
   resolveSalesOrderFlowDetailItems,
+  resolveSalesOrderFlowDetailNavigationCapabilities,
   resolveSalesOrderFlowDetailShipmentViews,
   resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
@@ -28,6 +30,7 @@ import {
   getSalesOrderFlowDetailApiPath,
   getSalesOrderFlowEventsApiPath,
   getSalesOrderFlowManagementApiPath,
+  getSalesOrderFlowRecomputeApiPath,
 } from "@/src/lib/salesOrderFlowClient.js";
 import type { SalesOrderFlowDetailTab } from "@/src/lib/salesOrderFlowDetailUi.js";
 
@@ -201,8 +204,10 @@ function detailFixture(
       salesOrderPrint: "/print",
       salesOrderDetailApi: "/api",
       salesOrderIntelligenceApi: "/api",
-      outputDocuments: "/output",
-      productionOrders: "/ops",
+      outputDocuments: "/output-documents?order=PV-1",
+      productionOrders: "/production-orders?search=PV-1",
+      portfolioAudit360:
+        "/finance/portfolio-reconciliation?auditOrderId=x",
     },
     valuesVisible: true,
     productionVisible: true,
@@ -906,5 +911,75 @@ describe("sales order flow management actions (OP-72)", () => {
     );
     assert.match(client, /patchSalesOrderFlowManagement/);
     assert.match(client, /fetchSalesOrderFlowResponsibleUsers/);
+  });
+});
+
+describe("sales order flow navigation links (OP-73)", () => {
+  it("expõe path de recompute", () => {
+    assert.equal(
+      getSalesOrderFlowRecomputeApiPath("abc"),
+      "/api/commercial/sales-order-flow/abc/recompute"
+    );
+  });
+
+  it("monta header links oficiais apenas com permissão", () => {
+    const all = resolveSalesOrderFlowDetailHeaderLinks(
+      detailFixture(),
+      resolveSalesOrderFlowDetailNavigationCapabilities({
+        canPerformAction: () => true,
+        canViewModule: () => true,
+      })
+    );
+    assert.deepEqual(
+      all.map((link) => link.id),
+      [
+        "sales_order",
+        "production_orders",
+        "output_documents",
+        "portfolio_audit_360",
+      ]
+    );
+    assert.equal(all[0]?.href, "/sales-orders/x");
+    assert.match(all[3]?.href ?? "", /auditOrderId=/);
+
+    const none = resolveSalesOrderFlowDetailHeaderLinks(
+      detailFixture(),
+      resolveSalesOrderFlowDetailNavigationCapabilities({
+        canPerformAction: () => false,
+        canViewModule: () => false,
+      })
+    );
+    assert.equal(none.length, 0);
+
+    const fiscalOnly = resolveSalesOrderFlowDetailHeaderLinks(
+      detailFixture({ productionVisible: false, fiscalVisible: true }),
+      resolveSalesOrderFlowDetailNavigationCapabilities({
+        canPerformAction: (resource) =>
+          resource === "commercial.output_documents" ||
+          resource === "commercial.sales_orders",
+        canViewModule: () => false,
+      })
+    );
+    assert.deepEqual(
+      fiscalOnly.map((link) => link.id),
+      ["sales_order", "output_documents"]
+    );
+  });
+
+  it("oculta OP/DS quando payload não libera a superfície", () => {
+    const links = resolveSalesOrderFlowDetailHeaderLinks(
+      detailFixture({ productionVisible: false, fiscalVisible: false }),
+      {
+        canOpenSalesOrder: true,
+        canOpenProductionOrders: true,
+        canOpenOutputDocuments: true,
+        canOpenPortfolioAudit360: true,
+        canExecuteRecompute: true,
+      }
+    );
+    assert.deepEqual(
+      links.map((link) => link.id),
+      ["sales_order", "portfolio_audit_360"]
+    );
   });
 });

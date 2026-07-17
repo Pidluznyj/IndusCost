@@ -25,8 +25,14 @@ import {
 } from "@/src/lib/sales/salesOrderFlowDetail.server.js";
 import { applySalesOrderFlowManagement } from "@/src/lib/sales/salesOrderFlowManagement.server.js";
 import {
+  recomputeSalesOrderFlow,
+  SalesOrderFlowOrderNotFoundError,
+} from "@/src/lib/sales/salesOrderFlowRecompute.server.js";
+import { assertSalesOrderFlowDetailId } from "@/src/lib/sales/salesOrderFlowDetail.js";
+import {
   resolveSalesOrderFlowCapabilitiesWith,
   resolveSalesOrderFlowManagementRequirements,
+  SALES_ORDER_FLOW_RESOURCE_MATRIX,
 } from "@/src/lib/sales/salesOrderFlowPermissions.js";
 import { resolveSalesOrderFlowAccessScope } from "@/src/lib/sales/salesOrderFlowAccessScope.js";
 import type { RequireResourceDecision } from "@/src/lib/security/requireResource.js";
@@ -437,6 +443,96 @@ export function registerSalesOrderFlowRoutes(
         );
         return res.status(500).json({
           error: "Não foi possível atualizar a gestão do Fluxo de Pedidos.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/commercial/sales-order-flow/:salesOrderId/recompute",
+    requireSalesOrderFlowEnabled(),
+    requireAppAuth,
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrders,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      COMMERCIAL_RESOURCE_KEYS.salesOrdersFlow,
+      COMMERCIAL_ACTIONS.view
+    ),
+    requireResource(
+      SALES_ORDER_FLOW_RESOURCE_MATRIX.rebuild.resourceKey,
+      SALES_ORDER_FLOW_RESOURCE_MATRIX.rebuild.action
+    ),
+    async (req, res) => {
+      try {
+        const scoped = await resolveScopedUser(req);
+        if (!scoped.ok) {
+          if (scoped.status === 401) {
+            return res.status(401).json({ error: "Não autenticado." });
+          }
+          return res.status(scoped.status).json(scoped.body);
+        }
+        if (!scoped.capabilities.canExecuteRebuild) {
+          return res.status(403).json({
+            error: "Sem permissão para recomputar o Fluxo de Pedidos.",
+            code: "SALES_ORDER_FLOW_RECOMPUTE_FORBIDDEN",
+          });
+        }
+
+        const salesOrderId = assertSalesOrderFlowDetailId(
+          String(req.params.salesOrderId ?? "")
+        );
+        const orderMeta = await scoped.prisma.salesOrder.findUnique({
+          where: { id: salesOrderId },
+          select: { id: true, customerId: true },
+        });
+        if (!orderMeta) {
+          return res.status(404).json({
+            error: "Pedido não encontrado.",
+            code: "SALES_ORDER_NOT_FOUND",
+          });
+        }
+        if (
+          scoped.scopeCustomerIds &&
+          !scoped.scopeCustomerIds.includes(orderMeta.customerId)
+        ) {
+          return res.status(403).json({
+            error: "Pedido fora do escopo comercial do usuário.",
+            code: "SALES_ORDER_OUT_OF_SCOPE",
+          });
+        }
+
+        const result = await recomputeSalesOrderFlow(
+          scoped.prisma,
+          salesOrderId
+        );
+        res.setHeader("Cache-Control", "no-store");
+        return res.json({
+          salesOrderId: result.salesOrderId,
+          action: result.action,
+          reason: result.reason,
+          currentOrderStage: result.currentOrderStage,
+          previousOrderStage: result.previousOrderStage,
+          skippedWrite: result.skippedWrite,
+          computedAt: result.computedAt,
+        });
+      } catch (error) {
+        if (error instanceof SalesOrderFlowOrderNotFoundError) {
+          return res.status(404).json({
+            error: "Pedido não encontrado.",
+            code: "SALES_ORDER_NOT_FOUND",
+          });
+        }
+        if (error instanceof SalesOrderFlowDetailQueryError) {
+          return res.status(400).json({ error: error.message });
+        }
+        console.error(
+          "POST /api/commercial/sales-order-flow/:salesOrderId/recompute:",
+          error
+        );
+        return res.status(500).json({
+          error: "Não foi possível recomputar o Fluxo de Pedidos.",
         });
       }
     }

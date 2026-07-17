@@ -56,13 +56,17 @@ import {
 } from "@/src/lib/salesOrderFlowKanbanPagination";
 import {
   areSalesOrderFlowFilterDateRangesInvalid,
+  areSalesOrderFlowSearchParamsEqual,
   buildSalesOrderFlowSearchParams,
   canViewSalesOrderFlow,
   classifySalesOrderFlowListError,
+  collectSalesOrderFlowCardsFromColumnStates,
   EMPTY_SALES_ORDER_FLOW_FILTERS,
   hasActiveSalesOrderFlowFilters,
   isSalesOrderFlowDateRangeInvalid,
+  parseSalesOrderFlowDrawerFromSearchParams,
   parseSalesOrderFlowFiltersFromSearchParams,
+  resolveSalesOrderFlowDrawerFromCards,
   resolveSalesOrderFlowExecutiveIndicators,
   SALES_ORDER_FLOW_BREADCRUMB,
   SALES_ORDER_FLOW_PRIORITY_OPTIONS,
@@ -93,6 +97,11 @@ export function SalesOrderFlowModule() {
 
   const initialFilters = useMemo(
     () => parseSalesOrderFlowFiltersFromSearchParams(searchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot inicial da URL
+    []
+  );
+  const initialDrawer = useMemo(
+    () => parseSalesOrderFlowDrawerFromSearchParams(searchParams),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot inicial da URL
     []
   );
@@ -131,12 +140,30 @@ export function SalesOrderFlowModule() {
   const [selectedOrder, setSelectedOrder] = useState<{
     id: string;
     code: string;
-  } | null>(null);
+  } | null>(() =>
+    initialDrawer.orderId
+      ? { id: initialDrawer.orderId, code: initialDrawer.orderCode ?? "" }
+      : null
+  );
+  const [pendingDrawerCode, setPendingDrawerCode] = useState<string | null>(
+    () =>
+      !initialDrawer.orderId && initialDrawer.orderCode
+        ? initialDrawer.orderCode
+        : null
+  );
+  const [drawerDeepLinkError, setDrawerDeepLinkError] = useState<string | null>(
+    () =>
+      initialDrawer.invalidOrderId
+        ? "Deep link inválido: orderId precisa ser um UUID."
+        : null
+  );
 
   const filterGenerationRef = useRef(0);
   const columnAbortRef = useRef<Map<SalesOrderFlowStage, AbortController>>(
     new Map()
   );
+  const kanbanScrollRef = useRef<HTMLDivElement | null>(null);
+  const kanbanScrollLeftRef = useRef(0);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
@@ -174,11 +201,112 @@ export function SalesOrderFlowModule() {
     return () => window.clearTimeout(timer);
   }, [qDraft, companyDraft, productDraft, sectorDraft]);
 
-  // Sync URL canônica (descarta inválidos / defaults).
+  // Sync URL canônica (filtros + drawer). replace evita loop no histórico.
   useEffect(() => {
-    const next = buildSalesOrderFlowSearchParams(filters);
+    const next = buildSalesOrderFlowSearchParams(
+      filters,
+      selectedOrder
+        ? { orderId: selectedOrder.id, orderCode: selectedOrder.code }
+        : pendingDrawerCode
+          ? { orderCode: pendingDrawerCode }
+          : null
+    );
+    if (areSalesOrderFlowSearchParamsEqual(next, searchParams)) return;
     setSearchParams(next, { replace: true });
-  }, [filters, setSearchParams]);
+  }, [filters, selectedOrder, pendingDrawerCode, searchParams, setSearchParams]);
+
+  // Deep link por código: resolve contra cards carregados (sem navegar de novo).
+  useEffect(() => {
+    if (!pendingDrawerCode || selectedOrder) return;
+    const cards = collectSalesOrderFlowCardsFromColumnStates(columnStates);
+    const resolved = resolveSalesOrderFlowDrawerFromCards(cards, {
+      orderCode: pendingDrawerCode,
+    });
+    if (!resolved) return;
+    setSelectedOrder(resolved);
+    setPendingDrawerCode(null);
+    setDrawerDeepLinkError(null);
+  }, [columnStates, pendingDrawerCode, selectedOrder]);
+
+  // Fallback: busca lista com q=código quando o card ainda não está nas colunas.
+  useEffect(() => {
+    if (!pendingDrawerCode || selectedOrder || !canView || featureEnabled !== true) {
+      return;
+    }
+    if (!salesOrderFlowColumnStatesAllSettled(visibleStages, columnStates)) {
+      return;
+    }
+    const controller = new AbortController();
+    void fetchSalesOrderFlowList(
+      {
+        ...salesOrderFlowFiltersToClientQuery(filtersRef.current),
+        q: pendingDrawerCode,
+        limit: 20,
+      },
+      controller.signal
+    )
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        const cards = (payload.columns ?? []).flatMap((col) => col.cards ?? []);
+        const resolved = resolveSalesOrderFlowDrawerFromCards(cards, {
+          orderCode: pendingDrawerCode,
+        });
+        if (resolved) {
+          setSelectedOrder(resolved);
+          setPendingDrawerCode(null);
+          setDrawerDeepLinkError(null);
+          return;
+        }
+        setDrawerDeepLinkError(
+          `Pedido "${pendingDrawerCode}" não encontrado no fluxo.`
+        );
+        setPendingDrawerCode(null);
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setDrawerDeepLinkError(
+          `Não foi possível abrir o pedido "${pendingDrawerCode}".`
+        );
+        setPendingDrawerCode(null);
+      });
+    return () => controller.abort();
+  }, [
+    pendingDrawerCode,
+    selectedOrder,
+    canView,
+    featureEnabled,
+    columnStates,
+    visibleStages,
+  ]);
+
+  const openOrderDrawer = useCallback((id: string, code: string) => {
+    if (kanbanScrollRef.current) {
+      kanbanScrollLeftRef.current = kanbanScrollRef.current.scrollLeft;
+    }
+    setDrawerDeepLinkError(null);
+    setPendingDrawerCode(null);
+    setSelectedOrder({ id, code });
+  }, []);
+
+  const closeOrderDrawer = useCallback(() => {
+    setSelectedOrder(null);
+    setPendingDrawerCode(null);
+    requestAnimationFrame(() => {
+      if (kanbanScrollRef.current) {
+        kanbanScrollRef.current.scrollLeft = kanbanScrollLeftRef.current;
+      }
+    });
+  }, []);
+
+  const handleOrderCodeResolved = useCallback((code: string) => {
+    setSelectedOrder((current) =>
+      current && current.code !== code ? { ...current, code } : current
+    );
+  }, []);
+
+  const handleOrderRecomputed = useCallback(() => {
+    setRetryToken((token) => token + 1);
+  }, []);
 
   // Feature flag — uma vez por sessão de view (não refaz a cada filtro).
   useEffect(() => {
@@ -988,10 +1116,28 @@ export function SalesOrderFlowModule() {
           columns={kanbanColumns}
           valuesVisible={valuesVisible}
           inconsistenciesVisible={inconsistenciesVisible}
-          onOpenOrder={(id, code) => setSelectedOrder({ id, code })}
+          scrollContainerRef={kanbanScrollRef}
+          onOpenOrder={openOrderDrawer}
           onLoadMore={handleLoadMore}
           onRetryColumn={handleRetryColumn}
         />
+      ) : null}
+
+      {drawerDeepLinkError ? (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+          data-testid="sales-order-flow-drawer-deeplink-error"
+        >
+          {drawerDeepLinkError}
+          <button
+            type="button"
+            className="ml-3 underline"
+            onClick={() => setDrawerDeepLinkError(null)}
+          >
+            Dispensar
+          </button>
+        </div>
       ) : null}
 
       {selectedOrder ? (
@@ -999,7 +1145,9 @@ export function SalesOrderFlowModule() {
           open
           salesOrderId={selectedOrder.id}
           orderCode={selectedOrder.code}
-          onClose={() => setSelectedOrder(null)}
+          onClose={closeOrderDrawer}
+          onOrderCodeResolved={handleOrderCodeResolved}
+          onRecomputed={handleOrderRecomputed}
           onManagementUpdated={({ salesOrderId, management }) => {
             setColumnStates((current) =>
               patchSalesOrderFlowKanbanCard(current, salesOrderId, {

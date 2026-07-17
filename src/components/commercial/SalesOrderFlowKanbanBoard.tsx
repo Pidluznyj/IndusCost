@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import {
   AlertTriangle,
   Ban,
@@ -37,6 +38,7 @@ type Props = {
   columns: readonly SalesOrderFlowKanbanColumnView[];
   valuesVisible: boolean;
   inconsistenciesVisible: boolean;
+  scrollContainerRef?: RefObject<HTMLDivElement | null>;
   onOpenOrder: (orderId: string, orderCode: string) => void;
   onLoadMore: (stage: SalesOrderFlowStage) => void;
   onRetryColumn: (stage: SalesOrderFlowStage) => void;
@@ -46,6 +48,7 @@ export function SalesOrderFlowKanbanBoard({
   columns,
   valuesVisible,
   inconsistenciesVisible,
+  scrollContainerRef,
   onOpenOrder,
   onLoadMore,
   onRetryColumn,
@@ -63,6 +66,7 @@ export function SalesOrderFlowKanbanBoard({
 
   return (
     <section
+      ref={scrollContainerRef}
       className="overflow-x-auto overscroll-x-contain pb-3"
       aria-label="Kanban operacional de pedidos"
       data-testid="sales-order-flow-kanban"

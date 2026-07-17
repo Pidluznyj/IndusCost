@@ -99,6 +99,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId", resourceKey: "commercial.sales_orders.flow", action: "view" },
   { method: "GET", path: "/api/commercial/sales-order-flow/:salesOrderId/events", resourceKey: "commercial.sales_orders.flow.timeline", action: "view" },
   { method: "PATCH", path: "/api/commercial/sales-order-flow/:salesOrderId/management", resourceKey: "commercial.sales_orders.flow_management", action: "manage" },
+  { method: "POST", path: "/api/commercial/sales-order-flow/:salesOrderId/recompute", resourceKey: "commercial.sales_orders.flow_rebuild", action: "execute" },
 
   { method: "GET", path: "/api/commercial/output-documents/summary", resourceKey: "commercial.output_documents", action: "view" },
   { method: "GET", path: "/api/commercial/output-documents", resourceKey: "commercial.output_documents", action: "view" },

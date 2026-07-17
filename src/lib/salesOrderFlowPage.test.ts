@@ -34,16 +34,20 @@ import {
 } from "@/src/lib/salesOrderFlowClient.js";
 import {
   areSalesOrderFlowFilterDateRangesInvalid,
+  areSalesOrderFlowSearchParamsEqual,
   buildSalesOrderFlowSearchParams,
   canAccessSalesOrderFlowModule,
   canViewSalesOrderFlow,
   classifySalesOrderFlowListError,
+  collectSalesOrderFlowCardsFromColumnStates,
   EMPTY_SALES_ORDER_FLOW_FILTERS,
   hasActiveSalesOrderFlowFilters,
   parseSalesOrderFlowBooleanParam,
+  parseSalesOrderFlowDrawerFromSearchParams,
   parseSalesOrderFlowFiltersFromSearchParams,
   parseSalesOrderFlowPriorityParam,
   parseSalesOrderFlowStagesParam,
+  resolveSalesOrderFlowDrawerFromCards,
   SALES_ORDER_FLOW_BREADCRUMB,
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
@@ -220,7 +224,7 @@ describe("salesOrderFlowClient", () => {
     assert.match(mod, /sales-order-flow-empty/);
     assert.match(mod, /sales-order-flow-feature-disabled/);
     assert.match(mod, /SalesOrderFlowKanbanBoard/);
-    assert.doesNotMatch(mod, /\bDrawer\b/);
+    assert.match(mod, /SalesOrderFlowDetailDrawer/);
   });
 });
 
@@ -786,5 +790,124 @@ describe("sales order flow operational kanban (OP-67)", () => {
     assert.match(html, /sales-order-flow-kanban-column-error-WAITING_NFE/);
     assert.match(html, /Falha isolada/);
     assert.match(html, /sales-order-flow-kanban-column-retry-WAITING_NFE/);
+  });
+});
+
+describe("sales order flow drawer URL (OP-73)", () => {
+  const ORDER_ID = "11111111-1111-4111-8111-111111111111";
+
+  it("serializa e restaura orderId/order com filtros", () => {
+    const filters = {
+      ...EMPTY_SALES_ORDER_FLOW_FILTERS,
+      q: "PV",
+      overdue: true as const,
+      stages: ["IN_PRODUCTION" as const],
+    };
+    const params = buildSalesOrderFlowSearchParams(filters, {
+      orderId: ORDER_ID,
+      orderCode: "PV-73",
+    });
+    assert.equal(params.get("orderId"), ORDER_ID);
+    assert.equal(params.get("order"), "PV-73");
+    assert.equal(params.get("q"), "PV");
+    assert.equal(params.get("overdue"), "true");
+    assert.equal(params.get("stages"), "IN_PRODUCTION");
+
+    const drawer = parseSalesOrderFlowDrawerFromSearchParams(params);
+    assert.equal(drawer.orderId, ORDER_ID);
+    assert.equal(drawer.orderCode, "PV-73");
+    assert.equal(drawer.invalidOrderId, false);
+
+    const restoredFilters = parseSalesOrderFlowFiltersFromSearchParams(params);
+    assert.equal(restoredFilters.q, "PV");
+    assert.equal(restoredFilters.overdue, true);
+    assert.deepEqual(restoredFilters.stages, ["IN_PRODUCTION"]);
+  });
+
+  it("fecha drawer sem perder filtros na URL", () => {
+    const filters = {
+      ...EMPTY_SALES_ORDER_FLOW_FILTERS,
+      blocked: true as const,
+      priority: "HIGH" as const,
+    };
+    const open = buildSalesOrderFlowSearchParams(filters, {
+      orderId: ORDER_ID,
+      orderCode: "PV-1",
+    });
+    const closed = buildSalesOrderFlowSearchParams(filters, null);
+    assert.equal(open.get("orderId"), ORDER_ID);
+    assert.equal(closed.get("orderId"), null);
+    assert.equal(closed.get("order"), null);
+    assert.equal(closed.get("blocked"), "true");
+    assert.equal(closed.get("priority"), "HIGH");
+  });
+
+  it("descarta orderId inválido sem quebrar filtros", () => {
+    const params = new URLSearchParams(
+      "q=abc&orderId=not-a-uuid&order=PV-9&overdue=true"
+    );
+    const drawer = parseSalesOrderFlowDrawerFromSearchParams(params);
+    assert.equal(drawer.orderId, null);
+    assert.equal(drawer.orderCode, "PV-9");
+    assert.equal(drawer.invalidOrderId, true);
+    const filters = parseSalesOrderFlowFiltersFromSearchParams(params);
+    assert.equal(filters.q, "abc");
+    assert.equal(filters.overdue, true);
+  });
+
+  it("resolve deep link por código nos cards e compara params sem loop", () => {
+    const cards = [
+      { orderId: ORDER_ID, orderCode: "PV-73" },
+      { orderId: "22222222-2222-4222-8222-222222222222", orderCode: "PV-74" },
+    ];
+    assert.deepEqual(
+      resolveSalesOrderFlowDrawerFromCards(cards, { orderCode: "pv-73" }),
+      { id: ORDER_ID, code: "PV-73" }
+    );
+    assert.deepEqual(
+      resolveSalesOrderFlowDrawerFromCards(cards, { orderId: ORDER_ID }),
+      { id: ORDER_ID, code: "PV-73" }
+    );
+    const a = buildSalesOrderFlowSearchParams(EMPTY_SALES_ORDER_FLOW_FILTERS, {
+      orderId: ORDER_ID,
+    });
+    const b = new URLSearchParams(a.toString());
+    assert.equal(areSalesOrderFlowSearchParamsEqual(a, b), true);
+    b.set("q", "x");
+    assert.equal(areSalesOrderFlowSearchParamsEqual(a, b), false);
+    assert.deepEqual(
+      collectSalesOrderFlowCardsFromColumnStates({
+        IN_PRODUCTION: { cards },
+      }).map((c) => c.orderCode),
+      ["PV-73", "PV-74"]
+    );
+  });
+
+  it("módulo preserva filtros/scroll/paginação e sincroniza drawer na URL", () => {
+    const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
+    assert.match(mod, /parseSalesOrderFlowDrawerFromSearchParams/);
+    assert.match(mod, /buildSalesOrderFlowSearchParams\(/);
+    assert.match(mod, /areSalesOrderFlowSearchParamsEqual/);
+    assert.match(mod, /openOrderDrawer/);
+    assert.match(mod, /closeOrderDrawer/);
+    assert.match(mod, /kanbanScrollLeftRef/);
+    assert.match(mod, /scrollContainerRef/);
+    assert.match(mod, /pendingDrawerCode/);
+    assert.match(mod, /replace: true/);
+    assert.match(mod, /setRetryToken/);
+    assert.doesNotMatch(mod, /navigate\(\s*`\/commercial\/sales-order-flow/);
+  });
+
+  it("drawer expõe navegação oficial, cópia e recompute", () => {
+    const drawer = read(
+      "src/components/commercial/SalesOrderFlowDetailDrawer.tsx"
+    );
+    assert.match(drawer, /sales-order-flow-detail-nav/);
+    assert.match(drawer, /sales-order-flow-detail-back-kanban/);
+    assert.match(drawer, /sales-order-flow-detail-copy-code/);
+    assert.match(drawer, /sales-order-flow-detail-recompute/);
+    assert.match(drawer, /resolveSalesOrderFlowDetailHeaderLinks/);
+    assert.match(drawer, /recomputeSalesOrderFlowOrder/);
+    assert.match(drawer, /Voltar ao Kanban/);
   });
 });

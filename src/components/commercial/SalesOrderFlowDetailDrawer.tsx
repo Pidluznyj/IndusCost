@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Copy, Loader2, RefreshCw } from "lucide-react";
 import {
   Overlay,
   OverlayBadge,
@@ -12,12 +13,14 @@ import {
 import {
   fetchSalesOrderFlowDetail,
   fetchSalesOrderFlowEvents,
+  recomputeSalesOrderFlowOrder,
   type SalesOrderFlowDetailPayload,
   type SalesOrderFlowEventsPayload,
   type SalesOrderFlowManagementApi,
 } from "@/src/lib/salesOrderFlowClient";
 import {
   classifySalesOrderFlowDetailError,
+  classifySalesOrderFlowRecomputeError,
   dedupeSalesOrderFlowDetailEventsByKey,
   filterSalesOrderFlowDetailInconsistencyRows,
   formatSalesOrderFlowDetailDate,
@@ -32,8 +35,10 @@ import {
   resolveSalesOrderFlowDetailAvailableTabs,
   resolveSalesOrderFlowDetailDaysInStage,
   resolveSalesOrderFlowDetailEventView,
+  resolveSalesOrderFlowDetailHeaderLinks,
   resolveSalesOrderFlowDetailInconsistencyRows,
   resolveSalesOrderFlowDetailItems,
+  resolveSalesOrderFlowDetailNavigationCapabilities,
   resolveSalesOrderFlowDetailShipmentViews,
   resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
@@ -51,6 +56,11 @@ type Props = {
   salesOrderId: string | null;
   orderCode?: string | null;
   onClose: () => void;
+  onOrderCodeResolved?: (orderCode: string) => void;
+  onRecomputed?: (result: {
+    salesOrderId: string;
+    currentOrderStage: string;
+  }) => void;
   onManagementUpdated?: (update: {
     salesOrderId: string;
     management: SalesOrderFlowManagementApi;
@@ -67,6 +77,8 @@ export function SalesOrderFlowDetailDrawer({
   salesOrderId,
   orderCode,
   onClose,
+  onOrderCodeResolved,
+  onRecomputed,
   onManagementUpdated,
   managementCapabilities: managementCapabilitiesProp,
 }: Props) {
@@ -79,6 +91,14 @@ export function SalesOrderFlowDetailDrawer({
       ),
     [managementCapabilitiesProp, permissions.canPerformAction]
   );
+  const navigationCapabilities = useMemo(
+    () =>
+      resolveSalesOrderFlowDetailNavigationCapabilities({
+        canPerformAction: permissions.canPerformAction,
+        canViewModule: permissions.canViewModule,
+      }),
+    [permissions.canPerformAction, permissions.canViewModule]
+  );
   const [detail, setDetail] = useState<SalesOrderFlowDetailPayload | null>(
     null
   );
@@ -89,6 +109,10 @@ export function SalesOrderFlowDetailDrawer({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<SalesOrderFlowDetailTab>("resumo");
   const [retryToken, setRetryToken] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeMessage, setRecomputeMessage] = useState<string | null>(null);
+  const [recomputeError, setRecomputeError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !salesOrderId) {
@@ -97,17 +121,29 @@ export function SalesOrderFlowDetailDrawer({
       setErrorMessage(null);
       setActiveTab("resumo");
       setLoading(false);
+      setCopyFeedback(null);
+      setRecomputeMessage(null);
+      setRecomputeError(null);
       return;
     }
+    setCopyFeedback(null);
+    setRecomputeMessage(null);
+    setRecomputeError(null);
+    setActiveTab("resumo");
+  }, [open, salesOrderId]);
+
+  useEffect(() => {
+    if (!open || !salesOrderId) return;
     const controller = new AbortController();
-    setDetail(null);
     setLoading(true);
     setErrorKind(null);
     setErrorMessage(null);
-    setActiveTab("resumo");
     void fetchSalesOrderFlowDetail(salesOrderId, controller.signal)
       .then((payload) => {
-        if (!controller.signal.aborted) setDetail(payload);
+        if (controller.signal.aborted) return;
+        setDetail(payload);
+        const code = payload.order.orderCode?.trim();
+        if (code) onOrderCodeResolved?.(code);
       })
       .catch((cause: unknown) => {
         if (
@@ -124,6 +160,8 @@ export function SalesOrderFlowDetailDrawer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
+    // onOrderCodeResolved é opcional e não deve reabrir o fetch em loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, salesOrderId, retryToken]);
 
   const items = useMemo(
@@ -138,6 +176,13 @@ export function SalesOrderFlowDetailDrawer({
     () => resolveSalesOrderFlowDetailAvailableTabs(detail),
     [detail]
   );
+  const headerLinks = useMemo(
+    () =>
+      detail
+        ? resolveSalesOrderFlowDetailHeaderLinks(detail, navigationCapabilities)
+        : [],
+    [detail, navigationCapabilities]
+  );
   const titleId = "sales-order-flow-detail-title";
   const displayCode =
     detail?.order.orderCode ?? orderCode?.trim() ?? "Pedido";
@@ -147,6 +192,44 @@ export function SalesOrderFlowDetailDrawer({
       setActiveTab("resumo");
     }
   }, [tabs, activeTab]);
+
+  async function handleCopyOrderCode() {
+    const code = displayCode.trim();
+    if (!code || code === "Pedido") return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopyFeedback("Código copiado");
+      window.setTimeout(() => setCopyFeedback(null), 2000);
+    } catch {
+      setCopyFeedback("Não foi possível copiar");
+      window.setTimeout(() => setCopyFeedback(null), 2000);
+    }
+  }
+
+  async function handleRecompute() {
+    if (!salesOrderId || !navigationCapabilities.canExecuteRecompute) return;
+    setRecomputing(true);
+    setRecomputeError(null);
+    setRecomputeMessage(null);
+    try {
+      const result = await recomputeSalesOrderFlowOrder(salesOrderId);
+      setRecomputeMessage(
+        result.action === "unchanged"
+          ? "Pedido já estava atualizado."
+          : "Pedido atualizado com sucesso."
+      );
+      onRecomputed?.({
+        salesOrderId: result.salesOrderId,
+        currentOrderStage: result.currentOrderStage,
+      });
+      setRetryToken((token) => token + 1);
+    } catch (cause: unknown) {
+      const classified = classifySalesOrderFlowRecomputeError(cause);
+      setRecomputeError(classified.message);
+    } finally {
+      setRecomputing(false);
+    }
+  }
 
   return (
     <Overlay
@@ -188,6 +271,83 @@ export function SalesOrderFlowDetailDrawer({
         closeLabel="Fechar detalhe do fluxo"
         density="default"
       />
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-2"
+        data-testid="sales-order-flow-detail-nav"
+      >
+        <button
+          type="button"
+          className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
+          onClick={onClose}
+          data-testid="sales-order-flow-detail-back-kanban"
+        >
+          Voltar ao Kanban
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
+          onClick={() => void handleCopyOrderCode()}
+          disabled={!displayCode || displayCode === "Pedido"}
+          data-testid="sales-order-flow-detail-copy-code"
+          title="Copiar código do pedido"
+        >
+          <Copy className="h-3 w-3" aria-hidden="true" />
+          Copiar código
+        </button>
+        {navigationCapabilities.canExecuteRecompute ? (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
+            onClick={() => void handleRecompute()}
+            disabled={recomputing || !salesOrderId || loading}
+            data-testid="sales-order-flow-detail-recompute"
+            title="Recomputar snapshot do pedido"
+          >
+            <RefreshCw
+              className={cn("h-3 w-3", recomputing && "animate-spin")}
+              aria-hidden="true"
+            />
+            {recomputing ? "Atualizando…" : "Atualizar pedido"}
+          </button>
+        ) : null}
+        {headerLinks.map((link) => (
+          <Link
+            key={link.id}
+            to={link.href}
+            className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
+            data-testid={link.testId}
+          >
+            {link.label}
+          </Link>
+        ))}
+        {copyFeedback ? (
+          <span
+            className="text-xs text-muted-foreground"
+            aria-live="polite"
+            data-testid="sales-order-flow-detail-copy-feedback"
+          >
+            {copyFeedback}
+          </span>
+        ) : null}
+        {recomputeMessage ? (
+          <span
+            className="text-xs text-emerald-700"
+            aria-live="polite"
+            data-testid="sales-order-flow-detail-recompute-ok"
+          >
+            {recomputeMessage}
+          </span>
+        ) : null}
+        {recomputeError ? (
+          <span
+            className="text-xs text-destructive"
+            role="alert"
+            data-testid="sales-order-flow-detail-recompute-error"
+          >
+            {recomputeError}
+          </span>
+        ) : null}
+      </div>
       <OverlayTabs
         tabs={tabs}
         active={activeTab}

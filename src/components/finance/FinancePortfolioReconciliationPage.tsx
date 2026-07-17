@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -26,7 +27,12 @@ import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/Fina
 import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconciliation/OrderToCashAuditTab";
 import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
+import { OrderFullAuditDialog } from "@/src/components/finance/portfolio-reconciliation/OrderFullAuditDialog";
 import { cn } from "@/src/lib/utils";
+
+const AUDIT_ORDER_ID_PARAM = "auditOrderId";
+const UUID_LIKE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const PORTFOLIO_VISIBLE_TAB_CATALOG = PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) =>
   isPortfolioReconciliationVisibleTabId(t.id)
@@ -51,6 +57,7 @@ function pickDisplayRun(
  */
 export function FinancePortfolioReconciliationPage() {
   const permissions = usePermissions();
+  const [searchParams, setSearchParams] = useSearchParams();
   /** P12: módulo e abas via DTO (mesmo contrato da sidebar/rotas). */
   const canView = permissions.canViewModule("portfolio-reconciliation");
   const abortRef = useRef<AbortController | null>(null);
@@ -58,6 +65,17 @@ export function FinancePortfolioReconciliationPage() {
   const [runs, setRuns] = useState<PortfolioReconciliationRunsPayload["runs"]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const deepLinkAuditOrderId = useMemo(() => {
+    const raw = searchParams.get(AUDIT_ORDER_ID_PARAM)?.trim() || "";
+    return raw && UUID_LIKE.test(raw) ? raw : null;
+  }, [searchParams]);
+  const [auditOrderId, setAuditOrderId] = useState<string | null>(
+    deepLinkAuditOrderId
+  );
+
+  useEffect(() => {
+    setAuditOrderId(deepLinkAuditOrderId);
+  }, [deepLinkAuditOrderId]);
   /**
    * Aba ativa. useAuthorizedTabs corrige URL/estado legado não autorizado.
    */
@@ -236,6 +254,21 @@ export function FinancePortfolioReconciliationPage() {
             <OrderToCashAuditTab />
           </div>
         </ProtectedTab>
+
+        <OrderFullAuditDialog
+          open={auditOrderId != null}
+          onOpenChange={(open) => {
+            if (open) return;
+            setAuditOrderId(null);
+            if (!searchParams.has(AUDIT_ORDER_ID_PARAM)) return;
+            const next = new URLSearchParams(searchParams);
+            next.delete(AUDIT_ORDER_ID_PARAM);
+            setSearchParams(next, { replace: true });
+          }}
+          salesOrderId={auditOrderId}
+          orderCode={null}
+          runId={displayRun?.id ?? null}
+        />
       </FinanceBiDashboardShell>
     </div>
   );

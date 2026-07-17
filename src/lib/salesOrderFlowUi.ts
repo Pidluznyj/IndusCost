@@ -376,7 +376,8 @@ export function parseSalesOrderFlowFiltersFromSearchParams(
 }
 
 export function buildSalesOrderFlowSearchParams(
-  filters: SalesOrderFlowUiFilters
+  filters: SalesOrderFlowUiFilters,
+  drawer?: { orderId?: string | null; orderCode?: string | null } | null
 ): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.q.trim()) params.set("q", filters.q.trim());
@@ -403,7 +404,118 @@ export function buildSalesOrderFlowSearchParams(
   if (filters.stages.length > 0) {
     params.set("stages", filters.stages.join(","));
   }
+  const drawerSelection = parseSalesOrderFlowDrawerSelection({
+    orderId: drawer?.orderId ?? null,
+    orderCode: drawer?.orderCode ?? null,
+  });
+  if (drawerSelection.orderId) params.set("orderId", drawerSelection.orderId);
+  if (drawerSelection.orderCode) params.set("order", drawerSelection.orderCode);
   return params;
+}
+
+/** UUID v1–v5 (browser-safe). */
+export function isSalesOrderFlowUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
+}
+
+export type SalesOrderFlowDrawerSelection = {
+  orderId: string | null;
+  orderCode: string | null;
+  /** true quando orderId veio inválido e foi descartado */
+  invalidOrderId: boolean;
+};
+
+/**
+ * Deep link do drawer: `orderId` (UUID) e/ou `order` (código).
+ * Rota inválida de UUID é descartada sem quebrar filtros.
+ */
+export function parseSalesOrderFlowDrawerFromSearchParams(
+  params: URLSearchParams
+): SalesOrderFlowDrawerSelection {
+  const rawId = params.get("orderId")?.trim() || "";
+  const rawCode =
+    params.get("order")?.trim() ||
+    params.get("orderCode")?.trim() ||
+    "";
+  if (rawId && !isSalesOrderFlowUuidLike(rawId)) {
+    return {
+      orderId: null,
+      orderCode: rawCode || null,
+      invalidOrderId: true,
+    };
+  }
+  return {
+    orderId: rawId || null,
+    orderCode: rawCode || null,
+    invalidOrderId: false,
+  };
+}
+
+export function parseSalesOrderFlowDrawerSelection(input: {
+  orderId?: string | null;
+  orderCode?: string | null;
+}): { orderId: string | null; orderCode: string | null } {
+  const orderIdRaw = input.orderId?.trim() || "";
+  const orderCode = input.orderCode?.trim() || "";
+  const orderId =
+    orderIdRaw && isSalesOrderFlowUuidLike(orderIdRaw) ? orderIdRaw : null;
+  return {
+    orderId,
+    orderCode: orderCode || null,
+  };
+}
+
+/** Compara search params sem depender da ordem das chaves. */
+export function areSalesOrderFlowSearchParamsEqual(
+  a: URLSearchParams,
+  b: URLSearchParams
+): boolean {
+  const keys = new Set([...a.keys(), ...b.keys()]);
+  for (const key of keys) {
+    if ((a.get(key) ?? "") !== (b.get(key) ?? "")) return false;
+  }
+  return true;
+}
+
+/**
+ * Resolve deep link orderId/código contra cards já carregados no Kanban.
+ * Com orderId válido, abre mesmo se o card ainda não estiver na página.
+ */
+export function resolveSalesOrderFlowDrawerFromCards(
+  cards: ReadonlyArray<{ orderId: string; orderCode: string }>,
+  selection: { orderId?: string | null; orderCode?: string | null }
+): { id: string; code: string } | null {
+  const parsed = parseSalesOrderFlowDrawerSelection(selection);
+  if (parsed.orderId) {
+    const byId = cards.find((card) => card.orderId === parsed.orderId);
+    return {
+      id: parsed.orderId,
+      code: byId?.orderCode ?? parsed.orderCode ?? "",
+    };
+  }
+  if (!parsed.orderCode) return null;
+  const needle = parsed.orderCode.toLowerCase();
+  const byCode = cards.find(
+    (card) => card.orderCode.trim().toLowerCase() === needle
+  );
+  return byCode ? { id: byCode.orderId, code: byCode.orderCode } : null;
+}
+
+export function collectSalesOrderFlowCardsFromColumnStates(
+  columnStates: Record<string, { cards: ReadonlyArray<{ orderId: string; orderCode: string }> }>
+): Array<{ orderId: string; orderCode: string }> {
+  const out: Array<{ orderId: string; orderCode: string }> = [];
+  const seen = new Set<string>();
+  for (const state of Object.values(columnStates)) {
+    for (const card of state.cards) {
+      if (seen.has(card.orderId)) continue;
+      seen.add(card.orderId);
+      out.push({ orderId: card.orderId, orderCode: card.orderCode });
+    }
+  }
+  return out;
 }
 
 export function hasActiveSalesOrderFlowFilters(
