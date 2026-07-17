@@ -290,7 +290,7 @@ describe("stock documents sync lifecycle (DS-03.5)", () => {
     assert.equal(audit.markAbsentApplied, false);
 
     const data = buildStockDocumentsIntegrationRunData({ audit });
-    assert.equal(data.target, "stock_documents");
+    assert.equal(data.target, "stock-documents");
     assert.equal(data.mode, "apply");
     assert.equal(data.status, "SUCCESS");
     assert.equal(data.createdCount, 1);
