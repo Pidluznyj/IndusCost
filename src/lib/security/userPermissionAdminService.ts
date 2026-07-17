@@ -4,7 +4,6 @@
 
 import type { AppUserRole, PrismaClient } from "@prisma/client";
 import {
-  getOfficialRolePermissionFlags,
   PERMISSION_RESOURCE_SEEDS,
   sortPermissionResourcesForInsert,
   validatePermissionResourceCatalog,
@@ -43,6 +42,12 @@ import {
   type PermissionAuditEntryPlan,
 } from "@/src/lib/security/permissionAudit.js";
 import { projectAccessProfileResourceFlags } from "@/src/lib/accessProfilesMatrix.js";
+import {
+  expandOverridesToAliases,
+  getBridgedOfficialRolePermissionFlags,
+  listEquivalentPermissionKeys,
+  resolveBridgedOverride,
+} from "@/src/lib/security/permissionAliasBridge.js";
 
 export class UserPermissionAdminError extends Error {
   readonly code: string;
@@ -105,7 +110,7 @@ export function resolveUserPermissionBaselineFlags(args: {
   if (!args.accessProfile) {
     const out: Record<string, PermissionFlags> = {};
     for (const seed of PERMISSION_RESOURCE_SEEDS) {
-      out[seed.key] = getOfficialRolePermissionFlags(args.role, seed.key);
+      out[seed.key] = getBridgedOfficialRolePermissionFlags(args.role, seed.key);
     }
     return out;
   }
@@ -115,7 +120,19 @@ export function resolveUserPermissionBaselineFlags(args: {
   );
   const out: Record<string, PermissionFlags> = {};
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    out[seed.key] = profileFlags[seed.key] ?? { ...EMPTY_FLAGS };
+    let merged = { ...EMPTY_FLAGS };
+    let sawAny = false;
+    for (const key of listEquivalentPermissionKeys(seed.key)) {
+      const f = profileFlags[key];
+      if (!f) continue;
+      sawAny = true;
+      merged = {
+        canView: merged.canView || f.canView,
+        canExecute: merged.canExecute || f.canExecute,
+        canManage: merged.canManage || f.canManage,
+      };
+    }
+    out[seed.key] = sawAny ? merged : { ...EMPTY_FLAGS };
   }
   return out;
 }
@@ -125,15 +142,14 @@ export function buildEditablePermissionTree(
   overrides: readonly UserPermissionOverrideGrant[],
   baselineFlagsByKey?: Readonly<Record<string, PermissionFlags>> | null
 ): EditablePermissionTreeNode[] {
-  const overrideByKey = new Map(overrides.map((o) => [o.resourceKey, o]));
   const nodes = new Map<string, EditablePermissionTreeNode>();
   const uiSeeds = listPermissionSeedsForAdminUi();
 
   for (const seed of uiSeeds) {
     const roleFlags =
       baselineFlagsByKey?.[seed.key] ??
-      getOfficialRolePermissionFlags(role, seed.key);
-    const ov = overrideByKey.get(seed.key);
+      getBridgedOfficialRolePermissionFlags(role, seed.key);
+    const ov = resolveBridgedOverride(overrides, seed.key);
     const override = ov
       ? {
           canView: ov.canView,
@@ -621,6 +637,9 @@ export async function saveUserPermissionOverrides(
     }
     normalized = [...byKey.values()];
   }
+
+  // Dual-write PT↔canônico: o que a UI grava em `commercial*` também vale em `comercial*`.
+  normalized = expandOverridesToAliases(normalized);
 
   // Sem mudança real → não grava DB nem auditoria (evita ruído).
   if (overridesUnchanged(beforeOverrides, normalized)) {

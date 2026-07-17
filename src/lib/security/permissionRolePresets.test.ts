@@ -158,14 +158,26 @@ describe("permissionRolePresets", () => {
 describe("userPermissionAdminService pure", () => {
   it("buildEditablePermissionTree aninha filhos", () => {
     const tree = buildEditablePermissionTree("ADMIN", []);
-    const financeiro = tree.find((n) => n.key === "financeiro");
+    // UI admin usa chaves canônicas (finance/commercial); aliases PT ficam ocultos.
+    const financeiro = tree.find((n) => n.key === "finance");
     assert.ok(financeiro);
-    assert.ok(financeiro!.children.some((c) => c.key === "financeiro.conciliacao_carteira"));
+    assert.ok(
+      financeiro!.children.some(
+        (c) =>
+          c.key === "finance.wallet_reconciliation" ||
+          c.key.startsWith("finance.")
+      )
+    );
 
-    const comercial = tree.find((n) => n.key === "comercial");
+    const comercial = tree.find((n) => n.key === "commercial");
     assert.ok(comercial);
-    assert.ok(comercial!.children.some((c) => c.key === "comissoes"));
-    assert.equal(tree.some((n) => n.key === "comissoes"), false);
+    assert.ok(
+      comercial!.children.some(
+        (c) => c.key === "commercial.sales_orders" || c.key.startsWith("commercial.")
+      )
+    );
+    assert.equal(tree.some((n) => n.key === "comercial"), false);
+    assert.equal(tree.some((n) => n.key === "financeiro"), false);
 
     const operations = tree.find((n) => n.key === "operations");
     assert.ok(operations);

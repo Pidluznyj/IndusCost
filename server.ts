@@ -489,6 +489,7 @@ import {
   resolveEmployeeDisplayName,
   resolveLoginEmailForNewUser,
 } from "./src/lib/adminUserEmployeeLink.js";
+import { resolveNewUserInitialAccess } from "./src/lib/adminUserCreationPolicy.js";
 import { resolveAppUserSellerLinkFromBody } from "./src/lib/adminUserSellerLink.js";
 import { evaluateAppUserDeleteGuard } from "./src/lib/adminUserDelete.js";
 import { resolveCookieSecure } from "./src/lib/appSessionCookie.js";
@@ -2162,34 +2163,28 @@ async function startServer() {
       const employeeIdRaw = req.body?.employeeId;
       const emailRaw = typeof req.body?.email === "string" ? req.body.email : "";
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      let role = parseAppUserRole(req.body?.role) ?? AppUserRole.VIEWER;
-      let permissions = filterKnownPermissions(req.body?.permissions);
-      const accessProfileId =
-        req.body?.accessProfileId === null || req.body?.accessProfileId === undefined
-          ? null
-          : String(req.body.accessProfileId).trim() || null;
+      // Criação fail-closed: perfil, role operacional e permissões só podem ser
+      // atribuídos depois, pelos fluxos administrativos próprios.
+      // Ignora esses campos mesmo se um cliente antigo/malicioso os enviar.
+      const {
+        role,
+        permissions,
+        accessProfileId,
+        externalSellerId,
+        externalSellerIds,
+        sellerResponsibleName,
+      } = resolveNewUserInitialAccess();
       const isActive = req.body?.isActive !== false;
-      const sellerLink = resolveAppUserSellerLinkFromBody(req.body ?? {});
+      const sellerLink = {
+        externalSellerId,
+        externalSellerIds,
+        sellerResponsibleName,
+      };
 
       const passwordError = validatePasswordMin(password);
       if (passwordError) {
         return res.status(400).json({ error: "INVALID_PASSWORD", message: passwordError });
       }
-      if (role === AppUserRole.SELLER) {
-        if (!sellerLink.sellerResponsibleName) {
-          return res.status(400).json({
-            error: "SELLER_RESPONSIBLE_REQUIRED",
-            message: "Vendedor precisa de um responsável comercial.",
-          });
-        }
-        if (sellerLink.externalSellerIds.length === 0) {
-          return res.status(400).json({
-            error: "SELLER_NOMUS_IDS_REQUIRED",
-            message: "Vendedor precisa de ao menos um ID Nomus vinculado.",
-          });
-        }
-      }
-
       const employeeId =
         typeof employeeIdRaw === "string" ? employeeIdRaw.trim() : String(employeeIdRaw ?? "").trim();
       const employeeRow = employeeId
@@ -2251,15 +2246,7 @@ async function startServer() {
         });
       }
 
-      if (accessProfileId) {
-        const profile = await resolveAccessProfileForUser(prisma, accessProfileId);
-        const applied = applyAccessProfileToUserFields(profile);
-        if (applied.role) role = applied.role;
-        if (req.body?.permissions === undefined) permissions = applied.permissions;
-      }
-
-      // P06: não materializar baseline VIEWER/role silenciosamente quando bag vazia.
-      // Perfil ou permissions explícitas definem a bag; preset aplica-se via admin explícito.
+      // VIEWER sem perfil e bag vazia permanece sem acesso até configuração explícita.
 
       const passwordHash = await hashPassword(password);
       const user = await prisma.appUser.create({

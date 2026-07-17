@@ -95,26 +95,16 @@ type CreateForm = {
   employeeId: string;
   name: string;
   email: string;
-  accessProfileId: string;
-  role: AppUserRole;
   isActive: boolean;
   password: string;
-  externalSellerId: string;
-  externalSellerIds: number[];
-  sellerResponsibleName: string;
 };
 
 const EMPTY_CREATE: CreateForm = {
   employeeId: "",
   name: "",
   email: "",
-  accessProfileId: "",
-  role: "VIEWER",
   isActive: true,
   password: "",
-  externalSellerId: "",
-  externalSellerIds: [],
-  sellerResponsibleName: "",
 };
 
 const EMPTY_SELLER_LINK: SellerNomusPickerValue = {
@@ -752,16 +742,6 @@ export const AdminUsersModule: React.FC = () => {
       setCreateError(`Senha com no mínimo ${APP_PASSWORD_MIN_LENGTH} caracteres.`);
       return;
     }
-    if (roleRequiresSellerNomusLink(createForm.role)) {
-      if (!createForm.sellerResponsibleName.trim()) {
-        setCreateError("Vendedor precisa de um responsável comercial.");
-        return;
-      }
-      if (createForm.externalSellerIds.length === 0) {
-        setCreateError("Selecione ao menos um ID Nomus para vincular a este login.");
-        return;
-      }
-    }
     setSaving(true);
     setCreateError(null);
     try {
@@ -773,15 +753,7 @@ export const AdminUsersModule: React.FC = () => {
           name: createForm.name.trim(),
           email: createForm.email.trim(),
           password: createForm.password,
-          role: createForm.role,
-          accessProfileId: createForm.accessProfileId.trim() || null,
-          permissions: [],
           isActive: createForm.isActive,
-          externalSellerId: createForm.externalSellerId.trim()
-            ? Number.parseInt(createForm.externalSellerId.trim(), 10)
-            : null,
-          externalSellerIds: createForm.externalSellerIds,
-          sellerResponsibleName: createForm.sellerResponsibleName.trim() || null,
         }),
       });
       setCreateOpen(false);
@@ -1873,83 +1845,10 @@ export const AdminUsersModule: React.FC = () => {
                 onChange={(e) => setCreateForm((f) => ({ ...f, password: e.target.value }))}
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm"
               />
-              <label className="block space-y-1">
-                <span className="text-[11px] font-semibold text-muted-foreground">
-                  Perfil de acesso
-                </span>
-                <select
-                  value={createForm.accessProfileId}
-                  onChange={(e) => {
-                    const accessProfileId = e.target.value;
-                    const profile = accessProfiles.find((p) => p.id === accessProfileId);
-                    setCreateForm((f) => ({
-                      ...f,
-                      accessProfileId,
-                      role:
-                        profile?.roleBase && profile.roleBase !== "SUPER_ADMIN"
-                          ? profile.roleBase
-                          : profile?.roleBase === "SUPER_ADMIN"
-                            ? "SUPER_ADMIN"
-                            : f.role,
-                    }));
-                  }}
-                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  data-testid="create-user-access-profile-select"
-                >
-                  <option value="">Sem perfil (usar role abaixo)</option>
-                  {accessProfiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                      {p.roleBase ? ` · ${formatRoleLabel(p.roleBase)}` : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-1">
-                <span className="text-[11px] font-semibold text-muted-foreground">
-                  Role técnica
-                </span>
-                <select
-                  value={createForm.role}
-                  onChange={(e) =>
-                    setCreateForm((f) => ({ ...f, role: e.target.value as AppUserRole }))
-                  }
-                  className="w-full rounded-lg border border-border px-3 py-2 text-sm"
-                  data-testid="create-user-role-select"
-                >
-                  {APP_USER_ROLE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {roleAllowsSellerNomusLink(createForm.role) ? (
-                <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-3">
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    {roleRequiresSellerNomusLink(createForm.role)
-                      ? "Vínculo obrigatório: responsável comercial e ao menos um ID Nomus."
-                      : "Opcional para gestor comercial: vincule o responsável e os IDs Nomus da carteira que este perfil acompanha."}
-                  </p>
-                  <SellerNomusPicker
-                    sellers={sellerOptions}
-                    requireNomusIds={roleRequiresSellerNomusLink(createForm.role)}
-                    value={{
-                      externalSellerId: createForm.externalSellerId,
-                      externalSellerIds: createForm.externalSellerIds,
-                      sellerResponsibleName: createForm.sellerResponsibleName,
-                    }}
-                    onChange={(next) =>
-                      setCreateForm((f) => ({
-                        ...f,
-                        externalSellerId: next.externalSellerId,
-                        externalSellerIds: next.externalSellerIds,
-                        sellerResponsibleName: next.sellerResponsibleName,
-                      }))
-                    }
-                  />
-                </div>
-              ) : null}
+              <p className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+                O usuário será criado sem perfil e sem acesso. Depois da criação, abra o usuário
+                para atribuir um perfil pronto ou configurar as permissões manualmente.
+              </p>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

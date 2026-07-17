@@ -5,7 +5,6 @@
 
 import type { AppUserRole } from "@prisma/client";
 import {
-  getOfficialRolePermissionFlags,
   OFFICIAL_APP_USER_ROLES,
   PERMISSION_RESOURCE_SEEDS,
   type PermissionResourceSeed,
@@ -16,6 +15,11 @@ import type {
   UserPermissionOverrideGrant,
 } from "@/src/lib/security/permissionTypes.js";
 import { materializeLegacyBagFromEffectiveFlags } from "@/src/lib/security/permissionDualWrite/service.ts";
+import {
+  getBridgedOfficialRolePermissionFlags,
+  resolveBridgedOverride,
+} from "@/src/lib/security/permissionAliasBridge.js";
+import { listPermissionSeedsForAdminUi } from "@/src/lib/permissionAdminUiSeeds.js";
 
 export type MatrixCellStatus = "allowed" | "blocked" | "partial";
 
@@ -132,7 +136,7 @@ export function getOfficialRolePreset(role: AppUserRole): OfficialRolePreset {
       parentKey: seed.parentKey,
       module: seed.module,
       depth: depthOf(seed, byKey),
-      flags: getOfficialRolePermissionFlags(role, seed.key),
+      flags: getBridgedOfficialRolePermissionFlags(role, seed.key),
     }));
   return {
     role,
@@ -161,7 +165,7 @@ export function buildRolePermissionMatrixRows(options?: {
     .sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))
     .map((seed) => {
       const cells: RoleMatrixCell[] = roles.map((role) => {
-        const flags = getOfficialRolePermissionFlags(role, seed.key);
+        const flags = getBridgedOfficialRolePermissionFlags(role, seed.key);
         return {
           role,
           flags,
@@ -188,12 +192,13 @@ export function buildEffectiveFlagsMap(
   overrides: readonly UserPermissionOverrideGrant[],
   baselineFlagsByKey?: Readonly<Record<string, PermissionFlags>> | null
 ): Record<string, PermissionFlags> {
-  const overrideByKey = new Map(overrides.map((o) => [o.resourceKey, o]));
   const out: Record<string, PermissionFlags> = {};
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
     const baseline =
-      baselineFlagsByKey?.[seed.key] ?? getOfficialRolePermissionFlags(role, seed.key);
-    out[seed.key] = mergeRoleAndOverrideFlags(baseline, overrideByKey.get(seed.key));
+      baselineFlagsByKey?.[seed.key] ??
+      getBridgedOfficialRolePermissionFlags(role, seed.key);
+    const ov = resolveBridgedOverride(overrides, seed.key);
+    out[seed.key] = mergeRoleAndOverrideFlags(baseline, ov);
   }
   return out;
 }
@@ -210,12 +215,15 @@ export function diffUserAgainstRolePreset(args: {
     buildEffectiveFlagsMap(args.role, args.overrides, args.baselineFlagsByKey);
   const overrideKeys = new Set(args.overrides.map((o) => o.resourceKey));
   const items: UserVsRoleDiffItem[] = [];
+  const equivalentOverride = (key: string) =>
+    resolveBridgedOverride(args.overrides, key) != null;
+
   for (const seed of PERMISSION_RESOURCE_SEEDS) {
     const roleFlags =
       args.baselineFlagsByKey?.[seed.key] ??
-      getOfficialRolePermissionFlags(args.role, seed.key);
+      getBridgedOfficialRolePermissionFlags(args.role, seed.key);
     const effectiveFlags = effective[seed.key] ?? roleFlags;
-    const hasOverride = overrideKeys.has(seed.key);
+    const hasOverride = overrideKeys.has(seed.key) || equivalentOverride(seed.key);
     const changed = hasOverride || !flagsEqual(roleFlags, effectiveFlags);
     if (!changed) continue;
     items.push({
@@ -291,6 +299,30 @@ export function planApplyRolePreset(args: {
   };
 }
 
+function flagsAllowAccess(flags: PermissionFlags): boolean {
+  return flags.canView || flags.canExecute || flags.canManage;
+}
+
+function isAllowedWithAncestors(
+  seedKey: string,
+  role: AppUserRole,
+  effective: Record<string, PermissionFlags>,
+  byKey: Map<string, PermissionResourceSeed>
+): boolean {
+  const flags =
+    effective[seedKey] ?? getBridgedOfficialRolePermissionFlags(role, seedKey);
+  if (!flagsAllowAccess(flags)) return false;
+  let parentKey = byKey.get(seedKey)?.parentKey ?? null;
+  while (parentKey) {
+    const parentFlags =
+      effective[parentKey] ??
+      getBridgedOfficialRolePermissionFlags(role, parentKey);
+    if (!flagsAllowAccess(parentFlags)) return false;
+    parentKey = byKey.get(parentKey)?.parentKey ?? null;
+  }
+  return true;
+}
+
 export function buildPermissionAccessSummary(args: {
   role: AppUserRole;
   effective: Record<string, PermissionFlags>;
@@ -305,12 +337,31 @@ export function buildPermissionAccessSummary(args: {
   const tabsBlocked: string[] = [];
   const criticalActionsAllowed: string[] = [];
 
-  for (const seed of PERMISSION_RESOURCE_SEEDS) {
-    const flags = args.effective[seed.key] ?? getOfficialRolePermissionFlags(args.role, seed.key);
-    const allowed = flags.canView || flags.canExecute || flags.canManage;
+  // Só seeds da UI admin (canônicos) — evita "Comercial" liberado via alias PT
+  // enquanto a árvore edita `commercial*`.
+  const uiSeeds = listPermissionSeedsForAdminUi();
+  const byKey = new Map(PERMISSION_RESOURCE_SEEDS.map((s) => [s.key, s]));
+
+  for (const seed of uiSeeds) {
+    const flags =
+      args.effective[seed.key] ??
+      getBridgedOfficialRolePermissionFlags(args.role, seed.key);
+    const allowed = isAllowedWithAncestors(
+      seed.key,
+      args.role,
+      args.effective,
+      byKey
+    );
     if (seed.type === "MENU" && allowed) menusAllowed.push(seed.label);
     if (seed.type === "SUBMENU" && allowed) submenusAllowed.push(seed.label);
-    if (seed.type === "TAB" && !allowed) tabsBlocked.push(seed.label);
+    // Abas bloqueadas só sob menus/submenus ainda liberados (evita lista gigante).
+    if (seed.type === "TAB" && !flagsAllowAccess(flags)) {
+      const parentKey = seed.parentKey;
+      const parentAllowed = parentKey
+        ? isAllowedWithAncestors(parentKey, args.role, args.effective, byKey)
+        : false;
+      if (parentAllowed) tabsBlocked.push(seed.label);
+    }
     if (
       seed.type === "ACTION" &&
       (flags.canManage || seed.key === "admin.permissoes.action.manage") &&

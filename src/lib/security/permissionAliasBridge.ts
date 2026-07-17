@@ -12,8 +12,14 @@ import {
 import { PERMISSION_CONTRACT_RESOURCES } from "@/src/lib/security/permissionContract/index.js";
 import type { PermissionFlags } from "@/src/lib/security/permissionTypes.js";
 
+const EMPTY: PermissionFlags = {
+  canView: false,
+  canExecute: false,
+  canManage: false,
+};
+
 function emptyFlags(): PermissionFlags {
-  return { canView: false, canExecute: false, canManage: false };
+  return { ...EMPTY };
 }
 
 function orFlags(a: PermissionFlags, b: PermissionFlags): PermissionFlags {
@@ -24,26 +30,59 @@ function orFlags(a: PermissionFlags, b: PermissionFlags): PermissionFlags {
   };
 }
 
-/** Todas as chaves seed/contrato equivalentes a `resourceKey` (inclui ela mesma). */
+/**
+ * Chaves equivalentes a `resourceKey` para projeção de flags/overrides.
+ *
+ * - Canônico → ele + seus `relationalResourceKeys`
+ * - Alias legado → ele + o canônico (NÃO inclui aliases irmãos)
+ *
+ * Evita clique falso (ex.: `admin.usuarios` ≉ `admin.permissoes.action.manage`
+ * só porque ambos estão em `admin.settings.security.relationalResourceKeys`).
+ */
 export function listEquivalentPermissionKeys(resourceKey: string): string[] {
   const key = resourceKey.trim();
   if (!key) return [];
   const keys = new Set<string>([key]);
   for (const r of PERMISSION_CONTRACT_RESOURCES) {
-    const rels = r.relationalResourceKeys ?? [];
-    if (r.resourceKey === key || rels.includes(key)) {
+    const rels = (r.relationalResourceKeys ?? [])
+      .map((rel) => rel.trim())
+      .filter(Boolean);
+    if (r.resourceKey === key) {
+      for (const rel of rels) keys.add(rel);
+      continue;
+    }
+    if (rels.includes(key)) {
       keys.add(r.resourceKey);
-      for (const rel of rels) {
-        if (rel.trim()) keys.add(rel.trim());
-      }
     }
   }
   return [...keys].sort();
 }
 
-/** Aliases distintos da chave (para dual-write). */
+/** Aliases distintos da chave (projeção de flags / resolve de override). */
 export function listPermissionAliasKeys(resourceKey: string): string[] {
   return listEquivalentPermissionKeys(resourceKey).filter((k) => k !== resourceKey);
+}
+
+/**
+ * Dual-write só em pares 1:1 (ex.: commercial ↔ comercial).
+ * Bundles multi-alias (admin.settings.security → 3 PT) não expandem —
+ * evita bleed de override entre irmãos.
+ */
+export function listDualWriteAliasKeys(resourceKey: string): string[] {
+  const key = resourceKey.trim();
+  if (!key) return [];
+  for (const r of PERMISSION_CONTRACT_RESOURCES) {
+    const rels = (r.relationalResourceKeys ?? [])
+      .map((rel) => rel.trim())
+      .filter(Boolean);
+    if (r.resourceKey === key) {
+      return rels.length === 1 ? [rels[0]!] : [];
+    }
+    if (rels.includes(key)) {
+      return rels.length === 1 ? [r.resourceKey] : [];
+    }
+  }
+  return [];
 }
 
 /**
@@ -104,31 +143,54 @@ export function resolveBridgedOverride(
   };
 }
 
-/** Expande overrides para dual-write em todos os aliases equivalentes. */
+/**
+ * Lê flags de um mapa considerando aliases (OR).
+ * Se nenhum alias existir no mapa, retorna `fallback`.
+ */
+export function projectBridgedFlagsFromMap(
+  flagsByKey: Readonly<Record<string, PermissionFlags>>,
+  resourceKey: string,
+  fallback: PermissionFlags = EMPTY
+): PermissionFlags {
+  let merged = emptyFlags();
+  let sawAny = false;
+  for (const key of listEquivalentPermissionKeys(resourceKey)) {
+    const f = flagsByKey[key];
+    if (!f) continue;
+    sawAny = true;
+    merged = orFlags(merged, f);
+  }
+  return sawAny ? merged : { ...fallback };
+}
+
+/** Expande overrides para dual-write 1:1 (PT ↔ canônico). */
 export function expandOverridesToAliases<T extends AxisOverride>(
   overrides: readonly T[]
 ): T[] {
   const byKey = new Map<string, T>();
+  const mergeAxis = (a: boolean | null, b: boolean | null): boolean | null => {
+    if (a === false || b === false) return false;
+    if (a === true || b === true) return true;
+    return null;
+  };
+  const put = (key: string, ov: T) => {
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { ...ov, resourceKey: key });
+      return;
+    }
+    byKey.set(key, {
+      ...prev,
+      resourceKey: key,
+      canView: mergeAxis(prev.canView, ov.canView),
+      canExecute: mergeAxis(prev.canExecute, ov.canExecute),
+      canManage: mergeAxis(prev.canManage, ov.canManage),
+    });
+  };
   for (const ov of overrides) {
-    for (const key of listEquivalentPermissionKeys(ov.resourceKey)) {
-      const prev = byKey.get(key);
-      if (!prev) {
-        byKey.set(key, { ...ov, resourceKey: key });
-        continue;
-      }
-      // Deny wins ao fundir dual-write.
-      const mergeAxis = (a: boolean | null, b: boolean | null): boolean | null => {
-        if (a === false || b === false) return false;
-        if (a === true || b === true) return true;
-        return null;
-      };
-      byKey.set(key, {
-        ...prev,
-        resourceKey: key,
-        canView: mergeAxis(prev.canView, ov.canView),
-        canExecute: mergeAxis(prev.canExecute, ov.canExecute),
-        canManage: mergeAxis(prev.canManage, ov.canManage),
-      });
+    put(ov.resourceKey, ov);
+    for (const alias of listDualWriteAliasKeys(ov.resourceKey)) {
+      put(alias, ov);
     }
   }
   return [...byKey.values()].sort((a, b) =>
