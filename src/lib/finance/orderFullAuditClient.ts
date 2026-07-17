@@ -173,6 +173,17 @@ export type OrderFullAuditStockDocument = {
   idNfe: number | null;
   totalValue: number;
   allocatedValue: number;
+  allocatedToAllOrders?: number;
+  unallocatedBalance?: number;
+  overAllocation?: number;
+  coveragePercent?: number | null;
+  coverageStatus?:
+    | "nao_alocado"
+    | "parcial"
+    | "completo"
+    | "superalocado"
+    | "arredondamento"
+    | null;
   outsideOrderValue: number;
   quantityDocument: number;
   quantityUsedForOrder: number;
@@ -186,7 +197,16 @@ export type OrderFullAuditStockDocument = {
     | "ITEM_EVIDENCE"
     | "HEADER_ONLY"
     | "SALES_ORDER_NFE_LINK"
+    | "ORDER_TO_CASH"
+    | "UNRESOLVED"
+    | "CONFLICT"
     | "UNKNOWN";
+  linkedOrders?: Array<{
+    salesOrderId: string;
+    orderCode: string | null;
+    allocatedValue: number;
+    linkOrigin: string;
+  }>;
   alerts: string[];
 };
 
@@ -203,6 +223,17 @@ export type OrderFullAuditStockDocumentItem = {
   excessQuantity: number | null;
   unitValue: number | null;
   totalValue: number | null;
+  allocatedValue?: number | null;
+  unallocatedBalance?: number | null;
+  overAllocation?: number | null;
+  linkStatus?: "resolved" | "unresolved" | "partial" | "conflict" | null;
+  linkedSalesOrderItemIds?: string[];
+  linkCandidates?: Array<{
+    salesOrderId: string | null;
+    salesOrderItemId: string | null;
+    allocatedValue: number;
+    source: string;
+  }>;
   linkedSalesOrderId: string | null;
   linkedOrderCode: string | null;
   linkedSalesOrderItemId: string | null;

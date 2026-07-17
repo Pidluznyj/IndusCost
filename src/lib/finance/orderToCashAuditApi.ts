@@ -419,6 +419,8 @@ export type OrderToCashAuditFactRecord = {
   stockDocumentId: string | null;
   stockDocumentExternalId: number | null;
   stockDocumentDate: Date | string | null;
+  stockDocumentItemId?: string | null;
+  stockDocumentItemExternalProductId?: number | null;
   stockDocumentItemQuantity: number | null;
   quantityUsedForOrder: number | null;
   excessQuantity: number | null;

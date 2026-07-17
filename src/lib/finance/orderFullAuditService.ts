@@ -26,6 +26,11 @@ import {
   resolveSalesOrderRelatedNfes,
   type SalesOrderRelatedNfeResolveResult,
 } from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
+import {
+  allocatedValueForSalesOrder,
+  projectOutputDocumentAllocation,
+  type OutputDocumentAllocationProjection,
+} from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
 import type { OrderToCashAuditFactRecord } from "./orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./orderToCashFactItemStatusEnrichment.server.js";
 import {
@@ -350,8 +355,22 @@ export type OrderFullAuditStockDocument = {
   customerName: string | null;
   companyName: string | null;
   idNfe: number | null;
+  /** Total do documento (stage) — aparece uma única vez; nunca soma de facts. */
   totalValue: number;
+  /** Valor alocado a ESTE pedido (não o total do documento). */
   allocatedValue: number;
+  /** Soma das alocações a todos os pedidos (separada do total). */
+  allocatedToAllOrders: number;
+  unallocatedBalance: number;
+  overAllocation: number;
+  coveragePercent: number | null;
+  coverageStatus:
+    | "nao_alocado"
+    | "parcial"
+    | "completo"
+    | "superalocado"
+    | "arredondamento"
+    | null;
   outsideOrderValue: number;
   quantityDocument: number;
   quantityUsedForOrder: number;
@@ -366,7 +385,17 @@ export type OrderFullAuditStockDocument = {
     | "ITEM_EVIDENCE"
     | "HEADER_ONLY"
     | "SALES_ORDER_NFE_LINK"
+    | "ORDER_TO_CASH"
+    | "UNRESOLVED"
+    | "CONFLICT"
     | "UNKNOWN";
+  /** Pedidos vinculados com valor alocado exclusivo (DS-03.8). */
+  linkedOrders: Array<{
+    salesOrderId: string;
+    orderCode: string | null;
+    allocatedValue: number;
+    linkOrigin: string;
+  }>;
   alerts: string[];
 };
 
@@ -383,6 +412,19 @@ export type OrderFullAuditStockDocumentItem = {
   excessQuantity: number | null;
   unitValue: number | null;
   totalValue: number | null;
+  /** Soma alocada deste item (todos os vínculos). */
+  allocatedValue: number | null;
+  unallocatedBalance: number | null;
+  overAllocation: number | null;
+  linkStatus: "resolved" | "unresolved" | "partial" | "conflict" | null;
+  /** Todos os vínculos válidos preservados (DS-03.8). */
+  linkedSalesOrderItemIds: string[];
+  linkCandidates: Array<{
+    salesOrderId: string | null;
+    salesOrderItemId: string | null;
+    allocatedValue: number;
+    source: string;
+  }>;
   /** salesOrderId oficial do IndusCost casado pelo fact ou pela evidência. */
   linkedSalesOrderId: string | null;
   linkedOrderCode: string | null;
@@ -1608,6 +1650,11 @@ export async function loadOrderFullAudit(
         idNfe: null,
         totalValue: 0,
         allocatedValue: 0,
+        allocatedToAllOrders: 0,
+        unallocatedBalance: 0,
+        overAllocation: 0,
+        coveragePercent: null,
+        coverageStatus: null,
         outsideOrderValue: 0,
         quantityDocument: 0,
         quantityUsedForOrder: 0,
@@ -1618,20 +1665,20 @@ export async function loadOrderFullAudit(
         productLines: 0,
         status: null,
         linkOrigin: "ITEM_EVIDENCE" as const,
+        linkedOrders: [],
         alerts: [] as string[],
       };
-      cur.quantityDocument += fact.stockDocumentItemQuantity ?? 0;
+      // DS-03.8: não somar stockDocumentItemTotalValue (infla em rateios).
+      // totalValue vem do stage; allocatedValue é recalculado na projeção.
       cur.quantityUsedForOrder += fact.quantityUsedForOrder ?? 0;
       cur.excessQuantity += fact.excessQuantity ?? 0;
       cur.outsideOrderQuantity += fact.outsideOrderQuantity ?? 0;
-      cur.totalValue += fact.stockDocumentItemTotalValue ?? 0;
       cur.allocatedValue += fact.allocatedValueByDocumentPrice ?? 0;
       cur.outsideOrderValue +=
         (fact.outsideOrderQuantity ?? 0) *
         (fact.stockDocumentItemUnitValue ?? 0);
       cur.hasExcess = cur.hasExcess || (fact.excessQuantity ?? 0) > MONEY_TOLERANCE;
       cur.hasOutside = cur.hasOutside || (fact.outsideOrderQuantity ?? 0) > MONEY_TOLERANCE;
-      cur.productLines += 1;
       stockMap.set(fact.stockDocumentExternalId, cur);
     }
   }
@@ -1790,10 +1837,16 @@ export async function loadOrderFullAudit(
       ? prisma.nomusStockDocument.findMany({
           where: { externalId: { in: stockIds } },
           select: {
+            id: true,
             externalId: true,
             tipoDocumentoEstoque: true,
             dataDocumento: true,
             idNfe: true,
+            totalValue: true,
+            personName: true,
+            companyName: true,
+            statusRaw: true,
+            movementDate: true,
             rawJson: true,
             items: {
               select: {
@@ -1875,9 +1928,10 @@ export async function loadOrderFullAudit(
     entry.tipoDocumentoEstoque = doc.tipoDocumentoEstoque ?? null;
     entry.dataDocumento = entry.dataDocumento ?? toIso(doc.dataDocumento);
     entry.idNfe = doc.idNfe ?? null;
-    // Metadados adicionais vindos do rawJson (best-effort).
+    // Metadados: preferir colunas normalizadas do stage; rawJson como fallback.
     entry.customerName =
       entry.customerName ??
+      doc.personName ??
       readNomusRawString(doc.rawJson, [
         "nomeCliente",
         "cliente",
@@ -1886,18 +1940,22 @@ export async function loadOrderFullAudit(
       ]);
     entry.companyName =
       entry.companyName ??
+      doc.companyName ??
       readNomusRawString(doc.rawJson, [
         "empresa",
         "razaoSocialEmpresa",
         "companyName",
       ]);
     entry.dataMovimentacao =
+      toIso(doc.movementDate) ??
       readNomusRawString(doc.rawJson, [
         "dataMovimentacao",
         "dataMov",
         "movementDate",
-      ]) ?? entry.dataMovimentacao;
+      ]) ??
+      entry.dataMovimentacao;
     entry.status =
+      doc.statusRaw ??
       readNomusRawString(doc.rawJson, ["status", "situacao", "statusDocumento"]) ??
       entry.status;
   }
@@ -2186,20 +2244,11 @@ export async function loadOrderFullAudit(
   }
 
   /* -------------------------------------------------------------------- */
-  /*  Aba Documentos de Saída — itens ricos com comparação de preço        */
+  /*  Aba Documentos de Saída — DS-03.8 projeção consolidada               */
   /* -------------------------------------------------------------------- */
   const stockDocumentItems: OrderFullAuditStockDocumentItem[] = [];
-  const factsByDocKey = new Map<string, OrderToCashAuditFactRecord[]>();
-  const factsByDocExternalId = new Map<
-    number,
-    OrderToCashAuditFactRecord[]
-  >();
+  const factsByDocExternalId = new Map<number, OrderToCashAuditFactRecord[]>();
   for (const fact of facts) {
-    if (fact.stockDocumentId) {
-      const arr = factsByDocKey.get(fact.stockDocumentId) ?? [];
-      arr.push(fact);
-      factsByDocKey.set(fact.stockDocumentId, arr);
-    }
     if (fact.stockDocumentExternalId != null) {
       const arr =
         factsByDocExternalId.get(fact.stockDocumentExternalId) ?? [];
@@ -2208,61 +2257,146 @@ export async function loadOrderFullAudit(
     }
   }
 
-  const itemsByExternalProductId = new Map<number, OrderFullAuditItem[]>();
-  for (const it of items) {
-    if (it.productExternalId == null) continue;
-    const arr = itemsByExternalProductId.get(it.productExternalId) ?? [];
-    arr.push(it);
-    itemsByExternalProductId.set(it.productExternalId, arr);
-  }
+  const orderItemHints = items.map((it) => ({
+    salesOrderItemId: it.salesOrderItemId,
+    salesOrderId,
+    orderCode: order.orderCode ?? null,
+    externalProductId: it.productExternalId,
+  }));
 
   for (const doc of stockRows) {
-    const docEntry = stockMap.get(doc.externalId);
-    if (!docEntry) continue;
+    let docEntry = stockMap.get(doc.externalId);
+    if (!docEntry) {
+      // Documento no stage mas sem fact O2C — ainda listável após DS-03.7/03.8.
+      docEntry = {
+        stockDocumentExternalId: doc.externalId,
+        tipoDocumentoEstoque: doc.tipoDocumentoEstoque ?? null,
+        dataDocumento: toIso(doc.dataDocumento),
+        dataMovimentacao: toIso(doc.movementDate),
+        customerName: doc.personName ?? null,
+        companyName: doc.companyName ?? null,
+        idNfe: doc.idNfe ?? null,
+        totalValue: 0,
+        allocatedValue: 0,
+        allocatedToAllOrders: 0,
+        unallocatedBalance: 0,
+        overAllocation: 0,
+        coveragePercent: null,
+        coverageStatus: null,
+        outsideOrderValue: 0,
+        quantityDocument: 0,
+        quantityUsedForOrder: 0,
+        excessQuantity: 0,
+        outsideOrderQuantity: 0,
+        hasExcess: false,
+        hasOutside: false,
+        productLines: 0,
+        status: doc.statusRaw ?? null,
+        linkOrigin: "HEADER_ONLY",
+        linkedOrders: [],
+        alerts: [],
+      };
+      stockMap.set(doc.externalId, docEntry);
+    }
+
     const factsForDoc = factsByDocExternalId.get(doc.externalId) ?? [];
-    for (const stockItem of doc.items) {
-      const docQty = decimalToNumber(stockItem.quantity);
-      const docUnit = decimalToNumber(stockItem.unitValue);
-      const docTotal =
-        decimalToNumber(stockItem.estimatedTotalValue) ??
-        (docQty != null && docUnit != null ? round2(docQty * docUnit) : null);
+    const projection: OutputDocumentAllocationProjection =
+      projectOutputDocumentAllocation({
+        document: {
+          id: doc.id,
+          externalId: doc.externalId,
+          idNfe: doc.idNfe,
+          totalValue: doc.totalValue,
+          items: doc.items.map((item) => ({
+            id: item.id,
+            externalItemId: item.externalItemId,
+            externalProductId: item.externalProductId,
+            quantity: item.quantity,
+            unitValue: item.unitValue,
+            estimatedTotalValue: item.estimatedTotalValue,
+          })),
+        },
+        allocationLines: factsForDoc.map((f) => ({
+          stockDocumentItemId: f.stockDocumentItemId ?? null,
+          salesOrderId: f.salesOrderId ?? salesOrderId,
+          salesOrderItemId: f.salesOrderItemId ?? null,
+          orderCode: f.orderCode ?? order.orderCode ?? null,
+          allocatedValueByDocumentPrice: f.allocatedValueByDocumentPrice,
+          quantityUsedForOrder: f.quantityUsedForOrder,
+          externalProductId:
+            f.stockDocumentItemExternalProductId ??
+            (f.salesOrderItemId
+              ? itemByStorageId.get(f.salesOrderItemId)?.productExternalId ?? null
+              : null),
+        })),
+        orderItemHints,
+        focusSalesOrderId: salesOrderId,
+      });
 
-      // Casamento oficial: fact que tenha `stockDocumentExternalId` + mesmo produto
-      // externo (evidência por linha). Facts trazem `productCode` snapshot;
-      // usamos `externalProductId` do stock item + `sku` do fact via items internos.
-      const matchingFact =
-        factsForDoc.find(
-          (f) =>
-            f.salesOrderItemId != null &&
-            stockItem.externalProductId != null &&
-            (itemByStorageId.get(f.salesOrderItemId!)?.productExternalId ??
-              null) === stockItem.externalProductId
-        ) ?? null;
+    const forThisOrder = allocatedValueForSalesOrder(projection, salesOrderId);
 
-      const matchingItem =
-        matchingFact?.salesOrderItemId
-          ? itemByStorageId.get(matchingFact.salesOrderItemId) ?? null
-          : (() => {
-              const candidates =
-                stockItem.externalProductId != null
-                  ? itemsByExternalProductId.get(stockItem.externalProductId) ??
-                    []
-                  : [];
-              return candidates.length === 1 ? candidates[0]! : null;
-            })();
+    docEntry.totalValue = projection.document.totalValue;
+    docEntry.allocatedValue = forThisOrder.allocatedValue;
+    docEntry.allocatedToAllOrders = projection.document.allocatedToAllOrders;
+    docEntry.unallocatedBalance = projection.document.unallocatedBalance;
+    docEntry.overAllocation = projection.document.overAllocation;
+    docEntry.coveragePercent = projection.document.coveragePercent;
+    docEntry.coverageStatus = projection.document.coverageStatus;
+    docEntry.productLines = projection.document.productLineCount;
+    docEntry.quantityDocument = projection.items.reduce(
+      (s, i) => s + i.quantityDocument,
+      0
+    );
+    docEntry.quantityUsedForOrder = forThisOrder.allocatedValueCents >= 0
+      ? projection.linkedOrders.find((o) => o.salesOrderId === salesOrderId)
+          ?.quantityUsedForOrder ?? 0
+      : docEntry.quantityUsedForOrder;
+    docEntry.linkedOrders = projection.linkedOrders.map((o) => ({
+      salesOrderId: o.salesOrderId,
+      orderCode: o.orderCode,
+      allocatedValue: o.allocatedValue,
+      linkOrigin: o.linkOrigin,
+    }));
+    docEntry.linkOrigin =
+      projection.document.linkOrigin === "UNRESOLVED"
+        ? order.nfeLinks.some(
+            (l) => l.nfeExternalId === docEntry!.idNfe && l.nfeExternalId != null
+          )
+          ? "SALES_ORDER_NFE_LINK"
+          : "HEADER_ONLY"
+        : projection.document.linkOrigin === "ORDER_TO_CASH"
+          ? "ORDER_TO_CASH"
+          : projection.document.linkOrigin === "CONFLICT"
+            ? "CONFLICT"
+            : projection.document.linkOrigin === "ITEM_EVIDENCE"
+              ? "ITEM_EVIDENCE"
+              : projection.document.linkOrigin === "SALES_ORDER_NFE_LINK"
+                ? "SALES_ORDER_NFE_LINK"
+                : "UNKNOWN";
 
-      const usedQty =
-        (matchingFact?.quantityUsedForOrder ?? null) != null
-          ? decimalToNumber(matchingFact!.quantityUsedForOrder)
-          : matchingItem != null && docQty != null
-            ? docQty
-            : null;
-      const excessQty =
-        (matchingFact?.excessQuantity ?? null) != null
-          ? decimalToNumber(matchingFact!.excessQuantity)
-          : docQty != null && usedQty != null
-            ? Math.max(0, docQty - usedQty)
-            : null;
+    if (projection.document.coverageStatus === "superalocado") {
+      if (!docEntry.alerts.includes("DOCUMENT_OVER_ALLOCATED")) {
+        docEntry.alerts.push("DOCUMENT_OVER_ALLOCATED");
+      }
+    }
+    if (projection.document.linkOrigin === "CONFLICT") {
+      if (!docEntry.alerts.includes("DOCUMENT_ITEM_LINK_CONFLICT")) {
+        docEntry.alerts.push("DOCUMENT_ITEM_LINK_CONFLICT");
+      }
+    }
+
+    for (const projected of projection.items) {
+      const stockItem = doc.items.find((i) => i.id === projected.stockDocumentItemId);
+      const primarySoi = projected.primarySalesOrderItemId;
+      const matchingItem = primarySoi
+        ? itemByStorageId.get(primarySoi) ?? null
+        : null;
+
+      const docQty = projected.quantityDocument;
+      const usedQty = projected.quantityUsedForOrder;
+      const excessQty = Math.max(0, docQty - usedQty);
+      const docUnit = projected.unitValue;
+      const docTotal = projected.totalValue;
 
       const orderUnitPrice = matchingItem?.unitPrice ?? null;
       const priceDiffAbs =
@@ -2278,20 +2412,12 @@ export async function loadOrderFullAudit(
           ? round2(priceDiffAbs * usedQty)
           : null;
 
-      const alertsForLine: string[] = [];
-      if (
-        docQty != null &&
-        usedQty != null &&
-        docQty - usedQty > 0.0001 &&
-        matchingItem != null
-      ) {
+      const alertsForLine = [...projected.alerts];
+      if (excessQty > 0.0001 && matchingItem != null) {
         alertsForLine.push("DOCUMENT_WITH_EXCESS");
       }
-      if (!matchingItem) {
+      if (projected.linkStatus === "unresolved") {
         alertsForLine.push("DOCUMENT_EXTRA_ITEM");
-      }
-      if (matchingItem && matchingFact == null) {
-        alertsForLine.push("DOCUMENT_ALLOCATED_BY_HEADER_ONLY");
       }
       if (
         matchingItem &&
@@ -2305,7 +2431,6 @@ export async function loadOrderFullAudit(
       if (
         matchingItem != null &&
         matchingItem.quantity != null &&
-        docQty != null &&
         Math.abs(docQty - matchingItem.quantity) > 0.0001
       ) {
         alertsForLine.push("DOCUMENT_QUANTITY_MISMATCH");
@@ -2314,70 +2439,84 @@ export async function loadOrderFullAudit(
         alertsForLine.push("DOCUMENT_WITHOUT_NFE");
       }
 
-      // Propaga alertas resumidos para o cabeçalho do documento.
       for (const c of alertsForLine) {
         if (!docEntry.alerts.includes(c)) docEntry.alerts.push(c);
       }
 
+      const factForPrimary =
+        primarySoi != null
+          ? factsForDoc.find((f) => f.salesOrderItemId === primarySoi) ?? null
+          : factsForDoc[0] ?? null;
+
       stockDocumentItems.push({
         stockDocumentExternalId: doc.externalId,
-        stockDocumentItemId: stockItem.id,
-        externalItemId: stockItem.externalItemId ?? null,
-        productSku: readNomusRawString(stockItem.rawJson, [
-          "codigoProduto",
-          "sku",
-          "codigo",
-          "productSku",
-        ]),
-        productName: readNomusRawString(stockItem.rawJson, [
-          "descricaoProduto",
-          "descricao",
-          "productName",
-          "nomeProduto",
-        ]),
-        productExternalId: stockItem.externalProductId ?? null,
-        unit: readNomusRawString(stockItem.rawJson, [
-          "unidade",
-          "un",
-          "unit",
-        ]),
+        stockDocumentItemId: projected.stockDocumentItemId,
+        externalItemId: projected.externalItemId,
+        productSku: stockItem
+          ? readNomusRawString(stockItem.rawJson, [
+              "codigoProduto",
+              "sku",
+              "codigo",
+              "productSku",
+            ])
+          : null,
+        productName: stockItem
+          ? readNomusRawString(stockItem.rawJson, [
+              "descricaoProduto",
+              "descricao",
+              "productName",
+              "nomeProduto",
+            ])
+          : null,
+        productExternalId: projected.externalProductId,
+        unit: stockItem
+          ? readNomusRawString(stockItem.rawJson, ["unidade", "un", "unit"])
+          : null,
         quantityDocument: docQty,
         quantityUsedForOrder: usedQty,
         excessQuantity: excessQty,
         unitValue: docUnit,
         totalValue: docTotal,
-        linkedSalesOrderId: matchingFact?.salesOrderId ?? null,
+        allocatedValue: projected.allocatedValue,
+        unallocatedBalance: projected.unallocatedBalanceCents / 100,
+        overAllocation: projected.overAllocationCents / 100,
+        linkStatus: projected.linkStatus,
+        linkedSalesOrderItemIds: projected.links
+          .map((l) => l.salesOrderItemId)
+          .filter((id): id is string => Boolean(id)),
+        linkCandidates: projected.links.map((l) => ({
+          salesOrderId: l.salesOrderId,
+          salesOrderItemId: l.salesOrderItemId,
+          allocatedValue: l.allocatedValueCents / 100,
+          source: l.source,
+        })),
+        linkedSalesOrderId: projected.primarySalesOrderId,
         linkedOrderCode: order.orderCode ?? null,
-        linkedSalesOrderItemId:
-          matchingItem?.salesOrderItemId ??
-          matchingFact?.salesOrderItemId ??
-          null,
+        linkedSalesOrderItemId: projected.primarySalesOrderItemId,
         linkedOrderItemSequence: matchingItem?.itemSequence ?? null,
         orderUnitPrice,
         priceDiffAbsolute: priceDiffAbs,
         priceDiffPercent: priceDiffPerc,
         financialImpact,
         nfeExternalId: docEntry.idNfe,
-        nfeNumber: matchingFact?.nfeNumber ?? null,
+        nfeNumber: factForPrimary?.nfeNumber ?? null,
         receivableExternalId: null,
-        lineType: matchingFact?.lineType ?? null,
-        alerts: alertsForLine,
+        lineType: factForPrimary?.lineType ?? null,
+        alerts: [...new Set(alertsForLine)],
       });
     }
 
-    // Ajusta linkOrigin do cabeçalho com base nos facts encontrados.
     if (factsForDoc.length === 0) {
-      docEntry.linkOrigin =
-        order.nfeLinks.some((l) => l.nfeExternalId === docEntry.idNfe && l.nfeExternalId != null)
-          ? "SALES_ORDER_NFE_LINK"
-          : "HEADER_ONLY";
+      if (
+        order.nfeLinks.some(
+          (l) => l.nfeExternalId === docEntry!.idNfe && l.nfeExternalId != null
+        )
+      ) {
+        docEntry.linkOrigin = "SALES_ORDER_NFE_LINK";
+      }
       if (!docEntry.alerts.includes("DOCUMENT_ALLOCATED_BY_HEADER_ONLY")) {
         docEntry.alerts.push("DOCUMENT_ALLOCATED_BY_HEADER_ONLY");
       }
-    } else if (factsForDoc.every((f) => f.salesOrderItemId != null)) {
-      docEntry.linkOrigin = "ITEM_EVIDENCE";
-    } else {
-      docEntry.linkOrigin = "HEADER_ONLY";
     }
     if (docEntry.idNfe == null && !docEntry.alerts.includes("DOCUMENT_WITHOUT_NFE")) {
       docEntry.alerts.push("DOCUMENT_WITHOUT_NFE");
@@ -5217,6 +5356,9 @@ function normalizeFact(raw: Record<string, unknown>): OrderToCashAuditFactRecord
     stockDocumentId: (raw.stockDocumentId as string | null) ?? null,
     stockDocumentExternalId: (raw.stockDocumentExternalId as number | null) ?? null,
     stockDocumentDate: (raw.stockDocumentDate as Date | string | null) ?? null,
+    stockDocumentItemId: (raw.stockDocumentItemId as string | null) ?? null,
+    stockDocumentItemExternalProductId:
+      (raw.stockDocumentItemExternalProductId as number | null) ?? null,
     stockDocumentItemQuantity: decimalToNumber(raw.stockDocumentItemQuantity),
     quantityUsedForOrder: decimalToNumber(raw.quantityUsedForOrder),
     excessQuantity: decimalToNumber(raw.excessQuantity),
