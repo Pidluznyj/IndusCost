@@ -22,9 +22,10 @@ describe("financeAccountsReceivableFormat", () => {
 
   it("formatFinanceCurrencyCompact usa padrão KPI executivo", () => {
     assert.equal(formatFinanceCurrencyCompact(942.81), "R$\u00a0942,81");
-    assert.equal(formatFinanceCurrencyCompact(12_400), "R$ 12,4 mil");
-    assert.equal(formatFinanceCurrencyCompact(827_500), "R$ 827,5 mil");
-    assert.equal(formatFinanceCurrencyCompact(5_830_000), "R$ 5,83 Mi");
+    // Intl BRL usa NBSP (símbolo↔valor e número↔sufixo).
+    assert.equal(formatFinanceCurrencyCompact(12_400), "R$\u00a012,4\u00a0mil");
+    assert.equal(formatFinanceCurrencyCompact(827_500), "R$\u00a0827,5\u00a0mil");
+    assert.equal(formatFinanceCurrencyCompact(5_830_000), "R$\u00a05,83\u00a0Mi");
     assert.doesNotMatch(formatFinanceCurrencyCompact(5_827_010.62), /5\.827\.010/);
   });
 
