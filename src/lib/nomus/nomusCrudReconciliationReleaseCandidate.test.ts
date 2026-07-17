@@ -56,7 +56,7 @@ import {
   type AccountsPayableLifecycleLocalSnapshot,
 } from "./nomusAccountsPayableSourceReconciliation.js";
 import { parseNomusSourceReconcileCli } from "./nomusSourceReconcileCli.js";
-import { canMarkRecordMissingInRun } from "./nomusSourceLifecycleContract.js";
+import { canReconcileAbsencesFromRun } from "./nomusSourceLifecycleContract.js";
 
 const ROOT = process.cwd();
 const executedAt = new Date("2026-07-17T20:00:00.000Z");
@@ -68,8 +68,8 @@ function read(rel: string): string {
 
 const soFullScope = buildSalesOrderSyncReconciliationScope({
   strategy: "full-reconciliation",
-  from: "2020-01-01",
-  to: "2030-12-31",
+  fromIso: "2020-01-01",
+  toIso: "2030-12-31",
 });
 
 const arScope = buildAccountsReceivableSyncReconciliationScope({
@@ -91,13 +91,15 @@ function soLocal(
     Pick<SalesOrderLifecycleLocalSnapshot, "localId" | "externalSalesOrderId">
 ): SalesOrderLifecycleLocalSnapshot {
   return {
+    orderCode: `PD ${String(overrides.externalSalesOrderId).padStart(5, "0")}`,
     payloadHash: "h1",
     sourcePresenceStatus: "PRESENT",
     presentInLastPayload: true,
     missingConsecutiveRuns: 0,
     missingSince: null,
     sourceRemovedAt: null,
-    orderCode: null,
+    firstSeenAt: new Date("2026-07-01T00:00:00.000Z"),
+    lastSeenAt: new Date("2026-07-10T00:00:00.000Z"),
     ...overrides,
   };
 }
@@ -145,8 +147,10 @@ function soComplete() {
   return assessSalesOrderSyncPayloadCompleteness({
     strategy: "full-reconciliation",
     startPage: 1,
-    completedWindow: true,
-    stoppedBecauseEmpty: true,
+    completedWindow: false,
+    stoppedBecauseEmpty: false,
+    stoppedBecauseNoNext: true,
+    http429Count: 0,
   });
 }
 
@@ -294,7 +298,7 @@ describe("SYNC-10 — Pedidos E2E lógico", () => {
         },
       ],
       reactivated,
-      new Map([["2737", { externalId: "2737", payloadHash: "h-new" }]])
+      [{ externalId: "2737", payloadHash: "h-new" }]
     );
     assert.equal(after.length, 1);
     assert.equal(after[0]?.sourcePresenceStatus, "PRESENT");
@@ -305,9 +309,11 @@ describe("SYNC-10 — Pedidos E2E lógico", () => {
 describe("SYNC-10 — CR E2E lógico", () => {
   it("novo / saldo / pagamento / ausência / reativação / independência do Pedido", () => {
     const created = buildAccountsReceivableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: arScope,
       completeness: arComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 10, payloadHash: "h1" }],
+      foundRows: [{ externalId: 10, payloadHash: "h1" }],
       localRecords: [],
       executedAt,
       mode: "preview",
@@ -315,37 +321,46 @@ describe("SYNC-10 — CR E2E lógico", () => {
     assert.equal(created.counters.creates, 1);
 
     const balance = buildAccountsReceivableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: arScope,
       completeness: arComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 10, payloadHash: "h-balance" }],
-      localRecords: [arLocal({ localId: "a1", externalId: 10, payloadHash: "h1", balanceReceivable: 1000 })],
+      foundRows: [{ externalId: 10, payloadHash: "h-balance" }],
+      localRecords: [
+        arLocal({ localId: "a1", externalId: 10, payloadHash: "h1", balanceReceivable: 1000 }),
+      ],
       executedAt,
       mode: "preview",
     });
     assert.equal(balance.counters.updates, 1);
 
-    const paidLocal = arLocal({
-      localId: "paid",
-      externalId: 11,
-      payloadHash: "paid-hash",
-      balanceReceivable: 0,
-      amountReceived: 500,
-      settlementDate: executedAt,
-    });
     const paidPlan = buildAccountsReceivableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: arScope,
       completeness: arComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 11, payloadHash: "paid-hash" }],
-      localRecords: [paidLocal],
+      foundRows: [{ externalId: 11, payloadHash: "paid-hash" }],
+      localRecords: [
+        arLocal({
+          localId: "paid",
+          externalId: 11,
+          payloadHash: "paid-hash",
+          balanceReceivable: 0,
+          amountReceived: 500,
+          settlementDate: executedAt,
+        }),
+      ],
       executedAt,
       mode: "preview",
     });
     assert.equal(paidPlan.counters.unchanged, 1);
 
     const missing = buildAccountsReceivableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: arScope,
       completeness: arComplete(),
       reconciliationEnabled: true,
-      found: [],
+      foundRows: [],
       localRecords: [arLocal({ localId: "a1", externalId: 10 })],
       executedAt,
       mode: "apply",
@@ -353,9 +368,13 @@ describe("SYNC-10 — CR E2E lógico", () => {
     assert.equal(missing.counters.missingCandidates, 1);
 
     const reactivated = buildAccountsReceivableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: arScope,
       completeness: arComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: ACCOUNTS_RECEIVABLE_PILOT.externalId, payloadHash: "h-new" }],
+      foundRows: [
+        { externalId: ACCOUNTS_RECEIVABLE_PILOT.externalId, payloadHash: "h-new" },
+      ],
       localRecords: [
         arLocal({
           localId: "pilot",
@@ -381,12 +400,19 @@ describe("SYNC-10 — CR E2E lógico", () => {
 
 describe("SYNC-10 — CP E2E lógico", () => {
   it("novo / vencimento / pagamento / ausência / reativação / dueDate", () => {
-    assertAccountsPayableOperationalAxisIsDueDate({ dueDate });
+    assertAccountsPayableOperationalAxisIsDueDate({
+      dueDate,
+      paymentDate: new Date("2026-07-01T00:00:00.000Z"),
+      competenceDate: new Date("2026-06-01T00:00:00.000Z"),
+      operationalDueDate: dueDate,
+    });
 
     const created = buildAccountsPayableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: apScope,
       completeness: apComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 20, payloadHash: "h1" }],
+      foundRows: [{ externalId: 20, payloadHash: "h1" }],
       localRecords: [],
       executedAt,
       mode: "preview",
@@ -394,9 +420,11 @@ describe("SYNC-10 — CP E2E lógico", () => {
     assert.equal(created.counters.creates, 1);
 
     const dueChanged = buildAccountsPayableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: apScope,
       completeness: apComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 20, payloadHash: "h-due" }],
+      foundRows: [{ externalId: 20, payloadHash: "h-due" }],
       localRecords: [
         apLocal({ localId: "p1", externalId: 20, payloadHash: "h1", dueDateIso: "2026-08-01" }),
       ],
@@ -406,9 +434,11 @@ describe("SYNC-10 — CP E2E lógico", () => {
     assert.equal(dueChanged.counters.updates, 1);
 
     const paid = buildAccountsPayableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: apScope,
       completeness: apComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 21, payloadHash: "paid" }],
+      foundRows: [{ externalId: 21, payloadHash: "paid" }],
       localRecords: [
         apLocal({
           localId: "paid",
@@ -425,20 +455,27 @@ describe("SYNC-10 — CP E2E lógico", () => {
     assert.equal(paid.counters.unchanged, 1);
 
     const missing = buildAccountsPayableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: apScope,
       completeness: apComplete(),
       reconciliationEnabled: true,
-      found: [],
+      foundRows: [],
       localRecords: [apLocal({ localId: "p1", externalId: 20 })],
       executedAt,
       mode: "apply",
     });
     assert.equal(missing.counters.missingCandidates, 1);
-    assert.equal(missing.missingCandidates[0]?.lifecyclePatch?.sourcePresenceStatus, "MISSING_CANDIDATE");
+    assert.equal(
+      missing.missingCandidates[0]?.lifecyclePatch?.sourcePresenceStatus,
+      "MISSING_CANDIDATE"
+    );
 
     const reactivated = buildAccountsPayableSourceReconciliationPlan({
+      syncStrategy: "full_refresh_upsert",
+      scope: apScope,
       completeness: apComplete(),
       reconciliationEnabled: true,
-      found: [{ externalId: 20, payloadHash: "back" }],
+      foundRows: [{ externalId: 20, payloadHash: "back" }],
       localRecords: [
         apLocal({
           localId: "p1",
@@ -460,7 +497,7 @@ describe("SYNC-10 — CP E2E lógico", () => {
 describe("SYNC-10 — falhas e proteções", () => {
   it("payload incompleto / 429 / max pages / timeout-like / lock / retomada / idempotência", () => {
     assert.equal(
-      canMarkRecordMissingInRun({
+      canReconcileAbsencesFromRun({
         status: "SUCCESS",
         payloadComplete: false,
       }),
@@ -475,6 +512,7 @@ describe("SYNC-10 — falhas e proteções", () => {
         startPage: 1,
         completedWindow: true,
         stoppedBecauseEmpty: false,
+        stoppedBecauseNoNext: false,
       }),
       reconciliationEnabled: true,
       foundPedidos: [],
@@ -494,9 +532,10 @@ describe("SYNC-10 — falhas e proteções", () => {
       stoppedBecauseMaxPages: false,
       onlyPending: false,
       http429Count: 3,
-      fatalHttpStatus: 429,
+      fetchFailed: true,
     });
     assert.equal(ar429.payloadComplete, false);
+    assert.ok(ar429.reasons.includes("HTTP_429_UNRECOVERED"));
 
     const maxPages = assessAccountsPayableSyncPayloadCompleteness({
       syncStrategy: "full_refresh_upsert",
@@ -515,7 +554,8 @@ describe("SYNC-10 — falhas e proteções", () => {
       startPage: 1,
       completedWindow: false,
       stoppedBecauseEmpty: false,
-      transportError: "ETIMEDOUT",
+      fetchFailed: true,
+      errors: ["ETIMEDOUT"],
     });
     assert.equal(timeoutLike.payloadComplete, false);
 
