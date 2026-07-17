@@ -8,7 +8,6 @@
 import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
-import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import {
   COMMISSIONS_LEGACY_PATH_REDIRECTS,
   COMMISSIONS_SECTIONS,
@@ -21,7 +20,7 @@ import {
 } from "@/src/lib/commissionsNavigation";
 import { COMMISSIONS_LIVE_UI_TABS } from "@/src/lib/moduleTabResources";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
 import { CommissionsClosingsPage } from "@/src/components/commissions/pages/CommissionsClosingsPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
@@ -48,7 +47,6 @@ function CommissionsSectionGuard({
   sectionId,
   allowedIds,
   children,
-  fallbackPath,
 }: {
   sectionId: CommissionsSectionId;
   allowedIds: ReadonlySet<string>;
@@ -56,7 +54,7 @@ function CommissionsSectionGuard({
   fallbackPath: string;
 }) {
   if (!allowedIds.has(sectionId)) {
-    return <Navigate to={fallbackPath} replace />;
+    return <UnauthorizedAccessGate forceDenied />;
   }
   return <>{children}</>;
 }
@@ -89,22 +87,15 @@ export function CommissionsModule() {
   }
 
   if (isEmpty) {
-    return (
-      <PermissionDenied
-        title="Nenhuma aba disponível"
-        message={PERMISSION_EMPTY_TABS_MESSAGE}
-        testId="commissions-empty-tabs"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   if (
     currentSection &&
     COMMISSIONS_LIVE_UI_TABS.some((t) => t.id === currentSection) &&
-    !allowedIds.has(currentSection) &&
-    location.pathname !== defaultPath
+    !allowedIds.has(currentSection)
   ) {
-    return <Navigate to={defaultPath} replace />;
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   const guard = (sectionId: CommissionsSectionId, page: React.ReactNode) => (

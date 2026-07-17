@@ -1,7 +1,6 @@
 import React from "react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
-import { PERMISSION_DENIED_TAB_MESSAGE } from "@/src/lib/permissionsClient";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import {
   canViewTabResource,
   navigationAccessContextFromAuth,
@@ -12,19 +11,19 @@ type Props = {
   /** Quando false, não renderiza nada (aba inativa). */
   active: boolean;
   children: React.ReactNode;
+  /** @deprecated PERM-39 usa modal canônico; mantido por compat de assinatura. */
   deniedMessage?: string;
 };
 
 /**
  * Conteúdo de aba (P12): view via DTO efetivo.
- * Ativa sem permissão → PermissionDenied (não CSS-only).
+ * Ativa sem permissão → modal PERM-39 (não CSS-only / sem Navigate silencioso).
  * Inativa → null.
  */
 export function ProtectedTab({
   resourceKey,
   active,
   children,
-  deniedMessage = PERMISSION_DENIED_TAB_MESSAGE,
 }: Props) {
   const auth = useAuth();
   const ctx = navigationAccessContextFromAuth(auth);
@@ -32,13 +31,7 @@ export function ProtectedTab({
   if (!active) return null;
 
   if (!canViewTabResource(resourceKey, ctx)) {
-    return (
-      <PermissionDenied
-        title="Aba sem permissão"
-        message={deniedMessage}
-        testId="protected-tab-denied"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   return <>{children}</>;

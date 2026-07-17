@@ -19,23 +19,12 @@ import {
 } from "@/src/lib/financeNavigation";
 import { FINANCE_UI_SECTIONS } from "@/src/lib/internalSurfaceAccess";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
-import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 
 function FinanceCanonicalRedirect() {
   const location = useLocation();
   const target = resolveFinanceCanonicalPath(location.pathname);
   return <Navigate to={target} replace />;
-}
-
-function DeniedSection({ label }: { label: string }) {
-  return (
-    <PermissionDenied
-      title="Seção sem permissão"
-      message={`Você não tem permissão para ${label}.`}
-      testId="finance-section-denied"
-    />
-  );
 }
 
 export function FinanceModule() {
@@ -56,16 +45,10 @@ export function FinanceModule() {
   }
 
   if (isEmpty) {
-    return (
-      <PermissionDenied
-        title="Nenhuma aba disponível"
-        message={PERMISSION_EMPTY_TABS_MESSAGE}
-        testId="finance-module-empty-tabs"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
-  // URL de seção sem grant → redirect para primeira autorizada (não renderiza conteúdo oculto)
+  // URL de seção sem grant → modal (PERM-39); sem Navigate silencioso
   const pathNorm = location.pathname.replace(/\/+$/, "") || "/";
   const onDeniedSection =
     pathNorm.startsWith("/finance/") &&
@@ -73,8 +56,8 @@ export function FinanceModule() {
       (s) => pathNorm === s.path || pathNorm.startsWith(`${s.path}/`)
     ) &&
     pathNorm !== "/finance";
-  if (onDeniedSection && pathNorm !== defaultPath) {
-    return <Navigate to={defaultPath} replace />;
+  if (onDeniedSection) {
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   const can = (id: FinanceSectionId) => visibleIds.has(id);
@@ -83,37 +66,37 @@ export function FinanceModule() {
     "cash-flow": can("cash-flow") ? (
       <FinanceCashFlowPage />
     ) : (
-      <DeniedSection label="Fluxo de Caixa" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     "accounts-receivable": can("accounts-receivable") ? (
       <FinanceAccountsReceivablePage />
     ) : (
-      <DeniedSection label="Contas a Receber" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     "accounts-payable": can("accounts-payable") ? (
       <FinanceAccountsPayablePage />
     ) : (
-      <DeniedSection label="Contas a Pagar" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     billing: can("billing") ? (
       <FinanceBillingPage />
     ) : (
-      <DeniedSection label="Faturamento" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     "sales-orders": can("sales-orders") ? (
       <FinanceSalesOrdersPage />
     ) : (
-      <DeniedSection label="Pedidos de Venda" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     "cost-centers": can("cost-centers") ? (
       <FinanceCostCentersPage />
     ) : (
-      <DeniedSection label="Centros de Custo" />
+      <UnauthorizedAccessGate forceDenied />
     ),
     "executive-report": can("executive-report") ? (
       <FinanceExecutiveReportPage />
     ) : (
-      <DeniedSection label="Relatório Presidencial" />
+      <UnauthorizedAccessGate forceDenied />
     ),
   };
 

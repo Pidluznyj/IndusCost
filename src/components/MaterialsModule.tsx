@@ -14,13 +14,12 @@ import {
   MATERIALS_UI_SECTIONS,
   MARKET_INTELLIGENCE_SECTION_KEYS,
 } from "@/src/lib/moduleTabResources";
-import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { MaterialModule } from "@/src/components/MaterialModule";
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
 import { MaterialsMarketIntelligenceReportsPage } from "@/src/components/materials/MaterialsMarketIntelligenceReportsPage";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { usePermissions } from "@/src/hooks/usePermissions";
 
 function MaterialsHomeRedirect({ path }: { path: string }) {
@@ -53,23 +52,11 @@ export function MaterialsModule() {
     getMaterialsDefaultPath();
 
   if (!canViewModule && isEmpty) {
-    return (
-      <PermissionDenied
-        title="Sem permissão"
-        message="Você não tem permissão para acessar Suprimentos."
-        testId="materials-module-denied"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   if (isEmpty) {
-    return (
-      <PermissionDenied
-        title="Nenhuma aba disponível"
-        message={PERMISSION_EMPTY_TABS_MESSAGE}
-        testId="materials-empty-tabs"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   if (!isMaterialsCanonicalPath(location.pathname)) {
@@ -85,21 +72,16 @@ export function MaterialsModule() {
   const canMi = visibleIds.has("marketIntelligence");
 
   if (onCatalog && !canCatalog) {
-    return <Navigate to={defaultPath} replace />;
+    return <UnauthorizedAccessGate forceDenied />;
   }
   if ((onMiHome || location.pathname.includes("/market-intelligence")) && !canMi) {
-    return <Navigate to={defaultPath} replace />;
+    return <UnauthorizedAccessGate forceDenied />;
   }
   if (
     onMiDetail &&
     !permissions.canViewTabResource(MARKET_INTELLIGENCE_SECTION_KEYS.material360)
   ) {
-    return (
-      <PermissionDenied
-        title="Aba sem permissão"
-        message="Você não tem permissão para a Matéria-prima 360."
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   return (
@@ -151,7 +133,7 @@ export function MaterialsModule() {
             canMi ? (
               <MaterialsMarketIntelligenceReportsPage />
             ) : (
-              <PermissionDenied title="Aba sem permissão" />
+              <UnauthorizedAccessGate forceDenied />
             )
           }
         />
@@ -161,7 +143,7 @@ export function MaterialsModule() {
             canMi ? (
               <MaterialsMarketIntelligenceDetailPage />
             ) : (
-              <PermissionDenied title="Aba sem permissão" />
+              <UnauthorizedAccessGate forceDenied />
             )
           }
         />
@@ -171,7 +153,7 @@ export function MaterialsModule() {
             canMi ? (
               <MaterialsMarketIntelligencePage />
             ) : (
-              <PermissionDenied title="Aba sem permissão" />
+              <UnauthorizedAccessGate forceDenied />
             )
           }
         />

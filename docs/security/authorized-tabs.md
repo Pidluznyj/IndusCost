@@ -13,8 +13,8 @@
 
 - Aba sem `view` no DTO → não aparece (sem gaps)
 - Aba ativa = pedida se permitida; senão primeira permitida
-- URL/estado apontando para aba negada → corrigido para a primeira permitida
-- Nenhuma aba permitida → acesso negado (`PERMISSION_EMPTY_TABS_MESSAGE`)
+- URL/estado apontando para aba negada → modal PERM-39 (sem Navigate silencioso); OK → primeira rota do catálogo
+- Nenhuma aba permitida → modal / página neutra PERM-39 (`UnauthorizedAccessGate`)
 - Painel de aba negada não monta → sem chamada de API daquela aba
 - `SUPER_ADMIN` vê todas as abas do catálogo
 - Ocultação de aba **não** substitui `requireResource` no backend

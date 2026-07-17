@@ -1,6 +1,6 @@
 /**
  * P11 — Guard de rota privada: mesmo view/resourceKey da sidebar (DTO efetivo).
- * Preserva a URL no address bar quando negado (AccessDenied sem Navigate).
+ * PERM-39: URL permanece até o OK do modal; só então Navigate para a primeira rota permitida.
  */
 
 import React from "react";

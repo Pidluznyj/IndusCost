@@ -9,7 +9,6 @@ import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { canAccessModule } from "@/src/lib/modulePermissions";
 import { canViewInventory } from "@/src/lib/operationsAdminPermissions";
 import { INVENTORY_UI_TABS } from "@/src/lib/moduleTabResources";
-import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import { InventoryDashboardTab } from "@/src/components/inventory/InventoryDashboardTab";
 import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab";
 import { InventoryWarehousesTab } from "@/src/components/inventory/InventoryWarehousesTab";
@@ -29,10 +28,9 @@ import {
   InventoryComingSoonTab,
   InventoryErrorBanner,
   InventoryLoading,
-  InventoryPermissionDenied,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryDashboardPayload } from "@/src/types/inventory";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 
 type Props = {
   initialTab?: InventoryTabId;
@@ -55,7 +53,7 @@ export function InventoryModule({ initialTab }: Props = {}) {
 
   const navTabIds = new Set(getVisibleInventoryTabs().map((t) => t.id));
   const catalog = INVENTORY_UI_TABS.filter((t) => navTabIds.has(t.id));
-  const { visibleTabs, activeId, isEmpty } = useAuthorizedTabs({
+  const { visibleTabs, activeId, isEmpty, requestedDenied } = useAuthorizedTabs({
     tabs: catalog,
     requestedId: tab,
     parentResourceKey: "operations.inventory",
@@ -81,10 +79,12 @@ export function InventoryModule({ initialTab }: Props = {}) {
   }, [location.pathname, tab]);
 
   useEffect(() => {
+    // PERM-39: aba negada → modal; não corrigir URL silenciosamente
+    if (requestedDenied) return;
     if (activeId && activeId !== tab) {
       selectTab(activeId as InventoryTabId);
     }
-  }, [activeId, tab, selectTab]);
+  }, [activeId, tab, selectTab, requestedDenied]);
 
   const loadDashboard = useCallback(async () => {
     const raw = await fetchJsonOk<unknown>("/api/inventory/dashboard");
@@ -110,19 +110,11 @@ export function InventoryModule({ initialTab }: Props = {}) {
   }, [refresh, tab]);
 
   if (!canView) {
-    return (
-      <InventoryPermissionDenied message="Você não tem permissão para acessar o módulo Estoque / Almoxarifado. Solicite a permissão inventory.view ao administrador." />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
-  if (isEmpty) {
-    return (
-      <PermissionDenied
-        title="Nenhuma aba disponível"
-        message={PERMISSION_EMPTY_TABS_MESSAGE}
-        testId="inventory-empty-tabs"
-      />
-    );
+  if (isEmpty || requestedDenied) {
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   const activeTabDef = getInventoryTabDef(tab);

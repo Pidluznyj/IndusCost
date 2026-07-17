@@ -42,8 +42,7 @@ import {
   canViewAccessProfiles,
 } from "@/src/lib/modulePermissions";
 import { SETTINGS_HUB_UI_SECTIONS } from "@/src/lib/moduleTabResources";
-import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -1226,13 +1225,7 @@ export const SettingsModule = () => {
   };
 
   if (settingsAuthorizedTabs.isEmpty) {
-    return (
-      <PermissionDenied
-        title="Nenhuma aba disponível"
-        message={PERMISSION_EMPTY_TABS_MESSAGE}
-        testId="settings-empty-tabs"
-      />
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   return (

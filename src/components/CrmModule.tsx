@@ -96,10 +96,6 @@ import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { CRM_UI_TABS, TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { ProtectedTab } from "@/src/components/security/ProtectedTab";
-import { PermissionDenied } from "@/src/components/security/PermissionDenied";
-import {
-  PERMISSION_EMPTY_TABS_MESSAGE,
-} from "@/src/lib/permissionsClient";
 import {
   canAccessCrmAny,
   canAccessCrmGeneral,
@@ -110,6 +106,7 @@ import {
   isCrmSellerLinked,
 } from "@/src/lib/modulePermissions";
 import { AccessDenied } from "@/src/components/AccessDenied";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import { CrmCustomerPortfolioSection } from "@/src/components/crm/CrmCustomerPortfolioSection";
 import type { CrmCommercialIntelResponse } from "@/src/lib/crmCommercialIntelligence";
 import type {
@@ -1481,13 +1478,19 @@ export const CrmModule = () => {
   });
 
   useEffect(() => {
+    // PERM-39: aba negada → modal; não trocar aba silenciosamente
+    if (crmAuthorizedTabs.requestedDenied) return;
     if (
       crmAuthorizedTabs.activeId &&
       crmAuthorizedTabs.activeId !== activeCrmManagementTab
     ) {
       setActiveCrmManagementTab(crmAuthorizedTabs.activeId);
     }
-  }, [crmAuthorizedTabs.activeId, activeCrmManagementTab]);
+  }, [
+    crmAuthorizedTabs.activeId,
+    crmAuthorizedTabs.requestedDenied,
+    activeCrmManagementTab,
+  ]);
 
   const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
@@ -2275,12 +2278,8 @@ export const CrmModule = () => {
           onTabChange={setActiveCrmManagementTab}
         />
 
-        {crmAuthorizedTabs.isEmpty ? (
-          <PermissionDenied
-            title="Nenhuma aba disponível"
-            message={PERMISSION_EMPTY_TABS_MESSAGE}
-            testId="crm-empty-tabs"
-          />
+        {crmAuthorizedTabs.isEmpty || crmAuthorizedTabs.requestedDenied ? (
+          <UnauthorizedAccessGate forceDenied />
         ) : (
           <>
         <ProtectedTab

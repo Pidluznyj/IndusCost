@@ -149,7 +149,7 @@ describe("InventoryModule estados", () => {
     const mod = read("src/components/InventoryModule.tsx");
     assert.match(mod, /InventoryLoading/);
     assert.match(mod, /InventoryErrorBanner/);
-    assert.match(mod, /InventoryPermissionDenied/);
+    assert.match(mod, /UnauthorizedAccessGate/);
     assert.match(mod, /InventoryComingSoonTab/);
   });
 });
