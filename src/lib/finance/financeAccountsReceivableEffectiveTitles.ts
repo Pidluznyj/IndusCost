@@ -3,6 +3,7 @@
  *
  * Consome o motor FIN-05. Dedup de CR só por `externalId`.
  * Não inclui previsão integral substituída nem saldo de corte.
+ * Linhas: CR REAL | DOCUMENTO AGUARDANDO CR | PREVISÃO RESIDUAL DO PEDIDO.
  */
 
 import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
