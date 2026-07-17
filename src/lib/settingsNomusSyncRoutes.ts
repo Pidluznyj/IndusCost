@@ -34,6 +34,11 @@ import {
   ADMIN_SETTINGS_ACTIONS,
   ADMIN_SETTINGS_RESOURCE_KEYS,
 } from "@/src/lib/adminSettingsAccess.js";
+import { prisma } from "@/src/lib/prisma.js";
+import {
+  buildNomusSourceReconciliationObservabilityStatus,
+  loadNomusSourcePresenceDrilldown,
+} from "@/src/lib/nomus/nomusSourceReconciliationObservability.server.js";
 
 export type NomusSyncLogSummary = {
   fileName: string;
@@ -120,6 +125,49 @@ export function registerSettingsNomusSyncRoutes(
       } catch (error) {
         console.error("GET /api/integrations/nomus/health:", error);
         return res.status(500).json({ error: "Erro ao carregar saúde das integrações Nomus." });
+      }
+    }
+  );
+
+  /** SYNC-09 — métricas/alertas de NomusSourceSyncRun (somente view). */
+  app.get(
+    "/api/settings/nomus-sync/source-reconciliation-status",
+    nomusView,
+    async (_req, res) => {
+      try {
+        const payload = await buildNomusSourceReconciliationObservabilityStatus(prisma);
+        return res.json(payload);
+      } catch (error) {
+        console.error(
+          "GET /api/settings/nomus-sync/source-reconciliation-status:",
+          error
+        );
+        return res.status(500).json({
+          error: "Erro ao carregar observabilidade de reconciliação Nomus.",
+        });
+      }
+    }
+  );
+
+  /** SYNC-09 — drilldown administrativo de presença (sem rawPayload). */
+  app.get(
+    "/api/settings/nomus-sync/source-reconciliation-records",
+    nomusView,
+    async (req, res) => {
+      try {
+        const payload = await loadNomusSourcePresenceDrilldown(
+          prisma,
+          req.query as Record<string, unknown>
+        );
+        return res.json(payload);
+      } catch (error) {
+        console.error(
+          "GET /api/settings/nomus-sync/source-reconciliation-records:",
+          error
+        );
+        return res.status(500).json({
+          error: "Erro ao consultar registros de presença Nomus.",
+        });
       }
     }
   );

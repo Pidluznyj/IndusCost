@@ -29,6 +29,7 @@ import { AdminKpiSection } from "@/src/components/admin/adminUi";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
+import { NomusSourceReconciliationObservabilityCard } from "@/src/components/NomusSourceReconciliationObservabilityCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
 import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarginNomusConfigPanel";
@@ -1684,6 +1685,8 @@ export const SettingsModule = () => {
                 canRun={canRunNomusDailySync}
                 onLogsRefresh={() => setNomusReloadSeq((prev) => prev + 1)}
               />
+
+              <NomusSourceReconciliationObservabilityCard />
 
               {nomusHealthError && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
