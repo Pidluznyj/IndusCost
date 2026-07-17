@@ -77,13 +77,11 @@ describe("Documento sem CR", () => {
       assertMoney(doc.allocatedByOrderPrice, "9000.00");
     }
     assertMoney(schedule.coverageSummary.activeOrderResidualTotal, "1000.00");
-    assert.equal(schedule.activeOrderResidualSchedule.length, 2);
-    // Datas residuais ainda são as do Pedido (parte não coberta).
-    assert.ok(
-      schedule.activeOrderResidualSchedule.every(
-        (l) => l.dueDate === "2026-08-01" || l.dueDate === "2026-09-01"
-      )
-    );
+    // FIN-13: 1 entrega ocupa a 1ª posição; residual R$ 1.000 na 2ª.
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 2);
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.dueDate, "2026-09-01");
+    assert.equal(schedule.coverageSummary.materializationMode, "STAGED_AUTOMATIC");
     assert.ok(
       schedule.alerts.some((a) => a.code === "DOCUMENT_AWAITING_FINANCIAL_SCHEDULE")
     );
@@ -212,7 +210,7 @@ describe("contrato de saída e soma exata", () => {
     );
   });
 
-  it("mantém ordem e quantidade de datas no residual proporcional", () => {
+  it("FIN-13: entrega parcial ocupa 1ª posição; residual na restante", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule(
       fixtureOrder10000Base({
         items: [
@@ -238,10 +236,9 @@ describe("contrato de saída e soma exata", () => {
         ],
       })
     );
-    assert.equal(schedule.activeOrderResidualSchedule.length, 2);
-    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 1);
-    assert.equal(schedule.activeOrderResidualSchedule[1]!.installmentNumber, 2);
-    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "2500.00");
-    assertMoney(schedule.activeOrderResidualSchedule[1]!.residualAmount, "2500.00");
+    assert.equal(schedule.coverageSummary.materializationMode, "STAGED_AUTOMATIC");
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 2);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "5000.00");
   });
 });

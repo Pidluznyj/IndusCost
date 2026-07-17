@@ -222,6 +222,8 @@ function buildDocumentInputs(
       sourceInvoiceId: doc.idNfe ?? null,
       isValid: true as const,
       allocatedByOrderPrice: String(round2(doc.allocatedValue ?? 0)),
+      documentDate: doc.dataDocumento ?? null,
+      issuedAt: doc.dataMovimentacao ?? null,
       provenInstallments: null as null,
     }));
 }

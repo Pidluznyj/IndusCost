@@ -90,18 +90,18 @@ function assertCoreInvariants(
     `${label}: soma residual exata`
   );
   assert.equal(
-    residual.toFixed(2),
+    residual
+      .add(schedule.coverageSummary.stagedResidualWithoutPosition)
+      .toFixed(2),
     schedule.coverageSummary.itemActiveResidualTotal.toFixed(2),
-    `${label}: residual agenda = residual de itens`
+    `${label}: residual agenda + orphan staged = residual de itens`
   );
 
-  // Corte fora da agenda (não entra residual / doc / CR como obrigação futura).
-  if (schedule.cutAmount.gt(0)) {
-    assert.ok(
-      residual.eq(schedule.coverageSummary.itemActiveResidualTotal),
-      `${label}: corte não gera residual ativo`
-    );
-  }
+  // Corte fora da agenda ativa (não soma residual/doc/CR).
+  assert.ok(
+    schedule.cutAmount.gte(0),
+    `${label}: corte é não-negativo e separado da agenda`
+  );
 
   // Nenhuma dupla contagem: NF com CR não aparece em documentSchedule.
   const crInvoiceIds = new Set(
@@ -356,8 +356,13 @@ describe("FIN-11 — matriz completa (24 cenários)", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule(matrixVariosItensMistos());
     assertMoney(schedule.cutAmount, "1000.00");
     assertMoney(schedule.canceledAmount, "2000.00");
-    // Residual: só item parcial (2000).
-    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "2000.00");
+    // FIN-13: 3 entregas × 2 posições → residual ativo sem posição aberta.
+    assertMoney(schedule.coverageSummary.itemActiveResidualTotal, "2000.00");
+    assertMoney(schedule.coverageSummary.stagedResidualWithoutPosition, "2000.00");
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "0.00");
+    assert.ok(
+      schedule.alerts.some((a) => a.code === "STAGED_RESIDUAL_WITHOUT_OPEN_POSITION")
+    );
     assert.equal(schedule.documentSchedule.length, 3);
     assertCoreInvariants(schedule, "10");
     assertScreensAndApisCoherent(schedule);

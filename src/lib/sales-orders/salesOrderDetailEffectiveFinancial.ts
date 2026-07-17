@@ -132,6 +132,8 @@ function buildDocumentInputs(audit: OrderFullAuditPayload) {
       sourceInvoiceId: doc.idNfe ?? null,
       isValid: true,
       allocatedByOrderPrice: String(round2(doc.allocatedValue)),
+      documentDate: doc.dataDocumento ?? null,
+      issuedAt: doc.dataMovimentacao ?? null,
       // Condição documental comprovada ainda não está no stage — awaiting.
       provenInstallments: null as null,
     }));

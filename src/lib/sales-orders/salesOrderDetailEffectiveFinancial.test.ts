@@ -135,8 +135,10 @@ describe("FIN-06 — contrato Detalhe do Pedido", () => {
     ];
     const financial = project(fixture);
     // Residual comercial continua 1.000 (itens), não 10.000−8.500=1.500.
-    assert.equal(financial.coverageSummary.activeOrderResidualTotal, 1000);
-    assert.notEqual(financial.coverageSummary.activeOrderResidualTotal, 1500);
+    // FIN-13: Doc + CR (NF distinta) ocupam as 2 posições → residual pode ficar órfão na agenda,
+    // mas a base comercial de itens permanece 1.000.
+    assert.equal(financial.coverageSummary.itemActiveResidualTotal, 1000);
+    assert.notEqual(financial.coverageSummary.itemActiveResidualTotal, 1500);
   });
 });
 
@@ -325,15 +327,14 @@ describe("FIN-07 — apresentação financeira do Detalhe do Pedido", () => {
     }
   });
 
-  it("parcial → histórico Parcialmente substituída com residual e substituída", () => {
+  it("parcial → histórico com posição ocupada + residual na restante (FIN-13)", () => {
     const financial = project(fixturePartialWithDoc9000Proven());
     const installments = financial.originalForecastHistory.filter(
       (r) => r.kind === "installment"
     );
     assert.ok(installments.length > 0);
-    assert.ok(
-      installments.every((r) => r.status === "Parcialmente substituída")
-    );
+    assert.ok(installments.some((r) => r.status === "Substituída"));
+    assert.ok(installments.some((r) => r.status === "Parcialmente substituída"));
     const sumResidual = installments.reduce((s, r) => s + r.residualAmount, 0);
     const sumSub = installments.reduce((s, r) => s + r.substitutedAmount, 0);
     assert.equal(Math.round(sumResidual * 100) / 100, 1000);

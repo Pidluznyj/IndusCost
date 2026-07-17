@@ -14,16 +14,28 @@ import {
   type ComputeSalesOrderItemFinancialAmountsInput,
   type SalesOrderItemFinancialAmounts,
 } from "./salesOrderItemFinancialAmounts.js";
+import {
+  buildStagedDeliveryBlocks,
+  resolveEffectiveScheduleMaterializationMode,
+  resolveResidualPartsForMaterializationMode,
+  sortOriginalPositions,
+  type EffectiveScheduleMaterializationMode,
+  type StagedDeliveryBlock,
+} from "./salesOrderStagedDeliverySchedule.js";
 
 const ZERO = new Prisma.Decimal(0);
 const MONEY_DP = 2;
 const ROUND = Prisma.Decimal.ROUND_HALF_UP;
 
+export type { EffectiveScheduleMaterializationMode };
+
 export type EffectiveScheduleAlertCode =
   | "DOCUMENT_AWAITING_FINANCIAL_SCHEDULE"
   | "ITEM_CLASSIFICATION_PENDING"
   | "ORDER_RESIDUAL_OVERDUE"
-  | "ORDER_RESIDUAL_WITHOUT_INSTALLMENTS";
+  | "ORDER_RESIDUAL_WITHOUT_INSTALLMENTS"
+  | "STAGED_RESIDUAL_WITHOUT_OPEN_POSITION"
+  | "STAGED_INCONCLUSIVE_RESIDUAL";
 
 export type EffectiveScheduleAlert = {
   code: EffectiveScheduleAlertCode;
@@ -89,6 +101,9 @@ export type EffectiveScheduleCoverageSummary = {
   cutAmount: Prisma.Decimal;
   canceledAmount: Prisma.Decimal;
   unresolvedAmount: Prisma.Decimal;
+  /** Residual ativo sem posição aberta após staged (FIN-13). */
+  stagedResidualWithoutPosition: Prisma.Decimal;
+  materializationMode: EffectiveScheduleMaterializationMode;
   precedenceSource:
     | "REAL_RECEIVABLE"
     | "OUTPUT_DOCUMENT"
@@ -110,6 +125,9 @@ export type SalesOrderEffectiveFinancialSchedule = {
   coverageSummary: EffectiveScheduleCoverageSummary;
   alerts: EffectiveScheduleAlert[];
   itemAmounts: SalesOrderItemFinancialAmounts[];
+  /** Blocos de entrega usados na ocupação de posições (FIN-13). */
+  stagedDeliveryBlocks: StagedDeliveryBlock[];
+  occupiedPositionIndexes: number[];
 };
 
 export type EffectiveScheduleOriginalInstallmentInput = {
@@ -132,6 +150,10 @@ export type EffectiveScheduleDocumentInput = {
   sourceInvoiceId?: number | null;
   isValid?: boolean;
   allocatedByOrderPrice: Prisma.Decimal | string;
+  /** Data oficial do Documento de Saída (ordenação staged FIN-13). */
+  documentDate?: string | null;
+  /** Data de emissão/processamento (desempate staged). */
+  issuedAt?: string | null;
   /**
    * Parcelas comprovadas localmente no Documento.
    * Vazio/ausente → DOCUMENT_AWAITING_FINANCIAL_SCHEDULE (sem datas do Pedido).
@@ -148,6 +170,11 @@ export type BuildSalesOrderEffectiveFinancialScheduleInput = {
   realReceivables?: readonly EffectiveScheduleRealReceivableInput[];
   documents?: readonly EffectiveScheduleDocumentInput[];
   referenceDate?: Date;
+  /**
+   * Agenda manual explícita do saldo (FIN-13).
+   * Somente quando houver evidência tipada — nunca inferida por updatedAt.
+   */
+  manualResidualSchedule?: readonly EffectiveScheduleOriginalInstallmentInput[] | null;
 };
 
 function money(value: Prisma.Decimal | string | number | null | undefined): Prisma.Decimal {
@@ -370,27 +397,61 @@ export function buildSalesOrderEffectiveFinancialSchedule(
   );
   documentAwaitingAmount = documentAwaitingAmount.toDecimalPlaces(MONEY_DP, ROUND);
 
-  const original = [...input.originalInstallments]
-    .map((line, idx) => ({
-      installmentNumber: line.installmentNumber || idx + 1,
-      dueDate: line.dueDate,
-      originalAmount: money(line.amount),
-    }))
-    .filter((line) => line.originalAmount.gt(0))
-    .sort((a, b) => a.installmentNumber - b.installmentNumber);
+  const original = sortOriginalPositions(input.originalInstallments);
 
   const originalAmounts = original.map((l) => l.originalAmount);
   const originalSum = originalAmounts
     .reduce((s, a) => s.add(a), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
 
-  // Residual ativo do pedido (itens parciais / não atendidos). Corte/cancelado/UNKNOWN fora.
+  // Residual ativo do pedido (itens parciais / não atendidos). Corte/cancelado fora.
   const residualToSchedule = itemActiveResidualTotal;
 
-  const residualParts =
-    original.length > 0
-      ? allocateResidualToOriginalInstallments(originalAmounts, residualToSchedule)
-      : [];
+  const stagedDeliveryBlocks = buildStagedDeliveryBlocks({
+    documents: input.documents,
+    realReceivables: input.realReceivables,
+  });
+
+  const hasExplicitManual =
+    (input.manualResidualSchedule?.filter((l) => money(l.amount).gt(0)).length ??
+      0) > 0;
+
+  const materializationMode = resolveEffectiveScheduleMaterializationMode({
+    itemAmounts,
+    deliveryBlockCount: stagedDeliveryBlocks.length,
+    originalPositionCount: original.length,
+    itemActiveResidualTotal: residualToSchedule,
+    cutAmount,
+    canceledAmount,
+    unresolvedAmount,
+    hasExplicitManualResidualSchedule: hasExplicitManual,
+  });
+
+  const manualResidualParts =
+    hasExplicitManual && input.manualResidualSchedule
+      ? (() => {
+          const byNumber = new Map(
+            sortOriginalPositions(input.manualResidualSchedule!).map((p) => [
+              p.installmentNumber,
+              p.originalAmount,
+            ])
+          );
+          return original.map((p) => byNumber.get(p.installmentNumber) ?? ZERO);
+        })()
+      : null;
+
+  const stagedAllocation = resolveResidualPartsForMaterializationMode({
+    mode: materializationMode,
+    positions: original,
+    deliveryBlocks: stagedDeliveryBlocks,
+    residualTotal: residualToSchedule,
+    proportionalAllocator: allocateResidualToOriginalInstallments,
+    manualResidualParts,
+  });
+
+  const residualParts = stagedAllocation.residualParts;
+  let stagedResidualWithoutPosition = stagedAllocation.stagedResidualWithoutPosition;
+  const occupiedPositionIndexes = stagedAllocation.occupiedPositionIndexes;
 
   if (residualToSchedule.gt(0) && original.length === 0) {
     alerts.push({
@@ -399,7 +460,31 @@ export function buildSalesOrderEffectiveFinancialSchedule(
       message:
         "Há residual ativo de itens sem parcelas originais do Pedido para distribuir.",
     });
+    stagedResidualWithoutPosition = residualToSchedule;
   }
+
+  if (materializationMode === "INCONCLUSIVE" && residualToSchedule.gt(0)) {
+    alerts.push({
+      code: "STAGED_INCONCLUSIVE_RESIDUAL",
+      severity: "warning",
+      message:
+        "Residual inconclusivo (status de item desconhecido) — não tratado como corte nem zerado silenciosamente.",
+    });
+  }
+
+  if (stagedResidualWithoutPosition.gt(0)) {
+    alerts.push({
+      code: "STAGED_RESIDUAL_WITHOUT_OPEN_POSITION",
+      severity: "error",
+      message:
+        "Há saldo comercial ativo sem posição planejada aberta após entregas parciais — exige revisão manual das condições do saldo.",
+    });
+  }
+
+  // Residual sem posição entra em unresolved (não inventa vencimento).
+  unresolvedAmount = unresolvedAmount
+    .add(stagedResidualWithoutPosition)
+    .toDecimalPlaces(MONEY_DP, ROUND);
 
   const activeOrderResidualSchedule: EffectiveScheduleOrderInstallment[] = [];
   const supersededOrderSchedule: EffectiveScheduleOrderInstallment[] = [];
@@ -425,11 +510,12 @@ export function buildSalesOrderEffectiveFinancialSchedule(
       }
     }
 
+    const occupied = occupiedPositionIndexes.includes(i);
     const supersededAmount = maxMoney(
       ZERO,
       line.originalAmount.sub(residualAmount)
     ).toDecimalPlaces(MONEY_DP, ROUND);
-    if (supersededAmount.gt(0)) {
+    if (supersededAmount.gt(0) || occupied) {
       supersededOrderSchedule.push({
         installmentNumber: line.installmentNumber,
         dueDate: line.dueDate,
@@ -444,28 +530,24 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     .reduce((s, l) => s.add(l.residualAmount), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
 
-  // Guarda: soma residual = pool (centavos exatos).
-  if (!activeOrderResidualTotal.eq(residualToSchedule) && original.length > 0) {
-    // Ajuste defensivo na última ativa — allocateResidual já deve garantir.
-    const drift = residualToSchedule.sub(activeOrderResidualTotal);
+  // Guarda: residual colocado + sem posição = pool (centavos exatos).
+  const placedPlusOrphan = activeOrderResidualTotal.add(stagedResidualWithoutPosition);
+  if (!placedPlusOrphan.eq(residualToSchedule) && original.length > 0) {
+    const drift = residualToSchedule.sub(placedPlusOrphan);
     if (!drift.eq(0) && activeOrderResidualSchedule.length > 0) {
       const last = activeOrderResidualSchedule[activeOrderResidualSchedule.length - 1]!;
       last.residualAmount = last.residualAmount.add(drift).toDecimalPlaces(MONEY_DP, ROUND);
     }
   }
 
-  const supersededOrderTotal = maxMoney(
-    ZERO,
-    originalSum.sub(
-      activeOrderResidualSchedule
-        .reduce((s, l) => s.add(l.residualAmount), ZERO)
-        .toDecimalPlaces(MONEY_DP, ROUND)
-    )
-  ).toDecimalPlaces(MONEY_DP, ROUND);
-
   const finalActiveTotal = activeOrderResidualSchedule
     .reduce((s, l) => s.add(l.residualAmount), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
+
+  const supersededOrderTotal = maxMoney(
+    ZERO,
+    originalSum.sub(finalActiveTotal)
+  ).toDecimalPlaces(MONEY_DP, ROUND);
 
   const coverageSummary: EffectiveScheduleCoverageSummary = {
     plannedNetTotal,
@@ -478,6 +560,8 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     cutAmount,
     canceledAmount,
     unresolvedAmount,
+    stagedResidualWithoutPosition,
+    materializationMode,
     precedenceSource: resolvePrecedenceSource({
       cr: coveredByRealReceivables,
       docWithoutCr: coveredByDocumentsWithoutCr,
@@ -498,6 +582,8 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     coverageSummary,
     alerts,
     itemAmounts,
+    stagedDeliveryBlocks,
+    occupiedPositionIndexes,
   };
 }
 

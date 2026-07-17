@@ -92,6 +92,8 @@ Tolerâncias monetárias e de data para *match* título↔parcela ficam a cargo 
 
 3. O **residual** (valor ativo − cobertura do Documento) permanece previsto pelas **condições e datas originais do Pedido**.
 
+4. **Entrega parcial com saldo ativo (FIN-13):** quando houver Documento/CR parcial, item ainda ativo e **mais de uma** posição planejada, **não** ratear o residual sobre todas as parcelas. Cada entrega ocupa a **próxima posição aberta**; o saldo comercial ativo redistribui-se **somente** nas posições restantes (pesos relativos). Substituição integral (residual zero) permanece inalterada. Detalhes: `docs/finance/staged-delivery-schedule-remediation.md`.
+
 ### 3.3 CR real existente
 
 **Regra:** os títulos reais de CR **substituem** a agenda do Documento (e a do Pedido) na **parte coberta** pelo CR.
