@@ -119,7 +119,7 @@ Teste: `src/lib/sales-orders/salesOrderTributosReleaseCandidate.test.tsx`
 | 05 | `189121b` | Contrato API + permissão |
 | 06 | `db86370` | Estados FE / layout |
 | 07 | `368974f` | Auditoria read-only |
-| 08 | *(este commit / ver `git log -1 --grep=TRIB-08`)* | Release candidate |
+| 08 | `2196c0f` | Release candidate |
 
 ---
 
