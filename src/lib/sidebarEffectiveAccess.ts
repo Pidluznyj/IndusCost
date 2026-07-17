@@ -279,6 +279,67 @@ function filterGroupFromDto(
 }
 
 /**
+ * DTO mínimo a partir de `allowedResources` do `/me` (PERM-36 / testes).
+ * Não inventa recursos fora da lista; SUPER_ADMIN ignora a lista.
+ */
+export function effectiveAccessDtoFromAllowedResources(
+  allowedResources: readonly string[],
+  options?: {
+    role?: EffectiveAccessMeDto["role"];
+    isSuperAdmin?: boolean;
+    permissionsVersion?: number;
+  }
+): EffectiveAccessMeDto {
+  const isSuperAdmin = options?.isSuperAdmin === true;
+  const keys = isSuperAdmin
+    ? []
+    : [...new Set(allowedResources.map((k) => k.trim()).filter(Boolean))].sort();
+  const actionsByResource: EffectiveAccessMeDto["actionsByResource"] = {};
+  const capabilities: EffectiveAccessMeDto["capabilities"] = {};
+  for (const resourceKey of keys) {
+    actionsByResource[resourceKey] = ["view"];
+    capabilities[resourceKey] = {
+      canView: true,
+      canExecute: false,
+      canManage: false,
+    };
+  }
+  return {
+    permissionsVersion: options?.permissionsVersion ?? 0,
+    role: options?.role ?? (isSuperAdmin ? "SUPER_ADMIN" : "VIEWER"),
+    isSuperAdmin,
+    allowedResources: keys,
+    actionsByResource,
+    navigationReveal: [...keys],
+    capabilities,
+    compatibility: {
+      mode: "shadow",
+      legacyBagAuthoritative: false,
+      legacyPermissionsPresent: false,
+      legacyCompatApplied: false,
+    },
+  };
+}
+
+/**
+ * Filtra o catálogo oficial da sidebar pelas permissões efetivas do `/me`.
+ * Alias documentado (PERM-36) de `buildSidebarNavigationFromEffectiveAccess`.
+ *
+ * Regras:
+ * - módulo/grupo sem filhos permitidos não aparece;
+ * - submenu negado não aparece;
+ * - SUPER_ADMIN vê a estrutura completa na ordem oficial;
+ * - recurso desconhecido / sem mapa de contrato não revela item;
+ * - ocultação de menu ≠ autorização de API (`requireResource` no backend).
+ */
+export function filterOfficialSidebarByEffectiveAccess(
+  dto: EffectiveAccessMeDto | null | undefined,
+  structure: GroupedNavigationStructure = buildGroupedNavigationStructure()
+): SidebarAccessibleNavigation {
+  return buildSidebarNavigationFromEffectiveAccess(dto, structure);
+}
+
+/**
  * Navegação sidebar só com DTO efetivo.
  * - loading / sem user / erro de sessão → vazio (caller)
  * - SUPER_ADMIN → estrutura completa

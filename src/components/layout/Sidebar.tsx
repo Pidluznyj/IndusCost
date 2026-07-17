@@ -436,6 +436,7 @@ export const Sidebar = () => {
     (auth.effectiveAccess?.allowedResources ?? []).join("|"),
   ].join("::");
 
+  // PERM-36: filtro só via DTO /me + catálogo oficial (sem regras locais de auth).
   const navigation = React.useMemo(
     () =>
       buildResourceAwareSidebarNavigation({
