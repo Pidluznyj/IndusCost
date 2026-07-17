@@ -1,5 +1,5 @@
 /**
- * Helpers browser-safe da tela Comercial → Fluxo de Pedidos (shell OP-64).
+ * Helpers browser-safe da tela Comercial → Fluxo de Pedidos.
  */
 import {
   COMMERCIAL_ACTIONS,
@@ -7,6 +7,12 @@ import {
 } from "@/src/lib/commercialAccess.js";
 import { HttpError } from "@/src/lib/http.js";
 import type { PermissionChecker } from "@/src/lib/modulePermissions.js";
+import {
+  isSalesOrderFlowStage,
+  SALES_ORDER_FLOW_STAGE_LABELS,
+  SALES_ORDER_FLOW_STAGES,
+  type SalesOrderFlowStage,
+} from "@/src/lib/sales/salesOrderFlowCatalog.js";
 
 export const SALES_ORDER_FLOW_MODULE_ID = "sales-order-flow" as const;
 export const SALES_ORDER_FLOW_ROUTE_PATH = "/commercial/sales-order-flow";
@@ -16,6 +22,79 @@ export const SALES_ORDER_FLOW_PAGE_SUBTITLE =
 export const SALES_ORDER_FLOW_BREADCRUMB = "Comercial / Fluxo de Pedidos";
 export const SALES_ORDER_FLOW_VIEW_LEGACY_PERMISSION =
   "sales_orders.flow.view" as const;
+export const SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS = 300;
+
+/** Espelha SALES_ORDER_FLOW_SUMMARY_PRIORITIES sem importar módulo de contrato/server. */
+export const SALES_ORDER_FLOW_UI_PRIORITIES = [
+  "LOW",
+  "NORMAL",
+  "HIGH",
+  "URGENT",
+] as const;
+
+export type SalesOrderFlowUiPriority =
+  (typeof SALES_ORDER_FLOW_UI_PRIORITIES)[number];
+
+export type SalesOrderFlowUiFilters = {
+  q: string;
+  customerId: string;
+  sellerKey: string;
+  company: string;
+  product: string;
+  sector: string;
+  issueFrom: string;
+  issueTo: string;
+  promisedFrom: string;
+  promisedTo: string;
+  overdue: boolean | null;
+  blocked: boolean | null;
+  inconsistent: boolean | null;
+  partiallyShipped: boolean | null;
+  withCut: boolean | null;
+  withActiveResidual: boolean | null;
+  priority: SalesOrderFlowUiPriority | null;
+  /** Vazio = todas as etapas. */
+  stages: SalesOrderFlowStage[];
+};
+
+export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
+  q: "",
+  customerId: "",
+  sellerKey: "",
+  company: "",
+  product: "",
+  sector: "",
+  issueFrom: "",
+  issueTo: "",
+  promisedFrom: "",
+  promisedTo: "",
+  overdue: null,
+  blocked: null,
+  inconsistent: null,
+  partiallyShipped: null,
+  withCut: null,
+  withActiveResidual: null,
+  priority: null,
+  stages: [],
+};
+
+export const SALES_ORDER_FLOW_PRIORITY_OPTIONS: ReadonlyArray<{
+  value: SalesOrderFlowUiPriority;
+  label: string;
+}> = [
+  { value: "LOW", label: "Baixa" },
+  { value: "NORMAL", label: "Normal" },
+  { value: "HIGH", label: "Alta" },
+  { value: "URGENT", label: "Urgente" },
+];
+
+export const SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS: ReadonlyArray<{
+  value: SalesOrderFlowStage;
+  label: string;
+}> = SALES_ORDER_FLOW_STAGES.map((stage) => ({
+  value: stage,
+  label: SALES_ORDER_FLOW_STAGE_LABELS[stage],
+}));
 
 export function canViewSalesOrderFlow(check: {
   canPerformAction?: (resourceKey: string, action: string) => boolean;
@@ -77,5 +156,208 @@ export function classifySalesOrderFlowListError(error: unknown): {
       error instanceof Error
         ? error.message
         : "Erro ao carregar o Fluxo de Pedidos.",
+  };
+}
+
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function normalizeSalesOrderFlowDateParam(
+  value: string | null | undefined
+): string {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return "";
+  if (DATE_ONLY_RE.test(trimmed)) return trimmed;
+  // ISO completo → dia local/UTC seguro via prefixo YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) return trimmed.slice(0, 10);
+  return "";
+}
+
+export function parseSalesOrderFlowPriorityParam(
+  value: string | null | undefined
+): SalesOrderFlowUiPriority | null {
+  const raw = value?.trim().toUpperCase() ?? "";
+  if (!raw) return null;
+  return (SALES_ORDER_FLOW_UI_PRIORITIES as readonly string[]).includes(raw)
+    ? (raw as SalesOrderFlowUiPriority)
+    : null;
+}
+
+export function parseSalesOrderFlowStagesParam(
+  value: string | null | undefined
+): SalesOrderFlowStage[] {
+  if (value == null || value.trim() === "") return [];
+  const stages: SalesOrderFlowStage[] = [];
+  const seen = new Set<string>();
+  for (const part of value.split(",")) {
+    const stage = part.trim().toUpperCase();
+    if (!stage || seen.has(stage)) continue;
+    if (!isSalesOrderFlowStage(stage)) continue;
+    seen.add(stage);
+    stages.push(stage);
+  }
+  return stages;
+}
+
+export function parseSalesOrderFlowBooleanParam(
+  value: string | null | undefined
+): boolean | null {
+  if (value == null || value === "") return null;
+  const folded = value.trim().toLowerCase();
+  if (folded === "true" || folded === "1") return true;
+  if (folded === "false" || folded === "0") return false;
+  return null;
+}
+
+/**
+ * Lê URL e normaliza valores inválidos (descarta em vez de falhar).
+ */
+export function parseSalesOrderFlowFiltersFromSearchParams(
+  params: URLSearchParams
+): SalesOrderFlowUiFilters {
+  return {
+    q: params.get("q")?.trim() ?? "",
+    customerId: params.get("customerId")?.trim() ?? "",
+    sellerKey:
+      params.get("sellerKey")?.trim() ||
+      params.get("seller")?.trim() ||
+      "",
+    company: params.get("company")?.trim() ?? "",
+    product: params.get("product")?.trim() ?? "",
+    sector: params.get("sector")?.trim() ?? "",
+    issueFrom: normalizeSalesOrderFlowDateParam(params.get("issueFrom")),
+    issueTo: normalizeSalesOrderFlowDateParam(params.get("issueTo")),
+    promisedFrom: normalizeSalesOrderFlowDateParam(params.get("promisedFrom")),
+    promisedTo: normalizeSalesOrderFlowDateParam(params.get("promisedTo")),
+    overdue: parseSalesOrderFlowBooleanParam(params.get("overdue")),
+    blocked: parseSalesOrderFlowBooleanParam(params.get("blocked")),
+    inconsistent: parseSalesOrderFlowBooleanParam(params.get("inconsistent")),
+    partiallyShipped: parseSalesOrderFlowBooleanParam(
+      params.get("partiallyShipped")
+    ),
+    withCut: parseSalesOrderFlowBooleanParam(params.get("withCut")),
+    withActiveResidual: parseSalesOrderFlowBooleanParam(
+      params.get("withActiveResidual")
+    ),
+    priority: parseSalesOrderFlowPriorityParam(params.get("priority")),
+    stages: parseSalesOrderFlowStagesParam(params.get("stages")),
+  };
+}
+
+export function buildSalesOrderFlowSearchParams(
+  filters: SalesOrderFlowUiFilters
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.q.trim()) params.set("q", filters.q.trim());
+  if (filters.customerId.trim()) params.set("customerId", filters.customerId.trim());
+  if (filters.sellerKey.trim()) params.set("sellerKey", filters.sellerKey.trim());
+  if (filters.company.trim()) params.set("company", filters.company.trim());
+  if (filters.product.trim()) params.set("product", filters.product.trim());
+  if (filters.sector.trim()) params.set("sector", filters.sector.trim());
+  if (filters.issueFrom) params.set("issueFrom", filters.issueFrom);
+  if (filters.issueTo) params.set("issueTo", filters.issueTo);
+  if (filters.promisedFrom) params.set("promisedFrom", filters.promisedFrom);
+  if (filters.promisedTo) params.set("promisedTo", filters.promisedTo);
+  if (filters.overdue === true) params.set("overdue", "true");
+  if (filters.blocked === true) params.set("blocked", "true");
+  if (filters.inconsistent === true) params.set("inconsistent", "true");
+  if (filters.partiallyShipped === true) {
+    params.set("partiallyShipped", "true");
+  }
+  if (filters.withCut === true) params.set("withCut", "true");
+  if (filters.withActiveResidual === true) {
+    params.set("withActiveResidual", "true");
+  }
+  if (filters.priority) params.set("priority", filters.priority);
+  if (filters.stages.length > 0) {
+    params.set("stages", filters.stages.join(","));
+  }
+  return params;
+}
+
+export function hasActiveSalesOrderFlowFilters(
+  filters: SalesOrderFlowUiFilters
+): boolean {
+  return Boolean(
+    filters.q.trim() ||
+      filters.customerId.trim() ||
+      filters.sellerKey.trim() ||
+      filters.company.trim() ||
+      filters.product.trim() ||
+      filters.sector.trim() ||
+      filters.issueFrom ||
+      filters.issueTo ||
+      filters.promisedFrom ||
+      filters.promisedTo ||
+      filters.overdue === true ||
+      filters.blocked === true ||
+      filters.inconsistent === true ||
+      filters.partiallyShipped === true ||
+      filters.withCut === true ||
+      filters.withActiveResidual === true ||
+      filters.priority ||
+      filters.stages.length > 0
+  );
+}
+
+export function isSalesOrderFlowDateRangeInvalid(
+  from: string,
+  to: string
+): boolean {
+  return Boolean(from && to && from > to);
+}
+
+export function areSalesOrderFlowFilterDateRangesInvalid(
+  filters: Pick<
+    SalesOrderFlowUiFilters,
+    "issueFrom" | "issueTo" | "promisedFrom" | "promisedTo"
+  >
+): boolean {
+  return (
+    isSalesOrderFlowDateRangeInvalid(filters.issueFrom, filters.issueTo) ||
+    isSalesOrderFlowDateRangeInvalid(filters.promisedFrom, filters.promisedTo)
+  );
+}
+
+export function salesOrderFlowFiltersToClientQuery(
+  filters: SalesOrderFlowUiFilters
+): {
+  q: string | null;
+  customerId: string | null;
+  sellerKey: string | null;
+  company: string | null;
+  product: string | null;
+  sector: string | null;
+  issueFrom: string | null;
+  issueTo: string | null;
+  promisedFrom: string | null;
+  promisedTo: string | null;
+  overdue: boolean | null;
+  blocked: boolean | null;
+  inconsistent: boolean | null;
+  partiallyShipped: boolean | null;
+  withCut: boolean | null;
+  withActiveResidual: boolean | null;
+  priority: SalesOrderFlowUiPriority | null;
+  stages: SalesOrderFlowStage[] | null;
+} {
+  return {
+    q: filters.q.trim() || null,
+    customerId: filters.customerId.trim() || null,
+    sellerKey: filters.sellerKey.trim() || null,
+    company: filters.company.trim() || null,
+    product: filters.product.trim() || null,
+    sector: filters.sector.trim() || null,
+    issueFrom: filters.issueFrom || null,
+    issueTo: filters.issueTo || null,
+    promisedFrom: filters.promisedFrom || null,
+    promisedTo: filters.promisedTo || null,
+    overdue: filters.overdue,
+    blocked: filters.blocked,
+    inconsistent: filters.inconsistent,
+    partiallyShipped: filters.partiallyShipped,
+    withCut: filters.withCut,
+    withActiveResidual: filters.withActiveResidual,
+    priority: filters.priority,
+    stages: filters.stages.length > 0 ? filters.stages : null,
   };
 }

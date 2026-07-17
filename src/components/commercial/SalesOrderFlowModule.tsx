@@ -1,33 +1,76 @@
-import { useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Loader2, Search } from "lucide-react";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { fetchJsonOk } from "@/src/lib/http";
+import { getSalesOrderSellerFilterOptionsUrl } from "@/src/lib/salesOrderListReportExportUi";
+import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
 import {
   fetchSalesOrderFlowFeatureStatus,
+  fetchSalesOrderFlowList,
   fetchSalesOrderFlowSummary,
+  type SalesOrderFlowListPayload,
   type SalesOrderFlowSummaryPayload,
 } from "@/src/lib/salesOrderFlowClient";
 import {
+  areSalesOrderFlowFilterDateRangesInvalid,
+  buildSalesOrderFlowSearchParams,
   canViewSalesOrderFlow,
   classifySalesOrderFlowListError,
+  EMPTY_SALES_ORDER_FLOW_FILTERS,
+  hasActiveSalesOrderFlowFilters,
+  isSalesOrderFlowDateRangeInvalid,
+  parseSalesOrderFlowFiltersFromSearchParams,
   SALES_ORDER_FLOW_BREADCRUMB,
+  SALES_ORDER_FLOW_PRIORITY_OPTIONS,
+  SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS,
+  SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS,
+  salesOrderFlowFiltersToClientQuery,
+  type SalesOrderFlowUiFilters,
 } from "@/src/lib/salesOrderFlowUi";
+import { cn } from "@/src/lib/utils";
+import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog";
+import type { SalesOrderFlowUiPriority } from "@/src/lib/salesOrderFlowUi";
+
+const FILTER_CONTROL_CLASS =
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
- * Shell da página Comercial → Fluxo de Pedidos (OP-64).
- * Sem kanban/cards/painel lateral — só estados de página + carga do resumo.
+ * Shell + filtros do Kanban Comercial (OP-64/OP-65).
+ * Sem cards/drawer — filtros alimentam summary e list para as colunas.
  */
 export function SalesOrderFlowModule() {
   const auth = useAuth();
   const permissions = usePermissions();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canView = canViewSalesOrderFlow({
     canPerformAction: permissions.canPerformAction,
     hasPermission: auth.hasPermission,
   });
 
+  const initialFilters = useMemo(
+    () => parseSalesOrderFlowFiltersFromSearchParams(searchParams),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot inicial da URL
+    []
+  );
+
+  const [qDraft, setQDraft] = useState(initialFilters.q);
+  const [companyDraft, setCompanyDraft] = useState(initialFilters.company);
+  const [productDraft, setProductDraft] = useState(initialFilters.product);
+  const [sectorDraft, setSectorDraft] = useState(initialFilters.sector);
+
+  const [filters, setFilters] = useState<SalesOrderFlowUiFilters>(initialFilters);
+
+  const [sellerOptions, setSellerOptions] = useState<
+    SalesOrderSellerFilterOption[]
+  >([]);
+
   const [summary, setSummary] = useState<SalesOrderFlowSummaryPayload | null>(
     null
   );
+  const [list, setList] = useState<SalesOrderFlowListPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
@@ -37,16 +80,48 @@ export function SalesOrderFlowModule() {
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const dateRangesInvalid = areSalesOrderFlowFilterDateRangesInvalid(filters);
+
+  // Debounce de campos de texto livre.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const nextQ = qDraft.trim();
+      const nextCompany = companyDraft.trim();
+      const nextProduct = productDraft.trim();
+      const nextSector = sectorDraft.trim();
+      setFilters((current) => {
+        if (
+          current.q === nextQ &&
+          current.company === nextCompany &&
+          current.product === nextProduct &&
+          current.sector === nextSector
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          q: nextQ,
+          company: nextCompany,
+          product: nextProduct,
+          sector: nextSector,
+        };
+      });
+    }, SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [qDraft, companyDraft, productDraft, sectorDraft]);
+
+  // Sync URL canônica (descarta inválidos / defaults).
+  useEffect(() => {
+    const next = buildSalesOrderFlowSearchParams(filters);
+    setSearchParams(next, { replace: true });
+  }, [filters, setSearchParams]);
+
+  // Feature flag — uma vez por sessão de view (não refaz a cada filtro).
   useEffect(() => {
     if (!canView) return;
     const controller = new AbortController();
-    setLoading(true);
-    setErrorKind(null);
-    setErrorMessage(null);
-
-    void (async () => {
-      try {
-        const status = await fetchSalesOrderFlowFeatureStatus(controller.signal);
+    void fetchSalesOrderFlowFeatureStatus(controller.signal)
+      .then((status) => {
         if (controller.signal.aborted) return;
         setFeatureEnabled(status.enabled);
         if (!status.enabled) {
@@ -55,14 +130,73 @@ export function SalesOrderFlowModule() {
             "Fluxo de Pedidos não está habilitado neste ambiente."
           );
           setSummary(null);
+          setList(null);
           setHasLoadedOnce(true);
+          setLoading(false);
+        }
+      })
+      .catch((error: unknown) => {
+        if (
+          controller.signal.aborted ||
+          (error instanceof DOMException && error.name === "AbortError")
+        ) {
           return;
         }
-        const data = await fetchSalesOrderFlowSummary({}, controller.signal);
-        if (controller.signal.aborted) return;
-        setSummary(data);
+        const classified = classifySalesOrderFlowListError(error);
+        setFeatureEnabled(false);
+        setErrorKind(classified.kind);
+        setErrorMessage(classified.message);
         setHasLoadedOnce(true);
-      } catch (error: unknown) {
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, [canView]);
+
+  // Opções de vendedor (dados existentes da listagem de pedidos).
+  useEffect(() => {
+    if (!canView) return;
+    const controller = new AbortController();
+    void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
+      getSalesOrderSellerFilterOptionsUrl(),
+      { signal: controller.signal }
+    )
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setSellerOptions(data.options ?? []);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSellerOptions([]);
+      });
+    return () => controller.abort();
+  }, [canView]);
+
+  // Summary + list com os mesmos filtros (uma chamada conjunta por mudança).
+  useEffect(() => {
+    if (!canView || featureEnabled !== true) return;
+    if (dateRangesInvalid) {
+      setLoading(false);
+      setErrorKind(null);
+      setErrorMessage(null);
+      return;
+    }
+    const controller = new AbortController();
+    const query = salesOrderFlowFiltersToClientQuery(filters);
+    setLoading(true);
+    setErrorKind(null);
+    setErrorMessage(null);
+
+    void Promise.all([
+      fetchSalesOrderFlowSummary(query, controller.signal),
+      fetchSalesOrderFlowList(query, controller.signal),
+    ])
+      .then(([summaryPayload, listPayload]) => {
+        if (controller.signal.aborted) return;
+        setSummary(summaryPayload);
+        setList(listPayload);
+        setHasLoadedOnce(true);
+      })
+      .catch((error: unknown) => {
         if (
           controller.signal.aborted ||
           (error instanceof DOMException && error.name === "AbortError")
@@ -73,14 +207,27 @@ export function SalesOrderFlowModule() {
         setErrorKind(classified.kind);
         setErrorMessage(classified.message);
         setSummary(null);
+        setList(null);
         setHasLoadedOnce(true);
-      } finally {
+      })
+      .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
-      }
-    })();
+      });
 
     return () => controller.abort();
-  }, [canView, retryToken]);
+  }, [canView, featureEnabled, filters, dateRangesInvalid, retryToken]);
+
+  const clearFilters = () => {
+    setQDraft("");
+    setCompanyDraft("");
+    setProductDraft("");
+    setSectorDraft("");
+    setFilters({ ...EMPTY_SALES_ORDER_FLOW_FILTERS });
+  };
+
+  const patchFilters = (patch: Partial<SalesOrderFlowUiFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+  };
 
   if (!canView) {
     return (
@@ -93,15 +240,26 @@ export function SalesOrderFlowModule() {
     );
   }
 
+  const filtersActive = hasActiveSalesOrderFlowFilters(filters);
   const totalOrders =
     summary?.columns.reduce((sum, column) => sum + column.orderCount, 0) ?? 0;
-  const showEmpty =
+  const showEmptyCatalog =
     hasLoadedOnce &&
     !loading &&
     !errorMessage &&
     featureEnabled === true &&
-    totalOrders === 0;
+    totalOrders === 0 &&
+    !filtersActive;
+  const showEmptyFilters =
+    hasLoadedOnce &&
+    !loading &&
+    !errorMessage &&
+    featureEnabled === true &&
+    totalOrders === 0 &&
+    filtersActive;
   const initialLoading = loading && !hasLoadedOnce;
+  const stageSelectValue =
+    filters.stages.length === 1 ? filters.stages[0] : "";
 
   return (
     <div className="space-y-4" data-testid="sales-order-flow-module">
@@ -111,6 +269,269 @@ export function SalesOrderFlowModule() {
       >
         {SALES_ORDER_FLOW_BREADCRUMB}
       </p>
+
+      <section
+        className="rounded-xl border border-border bg-card p-3 space-y-3"
+        data-testid="sales-order-flow-filters"
+        aria-label="Filtros do Fluxo de Pedidos"
+      >
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <FilterField label="Busca geral">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <input
+                className={cn(FILTER_CONTROL_CLASS, "pl-8")}
+                data-testid="sales-order-flow-filter-q"
+                placeholder="Pedido, cliente…"
+                value={qDraft}
+                onChange={(event) => setQDraft(event.target.value)}
+              />
+            </div>
+          </FilterField>
+
+          <div data-testid="sales-order-flow-filter-customer">
+            <CustomerAutocompleteFilter
+              label="Cliente"
+              customerId={filters.customerId || undefined}
+              placeholder="Todos os clientes"
+              onChange={(selection) => {
+                patchFilters({ customerId: selection?.id?.trim() ?? "" });
+              }}
+              onClear={() => {
+                patchFilters({ customerId: "" });
+              }}
+            />
+          </div>
+
+          <FilterField label="Vendedor">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-seller"
+              value={filters.sellerKey}
+              onChange={(event) =>
+                patchFilters({ sellerKey: event.target.value })
+              }
+            >
+              <option value="">Todos</option>
+              {sellerOptions.map((option) => (
+                <option key={option.sellerKey} value={option.sellerKey}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+
+          <FilterField label="Empresa">
+            <input
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-company"
+              placeholder="Ex.: KOPPETEL"
+              value={companyDraft}
+              onChange={(event) => setCompanyDraft(event.target.value)}
+            />
+          </FilterField>
+
+          <FilterField label="Etapa">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-stage"
+              value={stageSelectValue}
+              onChange={(event) => {
+                const value = event.target.value;
+                patchFilters({
+                  stages: value ? [value as SalesOrderFlowStage] : [],
+                });
+              }}
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+
+          <FilterField label="Prioridade">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-priority"
+              value={filters.priority ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                patchFilters({
+                  priority: value
+                    ? (value as SalesOrderFlowUiPriority)
+                    : null,
+                });
+              }}
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_PRIORITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+
+          <FilterField label="Produto">
+            <input
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-product"
+              placeholder="Código ou descrição"
+              value={productDraft}
+              onChange={(event) => setProductDraft(event.target.value)}
+            />
+          </FilterField>
+
+          <FilterField label="Setor">
+            <input
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-sector"
+              placeholder="Setor"
+              value={sectorDraft}
+              onChange={(event) => setSectorDraft(event.target.value)}
+            />
+          </FilterField>
+
+          <FilterField label="Emissão de">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-issue-from"
+              aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                filters.issueFrom,
+                filters.issueTo
+              )}
+              value={filters.issueFrom}
+              onChange={(event) =>
+                patchFilters({ issueFrom: event.target.value })
+              }
+            />
+          </FilterField>
+
+          <FilterField label="Emissão até">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-issue-to"
+              aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                filters.issueFrom,
+                filters.issueTo
+              )}
+              value={filters.issueTo}
+              onChange={(event) =>
+                patchFilters({ issueTo: event.target.value })
+              }
+            />
+          </FilterField>
+
+          <FilterField label="Entrega prometida de">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-promised-from"
+              aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                filters.promisedFrom,
+                filters.promisedTo
+              )}
+              value={filters.promisedFrom}
+              onChange={(event) =>
+                patchFilters({ promisedFrom: event.target.value })
+              }
+            />
+          </FilterField>
+
+          <FilterField label="Entrega prometida até">
+            <input
+              type="date"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-promised-to"
+              aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                filters.promisedFrom,
+                filters.promisedTo
+              )}
+              value={filters.promisedTo}
+              onChange={(event) =>
+                patchFilters({ promisedTo: event.target.value })
+              }
+            />
+          </FilterField>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <BooleanFilter
+            testId="sales-order-flow-filter-overdue"
+            label="Atrasados"
+            checked={filters.overdue === true}
+            onChange={(checked) =>
+              patchFilters({ overdue: checked ? true : null })
+            }
+          />
+          <BooleanFilter
+            testId="sales-order-flow-filter-blocked"
+            label="Bloqueados"
+            checked={filters.blocked === true}
+            onChange={(checked) =>
+              patchFilters({ blocked: checked ? true : null })
+            }
+          />
+          <BooleanFilter
+            testId="sales-order-flow-filter-inconsistent"
+            label="Inconsistentes"
+            checked={filters.inconsistent === true}
+            onChange={(checked) =>
+              patchFilters({ inconsistent: checked ? true : null })
+            }
+          />
+          <BooleanFilter
+            testId="sales-order-flow-filter-partially-shipped"
+            label="Parcialmente enviados"
+            checked={filters.partiallyShipped === true}
+            onChange={(checked) =>
+              patchFilters({ partiallyShipped: checked ? true : null })
+            }
+          />
+          <BooleanFilter
+            testId="sales-order-flow-filter-with-cut"
+            label="Com corte"
+            checked={filters.withCut === true}
+            onChange={(checked) =>
+              patchFilters({ withCut: checked ? true : null })
+            }
+          />
+          <BooleanFilter
+            testId="sales-order-flow-filter-with-active-residual"
+            label="Com saldo ativo"
+            checked={filters.withActiveResidual === true}
+            onChange={(checked) =>
+              patchFilters({ withActiveResidual: checked ? true : null })
+            }
+          />
+
+          <button
+            type="button"
+            className="ml-auto inline-flex rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-40"
+            data-testid="sales-order-flow-clear-filters"
+            disabled={!filtersActive && !qDraft && !companyDraft && !productDraft && !sectorDraft}
+            onClick={clearFilters}
+          >
+            Limpar filtros
+          </button>
+        </div>
+
+        {dateRangesInvalid ? (
+          <p
+            className="text-sm text-amber-700"
+            role="alert"
+            data-testid="sales-order-flow-date-range-invalid"
+          >
+            Intervalo de datas inválido: a data inicial não pode ser maior que a
+            final.
+          </p>
+        ) : null}
+      </section>
 
       {initialLoading ? (
         <div
@@ -150,7 +571,7 @@ export function SalesOrderFlowModule() {
         </div>
       ) : null}
 
-      {showEmpty ? (
+      {showEmptyCatalog ? (
         <div
           className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground"
           data-testid="sales-order-flow-empty"
@@ -159,9 +580,27 @@ export function SalesOrderFlowModule() {
         </div>
       ) : null}
 
+      {showEmptyFilters ? (
+        <div
+          className="rounded-xl border border-dashed border-border bg-card p-12 text-center text-sm text-muted-foreground space-y-3"
+          data-testid="sales-order-flow-empty-filters"
+        >
+          <p>Nenhum pedido corresponde aos filtros aplicados.</p>
+          <button
+            type="button"
+            className="inline-flex rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+            onClick={clearFilters}
+          >
+            Limpar filtros
+          </button>
+        </div>
+      ) : null}
+
       {!initialLoading &&
       !errorMessage &&
-      !showEmpty &&
+      !showEmptyCatalog &&
+      !showEmptyFilters &&
+      !dateRangesInvalid &&
       featureEnabled === true &&
       summary ? (
         <div
@@ -170,10 +609,53 @@ export function SalesOrderFlowModule() {
         >
           {totalOrders === 1
             ? "1 pedido no fluxo."
-            : `${totalOrders} pedidos no fluxo.`}{" "}
+            : `${totalOrders} pedidos no fluxo.`}
+          {list
+            ? ` ${list.columns.length} colunas carregadas com os filtros atuais.`
+            : null}{" "}
           O quadro Kanban será disponibilizado em seguida.
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function BooleanFilter({
+  testId,
+  label,
+  checked,
+  onChange,
+}: {
+  testId: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="inline-flex items-center gap-2 text-sm text-foreground">
+      <input
+        type="checkbox"
+        className="h-4 w-4 rounded border-border"
+        data-testid={testId}
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      {label}
+    </label>
   );
 }
