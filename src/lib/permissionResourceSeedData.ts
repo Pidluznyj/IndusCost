@@ -924,7 +924,9 @@ const ROLE_MATRIX: Record<Exclude<AppUserRole, "SUPER_ADMIN">, Record<string, Ro
     "admin.permissoes.action.manage": NONE,
   },
   VIEWER: {
-    dashboard: V,
+    // VIEWER é apenas a role técnica fail-closed de usuários sem perfil.
+    // Nenhum menu é concedido automaticamente; acesso vem de perfil/override.
+    dashboard: NONE,
     financeiro: NONE,
     "financeiro.conciliacao_carteira": NONE,
     "financeiro.conciliacao_carteira.tab.conciliacao": NONE,
@@ -935,9 +937,9 @@ const ROLE_MATRIX: Record<Exclude<AppUserRole, "SUPER_ADMIN">, Record<string, Ro
     "financeiro.contas_pagar": NONE,
     "financeiro.fluxo_caixa": NONE,
     "financeiro.relatorio_presidencial": NONE,
-    comercial: V,
-    "comercial.pedidos_venda": V,
-    "comercial.documentos_saida": V,
+    comercial: NONE,
+    "comercial.pedidos_venda": NONE,
+    "comercial.documentos_saida": NONE,
     "comercial.crm": NONE,
     "comercial.crm.tab.gestao_geral": NONE,
     "comercial.crm.tab.gestao_vendedor": NONE,

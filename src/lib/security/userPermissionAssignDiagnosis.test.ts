@@ -20,6 +20,7 @@ import {
 } from "@/src/lib/userPermissionsMatrix.ts";
 import { applyDenyOnResource, applyAllowOnResource, clearMatrixOverrideForResource } from "@/src/lib/userPermissionsMatrix.ts";
 import { canEffectiveAccess, resolveEffectiveAccess } from "@/src/lib/security/effectiveAccess/index.ts";
+import { expandOverridesToAliases } from "@/src/lib/security/permissionAliasBridge.js";
 
 /** Chaves legadas conhecidas (bag) — projetam para recursos da matriz. */
 const PROFILE_PERMS = ["dashboard.view", "crm.view"];
@@ -366,10 +367,14 @@ describe("PERM-29 user permission assign", () => {
       profileFlagsByKey: reloaded.profileFlags,
     });
     const again = buildSaveOverridesFromMatrix(model.draft, reloaded.roleDefaults);
+    // Dual-write 1:1 grava aliases no DB; a matriz só reemite chaves da árvore.
+    // Round-trip: expandir o save da UI deve reproduzir o conjunto persistido.
     assert.deepEqual(
-      again.map((o) => o.resourceKey).sort(),
+      expandOverridesToAliases(again)
+        .map((o) => o.resourceKey)
+        .sort(),
       afterOverrides.map((o) => o.resourceKey).sort(),
-      "reload deve reproduzir o mesmo conjunto de overrides"
+      "reload deve reproduzir o mesmo conjunto de overrides (com dual-write)"
     );
   });
 

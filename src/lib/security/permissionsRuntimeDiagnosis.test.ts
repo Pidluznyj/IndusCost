@@ -165,7 +165,7 @@ describe("P09 Leticia — Contas a Pagar only (comportamento desejado)", () => {
     assertNoResidualP09Bleeds(report);
   });
 
-  it("dual-write — mega-keys mapeadas caem; unmapped preserva; baseline VIEWER", () => {
+  it("dual-write — mega-keys mapeadas caem; unmapped preserva; VIEWER vazio", () => {
     const effective = buildEffectiveFlagsMap("VIEWER", [
       {
         resourceKey: "financeiro.contas_pagar",
@@ -191,8 +191,8 @@ describe("P09 Leticia — Contas a Pagar only (comportamento desejado)", () => {
     );
     assert.ok(bag.includes("finance.accountsPayable.view"));
     assert.equal(bag.includes("crm.view"), false, "1:1 não emite crm.view do âncora comercial");
-    assert.ok(bag.includes("sales_orders.view"), "baseline VIEWER pedidos");
-    assert.ok(bag.includes("dashboard.view"), "baseline VIEWER dashboard");
+    assert.equal(bag.includes("sales_orders.view"), false, "VIEWER não injeta pedidos");
+    assert.equal(bag.includes("dashboard.view"), false, "VIEWER não injeta dashboard");
   });
 
   it("path /employees protegido por resource quando bag limpa", () => {

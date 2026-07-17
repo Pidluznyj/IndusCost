@@ -86,9 +86,10 @@ describe("permissionService motor relacional", () => {
     const subject = { id: "vw", role: "VIEWER" as const };
     const snap = createSeedPermissionSnapshot({ role: "VIEWER", userId: "vw" });
 
+    // VIEWER fail-closed: sem view automática em pedidos (acesso via perfil).
     assert.equal(
       canAccessResource(subject, PermissionResourceKeys.COMERCIAL_PEDIDOS_VENDA, "view", snap),
-      true
+      false
     );
     assert.equal(
       canAccessResource(

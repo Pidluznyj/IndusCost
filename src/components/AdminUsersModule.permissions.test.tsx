@@ -86,7 +86,6 @@ describe("AdminUsers PermissionsTree smoke (PERM-35)", () => {
       fs.readFileSync(new URL("./AdminUsersModule.tsx", import.meta.url), "utf8")
     );
     assert.match(src, /user-permission-access-profile-select/);
-    assert.match(src, /create-user-access-profile-select/);
     assert.match(src, /fetchAccessProfilesList/);
     assert.match(src, /handleAccessProfileChange/);
     assert.doesNotMatch(
@@ -95,6 +94,9 @@ describe("AdminUsers PermissionsTree smoke (PERM-35)", () => {
       "seletor principal nao deve mais ser role"
     );
     assert.match(src, /Perfil de acesso/);
+    // Criação: sem perfil no formulário (política resolveNewUserInitialAccess).
+    assert.doesNotMatch(src, /create-user-access-profile-select/);
+    assert.match(src, /sem perfil e sem acesso/);
   });
 
   it("SUPER_ADMIN readOnly", () => {

@@ -642,7 +642,10 @@ export async function saveUserPermissionOverrides(
   normalized = expandOverridesToAliases(normalized);
 
   // Sem mudança real → não grava DB nem auditoria (evita ruído).
-  if (overridesUnchanged(beforeOverrides, normalized)) {
+  // Compara após expandir o estado anterior — senão o dual-write parece “diff”.
+  if (
+    overridesUnchanged(expandOverridesToAliases(beforeOverrides), normalized)
+  ) {
     return getUserPermissionsAdmin(prisma, args.userId);
   }
 

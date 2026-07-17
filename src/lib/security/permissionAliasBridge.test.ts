@@ -31,7 +31,7 @@ describe("permissionAliasBridge — PT ↔ canônico", () => {
     assert.ok(!users.includes("admin.permissoes.action.manage"));
   });
 
-  it("VIEWER baseline bridged libera commercial* (matriz PT)", () => {
+  it("VIEWER baseline bridged permanece fail-closed", () => {
     const commercial = getBridgedOfficialRolePermissionFlags("VIEWER", "commercial");
     const sales = getBridgedOfficialRolePermissionFlags(
       "VIEWER",
@@ -41,9 +41,9 @@ describe("permissionAliasBridge — PT ↔ canônico", () => {
       "VIEWER",
       "commercial.output_documents"
     );
-    assert.equal(commercial.canView, true);
-    assert.equal(sales.canView, true);
-    assert.equal(docs.canView, true);
+    assert.equal(commercial.canView, false);
+    assert.equal(sales.canView, false);
+    assert.equal(docs.canView, false);
   });
 
   it("deny em commercial aplica no alias comercial (deny wins)", () => {
@@ -73,18 +73,11 @@ describe("permissionAliasBridge — PT ↔ canônico", () => {
     assert.ok(expanded.every((o) => o.canView === false));
   });
 
-  it("VIEWER sem override: resumo mostra Comercial / Pedidos / Documentos", () => {
+  it("VIEWER sem override: resumo não mostra nenhum acesso", () => {
     const effective = buildEffectiveFlagsMap("VIEWER", []);
     const summary = buildPermissionAccessSummary({ role: "VIEWER", effective });
-    assert.ok(summary.menusAllowed.includes("Comercial"));
-    assert.ok(
-      summary.submenusAllowed.some((l) => /pedidos/i.test(l)),
-      `submenus: ${summary.submenusAllowed.join(",")}`
-    );
-    assert.ok(
-      summary.submenusAllowed.some((l) => /documentos/i.test(l)),
-      `submenus: ${summary.submenusAllowed.join(",")}`
-    );
+    assert.deepEqual(summary.menusAllowed, []);
+    assert.deepEqual(summary.submenusAllowed, []);
   });
 
   it("VIEWER + deny commercial*: resumo não lista Comercial liberado", () => {
@@ -123,12 +116,12 @@ describe("permissionAliasBridge — PT ↔ canônico", () => {
     assert.ok(!summary.submenusAllowed.some((l) => /documentos/i.test(l)));
   });
 
-  it("árvore VIEWER mostra Comercial liberado até deny explícito", () => {
+  it("árvore VIEWER nasce bloqueada e aceita deny explícito idempotente", () => {
     const open = buildEditablePermissionTree("VIEWER", []);
     const comercial = open.find((n) => n.key === "commercial");
     assert.ok(comercial);
-    assert.equal(comercial!.roleFlags.canView, true);
-    assert.equal(comercial!.effectiveFlags.canView, true);
+    assert.equal(comercial!.roleFlags.canView, false);
+    assert.equal(comercial!.effectiveFlags.canView, false);
 
     const denied = buildEditablePermissionTree("VIEWER", [
       {

@@ -342,3 +342,35 @@ describe("FIN-09 — wiring Auditoria usa projeção FIN-05", () => {
     assert.doesNotMatch(src, /buildSalesOrderPlannedReceivables\(/);
   });
 });
+
+describe("FIN-12 — anti-paralelo Pedido−CR e motor oficial", () => {
+  it("consumidores de produção não chamam buildSalesOrderPlannedReceivables", () => {
+    const paths = [
+      "src/lib/finance/orderFullAuditService.ts",
+      "src/lib/finance/orderReceivablesResolver.ts",
+      "src/lib/finance/financeAccountsReceivableEffectiveTitles.ts",
+      "src/lib/finance/financeAccountsReceivableEffectiveTitles.server.ts",
+      "src/lib/sales-orders/salesOrderDetailEffectiveFinancial.ts",
+      "src/lib/sales-orders/salesOrderDetailService.server.ts",
+      "src/lib/finance/effectiveScheduleAuditProjection.ts",
+    ];
+    for (const rel of paths) {
+      const src = readSrc(rel);
+      assert.doesNotMatch(
+        src,
+        /buildSalesOrderPlannedReceivables\(/,
+        `${rel} não deve chamar o motor legado`
+      );
+    }
+  });
+
+  it("motor oficial usa classificador + valores por item (não Pedido−CR)", () => {
+    const engine = readSrc("src/lib/finance/salesOrderEffectiveFinancialSchedule.ts");
+    assert.match(engine, /computeSalesOrderItemFinancialAmounts/);
+    assert.match(engine, /itemActiveResidualTotal/);
+    assert.doesNotMatch(engine, /orderActiveValue\s*-\s*.*realReceivable/);
+    const amounts = readSrc("src/lib/finance/salesOrderItemFinancialAmounts.ts");
+    assert.match(amounts, /classifySalesOrderItemFinancialFulfillment/);
+    assert.match(amounts, /FULFILLED_WITH_CUT|PARTIALLY_FULFILLED|CANCELED|UNKNOWN/);
+  });
+});

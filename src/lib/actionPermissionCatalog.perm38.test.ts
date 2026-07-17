@@ -318,10 +318,12 @@ describe("PERM-38 — FE view vs CRUD", () => {
 
 describe("PERM-38 — BE 403 para ação negada", () => {
   it("products create: view-only → 403; com create → allow", () => {
+    // Bag legada só entra com legacyCompatMode (default OFF no BE canônico).
     const denied = authorizeRequireResource(
       appAuth(["products.view"]),
       "engineering.products",
-      "create"
+      "create",
+      { legacyCompatMode: true }
     );
     assert.equal(denied.ok, false);
     if (!denied.ok) assert.equal(denied.status, 403);
@@ -329,7 +331,8 @@ describe("PERM-38 — BE 403 para ação negada", () => {
     const allowed = authorizeRequireResource(
       appAuth(["products.view", "products.create"]),
       "engineering.products",
-      "create"
+      "create",
+      { legacyCompatMode: true }
     );
     assert.equal(allowed.ok, true);
   });
@@ -358,7 +361,8 @@ describe("PERM-38 — BE 403 para ação negada", () => {
     const denied = authorizeRequireResource(
       appAuth(["finance.suppliers.view"]),
       "finance.suppliers",
-      "manage"
+      "manage",
+      { legacyCompatMode: true }
     );
     assert.equal(denied.ok, false);
     if (!denied.ok) assert.equal(denied.status, 403);
@@ -366,7 +370,8 @@ describe("PERM-38 — BE 403 para ação negada", () => {
     const allowed = authorizeRequireResource(
       appAuth(["finance.suppliers.view", "finance.suppliers.manage"]),
       "finance.suppliers",
-      "manage"
+      "manage",
+      { legacyCompatMode: true }
     );
     assert.equal(allowed.ok, true);
   });

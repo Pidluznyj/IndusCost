@@ -34,16 +34,12 @@ describe("resolveEffectiveAccess — SUPER_ADMIN / VIEWER / role", () => {
     assert.equal(canEffectiveAccess(r, "finance.accounts_payable", "approve"), false);
   });
 
-  it("VIEWER com role preset NÃO usa bag; comercial via seed", () => {
+  it("VIEWER sem perfil é fail-closed e NÃO usa bag", () => {
     const r = resolveEffectiveAccess(fixtureViewerRolePreset());
     assert.equal(r.legacyCompatApplied, false);
-    // Seed VIEWER: comercial + pedidos; financeiro NONE
-    assert.equal(canEffectiveAccess(r, "commercial.sales_orders", "view"), true);
+    assert.equal(canEffectiveAccess(r, "dashboard", "view"), false);
+    assert.equal(canEffectiveAccess(r, "commercial.sales_orders", "view"), false);
     assert.equal(canEffectiveAccess(r, "finance.accounts_payable", "view"), false);
-    assert.ok(
-      r.byResourceAction["commercial.sales_orders"]?.view?.source === "ROLE" ||
-        r.baselineUsed["commercial.sales_orders"]?.view === true
-    );
   });
 
   it("VIEWER não amplia além do baseline/overrides (bag ignorada)", () => {
@@ -195,9 +191,10 @@ describe("resolveEffectiveAccess — legado / alias / mega-key", () => {
 });
 
 describe("resolveEffectiveAccess — role baseline builder", () => {
-  it("buildRoleBaselineFromSeed VIEWER inclui comercial, não financeiro", () => {
+  it("buildRoleBaselineFromSeed VIEWER é vazio (fail-closed)", () => {
     const b = buildRoleBaselineFromSeed("VIEWER");
-    assert.equal(b["commercial.sales_orders"]?.view, true);
+    assert.equal(b["dashboard"]?.view, undefined);
+    assert.equal(b["commercial.sales_orders"]?.view, undefined);
     assert.equal(b["finance.accounts_payable"]?.view, undefined);
   });
 });

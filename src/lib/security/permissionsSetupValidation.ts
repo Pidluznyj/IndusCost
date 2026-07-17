@@ -124,12 +124,22 @@ export function validatePermissionsCatalogSetup(): PermissionsSetupReport {
     ],
     COMMERCIAL_MANAGER: [{ resourceKey: "dashboard", require: "view" }],
     SELLER: [{ resourceKey: "dashboard", require: "view" }],
-    VIEWER: [{ resourceKey: "dashboard", require: "view" }],
+    // VIEWER é role técnica fail-closed: sem mínimo automático; acesso via perfil/override.
+    VIEWER: [],
   };
 
   for (const role of OFFICIAL_APP_USER_ROLES) {
     if (role === "SUPER_ADMIN") continue;
     const mins = minimumByRole[role] ?? [{ resourceKey: "dashboard", require: "view" as const }];
+    if (mins.length === 0) {
+      push(
+        checks,
+        "ok",
+        "ROLE_MINIMUM_OK",
+        `Role ${role}: fail-closed sem mínimo obrigatório (perfil/override).`
+      );
+      continue;
+    }
     for (const min of mins) {
       if (!keys.has(min.resourceKey)) {
         push(

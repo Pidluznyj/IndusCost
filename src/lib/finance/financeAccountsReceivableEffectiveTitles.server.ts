@@ -88,35 +88,49 @@ export async function loadFinanceArEffectiveOrderContexts(
     take: limit,
   });
 
+  // Evita N+1 sequencial: carrega audits em paralelo (pool limitado).
+  // Ainda há 1 audit/pedido (custo do getOrderFullAudit); teto = `limit` ≤ 40.
+  const CONCURRENCY = 4;
   const contexts: FinanceArEffectiveOrderContext[] = [];
 
-  for (const order of orders) {
-    try {
-      const audit = await getOrderFullAudit({
-        salesOrderId: order.id,
-        orderCode: order.orderCode,
-      });
-      if (!("ok" in audit) || audit.ok !== true) continue;
-      const scheduleInput = buildEffectiveScheduleInputFromAudit(
-        audit,
-        referenceDate
-      );
-      const schedule = buildSalesOrderEffectiveFinancialSchedule(scheduleInput);
-      const personFromCr = audit.receivables[0];
-      contexts.push({
-        schedule,
-        personId: order.externalCustomerId ?? null,
-        personName:
-          personFromCr?.personName ?? order.Customer?.companyName ?? null,
-        personCnpj: personFromCr?.personCnpj ?? order.Customer?.taxId ?? null,
-        companyName: personFromCr?.companyName ?? null,
-      });
-    } catch (err) {
-      console.error(
-        "loadFinanceArEffectiveOrderContexts: falha no pedido",
-        order.orderCode,
-        err
-      );
+  for (let i = 0; i < orders.length; i += CONCURRENCY) {
+    const slice = orders.slice(i, i + CONCURRENCY);
+    const settled = await Promise.all(
+      slice.map(async (order) => {
+        try {
+          const audit = await getOrderFullAudit({
+            salesOrderId: order.id,
+            orderCode: order.orderCode,
+          });
+          if (!("ok" in audit) || audit.ok !== true) return null;
+          const scheduleInput = buildEffectiveScheduleInputFromAudit(
+            audit,
+            referenceDate
+          );
+          const schedule =
+            buildSalesOrderEffectiveFinancialSchedule(scheduleInput);
+          const personFromCr = audit.receivables[0];
+          return {
+            schedule,
+            personId: order.externalCustomerId ?? null,
+            personName:
+              personFromCr?.personName ?? order.Customer?.companyName ?? null,
+            personCnpj:
+              personFromCr?.personCnpj ?? order.Customer?.taxId ?? null,
+            companyName: personFromCr?.companyName ?? null,
+          } satisfies FinanceArEffectiveOrderContext;
+        } catch (err) {
+          console.error(
+            "loadFinanceArEffectiveOrderContexts: falha no pedido",
+            order.orderCode,
+            err
+          );
+          return null;
+        }
+      })
+    );
+    for (const ctx of settled) {
+      if (ctx) contexts.push(ctx);
     }
   }
 

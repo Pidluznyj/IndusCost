@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>FIN-12 — Preview agenda financeira Detalhe do Pedido</title>
+  <link rel="stylesheet" href="../../src/components/sales/sales-order-detail-view.css" />
+  <style>
+    body { margin: 0; font-family: Segoe UI, system-ui, sans-serif; background: #e5e7eb; }
+    .frame { max-width: 1100px; margin: 24px auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px 20px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    .sub { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div class="frame so-detail-view" data-testid="fin12-financial-preview">
+    <h1>Pedido PD 09999 — Financeiro (RC FIN-12)</h1>
+    <p class="sub">Preview estático dos KPIs / meta / tabela efetiva (FIN-05→FIN-07).</p>
+    <div class="so-detail-kpi-grid" data-testid="sales-order-detail-financial-kpis">
+      <div class="so-detail-kpi so-detail-kpi--positive"><div class="so-detail-kpi-label">CR real total</div><div class="so-detail-kpi-value">R$&nbsp;10.000,00</div></div>
+      <div class="so-detail-kpi so-detail-kpi--warning"><div class="so-detail-kpi-label">CR aberto</div><div class="so-detail-kpi-value">R$&nbsp;6.500,00</div></div>
+      <div class="so-detail-kpi so-detail-kpi--positive"><div class="so-detail-kpi-label">CR recebido</div><div class="so-detail-kpi-value">R$&nbsp;3.500,00</div></div>
+      <div class="so-detail-kpi so-detail-kpi--info"><div class="so-detail-kpi-label">Previsão residual ativa</div><div class="so-detail-kpi-value">R$&nbsp;1.000,00</div></div>
+      <div class="so-detail-kpi"><div class="so-detail-kpi-label">Próximo vencimento</div><div class="so-detail-kpi-value">01/08/2026</div></div>
+    </div>
+    <div class="so-detail-financial-meta" data-testid="sales-order-detail-financial-meta">
+      <span>Coberto por Documento: R$&nbsp;0,00</span>
+      <span>Valor cortado: R$&nbsp;0,00</span>
+    </div>
+    <div class="so-detail-scroll">
+      <table class="so-detail-table" data-testid="sales-order-detail-financial-table">
+        <thead>
+          <tr>
+            <th>Origem</th><th>Referência</th><th>Parcela</th><th>Vencimento</th>
+            <th class="so-detail-num">Valor</th><th class="so-detail-num">Aberto</th>
+            <th class="so-detail-num">Recebido</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="so-detail-badge so-detail-badge--invoiced">CR real</span></td>
+            <td class="font-semibold">NF 7001</td><td>1/1</td><td>20/07/2026</td>
+            <td class="so-detail-money">R$&nbsp;10.000,00</td>
+            <td class="so-detail-money">R$&nbsp;6.500,00</td>
+            <td class="so-detail-money so-detail-money--positive">R$&nbsp;3.500,00</td>
+            <td><span class="so-detail-badge">Parcial</span></td>
+          </tr>
+          <tr>
+            <td><span class="so-detail-badge">Residual Pedido</span></td>
+            <td>Condição original</td><td>1/2</td><td>01/08/2026</td>
+            <td class="so-detail-money">R$&nbsp;500,00</td>
+            <td class="so-detail-money">R$&nbsp;500,00</td>
+            <td class="so-detail-money">R$&nbsp;0,00</td>
+            <td><span class="so-detail-badge">A vencer</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <details class="so-detail-superseded-plan" open>
+      <summary>Histórico da previsão original (substituída — não é aberto)</summary>
+      <p style="font-size:11px;color:#64748b;margin:6px 0 0">Parcelas do Pedido substituídas por CR — sem alerta de vencido operacional.</p>
+    </details>
+  </div>
+</body>
+</html>

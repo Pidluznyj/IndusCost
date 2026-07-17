@@ -99,14 +99,14 @@ const ROWS: Row[] = [
     expectSource: "DENY_DEFAULT",
   },
   {
-    name: "sem profileSnapshot usa role preset (VIEWER comercial)",
+    name: "sem profileSnapshot usa role preset VIEWER fail-closed",
     role: "VIEWER",
     // profileSnapshot omitted → role
     overrides: {},
     resourceKey: "commercial.sales_orders",
     action: "view",
-    expectAllow: true,
-    expectSource: "ROLE",
+    expectAllow: false,
+    expectSource: "DENY_DEFAULT",
   },
   {
     name: "ancestor view DENY bloqueia filho com ALLOW",

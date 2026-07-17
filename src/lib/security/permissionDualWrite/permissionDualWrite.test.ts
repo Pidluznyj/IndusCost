@@ -152,7 +152,8 @@ describe("permissionDualWrite apply integration (memory)", () => {
       dryRun: false,
       effectiveByResourceKey: effective,
     });
-    assert.equal(applied.applied, true);
+    // Nenhum grant VIEWER foi injetado; o unmapped já estava preservado.
+    assert.equal(applied.applied, false);
     assert.ok(port.store.get("u1")!.legacyPermissions.includes("reports.material_demand.view"));
   });
 
