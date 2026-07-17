@@ -2,25 +2,26 @@ import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { usePermissions } from "@/src/hooks/usePermissions";
 import { canAccessModule } from "@/src/lib/modulePermissions";
 import {
   getMaterialsDefaultPath,
   isMaterialsCanonicalPath,
   MATERIALS_SECTIONS,
+  parseMaterialsSectionFromPath,
   resolveMaterialsCanonicalPath,
 } from "@/src/lib/materialsNavigation";
 import {
   MATERIALS_UI_SECTIONS,
   MARKET_INTELLIGENCE_SECTION_KEYS,
-  TabResourceKeys,
 } from "@/src/lib/moduleTabResources";
 import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { MaterialModule } from "@/src/components/MaterialModule";
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
 import { MaterialsMarketIntelligenceReportsPage } from "@/src/components/materials/MaterialsMarketIntelligenceReportsPage";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { usePermissions } from "@/src/hooks/usePermissions";
 
 function MaterialsHomeRedirect({ path }: { path: string }) {
   return <Navigate to={path} replace />;
@@ -36,33 +37,38 @@ export function MaterialsModule() {
   const permissions = usePermissions();
   const location = useLocation();
   const canViewModule = canAccessModule("materials", auth);
-
-  const visibleSections = MATERIALS_SECTIONS.filter((section) => {
-    const mapped = MATERIALS_UI_SECTIONS.find((s) => s.id === section.id);
-    if (!mapped) return canViewModule;
-    return permissions.canView(mapped.resourceKey);
+  const requestedId = parseMaterialsSectionFromPath(location.pathname);
+  const { visibleTabs, isEmpty, activeId } = useAuthorizedTabs({
+    tabs: MATERIALS_UI_SECTIONS,
+    requestedId,
   });
+  const visibleIds = new Set(visibleTabs.map((t) => t.id));
+  const visibleSections = MATERIALS_SECTIONS.filter((section) =>
+    visibleIds.has(section.id)
+  );
 
   const defaultPath =
+    MATERIALS_SECTIONS.find((s) => s.id === activeId)?.path ??
     visibleSections[0]?.path ??
-    (permissions.canView(TabResourceKeys.SUPRIMENTOS_CATALOGO)
-      ? getMaterialsDefaultPath()
-      : MATERIALS_SECTIONS.find((s) => s.id === "marketIntelligence")?.path) ??
     getMaterialsDefaultPath();
 
-  if (!canViewModule && visibleSections.length === 0) {
+  if (!canViewModule && isEmpty) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        Você não tem permissão para acessar Suprimentos.
-      </div>
+      <PermissionDenied
+        title="Sem permissão"
+        message="Você não tem permissão para acessar Suprimentos."
+        testId="materials-module-denied"
+      />
     );
   }
 
-  if (visibleSections.length === 0) {
+  if (isEmpty) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        {PERMISSION_EMPTY_TABS_MESSAGE}
-      </div>
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="materials-empty-tabs"
+      />
     );
   }
 
@@ -75,18 +81,19 @@ export function MaterialsModule() {
     location.pathname.startsWith("/materials/market-intelligence/") &&
     !location.pathname.endsWith("/reports");
   const onCatalog = location.pathname === "/materials" || location.pathname === "/materials/";
+  const canCatalog = visibleIds.has("catalog");
+  const canMi = visibleIds.has("marketIntelligence");
 
-  if (onCatalog && !permissions.canView(TabResourceKeys.SUPRIMENTOS_CATALOGO)) {
+  if (onCatalog && !canCatalog) {
+    return <Navigate to={defaultPath} replace />;
+  }
+  if ((onMiHome || location.pathname.includes("/market-intelligence")) && !canMi) {
     return <Navigate to={defaultPath} replace />;
   }
   if (
-    (onMiHome || location.pathname.includes("/market-intelligence")) &&
-    !permissions.canView(TabResourceKeys.MI_HOME) &&
-    !permissions.canView(TabResourceKeys.MI_360)
+    onMiDetail &&
+    !permissions.canViewTabResource(MARKET_INTELLIGENCE_SECTION_KEYS.material360)
   ) {
-    return <Navigate to={defaultPath} replace />;
-  }
-  if (onMiDetail && !permissions.canView(MARKET_INTELLIGENCE_SECTION_KEYS.material360)) {
     return (
       <PermissionDenied
         title="Aba sem permissão"
@@ -131,7 +138,7 @@ export function MaterialsModule() {
         <Route
           index
           element={
-            permissions.canView(TabResourceKeys.SUPRIMENTOS_CATALOGO) ? (
+            canCatalog ? (
               <MaterialModule />
             ) : (
               <MaterialsHomeRedirect path={defaultPath} />
@@ -141,7 +148,7 @@ export function MaterialsModule() {
         <Route
           path="market-intelligence/reports"
           element={
-            permissions.canView(TabResourceKeys.MI_HOME) ? (
+            canMi ? (
               <MaterialsMarketIntelligenceReportsPage />
             ) : (
               <PermissionDenied title="Aba sem permissão" />
@@ -150,12 +157,18 @@ export function MaterialsModule() {
         />
         <Route
           path="market-intelligence/:materialId"
-          element={<MaterialsMarketIntelligenceDetailPage />}
+          element={
+            canMi ? (
+              <MaterialsMarketIntelligenceDetailPage />
+            ) : (
+              <PermissionDenied title="Aba sem permissão" />
+            )
+          }
         />
         <Route
           path="market-intelligence"
           element={
-            permissions.canView(TabResourceKeys.MI_HOME) ? (
+            canMi ? (
               <MaterialsMarketIntelligencePage />
             ) : (
               <PermissionDenied title="Aba sem permissão" />

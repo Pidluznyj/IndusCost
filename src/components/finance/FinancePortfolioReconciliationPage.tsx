@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
@@ -27,6 +28,10 @@ import { OrderToCashAuditTab } from "@/src/components/finance/portfolio-reconcil
 import { OrderStatusTab } from "@/src/components/finance/portfolio-reconciliation/OrderStatusTab";
 import { cn } from "@/src/lib/utils";
 
+const PORTFOLIO_VISIBLE_TAB_CATALOG = PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) =>
+  isPortfolioReconciliationVisibleTabId(t.id)
+);
+
 /** Preferências: último SUCCESS; senão o mais recente da lista. */
 function pickDisplayRun(
   runs: PortfolioReconciliationRunDto[]
@@ -48,46 +53,36 @@ export function FinancePortfolioReconciliationPage() {
   const permissions = usePermissions();
   /** P12: módulo e abas via DTO (mesmo contrato da sidebar/rotas). */
   const canView = permissions.canViewModule("portfolio-reconciliation");
-  /**
-   * Abas visíveis na UI (2026-07 em diante): somente Status Pedidos e
-   * Auditoria Pedido → Caixa, filtradas por DTO. Ver
-   * `PORTFOLIO_RECONCILIATION_VISIBLE_TAB_IDS` em `permissionsClient.ts`.
-   */
-  const visibleTabs = useMemo<PortfolioReconciliationVisibleTabId[]>(() => {
-    const whitelist = new Set(
-      PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) =>
-        isPortfolioReconciliationVisibleTabId(t.id)
-      ).map((t) => t.id)
-    );
-    return permissions
-      .filterTabsByViewDto(
-        PORTFOLIO_RECONCILIATION_UI_TABS.filter((t) => whitelist.has(t.id))
-        // Tab dedicada basta; pai portfolio não é obrigatório (grant fino).
-      )
-      .map((t) => t.id as PortfolioReconciliationVisibleTabId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    permissions.authUser?.id,
-    permissions.authUser?.role,
-    permissions.authUser?.effectivePermissions?.join("|"),
-  ]);
   const abortRef = useRef<AbortController | null>(null);
 
   const [runs, setRuns] = useState<PortfolioReconciliationRunsPayload["runs"]>([]);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /**
-   * Aba ativa. pickAllowedTabId bloqueia seleção / estado legado não autorizado.
+   * Aba ativa. useAuthorizedTabs corrige URL/estado legado não autorizado.
    */
   const [activeView, setActiveView] = useState<PortfolioReconciliationVisibleTabId>(
-    () => visibleTabs[0] ?? "order-status-pedidos"
+    "order-status-pedidos"
+  );
+  const {
+    visibleTabs: authorizedTabDefs,
+    activeId,
+    isEmpty: noAuthorizedTabs,
+  } = useAuthorizedTabs({
+    tabs: PORTFOLIO_VISIBLE_TAB_CATALOG,
+    requestedId: activeView,
+  });
+  const visibleTabs = useMemo(
+    () =>
+      authorizedTabDefs.map((t) => t.id as PortfolioReconciliationVisibleTabId),
+    [authorizedTabDefs]
   );
 
   useEffect(() => {
-    const next = permissions.pickAllowedTabId(activeView, visibleTabs);
-    if (next && next !== activeView) setActiveView(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, visibleTabs.join("|")]);
+    if (activeId && activeId !== activeView) {
+      setActiveView(activeId as PortfolioReconciliationVisibleTabId);
+    }
+  }, [activeId, activeView]);
 
   const loadRuns = useCallback(async () => {
     if (!canView) {
@@ -134,7 +129,7 @@ export function FinancePortfolioReconciliationPage() {
     );
   }
 
-  if (visibleTabs.length === 0) {
+  if (noAuthorizedTabs) {
     return (
       <PermissionDenied
         title="Nenhuma aba disponível"

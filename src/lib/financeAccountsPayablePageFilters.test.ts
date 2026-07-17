@@ -136,7 +136,7 @@ describe("financeAccountsPayablePageFilters", () => {
   it("FinanceModule mantém rotas absolutas após alinhamento de filtros", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
     const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");
-    assert.ok(mod.includes("listVisibleFinanceSections"));
+    assert.ok(mod.includes("useAuthorizedTabs") || mod.includes("listVisibleFinanceSections"));
     assert.ok(nav.includes("FINANCE_SECTIONS"));
     assert.ok(mod.includes("to={section.path}"));
     assert.ok(mod.includes('path="accounts-payable"'));

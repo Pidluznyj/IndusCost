@@ -165,3 +165,95 @@ export const PRODUCT_UI_TABS: ReadonlyArray<{
   { id: "history", resourceKey: PRODUCT_TAB_RESOURCE_KEYS.history, label: "Histórico" },
 ];
 
+/** Estoque — abas com resourceKey fino ou herança do módulo. */
+export type InventoryUiTabId =
+  | "overview"
+  | "items"
+  | "warehouses"
+  | "balances"
+  | "movements"
+  | "counts"
+  | "reservations"
+  | "audit";
+
+export const INVENTORY_UI_TABS: ReadonlyArray<{
+  id: InventoryUiTabId;
+  resourceKey: string;
+  label: string;
+}> = [
+  { id: "overview", resourceKey: "operations.inventory", label: "Visão Geral" },
+  { id: "items", resourceKey: "operations.inventory.items", label: "Itens" },
+  {
+    id: "warehouses",
+    resourceKey: "operations.inventory.warehouses",
+    label: "Almoxarifados",
+  },
+  { id: "balances", resourceKey: "operations.inventory", label: "Saldos" },
+  {
+    id: "movements",
+    resourceKey: "operations.inventory.movements",
+    label: "Movimentações",
+  },
+  {
+    id: "counts",
+    resourceKey: "operations.inventory.counts",
+    label: "Conferência Física",
+  },
+  { id: "reservations", resourceKey: "operations.inventory", label: "Reservas" },
+  { id: "audit", resourceKey: "operations.inventory", label: "Auditoria" },
+];
+
+/** Configurações — hub sections → contrato admin.settings.*. */
+export type SettingsHubUiSectionId =
+  | "globals"
+  | "branding"
+  | "operational"
+  | "nomusSync"
+  | "priceTables"
+  | "security"
+  | "integrations"
+  | "system";
+
+export const SETTINGS_HUB_UI_SECTIONS: ReadonlyArray<{
+  id: SettingsHubUiSectionId;
+  resourceKey: string;
+  label: string;
+}> = [
+  {
+    id: "globals",
+    resourceKey: "admin.settings.global_params",
+    label: "Gerais / Parâmetros Globais",
+  },
+  {
+    id: "branding",
+    resourceKey: "admin.settings.branding",
+    label: "Identidade Visual",
+  },
+  {
+    id: "operational",
+    resourceKey: "admin.settings.operational",
+    label: "Estrutura Operacional",
+  },
+  {
+    id: "nomusSync",
+    resourceKey: "admin.settings.nomus_sync",
+    label: "Logs Nomus",
+  },
+  {
+    id: "priceTables",
+    resourceKey: "admin.settings.price_tables",
+    label: "Tabelas de Preço",
+  },
+  {
+    id: "security",
+    resourceKey: "admin.settings.security",
+    label: "Usuários e Permissões",
+  },
+  {
+    id: "integrations",
+    resourceKey: "admin.settings",
+    label: "Integrações",
+  },
+  { id: "system", resourceKey: "admin.settings", label: "Sistema" },
+];
+

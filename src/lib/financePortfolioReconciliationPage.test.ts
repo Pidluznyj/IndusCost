@@ -149,14 +149,10 @@ describe("finance portfolio reconciliation menu + page", () => {
     assert.match(page, /portfolio-reconciliation-empty-permission|PERMISSION_EMPTY_TABS_MESSAGE/);
   });
 
-  it("aba default = Status Pedidos e fallback via pickAllowedTabId (P12)", () => {
+  it("aba default = Status Pedidos e fallback via useAuthorizedTabs (PERM-37)", () => {
     const page = read("src/components/finance/FinancePortfolioReconciliationPage.tsx");
-    assert.match(
-      page,
-      /useState<PortfolioReconciliationVisibleTabId>\s*\(\s*\(\)\s*=>\s*visibleTabs\[0\]\s*\?\?\s*"order-status-pedidos"\s*\)/
-    );
-    assert.match(page, /pickAllowedTabId\s*\(\s*activeView\s*,\s*visibleTabs\s*\)/);
-    assert.match(page, /filterTabsByViewDto/);
+    assert.match(page, /useAuthorizedTabs/);
+    assert.match(page, /"order-status-pedidos"/);
     assert.match(page, /canViewModule\s*\(\s*"portfolio-reconciliation"\s*\)/);
   });
 

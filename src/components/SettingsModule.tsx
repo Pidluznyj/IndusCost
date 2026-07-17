@@ -36,11 +36,14 @@ import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/Se
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import {
-  canAccessSettingsSection,
   canManageUsers,
   canViewAccessProfiles,
 } from "@/src/lib/modulePermissions";
+import { SETTINGS_HUB_UI_SECTIONS } from "@/src/lib/moduleTabResources";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 
 const PAYROLL_COMPONENT_TYPE_OPTIONS = [
   { value: "BENEFIT", label: "Benefício", searchTerms: "BENEFIT benefício beneficio" },
@@ -343,18 +346,23 @@ export const SettingsModule = () => {
   const [globalsLoadError, setGlobalsLoadError] = useState<string | null>(null);
   const [activeHubSection, setActiveHubSection] = useState<HubSection>("globals");
 
-  const visibleHubSections = React.useMemo(
-    () =>
-      HUB_SECTIONS.filter((section) => canAccessSettingsSection(section.id, auth)),
-    [auth]
-  );
+  const settingsAuthorizedTabs = useAuthorizedTabs({
+    tabs: SETTINGS_HUB_UI_SECTIONS,
+    requestedId: activeHubSection,
+  });
+  const visibleHubSections = React.useMemo(() => {
+    const allowed = new Set(settingsAuthorizedTabs.allowedIds);
+    return HUB_SECTIONS.filter((section) => allowed.has(section.id));
+  }, [settingsAuthorizedTabs.allowedIds.join("|")]);
 
   useEffect(() => {
-    if (!visibleHubSections.some((s) => s.id === activeHubSection)) {
-      const first = visibleHubSections[0]?.id;
-      if (first) setActiveHubSection(first);
+    if (
+      settingsAuthorizedTabs.activeId &&
+      settingsAuthorizedTabs.activeId !== activeHubSection
+    ) {
+      setActiveHubSection(settingsAuthorizedTabs.activeId);
     }
-  }, [activeHubSection, visibleHubSections]);
+  }, [settingsAuthorizedTabs.activeId, activeHubSection]);
   const [activeOperationalTab, setActiveOperationalTab] = useState<OperationalSubTab>("roles");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
@@ -437,13 +445,27 @@ export const SettingsModule = () => {
   const [suppressAutoVersionSelect, setSuppressAutoVersionSelect] = useState(false);
 
   const fetchData = async () => {
+    const allowed = new Set(settingsAuthorizedTabs.allowedIds);
+    const canOperational = allowed.has("operational");
+    const canGlobals = allowed.has("globals");
+    if (!canOperational && !canGlobals) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setGlobalsLoadError(null);
     try {
-      const [rolesData, componentsData, config] = await Promise.all([
-        fetchJsonOk<Role[]>("/api/roles"),
-        fetchJsonOk<PayrollComponent[]>("/api/payroll-components"),
-        fetchJsonOk<{
+      const rolesData = canOperational
+        ? await fetchJsonOk<Role[]>("/api/roles")
+        : [];
+      const componentsData = canOperational
+        ? await fetchJsonOk<PayrollComponent[]>("/api/payroll-components")
+        : [];
+      setRoles(Array.isArray(rolesData) ? rolesData : []);
+      setComponents(Array.isArray(componentsData) ? componentsData : []);
+
+      if (canGlobals) {
+        const config = await fetchJsonOk<{
           values: {
             energyCost: number;
             workingHours: number;
@@ -457,29 +479,26 @@ export const SettingsModule = () => {
             factoryId?: string;
             hhOverrideId?: string;
           };
-        }>("/api/settings/globals"),
-      ]);
-      setRoles(Array.isArray(rolesData) ? rolesData : []);
-      setComponents(Array.isArray(componentsData) ? componentsData : []);
-      
-      setGlobals({
-        energyCost: config.values.energyCost,
-        workingHours: config.values.workingHours,
-        factoryHours: config.values.factoryHours,
-        hhOverride: config.values.hhOverride,
-        calculatedHh: config.calculated.hhAuto,
-        hhSource: config.calculated.hhSource,
-        energyId: config.ids.energyId,
-        hoursId: config.ids.hoursId,
-        factoryId: config.ids.factoryId,
-        hhOverrideId: config.ids.hhOverrideId
-      });
-      setGlobalForm({
-        energyCost: config.values.energyCost,
-        workingHours: config.values.workingHours,
-        factoryHours: config.values.factoryHours,
-        hhOverride: config.values.hhOverride ?? "",
-      });
+        }>("/api/settings/globals");
+        setGlobals({
+          energyCost: config.values.energyCost,
+          workingHours: config.values.workingHours,
+          factoryHours: config.values.factoryHours,
+          hhOverride: config.values.hhOverride,
+          calculatedHh: config.calculated.hhAuto,
+          hhSource: config.calculated.hhSource,
+          energyId: config.ids.energyId,
+          hoursId: config.ids.hoursId,
+          factoryId: config.ids.factoryId,
+          hhOverrideId: config.ids.hhOverrideId,
+        });
+        setGlobalForm({
+          energyCost: config.values.energyCost,
+          workingHours: config.values.workingHours,
+          factoryHours: config.values.factoryHours,
+          hhOverride: config.values.hhOverride ?? "",
+        });
+      }
     } catch (error) {
       console.error("Erro ao buscar configurações:", error);
       setGlobalsLoadError(
@@ -491,8 +510,13 @@ export const SettingsModule = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (settingsAuthorizedTabs.isEmpty) {
+      setLoading(false);
+      return;
+    }
+    void fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recarrega quando grants de hub mudam
+  }, [settingsAuthorizedTabs.allowedIds.join("|")]);
 
   useEffect(() => {
     if (activeHubSection !== "nomusSync") return;
@@ -1200,6 +1224,16 @@ export const SettingsModule = () => {
       alert(error instanceof Error ? error.message : "Não foi possível salvar.");
     }
   };
+
+  if (settingsAuthorizedTabs.isEmpty) {
+    return (
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="settings-empty-tabs"
+      />
+    );
+  }
 
   return (
     <div className="space-y-6" data-tour="settings-root">

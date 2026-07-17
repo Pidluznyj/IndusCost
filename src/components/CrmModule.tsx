@@ -89,13 +89,14 @@ import { CrmSellerDashboardSection } from "@/src/components/CrmSellerDashboardSe
 import { CrmSellerDashboardLists } from "@/src/components/CrmSellerDashboardLists";
 import {
   CrmCommercialManagementTabs,
-  getDefaultCrmManagementTab,
   type CrmManagementTabId,
 } from "@/src/components/CrmCommercialManagementTabs";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
-import { TabResourceKeys } from "@/src/lib/moduleTabResources";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
+import { CRM_UI_TABS, TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { ProtectedTab } from "@/src/components/security/ProtectedTab";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import {
   PERMISSION_EMPTY_TABS_MESSAGE,
 } from "@/src/lib/permissionsClient";
@@ -1472,21 +1473,21 @@ export const CrmModule = () => {
   const sellerNotLinked =
     isOwnSellerOnly && auth.authUser != null && !isCrmSellerLinked(auth.authUser);
 
-  const [activeCrmManagementTab, setActiveCrmManagementTab] = useState<CrmManagementTabId>(
-    () =>
-      getDefaultCrmManagementTab({
-        ...auth,
-        canView: permissions.canView,
-      }) ?? "seller"
-  );
+  const [activeCrmManagementTab, setActiveCrmManagementTab] =
+    useState<CrmManagementTabId>("general");
+  const crmAuthorizedTabs = useAuthorizedTabs({
+    tabs: CRM_UI_TABS,
+    requestedId: activeCrmManagementTab,
+  });
 
   useEffect(() => {
-    const def = getDefaultCrmManagementTab({
-      ...auth,
-      canView: permissions.canView,
-    });
-    if (def) setActiveCrmManagementTab(def);
-  }, [auth.authUser?.id, canCrmGeneral, canCrmSeller, permissions.canView]);
+    if (
+      crmAuthorizedTabs.activeId &&
+      crmAuthorizedTabs.activeId !== activeCrmManagementTab
+    ) {
+      setActiveCrmManagementTab(crmAuthorizedTabs.activeId);
+    }
+  }, [crmAuthorizedTabs.activeId, activeCrmManagementTab]);
 
   const [sellerDashboard, setSellerDashboard] = useState<SellerDashboardResponse | null>(null);
   const [sellerDashboardLoading, setSellerDashboardLoading] = useState(true);
@@ -1509,21 +1510,6 @@ export const CrmModule = () => {
       setSelectedSellerKey(`r:${user.sellerResponsibleName.trim().toLowerCase()}`);
     }
   }, [isOwnSellerOnly, sellerNotLinked, auth.authUser]);
-
-  useEffect(() => {
-    if (!canCrmAny) return;
-    if (activeCrmManagementTab === "general" && !canCrmGeneral) {
-      setActiveCrmManagementTab(canCrmSeller ? "seller" : "portfolio");
-      return;
-    }
-    if (activeCrmManagementTab === "seller" && !canCrmSeller) {
-      setActiveCrmManagementTab(canCrmGeneral ? "general" : "portfolio");
-      return;
-    }
-    if (activeCrmManagementTab === "portfolio" && !canCrmPortfolio) {
-      setActiveCrmManagementTab(canCrmGeneral ? "general" : "seller");
-    }
-  }, [activeCrmManagementTab, canCrmAny, canCrmGeneral, canCrmSeller, canCrmPortfolio]);
 
   const loadManagementDashboard = useCallback(async () => {
     setManagementDashboardLoading(true);
@@ -1845,14 +1831,18 @@ export const CrmModule = () => {
   useEffect(() => {
     if (!canCrmAny) return;
 
-    if (canCrmGeneral) {
+    if (activeCrmManagementTab === "general" && canCrmGeneral) {
       void loadManagementDashboard();
-    } else {
+    } else if (!canCrmGeneral) {
       setManagementDashboard(null);
       setManagementDashboardLoading(false);
     }
 
-    if (canCrmSeller && !sellerNotLinked) {
+    if (
+      activeCrmManagementTab === "seller" &&
+      canCrmSeller &&
+      !sellerNotLinked
+    ) {
       void loadSellerDashboard();
     }
   }, [
@@ -2285,12 +2275,14 @@ export const CrmModule = () => {
           onTabChange={setActiveCrmManagementTab}
         />
 
-        {!canCrmGeneral && !canCrmSeller && !canCrmPortfolio ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            {PERMISSION_EMPTY_TABS_MESSAGE}
-          </p>
-        ) : null}
-
+        {crmAuthorizedTabs.isEmpty ? (
+          <PermissionDenied
+            title="Nenhuma aba disponível"
+            message={PERMISSION_EMPTY_TABS_MESSAGE}
+            testId="crm-empty-tabs"
+          />
+        ) : (
+          <>
         <ProtectedTab
           resourceKey={TabResourceKeys.CRM_GESTAO_GERAL}
           active={activeCrmManagementTab === "general"}
@@ -2374,6 +2366,8 @@ export const CrmModule = () => {
             Solicite ao administrador o vínculo como responsável comercial do cliente.
           </div>
         </ProtectedTab>
+          </>
+        )}
           </>
         )}
       </section>

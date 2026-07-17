@@ -66,8 +66,10 @@ import {
 } from "@/src/components/product/OpenBookCompositionTab";
 import { buildEngineeringExportWorkbook, workbookToXlsxBytes } from "@/src/lib/productEngineeringExport";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { usePermissions } from "@/src/hooks/usePermissions";
-import { getVisibleProductTabs, type ProductTabId } from "@/src/lib/modulePermissions";
+import { type ProductTabId } from "@/src/lib/modulePermissions";
+import { PRODUCT_UI_TABS } from "@/src/lib/moduleTabResources";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import {
   GRID_CIU_COLUMN_LABEL,
   GRID_CIU_COLUMN_TOOLTIP,
@@ -182,11 +184,6 @@ const PRODUCTS_MAIN_TABS: { id: ProductsMainTab; label: string }[] = [
 
 export const ProductModule = () => {
   const auth = useAuth();
-  const permissions = usePermissions();
-  const productPermCheck = {
-    ...auth,
-    canViewResource: permissions.canView,
-  };
   const canCreateProduct = auth.hasPermission("products.create");
   const canEditProduct = auth.hasPermission("products.edit");
   const canDeleteProduct = auth.hasPermission("products.delete");
@@ -219,11 +216,6 @@ export const ProductModule = () => {
 
   const [activeProductsMainTab, setActiveProductsMainTab] = useState<ProductsMainTab>("products");
 
-  const visibleFormTabs = useMemo(() => {
-    const allowed = new Set(getVisibleProductTabs(productPermCheck));
-    return PRODUCT_FORM_TABS.filter((t) => allowed.has(t.id));
-  }, [auth]);
-
   const [items, setItems] = useState<ProductWithCostSummary[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [bomItemOptions, setBomItemOptions] = useState<BomItemOptionRow[]>([]);
@@ -243,13 +235,24 @@ export const ProductModule = () => {
   const [editingItem, setEditingItem] = useState<Product | null>(null);
   const [activeFormTab, setActiveFormTab] = useState<ProductTabId>("info");
 
+  const productAuthorizedTabs = useAuthorizedTabs({
+    tabs: PRODUCT_UI_TABS,
+    requestedId: activeFormTab,
+  });
+  const visibleFormTabs = useMemo(() => {
+    const allowed = new Set(productAuthorizedTabs.allowedIds);
+    return PRODUCT_FORM_TABS.filter((t) => allowed.has(t.id));
+  }, [productAuthorizedTabs.allowedIds.join("|")]);
+
   useEffect(() => {
     if (!isModalOpen) return;
-    if (visibleFormTabs.length === 0) return;
-    if (!visibleFormTabs.some((t) => t.id === activeFormTab)) {
-      setActiveFormTab(visibleFormTabs[0]!.id);
+    if (
+      productAuthorizedTabs.activeId &&
+      productAuthorizedTabs.activeId !== activeFormTab
+    ) {
+      setActiveFormTab(productAuthorizedTabs.activeId);
     }
-  }, [isModalOpen, visibleFormTabs, activeFormTab]);
+  }, [isModalOpen, productAuthorizedTabs.activeId, activeFormTab]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [treeData, setTreeData] = useState<any>(null);
   const [loadingTree, setLoadingTree] = useState(false);
@@ -1773,8 +1776,8 @@ export const ProductModule = () => {
                     </div>
                   ) : null}
                   {visibleFormTabs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-12">
-                      Você não possui permissão para nenhuma aba de engenharia deste produto.
+                    <p className="text-sm text-muted-foreground text-center py-12" role="status">
+                      {PERMISSION_EMPTY_TABS_MESSAGE}
                     </p>
                   ) : null}
                   {/* Tab: Info */}

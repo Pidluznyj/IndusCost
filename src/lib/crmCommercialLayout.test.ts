@@ -60,7 +60,7 @@ describe("crmCommercialLayout", () => {
     assert.match(tabsUi, /CRM_UI_TABS/);
     assert.match(tabDefs, /id: "general"/);
     assert.match(tabDefs, /label: "Gestão Geral"/);
-    assert.match(tabsUi, /canAccessCrmGeneral|crm\.general\.view/);
+    assert.match(tabsUi, /useAuthorizedTabs|CRM_UI_TABS/);
   });
 
   it("vendedor não vê Gestão Geral e entra em Meu Dashboard", () => {

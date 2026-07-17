@@ -1,13 +1,15 @@
 import React from "react";
 import { cn } from "@/src/lib/utils";
-import { usePermissions } from "@/src/hooks/usePermissions";
-import { isCrmOwnSellerOnly } from "@/src/lib/modulePermissions";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { isCrmOwnSellerOnly } from "@/src/lib/modulePermissions";
 import {
   CRM_UI_TABS,
   type CrmUiTabId,
 } from "@/src/lib/moduleTabResources";
 import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
+import { resolveAuthorizedTabs } from "@/src/lib/authorizedTabs";
+import type { NavigationAccessContext } from "@/src/lib/resourceNavigationAccess";
 
 export type CrmManagementTabId = CrmUiTabId;
 
@@ -21,12 +23,13 @@ export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsPr
   onTabChange,
 }) => {
   const auth = useAuth();
-  const { canView, listAllowedCrmTabs } = usePermissions();
   const ownSellerTab = isCrmOwnSellerOnly(auth);
-  const allowedIds = new Set(listAllowedCrmTabs());
-  const tabs = CRM_UI_TABS.filter((tab) => allowedIds.has(tab.id) && canView(tab.resourceKey));
+  const { visibleTabs: tabs, isEmpty } = useAuthorizedTabs({
+    tabs: CRM_UI_TABS,
+    requestedId: activeTab,
+  });
 
-  if (tabs.length === 0) {
+  if (isEmpty) {
     return (
       <p className="text-sm text-muted-foreground border-b border-border pb-3" role="status">
         {PERMISSION_EMPTY_TABS_MESSAGE}
@@ -67,6 +70,9 @@ export const CrmCommercialManagementTabs: React.FC<CrmCommercialManagementTabsPr
   );
 };
 
+/**
+ * Default bag-aware (testes / bootstrap). Em runtime a UI usa `useAuthorizedTabs`.
+ */
 export function getDefaultCrmManagementTab(auth: {
   canView?: (resourceKey: string) => boolean;
   hasPermission: (p: string) => boolean;
@@ -77,7 +83,6 @@ export function getDefaultCrmManagementTab(auth: {
     ((key: string) => {
       const tab = CRM_UI_TABS.find((t) => t.resourceKey === key);
       if (!tab) return false;
-      // fallback legado se API de permissões ainda não injetada
       if (tab.id === "general") return auth.hasPermission("crm.general.view");
       if (tab.id === "seller") {
         return (
@@ -97,4 +102,12 @@ export function getDefaultCrmManagementTab(auth: {
     allowed.some((t) => t.id === "seller") && !allowed.some((t) => t.id === "general");
   if (sellerOnly) return "seller";
   return allowed[0]!.id;
+}
+
+/** Resolve aba CRM ativa a partir do DTO (PERM-37). */
+export function resolveCrmAuthorizedActiveTab(
+  requested: CrmManagementTabId | null | undefined,
+  ctx: NavigationAccessContext
+): CrmManagementTabId | null {
+  return resolveAuthorizedTabs(CRM_UI_TABS, ctx, { requestedId: requested }).activeId;
 }

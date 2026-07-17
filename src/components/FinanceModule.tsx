@@ -2,7 +2,6 @@ import React from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { FileText, Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
 import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage";
@@ -14,14 +13,14 @@ import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrd
 import {
   getFinanceDefaultPath,
   isFinanceCanonicalPath,
+  parseFinanceSectionFromPath,
   resolveFinanceCanonicalPath,
   type FinanceSectionId,
 } from "@/src/lib/financeNavigation";
-import {
-  listVisibleFinanceSections,
-  navigationAccessContextFromAuth,
-} from "@/src/lib/resourceNavigationAccess";
+import { FINANCE_UI_SECTIONS } from "@/src/lib/internalSurfaceAccess";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 
 function FinanceCanonicalRedirect() {
   const location = useLocation();
@@ -40,23 +39,29 @@ function DeniedSection({ label }: { label: string }) {
 }
 
 export function FinanceModule() {
-  const auth = useAuth();
   const location = useLocation();
-  const ctx = navigationAccessContextFromAuth(auth);
-
-  const visibleSections = listVisibleFinanceSections(ctx);
+  const requestedId = parseFinanceSectionFromPath(location.pathname);
+  const { visibleTabs: visibleSections, isEmpty, activeId } = useAuthorizedTabs({
+    tabs: FINANCE_UI_SECTIONS,
+    requestedId,
+  });
   const visibleIds = new Set(visibleSections.map((s) => s.id));
-  const defaultPath = visibleSections[0]?.path ?? getFinanceDefaultPath();
+  const defaultPath =
+    visibleSections.find((s) => s.id === activeId)?.path ??
+    visibleSections[0]?.path ??
+    getFinanceDefaultPath();
 
   if (!isFinanceCanonicalPath(location.pathname)) {
     return <FinanceCanonicalRedirect />;
   }
 
-  if (visibleSections.length === 0) {
+  if (isEmpty) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        Você não tem permissão para acessar o domínio Financeiro nesta fase.
-      </div>
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="finance-module-empty-tabs"
+      />
     );
   }
 

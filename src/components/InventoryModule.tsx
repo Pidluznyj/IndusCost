@@ -5,11 +5,11 @@ import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { canAccessModule } from "@/src/lib/modulePermissions";
-import {
-  canViewInventory,
-  listVisibleInventoryTabIds,
-} from "@/src/lib/operationsAdminPermissions";
+import { canViewInventory } from "@/src/lib/operationsAdminPermissions";
+import { INVENTORY_UI_TABS } from "@/src/lib/moduleTabResources";
+import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import { InventoryDashboardTab } from "@/src/components/inventory/InventoryDashboardTab";
 import { InventoryItemsTab } from "@/src/components/inventory/InventoryItemsTab";
 import { InventoryWarehousesTab } from "@/src/components/inventory/InventoryWarehousesTab";
@@ -32,6 +32,7 @@ import {
   InventoryPermissionDenied,
 } from "@/src/components/inventory/inventoryUi";
 import type { InventoryDashboardPayload } from "@/src/types/inventory";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 
 type Props = {
   initialTab?: InventoryTabId;
@@ -52,10 +53,38 @@ export function InventoryModule({ initialTab }: Props = {}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const navTabIds = new Set(getVisibleInventoryTabs().map((t) => t.id));
+  const catalog = INVENTORY_UI_TABS.filter((t) => navTabIds.has(t.id));
+  const { visibleTabs, activeId, isEmpty } = useAuthorizedTabs({
+    tabs: catalog,
+    requestedId: tab,
+    parentResourceKey: "operations.inventory",
+    requireParentView: true,
+  });
+
+  const selectTab = useCallback(
+    (next: InventoryTabId) => {
+      setTab(next);
+      if (next === "items") navigate("/inventory/items");
+      else if (next === "warehouses") navigate("/inventory/warehouses");
+      else if (next === "movements") navigate("/inventory/movements");
+      else if (next === "balances") navigate("/inventory/balances");
+      else if (next === "counts") navigate("/inventory/counts");
+      else navigate("/inventory");
+    },
+    [navigate]
+  );
+
   useEffect(() => {
     const fromPath = resolveInventoryTabFromPath(location.pathname);
     if (fromPath !== tab) setTab(fromPath);
-  }, [location.pathname]);
+  }, [location.pathname, tab]);
+
+  useEffect(() => {
+    if (activeId && activeId !== tab) {
+      selectTab(activeId as InventoryTabId);
+    }
+  }, [activeId, tab, selectTab]);
 
   const loadDashboard = useCallback(async () => {
     const raw = await fetchJsonOk<unknown>("/api/inventory/dashboard");
@@ -76,26 +105,9 @@ export function InventoryModule({ initialTab }: Props = {}) {
   }, [tab, loadDashboard]);
 
   useEffect(() => {
+    if (tab !== "overview") return;
     void refresh();
-  }, [refresh]);
-
-  const selectTab = (next: InventoryTabId) => {
-    setTab(next);
-    if (next === "items") navigate("/inventory/items");
-    else if (next === "warehouses") navigate("/inventory/warehouses");
-    else if (next === "movements") navigate("/inventory/movements");
-    else if (next === "balances") navigate("/inventory/balances");
-    else if (next === "counts") navigate("/inventory/counts");
-    else if (
-      location.pathname.includes("/inventory/items") ||
-      location.pathname.includes("/inventory/warehouses") ||
-      location.pathname.includes("/inventory/movements") ||
-      location.pathname.includes("/inventory/balances") ||
-      location.pathname.includes("/inventory/counts")
-    ) {
-      navigate("/inventory");
-    }
-  };
+  }, [refresh, tab]);
 
   if (!canView) {
     return (
@@ -103,23 +115,25 @@ export function InventoryModule({ initialTab }: Props = {}) {
     );
   }
 
-  const visibleTabs = getVisibleInventoryTabs().filter((t) =>
-    listVisibleInventoryTabIds([t.id], resourceCheck).includes(t.id)
-  );
-  const activeTabDef = getInventoryTabDef(tab);
+  if (isEmpty) {
+    return (
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="inventory-empty-tabs"
+      />
+    );
+  }
 
-  React.useEffect(() => {
-    if (visibleTabs.length === 0) return;
-    if (visibleTabs.some((t) => t.id === tab)) return;
-    const fallback = visibleTabs[0]!.id;
-    selectTab(fallback);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só reagimos a tab sem permissão
-  }, [tab, visibleTabs.map((t) => t.id).join("|")]);
+  const activeTabDef = getInventoryTabDef(tab);
+  const visibleNavTabs = getVisibleInventoryTabs().filter((t) =>
+    visibleTabs.some((v) => v.id === t.id)
+  );
 
   return (
     <div className="space-y-4" data-testid="inventory-module">
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 pb-2">
-        {visibleTabs.map((t) => (
+        {visibleNavTabs.map((t) => (
           <button
             key={t.id}
             type="button"

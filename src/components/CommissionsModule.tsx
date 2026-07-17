@@ -8,12 +8,6 @@
 import React from "react";
 import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
-import { useAuth } from "@/src/contexts/AuthContext";
-import { usePermissions } from "@/src/hooks/usePermissions";
-import {
-  canViewCommissionsSection,
-  resolveFirstAccessibleCommissionsPath,
-} from "@/src/lib/commissionsModulePermissions";
 import { PERMISSION_EMPTY_TABS_MESSAGE } from "@/src/lib/permissionsClient";
 import {
   COMMISSIONS_LEGACY_PATH_REDIRECTS,
@@ -25,58 +19,67 @@ import {
   resolveCommissionsLegacyRedirect,
   type CommissionsSectionId,
 } from "@/src/lib/commissionsNavigation";
+import { COMMISSIONS_LIVE_UI_TABS } from "@/src/lib/moduleTabResources";
+import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { CommissionsReceiptClosingPage } from "@/src/components/commissions/pages/CommissionsReceiptClosingPage";
 import { CommissionsClosingsPage } from "@/src/components/commissions/pages/CommissionsClosingsPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
 import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
 
-function CommissionsHomeRedirect() {
-  return <Navigate to={getCommissionsDefaultPath()} replace />;
+function CommissionsHomeRedirect({ path }: { path: string }) {
+  return <Navigate to={path} replace />;
 }
 
-function CommissionsDeprecatedTabRedirect() {
-  return <Navigate to={getCommissionsDefaultPath()} replace />;
+function CommissionsDeprecatedTabRedirect({ path }: { path: string }) {
+  return <Navigate to={path} replace />;
 }
 
-function CommissionsLegacyRedirect() {
+function CommissionsLegacyRedirect({ fallbackPath }: { fallbackPath: string }) {
   const location = useLocation();
   const segments = location.pathname.split("/").filter(Boolean);
   const legacySegment = segments[segments.indexOf("commissions") + 1] ?? "";
-  const target = resolveCommissionsLegacyRedirect(legacySegment) ?? getCommissionsDefaultPath();
+  const target = resolveCommissionsLegacyRedirect(legacySegment) ?? fallbackPath;
   return <Navigate to={target} replace />;
 }
 
 function CommissionsSectionGuard({
   sectionId,
+  allowedIds,
   children,
   fallbackPath,
-  canViewResource,
 }: {
   sectionId: CommissionsSectionId;
+  allowedIds: ReadonlySet<string>;
   children: React.ReactNode;
   fallbackPath: string;
-  canViewResource: (key: string) => boolean;
 }) {
-  const auth = useAuth();
-  if (!canViewCommissionsSection(sectionId, { ...auth, canViewResource })) {
+  if (!allowedIds.has(sectionId)) {
     return <Navigate to={fallbackPath} replace />;
   }
   return <>{children}</>;
 }
 
 export function CommissionsModule() {
-  const auth = useAuth();
-  const permissions = usePermissions();
   const location = useLocation();
-  const check = { ...auth, canViewResource: permissions.canView };
+  const currentSection = parseCommissionsSectionFromPath(location.pathname);
+  const requestedId =
+    currentSection &&
+    COMMISSIONS_LIVE_UI_TABS.some((t) => t.id === currentSection)
+      ? currentSection
+      : null;
 
+  const { visibleTabs, isEmpty, activeId } = useAuthorizedTabs({
+    tabs: COMMISSIONS_LIVE_UI_TABS,
+    requestedId,
+  });
+  const allowedIds = new Set(visibleTabs.map((t) => t.id));
   const visibleSections = COMMISSIONS_SECTIONS.filter((section) =>
-    canViewCommissionsSection(section.id, check)
+    allowedIds.has(section.id)
   );
-
   const defaultPath =
-    resolveFirstAccessibleCommissionsPath(check) ??
+    COMMISSIONS_SECTIONS.find((s) => s.id === activeId)?.path ??
     visibleSections[0]?.path ??
     getCommissionsDefaultPath();
 
@@ -85,28 +88,30 @@ export function CommissionsModule() {
     return <Navigate to={target} replace />;
   }
 
-  const currentSection = parseCommissionsSectionFromPath(location.pathname);
+  if (isEmpty) {
+    return (
+      <PermissionDenied
+        title="Nenhuma aba disponível"
+        message={PERMISSION_EMPTY_TABS_MESSAGE}
+        testId="commissions-empty-tabs"
+      />
+    );
+  }
+
   if (
     currentSection &&
-    !canViewCommissionsSection(currentSection, check) &&
+    COMMISSIONS_LIVE_UI_TABS.some((t) => t.id === currentSection) &&
+    !allowedIds.has(currentSection) &&
     location.pathname !== defaultPath
   ) {
     return <Navigate to={defaultPath} replace />;
   }
 
-  if (visibleSections.length === 0) {
-    return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-        {PERMISSION_EMPTY_TABS_MESSAGE}
-      </div>
-    );
-  }
-
   const guard = (sectionId: CommissionsSectionId, page: React.ReactNode) => (
     <CommissionsSectionGuard
       sectionId={sectionId}
+      allowedIds={allowedIds}
       fallbackPath={defaultPath}
-      canViewResource={permissions.canView}
     >
       {page}
     </CommissionsSectionGuard>
@@ -143,8 +148,14 @@ export function CommissionsModule() {
 
       <Routes>
         <Route index element={guard("monthlyClosing", <CommissionsReceiptClosingPage />)} />
-        <Route path="previsao" element={<CommissionsDeprecatedTabRedirect />} />
-        <Route path="auditoria" element={<CommissionsDeprecatedTabRedirect />} />
+        <Route
+          path="previsao"
+          element={<CommissionsDeprecatedTabRedirect path={defaultPath} />}
+        />
+        <Route
+          path="auditoria"
+          element={<CommissionsDeprecatedTabRedirect path={defaultPath} />}
+        />
         <Route path="fechamentos" element={guard("closings", <CommissionsClosingsPage />)} />
         <Route
           path="exclusoes-cliente"
@@ -153,9 +164,13 @@ export function CommissionsModule() {
         <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
         <Route path="reprocessar" element={guard("reprocess", <CommissionsReprocessPage />)} />
         {Object.keys(COMMISSIONS_LEGACY_PATH_REDIRECTS).map((legacy) => (
-          <Route key={legacy} path={legacy} element={<CommissionsLegacyRedirect />} />
+          <Route
+            key={legacy}
+            path={legacy}
+            element={<CommissionsLegacyRedirect fallbackPath={defaultPath} />}
+          />
         ))}
-        <Route path="*" element={<CommissionsHomeRedirect />} />
+        <Route path="*" element={<CommissionsHomeRedirect path={defaultPath} />} />
       </Routes>
     </div>
   );
