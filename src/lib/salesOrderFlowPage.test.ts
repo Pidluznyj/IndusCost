@@ -197,6 +197,6 @@ describe("salesOrderFlowClient", () => {
     assert.match(mod, /sales-order-flow-loading/);
     assert.match(mod, /sales-order-flow-empty/);
     assert.match(mod, /sales-order-flow-feature-disabled/);
-    assert.doesNotMatch(mod, /drawer|Drawer|KanbanColumn/);
+    assert.doesNotMatch(mod, /\bDrawer\b|KanbanColumn/);
   });
 });

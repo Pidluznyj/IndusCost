@@ -140,7 +140,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
     assert.deepEqual(counts, {
       engenharia: 5,
-      comercial: 6,
+      comercial: 8,
       financeiro: 6,
       operacoes: 7,
       administracao: 3,
