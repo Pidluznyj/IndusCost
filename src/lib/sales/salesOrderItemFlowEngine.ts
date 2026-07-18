@@ -689,6 +689,7 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const canceledDocIds = new Set(
     pack.stockDocuments
       .filter((d) => {
+        if (d.isCancelled === true) return true;
         const raw = (d.statusRaw ?? "").toLowerCase();
         return raw.includes("cancel");
       })

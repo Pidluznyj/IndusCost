@@ -436,4 +436,84 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     );
     assert.equal(r.documentedQuantity.eq(6), true);
   });
+
+  it("evidence: isCancelled=true exclui Documento mesmo sem statusRaw cancel*", () => {
+    const ORDER = "22222222-2222-2222-2222-222222222222";
+    const ITEM = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER,
+          orderCode: "PD-2",
+          status: "SENT_TO_NOMUS",
+          customerId: "c1",
+          expectedDeliveryDate: null,
+          items: [
+            {
+              id: ITEM,
+              salesOrderId: ORDER,
+              productId: "p1",
+              skuSnapshot: "SKU",
+              productNameSnapshot: "Prod",
+              quantity: 10,
+              nomusQuantityFulfilled: 0,
+              nomusItemStatusRaw: "2",
+              nomusItemStatusNormalized: "RELEASED",
+              nomusItemExternalId: 601,
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p1",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      productionLinks: [
+        {
+          id: "l1",
+          productionOrderId: "op1",
+          productionOrderExternalId: 1,
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          externalSalesOrderId: 1,
+          externalSalesOrderItemId: 601,
+          linkedQuantity: 10,
+          isCurrent: true,
+        },
+      ],
+      productionOrders: [
+        { id: "op1", externalId: 1, quantity: 10, status: "Liberada" },
+      ],
+      stockDocuments: [
+        {
+          id: "doc1",
+          externalId: 9001,
+          statusRaw: "EMITIDO",
+          isCancelled: true,
+        },
+      ],
+      allocations: [
+        {
+          auditKey: "alloc-doc-1",
+          runId: "run-1",
+          lineType: "STOCK_DOCUMENT",
+          salesOrderId: ORDER,
+          salesOrderItemId: ITEM,
+          stockDocumentExternalId: 9001,
+          quantityUsedForOrder: 10,
+        },
+      ],
+    });
+    const pack = map.get(ORDER)!;
+    assert.equal(pack.stockDocuments[0]?.isCancelled, true);
+    const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
+    assert.ok(r);
+    assert.equal(r!.documentedQuantity.eq(0), true);
+    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+  });
 });
