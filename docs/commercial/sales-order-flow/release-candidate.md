@@ -97,13 +97,13 @@ Fontes oficiais (read-only)
 
 ### Máquina de estados (colunas)
 
-1. `WAITING_RELEASE`  
-2. `WAITING_PRODUCTION_ORDER`  
-3. `IN_PRODUCTION`  
-4. `WAITING_OUTPUT_DOCUMENT`  
-5. `WAITING_NFE`  
-6. `SHIPPED_COMPLETED`  
-7. `CANCELED`  
+1. `WAITING_RELEASE`
+2. `WAITING_PRODUCTION_ORDER`
+3. `IN_PRODUCTION`
+4. `WAITING_OUTPUT_DOCUMENT`
+5. `WAITING_NFE`
+6. `SHIPPED_COMPLETED`
+7. `CANCELED`
 
 Auxiliar (não coluna): `INCONSISTENT`.
 
@@ -253,11 +253,11 @@ Smoke humano no servidor permanece no passo 20 do `deployment-runbook.md`.
 
 ## 12. Limitações dependentes do servidor
 
-1. Sem acesso Cursor → produção DB  
-2. Latência real e EXPLAIN só no host  
-3. Backup / migrate / restart / flag ON — operação  
-4. Seed de permissões novas (se ainda não aplicados no ambiente)  
-5. Dados Nomus precisam estar sincronizados antes do rebuild  
+1. Sem acesso Cursor → produção DB
+2. Latência real e EXPLAIN só no host
+3. Backup / migrate / restart / flag ON — operação
+4. Seed de permissões novas (se ainda não aplicados no ambiente)
+5. Dados Nomus precisam estar sincronizados antes do rebuild
 6. `producedQuantity` / ship date ainda não normalizados no stage (inconsistências INFO/WARNING)
 
 ---
@@ -316,7 +316,7 @@ Ordem cronológica (`git log --grep=sales-order-flow`):
 | `cf34520` | validate kanban APIs and interface | 77 |
 | `aa3b31e` | production lifecycle audit | 78 |
 | `27d8a95` / `ddcd054` | controlled deployment runbook | 79 |
-| *(este commit)* | finalize commercial kanban module | **80** |
+| `e201bdc` | finalize commercial kanban module | **80** |
 
 ---
 
