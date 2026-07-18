@@ -15,18 +15,19 @@
 
 ## Princípios
 
-1. **Fontes oficiais não são alteradas** pelo Fluxo de Pedidos.  
+1. **Fontes oficiais não são alteradas** pelo Fluxo de Pedidos.
    O rebuild/recompute grava apenas estruturas derivadas:
    - `SalesOrderItemFlowSnapshot`
    - `SalesOrderFlowSnapshot`
    - `SalesOrderFlowEvent`
-   - (management operacional, se usado) `SalesOrderFlowManagement`  
+   - (management operacional, se usado) `SalesOrderFlowManagement`
+
    Não altera `SalesOrder`, `SalesOrderItem`, OP Nomus, documentos de saída, NF-e, CR ou fluxo de caixa.
 
-2. **Snapshots são reconstruíveis.**  
+2. **Snapshots são reconstruíveis.**
    Podem ser apagados e regenerados via `rebuild:sales-order-flow` a partir da evidência local já sincronizada (motores OP-49…OP-54). Ver `rebuild-runbook.md`.
 
-3. **Rollout com flag desligada.**  
+3. **Rollout com flag desligada.**
    Deploy + migrate + rebuild ocorrem **antes** de expor o Kanban. A UI/API HTTP do Kanban permanece 404 enquanto `COMMERCIAL_SALES_ORDER_FLOW_ENABLED` não for `true`/`1`/`yes`/`on`/`enabled`.
 
 4. **Janela planejada.** Backup + working tree limpa + sem rebuild concorrente.
