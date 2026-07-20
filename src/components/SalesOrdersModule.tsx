@@ -31,6 +31,7 @@ import {
   SALES_ORDER_MONTH_OPTIONS,
   buildSalesOrderYearOptions,
 } from "@/src/lib/salesOrderPeriodFilter";
+import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
 import {
   downloadInternalMarginExport,
   getSalesOrderListInternalMarginExportUrl,
@@ -174,6 +175,7 @@ function SalesOrderList() {
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
+  const [hasInvoice, setHasInvoice] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
   const [sellerKey, setSellerKey] = useState("");
@@ -220,18 +222,39 @@ function SalesOrderList() {
 
   const listFiltersKey = useMemo(
     () =>
-      JSON.stringify({ status, customerId, sellerKey, startDate, endDate, year, month, search }),
-    [status, customerId, sellerKey, startDate, endDate, year, month, search]
+      JSON.stringify({
+        status,
+        hasInvoice,
+        customerId,
+        sellerKey,
+        startDate,
+        endDate,
+        year,
+        month,
+        search,
+      }),
+    [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]
   );
   const sellerOptionsFiltersKey = useMemo(
-    () => JSON.stringify({ status, customerId, startDate, endDate, year, month, search }),
-    [status, customerId, startDate, endDate, year, month, search]
+    () =>
+      JSON.stringify({
+        status,
+        hasInvoice,
+        customerId,
+        startDate,
+        endDate,
+        year,
+        month,
+        search,
+      }),
+    [status, hasInvoice, customerId, startDate, endDate, year, month, search]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
   const listExportQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    if (hasInvoice) params.set("hasInvoice", hasInvoice);
     if (customerId) params.set("customerId", customerId);
     if (sellerKey) params.set("sellerKey", sellerKey);
     if (startDate) params.set("startDate", startDate);
@@ -240,7 +263,7 @@ function SalesOrderList() {
     if (month) params.set("month", month);
     if (search) params.set("q", search);
     return params.toString();
-  }, [status, customerId, sellerKey, startDate, endDate, year, month, search]);
+  }, [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]);
 
   const internalExportQuery = listExportQuery;
 
@@ -329,6 +352,7 @@ function SalesOrderList() {
         params.set("page", String(page));
         params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
         if (status) params.set("status", status);
+        if (hasInvoice) params.set("hasInvoice", hasInvoice);
         if (customerId) params.set("customerId", customerId);
         if (sellerKey) params.set("sellerKey", sellerKey);
         if (startDate) params.set("startDate", startDate);
@@ -376,7 +400,7 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, customerId, sellerKey, startDate, endDate, year, month, search]
+    [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]
   );
 
   useEffect(() => {
@@ -384,6 +408,7 @@ function SalesOrderList() {
     setSellerOptionsLoading(true);
     const params = new URLSearchParams();
     if (status) params.set("status", status);
+    if (hasInvoice) params.set("hasInvoice", hasInvoice);
     if (customerId) params.set("customerId", customerId);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
@@ -407,7 +432,7 @@ function SalesOrderList() {
         if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => ac.abort();
-  }, [sellerOptionsFiltersKey, status, customerId, startDate, endDate, year, month, search]);
+  }, [sellerOptionsFiltersKey, status, hasInvoice, customerId, startDate, endDate, year, month, search]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -497,7 +522,24 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
-          <div className="col-span-12 lg:col-span-6">
+          <div className="col-span-12 sm:col-span-6 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-has-invoice">Vínculo NF</FilterLabel>
+            <select
+              id="sales-orders-filter-has-invoice"
+              className={SALES_FILTER_CONTROL_CLASS}
+              value={hasInvoice}
+              onChange={(e) => setHasInvoice(e.target.value)}
+              aria-label="Filtrar por vínculo de NF"
+              data-testid="sales-orders-filter-has-invoice"
+            >
+              {INVOICE_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-12 lg:col-span-4">
             <FilterLabel htmlFor="sales-orders-smart-search">Busca inteligente</FilterLabel>
             <input
               id="sales-orders-smart-search"
@@ -578,6 +620,7 @@ function SalesOrderList() {
             type="button"
             onClick={() => {
               setStatus("");
+              setHasInvoice("");
               setCustomerId("");
               setCustomerSelection(null);
               setSellerKey("");

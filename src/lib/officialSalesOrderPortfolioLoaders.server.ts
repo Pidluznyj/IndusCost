@@ -4,7 +4,7 @@ import {
   mapPrismaOrderToSalesOrderRulesInput,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "@/src/lib/salesOrderRulesAdapter.js";
-import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.server.js";
 
 /** ABC portfólio — receita por cliente via motor oficial (sem groupBy Prisma). */
 export async function loadOfficialPortfolioAbcRevenueRows(

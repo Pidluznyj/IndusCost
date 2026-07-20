@@ -32,6 +32,8 @@ export type SalesOrderListQuery = {
   year: number | null;
   month: number | null;
   q: string;
+  /** `true` = Com NF; `false` = Sem NF; `null` = Todos. */
+  hasInvoice: boolean | null;
   page: number;
   pageSize: number;
 };
@@ -54,6 +56,18 @@ function parsePositiveIntQuery(value: unknown, fallback: number): number {
   return Math.trunc(n);
 }
 
+/** Aceita `true`/`false` (e 1/0) da query string; vazio = todos. */
+export function parseSalesOrderListHasInvoiceParam(
+  value: unknown
+): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return null;
+  const token = value.trim().toLowerCase();
+  if (token === "true" || token === "1") return true;
+  if (token === "false" || token === "0") return false;
+  return null;
+}
+
 export function parseSalesOrderListQuery(query: Record<string, unknown>): SalesOrderListQuery {
   const sellerKeyRaw = String(query.sellerKey ?? "").trim();
   return {
@@ -67,6 +81,7 @@ export function parseSalesOrderListQuery(query: Record<string, unknown>): SalesO
     year: parseSalesOrderYearParam(query.year),
     month: parseSalesOrderMonthParam(query.month),
     q: String(query.q ?? "").trim(),
+    hasInvoice: parseSalesOrderListHasInvoiceParam(query.hasInvoice),
     page: parsePositiveIntQuery(query.page, 1),
     pageSize: Math.min(parsePositiveIntQuery(query.pageSize, 20), 100),
   };
@@ -99,6 +114,7 @@ export function buildSalesOrderListWhereForQuery(
     year: query.year,
     month: query.month,
     q: query.q || undefined,
+    hasInvoice: query.hasInvoice,
   });
 }
 
@@ -115,6 +131,7 @@ export function buildSalesOrderListWhereExcludingSeller(
     year: query.year,
     month: query.month,
     q: query.q || undefined,
+    hasInvoice: query.hasInvoice,
   });
 }
 
@@ -171,5 +188,7 @@ export function buildSalesOrderListFilterLabels(
     rows.push({ label: "Emissão até", value: query.endDate.toISOString().slice(0, 10) });
   }
   if (query.q) rows.push({ label: "Busca", value: query.q });
+  if (query.hasInvoice === true) rows.push({ label: "Vínculo NF", value: "Com NF" });
+  if (query.hasInvoice === false) rows.push({ label: "Vínculo NF", value: "Sem NF" });
   return rows;
 }

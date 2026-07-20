@@ -46,7 +46,7 @@ import {
   type SalesOrderFlowDetailTab,
   type SalesOrderFlowManagementUiCapabilities,
 } from "@/src/lib/salesOrderFlowDetailUi";
-import { SALES_ORDER_FLOW_EVENT_TYPES } from "@/src/lib/sales/salesOrderFlowTimeline";
+import { SALES_ORDER_FLOW_EVENT_TYPES } from "@/src/lib/sales/salesOrderFlowTimeline.shared";
 import { SalesOrderFlowManagementPanel } from "@/src/components/commercial/SalesOrderFlowManagementPanel";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { cn } from "@/src/lib/utils";

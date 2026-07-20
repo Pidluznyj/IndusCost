@@ -21,7 +21,7 @@ import type { SalesOrderFlowListInconsistency } from "@/src/lib/sales/salesOrder
 import {
   SALES_ORDER_FLOW_EVENT_TYPES,
   type SalesOrderFlowEventType,
-} from "@/src/lib/sales/salesOrderFlowTimeline.js";
+} from "@/src/lib/sales/salesOrderFlowTimeline.shared.js";
 import { formatCurrency } from "@/src/lib/utils.js";
 
 export type SalesOrderFlowDetailTab =

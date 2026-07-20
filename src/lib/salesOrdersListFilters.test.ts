@@ -21,6 +21,16 @@ test("limpar filtros limpa seleção de cliente", () => {
   assert.ok(page.includes("setCustomerSelection(null)"));
 });
 
+test("Resultado tem filtro Vínculo NF (Com NF / Sem NF)", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+    "utf8"
+  );
+  assert.ok(page.includes("INVOICE_FILTER_OPTIONS"));
+  assert.ok(page.includes('params.set("hasInvoice", hasInvoice)'));
+  assert.ok(page.includes("setHasInvoice(\"\")"));
+});
+
 test("Produtos Vendidos usa autocomplete no filtro de cliente", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "commercial", "SoldProductsReportPage.tsx"),

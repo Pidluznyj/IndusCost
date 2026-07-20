@@ -3,7 +3,7 @@
  * Média mensal dos centros selecionados ÷ horas base ajustadas = taxa simulada.
  * Horas base vêm da capacidade (pessoas/máquinas × horas × eficiência), mesma regra da simulação simples.
  */
-import { roundMoney } from "./financeAccountsPayableDashboard.js";
+import { roundMoney } from "./commissions/commission-money.shared.js";
 import {
   computeHhHmCapacityHours,
   HH_HM_CAPACITY_DEFAULT_EFFICIENCY_PERCENT,

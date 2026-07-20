@@ -6,6 +6,7 @@ import {
   buildSalesOrderSearchCodeTokens,
   normalizeSalesOrderSearchTerm,
 } from "@/src/lib/salesOrderSmartSearch.js";
+import { NOMUS_NFE_STATUS_CANCELLED } from "@/src/lib/nomusNfeClassification.js";
 
 export const SALES_ORDER_LIST_STATUS_VALUES = [
   "DRAFT",
@@ -40,6 +41,12 @@ export type SalesOrderListFilters = {
   month?: number | null;
   /** Busca inteligente (q): pedido/NF/cliente/vendedor/empresa/itens. */
   q?: string | null;
+  /**
+   * Filtro Com NF / Sem NF (aba Resultado).
+   * Aproxima `hasInvoice` do motor: vínculo oficial com data de processamento
+   * e status diferente de cancelada (7). Cancelada sozinha = Sem NF.
+   */
+  hasInvoice?: boolean | null;
 };
 
 /**
@@ -82,6 +89,24 @@ export function buildSalesOrderSearchOr(
   or.push({ items: { some: { skuSnapshot: { contains: term, ...insensitive } } } });
 
   return or;
+}
+
+/**
+ * Vínculo oficial de NF válida para filtro de listagem (aproxima `hasNfe` do motor):
+ * tem `SalesOrderNfeLink` com data de processamento e status ≠ cancelada.
+ */
+export function buildSalesOrderValidNfeLinkWhere(): Prisma.SalesOrderNfeLinkWhereInput {
+  return {
+    AND: [
+      { dataProcessamento: { not: null } },
+      {
+        OR: [
+          { nfeStatus: null },
+          { nfeStatus: { not: NOMUS_NFE_STATUS_CANCELLED } },
+        ],
+      },
+    ],
+  };
 }
 
 export type SalesOrderListSummary = {
@@ -156,6 +181,11 @@ export function buildSalesOrderListWhere(
   if (hasIssueDateFilter) and.push({ issueDate });
   if (searchOr) and.push({ OR: searchOr });
   if (sellerWhere) and.push(sellerWhere);
+  if (filters.hasInvoice === true) {
+    and.push({ nfeLinks: { some: buildSalesOrderValidNfeLinkWhere() } });
+  } else if (filters.hasInvoice === false) {
+    and.push({ nfeLinks: { none: buildSalesOrderValidNfeLinkWhere() } });
+  }
 
   if (and.length === 0) return {};
   if (and.length === 1) return and[0]!;

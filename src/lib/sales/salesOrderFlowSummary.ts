@@ -10,7 +10,7 @@ import {
   type SalesOrderFlowStage,
 } from "./salesOrderFlowCatalog.js";
 import { buildSalesOrderSearchOr } from "@/src/lib/salesOrdersListSummary.js";
-import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.server.js";
 
 export const SALES_ORDER_FLOW_SUMMARY_PRIORITIES = [
   "LOW",

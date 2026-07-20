@@ -159,6 +159,23 @@ describe("salesOrdersListSummary", () => {
     assert.deepEqual(where, { externalSellerId: null });
   });
 
+  it("buildSalesOrderListWhere filtra Com NF via nfeLinks válidos", () => {
+    const where = buildSalesOrderListWhere({ hasInvoice: true });
+    const json = JSON.stringify(where);
+    assert.match(json, /"nfeLinks"/);
+    assert.match(json, /"some"/);
+    assert.match(json, /"dataProcessamento"/);
+    assert.match(json, /"not":7/);
+  });
+
+  it("buildSalesOrderListWhere filtra Sem NF via none de vínculo válido", () => {
+    const where = buildSalesOrderListWhere({ hasInvoice: false });
+    const json = JSON.stringify(where);
+    assert.match(json, /"nfeLinks"/);
+    assert.match(json, /"none"/);
+    assert.match(json, /"dataProcessamento"/);
+  });
+
   it("UI da lista usa select de vendedor com sellerKey", () => {
     const page = readFileSync(
       join(process.cwd(), "src/components/SalesOrdersModule.tsx"),

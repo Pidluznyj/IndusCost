@@ -15,7 +15,7 @@ import {
   parseSalesOrderFlowInconsistencies,
   type SalesOrderFlowListInconsistency,
 } from "./salesOrderFlowList.js";
-import { SALES_ORDER_FLOW_EVENT_TYPES } from "./salesOrderFlowTimeline.js";
+import { SALES_ORDER_FLOW_EVENT_TYPES } from "./salesOrderFlowTimeline.shared.js";
 import { isUuidLike } from "./salesOrderFlowRebuild.js";
 
 export class SalesOrderFlowDetailQueryError extends Error {

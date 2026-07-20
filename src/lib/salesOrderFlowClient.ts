@@ -13,7 +13,7 @@ import type {
   SalesOrderFlowSummaryPriority,
 } from "@/src/lib/sales/salesOrderFlowSummary.js";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog.js";
-import type { SalesOrderFlowEventType } from "@/src/lib/sales/salesOrderFlowTimeline.js";
+import type { SalesOrderFlowEventType } from "@/src/lib/sales/salesOrderFlowTimeline.shared.js";
 import { SALES_ORDER_FLOW_FEATURE_RESOURCE } from "@/src/lib/sales/salesOrderFlowFeatureFlags.js";
 
 export type {
