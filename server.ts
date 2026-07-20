@@ -385,6 +385,7 @@ import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
 import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
+import { registerSalesOrderIndustrialResultReportRoutes } from "./src/lib/salesOrderIndustrialResultReportRoutes.js";
 import { registerSalesOrderDetailRoutes } from "./src/lib/salesOrderDetailRoutes.js";
 import {
   parseSalesOrderListQuery,
@@ -14590,6 +14591,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerSalesOrderReportRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    resolveEmitterName: async (req) => {
+      const user = await getCurrentAppUser(req);
+      return user?.name?.trim() || null;
+    },
+  });
+
+  registerSalesOrderIndustrialResultReportRoutes(app, {
     requireAppAuth,
     requireResource,
     resolveEmitterName: async (req) => {

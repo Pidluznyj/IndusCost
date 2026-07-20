@@ -18,6 +18,7 @@ import {
 } from "@/src/components/sales/SalesOrderQuickSummaryDrawer";
 import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrderMarginAnalysis";
 import { SalesOrderReportPrintDocument } from "@/src/components/sales/SalesOrderReportPrintDocument";
+import { SalesOrderIndustrialResultReportPrintDocument } from "@/src/components/sales/SalesOrderIndustrialResultReportPrintDocument";
 import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
@@ -46,6 +47,8 @@ import {
   getSalesOrderReportXlsxUrl,
 } from "@/src/lib/sales/salesOrderReportExportUi";
 import type { SalesOrderReportPayload } from "@/src/lib/sales/salesOrderReport";
+import { getSalesOrderIndustrialResultReportPayloadUrl } from "@/src/lib/sales/salesOrderIndustrialResultReportExportUi";
+import type { SalesOrderIndustrialResultReportPayload } from "@/src/lib/sales/salesOrderIndustrialResultReport";
 import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "@/src/lib/salesOrderInternalMarginExport";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
@@ -193,6 +196,10 @@ function SalesOrderList() {
   const [exportingInternal, setExportingInternal] = useState(false);
   const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
   const [exportingReportPdf, setExportingReportPdf] = useState(false);
+  const [exportingIndustrialPdf, setExportingIndustrialPdf] = useState(false);
+  const [industrialPrintPayload, setIndustrialPrintPayload] =
+    useState<SalesOrderIndustrialResultReportPayload | null>(null);
+  const [industrialPrintRequestId, setIndustrialPrintRequestId] = useState(0);
   const [reportPrintPayload, setReportPrintPayload] = useState<SalesOrderReportPayload | null>(
     null
   );
@@ -337,6 +344,22 @@ function SalesOrderList() {
     }
   }, [exportingReportPdf, listExportQuery]);
 
+  const handleExportIndustrialResultPdf = useCallback(async () => {
+    if (exportingIndustrialPdf) return;
+    setExportingIndustrialPdf(true);
+    try {
+      const payload = await fetchJsonOk<SalesOrderIndustrialResultReportPayload>(
+        getSalesOrderIndustrialResultReportPayloadUrl(listExportQuery)
+      );
+      setIndustrialPrintPayload(payload);
+      setIndustrialPrintRequestId((id) => id + 1);
+    } catch (err) {
+      console.error(err);
+      alert("Não foi possível gerar o PDF de Resultado Industrial.");
+      setExportingIndustrialPdf(false);
+    }
+  }, [exportingIndustrialPdf, listExportQuery]);
+
   useEffect(() => {
     void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
       .then(setBranding)
@@ -366,6 +389,32 @@ function SalesOrderList() {
       window.removeEventListener("afterprint", onAfterPrint);
     };
   }, [reportPrintRequestId, reportPrintPayload]);
+
+  useEffect(() => {
+    if (industrialPrintRequestId === 0 || !industrialPrintPayload) return;
+
+    document.body.classList.add("sales-orders-print-route");
+    document.body.classList.add("sales-orders-industrial-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("sales-orders-print-route");
+      document.body.classList.remove("sales-orders-industrial-print-route");
+      setIndustrialPrintPayload(null);
+      setIndustrialPrintRequestId(0);
+      setExportingIndustrialPdf(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [industrialPrintRequestId, industrialPrintPayload]);
 
   const handleExportInternal = useCallback(async () => {
     setExportingInternal(true);
@@ -739,6 +788,26 @@ function SalesOrderList() {
           </button>
           <button
             type="button"
+            data-testid="sales-orders-export-industrial-result-pdf"
+            disabled={exportingIndustrialPdf}
+            onClick={() => void handleExportIndustrialResultPdf()}
+            className={SALES_FILTER_ACTION_BUTTON_CLASS}
+            title="PDF — Resultado Industrial (mesmos filtros da tela)"
+          >
+            {exportingIndustrialPdf ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                <span>Gerando…</span>
+              </>
+            ) : (
+              <>
+                <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>PDF — Resultado Industrial</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
             data-testid="sales-orders-export-internal-margin"
             disabled={exportingInternal}
             onClick={() => void handleExportInternal()}
@@ -861,6 +930,15 @@ function SalesOrderList() {
         ? createPortal(
             <SalesOrderReportPrintDocument
               payload={reportPrintPayload}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
+      {industrialPrintPayload
+        ? createPortal(
+            <SalesOrderIndustrialResultReportPrintDocument
+              payload={industrialPrintPayload}
               branding={branding}
             />,
             document.body

@@ -736,3 +736,27 @@
     white-space: nowrap;
   }
 }
+
+
+/* Resultado Industrial — A3 paisagem para acomodar colunas */
+body.sales-orders-industrial-print-route {
+  @page {
+    size: A3 landscape;
+    margin: 8mm 8mm 10mm 8mm;
+  }
+}
+
+.sales-orders-industrial-print-table {
+  font-size: 7.5px;
+}
+
+.sales-orders-industrial-print-table th,
+.sales-orders-industrial-print-table td {
+  padding: 2px 3px;
+  white-space: nowrap;
+}
+
+.sales-orders-industrial-print-row--incomplete td {
+  opacity: 0.72;
+  font-style: italic;
+}
