@@ -7,6 +7,7 @@ import {
   normalizeSalesOrderSearchTerm,
 } from "@/src/lib/salesOrderSmartSearch.js";
 import { NOMUS_NFE_STATUS_CANCELLED } from "@/src/lib/nomusNfeClassification.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 
 export const SALES_ORDER_LIST_STATUS_VALUES = [
   "DRAFT",
@@ -77,9 +78,11 @@ export function buildSalesOrderSearchOr(
   or.push({ nomusSellerName: { contains: term, ...insensitive } });
   or.push({ companyIssuer: { contains: term, ...insensitive } });
   // ID numérico de vendedor Nomus (idPessoaVendedor / externalSellerId)
+  // e ID externo do pedido (externalSalesOrderId).
   const asNum = Number(term);
   if (Number.isInteger(asNum) && asNum > 0) {
     or.push({ externalSellerId: asNum });
+    or.push({ externalSalesOrderId: asNum });
   }
   or.push({ Customer: { is: { companyName: { contains: term, ...insensitive } } } });
   or.push({ Customer: { is: { tradeName: { contains: term, ...insensitive } } } });
@@ -123,9 +126,17 @@ export function isValidSalesOrderListStatus(value: unknown): value is SalesOrder
   );
 }
 
+export type BuildSalesOrderListWhereOptions = {
+  /** Override de env para testes; default = process.env. */
+  env?: Record<string, string | undefined>;
+  /** Auditoria/histórico: não exclui MISSING_CONFIRMED. */
+  includeConfirmedMissing?: boolean;
+};
+
 /** Where Prisma alinhado ao GET /api/sales-orders (mesmos filtros da listagem). */
 export function buildSalesOrderListWhere(
-  filters: SalesOrderListFilters
+  filters: SalesOrderListFilters,
+  options?: BuildSalesOrderListWhereOptions
 ): Prisma.SalesOrderWhereInput {
   const status = filters.status?.trim() ?? "";
   const customerId = filters.customerId?.trim() ?? "";
@@ -187,9 +198,14 @@ export function buildSalesOrderListWhere(
     and.push({ nfeLinks: { none: buildSalesOrderValidNfeLinkWhere() } });
   }
 
-  if (and.length === 0) return {};
-  if (and.length === 1) return and[0]!;
-  return { AND: and };
+  const commercialWhere: Prisma.SalesOrderWhereInput =
+    and.length === 0 ? {} : and.length === 1 ? and[0]! : { AND: and };
+
+  // Presença operacional no AND raiz — busca inteligente (OR) não contorna a exclusão.
+  return mergeSalesOrderOperationalPresenceWhere(commercialWhere, {
+    env: options?.env,
+    includeConfirmedMissing: options?.includeConfirmedMissing,
+  }) as Prisma.SalesOrderWhereInput;
 }
 
 export function buildSalesOrderListSummary(input: {

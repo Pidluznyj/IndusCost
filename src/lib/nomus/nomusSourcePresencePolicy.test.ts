@@ -295,6 +295,10 @@ describe("nomusSourcePresencePolicy — merges Prisma", () => {
     assert.match(mgmt, /mergeSalesOrderOperationalPresenceWhere/);
     assert.match(metrics, /mergeSalesOrderOperationalPresenceWhere/);
     assert.match(forecast, /mergeSalesOrderOperationalPresenceWhere/);
+    assert.match(
+      read("src/lib/salesOrdersListSummary.ts"),
+      /mergeSalesOrderOperationalPresenceWhere/
+    );
     // SYNC-07 não modifica sincronizadores
     assert.doesNotMatch(syncAp, /nomusSourcePresencePolicy/);
     assert.doesNotMatch(syncAr, /nomusSourcePresencePolicy/);

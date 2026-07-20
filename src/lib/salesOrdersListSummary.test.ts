@@ -13,6 +13,9 @@ import {
 } from "./salesOrderNomusSellerDisplay.js";
 
 describe("salesOrdersListSummary", () => {
+  /** Isola testes estruturais da flag de presença (HOTFIX-05). */
+  const noPresence = { env: {} as Record<string, string | undefined> };
+
   const allRows = [
     { id: "1", totalNetValue: 1000, totalItems: 3, customerId: "c1", status: "SENT_TO_NOMUS" },
     { id: "2", totalNetValue: 2500, totalItems: 5, customerId: "c1", status: "READY_TO_SEND" },
@@ -87,13 +90,16 @@ describe("salesOrdersListSummary", () => {
   it("buildSalesOrderListWhere aplica status, cliente e período", () => {
     const start = new Date(2026, 0, 1);
     const end = new Date(2026, 11, 31, 23, 59, 59, 999);
-    const where = buildSalesOrderListWhere({
-      status: "SENT_TO_NOMUS",
-      customerId: "uuid-client",
-      seller: "464",
-      startDate: start,
-      endDate: end,
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        status: "SENT_TO_NOMUS",
+        customerId: "uuid-client",
+        seller: "464",
+        startDate: start,
+        endDate: end,
+      },
+      noPresence
+    );
     assert.ok(where.AND);
     const and = where.AND as Array<Record<string, unknown>>;
     assert.ok(and.some((c) => c.status === "SENT_TO_NOMUS"));
@@ -104,15 +110,18 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("buildSalesOrderListWhere com sellerWhere não usa responsible legado", () => {
-    const where = buildSalesOrderListWhere({
-      seller: "João",
-      sellerWhere: { externalSellerId: { in: [464] } },
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        seller: "João",
+        sellerWhere: { externalSellerId: { in: [464] } },
+      },
+      noPresence
+    );
     assert.deepEqual(where, { externalSellerId: { in: [464] } });
   });
 
   it("buildSalesOrderListWhere filtra issueDate por ano", () => {
-    const where = buildSalesOrderListWhere({ year: 2026 });
+    const where = buildSalesOrderListWhere({ year: 2026 }, noPresence);
     assert.deepEqual(where.issueDate, {
       gte: new Date(2026, 0, 1, 0, 0, 0, 0),
       lt: new Date(2027, 0, 1, 0, 0, 0, 0),
@@ -120,7 +129,7 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("buildSalesOrderListWhere filtra issueDate por ano e mês", () => {
-    const where = buildSalesOrderListWhere({ year: 2026, month: 6 });
+    const where = buildSalesOrderListWhere({ year: 2026, month: 6 }, noPresence);
     assert.deepEqual(where.issueDate, {
       gte: new Date(2026, 5, 1, 0, 0, 0, 0),
       lt: new Date(2026, 6, 1, 0, 0, 0, 0),
@@ -128,7 +137,7 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("buildSalesOrderListWhere calcula corretamente o fim de dezembro", () => {
-    const where = buildSalesOrderListWhere({ year: 2026, month: 12 });
+    const where = buildSalesOrderListWhere({ year: 2026, month: 12 }, noPresence);
     assert.deepEqual(where.issueDate, {
       gte: new Date(2026, 11, 1, 0, 0, 0, 0),
       lt: new Date(2027, 0, 1, 0, 0, 0, 0),
@@ -136,31 +145,40 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("buildSalesOrderListWhere ignora ano inválido (filtros antigos seguem)", () => {
-    const where = buildSalesOrderListWhere({
-      status: "DRAFT",
-      year: Number.NaN as unknown as number,
-      month: 6,
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        status: "DRAFT",
+        year: Number.NaN as unknown as number,
+        month: 6,
+      },
+      noPresence
+    );
     assert.equal(where.status, "DRAFT");
     assert.equal(where.issueDate, undefined);
   });
 
   it("buildSalesOrderListWhere com sellerKey via sellerWhere filtra externalSellerId", () => {
-    const where = buildSalesOrderListWhere({
-      sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("464"),
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("464"),
+      },
+      noPresence
+    );
     assert.deepEqual(where, { externalSellerId: 464 });
   });
 
   it("buildSalesOrderListWhere com sellerKey sem vendedor", () => {
-    const where = buildSalesOrderListWhere({
-      sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("__NO_SELLER__"),
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        sellerWhere: buildSalesOrderNomusSellerWhereFromSellerKey("__NO_SELLER__"),
+      },
+      noPresence
+    );
     assert.deepEqual(where, { externalSellerId: null });
   });
 
   it("buildSalesOrderListWhere filtra Com NF via nfeLinks válidos", () => {
-    const where = buildSalesOrderListWhere({ hasInvoice: true });
+    const where = buildSalesOrderListWhere({ hasInvoice: true }, noPresence);
     const json = JSON.stringify(where);
     assert.match(json, /"nfeLinks"/);
     assert.match(json, /"some"/);
@@ -169,7 +187,7 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("buildSalesOrderListWhere filtra Sem NF via none de vínculo válido", () => {
-    const where = buildSalesOrderListWhere({ hasInvoice: false });
+    const where = buildSalesOrderListWhere({ hasInvoice: false }, noPresence);
     const json = JSON.stringify(where);
     assert.match(json, /"nfeLinks"/);
     assert.match(json, /"none"/);
@@ -206,27 +224,39 @@ describe("salesOrdersListSummary", () => {
   });
 
   function orContains(where: ReturnType<typeof buildSalesOrderListWhere>): string[] {
-    const or = (where.OR ?? []) as Array<Record<string, any>>;
     const found: string[] = [];
-    const walk = (node: any): void => {
+    const walk = (node: unknown): void => {
       if (!node || typeof node !== "object") return;
-      if (typeof node.contains === "string") found.push(node.contains);
-      for (const value of Object.values(node)) walk(value);
+      const obj = node as Record<string, unknown>;
+      if (typeof obj.contains === "string") found.push(obj.contains);
+      for (const value of Object.values(obj)) walk(value);
     };
-    for (const clause of or) walk(clause);
+    walk(where);
     return found;
   }
 
+  function searchOrClauses(
+    where: ReturnType<typeof buildSalesOrderListWhere>
+  ): Array<Record<string, unknown>> {
+    if (Array.isArray(where.OR)) return where.OR as Array<Record<string, unknown>>;
+    if (Array.isArray(where.AND)) {
+      for (const clause of where.AND as Array<Record<string, unknown>>) {
+        if (Array.isArray(clause.OR)) return clause.OR as Array<Record<string, unknown>>;
+      }
+    }
+    return [];
+  }
+
   it("busca por número puro 02682 monta OR com tokens 02682 e 2682", () => {
-    const where = buildSalesOrderListWhere({ q: "02682" });
-    assert.ok(Array.isArray(where.OR));
+    const where = buildSalesOrderListWhere({ q: "02682" }, noPresence);
+    assert.ok(searchOrClauses(where).length > 0);
     const contains = orContains(where);
     assert.ok(contains.includes("02682"));
     assert.ok(contains.includes("2682"));
   });
 
   it("busca PD 02682 encontra mesmo pedido salvo como 02682 (token 02682 presente)", () => {
-    const where = buildSalesOrderListWhere({ q: "PD 02682" });
+    const where = buildSalesOrderListWhere({ q: "PD 02682" }, noPresence);
     const contains = orContains(where);
     // Token numérico permite casar 'PD 02682' do banco quando usuário digita variações.
     assert.ok(contains.includes("02682"));
@@ -234,8 +264,8 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("OR cobre pedido, NF, cliente, vendedor, empresa e itens", () => {
-    const where = buildSalesOrderListWhere({ q: "maria" });
-    const or = (where.OR ?? []) as Array<Record<string, any>>;
+    const where = buildSalesOrderListWhere({ q: "maria" }, noPresence);
+    const or = searchOrClauses(where);
     const json = JSON.stringify(or);
     assert.ok(json.includes("orderCode"));
     assert.ok(json.includes("nfeLinks"));
@@ -250,18 +280,21 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("busca combina com year/month (issueDate + OR juntos)", () => {
-    const where = buildSalesOrderListWhere({ q: "02682", year: 2026, month: 6 });
+    const where = buildSalesOrderListWhere({ q: "02682", year: 2026, month: 6 }, noPresence);
     const json = JSON.stringify(where);
     assert.ok(json.includes("issueDate"), "mantém filtro de período");
     assert.ok(json.includes("OR") || json.includes("orderCode"), "mantém busca inteligente");
   });
 
   it("busca combina com status e cliente existentes", () => {
-    const where = buildSalesOrderListWhere({
-      q: "02682",
-      status: "SENT_TO_NOMUS",
-      customerId: "cust-1",
-    });
+    const where = buildSalesOrderListWhere(
+      {
+        q: "02682",
+        status: "SENT_TO_NOMUS",
+        customerId: "cust-1",
+      },
+      noPresence
+    );
     const json = JSON.stringify(where);
     assert.ok(json.includes("SENT_TO_NOMUS"));
     assert.ok(json.includes("cust-1"));
@@ -269,7 +302,7 @@ describe("salesOrdersListSummary", () => {
   });
 
   it("sem q → nenhum OR (filtros antigos intactos)", () => {
-    const where = buildSalesOrderListWhere({ status: "DRAFT" });
+    const where = buildSalesOrderListWhere({ status: "DRAFT" }, noPresence);
     assert.equal(where.OR, undefined);
     assert.equal(where.status, "DRAFT");
   });

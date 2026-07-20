@@ -111,33 +111,39 @@ export async function resolveSalesOrderListSellerWhere(
 
 export function buildSalesOrderListWhereForQuery(
   query: SalesOrderListQuery,
-  sellerWhere: Prisma.SalesOrderWhereInput | null
+  sellerWhere: Prisma.SalesOrderWhereInput | null,
+  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
 ): Prisma.SalesOrderWhereInput {
   const useLegacySellerText = query.sellerKey.kind === "all" && query.sellerText;
-  return buildSalesOrderListWhere({
-    status:
-      query.status && isValidSalesOrderListStatus(query.status) ? query.status : undefined,
-    customerId: query.customerId || undefined,
-    seller: useLegacySellerText ? query.sellerText : undefined,
-    sellerWhere,
-    startDate: query.startDate,
-    endDate: query.endDate,
-    year: query.year,
-    month: query.month,
-    q: query.q || undefined,
-    hasInvoice: query.hasInvoice,
-  });
+  return buildSalesOrderListWhere(
+    {
+      status:
+        query.status && isValidSalesOrderListStatus(query.status) ? query.status : undefined,
+      customerId: query.customerId || undefined,
+      seller: useLegacySellerText ? query.sellerText : undefined,
+      sellerWhere,
+      startDate: query.startDate,
+      endDate: query.endDate,
+      year: query.year,
+      month: query.month,
+      q: query.q || undefined,
+      hasInvoice: query.hasInvoice,
+    },
+    options
+  );
 }
 
 /**
- * Where completo da listagem (filtros sync + status de CR via NF).
+ * Where completo da listagem (filtros sync + status de CR via NF + presença operacional).
+ * Mesma população alimenta linhas, count, cards e exportações.
  */
 export async function resolveSalesOrderListWhere(
   prisma: PrismaClient,
   query: SalesOrderListQuery,
-  sellerWhere: Prisma.SalesOrderWhereInput | null
+  sellerWhere: Prisma.SalesOrderWhereInput | null,
+  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
 ): Promise<Prisma.SalesOrderWhereInput> {
-  const base = buildSalesOrderListWhereForQuery(query, sellerWhere);
+  const base = buildSalesOrderListWhereForQuery(query, sellerWhere, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
     prisma,
     query.receivableStatus
@@ -147,26 +153,31 @@ export async function resolveSalesOrderListWhere(
 
 /** Where da listagem sem filtro de vendedor (opções do select). */
 export function buildSalesOrderListWhereExcludingSeller(
-  query: SalesOrderListQuery
+  query: SalesOrderListQuery,
+  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
 ): Prisma.SalesOrderWhereInput {
-  return buildSalesOrderListWhere({
-    status:
-      query.status && isValidSalesOrderListStatus(query.status) ? query.status : undefined,
-    customerId: query.customerId || undefined,
-    startDate: query.startDate,
-    endDate: query.endDate,
-    year: query.year,
-    month: query.month,
-    q: query.q || undefined,
-    hasInvoice: query.hasInvoice,
-  });
+  return buildSalesOrderListWhere(
+    {
+      status:
+        query.status && isValidSalesOrderListStatus(query.status) ? query.status : undefined,
+      customerId: query.customerId || undefined,
+      startDate: query.startDate,
+      endDate: query.endDate,
+      year: query.year,
+      month: query.month,
+      q: query.q || undefined,
+      hasInvoice: query.hasInvoice,
+    },
+    options
+  );
 }
 
 export async function resolveSalesOrderListWhereExcludingSeller(
   prisma: PrismaClient,
-  query: SalesOrderListQuery
+  query: SalesOrderListQuery,
+  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
 ): Promise<Prisma.SalesOrderWhereInput> {
-  const base = buildSalesOrderListWhereExcludingSeller(query);
+  const base = buildSalesOrderListWhereExcludingSeller(query, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
     prisma,
     query.receivableStatus
