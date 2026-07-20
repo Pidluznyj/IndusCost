@@ -9,9 +9,7 @@ import {
   buildSalesOrderYearOptions,
   SALES_ORDER_MONTH_OPTIONS,
 } from "@/src/lib/salesOrderPeriodFilter";
-import {
-  getSalesOrderResultApiPath,
-} from "@/src/lib/salesOrderResultApi";
+import { getSalesOrderResultApiPath } from "@/src/lib/salesOrderResultApi";
 import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
 import { buildSalesOrderResultTotalsMarginTooltipText } from "@/src/lib/salesOrderMarginDisplay";
 import {
@@ -29,6 +27,14 @@ import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SalesOrderResultMonthlyMarginChart } from "@/src/components/sales/SalesOrderResultMonthlyMarginChart";
 import { SalesOrderResultProjectionChart } from "@/src/components/sales/SalesOrderResultProjectionChart";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { getSalesOrderSellerFilterOptionsUrl } from "@/src/lib/salesOrderListReportExportUi";
+import type { SalesOrderSellerFilterOption } from "@/src/lib/salesOrderNomusSellerDisplay";
+import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
+import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
+import { SALES_ORDER_STATUS_LABELS } from "@/src/lib/materialDemandFilters";
+
+const FILTER_CONTROL =
+  "mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm";
 
 export function SalesOrderResultPage() {
   const auth = useAuth();
@@ -39,16 +45,57 @@ export function SalesOrderResultPage() {
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState<number | "">("");
   const [customerId, setCustomerId] = useState("");
-  const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
+  const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(
+    null
+  );
   const [productQuery, setProductQuery] = useState("");
-  const [seller, setSeller] = useState("");
-  const [company, setCompany] = useState("");
+  const [sellerKey, setSellerKey] = useState("");
+  const [status, setStatus] = useState("");
+  const [hasInvoice, setHasInvoice] = useState("");
+  const [receivableStatus, setReceivableStatus] = useState("");
+  const [sellerFilterOptions, setSellerFilterOptions] = useState<SalesOrderSellerFilterOption[]>(
+    []
+  );
+  const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
   const [payload, setPayload] = useState<SalesOrderResultDashboardPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
 
   const asOfDate = useMemo(() => new Date().toISOString().slice(0, 10), []);
+
+  const listFilterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("year", String(year));
+    if (month !== "") params.set("month", String(month));
+    if (customerId) params.set("customerId", customerId);
+    if (sellerKey) params.set("sellerKey", sellerKey);
+    if (status) params.set("status", status);
+    if (hasInvoice) params.set("hasInvoice", hasInvoice);
+    if (receivableStatus) params.set("receivableStatus", receivableStatus);
+    return params.toString();
+  }, [year, month, customerId, sellerKey, status, hasInvoice, receivableStatus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSellerOptionsLoading(true);
+    void fetchJsonOk<{ options?: SalesOrderSellerFilterOption[] }>(
+      getSalesOrderSellerFilterOptionsUrl(listFilterQuery)
+    )
+      .then((res) => {
+        if (cancelled) return;
+        setSellerFilterOptions(Array.isArray(res.options) ? res.options : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSellerFilterOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSellerOptionsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [listFilterQuery]);
 
   const load = useCallback(async () => {
     if (!canView) return;
@@ -60,8 +107,10 @@ export function SalesOrderResultPage() {
         month: month === "" ? undefined : month,
         customerId: customerId || undefined,
         productId: productQuery.trim() || undefined,
-        sellerId: seller.trim() || undefined,
-        companyId: company.trim() || undefined,
+        sellerKey: sellerKey || undefined,
+        status: status || undefined,
+        hasInvoice: hasInvoice || undefined,
+        receivableStatus: receivableStatus || undefined,
         asOfDate,
       });
       const data = await fetchJsonOk<SalesOrderResultDashboardPayload>(path);
@@ -72,7 +121,18 @@ export function SalesOrderResultPage() {
     } finally {
       setLoading(false);
     }
-  }, [canView, year, month, customerId, productQuery, seller, company, asOfDate]);
+  }, [
+    canView,
+    year,
+    month,
+    customerId,
+    productQuery,
+    sellerKey,
+    status,
+    hasInvoice,
+    receivableStatus,
+    asOfDate,
+  ]);
 
   useEffect(() => {
     void load();
@@ -88,7 +148,7 @@ export function SalesOrderResultPage() {
     return (
       <div className={`${financeBiCardClass} p-8 text-center`} data-testid="sales-order-result-denied">
         <p className="text-sm font-semibold text-[#111827]">Acesso restrito</p>
-        <p className="text-sm text-[#6B7280] mt-2">
+        <p className="text-sm text-[#6B7280] mt-1">
           A aba Resultado exige permissão para visualizar custo e margem de produtos.
         </p>
       </div>
@@ -103,18 +163,20 @@ export function SalesOrderResultPage() {
       <div>
         <h2 className="text-lg font-bold text-[#111827]">Resultado de Pedidos de Venda</h2>
         <p className="text-sm text-[#6B7280] mt-1">
-          Visão de venda, custo, margem e projeção comercial com base nos pedidos do período.
+          Mesmo escopo e motores oficiais da listagem Comercial &gt; Pedidos de Venda (valor do
+          pedido, custo versionado e margem gerencial).
         </p>
       </div>
 
-      <div className={`${financeBiCardClass} p-4`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className={`${financeBiCardClass} p-4`} data-testid="sales-order-result-filters">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           <label className="text-xs font-semibold text-[#374151]">
             Ano
             <select
-              className="mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm"
+              className={FILTER_CONTROL}
               value={year}
               onChange={(e) => setYear(Number(e.target.value))}
+              data-testid="sales-order-result-filter-year"
             >
               {yearOptions.map((y) => (
                 <option key={y} value={y}>
@@ -126,14 +188,46 @@ export function SalesOrderResultPage() {
           <label className="text-xs font-semibold text-[#374151]">
             Mês
             <select
-              className="mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm"
+              className={FILTER_CONTROL}
               value={month}
               onChange={(e) => setMonth(e.target.value === "" ? "" : Number(e.target.value))}
+              data-testid="sales-order-result-filter-month"
             >
               <option value="">Todos</option>
               {SALES_ORDER_MONTH_OPTIONS.map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#374151]">
+            Situação
+            <select
+              className={FILTER_CONTROL}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              data-testid="sales-order-result-filter-status"
+            >
+              <option value="">Todos</option>
+              {Object.entries(SALES_ORDER_STATUS_LABELS).map(([k, label]) => (
+                <option key={k} value={k}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#374151]">
+            Vínculo NF
+            <select
+              className={FILTER_CONTROL}
+              value={hasInvoice}
+              onChange={(e) => setHasInvoice(e.target.value)}
+              data-testid="sales-order-result-filter-has-invoice"
+            >
+              {INVOICE_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
                 </option>
               ))}
             </select>
@@ -149,31 +243,62 @@ export function SalesOrderResultPage() {
             />
           </div>
           <label className="text-xs font-semibold text-[#374151]">
-            Produto (ID)
-            <input
-              className="mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm"
-              value={productQuery}
-              onChange={(e) => setProductQuery(e.target.value)}
-              placeholder="UUID do produto"
-            />
+            Vendedor
+            <select
+              className={FILTER_CONTROL}
+              value={sellerKey}
+              onChange={(e) => setSellerKey(e.target.value)}
+              disabled={sellerOptionsLoading}
+              data-testid="sales-order-result-filter-seller"
+            >
+              <option value="">Todos os vendedores</option>
+              {sellerFilterOptions.map((option) => (
+                <option key={option.sellerKey} value={option.sellerKey}>
+                  {option.label}
+                  {option.orderCount > 0 ? ` (${option.orderCount})` : ""}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="text-xs font-semibold text-[#374151]">
-            Vendedor
+            Status CR
+            <select
+              className={FILTER_CONTROL}
+              value={receivableStatus}
+              onChange={(e) => setReceivableStatus(e.target.value)}
+              data-testid="sales-order-result-filter-receivable"
+            >
+              {RECEIVABLE_STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-xs font-semibold text-[#374151] lg:col-span-2">
+            Produto (ID opcional)
             <input
-              className="mt-1 w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm"
-              value={seller}
-              onChange={(e) => setSeller(e.target.value)}
+              className={FILTER_CONTROL}
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
+              placeholder="UUID do produto (filtro adicional)"
+              data-testid="sales-order-result-filter-product"
             />
           </label>
         </div>
       </div>
 
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
       ) : null}
 
       {loading && !payload ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-[#6B7280]" data-testid="sales-order-result-loading">
+        <div
+          className="flex items-center justify-center gap-2 py-16 text-sm text-[#6B7280]"
+          data-testid="sales-order-result-loading"
+        >
           <Loader2 className="h-5 w-5 animate-spin" />
           Carregando resultado…
         </div>
@@ -183,7 +308,7 @@ export function SalesOrderResultPage() {
         <>
           <ExecutiveSummarySection
             title="Resumo do resultado"
-            eyebrow="Totais consolidados do filtro aplicado"
+            eyebrow="Totais do mesmo universo filtrado da listagem de Pedidos"
             testId="sales-order-result-kpi-summary"
             actions={
               <button
@@ -208,7 +333,7 @@ export function SalesOrderResultPage() {
                 amountFormat="currency"
                 tone="money"
                 icon={ShoppingBag}
-                helperText="Soma do valor de venda dos pedidos no filtro aplicado."
+                helperText="Σ totalNetValue oficial dos pedidos no filtro (motor de pedidos)."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -218,7 +343,7 @@ export function SalesOrderResultPage() {
                 amountFormat="currency"
                 tone="internal"
                 icon={Package}
-                helperText="Custo de produção consolidado dos itens no filtro."
+                helperText="Custo versionado vigente na data de emissão do pedido."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -228,7 +353,7 @@ export function SalesOrderResultPage() {
                 amountFormat="currency"
                 tone={metricVariantToTotalizerTone(resolveMarginMoneyVariant(totals.marginAmount))}
                 icon={Wallet}
-                helperText="Margem gerencial consolidada (venda − custo)."
+                helperText="Margem gerencial oficial (após imposto TaxRule − custo versionado)."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -238,7 +363,7 @@ export function SalesOrderResultPage() {
                 amountFormat="percent"
                 tone={metricVariantToTotalizerTone(resolveMarginPercentVariant(totals.marginPercent))}
                 icon={Percent}
-                helperText="Margem percentual sobre a venda do filtro."
+                helperText="Margem ponderada por receita líquida gerencial."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -248,7 +373,7 @@ export function SalesOrderResultPage() {
                 amountFormat="currency"
                 tone="neutral"
                 icon={Scale}
-                helperText="Margem média por unidade nos itens do filtro."
+                helperText="Margem média por item válido no filtro."
                 loading={loading}
               />
               <SystemTotalizerCard
@@ -258,14 +383,17 @@ export function SalesOrderResultPage() {
                 amountFormat="number"
                 tone="info"
                 icon={ShoppingBag}
-                helperText="Quantidade de pedidos no filtro aplicado."
+                helperText="Quantidade de pedidos no mesmo escopo da listagem."
                 loading={loading}
               />
             </SummaryKpiGrid>
           </ExecutiveSummarySection>
 
           {showTooltip && marginTooltipText ? (
-            <div className={`${financeBiCardClass} p-4 text-sm text-[#374151]`} data-testid="sales-order-result-margin-tooltip">
+            <div
+              className={`${financeBiCardClass} p-4 text-sm text-[#374151]`}
+              data-testid="sales-order-result-margin-tooltip"
+            >
               <pre className="whitespace-pre-line font-sans text-sm">{marginTooltipText}</pre>
             </div>
           ) : null}
@@ -273,7 +401,10 @@ export function SalesOrderResultPage() {
           {(warnings?.missingCostCount ?? 0) > 0 ||
           (warnings?.missingProductCount ?? 0) > 0 ||
           (warnings?.negativeMarginCount ?? 0) > 0 ? (
-            <div className={`${financeBiCardClass} p-4 flex flex-wrap gap-4 text-sm`} data-testid="sales-order-result-alerts">
+            <div
+              className={`${financeBiCardClass} p-4 flex flex-wrap gap-4 text-sm`}
+              data-testid="sales-order-result-alerts"
+            >
               {(warnings?.negativeMarginCount ?? 0) > 0 ? (
                 <span className="inline-flex items-center gap-1 text-red-700">
                   <AlertTriangle className="h-4 w-4" />
@@ -297,7 +428,10 @@ export function SalesOrderResultPage() {
 
           {payload ? <SalesOrderResultMonthlyMarginChart rows={payload.monthlyMargin} /> : null}
           {payload ? (
-            <SalesOrderResultProjectionChart rows={payload.realizedVsProjected} projection={payload.projection} />
+            <SalesOrderResultProjectionChart
+              rows={payload.realizedVsProjected}
+              projection={payload.projection}
+            />
           ) : null}
         </>
       ) : null}

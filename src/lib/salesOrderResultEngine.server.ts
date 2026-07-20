@@ -1,16 +1,14 @@
 /**
- * Motor server-side da aba Resultado — compõe margem oficial, imposto TaxRule e projeção.
+ * Motor server-side da aba Resultado — mesmo escopo da listagem oficial de Pedidos
+ * (`parseSalesOrderListQuery` / `resolveSalesOrderListWhere`) + margem oficial
+ * (`salesMarginRulesEngine` + custo versionado em issueDate).
  */
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import {
   loadSalesMarginNomusConfig,
   salesMarginNomusConfigToCostPolicy,
 } from "./salesMarginNomusConfig.js";
 import { resolveOfficialSalesMarginTaxContext } from "./salesMarginNomusTaxContext.server.js";
-import {
-  buildSalesOrderMarginIndicatorWhere,
-  parseSalesOrderMarginIndicatorFilters,
-} from "./salesOrderMarginIndicators.server.js";
 import {
   buildOfficialSalesMarginRulesResult,
   buildOfficialSalesOrderResultMarginPayload,
@@ -27,10 +25,22 @@ import {
   mapPrismaOrderToSalesOrderRulesInput,
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./salesOrderRulesAdapter.js";
+import {
+  parseSalesOrderListQuery,
+  resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
+} from "./salesOrderListQuery.server.js";
 import type {
   SalesOrderResultDashboardPayload,
   SalesOrderResultFilters,
 } from "./salesOrderResultTypes.js";
+
+/** Select único: regras de pedido + itens para margem (mesmo universo da listagem). */
+const SALES_ORDER_RESULT_PRISMA_SELECT = {
+  ...SALES_ORDER_RULES_PRISMA_SELECT,
+  proposalId: true,
+  items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
+} as const;
 
 function parseAsOfDate(value: unknown, fallback: Date): Date {
   if (typeof value !== "string" || !value.trim()) return fallback;
@@ -42,36 +52,54 @@ function parseAsOfDate(value: unknown, fallback: Date): Date {
   return new Date(y, m, d, 23, 59, 59, 999);
 }
 
+function andWhere(
+  base: Prisma.SalesOrderWhereInput,
+  extra: Prisma.SalesOrderWhereInput | null
+): Prisma.SalesOrderWhereInput {
+  if (!extra) return base;
+  return { AND: [base, extra] };
+}
+
+/**
+ * Filtros da aba Resultado — alinhados ao parse canônico da listagem de Pedidos.
+ * `productId` permanece como filtro adicional (AND em itens).
+ */
 export function parseSalesOrderResultFilters(
   query: Record<string, unknown>,
   now = new Date()
 ): SalesOrderResultFilters {
-  const indicatorFilters = parseSalesOrderMarginIndicatorFilters(query, now);
+  const listQuery = parseSalesOrderListQuery(query);
   const asOfDate =
     typeof query.asOfDate === "string" && query.asOfDate.trim()
       ? query.asOfDate.trim()
       : now.toISOString().slice(0, 10);
+  const productId = String(query.productId ?? "").trim() || undefined;
 
   return {
-    year: indicatorFilters.year,
-    month: indicatorFilters.month,
-    customerId: indicatorFilters.customerId,
-    productId: indicatorFilters.productId,
-    sellerId: indicatorFilters.responsible,
-    companyId: indicatorFilters.companyIssuer,
+    year: listQuery.year ?? now.getFullYear(),
+    month: listQuery.month ?? undefined,
+    customerId: listQuery.customerId || undefined,
+    productId,
+    sellerId: listQuery.sellerKeyRaw || listQuery.sellerText || undefined,
+    companyId: undefined,
     asOfDate,
+    status: listQuery.status || undefined,
+    sellerKey: listQuery.sellerKeyRaw || undefined,
+    hasInvoice:
+      listQuery.hasInvoice === null
+        ? undefined
+        : listQuery.hasInvoice
+          ? "true"
+          : "false",
+    receivableStatus: listQuery.receivableStatus ?? undefined,
+    q: listQuery.q || undefined,
+    startDate: listQuery.startDate
+      ? listQuery.startDate.toISOString().slice(0, 10)
+      : undefined,
+    endDate: listQuery.endDate
+      ? listQuery.endDate.toISOString().slice(0, 10)
+      : undefined,
   };
-}
-
-async function loadSalesOrderResultRulesOrders(
-  db: PrismaClient,
-  where: ReturnType<typeof buildSalesOrderMarginIndicatorWhere>
-) {
-  const rows = await db.salesOrder.findMany({
-    where,
-    select: SALES_ORDER_RULES_PRISMA_SELECT,
-  });
-  return rows.map(mapPrismaOrderToSalesOrderRulesInput);
 }
 
 export async function buildSalesOrderResultDashboard(
@@ -81,21 +109,31 @@ export async function buildSalesOrderResultDashboard(
 ): Promise<SalesOrderResultDashboardPayload> {
   const filters = parseSalesOrderResultFilters(query, now);
   const referenceDate = parseAsOfDate(filters.asOfDate, now);
-  const indicatorFilters = parseSalesOrderMarginIndicatorFilters(query, now);
-  const where = buildSalesOrderMarginIndicatorWhere(indicatorFilters);
+
+  // Escopo oficial = mesma cadeia da listagem / PDF / Resultado Industrial.
+  const listQuery = parseSalesOrderListQuery({
+    ...query,
+    // Garante ano para o dashboard (UI sempre envia; fallback = ano corrente).
+    year: query.year ?? filters.year,
+  });
+  const sellerWhere = await resolveSalesOrderListSellerWhere(db, {
+    sellerKeyRaw: listQuery.sellerKeyRaw,
+    sellerText: listQuery.sellerText,
+  });
+  let where = await resolveSalesOrderListWhere(db, listQuery, sellerWhere);
+
+  if (filters.productId) {
+    where = andWhere(where, {
+      items: { some: { productId: filters.productId } },
+    });
+  }
 
   const orders = await db.salesOrder.findMany({
     where,
-    select: {
-      id: true,
-      issueDate: true,
-      totalNetValue: true,
-      nomusRawResponse: true,
-      items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
-    },
+    select: SALES_ORDER_RESULT_PRISMA_SELECT,
   });
 
-  const rulesOrders = await loadSalesOrderResultRulesOrders(db, where);
+  const rulesOrders = orders.map(mapPrismaOrderToSalesOrderRulesInput);
   const salesBundle = buildOfficialSalesOrderResultSalesBundle({
     orders: rulesOrders,
     year: filters.year,
@@ -108,11 +146,12 @@ export async function buildSalesOrderResultDashboard(
   });
 
   const { config: nomusConfig } = await loadSalesMarginNomusConfig(db);
-  const marginContext = await buildSalesOrderMarginContext(db, orders as SalesOrderForMargin[], {
+  const marginOrders = orders as SalesOrderForMargin[];
+  const marginContext = await buildSalesOrderMarginContext(db, marginOrders, {
     costPolicy: salesMarginNomusConfigToCostPolicy(nomusConfig),
   });
   const marginRulesOrders = mapMarginContextToRulesOrders(
-    orders as SalesOrderForMargin[],
+    marginOrders,
     marginContext.byOrderId
   );
 

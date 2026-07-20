@@ -5,9 +5,18 @@ export type SalesOrderResultFilters = {
   month?: number;
   customerId?: string;
   productId?: string;
+  /** @deprecated Preferir sellerKey — mantido para compat. */
   sellerId?: string;
   companyId?: string;
   asOfDate: string;
+  /** Filtros alinhados à listagem oficial de Pedidos. */
+  status?: string;
+  sellerKey?: string;
+  hasInvoice?: string;
+  receivableStatus?: string;
+  q?: string;
+  startDate?: string;
+  endDate?: string;
 };
 
 export type SalesOrderResultTotals = {
@@ -73,11 +82,11 @@ export type SalesOrderResultWarnings = {
 };
 
 export type SalesOrderResultSource = {
-  sales: "official-sales-order-engine";
-  margin: "official-sales-order-margin-engine";
-  cost: "official-product-cost-engine";
-  tax: "official-tax-rule-engine";
-  projection: "official-sales-order-dashboard-rules";
+  sales: string;
+  margin: string;
+  cost: string;
+  tax: string;
+  projection: string;
 };
 
 export type SalesOrderResultDashboardPayload = {
