@@ -132,13 +132,13 @@ export function SalesOrderDetailResultadoTab({
           Matérias-primas do pedido
         </h2>
         <p className="mb-3 text-[11px] text-[#6b7280]">
-          Quantidade total no pedido (BOM × qtd do item), preço unitário
-          considerado no custo publicado e custo total. Consolidadas por material.
+          Explosão da BOM do produto (componentes → MP), igual à Inteligência de Matéria-Prima:
+          quantidade no pedido, valor por quilo e custo total, consolidados por material.
         </p>
 
         {industrialResult.materials.length === 0 ? (
           <p className="text-[12px] text-[#6b7280]">
-            Nenhuma linha de MP encontrada no snapshot de custo publicado dos itens.
+            Nenhuma matéria-prima encontrada na BOM dos produtos do pedido.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -148,15 +148,11 @@ export function SalesOrderDetailResultadoTab({
             >
               <thead>
                 <tr className="border-b border-[#E5E7EB] text-[10px] uppercase tracking-wide text-[#6b7280]">
-                  <th className="px-2 py-2 font-semibold">SKU</th>
-                  <th className="px-2 py-2 font-semibold">Material</th>
-                  <th className="px-2 py-2 font-semibold">Un.</th>
-                  <th className="px-2 py-2 font-semibold text-right">Qtd no pedido</th>
-                  <th className="px-2 py-2 font-semibold text-right">
-                    Preço considerado
-                  </th>
-                  <th className="px-2 py-2 font-semibold text-right">Custo total</th>
-                  <th className="px-2 py-2 font-semibold">Produto origem</th>
+                  <th className="px-2 py-2 font-semibold">Código</th>
+                  <th className="px-2 py-2 font-semibold">Descrição</th>
+                  <th className="px-2 py-2 font-semibold text-right">Qtde</th>
+                  <th className="px-2 py-2 font-semibold text-right">Valor por quilo</th>
+                  <th className="px-2 py-2 font-semibold text-right">Valor total</th>
                 </tr>
               </thead>
               <tbody>
@@ -168,8 +164,12 @@ export function SalesOrderDetailResultadoTab({
                     <td className="px-2 py-1.5 font-mono text-[10px]">
                       {m.sku ?? "—"}
                     </td>
-                    <td className="px-2 py-1.5">{m.name}</td>
-                    <td className="px-2 py-1.5">{m.unit ?? "—"}</td>
+                    <td className="px-2 py-1.5">
+                      {m.name}
+                      {m.unit ? (
+                        <span className="ml-1 text-[10px] text-[#6b7280]">({m.unit})</span>
+                      ) : null}
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">
                       {formatExecutiveDecimal(m.quantityInOrder)}
                     </td>
@@ -179,21 +179,17 @@ export function SalesOrderDetailResultadoTab({
                     <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
                       {money(m.totalCost)}
                     </td>
-                    <td className="px-2 py-1.5 text-[#6b7280]">
-                      {m.sourceProductSku ?? m.sourceProductName ?? "—"}
-                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-[#F9FAFB] font-semibold text-[#111827]">
-                  <td className="px-2 py-2" colSpan={5}>
-                    Total MP (linhas)
+                  <td className="px-2 py-2" colSpan={4}>
+                    Total MP
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">
                     {money(industrialResult.materialsTotalCost)}
                   </td>
-                  <td />
                 </tr>
               </tfoot>
             </table>

@@ -1,13 +1,14 @@
 /**
  * Custos industriais + MP + resultado para o Detalhe do Pedido (server-only).
+ * MP: explosão Open Book da BOM do produto (mesmo motor da Inteligência de MP).
  */
 import type { PrismaClient } from "@prisma/client";
-import { normalizeProductionCostBomLineAudit } from "@/src/lib/productionCostCalculationSnapshotAudit.js";
+import type { ExplosionRowCore } from "@/src/lib/openBookMaterialExplosion.js";
+import { explodeProductRawMaterialsPerUnit } from "@/src/lib/openBookRawMaterialExplosion.server.js";
 import {
-  effectiveProductionCostLookupKey,
-  type EffectiveProductProductionCostOk,
-} from "@/src/lib/productionCostVersioning.js";
-import { getEffectiveProductProductionCostsForPairs } from "@/src/lib/productionCostTables.server.js";
+  createProductCostAnalysisEngine,
+  type AnalysisCache,
+} from "@/src/lib/productCostAnalysisEngine.server.js";
 import {
   resolveSalesOrderItemProducts,
   type SalesOrderMarginResolverItem,
@@ -27,7 +28,7 @@ import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 import { loadSalesOrderIndustrialResultReportPayload } from "@/src/lib/sales/salesOrderIndustrialResultReportService.server.js";
 import {
   buildSalesOrderDetailIndustrialResultBlock,
-  scaleBomMaterialLineForOrderItem,
+  scaleOpenBookExplosionRowForOrderItem,
   type SalesOrderDetailIndustrialMaterialLine,
   type SalesOrderDetailIndustrialResultBlock,
 } from "./salesOrderDetailIndustrialResult.js";
@@ -85,21 +86,6 @@ function mapItemToResolverInput(
   };
 }
 
-function readBomLinesFromSnapshot(snapshot: unknown): ReturnType<
-  typeof normalizeProductionCostBomLineAudit
->[] {
-  if (!snapshot || typeof snapshot !== "object") return [];
-  const raw = snapshot as Record<string, unknown>;
-  const bom = raw.bomStructure;
-  if (bom && typeof bom === "object") {
-    const lines = (bom as { lines?: unknown }).lines;
-    if (Array.isArray(lines)) {
-      return lines.map(normalizeProductionCostBomLineAudit);
-    }
-  }
-  return [];
-}
-
 async function loadMaterialLinesForOrder(
   prisma: PrismaClient,
   salesOrderId: string
@@ -134,42 +120,59 @@ async function loadMaterialLinesForOrder(
   const productIndex = await loadSalesOrderMarginProductBatchIndex(prisma, resolverItems);
   const productResolutions = resolveSalesOrderItemProducts(resolverItems, productIndex);
 
-  const pairs: Array<{ productId: string; referenceDate: Date }> = [];
-  for (const mapped of resolverItems) {
-    if (mapped.isCanceled) continue;
-    const productId = productResolutions.get(mapped.salesOrderItemId)?.productId;
-    if (!productId || !order.issueDate) continue;
-    pairs.push({ productId, referenceDate: order.issueDate });
+  const engine = createProductCostAnalysisEngine(prisma);
+  let cache: AnalysisCache;
+  try {
+    cache = await engine.initAnalysisCache();
+  } catch (e) {
+    return {
+      lines: [],
+      warnings: [
+        e instanceof Error
+          ? `Configuração de custo indisponível para explodir BOM: ${e.message}`
+          : "Configuração de custo indisponível para explodir BOM.",
+      ],
+    };
   }
-  const effectiveCostsByKey = await getEffectiveProductProductionCostsForPairs(prisma, pairs);
 
   const lines: SalesOrderDetailIndustrialMaterialLine[] = [];
   const warnings: string[] = [];
+  const explosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
 
   for (const mapped of resolverItems) {
     if (mapped.isCanceled) continue;
     const productId = productResolutions.get(mapped.salesOrderItemId)?.productId;
     const qty = qtyNumber(mapped.quantity);
-    if (!productId || !order.issueDate || !(qty > 0)) continue;
-    const key = effectiveProductionCostLookupKey(productId, order.issueDate);
-    const effective = effectiveCostsByKey.get(key);
-    if (!effective || effective.status !== "OK") {
+    if (!productId || !(qty > 0)) {
+      if (!productId) {
+        warnings.push(
+          `Item ${mapped.skuSnapshot ?? mapped.salesOrderItemId}: produto não identificado para explodir BOM.`
+        );
+      }
+      continue;
+    }
+
+    const exploded = await explodeProductRawMaterialsPerUnit(prisma, productId, {
+      cache,
+      memo: explosionMemo,
+    });
+
+    if (!exploded.ok) {
       warnings.push(
-        `Item ${mapped.skuSnapshot ?? mapped.salesOrderItemId}: sem snapshot de custo para listar MP.`
+        `Item ${mapped.skuSnapshot ?? productId}: não foi possível explodir a BOM (${exploded.error}).`
       );
       continue;
     }
-    const ok = effective as EffectiveProductProductionCostOk;
-    const bomLines = readBomLinesFromSnapshot(ok.calculationSnapshot);
-    if (bomLines.length === 0) {
+    if (exploded.rows.length === 0) {
       warnings.push(
-        `Item ${mapped.skuSnapshot ?? productId}: snapshot publicado sem linhas de BOM/MP.`
+        `Item ${mapped.skuSnapshot ?? productId}: BOM sem matéria-prima (MP) registrada.`
       );
       continue;
     }
-    for (const bom of bomLines) {
-      const scaled = scaleBomMaterialLineForOrderItem({
-        line: bom,
+
+    for (const row of exploded.rows) {
+      const scaled = scaleOpenBookExplosionRowForOrderItem({
+        row,
         orderItemQuantity: qty,
         sourceProductSku: mapped.skuSnapshot,
         sourceProductName: mapped.productNameSnapshot,

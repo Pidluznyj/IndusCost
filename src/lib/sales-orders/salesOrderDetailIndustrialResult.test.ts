@@ -6,6 +6,7 @@ import {
   mergeIndustrialMaterialLines,
   resolveIndustrialResultVerdict,
   scaleBomMaterialLineForOrderItem,
+  scaleOpenBookExplosionRowForOrderItem,
 } from "./salesOrderDetailIndustrialResult.js";
 import type { SalesOrderIndustrialResultReportRow } from "@/src/lib/sales/salesOrderIndustrialResultReport.js";
 
@@ -97,6 +98,27 @@ describe("salesOrderDetailIndustrialResult", () => {
     assert.equal(line!.quantityInOrder, 10);
     assert.equal(line!.unitCostUsed, 10);
     assert.equal(line!.totalCost, 100);
+  });
+
+  it("escala explosão Open Book × quantidade do item", () => {
+    const line = scaleOpenBookExplosionRowForOrderItem({
+      row: {
+        materialId: "m1",
+        code: "MP-01",
+        description: "Resina",
+        unit: "KG",
+        quantity: 2,
+        totalCost: 20,
+      },
+      orderItemQuantity: 5,
+      sourceProductSku: "618.10AA",
+      sourceProductName: "Produto A",
+    });
+    assert.ok(line);
+    assert.equal(line!.quantityInOrder, 10);
+    assert.equal(line!.unitCostUsed, 10);
+    assert.equal(line!.totalCost, 100);
+    assert.equal(line!.sku, "MP-01");
   });
 
   it("consolida materiais iguais e monta bloco", () => {

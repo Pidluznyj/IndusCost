@@ -9,6 +9,7 @@ import type {
   SalesOrderIndustrialResultReportRow,
 } from "@/src/lib/sales/salesOrderIndustrialResultReport.js";
 import type { ProductionCostBomLineAudit } from "@/src/lib/productionCostCalculationSnapshotAudit.js";
+import type { ExplosionRowCore } from "@/src/lib/openBookMaterialExplosion.js";
 
 export type SalesOrderDetailIndustrialMaterialLine = {
   materialKey: string;
@@ -18,7 +19,7 @@ export type SalesOrderDetailIndustrialMaterialLine = {
   unit: string | null;
   /** Qtd total no pedido (BOM × qtd do item). */
   quantityInOrder: number;
-  /** Preço unitário considerado no custo publicado. */
+  /** Preço unitário considerado (R$/un. da MP — tipicamente R$/kg). */
   unitCostUsed: number | null;
   /** Custo total da MP no pedido. */
   totalCost: number;
@@ -153,6 +154,50 @@ export function scaleBomMaterialLineForOrderItem(
     sourceProductSku: input.sourceProductSku,
     sourceProductName: input.sourceProductName,
     lineType: line.lineType,
+  };
+}
+
+/**
+ * Escala linha da explosão Open Book (MP folha por unidade do produto) × qtd do item.
+ * Mesma origem da Inteligência de Matéria-Prima.
+ */
+export function scaleOpenBookExplosionRowForOrderItem(input: {
+  row: ExplosionRowCore;
+  orderItemQuantity: number;
+  sourceProductSku: string | null;
+  sourceProductName: string | null;
+}): SalesOrderDetailIndustrialMaterialLine | null {
+  const { row, orderItemQuantity } = input;
+  if (!(orderItemQuantity > 0)) return null;
+  const qtyPerUnit = Number(row.quantity);
+  const costPerUnit = Number(row.totalCost);
+  if (!(qtyPerUnit > 0) || !Number.isFinite(qtyPerUnit)) return null;
+  const quantityInOrder = roundMoney(qtyPerUnit * orderItemQuantity);
+  const unitCostUsed =
+    qtyPerUnit > 0 && Number.isFinite(costPerUnit)
+      ? roundMoney(costPerUnit / qtyPerUnit)
+      : null;
+  const totalCost = Number.isFinite(costPerUnit)
+    ? roundMoney(costPerUnit * orderItemQuantity)
+    : unitCostUsed != null
+      ? roundMoney(unitCostUsed * quantityInOrder)
+      : 0;
+  const sku = row.code?.trim() || null;
+  const name = row.description?.trim() || sku || "Material sem nome";
+  const materialKey = row.materialId?.trim() || sku || name;
+
+  return {
+    materialKey,
+    materialId: row.materialId?.trim() || null,
+    sku,
+    name,
+    unit: row.unit?.trim() || null,
+    quantityInOrder,
+    unitCostUsed,
+    totalCost,
+    sourceProductSku: input.sourceProductSku,
+    sourceProductName: input.sourceProductName,
+    lineType: "MATERIAL",
   };
 }
 
