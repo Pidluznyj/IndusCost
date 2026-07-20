@@ -100,6 +100,7 @@ src/lib/sales/salesOrderToCashFunnelFilters.test.ts
 src/lib/sales/orderToCashAuditBuilder.test.ts
 src/lib/sales/orderToCashAuditRebuild.test.ts
 src/lib/salesOrderListHasInvoiceFilter.test.ts
+src/lib/salesOrderListReceivableFilter.test.ts
 src/lib/finance/portfolioMaturityIntelligenceApi.test.ts
 src/lib/finance/portfolioOrderFulfillmentMap.test.ts
 src/lib/finance/portfolioCashForecastMaturity.test.ts

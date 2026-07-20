@@ -20,6 +20,12 @@ import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
+import {
+  andSalesOrderListWhere,
+  parseSalesOrderListReceivableStatusParam,
+  resolveSalesOrderListReceivableStatusWhere,
+  type SalesOrderListReceivableStatus,
+} from "./salesOrderListReceivableFilter.js";
 
 export type SalesOrderListQuery = {
   status: string;
@@ -34,6 +40,8 @@ export type SalesOrderListQuery = {
   q: string;
   /** `true` = Com NF; `false` = Sem NF; `null` = Todos. */
   hasInvoice: boolean | null;
+  /** Status de CR oficial via NF: open | settled | none. */
+  receivableStatus: SalesOrderListReceivableStatus | null;
   page: number;
   pageSize: number;
 };
@@ -82,6 +90,9 @@ export function parseSalesOrderListQuery(query: Record<string, unknown>): SalesO
     month: parseSalesOrderMonthParam(query.month),
     q: String(query.q ?? "").trim(),
     hasInvoice: parseSalesOrderListHasInvoiceParam(query.hasInvoice),
+    receivableStatus: parseSalesOrderListReceivableStatusParam(
+      query.receivableStatus
+    ),
     page: parsePositiveIntQuery(query.page, 1),
     pageSize: Math.min(parsePositiveIntQuery(query.pageSize, 20), 100),
   };
@@ -118,6 +129,22 @@ export function buildSalesOrderListWhereForQuery(
   });
 }
 
+/**
+ * Where completo da listagem (filtros sync + status de CR via NF).
+ */
+export async function resolveSalesOrderListWhere(
+  prisma: PrismaClient,
+  query: SalesOrderListQuery,
+  sellerWhere: Prisma.SalesOrderWhereInput | null
+): Promise<Prisma.SalesOrderWhereInput> {
+  const base = buildSalesOrderListWhereForQuery(query, sellerWhere);
+  const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
+    prisma,
+    query.receivableStatus
+  );
+  return andSalesOrderListWhere(base, receivableWhere);
+}
+
 /** Where da listagem sem filtro de vendedor (opções do select). */
 export function buildSalesOrderListWhereExcludingSeller(
   query: SalesOrderListQuery
@@ -135,12 +162,24 @@ export function buildSalesOrderListWhereExcludingSeller(
   });
 }
 
+export async function resolveSalesOrderListWhereExcludingSeller(
+  prisma: PrismaClient,
+  query: SalesOrderListQuery
+): Promise<Prisma.SalesOrderWhereInput> {
+  const base = buildSalesOrderListWhereExcludingSeller(query);
+  const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
+    prisma,
+    query.receivableStatus
+  );
+  return andSalesOrderListWhere(base, receivableWhere);
+}
+
 export async function loadSalesOrderSellerFilterOptions(
   prisma: PrismaClient,
   query: Record<string, unknown>
 ): Promise<SalesOrderSellerFilterOption[]> {
   const parsed = parseSalesOrderListQuery(query);
-  const where = buildSalesOrderListWhereExcludingSeller(parsed);
+  const where = await resolveSalesOrderListWhereExcludingSeller(prisma, parsed);
   const groups = await prisma.salesOrder.groupBy({
     by: ["externalSellerId"],
     where,
@@ -190,5 +229,12 @@ export function buildSalesOrderListFilterLabels(
   if (query.q) rows.push({ label: "Busca", value: query.q });
   if (query.hasInvoice === true) rows.push({ label: "Vínculo NF", value: "Com NF" });
   if (query.hasInvoice === false) rows.push({ label: "Vínculo NF", value: "Sem NF" });
+  if (query.receivableStatus === "open") {
+    rows.push({ label: "Status CR", value: "CR em aberto" });
+  } else if (query.receivableStatus === "settled") {
+    rows.push({ label: "Status CR", value: "CR quitado" });
+  } else if (query.receivableStatus === "none") {
+    rows.push({ label: "Status CR", value: "Sem CR" });
+  }
   return rows;
 }

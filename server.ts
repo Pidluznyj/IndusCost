@@ -387,9 +387,9 @@ import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderLi
 import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
 import { registerSalesOrderDetailRoutes } from "./src/lib/salesOrderDetailRoutes.js";
 import {
-  buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
 } from "./src/lib/salesOrderListQuery.server.js";
 import {
   attachMarginToSalesOrderDetail,
@@ -14440,7 +14440,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         sellerText: listQuery.sellerText,
       });
 
-      const where = buildSalesOrderListWhereForQuery(listQuery, sellerWhere);
+      const where = await resolveSalesOrderListWhere(prisma, listQuery, sellerWhere);
 
       const page = listQuery.page;
       const pageSize = listQuery.pageSize;

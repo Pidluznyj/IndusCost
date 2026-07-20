@@ -13,9 +13,9 @@ import {
 } from "./salesOrderNomusSellerDisplay.js";
 import {
   buildSalesOrderListFilterLabels,
-  buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
   type SalesOrderListQuery,
 } from "./salesOrderListQuery.server.js";
 import {
@@ -80,7 +80,7 @@ export async function loadSalesOrderListReportExportPayload(
     sellerKeyRaw: parsed.sellerKeyRaw,
     sellerText: parsed.sellerText,
   });
-  const where = buildSalesOrderListWhereForQuery(parsed, sellerWhere);
+  const where = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere);
   const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
   const sellerLabel = resolveSellerLabelForSummary(parsed, sellerIdentityCtx);
 

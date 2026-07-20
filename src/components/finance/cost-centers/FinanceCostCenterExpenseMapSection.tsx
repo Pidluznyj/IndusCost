@@ -518,9 +518,15 @@ export function FinanceCostCenterExpenseMapSection({
     setExportingPdf(true);
     setError(null);
     try {
+      const pdfExportQuery = buildCostCenterExpenseMapExportQuery(
+        appliedFilters,
+        drilldown,
+        isMultiCenterDetail ? detailCenterIds : undefined,
+        { sortBy: "dueDate", sortDirection: "desc" }
+      );
       const exportPath = isMultiCenterDetail
-        ? `/api/finance/cost-centers/detail/export-data?${exportQuery}`
-        : `/api/finance/cost-centers/${detailCenterIds[0]}/detail/export-data?${exportQuery}`;
+        ? `/api/finance/cost-centers/detail/export-data?${pdfExportQuery}`
+        : `/api/finance/cost-centers/${detailCenterIds[0]}/detail/export-data?${pdfExportQuery}`;
       const payload = await fetchJsonOk<CostCenterDetailExportPayload>(exportPath, {
         credentials: "include",
       });

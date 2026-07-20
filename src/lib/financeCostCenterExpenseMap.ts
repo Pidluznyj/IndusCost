@@ -259,7 +259,11 @@ export function buildCostCenterExpenseMapAllocationsQuery(
 export function buildCostCenterExpenseMapExportQuery(
   pageFilters: FinanceCostCentersUiFilters,
   drilldown: CostCenterExpenseMapDrilldownFilters,
-  costCenterIds?: string[]
+  costCenterIds?: string[],
+  options?: {
+    sortBy?: CostCenterDetailSortField;
+    sortDirection?: "asc" | "desc";
+  }
 ): string {
   const qs = new URLSearchParams(buildFinanceCostCentersDashboardQuery(pageFilters));
 
@@ -282,8 +286,8 @@ export function buildCostCenterExpenseMapExportQuery(
   appendIfPresent(qs, "paymentDateFrom", drilldown.paymentDateFrom);
   appendIfPresent(qs, "paymentDateTo", drilldown.paymentDateTo);
 
-  qs.set("sortBy", drilldown.sortBy);
-  qs.set("sortDirection", drilldown.sortDirection);
+  qs.set("sortBy", options?.sortBy ?? drilldown.sortBy);
+  qs.set("sortDirection", options?.sortDirection ?? drilldown.sortDirection);
   return qs.toString();
 }
 

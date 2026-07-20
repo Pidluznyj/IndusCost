@@ -128,10 +128,13 @@ export function buildCostCenterMonthlyChartQuery(
   appliedFilters: FinanceCostCentersUiFilters,
   costCenterIds: string[]
 ): string {
+  // Drilldown chart always shows the full AP universe for the center in the year
+  // (paid + open), regardless of status filters on the page.
   const q = new URLSearchParams(
     buildFinanceCostCentersDashboardQuery({
       ...appliedFilters,
-      month: null,
+      month: undefined,
+      status: "all",
     })
   );
   if (costCenterIds.length > 0) {

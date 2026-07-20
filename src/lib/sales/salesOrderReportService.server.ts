@@ -22,9 +22,9 @@ import {
   type OrderOfficialCrSummary,
 } from "./orderFiscalFinancialMetrics.js";
 import {
-  buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
   type SalesOrderListQuery,
 } from "../salesOrderListQuery.server.js";
 import { resolveSalesOrderListPaymentSummary } from "../salesOrderListPaymentSchedule.js";
@@ -142,7 +142,7 @@ export async function loadSalesOrderReportPayload(
     sellerKeyRaw: parsed.sellerKeyRaw,
     sellerText: parsed.sellerText,
   });
-  const where = buildSalesOrderListWhereForQuery(parsed, sellerWhere);
+  const where = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere);
   const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
   const sellerLabel = resolveSellerLabelForFilters(parsed, sellerIdentityCtx);
 

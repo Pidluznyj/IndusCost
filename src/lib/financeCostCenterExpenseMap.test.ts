@@ -6,6 +6,7 @@ import {
   aggregateCostCenterExpenseMapTotals,
   formatCostCenterExpenseMapSummaryCurrency,
   buildCostCenterExpenseMapAllocationsQuery,
+  buildCostCenterExpenseMapExportQuery,
   buildExpenseMapDetailTitle,
   formatExpenseMapSelectedCenterNames,
   buildCostCenterExpenseMapCards,
@@ -204,6 +205,47 @@ describe("financeCostCenterExpenseMap", () => {
     assert.ok(qs.includes("lockedOnly=true"));
     assert.ok(qs.includes("page=2"));
     assert.ok(qs.includes("sortBy=allocatedAmount"));
+  });
+
+
+  it("exportação PDF força ordenação por vencimento DESC", () => {
+    const filters = createDefaultFinanceCostCentersUiFilters();
+    const qs = buildCostCenterExpenseMapExportQuery(
+      filters,
+      {
+        ...DEFAULT_COST_CENTER_EXPENSE_MAP_DRILLDOWN_FILTERS,
+        sortBy: "allocatedAmount",
+        sortDirection: "asc",
+      },
+      undefined,
+      { sortBy: "dueDate", sortDirection: "desc" }
+    );
+    assert.ok(qs.includes("sortBy=dueDate"));
+    assert.ok(qs.includes("sortDirection=desc"));
+    assert.ok(!qs.includes("sortBy=allocatedAmount"));
+  });
+
+  it("PDF do detalhe usa ordenação por vencimento DESC na query", () => {
+    const section = readFileSync(
+      join(process.cwd(), "src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx"),
+      "utf8"
+    );
+    assert.match(section, /sortBy:\s*"dueDate"/);
+    assert.match(section, /sortDirection:\s*"desc"/);
+  });
+
+  it("gráfico mensal empilha pago e em aberto", () => {
+    const chart = readFileSync(
+      join(
+        process.cwd(),
+        "src/components/finance/cost-centers/FinanceCostCenterMonthlyDrilldownChart.tsx"
+      ),
+      "utf8"
+    );
+    assert.match(chart, /stackId="ap"/);
+    assert.match(chart, /dataKey="paidAmount"/);
+    assert.match(chart, /dataKey="openAmount"/);
+    assert.match(chart, /<Bar[\s\S]*dataKey="openAmount"/);
   });
 
   it("drilldown lista títulos por centro único ou consolidado na seleção", () => {

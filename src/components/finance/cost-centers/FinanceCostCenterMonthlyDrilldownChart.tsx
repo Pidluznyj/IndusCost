@@ -4,7 +4,6 @@ import {
   CartesianGrid,
   ComposedChart,
   Legend,
-  Line,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -139,17 +138,17 @@ export function FinanceCostCenterMonthlyDrilldownChart({
             dataKey="paidAmount"
             name="Pago / realizado"
             fill="#059669"
-            radius={[4, 4, 0, 0]}
-            maxBarSize={32}
+            stackId="ap"
+            radius={[0, 0, 0, 0]}
+            maxBarSize={36}
           />
-          <Line
-            type="monotone"
+          <Bar
             dataKey="openAmount"
             name="Previsto / em aberto"
-            stroke="#0284c7"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#0284c7" }}
-            activeDot={{ r: 4 }}
+            fill="#0284c7"
+            stackId="ap"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={36}
           />
         </ComposedChart>
       </ResponsiveContainer>

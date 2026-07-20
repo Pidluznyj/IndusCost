@@ -83,6 +83,25 @@ describe("financeCostCenterMonthlyChart", () => {
     assert.match(qs, /costCenterIds=cc-1/);
   });
 
+
+  it("query do gráfico força status=all mesmo com filtro da tela", () => {
+    const qs = buildCostCenterMonthlyChartQuery(
+      {
+        year: 2026,
+        month: 3,
+        status: "settled",
+        companyName: "",
+        costCenterId: "",
+        supplierId: "",
+        classification: "all",
+      },
+      ["cc-mp"]
+    );
+    assert.doesNotMatch(qs, /status=/);
+    assert.doesNotMatch(qs, /month=/);
+    assert.match(qs, /costCenterIds=cc-mp/);
+  });
+
   it("formata rótulo de período com destaque de mês filtrado", () => {
     assert.match(formatCostCenterMonthlyChartPeriodLabel(2026, 6), /06\/2026/);
     assert.match(formatCostCenterMonthlyChartPeriodLabel(2026, null), /Ano 2026/);

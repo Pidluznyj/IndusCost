@@ -41,9 +41,9 @@ import {
 } from "./salesOrderNomusSellerDisplay.js";
 import { loadCommissionSellerIdentityContext } from "./commissions/commissionSellerIdentity.server.js";
 import {
-  buildSalesOrderListWhereForQuery,
   parseSalesOrderListQuery,
   resolveSalesOrderListSellerWhere,
+  resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
 
 export type SalesOrderInternalMarginExportScope = "list" | "management" | "indicators";
@@ -452,7 +452,7 @@ export async function loadSalesOrderInternalMarginExportPayload(
     sellerText: listQuery.sellerText,
   });
 
-  const where = buildSalesOrderListWhereForQuery(listQuery, sellerWhere);
+  const where = await resolveSalesOrderListWhere(prisma, listQuery, sellerWhere);
 
   const orders = await prisma.salesOrder.findMany({
     where,

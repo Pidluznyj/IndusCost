@@ -32,6 +32,7 @@ import {
   buildSalesOrderYearOptions,
 } from "@/src/lib/salesOrderPeriodFilter";
 import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
+import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
 import {
   downloadInternalMarginExport,
   getSalesOrderListInternalMarginExportUrl,
@@ -176,6 +177,7 @@ function SalesOrderList() {
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
   const [hasInvoice, setHasInvoice] = useState("");
+  const [receivableStatus, setReceivableStatus] = useState("");
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(null);
   const [sellerKey, setSellerKey] = useState("");
@@ -225,6 +227,7 @@ function SalesOrderList() {
       JSON.stringify({
         status,
         hasInvoice,
+        receivableStatus,
         customerId,
         sellerKey,
         startDate,
@@ -233,13 +236,25 @@ function SalesOrderList() {
         month,
         search,
       }),
-    [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]
+    [
+      status,
+      hasInvoice,
+      receivableStatus,
+      customerId,
+      sellerKey,
+      startDate,
+      endDate,
+      year,
+      month,
+      search,
+    ]
   );
   const sellerOptionsFiltersKey = useMemo(
     () =>
       JSON.stringify({
         status,
         hasInvoice,
+        receivableStatus,
         customerId,
         startDate,
         endDate,
@@ -247,7 +262,17 @@ function SalesOrderList() {
         month,
         search,
       }),
-    [status, hasInvoice, customerId, startDate, endDate, year, month, search]
+    [
+      status,
+      hasInvoice,
+      receivableStatus,
+      customerId,
+      startDate,
+      endDate,
+      year,
+      month,
+      search,
+    ]
   );
   const prevListFiltersKeyRef = useRef<string | null>(null);
 
@@ -255,6 +280,7 @@ function SalesOrderList() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (hasInvoice) params.set("hasInvoice", hasInvoice);
+    if (receivableStatus) params.set("receivableStatus", receivableStatus);
     if (customerId) params.set("customerId", customerId);
     if (sellerKey) params.set("sellerKey", sellerKey);
     if (startDate) params.set("startDate", startDate);
@@ -263,7 +289,18 @@ function SalesOrderList() {
     if (month) params.set("month", month);
     if (search) params.set("q", search);
     return params.toString();
-  }, [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]);
+  }, [
+    status,
+    hasInvoice,
+    receivableStatus,
+    customerId,
+    sellerKey,
+    startDate,
+    endDate,
+    year,
+    month,
+    search,
+  ]);
 
   const internalExportQuery = listExportQuery;
 
@@ -353,6 +390,7 @@ function SalesOrderList() {
         params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
         if (status) params.set("status", status);
         if (hasInvoice) params.set("hasInvoice", hasInvoice);
+        if (receivableStatus) params.set("receivableStatus", receivableStatus);
         if (customerId) params.set("customerId", customerId);
         if (sellerKey) params.set("sellerKey", sellerKey);
         if (startDate) params.set("startDate", startDate);
@@ -400,7 +438,7 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, hasInvoice, customerId, sellerKey, startDate, endDate, year, month, search]
+    [status, hasInvoice, receivableStatus, customerId, sellerKey, startDate, endDate, year, month, search]
   );
 
   useEffect(() => {
@@ -409,6 +447,7 @@ function SalesOrderList() {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (hasInvoice) params.set("hasInvoice", hasInvoice);
+    if (receivableStatus) params.set("receivableStatus", receivableStatus);
     if (customerId) params.set("customerId", customerId);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
@@ -432,7 +471,7 @@ function SalesOrderList() {
         if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => ac.abort();
-  }, [sellerOptionsFiltersKey, status, hasInvoice, customerId, startDate, endDate, year, month, search]);
+  }, [sellerOptionsFiltersKey, status, hasInvoice, receivableStatus, customerId, startDate, endDate, year, month, search]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -553,8 +592,8 @@ function SalesOrderList() {
             />
           </div>
 
-          {/* Linha 2: cliente + vendedor + datas */}
-          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
+          {/* Linha 2: cliente + vendedor + datas + status CR */}
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3">
             <CustomerAutocompleteFilter
               label="Cliente"
               value={customerSelection}
@@ -569,7 +608,7 @@ function SalesOrderList() {
               }}
             />
           </div>
-          <div className="col-span-12 sm:col-span-6 lg:col-span-4">
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3">
             <FilterLabel htmlFor="sales-orders-seller-filter">Vendedor</FilterLabel>
             <select
               id="sales-orders-seller-filter"
@@ -609,6 +648,23 @@ function SalesOrderList() {
               onChange={(e) => setEndDate(e.target.value)}
             />
           </div>
+          <div className="col-span-12 sm:col-span-6 lg:col-span-2">
+            <FilterLabel htmlFor="sales-orders-filter-receivable-status">Status CR</FilterLabel>
+            <select
+              id="sales-orders-filter-receivable-status"
+              className={SALES_FILTER_CONTROL_CLASS}
+              value={receivableStatus}
+              onChange={(e) => setReceivableStatus(e.target.value)}
+              aria-label="Filtrar por status de Contas a Receber"
+              data-testid="sales-orders-filter-receivable-status"
+            >
+              {RECEIVABLE_STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* Barra de ações — separada por divisor, alinhada à direita, botões
@@ -621,6 +677,7 @@ function SalesOrderList() {
             onClick={() => {
               setStatus("");
               setHasInvoice("");
+              setReceivableStatus("");
               setCustomerId("");
               setCustomerSelection(null);
               setSellerKey("");
