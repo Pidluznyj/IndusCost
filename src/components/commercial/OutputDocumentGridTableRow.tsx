@@ -35,7 +35,7 @@ export function OutputDocumentGridTableRow({
       aria-label={`Abrir detalhe do Documento de Saída ${documentLabel}`}
       className={cn(
         "cursor-pointer border-b border-border/70 outline-none last:border-0 hover:bg-muted/30 focus-visible:bg-muted/40 data-[selected=true]:bg-primary/5",
-        item.isCancelled && "bg-rose-50/40 text-muted-foreground"
+        item.isCancelled && "bg-rose-50/50 text-muted-foreground"
       )}
       data-testid={`output-documents-row-${item.externalId}`}
       onClick={onOpen}

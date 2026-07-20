@@ -53,6 +53,7 @@ import {
   OUTPUT_DOCUMENTS_PAGE_TITLE,
   OUTPUT_DOCUMENTS_ROUTE_PATH,
   outputDocumentFinancialStatusTone,
+  outputDocumentStatusTone,
   parseOutputDocumentsFinancialStatusParam,
   applyOutputDocumentsKpiPreset,
   buildOutputDocumentsPageCsv,
@@ -285,6 +286,13 @@ describe("outputDocumentsUi", () => {
       "Aguardando CR"
     );
     assert.equal(outputDocumentFinancialStatusTone("vencido"), "rose");
+    assert.equal(outputDocumentFinancialStatusTone("aguardando_cr"), "amber");
+    assert.equal(outputDocumentFinancialStatusTone("recebido"), "emerald");
+    assert.equal(outputDocumentFinancialStatusTone("cancelado"), "rose");
+    assert.equal(
+      outputDocumentStatusTone(gridItem({ isCancelled: true })),
+      "rose"
+    );
     assert.equal(
       formatOutputDocumentStatusLabel(gridItem({ isCancelled: true })),
       "Cancelado"
@@ -411,6 +419,71 @@ describe("output documents page filters cards and grid", () => {
     );
     assert.match(cancelled, /data-cancelled="true"/);
     assert.match(cancelled, /Cancelado/);
+    assert.match(cancelled, /bg-rose-50/);
+  });
+
+  it("alinha scroll, tipografia do grid e estados vazios ao padrão de OP", () => {
+    const source = read(
+      "src/components/commercial/OutputDocumentsModule.tsx"
+    );
+    assert.match(source, /output-documents-grid-top-scroll/);
+    assert.match(source, /topGridScrollRef/);
+    assert.match(source, /gridScrollRef/);
+    assert.match(source, /min-w-\[1180px\]/);
+    assert.match(source, /space-y-4/);
+    assert.match(source, /p-10 text-center text-sm text-muted-foreground/);
+    assert.match(source, /bg-muted\/40 text-xs uppercase tracking-wider/);
+    assert.match(source, /overflow-x-auto overflow-y-hidden/);
+    assert.doesNotMatch(source, /min-w-\[64rem\]/);
+  });
+
+  it("badges financeiros e de status usam tons executivos suaves", () => {
+    const cancelled = renderRow(
+      gridItem({
+        isCancelled: true,
+        statusRaw: null,
+        financialStatus: "cancelado",
+      })
+    );
+    assert.match(cancelled, /bg-rose-50/);
+    assert.match(cancelled, /text-rose-800/);
+    assert.doesNotMatch(cancelled, /bg-rose-500 text-white/);
+
+    const awaiting = renderRow(
+      gridItem({
+        isCancelled: false,
+        financialStatus: "aguardando_cr",
+      })
+    );
+    assert.match(awaiting, /Aguardando CR/);
+    assert.match(awaiting, /bg-amber-50/);
+    assert.match(awaiting, /text-amber-900/);
+    assert.doesNotMatch(awaiting, /bg-amber-500 text-white/);
+
+    const received = renderRow(
+      gridItem({
+        isCancelled: false,
+        financialStatus: "recebido",
+        receivableOpenValue: 0,
+      })
+    );
+    assert.match(received, /Recebido/);
+    assert.match(received, /bg-emerald-50/);
+    assert.match(received, /text-emerald-800/);
+    assert.doesNotMatch(received, /bg-emerald-500 text-white/);
+  });
+
+  it("drawer detalhe preserva largura, abas e estados vazios do padrão OP", () => {
+    const source = read(
+      "src/components/commercial/OutputDocumentDetailOverlay.tsx"
+    );
+    assert.match(source, /!max-w-\[1400px\]/);
+    assert.match(source, /size="full"/);
+    assert.match(source, /OverlayBody className="bg-\[color:var\(--color-overlay-surface-muted\)\] px-4 py-4"/);
+    assert.match(source, /variant="pill"/);
+    assert.match(source, /border-dashed border-border p-5 text-center/);
+    assert.match(source, /output-document-detail-orders-empty/);
+    assert.match(source, /output-document-detail-nfes-empty/);
   });
 
   it("paginação usa pageSize do backend e controles Anterior/Próxima", () => {

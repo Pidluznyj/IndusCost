@@ -2,6 +2,7 @@ import React, {
   createElement,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -171,6 +172,9 @@ export function OutputDocumentsModule() {
     useState<OutputDocumentsListSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const topGridScrollRef = useRef<HTMLDivElement>(null);
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  const [gridScrollWidth, setGridScrollWidth] = useState(1280);
   const [retryToken, setRetryToken] = useState(0);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     () => {
@@ -425,6 +429,24 @@ export function OutputDocumentsModule() {
     hasLoadedOnce && !loading && !errorMessage && totalItems === 0 && !filtersActive;
   const showEmptyFilters =
     hasLoadedOnce && !loading && !errorMessage && totalItems === 0 && filtersActive;
+
+  useEffect(() => {
+    const viewport = gridScrollRef.current;
+    if (!viewport) return;
+    const updateWidth = () =>
+      setGridScrollWidth(Math.max(viewport.scrollWidth, viewport.clientWidth));
+    updateWidth();
+    const observer =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updateWidth);
+    observer?.observe(viewport);
+    const table = viewport.querySelector("table");
+    if (table) observer?.observe(table);
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, [items]);
 
   const clearFilters = () => {
     setSearchDraft("");
@@ -840,25 +862,25 @@ export function OutputDocumentsModule() {
           ) : null}
           {initialLoading ? (
             <div
-              className="space-y-3 p-4"
+              className="space-y-3 p-10"
               data-testid="output-documents-loading"
               role="status"
               aria-live="polite"
               aria-label="Carregando Documentos de Saída"
             >
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 Carregando Documentos de Saída…
               </div>
               <div
-                className="space-y-2"
+                className="mx-auto max-w-3xl space-y-2"
                 data-testid="output-documents-skeleton"
                 aria-hidden="true"
               >
-                {Array.from({ length: 6 }).map((_, index) => (
+                {Array.from({ length: 5 }).map((_, index) => (
                   <div
                     key={index}
-                    className="h-10 animate-pulse rounded-md bg-muted/70"
+                    className="h-9 animate-pulse rounded-md bg-muted/50"
                   />
                 ))}
               </div>
@@ -878,68 +900,94 @@ export function OutputDocumentsModule() {
               Nenhum resultado para os filtros aplicados.
             </div>
           ) : (
-            <div className="max-w-full overflow-x-auto" data-testid="output-documents-grid-scroll">
-              <table className="w-full min-w-[64rem] text-left text-sm">
-                <caption className="sr-only">
-                  Documentos de Saída sincronizados do Nomus. Ative uma linha para
-                  abrir o detalhe.
-                </caption>
-                <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
-                  <tr>
-                    {GRID_COLUMNS.map((column) => (
-                      <th
-                        key={column.label}
-                        className={cn(
-                          "whitespace-nowrap px-3 py-2 font-medium",
-                          column.align === "right" ? "text-right" : undefined
-                        )}
-                        aria-sort={
-                          column.sortKey && sortBy === column.sortKey
-                            ? sortDir === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : undefined
-                        }
-                      >
-                        {column.sortKey ? (
-                          <button
-                            type="button"
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded px-0.5 py-0.5 hover:text-foreground",
-                              column.align === "right" && "ml-auto",
-                              sortBy === column.sortKey && "text-foreground"
-                            )}
-                            data-testid={`output-documents-sort-${column.sortKey}`}
-                            onClick={() => toggleSort(column.sortKey!)}
-                          >
-                            {column.label}
-                            {sortBy === column.sortKey ? (
-                              sortDir === "asc" ? (
-                                <ArrowUp className="h-3 w-3" aria-hidden="true" />
-                              ) : (
-                                <ArrowDown className="h-3 w-3" aria-hidden="true" />
-                              )
-                            ) : null}
-                          </button>
-                        ) : (
-                          column.label
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) =>
-                    createElement(OutputDocumentGridTableRow, {
-                      key: item.id,
-                      item,
-                      selected: selectedDocumentId === item.id,
-                      onOpen: () => setSelectedDocumentId(item.id),
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <div
+                ref={topGridScrollRef}
+                className="max-w-full overflow-x-auto overflow-y-hidden"
+                data-testid="output-documents-grid-top-scroll"
+                aria-label="Rolagem horizontal superior da tabela"
+                onScroll={(event) => {
+                  const grid = gridScrollRef.current;
+                  if (grid && grid.scrollLeft !== event.currentTarget.scrollLeft) {
+                    grid.scrollLeft = event.currentTarget.scrollLeft;
+                  }
+                }}
+              >
+                <div className="h-px" style={{ width: gridScrollWidth }} aria-hidden="true" />
+              </div>
+              <div
+                ref={gridScrollRef}
+                className="max-w-full overflow-x-auto"
+                data-testid="output-documents-grid-scroll"
+                onScroll={(event) => {
+                  const top = topGridScrollRef.current;
+                  if (top && top.scrollLeft !== event.currentTarget.scrollLeft) {
+                    top.scrollLeft = event.currentTarget.scrollLeft;
+                  }
+                }}
+              >
+                <table className="min-w-[1180px] text-left text-sm">
+                  <caption className="sr-only">
+                    Documentos de Saída sincronizados do Nomus. Ative uma linha para
+                    abrir o detalhe.
+                  </caption>
+                  <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wider text-muted-foreground">
+                    <tr>
+                      {GRID_COLUMNS.map((column) => (
+                        <th
+                          key={column.label}
+                          className={cn(
+                            "whitespace-nowrap px-3 py-2 font-medium",
+                            column.align === "right" ? "text-right" : undefined
+                          )}
+                          aria-sort={
+                            column.sortKey && sortBy === column.sortKey
+                              ? sortDir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : undefined
+                          }
+                        >
+                          {column.sortKey ? (
+                            <button
+                              type="button"
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded px-0.5 py-0.5 hover:text-foreground",
+                                column.align === "right" && "ml-auto",
+                                sortBy === column.sortKey && "text-foreground"
+                              )}
+                              data-testid={`output-documents-sort-${column.sortKey}`}
+                              onClick={() => toggleSort(column.sortKey!)}
+                            >
+                              {column.label}
+                              {sortBy === column.sortKey ? (
+                                sortDir === "asc" ? (
+                                  <ArrowUp className="h-3 w-3" aria-hidden="true" />
+                                ) : (
+                                  <ArrowDown className="h-3 w-3" aria-hidden="true" />
+                                )
+                              ) : null}
+                            </button>
+                          ) : (
+                            column.label
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) =>
+                      createElement(OutputDocumentGridTableRow, {
+                        key: item.id,
+                        item,
+                        selected: selectedDocumentId === item.id,
+                        onOpen: () => setSelectedDocumentId(item.id),
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </section>
       ) : null}
