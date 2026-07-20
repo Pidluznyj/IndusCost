@@ -47,6 +47,7 @@ import {
   type ResolvedOrderSellerIdentity,
 } from "@/src/lib/commercial/orderSellerIdentityResolver.js";
 import { loadCommissionSellerIdentityContext } from "@/src/lib/commissions/commissionSellerIdentity.server.js";
+import { resolveCommissionSellerDisplay } from "@/src/lib/commissions/commissionSellerDisplay.js";
 import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
 import {
   buildEffectiveScheduleConsumerAlerts,
@@ -1086,6 +1087,39 @@ export type OrderFullAuditCommissionCustomerException = {
   productCode: string | null;
   commissionPersonName: string | null;
 };
+
+/** Select Prisma válido de CommissionPerson (schema não tem `canonicalName`). */
+export const ORDER_FULL_AUDIT_COMMISSION_PERSON_SELECT = {
+  id: true,
+  name: true,
+} as const;
+
+/**
+ * Mapeia exceção de cliente para o DTO da auditoria.
+ * Nome canônico = CommissionPerson.name via resolvedor oficial de comissões.
+ */
+export function mapOrderFullAuditCommissionCustomerException(e: {
+  id: string;
+  reason: string | null;
+  startDate: Date;
+  endDate: Date | null;
+  active: boolean;
+  productCode: string | null;
+  commissionPerson: { id: string; name: string } | null;
+}): OrderFullAuditCommissionCustomerException {
+  const seller = resolveCommissionSellerDisplay({
+    commissionPerson: e.commissionPerson,
+  });
+  return {
+    id: e.id,
+    reason: e.reason ?? "",
+    startDate: toIso(e.startDate),
+    endDate: toIso(e.endDate ?? null),
+    active: e.active,
+    productCode: e.productCode ?? null,
+    commissionPersonName: seller.name,
+  };
+}
 
 export type OrderFullAuditCommissionBlock = {
   present: boolean;
@@ -5130,7 +5164,9 @@ async function loadCommissionBlock(input: {
                 ],
               },
               include: {
-                commissionPerson: { select: { canonicalName: true, id: true } },
+                commissionPerson: {
+                  select: ORDER_FULL_AUDIT_COMMISSION_PERSON_SELECT,
+                },
               },
             })
             .catch(() => [])
@@ -5151,15 +5187,9 @@ async function loadCommissionBlock(input: {
 
     if (!snapshot) {
       // Sem snapshot: bloco vazio + exceções (se existirem).
-      empty.customerExceptions = customerExceptions.map((e) => ({
-        id: e.id,
-        reason: e.reason ?? "",
-        startDate: toIso(e.startDate),
-        endDate: toIso(e.endDate ?? null),
-        active: e.active,
-        productCode: e.productCode ?? null,
-        commissionPersonName: e.commissionPerson?.canonicalName ?? null,
-      }));
+      empty.customerExceptions = customerExceptions.map(
+        mapOrderFullAuditCommissionCustomerException
+      );
       return empty;
     }
 
@@ -5371,15 +5401,9 @@ async function loadCommissionBlock(input: {
       items,
       receivableSchedule,
       receipts,
-      customerExceptions: customerExceptions.map((e) => ({
-        id: e.id,
-        reason: e.reason ?? "",
-        startDate: toIso(e.startDate),
-        endDate: toIso(e.endDate ?? null),
-        active: e.active,
-        productCode: e.productCode ?? null,
-        commissionPersonName: e.commissionPerson?.canonicalName ?? null,
-      })),
+      customerExceptions: customerExceptions.map(
+        mapOrderFullAuditCommissionCustomerException
+      ),
     };
   } catch (e) {
     console.warn(
