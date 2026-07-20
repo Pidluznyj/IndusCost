@@ -61,22 +61,27 @@ function SummaryKpiCard({
   );
 }
 
+function shortTaxSource(label: string): string {
+  const raw = label.trim().toLowerCase();
+  if (raw.startsWith("real")) return "Real";
+  if (raw.startsWith("estimado")) return "Estim.";
+  if (raw.startsWith("misto")) return "Misto";
+  if (raw.startsWith("incompleto")) return "Inc.";
+  return label;
+}
+
 function RowCells({ row }: { row: SalesOrderIndustrialResultReportRow }) {
   const commercial = moneyOrDash(row.orderCommercialValue);
+  const taxes = moneyOrDash(row.totalTaxes);
+  const costTotal = moneyOrDash(row.totalIndustrialCost);
   const result = moneyOrDash(row.industrialResult, true);
   const incomplete = !row.includedInConsolidation;
   return (
     <tr className={incomplete ? "sales-orders-industrial-print-row--incomplete" : undefined}>
-      <td>{displayFinanceText(row.orderCode)}</td>
-      <td>{formatFinanceDate(row.issueDate)}</td>
-      <td>{displayFinanceText(row.customerName)}</td>
-      <td>{displayFinanceText(row.sellerName)}</td>
-      <td>{displayFinanceText(row.orderStatusLabel)}</td>
-      <td>{displayFinanceText(row.invoiceStatusLabel)}</td>
+      <td className="sales-orders-industrial-col-order">{displayFinanceText(row.orderCode)}</td>
+      <td className="sales-orders-industrial-col-date">{formatFinanceDate(row.issueDate)}</td>
+      <td className="sales-orders-industrial-col-customer">{displayFinanceText(row.customerName)}</td>
       <td className={commercial.className}>{commercial.text}</td>
-      <td className={moneyOrDash(row.revenueAfterTaxes).className}>
-        {moneyOrDash(row.revenueAfterTaxes).text}
-      </td>
       <td className={moneyOrDash(row.materialCost).className}>
         {moneyOrDash(row.materialCost).text}
       </td>
@@ -89,27 +94,15 @@ function RowCells({ row }: { row: SalesOrderIndustrialResultReportRow }) {
       <td className={moneyOrDash(row.otherIndustrialCost).className}>
         {moneyOrDash(row.otherIndustrialCost).text}
       </td>
-      <td className={moneyOrDash(row.totalIndustrialCost).className}>
-        {moneyOrDash(row.totalIndustrialCost).text}
+      <td className={costTotal.className}>{costTotal.text}</td>
+      <td className={taxes.className}>{taxes.text}</td>
+      <td className="sales-orders-industrial-col-tax-source">
+        {shortTaxSource(row.taxSourceLabel)}
       </td>
-      <td className={moneyOrDash(row.icms).className}>{moneyOrDash(row.icms).text}</td>
-      <td className={moneyOrDash(row.ipi).className}>{moneyOrDash(row.ipi).text}</td>
-      <td className={moneyOrDash(row.pis).className}>{moneyOrDash(row.pis).text}</td>
-      <td className={moneyOrDash(row.cofins).className}>{moneyOrDash(row.cofins).text}</td>
-      <td className={moneyOrDash(row.icmsSt).className}>{moneyOrDash(row.icmsSt).text}</td>
-      <td className={moneyOrDash(row.difal).className}>{moneyOrDash(row.difal).text}</td>
-      <td className={moneyOrDash(row.fcp).className}>{moneyOrDash(row.fcp).text}</td>
-      <td className={moneyOrDash(row.otherTaxes).className}>
-        {moneyOrDash(row.otherTaxes).text}
-      </td>
-      <td className={moneyOrDash(row.totalTaxes).className}>
-        {moneyOrDash(row.totalTaxes).text}
-      </td>
-      <td>{displayFinanceText(row.taxSourceLabel)}</td>
       <td className={result.className}>{result.text}</td>
-      <td className="sales-orders-print-money">{percentOrDash(row.industrialMarginPercent)}</td>
-      <td>{displayFinanceText(row.costSourceStatusLabel)}</td>
-      <td>{displayFinanceText(row.costTableVersionLabel ?? "—")}</td>
+      <td className="sales-orders-print-money sales-orders-industrial-col-margin">
+        {percentOrDash(row.industrialMarginPercent)}
+      </td>
     </tr>
   );
 }
@@ -122,6 +115,11 @@ export function SalesOrderIndustrialResultReportPrintDocument({
   branding: BrandingSettingsDTO;
 }) {
   const s = payload.summary;
+  const incompleteNote =
+    s.incompleteCostOrdersCount + s.incompleteTaxOrdersCount > 0
+      ? ` · ${s.incompleteCostOrdersCount} sem custo · ${s.incompleteTaxOrdersCount} com imposto incompleto (fora da consolidação)`
+      : "";
+
   return (
     <div
       id="sales-orders-print-root"
@@ -130,22 +128,10 @@ export function SalesOrderIndustrialResultReportPrintDocument({
     >
       <SalesOrderIndustrialResultReportPrintCover payload={payload} branding={branding} />
 
-      <section className="sales-orders-print-summary-grid">
-        <SummaryKpiCard label="Pedidos" value={formatFinanceInteger(s.ordersCount)} />
+      <section className="sales-orders-print-summary-grid sales-orders-industrial-summary-grid">
         <SummaryKpiCard
-          label="Completos"
-          value={formatFinanceInteger(s.completeOrdersCount)}
-          tone="positive"
-        />
-        <SummaryKpiCard
-          label="Custo incompleto"
-          value={formatFinanceInteger(s.incompleteCostOrdersCount)}
-          tone={s.incompleteCostOrdersCount > 0 ? "warning" : "neutral"}
-        />
-        <SummaryKpiCard
-          label="Imposto incompleto"
-          value={formatFinanceInteger(s.incompleteTaxOrdersCount)}
-          tone={s.incompleteTaxOrdersCount > 0 ? "warning" : "neutral"}
+          label="Pedidos"
+          value={`${formatFinanceInteger(s.completeOrdersCount)} / ${formatFinanceInteger(s.ordersCount)}`}
         />
         <SummaryKpiCard
           label="Valor comercial"
@@ -156,13 +142,8 @@ export function SalesOrderIndustrialResultReportPrintDocument({
           value={formatFinanceCurrency(s.totalIndustrialCostTotal)}
         />
         <SummaryKpiCard
-          label="Total impostos"
+          label="Impostos"
           value={formatFinanceCurrency(s.totalTaxesTotal)}
-        />
-        <SummaryKpiCard
-          label="Receita após impostos"
-          value={formatFinanceCurrency(s.revenueAfterTaxesTotal)}
-          tone="info"
         />
         <SummaryKpiCard
           label="Resultado industrial"
@@ -180,44 +161,49 @@ export function SalesOrderIndustrialResultReportPrintDocument({
         />
       </section>
 
+      <p className="sales-orders-industrial-flow-note">
+        Leitura: valor do pedido − impostos − custos (MP + HH + HM + outros) = quanto sobra
+        {incompleteNote}.
+      </p>
+
       <table className="sales-orders-print-table sales-orders-industrial-print-table">
+        <colgroup>
+          <col className="sales-orders-industrial-col-order" />
+          <col className="sales-orders-industrial-col-date" />
+          <col className="sales-orders-industrial-col-customer" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-money-strong" />
+          <col className="sales-orders-industrial-col-money" />
+          <col className="sales-orders-industrial-col-tax-source" />
+          <col className="sales-orders-industrial-col-money-strong" />
+          <col className="sales-orders-industrial-col-margin" />
+        </colgroup>
         <thead>
           <tr>
-            <th colSpan={6}>Identificação</th>
-            <th colSpan={2}>Receita</th>
-            <th colSpan={5}>Custos</th>
-            <th colSpan={10}>Impostos</th>
-            <th colSpan={2}>Resultado</th>
-            <th colSpan={2}>Rastreabilidade</th>
+            <th colSpan={3}>Pedido</th>
+            <th>Receita</th>
+            <th colSpan={5}>Custos industriais</th>
+            <th colSpan={2}>Impostos</th>
+            <th colSpan={2}>Quanto sobra</th>
           </tr>
           <tr>
             <th>Pedido</th>
             <th>Data</th>
             <th>Cliente</th>
-            <th>Vendedor</th>
-            <th>Situação</th>
-            <th>NF</th>
-            <th>Valor pedido</th>
-            <th>Receita após imp.</th>
+            <th>Valor</th>
             <th>MP</th>
             <th>HH</th>
             <th>HM</th>
             <th>Outros</th>
-            <th>Custo total</th>
-            <th>ICMS</th>
-            <th>IPI</th>
-            <th>PIS</th>
-            <th>COFINS</th>
-            <th>ICMS-ST</th>
-            <th>DIFAL</th>
-            <th>FCP</th>
-            <th>Outros imp.</th>
-            <th>Total imp.</th>
+            <th>Custo</th>
+            <th>Total</th>
             <th>Fonte</th>
-            <th>Resultado ind.</th>
-            <th>Margem %</th>
-            <th>Fonte custo</th>
-            <th>Versão</th>
+            <th>Resultado</th>
+            <th>Margem</th>
           </tr>
         </thead>
         <tbody>

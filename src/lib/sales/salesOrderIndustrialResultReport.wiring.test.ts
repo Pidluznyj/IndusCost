@@ -42,9 +42,13 @@ describe("salesOrderIndustrialResultReport wiring", () => {
     assert.match(doc, /sales-orders-industrial-result-print-document/);
     assert.match(doc, /Resultado industrial/);
     assert.match(doc, /Margem industrial/);
+    assert.match(doc, /Quanto sobra/);
+    assert.match(doc, /Custos industriais/);
+    assert.doesNotMatch(doc, /<th>ICMS<\/th>/);
+    assert.doesNotMatch(doc, /<th>Vendedor<\/th>/);
     assert.match(doc, /id="sales-orders-print-root"/);
     assert.match(css, /sales-orders-industrial-print-route/);
-    assert.match(css, /A3 landscape/);
+    assert.match(css, /A4 landscape/);
   });
 
   it("custo histórico não usa fallback live e reconcilia breakdown", () => {

@@ -738,25 +738,80 @@
 }
 
 
-/* Resultado Industrial — A3 paisagem para acomodar colunas */
-body.sales-orders-industrial-print-route {
-  @page {
-    size: A3 landscape;
-    margin: 8mm 8mm 10mm 8mm;
+
+/* Resultado Industrial — layout enxuto (A4 paisagem, colunas essenciais) */
+@media print {
+  body.sales-orders-industrial-print-route {
+    @page {
+      size: A4 landscape;
+      margin: 8mm 8mm 10mm 8mm;
+    }
   }
-}
 
-.sales-orders-industrial-print-table {
-  font-size: 7.5px;
-}
+  body.sales-orders-industrial-print-route .sales-orders-industrial-summary-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    margin-bottom: 6px;
+  }
 
-.sales-orders-industrial-print-table th,
-.sales-orders-industrial-print-table td {
-  padding: 2px 3px;
-  white-space: nowrap;
-}
+  body.sales-orders-industrial-print-route .sales-orders-industrial-flow-note {
+    display: block;
+    margin: 0 0 6px;
+    font-size: 8px;
+    color: #475569;
+    line-height: 1.35;
+  }
 
-.sales-orders-industrial-print-row--incomplete td {
-  opacity: 0.72;
-  font-style: italic;
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table {
+    table-layout: fixed;
+    width: 100%;
+    font-size: 8.5px;
+    border-collapse: collapse;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-order { width: 7%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-date { width: 6%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-customer { width: 17%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-money { width: 7%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-money-strong { width: 8%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-tax-source { width: 5%; }
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table col.sales-orders-industrial-col-margin { width: 5.5%; }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table th,
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table td {
+    padding: 3px 4px;
+    vertical-align: top;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border: 1px solid #cbd5e1;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table thead tr:first-child th {
+    background: #e2e8f0;
+    font-size: 7.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    text-align: center;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-table thead tr:last-child th {
+    background: #f8fafc;
+    font-size: 7.5px;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-col-customer {
+    white-space: normal !important;
+    word-break: break-word;
+    line-height: 1.25;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-col-tax-source {
+    text-align: center;
+  }
+
+  body.sales-orders-industrial-print-route .sales-orders-industrial-print-row--incomplete td {
+    opacity: 0.7;
+    font-style: italic;
+  }
 }

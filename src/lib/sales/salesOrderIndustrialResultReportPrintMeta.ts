@@ -11,7 +11,7 @@ export const SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_SUBTITLE =
 export const SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_DATA_SOURCE =
   "Pedidos de Venda Nomus + tabelas de custo publicadas + NF / TaxRule";
 export const SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_DISCLAIMER =
-  "Resultado industrial = valor comercial − impostos − custo industrial histórico. Não é lucro líquido. Pedidos com custo ou imposto incompleto são excluídos da consolidação.";
+  "Resultado industrial = valor do pedido − impostos − custo industrial histórico (MP + HH + HM + outros). Não é lucro líquido. Pedidos incompletos ficam fora da consolidação.";
 export const SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_FOOTER_NOTE =
   "Documento gerado pelo IndusCost · Resultado Industrial dos Pedidos";
 
