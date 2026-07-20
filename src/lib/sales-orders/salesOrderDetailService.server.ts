@@ -275,7 +275,8 @@ function mapStockDocuments(
 ): SalesOrderDetailStockDocument[] {
   return docs.map((doc) => ({
     stockDocumentExternalId: doc.stockDocumentExternalId,
-    numero: String(doc.stockDocumentExternalId),
+    numero:
+      doc.documentNumber?.trim() || String(doc.stockDocumentExternalId),
     dataDocumento: doc.dataDocumento ?? null,
     valorTotal: doc.totalValue ?? null,
     allocatedValueToOrder: round2(doc.allocatedValue),

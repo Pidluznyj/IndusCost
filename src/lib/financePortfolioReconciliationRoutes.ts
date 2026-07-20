@@ -1,5 +1,6 @@
 import type express from "express";
 import type { RequestHandler } from "express";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { financeApiErrorJson } from "./financeTabLoadError.js";
 import { PortfolioReconciliationApiParseError } from "./finance/portfolioReconciliationApi.js";
 import {
@@ -31,16 +32,22 @@ import { getOrderFullAudit } from "./finance/orderFullAuditService.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
+import {
+  decideOutputDocumentRawAccess,
+  parseIncludeRawFlag,
+} from "./output-documents/outputDocumentsRawAccess.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
+  getCurrentAppUser: (req: express.Request) => Promise<AppAuthContext | null>;
 };
 
 export function registerFinancePortfolioReconciliationRoutes(
   app: express.Express,
   auth: AuthGuards
 ) {
+  const { getCurrentAppUser } = auth;
   const moduleGuard = [
     auth.requireAppAuth,
     auth.requireResource(FINANCE_MODULE_RESOURCE_KEYS.portfolio, FINANCE_MODULE_ACTIONS.view),
@@ -473,7 +480,27 @@ export function registerFinancePortfolioReconciliationRoutes(
         const orderCode = typeof req.query.orderCode === "string"
           ? req.query.orderCode.trim() || null
           : null;
-        const includeRaw = req.query.includeRaw === "true" || req.query.includeRaw === "1";
+        const includeRawRequested = parseIncludeRawFlag(req.query.includeRaw);
+        let includeRaw = false;
+        if (includeRawRequested) {
+          const user = await getCurrentAppUser(req);
+          if (!user) {
+            res.status(401).json({
+              error: "Não autenticado.",
+              code: "UNAUTHORIZED",
+            });
+            return;
+          }
+          const rawDecision = decideOutputDocumentRawAccess({
+            user,
+            includeRaw: true,
+          });
+          if (rawDecision.allowed === false) {
+            res.status(rawDecision.status).json(rawDecision.body);
+            return;
+          }
+          includeRaw = true;
+        }
         const appAuth = (
           req as { appAuth?: { userId?: string; permissions?: string[] } }
         ).appAuth;

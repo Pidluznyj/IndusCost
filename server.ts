@@ -15162,6 +15162,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerFinancePortfolioReconciliationRoutes(app, {
     requireAppAuth,
     requireResource,
+    getCurrentAppUser,
   });
 
   registerFinanceExecutiveReportRoutes(app, {

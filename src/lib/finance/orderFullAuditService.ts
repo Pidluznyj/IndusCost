@@ -28,6 +28,7 @@ import {
 } from "@/src/lib/sales-orders/salesOrderRelatedNfeResolver.js";
 import {
   allocatedValueForSalesOrder,
+  allocationLinesFromResolvedO2c,
   projectOutputDocumentAllocation,
   type OutputDocumentAllocationProjection,
 } from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
@@ -71,10 +72,19 @@ import {
 import { NOMUS_STOCK_DOCUMENT_TIPO_SAIDA } from "@/src/lib/output-documents/auditOutputDocumentsDb.js";
 import { buildOutputDocumentAuditHref } from "@/src/lib/outputDocumentsUi.js";
 import { extractOutputDocumentItemProductIdentity } from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
+import { loadOutputDocumentsForSalesOrder } from "@/src/lib/output-documents/nomusOutputDocumentResolver.server.js";
 import {
   buildOrderFullAuditDocumentHeaderAlertDrafts,
   emptyOrderFullAuditStockDocument,
 } from "./orderFullAuditDocuments.js";
+import {
+  buildReceivableExternalIdByNfeMap,
+  dedupeResolvedOutputDocumentsByExternalId,
+  resolveAuditDocumentNfeNumber,
+  resolveAuditDocumentReceivableExternalId,
+  stockDocumentEntryFromResolved,
+} from "./orderFullAuditOutputDocumentsAdapter.js";
+import type { ResolvedOutputDocument } from "@/src/lib/output-documents/nomusOutputDocumentResolver.js";
 
 const MONEY_TOLERANCE = 0.01;
 
@@ -1827,9 +1837,53 @@ export async function loadOrderFullAudit(
   // Complementa NF com dados oficiais (`NomusNfe`) e stock document (`NomusStockDocument`).
   const realNfeIds = [...nfeMap.keys()].filter((id) => id > 0);
 
-  // Overlay: Documentos de Saída ligados só via NF (SalesOrderNfeLink → idNfe),
-  // mesmo sem fato O2C — mesmo critério de loadOutputDocumentsForSalesOrder.
-  if (realNfeIds.length > 0) {
+  // Overlay canônico DS-05.6: Documentos de Saída via resolver (NF + O2C),
+  // sem depender exclusivamente do run atual do O2C.
+  let resolvedOutputDocuments: ResolvedOutputDocument[] = [];
+  try {
+    resolvedOutputDocuments = dedupeResolvedOutputDocumentsByExternalId(
+      await loadOutputDocumentsForSalesOrder(prisma, salesOrderId, {
+        runId: runId ?? undefined,
+      })
+    );
+  } catch (error) {
+    console.warn(
+      "[orderFullAuditService] falha ao carregar Documentos de Saída via resolver — mantendo overlay legado.",
+      error
+    );
+  }
+  const receivableByNfeId =
+    buildReceivableExternalIdByNfeMap(resolvedOutputDocuments);
+  const resolvedByExternalId = new Map(
+    resolvedOutputDocuments.map((doc) => [doc.document.externalId, doc])
+  );
+
+  for (const resolved of resolvedOutputDocuments) {
+    const externalId = resolved.document.externalId;
+    const existing = stockMap.get(externalId);
+    if (!existing) {
+      stockMap.set(externalId, stockDocumentEntryFromResolved(resolved));
+      continue;
+    }
+    existing.stockDocumentId = resolved.document.id;
+    existing.documentNumber =
+      resolved.document.documentNumber?.trim() || existing.documentNumber;
+    existing.idNfe = resolved.document.idNfe ?? existing.idNfe;
+    existing.tipoDocumentoEstoque =
+      resolved.document.tipoDocumentoEstoque ?? existing.tipoDocumentoEstoque;
+    existing.status = resolved.document.statusRaw ?? existing.status;
+    existing.isCancelled =
+      resolved.document.isCancelled === true || existing.isCancelled;
+    if (
+      resolved.document.isCancelled === true &&
+      !existing.alerts.includes("DOCUMENT_CANCELLED")
+    ) {
+      existing.alerts.push("DOCUMENT_CANCELLED");
+    }
+  }
+
+  // Fallback legado: NF → stage quando o resolver falhou e só há facts/NFes.
+  if (resolvedOutputDocuments.length === 0 && realNfeIds.length > 0) {
     const nfeLinkedDocs = await prisma.nomusStockDocument.findMany({
       where: {
         idNfe: { in: realNfeIds },
@@ -2345,6 +2399,28 @@ export async function loadOrderFullAudit(
     }
 
     const factsForDoc = factsByDocExternalId.get(doc.externalId) ?? [];
+    const resolved = resolvedByExternalId.get(doc.externalId);
+    const allocationLines = resolved
+      ? allocationLinesFromResolvedO2c(
+          resolved.o2c.allocationLines,
+          doc.items.map((item) => ({
+            stockDocumentItemId: item.id,
+            externalProductId: item.externalProductId,
+          }))
+        )
+      : factsForDoc.map((f) => ({
+          stockDocumentItemId: f.stockDocumentItemId ?? null,
+          salesOrderId: f.salesOrderId ?? salesOrderId,
+          salesOrderItemId: f.salesOrderItemId ?? null,
+          orderCode: f.orderCode ?? order.orderCode ?? null,
+          allocatedValueByDocumentPrice: f.allocatedValueByDocumentPrice,
+          quantityUsedForOrder: f.quantityUsedForOrder,
+          externalProductId:
+            f.stockDocumentItemExternalProductId ??
+            (f.salesOrderItemId
+              ? itemByStorageId.get(f.salesOrderItemId)?.productExternalId ?? null
+              : null),
+        }));
     const projection: OutputDocumentAllocationProjection =
       projectOutputDocumentAllocation({
         document: {
@@ -2361,19 +2437,7 @@ export async function loadOrderFullAudit(
             estimatedTotalValue: item.estimatedTotalValue,
           })),
         },
-        allocationLines: factsForDoc.map((f) => ({
-          stockDocumentItemId: f.stockDocumentItemId ?? null,
-          salesOrderId: f.salesOrderId ?? salesOrderId,
-          salesOrderItemId: f.salesOrderItemId ?? null,
-          orderCode: f.orderCode ?? order.orderCode ?? null,
-          allocatedValueByDocumentPrice: f.allocatedValueByDocumentPrice,
-          quantityUsedForOrder: f.quantityUsedForOrder,
-          externalProductId:
-            f.stockDocumentItemExternalProductId ??
-            (f.salesOrderItemId
-              ? itemByStorageId.get(f.salesOrderItemId)?.productExternalId ?? null
-              : null),
-        })),
+        allocationLines,
         orderItemHints,
         focusSalesOrderId: salesOrderId,
       });
@@ -2554,8 +2618,15 @@ export async function loadOrderFullAudit(
         priceDiffPercent: priceDiffPerc,
         financialImpact,
         nfeExternalId: docEntry.idNfe,
-        nfeNumber: factForPrimary?.nfeNumber ?? null,
-        receivableExternalId: null,
+        nfeNumber: resolveAuditDocumentNfeNumber(
+          docEntry.idNfe,
+          nfeMap,
+          factForPrimary?.nfeNumber ?? null
+        ),
+        receivableExternalId: resolveAuditDocumentReceivableExternalId(
+          docEntry.idNfe,
+          receivableByNfeId
+        ),
         lineType: factForPrimary?.lineType ?? null,
         alerts: [...new Set(alertsForLine)],
       });
@@ -3397,6 +3468,11 @@ export async function loadOrderFullAudit(
     includeRaw: Boolean(input.includeRaw),
     alertsCreated: alerts.length,
     alertsResolved: 0,
+    stockDocumentRawByExternalId: new Map(
+      stockRows.map((doc) => [doc.externalId, doc.rawJson ?? null])
+    ),
+    nfeRawByExternalId,
+    receivableRawByExternalId,
   });
 
   return {
@@ -4218,6 +4294,9 @@ function buildTechnicalAuditBlock(input: {
   includeRaw: boolean;
   alertsCreated: number;
   alertsResolved: number;
+  stockDocumentRawByExternalId?: ReadonlyMap<number, unknown>;
+  nfeRawByExternalId?: ReadonlyMap<number, unknown>;
+  receivableRawByExternalId?: ReadonlyMap<number, unknown>;
 }): OrderFullAuditTechnicalAuditBlock {
   const {
     order,
@@ -4241,6 +4320,9 @@ function buildTechnicalAuditBlock(input: {
     gaps,
     factsSample,
     includeRaw,
+    stockDocumentRawByExternalId,
+    nfeRawByExternalId,
+    receivableRawByExternalId,
   } = input;
 
   const source = (
@@ -4524,9 +4606,25 @@ function buildTechnicalAuditBlock(input: {
         nomusRawItems: Object.fromEntries(
           order.items.map((i) => [i.id, i.nomusRawItem ?? null])
         ),
-        stockDocumentPayloads: {},
-        nfePayloads: {},
-        receivablePayloads: {},
+        stockDocumentPayloads: Object.fromEntries(
+          stockDocuments.map((doc) => [
+            String(doc.stockDocumentExternalId),
+            stockDocumentRawByExternalId?.get(doc.stockDocumentExternalId) ??
+              null,
+          ])
+        ),
+        nfePayloads: Object.fromEntries(
+          nfes.map((nfe) => [
+            String(nfe.nfeExternalId),
+            nfeRawByExternalId?.get(nfe.nfeExternalId) ?? null,
+          ])
+        ),
+        receivablePayloads: Object.fromEntries(
+          receivables.map((r) => [
+            String(r.receivableExternalId),
+            receivableRawByExternalId?.get(r.receivableExternalId) ?? null,
+          ])
+        ),
         factsSample,
       }
     : undefined;
