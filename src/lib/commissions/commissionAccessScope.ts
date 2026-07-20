@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
-import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { hasPermission } from "@/src/lib/appAuth.js";
+import type { AppAuthContext } from "@/src/lib/auth/appAuth.shared.js";
+import { hasPermission } from "@/src/lib/auth/appAuth.shared.js";
 
 export type CommissionDataScope = "global" | "own" | "none";
 

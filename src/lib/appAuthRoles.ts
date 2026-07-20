@@ -1,4 +1,6 @@
-import type { AppUserRole } from "@prisma/client";
+import type { AppUserRole } from "@/src/lib/auth/appAuth.shared.js";
+
+export type { AppUserRole };
 
 export const APP_USER_ROLE_VALUES: AppUserRole[] = [
   "SUPER_ADMIN",

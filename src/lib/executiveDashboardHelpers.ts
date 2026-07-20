@@ -1,5 +1,8 @@
-import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import { hasAnyPermission, hasPermission } from "@/src/lib/appAuth.js";
+import type { AppAuthContext } from "@/src/lib/auth/appAuth.shared.js";
+import {
+  hasAnyPermission,
+  hasPermission,
+} from "@/src/lib/auth/appAuth.shared.js";
 import { evaluateFleetRouteAccess } from "@/src/lib/fleetPermissionResolve.js";
 
 export {
