@@ -4,7 +4,12 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import { fetchNomusPedidosForAudit } from "../nomusSalesOrdersClient.js";
+import {
+  fetchNomusPedidosForAudit,
+  lookupNomusPedidoByExternalId,
+  lookupNomusPedidoByOrderCode,
+  type DirectedPedidoLookupResult,
+} from "../nomusSalesOrdersClient.js";
 import { buildNomusUrl, fetchNomusJson } from "../nomusRestClient.js";
 import {
   buildAccountsReceivablePageParams,
@@ -28,7 +33,16 @@ import {
   assessSalesOrderSyncPayloadCompleteness,
   buildSalesOrderSourceReconciliationPlan,
   buildSalesOrderSyncReconciliationScope,
+  type SalesOrderFetchCompletenessAssessment,
+  type SalesOrderLifecycleLocalSnapshot,
 } from "./nomusSalesOrderSourceReconciliation.js";
+import {
+  assessTargetedSalesOrderLookupCompleteness,
+  assertTargetedNomusIdentityConsistent,
+  buildSalesOrderTargetedLookupScope,
+  hasSalesOrderReconcileTarget,
+  resolveSalesOrderReconcileTargetIdentity,
+} from "./nomusSalesOrderTargetedReconcile.js";
 import {
   ACCOUNTS_RECEIVABLE_PILOT,
   assessAccountsReceivableSyncPayloadCompleteness,
@@ -150,6 +164,77 @@ async function applyPatchBatches(input: {
   };
 }
 
+async function resolveTargetedNomusLookup(input: {
+  baseUrl: string;
+  from: Date;
+  to: Date;
+  env: NodeJS.ProcessEnv;
+  externalId: number | null;
+  orderCode: string | null;
+}): Promise<DirectedPedidoLookupResult> {
+  const byCode = input.orderCode?.trim()
+    ? await lookupNomusPedidoByOrderCode({
+        baseUrl: input.baseUrl,
+        orderCode: input.orderCode,
+        from: input.from,
+        to: input.to,
+        env: input.env,
+      })
+    : null;
+  const byId =
+    input.externalId != null
+      ? await lookupNomusPedidoByExternalId({
+          baseUrl: input.baseUrl,
+          externalId: input.externalId,
+          from: input.from,
+          to: input.to,
+          env: input.env,
+        })
+      : null;
+
+  if (byCode?.status === "inconclusive") return byCode;
+  if (byId?.status === "inconclusive") return byId;
+
+  if (byCode?.status === "found" && byId?.status === "found") {
+    if (
+      byCode.pedido.externalSalesOrderId !== byId.pedido.externalSalesOrderId
+    ) {
+      throw new Error(
+        `TARGET_IDENTITY_DIVERGENCE: lookup por orderCode=${input.orderCode} retornou id=${byCode.pedido.externalSalesOrderId}, por externalId=${input.externalId} retornou id=${byId.pedido.externalSalesOrderId}.`
+      );
+    }
+    assertTargetedNomusIdentityConsistent({
+      expectedExternalId: input.externalId,
+      expectedOrderCode: input.orderCode,
+      foundExternalId: byCode.pedido.externalSalesOrderId,
+      foundOrderCode: byCode.pedido.orderCode,
+    });
+    return byCode;
+  }
+
+  if (byCode?.status === "found") {
+    assertTargetedNomusIdentityConsistent({
+      expectedExternalId: input.externalId,
+      expectedOrderCode: input.orderCode,
+      foundExternalId: byCode.pedido.externalSalesOrderId,
+      foundOrderCode: byCode.pedido.orderCode,
+    });
+    return byCode;
+  }
+
+  if (byId?.status === "found") {
+    assertTargetedNomusIdentityConsistent({
+      expectedExternalId: input.externalId,
+      expectedOrderCode: input.orderCode,
+      foundExternalId: byId.pedido.externalSalesOrderId,
+      foundOrderCode: byId.pedido.orderCode,
+    });
+    return byId;
+  }
+
+  return { status: "not_found" };
+}
+
 export async function runNomusSalesOrdersHistoricalReconcile(input: {
   prisma: PrismaClient;
   argv: string[];
@@ -165,68 +250,148 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
   try {
     const from = parseDay(options.from, "2020-01-01");
     const to = parseDay(options.to, "2030-12-31");
+    const fromIso = from.toISOString().slice(0, 10);
+    const toIso = to.toISOString().slice(0, 10);
     const baseUrl = requireEnv("NOMUS_BASE_URL", env);
-    const fetched = await fetchNomusPedidosForAudit({
-      baseUrl,
-      from,
-      to,
-      env,
-      strategyLabel: "full-reconciliation",
-    });
-    const completeness = assessSalesOrderSyncPayloadCompleteness({
-      strategy: "full-reconciliation",
-      startPage: fetched.completeness.startPage,
-      completedWindow: fetched.completeness.stoppedBecauseMaxPages,
-      stoppedBecauseEmpty: fetched.completeness.stoppedBecauseEmpty,
-      stoppedBecauseNoNext: fetched.completeness.stoppedBecauseNoNext,
-      http429Count: fetched.completeness.http429Count,
-      errors: fetched.completeness.errors,
-      fetchFailed: fetched.completeness.stopReason === "http_error",
-    });
-    const locals = await loadSalesOrderLifecycleLocals({
-      prisma: input.prisma,
-      issueDateFrom: from,
-      issueDateTo: to,
+    const targeted = hasSalesOrderReconcileTarget({
+      externalId: options.externalId,
       orderCode: options.orderCode,
-      externalSalesOrderIds:
-        options.externalId != null ? [options.externalId] : undefined,
     });
-    const localHash = new Map(
-      locals.map((l) => [l.externalSalesOrderId, l.payloadHash ?? ""] as const)
-    );
-    const foundPedidos = fetched.pedidos
-      .filter((p) => p.externalSalesOrderId != null)
-      .map((p) => {
-        const id = p.externalSalesOrderId as number;
-        const hash = localHash.get(id);
+    const reconcileEnabled = isSalesOrderAbsenceReconcileEnabled(env);
+
+    let completeness: SalesOrderFetchCompletenessAssessment;
+    let locals: SalesOrderLifecycleLocalSnapshot[];
+    let foundPedidos: Array<{ externalSalesOrderId: number; payloadHash: string }>;
+    let directedLookups: Array<{ externalSalesOrderId: number; found: boolean }> =
+      [];
+    let scope: ReturnType<typeof buildSalesOrderSyncReconciliationScope>;
+
+    if (targeted) {
+      // Datas apoiam a busca; não expandem o universo comparado.
+      const candidateLocals = await loadSalesOrderLifecycleLocals({
+        prisma: input.prisma,
+        issueDateFrom: from,
+        issueDateTo: to,
+        orderCode: options.orderCode,
+        externalSalesOrderIds:
+          options.externalId != null ? [options.externalId] : undefined,
+        ignoreIssueDateWindow: true,
+      });
+      const identity = resolveSalesOrderReconcileTargetIdentity({
+        externalId: options.externalId,
+        orderCode: options.orderCode,
+        locals: candidateLocals,
+      });
+      if (!identity.ok) {
         return {
-          externalSalesOrderId: id,
-          payloadHash: hash && hash.length > 0 ? hash : `reconcile-presence:${id}`,
+          ok: false,
+          mode: options.mode,
+          writes: false,
+          errorCode: identity.code,
+          message: identity.message,
+          physicalDeletes: 0,
         };
+      }
+
+      locals = identity.local ? [identity.local] : [];
+      scope = buildSalesOrderTargetedLookupScope({
+        fromIso,
+        toIso,
+        externalId: identity.externalId,
+        orderCode: identity.orderCode,
+      }) as ReturnType<typeof buildSalesOrderSyncReconciliationScope>;
+
+      const lookup = await resolveTargetedNomusLookup({
+        baseUrl,
+        from,
+        to,
+        env,
+        externalId: identity.externalId,
+        orderCode: identity.orderCode,
+      });
+      completeness = assessTargetedSalesOrderLookupCompleteness({
+        lookupStatus: lookup.status,
+        reason: lookup.status === "inconclusive" ? lookup.reason : null,
       });
 
-    const directedLookups: Array<{ externalSalesOrderId: number; found: boolean }> =
-      [];
-    if (options.confirmCandidates && completeness.payloadComplete) {
-      const candidates = locals.filter(
-        (l) => l.sourcePresenceStatus === "MISSING_CANDIDATE"
-      );
-      for (const c of candidates.slice(0, 50)) {
-        directedLookups.push({
-          externalSalesOrderId: c.externalSalesOrderId,
-          found: foundPedidos.some(
-            (f) => f.externalSalesOrderId === c.externalSalesOrderId
-          ),
-        });
+      if (lookup.status === "found" && lookup.pedido.externalSalesOrderId != null) {
+        const id = lookup.pedido.externalSalesOrderId;
+        const hash =
+          locals.find((l) => l.externalSalesOrderId === id)?.payloadHash ||
+          `reconcile-presence:${id}`;
+        foundPedidos = [{ externalSalesOrderId: id, payloadHash: hash }];
+      } else {
+        foundPedidos = [];
       }
-    }
 
-    const reconcileEnabled = isSalesOrderAbsenceReconcileEnabled(env);
-    const scope = buildSalesOrderSyncReconciliationScope({
-      strategy: "full-reconciliation",
-      fromIso: from.toISOString().slice(0, 10),
-      toIso: to.toISOString().slice(0, 10),
-    });
+      if (identity.externalId != null && completeness.payloadComplete) {
+        directedLookups = [
+          {
+            externalSalesOrderId: identity.externalId,
+            found: foundPedidos.some(
+              (f) => f.externalSalesOrderId === identity.externalId
+            ),
+          },
+        ];
+      }
+    } else {
+      const fetched = await fetchNomusPedidosForAudit({
+        baseUrl,
+        from,
+        to,
+        env,
+        strategyLabel: "full-reconciliation",
+      });
+      completeness = assessSalesOrderSyncPayloadCompleteness({
+        strategy: "full-reconciliation",
+        startPage: fetched.completeness.startPage,
+        completedWindow: fetched.completeness.stoppedBecauseMaxPages,
+        stoppedBecauseEmpty: fetched.completeness.stoppedBecauseEmpty,
+        stoppedBecauseNoNext: fetched.completeness.stoppedBecauseNoNext,
+        http429Count: fetched.completeness.http429Count,
+        errors: fetched.completeness.errors,
+        fetchFailed: fetched.completeness.stopReason === "http_error",
+      });
+      locals = await loadSalesOrderLifecycleLocals({
+        prisma: input.prisma,
+        issueDateFrom: from,
+        issueDateTo: to,
+      });
+      const localHash = new Map(
+        locals.map((l) => [l.externalSalesOrderId, l.payloadHash ?? ""] as const)
+      );
+      foundPedidos = fetched.pedidos
+        .filter((p) => p.externalSalesOrderId != null)
+        .map((p) => {
+          const id = p.externalSalesOrderId as number;
+          const hash = localHash.get(id);
+          return {
+            externalSalesOrderId: id,
+            payloadHash:
+              hash && hash.length > 0 ? hash : `reconcile-presence:${id}`,
+          };
+        });
+
+      if (options.confirmCandidates && completeness.payloadComplete) {
+        const candidates = locals.filter(
+          (l) => l.sourcePresenceStatus === "MISSING_CANDIDATE"
+        );
+        for (const c of candidates.slice(0, 50)) {
+          directedLookups.push({
+            externalSalesOrderId: c.externalSalesOrderId,
+            found: foundPedidos.some(
+              (f) => f.externalSalesOrderId === c.externalSalesOrderId
+            ),
+          });
+        }
+      }
+
+      scope = buildSalesOrderSyncReconciliationScope({
+        strategy: "full-reconciliation",
+        fromIso,
+        toIso,
+      });
+    }
 
     let runId: string | null = null;
     if (options.mode === "apply") {
@@ -236,6 +401,7 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
           mode: "apply",
           writes: false,
           applyBlockedReason: "RECONCILE_FLAG_DISABLED",
+          physicalDeletes: 0,
         };
       }
       if (!completeness.payloadComplete) {
@@ -245,12 +411,13 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
           writes: false,
           applyBlockedReason: "PAYLOAD_INCOMPLETE",
           completeness,
+          physicalDeletes: 0,
         };
       }
       runId = (
         await createSalesOrderSourceSyncRun({
           prisma: input.prisma,
-          strategy: "historical-reconcile",
+          strategy: targeted ? "historical-targeted-lookup" : "historical-reconcile",
           scope: scope as unknown as Record<string, unknown>,
           startedAt: new Date(),
           coveredFrom: from,
@@ -260,10 +427,11 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
     }
 
     const plan = buildSalesOrderSourceReconciliationPlan({
-      strategy: "full-reconciliation",
+      strategy: targeted ? "targeted-lookup" : "full-reconciliation",
       scope,
       completeness,
       reconciliationEnabled: reconcileEnabled,
+      evaluateAbsencesInPreview: true,
       foundPedidos,
       localRecords: locals,
       directedLookups,
@@ -304,8 +472,10 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
     if (options.mode === "preview") {
       return {
         ok: true,
+        strategy: targeted ? "TARGETED_LOOKUP" : "FULL_RECONCILIATION",
         ...report,
         csv: options.csv ? formatReconcileReportCsv(report) : undefined,
+        physicalDeletes: 0,
       };
     }
 
@@ -339,6 +509,7 @@ export async function runNomusSalesOrdersHistoricalReconcile(input: {
     }
     return {
       ok: true,
+      strategy: targeted ? "TARGETED_LOOKUP" : "FULL_RECONCILIATION",
       ...report,
       applied: applied.applied,
       resumeCursor: applied.resumeCursor,

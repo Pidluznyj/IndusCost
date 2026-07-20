@@ -27,11 +27,16 @@ import {
 } from "./nomusSourceReconciliationEngine.js";
 import type { NomusSalesOrdersSyncStrategy } from "../nomusSalesOrdersSyncWindow.js";
 
+/** Estratégias do adapter de Pedidos (inclui lookup direcionado do reconcile histórico). */
+export type SalesOrderReconciliationStrategy =
+  | NomusSalesOrdersSyncStrategy
+  | "targeted-lookup";
+
 export type SalesOrderFetchCompletenessAssessment = {
   /** Autoriza ausência no motor (SUCCESS + payloadComplete). */
   payloadComplete: boolean;
   status: "COMPLETE" | "INCONCLUSIVE_FETCH" | "RECENT_WINDOW";
-  strategy: NomusSalesOrdersSyncStrategy;
+  strategy: SalesOrderReconciliationStrategy;
   reasons: string[];
   startPage: number;
   stoppedBecauseEmpty: boolean;
@@ -42,7 +47,7 @@ export type SalesOrderFetchCompletenessAssessment = {
 };
 
 export type SalesOrderFetchMetaForCompleteness = {
-  strategy: NomusSalesOrdersSyncStrategy;
+  strategy: SalesOrderReconciliationStrategy;
   startPage: number;
   /** Hit maxPages no bloco (cursor) — NÃO prova universo completo. */
   completedWindow: boolean;
@@ -80,6 +85,41 @@ export function assessSalesOrderSyncPayloadCompleteness(
       stoppedBecauseEmpty: meta.stoppedBecauseEmpty,
       stoppedBecauseNoNext: meta.stoppedBecauseNoNext === true,
       stoppedBecauseMaxPages: meta.completedWindow,
+      http429Count,
+      errors,
+    };
+  }
+
+  if (meta.strategy === "targeted-lookup") {
+    // Completude direcionada é avaliada por assessTargetedSalesOrderLookupCompleteness.
+    // Aqui só rejeita meta claramente inválida (erro/max pages).
+    if (meta.fetchFailed || errors.length > 0 || meta.completedWindow) {
+      reasons.push("TARGETED_LOOKUP_INCONCLUSIVE");
+      if (meta.fetchFailed) reasons.push("FETCH_FAILED");
+      if (meta.completedWindow) reasons.push("MAX_PAGES_HIT_INCOMPLETE_SNAPSHOT");
+      return {
+        payloadComplete: false,
+        status: "INCONCLUSIVE_FETCH",
+        strategy: meta.strategy,
+        reasons: [...new Set(reasons)],
+        startPage: meta.startPage,
+        stoppedBecauseEmpty: meta.stoppedBecauseEmpty,
+        stoppedBecauseNoNext: meta.stoppedBecauseNoNext === true,
+        stoppedBecauseMaxPages: meta.completedWindow,
+        http429Count,
+        errors,
+      };
+    }
+    reasons.push("TARGETED_LOOKUP_CONCLUSIVE");
+    return {
+      payloadComplete: true,
+      status: "COMPLETE",
+      strategy: meta.strategy,
+      reasons: [...new Set(reasons)],
+      startPage: meta.startPage,
+      stoppedBecauseEmpty: meta.stoppedBecauseEmpty,
+      stoppedBecauseNoNext: meta.stoppedBecauseNoNext === true,
+      stoppedBecauseMaxPages: false,
       http429Count,
       errors,
     };
@@ -151,7 +191,7 @@ export function stableNomusSalesOrderPayloadHash(
 }
 
 export function buildSalesOrderSyncReconciliationScope(input: {
-  strategy: NomusSalesOrdersSyncStrategy;
+  strategy: SalesOrderReconciliationStrategy;
   fromIso: string;
   toIso: string;
 }): NomusSourceSyncScope {
@@ -201,11 +241,16 @@ export function toSalesOrderLocalRecord(
 }
 
 export type BuildSalesOrderReconciliationPlanArgs = {
-  strategy: NomusSalesOrdersSyncStrategy;
+  strategy: SalesOrderReconciliationStrategy;
   scope: NomusSourceSyncScope;
   completeness: SalesOrderFetchCompletenessAssessment;
-  /** Kill switch NOMUS_SOURCE_RECONCILE_SALES_ORDERS_ENABLED. */
+  /** Kill switch NOMUS_SOURCE_RECONCILE_SALES_ORDERS_ENABLED (bloqueia apply; ver evaluateAbsencesInPreview). */
   reconciliationEnabled: boolean;
+  /**
+   * HOTFIX-02: em preview, permite calcular ausência mesmo com flag desligada.
+   * Apply continua exigindo reconciliationEnabled=true.
+   */
+  evaluateAbsencesInPreview?: boolean;
   foundPedidos: ReadonlyArray<{
     externalSalesOrderId: number;
     payloadHash: string;
@@ -223,15 +268,22 @@ export type BuildSalesOrderReconciliationPlanArgs = {
 
 /**
  * recent-window: flag de ausência forçada off (mesmo com env on).
- * full-reconciliation: usa flag + payloadComplete da prova OP-81.
+ * full-reconciliation / targeted-lookup: usa flag + payloadComplete
+ * (preview pode avaliar ausência com flag off via evaluateAbsencesInPreview).
  */
 export function buildSalesOrderSourceReconciliationPlan(
   args: BuildSalesOrderReconciliationPlanArgs
 ): NomusSourceReconciliationPlan {
+  const mode = args.mode ?? "preview";
+  const strategyAllowsAbsence =
+    args.strategy === "full-reconciliation" ||
+    args.strategy === "targeted-lookup";
+  const previewMayEvaluate =
+    mode === "preview" && args.evaluateAbsencesInPreview === true;
   const absenceAllowed =
-    args.strategy === "full-reconciliation" &&
-    args.reconciliationEnabled &&
-    args.completeness.payloadComplete;
+    strategyAllowsAbsence &&
+    args.completeness.payloadComplete &&
+    (args.reconciliationEnabled || previewMayEvaluate);
 
   const status =
     args.runStatus ??
@@ -273,7 +325,7 @@ export function buildSalesOrderSourceReconciliationPlan(
     directedLookups,
     executedAt: args.executedAt,
     reconciliationEnabled: absenceAllowed,
-    mode: args.mode ?? "preview",
+    mode,
     confirmation: {
       consecutiveCompleteMissesToConfirm: 2,
       confirmViaDirectedLookup: true,

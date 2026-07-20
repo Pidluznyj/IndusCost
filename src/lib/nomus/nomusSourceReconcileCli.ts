@@ -163,14 +163,15 @@ export function assessReconcileApplyGate(input: {
   completeness: NomusSourceReconcileCompletenessGate;
   reconciliationEnabled: boolean;
 }): { applyAllowed: boolean; applyBlockedReason: string | null } {
-  if (input.mode === "preview") {
-    return { applyAllowed: false, applyBlockedReason: "PREVIEW_NO_WRITE" };
-  }
+  // HOTFIX-02: flag desligada bloqueia apply mesmo em preview (motivo visível).
   if (!input.reconciliationEnabled) {
     return {
       applyAllowed: false,
       applyBlockedReason: "RECONCILE_FLAG_DISABLED",
     };
+  }
+  if (input.mode === "preview") {
+    return { applyAllowed: false, applyBlockedReason: "PREVIEW_NO_WRITE" };
   }
   if (!input.completeness.payloadComplete) {
     return {

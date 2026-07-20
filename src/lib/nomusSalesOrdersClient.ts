@@ -324,6 +324,62 @@ export async function lookupNomusPedidoByOrderCode(args: {
     return { status: "inconclusive", reason: "orderCode inválido" };
   }
 
+  return lookupNomusPedidoInWindow({
+    baseUrl: args.baseUrl,
+    from: args.from,
+    to: args.to,
+    maxPages: args.maxPages,
+    pageSize: args.pageSize,
+    fetchJson: args.fetchJson,
+    env: args.env,
+    match: (identity) =>
+      identity.orderCodeKey === targetKey ||
+      (identity.externalSalesOrderId != null &&
+        String(identity.externalSalesOrderId) === args.orderCode.trim()),
+  });
+}
+
+/**
+ * Consulta direcionada por externalId (scan paginado no período).
+ * Read-only; inconclusivo se maxPages sem encontrar.
+ */
+export async function lookupNomusPedidoByExternalId(args: {
+  baseUrl: string;
+  externalId: number;
+  from: Date;
+  to: Date;
+  maxPages?: number;
+  pageSize?: number;
+  fetchJson?: typeof fetchNomusJson;
+  env?: NodeJS.ProcessEnv;
+}): Promise<DirectedPedidoLookupResult> {
+  const targetId = Math.trunc(args.externalId);
+  if (!Number.isFinite(targetId) || targetId <= 0) {
+    return { status: "inconclusive", reason: "externalId inválido" };
+  }
+
+  return lookupNomusPedidoInWindow({
+    baseUrl: args.baseUrl,
+    from: args.from,
+    to: args.to,
+    maxPages: args.maxPages,
+    pageSize: args.pageSize,
+    fetchJson: args.fetchJson,
+    env: args.env,
+    match: (identity) => identity.externalSalesOrderId === targetId,
+  });
+}
+
+async function lookupNomusPedidoInWindow(args: {
+  baseUrl: string;
+  from: Date;
+  to: Date;
+  maxPages?: number;
+  pageSize?: number;
+  fetchJson?: typeof fetchNomusJson;
+  env?: NodeJS.ProcessEnv;
+  match: (identity: NomusPedidoIdentity) => boolean;
+}): Promise<DirectedPedidoLookupResult> {
   const env = args.env ?? process.env;
   const fetchJson = args.fetchJson ?? fetchNomusJson;
   const maxPages =
@@ -354,13 +410,7 @@ export async function lookupNomusPedidoByOrderCode(args: {
 
       for (const pedido of arr) {
         const identity = extractNomusPedidoIdentity(pedido);
-        if (identity.orderCodeKey === targetKey) {
-          return { status: "found", pedido: identity };
-        }
-        if (
-          identity.externalSalesOrderId != null &&
-          String(identity.externalSalesOrderId) === args.orderCode.trim()
-        ) {
+        if (args.match(identity)) {
           return { status: "found", pedido: identity };
         }
       }

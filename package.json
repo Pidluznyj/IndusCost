@@ -124,7 +124,7 @@
     "test:nomus:source-lifecycle": "tsx --test src/lib/nomus/nomusSourceLifecycleContract.test.ts",
     "test:nomus:source-reconciliation": "tsx --test src/lib/nomus/nomusSourceReconciliationEngine.test.ts",
     "test:nomus:source-presence-ops": "tsx --test src/lib/nomus/nomusSourcePresencePolicy.test.ts",
-    "test:nomus:source-reconcile-cli": "tsx --test src/lib/nomus/nomusLifecycleBackfill.test.ts",
+    "test:nomus:source-reconcile-cli": "tsx --test src/lib/nomus/nomusLifecycleBackfill.test.ts src/lib/nomus/nomusSalesOrderTargetedReconcile.test.ts",
     "test:nomus:source-observability": "tsx --test src/lib/nomus/nomusSourceReconciliationObservability.test.ts",
     "test:nomus:source-rc": "tsx --test src/lib/nomus/nomusCrudReconciliationReleaseCandidate.test.ts",
     "test:nomus:canonical-sync": "tsx --test src/lib/nomus/nomusCanonicalSyncContract.test.ts",

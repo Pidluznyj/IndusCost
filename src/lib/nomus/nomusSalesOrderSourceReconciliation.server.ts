@@ -14,7 +14,7 @@ import { dirname } from "node:path";
 import { hostname } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { NOMUS_SALES_ORDER_SOURCE } from "../salesOrderNomusSync.server.js";
+import { NOMUS_SALES_ORDER_SOURCE, canonicalNomusOrderCodeKey } from "../salesOrderNomusSync.server.js";
 import { isNomusSalesOrderAbsenceReconciliationEnabled } from "./nomusSourceReconciliationFlags.js";
 import type { NomusSourceLifecyclePatch } from "./nomusSourceReconciliationEngine.js";
 import type {
@@ -122,20 +122,18 @@ export async function loadSalesOrderLifecycleLocals(input: {
   issueDateTo: Date;
   orderCode?: string | null;
   externalSalesOrderIds?: number[];
+  /** TARGETED_LOOKUP: não restringe por janela de emissão (datas só apoiam busca Nomus). */
+  ignoreIssueDateWindow?: boolean;
 }): Promise<SalesOrderLifecycleLocalSnapshot[]> {
   const where: Prisma.SalesOrderWhereInput = {
     sourceSystem: NOMUS_SALES_ORDER_SOURCE,
     externalSalesOrderId: { not: null },
-    issueDate: { gte: input.issueDateFrom, lte: input.issueDateTo },
   };
+  if (!input.ignoreIssueDateWindow) {
+    where.issueDate = { gte: input.issueDateFrom, lte: input.issueDateTo };
+  }
   if (input.externalSalesOrderIds?.length) {
     where.externalSalesOrderId = { in: input.externalSalesOrderIds };
-  }
-  if (input.orderCode?.trim()) {
-    where.OR = [
-      { orderCode: input.orderCode.trim() },
-      { externalSalesOrderCode: input.orderCode.trim() },
-    ];
   }
 
   const rows = await input.prisma.salesOrder.findMany({
@@ -144,6 +142,7 @@ export async function loadSalesOrderLifecycleLocals(input: {
       id: true,
       externalSalesOrderId: true,
       orderCode: true,
+      externalSalesOrderCode: true,
       payloadHash: true,
       sourcePresenceStatus: true,
       presentInLastPayload: true,
@@ -158,8 +157,19 @@ export async function loadSalesOrderLifecycleLocals(input: {
     orderBy: [{ issueDate: "asc" }, { orderCode: "asc" }],
   });
 
+  const orderCodeKey = input.orderCode?.trim()
+    ? canonicalNomusOrderCodeKey(input.orderCode)
+    : null;
+
   return rows
     .filter((r) => r.externalSalesOrderId != null)
+    .filter((r) => {
+      if (!orderCodeKey) return true;
+      const key =
+        canonicalNomusOrderCodeKey(r.orderCode) ??
+        canonicalNomusOrderCodeKey(r.externalSalesOrderCode);
+      return key === orderCodeKey;
+    })
     .map((r) => ({
       localId: r.id,
       externalSalesOrderId: r.externalSalesOrderId as number,

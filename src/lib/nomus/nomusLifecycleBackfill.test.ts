@@ -263,6 +263,9 @@ describe("SYNC-08 lifecycle backfill + reconcile CLI", () => {
     assert.match(server, /acquireSalesOrderReconcileLock/);
     assert.match(server, /acquireAccountsReceivableReconcileLock/);
     assert.match(server, /acquireAccountsPayableReconcileLock/);
+    assert.match(server, /TARGETED_LOOKUP/);
+    assert.match(server, /hasSalesOrderReconcileTarget/);
+    assert.match(server, /evaluateAbsencesInPreview/);
   });
 
   it("10. payload incompleto interrompe apply", () => {
