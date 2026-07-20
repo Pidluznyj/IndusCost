@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Overlay,
   OverlayBadge,
@@ -46,12 +47,16 @@ import {
   outputDocumentInconsistencyTone,
   outputDocumentItemLinkStatusTone,
   outputDocumentStatusTone,
+  resolveOutputDocumentDetailHeaderLinks,
+  resolveOutputDocumentDetailNavigationCapabilities,
 } from "@/src/lib/outputDocumentsUi";
+import { cn } from "@/src/lib/utils";
 
 type Props = {
   outputDocumentId: string | null;
   onClose: () => void;
   onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
+  onOpenNfe?: (nfe: { numero: string | null; externalId: number }) => void;
   dismissOnEsc?: boolean;
 };
 
@@ -67,16 +72,28 @@ export function OutputDocumentDetailOverlay({
   outputDocumentId,
   onClose,
   onOpenSalesOrder,
+  onOpenNfe,
   dismissOnEsc = true,
 }: Props) {
   const auth = useAuth();
   const permissions = usePermissions();
+  const [searchParams] = useSearchParams();
   const includeRaw = canViewOutputDocumentsRaw({
     canPerformAction: permissions.canPerformAction,
     hasPermission: auth.hasPermission,
   });
+  const navigationCapabilities = useMemo(
+    () =>
+      resolveOutputDocumentDetailNavigationCapabilities({
+        canPerformAction: permissions.canPerformAction,
+        canViewModule: permissions.canViewModule,
+      }),
+    [permissions.canPerformAction, permissions.canViewModule]
+  );
   const [detail, setDetail] = useState<OutputDocumentDetailPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [errorKind, setErrorKind] = useState<
     "not_found" | "access_denied" | "api_unavailable" | "generic" | null
   >(null);
@@ -84,19 +101,23 @@ export function OutputDocumentDetailOverlay({
   const [activeTab, setActiveTab] = useState<OutputDocumentDetailTab>("geral");
 
   useEffect(() => {
+    setRefreshToken(0);
+    setActiveTab("geral");
+    setCopyFeedback(null);
+  }, [outputDocumentId]);
+
+  useEffect(() => {
     if (!outputDocumentId) {
       setDetail(null);
       setErrorKind(null);
       setErrorMessage(null);
-      setActiveTab("geral");
       return;
     }
     const controller = new AbortController();
-    setDetail(null);
+    if (refreshToken === 0) setDetail(null);
     setLoading(true);
     setErrorKind(null);
     setErrorMessage(null);
-    setActiveTab("geral");
     void fetchOutputDocumentDetail(outputDocumentId, {
       includeRaw,
       signal: controller.signal,
@@ -119,7 +140,40 @@ export function OutputDocumentDetailOverlay({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [outputDocumentId, includeRaw]);
+  }, [outputDocumentId, includeRaw, refreshToken]);
+
+  const headerLinks = useMemo(
+    () =>
+      detail
+        ? resolveOutputDocumentDetailHeaderLinks(detail, navigationCapabilities, {
+            currentSearchParams: searchParams,
+          })
+        : [],
+    [detail, navigationCapabilities, searchParams]
+  );
+
+  const documentLabel = detail
+    ? formatOutputDocumentNumber({
+        documentNumber: detail.document.documentNumber,
+        externalId: detail.document.externalId,
+      })
+    : null;
+
+  const handleCopyDocumentNumber = useCallback(async () => {
+    if (!documentLabel || documentLabel === "—") return;
+    try {
+      await navigator.clipboard.writeText(documentLabel);
+      setCopyFeedback("Número copiado");
+    } catch {
+      setCopyFeedback("Não foi possível copiar");
+    }
+  }, [documentLabel]);
+
+  useEffect(() => {
+    if (!copyFeedback) return;
+    const timer = window.setTimeout(() => setCopyFeedback(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copyFeedback]);
 
   const tabs = useMemo(
     () => [
@@ -144,12 +198,6 @@ export function OutputDocumentDetailOverlay({
   }, [tabs, activeTab]);
 
   const titleId = "output-document-detail-title";
-  const documentLabel = detail
-    ? formatOutputDocumentNumber({
-        documentNumber: detail.document.documentNumber,
-        externalId: detail.document.externalId,
-      })
-    : null;
 
   return (
     <Overlay
@@ -210,6 +258,83 @@ export function OutputDocumentDetailOverlay({
         closeLabel="Fechar detalhe"
         density="default"
       />
+      <div
+        className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-2"
+        data-testid="output-document-detail-nav"
+      >
+        <button
+          type="button"
+          className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
+          onClick={onClose}
+          data-testid="output-document-detail-back-list"
+        >
+          Voltar para a lista
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
+          onClick={() => void handleCopyDocumentNumber()}
+          disabled={!documentLabel || documentLabel === "—"}
+          data-testid="output-document-detail-copy-number"
+          title="Copiar número do documento"
+        >
+          <Copy className="h-3 w-3" aria-hidden="true" />
+          Copiar número
+        </button>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
+          onClick={() => setRefreshToken((token) => token + 1)}
+          disabled={!outputDocumentId || loading}
+          data-testid="output-document-detail-refresh"
+          title="Atualizar dados do documento"
+        >
+          <RefreshCw
+            className={cn("h-3 w-3", loading && "animate-spin")}
+            aria-hidden="true"
+          />
+          {loading ? "Atualizando…" : "Atualizar"}
+        </button>
+        {headerLinks.map((link) => {
+          if (link.id === "nfe") {
+            const primaryNfe =
+              detail?.nfes.find((nfe) => nfe.isPrimary) ?? detail?.nfes[0] ?? null;
+            if (!primaryNfe) return null;
+            if (onOpenNfe) {
+              return (
+                <button
+                  key={link.id}
+                  type="button"
+                  className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
+                  data-testid={link.testId}
+                  onClick={() => onOpenNfe(primaryNfe)}
+                >
+                  {link.label}
+                </button>
+              );
+            }
+          }
+          return (
+            <Link
+              key={link.id}
+              to={link.href}
+              className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
+              data-testid={link.testId}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+        {copyFeedback ? (
+          <span
+            className="text-xs text-muted-foreground"
+            aria-live="polite"
+            data-testid="output-document-detail-copy-feedback"
+          >
+            {copyFeedback}
+          </span>
+        ) : null}
+      </div>
       <OverlayTabs
         tabs={tabs}
         active={activeTab}
@@ -225,20 +350,32 @@ export function OutputDocumentDetailOverlay({
             Carregando detalhe…
           </DrawerState>
         ) : errorMessage ? (
-          <div
-            role="alert"
-            className={
-              errorKind === "not_found"
-                ? "rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950"
-                : "rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
-            }
-            data-testid={
-              errorKind === "not_found"
-                ? "output-document-detail-not-found"
-                : "output-document-detail-error"
-            }
-          >
-            {errorMessage}
+          <div className="space-y-3">
+            <div
+              role="alert"
+              className={
+                errorKind === "not_found"
+                  ? "rounded-xl border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950"
+                  : "rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive"
+              }
+              data-testid={
+                errorKind === "not_found"
+                  ? "output-document-detail-not-found"
+                  : "output-document-detail-error"
+              }
+            >
+              {errorMessage}
+            </div>
+            {errorKind !== "not_found" && errorKind !== "access_denied" ? (
+              <button
+                type="button"
+                className="rounded-lg border border-border px-3 py-1.5 text-sm"
+                data-testid="output-document-detail-retry"
+                onClick={() => setRefreshToken((token) => token + 1)}
+              >
+                Tentar novamente
+              </button>
+            ) : null}
           </div>
         ) : detail ? (
           <OutputDocumentDetailContent

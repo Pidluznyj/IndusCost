@@ -25,6 +25,7 @@ import {
 import {
   canAccessOutputDocumentsModule,
   canViewOutputDocuments,
+  canViewOutputDocumentsRaw,
   classifyOutputDocumentsDetailError,
   classifyOutputDocumentsListError,
   formatOutputDocumentCancellation,
@@ -42,7 +43,10 @@ import {
   formatOutputDocumentStatusLabel,
   hasActiveOutputDocumentsFilters,
   isOutputDocumentsDateRangeInvalid,
-  canViewOutputDocumentsRaw,
+  areOutputDocumentsSearchParamsEqual,
+  buildOutputDocumentNfeListHref,
+  buildOutputDocumentPortfolioAudit360Href,
+  resolveOutputDocumentDetailHeaderLinks,
   OUTPUT_DOCUMENTS_BREADCRUMB,
   OUTPUT_DOCUMENTS_PAGE_SIZE,
   OUTPUT_DOCUMENTS_PAGE_SUBTITLE,
@@ -338,8 +342,8 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /OUTPUT_DOCUMENTS_BREADCRUMB/);
     assert.equal(OUTPUT_DOCUMENTS_BREADCRUMB, "Comercial / Documentos de Saída");
     for (const marker of [
-      "output-documents-denied",
       "output-documents-loading",
+      "output-documents-skeleton",
       "output-documents-empty",
       "output-documents-empty-filters",
       "output-documents-api-unavailable",
@@ -360,6 +364,7 @@ describe("output documents page filters cards and grid", () => {
       "output-documents-has-receivable",
       "output-documents-clear-filters",
       "output-documents-export-csv",
+      "output-documents-refresh",
       "output-documents-card-documents",
       "output-documents-card-total-value",
       "output-documents-card-with-nfe",
@@ -369,6 +374,8 @@ describe("output documents page filters cards and grid", () => {
     ]) {
       assert.match(source, new RegExp(marker));
     }
+    assert.match(source, /UnauthorizedAccessGate/);
+    assert.match(source, /areOutputDocumentsSearchParamsEqual/);
     assert.match(source, /AbortController/);
     assert.match(source, /SEARCH_DEBOUNCE_MS/);
     assert.match(source, /useSearchParams/);
@@ -1069,6 +1076,7 @@ describe("output documents detail drawer", () => {
     );
     assert.match(moduleSource, /SalesOrderDetailDialog/);
     assert.match(moduleSource, /onOpenSalesOrder=\{openSalesOrderDetail\}/);
+    assert.match(moduleSource, /onOpenNfe=\{openNfeInList\}/);
     assert.match(moduleSource, /dismissOnEsc=\{salesOrderDetailId == null\}/);
 
     const overlay = read(
@@ -1113,5 +1121,105 @@ describe("output documents detail drawer", () => {
       canViewOutputDocumentsRaw({ hasPermission: () => false }),
       false
     );
+  });
+});
+
+describe("output documents page interactions", () => {
+  it("preserva filtros ao sincronizar URL e deep link do documento", () => {
+    const a = new URLSearchParams(
+      "page=2&company=KOPPETEL&documentId=00000000-0000-4000-8000-000000000301"
+    );
+    const b = new URLSearchParams(
+      "documentId=00000000-0000-4000-8000-000000000301&company=KOPPETEL&page=2"
+    );
+    assert.equal(areOutputDocumentsSearchParamsEqual(a, b), true);
+    assert.equal(
+      areOutputDocumentsSearchParamsEqual(a, new URLSearchParams("page=2")),
+      false
+    );
+
+    const moduleSource = read(
+      "src/components/commercial/OutputDocumentsModule.tsx"
+    );
+    assert.match(moduleSource, /areOutputDocumentsSearchParamsEqual/);
+    assert.match(
+      moduleSource,
+      /setSelectedDocumentId\(\(current\) => \(current === fromUrl \? current : fromUrl\)\)/
+    );
+    assert.match(moduleSource, /setSelectedDocumentId\(null\)/);
+  });
+
+  it("drawer expõe voltar, copiar, atualizar e links oficiais", () => {
+    const overlay = read(
+      "src/components/commercial/OutputDocumentDetailOverlay.tsx"
+    );
+    assert.match(overlay, /output-document-detail-nav/);
+    assert.match(overlay, /output-document-detail-back-list/);
+    assert.match(overlay, /output-document-detail-copy-number/);
+    assert.match(overlay, /output-document-detail-refresh/);
+    assert.match(overlay, /output-document-detail-retry/);
+    assert.match(overlay, /navigator\.clipboard\.writeText/);
+    assert.match(overlay, /resolveOutputDocumentDetailHeaderLinks/);
+  });
+
+  it("links de NF-e e Auditoria 360 respeitam filtros e permissão", () => {
+    const current = new URLSearchParams(
+      "company=KOPPETEL&page=3&documentId=abc"
+    );
+    const nfeHref = buildOutputDocumentNfeListHref(
+      { numero: "98765", externalId: 7208 },
+      current
+    );
+    assert.match(nfeHref, /nfe=98765/);
+    assert.match(nfeHref, /company=KOPPETEL/);
+    assert.doesNotMatch(nfeHref, /documentId=/);
+    assert.doesNotMatch(nfeHref, /page=/);
+
+    assert.equal(
+      buildOutputDocumentPortfolioAudit360Href("order-a"),
+      "/finance/portfolio-reconciliation?auditOrderId=order-a"
+    );
+
+    const denied = resolveOutputDocumentDetailHeaderLinks(
+      {
+        nfes: [
+          {
+            numero: "98765",
+            externalId: 7208,
+            isPrimary: true,
+          },
+        ],
+        orders: [{ salesOrderId: "order-a" }],
+      },
+      { canOpenPortfolioAudit360: false },
+      { currentSearchParams: current }
+    );
+    assert.equal(denied.length, 1);
+    assert.equal(denied[0]?.id, "nfe");
+
+    const allowed = resolveOutputDocumentDetailHeaderLinks(
+      {
+        nfes: [
+          {
+            numero: "98765",
+            externalId: 7208,
+            isPrimary: true,
+          },
+        ],
+        orders: [{ salesOrderId: "order-a" }],
+      },
+      { canOpenPortfolioAudit360: true }
+    );
+    assert.equal(allowed.length, 2);
+    assert.ok(allowed.some((link) => link.id === "portfolio_audit_360"));
+  });
+
+  it("acesso negado usa o gate oficial com redirecionamento", () => {
+    const moduleSource = read(
+      "src/components/commercial/OutputDocumentsModule.tsx"
+    );
+    assert.match(moduleSource, /UnauthorizedAccessGate/);
+    assert.match(moduleSource, /forceDenied/);
+    assert.doesNotMatch(moduleSource, /output-documents-denied/);
   });
 });

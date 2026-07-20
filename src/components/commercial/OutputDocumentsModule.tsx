@@ -15,17 +15,20 @@ import {
   FileWarning,
   Loader2,
   Receipt,
+  RefreshCw,
   Search,
   Wallet,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
 import {
   fetchOutputDocumentsList,
   fetchOutputDocumentsSummary,
 } from "@/src/lib/outputDocumentsClient";
 import {
   applyOutputDocumentsKpiPreset,
+  areOutputDocumentsSearchParamsEqual,
   canViewOutputDocuments,
   classifyOutputDocumentsListError,
   downloadOutputDocumentsPageCsv,
@@ -197,6 +200,17 @@ export function OutputDocumentsModule() {
   >(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const openNfeInList = useCallback(
+    (nfe: { numero: string | null; externalId: number }) => {
+      const label = nfe.numero?.trim() || String(nfe.externalId);
+      setNfeDraft(label);
+      setNfe(label);
+      setPage(1);
+      setSelectedDocumentId(null);
+    },
+    []
+  );
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const nextSearch = searchDraft.trim();
@@ -240,6 +254,11 @@ export function OutputDocumentsModule() {
   ]);
 
   useEffect(() => {
+    const fromUrl = searchParams.get("documentId")?.trim() || null;
+    setSelectedDocumentId((current) => (current === fromUrl ? current : fromUrl));
+  }, [searchParams]);
+
+  useEffect(() => {
     const next = new URLSearchParams();
     if (page > 1) next.set("page", String(page));
     if (search) next.set("search", search);
@@ -256,7 +275,9 @@ export function OutputDocumentsModule() {
     if (sortBy !== "dataDocumento") next.set("sortBy", sortBy);
     if (sortDir !== "desc") next.set("sortDir", sortDir);
     if (selectedDocumentId) next.set("documentId", selectedDocumentId);
-    setSearchParams(next, { replace: true });
+    if (!areOutputDocumentsSearchParamsEqual(next, searchParams)) {
+      setSearchParams(next, { replace: true });
+    }
   }, [
     page,
     search,
@@ -273,6 +294,7 @@ export function OutputDocumentsModule() {
     sortBy,
     sortDir,
     selectedDocumentId,
+    searchParams,
     setSearchParams,
   ]);
 
@@ -369,14 +391,7 @@ export function OutputDocumentsModule() {
   ]);
 
   if (!canView) {
-    return (
-      <div
-        className="rounded-xl border border-border bg-card p-8 text-center text-muted-foreground"
-        data-testid="output-documents-denied"
-      >
-        Você não possui permissão para acessar Documentos de Saída.
-      </div>
-    );
+    return <UnauthorizedAccessGate forceDenied />;
   }
 
   const filtersActive = hasActiveOutputDocumentsFilters({
@@ -457,6 +472,26 @@ export function OutputDocumentsModule() {
       >
         {OUTPUT_DOCUMENTS_BREADCRUMB}
       </p>
+
+      <div
+        className="flex flex-wrap items-center gap-2"
+        data-testid="output-documents-toolbar"
+      >
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
+          data-testid="output-documents-refresh"
+          disabled={loading}
+          onClick={() => setRetryToken((token) => token + 1)}
+          title="Atualizar lista"
+        >
+          <RefreshCw
+            className={cn("h-3.5 w-3.5", loading && "animate-spin")}
+            aria-hidden="true"
+          />
+          Atualizar
+        </button>
+      </div>
 
       <section
         className="rounded-xl border border-border bg-card p-3"
@@ -805,13 +840,28 @@ export function OutputDocumentsModule() {
           ) : null}
           {initialLoading ? (
             <div
-              className="flex items-center justify-center gap-2 p-10 text-sm text-muted-foreground"
+              className="space-y-3 p-4"
               data-testid="output-documents-loading"
               role="status"
               aria-live="polite"
+              aria-label="Carregando Documentos de Saída"
             >
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Carregando Documentos de Saída…
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Carregando Documentos de Saída…
+              </div>
+              <div
+                className="space-y-2"
+                data-testid="output-documents-skeleton"
+                aria-hidden="true"
+              >
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="h-10 animate-pulse rounded-md bg-muted/70"
+                  />
+                ))}
+              </div>
             </div>
           ) : showEmptyCatalog ? (
             <div
@@ -931,6 +981,7 @@ export function OutputDocumentsModule() {
         outputDocumentId={selectedDocumentId}
         onClose={() => setSelectedDocumentId(null)}
         onOpenSalesOrder={openSalesOrderDetail}
+        onOpenNfe={openNfeInList}
         dismissOnEsc={salesOrderDetailId == null}
       />
 

@@ -221,6 +221,24 @@ export function buildOutputDocumentNfeSearchHref(nfe: {
 }
 
 /**
+ * Abre a lista filtrada pela NF-e preservando os demais filtros (sem documentId).
+ */
+export function buildOutputDocumentNfeListHref(
+  nfe: { numero: string | null; externalId: number },
+  current?: URLSearchParams | null
+): string {
+  const next = current ? new URLSearchParams(current) : new URLSearchParams();
+  const label = nfe.numero?.trim() || String(nfe.externalId);
+  next.set("nfe", label);
+  next.delete("documentId");
+  next.delete("page");
+  const qs = next.toString();
+  return qs
+    ? `${OUTPUT_DOCUMENTS_ROUTE_PATH}?${qs}`
+    : OUTPUT_DOCUMENTS_ROUTE_PATH;
+}
+
+/**
  * Deep link da Auditoria 360º → Comercial · Documentos de Saída.
  * Prefere `documentId` (UUID local); senão busca por número/externalId.
  */
@@ -236,6 +254,89 @@ export function buildOutputDocumentAuditHref(doc: {
   const search =
     doc.documentNumber?.trim() || String(doc.stockDocumentExternalId);
   return `${OUTPUT_DOCUMENTS_ROUTE_PATH}?search=${encodeURIComponent(search)}`;
+}
+
+/** Deep link oficial para Auditoria 360° (Conciliação de Carteira) a partir de um pedido. */
+export function buildOutputDocumentPortfolioAudit360Href(
+  salesOrderId: string
+): string {
+  return `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(salesOrderId)}`;
+}
+
+/**
+ * Compara search params sem depender da ordem das chaves —
+ * evita loops de `setSearchParams` no deep link.
+ */
+export function areOutputDocumentsSearchParamsEqual(
+  a: URLSearchParams,
+  b: URLSearchParams
+): boolean {
+  const keys = new Set([...a.keys(), ...b.keys()]);
+  for (const key of keys) {
+    if ((a.get(key) ?? "") !== (b.get(key) ?? "")) return false;
+  }
+  return true;
+}
+
+export type OutputDocumentDetailNavigationCapabilities = {
+  canOpenPortfolioAudit360: boolean;
+};
+
+export function resolveOutputDocumentDetailNavigationCapabilities(check: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  canViewModule?: (moduleId: string) => boolean;
+}): OutputDocumentDetailNavigationCapabilities {
+  return {
+    canOpenPortfolioAudit360: Boolean(
+      check.canPerformAction?.("finance.portfolio_reconciliation", "view") ||
+        check.canViewModule?.("portfolio-reconciliation")
+    ),
+  };
+}
+
+export type OutputDocumentDetailHeaderLink = {
+  id: "nfe" | "portfolio_audit_360";
+  label: string;
+  href: string;
+  testId: string;
+};
+
+/**
+ * Links oficiais do drawer — só rotas com permissão e evidência local.
+ * NF-e filtra a própria lista (rota oficial existente). Auditoria 360° exige pedido + permissão.
+ */
+export function resolveOutputDocumentDetailHeaderLinks(
+  detail: {
+    nfes: ReadonlyArray<{ numero: string | null; externalId: number; isPrimary: boolean }>;
+    orders: ReadonlyArray<{ salesOrderId: string }>;
+  },
+  capabilities: OutputDocumentDetailNavigationCapabilities,
+  options?: { currentSearchParams?: URLSearchParams | null }
+): OutputDocumentDetailHeaderLink[] {
+  const links: OutputDocumentDetailHeaderLink[] = [];
+  const primaryNfe =
+    detail.nfes.find((nfe) => nfe.isPrimary) ?? detail.nfes[0] ?? null;
+  if (primaryNfe) {
+    links.push({
+      id: "nfe",
+      label: "Abrir NF-e",
+      href: buildOutputDocumentNfeListHref(
+        primaryNfe,
+        options?.currentSearchParams
+      ),
+      testId: "output-document-detail-open-nfe",
+    });
+  }
+  const firstOrder = detail.orders[0];
+  if (firstOrder && capabilities.canOpenPortfolioAudit360) {
+    links.push({
+      id: "portfolio_audit_360",
+      label: "Auditoria 360°",
+      href: buildOutputDocumentPortfolioAudit360Href(firstOrder.salesOrderId),
+      testId: "output-document-detail-open-audit-360",
+    });
+  }
+  return links;
 }
 
 export function formatOutputDocumentCoverageStatus(
