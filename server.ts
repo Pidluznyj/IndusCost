@@ -11279,10 +11279,57 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const openBookExplosionMemo = new Map<string, Map<string, ExplosionRowCore>>();
     const getProductAnalysis = async (pid: string) => {
       if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
-      const a = await getProductCostAnalysis(pid, analysisCache, true);
+      // includeDetails=false: MD só precisa de totais + explosão Open Book
+      const a = await getProductCostAnalysis(pid, analysisCache, false);
       productAnalysisMemo.set(pid, a);
       return a;
     };
+
+    type ProductPrep =
+      | { ok: true; rows: Array<Record<string, unknown>> }
+      | { ok: false; reason: "analysis" | "explosion" | "empty" };
+    const productPrep = new Map<string, ProductPrep>();
+    const uniqueProductIds = new Set<string>();
+    for (const order of salesOrders) {
+      for (const item of order.items) uniqueProductIds.add(item.productId);
+    }
+
+    const PRODUCT_PREP_CONCURRENCY = 8;
+    const productIdList = [...uniqueProductIds];
+    for (let i = 0; i < productIdList.length; i += PRODUCT_PREP_CONCURRENCY) {
+      const batch = productIdList.slice(i, i + PRODUCT_PREP_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (productId) => {
+          const analysis = await getProductAnalysis(productId);
+          if (!analysis || isCostAnalysisFailure(analysis)) {
+            productPrep.set(productId, { ok: false, reason: "analysis" });
+            return;
+          }
+          const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+            productId,
+            analysisCache,
+            new Set<string>(),
+            openBookExplosionMemo
+          );
+          if (!(explosion instanceof Map)) {
+            productPrep.set(productId, { ok: false, reason: "explosion" });
+            return;
+          }
+          const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
+          const industri = Number(
+            (analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0
+          );
+          const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<
+            Record<string, unknown>
+          >;
+          if (rows.length === 0) {
+            productPrep.set(productId, { ok: false, reason: "empty" });
+            return;
+          }
+          productPrep.set(productId, { ok: true, rows });
+        })
+      );
+    }
 
     type MaterialAgg = {
       materialId: string;
@@ -11386,46 +11433,37 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           continue;
         }
 
-        const analysis = await getProductAnalysis(item.productId);
-        if (!analysis || isCostAnalysisFailure(analysis)) {
-          coverage.orderItemsSkippedAnalysisFailure += 1;
-          recordMaterialDemandSkip(coverage, {
-            orderCode: order.orderCode,
-            productSku: productSkuEarly,
-            productName: productNameEarly,
-            reason: "Análise de custo/composição indisponível para o produto",
-          });
+        const prep = productPrep.get(item.productId);
+        if (!prep || !prep.ok) {
+          const reason = prep?.reason ?? "analysis";
+          if (reason === "explosion") {
+            coverage.orderItemsSkippedExplosionError += 1;
+            recordMaterialDemandSkip(coverage, {
+              orderCode: order.orderCode,
+              productSku: productSkuEarly,
+              productName: productNameEarly,
+              reason: "Não foi possível explodir a composição do produto",
+            });
+          } else if (reason === "empty") {
+            coverage.orderItemsSkippedNoMaterials += 1;
+            recordMaterialDemandSkip(coverage, {
+              orderCode: order.orderCode,
+              productSku: productSkuEarly,
+              productName: productNameEarly,
+              reason: "Composição sem matéria-prima registrada para custeio",
+            });
+          } else {
+            coverage.orderItemsSkippedAnalysisFailure += 1;
+            recordMaterialDemandSkip(coverage, {
+              orderCode: order.orderCode,
+              productSku: productSkuEarly,
+              productName: productNameEarly,
+              reason: "Análise de custo/composição indisponível para o produto",
+            });
+          }
           continue;
         }
-        const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
-          item.productId,
-          analysisCache,
-          new Set<string>(),
-          openBookExplosionMemo
-        );
-        if (!(explosion instanceof Map)) {
-          coverage.orderItemsSkippedExplosionError += 1;
-          recordMaterialDemandSkip(coverage, {
-            orderCode: order.orderCode,
-            productSku: productSkuEarly,
-            productName: productNameEarly,
-            reason: "Não foi possível explodir a composição do produto",
-          });
-          continue;
-        }
-        const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
-        const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
-        const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
-        if (rows.length === 0) {
-          coverage.orderItemsSkippedNoMaterials += 1;
-          recordMaterialDemandSkip(coverage, {
-            orderCode: order.orderCode,
-            productSku: productSkuEarly,
-            productName: productNameEarly,
-            reason: "Composição sem matéria-prima registrada para custeio",
-          });
-          continue;
-        }
+        const rows = prep.rows;
 
         coverage.orderItemsProcessed += 1;
 
@@ -12010,7 +12048,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
     const getProductAnalysis = async (pid: string) => {
       if (productAnalysisMemo.has(pid)) return productAnalysisMemo.get(pid);
-      const a = await getProductCostAnalysis(pid, analysisCache, true);
+      const a = await getProductCostAnalysis(pid, analysisCache, false);
       productAnalysisMemo.set(pid, a);
       return a;
     };
@@ -12020,47 +12058,59 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       for (const item of order.items) productIds.add(item.productId);
     }
 
-    for (const productId of productIds) {
-      const analysis = await getProductAnalysis(productId);
-      if (!analysis || isCostAnalysisFailure(analysis)) continue;
+    const PRODUCT_PREP_CONCURRENCY = 8;
+    const productIdList = [...productIds];
+    for (let i = 0; i < productIdList.length; i += PRODUCT_PREP_CONCURRENCY) {
+      const batch = productIdList.slice(i, i + PRODUCT_PREP_CONCURRENCY);
+      await Promise.all(
+        batch.map(async (productId) => {
+          const analysis = await getProductAnalysis(productId);
+          if (!analysis || isCostAnalysisFailure(analysis)) return;
 
-      const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
-        productId,
-        analysisCache,
-        new Set<string>(),
-        openBookExplosionMemo
+          const explosion = await buildOpenBookRawMaterialExplosionPerUnit(
+            productId,
+            analysisCache,
+            new Set<string>(),
+            openBookExplosionMemo
+          );
+          if (!(explosion instanceof Map)) return;
+
+          const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
+          const industri = Number(
+            (analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0
+          );
+          const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<
+            Record<string, unknown>
+          >;
+          if (rows.length === 0) return;
+
+          const bomRows: ProductBomExplosionRow[] = [];
+          for (const row of rows) {
+            const mid =
+              typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
+            if (!mid) continue;
+            const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
+            const desc =
+              typeof row.description === "string" && row.description.trim()
+                ? row.description.trim()
+                : "Matéria-prima";
+            const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
+            const { unitKey, unitLabel } = normalizeMaterialUnitKey(unit);
+            bomRows.push({
+              materialId: mid,
+              materialCode: code,
+              materialName: desc,
+              unit,
+              unitKey,
+              unitLabel,
+              quantityPerUnit: safeNum(row.quantity) ?? 0,
+              valuePerUnit: safeNum(row.totalCost),
+              unitCost: safeNum(row.unitCostEffective),
+            });
+          }
+          if (bomRows.length > 0) productExplosions.set(productId, bomRows);
+        })
       );
-      if (!(explosion instanceof Map)) continue;
-
-      const mp = Number((analysis as { totalMaterialCost?: unknown }).totalMaterialCost ?? 0);
-      const industri = Number((analysis as { totalIndustrialCost?: unknown }).totalIndustrialCost ?? 0);
-      const rows = finalizeRowsForOpenBook(explosion, industri, mp) as Array<Record<string, unknown>>;
-      if (rows.length === 0) continue;
-
-      const bomRows: ProductBomExplosionRow[] = [];
-      for (const row of rows) {
-        const mid = typeof row.materialId === "string" && row.materialId.trim() ? row.materialId : null;
-        if (!mid) continue;
-        const code = typeof row.code === "string" && row.code.trim() ? row.code.trim() : null;
-        const desc =
-          typeof row.description === "string" && row.description.trim()
-            ? row.description.trim()
-            : "Matéria-prima";
-        const unit = typeof row.unit === "string" && row.unit.trim() ? row.unit.trim() : null;
-        const { unitKey, unitLabel } = normalizeMaterialUnitKey(unit);
-        bomRows.push({
-          materialId: mid,
-          materialCode: code,
-          materialName: desc,
-          unit,
-          unitKey,
-          unitLabel,
-          quantityPerUnit: safeNum(row.quantity) ?? 0,
-          valuePerUnit: safeNum(row.totalCost),
-          unitCost: safeNum(row.unitCostEffective),
-        });
-      }
-      if (bomRows.length > 0) productExplosions.set(productId, bomRows);
     }
 
     const intelligenceFilters = buildMaterialDemandIntelligenceFilters(filters, query);
