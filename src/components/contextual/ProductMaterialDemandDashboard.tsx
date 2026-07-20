@@ -8,6 +8,8 @@ import {
   MATERIAL_DEMAND_TAB_HINTS,
   materialDemandTabButtonClass,
   materialDemandTabNeedsRows,
+  resolveMaterialDemandYtdPeriod,
+  formatYmdAsPtBr,
   type MaterialDemandDashboardTab,
 } from "@/src/components/contextual/materialDemandDashboardUi";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -45,6 +47,8 @@ import {
   MaterialDemandTablePagination,
   MaterialDemandTopMaterialsByPeriod,
   MaterialDemandUsageEstimateHeader,
+  MaterialDemandYtdKpiGrid,
+  MaterialDemandYtdMaterialsTable,
   type MaterialOriginRow,
 } from "@/src/components/contextual/MaterialDemandDashboardPanels";
 import { MaterialDemandPlannedRealizedPanel } from "@/src/components/contextual/MaterialDemandPlannedRealizedPanel";
@@ -218,7 +222,7 @@ const DASHBOARD_CONTEXT = {
     baseBadge: "Base: pedidos de venda",
     title: "Pedidos de venda — Inteligência de Matéria-Prima",
     subtitle:
-      "Estimativa de matéria-prima com base em pedidos, faturamento e saldo em aberto — com janela padrão de 14 dias.",
+      "Estimativa YTD de matéria-prima a partir dos itens dos pedidos de venda (explosão de BOM), com visão de compra e saldo.",
   },
 } as const;
 
@@ -591,7 +595,7 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
   );
 
   const rowsSort = useMemo(() => {
-    if (activeTab === "usage-estimate") {
+    if (activeTab === "usage-estimate" || activeTab === "ytd") {
       return {
         sortBy: usageTableSort === "quantity" ? "quantityTotal" : "estimatedValueTotal",
         sortDir: "desc" as const,
@@ -893,9 +897,21 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
       setActiveTab(tab);
       setExpandedMaterialId(null);
       setRowsPage(1);
+      if (tab === "ytd") {
+        const ytd = resolveMaterialDemandYtdPeriod();
+        const next: FiltersState = {
+          ...appliedFilters,
+          dateBasis: ytd.dateBasis,
+          startDate: ytd.startDate,
+          endDate: ytd.endDate,
+        };
+        setFilters(next);
+        commitAppliedFilters(next, tab);
+        return;
+      }
       syncUrlFromState(appliedFilters, tab);
     },
-    [appliedFilters, syncUrlFromState]
+    [appliedFilters, commitAppliedFilters, syncUrlFromState]
   );
 
   const handleExportCsv = useCallback(async () => {
@@ -1515,6 +1531,89 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                 </div>
                 <p className="text-sm text-muted-foreground">{MATERIAL_DEMAND_TAB_HINTS[activeTab]}</p>
               </nav>
+
+              {activeTab === "ytd" ? (
+                <div className="space-y-6" data-testid="material-demand-ytd-tab">
+                  <div className="rounded-xl border border-border bg-card px-5 py-4 shadow-sm">
+                    <h3 className="text-sm font-bold text-foreground">
+                      Quantidade estimada YTD por matéria-prima
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Estimativa a partir da explosão de BOM dos itens dos pedidos de venda emitidos no ano
+                      corrente ({formatYmdAsPtBr(appliedFilters.startDate)} a{" "}
+                      {formatYmdAsPtBr(appliedFilters.endDate)}).
+                    </p>
+                  </div>
+                  <MaterialDemandYtdKpiGrid
+                    summaryData={summaryData}
+                    appliedFilters={appliedFiltersPanel}
+                  />
+                  <MaterialDemandMixedUnitsBlock
+                    summaryData={summaryData}
+                    appliedFilters={appliedFiltersPanel}
+                    onSelectUnit={handleSelectUnit}
+                  />
+                  <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                    <div className="px-5 py-4 border-b border-border bg-muted/20 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">Matérias-primas YTD</h3>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Código, descrição, quantidade estimada, valor por quilo e valor total.
+                        </p>
+                      </div>
+                      <div className="material-demand-no-print flex flex-wrap gap-1.5 justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUsageTableSort("value");
+                            setRowsPage(1);
+                          }}
+                          className={cn(
+                            "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                            materialDemandTabButtonClass(usageTableSort === "value")
+                          )}
+                        >
+                          Ordenar por valor
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUsageTableSort("quantity");
+                            setRowsPage(1);
+                          }}
+                          className={cn(
+                            "inline-flex h-8 items-center rounded-lg border px-3 text-xs font-semibold transition-colors",
+                            materialDemandTabButtonClass(usageTableSort === "quantity")
+                          )}
+                        >
+                          Ordenar por quantidade
+                        </button>
+                      </div>
+                    </div>
+                    {rowsError ? (
+                      <div className="p-6 text-center text-sm text-destructive">{rowsError}</div>
+                    ) : showTableSkeleton ? (
+                      <div className="p-6 space-y-3">
+                        <DashboardSkeletonBlock className="h-6 w-40" />
+                        <DashboardSkeletonBlock className="h-48" />
+                      </div>
+                    ) : (
+                      <>
+                        <MaterialDemandYtdMaterialsTable rows={tableRows} />
+                        {pagination ? (
+                          <MaterialDemandTablePagination
+                            page={pagination.page}
+                            totalPages={pagination.totalPages}
+                            totalItems={pagination.totalItems}
+                            pageSize={pagination.pageSize}
+                            onPageChange={setRowsPage}
+                          />
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : null}
 
               {activeTab === "usage-estimate" ? (
                 <div className="space-y-6">

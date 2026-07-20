@@ -1,8 +1,12 @@
-import { salesOrderStatusLabel } from "@/src/lib/materialDemandFilters";
+import {
+  resolveMaterialDemandPeriodPreset,
+  salesOrderStatusLabel,
+} from "@/src/lib/materialDemandFilters";
 
 export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
 export type MaterialDemandDashboardTab =
+  | "ytd"
   | "usage-estimate"
   | "planned-vs-realized"
   | "summary"
@@ -15,6 +19,7 @@ export type MaterialDemandTabDef = {
 };
 
 export const MATERIAL_DEMAND_TABS: MaterialDemandTabDef[] = [
+  { id: "ytd", label: "YTD por MP" },
   { id: "usage-estimate", label: "Estimativa de uso" },
   { id: "planned-vs-realized", label: "Previsto x Realizado" },
   { id: "summary", label: "Resumo" },
@@ -23,6 +28,7 @@ export const MATERIAL_DEMAND_TABS: MaterialDemandTabDef[] = [
 ];
 
 export const MATERIAL_DEMAND_TAB_HINTS: Record<MaterialDemandDashboardTab, string> = {
+  ytd: "Quantidade estimada YTD de cada matéria-prima com base nos itens dos pedidos de venda (emissão no ano corrente).",
   "usage-estimate":
     "Quanto de cada matéria-prima será necessário para atender os pedidos filtrados no período selecionado.",
   "planned-vs-realized":
@@ -33,13 +39,23 @@ export const MATERIAL_DEMAND_TAB_HINTS: Record<MaterialDemandDashboardTab, strin
 };
 
 export function materialDemandTabNeedsRows(tab: MaterialDemandDashboardTab): boolean {
-  return tab === "usage-estimate" || tab === "by-material";
+  return tab === "ytd" || tab === "usage-estimate" || tab === "by-material";
 }
 
 export function defaultMaterialDemandTab(
   context: "products" | "sales-orders"
 ): MaterialDemandDashboardTab {
-  return context === "sales-orders" ? "usage-estimate" : "summary";
+  return context === "sales-orders" ? "ytd" : "summary";
+}
+
+/** Período canônico da aba YTD: emissão do pedido no ano corrente. */
+export function resolveMaterialDemandYtdPeriod(): {
+  dateBasis: MaterialDemandDateBasis;
+  startDate: string;
+  endDate: string;
+} {
+  const range = resolveMaterialDemandPeriodPreset("ytd", "issueDate");
+  return { dateBasis: "issueDate", startDate: range.startDate, endDate: range.endDate };
 }
 
 export function dateBasisLabelPt(dateBasis: MaterialDemandDateBasis): string {

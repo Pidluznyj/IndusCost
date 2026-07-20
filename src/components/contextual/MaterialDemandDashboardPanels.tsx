@@ -209,6 +209,116 @@ export function MaterialDemandKpiGrid({
   );
 }
 
+/** Cards de totalizadores da aba YTD — foco em valores. */
+export function MaterialDemandYtdKpiGrid({
+  summaryData,
+  appliedFilters,
+}: {
+  summaryData: SummaryPanelData;
+  appliedFilters: AppliedFiltersPanel;
+}) {
+  const unitLabel = appliedFilters.unitKey
+    ? summaryData.facets.units.find((u) => u.unitKey === appliedFilters.unitKey)?.unitLabel
+    : null;
+  const avgUnitCost =
+    summaryData.summary.quantityTotalsComparable &&
+    summaryData.summary.totalEstimatedQuantity > 0
+      ? summaryData.summary.totalEstimatedValue / summaryData.summary.totalEstimatedQuantity
+      : null;
+
+  return (
+    <ContextualDashboardKpiGrid minColumnWidth={170}>
+      <ContextualDashboardKpiCard
+        label="Valor total YTD"
+        value={money(summaryData.summary.totalEstimatedValue)}
+        hint="Soma do valor estimado de matéria-prima nos pedidos do ano"
+      />
+      {summaryData.summary.quantityTotalsComparable ? (
+        <ContextualDashboardKpiCard
+          label={unitLabel ? `Qtde total (${unitLabel})` : "Qtde total"}
+          value={num(summaryData.summary.totalEstimatedQuantity)}
+        />
+      ) : (
+        <ContextualDashboardKpiCard
+          label="Qtde total"
+          value="Várias unidades"
+          hint="Filtre por unidade para somar quantidades"
+          valueClassName="text-base font-semibold leading-snug sm:text-lg"
+        />
+      )}
+      <ContextualDashboardKpiCard
+        label="Valor médio / un."
+        value={avgUnitCost == null ? "—" : money(avgUnitCost)}
+        hint="Valor total ÷ quantidade (quando unidades são comparáveis)"
+      />
+      <ContextualDashboardKpiCard
+        label="Matérias-primas"
+        value={String(summaryData.summary.uniqueMaterials)}
+      />
+      <ContextualDashboardKpiCard
+        label="Pedidos YTD"
+        value={String(summaryData.summary.orderCount)}
+      />
+      <ContextualDashboardKpiCard
+        label="Produtos"
+        value={String(summaryData.summary.productCount)}
+      />
+    </ContextualDashboardKpiGrid>
+  );
+}
+
+/** Grid enxuto YTD: Código, Descrição, Qtde, Valor por quilo, Valor total. */
+export function MaterialDemandYtdMaterialsTable({
+  rows,
+}: {
+  rows: MaterialRowPanel[];
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+        Nenhuma matéria-prima estimada no YTD para os filtros selecionados.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto" data-testid="material-demand-ytd-table">
+      <table className="w-full text-xs">
+        <thead className="bg-muted/15 border-b border-border">
+          <tr>
+            <th className="p-3 text-left font-semibold">Código</th>
+            <th className="p-3 text-left font-semibold">Descrição</th>
+            <th className="p-3 text-right font-semibold">Qtde</th>
+            <th className="p-3 text-right font-semibold">Valor por quilo</th>
+            <th className="p-3 text-right font-semibold">Valor total</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((row) => {
+            const unit = row.unit ?? row.unitLabel ?? "";
+            return (
+              <tr key={row.materialId} className="hover:bg-muted/30">
+                <td className="p-3 whitespace-nowrap font-medium">{row.code ?? "—"}</td>
+                <td className="p-3 font-semibold break-words">{row.description}</td>
+                <td className="p-3 text-right tabular-nums whitespace-nowrap">
+                  {num(row.quantityTotal)}
+                  {unit ? ` ${unit}` : ""}
+                </td>
+                <td className="p-3 text-right tabular-nums whitespace-nowrap">
+                  {row.unitCostReference == null ? "—" : money(row.unitCostReference)}
+                </td>
+                <td className="p-3 text-right tabular-nums font-semibold whitespace-nowrap">
+                  {money(row.estimatedValueTotal)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function MaterialDemandMixedUnitsBlock({
   summaryData,
   appliedFilters,

@@ -54,10 +54,14 @@ test("materialDemandAggregationPeriodKey alinha dateBasis", () => {
   );
 });
 
-test("defaults sales-orders incluem carteira firme", () => {
+test("defaults sales-orders incluem carteira firme e YTD por emissão", () => {
   const f = buildDefaultMaterialDemandUiFilters("sales-orders");
   assert.deepEqual(f.statuses, [...SALES_ORDER_FIRM_STATUSES]);
   assert.equal(f.includeOrdersWithoutDeliveryDate, true);
+  assert.equal(f.dateBasis, "issueDate");
+  const ytd = resolveMaterialDemandPeriodPreset("ytd", "issueDate");
+  assert.equal(f.startDate, ytd.startDate);
+  assert.equal(f.endDate, ytd.endDate);
 });
 
 test("URL round-trip de filtros UI", () => {

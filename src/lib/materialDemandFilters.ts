@@ -341,13 +341,32 @@ export function resolveMaterialDemandPeriodPreset(
 export function buildDefaultMaterialDemandUiFilters(
   context: "products" | "sales-orders"
 ): MaterialDemandUiFilters {
+  if (context === "sales-orders") {
+    const dateBasis: MaterialDemandDateBasis = "issueDate";
+    const { startDate, endDate } = resolveMaterialDemandPeriodPreset("ytd", dateBasis);
+    return {
+      startDate,
+      endDate,
+      dateBasis,
+      statuses: [...SALES_ORDER_FIRM_STATUSES],
+      customerId: "",
+      productId: "",
+      materialId: "",
+      companyIssuer: "",
+      unitKey: "",
+      mode: "value",
+      search: "",
+      includeOrdersWithoutDeliveryDate: true,
+    };
+  }
+
   const dateBasis: MaterialDemandDateBasis = "expectedDeliveryDate";
   const { startDate, endDate } = resolveMaterialDemandPeriodPreset("next30", dateBasis);
   return {
     startDate,
     endDate,
     dateBasis,
-    statuses: context === "sales-orders" ? [...SALES_ORDER_FIRM_STATUSES] : [],
+    statuses: [],
     customerId: "",
     productId: "",
     materialId: "",
