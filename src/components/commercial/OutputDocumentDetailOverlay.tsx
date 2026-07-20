@@ -11,6 +11,8 @@ import {
   OverlayTable,
   OverlayTabs,
 } from "@/src/components/ui/overlay";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { usePermissions } from "@/src/hooks/usePermissions";
 import {
   fetchOutputDocumentDetail,
   type OutputDocumentDetailPayload,
@@ -19,6 +21,7 @@ import type { OutputDocumentDetailItem } from "@/src/lib/output-documents/output
 import {
   buildOutputDocumentNfeSearchHref,
   buildOutputDocumentSalesOrderHref,
+  canViewOutputDocumentsRaw,
   classifyOutputDocumentsDetailError,
   formatOutputDocumentCancellation,
   formatOutputDocumentDate,
@@ -33,9 +36,12 @@ import {
   formatOutputDocumentItemUnit,
   formatOutputDocumentLabel,
   formatOutputDocumentMoney,
+  formatOutputDocumentNfeCancellation,
+  formatOutputDocumentNfeDocumentaryDiffs,
   formatOutputDocumentNumber,
   formatOutputDocumentPrimaryNfe,
   formatOutputDocumentStatusLabel,
+  OUTPUT_DOCUMENT_AWAITING_CR_MESSAGE,
   outputDocumentFinancialStatusTone,
   outputDocumentInconsistencyTone,
   outputDocumentItemLinkStatusTone,
@@ -45,6 +51,8 @@ import {
 type Props = {
   outputDocumentId: string | null;
   onClose: () => void;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
+  dismissOnEsc?: boolean;
 };
 
 export type OutputDocumentDetailTab =
@@ -58,7 +66,15 @@ export type OutputDocumentDetailTab =
 export function OutputDocumentDetailOverlay({
   outputDocumentId,
   onClose,
+  onOpenSalesOrder,
+  dismissOnEsc = true,
 }: Props) {
+  const auth = useAuth();
+  const permissions = usePermissions();
+  const includeRaw = canViewOutputDocumentsRaw({
+    canPerformAction: permissions.canPerformAction,
+    hasPermission: auth.hasPermission,
+  });
   const [detail, setDetail] = useState<OutputDocumentDetailPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [errorKind, setErrorKind] = useState<
@@ -81,7 +97,10 @@ export function OutputDocumentDetailOverlay({
     setErrorKind(null);
     setErrorMessage(null);
     setActiveTab("geral");
-    void fetchOutputDocumentDetail(outputDocumentId, { signal: controller.signal })
+    void fetchOutputDocumentDetail(outputDocumentId, {
+      includeRaw,
+      signal: controller.signal,
+    })
       .then((payload) => {
         if (!controller.signal.aborted) setDetail(payload);
       })
@@ -100,23 +119,23 @@ export function OutputDocumentDetailOverlay({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [outputDocumentId]);
+  }, [outputDocumentId, includeRaw]);
 
-  const tabs = useMemo(() => {
-    const base: Array<{ id: OutputDocumentDetailTab; label: string; count?: number }> = [
-      { id: "geral", label: "Geral" },
-      { id: "itens", label: "Itens", count: detail?.items.length },
-      { id: "pedidos", label: "Pedidos", count: detail?.orders.length },
-      { id: "nfes", label: "NF-e", count: detail?.nfes.length },
-    ];
-    if (detail?.permissions.canViewFinancial || detail?.financial) {
-      base.push({ id: "financeiro", label: "Financeiro" });
-    }
-    if (detail?.permissions.canViewAudit || detail?.audit) {
-      base.push({ id: "auditoria", label: "Auditoria" });
-    }
-    return base;
-  }, [detail]);
+  const tabs = useMemo(
+    () => [
+      { id: "geral" as const, label: "Geral" },
+      { id: "itens" as const, label: "Itens", count: detail?.items.length },
+      {
+        id: "pedidos" as const,
+        label: "Pedidos de Venda",
+        count: detail?.orders.length,
+      },
+      { id: "nfes" as const, label: "NF-e", count: detail?.nfes.length },
+      { id: "financeiro" as const, label: "Financeiro" },
+      { id: "auditoria" as const, label: "Auditoria" },
+    ],
+    [detail]
+  );
 
   useEffect(() => {
     if (!tabs.some((tab) => tab.id === activeTab)) {
@@ -137,6 +156,7 @@ export function OutputDocumentDetailOverlay({
       open={outputDocumentId != null}
       onClose={onClose}
       size="full"
+      dismissOnEsc={dismissOnEsc}
       ariaLabelledBy={titleId}
       ariaDescribedBy="output-document-detail-description"
       testId="output-document-detail-drawer"
@@ -221,7 +241,11 @@ export function OutputDocumentDetailOverlay({
             {errorMessage}
           </div>
         ) : detail ? (
-          <OutputDocumentDetailContent detail={detail} activeTab={activeTab} />
+          <OutputDocumentDetailContent
+            detail={detail}
+            activeTab={activeTab}
+            onOpenSalesOrder={onOpenSalesOrder}
+          />
         ) : null}
       </OverlayBody>
     </Overlay>
@@ -231,9 +255,11 @@ export function OutputDocumentDetailOverlay({
 export function OutputDocumentDetailContent({
   detail,
   activeTab = "geral",
+  onOpenSalesOrder,
 }: {
   detail: OutputDocumentDetailPayload;
   activeTab?: OutputDocumentDetailTab;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -241,9 +267,9 @@ export function OutputDocumentDetailContent({
         <InconsistenciesBanner inconsistencies={detail.inconsistencies} />
       ) : null}
       {activeTab === "itens" ? (
-        <ItemsPanel detail={detail} />
+        <ItemsPanel detail={detail} onOpenSalesOrder={onOpenSalesOrder} />
       ) : activeTab === "pedidos" ? (
-        <OrdersPanel detail={detail} />
+        <OrdersPanel detail={detail} onOpenSalesOrder={onOpenSalesOrder} />
       ) : activeTab === "nfes" ? (
         <NfesPanel detail={detail} />
       ) : activeTab === "financeiro" ? (
@@ -408,7 +434,13 @@ function GeneralPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
   );
 }
 
-function ItemsPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
+function ItemsPanel({
+  detail,
+  onOpenSalesOrder,
+}: {
+  detail: OutputDocumentDetailPayload;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
+}) {
   return (
     <div
       id="overlay-panel-itens"
@@ -420,13 +452,22 @@ function ItemsPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
         title="Itens do documento"
         description={`${detail.resolution.itemCount} item(ns) · ${detail.resolution.itemsResolved} resolvido(s) · ${detail.resolution.itemsUnresolved} não resolvido(s)`}
       >
-        <OutputDocumentItemsTable items={detail.items} />
+        <OutputDocumentItemsTable
+          items={detail.items}
+          onOpenSalesOrder={onOpenSalesOrder}
+        />
       </OverlaySection>
     </div>
   );
 }
 
-function OrdersPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
+function OrdersPanel({
+  detail,
+  onOpenSalesOrder,
+}: {
+  detail: OutputDocumentDetailPayload;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
+}) {
   return (
     <div
       id="overlay-panel-pedidos"
@@ -435,7 +476,7 @@ function OrdersPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
       data-testid="output-document-detail-orders-panel"
     >
       <OverlaySection
-        title="Pedidos vinculados"
+        title="Pedidos de Venda"
         description={`${detail.orders.length} pedido(s) · cobertura ${detail.allocations.coverageStatus}`}
       >
         {detail.orders.length === 0 ? (
@@ -444,20 +485,20 @@ function OrdersPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
           </EmptyBlock>
         ) : (
           <OverlayTable
-            className="min-w-[960px]"
+            className="min-w-[1040px]"
             data-testid="output-document-detail-orders-table"
           >
             <OverlayTable.Head>
               <OverlayTable.Row>
                 {[
                   "Pedido",
-                  "Emissão",
+                  "Data",
                   "Status",
                   "Vendedor",
-                  "Valor do pedido",
+                  "Valor",
                   "Valor alocado",
-                  "Cobertura",
-                  "Origem",
+                  "% cobertura",
+                  "Abrir",
                 ].map((label) => (
                   <OverlayTable.HeadCell key={label}>{label}</OverlayTable.HeadCell>
                 ))}
@@ -465,12 +506,12 @@ function OrdersPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
             </OverlayTable.Head>
             <OverlayTable.Body>
               {detail.orders.map((order) => (
-                <OverlayTable.Row key={order.salesOrderId}>
-                  <OverlayTable.Cell>
-                    <DeepLink
-                      href={buildOutputDocumentSalesOrderHref(order)}
-                      label={order.orderCode?.trim() || order.salesOrderId}
-                    />
+                <OverlayTable.Row
+                  key={order.salesOrderId}
+                  data-testid={`output-document-detail-order-${order.salesOrderId}`}
+                >
+                  <OverlayTable.Cell mono>
+                    {order.orderCode?.trim() || order.salesOrderId}
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
                     {formatOutputDocumentDate(order.issueDate)}
@@ -493,7 +534,24 @@ function OrdersPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                       : `${order.coveragePercent.toFixed(1)}%`}
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
-                    {order.sources.join(" · ") || "—"}
+                    {onOpenSalesOrder ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-primary hover:bg-primary/5"
+                        data-testid={`output-document-detail-open-order-${order.salesOrderId}`}
+                        onClick={() =>
+                          onOpenSalesOrder(order.salesOrderId, order.orderCode)
+                        }
+                      >
+                        Abrir pedido
+                        <ExternalLink className="h-3 w-3 opacity-70" aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <DeepLink
+                        href={buildOutputDocumentSalesOrderHref(order)}
+                        label="Abrir pedido"
+                      />
+                    )}
                   </OverlayTable.Cell>
                 </OverlayTable.Row>
               ))}
@@ -536,7 +594,7 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
       data-testid="output-document-detail-nfes-panel"
     >
       <OverlaySection
-        title="NF-e vinculadas"
+        title="NF-e"
         description={`${detail.nfes.length} nota(s)`}
       >
         {detail.nfes.length === 0 ? (
@@ -545,7 +603,7 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
           </EmptyBlock>
         ) : (
           <OverlayTable
-            className="min-w-[900px]"
+            className="min-w-[1100px]"
             data-testid="output-document-detail-nfes-table"
           >
             <OverlayTable.Head>
@@ -555,10 +613,11 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                   "Série",
                   "Status",
                   "Emissão",
+                  "Processamento",
                   "Valor",
                   "Chave",
-                  "Local",
-                  "Fonte",
+                  "Cancelamento",
+                  "Diferenças documentais",
                 ].map((label) => (
                   <OverlayTable.HeadCell key={label}>{label}</OverlayTable.HeadCell>
                 ))}
@@ -569,6 +628,7 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                 <OverlayTable.Row
                   key={nfe.externalId}
                   data-primary={nfe.isPrimary ? "true" : "false"}
+                  data-testid={`output-document-detail-nfe-${nfe.externalId}`}
                 >
                   <OverlayTable.Cell>
                     <DeepLink
@@ -596,6 +656,9 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                   <OverlayTable.Cell>
                     {formatOutputDocumentDate(nfe.dataEmissao)}
                   </OverlayTable.Cell>
+                  <OverlayTable.Cell>
+                    {formatOutputDocumentDate(nfe.dataProcessamento)}
+                  </OverlayTable.Cell>
                   <OverlayTable.Cell mono className="tabular-nums">
                     {formatOutputDocumentMoney(nfe.totalValue)}
                   </OverlayTable.Cell>
@@ -603,10 +666,15 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                     {formatOutputDocumentLabel(nfe.chaveMasked)}
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
-                    {nfe.foundLocally ? "Encontrada" : "Ausente"}
+                    {formatOutputDocumentNfeCancellation(nfe)}
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
-                    {nfe.sources.join(" · ") || "—"}
+                    <div className="max-w-[16rem]">
+                      {formatOutputDocumentNfeDocumentaryDiffs(
+                        nfe,
+                        detail.inconsistencies
+                      )}
+                    </div>
                   </OverlayTable.Cell>
                 </OverlayTable.Row>
               ))}
@@ -634,6 +702,7 @@ function FinancialPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
     );
   }
   const financial = detail.financial;
+  const awaitingCr = financial.status === "aguardando_cr";
   return (
     <div
       id="overlay-panel-financeiro"
@@ -641,22 +710,31 @@ function FinancialPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
       className="space-y-4"
       data-testid="output-document-detail-financial-panel"
     >
+      {awaitingCr ? (
+        <div
+          className="rounded-xl border border-amber-300/70 bg-amber-50 p-3 text-sm text-amber-950"
+          data-testid="output-document-detail-awaiting-cr"
+          role="status"
+        >
+          {OUTPUT_DOCUMENT_AWAITING_CR_MESSAGE}
+        </div>
+      ) : null}
       <OverlaySection title="Situação financeira">
         <OverlayKpiCardGrid columns={4}>
           <OverlayKpiCard
-            label="Situação"
+            label="Status"
             value={formatOutputDocumentFinancialStatusLabel(financial.status)}
             tone="info"
             size="sm"
           />
           <OverlayKpiCard
-            label="Total CR"
+            label="CR total"
             value={formatOutputDocumentMoney(financial.receivableTotal)}
             tone="neutral"
             size="sm"
           />
           <OverlayKpiCard
-            label="Em aberto"
+            label="Aberto"
             value={formatOutputDocumentMoney(financial.open)}
             tone={financial.open > 0 ? "warning" : "positive"}
             size="sm"
@@ -670,16 +748,16 @@ function FinancialPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
         </OverlayKpiCardGrid>
         <DetailFieldGrid className="mt-4">
           <DetailField
-            label="Origem"
-            value={formatOutputDocumentLabel(financial.financialOrigin)}
-          />
-          <DetailField
             label="Próximo vencimento"
             value={formatOutputDocumentDate(financial.nextDueDate)}
           />
           <DetailField
             label="Parcelas"
             value={String(financial.installmentCount)}
+          />
+          <DetailField
+            label="Origem"
+            value={formatOutputDocumentLabel(financial.financialOrigin)}
           />
           <DetailField
             label="Condição do documento"
@@ -695,7 +773,7 @@ function FinancialPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
         ) : null}
       </OverlaySection>
 
-      <OverlaySection title="Títulos / parcelas">
+      <OverlaySection title="Títulos">
         {financial.titles.length === 0 ? (
           <EmptyBlock testId="output-document-detail-financial-titles-empty">
             Nenhum título de CR vinculado.
@@ -772,12 +850,21 @@ function AuditPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
       className="space-y-4"
       data-testid="output-document-detail-audit-panel"
     >
-      <OverlaySection title="Sincronização e presença">
+      <OverlaySection title="IDs externos">
         <DetailFieldGrid>
+          <DetailField label="Documento ID" value={audit.stockDocumentId} />
           <DetailField
             label="External ID"
             value={String(audit.stockDocumentExternalId)}
           />
+          <DetailField
+            label="idNfe"
+            value={audit.idNfe == null ? "—" : String(audit.idNfe)}
+          />
+        </DetailFieldGrid>
+      </OverlaySection>
+      <OverlaySection title="Sincronização e presença">
+        <DetailFieldGrid>
           <DetailField
             label="Hash do payload"
             value={formatOutputDocumentLabel(audit.payloadHash)}
@@ -800,7 +887,7 @@ function AuditPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
           />
         </DetailFieldGrid>
       </OverlaySection>
-      <OverlaySection title="Classificação de vínculos">
+      <OverlaySection title="Origem dos vínculos">
         <DetailFieldGrid>
           <DetailField
             label="NF-e"
@@ -824,12 +911,35 @@ function AuditPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
           />
         </DetailFieldGrid>
         {audit.conflicts.length > 0 ? (
-          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-rose-800">
+          <ul
+            className="mt-3 list-disc space-y-1 pl-5 text-sm text-rose-800"
+            data-testid="output-document-detail-audit-conflicts"
+          >
             {audit.conflicts.map((conflict) => (
               <li key={conflict}>{conflict}</li>
             ))}
           </ul>
         ) : null}
+      </OverlaySection>
+      <OverlaySection title="Raw JSON">
+        {detail.permissions.canViewRaw && detail.raw ? (
+          <div
+            className="space-y-3"
+            data-testid="output-document-detail-raw-json"
+          >
+            <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-background p-3 text-xs">
+              {JSON.stringify(detail.raw.document, null, 2)}
+            </pre>
+            <pre className="max-h-48 overflow-auto rounded-lg border border-border bg-background p-3 text-xs">
+              {JSON.stringify(detail.raw.items, null, 2)}
+            </pre>
+          </div>
+        ) : (
+          <EmptyBlock testId="output-document-detail-raw-denied">
+            Raw JSON disponível somente com permissão específica
+            (commercial.output_documents.raw).
+          </EmptyBlock>
+        )}
       </OverlaySection>
     </div>
   );
@@ -837,8 +947,10 @@ function AuditPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
 
 function OutputDocumentItemsTable({
   items,
+  onOpenSalesOrder,
 }: {
   items: ReadonlyArray<OutputDocumentDetailItem>;
+  onOpenSalesOrder?: (salesOrderId: string, orderCode?: string | null) => void;
 }) {
   if (items.length === 0) {
     return (
@@ -900,13 +1012,28 @@ function OutputDocumentItemsTable({
             </OverlayTable.Cell>
             <OverlayTable.Cell>
               {item.links[0]?.salesOrderId ? (
-                <DeepLink
-                  href={buildOutputDocumentSalesOrderHref({
-                    salesOrderId: item.links[0].salesOrderId,
-                    orderCode: item.links[0].orderCode,
-                  })}
-                  label={formatOutputDocumentItemOrder(item)}
-                />
+                onOpenSalesOrder ? (
+                  <button
+                    type="button"
+                    className="font-medium text-primary hover:underline"
+                    onClick={() =>
+                      onOpenSalesOrder(
+                        item.links[0]!.salesOrderId!,
+                        item.links[0]!.orderCode
+                      )
+                    }
+                  >
+                    {formatOutputDocumentItemOrder(item)}
+                  </button>
+                ) : (
+                  <DeepLink
+                    href={buildOutputDocumentSalesOrderHref({
+                      salesOrderId: item.links[0].salesOrderId,
+                      orderCode: item.links[0].orderCode,
+                    })}
+                    label={formatOutputDocumentItemOrder(item)}
+                  />
+                )
               ) : (
                 formatOutputDocumentItemOrder(item)
               )}

@@ -1,5 +1,11 @@
-import { createElement, useEffect, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, {
+  createElement,
+  useCallback,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowDown,
   ArrowUp,
@@ -54,6 +60,12 @@ import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDo
 import { OutputDocumentDetailOverlay } from "@/src/components/commercial/OutputDocumentDetailOverlay";
 import { cn } from "@/src/lib/utils";
 
+const SalesOrderDetailDialog = React.lazy(() =>
+  import("@/src/components/sales/SalesOrderDetailDialog").then((mod) => ({
+    default: mod.SalesOrderDetailDialog,
+  }))
+);
+
 const SEARCH_DEBOUNCE_MS = 300;
 const FILTER_CONTROL_CLASS =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -99,6 +111,7 @@ function initialPage(params: URLSearchParams): number {
 export function OutputDocumentsModule() {
   const auth = useAuth();
   const permissions = usePermissions();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const canView = canViewOutputDocuments({
     canPerformAction: permissions.canPerformAction,
@@ -162,6 +175,23 @@ export function OutputDocumentsModule() {
       return id || null;
     }
   );
+  const [salesOrderDetailId, setSalesOrderDetailId] = useState<string | null>(
+    null
+  );
+  const [salesOrderDetailCode, setSalesOrderDetailCode] = useState<string | null>(
+    null
+  );
+  const openSalesOrderDetail = useCallback(
+    (salesOrderId: string, orderCode?: string | null) => {
+      setSalesOrderDetailId(salesOrderId);
+      setSalesOrderDetailCode(orderCode?.trim() || null);
+    },
+    []
+  );
+  const closeSalesOrderDetail = useCallback(() => {
+    setSalesOrderDetailId(null);
+    setSalesOrderDetailCode(null);
+  }, []);
   const [errorKind, setErrorKind] = useState<
     "access_denied" | "api_unavailable" | "generic" | null
   >(null);
@@ -900,7 +930,26 @@ export function OutputDocumentsModule() {
       <OutputDocumentDetailOverlay
         outputDocumentId={selectedDocumentId}
         onClose={() => setSelectedDocumentId(null)}
+        onOpenSalesOrder={openSalesOrderDetail}
+        dismissOnEsc={salesOrderDetailId == null}
       />
+
+      {salesOrderDetailId != null ? (
+        <React.Suspense fallback={null}>
+          <SalesOrderDetailDialog
+            open
+            salesOrderId={salesOrderDetailId}
+            orderCode={salesOrderDetailCode}
+            onClose={closeSalesOrderDetail}
+            onOpenFullAudit={(id) => {
+              closeSalesOrderDetail();
+              navigate(
+                `/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(id)}`
+              );
+            }}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 }

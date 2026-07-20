@@ -289,6 +289,60 @@ export function canViewOutputDocumentsAudit(check: {
   );
 }
 
+export function canViewOutputDocumentsRaw(check: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  hasPermission?: (permission: string) => boolean;
+}): boolean {
+  return Boolean(
+    check.canPerformAction?.(
+      COMMERCIAL_RESOURCE_KEYS.outputDocumentsRaw,
+      COMMERCIAL_ACTIONS.view
+    ) ||
+      check.hasPermission?.("output_documents.raw.view") ||
+      check.hasPermission?.("audit.raw.read")
+  );
+}
+
+/** Mensagem oficial quando o CR ainda não materializou. */
+export const OUTPUT_DOCUMENT_AWAITING_CR_MESSAGE =
+  "Aguardando materialização do CR";
+
+export function formatOutputDocumentNfeCancellation(nfe: {
+  isCancelled: boolean;
+}): string {
+  return nfe.isCancelled ? "Cancelada" : "Não";
+}
+
+export function formatOutputDocumentNfeDocumentaryDiffs(
+  nfe: {
+    externalId: number;
+    numero: string | null;
+    foundLocally: boolean;
+    isCancelled: boolean;
+  },
+  inconsistencies: ReadonlyArray<{ code: string; message: string }>
+): string {
+  const diffs: string[] = [];
+  if (!nfe.foundLocally) {
+    diffs.push("Ausente no stage local");
+  }
+  if (nfe.isCancelled) {
+    diffs.push("NF-e cancelada");
+  }
+  const needle = String(nfe.externalId);
+  const numero = nfe.numero?.trim();
+  for (const entry of inconsistencies) {
+    if (!entry.code.startsWith("NFE_")) continue;
+    if (
+      entry.message.includes(needle) ||
+      (numero != null && numero !== "" && entry.message.includes(numero))
+    ) {
+      diffs.push(entry.message);
+    }
+  }
+  return diffs.length > 0 ? [...new Set(diffs)].join(" · ") : "—";
+}
+
 export function outputDocumentInconsistencyTone(
   severity: "info" | "warning" | "error" | string
 ): OverlayBadgeTone {

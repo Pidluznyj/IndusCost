@@ -35,11 +35,14 @@ import {
   formatOutputDocumentItemLocalProduct,
   formatOutputDocumentMoney,
   formatOutputDocumentNfe,
+  formatOutputDocumentNfeCancellation,
+  formatOutputDocumentNfeDocumentaryDiffs,
   formatOutputDocumentNumber,
   formatOutputDocumentOrdersCount,
   formatOutputDocumentStatusLabel,
   hasActiveOutputDocumentsFilters,
   isOutputDocumentsDateRangeInvalid,
+  canViewOutputDocumentsRaw,
   OUTPUT_DOCUMENTS_BREADCRUMB,
   OUTPUT_DOCUMENTS_PAGE_SIZE,
   OUTPUT_DOCUMENTS_PAGE_SUBTITLE,
@@ -745,10 +748,14 @@ describe("output documents detail drawer", () => {
       React.createElement(OutputDocumentDetailContent, {
         detail: withOrders,
         activeTab: "pedidos",
+        onOpenSalesOrder: () => {},
       })
     );
     assert.match(pedidos, /output-document-detail-orders-panel/);
     assert.match(pedidos, /PD-100/);
+    assert.match(pedidos, /Abrir pedido/);
+    assert.match(pedidos, /Vendedor X/);
+    assert.match(pedidos, /50\.0%/);
 
     const nfes = renderToStaticMarkup(
       React.createElement(OutputDocumentDetailContent, {
@@ -758,6 +765,8 @@ describe("output documents detail drawer", () => {
     );
     assert.match(nfes, /output-document-detail-nfes-panel/);
     assert.match(nfes, /98765/);
+    assert.match(nfes, /Diferenças documentais/);
+    assert.match(nfes, /Cancelamento/);
 
     const financeiro = renderToStaticMarkup(
       React.createElement(OutputDocumentDetailContent, {
@@ -767,5 +776,342 @@ describe("output documents detail drawer", () => {
     );
     assert.match(financeiro, /output-document-detail-financial-panel/);
     assert.match(financeiro, /CR em aberto/);
+    assert.match(financeiro, /CR total/);
+  });
+
+  it("Financeiro e Auditoria respeitam permissões negadas", () => {
+    const denied = detailPayload({
+      financial: null,
+      audit: null,
+      permissions: {
+        canViewFinancial: false,
+        canViewAudit: false,
+        canViewRaw: false,
+      },
+    });
+
+    const financeiro = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: denied,
+        activeTab: "financeiro",
+      })
+    );
+    assert.match(financeiro, /output-document-detail-financial-denied/);
+
+    const auditoria = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: denied,
+        activeTab: "auditoria",
+      })
+    );
+    assert.match(auditoria, /output-document-detail-audit-denied/);
+  });
+
+  it("abas vazias e aguardando materialização do CR", () => {
+    const empty = detailPayload({
+      orders: [],
+      nfes: [],
+      financial: {
+        status: "aguardando_cr",
+        statusReasons: [],
+        financialOrigin: "NONE",
+        financialOriginReasons: [],
+        receivableTotal: 0,
+        open: 0,
+        received: 0,
+        nextDueDate: null,
+        installmentCount: 0,
+        titles: [],
+        documentPaymentTermsRaw: null,
+        alerts: [],
+      },
+    });
+
+    assert.match(
+      renderToStaticMarkup(
+        React.createElement(OutputDocumentDetailContent, {
+          detail: empty,
+          activeTab: "pedidos",
+        })
+      ),
+      /output-document-detail-orders-empty/
+    );
+    assert.match(
+      renderToStaticMarkup(
+        React.createElement(OutputDocumentDetailContent, {
+          detail: empty,
+          activeTab: "nfes",
+        })
+      ),
+      /output-document-detail-nfes-empty/
+    );
+
+    const financeiro = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: empty,
+        activeTab: "financeiro",
+      })
+    );
+    assert.match(financeiro, /output-document-detail-awaiting-cr/);
+    assert.match(financeiro, /Aguardando materialização do CR/);
+    assert.match(financeiro, /output-document-detail-financial-titles-empty/);
+  });
+
+  it("múltiplos vínculos e auditoria com raw sob permissão", () => {
+    const multi = detailPayload({
+      orders: [
+        {
+          salesOrderId: "order-a",
+          orderCode: "PD-100",
+          issueDate: "2026-06-01T00:00:00.000Z",
+          status: "Faturado",
+          officialSeller: { externalSellerId: 9, name: "Vendedor X" },
+          orderValue: 200,
+          allocatedValue: 40,
+          coveragePercent: 40,
+          sources: ["order_to_cash_fact"],
+        },
+        {
+          salesOrderId: "order-b",
+          orderCode: "PD-200",
+          issueDate: "2026-06-02T00:00:00.000Z",
+          status: "Aberto",
+          officialSeller: { externalSellerId: 10, name: "Vendedor Y" },
+          orderValue: 80,
+          allocatedValue: 10,
+          coveragePercent: 10,
+          sources: ["sales_order_nfe_link"],
+        },
+      ],
+      nfes: [
+        {
+          externalId: 7208,
+          numero: "98765",
+          serie: "1",
+          status: 100,
+          isCancelled: false,
+          dataEmissao: "2026-06-01T00:00:00.000Z",
+          dataProcessamento: "2026-06-01T12:00:00.000Z",
+          totalValue: 100,
+          chaveMasked: "****1111",
+          foundLocally: true,
+          isPrimary: true,
+          sources: ["stock_document_idNfe"],
+        },
+        {
+          externalId: 7209,
+          numero: "98766",
+          serie: "1",
+          status: 100,
+          isCancelled: true,
+          dataEmissao: "2026-06-03T00:00:00.000Z",
+          dataProcessamento: null,
+          totalValue: 50,
+          chaveMasked: "****2222",
+          foundLocally: false,
+          isPrimary: false,
+          sources: [],
+        },
+      ],
+      inconsistencies: [
+        {
+          code: "NFE_MISSING_LOCAL",
+          severity: "warning",
+          message: "NF-e 7209 referenciada, mas ausente no stage local.",
+        },
+      ],
+      financial: {
+        status: "parcialmente_recebido",
+        statusReasons: [],
+        financialOrigin: "REAL_RECEIVABLE",
+        financialOriginReasons: [],
+        receivableTotal: 100,
+        open: 40,
+        received: 60,
+        nextDueDate: "2026-07-01T00:00:00.000Z",
+        installmentCount: 2,
+        titles: [
+          {
+            receivableExternalId: 1,
+            sourceInvoiceId: 7208,
+            amountReceivable: 60,
+            amountReceivableCents: 6000,
+            amountReceived: 60,
+            amountReceivedCents: 6000,
+            balanceReceivable: 0,
+            balanceReceivableCents: 0,
+            dueDate: "2026-06-15T00:00:00.000Z",
+            settlementDate: "2026-06-14T00:00:00.000Z",
+            settlement: "recebido",
+            dueStatus: "nao_aplicavel",
+            alerts: [],
+          },
+          {
+            receivableExternalId: 2,
+            sourceInvoiceId: 7208,
+            amountReceivable: 40,
+            amountReceivableCents: 4000,
+            amountReceived: 0,
+            amountReceivedCents: 0,
+            balanceReceivable: 40,
+            balanceReceivableCents: 4000,
+            dueDate: "2026-07-01T00:00:00.000Z",
+            settlementDate: null,
+            settlement: "aberto",
+            dueStatus: "a_vencer",
+            alerts: [],
+          },
+        ],
+        documentPaymentTermsRaw: "30/60",
+        alerts: [],
+      },
+      audit: {
+        stockDocumentId: "00000000-0000-4000-8000-000000000301",
+        stockDocumentExternalId: 8451,
+        idNfe: 7208,
+        payloadHash: "hash-abc",
+        firstSeenAt: "2026-07-01T10:00:00.000Z",
+        lastSeenAt: "2026-07-10T10:00:00.000Z",
+        presentInLastPayload: true,
+        syncedAt: "2026-07-10T10:00:00.000Z",
+        nfeLink: {
+          classification: "persistido",
+          sources: ["stock_document_idNfe"],
+          reasons: [],
+        },
+        ordersLink: {
+          classification: "derivado",
+          sources: ["order_to_cash_fact", "sales_order_nfe_link"],
+          reasons: ["dois pedidos"],
+        },
+        receivablesLink: {
+          classification: "derivado",
+          sources: ["order_to_cash_fact"],
+          reasons: [],
+        },
+        o2cPresent: true,
+        o2cRunIds: ["run-1"],
+        conflicts: ["alocação parcial entre pedidos"],
+      },
+      permissions: {
+        canViewFinancial: true,
+        canViewAudit: true,
+        canViewRaw: true,
+      },
+      raw: {
+        document: { externalId: 8451 },
+        items: [{ id: "item-resolved" }],
+      },
+    });
+
+    const pedidos = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: multi,
+        activeTab: "pedidos",
+        onOpenSalesOrder: () => {},
+      })
+    );
+    assert.match(pedidos, /PD-100/);
+    assert.match(pedidos, /PD-200/);
+    assert.match(pedidos, /output-document-detail-open-order-order-a/);
+
+    const nfes = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: multi,
+        activeTab: "nfes",
+      })
+    );
+    assert.match(nfes, /98765/);
+    assert.match(nfes, /98766/);
+    assert.match(nfes, /Ausente no stage local/);
+
+    const financeiro = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: multi,
+        activeTab: "financeiro",
+      })
+    );
+    assert.match(financeiro, /output-document-detail-financial-titles/);
+    assert.match(financeiro, /Parcialmente recebido/);
+
+    const auditoria = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: multi,
+        activeTab: "auditoria",
+      })
+    );
+    assert.match(auditoria, /output-document-detail-audit-panel/);
+    assert.match(auditoria, /hash-abc/);
+    assert.match(auditoria, /output-document-detail-audit-conflicts/);
+    assert.match(auditoria, /output-document-detail-raw-json/);
+    assert.match(auditoria, /8451/);
+
+    const auditNoRaw = renderToStaticMarkup(
+      React.createElement(OutputDocumentDetailContent, {
+        detail: {
+          ...multi,
+          permissions: {
+            canViewFinancial: true,
+            canViewAudit: true,
+            canViewRaw: false,
+          },
+          raw: null,
+        },
+        activeTab: "auditoria",
+      })
+    );
+    assert.match(auditNoRaw, /output-document-detail-raw-denied/);
+  });
+
+  it("módulo abre pedido via dialog e overlay não chama Nomus", () => {
+    const moduleSource = read(
+      "src/components/commercial/OutputDocumentsModule.tsx"
+    );
+    assert.match(moduleSource, /SalesOrderDetailDialog/);
+    assert.match(moduleSource, /onOpenSalesOrder=\{openSalesOrderDetail\}/);
+    assert.match(moduleSource, /dismissOnEsc=\{salesOrderDetailId == null\}/);
+
+    const overlay = read(
+      "src/components/commercial/OutputDocumentDetailOverlay.tsx"
+    );
+    assert.doesNotMatch(overlay, /nomusClient|fetchNomus|NOMUS_API/);
+    assert.match(overlay, /Pedidos de Venda/);
+    assert.match(overlay, /includeRaw/);
+    assert.match(overlay, /OUTPUT_DOCUMENT_AWAITING_CR_MESSAGE/);
+    assert.match(overlay, /canViewOutputDocumentsRaw/);
+  });
+
+  it("helpers de NF-e e permissão raw", () => {
+    assert.equal(
+      formatOutputDocumentNfeCancellation({ isCancelled: true }),
+      "Cancelada"
+    );
+    assert.match(
+      formatOutputDocumentNfeDocumentaryDiffs(
+        {
+          externalId: 7209,
+          numero: "98766",
+          foundLocally: false,
+          isCancelled: true,
+        },
+        [
+          {
+            code: "NFE_MISSING_LOCAL",
+            message: "NF-e 7209 referenciada, mas ausente no stage local.",
+          },
+        ]
+      ),
+      /Ausente no stage local/
+    );
+    assert.equal(
+      canViewOutputDocumentsRaw({
+        hasPermission: (p) => p === "output_documents.raw.view",
+      }),
+      true
+    );
+    assert.equal(
+      canViewOutputDocumentsRaw({ hasPermission: () => false }),
+      false
+    );
   });
 });
