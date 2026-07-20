@@ -6,8 +6,6 @@ import {
   NOMUS_OPS_EXCLUDE_MISSING_AP_ENV,
   NOMUS_OPS_EXCLUDE_MISSING_AR_ENV,
   NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENV,
-  accountsPayableOperationalPresenceSql,
-  accountsReceivableOperationalPresenceSql,
   canAuditConfirmedMissingPresence,
   isFinanceApExcludedBySourcePresence,
   isFinanceArExcludedBySourcePresence,
@@ -20,9 +18,13 @@ import {
   mergeAccountsPayableOperationalPresenceWhere,
   mergeAccountsReceivableOperationalPresenceWhere,
   mergeSalesOrderOperationalPresenceWhere,
-  salesOrderOperationalPresenceSql,
   shouldExcludeConfirmedMissingFromOpenOperations,
 } from "./nomusSourcePresencePolicy.js";
+import {
+  accountsPayableOperationalPresenceSql,
+  accountsReceivableOperationalPresenceSql,
+  salesOrderOperationalPresenceSql,
+} from "./nomusSourcePresencePolicy.server.js";
 
 const ROOT = process.cwd();
 

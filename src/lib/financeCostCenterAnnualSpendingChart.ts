@@ -7,7 +7,8 @@ import type {
   FinanceCostCenterDashboardByCostCenterRow,
   FinanceCostCenterDashboardFilters,
 } from "@/src/lib/financeCostCenterDashboard.js";
-import { roundMoney, safeRatio } from "@/src/lib/financeAccountsPayableDashboard.js";
+import { roundMoney } from "@/src/lib/commissions/commission-money.shared.js";
+import { safeRatio } from "@/src/lib/financeAccountsPayableDashboard.js";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat.js";
 
 export const COST_CENTER_ANNUAL_SPENDING_METRICS_SOURCE =

@@ -20,7 +20,7 @@ import {
   toPgDateYmd,
 } from "@/src/lib/salesOrderInvoicingSql.js";
 import { endOfYear, startOfYear } from "@/src/lib/executiveDashboardWorkdays.js";
-import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.server.js";
 
 const NOT_CANCELLED = Prisma.sql`so.status != 'CANCELLED'`;
 const MARKET_CUSTOMER = billingMarketCustomerFilterSql("c");

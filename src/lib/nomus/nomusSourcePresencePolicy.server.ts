@@ -1,70 +1,22 @@
 /**
- * SYNC-07 — Filtros Prisma/SQL da policy de presença (server-only).
+ * SYNC-07 — Fragmentos SQL Prisma da policy de presença (server-only).
+ * Merges/predicados puros: `nomusSourcePresencePolicy.ts`.
  */
 
 import { Prisma } from "@prisma/client";
 import {
-  buildNomusSourceOperationallyPresentPrismaWhere,
   isNomusOpsExcludeMissingApEnabled,
   isNomusOpsExcludeMissingArEnabled,
   isNomusOpsExcludeMissingSalesOrdersEnabled,
-  mergePrismaWhereWithOperationalPresence,
 } from "./nomusSourcePresencePolicy.js";
 
 export {
   buildNomusSourceOperationallyPresentPrismaWhere,
+  mergeAccountsPayableOperationalPresenceWhere,
+  mergeAccountsReceivableOperationalPresenceWhere,
   mergePrismaWhereWithOperationalPresence,
+  mergeSalesOrderOperationalPresenceWhere,
 } from "./nomusSourcePresencePolicy.js";
-
-export function mergeSalesOrderOperationalPresenceWhere(
-  where: Prisma.SalesOrderWhereInput,
-  options?: {
-    includeConfirmedMissing?: boolean;
-    env?: Record<string, string | undefined>;
-  }
-): Prisma.SalesOrderWhereInput {
-  if (options?.includeConfirmedMissing) return where;
-  if (!isNomusOpsExcludeMissingSalesOrdersEnabled(options?.env)) return where;
-  return mergePrismaWhereWithOperationalPresence(
-    where,
-    true
-  ) as Prisma.SalesOrderWhereInput;
-}
-
-export function mergeAccountsReceivableOperationalPresenceWhere(
-  where: Prisma.NomusAccountsReceivableWhereInput,
-  options?: {
-    /** Quando false, não aplica (ex.: visão settled/histórico). Default: true. */
-    openOperationalUniverse?: boolean;
-    includeConfirmedMissing?: boolean;
-    env?: Record<string, string | undefined>;
-  }
-): Prisma.NomusAccountsReceivableWhereInput {
-  if (options?.includeConfirmedMissing) return where;
-  if (options?.openOperationalUniverse === false) return where;
-  if (!isNomusOpsExcludeMissingArEnabled(options?.env)) return where;
-  return mergePrismaWhereWithOperationalPresence(
-    where,
-    true
-  ) as Prisma.NomusAccountsReceivableWhereInput;
-}
-
-export function mergeAccountsPayableOperationalPresenceWhere(
-  where: Prisma.NomusAccountsPayableWhereInput,
-  options?: {
-    openOperationalUniverse?: boolean;
-    includeConfirmedMissing?: boolean;
-    env?: Record<string, string | undefined>;
-  }
-): Prisma.NomusAccountsPayableWhereInput {
-  if (options?.includeConfirmedMissing) return where;
-  if (options?.openOperationalUniverse === false) return where;
-  if (!isNomusOpsExcludeMissingApEnabled(options?.env)) return where;
-  return mergePrismaWhereWithOperationalPresence(
-    where,
-    true
-  ) as Prisma.NomusAccountsPayableWhereInput;
-}
 
 /** Fragmento SQL para SalesOrder (alias padrão `so`). */
 export function salesOrderOperationalPresenceSql(

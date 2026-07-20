@@ -124,6 +124,51 @@ export function mergePrismaWhereWithOperationalPresence<T extends object>(
   return { AND: [where, presence] };
 }
 
+/**
+ * Merges tipados no servidor via cast; aqui são genéricos (sem @prisma/client)
+ * para módulos também alcançados pelo frontend (dashboards / helpers).
+ */
+export function mergeSalesOrderOperationalPresenceWhere<T extends object>(
+  where: T,
+  options?: {
+    includeConfirmedMissing?: boolean;
+    env?: Record<string, string | undefined>;
+  }
+): T | ReturnType<typeof mergePrismaWhereWithOperationalPresence<T>> {
+  if (options?.includeConfirmedMissing) return where;
+  if (!isNomusOpsExcludeMissingSalesOrdersEnabled(options?.env)) return where;
+  return mergePrismaWhereWithOperationalPresence(where, true);
+}
+
+export function mergeAccountsReceivableOperationalPresenceWhere<T extends object>(
+  where: T,
+  options?: {
+    /** Quando false, não aplica (ex.: visão settled/histórico). Default: true. */
+    openOperationalUniverse?: boolean;
+    includeConfirmedMissing?: boolean;
+    env?: Record<string, string | undefined>;
+  }
+): T | ReturnType<typeof mergePrismaWhereWithOperationalPresence<T>> {
+  if (options?.includeConfirmedMissing) return where;
+  if (options?.openOperationalUniverse === false) return where;
+  if (!isNomusOpsExcludeMissingArEnabled(options?.env)) return where;
+  return mergePrismaWhereWithOperationalPresence(where, true);
+}
+
+export function mergeAccountsPayableOperationalPresenceWhere<T extends object>(
+  where: T,
+  options?: {
+    openOperationalUniverse?: boolean;
+    includeConfirmedMissing?: boolean;
+    env?: Record<string, string | undefined>;
+  }
+): T | ReturnType<typeof mergePrismaWhereWithOperationalPresence<T>> {
+  if (options?.includeConfirmedMissing) return where;
+  if (options?.openOperationalUniverse === false) return where;
+  if (!isNomusOpsExcludeMissingApEnabled(options?.env)) return where;
+  return mergePrismaWhereWithOperationalPresence(where, true);
+}
+
 export function isFinanceArExcludedBySourcePresence(
   row: NomusSourcePresenceRow & { balanceReceivable?: number | null },
   env: Record<string, string | undefined> = process.env

@@ -4,7 +4,7 @@
 
 import { Prisma } from "@prisma/client";
 import { crmOrderHasFollowUpExistsSql } from "@/src/lib/crmOrderFollowUp";
-import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { salesOrderOperationalPresenceSql } from "@/src/lib/nomus/nomusSourcePresencePolicy.server.js";
 
 export const CRM_VALID_PURCHASE_STATUS_SQL = Prisma.sql`so.status::text IN ('READY_TO_SEND', 'SENT_TO_NOMUS')`;
 
