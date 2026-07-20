@@ -8,6 +8,7 @@ import {
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsReceivableFormat";
 import { FINANCE_CC_DETAIL_EXPORT_TITLE } from "@/src/lib/financeCostCenterDetailExportMeta";
+import { FinanceCostCenterMonthlyPrintChart } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyPrintChart";
 
 function sourceLabel(source: string): string {
   switch (source) {
@@ -119,6 +120,17 @@ export function FinanceCostCenterDetailPrintDocument({
               </tbody>
             </table>
           </section>
+        ) : null}
+
+        {payload.monthlyChart ? (
+          <FinanceCostCenterMonthlyPrintChart
+            payload={payload.monthlyChart}
+            title={
+              isConsolidated
+                ? "Comportamento mensal — centros selecionados"
+                : "Comportamento mensal do centro de custo"
+            }
+          />
         ) : null}
 
         <section className="finance-cc-detail-print-section">

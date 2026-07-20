@@ -54,6 +54,8 @@ import { buildSalesOrderFiscalTaxesPayload } from "./salesOrderFiscalTaxes.serve
 import { buildSalesOrderFiscalTaxesErrorPayload } from "./salesOrderFiscalTaxesContract.js";
 import { canViewSalesOrderFiscalTaxesFromAuth } from "./salesOrderFiscalTaxesPermissions.js";
 import { buildSalesOrderDetailFinancialFromAudit } from "./salesOrderDetailEffectiveFinancial.js";
+import { loadSalesOrderDetailIndustrialResult } from "./salesOrderDetailIndustrialResult.server.js";
+import { buildSalesOrderDetailIndustrialResultBlock } from "./salesOrderDetailIndustrialResult.js";
 import type {
   SalesOrderDetailAlert,
   SalesOrderDetailFinancial,
@@ -442,6 +444,27 @@ export async function getSalesOrderDetail(
     }
   }
 
+  let industrialResult = buildSalesOrderDetailIndustrialResultBlock({
+    row: null,
+    materials: [],
+    extraWarnings: ["Custo/resultado industrial não carregado."],
+  });
+  try {
+    industrialResult = await loadSalesOrderDetailIndustrialResult(
+      prismaClient,
+      salesOrderId
+    );
+  } catch (err) {
+    console.error("getSalesOrderDetail industrialResult", err);
+    industrialResult = buildSalesOrderDetailIndustrialResultBlock({
+      row: null,
+      materials: [],
+      extraWarnings: [
+        "Falha técnica ao montar custos industriais e resultado do pedido.",
+      ],
+    });
+  }
+
   const now = new Date().toISOString();
   const payload: SalesOrderDetailPayload = {
     ok: true,
@@ -458,6 +481,7 @@ export async function getSalesOrderDetail(
     alerts,
     fiscalTaxes,
     fiscalTaxesAccess: allowFiscal ? "allowed" : "denied",
+    industrialResult,
     technicalInfo: {
       sources: [
         "SalesOrder + SalesOrderItem (Prisma)",
@@ -470,6 +494,7 @@ export async function getSalesOrderDetail(
         "NomusAccountsReceivable (CR real)",
         "nomusSalesOrderItemStatus.parseNomusSalesOrderItemStatusFromRawItem",
         "NomusNfeFiscalSummary + NomusNfeTaxLine (aba Tributos)",
+        "salesOrderIndustrialResultReport + productionCost calculationSnapshot (abas Custos/Resultado)",
       ],
       sourceTables: audit.technicalAudit.sourceTables ?? [],
       salesOrderId: audit.salesOrderId,

@@ -15,6 +15,8 @@ import {
 import { canViewSalesOrderFiscalTaxes } from "@/src/lib/sales-orders/salesOrderFiscalTaxesPermissions";
 import { SalesOrderDetailView } from "./SalesOrderDetailView";
 import { SalesOrderTributosTab } from "./SalesOrderTributosTab";
+import { SalesOrderDetailCustosTab } from "./SalesOrderDetailCustosTab";
+import { SalesOrderDetailResultadoTab } from "./SalesOrderDetailResultadoTab";
 
 const DETAIL_PRINT_BODY_CLASS = "sales-order-detail-print-route";
 
@@ -28,7 +30,7 @@ type Props = {
 
 const AUDIT_360_ENABLED = true;
 
-type DetailTabId = "geral" | "tributos";
+type DetailTabId = "geral" | "tributos" | "custos" | "resultado";
 
 /**
  * Modal grande (quase fullscreen) para o Detalhe do Pedido de Venda.
@@ -227,42 +229,49 @@ export function SalesOrderDetailDialog({
           </div>
         </header>
 
-        {/* Abas Gerais / Tributos */}
+        {/* Abas Gerais / Tributos / Custos / Resultado */}
         <nav
           className="so-detail-no-print print-no-print flex flex-wrap items-center gap-1 border-b border-[#E5E7EB] bg-[#F9FAFB] px-4 py-2"
           role="tablist"
           data-testid="sales-order-detail-tabs"
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "geral"}
-            onClick={() => setActiveTab("geral")}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
-              activeTab === "geral"
-                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
-                : "text-[#4B5563] hover:bg-[#F3F4F6]"
-            )}
-            data-testid="sales-order-detail-tab-geral"
-          >
-            Geral
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "tributos"}
-            onClick={() => setActiveTab("tributos")}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
-              activeTab === "tributos"
-                ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
-                : "text-[#4B5563] hover:bg-[#F3F4F6]"
-            )}
-            data-testid="sales-order-detail-tab-tributos"
-          >
-            Tributos
-          </button>
+          {(
+            [
+              { id: "geral" as const, label: "Geral", testId: "sales-order-detail-tab-geral" },
+              {
+                id: "tributos" as const,
+                label: "Tributos",
+                testId: "sales-order-detail-tab-tributos",
+              },
+              {
+                id: "custos" as const,
+                label: "Custos",
+                testId: "sales-order-detail-tab-custos",
+              },
+              {
+                id: "resultado" as const,
+                label: "Resultado detalhado",
+                testId: "sales-order-detail-tab-resultado",
+              },
+            ] as const
+          ).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                activeTab === tab.id
+                  ? "bg-white text-[#111827] shadow-sm ring-1 ring-[#E5E7EB]"
+                  : "text-[#4B5563] hover:bg-[#F3F4F6]"
+              )}
+              data-testid={tab.testId}
+            >
+              {tab.label}
+            </button>
+          ))}
         </nav>
 
         {/* Body com scroll interno — conteúdo liberado no @media print */}
@@ -287,11 +296,43 @@ export function SalesOrderDetailDialog({
               <div id="sales-order-detail-print-root">
                 <SalesOrderDetailView payload={payload} />
               </div>
-            ) : (
+            ) : activeTab === "tributos" ? (
               <SalesOrderTributosTab
                 fiscalTaxes={payload.fiscalTaxes}
                 denied={!canTributos || payload.fiscalTaxesAccess === "denied"}
                 fiscalTaxesAccess={payload.fiscalTaxesAccess}
+              />
+            ) : activeTab === "custos" ? (
+              <SalesOrderDetailCustosTab
+                industrialResult={
+                  payload.industrialResult ?? {
+                    available: false,
+                    row: null,
+                    materials: [],
+                    materialsTotalCost: 0,
+                    verdict: "INCOMPLETE",
+                    verdictLabel: "Apuração incompleta",
+                    resultNarrative:
+                      "Custos industriais não disponíveis neste payload.",
+                    warnings: [],
+                  }
+                }
+              />
+            ) : (
+              <SalesOrderDetailResultadoTab
+                industrialResult={
+                  payload.industrialResult ?? {
+                    available: false,
+                    row: null,
+                    materials: [],
+                    materialsTotalCost: 0,
+                    verdict: "INCOMPLETE",
+                    verdictLabel: "Apuração incompleta",
+                    resultNarrative:
+                      "Resultado industrial não disponível neste payload.",
+                    warnings: [],
+                  }
+                }
               />
             )
           ) : (

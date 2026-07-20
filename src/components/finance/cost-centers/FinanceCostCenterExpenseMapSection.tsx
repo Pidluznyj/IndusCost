@@ -530,7 +530,21 @@ export function FinanceCostCenterExpenseMapSection({
       const payload = await fetchJsonOk<CostCenterDetailExportPayload>(exportPath, {
         credentials: "include",
       });
-      setPrintPayload(payload);
+
+      let monthlyChart = chartPayload;
+      if (!monthlyChart) {
+        try {
+          const chartQs = buildCostCenterMonthlyChartQuery(appliedFilters, detailCenterIds);
+          monthlyChart = await fetchJsonOk<CostCenterMonthlyChartPayload>(
+            `/api/finance/cost-centers/monthly-chart?${chartQs}`,
+            { credentials: "include" }
+          );
+        } catch {
+          monthlyChart = null;
+        }
+      }
+
+      setPrintPayload({ ...payload, monthlyChart });
       document.body.classList.add("cc-detail-print-route");
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => {

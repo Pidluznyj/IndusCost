@@ -225,6 +225,8 @@ export type LoadSalesOrderIndustrialResultReportInput = {
   query: Record<string, unknown>;
   emitterName?: string | null;
   referenceDate?: Date;
+  /** Quando informado, restringe aos pedidos (ex.: detalhe de um único id). */
+  salesOrderIds?: string[];
 };
 
 export async function loadSalesOrderIndustrialResultReportPayload(
@@ -237,7 +239,14 @@ export async function loadSalesOrderIndustrialResultReportPayload(
     sellerKeyRaw: parsed.sellerKeyRaw,
     sellerText: parsed.sellerText,
   });
-  const where = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere);
+  const baseWhere = await resolveSalesOrderListWhere(prisma, parsed, sellerWhere);
+  const scopedIds = (input.salesOrderIds ?? [])
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+  const where =
+    scopedIds.length > 0
+      ? ({ AND: [baseWhere, { id: { in: scopedIds } }] } as typeof baseWhere)
+      : baseWhere;
   const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
   const sellerLabel = resolveSellerLabelForFilters(parsed, sellerIdentityCtx);
 

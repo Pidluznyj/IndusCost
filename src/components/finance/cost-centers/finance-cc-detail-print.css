@@ -170,4 +170,109 @@
     break-inside: avoid;
     page-break-inside: avoid;
   }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 10px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-subtitle {
+    margin: 0 0 4px;
+    font-size: 7.5px;
+    color: #555;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 7.5px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border: 1px solid #999;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-swatch--paid {
+    background: #059669;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-swatch--open {
+    background: #0284c7;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-plot {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    width: 100%;
+    border: 1px solid #d1d5db;
+    background: #fafafa;
+    padding: 8px 6px 4px;
+    box-sizing: border-box;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-col {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-col--highlighted .finance-cc-detail-print-chart-month {
+    color: #4338ca;
+    font-weight: 700;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-bars {
+    flex: 1 1 auto;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    min-height: 0;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-stack {
+    width: 68%;
+    max-width: 28px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow: hidden;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-segment {
+    width: 100%;
+    min-height: 1px;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-segment--paid {
+    background: #059669;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-segment--open {
+    background: #0284c7;
+  }
+
+  #cc-detail-print-root .finance-cc-detail-print-chart-month {
+    margin-top: 3px;
+    font-size: 7px;
+    font-weight: 600;
+    color: #374151;
+    white-space: nowrap;
+  }
 }

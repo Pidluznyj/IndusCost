@@ -1,5 +1,7 @@
 /** Tipos compartilhados (client-safe) — detalhe de centro de custo e realocação. */
 
+import type { CostCenterMonthlyChartPayload } from "./financeCostCenterMonthlyChart.shared.js";
+
 export const FINANCE_CC_REALLOCATION_REASONS = [
   { value: "MANUAL_CORRECTION", label: "Correção manual" },
   { value: "BUSINESS_RULE", label: "Regra de negócio" },
@@ -134,6 +136,8 @@ export type CostCenterDetailExportPayload = {
   /** Consolidação de múltiplos centros (mapa de gastos). */
   consolidated?: boolean;
   selectedCenterNames?: string[];
+  /** Série mensal (pago / em aberto) impressa antes do grid de títulos. */
+  monthlyChart?: CostCenterMonthlyChartPayload | null;
 };
 
 export type CostCenterReallocationPreviewItem = {

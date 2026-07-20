@@ -21,6 +21,7 @@
  */
 
 import type { SalesOrderBillingStatus } from "@/src/lib/sales/salesOrderListBillingStatus";
+import type { SalesOrderDetailIndustrialResultBlock } from "./salesOrderDetailIndustrialResult.js";
 import type {
   OrderFullAuditPlannedReceivable,
   OrderFullAuditReceipt,
@@ -342,6 +343,11 @@ export type SalesOrderDetailPayload = {
   fiscalTaxes: SalesOrderFiscalTaxesPayload | null;
   /** Gate oficial da aba Tributos (backend). */
   fiscalTaxesAccess: "allowed" | "denied";
+  /**
+   * Abas Custos / Resultado — mesmo motor do relatório industrial + explosão MP.
+   * Sempre presente quando ok; `available: false` se não apurou.
+   */
+  industrialResult: SalesOrderDetailIndustrialResultBlock;
   technicalInfo: {
     sources: string[];
     sourceTables: string[];

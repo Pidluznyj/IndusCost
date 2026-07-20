@@ -4,11 +4,11 @@ import { SalesOrderIndustrialResultReportPrintCover } from "./SalesOrderIndustri
 import {
   displayFinanceText,
   formatFinanceCurrency,
-  formatFinanceDate,
   formatFinanceDateTime,
   formatFinanceInteger,
   formatFinancePercent,
 } from "@/src/lib/financeAccountsReceivableFormat";
+import { toCivilDateKey } from "@/src/lib/financeCivilDate";
 import {
   SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_DISCLAIMER,
   SALES_ORDER_INDUSTRIAL_RESULT_REPORT_PRINT_FOOTER_NOTE,
@@ -43,6 +43,15 @@ function percentOrDash(value: number | null | undefined): string {
   return formatFinancePercent(value);
 }
 
+/** Data compacta MM/AA (dia civil) para o grid do PDF industrial. */
+function formatIndustrialIssueMonthYear(iso: string | null | undefined): string {
+  const key = toCivilDateKey(iso);
+  if (!key) return "—";
+  const [, year, month] = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key) ?? [];
+  if (!year || !month) return "—";
+  return `${month}/${year.slice(-2)}`;
+}
+
 function SummaryKpiCard({
   label,
   value,
@@ -61,17 +70,9 @@ function SummaryKpiCard({
   );
 }
 
-function shortTaxSource(label: string): string {
-  const raw = label.trim().toLowerCase();
-  if (raw.startsWith("real")) return "Real";
-  if (raw.startsWith("estimado")) return "Estim.";
-  if (raw.startsWith("misto")) return "Misto";
-  if (raw.startsWith("incompleto")) return "Inc.";
-  return label;
-}
-
 function RowCells({ row }: { row: SalesOrderIndustrialResultReportRow }) {
   const commercial = moneyOrDash(row.orderCommercialValue);
+  // totalTaxes: real da NF quando houver; senão o estimado usado no cálculo de margem.
   const taxes = moneyOrDash(row.totalTaxes);
   const costTotal = moneyOrDash(row.totalIndustrialCost);
   const result = moneyOrDash(row.industrialResult, true);
@@ -79,8 +80,7 @@ function RowCells({ row }: { row: SalesOrderIndustrialResultReportRow }) {
   return (
     <tr className={incomplete ? "sales-orders-industrial-print-row--incomplete" : undefined}>
       <td className="sales-orders-industrial-col-order">{displayFinanceText(row.orderCode)}</td>
-      <td className="sales-orders-industrial-col-date">{formatFinanceDate(row.issueDate)}</td>
-      <td className="sales-orders-industrial-col-customer">{displayFinanceText(row.customerName)}</td>
+      <td className="sales-orders-industrial-col-date">{formatIndustrialIssueMonthYear(row.issueDate)}</td>
       <td className={commercial.className}>{commercial.text}</td>
       <td className={moneyOrDash(row.materialCost).className}>
         {moneyOrDash(row.materialCost).text}
@@ -96,9 +96,6 @@ function RowCells({ row }: { row: SalesOrderIndustrialResultReportRow }) {
       </td>
       <td className={costTotal.className}>{costTotal.text}</td>
       <td className={taxes.className}>{taxes.text}</td>
-      <td className="sales-orders-industrial-col-tax-source">
-        {shortTaxSource(row.taxSourceLabel)}
-      </td>
       <td className={result.className}>{result.text}</td>
       <td className="sales-orders-print-money sales-orders-industrial-col-margin">
         {percentOrDash(row.industrialMarginPercent)}
@@ -130,28 +127,32 @@ export function SalesOrderIndustrialResultReportPrintDocument({
 
       <section className="sales-orders-print-summary-grid sales-orders-industrial-summary-grid">
         <SummaryKpiCard
-          label="Pedidos"
-          value={`${formatFinanceInteger(s.completeOrdersCount)} / ${formatFinanceInteger(s.ordersCount)}`}
-        />
-        <SummaryKpiCard
-          label="Valor comercial"
+          label="Total R$ pedidos"
           value={formatFinanceCurrency(s.orderCommercialValueTotal)}
         />
         <SummaryKpiCard
-          label="Custo industrial"
-          value={formatFinanceCurrency(s.totalIndustrialCostTotal)}
+          label="Custo HH R$"
+          value={formatFinanceCurrency(s.laborHourCostTotal)}
         />
         <SummaryKpiCard
-          label="Impostos"
+          label="Custo HM R$"
+          value={formatFinanceCurrency(s.machineHourCostTotal)}
+        />
+        <SummaryKpiCard
+          label="Custo MP R$"
+          value={formatFinanceCurrency(s.materialCostTotal)}
+        />
+        <SummaryKpiCard
+          label="R$ Imposto"
           value={formatFinanceCurrency(s.totalTaxesTotal)}
         />
         <SummaryKpiCard
-          label="Resultado industrial"
+          label="Resultado R$"
           value={formatFinanceCurrency(s.industrialResultTotal)}
           tone={s.industrialResultTotal < 0 ? "risk" : "positive"}
         />
         <SummaryKpiCard
-          label="Margem industrial"
+          label="Margem %"
           value={
             s.industrialMarginPercentConsolidated == null
               ? "—"
@@ -162,7 +163,9 @@ export function SalesOrderIndustrialResultReportPrintDocument({
       </section>
 
       <p className="sales-orders-industrial-flow-note">
-        Leitura: valor do pedido − impostos − custos (MP + HH + HM + outros) = quanto sobra
+        Cabeçalho na sequência: Total R$ pedidos → Custo HH → Custo HM → Custo MP → Imposto →
+        Resultado → Margem %. Resultado = pedidos − (HH + HM + MP + outros) − imposto
+        {` · ${formatFinanceInteger(s.completeOrdersCount)}/${formatFinanceInteger(s.ordersCount)} consolidados`}
         {incompleteNote}.
       </p>
 
@@ -170,38 +173,34 @@ export function SalesOrderIndustrialResultReportPrintDocument({
         <colgroup>
           <col className="sales-orders-industrial-col-order" />
           <col className="sales-orders-industrial-col-date" />
-          <col className="sales-orders-industrial-col-customer" />
           <col className="sales-orders-industrial-col-money" />
           <col className="sales-orders-industrial-col-money" />
           <col className="sales-orders-industrial-col-money" />
           <col className="sales-orders-industrial-col-money" />
           <col className="sales-orders-industrial-col-money" />
           <col className="sales-orders-industrial-col-money-strong" />
-          <col className="sales-orders-industrial-col-money" />
-          <col className="sales-orders-industrial-col-tax-source" />
+          <col className="sales-orders-industrial-col-money-strong" />
           <col className="sales-orders-industrial-col-money-strong" />
           <col className="sales-orders-industrial-col-margin" />
         </colgroup>
         <thead>
           <tr>
-            <th colSpan={3}>Pedido</th>
+            <th colSpan={2}>Pedido</th>
             <th>Receita</th>
             <th colSpan={5}>Custos industriais</th>
-            <th colSpan={2}>Impostos</th>
+            <th>Impostos</th>
             <th colSpan={2}>Quanto sobra</th>
           </tr>
           <tr>
             <th>Pedido</th>
             <th>Data</th>
-            <th>Cliente</th>
             <th>Valor</th>
             <th>MP</th>
             <th>HH</th>
             <th>HM</th>
             <th>Outros</th>
             <th>Custo</th>
-            <th>Total</th>
-            <th>Fonte</th>
+            <th>Custo impostos</th>
             <th>Resultado</th>
             <th>Margem</th>
           </tr>

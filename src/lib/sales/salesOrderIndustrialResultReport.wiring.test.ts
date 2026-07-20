@@ -40,10 +40,30 @@ describe("salesOrderIndustrialResultReport wiring", () => {
     assert.match(meta, /RESULTADO INDUSTRIAL/);
     assert.match(meta, /Relatório de Resultado Industrial/);
     assert.match(doc, /sales-orders-industrial-result-print-document/);
-    assert.match(doc, /Resultado industrial/);
-    assert.match(doc, /Margem industrial/);
+    assert.match(doc, /Total R\$ pedidos/);
+    assert.match(doc, /Custo HH R\$/);
+    assert.match(doc, /Custo HM R\$/);
+    assert.match(doc, /Custo MP R\$/);
+    assert.match(doc, /R\$ Imposto/);
+    assert.match(doc, /Resultado R\$/);
+    assert.match(doc, /Margem %/);
     assert.match(doc, /Quanto sobra/);
     assert.match(doc, /Custos industriais/);
+    assert.match(doc, /Custo impostos/);
+    assert.match(doc, /row\.totalTaxes/);
+    assert.match(doc, /formatIndustrialIssueMonthYear|MM\/AA|month\/year\.slice/);
+    assert.ok(
+      doc.indexOf("Total R$ pedidos") < doc.indexOf("Custo HH R$") &&
+        doc.indexOf("Custo HH R$") < doc.indexOf("Custo HM R$") &&
+        doc.indexOf("Custo HM R$") < doc.indexOf("Custo MP R$") &&
+        doc.indexOf("Custo MP R$") < doc.indexOf("R$ Imposto") &&
+        doc.indexOf("R$ Imposto") < doc.indexOf("Resultado R$") &&
+        doc.indexOf("Resultado R$") < doc.indexOf("Margem %")
+    );
+    assert.doesNotMatch(doc, /<th>Cliente<\/th>/);
+    assert.doesNotMatch(doc, /customerName/);
+    assert.doesNotMatch(doc, /<th>Fonte<\/th>/);
+    assert.doesNotMatch(doc, /taxSourceLabel/);
     assert.doesNotMatch(doc, /<th>ICMS<\/th>/);
     assert.doesNotMatch(doc, /<th>Vendedor<\/th>/);
     assert.match(doc, /id="sales-orders-print-root"/);

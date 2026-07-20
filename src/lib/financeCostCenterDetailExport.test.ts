@@ -284,6 +284,25 @@ describe("financeCostCenterDetailExport", () => {
     assert.ok(printDoc.includes("FINANCE_CC_DETAIL_EXPORT_TITLE"));
     assert.ok(printDoc.includes(">Alocado<"));
     assert.ok(printDoc.includes("payload.totals.allocatedAmount"));
+    assert.ok(printDoc.includes("FinanceCostCenterMonthlyPrintChart"));
+    assert.ok(printDoc.includes("payload.monthlyChart"));
+    assert.ok(printDoc.indexOf("FinanceCostCenterMonthlyPrintChart") < printDoc.indexOf("Títulos alocados"));
+  });
+
+  it("PDF inclui gráfico mensal pago/em aberto antes do grid", () => {
+    const printChart = read(
+      "src/components/finance/cost-centers/FinanceCostCenterMonthlyPrintChart.tsx"
+    );
+    const css = read("src/components/finance/cost-centers/finance-cc-detail-print.css");
+    const ui = read("src/components/finance/cost-centers/FinanceCostCenterExpenseMapSection.tsx");
+    assert.ok(printChart.includes("Pago / realizado"));
+    assert.ok(printChart.includes("Previsto / em aberto"));
+    assert.ok(printChart.includes("paidAmount"));
+    assert.ok(printChart.includes("openAmount"));
+    assert.ok(css.includes("finance-cc-detail-print-chart-segment--paid"));
+    assert.ok(css.includes("finance-cc-detail-print-chart-segment--open"));
+    assert.ok(ui.includes("monthlyChart"));
+    assert.ok(ui.includes("buildCostCenterMonthlyChartQuery"));
   });
 
   it("detalhe do mapa usa summary da listagem (uma única fonte)", () => {
