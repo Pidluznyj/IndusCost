@@ -1,3 +1,5 @@
+import { mergeSalesOrderOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
+
 export type MaterialDemandMode = "quantity" | "value" | "orders" | "products";
 export type MaterialDemandDateBasis = "issueDate" | "expectedDeliveryDate";
 
@@ -150,7 +152,14 @@ export function materialDemandFiltersCacheKey(filters: MaterialDemandFilters): s
   return JSON.stringify(filters);
 }
 
-export function buildMaterialDemandSalesOrderWhere(filters: MaterialDemandFilters): Record<string, unknown> {
+export function buildMaterialDemandSalesOrderWhere(
+  filters: MaterialDemandFilters,
+  options?: {
+    env?: Record<string, string | undefined>;
+    /** Default OPERATIONAL — aplica exclusão MISSING_CONFIRMED quando a flag está on. */
+    includeConfirmedMissing?: boolean;
+  }
+): Record<string, unknown> {
   const where: Record<string, unknown> = {};
 
   if (filters.startDate || filters.endDate) {
@@ -180,10 +189,22 @@ export function buildMaterialDemandSalesOrderWhere(filters: MaterialDemandFilter
 
   if (filters.customerId) where.customerId = filters.customerId;
   if (filters.companyIssuer) where.companyIssuer = filters.companyIssuer;
-  if (filters.seller) where.responsible = filters.seller;
+  if (filters.seller) {
+    // Preferência Nomus (mesmo eixo da listagem); fallback textual em nomusSellerName.
+    const asNum = Number(filters.seller);
+    if (Number.isInteger(asNum) && asNum > 0) {
+      where.externalSellerId = asNum;
+    } else {
+      where.nomusSellerName = { contains: filters.seller, mode: "insensitive" };
+    }
+  }
   if (filters.productId) where.items = { some: { productId: filters.productId } };
 
-  return where;
+  // OP-02: mesma política de presença das visões operacionais.
+  return mergeSalesOrderOperationalPresenceWhere(where, {
+    env: options?.env,
+    includeConfirmedMissing: options?.includeConfirmedMissing,
+  }) as Record<string, unknown>;
 }
 
 export type MaterialDemandCoverage = {

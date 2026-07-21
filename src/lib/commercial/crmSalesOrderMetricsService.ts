@@ -11,6 +11,7 @@ import type { PrismaClient } from "@prisma/client";
 import { isCancelledSalesOrderStatus } from "@/src/lib/salesOrderDashboardRules.js";
 import { isNomusSellerInformed } from "@/src/lib/salesOrderNomusSeller.shared.js";
 import { normalizeSellerIdentityName } from "@/src/lib/crmSellerIdentityConsolidation.js";
+import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
 import {
   CRM_OFFICIAL_UI_MESSAGES,
   CRM_PORTFOLIO_AXIS,
@@ -662,7 +663,8 @@ export async function loadCrmSalesOrderMetrics(
   }
 
   const rows = await prisma.salesOrder.findMany({
-    where: where as never,
+    // OP-02: mesma presença operacional da listagem Comercial.
+    where: mergeSalesOrderOperationalPresenceWhere(where) as never,
     select: CRM_SALES_ORDER_METRICS_PRISMA_SELECT as never,
     orderBy: { issueDate: "desc" },
     take: options?.take ?? 20000,

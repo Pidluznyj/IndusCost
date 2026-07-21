@@ -20,25 +20,78 @@ test("parseMaterialDemandFilters: statuses múltiplos via CSV", () => {
 });
 
 test("buildMaterialDemandSalesOrderWhere: status in e entrega sem data", () => {
-  const where = buildMaterialDemandSalesOrderWhere({
-    startDate: "2026-05-01",
-    endDate: "2026-05-31",
-    dateBasis: "expectedDeliveryDate",
-    status: null,
-    statuses: [...SALES_ORDER_FIRM_STATUSES],
-    customerId: null,
-    productId: null,
-    materialId: null,
-    companyIssuer: null,
-    unitKey: null,
-    mode: "value",
-    search: "",
-    includeOrdersWithoutDeliveryDate: true,
-    invoicingScope: "all",
-    seller: null,
-  });
+  const where = buildMaterialDemandSalesOrderWhere(
+    {
+      startDate: "2026-05-01",
+      endDate: "2026-05-31",
+      dateBasis: "expectedDeliveryDate",
+      status: null,
+      statuses: [...SALES_ORDER_FIRM_STATUSES],
+      customerId: null,
+      productId: null,
+      materialId: null,
+      companyIssuer: null,
+      unitKey: null,
+      mode: "value",
+      search: "",
+      includeOrdersWithoutDeliveryDate: true,
+      invoicingScope: "all",
+      seller: null,
+    },
+    { env: {} }
+  );
+  // Sem flag de presença: estrutura comercial no root.
   assert.ok(where.OR);
   assert.equal((where.status as { in: string[] }).in.length, 2);
+});
+
+test("buildMaterialDemandSalesOrderWhere: OP-02 aplica presença com flag on", () => {
+  const where = buildMaterialDemandSalesOrderWhere(
+    {
+      startDate: null,
+      endDate: null,
+      dateBasis: "issueDate",
+      status: null,
+      statuses: [...SALES_ORDER_FIRM_STATUSES],
+      customerId: null,
+      productId: null,
+      materialId: null,
+      companyIssuer: null,
+      unitKey: null,
+      mode: "value",
+      search: "",
+      includeOrdersWithoutDeliveryDate: true,
+      invoicingScope: "all",
+      seller: null,
+    },
+    { env: { NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENABLED: "true" } }
+  );
+  assert.match(JSON.stringify(where), /MISSING_CONFIRMED/);
+});
+
+test("buildMaterialDemandSalesOrderWhere: seller usa eixo Nomus", () => {
+  const byId = buildMaterialDemandSalesOrderWhere(
+    {
+      startDate: null,
+      endDate: null,
+      dateBasis: "issueDate",
+      status: null,
+      statuses: [],
+      customerId: null,
+      productId: null,
+      materialId: null,
+      companyIssuer: null,
+      unitKey: null,
+      mode: "value",
+      search: "",
+      includeOrdersWithoutDeliveryDate: true,
+      invoicingScope: "all",
+      seller: "42",
+    },
+    { env: {} }
+  );
+  assert.equal(byId.externalSellerId, 42);
+  assert.equal(byId.responsible, undefined);
 });
 
 test("materialDemandAggregationPeriodKey alinha dateBasis", () => {

@@ -11,6 +11,7 @@ import type { SalesOrderManagementRow } from "./salesOrderManagementTypes.js";
 import type { ManagementStatusCardId } from "./salesOrderManagementStatus.js";
 import { isCancelledSalesOrderStatus } from "./salesOrderDashboardRules.js";
 import { mergeSalesOrderOperationalPresenceWhere } from "./nomus/nomusSourcePresencePolicy.js";
+import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
 
 export const SALES_ORDER_METRICS_ENGINE_VERSION = "1.0.0";
 
@@ -295,10 +296,17 @@ const DEFAULT_ORDER_SELECT = {
 
 export async function loadSalesOrderEnrichedMetricsFromDb(
   where: Prisma.SalesOrderWhereInput,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+  }
 ): Promise<SalesOrderEnrichedMetrics[]> {
   const orders = await prisma.salesOrder.findMany({
-    where: mergeSalesOrderOperationalPresenceWhere(where),
+    where: mergeSalesOrderOperationalPresenceWhere(where, {
+      env: options?.env,
+      includeConfirmedMissing: options?.includeConfirmedMissing,
+    }),
     select: DEFAULT_ORDER_SELECT,
   });
   const map = await loadSalesOrderEnrichedMetricsMap(orders, referenceDate);
@@ -307,14 +315,25 @@ export async function loadSalesOrderEnrichedMetricsFromDb(
 
 export async function loadSalesOrderEnrichedMetricsForIssueYear(
   year: number,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+  }
 ): Promise<SalesOrderEnrichedMetrics[]> {
-  const start = new Date(year, 0, 1);
-  const end = new Date(year, 11, 31, 23, 59, 59, 999);
-  return loadSalesOrderEnrichedMetricsFromDb(
-    { issueDate: { gte: start, lte: end } },
-    referenceDate
+  // OP-02: mesma população canônica da listagem (year + presença operacional).
+  const where = buildSalesOrderListWhere(
+    { year },
+    {
+      env: options?.env,
+      includeConfirmedMissing: options?.includeConfirmedMissing,
+    }
   );
+  return loadSalesOrderEnrichedMetricsFromDb(where, referenceDate, {
+    env: options?.env,
+    // Presence já aplicada no list where.
+    includeConfirmedMissing: true,
+  });
 }
 
 export function aggregateSalesOrderMetrics(
