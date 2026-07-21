@@ -211,6 +211,9 @@ describe("nomusSourceReconciliationObservability", () => {
     }
     assert.match(card, /source-reconciliation-status/);
     assert.match(card, /somente apresentação|Observabilidade/i);
+    // Evita tela branca: status?.metrics.byEntity quebra quando metrics é undefined
+    assert.match(card, /status\?\.metrics\?\.byEntity/);
+    assert.match(card, /operationalImpact\?\.adminAlert/);
     const row = buildPresenceDrilldownRow({
       entityType: "SALES_ORDER",
       localId: "x",

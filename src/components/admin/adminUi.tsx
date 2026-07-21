@@ -105,7 +105,7 @@ export function AdminMetricGrid({
         secondary && nomusSyncMetrics && NOMUS_SYNC_METRIC_GRID_SECONDARY_CLASS
       )}
     >
-      {items.map((item) => (
+      {(items ?? []).map((item) => (
         <SystemTotalizerCard
           key={item.label}
           label={item.label}

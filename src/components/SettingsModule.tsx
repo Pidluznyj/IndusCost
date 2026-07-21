@@ -77,10 +77,13 @@ type NomusSyncMode = "apply" | "dry";
 type NomusSyncTarget =
   | "customers"
   | "products"
+  | "bom-components"
   | "proposals"
   | "sales-orders"
   | "accounts-receivable"
-  | "accounts-payable";
+  | "accounts-payable"
+  | "nfes"
+  | "stock-documents";
 type NomusIntegrationHealthState = "OK" | "FAILED" | "STALE" | "WARNING" | "NO_DATA";
 
 type NomusHealthLastRun = {
@@ -170,7 +173,7 @@ type NomusSyncLogSummary = {
   sizeBytes: number;
   modifiedAt: string;
   command: string | null;
-  metrics: {
+  metrics?: {
     eligibleCount: number | null;
     blockedCount: number | null;
     created: number | null;
@@ -181,7 +184,7 @@ type NomusSyncLogSummary = {
     startPage: number | null;
     maxPages: number | null;
     lastPage: number | null;
-  };
+  } | null;
   blockedReasons: Record<string, number>;
 };
 
@@ -1786,10 +1789,13 @@ export const SettingsModule = () => {
                   <option value="all">Target: Todos</option>
                   <option value="customers">Target: Clientes</option>
                   <option value="products">Target: Produtos</option>
+                  <option value="bom-components">Target: Componentes da BOM</option>
                   <option value="proposals">Target: Propostas</option>
                   <option value="sales-orders">Target: Pedidos de venda</option>
                   <option value="accounts-receivable">Target: Contas a receber</option>
                   <option value="accounts-payable">Target: Contas a pagar</option>
+                  <option value="nfes">Target: NF-e / Faturamento</option>
+                  <option value="stock-documents">Target: Documentos de Saída</option>
                 </select>
                 <select
                   value={nomusModeFilter}
@@ -1887,9 +1893,9 @@ export const SettingsModule = () => {
                           </td>
                           <td className="px-3 py-2 text-right">{formatDurationMs(log.durationMs)}</td>
                           <td className="px-3 py-2 text-right">{formatIntOrDash(log.exitCode)}</td>
-                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.created)}</td>
-                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.updated)}</td>
-                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics.blockedCount)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics?.created)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics?.updated)}</td>
+                          <td className="px-3 py-2 text-right">{formatIntOrDash(log.metrics?.blockedCount)}</td>
                           <td className="px-3 py-2 font-mono text-xs max-w-[280px] truncate" title={log.fileName}>
                             {log.fileName}
                           </td>

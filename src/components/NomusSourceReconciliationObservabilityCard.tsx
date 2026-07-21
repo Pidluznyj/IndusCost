@@ -104,7 +104,10 @@ export function NomusSourceReconciliationObservabilityCard() {
       const data = await fetchJsonOk<StatusPayload>(
         "/api/settings/nomus-sync/source-reconciliation-status"
       );
-      setStatus(data);
+      setStatus(data?.metrics?.byEntity ? data : null);
+      if (!data?.metrics?.byEntity) {
+        setError("Resposta de observabilidade incompleta.");
+      }
     } catch (e) {
       setError(
         e instanceof Error
@@ -195,7 +198,7 @@ export function NomusSourceReconciliationObservabilityCard() {
       )}
 
       <div className="space-y-4">
-        {(status?.metrics.byEntity ?? []).map((entity) => (
+        {(status?.metrics?.byEntity ?? []).map((entity) => (
           <AdminKpiSection
             key={entity.entityType}
             title={entityLabel(entity.entityType)}
@@ -313,9 +316,9 @@ export function NomusSourceReconciliationObservabilityCard() {
                     {formatSyncCardDateTimeLine(row.lastSeenAt)}
                   </td>
                   <td className="py-2 pr-2">
-                    {row.operationalImpact.adminAlert
+                    {row.operationalImpact?.adminAlert
                       ? "alerta candidato"
-                      : row.operationalImpact.isOperationallyPresent
+                      : row.operationalImpact?.isOperationallyPresent
                         ? "operacional"
                         : "fora da operação"}
                   </td>
