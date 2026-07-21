@@ -61,6 +61,22 @@ export type InventoryReservationType =
 
 export type InventoryReservationStatus = "ACTIVE" | "CANCELED" | "CONSUMED";
 
+export type InventoryBlockStatus = "ACTIVE" | "RELEASED";
+
+export type InventoryBlockReasonType =
+  | "QUALITY"
+  | "QUARANTINE"
+  | "DAMAGE"
+  | "AUDIT"
+  | "MANUAL"
+  | "OTHER";
+
+export type InventoryStockSnapshotSource =
+  | "MANUAL"
+  | "RECALCULATION"
+  | "SYSTEM"
+  | "COUNT_SESSION";
+
 export type InventoryCountSessionStatus =
   | "OPEN"
   | "COUNTING"
@@ -89,6 +105,7 @@ export type InventoryItemRow = {
   averageCost: number | null;
   lastKnownCost: number | null;
   productId: string | null;
+  materialId: string | null;
   nomusProductCode: string | null;
   nomusProductId: string | null;
   notes: string | null;

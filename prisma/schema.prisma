@@ -245,6 +245,8 @@ model Material {
   PurchaseRequestItem           PurchaseRequestItem[]
   ProjectStructureLine          ProjectStructureLine[]
   MaterialCostTableItem         MaterialCostTableItem[]
+  /// Itens logísticos locais (SC) — vínculo read-only ao cadastro oficial de MP.
+  InventoryItem                 InventoryItem[]
 }
 
 enum MaterialMarketCriticality {
@@ -5185,6 +5187,27 @@ enum InventoryReservationStatus {
   CONSUMED
 }
 
+enum InventoryBlockStatus {
+  ACTIVE
+  RELEASED
+}
+
+enum InventoryBlockReasonType {
+  QUALITY
+  QUARANTINE
+  DAMAGE
+  AUDIT
+  MANUAL
+  OTHER
+}
+
+enum InventoryStockSnapshotSource {
+  MANUAL
+  RECALCULATION
+  SYSTEM
+  COUNT_SESSION
+}
+
 enum InventoryCountSessionStatus {
   OPEN
   COUNTING
@@ -5199,6 +5222,7 @@ model InventoryItem {
   code                  String              @unique
   description           String
   itemType              InventoryItemType
+  /// Unidade oficial operacional do item logístico (espelha Material.unit quando materialId estiver vinculado).
   unit                  String
   family                String?
   group                 String?
@@ -5214,6 +5238,8 @@ model InventoryItem {
   averageCost           Decimal?            @db.Decimal(20, 6)
   lastKnownCost         Decimal?            @db.Decimal(20, 6)
   productId             String?             @db.Uuid
+  /// Vínculo ao cadastro oficial de matéria-prima (sem duplicar MP).
+  materialId            String?             @db.Uuid
   nomusProductCode      String?
   nomusProductId        String?
   notes                 String?
@@ -5222,15 +5248,19 @@ model InventoryItem {
   createdByUserId       String?
   updatedByUserId       String?
 
-  Product      Product?               @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  balances     InventoryBalance[]
-  movements    InventoryMovement[]
-  reservations InventoryReservation[]
-  countLines   InventoryCountLine[]
+  Product           Product?                     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  Material          Material?                    @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  balances          InventoryBalance[]
+  movements         InventoryMovement[]
+  reservations      InventoryReservation[]
+  blocks            InventoryBlock[]
+  countLines        InventoryCountLine[]
+  stockSnapshotLines InventoryStockSnapshotLine[]
 
   @@index([itemType])
   @@index([status])
   @@index([productId])
+  @@index([materialId])
   @@index([nomusProductCode])
 }
 
@@ -5243,39 +5273,48 @@ model InventoryWarehouse {
   allowsMovements Boolean                  @default(true)
   createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId String?
+  updatedByUserId String?
 
   locations            InventoryLocation[]
   balances             InventoryBalance[]
   sourceMovements      InventoryMovement[]     @relation("MovementSourceWarehouse")
   destinationMovements InventoryMovement[]     @relation("MovementDestinationWarehouse")
   reservations         InventoryReservation[]
+  blocks               InventoryBlock[]
   countSessions        InventoryCountSession[]
   countLines           InventoryCountLine[]
+  stockSnapshotLines   InventoryStockSnapshotLine[]
 
   @@index([status])
 }
 
 model InventoryLocation {
-  id          String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  warehouseId String                  @db.Uuid
-  code        String
-  name        String
-  status      InventoryLocationStatus @default(ACTIVE)
-  createdAt   DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt   DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  id              String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  warehouseId     String                  @db.Uuid
+  code            String
+  name            String
+  status          InventoryLocationStatus @default(ACTIVE)
+  createdAt       DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+  createdByUserId String?
+  updatedByUserId String?
 
   warehouse            InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   balances             InventoryBalance[]
   sourceMovements      InventoryMovement[]    @relation("MovementSourceLocation")
   destinationMovements InventoryMovement[]    @relation("MovementDestinationLocation")
   reservations         InventoryReservation[]
+  blocks               InventoryBlock[]
   countLines           InventoryCountLine[]
+  stockSnapshotLines   InventoryStockSnapshotLine[]
 
   @@unique([warehouseId, code])
   @@index([warehouseId])
   @@index([status])
 }
 
+/// Movimento imutável (ledger). Sem updatedAt de negócio — correção só via REVERSAL.
 model InventoryMovement {
   id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   itemId                    String                      @db.Uuid
@@ -5285,10 +5324,12 @@ model InventoryMovement {
   destinationLocationId     String?                     @db.Uuid
   movementType              InventoryMovementType
   quantity                  Decimal                     @db.Decimal(20, 6)
+  /// Unidade oficial do fato (cópia imutável no lançamento).
   unit                      String
   reason                    String
   notes                     String?
   responsibleUserId         String?
+  createdByUserId           String?
   movementDate              DateTime                    @default(now()) @db.Timestamptz(6)
   originType                InventoryMovementOriginType @default(MANUAL)
   originId                  String?
@@ -5303,8 +5344,16 @@ model InventoryMovement {
   productionOrderCode       String?
   bomId                     String?                     @db.Uuid
   productId                 String?                     @db.Uuid
+  /// Snapshot do vínculo oficial de MP no momento do fato (não atualiza se Material mudar).
+  materialId                String?                     @db.Uuid
+  materialCodeSnapshot      String?
+  materialDescriptionSnapshot String?
   nfeId                     String?
   nfeNumber                 String?
+  /// Rastreabilidade operacional (lote / série / validade).
+  lotNumber                 String?
+  serialNumber              String?
+  expirationDate            DateTime?                   @db.Timestamptz(6)
   previousPhysicalBalance   Decimal                     @db.Decimal(20, 6)
   nextPhysicalBalance       Decimal                     @db.Decimal(20, 6)
   previousReservedBalance   Decimal                     @default(0) @db.Decimal(20, 6)
@@ -5317,6 +5366,7 @@ model InventoryMovement {
   nextAvailableBalance      Decimal                     @db.Decimal(20, 6)
   reversedMovementId        String?                     @db.Uuid
   reservationId             String?                     @db.Uuid
+  blockId                   String?                     @db.Uuid
   createdAt                 DateTime                    @default(now()) @db.Timestamptz(6)
 
   item                 InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -5328,8 +5378,11 @@ model InventoryMovement {
   reversedMovement     InventoryMovement?    @relation("MovementReversal", fields: [reversedMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   reversalMovements    InventoryMovement[]   @relation("MovementReversal")
   reservation          InventoryReservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  block                InventoryBlock?       @relation(fields: [blockId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   countLine            InventoryCountLine?
+  stockSnapshotLines   InventoryStockSnapshotLine[]
 
+  @@unique([reversedMovementId])
   @@index([itemId])
   @@index([movementType])
   @@index([movementDate])
@@ -5340,8 +5393,14 @@ model InventoryMovement {
   @@index([salesOrderId])
   @@index([purchaseOrderId])
   @@index([reservationId])
+  @@index([blockId])
+  @@index([materialId])
+  @@index([lotNumber])
+  @@index([createdByUserId])
+  @@index([createdAt])
 }
 
+/// Saldo materializado — projeção do ledger; nunca fonte editável direta.
 model InventoryBalance {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   itemId             String    @db.Uuid
@@ -5357,6 +5416,8 @@ model InventoryBalance {
   averageCost        Decimal?  @db.Decimal(20, 6)
   totalValue         Decimal?  @db.Decimal(20, 2)
   lastMovementAt     DateTime?
+  /// Último movimento que materializou este saldo (rastreio ledger → saldo).
+  lastMovementId     String?   @db.Uuid
   updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
 
   item      InventoryItem      @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
@@ -5367,6 +5428,7 @@ model InventoryBalance {
   @@index([warehouseId])
   @@index([locationId])
   @@index([availableQuantity])
+  @@index([lastMovementId])
 }
 
 model InventoryReservation {
@@ -5395,6 +5457,88 @@ model InventoryReservation {
   @@index([warehouseId])
   @@index([status])
   @@index([reservationType])
+  @@index([createdByUserId])
+  @@index([createdAt])
+}
+
+/// Bloqueio tipado (qualidade/auditoria) — espelha reserva; saldo bloqueado só via movimentos BLOCK/UNBLOCK.
+model InventoryBlock {
+  id              String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId          String                      @db.Uuid
+  warehouseId     String                      @db.Uuid
+  locationId      String?                     @db.Uuid
+  quantity        Decimal                     @db.Decimal(20, 6)
+  reasonType      InventoryBlockReasonType    @default(MANUAL)
+  status          InventoryBlockStatus        @default(ACTIVE)
+  reason          String
+  originType      InventoryMovementOriginType @default(MANUAL)
+  originId        String?
+  createdByUserId String?
+  releasedByUserId String?
+  createdAt       DateTime                    @default(now()) @db.Timestamptz(6)
+  releasedAt      DateTime?                   @db.Timestamptz(6)
+  notes           String?
+
+  item      InventoryItem       @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouse InventoryWarehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  location  InventoryLocation?  @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  movements InventoryMovement[]
+
+  @@index([itemId])
+  @@index([warehouseId])
+  @@index([status])
+  @@index([reasonType])
+  @@index([createdByUserId])
+  @@index([createdAt])
+}
+
+/// Snapshot pontual de saldos (auditoria / recálculo a partir do ledger). Não substitui InventoryBalance.
+model InventoryStockSnapshot {
+  id              String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  asOfAt          DateTime                     @db.Timestamptz(6)
+  source          InventoryStockSnapshotSource @default(RECALCULATION)
+  reason          String?
+  createdByUserId String?
+  createdByUserName String?
+  createdAt       DateTime                     @default(now()) @db.Timestamptz(6)
+
+  lines InventoryStockSnapshotLine[]
+
+  @@index([asOfAt])
+  @@index([source])
+  @@index([createdByUserId])
+  @@index([createdAt])
+}
+
+model InventoryStockSnapshotLine {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  snapshotId         String   @db.Uuid
+  itemId             String   @db.Uuid
+  warehouseId        String   @db.Uuid
+  locationId         String?  @db.Uuid
+  balanceKey         String
+  physicalQuantity   Decimal  @db.Decimal(20, 6)
+  reservedQuantity   Decimal  @default(0) @db.Decimal(20, 6)
+  blockedQuantity    Decimal  @default(0) @db.Decimal(20, 6)
+  quarantineQuantity Decimal  @default(0) @db.Decimal(20, 6)
+  availableQuantity  Decimal  @db.Decimal(20, 6)
+  /// Unidade oficial congelada no snapshot.
+  unit               String
+  materialId         String?  @db.Uuid
+  materialCodeSnapshot String?
+  lastMovementId     String?  @db.Uuid
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  snapshot    InventoryStockSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  item        InventoryItem          @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  warehouse   InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  location    InventoryLocation?     @relation(fields: [locationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  lastMovement InventoryMovement?    @relation(fields: [lastMovementId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([snapshotId])
+  @@index([itemId, balanceKey])
+  @@index([warehouseId])
+  @@index([lastMovementId])
 }
 
 model InventoryCountSession {
