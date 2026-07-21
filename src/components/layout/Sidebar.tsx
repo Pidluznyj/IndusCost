@@ -35,6 +35,7 @@ import {
   Activity,
   Cog,
   HelpCircle,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -90,6 +91,7 @@ export const SIDEBAR_LAYOUT_MARKERS = {
 const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   dashboard: LayoutDashboard,
   employees: Users,
+  "org-chart": Network,
   machines: Cpu,
   materials: Truck,
   purchases: ShoppingCart,
@@ -127,6 +129,7 @@ const GROUP_ICONS: Record<NavigationGroupId, LucideIcon> = {
   comercial: Briefcase,
   financeiro: Banknote,
   operacoes: Factory,
+  gestao_pessoas: Users,
   administracao: Settings,
   outros: HelpCircle,
 };

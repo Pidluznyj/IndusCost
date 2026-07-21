@@ -48,6 +48,24 @@ export const EMPLOYEES_PILOT_ENDPOINTS = [
   },
   {
     method: "GET",
+    path: "/api/employees/org/*",
+    resourceKey: "admin.employees",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/employees/org/*",
+    resourceKey: "admin.employees",
+    action: "create",
+  },
+  {
+    method: "PUT",
+    path: "/api/employees/org/*",
+    resourceKey: "admin.employees",
+    action: "update",
+  },
+  {
+    method: "GET",
     path: "/api/employees/:id/user-link-status",
     resourceKey: "admin.employees.user_link",
     action: "manage",

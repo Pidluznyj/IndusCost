@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-17T19:49:14.372Z",
+  "generatedAt": "2026-07-21T20:35:01.633Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -20,8 +20,8 @@
       "itemId": "employees",
       "label": "Pessoas / RH",
       "path": "/employees",
-      "groupId": "administracao",
-      "groupLabel": "Administração",
+      "groupId": "gestao_pessoas",
+      "groupLabel": "Gestão de pessoas",
       "isDirect": false,
       "requiredPermissions": [
         "employees.view"
@@ -29,6 +29,18 @@
     },
     {
       "order": 3,
+      "itemId": "org-chart",
+      "label": "Organograma",
+      "path": "/org-chart",
+      "groupId": "gestao_pessoas",
+      "groupLabel": "Gestão de pessoas",
+      "isDirect": false,
+      "requiredPermissions": [
+        "employees.view"
+      ]
+    },
+    {
+      "order": 4,
       "itemId": "machines",
       "label": "Máquinas",
       "path": "/machines",
@@ -40,7 +52,7 @@
       ]
     },
     {
-      "order": 4,
+      "order": 5,
       "itemId": "materials",
       "label": "Suprimentos",
       "path": "/materials",
@@ -52,7 +64,7 @@
       ]
     },
     {
-      "order": 5,
+      "order": 6,
       "itemId": "purchases",
       "label": "Compras",
       "path": "/purchases",
@@ -64,7 +76,7 @@
       ]
     },
     {
-      "order": 6,
+      "order": 7,
       "itemId": "maintenance",
       "label": "Manutenção Predial",
       "path": "/maintenance",
@@ -76,7 +88,7 @@
       ]
     },
     {
-      "order": 7,
+      "order": 8,
       "itemId": "inventory",
       "label": "Estoque / Almoxarifado",
       "path": "/inventory",
@@ -88,7 +100,7 @@
       ]
     },
     {
-      "order": 8,
+      "order": 9,
       "itemId": "operations-performance",
       "label": "Performance",
       "path": "/operations-performance",
@@ -102,7 +114,7 @@
       ]
     },
     {
-      "order": 9,
+      "order": 10,
       "itemId": "production-orders",
       "label": "Ordens de Produção",
       "path": "/production-orders",
@@ -114,7 +126,7 @@
       ]
     },
     {
-      "order": 10,
+      "order": 11,
       "itemId": "projects",
       "label": "Projetos",
       "path": "/projects",
@@ -126,7 +138,7 @@
       ]
     },
     {
-      "order": 11,
+      "order": 12,
       "itemId": "fleet",
       "label": "Gestão de Frota",
       "path": "/fleet",
@@ -139,7 +151,7 @@
       ]
     },
     {
-      "order": 12,
+      "order": 13,
       "itemId": "products",
       "label": "Produtos",
       "path": "/products",
@@ -151,7 +163,7 @@
       ]
     },
     {
-      "order": 13,
+      "order": 14,
       "itemId": "transformation-simulator",
       "label": "Simulador de Custo de Injeção",
       "path": "/transformation-simulator",
@@ -164,7 +176,7 @@
       ]
     },
     {
-      "order": 14,
+      "order": 15,
       "itemId": "opex",
       "label": "Custos Indiretos",
       "path": "/opex",
@@ -177,7 +189,7 @@
       ]
     },
     {
-      "order": 15,
+      "order": 16,
       "itemId": "taxes",
       "label": "Tributos",
       "path": "/taxes",
@@ -189,7 +201,7 @@
       ]
     },
     {
-      "order": 16,
+      "order": 17,
       "itemId": "pricing",
       "label": "Formação de Preço",
       "path": "/pricing",
@@ -201,7 +213,7 @@
       ]
     },
     {
-      "order": 17,
+      "order": 18,
       "itemId": "proposals",
       "label": "Propostas",
       "path": "/proposals",
@@ -213,7 +225,7 @@
       ]
     },
     {
-      "order": 18,
+      "order": 19,
       "itemId": "sales-orders",
       "label": "Pedidos de venda",
       "path": "/sales-orders",
@@ -225,7 +237,7 @@
       ]
     },
     {
-      "order": 19,
+      "order": 20,
       "itemId": "sales-order-flow",
       "label": "Fluxo de Pedidos",
       "path": "/commercial/sales-order-flow",
@@ -237,7 +249,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "output-documents",
       "label": "Documentos de Saída",
       "path": "/output-documents",
@@ -249,7 +261,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -261,7 +273,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -277,7 +289,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -298,7 +310,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -310,7 +322,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -323,7 +335,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -340,7 +352,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -354,7 +366,7 @@
       ]
     },
     {
-      "order": 28,
+      "order": 29,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -370,7 +382,7 @@
       ]
     },
     {
-      "order": 29,
+      "order": 30,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -383,7 +395,7 @@
       ]
     },
     {
-      "order": 30,
+      "order": 31,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -399,6 +411,7 @@
   "appModuleRoutes": {
     "dashboard": true,
     "employees": true,
+    "org-chart": true,
     "machines": true,
     "materials": true,
     "purchases": true,
@@ -480,6 +493,9 @@
       "pricing.view"
     ],
     "employees": [
+      "employees.view"
+    ],
+    "org-chart": [
       "employees.view"
     ],
     "machines": [

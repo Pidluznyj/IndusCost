@@ -30,6 +30,7 @@ import {
   shouldWritePortfolioRebuild,
   type RebuildPortfolioCliOptions,
 } from "../src/lib/finance/portfolioReconciliationRebuild.ts";
+import { mergeSalesOrderWhereWithPortfolioOperationalGate } from "../src/lib/finance/financePortfolioOperationalOrderGate.server.ts";
 import type {
   PortfolioReconciliationSnapshot,
   SnapshotNfe,
@@ -79,8 +80,11 @@ async function loadSnapshot(
     }
   }
 
+  // Mesmo universo operacional de Pedidos / CR (exclui CANCELLED/ERROR e MISSING_CONFIRMED).
+  const gatedOrderWhere = mergeSalesOrderWhereWithPortfolioOperationalGate(orderWhere);
+
   const ordersRaw = await prisma.salesOrder.findMany({
-    where: orderWhere,
+    where: gatedOrderWhere,
     take: options.maxOrders ?? undefined,
     orderBy: { issueDate: "asc" },
     include: {

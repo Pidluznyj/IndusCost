@@ -22,6 +22,7 @@ export const NAVIGATION_GROUP_SHORT_LABELS: Record<NavigationGroupId, string> = 
   comercial: "Com.",
   financeiro: "Fin.",
   operacoes: "Ops.",
+  gestao_pessoas: "Pessoas",
   administracao: "Adm.",
   outros: "Outros",
 };
@@ -29,6 +30,7 @@ export const NAVIGATION_GROUP_SHORT_LABELS: Record<NavigationGroupId, string> = 
 export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   dashboard: "Home",
   employees: "RH",
+  "org-chart": "Org.",
   machines: "Máq.",
   materials: "Supr.",
   purchases: "Compr.",

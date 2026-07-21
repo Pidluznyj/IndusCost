@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
+import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
 import { MachineModule } from "./components/MachineModule";
 import { MaterialsModule } from "./components/MaterialsModule";
 import { ProductModule } from "./components/ProductModule";
@@ -404,6 +405,17 @@ export default function App() {
               description="Cadastro administrativo de colaboradores, cargos e benefícios. Não altera CIU, custo de produtos, HH global ou roteiros de produção."
             >
               <EmployeeModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="org-chart"
+          element={
+            <ModulePageShell
+              title="Organograma"
+              description="Visão hierárquica da estrutura organizacional — diretorias, departamentos, responsáveis e equipes."
+            >
+              <HrOrgChartPage />
             </ModulePageShell>
           }
         />

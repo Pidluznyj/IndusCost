@@ -15,6 +15,7 @@ import {
   EyeOff,
   User,
   Trash2,
+  Building2,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
@@ -55,6 +56,7 @@ import { EmployeeFichaTabNav } from "@/src/components/employee/EmployeeFichaTabN
 import { EmployeePersonLinkField } from "@/src/components/employee/EmployeePersonLinkField";
 import { EmployeeSystemAccessCard } from "@/src/components/employee/EmployeeSystemAccessCard";
 import { EmployeeSystemLinksPanel } from "@/src/components/employee/EmployeeSystemLinksPanel";
+import { EmployeeOrgStructurePanel } from "@/src/components/employee/EmployeeOrgStructurePanel";
 import { motion } from "motion/react";
 import { SearchableSelect } from "./shared/SearchableSelect";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
@@ -233,6 +235,21 @@ export const EmployeeModule = () => {
     { value: string; label: string; searchTerms?: string }[]
   >([]);
   const [departmentSuggestions, setDepartmentSuggestions] = useState<string[]>([]);
+  const [orgDepartmentOptions, setOrgDepartmentOptions] = useState<
+    {
+      value: string;
+      label: string;
+      searchTerms?: string;
+      name?: string;
+      leaderEmployeeId?: string | null;
+      leaderName?: string | null;
+      directorateName?: string | null;
+      directorateLeaderEmployeeId?: string | null;
+      directorateLeaderName?: string | null;
+    }[]
+  >([]);
+  const [searchingOrgDepartments, setSearchingOrgDepartments] = useState(false);
+  const [rhView, setRhView] = useState<"people" | "org">("people");
   const [searchingCostCenters, setSearchingCostCenters] = useState(false);
   const [searchingManagers, setSearchingManagers] = useState(false);
   const [searchingRoles, setSearchingRoles] = useState(false);
@@ -354,7 +371,7 @@ export const EmployeeModule = () => {
       const deptQs = new URLSearchParams();
       if (opts?.departmentQ) deptQs.set("q", opts.departmentQ);
 
-      const [cc, mgr, roleLookup, depts] = await Promise.all([
+      const [cc, mgr, roleLookup, depts, orgDepts] = await Promise.all([
         fetchJsonOk<{ rows: { id: string; label: string; code: string; name: string }[] }>(
           `/api/employees/lookups/cost-centers?${ccQs.toString()}`
         ),
@@ -367,6 +384,20 @@ export const EmployeeModule = () => {
         fetchJsonOk<{ rows: { value: string; label: string }[] }>(
           `/api/employees/lookups/departments?${deptQs.toString()}`
         ),
+        fetchJsonOk<{
+          rows: {
+            id: string;
+            label: string;
+            name: string;
+            directorateName: string | null;
+            leaderEmployeeId: string | null;
+            leaderName: string | null;
+            directorateLeaderEmployeeId: string | null;
+            directorateLeaderName: string | null;
+          }[];
+        }>(`/api/employees/lookups/org-departments?${deptQs.toString()}`).catch(() => ({
+          rows: [],
+        })),
       ]);
       setCostCenterOptions(
         (cc.rows ?? []).map((r) => ({
@@ -400,13 +431,26 @@ export const EmployeeModule = () => {
       }
       setRoleLookupOptions(roleOpts);
       setDepartmentSuggestions((depts.rows ?? []).map((r) => r.value));
+      setOrgDepartmentOptions(
+        (orgDepts.rows ?? []).map((r) => ({
+          value: r.id,
+          label: r.label,
+          name: r.name,
+          searchTerms: `${r.name} ${r.directorateName ?? ""} ${r.leaderName ?? ""}`,
+          leaderEmployeeId: r.leaderEmployeeId,
+          leaderName: r.leaderName,
+          directorateName: r.directorateName,
+          directorateLeaderEmployeeId: r.directorateLeaderEmployeeId,
+          directorateLeaderName: r.directorateLeaderName,
+        }))
+      );
     } catch (error) {
       console.error("Erro ao carregar lookups RH:", error);
     }
   };
 
   const scheduleLookupSearch = (
-    kind: "costCenter" | "manager" | "role" | "department",
+    kind: "costCenter" | "manager" | "role" | "department" | "orgDepartment",
     term: string
   ) => {
     if (lookupDebounceRef.current) clearTimeout(lookupDebounceRef.current);
@@ -417,7 +461,9 @@ export const EmployeeModule = () => {
           ? setSearchingManagers
           : kind === "role"
             ? setSearchingRoles
-            : null;
+            : kind === "orgDepartment"
+              ? setSearchingOrgDepartments
+              : null;
     setSearching?.(true);
     lookupDebounceRef.current = setTimeout(() => {
       void (async () => {
@@ -426,7 +472,8 @@ export const EmployeeModule = () => {
             costCenterQ: kind === "costCenter" ? term : undefined,
             managerQ: kind === "manager" ? term : undefined,
             roleQ: kind === "role" ? term : undefined,
-            departmentQ: kind === "department" ? term : undefined,
+            departmentQ:
+              kind === "department" || kind === "orgDepartment" ? term : undefined,
           });
         } finally {
           setSearching?.(false);
@@ -829,6 +876,57 @@ export const EmployeeModule = () => {
         </div>
       )}
 
+      <div
+        className="inline-flex rounded-lg border border-border bg-card p-1 gap-1"
+        role="tablist"
+        aria-label="Visões do RH"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rhView === "people"}
+          onClick={() => setRhView("people")}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            rhView === "people"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent"
+          )}
+        >
+          <User className="h-4 w-4" />
+          Colaboradores
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={rhView === "org"}
+          onClick={() => {
+            setRhView("org");
+            void loadProfessionalLookups({ managerQ: "" });
+          }}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            rhView === "org"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-accent"
+          )}
+        >
+          <Building2 className="h-4 w-4" />
+          Estrutura organizacional
+        </button>
+      </div>
+
+      {rhView === "org" ? (
+        <EmployeeOrgStructurePanel
+          canManage={canEdit || canCreate}
+          managerOptions={managerOptions}
+          searchingManagers={searchingManagers}
+          onRequestManagers={(term) => scheduleLookupSearch("manager", term)}
+        />
+      ) : null}
+
+      {rhView === "people" ? (
+      <>
       {/* Header Actions */}
       <div
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -1071,6 +1169,8 @@ export const EmployeeModule = () => {
           </table>
         </div>
       </div>
+      </>
+      ) : null}
 
       {/* Modal: Employee Form */}
       {isModalOpen && canWrite && (
@@ -1254,29 +1354,91 @@ export const EmployeeModule = () => {
                             <label className="text-xs font-bold text-muted-foreground uppercase">
                               Departamento / setor *
                             </label>
-                            <input
-                              required
-                              type="text"
-                              list="employee-department-suggestions"
-                              className={INPUT_CLASS}
-                              value={formData.department}
-                              onChange={(e) => {
-                                const next = e.target.value;
-                                setFormData({ ...formData, department: next });
-                                scheduleLookupSearch("department", next);
-                              }}
-                              onFocus={() => scheduleLookupSearch("department", formData.department)}
-                              autoComplete="off"
-                            />
-                            <datalist id="employee-department-suggestions">
-                              {departmentSuggestions.map((d) => (
-                                <option key={d} value={d} />
-                              ))}
-                            </datalist>
-                            <p className="text-[11px] text-muted-foreground">
-                              Sem cadastro oficial de departamentos — texto livre com sugestões já
-                              usadas.
-                            </p>
+                            {orgDepartmentOptions.length > 0 || formData.departmentId ? (
+                              <>
+                                <SearchableSelect
+                                  required
+                                  placeholder="Selecione o departamento oficial..."
+                                  options={orgDepartmentOptions}
+                                  value={formData.departmentId ?? ""}
+                                  onChange={(v) => {
+                                    const opt = orgDepartmentOptions.find((o) => o.value === v);
+                                    const employeeId = editingEmployee?.id ?? null;
+                                    const isSelfLeader =
+                                      Boolean(employeeId) &&
+                                      opt?.leaderEmployeeId === employeeId;
+                                    const nextManagerId = isSelfLeader
+                                      ? opt?.directorateLeaderEmployeeId &&
+                                        opt.directorateLeaderEmployeeId !== employeeId
+                                        ? opt.directorateLeaderEmployeeId
+                                        : ""
+                                      : opt?.leaderEmployeeId ?? "";
+                                    const nextManagerName = isSelfLeader
+                                      ? nextManagerId
+                                        ? opt?.directorateLeaderName ?? ""
+                                        : ""
+                                      : opt?.leaderName ?? "";
+                                    lookupContextRef.current.selectedManagerId =
+                                      nextManagerId || undefined;
+                                    setFormData({
+                                      ...formData,
+                                      departmentId: v,
+                                      department: opt?.name ?? formData.department,
+                                      managerId: nextManagerId,
+                                      managerName: nextManagerName,
+                                    });
+                                  }}
+                                  remoteSearch
+                                  searching={searchingOrgDepartments}
+                                  onSearchTermChange={(term) =>
+                                    scheduleLookupSearch("orgDepartment", term)
+                                  }
+                                  unknownSelectionLabel={
+                                    formData.department
+                                      ? `${formData.department} (legado — selecione o oficial)`
+                                      : "Departamento não listado"
+                                  }
+                                />
+                                <p className="text-[11px] text-muted-foreground">
+                                  O gestor responsável é sempre o líder deste departamento.
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <input
+                                  required
+                                  type="text"
+                                  list="employee-department-suggestions"
+                                  className={INPUT_CLASS}
+                                  value={formData.department}
+                                  onChange={(e) => {
+                                    const next = e.target.value;
+                                    setFormData({ ...formData, department: next, departmentId: "" });
+                                    scheduleLookupSearch("department", next);
+                                  }}
+                                  onFocus={() =>
+                                    scheduleLookupSearch("department", formData.department)
+                                  }
+                                  autoComplete="off"
+                                />
+                                <datalist id="employee-department-suggestions">
+                                  {departmentSuggestions.map((d) => (
+                                    <option key={d} value={d} />
+                                  ))}
+                                </datalist>
+                                <p className="text-[11px] text-muted-foreground">
+                                  Ainda não há departamentos oficiais — cadastre em{" "}
+                                  <button
+                                    type="button"
+                                    className="font-semibold text-primary underline-offset-2 hover:underline"
+                                    onClick={() => setRhView("org")}
+                                  >
+                                    Estrutura organizacional
+                                  </button>
+                                  .
+                                </p>
+                              </>
+                            )}
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-muted-foreground uppercase">
@@ -1312,32 +1474,53 @@ export const EmployeeModule = () => {
                             <label className="text-xs font-bold text-muted-foreground uppercase">
                               Gestor responsável
                             </label>
-                            <SearchableSelect
-                              placeholder="Buscar colaborador ativo..."
-                              options={[
-                                { value: "", label: "— Sem gestor —", searchTerms: "sem" },
-                                ...managerOptions,
-                              ]}
-                              value={formData.managerId ?? ""}
-                              onChange={(v) => {
-                                const opt = managerOptions.find((o) => o.value === v);
-                                lookupContextRef.current.selectedManagerId = v || undefined;
-                                setFormData({
-                                  ...formData,
-                                  managerId: v,
-                                  managerName: opt?.label ?? "",
-                                });
-                              }}
-                              remoteSearch
-                              searching={searchingManagers}
-                              onSearchTermChange={(term) => scheduleLookupSearch("manager", term)}
-                              pinOptionValues={[""]}
-                              unknownSelectionLabel={
-                                formData.managerName
-                                  ? `${formData.managerName} (histórico)`
-                                  : "Gestor não listado"
-                              }
-                            />
+                            {formData.departmentId ? (
+                              <>
+                                <input
+                                  type="text"
+                                  readOnly
+                                  className={cn(INPUT_CLASS, "bg-muted/40 text-muted-foreground")}
+                                  value={
+                                    formData.managerName?.trim() ||
+                                    (formData.managerId
+                                      ? managerOptions.find((o) => o.value === formData.managerId)
+                                          ?.label ?? "Líder do departamento"
+                                      : "— Líder da diretoria / sem gestor (quando a pessoa é o líder) —")
+                                  }
+                                />
+                                <p className="text-[11px] text-muted-foreground">
+                                  Definido automaticamente pelo líder do departamento oficial. Não é
+                                  editável.
+                                </p>
+                              </>
+                            ) : (
+                              <SearchableSelect
+                                placeholder="Buscar colaborador ativo..."
+                                options={[
+                                  { value: "", label: "— Sem gestor —", searchTerms: "sem" },
+                                  ...managerOptions,
+                                ]}
+                                value={formData.managerId ?? ""}
+                                onChange={(v) => {
+                                  const opt = managerOptions.find((o) => o.value === v);
+                                  lookupContextRef.current.selectedManagerId = v || undefined;
+                                  setFormData({
+                                    ...formData,
+                                    managerId: v,
+                                    managerName: opt?.label ?? "",
+                                  });
+                                }}
+                                remoteSearch
+                                searching={searchingManagers}
+                                onSearchTermChange={(term) => scheduleLookupSearch("manager", term)}
+                                pinOptionValues={[""]}
+                                unknownSelectionLabel={
+                                  formData.managerName
+                                    ? `${formData.managerName} (histórico)`
+                                    : "Gestor não listado"
+                                }
+                              />
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1953,6 +2136,18 @@ export const EmployeeModule = () => {
                     />
                     <DetailField label="Cargo" value={displayText(viewingEmployee.Role.name)} />
                     <DetailField label="Departamento" value={displayText(viewingEmployee.department)} />
+                    {viewingEmployee.orgDepartment?.directorate?.name ? (
+                      <DetailField
+                        label="Diretoria"
+                        value={viewingEmployee.orgDepartment.directorate.name}
+                      />
+                    ) : null}
+                    {viewingEmployee.orgDepartment?.leader?.name ? (
+                      <DetailField
+                        label="Líder do departamento"
+                        value={viewingEmployee.orgDepartment.leader.name}
+                      />
+                    ) : null}
                     <DetailField
                       label="Centro de custo"
                       value={

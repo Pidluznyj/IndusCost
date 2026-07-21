@@ -196,6 +196,7 @@ export const SIDEBAR_GROUP_UI_LABELS = [
   "Comercial",
   "Financeiro",
   "Operações",
+  "Gestão de pessoas",
   "Administração",
 ] as const;
 
@@ -207,6 +208,7 @@ const PERSISTABLE_GROUP_IDS: readonly NavigationGroupId[] = [
   "comercial",
   "financeiro",
   "operacoes",
+  "gestao_pessoas",
   "administracao",
   "outros",
 ];

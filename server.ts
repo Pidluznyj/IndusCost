@@ -204,6 +204,12 @@ import {
 } from "./src/lib/crmCustomersList.js";
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
+import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
+import {
+  HrOrgStructureError,
+  resolveForcedManagerFromOrgDepartment,
+} from "./src/lib/hrOrgStructure.js";
+import { resolveHrDepartmentLabel } from "./src/lib/hrOrgStructure.server.js";
 import {
   registerCanonicalPersonRoutes,
   resolvePersonIdFromEmployeeBody,
@@ -2975,6 +2981,17 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
       financialCostCenter: {
         select: { id: true, code: true, name: true, status: true },
       },
+      orgDepartment: {
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          directorateId: true,
+          leaderEmployeeId: true,
+          directorate: { select: { id: true, name: true, status: true } },
+          leader: { select: { id: true, name: true, socialName: true, status: true } },
+        },
+      },
       manager: {
         select: { id: true, name: true, socialName: true, status: true },
       },
@@ -3146,6 +3163,17 @@ const employeeApiInclude = {
   financialCostCenter: {
     select: { id: true, code: true, name: true, status: true },
   },
+  orgDepartment: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      directorateId: true,
+      leaderEmployeeId: true,
+      directorate: { select: { id: true, name: true, status: true } },
+      leader: { select: { id: true, name: true, socialName: true, status: true } },
+    },
+  },
   manager: {
     select: { id: true, name: true, socialName: true, status: true },
   },
@@ -3167,6 +3195,7 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
       name,
       roleId,
       department,
+      departmentId,
       costCenter,
       costCenterId,
       classification,
@@ -3215,6 +3244,25 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
       throw linkErr;
     }
 
+    const orgDept = await resolveHrDepartmentLabel(
+      prisma,
+      typeof departmentId === "string" ? departmentId : null,
+      typeof department === "string" ? department : ""
+    );
+    if (!orgDept.department) {
+      return res.status(400).json({ error: "Departamento é obrigatório." });
+    }
+
+    const forcedManager = orgDept.departmentId
+      ? resolveForcedManagerFromOrgDepartment({
+          employeeId: null,
+          departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
+          departmentLeaderName: orgDept.leaderName,
+          directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
+          directorateLeaderName: orgDept.directorateLeaderName,
+        })
+      : null;
+
     const persisted = await prepareEmployeePersistedFields(
       prisma,
       {
@@ -3223,8 +3271,8 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
         costCenter,
         costCenterId,
         classification,
-        managerId,
-        managerName,
+        managerId: forcedManager ? forcedManager.managerId : managerId,
+        managerName: forcedManager ? forcedManager.managerName : managerName,
         status,
         contractType: hrProfileBody.contractType,
         admissionDate: hrProfileBody.admissionDate,
@@ -3251,7 +3299,8 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
           {
             name: resolvedName,
             roleId: cleanRoleId,
-            department: normalizeRequiredText(department),
+            department: orgDept.department,
+            departmentId: orgDept.departmentId,
             costCenter: persisted.costCenterLabel,
             costCenterId: persisted.costCenterId,
             classification: persisted.classification,
@@ -3345,6 +3394,9 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
     if (error instanceof EmployeeRegistrationError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
     }
+    if (error instanceof HrOrgStructureError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
     console.error("Create employee error:", error);
     res.status(500).json({
       error: error instanceof Error ? error.message : "Erro ao criar funcionário",
@@ -3361,6 +3413,7 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
       name,
       roleId,
       department,
+      departmentId,
       costCenter,
       costCenterId,
       classification,
@@ -3436,6 +3489,25 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
       throw linkErr;
     }
 
+    const orgDept = await resolveHrDepartmentLabel(
+      prisma,
+      typeof departmentId === "string" ? departmentId : null,
+      typeof department === "string" ? department : ""
+    );
+    if (!orgDept.department) {
+      return res.status(400).json({ error: "Departamento é obrigatório." });
+    }
+
+    const forcedManager = orgDept.departmentId
+      ? resolveForcedManagerFromOrgDepartment({
+          employeeId: id,
+          departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
+          departmentLeaderName: orgDept.leaderName,
+          directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
+          directorateLeaderName: orgDept.directorateLeaderName,
+        })
+      : null;
+
     const persisted = await prepareEmployeePersistedFields(
       prisma,
       {
@@ -3444,8 +3516,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
         costCenter,
         costCenterId,
         classification,
-        managerId,
-        managerName,
+        managerId: forcedManager ? forcedManager.managerId : managerId,
+        managerName: forcedManager ? forcedManager.managerName : managerName,
         status,
         contractType: hrProfileBody.contractType,
         admissionDate: hrProfileBody.admissionDate,
@@ -3453,7 +3525,9 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
       } as Record<string, unknown>,
       {
         employeeId: id,
-        preserveManagerId: existingEmployee.managerId,
+        preserveManagerId: forcedManager
+          ? forcedManager.managerId
+          : existingEmployee.managerId,
         preserveCostCenterId: existingEmployee.costCenterId,
         existingCostCenterLabel: existingEmployee.costCenter,
         existingContractType: existingEmployee.contractType,
@@ -3528,7 +3602,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
           {
             name: resolvedName,
             roleId: cleanRoleId,
-            department: normalizeRequiredText(department),
+            department: orgDept.department,
+            departmentId: orgDept.departmentId,
             costCenter: persisted.costCenterLabel,
             costCenterId: persisted.costCenterId,
             classification: persisted.classification,
@@ -3621,6 +3696,9 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
     });
   } catch (error) {
     if (error instanceof EmployeeRegistrationError) {
+      return res.status(error.status).json({ error: error.message, code: error.code });
+    }
+    if (error instanceof HrOrgStructureError) {
       return res.status(error.status).json({ error: error.message, code: error.code });
     }
     console.error("Update employee error:", error);
@@ -13916,6 +13994,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  registerHrOrgStructureRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   registerCanonicalPersonRoutes(app, {

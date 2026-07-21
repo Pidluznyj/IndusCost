@@ -20,6 +20,7 @@ import {
   type OrderToCashAuditRunMeta,
 } from "./finance/orderToCashAuditApi.js";
 import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
+import { gateOrderToCashAuditFactWhere } from "./finance/financePortfolioOperationalOrderGate.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -407,10 +408,11 @@ export async function loadOrderToCashAuditList(query: Record<string, unknown>) {
   }
 
   const isGeneralRun = resolved.run.isGeneralRun;
-  const where = buildOrderToCashAuditFactWhere(filters, resolved.runId, {
+  const baseWhere = buildOrderToCashAuditFactWhere(filters, resolved.runId, {
     isGeneralRun,
     applyYearOnIssueDate: isGeneralRun,
   }) as Prisma.OrderToCashAuditFactWhereInput;
+  const where = await gateOrderToCashAuditFactWhere(prisma, baseWhere);
 
   const orderBy = buildOrderToCashAuditPrismaOrderBy(
     filters.sortBy,

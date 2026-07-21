@@ -24,6 +24,7 @@ export type NavigationIconKey =
   | "Warehouse"
   | "Truck"
   | "Settings"
+  | "Users"
   | "FolderQuestion";
 
 export type NavigationGroupId =
@@ -33,6 +34,7 @@ export type NavigationGroupId =
   | "comercial"
   | "financeiro"
   | "operacoes"
+  | "gestao_pessoas"
   | "administracao"
   | "outros";
 
@@ -103,6 +105,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   purchases: ["purchases.view"],
   pricing: ["pricing.view"],
   employees: ["employees.view"],
+  "org-chart": ["employees.view"],
   machines: ["machines.view"],
   materials: ["materials.view"],
   opex: ["opex.view", "costs.view"],
@@ -204,11 +207,18 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     ],
   },
   {
+    id: "gestao_pessoas",
+    label: "Gestão de pessoas",
+    iconKey: "Users",
+    order: 7,
+    itemIds: ["employees", "org-chart"],
+  },
+  {
     id: "administracao",
     label: "Administração",
     iconKey: "Settings",
-    order: 7,
-    itemIds: ["employees", "settings", "guide"],
+    order: 8,
+    itemIds: ["settings", "guide"],
   },
 ];
 

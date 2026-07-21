@@ -223,6 +223,7 @@ describe("resourceNavigationAccess — rota e navegação segura", () => {
   it("P11: URL direta — RH, máquinas, engenharia, admin, comercial", () => {
     const rh = ctx("VIEWER", ["employees.view", "dashboard.view"]);
     assert.equal(canAccessPath("/employees", rh), true);
+    assert.equal(canAccessPath("/org-chart", rh), true);
     assert.equal(canAccessPath("/machines", rh), false);
 
     const eng = ctx("VIEWER", ["products.view", "dashboard.view"]);
