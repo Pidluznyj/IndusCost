@@ -1131,7 +1131,7 @@ export function MaterialDemandTablePagination({
   onPrev: () => void;
   onNext: () => void;
 }) {
-  if (pagination.totalPages <= 1) return null;
+  if (!pagination || pagination.totalPages <= 1) return null;
   return (
     <div className="material-demand-no-print flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3 text-sm">
       <p className="text-muted-foreground">

@@ -1602,11 +1602,10 @@ export function ProductMaterialDemandDashboard({ context = "products" }: Product
                         <MaterialDemandYtdMaterialsTable rows={tableRows} />
                         {pagination ? (
                           <MaterialDemandTablePagination
-                            page={pagination.page}
-                            totalPages={pagination.totalPages}
-                            totalItems={pagination.totalItems}
-                            pageSize={pagination.pageSize}
-                            onPageChange={setRowsPage}
+                            pagination={pagination}
+                            loadingRows={loadingRows}
+                            onPrev={() => setRowsPage((p) => Math.max(1, p - 1))}
+                            onNext={() => setRowsPage((p) => p + 1)}
                           />
                         ) : null}
                       </>

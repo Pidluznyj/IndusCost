@@ -45,4 +45,20 @@ describe("materialDemandYtdTab", () => {
     assert.match(dash, /material-demand-ytd-tab/);
     assert.match(dash, /resolveMaterialDemandYtdPeriod/);
   });
+
+  it("paginação YTD usa contrato pagination/onPrev/onNext (evita crash totalPages)", () => {
+    const dash = read("src/components/contextual/ProductMaterialDemandDashboard.tsx");
+    const ytdIdx = dash.indexOf("MaterialDemandYtdMaterialsTable");
+    assert.ok(ytdIdx >= 0);
+    const ytdBlock = dash.slice(ytdIdx, ytdIdx + 600);
+    assert.match(ytdBlock, /MaterialDemandTablePagination/);
+    assert.match(ytdBlock, /pagination=\{pagination\}/);
+    assert.match(ytdBlock, /onPrev=\{/);
+    assert.match(ytdBlock, /onNext=\{/);
+    assert.doesNotMatch(ytdBlock, /onPageChange=/);
+    assert.doesNotMatch(ytdBlock, /totalPages=\{pagination\.totalPages\}/);
+
+    const panels = read("src/components/contextual/MaterialDemandDashboardPanels.tsx");
+    assert.match(panels, /if\s*\(\s*!pagination\s*\|\|\s*pagination\.totalPages\s*<=\s*1\s*\)/);
+  });
 });
