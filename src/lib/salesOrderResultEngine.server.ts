@@ -30,9 +30,12 @@ import {
   resolveSalesOrderListSellerWhere,
   resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
+import { decimalToNumber } from "./executiveDashboardHelpers.js";
+import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboardTypes.js";
 import type {
   SalesOrderResultDashboardPayload,
   SalesOrderResultFilters,
+  SalesOrderResultMonthlySalesComparisonRow,
 } from "./salesOrderResultTypes.js";
 
 /** Select único: regras de pedido + itens para margem (mesmo universo da listagem). */
@@ -182,24 +185,78 @@ export async function buildSalesOrderResultDashboard(
     filters,
   });
 
+  // Ano anterior: mesma população OP-02 (filtros da listagem), só para série YoY de vendas.
+  // Sem mês — o comparativo mensal é sempre o ano completo.
+  const previousYear = filters.year - 1;
+  const prevListQuery = parseSalesOrderListQuery({
+    ...query,
+    year: previousYear,
+    month: undefined,
+  });
+  const prevSellerWhere = await resolveSalesOrderListSellerWhere(db, {
+    sellerKeyRaw: prevListQuery.sellerKeyRaw,
+    sellerText: prevListQuery.sellerText,
+  });
+  let prevWhere = await resolveSalesOrderListWhere(
+    db,
+    prevListQuery,
+    prevSellerWhere
+  );
+  if (filters.productId) {
+    prevWhere = andWhere(prevWhere, {
+      items: { some: { productId: filters.productId } },
+    });
+  }
+  const previousYearOrders = await db.salesOrder.findMany({
+    where: prevWhere,
+    select: {
+      issueDate: true,
+      totalNetValue: true,
+    },
+  });
+  const previousYearMonthly = new Map<number, number>();
+  for (let m = 1; m <= 12; m += 1) previousYearMonthly.set(m, 0);
+  for (const order of previousYearOrders) {
+    if (order.issueDate.getFullYear() !== previousYear) continue;
+    const month = order.issueDate.getMonth() + 1;
+    previousYearMonthly.set(
+      month,
+      (previousYearMonthly.get(month) ?? 0) +
+        (decimalToNumber(order.totalNetValue) ?? 0)
+    );
+  }
+
   const monthlySales = salesBundle.monthlyTimeline.map((point) => ({
     month: point.month,
     amount: point.soldAmount,
   }));
-  const previousYearMonthly = new Map(
-    salesBundle.previousYearTimeline.map((point) => [point.month, point.soldAmount])
+  const currentYearMonthly = new Map(
+    monthlySales.map((point) => [point.month, point.amount])
   );
-  const { rows: realizedVsProjected, projection } = buildSalesOrderResultRealizedVsProjected({
-    monthlySales,
-    year: filters.year,
-    referenceDate,
-    previousYearMonthlySales: previousYearMonthly,
-  });
+  const monthlySalesComparison: SalesOrderResultMonthlySalesComparisonRow[] =
+    FINANCE_SALES_ORDERS_MONTH_LABELS.map((monthLabel, index) => {
+      const month = index + 1;
+      return {
+        month,
+        monthLabel,
+        currentYearAmount: currentYearMonthly.get(month) ?? 0,
+        previousYearAmount: previousYearMonthly.get(month) ?? 0,
+      };
+    });
+
+  const { rows: realizedVsProjected, projection } =
+    buildSalesOrderResultRealizedVsProjected({
+      monthlySales,
+      year: filters.year,
+      referenceDate,
+      previousYearMonthlySales: previousYearMonthly,
+    });
 
   return {
     filters,
     totals: marginPayload.totals,
     monthlyMargin: marginPayload.monthlyMargin,
+    monthlySalesComparison,
     realizedVsProjected,
     projection,
     warnings: marginPayload.warnings,

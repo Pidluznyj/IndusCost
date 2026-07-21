@@ -49,6 +49,14 @@ export type SalesOrderResultMonthlyRow = {
   ordersCount: number;
 };
 
+/** Comparativo YoY de valor vendido (issueDate) — 12 meses. */
+export type SalesOrderResultMonthlySalesComparisonRow = {
+  month: number;
+  monthLabel: string;
+  currentYearAmount: number;
+  previousYearAmount: number;
+};
+
 export type SalesOrderResultRealizedVsProjectedRow = {
   month: number;
   monthLabel: string;
@@ -93,6 +101,8 @@ export type SalesOrderResultDashboardPayload = {
   filters: SalesOrderResultFilters;
   totals: SalesOrderResultTotals;
   monthlyMargin: SalesOrderResultMonthlyRow[];
+  /** Valor vendido mês a mês: ano filtrado vs ano anterior (OP-02 / mesma listagem). */
+  monthlySalesComparison: SalesOrderResultMonthlySalesComparisonRow[];
   realizedVsProjected: SalesOrderResultRealizedVsProjectedRow[];
   projection: SalesOrderResultProjection;
   warnings: SalesOrderResultWarnings;

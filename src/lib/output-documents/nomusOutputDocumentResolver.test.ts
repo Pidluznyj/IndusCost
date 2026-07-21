@@ -15,7 +15,10 @@ import {
 import {
   loadOutputDocumentByExternalId,
   loadOutputDocumentsForSalesOrder,
+  loadSalesOrdersForOutputDocument,
 } from "./nomusOutputDocumentResolver.server.js";
+import { loadOutputDocumentDetail } from "./outputDocumentsDetail.server.js";
+import { NOMUS_STOCK_DOCUMENT_TIPO_SAIDA } from "./auditOutputDocumentsDb.js";
 
 const ORDER_A = "00000000-0000-4000-8000-0000000000a1";
 const ORDER_B = "00000000-0000-4000-8000-0000000000b2";
@@ -483,11 +486,52 @@ describe("loadOutputDocument* (memory prisma)", () => {
       salesOrderNfeLink: {
         findMany: async (args: { where: Record<string, unknown> }) => {
           let rows = [...seed.links];
-          if (typeof args.where.nfeExternalId === "number") {
-            rows = rows.filter((l) => l.nfeExternalId === args.where.nfeExternalId);
+          const where = args.where;
+          if (typeof where.nfeExternalId === "number") {
+            rows = rows.filter((l) => l.nfeExternalId === where.nfeExternalId);
           }
-          if (typeof args.where.salesOrderId === "string") {
-            rows = rows.filter((l) => l.salesOrderId === args.where.salesOrderId);
+          if (
+            where.nfeExternalId &&
+            typeof where.nfeExternalId === "object" &&
+            "in" in (where.nfeExternalId as object)
+          ) {
+            const ids = (where.nfeExternalId as { in: number[] }).in;
+            rows = rows.filter((l) => ids.includes(l.nfeExternalId));
+          }
+          if (typeof where.nfeKey === "string") {
+            rows = rows.filter(
+              (l) =>
+                "nfeKey" in l &&
+                (l as { nfeKey?: string | null }).nfeKey === where.nfeKey
+            );
+          }
+          if (typeof where.salesOrderId === "string") {
+            rows = rows.filter((l) => l.salesOrderId === where.salesOrderId);
+          }
+          if (Array.isArray(where.OR)) {
+            const clauses = where.OR as Array<Record<string, unknown>>;
+            rows = seed.links.filter((l) =>
+              clauses.some((clause) => {
+                if (typeof clause.nfeExternalId === "number") {
+                  return l.nfeExternalId === clause.nfeExternalId;
+                }
+                if (
+                  clause.nfeExternalId &&
+                  typeof clause.nfeExternalId === "object" &&
+                  "in" in (clause.nfeExternalId as object)
+                ) {
+                  const ids = (clause.nfeExternalId as { in: number[] }).in;
+                  return ids.includes(l.nfeExternalId);
+                }
+                if (typeof clause.nfeKey === "string") {
+                  return (
+                    "nfeKey" in l &&
+                    (l as { nfeKey?: string | null }).nfeKey === clause.nfeKey
+                  );
+                }
+                return false;
+              })
+            );
           }
           return rows;
         },
@@ -607,5 +651,311 @@ describe("loadOutputDocument* (memory prisma)", () => {
     assert.equal(results[0]!.document.externalId, 8451);
     assert.equal(results[0]!.o2c.present, false);
     assert.equal(results[0]!.orders.link.classification, "derivado");
+  });
+
+  it("inverso: documento descobre pedido via SalesOrderNfeLink sem O2C (N:N)", async () => {
+    const prisma = createMemoryPrisma({
+      documents: [
+        baseDocument({
+          id: "doc-8572",
+          externalId: 8572,
+          idNfe: 7305,
+          documentNumber: "8572",
+        }),
+      ],
+      items: [
+        {
+          id: "item-8572",
+          stockDocumentId: "doc-8572",
+          externalItemId: 1,
+          externalProductId: 100,
+          quantity: "1",
+          unitValue: "10",
+          estimatedTotalValue: "10",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+      nfes: [
+        {
+          id: "nfe-7305",
+          externalId: 7305,
+          numero: "7305",
+          chave: "CHAVE-7305",
+          status: 4,
+        },
+      ],
+      links: [
+        {
+          id: "link-a",
+          salesOrderId: ORDER_A,
+          orderCode: "PD 02596",
+          nfeExternalId: 7305,
+        },
+        {
+          id: "link-b",
+          salesOrderId: ORDER_B,
+          orderCode: "PD 02600",
+          nfeExternalId: 7305,
+        },
+      ],
+      orders: [
+        { id: ORDER_A, orderCode: "PD 02596", status: "OPEN" },
+        { id: ORDER_B, orderCode: "PD 02600", status: "OPEN" },
+      ],
+      orderItems: [],
+      o2c: [],
+      receivables: [],
+    });
+
+    const forward = await loadOutputDocumentsForSalesOrder(
+      prisma as never,
+      ORDER_A
+    );
+    assert.equal(forward.length, 1);
+    assert.equal(forward[0]!.document.externalId, 8572);
+
+    const reverse = await loadSalesOrdersForOutputDocument(
+      prisma as never,
+      8572
+    );
+    assert.ok(reverse);
+    assert.equal(reverse!.orders.orders.length, 2);
+    assert.deepEqual(
+      reverse!.orders.orders.map((o) => o.orderCode).sort(),
+      ["PD 02596", "PD 02600"]
+    );
+    assert.ok(
+      reverse!.orders.orders.every((o) =>
+        o.sources.includes("sales_order_nfe_link")
+      )
+    );
+    assert.equal(reverse!.orders.link.classification, "derivado");
+  });
+
+  it("inverso: sem idNfe no stage, ainda resolve pedidos via NF do O2C + SalesOrderNfeLink", async () => {
+    const prisma = createMemoryPrisma({
+      documents: [
+        baseDocument({
+          id: "doc-no-nfe",
+          externalId: 9001,
+          idNfe: null,
+        }),
+      ],
+      items: [
+        {
+          id: "item-9001",
+          stockDocumentId: "doc-no-nfe",
+          externalItemId: 1,
+          externalProductId: 100,
+          quantity: "1",
+          unitValue: "10",
+          estimatedTotalValue: "10",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+      nfes: [],
+      links: [
+        {
+          id: "link-o2c-nfe",
+          salesOrderId: ORDER_A,
+          orderCode: "PD02590",
+          nfeExternalId: 7208,
+        },
+      ],
+      orders: [{ id: ORDER_A, orderCode: "PD02590", status: "OPEN" }],
+      orderItems: [],
+      o2c: [
+        {
+          runId: "run-1",
+          salesOrderId: null,
+          orderCode: null,
+          salesOrderItemId: null,
+          nfeExternalId: 7208,
+          stockDocumentExternalId: 9001,
+          stockDocumentIdNfe: 7208,
+          stockDocumentItemId: null,
+          allocatedValueByDocumentPrice: null,
+          quantityUsedForOrder: null,
+          receivableIdsJson: null,
+        },
+      ],
+      receivables: [],
+    });
+
+    const reverse = await loadSalesOrdersForOutputDocument(
+      prisma as never,
+      9001
+    );
+    assert.ok(reverse);
+    assert.equal(reverse!.orders.orders.length, 1);
+    assert.equal(reverse!.orders.orders[0]!.salesOrderId, ORDER_A);
+    assert.ok(
+      reverse!.orders.orders[0]!.sources.includes("sales_order_nfe_link")
+    );
+  });
+
+  it("detalhe 8572 lista pedidos N:N via NfeLink (mesmo critério da lista)", async () => {
+    const prisma = {
+      nomusStockDocument: {
+        findFirst: async () => ({
+          id: "doc-8572",
+          externalId: 8572,
+          tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
+          syncedAt: new Date("2026-07-10T20:05:00.000Z"),
+          firstSeenAt: new Date("2026-07-10T20:05:00.000Z"),
+          lastSeenAt: new Date("2026-07-10T20:05:00.000Z"),
+          presentInLastPayload: true,
+          cancelledAt: null,
+          cancellationReason: null,
+          payloadHash: "hash",
+        }),
+        findUnique: async () => ({ rawJson: null }),
+      },
+      nomusStockDocumentItem: {
+        findMany: async () => [
+          {
+            id: "item-8572",
+            externalItemId: 1,
+            externalProductId: 100,
+            quantity: "1",
+            unitValue: "10",
+            estimatedTotalValue: "10",
+            createdAt: new Date("2026-01-01T00:00:00.000Z"),
+            rawJson: null,
+          },
+        ],
+      },
+      nomusNfe: {
+        findUnique: async () => ({
+          id: "nfe-7305",
+          externalId: 7305,
+          numero: "7305",
+          chave: "CHAVE-7305",
+          status: 4,
+        }),
+        findMany: async () => [
+          {
+            id: "nfe-7305",
+            externalId: 7305,
+            numero: "7305",
+            serie: "1",
+            status: 4,
+            chave: "CHAVE-7305",
+            xmlDhEmi: null,
+            dataProcessamento: null,
+            valorLiquido: 1500,
+            xmlVNF: 1500,
+          },
+        ],
+      },
+      salesOrderNfeLink: {
+        findMany: async () => [
+          {
+            id: "link-a",
+            salesOrderId: ORDER_A,
+            orderCode: "PD 02596",
+            nfeExternalId: 7305,
+          },
+          {
+            id: "link-b",
+            salesOrderId: ORDER_B,
+            orderCode: "PD 02600",
+            nfeExternalId: 7305,
+          },
+        ],
+      },
+      salesOrder: {
+        findMany: async () => [
+          {
+            id: ORDER_A,
+            orderCode: "PD 02596",
+            status: "OPEN",
+            issueDate: new Date("2026-06-01"),
+            externalSellerId: null,
+            nomusSellerName: "Vendedor A",
+            responsible: null,
+            totalNetValue: 1000,
+          },
+          {
+            id: ORDER_B,
+            orderCode: "PD 02600",
+            status: "OPEN",
+            issueDate: new Date("2026-06-02"),
+            externalSellerId: null,
+            nomusSellerName: "Vendedor B",
+            responsible: null,
+            totalNetValue: 500,
+          },
+        ],
+      },
+      salesOrderItem: {
+        findMany: async () => [],
+      },
+      orderToCashAuditFact: {
+        findMany: async () => [],
+      },
+      nomusAccountsReceivable: {
+        findMany: async () => [],
+      },
+    };
+
+    // Stub stage row for resolver (findFirst by externalId on loadOutputDocumentByExternalId)
+    const docs = [
+      {
+        id: "doc-8572",
+        externalId: 8572,
+        idNfe: 7305,
+        tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
+        dataDocumento: new Date("2026-07-09"),
+        documentNumber: "8572",
+        statusRaw: null,
+        isCancelled: false,
+        totalValue: "1500",
+        personExternalId: null,
+        personName: null,
+        companyExternalId: null,
+        companyName: null,
+        movementDate: null,
+        paymentTermsRaw: null,
+      },
+    ];
+    (prisma as { nomusStockDocument: Record<string, unknown> }).nomusStockDocument =
+      {
+        ...prisma.nomusStockDocument,
+        findFirst: async (args: { where: Record<string, unknown> }) => {
+          if (args.where.id === "doc-8572" || args.where.externalId === 8572) {
+            return {
+              id: "doc-8572",
+              externalId: 8572,
+              tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA,
+              syncedAt: new Date("2026-07-10T20:05:00.000Z"),
+              firstSeenAt: new Date("2026-07-10T20:05:00.000Z"),
+              lastSeenAt: new Date("2026-07-10T20:05:00.000Z"),
+              presentInLastPayload: true,
+              cancelledAt: null,
+              cancellationReason: null,
+              payloadHash: "hash",
+              ...docs[0],
+            };
+          }
+          return null;
+        },
+      };
+
+    const detail = await loadOutputDocumentDetail("8572", {
+      prisma: prisma as never,
+      now: new Date("2026-07-15"),
+      permissions: { canViewFinancial: true, canViewAudit: true },
+    });
+    assert.ok(detail);
+    assert.equal(detail!.orders.length, 2);
+    assert.deepEqual(
+      detail!.orders.map((o) => o.orderCode).sort(),
+      ["PD 02596", "PD 02600"]
+    );
+    assert.equal(
+      detail!.inconsistencies.some((i) => i.code === "ORDER_UNRESOLVED"),
+      false
+    );
   });
 });

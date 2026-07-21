@@ -618,7 +618,9 @@ function OrdersPanel({
       >
         {detail.orders.length === 0 ? (
           <EmptyBlock testId="output-document-detail-orders-empty">
-            Nenhum pedido vinculado por NF-e ou alocação O2C.
+            {detail.document.idNfe != null
+              ? `Nenhum pedido em SalesOrderNfeLink para idNfe ${detail.document.idNfe} nem em alocação O2C deste documento.`
+              : "Nenhum pedido vinculado: documento sem idNfe e sem alocação O2C."}
           </EmptyBlock>
         ) : (
           <OverlayTable

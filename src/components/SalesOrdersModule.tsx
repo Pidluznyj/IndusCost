@@ -11,6 +11,7 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { SalesOrderListSummaryCards } from "@/src/components/sales/SalesOrderListSummaryCards";
+import { SalesOrderListMonthlyCharts } from "@/src/components/sales/SalesOrderListMonthlyCharts";
 import { SalesOrderListTable } from "@/src/components/sales/SalesOrderListTable";
 import {
   SalesOrderQuickSummaryDrawer,
@@ -856,6 +857,21 @@ function SalesOrderList() {
         marginSummary={marginSummary}
         showMarginCard={showMarginEconomics}
         loading={loading}
+      />
+
+      <SalesOrderListMonthlyCharts
+        filters={{
+          year: year ? Number(year) : currentYear,
+          status: status || undefined,
+          hasInvoice: hasInvoice || undefined,
+          receivableStatus: receivableStatus || undefined,
+          customerId: customerId || undefined,
+          sellerKey: sellerKey || undefined,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          q: search || undefined,
+        }}
+        showMarginChart={showMarginEconomics}
       />
 
       <SalesOrderListTable

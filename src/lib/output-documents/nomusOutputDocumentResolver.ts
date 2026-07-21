@@ -446,9 +446,15 @@ export function resolveOutputDocument(
     evidence.document.idNfe ??
     (nfeLink.classification !== "conflitante" ? resolvedNfeExternalId : null);
 
+  // Loader já escopa os links ao documento (idNfe stage ∪ NF do O2C ∪ chave).
+  // Não descartar link da mesma NF com nfeExternalId divergente (match por chave).
+  const allowedNfeIds = new Set<number>([
+    ...(evidence.document.idNfe != null ? [evidence.document.idNfe] : []),
+    ...o2cNfeIds,
+    ...evidence.salesOrderNfeLinks.map((l) => l.nfeExternalId),
+  ]);
   const dedupedLinks = dedupeSalesOrderNfeLinks(evidence.salesOrderNfeLinks).filter(
-    (link) =>
-      evidence.document.idNfe == null || link.nfeExternalId === evidence.document.idNfe
+    (link) => allowedNfeIds.has(link.nfeExternalId)
   );
 
   const orderIdsViaNfeLink = uniqueStrings(dedupedLinks.map((l) => l.salesOrderId));

@@ -65,6 +65,22 @@ export type LoadOutputDocumentOptions = {
   onlySaida?: boolean;
 };
 
+function uniquePositiveInts(values: Array<number | null | undefined>): number[] {
+  return [
+    ...new Set(
+      values.filter(
+        (id): id is number => typeof id === "number" && Number.isFinite(id) && id > 0
+      )
+    ),
+  ];
+}
+
+/**
+ * Evidências Documento → Pedido(s), espelho de `loadOutputDocumentsForSalesOrder`:
+ * 1) SalesOrderNfeLink via idNfe (e NF ids observados no O2C / chave da NF)
+ * 2) OrderToCashAuditFact via stockDocumentExternalId
+ * N:N — vários pedidos na mesma NF/documento.
+ */
 async function loadRelatedEvidence(
   prisma: PrismaLike,
   document: {
@@ -77,7 +93,7 @@ async function loadRelatedEvidence(
   const runId = options.runId?.trim() || null;
   const idNfe = document.idNfe;
 
-  const [nfeRow, links, o2cRows, receivables] = await Promise.all([
+  const [nfeRow, o2cRows] = await Promise.all([
     idNfe != null
       ? prisma.nomusNfe.findUnique({
           where: { externalId: idNfe },
@@ -90,17 +106,6 @@ async function loadRelatedEvidence(
           },
         })
       : Promise.resolve(null),
-    idNfe != null
-      ? prisma.salesOrderNfeLink.findMany({
-          where: { nfeExternalId: idNfe },
-          select: {
-            id: true,
-            salesOrderId: true,
-            orderCode: true,
-            nfeExternalId: true,
-          },
-        })
-      : Promise.resolve([]),
     prisma.orderToCashAuditFact.findMany({
       where: runId
         ? { stockDocumentExternalId: document.externalId, runId }
@@ -119,6 +124,37 @@ async function loadRelatedEvidence(
         receivableIdsJson: true,
       },
     }),
+  ]);
+
+  const nfeIds = uniquePositiveInts([
+    idNfe,
+    ...o2cRows.map((row) => row.nfeExternalId),
+    ...o2cRows.map((row) => row.stockDocumentIdNfe),
+  ]);
+  const nfeKey = nfeRow?.chave?.trim() || null;
+
+  const linkWhere =
+    nfeIds.length > 0 || nfeKey
+      ? {
+          OR: [
+            ...(nfeIds.length > 0 ? [{ nfeExternalId: { in: nfeIds } }] : []),
+            ...(nfeKey ? [{ nfeKey }] : []),
+          ],
+        }
+      : null;
+
+  const [links, receivables] = await Promise.all([
+    linkWhere
+      ? prisma.salesOrderNfeLink.findMany({
+          where: linkWhere,
+          select: {
+            id: true,
+            salesOrderId: true,
+            orderCode: true,
+            nfeExternalId: true,
+          },
+        })
+      : Promise.resolve([]),
     idNfe != null
       ? prisma.nomusAccountsReceivable.findMany({
           where: { sourceInvoiceId: idNfe },
@@ -321,6 +357,23 @@ export async function loadOutputDocumentsByIdNfe(
     resolved.push(await resolveFromStageRow(prisma, row, options));
   }
   return resolved;
+}
+
+/**
+ * Inverso de `loadOutputDocumentsForSalesOrder`:
+ * descobre pedido(s) ligados a um Documento de Saída (N:N).
+ * Fontes: SalesOrderNfeLink (via idNfe/chave/O2C) ∪ OrderToCashAuditFact.
+ */
+export async function loadSalesOrdersForOutputDocument(
+  prisma: PrismaLike,
+  stockDocumentExternalId: number,
+  options: LoadOutputDocumentOptions = {}
+): Promise<ResolvedOutputDocument | null> {
+  return loadOutputDocumentByExternalId(
+    prisma,
+    stockDocumentExternalId,
+    options
+  );
 }
 
 /**
