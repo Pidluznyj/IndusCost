@@ -128,11 +128,14 @@ describe("financeArTitlesPrint", () => {
       year: "2026",
       status: "open",
       invoiceIssued: "yes",
+      minValue: "1000",
+      maxValue: "50000",
     };
     const lines = buildFinanceArTitlesPrintFilterLines(filters);
     assert.ok(lines.some((l) => l.includes("Esmaltec S/A")));
     assert.ok(lines.some((l) => l.includes("2026")));
     assert.ok(lines.some((l) => l.includes("NF emitida: Sim")));
+    assert.ok(lines.some((l) => l.startsWith("Valor:") && l.includes("—")));
   });
 
   it("PDF não quebra sem logo nem filtros", () => {

@@ -47,6 +47,7 @@ import {
   buildYtdDashboardFilters,
   filterArRowsForYtdReceived,
 } from "./financeCashFlowExecutiveYtd.js";
+import { suppressInferiorPreNfNomusArRows } from "./finance/financeArOperationalPortfolio.js";
 
 export class FinanceCashFlowAnnualComparisonParseError extends Error {
   constructor(message: string) {
@@ -399,7 +400,9 @@ export function filterArRowsForAnnualComparison(
     if (isNomusArStaleForReports(row, effectiveCutoff)) return false;
     return isFinanceArAllowedInManagementReport(row, referenceDate);
   });
-  return deduplicateFinanceArRows(matched).rows as FinanceCashFlowArRow[];
+  return suppressInferiorPreNfNomusArRows(
+    deduplicateFinanceArRows(matched).rows
+  ) as FinanceCashFlowArRow[];
 }
 
 function toAnnualComparisonApManagementFilters(

@@ -14,7 +14,6 @@ import {
   resolveFinanceApRealizedAmount,
 } from "./financeAccountsPayableRules.js";
 import { formatFinanceCurrency } from "./financeAccountsReceivableFormat.js";
-import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
 import type {
   FinanceArDashboardFilters,
 } from "./financeAccountsReceivableDashboard.js";
@@ -23,6 +22,7 @@ import type {
   FinanceCashFlowArRow,
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import { filterFinanceArOperationalPortfolioRows } from "./finance/financeArOperationalPortfolio.js";
 import type { FinanceCashFlowMonthlyPoint } from "./financeCashFlowDashboardTypes.js";
 import { buildNetCashPositionMetrics } from "./financeCashFlowIntelligence.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
@@ -155,7 +155,12 @@ export function filterArRowsForYtdReceived(
   syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowArRow[] {
   const arFilters = toReceivedArLoadFilters(filters);
-  return filterFinanceArManagementReportRows(rows, arFilters, referenceDate, syncCutoff) as FinanceCashFlowArRow[];
+  return filterFinanceArOperationalPortfolioRows(
+    rows,
+    arFilters,
+    referenceDate,
+    syncCutoff
+  ) as FinanceCashFlowArRow[];
 }
 
 export function isArReceivedInPeriod(

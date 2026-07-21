@@ -18,7 +18,7 @@ import {
   type FinanceArDashboardFilters,
   type FinanceArDashboardRow,
 } from "./financeAccountsReceivableDashboard.js";
-import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
+import { parseMoneyAmountInput } from "./moneyRangeFilter.js";
 import {
   isFinanceArExcludedFromReports,
   resolveEffectiveNomusArReportSyncCutoff,
@@ -57,6 +57,12 @@ import {
   type FinanceArEffectiveLineKind,
   type FinanceArEffectiveOrderContext,
 } from "./finance/financeAccountsReceivableEffectiveTitles.js";
+import {
+  extractFinanceArOrderCodeHint,
+  filterFinanceArOperationalPortfolioRows,
+} from "./finance/financeArOperationalPortfolio.js";
+
+export { extractFinanceArOrderCodeHint } from "./finance/financeArOperationalPortfolio.js";
 
 export type FinanceArTitlesOriginFilter = "all" | "withNfe" | "withoutNfe";
 export type FinanceArTitlesDelayFilter = "all" | "overdue" | "upcoming" | "dueToday" | "settled";
@@ -183,9 +189,11 @@ function parseOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Valor mínimo/máximo de filtro — zero ou negativo = sem filtro. */
+/** Valor mínimo/máximo de filtro — zero ou negativo = sem filtro. Aceita pt-BR. */
 function parseOptionalAmountFilter(value: unknown): number | undefined {
-  const n = parseOptionalNumber(value);
+  const raw = typeof value === "string" ? value.trim() : String(value ?? "").trim();
+  if (!raw) return undefined;
+  const n = parseMoneyAmountInput(raw) ?? parseOptionalNumber(raw);
   if (n == null || n <= 0) return undefined;
   return n;
 }
@@ -476,19 +484,6 @@ export function mapRowToTitleListItem(
   };
 }
 
-/** Extrai hint de Pedido (PD…) de search/documento. */
-export function extractFinanceArOrderCodeHint(
-  ...parts: Array<string | null | undefined>
-): string | null {
-  for (const part of parts) {
-    const raw = (part ?? "").trim();
-    if (!raw) continue;
-    const m = raw.match(/\bPD\s*[-/]?\s*\d+\b/i);
-    if (m) return m[0]!.replace(/\s+/g, " ").toUpperCase().replace(/PD\s*/, "PD ");
-  }
-  return null;
-}
-
 /**
  * Referência do título para PDF/Excel/grid:
  * NF/documento quando existir; senão número do Pedido de venda
@@ -564,7 +559,12 @@ export function buildFinanceArTitlesPayload(
       rowMatchesArAgingBucketDrilldown(row, query.agingBucket!, referenceDate, syncCutoff)
     );
   } else {
-    filtered = filterFinanceArManagementReportRows(rows, query.filters, referenceDate, syncCutoff);
+    filtered = filterFinanceArOperationalPortfolioRows(
+      rows,
+      query.filters,
+      referenceDate,
+      syncCutoff
+    );
 
     const effectiveLocalFilter =
       query.localFilter !== "all"

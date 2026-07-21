@@ -30,6 +30,7 @@ import {
 } from "./financeCashFlowLedger.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import { suppressInferiorPreNfNomusArRows } from "./finance/financeArOperationalPortfolio.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -168,7 +169,9 @@ export function filterCashFlowArPortfolioRows(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  return deduplicateFinanceArRows(portfolio).rows;
+  return suppressInferiorPreNfNomusArRows(
+    deduplicateFinanceArRows(portfolio).rows
+  ) as FinanceCashFlowArRow[];
 }
 
 export function filterCashFlowApPortfolioRows(
@@ -206,10 +209,12 @@ export function filterCashFlowArRowsScoped(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  const deduped = deduplicateFinanceArRows(portfolio);
-  return deduped.rows.filter((row) =>
-    matchesCashFlowArPeriodScope(row, filters, referenceDate)
+  const deduped = suppressInferiorPreNfNomusArRows(
+    deduplicateFinanceArRows(portfolio).rows
   );
+  return deduped.filter((row) =>
+    matchesCashFlowArPeriodScope(row, filters, referenceDate)
+  ) as FinanceCashFlowArRow[];
 }
 
 export function filterCashFlowApRowsScoped(

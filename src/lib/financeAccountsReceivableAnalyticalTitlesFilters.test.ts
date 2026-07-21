@@ -93,8 +93,20 @@ describe("financeAccountsReceivableAnalyticalTitlesFilters", () => {
 
   it("print document usa safeTrim e meta centralizada de filtros", () => {
     const printDoc = read("src/components/finance/FinanceAccountsReceivableTitlesPrintDocument.tsx");
-    assert.ok(printDoc.includes("safeTrim"));
-    assert.ok(printDoc.includes("buildFinanceArTitlesPrintFilterLines"));
+    const printCover = read("src/components/finance/FinanceAccountsReceivableTitlesPrintCover.tsx");
+    const printMeta = read("src/lib/financeArTitlesPrintMeta.ts");
+    assert.ok(printDoc.includes("FinanceAccountsReceivableTitlesPrintCover"));
+    assert.ok(printCover.includes("buildFinanceArTitlesPrintFilterLines"));
+    assert.ok(printMeta.includes("safeTrim"));
+    assert.ok(printMeta.includes("buildFinanceArTitlesPrintFilterLines"));
+  });
+
+  it("aba Títulos usa filtro monetário visual De/Até", () => {
+    const tab = read("src/components/finance/FinanceArAnalyticalTitlesTab.tsx");
+    assert.ok(tab.includes("MoneyRangeFilter"));
+    assert.ok(tab.includes("finance-ar-titles-money-range"));
+    assert.doesNotMatch(tab, /Valor mínimo/);
+    assert.doesNotMatch(tab, /Valor máximo/);
   });
 
   it("buildFinanceArAnalyticalTitlesQuery não usa trim direto", () => {

@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw, AlertTriangle, CalendarClock, CheckCircle2, FileText, Receipt, Scale, Wallet } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import { MoneyRangeFilter } from "@/src/components/common/MoneyRangeFilter";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
@@ -459,24 +460,15 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
               className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-sm"
             />
           </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Valor mínimo</span>
-            <input
-              value={draftFilters.minValue}
-              onChange={(e) => setDraftFilters((p) => ({ ...p, minValue: e.target.value }))}
-              placeholder="0,00"
-              className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-sm"
-            />
-          </label>
-          <label className="space-y-1">
-            <span className="text-[10px] font-bold uppercase text-muted-foreground">Valor máximo</span>
-            <input
-              value={draftFilters.maxValue}
-              onChange={(e) => setDraftFilters((p) => ({ ...p, maxValue: e.target.value }))}
-              placeholder="0,00"
-              className="w-full h-9 rounded-lg border border-border bg-background px-2.5 text-sm"
-            />
-          </label>
+          <MoneyRangeFilter
+            label="Valor do título"
+            minValue={draftFilters.minValue}
+            maxValue={draftFilters.maxValue}
+            onChange={({ minValue, maxValue }) =>
+              setDraftFilters((p) => ({ ...p, minValue, maxValue }))
+            }
+            testId="finance-ar-titles-money-range"
+          />
           <label className="space-y-1">
             <span className="text-[10px] font-bold uppercase text-muted-foreground">Origem</span>
             <select

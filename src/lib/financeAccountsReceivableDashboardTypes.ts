@@ -3,14 +3,12 @@
 import type { FinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import type { AccountsReceivableOpenHorizon } from "./financeAccountsReceivableHorizon.js";
 import { isNomusPersonIdCustomerParam } from "./financeAccountsReceivableCustomerMatch.js";
+import { moneyAmountToFilterParam } from "./moneyRangeFilter.js";
 import { safeTrim } from "./safeTrim.js";
 
 function positiveAmountFilterParam(value: string): string | null {
-  const raw = safeTrim(value);
-  if (!raw) return null;
-  const n = Number.parseFloat(raw.replace(",", "."));
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return raw;
+  const canonical = moneyAmountToFilterParam(safeTrim(value));
+  return canonical || null;
 }
 import {
   DEFAULT_FINANCE_AR_OVERDUE_UI_FILTERS,

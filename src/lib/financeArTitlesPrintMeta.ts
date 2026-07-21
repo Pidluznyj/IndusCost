@@ -1,5 +1,6 @@
 import type { FinanceArAnalyticalUiFilters } from "./financeAccountsReceivableDashboardTypes.js";
 import { FINANCE_AR_MONTH_OPTIONS, FINANCE_AR_STATUS_OPTIONS } from "./financeAccountsReceivableDashboardTypes.js";
+import { formatMoneyRangeSummary } from "./moneyRangeFilter.js";
 import { safeTrim } from "./safeTrim.js";
 
 export const FINANCE_AR_TITLES_PRINT_TITLE = "Contas a Receber — Títulos";
@@ -51,8 +52,10 @@ export function buildFinanceArTitlesPrintFilterLines(
     );
   }
   if (document) lines.push(`Documento: ${document}`);
-  if (safeTrim(filters.minValue)) lines.push(`Valor mínimo: ${safeTrim(filters.minValue)}`);
-  if (safeTrim(filters.maxValue)) lines.push(`Valor máximo: ${safeTrim(filters.maxValue)}`);
+  {
+    const range = formatMoneyRangeSummary(filters.minValue, filters.maxValue);
+    if (range) lines.push(`Valor: ${range}`);
+  }
   if (filters.origin !== "all") {
     lines.push(`Origem: ${filters.origin === "withNfe" ? "Com NF" : "Sem NF"}`);
   }
