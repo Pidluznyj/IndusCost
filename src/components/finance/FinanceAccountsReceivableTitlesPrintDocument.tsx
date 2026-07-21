@@ -117,7 +117,6 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
               <thead>
                 <tr>
                   <th className="col-client">Cliente</th>
-                  <th className="col-company">Empresa</th>
                   <th className="col-doc">Documento / Pedido</th>
                   <th className="col-date">Emissão</th>
                   <th className="col-date">Vencimento</th>
@@ -133,7 +132,6 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
                 {allItems.map((row) => (
                   <tr key={row.externalId}>
                     <td className="col-client">{displayFinanceText(row.personName)}</td>
-                    <td className="col-company">{displayFinanceText(row.companyName)}</td>
                     <td className="col-doc">
                       {displayFinanceText(resolveFinanceArTitleDocumentReference(row))}
                     </td>
@@ -164,7 +162,7 @@ export function FinanceAccountsReceivableTitlesPrintDocument({
               </tbody>
               <tfoot>
                 <tr className="finance-ar-titles-print-total-row">
-                  <td colSpan={8}>Total</td>
+                  <td colSpan={7}>Total</td>
                   <td className={financeArTitlesPrintTotalMoneyClass("original")}>
                     {formatFinanceCurrency(summary.totalOriginalValue)}
                   </td>

@@ -49,10 +49,11 @@ import {
   parseSalesOrderFlowStagesParam,
   resolveSalesOrderFlowDrawerFromCards,
   SALES_ORDER_FLOW_BREADCRUMB,
+  SALES_ORDER_FLOW_COMPANY_OPTIONS,
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
   SALES_ORDER_FLOW_ROUTE_PATH,
-  SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS,
+  areSalesOrderFlowUiFiltersEqual,
   resolveSalesOrderFlowExecutiveIndicators,
   salesOrderFlowFiltersToClientQuery,
 } from "@/src/lib/salesOrderFlowUi.js";
@@ -229,7 +230,7 @@ describe("salesOrderFlowClient", () => {
 });
 
 describe("sales order flow filters (OP-65)", () => {
-  it("expõe barra de filtros, limpeza e debounce", () => {
+  it("expõe barra de filtros, limpeza e pesquisa sob demanda", () => {
     const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
     assert.match(mod, /sales-order-flow-filters/);
     assert.match(mod, /sales-order-flow-filter-q/);
@@ -251,16 +252,19 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(mod, /sales-order-flow-filter-product/);
     assert.match(mod, /sales-order-flow-filter-sector/);
     assert.match(mod, /sales-order-flow-clear-filters/);
+    assert.match(mod, /sales-order-flow-apply-filters/);
     assert.match(mod, /CustomerAutocompleteFilter/);
+    assert.match(mod, /SALES_ORDER_FLOW_COMPANY_OPTIONS/);
+    assert.match(mod, /draftFilters/);
+    assert.match(mod, /applyFilters/);
     assert.match(mod, /getSalesOrderSellerFilterOptionsUrl/);
-    assert.match(mod, /SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS/);
+    assert.doesNotMatch(mod, /SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS/);
     assert.match(mod, /useSearchParams/);
     assert.match(mod, /setSearchParams\(next, \{ replace: true \}\)/);
     assert.match(mod, /fetchSalesOrderFlowSummary/);
     assert.match(mod, /fetchSalesOrderFlowList/);
     assert.match(mod, /loadColumnPage/);
     assert.match(mod, /filterGenerationRef/);
-    assert.equal(SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS, 300);
   });
 
   it("normaliza URL inválida com segurança", () => {
@@ -311,6 +315,23 @@ describe("sales order flow filters (OP-65)", () => {
         overdue: true,
       }),
       true
+    );
+    assert.equal(
+      areSalesOrderFlowUiFiltersEqual(
+        EMPTY_SALES_ORDER_FLOW_FILTERS,
+        EMPTY_SALES_ORDER_FLOW_FILTERS
+      ),
+      true
+    );
+    assert.equal(
+      areSalesOrderFlowUiFiltersEqual(EMPTY_SALES_ORDER_FLOW_FILTERS, {
+        ...EMPTY_SALES_ORDER_FLOW_FILTERS,
+        q: "x",
+      }),
+      false
+    );
+    assert.ok(
+      SALES_ORDER_FLOW_COMPANY_OPTIONS.some((o) => o.value === "Koppetel")
     );
   });
 
@@ -551,7 +572,9 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(mod, /SystemTotalizerCard/);
     assert.match(mod, /SummaryKpiGrid/);
     assert.match(mod, /sales-order-flow-indicators/);
-    assert.match(mod, /SalesOrderFlowKanbanBoard/);
+    assert.match(mod, /SalesOrderFlowKanbanFullscreen/);
+    assert.match(mod, /SalesOrderFlowAnalyticsPanel/);
+    assert.match(mod, /sales-order-flow-open-kanban/);
     assert.match(mod, /loading=\{indicatorsLoading\}/);
     assert.match(mod, /fetchSalesOrderFlowSummary/);
     assert.match(mod, /loadColumnPage/);
@@ -647,6 +670,25 @@ describe("sales order flow operational kanban (OP-67)", () => {
     }
     assert.match(html, /role="progressbar"/);
     assert.match(html, /aria-label="Abrir detalhe do pedido PV-0067"/);
+    assert.match(html, /data-minimized="false"/);
+  });
+
+  it("card minimizado exibe só número e status", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(SalesOrderFlowKanbanCard, {
+        card,
+        valuesVisible: true,
+        inconsistenciesVisible: true,
+        defaultMinimized: true,
+        onOpen: () => {},
+      })
+    );
+    assert.match(html, /data-minimized="true"/);
+    assert.match(html, /PV-0067/);
+    assert.match(html, /Em produção/);
+    assert.doesNotMatch(html, /Ana Comercial/);
+    assert.doesNotMatch(html, /role="progressbar"/);
+    assert.match(html, /sales-order-flow-card-expand-/);
   });
 
   it("oculta valores e inconsistências sem permissão", () => {

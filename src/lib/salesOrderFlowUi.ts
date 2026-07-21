@@ -22,7 +22,6 @@ export const SALES_ORDER_FLOW_PAGE_SUBTITLE =
 export const SALES_ORDER_FLOW_BREADCRUMB = "Comercial / Fluxo de Pedidos";
 export const SALES_ORDER_FLOW_VIEW_LEGACY_PERMISSION =
   "sales_orders.flow.view" as const;
-export const SALES_ORDER_FLOW_SEARCH_DEBOUNCE_MS = 300;
 
 /** Viewports de validação visual OP-77 (zoom 100%). */
 export const SALES_ORDER_FLOW_VIEWPORTS = [
@@ -143,6 +142,43 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
   priority: null,
   stages: [],
 };
+
+/** Empresas do grupo — select no filtro (contains no backend). */
+export const SALES_ORDER_FLOW_COMPANY_OPTIONS: ReadonlyArray<{
+  value: string;
+  label: string;
+}> = [
+  { value: "Lazarios", label: "Lazarios" },
+  { value: "Koppetel", label: "Koppetel" },
+  { value: "SM", label: "SM" },
+];
+
+export function areSalesOrderFlowUiFiltersEqual(
+  a: SalesOrderFlowUiFilters,
+  b: SalesOrderFlowUiFilters
+): boolean {
+  return (
+    a.q === b.q &&
+    a.customerId === b.customerId &&
+    a.sellerKey === b.sellerKey &&
+    a.company === b.company &&
+    a.product === b.product &&
+    a.sector === b.sector &&
+    a.issueFrom === b.issueFrom &&
+    a.issueTo === b.issueTo &&
+    a.promisedFrom === b.promisedFrom &&
+    a.promisedTo === b.promisedTo &&
+    a.overdue === b.overdue &&
+    a.blocked === b.blocked &&
+    a.inconsistent === b.inconsistent &&
+    a.partiallyShipped === b.partiallyShipped &&
+    a.withCut === b.withCut &&
+    a.withActiveResidual === b.withActiveResidual &&
+    a.priority === b.priority &&
+    a.stages.length === b.stages.length &&
+    a.stages.every((stage, index) => stage === b.stages[index])
+  );
+}
 
 export const SALES_ORDER_FLOW_PRIORITY_OPTIONS: ReadonlyArray<{
   value: SalesOrderFlowUiPriority;

@@ -47,7 +47,7 @@ export async function loadHrOrgChart(
   ]);
 
   return buildHrOrgChart({
-    organizationName: options?.organizationName ?? "Organização",
+    organizationName: options?.organizationName ?? "Lazarios Koppetel",
     includeInactiveUnits: options?.includeInactiveUnits === true,
     directorates,
     departments,

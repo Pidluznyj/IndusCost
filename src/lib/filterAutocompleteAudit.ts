@@ -185,6 +185,16 @@ export const FILTER_AUTOCOMPLETE_AUDIT: FilterAutocompleteAuditEntry[] = [
     recommendation: "manter componente específico de projeto (simulação manual)",
     status: "already_autocomplete",
   },
+  {
+    id: "output-documents-customer",
+    screen: "Comercial > Documentos de Saída",
+    file: "src/components/commercial/OutputDocumentsModule.tsx",
+    field: "customer / personExternalId",
+    entity: "customer",
+    issue: "input texto livre sem seleção estruturada",
+    recommendation: "CustomerAutocompleteFilter; personExternalId quando houver código Nomus",
+    status: "fixed",
+  },
 ];
 
 export function filterAutocompleteAuditByStatus(

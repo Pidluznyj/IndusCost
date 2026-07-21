@@ -1,8 +1,10 @@
-import type { RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import {
   AlertTriangle,
   Ban,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   Factory,
   Loader2,
   PackageCheck,
@@ -11,6 +13,7 @@ import {
 import type { SalesOrderFlowListCard } from "@/src/lib/sales/salesOrderFlowList";
 import {
   SALES_ORDER_FLOW_INCONSISTENCY_LABELS,
+  SALES_ORDER_FLOW_STAGE_LABELS,
   type SalesOrderFlowInconsistencyCode,
   type SalesOrderFlowStage,
 } from "@/src/lib/sales/salesOrderFlowCatalog";
@@ -38,6 +41,10 @@ type Props = {
   columns: readonly SalesOrderFlowKanbanColumnView[];
   valuesVisible: boolean;
   inconsistenciesVisible: boolean;
+  /** Quando true, cards exibem só número + status (expansível por card). */
+  cardsMinimized?: boolean;
+  /** Layout de altura plena para modal fullscreen. */
+  fullscreen?: boolean;
   scrollContainerRef?: RefObject<HTMLDivElement | null>;
   onOpenOrder: (orderId: string, orderCode: string) => void;
   onLoadMore: (stage: SalesOrderFlowStage) => void;
@@ -48,6 +55,8 @@ export function SalesOrderFlowKanbanBoard({
   columns,
   valuesVisible,
   inconsistenciesVisible,
+  cardsMinimized = false,
+  fullscreen = false,
   scrollContainerRef,
   onOpenOrder,
   onLoadMore,
@@ -67,16 +76,29 @@ export function SalesOrderFlowKanbanBoard({
   return (
     <section
       ref={scrollContainerRef}
-      className="overflow-x-auto overscroll-x-contain pb-3"
+      className={cn(
+        "overflow-x-auto overscroll-x-contain pb-3",
+        fullscreen && "h-full pb-0"
+      )}
       aria-label="Kanban operacional de pedidos"
       data-testid="sales-order-flow-kanban"
     >
       {/* min-w-max: scroll horizontal em 1366×768; colunas 300px × 6 ≈ 1848px */}
-      <div className="flex min-w-max items-stretch gap-3">
+      <div
+        className={cn(
+          "flex min-w-max items-stretch gap-3",
+          fullscreen && "h-full min-h-[calc(100dvh-4.5rem)]"
+        )}
+      >
         {columns.map((column) => (
           <section
             key={column.stage}
-            className="flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/20 shadow-sm max-h-[min(70vh,640px)]"
+            className={cn(
+              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/20 shadow-sm",
+              fullscreen
+                ? "h-full max-h-none"
+                : "max-h-[min(70vh,640px)]"
+            )}
             data-testid={`sales-order-flow-kanban-column-${column.stage}`}
           >
             <header
@@ -158,6 +180,7 @@ export function SalesOrderFlowKanbanBoard({
                     card={card}
                     valuesVisible={valuesVisible}
                     inconsistenciesVisible={inconsistenciesVisible}
+                    defaultMinimized={cardsMinimized}
                     onOpen={() => onOpenOrder(card.orderId, card.orderCode)}
                   />
                 </div>
@@ -239,170 +262,242 @@ export function SalesOrderFlowKanbanCard({
   card,
   valuesVisible,
   inconsistenciesVisible,
+  defaultMinimized = false,
   onOpen,
 }: {
   card: SalesOrderFlowListCard;
   valuesVisible: boolean;
   inconsistenciesVisible: boolean;
+  defaultMinimized?: boolean;
   onOpen: () => void;
 }) {
+  const [minimized, setMinimized] = useState(defaultMinimized);
+  useEffect(() => {
+    setMinimized(defaultMinimized);
+  }, [defaultMinimized, card.orderId]);
+
   const badges = resolveCardBadges(card);
+  const stageLabel =
+    SALES_ORDER_FLOW_STAGE_LABELS[card.stage] ?? String(card.stage);
+
+  if (minimized) {
+    return (
+      <div
+        className="flex w-full items-stretch gap-1 rounded-lg border border-border bg-card shadow-sm"
+        data-testid={`sales-order-flow-card-${card.orderId}`}
+        data-minimized="true"
+      >
+        <button
+          type="button"
+          className="min-w-0 flex-1 px-2.5 py-2 text-left transition hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+          onClick={onOpen}
+          aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-bold text-foreground">
+              {card.orderCode}
+            </p>
+            {card.isBlocked ? (
+              <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-hidden="true" />
+            ) : null}
+          </div>
+          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
+            {stageLabel}
+          </p>
+        </button>
+        <button
+          type="button"
+          className="shrink-0 border-l border-border px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
+          data-testid={`sales-order-flow-card-expand-${card.orderId}`}
+          aria-label={`Expandir pedido ${card.orderCode}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMinimized(false);
+          }}
+        >
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    );
+  }
 
   return (
-    <button
-      type="button"
-      className="w-full rounded-lg border border-border bg-card p-3 text-left shadow-sm transition hover:border-primary/35 hover:shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      onClick={onOpen}
+    <div
+      className="rounded-lg border border-border bg-card shadow-sm"
       data-testid={`sales-order-flow-card-${card.orderId}`}
-      aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
+      data-minimized="false"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-foreground">
-            {card.orderCode}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">
-            {card.customerName?.trim() || "Cliente não informado"}
-          </p>
-        </div>
-        <PriorityBadge priority={card.priority} />
-      </div>
-
-      <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
-        <span className="text-slate-600">Vendedor</span>
-        <strong className="truncate text-right font-medium text-foreground">
-          {card.sellerName?.trim() || "—"}
-        </strong>
-        <span className="text-slate-600">Empresa</span>
-        <strong className="truncate text-right font-medium text-foreground">
-          {card.companyIssuer?.trim() || "—"}
-        </strong>
-        <span className="text-slate-600">Entrega</span>
-        <strong
-          className={cn(
-            "text-right font-medium",
-            card.isOverdue ? "text-rose-700" : "text-foreground"
-          )}
+      <div className="flex items-start gap-1 border-b border-border/60 px-1 pt-1">
+        <button
+          type="button"
+          className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          data-testid={`sales-order-flow-card-minimize-${card.orderId}`}
+          aria-label={`Minimizar pedido ${card.orderCode}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setMinimized(true);
+          }}
         >
-          {formatFlowDate(card.promisedDeliveryAt)}
-        </strong>
-        <span className="text-slate-600">Na etapa</span>
-        <strong className="text-right font-medium text-foreground">
-          {formatDaysInStage(card.daysInStage)}
-        </strong>
+          <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
       </div>
-
-      <div className="mt-2 rounded-md border border-border/70 bg-muted/25 px-2 py-1.5 text-xs">
-        {valuesVisible ? (
-          <div className="grid grid-cols-2 gap-x-2">
-            <span className="text-slate-600">Valor</span>
-            <strong className="text-right text-foreground">
-              {formatNullableMoney(card.orderValue)}
-            </strong>
-            <span className="text-slate-600">Saldo ativo</span>
-            <strong className="text-right text-foreground">
-              {formatNullableMoney(card.activeResidualValue)}
-            </strong>
+      <button
+        type="button"
+        className="w-full p-3 pt-1 text-left transition hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        onClick={onOpen}
+        aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-foreground">
+              {card.orderCode}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {card.customerName?.trim() || "Cliente não informado"}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
+              {stageLabel}
+            </p>
           </div>
-        ) : (
-          <p className="text-center text-slate-600">
-            Valores ocultos por permissão
-          </p>
-        )}
-      </div>
-
-      <div className="mt-2 flex items-center justify-between text-xs">
-        <span className="text-slate-600">Itens</span>
-        <strong className="text-foreground">
-          {card.completedItems} concluídos · {card.pendingItems} pendentes
-        </strong>
-      </div>
-
-      <div className="mt-2 space-y-1.5">
-        {card.progressProductionOrder != null ? (
-          <CompactProgress
-            label="OP"
-            value={card.progressProductionOrder}
-            icon={Factory}
-          />
-        ) : null}
-        {card.progressProduced != null ? (
-          <CompactProgress
-            label="Produção"
-            value={card.progressProduced}
-            icon={Factory}
-          />
-        ) : null}
-        <CompactProgress
-          label="Documento"
-          value={card.progressDocumented}
-          icon={PackageCheck}
-        />
-        <CompactProgress
-          label="Faturado"
-          value={card.progressInvoiced}
-          icon={CalendarClock}
-        />
-        <CompactProgress
-          label="Enviado"
-          value={card.progressShipped}
-          icon={Truck}
-        />
-      </div>
-
-      <div className="mt-2 border-t border-border/70 pt-2 text-xs">
-        <p className="text-slate-600">Próxima ação</p>
-        <p className="font-medium text-foreground">
-          {card.nextAction?.trim() || "Sem ação definida"}
-        </p>
-        <p className="mt-1 text-slate-600">
-          Área:{" "}
-          <span className="font-medium text-foreground">
-            {card.responsibleArea?.trim() || "Não definida"}
-          </span>
-        </p>
-      </div>
-
-      {card.isBlocked ? (
-        <div className="mt-2 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1.5 text-xs text-rose-900">
-          <span className="inline-flex items-center gap-1 font-semibold">
-            <Ban className="h-3 w-3" /> Bloqueado
-          </span>
-          {card.blockReason?.trim() ? ` · ${card.blockReason.trim()}` : null}
+          <PriorityBadge priority={card.priority} />
         </div>
-      ) : null}
 
-      {inconsistenciesVisible && card.inconsistencies.length > 0 ? (
-        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">
-          <p className="inline-flex items-center gap-1 font-semibold">
-            <AlertTriangle className="h-3 w-3" />
-            {card.inconsistencies.length} inconsistência(s)
-          </p>
-          <p className="mt-0.5 line-clamp-2">
-            {card.inconsistencies
-              .slice(0, 2)
-              .map((item) => formatInconsistencyLabel(item.code))
-              .join(" · ")}
-          </p>
+        <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
+          <span className="text-slate-600">Vendedor</span>
+          <strong className="truncate text-right font-medium text-foreground">
+            {card.sellerName?.trim() || "—"}
+          </strong>
+          <span className="text-slate-600">Empresa</span>
+          <strong className="truncate text-right font-medium text-foreground">
+            {card.companyIssuer?.trim() || "—"}
+          </strong>
+          <span className="text-slate-600">Entrega</span>
+          <strong
+            className={cn(
+              "text-right font-medium",
+              card.isOverdue ? "text-rose-700" : "text-foreground"
+            )}
+          >
+            {formatFlowDate(card.promisedDeliveryAt)}
+          </strong>
+          <span className="text-slate-600">Na etapa</span>
+          <strong className="text-right font-medium text-foreground">
+            {formatDaysInStage(card.daysInStage)}
+          </strong>
         </div>
-      ) : null}
 
-      {badges.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
-          {badges.map((badge) => (
-            <span
-              key={badge.key}
-              className={cn(
-                "rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
-                badge.className
-              )}
-            >
-              {badge.label}
+        <div className="mt-2 rounded-md border border-border/70 bg-muted/25 px-2 py-1.5 text-xs">
+          {valuesVisible ? (
+            <div className="grid grid-cols-2 gap-x-2">
+              <span className="text-slate-600">Valor</span>
+              <strong className="text-right text-foreground">
+                {formatNullableMoney(card.orderValue)}
+              </strong>
+              <span className="text-slate-600">Saldo ativo</span>
+              <strong className="text-right text-foreground">
+                {formatNullableMoney(card.activeResidualValue)}
+              </strong>
+            </div>
+          ) : (
+            <p className="text-center text-slate-600">
+              Valores ocultos por permissão
+            </p>
+          )}
+        </div>
+
+        <div className="mt-2 flex items-center justify-between text-xs">
+          <span className="text-slate-600">Itens</span>
+          <strong className="text-foreground">
+            {card.completedItems} concluídos · {card.pendingItems} pendentes
+          </strong>
+        </div>
+
+        <div className="mt-2 space-y-1.5">
+          {card.progressProductionOrder != null ? (
+            <CompactProgress
+              label="OP"
+              value={card.progressProductionOrder}
+              icon={Factory}
+            />
+          ) : null}
+          {card.progressProduced != null ? (
+            <CompactProgress
+              label="Produção"
+              value={card.progressProduced}
+              icon={Factory}
+            />
+          ) : null}
+          <CompactProgress
+            label="Documento"
+            value={card.progressDocumented}
+            icon={PackageCheck}
+          />
+          <CompactProgress
+            label="Faturado"
+            value={card.progressInvoiced}
+            icon={CalendarClock}
+          />
+          <CompactProgress
+            label="Enviado"
+            value={card.progressShipped}
+            icon={Truck}
+          />
+        </div>
+
+        <div className="mt-2 border-t border-border/70 pt-2 text-xs">
+          <p className="text-slate-600">Próxima ação</p>
+          <p className="font-medium text-foreground">
+            {card.nextAction?.trim() || "Sem ação definida"}
+          </p>
+          <p className="mt-1 text-slate-600">
+            Área:{" "}
+            <span className="font-medium text-foreground">
+              {card.responsibleArea?.trim() || "Não definida"}
             </span>
-          ))}
+          </p>
         </div>
-      ) : null}
-    </button>
+
+        {card.isBlocked ? (
+          <div className="mt-2 rounded-md border border-rose-200 bg-rose-50/70 px-2 py-1.5 text-xs text-rose-900">
+            <span className="inline-flex items-center gap-1 font-semibold">
+              <Ban className="h-3 w-3" /> Bloqueado
+            </span>
+            {card.blockReason?.trim() ? ` · ${card.blockReason.trim()}` : null}
+          </div>
+        ) : null}
+
+        {inconsistenciesVisible && card.inconsistencies.length > 0 ? (
+          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/70 px-2 py-1.5 text-xs text-amber-950">
+            <p className="inline-flex items-center gap-1 font-semibold">
+              <AlertTriangle className="h-3 w-3" />
+              {card.inconsistencies.length} inconsistência(s)
+            </p>
+            <p className="mt-0.5 line-clamp-2">
+              {card.inconsistencies
+                .slice(0, 2)
+                .map((item) => formatInconsistencyLabel(item.code))
+                .join(" · ")}
+            </p>
+          </div>
+        ) : null}
+
+        {badges.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {badges.map((badge) => (
+              <span
+                key={badge.key}
+                className={cn(
+                  "rounded-full border px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                  badge.className
+                )}
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </button>
+    </div>
   );
 }
 

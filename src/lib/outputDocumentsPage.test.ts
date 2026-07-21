@@ -248,7 +248,6 @@ describe("outputDocumentsUi", () => {
     assert.equal(
       hasActiveOutputDocumentsFilters({
         search: "",
-        company: "",
         customer: "Cliente",
         from: "",
         to: "",
@@ -258,7 +257,6 @@ describe("outputDocumentsUi", () => {
     assert.equal(
       hasActiveOutputDocumentsFilters({
         search: "",
-        company: "",
         customer: "",
         from: "",
         to: "",
@@ -342,6 +340,7 @@ describe("outputDocumentsClient", () => {
         pageSize: 25,
         search: "  DOC 10 ",
         customer: "Cliente A",
+        personExternalId: 501,
         status: "Emitido",
         order: "PD 02534",
         nfe: "12345",
@@ -351,7 +350,7 @@ describe("outputDocumentsClient", () => {
         sortBy: "dataDocumento",
         sortDir: "desc",
       }),
-      "?page=2&pageSize=25&sortBy=dataDocumento&sortDir=desc&cancelled=yes&hasReceivable=no&search=DOC+10&customer=Cliente+A&status=Emitido&order=PD+02534&nfe=12345&financialStatus=aguardando_cr"
+      "?page=2&pageSize=25&sortBy=dataDocumento&sortDir=desc&personExternalId=501&cancelled=yes&hasReceivable=no&search=DOC+10&customer=Cliente+A&status=Emitido&order=PD+02534&nfe=12345&financialStatus=aguardando_cr"
     );
   });
 
@@ -381,7 +380,6 @@ describe("output documents page filters cards and grid", () => {
       "output-documents-search",
       "output-documents-from",
       "output-documents-to",
-      "output-documents-company",
       "output-documents-customer",
       "output-documents-status",
       "output-documents-order",
@@ -417,6 +415,10 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /applyOutputDocumentsKpiPreset/);
     assert.match(source, /sortBy/);
     assert.match(source, /sortDir/);
+    assert.match(source, /CustomerAutocompleteFilter/);
+    assert.match(source, /OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS/);
+    assert.doesNotMatch(source, /output-documents-company/);
+    assert.doesNotMatch(source, /setCompanyDraft/);
   });
 
   it("grid renderiza colunas principais e marca cancelados", () => {

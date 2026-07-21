@@ -37,6 +37,7 @@ import {
   isOutputDocumentsDateRangeInvalid,
   nextOutputDocumentsSortDir,
   OUTPUT_DOCUMENT_FINANCIAL_STATUS_OPTIONS,
+  OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS,
   OUTPUT_DOCUMENTS_BREADCRUMB,
   OUTPUT_DOCUMENTS_PAGE_SIZE,
   OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS,
@@ -62,6 +63,8 @@ import {
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDocumentGridTableRow";
 import { OutputDocumentDetailOverlay } from "@/src/components/commercial/OutputDocumentDetailOverlay";
+import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
+import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import { cn } from "@/src/lib/utils";
 
 const SalesOrderDetailDialog = React.lazy(() =>
@@ -112,6 +115,35 @@ function initialPage(params: URLSearchParams): number {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
 
+function initialPersonExternalId(params: URLSearchParams): number | null {
+  const raw = params.get("personExternalId")?.trim() ?? "";
+  if (!raw) return null;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function customerSelectionFromFilters(
+  customer: string,
+  personExternalId: number | null
+): EntityAutocompleteSelection | null {
+  const name = customer.trim();
+  if (!name && personExternalId == null) return null;
+  return {
+    name: name || `Cliente ${personExternalId}`,
+    code: personExternalId != null ? String(personExternalId) : null,
+    source: "induscost",
+  };
+}
+
+function personExternalIdFromSelection(
+  selection: EntityAutocompleteSelection | null
+): number | null {
+  const code = selection?.code?.trim() ?? "";
+  if (!code) return null;
+  const n = Number.parseInt(code, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export function OutputDocumentsModule() {
   const auth = useAuth();
   const permissions = usePermissions();
@@ -125,23 +157,27 @@ export function OutputDocumentsModule() {
   const [searchDraft, setSearchDraft] = useState(() =>
     initialParam(searchParams, "search")
   );
-  const [companyDraft, setCompanyDraft] = useState(() =>
-    initialParam(searchParams, "company")
-  );
-  const [customerDraft, setCustomerDraft] = useState(() =>
-    initialParam(searchParams, "customer")
-  );
-  const [statusDraft, setStatusDraft] = useState(() =>
-    initialParam(searchParams, "status")
-  );
   const [orderDraft, setOrderDraft] = useState(() =>
     initialParam(searchParams, "order")
   );
   const [nfeDraft, setNfeDraft] = useState(() => initialParam(searchParams, "nfe"));
   const [search, setSearch] = useState(searchDraft);
-  const [company, setCompany] = useState(companyDraft);
-  const [customer, setCustomer] = useState(customerDraft);
-  const [status, setStatus] = useState(statusDraft);
+  const [customer, setCustomer] = useState(() =>
+    initialParam(searchParams, "customer")
+  );
+  const [personExternalId, setPersonExternalId] = useState<number | null>(() =>
+    initialPersonExternalId(searchParams)
+  );
+  const [customerSelection, setCustomerSelection] =
+    useState<EntityAutocompleteSelection | null>(() =>
+      customerSelectionFromFilters(
+        initialParam(searchParams, "customer"),
+        initialPersonExternalId(searchParams)
+      )
+    );
+  const [status, setStatus] = useState(() =>
+    initialParam(searchParams, "status")
+  );
   const [order, setOrder] = useState(orderDraft);
   const [nfe, setNfe] = useState(nfeDraft);
   const [from, setFrom] = useState(() => initialParam(searchParams, "from"));
@@ -218,16 +254,10 @@ export function OutputDocumentsModule() {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const nextSearch = searchDraft.trim();
-      const nextCompany = companyDraft.trim();
-      const nextCustomer = customerDraft.trim();
-      const nextStatus = statusDraft.trim();
       const nextOrder = orderDraft.trim();
       const nextNfe = nfeDraft.trim();
       if (
         nextSearch === search &&
-        nextCompany === company &&
-        nextCustomer === customer &&
-        nextStatus === status &&
         nextOrder === order &&
         nextNfe === nfe
       ) {
@@ -235,24 +265,15 @@ export function OutputDocumentsModule() {
       }
       setPage(1);
       setSearch(nextSearch);
-      setCompany(nextCompany);
-      setCustomer(nextCustomer);
-      setStatus(nextStatus);
       setOrder(nextOrder);
       setNfe(nextNfe);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [
     searchDraft,
-    companyDraft,
-    customerDraft,
-    statusDraft,
     orderDraft,
     nfeDraft,
     search,
-    company,
-    customer,
-    status,
     order,
     nfe,
   ]);
@@ -266,8 +287,10 @@ export function OutputDocumentsModule() {
     const next = new URLSearchParams();
     if (page > 1) next.set("page", String(page));
     if (search) next.set("search", search);
-    if (company) next.set("company", company);
     if (customer) next.set("customer", customer);
+    if (personExternalId != null) {
+      next.set("personExternalId", String(personExternalId));
+    }
     if (status) next.set("status", status);
     if (order) next.set("order", order);
     if (nfe) next.set("nfe", nfe);
@@ -285,8 +308,8 @@ export function OutputDocumentsModule() {
   }, [
     page,
     search,
-    company,
     customer,
+    personExternalId,
     status,
     order,
     nfe,
@@ -317,8 +340,8 @@ export function OutputDocumentsModule() {
       page,
       pageSize: OUTPUT_DOCUMENTS_PAGE_SIZE,
       search,
-      company,
-      customer,
+      customer: personExternalId != null ? undefined : customer,
+      personExternalId: personExternalId ?? undefined,
       status,
       order,
       nfe,
@@ -379,8 +402,8 @@ export function OutputDocumentsModule() {
     dateRangeInvalid,
     page,
     search,
-    company,
     customer,
+    personExternalId,
     status,
     order,
     nfe,
@@ -400,8 +423,8 @@ export function OutputDocumentsModule() {
 
   const filtersActive = hasActiveOutputDocumentsFilters({
     search,
-    company,
     customer,
+    personExternalId,
     from,
     to,
     status,
@@ -413,9 +436,9 @@ export function OutputDocumentsModule() {
   });
   const draftsActive = Boolean(
     searchDraft.trim() ||
-      companyDraft.trim() ||
-      customerDraft.trim() ||
-      statusDraft.trim() ||
+      customer.trim() ||
+      personExternalId != null ||
+      status.trim() ||
       orderDraft.trim() ||
       nfeDraft.trim() ||
       from ||
@@ -450,15 +473,13 @@ export function OutputDocumentsModule() {
 
   const clearFilters = () => {
     setSearchDraft("");
-    setCompanyDraft("");
-    setCustomerDraft("");
-    setStatusDraft("");
+    setCustomerSelection(null);
+    setCustomer("");
+    setPersonExternalId(null);
+    setStatus("");
     setOrderDraft("");
     setNfeDraft("");
     setSearch("");
-    setCompany("");
-    setCustomer("");
-    setStatus("");
     setOrder("");
     setNfe("");
     setFrom("");
@@ -559,32 +580,49 @@ export function OutputDocumentsModule() {
               }}
             />
           </FilterField>
-          <FilterField label="Empresa">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="output-documents-company"
-              placeholder="Ex.: KOPPETEL"
-              value={companyDraft}
-              onChange={(event) => setCompanyDraft(event.target.value)}
+          <div data-testid="output-documents-customer">
+            <CustomerAutocompleteFilter
+              compact
+              label="Cliente"
+              value={customerSelection}
+              placeholder="Buscar cliente…"
+              onChange={(sel) => {
+                setCustomerSelection(sel);
+                setCustomer(sel?.name?.trim() ?? "");
+                setPersonExternalId(personExternalIdFromSelection(sel));
+                setPage(1);
+              }}
+              onClear={() => {
+                setCustomerSelection(null);
+                setCustomer("");
+                setPersonExternalId(null);
+                setPage(1);
+              }}
             />
-          </FilterField>
-          <FilterField label="Cliente">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="output-documents-customer"
-              placeholder="Nome do cliente"
-              value={customerDraft}
-              onChange={(event) => setCustomerDraft(event.target.value)}
-            />
-          </FilterField>
+          </div>
           <FilterField label="Status">
-            <input
+            <select
               className={FILTER_CONTROL_CLASS}
               data-testid="output-documents-status"
-              placeholder="Ex.: Emitido"
-              value={statusDraft}
-              onChange={(event) => setStatusDraft(event.target.value)}
-            />
+              value={status}
+              onChange={(event) => {
+                setPage(1);
+                setStatus(event.target.value);
+              }}
+            >
+              <option value="">Todos</option>
+              {status &&
+              !OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS.some(
+                (option) => option.value === status
+              ) ? (
+                <option value={status}>{status}</option>
+              ) : null}
+              {OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </FilterField>
           <FilterField label="Pedido">
             <input
