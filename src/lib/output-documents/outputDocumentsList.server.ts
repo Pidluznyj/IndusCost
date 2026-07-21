@@ -426,7 +426,7 @@ async function loadEnrichment(
             id: true,
             orderCode: true,
             companyIssuer: true,
-            customer: {
+            Customer: {
               select: { tradeName: true, companyName: true },
             },
           },
@@ -455,8 +455,8 @@ async function loadEnrichment(
       for (const orderId of orderIds) {
         const order = orderById.get(orderId);
         const name =
-          order?.customer.tradeName?.trim() ||
-          order?.customer.companyName?.trim() ||
+          order?.Customer?.tradeName?.trim() ||
+          order?.Customer?.companyName?.trim() ||
           null;
         if (name) {
           enrichment.customerNameByDoc.set(docExternalId, name);
