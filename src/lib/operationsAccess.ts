@@ -66,6 +66,18 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
     action: "manage",
   },
   {
+    method: "PUT",
+    path: "/api/inventory/items*",
+    resourceKey: "operations.inventory.items",
+    action: "manage",
+  },
+  {
+    method: "GET",
+    path: "/api/inventory/official-materials*",
+    resourceKey: "operations.inventory.items",
+    action: "view",
+  },
+  {
     method: "POST",
     path: "/api/inventory/warehouses*",
     resourceKey: "operations.inventory.warehouses",

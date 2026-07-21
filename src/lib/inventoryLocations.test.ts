@@ -103,9 +103,9 @@ describe("inventoryLocations — rotas e UI", () => {
     assert.equal(resolveInventoryTabFromPath("/inventory/warehouses"), "warehouses");
   });
 
-  it("casca SC aponta para warehouses com flag OP-05", () => {
+  it("casca SC aponta para estoque com flag OP-05", () => {
     const shell = read("src/components/supply-chain/SupplyChainModuleShell.tsx");
-    assert.match(shell, /\/inventory\/warehouses/);
+    assert.match(shell, /\/inventory\//);
     assert.match(shell, /SUPPLY_CHAIN_INVENTORY_MODULE_ENABLED/);
   });
 

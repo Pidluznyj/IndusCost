@@ -298,6 +298,96 @@ export function parseCancelReservationBody(body: unknown): string {
   return requireNonEmpty(data.reason ?? data.motivo, "reason");
 }
 
+function parseOptionalBoolean(value: unknown, defaultValue: boolean): boolean {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  return value === true || value === "true" || value === 1;
+}
+
+export type LinkOfficialMaterialBody = {
+  materialId: string;
+  defaultWarehouseId: string | null;
+  defaultLocationId: string | null;
+  controlsStock: boolean;
+  minimumStock: number | null;
+  safetyStock: number | null;
+  controlsLot: boolean;
+  allowsReservation: boolean;
+  allowsBlock: boolean;
+  status: "ACTIVE" | "INACTIVE";
+  notes: string | null;
+};
+
+export function parseLinkOfficialMaterialBody(body: unknown): LinkOfficialMaterialBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const statusRaw = safeTrim(data.status);
+  const status =
+    statusRaw && ITEM_STATUSES.has(statusRaw)
+      ? (statusRaw as "ACTIVE" | "INACTIVE")
+      : "ACTIVE";
+
+  return {
+    materialId: requireNonEmpty(data.materialId, "materialId"),
+    defaultWarehouseId: safeTrim(data.defaultWarehouseId) || null,
+    defaultLocationId: safeTrim(data.defaultLocationId) || null,
+    controlsStock: parseOptionalBoolean(data.controlsStock, true),
+    minimumStock: parseNonNegative(data.minimumStock, "minimumStock"),
+    safetyStock: parseNonNegative(data.safetyStock, "safetyStock"),
+    controlsLot: parseOptionalBoolean(data.controlsLot, false),
+    allowsReservation: parseOptionalBoolean(data.allowsReservation, true),
+    allowsBlock: parseOptionalBoolean(data.allowsBlock, true),
+    status,
+    notes: safeTrim(data.notes) || null,
+  };
+}
+
+export function parseUpdateMaterialStockLinkBody(
+  body: unknown
+): Partial<Omit<LinkOfficialMaterialBody, "materialId">> {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const out: Partial<Omit<LinkOfficialMaterialBody, "materialId">> = {};
+
+  if (data.defaultWarehouseId !== undefined) {
+    out.defaultWarehouseId = safeTrim(data.defaultWarehouseId) || null;
+  }
+  if (data.defaultLocationId !== undefined) {
+    out.defaultLocationId = safeTrim(data.defaultLocationId) || null;
+  }
+  if (data.controlsStock !== undefined) {
+    out.controlsStock = parseOptionalBoolean(data.controlsStock, true);
+  }
+  if (data.minimumStock !== undefined) {
+    out.minimumStock = parseNonNegative(data.minimumStock, "minimumStock");
+  }
+  if (data.safetyStock !== undefined) {
+    out.safetyStock = parseNonNegative(data.safetyStock, "safetyStock");
+  }
+  if (data.controlsLot !== undefined) {
+    out.controlsLot = parseOptionalBoolean(data.controlsLot, false);
+  }
+  if (data.allowsReservation !== undefined) {
+    out.allowsReservation = parseOptionalBoolean(data.allowsReservation, true);
+  }
+  if (data.allowsBlock !== undefined) {
+    out.allowsBlock = parseOptionalBoolean(data.allowsBlock, true);
+  }
+  if (data.status !== undefined) {
+    const s = requireNonEmpty(data.status, "status");
+    if (!ITEM_STATUSES.has(s)) throw new InventoryValidationError("Status inválido.", "INVALID_STATUS");
+    out.status = s as "ACTIVE" | "INACTIVE";
+  }
+  if (data.notes !== undefined) out.notes = safeTrim(data.notes) || null;
+
+  // Bloqueia tentativa de editar cadastro oficial via payload.
+  if (data.code !== undefined || data.description !== undefined || data.unit !== undefined) {
+    throw new InventoryValidationError(
+      "Código, descrição e unidade oficiais não podem ser editados no estoque.",
+      "OFFICIAL_MATERIAL_FIELDS_READONLY"
+    );
+  }
+
+  return out;
+}
+
 export type CreateInventoryLocationInput = {
   code: string;
   name: string;

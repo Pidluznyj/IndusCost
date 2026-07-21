@@ -3,6 +3,7 @@ import { Eye, Plus, Search } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { cn } from "@/src/lib/utils";
 import { InventoryItemDetailSheet } from "@/src/components/inventory/InventoryItemDetailSheet";
+import { InventoryMaterialLinkSheet } from "@/src/components/inventory/InventoryMaterialLinkSheet";
 import { INVENTORY_EMPTY } from "@/src/components/inventory/inventoryEmptyStates";
 import { appendQueryIfPresent, hasAnyFilter } from "@/src/components/inventory/inventoryFilterUtils";
 import {
@@ -29,6 +30,7 @@ import type { InventoryItemRow } from "@/src/types/inventory";
 type SheetState =
   | { mode: "closed" }
   | { mode: "create" }
+  | { mode: "link-material" }
   | { mode: "view"; itemId: string };
 
 export function InventoryItemsTab() {
@@ -115,15 +117,26 @@ export function InventoryItemsTab() {
 
       <div className="flex flex-wrap items-center justify-end gap-2">
         {canManageItems ? (
-          <button
-            type="button"
-            onClick={() => setSheet({ mode: "create" })}
-            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
-            data-testid="inventory-items-new"
-          >
-            <Plus className="h-4 w-4" />
-            Novo item
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSheet({ mode: "link-material" })}
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800"
+              data-testid="inventory-items-link-material"
+            >
+              <Search className="h-4 w-4" />
+              Vincular MP oficial
+            </button>
+            <button
+              type="button"
+              onClick={() => setSheet({ mode: "create" })}
+              className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-white"
+              data-testid="inventory-items-new"
+            >
+              <Plus className="h-4 w-4" />
+              Novo item
+            </button>
+          </div>
         ) : (
           <p className="text-xs text-slate-500" data-testid="inventory-items-no-permission">
             Sem permissão para cadastrar itens.
@@ -315,6 +328,12 @@ export function InventoryItemsTab() {
           canManage={canManageItems}
         />
       ) : null}
+
+      <InventoryMaterialLinkSheet
+        open={sheet.mode === "link-material"}
+        onClose={() => setSheet({ mode: "closed" })}
+        onLinked={() => void load()}
+      />
     </div>
   );
 }

@@ -5238,7 +5238,13 @@ model InventoryItem {
   controlsExpiration    Boolean             @default(false)
   controlsLocation      Boolean             @default(false)
   controlsQuality       Boolean             @default(false)
+  /// Controla saldo físico no ledger local.
+  controlsStock         Boolean             @default(true)
+  allowsReservation     Boolean             @default(true)
+  allowsBlock           Boolean             @default(true)
   minimumStock          Decimal?            @db.Decimal(20, 6)
+  /// Estoque de segurança (alerta operacional).
+  safetyStock           Decimal?            @db.Decimal(20, 6)
   maximumStock          Decimal?            @db.Decimal(20, 6)
   reorderPoint          Decimal?            @db.Decimal(20, 6)
   preferredSupplierName String?
@@ -5247,6 +5253,13 @@ model InventoryItem {
   productId             String?             @db.Uuid
   /// Vínculo ao cadastro oficial de matéria-prima (sem duplicar MP).
   materialId            String?             @db.Uuid
+  /// Snapshots históricos do cadastro oficial no momento do vínculo/atualização logística.
+  materialCodeSnapshot        String?
+  materialDescriptionSnapshot String?
+  materialUnitSnapshot        String?
+  materialCategorySnapshot    String?
+  defaultWarehouseId    String?             @db.Uuid
+  defaultLocationId     String?             @db.Uuid
   nomusProductCode      String?
   nomusProductId        String?
   notes                 String?
@@ -5257,6 +5270,8 @@ model InventoryItem {
 
   Product           Product?                     @relation(fields: [productId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   Material          Material?                    @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  defaultWarehouse  InventoryWarehouse?          @relation("InventoryItemDefaultWarehouse", fields: [defaultWarehouseId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  defaultLocation   InventoryLocation?           @relation("InventoryItemDefaultLocation", fields: [defaultLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   balances          InventoryBalance[]
   movements         InventoryMovement[]
   reservations      InventoryReservation[]
@@ -5268,7 +5283,10 @@ model InventoryItem {
   @@index([status])
   @@index([productId])
   @@index([materialId])
+  @@index([defaultWarehouseId])
+  @@index([defaultLocationId])
   @@index([nomusProductCode])
+  @@index([controlsStock])
 }
 
 model InventoryWarehouse {
@@ -5292,6 +5310,7 @@ model InventoryWarehouse {
   countSessions        InventoryCountSession[]
   countLines           InventoryCountLine[]
   stockSnapshotLines   InventoryStockSnapshotLine[]
+  defaultForItems      InventoryItem[]         @relation("InventoryItemDefaultWarehouse")
 
   @@index([status])
 }
@@ -5328,6 +5347,7 @@ model InventoryLocation {
   blocks               InventoryBlock[]
   countLines           InventoryCountLine[]
   stockSnapshotLines   InventoryStockSnapshotLine[]
+  defaultForItems      InventoryItem[]        @relation("InventoryItemDefaultLocation")
 
   @@unique([warehouseId, code])
   @@index([warehouseId])

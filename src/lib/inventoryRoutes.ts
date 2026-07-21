@@ -48,6 +48,11 @@ import {
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
 import {
+  linkOfficialMaterialToStockControl,
+  searchOfficialMaterialsForInventory,
+  updateOfficialMaterialStockLink,
+} from "@/src/lib/inventory/inventoryMaterialLinkService.server.js";
+import {
   assertWarehouseCanBeDeactivated,
   createInventoryLocation,
   setInventoryLocationStatus,
@@ -65,10 +70,12 @@ import {
   parseCreateInventoryMovementBody,
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
+  parseLinkOfficialMaterialBody,
   parseStatusPatchBody,
   parseUpdateInventoryItemBody,
   parseUpdateInventoryLocationBody,
   parseUpdateInventoryWarehouseBody,
+  parseUpdateMaterialStockLinkBody,
 } from "@/src/lib/inventory/inventoryValidation.js";
 
 type AuthGuards = {
@@ -94,13 +101,16 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "WAREHOUSE_NOT_FOUND" ||
     error.code === "LOCATION_NOT_FOUND" ||
     error.code === "LOCATION_PARENT_NOT_FOUND" ||
+    error.code === "OFFICIAL_MATERIAL_NOT_FOUND" ||
     error.code === "RESERVATION_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND"
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
-        : error.code === "LOCATION_CODE_DUPLICATE"
+        : error.code === "LOCATION_CODE_DUPLICATE" ||
+            error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
+            error.code === "INVENTORY_CODE_CONFLICT"
           ? 409
           : 400;
   return res.status(status).json({ error: error.message, code: error.code });
@@ -282,17 +292,23 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   app.get("/api/inventory/items", ...view, async (req, res) => {
     try {
       const q = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
+      const linkedOnly = String(req.query.linkedMaterials ?? "").trim() === "true";
+      const materialIdQ = String(req.query.materialId ?? "").trim();
       const where: Prisma.InventoryItemWhereInput = {
         ...(q.itemType ? { itemType: q.itemType } : {}),
         ...(q.status ? { status: q.status } : {}),
         ...(q.activeOnly ? { status: "ACTIVE" } : {}),
         ...(q.family ? { family: { equals: q.family, mode: "insensitive" } } : {}),
         ...(q.group ? { group: { equals: q.group, mode: "insensitive" } } : {}),
+        ...(linkedOnly ? { materialId: { not: null } } : {}),
+        ...(materialIdQ ? { materialId: materialIdQ } : {}),
         ...(q.search
           ? {
               OR: [
                 { code: { contains: q.search, mode: "insensitive" } },
                 { description: { contains: q.search, mode: "insensitive" } },
+                { materialCodeSnapshot: { contains: q.search, mode: "insensitive" } },
+                { materialDescriptionSnapshot: { contains: q.search, mode: "insensitive" } },
               ],
             }
           : {}),
@@ -400,6 +416,70 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  app.get("/api/inventory/official-materials", ...view, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? req.query.search ?? "").trim();
+      const limit = Math.min(
+        100,
+        Math.max(1, Number.parseInt(String(req.query.limit ?? "30"), 10) || 30)
+      );
+      const rows = await searchOfficialMaterialsForInventory(prisma, { q, limit });
+      res.json({ rows, total: rows.length });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/official-materials", e);
+      res.status(500).json(inventoryApiError("Erro ao pesquisar matérias-primas oficiais."));
+    }
+  });
+
+  app.post("/api/inventory/items/link-material", ...itemManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseLinkOfficialMaterialBody(req.body);
+      const item = await linkOfficialMaterialToStockControl(prisma, input, {
+        id: user.id,
+        name: user.name,
+      });
+      res.status(201).json({ item: serializeInventoryItem(item) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res
+          .status(409)
+          .json(inventoryApiError("Matéria-prima já vinculada ativamente ao estoque."));
+      }
+      console.error("POST /api/inventory/items/link-material", e);
+      res.status(500).json(inventoryApiError("Erro ao vincular matéria-prima ao estoque."));
+    }
+  });
+
+  app.put("/api/inventory/items/:id/material-link", ...itemManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const patch = parseUpdateMaterialStockLinkBody(req.body);
+      const item = await updateOfficialMaterialStockLink(prisma, id, patch, {
+        id: user.id,
+        name: user.name,
+      });
+      res.json({ item: serializeInventoryItem(item) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res
+          .status(409)
+          .json(inventoryApiError("Matéria-prima já vinculada ativamente ao estoque."));
+      }
+      console.error("PUT /api/inventory/items/:id/material-link", e);
+      res.status(500).json(inventoryApiError("Erro ao atualizar vínculo logístico."));
+    }
+  });
+
   app.get("/api/inventory/items/:id", ...view, async (req, res) => {
     try {
       const { id } = req.params;
@@ -427,6 +507,19 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Item não encontrado."));
 
       const patch = parseUpdateInventoryItemBody(req.body);
+      if (existing.materialId) {
+        if (
+          patch.code !== undefined ||
+          patch.description !== undefined ||
+          patch.unit !== undefined ||
+          patch.itemType !== undefined
+        ) {
+          throw new InventoryValidationError(
+            "Item vinculado à MP oficial: use o endpoint de vínculo logístico. Cadastro oficial é somente leitura.",
+            "OFFICIAL_MATERIAL_FIELDS_READONLY"
+          );
+        }
+      }
       const updated = await prisma.inventoryItem.update({
         where: { id },
         data: {
