@@ -53,6 +53,9 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   reports: "financeiro",
   inventory: "cadeia_suprimentos",
   purchases: "cadeia_suprimentos",
+  "sc-purchases": "cadeia_suprimentos",
+  "sc-inventory": "cadeia_suprimentos",
+  "sc-receiving": "cadeia_suprimentos",
   machines: "operacoes",
   "operations-performance": "operacoes",
   "production-orders": "operacoes",
@@ -89,6 +92,9 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       if (moduleId === "sales-order-flow") {
         expected = "/commercial/sales-order-flow";
       }
+      if (moduleId === "sc-purchases") expected = "/supply-chain/purchases";
+      if (moduleId === "sc-inventory") expected = "/supply-chain/inventory";
+      if (moduleId === "sc-receiving") expected = "/supply-chain/receiving";
       assert.equal(getModulePath(moduleId), expected);
     }
     for (const item of flattenGroupedNavigationItems()) {
@@ -141,7 +147,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
     assert.deepEqual(counts, {
       engenharia: 4,
-      cadeia_suprimentos: 3,
+      cadeia_suprimentos: 6,
       comercial: 8,
       financeiro: 6,
       operacoes: 5,

@@ -33,6 +33,7 @@ import { ProjectClientReportPage } from "./components/projects/ProjectClientRepo
 import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
 import { InventoryModule } from "./components/InventoryModule";
+import { SupplyChainModuleShell } from "./components/supply-chain/SupplyChainModuleShell";
 import { OperationsPerformanceModule } from "./components/operations/OperationsPerformanceModule";
 import { ProductionOrdersModule } from "./components/operations/ProductionOrdersModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
@@ -560,6 +561,39 @@ export default function App() {
               description="Controle de itens, saldos, movimentações e conferências."
             >
               <InventoryModule initialTab="counts" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/purchases"
+          element={
+            <ModulePageShell
+              title="Compras SC"
+              description="Casca controlada da Cadeia de Suprimentos — compras."
+            >
+              <SupplyChainModuleShell moduleId="sc-purchases" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/inventory"
+          element={
+            <ModulePageShell
+              title="Estoque SC"
+              description="Casca controlada da Cadeia de Suprimentos — estoque."
+            >
+              <SupplyChainModuleShell moduleId="sc-inventory" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/receiving"
+          element={
+            <ModulePageShell
+              title="Recebimentos"
+              description="Casca controlada da Cadeia de Suprimentos — recebimentos."
+            >
+              <SupplyChainModuleShell moduleId="sc-receiving" />
             </ModulePageShell>
           }
         />

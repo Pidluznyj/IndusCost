@@ -381,6 +381,8 @@ import { registerSettingsGlobalsRoutes } from "./src/lib/settingsGlobalsRoutes.j
 import { registerSettingsSalesMarginNomusRoutes } from "./src/lib/settingsSalesMarginNomusRoutes.js";
 import { registerSettingsNomusSyncRoutes } from "./src/lib/settingsNomusSyncRoutes.js";
 import { registerSettingsSalesOrderFlowRoutes } from "./src/lib/settingsSalesOrderFlowRoutes.js";
+import { registerSettingsSupplyChainRoutes } from "./src/lib/supply-chain/settingsSupplyChainRoutes.js";
+import { registerSupplyChainModuleRoutes } from "./src/lib/supply-chain/supplyChainModuleRoutes.js";
 import { buildSalesOrderFlowEngineStatus } from "./src/lib/sales/salesOrderFlowStatus.server.js";
 import { registerSalesProductRankingRoutes } from "./src/lib/salesProductRankingRoutes.js";
 import { registerOutputDocumentsRoutes } from "./src/lib/outputDocumentsRoutes.js";
@@ -15516,6 +15518,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       buildStatus: () => buildSalesOrderFlowEngineStatus(prisma),
     }
   );
+
+  registerSettingsSupplyChainRoutes(app, {
+    requireBootstrapOrResource,
+    isBootstrapAdminRequest,
+  });
+
+  registerSupplyChainModuleRoutes(app, {
+    requireAppAuth,
+    requireResource,
+  });
 
   // API fallback: garante resposta JSON para rotas /api não registradas
   // e evita cair no fallback HTML da SPA (Vite/index.html).

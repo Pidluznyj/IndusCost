@@ -103,6 +103,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   products: ["products.view"],
   "transformation-simulator": ["products.view", "simulations.view"],
   purchases: ["purchases.view"],
+  "sc-purchases": ["operations.supply_chain.purchases.view"],
   pricing: ["pricing.view"],
   employees: ["employees.view"],
   "org-chart": ["employees.view"],
@@ -114,6 +115,8 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   settings: ["settings.view", "users.manage"],
   maintenance: ["maintenance.view"],
   inventory: ["inventory.view"],
+  "sc-inventory": ["operations.supply_chain.inventory.view"],
+  "sc-receiving": ["operations.supply_chain.receiving.view"],
   "operations-performance": [
     "operations.component-performance.view",
     "operations.component-performance.edit",
@@ -168,7 +171,14 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Cadeia de Suprimentos",
     iconKey: "Truck",
     order: 3,
-    itemIds: ["materials", "purchases", "inventory"],
+    itemIds: [
+      "materials",
+      "purchases",
+      "sc-purchases",
+      "inventory",
+      "sc-inventory",
+      "sc-receiving",
+    ],
   },
   {
     id: "comercial",
@@ -240,6 +250,9 @@ export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
+  if (moduleId === "sc-purchases") return "/supply-chain/purchases";
+  if (moduleId === "sc-inventory") return "/supply-chain/inventory";
+  if (moduleId === "sc-receiving") return "/supply-chain/receiving";
   return `/${moduleId}`;
 }
 
