@@ -48,7 +48,7 @@ describe("materialDemandYtdTab", () => {
 
   it("paginação YTD usa contrato pagination/onPrev/onNext (evita crash totalPages)", () => {
     const dash = read("src/components/contextual/ProductMaterialDemandDashboard.tsx");
-    const ytdIdx = dash.indexOf("MaterialDemandYtdMaterialsTable");
+    const ytdIdx = dash.lastIndexOf("<MaterialDemandYtdMaterialsTable");
     assert.ok(ytdIdx >= 0);
     const ytdBlock = dash.slice(ytdIdx, ytdIdx + 600);
     assert.match(ytdBlock, /MaterialDemandTablePagination/);
