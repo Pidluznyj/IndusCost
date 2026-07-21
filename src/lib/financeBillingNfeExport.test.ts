@@ -16,6 +16,8 @@ describe("financeBillingNfeExport", () => {
         status: 1,
         billingClassification: "MARKET_REVENUE",
         xmlDestCnpjCpf: "12345678000199",
+        customerName: "Cliente Exportação Ltda",
+        customerDocumentFormatted: "12.345.678/0001-99",
         xmlNatOp: "Venda",
         fiscalDate: "2026-06-01T00:00:00.000Z",
         dataProcessamento: "2026-06-02T00:00:00.000Z",
@@ -25,6 +27,8 @@ describe("financeBillingNfeExport", () => {
       },
     ]);
     assert.match(csv, /ID Nomus/);
+    assert.match(csv, /Cliente/);
+    assert.match(csv, /Cliente Exportação Ltda/);
     assert.match(csv, /12345/);
     assert.match(csv, /1\.500,50/);
   });

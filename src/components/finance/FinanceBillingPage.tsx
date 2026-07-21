@@ -679,13 +679,13 @@ export function FinanceBillingPage() {
                 ))}
               </select>
             </FilterField>
-            <FilterField label="Cliente / CNPJ">
+            <FilterField label="Cliente">
               <input
                 value={draftNfeFilters.customerCnpj}
                 onChange={(e) =>
                   setDraftNfeFilters((p) => ({ ...p, customerCnpj: e.target.value }))
                 }
-                placeholder="CNPJ ou parte"
+                placeholder="CNPJ ou parte do documento"
                 className="w-full h-9 rounded-lg border border-[#E5E7EB] bg-white px-2.5 text-sm"
               />
             </FilterField>

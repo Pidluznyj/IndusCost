@@ -5,6 +5,12 @@ import {
   NOMUS_NFE_STATUS_AUTHORIZED,
   NOMUS_NFE_STATUS_CANCELLED,
 } from "@/src/lib/nomusNfeClassification.js";
+import { normalizeCnpj } from "@/src/lib/companyCnpjFormat.js";
+import {
+  extractNomusNfeDestNameFromXml,
+  formatFinanceBillingCustomerDocument,
+  resolveFinanceBillingCustomerDisplayName,
+} from "@/src/lib/financeBillingCustomerDisplay.js";
 
 export type FinanceBillingNfeClassificationFilter =
   | "all"
@@ -31,6 +37,10 @@ export type FinanceBillingNfeListItem = {
   status: number | null;
   billingClassification: NomusNfeBillingClassification | null;
   xmlDestCnpjCpf: string | null;
+  /** Nome legível do destinatário (Customer ou xNome do XML). */
+  customerName: string | null;
+  /** CNPJ/CPF formatado para exibição secundária. */
+  customerDocumentFormatted: string | null;
   xmlNatOp: string | null;
   fiscalDate: string | null;
   dataProcessamento: string | null;
@@ -182,28 +192,68 @@ export async function buildFinanceBillingNfeList(
         valorLiquido: true,
         isMarketSale: true,
         syncedAt: true,
+        xmlRaw: true,
       },
     }),
   ]);
 
+  const cnpjDigits = [
+    ...new Set(
+      rows
+        .map((row) => normalizeCnpj(row.xmlDestCnpjCpf))
+        .filter((digits) => digits.length >= 11)
+    ),
+  ];
+
+  const customerByCnpj = new Map<string, { companyName: string; tradeName: string | null }>();
+  if (cnpjDigits.length > 0) {
+    const customers = await prisma.$queryRaw<
+      Array<{ companyName: string; tradeName: string | null; tax_digits: string }>
+    >(
+      Prisma.sql`
+        SELECT
+          c."companyName" AS "companyName",
+          c."tradeName" AS "tradeName",
+          regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g') AS tax_digits
+        FROM "Customer" c
+        WHERE regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g') IN (${Prisma.join(cnpjDigits)})
+      `
+    );
+    for (const customer of customers) {
+      if (customer.tax_digits) customerByCnpj.set(customer.tax_digits, customer);
+    }
+  }
+
   return {
     filters,
     total,
-    items: rows.map((row) => ({
-      id: row.id,
-      externalId: row.externalId,
-      numero: row.numero,
-      serie: row.serie,
-      status: row.status,
-      billingClassification: row.billingClassification,
-      xmlDestCnpjCpf: row.xmlDestCnpjCpf,
-      xmlNatOp: row.xmlNatOp,
-      fiscalDate: row.xmlDhEmi?.toISOString() ?? null,
-      dataProcessamento: row.dataProcessamento?.toISOString() ?? null,
-      valorLiquido: decimalToNumber(row.valorLiquido),
-      isMarketSale: row.isMarketSale,
-      syncedAt: row.syncedAt.toISOString(),
-    })),
+    items: rows.map((row) => {
+      const digits = normalizeCnpj(row.xmlDestCnpjCpf);
+      const customer = digits ? customerByCnpj.get(digits) : undefined;
+      const xmlDestName = extractNomusNfeDestNameFromXml(row.xmlRaw);
+      return {
+        id: row.id,
+        externalId: row.externalId,
+        numero: row.numero,
+        serie: row.serie,
+        status: row.status,
+        billingClassification: row.billingClassification,
+        xmlDestCnpjCpf: row.xmlDestCnpjCpf,
+        customerName: resolveFinanceBillingCustomerDisplayName({
+          tradeName: customer?.tradeName,
+          companyName: customer?.companyName,
+          xmlDestName,
+          xmlDestCnpjCpf: row.xmlDestCnpjCpf,
+        }),
+        customerDocumentFormatted: formatFinanceBillingCustomerDocument(row.xmlDestCnpjCpf),
+        xmlNatOp: row.xmlNatOp,
+        fiscalDate: row.xmlDhEmi?.toISOString() ?? null,
+        dataProcessamento: row.dataProcessamento?.toISOString() ?? null,
+        valorLiquido: decimalToNumber(row.valorLiquido),
+        isMarketSale: row.isMarketSale,
+        syncedAt: row.syncedAt.toISOString(),
+      };
+    }),
     generatedAt: new Date().toISOString(),
   };
 }

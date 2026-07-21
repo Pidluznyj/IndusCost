@@ -131,7 +131,7 @@ export function FinanceBillingNfeDetailsTable({
                   NF-e
                 </th>
                 <th className="px-4 py-2.5 text-[10px] font-bold uppercase text-muted-foreground">
-                  Cliente / CNPJ
+                  Cliente
                 </th>
                 <th className="px-4 py-2.5 text-[10px] font-bold uppercase text-muted-foreground">
                   Emissão
@@ -162,7 +162,19 @@ export function FinanceBillingNfeDetailsTable({
                       <span className="text-muted-foreground"> /{row.serie}</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-2 max-w-[160px] truncate">{row.xmlDestCnpjCpf ?? "—"}</td>
+                  <td className="px-4 py-2 max-w-[220px]">
+                    <div className="font-semibold truncate" title={row.customerName ?? undefined}>
+                      {row.customerName ?? "—"}
+                    </div>
+                    {row.customerDocumentFormatted ? (
+                      <div
+                        className="text-[10px] text-muted-foreground tabular-nums truncate"
+                        title={row.customerDocumentFormatted}
+                      >
+                        {row.customerDocumentFormatted}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-2 tabular-nums whitespace-nowrap">
                     {row.fiscalDate ? formatFinanceDateTime(row.fiscalDate) : "—"}
                   </td>

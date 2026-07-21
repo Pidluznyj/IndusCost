@@ -18,6 +18,8 @@ function row(partial: Partial<FinanceBillingNfeListItem> & Pick<FinanceBillingNf
     status: NOMUS_NFE_STATUS_AUTHORIZED,
     billingClassification: NomusNfeBillingClassification.MARKET_REVENUE,
     xmlDestCnpjCpf: "123",
+    customerName: "Cliente Teste",
+    customerDocumentFormatted: "123",
     xmlNatOp: "Venda",
     fiscalDate: new Date(2026, 5, 10).toISOString(),
     dataProcessamento: null,

@@ -11,6 +11,7 @@ import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
 import { FINANCE_BILLING_EXECUTIVE_YEAR_SCOPE } from "@/src/lib/financeFilterScope";
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
+import { formatFinanceBillingCustomerDocument } from "@/src/lib/financeBillingCustomerDisplay";
 
 export function FinanceBillingCustomersTab({
   rows,
@@ -98,7 +99,14 @@ export function FinanceBillingCustomersTab({
                 return (
                   <tr key={row.customerId} className="hover:bg-muted/20">
                     <td className="px-4 py-2 text-muted-foreground">{idx + 1}</td>
-                    <td className="px-4 py-2 font-semibold">{row.customerName}</td>
+                    <td className="px-4 py-2">
+                      <div className="font-semibold">{row.customerName}</div>
+                      {formatFinanceBillingCustomerDocument(row.customerId) ? (
+                        <div className="text-[10px] text-muted-foreground tabular-nums">
+                          {formatFinanceBillingCustomerDocument(row.customerId)}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="px-4 py-2 text-right tabular-nums">
                       {formatExecutiveInteger(row.orderCount)}
                     </td>

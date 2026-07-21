@@ -76,8 +76,8 @@ function BillingHorizonDrilldownTable({ data }: { data: FinanceBillingHorizonDri
       <table className="min-w-full text-[11px]">
         <thead className="bg-[#F9FAFB] text-[#6B7280]">
           <tr>
-            <th className="px-3 py-2 text-left font-semibold">Cliente / Destinatário</th>
-            <th className="px-3 py-2 text-left font-semibold">Documento / CNPJ</th>
+            <th className="px-3 py-2 text-left font-semibold">Cliente</th>
+            <th className="px-3 py-2 text-left font-semibold">Pedido</th>
             <th className="px-3 py-2 text-left font-semibold">Nº NF-e</th>
             <th className="px-3 py-2 text-left font-semibold">Série</th>
             <th className="px-3 py-2 text-left font-semibold">Prev. entrega</th>
@@ -89,11 +89,21 @@ function BillingHorizonDrilldownTable({ data }: { data: FinanceBillingHorizonDri
         <tbody>
           {data.items.map((row) => (
             <tr key={row.orderId} className="border-t border-[#F3F4F6]">
-              <td className="px-3 py-2 max-w-[180px] truncate" title={row.customerName}>
-                {displayFinanceText(row.customerName)}
+              <td className="px-3 py-2 max-w-[200px]">
+                <div className="font-medium truncate" title={row.customerName}>
+                  {displayFinanceText(row.customerName)}
+                </div>
+                {row.customerDocument ? (
+                  <div
+                    className="text-[10px] text-[#9CA3AF] tabular-nums truncate"
+                    title={row.customerDocument}
+                  >
+                    {row.customerDocument}
+                  </div>
+                ) : null}
               </td>
-              <td className="px-3 py-2 whitespace-nowrap">
-                {displayFinanceText(row.customerDocument ?? row.orderCode)}
+              <td className="px-3 py-2 whitespace-nowrap font-semibold">
+                {displayFinanceText(row.orderCode)}
               </td>
               <td className="px-3 py-2 whitespace-nowrap">{displayFinanceText(row.nfeNumber)}</td>
               <td className="px-3 py-2 whitespace-nowrap">{displayFinanceText(row.nfeSerie)}</td>

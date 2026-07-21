@@ -62,27 +62,31 @@ const TOP_CUSTOMERS_LIMIT = 10;
 export const FISCAL_NFE_BILLING_NOTE =
   "Faturamento fiscal NF-e: status 4 (Autorizada), venda de mercado, classificação MARKET_REVENUE, valor líquido da NF-e. Alinhado ao BI fiscal.";
 
-function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase): Prisma.Sql {
+function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase, alias = ""): Prisma.Sql {
+  const prefix = alias ? `${alias}.` : "";
   if (dateBase === "processamento") {
-    return Prisma.sql`COALESCE("dataProcessamento", "xmlDhEmi")`;
+    return Prisma.sql`COALESCE(${Prisma.raw(`${prefix}"dataProcessamento"`)}, ${Prisma.raw(`${prefix}"xmlDhEmi"`)})`;
   }
-  return Prisma.sql`COALESCE("xmlDhEmi", "dataProcessamento")`;
+  return Prisma.sql`COALESCE(${Prisma.raw(`${prefix}"xmlDhEmi"`)}, ${Prisma.raw(`${prefix}"dataProcessamento"`)})`;
 }
 
 function fiscalNfeWhereSql(
   dateBase: FinanceBillingDateBase,
-  emitterCnpjDigits?: string
+  emitterCnpjDigits?: string,
+  alias = ""
 ): Prisma.Sql {
+  const prefix = alias ? `${alias}.` : "";
+  const col = (name: string) => Prisma.raw(`${prefix}"${name}"`);
   const emitterFilter =
     emitterCnpjDigits && emitterCnpjDigits.length > 0
-      ? Prisma.sql`AND regexp_replace(COALESCE("cnpjEmitente", ''), '[^0-9]', '', 'g') = ${emitterCnpjDigits}`
+      ? Prisma.sql`AND regexp_replace(COALESCE(${col("cnpjEmitente")}, ''), '[^0-9]', '', 'g') = ${emitterCnpjDigits}`
       : Prisma.empty;
   return Prisma.sql`
-    "status" = ${NOMUS_NFE_STATUS_AUTHORIZED}
-    AND "isMarketSale" = true
-    AND "billingClassification" = ${NomusNfeBillingClassification.MARKET_REVENUE}::"NomusNfeBillingClassification"
-    AND ${nfeCompetenceDateSql(dateBase)} IS NOT NULL
-    AND "valorLiquido" IS NOT NULL
+    ${col("status")} = ${NOMUS_NFE_STATUS_AUTHORIZED}
+    AND ${col("isMarketSale")} = true
+    AND ${col("billingClassification")} = ${NomusNfeBillingClassification.MARKET_REVENUE}::"NomusNfeBillingClassification"
+    AND ${nfeCompetenceDateSql(dateBase, alias)} IS NOT NULL
+    AND ${col("valorLiquido")} IS NOT NULL
     ${emitterFilter}
   `;
 }
@@ -179,12 +183,13 @@ async function queryRecentFiscalNfes(
   dateBase: FinanceBillingDateBase,
   emitterCnpjDigits?: string
 ): Promise<RecentInvoicedOrderRow[]> {
-  const dateExpr = nfeCompetenceDateSql(dateBase);
+  const dateExpr = nfeCompetenceDateSql(dateBase, "n");
   const rows = await prisma.$queryRaw<
     {
       id: string;
       numero: string | null;
-      dest: string | null;
+      dest_doc: string | null;
+      dest_name: string | null;
       competence: Date;
       valor: unknown;
       status: number | null;
@@ -192,14 +197,23 @@ async function queryRecentFiscalNfes(
   >(
     Prisma.sql`
       SELECT
-        id,
-        numero,
-        "xmlDestCnpjCpf" AS dest,
+        n.id,
+        n.numero,
+        n."xmlDestCnpjCpf" AS dest_doc,
+        COALESCE(
+          NULLIF(TRIM(c."tradeName"), ''),
+          NULLIF(TRIM(c."companyName"), ''),
+          NULLIF(TRIM((regexp_match(COALESCE(n."xmlRaw", ''), '<dest[^>]*>[\\s\\S]*?<xNome>([^<]+)</xNome>', 'i'))[1]), ''),
+          n."xmlDestCnpjCpf"
+        ) AS dest_name,
         ${dateExpr} AS competence,
-        "valorLiquido" AS valor,
-        status
-      FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
+        n."valorLiquido" AS valor,
+        n.status
+      FROM "NomusNfe" n
+      LEFT JOIN "Customer" c
+        ON regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g')
+         = regexp_replace(COALESCE(n."xmlDestCnpjCpf", ''), '[^0-9]', '', 'g')
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits, "n")}
       ORDER BY ${dateExpr} DESC
       LIMIT ${RECENT_NFE_LIMIT}
     `
@@ -207,7 +221,7 @@ async function queryRecentFiscalNfes(
   return rows.map((row) => ({
     orderId: row.id,
     orderCode: row.numero ? `NF ${row.numero}` : row.id.slice(0, 8),
-    customerName: row.dest ?? "—",
+    customerName: row.dest_name?.trim() || row.dest_doc || "—",
     invoiceDate: row.competence.toISOString(),
     totalNetValue: decimalToNumber(row.valor),
     invoiceStatus: row.status != null ? String(row.status) : null,
@@ -220,21 +234,33 @@ async function queryTopFiscalNfeCustomers(
   dateBase: FinanceBillingDateBase,
   emitterCnpjDigits?: string
 ): Promise<BillingTopCustomerRow[]> {
-  const dateExpr = nfeCompetenceDateSql(dateBase);
+  const dateExpr = nfeCompetenceDateSql(dateBase, "n");
   const rows = await prisma.$queryRaw<
     { customer_id: string; customer_name: string; order_count: bigint; total: unknown }[]
   >(
     Prisma.sql`
       SELECT
-        COALESCE("xmlDestCnpjCpf", '—') AS customer_id,
-        COALESCE("xmlDestCnpjCpf", '—') AS customer_name,
+        COALESCE(
+          NULLIF(regexp_replace(COALESCE(n."xmlDestCnpjCpf", ''), '[^0-9]', '', 'g'), ''),
+          '—'
+        ) AS customer_id,
+        COALESCE(
+          MAX(NULLIF(TRIM(c."tradeName"), '')),
+          MAX(NULLIF(TRIM(c."companyName"), '')),
+          MAX(NULLIF(TRIM((regexp_match(COALESCE(n."xmlRaw", ''), '<dest[^>]*>[\\s\\S]*?<xNome>([^<]+)</xNome>', 'i'))[1]), '')),
+          MAX(n."xmlDestCnpjCpf"),
+          '—'
+        ) AS customer_name,
         COUNT(*)::bigint AS order_count,
-        COALESCE(SUM("valorLiquido"), 0) AS total
-      FROM "NomusNfe"
-      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits)}
+        COALESCE(SUM(n."valorLiquido"), 0) AS total
+      FROM "NomusNfe" n
+      LEFT JOIN "Customer" c
+        ON regexp_replace(COALESCE(c."taxId", ''), '[^0-9]', '', 'g')
+         = regexp_replace(COALESCE(n."xmlDestCnpjCpf", ''), '[^0-9]', '', 'g')
+      WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits, "n")}
         AND ${dateExpr} >= ${from}
         AND ${dateExpr} <= ${to}
-      GROUP BY 1, 2
+      GROUP BY 1
       ORDER BY total DESC
       LIMIT ${TOP_CUSTOMERS_LIMIT}
     `
