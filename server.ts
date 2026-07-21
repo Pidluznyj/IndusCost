@@ -230,9 +230,11 @@ import {
   redactEmployeeAdminForApi,
 } from "./src/lib/employeeAdminHr.js";
 import {
+  assertEmployeesDeleteSuperAdmin,
   canViewEmployeeAdministrativeData,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
+  EmployeesAccessError,
 } from "./src/lib/employeesPermissions.js";
 import {
   EMPLOYEES_ACTIONS,
@@ -3630,14 +3632,49 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
 
 app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update), async (req, res) => {
   const { id } = req.params;
-  const authUser = await getCurrentAppUser(req);
-  await prisma.employee.delete({ where: { id } });
-  logEmployeeHrAudit({
-    event: "employee.delete",
-    actorUserId: authUser?.id ?? null,
-    employeeId: id,
-  });
-  res.json({ success: true });
+  try {
+    const authUser = await getCurrentAppUser(req);
+    assertEmployeesDeleteSuperAdmin(authUser);
+
+    const existing = await prisma.employee.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        appUser: { select: { id: true, email: true } },
+      },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: "Colaborador não encontrado." });
+    }
+    if (existing.appUser) {
+      return res.status(409).json({
+        error:
+          "Este colaborador está vinculado a um usuário do sistema. Desvincule o acesso em Usuários / ficha do colaborador antes de excluir.",
+        code: "EMPLOYEE_HAS_APP_USER",
+      });
+    }
+
+    await prisma.employee.delete({ where: { id } });
+    logEmployeeHrAudit({
+      event: "employee.delete",
+      actorUserId: authUser?.id ?? null,
+      employeeId: id,
+      details: { name: existing.name },
+    });
+    res.json({ success: true });
+  } catch (error) {
+    if (error instanceof EmployeesAccessError) {
+      return res.status(403).json({
+        error: error.message,
+        code: "EMPLOYEES_DELETE_FORBIDDEN",
+      });
+    }
+    console.error("DELETE /api/employees/:id", error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Erro ao excluir colaborador",
+    });
+  }
 });
 
   // --- API: Materials (Matérias-Primas e Insumos) ---

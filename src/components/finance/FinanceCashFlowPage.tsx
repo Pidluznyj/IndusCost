@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Loader2, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
+import { Download, Loader2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -42,10 +42,6 @@ import { FinanceCashFlowAnnualComparisonChart } from "@/src/components/finance/c
 import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import {
   FINANCE_CF_HELP_CALENDAR,
-  FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS,
-  FINANCE_CF_HELP_LARGEST_PROJECTED_OUTFLOWS,
-  FINANCE_CF_HELP_OVERDUE_PAYABLES,
-  FINANCE_CF_HELP_OVERDUE_RECEIVABLES,
   FINANCE_CF_HELP_TOP_CUSTOMERS,
   FINANCE_CF_HELP_TOP_SUPPLIERS,
 } from "@/src/lib/financeCashFlowBlockHelp";
@@ -561,38 +557,6 @@ export function FinanceCashFlowPage() {
           />
 
           <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CriticalList
-              title="Maiores entradas previstas"
-              help={FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS}
-              testId="cash-flow-largest-inflows"
-              items={payload.largestProjectedInflows}
-            />
-            <CriticalList
-              title="Maiores saídas previstas"
-              help={FINANCE_CF_HELP_LARGEST_PROJECTED_OUTFLOWS}
-              testId="cash-flow-largest-outflows"
-              items={payload.largestProjectedOutflows}
-              outflow
-            />
-          </section>
-
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <CriticalList
-              title="Vencidos a receber"
-              help={FINANCE_CF_HELP_OVERDUE_RECEIVABLES}
-              testId="cash-flow-overdue-receivables"
-              items={payload.overdueReceivables}
-            />
-            <CriticalList
-              title="Pagamentos vencidos"
-              help={FINANCE_CF_HELP_OVERDUE_PAYABLES}
-              testId="cash-flow-overdue-payables"
-              items={payload.overduePayables}
-              outflow
-            />
-          </section>
-
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <PartyList
               title="Top clientes por entrada"
               subtitle="Saldo em aberto AR — filtros aplicados"
@@ -686,62 +650,6 @@ function PartyList({
                 {outflow ? "−" : inflow ? "+" : ""}
                 {formatFinanceCurrency(item.amount)}
               </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function CriticalList({
-  title,
-  help,
-  testId,
-  items,
-  outflow = false,
-}: {
-  title: string;
-  help?: string;
-  testId?: string;
-  items: FinanceCashFlowDashboardPayload["largestProjectedInflows"];
-  outflow?: boolean;
-}) {
-  return (
-    <div className={`${financeBiCardClass} p-5 space-y-3`} data-testid={testId}>
-      <FinanceCashFlowBlockTitle
-        title={title}
-        help={help}
-        icon={
-          outflow ? (
-            <TrendingDown className="h-4 w-4 text-red-600 shrink-0" />
-          ) : (
-            <TrendingUp className="h-4 w-4 text-emerald-600 shrink-0" />
-          )
-        }
-      />
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nenhum título nesta categoria.</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.slice(0, 5).map((item) => (
-            <li key={`${item.side}-${item.externalId}`} className="text-sm space-y-0.5">
-              <div className="flex justify-between gap-2">
-                <span className="font-medium truncate">{displayFinanceText(item.personName)}</span>
-                <span
-                  className={cn(
-                    "shrink-0 font-bold tabular-nums text-right",
-                    outflow ? "text-[#DC2626]" : "text-[#059669]"
-                  )}
-                >
-                  {outflow ? "−" : "+"}
-                  {formatFinanceCurrency(item.amount)}
-                </span>
-              </div>
-              <p className="text-[11px] text-[#6B7280]">
-                Venc. {item.dueDate ? new Date(item.dueDate).toLocaleDateString("pt-BR") : "—"}
-                {item.daysOverdue > 0 ? ` · ${item.daysOverdue}d atraso` : ""}
-              </p>
             </li>
           ))}
         </ul>

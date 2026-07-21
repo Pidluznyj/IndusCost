@@ -130,6 +130,31 @@ export function canSearchCanonicalPeople(check: EmployeePermissionBag): boolean 
   return hasAny(check, EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS);
 }
 
+export class EmployeesAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmployeesAccessError";
+  }
+}
+
+/** Exclusão definitiva de colaborador — somente SUPER_ADMIN. */
+export function canDeleteEmployee(check: { isSuperAdmin: () => boolean }): boolean {
+  return check.isSuperAdmin();
+}
+
+export function assertEmployeesDeleteSuperAdmin(user: {
+  role?: string | null;
+} | null): void {
+  if (!user) {
+    throw new EmployeesAccessError("Autenticação necessária.");
+  }
+  if (user.role !== "SUPER_ADMIN") {
+    throw new EmployeesAccessError(
+      "Somente super administrador pode excluir colaboradores definitivamente."
+    );
+  }
+}
+
 /** Caps do agregador de vínculos a partir do bag legado. */
 export function buildEmployeeSystemLinksCapsFromPermissions(
   permissions: readonly string[],

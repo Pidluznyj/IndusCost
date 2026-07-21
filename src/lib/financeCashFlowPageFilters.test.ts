@@ -78,8 +78,10 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(page.includes("FinanceDataAuditDrawer"));
     assert.equal(page.includes("FinanceFilterScopeBanner"), false);
     assert.equal(page.includes("FinanceManagementSanitizationNote"), false);
-    assert.ok(page.includes("cash-flow-overdue-receivables"));
-    assert.ok(page.includes("cash-flow-overdue-payables"));
+    assert.ok(!page.includes("cash-flow-overdue-receivables"));
+    assert.ok(!page.includes("cash-flow-overdue-payables"));
+    assert.ok(!page.includes("cash-flow-largest-inflows"));
+    assert.ok(page.includes("cash-flow-top-customers"));
     assert.ok(page.includes("FinanceCashFlowBlockTitle"));
     assert.ok(page.includes("FinanceCashFlowRiskTab"));
     assert.ok(page.includes("FinanceCashFlowCalendar"));

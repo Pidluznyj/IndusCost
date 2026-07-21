@@ -124,11 +124,14 @@ describe("financeCashFlowDisplay", () => {
     assert.match(help, /data operacional/);
     assert.match(help, /linha do tempo/);
     assert.ok(page.includes("FinanceCashFlowBlockTitle"));
-    assert.ok(page.includes("cash-flow-overdue-receivables"));
-    assert.ok(page.includes("cash-flow-overdue-payables"));
-    assert.ok(page.includes("cash-flow-largest-inflows"));
-    assert.ok(page.includes("FINANCE_CF_HELP_OVERDUE_RECEIVABLES"));
-    assert.ok(page.includes("FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS"));
+    assert.ok(page.includes("cash-flow-top-customers"));
+    assert.ok(page.includes("cash-flow-top-suppliers"));
+    assert.ok(!page.includes("cash-flow-overdue-receivables"));
+    assert.ok(!page.includes("cash-flow-overdue-payables"));
+    assert.ok(!page.includes("cash-flow-largest-inflows"));
+    assert.ok(page.includes("FINANCE_CF_HELP_TOP_CUSTOMERS"));
+    assert.ok(!page.includes("FINANCE_CF_HELP_OVERDUE_RECEIVABLES"));
+    assert.ok(!page.includes("FINANCE_CF_HELP_LARGEST_PROJECTED_INFLOWS"));
   });
 
   it("seção de auditoria é colapsável e discreta na overview", () => {

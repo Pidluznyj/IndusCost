@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildEmployeeSystemLinksCapsFromPermissions,
   canCreateEmployees,
+  canDeleteEmployee,
   canListEmployees,
   canManageEmployeeEpi,
   canManageEmployeeLinks,
@@ -12,6 +13,8 @@ import {
   canViewEmployeeLinks,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
+  assertEmployeesDeleteSuperAdmin,
+  EmployeesAccessError,
 } from "./employeesPermissions.ts";
 
 function check(perms: string[]) {
@@ -76,5 +79,25 @@ describe("employeesPermissions — caps system-links", () => {
     const caps = buildEmployeeSystemLinksCapsFromPermissions([], "ADMIN");
     assert.equal(caps.canViewPii, true);
     assert.equal(caps.canViewEmployees, true);
+  });
+});
+
+describe("employeesPermissions — exclusão SUPER_ADMIN", () => {
+  it("canDeleteEmployee só para super admin", () => {
+    assert.equal(canDeleteEmployee({ isSuperAdmin: () => true }), true);
+    assert.equal(canDeleteEmployee({ isSuperAdmin: () => false }), false);
+  });
+
+  it("assertEmployeesDeleteSuperAdmin bloqueia não-super-admin", () => {
+    assert.throws(
+      () => assertEmployeesDeleteSuperAdmin({ role: "ADMIN" }),
+      (err: unknown) =>
+        err instanceof EmployeesAccessError &&
+        /super administrador/i.test((err as Error).message)
+    );
+    assert.throws(() => assertEmployeesDeleteSuperAdmin(null), EmployeesAccessError);
+    assert.doesNotThrow(() =>
+      assertEmployeesDeleteSuperAdmin({ role: "SUPER_ADMIN" })
+    );
   });
 });

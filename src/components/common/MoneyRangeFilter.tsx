@@ -1,5 +1,4 @@
 import React, { useId, useState } from "react";
-import { Banknote, X } from "lucide-react";
 import {
   MONEY_RANGE_PRESETS,
   formatMoneyAmountInput,
@@ -13,6 +12,7 @@ export type MoneyRangeFilterProps = {
   minValue: string;
   maxValue: string;
   onChange: (next: { minValue: string; maxValue: string }) => void;
+  /** Rótulo do grupo de atalhos (aria). */
   label?: string;
   className?: string;
   testId?: string;
@@ -38,19 +38,10 @@ function MoneyField({
   const shown = focused ? draft : externalDisplay;
 
   return (
-    <label htmlFor={id} className="flex min-w-0 flex-1 flex-col gap-1">
-      <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
-      <div
-        className={cn(
-          "flex h-10 items-center gap-1.5 rounded-xl border bg-background px-2.5 transition-colors",
-          focused
-            ? "border-primary/60 ring-2 ring-primary/15"
-            : "border-border hover:border-primary/30"
-        )}
-      >
-        <span className="select-none text-xs font-semibold text-emerald-700/80 dark:text-emerald-400/80">
+    <label htmlFor={id} className="space-y-1">
+      <span className="text-[10px] font-bold uppercase text-muted-foreground">{label}</span>
+      <div className="relative">
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
           R$
         </span>
         <input
@@ -74,7 +65,7 @@ function MoneyField({
             setDraft(next);
             onParamChange(moneyAmountToFilterParam(next));
           }}
-          className="min-w-0 flex-1 bg-transparent text-sm font-medium tabular-nums text-foreground outline-none placeholder:text-muted-foreground/50"
+          className="w-full h-9 rounded-lg border border-border bg-background pl-8 pr-2.5 text-sm tabular-nums"
         />
       </div>
     </label>
@@ -82,7 +73,8 @@ function MoneyField({
 }
 
 /**
- * Filtro visual De / Até com máscara BRL e atalhos de faixa.
+ * Filtro De / Até com máscara BRL e atalhos de faixa.
+ * Renderiza como itens da grade de filtros (mesmo padrão visual dos demais campos).
  * Emite valores canônicos (ex.: "1000", "50000.5") para a query existente.
  */
 export function MoneyRangeFilter({
@@ -98,62 +90,28 @@ export function MoneyRangeFilter({
   const summary = formatMoneyRangeSummary(minValue, maxValue);
 
   return (
-    <div
-      data-testid={testId}
-      className={cn(
-        "sm:col-span-2 rounded-2xl border border-emerald-200/70 bg-gradient-to-br from-emerald-50/80 via-background to-sky-50/40 p-3 shadow-sm dark:border-emerald-900/40 dark:from-emerald-950/30 dark:via-background dark:to-sky-950/20",
-        className
-      )}
-    >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-400">
-            <Banknote className="h-3.5 w-3.5" aria-hidden />
-          </span>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              {label}
-            </p>
-            <p className="text-xs text-muted-foreground/90">
-              {summary ?? "Defina a faixa ou use um atalho"}
-            </p>
-          </div>
-        </div>
-        {summary ? (
-          <button
-            type="button"
-            onClick={() => onChange({ minValue: "", maxValue: "" })}
-            className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[10px] font-semibold text-muted-foreground hover:bg-accent"
-            aria-label="Limpar faixa de valor"
-          >
-            <X className="h-3 w-3" />
-            Limpar
-          </button>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <MoneyField
-          id={`${baseId}-min`}
-          label="De"
-          value={minValue}
-          onParamChange={(param) => onChange({ minValue: param, maxValue })}
-        />
-        <div
-          className="mb-3 hidden self-end text-xs font-semibold text-emerald-600/70 sm:block"
-          aria-hidden
-        >
-          →
-        </div>
-        <MoneyField
-          id={`${baseId}-max`}
-          label="Até"
-          value={maxValue}
-          onParamChange={(param) => onChange({ minValue, maxValue: param })}
-        />
-      </div>
-
-      <div className="mt-2.5 flex flex-wrap gap-1.5" role="group" aria-label="Atalhos de valor">
+    <>
+      <MoneyField
+        id={`${baseId}-min`}
+        label="Valor de"
+        value={minValue}
+        onParamChange={(param) => onChange({ minValue: param, maxValue })}
+      />
+      <MoneyField
+        id={`${baseId}-max`}
+        label="Valor até"
+        value={maxValue}
+        onParamChange={(param) => onChange({ minValue, maxValue: param })}
+      />
+      <div
+        data-testid={testId}
+        className={cn(
+          "col-span-full flex flex-wrap items-center gap-1.5",
+          className
+        )}
+        role="group"
+        aria-label={label}
+      >
         {MONEY_RANGE_PRESETS.map((preset) => {
           const active = activePreset === preset.id;
           return (
@@ -167,17 +125,27 @@ export function MoneyRangeFilter({
                 })
               }
               className={cn(
-                "rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                "h-7 rounded-lg border px-2 text-[10px] font-semibold transition-colors",
                 active
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "bg-background/90 text-muted-foreground ring-1 ring-border hover:bg-emerald-50 hover:text-emerald-800 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >
               {preset.label}
             </button>
           );
         })}
+        {summary ? (
+          <button
+            type="button"
+            onClick={() => onChange({ minValue: "", maxValue: "" })}
+            className="ml-1 h-7 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+            aria-label="Limpar faixa de valor"
+          >
+            Limpar valor
+          </button>
+        ) : null}
       </div>
-    </div>
+    </>
   );
 }

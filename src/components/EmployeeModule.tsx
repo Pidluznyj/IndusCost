@@ -13,7 +13,8 @@ import {
   Settings,
   Eye,
   EyeOff,
-  User
+  User,
+  Trash2,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
@@ -73,6 +74,8 @@ import {
   canViewEmployeeLinks,
   canViewEmployeePersonalData,
 } from "@/src/lib/operationsAdminPermissions";
+import { canDeleteEmployee } from "@/src/lib/employeesPermissions";
+import { ProjectDeleteConfirmModal } from "@/src/components/projects/ProjectDeleteConfirmModal";
 import {
   EMPLOYEES_ACTIONS,
   EMPLOYEES_RESOURCE_KEYS,
@@ -168,6 +171,7 @@ export const EmployeeModule = () => {
     canCreateEmployees(auth) ||
     permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.create);
   const canWrite = canEdit || canCreate;
+  const canDelete = canDeleteEmployee(auth);
   const canViewPersonalHr =
     canViewEmployeePersonalData(auth) ||
     permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.personalData, EMPLOYEES_ACTIONS.view);
@@ -259,6 +263,9 @@ export const EmployeeModule = () => {
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [employeeFichaTab, setEmployeeFichaTab] = useState<EmployeeFichaTabId>("professional");
   const [viewFichaTab, setViewFichaTab] = useState<EmployeeFichaTabId>("professional");
+  const [employeePendingDelete, setEmployeePendingDelete] = useState<Employee | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<CreateEmployeeInput>(createEmptyEmployeeForm());
@@ -738,6 +745,34 @@ export const EmployeeModule = () => {
     }
   };
 
+  const requestDeleteEmployee = (employee: Employee) => {
+    if (!canDelete) return;
+    setDeleteError(null);
+    setEmployeePendingDelete(employee);
+  };
+
+  const confirmDeleteEmployee = async () => {
+    if (!employeePendingDelete || !canDelete) return;
+    setDeleteSaving(true);
+    setDeleteError(null);
+    try {
+      await fetchOk(`/api/employees/${employeePendingDelete.id}`, { method: "DELETE" });
+      setEmployeePendingDelete(null);
+      setViewingEmployee(null);
+      await fetchData();
+    } catch (error) {
+      const message =
+        error instanceof HttpError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Não foi possível excluir o colaborador.";
+      setDeleteError(message);
+    } finally {
+      setDeleteSaving(false);
+    }
+  };
+
   const filteredEmployees = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     return employees.filter((emp) => {
@@ -1016,6 +1051,16 @@ export const EmployeeModule = () => {
                               {emp.status === "ACTIVE" ? <UserMinus className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                             </button>
                           </>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => requestDeleteEmployee(emp)}
+                            className="p-2 rounded-md hover:bg-accent text-muted-foreground hover:text-destructive transition-all"
+                            title="Excluir definitivamente"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         )}
                       </div>
                     </td>
@@ -1870,6 +1915,16 @@ export const EmployeeModule = () => {
                     Editar
                   </button>
                 )}
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => requestDeleteEmployee(viewingEmployee)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-destructive/40 bg-background hover:bg-destructive/10 text-sm font-medium text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Excluir
+                  </button>
+                )}
                 <button type="button" onClick={() => setViewingEmployee(null)} className="p-2 hover:bg-accent rounded-full transition-colors">
                   <X className="h-5 w-5" />
                 </button>
@@ -2219,6 +2274,22 @@ export const EmployeeModule = () => {
           </motion.div>
         </div>
       )}
+
+      <ProjectDeleteConfirmModal
+        open={employeePendingDelete != null}
+        title="Excluir colaborador"
+        itemLabel={employeePendingDelete?.name}
+        description="Esta ação exclui definitivamente o cadastro de Pessoas/RH. Não é a mesma coisa que inativar. Se houver usuário do sistema vinculado, desvincule antes."
+        confirmLabel="Excluir definitivamente"
+        saving={deleteSaving}
+        error={deleteError}
+        onClose={() => {
+          if (deleteSaving) return;
+          setEmployeePendingDelete(null);
+          setDeleteError(null);
+        }}
+        onConfirm={confirmDeleteEmployee}
+      />
 
       <GuidedTour
         open={tourOpen}
