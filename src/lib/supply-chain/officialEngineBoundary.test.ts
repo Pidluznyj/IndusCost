@@ -45,6 +45,7 @@ describe("officialEngineBoundary — registro", () => {
     assert.ok(models.has("materialCostTableItem"));
     assert.ok(models.has("materialMarketQuote"));
     assert.ok(models.has("salesOrder"));
+    assert.ok(models.has("project"));
     assert.ok(models.has("nomusProductionOrder"));
     assert.ok(models.has("financialSupplier"));
     assert.ok(models.has("financialCostCenter"));
@@ -192,9 +193,9 @@ describe("domínio SC real — sem writes/imports indevidos", () => {
     );
   });
 
-  it("adaptador read-only não contém métodos de escrita no source", () => {
+  it("adaptador/provedor read-only não contém métodos de escrita no source", () => {
     const src = readFileSync(
-      join(REPO_ROOT, "src/lib/supply-chain/officialEngineReadAdapters.server.ts"),
+      join(REPO_ROOT, "src/lib/supply-chain/officialDataProviders.server.ts"),
       "utf8"
     );
     const hits = scanSourceForProtectedModelWrites("adapters.ts", src);
@@ -273,7 +274,9 @@ describe("createOfficialEngineReadAdapters — superfície só leitura", () => {
           description: "Aço",
           unit: "KG",
           status: "ACTIVE",
+          category: "METAL",
         }),
+        findMany: async () => [],
         create: async () => {
           materialCreateCalled = true;
           return {};
@@ -281,22 +284,39 @@ describe("createOfficialEngineReadAdapters — superfície só leitura", () => {
       },
       product: {
         findUnique: async () => null,
+        findMany: async () => [],
       },
       productBOM: {
         findMany: async () => [],
       },
       financialSupplier: {
         findUnique: async () => null,
+        findMany: async () => [],
+      },
+      costCenter: {
+        findUnique: async () => null,
+        findMany: async () => [],
       },
       salesOrder: {
         findUnique: async () => null,
       },
       nomusProductionOrder: {
         findUnique: async () => null,
+        findMany: async () => [],
       },
       financialCostCenter: {
         findUnique: async () => null,
+        findMany: async () => [],
       },
+      project: {
+        findUnique: async () => null,
+        findMany: async () => [],
+      },
+      materialCostTableItem: { findFirst: async () => null },
+      productionCostTableItem: { findFirst: async () => null },
+      materialMarketQuote: { findFirst: async () => null },
+      nomusStockDocument: { findUnique: async () => null },
+      nomusNfe: { findUnique: async () => null },
     };
 
     const adapters = createOfficialEngineReadAdapters(prismaStub as never);
@@ -309,5 +329,8 @@ describe("createOfficialEngineReadAdapters — superfície só leitura", () => {
     assert.equal("create" in adapters.materials, false);
     assert.equal("update" in adapters.materials, false);
     assert.equal("delete" in adapters.productsBom, false);
+    assert.ok(adapters.opsCostCenters);
+    assert.ok(adapters.publishedCosts);
+    assert.ok(adapters.projects);
   });
 });

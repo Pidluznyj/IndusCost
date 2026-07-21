@@ -425,6 +425,7 @@ import {
 } from "./src/lib/salesOrderPeriodFilter.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
+import { createOfficialDataProviders } from "./src/lib/supply-chain/officialDataProviders.server.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
 import { registerCostToCashTraceRoutes } from "./src/lib/audit/costToCashTraceRoutes.js";
@@ -5904,12 +5905,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         items = [],
       } = req.body;
 
-      const cc = await prisma.costCenter.findUnique({ where: { id: defaultCostCenterId } });
+      const officialReads = createOfficialDataProviders(prisma);
+      const cc = await officialReads.opsCostCenters.findById(defaultCostCenterId);
       if (!cc || !cc.isActive) {
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
 
       const created = await prisma.$transaction(async (tx) => {
+        const txReads = createOfficialDataProviders(tx);
         const header = await tx.purchaseRequest.create({
           data: {
             requester: String(requester).trim(),
@@ -5927,11 +5930,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           const costCenterId =
             it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
           if (costCenterId) {
-            const c = await tx.costCenter.findUnique({ where: { id: costCenterId } });
+            const c = await txReads.opsCostCenters.findById(costCenterId);
             if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
           }
           if (it.lineType === "MATERIA_PRIMA") {
-            const mat = await tx.material.findUnique({ where: { id: it.materialId } });
+            const mat = await txReads.materials.findById(it.materialId);
             if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
           }
           const mpExtras = purchaseRequestItemMpExtras(it);
@@ -5992,12 +5995,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         items = [],
       } = req.body;
 
-      const cc = await prisma.costCenter.findUnique({ where: { id: defaultCostCenterId } });
+      const officialReads = createOfficialDataProviders(prisma);
+      const cc = await officialReads.opsCostCenters.findById(defaultCostCenterId);
       if (!cc || !cc.isActive) {
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
 
       const updated = await prisma.$transaction(async (tx) => {
+        const txReads = createOfficialDataProviders(tx);
         await tx.purchaseRequest.update({
           where: { id },
           data: {
@@ -6018,11 +6023,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           const costCenterId =
             it.costCenterId && isUuid(it.costCenterId) ? it.costCenterId : null;
           if (costCenterId) {
-            const c = await tx.costCenter.findUnique({ where: { id: costCenterId } });
+            const c = await txReads.opsCostCenters.findById(costCenterId);
             if (!c || !c.isActive) throw new Error(`Centro de custo do item inválido ou inativo.`);
           }
           if (it.lineType === "MATERIA_PRIMA") {
-            const mat = await tx.material.findUnique({ where: { id: it.materialId } });
+            const mat = await txReads.materials.findById(it.materialId);
             if (!mat) throw new Error("Material da linha de matéria-prima não encontrado.");
           }
           const mpExtrasPut = purchaseRequestItemMpExtras(it);

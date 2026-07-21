@@ -31,6 +31,8 @@ export const OFFICIAL_ENGINE_PROTECTED_PRISMA_MODELS = [
   // Pedidos de venda
   "salesOrder",
   "salesOrderItem",
+  // Projetos (referência SC — só leitura)
+  "project",
   // OPs oficiais Nomus
   "nomusProductionOrder",
   "nomusProductionOrderSalesLink",
