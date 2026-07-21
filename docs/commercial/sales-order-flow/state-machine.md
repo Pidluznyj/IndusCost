@@ -74,8 +74,8 @@ Fontes oficiais (não inventar segunda verdade): status Nomus do item + FIN-03, 
 
 | | Critério |
 |--|----------|
-| **Entrada** | Item liberado **e** `requiresProduction === true` **e** sem cobertura suficiente de OP (`linkedQuantity` agregada &lt; quantidade ativa a produzir). |
-| **Saída** | Existe vínculo OP com cobertura suficiente **ou** item deixa de exigir produção **ou** residual zero (corte/cancelamento). |
+| **Entrada** | Item liberado **e** `requiresProduction === true` **e** sem cobertura suficiente de OP (`linkedQuantity` agregada &lt; quantidade ativa a produzir) **e** obrigação operacional ainda não encerrada por NF-e válida / residual zero. |
+| **Saída** | Existe vínculo OP com cobertura suficiente **ou** item deixa de exigir produção **ou** residual zero (corte/cancelamento) **ou** evidência terminal de envio/conclusão (NF-e válida cobrindo o alvo — prevalece sobre ausência histórica de OP). |
 | **Próxima ação** | Abrir ou vincular Ordem de Produção aos itens liberados. |
 | **Gap (OP-45)** | Se `requiresProduction` não estiver contratado → não inventar; emitir `REQUIRES_PRODUCTION_UNKNOWN` e **não** forçar esta coluna só por ausência de OP. |
 
@@ -130,7 +130,7 @@ Regressão **só** quando a evidência oficial deixa de cumprir a obrigação da
 |----------|--------|
 | NF-e autorizada → cancelada (7) com item ainda ativo | Volta para `WAITING_NFE` (ou `WAITING_OUTPUT_DOCUMENT` se DS também cair); `NFE_CANCELED_WITH_ACTIVE_ITEMS`. |
 | Documento/alocação O2C removida ou stale | Pode voltar de `WAITING_NFE` → `WAITING_OUTPUT_DOCUMENT`; `O2C_ALLOCATION_STALE`. |
-| Vínculo OP removido / `linkedQuantity` insuficiente | Pode voltar de `IN_PRODUCTION` → `WAITING_PRODUCTION_ORDER` (se ainda exige produção). |
+| Vínculo OP removido / `linkedQuantity` insuficiente | Pode voltar de `IN_PRODUCTION` → `WAITING_PRODUCTION_ORDER` (se ainda exige produção **e** a obrigação operacional ainda não estiver encerrada por NF-e válida). |
 | Liberação revertida na origem | Volta para `WAITING_RELEASE`. |
 
 Não regressar por heurística financeira paralela (cronograma efetivo FIN não redefine coluna comercial).

@@ -523,12 +523,30 @@ export function resolveSalesOrderItemFlow(
     currentStage = "WAITING_RELEASE";
     stageReason = "Item aguardando liberação comercial (status PENDING).";
   } else {
-    // Liberado ou além — avaliar produção / documento / NF.
+    // Liberado ou além — evidência terminal de envio/conclusão prevalece
+    // sobre ausência histórica de OP (regressão PD 02596 / OP-03).
     const needsProduction = requiresProduction === true;
     const skipProduction =
       requiresProduction === false || requiresProduction === null;
 
-    if (needsProduction && shipTargetQuantity.gt(0)) {
+    const postProductionStage = resolvePostProductionStage({
+      shipTargetQuantity,
+      documentedQuantity,
+      shippedQuantity,
+      fulfillmentClassification: fulfillment.classification,
+    });
+
+    if (postProductionStage === "SHIPPED_COMPLETED") {
+      currentStage = "SHIPPED_COMPLETED";
+      stageReason = stageReasonFor(currentStage, {
+        usedProductionProxy:
+          needsProduction &&
+          (producedQuantity == null ||
+            productionOrderQuantity.lt(shipTargetQuantity)),
+        completedWithoutProductionOrder:
+          needsProduction && productionOrderQuantity.lt(shipTargetQuantity),
+      });
+    } else if (needsProduction && shipTargetQuantity.gt(0)) {
       if (productionOrderQuantity.lt(shipTargetQuantity)) {
         currentStage = "WAITING_PRODUCTION_ORDER";
         stageReason =
@@ -542,12 +560,7 @@ export function resolveSalesOrderItemFlow(
           "OP coberta, porém quantidade produzida ainda insuficiente.";
       } else {
         // OP suficiente; produced null → proxy OK
-        currentStage = resolvePostProductionStage({
-          shipTargetQuantity,
-          documentedQuantity,
-          shippedQuantity,
-          fulfillmentClassification: fulfillment.classification,
-        });
+        currentStage = postProductionStage;
         stageReason = stageReasonFor(currentStage, {
           usedProductionProxy: producedQuantity == null && hasOfficialOpLink,
         });
@@ -556,12 +569,7 @@ export function resolveSalesOrderItemFlow(
       if (skipProduction && requiresProduction === null) {
         // UNKNOWN produção: não forçar coluna OP
       }
-      currentStage = resolvePostProductionStage({
-        shipTargetQuantity,
-        documentedQuantity,
-        shippedQuantity,
-        fulfillmentClassification: fulfillment.classification,
-      });
+      currentStage = postProductionStage;
       stageReason = stageReasonFor(currentStage, {
         skippedProduction: skipProduction,
       });
@@ -646,7 +654,11 @@ function resolvePostProductionStage(input: {
 
 function stageReasonFor(
   stage: SalesOrderItemFlowStage,
-  flags: { usedProductionProxy?: boolean; skippedProduction?: boolean }
+  flags: {
+    usedProductionProxy?: boolean;
+    skippedProduction?: boolean;
+    completedWithoutProductionOrder?: boolean;
+  }
 ): string {
   switch (stage) {
     case "WAITING_OUTPUT_DOCUMENT":
@@ -656,6 +668,9 @@ function stageReasonFor(
     case "WAITING_NFE":
       return "Documento presente; falta NF-e válida (proxy de envio).";
     case "SHIPPED_COMPLETED":
+      if (flags.completedWithoutProductionOrder) {
+        return "Obrigação coberta por NF-e válida; ausência histórica de OP não reabre obrigação de produção.";
+      }
       return flags.usedProductionProxy
         ? "NF-e válida cobre a obrigação; produção por proxy de OP."
         : "Obrigação coberta por NF-e válida (envio/conclusão).";
