@@ -85,22 +85,64 @@ describe("sidebarNavigation — filtro por permissão", () => {
 });
 
 describe("sidebarNavigation — grupos oficiais", () => {
-  it("estrutura completa contém os cinco grupos principais", () => {
+  it("estrutura completa contém os seis grupos principais", () => {
     const structure = buildGroupedNavigationStructure();
     const labels = structure.groups.map((group) => group.label);
     assert.deepEqual(labels, [...SIDEBAR_GROUP_UI_LABELS]);
   });
 
-  it("Engenharia contém Produtos, Simulador, Suprimentos, Simulações e Projetos", () => {
+  it("Engenharia contém Produtos, Simulador, Simulações e Projetos", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const eng = nav.groups.find((g) => g.id === "engenharia");
     assert.deepEqual(eng?.items.map((i) => i.label), [
       MODULE_LABELS.products,
       MODULE_LABELS["transformation-simulator"],
-      MODULE_LABELS.materials,
       MODULE_LABELS.simulations,
       MODULE_LABELS.projects,
     ]);
+  });
+
+  it("Cadeia de Suprimentos contém Suprimentos, Compras e Estoque / Almoxarifado", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const group = nav.groups.find((g) => g.id === "cadeia_suprimentos");
+    assert.deepEqual(group?.items.map((i) => i.itemId), [
+      "materials",
+      "purchases",
+      "inventory",
+    ]);
+    assert.deepEqual(group?.items.map((i) => i.label), [
+      MODULE_LABELS.materials,
+      MODULE_LABELS.purchases,
+      MODULE_LABELS.inventory,
+    ]);
+    assert.deepEqual(group?.items.map((i) => i.path), [
+      "/materials",
+      "/purchases",
+      "/inventory",
+    ]);
+  });
+
+  it("Cadeia de Suprimentos oculta-se sem filhos e mostra só o item autorizado", () => {
+    const onlyPurchases = buildAccessibleSidebarNavigation(checker(["purchases.view"]));
+    assert.equal(onlyPurchases.groups.some((g) => g.id === "engenharia"), false);
+    assert.equal(onlyPurchases.groups.some((g) => g.id === "operacoes"), false);
+    const purchasesGroup = onlyPurchases.groups.find((g) => g.id === "cadeia_suprimentos");
+    assert.deepEqual(purchasesGroup?.items.map((i) => i.itemId), ["purchases"]);
+
+    const onlyInventory = buildAccessibleSidebarNavigation(checker(["inventory.view"]));
+    assert.deepEqual(
+      onlyInventory.groups.find((g) => g.id === "cadeia_suprimentos")?.items.map((i) => i.itemId),
+      ["inventory"]
+    );
+
+    const onlyMaterials = buildAccessibleSidebarNavigation(checker(["materials.view"]));
+    assert.deepEqual(
+      onlyMaterials.groups.find((g) => g.id === "cadeia_suprimentos")?.items.map((i) => i.itemId),
+      ["materials"]
+    );
+
+    const none = buildAccessibleSidebarNavigation(checker(["machines.view"]));
+    assert.equal(none.groups.some((g) => g.id === "cadeia_suprimentos"), false);
   });
 
   it("Comercial contém CRM, Clientes, Propostas, Pedidos, Fluxo, Documentos de Saída, Formação de Preço e Comissões", () => {
@@ -131,12 +173,10 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Operações contém Estoque, Compras, Máquinas, Performance, Ordens de Produção, Manutenção e Frota", () => {
+  it("Operações contém Máquinas, Performance, Ordens de Produção, Manutenção e Frota", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "operacoes");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
-      "inventory",
-      "purchases",
       "machines",
       "operations-performance",
       "production-orders",
@@ -380,6 +420,7 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
     assert.ok(sidebar.includes("SIDEBAR_GROUP_UI_LABELS"));
     assert.deepEqual([...SIDEBAR_GROUP_UI_LABELS], [
       "Engenharia",
+      "Cadeia de Suprimentos",
       "Comercial",
       "Financeiro",
       "Operações",

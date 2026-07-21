@@ -18,6 +18,7 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
 export const NAVIGATION_GROUP_SHORT_LABELS: Record<NavigationGroupId, string> = {
   dashboard: "Home",
   engenharia: "Eng.",
+  cadeia_suprimentos: "Cad.",
   comercial: "Com.",
   financeiro: "Fin.",
   operacoes: "Ops.",

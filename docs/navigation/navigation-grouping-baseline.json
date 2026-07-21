@@ -44,8 +44,8 @@
       "itemId": "materials",
       "label": "Suprimentos",
       "path": "/materials",
-      "groupId": "engenharia",
-      "groupLabel": "Engenharia",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
       "isDirect": false,
       "requiredPermissions": [
         "materials.view"
@@ -56,8 +56,8 @@
       "itemId": "purchases",
       "label": "Compras",
       "path": "/purchases",
-      "groupId": "operacoes",
-      "groupLabel": "Operações",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
       "isDirect": false,
       "requiredPermissions": [
         "purchases.view"
@@ -80,8 +80,8 @@
       "itemId": "inventory",
       "label": "Estoque / Almoxarifado",
       "path": "/inventory",
-      "groupId": "operacoes",
-      "groupLabel": "Operações",
+      "groupId": "cadeia_suprimentos",
+      "groupLabel": "Cadeia de Suprimentos",
       "isDirect": false,
       "requiredPermissions": [
         "inventory.view"

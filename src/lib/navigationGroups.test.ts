@@ -34,7 +34,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   dashboard: "dashboard",
   products: "engenharia",
   "transformation-simulator": "engenharia",
-  materials: "engenharia",
+  materials: "cadeia_suprimentos",
   simulations: "engenharia",
   projects: "engenharia",
   "crm-commercial": "comercial",
@@ -51,8 +51,8 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   opex: "financeiro",
   taxes: "financeiro",
   reports: "financeiro",
-  inventory: "operacoes",
-  purchases: "operacoes",
+  inventory: "cadeia_suprimentos",
+  purchases: "cadeia_suprimentos",
   machines: "operacoes",
   "operations-performance": "operacoes",
   "production-orders": "operacoes",
@@ -139,10 +139,11 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     const structure = buildGroupedNavigationStructure();
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
     assert.deepEqual(counts, {
-      engenharia: 5,
+      engenharia: 4,
+      cadeia_suprimentos: 3,
       comercial: 8,
       financeiro: 6,
-      operacoes: 7,
+      operacoes: 5,
       administracao: 3,
     });
   });
@@ -163,7 +164,7 @@ describe("navigationGroups — permissões preservadas", () => {
       ["finance", "finance.view"],
       ["inventory", "inventory.view"],
       ["commissions", "commissions.view"],
-      ["crm-commercial", "crm.view"],
+      ["customers", "customers.view"],
       ["employees", "employees.view"],
       ["reports", "reports.view"],
     ];

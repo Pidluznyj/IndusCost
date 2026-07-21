@@ -94,7 +94,7 @@ describe("PERM-43 — fixture Analista de Compras", () => {
 });
 
 describe("PERM-43 — menu / submenu", () => {
-  it("sidebar: Engenharia→Suprimentos; Financeiro; Fornecedores; Operações (Estoque/Compras/Manutenção/Frota)", () => {
+  it("sidebar: Cadeia de Suprimentos (materials/purchases/inventory); Operações (manutenção/frota); Financeiro", () => {
     const dto = buildAnalistaComprasDto();
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
     const ids = nav.flatAccessibleItems.map((i) => i.id);
@@ -113,17 +113,20 @@ describe("PERM-43 — menu / submenu", () => {
     );
 
     const eng = nav.groups.find((g) => g.id === "engenharia");
-    assert.ok(eng);
+    assert.equal(eng, undefined, "grupo Engenharia oculto sem filhos");
+
+    const cadeia = nav.groups.find((g) => g.id === "cadeia_suprimentos");
+    assert.ok(cadeia);
     assert.deepEqual(
-      eng!.items.map((i) => i.itemId),
-      ["materials"]
+      cadeia!.items.map((i) => i.itemId),
+      ["materials", "purchases", "inventory"]
     );
 
     const ops = nav.groups.find((g) => g.id === "operacoes");
     assert.ok(ops);
     assert.deepEqual(
       ops!.items.map((i) => i.itemId).sort(),
-      ["fleet", "inventory", "maintenance", "purchases"].sort()
+      ["fleet", "maintenance"].sort()
     );
 
     const fin = nav.groups.find((g) => g.id === "financeiro");

@@ -123,6 +123,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
 const GROUP_ICONS: Record<NavigationGroupId, LucideIcon> = {
   dashboard: LayoutDashboard,
   engenharia: Package,
+  cadeia_suprimentos: Truck,
   comercial: Briefcase,
   financeiro: Banknote,
   operacoes: Factory,

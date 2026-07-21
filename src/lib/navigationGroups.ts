@@ -22,12 +22,14 @@ export type NavigationIconKey =
   | "HandCoins"
   | "Banknote"
   | "Warehouse"
+  | "Truck"
   | "Settings"
   | "FolderQuestion";
 
 export type NavigationGroupId =
   | "dashboard"
   | "engenharia"
+  | "cadeia_suprimentos"
   | "comercial"
   | "financeiro"
   | "operacoes"
@@ -156,13 +158,20 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Engenharia",
     iconKey: "Package",
     order: 2,
-    itemIds: ["products", "transformation-simulator", "materials", "simulations", "projects"],
+    itemIds: ["products", "transformation-simulator", "simulations", "projects"],
+  },
+  {
+    id: "cadeia_suprimentos",
+    label: "Cadeia de Suprimentos",
+    iconKey: "Truck",
+    order: 3,
+    itemIds: ["materials", "purchases", "inventory"],
   },
   {
     id: "comercial",
     label: "Comercial",
     iconKey: "HandCoins",
-    order: 3,
+    order: 4,
     itemIds: [
       "crm-commercial",
       "customers",
@@ -178,17 +187,15 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     id: "financeiro",
     label: "Financeiro",
     iconKey: "Banknote",
-    order: 4,
+    order: 5,
     itemIds: ["finance", "suppliers", "portfolio-reconciliation", "opex", "taxes", "reports"],
   },
   {
     id: "operacoes",
     label: "Operações",
     iconKey: "Warehouse",
-    order: 5,
+    order: 6,
     itemIds: [
-      "inventory",
-      "purchases",
       "machines",
       "operations-performance",
       "production-orders",
@@ -200,7 +207,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     id: "administracao",
     label: "Administração",
     iconKey: "Settings",
-    order: 6,
+    order: 7,
     itemIds: ["employees", "settings", "guide"],
   },
 ];

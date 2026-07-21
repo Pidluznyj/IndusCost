@@ -192,6 +192,7 @@ export function mergeExpandedNavigationGroups(
 
 export const SIDEBAR_GROUP_UI_LABELS = [
   "Engenharia",
+  "Cadeia de Suprimentos",
   "Comercial",
   "Financeiro",
   "Operações",
@@ -202,6 +203,7 @@ export const SIDEBAR_EXPANDED_GROUPS_STORAGE_KEY = "induscost.sidebar.expandedGr
 
 const PERSISTABLE_GROUP_IDS: readonly NavigationGroupId[] = [
   "engenharia",
+  "cadeia_suprimentos",
   "comercial",
   "financeiro",
   "operacoes",

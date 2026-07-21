@@ -133,13 +133,15 @@ function authBag(permissions: string[]): AppAuthContext {
 }
 
 describe("PERM-40 — matriz Dashboard + Engenharia", () => {
-  it("sidebar: só Suprimentos no grupo Engenharia; sem Produtos/Simulações/Projetos/Simulador", () => {
+  it("sidebar: só Suprimentos no grupo Cadeia de Suprimentos; sem Produtos/Simulações/Projetos/Simulador", () => {
     const dto = effectiveAccessDtoFromAllowedResources([...SUPPLIES_MI_SLICE]);
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
     const eng = nav.groups.find((g) => g.id === "engenharia");
-    assert.ok(eng, "grupo Engenharia deve aparecer via filho");
+    assert.equal(eng, undefined, "grupo Engenharia oculto sem filhos");
+    const cadeia = nav.groups.find((g) => g.id === "cadeia_suprimentos");
+    assert.ok(cadeia, "grupo Cadeia de Suprimentos deve aparecer via filho");
     assert.deepEqual(
-      eng!.items.map((i) => i.itemId),
+      cadeia!.items.map((i) => i.itemId),
       ["materials"]
     );
     const ids = nav.flatAccessibleItems.map((i) => i.id);

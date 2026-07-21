@@ -12,6 +12,7 @@ import { MODULE_LABELS } from "./modulePermissions.js";
 describe("sidebarLabels — rótulos curtos visíveis", () => {
   it("grupos principais têm abreviação touch-friendly", () => {
     assert.equal(NAVIGATION_GROUP_SHORT_LABELS.engenharia, "Eng.");
+    assert.equal(NAVIGATION_GROUP_SHORT_LABELS.cadeia_suprimentos, "Cad.");
     assert.equal(NAVIGATION_GROUP_SHORT_LABELS.comercial, "Com.");
     assert.equal(NAVIGATION_GROUP_SHORT_LABELS.financeiro, "Fin.");
     assert.equal(NAVIGATION_GROUP_SHORT_LABELS.operacoes, "Ops.");
@@ -45,7 +46,7 @@ describe("sidebarLabels — breadcrumb do header", () => {
 
   it("módulo em grupo retorna grupo › módulo", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/materials"), [
-      { label: "Engenharia" },
+      { label: "Cadeia de Suprimentos" },
       { label: MODULE_LABELS.materials, path: "/materials" },
     ]);
   });
