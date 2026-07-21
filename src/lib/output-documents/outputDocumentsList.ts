@@ -51,6 +51,12 @@ export type OutputDocumentListEnrichment = {
   nfeByExternalId: Map<number, OutputDocumentListNfeRow>;
   receivablesByNfe: Map<number, OutputDocumentFinancialReceivableInput[]>;
   allocatedOrdersCountByDoc: Map<number, number>;
+  /** Códigos de pedido (O2C ∪ SalesOrderNfeLink), estáveis e únicos. */
+  orderCodesByDoc: Map<number, string[]>;
+  /** Fallback de cliente quando `personName` do stage está vazio. */
+  customerNameByDoc: Map<number, string>;
+  /** Fallback de empresa quando `companyName` do stage está vazio. */
+  companyNameByDoc: Map<number, string>;
   referenceDate?: Date;
 };
 
@@ -61,6 +67,23 @@ function toIso(value: Date | null | undefined): string | null {
 
 function documentTotalNumber(row: OutputDocumentListStageRow): number | null {
   return decimalToNumber(row.totalValue);
+}
+
+function nfeTotalNumber(nfe: OutputDocumentListNfeRow | undefined): number | null {
+  if (!nfe) return null;
+  return decimalToNumber(nfe.xmlVNF ?? nfe.valorLiquido);
+}
+
+/** Valor de exibição: cabeçalho do stage; se nulo, valor oficial da NF-e vinculada. */
+export function resolveOutputDocumentListTotalValue(
+  row: OutputDocumentListStageRow,
+  enrichment: OutputDocumentListEnrichment
+): number | null {
+  const stageTotal = documentTotalNumber(row);
+  if (stageTotal != null) return stageTotal;
+  const idNfe = row.idNfe;
+  if (idNfe == null) return null;
+  return nfeTotalNumber(enrichment.nfeByExternalId.get(idNfe));
 }
 
 export function resolveListDocumentFinancialStatus(
@@ -182,6 +205,9 @@ export function buildOutputDocumentListItem(
   const financial = resolveListDocumentFinancialStatus(row, enrichment);
   const idNfe = row.idNfe;
   const nfe = idNfe != null ? enrichment.nfeByExternalId.get(idNfe) : undefined;
+  const orderCodes = enrichment.orderCodesByDoc.get(row.externalId) ?? [];
+  const allocatedOrdersCount =
+    enrichment.allocatedOrdersCountByDoc.get(row.externalId) ?? orderCodes.length;
 
   return {
     id: row.id,
@@ -193,13 +219,20 @@ export function buildOutputDocumentListItem(
     isCancelled: row.isCancelled,
     idNfe,
     nfeNumber: nfe?.numero ?? null,
-    customerName: row.personName,
+    customerName:
+      row.personName?.trim() ||
+      enrichment.customerNameByDoc.get(row.externalId) ||
+      null,
     personExternalId: row.personExternalId,
-    companyName: row.companyName,
+    companyName:
+      row.companyName?.trim() ||
+      enrichment.companyNameByDoc.get(row.externalId) ||
+      null,
     companyExternalId: row.companyExternalId,
-    totalValue: documentTotalNumber(row),
-    allocatedOrdersCount:
-      enrichment.allocatedOrdersCountByDoc.get(row.externalId) ?? 0,
+    totalValue: resolveOutputDocumentListTotalValue(row, enrichment),
+    allocatedOrdersCount,
+    primaryOrderCode: orderCodes[0] ?? null,
+    orderCodes,
     hasReceivable: financial.installmentCount > 0,
     financialStatus: financial.status,
     receivableOpenValue:
@@ -228,7 +261,7 @@ export function buildOutputDocumentsListSummary(
     if (row.isCancelled) {
       cancelled += 1;
     } else {
-      const value = documentTotalNumber(row);
+      const value = resolveOutputDocumentListTotalValue(row, enrichment);
       if (value != null) validTotalValue += value;
     }
     if (row.idNfe != null) withNfe += 1;

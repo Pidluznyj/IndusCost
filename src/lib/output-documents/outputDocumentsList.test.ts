@@ -48,6 +48,9 @@ function enrichment(
     nfeByExternalId: new Map(),
     receivablesByNfe: new Map(),
     allocatedOrdersCountByDoc: new Map(),
+    orderCodesByDoc: new Map(),
+    customerNameByDoc: new Map(),
+    companyNameByDoc: new Map(),
     referenceDate: REF,
     ...partial,
   };
@@ -107,6 +110,50 @@ describe("outputDocumentsList — resumo e valores", () => {
     const item = buildOutputDocumentListItem(rows[0]!, enrich);
     assert.equal(item.totalValue, 1000);
     assert.equal(item.allocatedOrdersCount, 3);
+  });
+
+  it("Pedido via orderCodes (NfeLink) sem O2C; valor e cliente por fallback oficial", () => {
+    const rows = [
+      row({
+        id: "a",
+        externalId: 8572,
+        idNfe: 7305,
+        totalValue: null,
+        personName: null,
+        companyName: null,
+        statusRaw: null,
+      }),
+    ];
+    const enrich = enrichment({
+      nfeByExternalId: new Map([
+        [
+          7305,
+          {
+            externalId: 7305,
+            numero: "7305",
+            status: 4,
+            valorLiquido: 1500,
+            xmlVNF: 1500,
+          },
+        ],
+      ]),
+      allocatedOrdersCountByDoc: new Map([[8572, 1]]),
+      orderCodesByDoc: new Map([[8572, ["PD 02596"]]]),
+      customerNameByDoc: new Map([[8572, "Cliente Oficial"]]),
+      companyNameByDoc: new Map([[8572, "KOPPETEL"]]),
+    });
+
+    const item = buildOutputDocumentListItem(rows[0]!, enrich);
+    assert.equal(item.allocatedOrdersCount, 1);
+    assert.equal(item.primaryOrderCode, "PD 02596");
+    assert.deepEqual(item.orderCodes, ["PD 02596"]);
+    assert.equal(item.totalValue, 1500);
+    assert.equal(item.customerName, "Cliente Oficial");
+    assert.equal(item.companyName, "KOPPETEL");
+
+    const summary = buildOutputDocumentsListSummary(rows, enrich);
+    assert.equal(summary.validTotalValue, 1500);
+    assert.equal(summary.withNfe, 1);
   });
 
   it("conta aguardando CR quando há NF sem títulos", () => {

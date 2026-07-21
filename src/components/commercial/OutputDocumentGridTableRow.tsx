@@ -9,7 +9,7 @@ import {
   formatOutputDocumentMoney,
   formatOutputDocumentNfe,
   formatOutputDocumentNumber,
-  formatOutputDocumentOrdersCount,
+  formatOutputDocumentOrdersLabel,
   formatOutputDocumentStatusLabel,
   outputDocumentFinancialStatusTone,
   outputDocumentStatusTone,
@@ -80,7 +80,7 @@ export function OutputDocumentGridTableRow({
         {formatOutputDocumentMoney(item.totalValue)}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
-        {formatOutputDocumentOrdersCount(item.allocatedOrdersCount)}
+        {formatOutputDocumentOrdersLabel(item)}
       </td>
       <td className="whitespace-nowrap px-3 py-2">
         {formatOutputDocumentNfe(item)}

@@ -40,6 +40,7 @@ import {
   formatOutputDocumentNfeDocumentaryDiffs,
   formatOutputDocumentNumber,
   formatOutputDocumentOrdersCount,
+  formatOutputDocumentOrdersLabel,
   formatOutputDocumentStatusLabel,
   hasActiveOutputDocumentsFilters,
   isOutputDocumentsDateRangeInvalid,
@@ -100,6 +101,8 @@ function gridItem(
     companyExternalId: 1,
     totalValue: 1500.5,
     allocatedOrdersCount: 2,
+    primaryOrderCode: "PD 02590",
+    orderCodes: ["PD 02590", "PD 02591"],
     hasReceivable: true,
     financialStatus: "cr_em_aberto",
     receivableOpenValue: 500.25,
@@ -280,6 +283,22 @@ describe("outputDocumentsUi", () => {
     assert.equal(formatOutputDocumentMoney(null), "—");
     assert.equal(formatOutputDocumentOrdersCount(2), "2 pedidos");
     assert.equal(formatOutputDocumentOrdersCount(0), "—");
+    assert.equal(
+      formatOutputDocumentOrdersLabel({
+        allocatedOrdersCount: 1,
+        primaryOrderCode: "PD 02596",
+        orderCodes: ["PD 02596"],
+      }),
+      "PD 02596"
+    );
+    assert.equal(
+      formatOutputDocumentOrdersLabel({
+        allocatedOrdersCount: 2,
+        primaryOrderCode: "PD 02590",
+        orderCodes: ["PD 02590", "PD 02591"],
+      }),
+      "PD 02590 +1"
+    );
     assert.equal(formatOutputDocumentNfe(gridItem()), "12345");
     assert.equal(
       formatOutputDocumentFinancialStatusLabel("aguardando_cr"),
@@ -405,7 +424,7 @@ describe("output documents page filters cards and grid", () => {
     assert.match(html, /DS-9001/);
     assert.match(html, /Cliente Fixture/);
     assert.match(html, /KOPPETEL/);
-    assert.match(html, /2 pedidos/);
+    assert.match(html, /PD 02590 \+1/);
     assert.match(html, /12345/);
     assert.match(html, /CR em aberto/);
     assert.match(html, /output-documents-row-9001/);

@@ -718,6 +718,20 @@ export function formatOutputDocumentOrdersCount(count: number): string {
   return count === 1 ? "1 pedido" : `${count} pedidos`;
 }
 
+/** Preferência: código oficial; senão contagem. */
+export function formatOutputDocumentOrdersLabel(
+  item: Pick<
+    OutputDocumentsListItem,
+    "allocatedOrdersCount" | "primaryOrderCode" | "orderCodes"
+  >
+): string {
+  const code = item.primaryOrderCode?.trim();
+  const count = item.allocatedOrdersCount;
+  if (code && count <= 1) return code;
+  if (code && count > 1) return `${code} +${count - 1}`;
+  return formatOutputDocumentOrdersCount(count);
+}
+
 export function formatOutputDocumentNfe(
   item: Pick<OutputDocumentsListItem, "nfeNumber" | "idNfe">
 ): string {

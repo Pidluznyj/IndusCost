@@ -65,6 +65,9 @@ function emptyEnrichment(referenceDate?: Date): OutputDocumentListEnrichment {
     nfeByExternalId: new Map(),
     receivablesByNfe: new Map(),
     allocatedOrdersCountByDoc: new Map(),
+    orderCodesByDoc: new Map(),
+    customerNameByDoc: new Map(),
+    companyNameByDoc: new Map(),
     referenceDate,
   };
 }
@@ -288,7 +291,7 @@ async function loadEnrichment(
   ];
   const docExternalIds = rows.map((r) => r.externalId);
 
-  const [nfes, receivables, o2cFacts] = await Promise.all([
+  const [nfes, receivables, o2cFacts, nfeLinks] = await Promise.all([
     nfeIds.length
       ? db.nomusNfe.findMany({
           where: { externalId: { in: nfeIds } },
@@ -322,9 +325,21 @@ async function loadEnrichment(
       select: {
         stockDocumentExternalId: true,
         salesOrderId: true,
+        orderCode: true,
       },
       take: 20_000,
     }),
+    nfeIds.length
+      ? db.salesOrderNfeLink.findMany({
+          where: { nfeExternalId: { in: nfeIds } },
+          select: {
+            nfeExternalId: true,
+            salesOrderId: true,
+            orderCode: true,
+          },
+          take: 20_000,
+        })
+      : Promise.resolve([]),
   ]);
 
   for (const nfe of nfes) {
@@ -356,16 +371,124 @@ async function loadEnrichment(
     enrichment.receivablesByNfe.set(ar.sourceInvoiceId, list);
   }
 
-  const ordersByDoc = new Map<number, Set<string>>();
-  for (const fact of o2cFacts) {
-    if (fact.stockDocumentExternalId == null || !fact.salesOrderId) continue;
-    const set =
-      ordersByDoc.get(fact.stockDocumentExternalId) ?? new Set<string>();
-    set.add(fact.salesOrderId);
-    ordersByDoc.set(fact.stockDocumentExternalId, set);
+  const docsByNfe = new Map<number, number[]>();
+  for (const row of rows) {
+    if (row.idNfe == null) continue;
+    const list = docsByNfe.get(row.idNfe) ?? [];
+    list.push(row.externalId);
+    docsByNfe.set(row.idNfe, list);
   }
-  for (const [docId, set] of ordersByDoc) {
-    enrichment.allocatedOrdersCountByDoc.set(docId, set.size);
+
+  const orderIdsByDoc = new Map<number, Set<string>>();
+  const orderCodesByDoc = new Map<number, Set<string>>();
+
+  const addOrder = (
+    docExternalId: number,
+    salesOrderId: string | null | undefined,
+    orderCode: string | null | undefined
+  ) => {
+    if (salesOrderId) {
+      const ids = orderIdsByDoc.get(docExternalId) ?? new Set<string>();
+      ids.add(salesOrderId);
+      orderIdsByDoc.set(docExternalId, ids);
+    }
+    const code = orderCode?.trim();
+    if (code) {
+      const codes = orderCodesByDoc.get(docExternalId) ?? new Set<string>();
+      codes.add(code);
+      orderCodesByDoc.set(docExternalId, codes);
+    }
+  };
+
+  for (const fact of o2cFacts) {
+    if (fact.stockDocumentExternalId == null) continue;
+    addOrder(fact.stockDocumentExternalId, fact.salesOrderId, fact.orderCode);
+  }
+
+  for (const link of nfeLinks) {
+    const docs = docsByNfe.get(link.nfeExternalId) ?? [];
+    for (const docExternalId of docs) {
+      addOrder(docExternalId, link.salesOrderId, link.orderCode);
+    }
+  }
+
+  const allOrderIds = [
+    ...new Set(
+      [...orderIdsByDoc.values()].flatMap((set) => [...set])
+    ),
+  ];
+
+  const salesOrders =
+    allOrderIds.length > 0
+      ? await db.salesOrder.findMany({
+          where: { id: { in: allOrderIds } },
+          select: {
+            id: true,
+            orderCode: true,
+            companyIssuer: true,
+            customer: {
+              select: { tradeName: true, companyName: true },
+            },
+          },
+          take: 10_000,
+        })
+      : [];
+
+  const orderById = new Map(
+    salesOrders.map((order) => [order.id, order] as const)
+  );
+
+  for (const [docExternalId, orderIds] of orderIdsByDoc) {
+    enrichment.allocatedOrdersCountByDoc.set(docExternalId, orderIds.size);
+
+    const codes = orderCodesByDoc.get(docExternalId) ?? new Set<string>();
+    for (const orderId of orderIds) {
+      const order = orderById.get(orderId);
+      if (order?.orderCode?.trim()) codes.add(order.orderCode.trim());
+    }
+    const sortedCodes = [...codes].sort((a, b) =>
+      a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" })
+    );
+    enrichment.orderCodesByDoc.set(docExternalId, sortedCodes);
+
+    if (!enrichment.customerNameByDoc.has(docExternalId)) {
+      for (const orderId of orderIds) {
+        const order = orderById.get(orderId);
+        const name =
+          order?.customer.tradeName?.trim() ||
+          order?.customer.companyName?.trim() ||
+          null;
+        if (name) {
+          enrichment.customerNameByDoc.set(docExternalId, name);
+          break;
+        }
+      }
+    }
+
+    if (!enrichment.companyNameByDoc.has(docExternalId)) {
+      for (const orderId of orderIds) {
+        const issuer = orderById.get(orderId)?.companyIssuer?.trim();
+        if (issuer) {
+          enrichment.companyNameByDoc.set(docExternalId, issuer);
+          break;
+        }
+      }
+    }
+  }
+
+  // Documentos só com código via link (sem salesOrderId resolvido) ainda contam.
+  for (const [docExternalId, codes] of orderCodesByDoc) {
+    if (!enrichment.allocatedOrdersCountByDoc.has(docExternalId)) {
+      enrichment.allocatedOrdersCountByDoc.set(docExternalId, codes.size);
+    }
+    if (!enrichment.orderCodesByDoc.has(docExternalId)) {
+      enrichment.orderCodesByDoc.set(
+        docExternalId,
+        [...codes].sort((a, b) =>
+          a.localeCompare(b, "pt-BR", { numeric: true, sensitivity: "base" })
+        )
+      );
+    }
   }
 
   return enrichment;

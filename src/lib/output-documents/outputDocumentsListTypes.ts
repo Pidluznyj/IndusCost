@@ -58,6 +58,10 @@ export type OutputDocumentsListItem = {
   /** Valor do documento (cabeçalho stage) — uma vez; null se ausente. */
   totalValue: number | null;
   allocatedOrdersCount: number;
+  /** Primeiro código de pedido oficial (NfeLink/O2C), quando houver. */
+  primaryOrderCode: string | null;
+  /** Códigos de pedido vinculados (únicos, estáveis). */
+  orderCodes: string[];
   hasReceivable: boolean;
   financialStatus: OutputDocumentFinancialStatus;
   receivableOpenValue: number | null;
