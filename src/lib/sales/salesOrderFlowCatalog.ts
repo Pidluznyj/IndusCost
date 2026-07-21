@@ -123,6 +123,7 @@ export const SALES_ORDER_FLOW_INCONSISTENCY_CODES = [
   "MIXED_ACTIVE_ITEM_STAGES",
   "O2C_ALLOCATION_STALE",
   "DUPLICATE_TRUTH_RISK",
+  "ORDER_COMPLETED_AT_MISSING",
 ] as const;
 
 export type SalesOrderFlowInconsistencyCode =
@@ -145,6 +146,7 @@ export const SALES_ORDER_FLOW_INCONSISTENCY_SEVERITY_BY_CODE = {
   MIXED_ACTIVE_ITEM_STAGES: "INFO",
   O2C_ALLOCATION_STALE: "WARNING",
   DUPLICATE_TRUTH_RISK: "CRITICAL",
+  ORDER_COMPLETED_AT_MISSING: "INFO",
 } as const satisfies Record<
   SalesOrderFlowInconsistencyCode,
   SalesOrderFlowInconsistencySeverity
@@ -167,6 +169,8 @@ export const SALES_ORDER_FLOW_INCONSISTENCY_LABELS = {
   MIXED_ACTIVE_ITEM_STAGES: "Itens ativos em estágios distintos",
   O2C_ALLOCATION_STALE: "Alocação O2C possivelmente defasada",
   DUPLICATE_TRUTH_RISK: "Risco de segunda fonte da verdade",
+  ORDER_COMPLETED_AT_MISSING:
+    "Pedido concluído sem data de conclusão segura (envio/documento/NF-e)",
 } as const satisfies Record<SalesOrderFlowInconsistencyCode, string>;
 
 export function isSalesOrderFlowStage(value: unknown): value is SalesOrderFlowStage {

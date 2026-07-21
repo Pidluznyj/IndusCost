@@ -17,6 +17,7 @@ import {
   type SalesOrderFlowEvidencePrisma,
 } from "./salesOrderFlowEvidence.server.js";
 import { resolveSalesOrderFlow } from "./salesOrderFlowEngine.js";
+import { buildSalesOrderFlowCompletionContextFromPack } from "./salesOrderFlowCompletionDates.js";
 import { resolveSalesOrderItemFlowFromEvidence } from "./salesOrderItemFlowEngine.js";
 import {
   buildSalesOrderFlowRecomputeDraft,
@@ -142,6 +143,11 @@ export async function recomputeSalesOrderFlow(
     }
     orderCode = pack.order.orderCode?.trim() || null;
 
+    const [existingOrderRow, existingItemRows] = await Promise.all([
+      findSalesOrderFlowSnapshotByOrderId(db, salesOrderId),
+      findSalesOrderItemFlowSnapshotsByOrderId(db, salesOrderId),
+    ]);
+
     const itemResults = pack.items
       .map((item) =>
         resolveSalesOrderItemFlowFromEvidence(pack, item.id, {
@@ -153,18 +159,18 @@ export async function recomputeSalesOrderFlow(
     const itemFinancials =
       options.itemFinancials ?? (await loadItemFinancials(db, salesOrderId));
 
+    const completionCtx = buildSalesOrderFlowCompletionContextFromPack(pack, {
+      persistedCompletedAt: existingOrderRow?.completedAt ?? null,
+    });
+
     const orderResult = resolveSalesOrderFlow(itemResults, {
       salesOrderId,
       orderStatus: pack.order.status,
       promisedDeliveryAt: pack.order.expectedDeliveryDate,
       referenceDate: options.referenceDate ?? pack.meta.loadedAt,
       itemFinancials,
+      ...completionCtx,
     });
-
-    const [existingOrderRow, existingItemRows] = await Promise.all([
-      findSalesOrderFlowSnapshotByOrderId(db, salesOrderId),
-      findSalesOrderItemFlowSnapshotsByOrderId(db, salesOrderId),
-    ]);
 
     const existingItems = existingItemRows.map((r) => ({
       salesOrderItemId: r.salesOrderItemId,

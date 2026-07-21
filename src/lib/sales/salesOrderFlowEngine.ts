@@ -27,6 +27,11 @@ import type {
   SalesOrderItemFlowInconsistency,
   SalesOrderItemFlowProgress,
 } from "./salesOrderItemFlowEngine.js";
+import {
+  maxIsoTimestamp,
+  resolveSalesOrderFlowCompletedAt,
+  type SalesOrderFlowItemTemporalAt,
+} from "./salesOrderFlowCompletionDates.js";
 
 const ZERO = new Prisma.Decimal(0);
 const HUNDRED = new Prisma.Decimal(100);
@@ -60,11 +65,24 @@ export type ResolveSalesOrderFlowOrderContext = {
    */
   orderStatus?: string | null;
   promisedDeliveryAt?: Date | string | null;
+  /**
+   * Relógio de avaliação apenas para atraso (`isOverdue`).
+   * Nunca entra em completedAt nem no fingerprint via completedAt.
+   */
   referenceDate?: Date | string | null;
   /** Valores líquidos oficiais por item — base dos totais monetários. */
   itemFinancials?: readonly ResolveSalesOrderFlowItemFinancial[];
-  /** Timestamps de envio por item (quando conhecidos / NF válida). */
+  /** Timestamps de envio/saída normalizados por item (quando conhecidos). */
   itemShippedAt?: readonly ResolveSalesOrderFlowItemShippedAt[];
+  /** Datas de documento de saída válido por item (proxy quando envio ausente). */
+  itemDocumentAt?: readonly SalesOrderFlowItemTemporalAt[];
+  /** Datas issuedAt de NF-e válida por item (proxy terciário). */
+  itemNfeIssuedAt?: readonly SalesOrderFlowItemTemporalAt[];
+  /**
+   * completedAt já persistido — reutilizado só se o pedido permanece
+   * SHIPPED_COMPLETED e não há evidência temporal nova (1–3).
+   */
+  persistedCompletedAt?: Date | string | null;
 };
 
 export type SalesOrderFlowBottleneck = {
@@ -362,7 +380,7 @@ export function resolveSalesOrderFlow(
     shipped: weightedProgressAverage(progressBase, (p) => p.shipped),
   };
 
-  // Datas de envio
+  // Datas de envio normalizadas
   const shippedTimes: number[] = [];
   for (const item of itemResults) {
     if (item.currentStage !== "SHIPPED_COMPLETED" && item.shippedQuantity.lte(0)) {
@@ -379,8 +397,37 @@ export function resolveSalesOrderFlow(
     shippedTimes.length > 0
       ? new Date(shippedTimes[shippedTimes.length - 1]!).toISOString()
       : null;
-  const completedAt =
-    currentStage === "SHIPPED_COMPLETED" ? lastShippedAt ?? toIso(orderContext.referenceDate) : null;
+
+  const completedItemIds = new Set(
+    itemResults
+      .filter((i) => i.isActiveForKanban && i.currentStage === "SHIPPED_COMPLETED")
+      .map((i) => i.salesOrderItemId)
+  );
+  const lastDocumentAt = maxIsoTimestamp(
+    (orderContext.itemDocumentAt ?? [])
+      .filter((row) => completedItemIds.has(row.salesOrderItemId))
+      .map((row) => row.at)
+  );
+  const lastNfeIssuedAt = maxIsoTimestamp(
+    (orderContext.itemNfeIssuedAt ?? [])
+      .filter((row) => completedItemIds.has(row.salesOrderItemId))
+      .map((row) => row.at)
+  );
+
+  const completedAt = resolveSalesOrderFlowCompletedAt({
+    isShippedCompleted: currentStage === "SHIPPED_COMPLETED",
+    lastNormalizedShippedAt: lastShippedAt,
+    lastDocumentAt,
+    lastNfeIssuedAt,
+    persistedCompletedAt: orderContext.persistedCompletedAt,
+  });
+  if (currentStage === "SHIPPED_COMPLETED" && completedAt == null) {
+    pushInconsistency(
+      inconsistencies,
+      "ORDER_COMPLETED_AT_MISSING",
+      "Pedido em SHIPPED_COMPLETED sem data de envio, documento de saída ou NF-e com data confiável."
+    );
+  }
 
   const promisedDeliveryAt = toIso(orderContext.promisedDeliveryAt);
   const referenceDate = orderContext.referenceDate

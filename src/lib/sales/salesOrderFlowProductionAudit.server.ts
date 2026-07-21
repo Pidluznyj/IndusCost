@@ -7,6 +7,7 @@ import type { PrismaClient } from "@prisma/client";
 import { loadSalesOrderFlowEvidence } from "./salesOrderFlowEvidence.server.js";
 import { resolveSalesOrderItemFlowFromEvidence } from "./salesOrderItemFlowEngine.js";
 import { resolveSalesOrderFlow } from "./salesOrderFlowEngine.js";
+import { buildSalesOrderFlowCompletionContextFromPack } from "./salesOrderFlowCompletionDates.js";
 import {
   findSalesOrderFlowEventsByOrderId,
   findSalesOrderFlowManagementByOrderId,
@@ -115,13 +116,6 @@ export async function loadSalesOrderFlowProductionAudit(
     .filter((r): r is NonNullable<typeof r> => r != null);
 
   const itemFinancials = await loadItemFinancials(prisma, orderRow.id);
-  const orderResult = resolveSalesOrderFlow(itemResults, {
-    salesOrderId: orderRow.id,
-    orderStatus: pack.order.status,
-    promisedDeliveryAt: pack.order.expectedDeliveryDate,
-    referenceDate: pack.meta.loadedAt,
-    itemFinancials,
-  });
 
   const [existingOrderRow, existingItemRows, eventsPage, management] =
     await Promise.all([
@@ -133,6 +127,19 @@ export async function loadSalesOrderFlowProductionAudit(
       }),
       findSalesOrderFlowManagementByOrderId(prisma, orderRow.id),
     ]);
+
+  const completionCtx = buildSalesOrderFlowCompletionContextFromPack(pack, {
+    persistedCompletedAt: existingOrderRow?.completedAt ?? null,
+  });
+
+  const orderResult = resolveSalesOrderFlow(itemResults, {
+    salesOrderId: orderRow.id,
+    orderStatus: pack.order.status,
+    promisedDeliveryAt: pack.order.expectedDeliveryDate,
+    referenceDate: pack.meta.loadedAt,
+    itemFinancials,
+    ...completionCtx,
+  });
 
   const existingItems = existingItemRows.map((r) => ({
     salesOrderItemId: r.salesOrderItemId,
