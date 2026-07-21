@@ -234,7 +234,8 @@ export function buildHrOrgChart(input: {
 
   return {
     kind: "organization",
-    name: (input.organizationName ?? "Organização").trim() || "Organização",
+    name:
+      (input.organizationName ?? "Lazarios Koppetel").trim() || "Lazarios Koppetel",
     generatedAt: new Date().toISOString(),
     directorates: roots,
     unassigned: unassigned.sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),

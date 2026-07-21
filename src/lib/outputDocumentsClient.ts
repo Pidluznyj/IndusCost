@@ -23,6 +23,7 @@ export type OutputDocumentsClientQuery = {
   to?: string;
   company?: string;
   customer?: string;
+  personExternalId?: number;
   status?: string;
   cancelled?: OutputDocumentsTriState;
   order?: string;
@@ -61,6 +62,12 @@ export function buildOutputDocumentsQueryString(
   if (query.pageSize != null) params.set("pageSize", String(query.pageSize));
   if (query.sortBy) params.set("sortBy", query.sortBy);
   if (query.sortDir) params.set("sortDir", query.sortDir);
+  if (
+    query.personExternalId != null &&
+    Number.isFinite(query.personExternalId)
+  ) {
+    params.set("personExternalId", String(query.personExternalId));
+  }
   if (query.cancelled && query.cancelled !== "all") {
     params.set("cancelled", query.cancelled);
   }

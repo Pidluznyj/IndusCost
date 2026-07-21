@@ -81,6 +81,9 @@ describe("financeArTitlesPrint", () => {
     assert.match(doc, /financeArTitlesPrintMoneyClass/);
     assert.match(doc, /finance-ar-titles-print-total-row/);
     assert.match(doc, /col-status/);
+    assert.match(doc, /col-client/);
+    assert.doesNotMatch(doc, /col-company/);
+    assert.doesNotMatch(doc, /<th className="col-company">Empresa<\/th>/);
   });
 
   it("cabeçalho exibe disclaimer, metadados e filtros", () => {
@@ -97,6 +100,8 @@ describe("financeArTitlesPrint", () => {
     assert.match(css, /finance-ar-titles-print-money--risk/);
     assert.match(css, /finance-ar-titles-print-summary-grid/);
     assert.match(css, /finance-ar-titles-print-filter-band/);
+    assert.match(css, /\.col-client[\s\S]*white-space:\s*nowrap/);
+    assert.doesNotMatch(css, /\.col-company\s*\{/);
   });
 
   it("resumo executivo permite quebra natural (sem page-break-inside avoid)", () => {

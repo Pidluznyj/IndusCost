@@ -60,6 +60,7 @@ test("telas corrigidas importam CustomerAutocompleteFilter", () => {
     "src/components/SalesOrdersModule.tsx",
     "src/components/commercial/SoldProductsReportPage.tsx",
     "src/components/contextual/ProductMaterialDemandDashboard.tsx",
+    "src/components/commercial/OutputDocumentsModule.tsx",
   ];
   for (const file of files) {
     const src = readFileSync(join(process.cwd(), file), "utf8");

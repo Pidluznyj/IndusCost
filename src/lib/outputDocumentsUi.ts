@@ -65,13 +65,13 @@ export function isOutputDocumentsDateRangeInvalid(
 
 export type OutputDocumentsActiveFiltersInput = {
   search: string;
-  company: string;
   customer: string;
   from: string;
   to: string;
   status?: string;
   order?: string;
   nfe?: string;
+  personExternalId?: string | number | null;
   financialStatus?: string | null;
   cancelled?: string | null;
   hasReceivable?: string | null;
@@ -80,10 +80,12 @@ export type OutputDocumentsActiveFiltersInput = {
 export function hasActiveOutputDocumentsFilters(
   input: OutputDocumentsActiveFiltersInput
 ): boolean {
+  const personExternalId =
+    input.personExternalId == null ? "" : String(input.personExternalId).trim();
   return Boolean(
     input.search.trim() ||
-      input.company.trim() ||
       input.customer.trim() ||
+      personExternalId ||
       input.from ||
       input.to ||
       input.status?.trim() ||
@@ -94,6 +96,16 @@ export function hasActiveOutputDocumentsFilters(
       (input.hasReceivable && input.hasReceivable !== "all")
   );
 }
+
+/** Status Nomus observados em documentos de estoque / saída (filtro por contains). */
+export const OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS: ReadonlyArray<{
+  value: string;
+  label: string;
+}> = [
+  { value: "Aberto", label: "Aberto" },
+  { value: "Emitido", label: "Emitido" },
+  { value: "Cancelado", label: "Cancelado" },
+];
 
 export const OUTPUT_DOCUMENTS_TRI_STATE_OPTIONS: ReadonlyArray<{
   value: OutputDocumentsTriState;

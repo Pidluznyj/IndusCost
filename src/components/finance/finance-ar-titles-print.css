@@ -184,9 +184,42 @@
   #ar-titles-print-root td {
     border: 1px solid #cbd5e1;
     padding: 2px 3px;
-    vertical-align: top;
-    word-wrap: break-word;
-    overflow-wrap: anywhere;
+    vertical-align: middle;
+  }
+
+  #ar-titles-print-root .col-client {
+    width: 28%;
+    text-align: left !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+    font-size: 7px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  #ar-titles-print-root .col-doc {
+    width: 9%;
+    white-space: nowrap;
+  }
+
+  #ar-titles-print-root .col-date {
+    width: 7%;
+    white-space: nowrap;
+  }
+
+  #ar-titles-print-root .col-status {
+    width: 7.5%;
+  }
+
+  #ar-titles-print-root .col-num {
+    width: 4%;
+  }
+
+  #ar-titles-print-root .col-money {
+    width: 9%;
   }
 
   #ar-titles-print-root .finance-ar-titles-print-filter-band {
@@ -359,22 +392,6 @@
   #ar-titles-print-root .finance-ar-titles-print-money--total {
     font-weight: 700;
     font-size: 7.5px;
-  }
-
-  #ar-titles-print-root .col-client {
-    width: 16%;
-  }
-
-  #ar-titles-print-root .col-company {
-    width: 10%;
-  }
-
-  #ar-titles-print-root .col-doc {
-    width: 9%;
-  }
-
-  #ar-titles-print-root .col-status {
-    width: 8%;
   }
 
   /* Status badges */
