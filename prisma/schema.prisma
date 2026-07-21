@@ -150,21 +150,26 @@ model Employee {
 }
 
 /// Diretoria organizacional (RH) — agrupa departamentos e exige líder responsável.
+/// Pode opcionalmente reportar a outra diretoria (`parentDirectorateId`), formando hierarquia.
 model HrDirectorate {
-  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code             String?        @unique
-  name             String         @unique
-  status           String         @default("ACTIVE")
-  leaderEmployeeId String         @db.Uuid
-  notes            String?
-  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                String?        @unique
+  name                String         @unique
+  status              String         @default("ACTIVE")
+  leaderEmployeeId    String         @db.Uuid
+  parentDirectorateId String?        @db.Uuid
+  notes               String?
+  createdAt           DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
 
-  leader      Employee       @relation("HrDirectorateLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  departments HrDepartment[]
+  leader            Employee        @relation("HrDirectorateLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  parentDirectorate HrDirectorate?  @relation("HrDirectorateHierarchy", fields: [parentDirectorateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  childDirectorates HrDirectorate[] @relation("HrDirectorateHierarchy")
+  departments       HrDepartment[]
 
   @@index([status])
   @@index([leaderEmployeeId])
+  @@index([parentDirectorateId])
 }
 
 /// Departamento oficial (RH) — sempre vinculado a uma diretoria e com líder designado.

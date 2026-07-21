@@ -12,9 +12,12 @@ export type HrDirectorateRow = {
   name: string;
   status: "ACTIVE" | "INACTIVE";
   leaderEmployeeId: string;
+  parentDirectorateId: string | null;
   notes: string | null;
   leader: { id: string; name: string; socialName: string | null; status: string | null } | null;
+  parentDirectorate: { id: string; name: string; status: string; code: string | null } | null;
   departmentCount: number;
+  childDirectorateCount?: number;
   departments: { id: string; name: string; status: string }[];
 };
 
@@ -42,7 +45,14 @@ const INPUT =
   "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/20";
 
 function emptyDirectorateForm() {
-  return { name: "", code: "", leaderEmployeeId: "", notes: "", status: "ACTIVE" as const };
+  return {
+    name: "",
+    code: "",
+    leaderEmployeeId: "",
+    parentDirectorateId: "",
+    notes: "",
+    status: "ACTIVE" as const,
+  };
 }
 
 function emptyDepartmentForm() {
@@ -118,6 +128,18 @@ export function EmployeeOrgStructurePanel({
     [directorates, deptForm.directorateId]
   );
 
+  const parentDirectorateOptions = useMemo(() => {
+    const options = directorates
+      .filter((d) => d.id !== editingDirId)
+      .filter((d) => d.status === "ACTIVE" || d.id === dirForm.parentDirectorateId)
+      .map((d) => ({
+        value: d.id,
+        label: d.name,
+        searchTerms: `${d.name} ${d.code ?? ""}`,
+      }));
+    return [{ value: "", label: "Sem vínculo (raiz)", searchTerms: "sem vinculo raiz" }, ...options];
+  }, [directorates, editingDirId, dirForm.parentDirectorateId]);
+
   async function saveDirectorate() {
     if (!canManage) return;
     setSaving(true);
@@ -192,6 +214,7 @@ export function EmployeeOrgStructurePanel({
       name: row.name,
       code: row.code ?? "",
       leaderEmployeeId: row.leaderEmployeeId,
+      parentDirectorateId: row.parentDirectorateId ?? "",
       notes: row.notes ?? "",
       status: row.status,
     });
@@ -230,8 +253,8 @@ export function EmployeeOrgStructurePanel({
           <div>
             <h2 className="text-sm font-semibold">Estrutura organizacional</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Cadastre diretorias e departamentos com líder obrigatório. Essa hierarquia será a base
-              para liberar visões de pessoas por nível (diretoria → departamento → colaboradores).
+              Cadastre diretorias e departamentos com líder obrigatório. Uma diretoria pode
+              responder a outra (ou ficar sem vínculo). Essa hierarquia alimenta o Organograma.
             </p>
           </div>
         </div>
@@ -285,6 +308,14 @@ export function EmployeeOrgStructurePanel({
                 onSearchTermChange={onRequestManagers}
                 unknownSelectionLabel="Selecione o líder"
               />
+              <SearchableSelect
+                placeholder="Responde a (diretoria superior)"
+                options={parentDirectorateOptions}
+                value={dirForm.parentDirectorateId}
+                onChange={(v) => setDirForm((p) => ({ ...p, parentDirectorateId: v }))}
+                unknownSelectionLabel="Sem vínculo (raiz)"
+                pinOptionValues={[""]}
+              />
               <select
                 className={INPUT}
                 value={dirForm.status}
@@ -330,6 +361,9 @@ export function EmployeeOrgStructurePanel({
                       <p className="text-sm font-medium">{row.name}</p>
                       <p className="text-[11px] text-muted-foreground">
                         Líder: {row.leader?.name ?? "—"} · {row.departmentCount} dept.
+                        {row.parentDirectorate
+                          ? ` · Responde a: ${row.parentDirectorate.name}`
+                          : " · Sem vínculo"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">

@@ -68,10 +68,12 @@ describe("hrOrgChart", () => {
     const dept = chart.directorates[0].departments[0];
     assert.equal(dept.leader?.id, "e-lead");
     assert.equal(hrOrgChartPersonLabel(dept.leader!), "Ana");
-    assert.equal(dept.members.length, 2); // diretor + vendedor (líder fora da lista)
-    assert.ok(dept.members.every((m) => m.id !== "e-lead"));
+    // Líderes de diretoria/departamento não entram como membros
+    assert.equal(dept.members.length, 1);
+    assert.equal(dept.members[0].id, "e-1");
+    assert.ok(dept.members.every((m) => m.id !== "e-lead" && m.id !== "e-dir"));
     assert.equal(chart.unassigned.length, 1);
-    assert.equal(chart.totals.people, 3);
+    assert.equal(chart.totals.people, 2);
     assert.equal(chart.totals.unassigned, 1);
   });
 
@@ -107,5 +109,89 @@ describe("hrOrgChart", () => {
     });
     assert.equal(chart.directorates.length, 1);
     assert.equal(chart.directorates[0].name, "Ativa");
+  });
+
+  it("aninha diretoria filha sob a superior e mantém raiz sem vínculo", () => {
+    const chart = buildHrOrgChart({
+      directorates: [
+        {
+          id: "root",
+          name: "Presidência",
+          code: "PRE",
+          status: "ACTIVE",
+          leaderEmployeeId: "a",
+          parentDirectorateId: null,
+        },
+        {
+          id: "child",
+          name: "Administrativa",
+          code: "ADM",
+          status: "ACTIVE",
+          leaderEmployeeId: "a",
+          parentDirectorateId: "root",
+        },
+        {
+          id: "orphan",
+          name: "Independente",
+          code: "IND",
+          status: "ACTIVE",
+          leaderEmployeeId: "a",
+          parentDirectorateId: null,
+        },
+      ],
+      departments: [],
+      employees: [
+        {
+          id: "a",
+          name: "A",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: null,
+          roleName: null,
+        },
+      ],
+    });
+    assert.equal(chart.directorates.length, 2);
+    const root = chart.directorates.find((d) => d.id === "root");
+    assert.ok(root);
+    assert.equal(root!.childDirectorates.length, 1);
+    assert.equal(root!.childDirectorates[0].id, "child");
+    assert.equal(chart.totals.directorates, 3);
+  });
+
+  it("líder de diretoria sem departamento não aparece em 'sem departamento'", () => {
+    const chart = buildHrOrgChart({
+      directorates: [
+        {
+          id: "root",
+          name: "Presidência",
+          code: null,
+          status: "ACTIVE",
+          leaderEmployeeId: "boss",
+        },
+      ],
+      departments: [],
+      employees: [
+        {
+          id: "boss",
+          name: "Chefe",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: null,
+          roleName: "Diretor",
+        },
+        {
+          id: "free",
+          name: "Livre",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: null,
+          roleName: null,
+        },
+      ],
+    });
+    assert.equal(chart.directorates[0].leader?.id, "boss");
+    assert.equal(chart.unassigned.length, 1);
+    assert.equal(chart.unassigned[0].id, "free");
   });
 });

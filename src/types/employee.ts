@@ -84,6 +84,12 @@ export interface Employee extends EmployeeHrProfileFields {
       status: string | null;
     } | null;
   } | null;
+  /** Presente quando a pessoa lidera diretoria/departamento ativo. */
+  orgLeadership?: {
+    isOrgLeader: boolean;
+    label: string | null;
+    roles: Array<{ kind: "directorate" | "department"; id: string; name: string }>;
+  };
   manager?: {
     id: string;
     name: string;
