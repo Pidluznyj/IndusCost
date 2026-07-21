@@ -303,36 +303,38 @@ describe("FIN-13 motor — cenários obrigatórios", () => {
     );
   });
 
-  it("4. Entrega 100k → real + residual 100 + 100", () => {
+  it("4. Entrega 100k → residual 200k na última (OP-05: ativo − CR)", () => {
     const schedule = order300kThreePositions({ docAmount: "100000.00", fulfilledQty: 10 });
-    assert.equal(schedule.coverageSummary.materializationMode, "STAGED_AUTOMATIC");
-    assert.equal(schedule.activeOrderResidualSchedule.length, 2);
-    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "100000.00");
-    assertMoney(schedule.activeOrderResidualSchedule[1]!.residualAmount, "100000.00");
-    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 2);
-    assert.equal(schedule.occupiedPositionIndexes.length, 1);
+    assert.equal(schedule.coverageSummary.materializationMode, "PROPORTIONAL_FALLBACK");
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "200000.00");
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
+    assert.equal(schedule.occupiedPositionIndexes.length, 2);
   });
 
-  it("5. Entrega 80k → 110 + 110", () => {
+  it("5. Entrega 80k → residual 220k na última", () => {
     const schedule = order300kThreePositions({ docAmount: "80000.00", fulfilledQty: 8 });
-    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "110000.00");
-    assertMoney(schedule.activeOrderResidualSchedule[1]!.residualAmount, "110000.00");
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "220000.00");
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
   });
 
-  it("6. Entrega 150k → 75 + 75", () => {
+  it("6. Entrega 150k → residual 150k na última", () => {
     const schedule = order300kThreePositions({ docAmount: "150000.00", fulfilledQty: 15 });
-    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "75000.00");
-    assertMoney(schedule.activeOrderResidualSchedule[1]!.residualAmount, "75000.00");
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "150000.00");
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
   });
 
-  it("7. Dois CRs da mesma NF ocupam uma posição", () => {
+  it("7. Dois CRs da mesma NF — cobertura nominal conjunta; residual na última", () => {
     const schedule = order300kThreePositions({
       docAmount: "100000.00",
       fulfilledQty: 10,
       crSplit: true,
     });
-    assert.equal(schedule.occupiedPositionIndexes.length, 1);
-    assert.equal(schedule.activeOrderResidualSchedule.length, 2);
+    assert.equal(schedule.occupiedPositionIndexes.length, 2);
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "200000.00");
     const blocks = buildStagedDeliveryBlocks({
       documents: [
         {
@@ -361,14 +363,15 @@ describe("FIN-13 motor — cenários obrigatórios", () => {
     assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
   });
 
-  it("9. Parcelas desiguais preservam pesos", () => {
+  it("9. Com CR definitivo residual fecha na última (não redistribui pesos)", () => {
     const schedule = order300kThreePositions({
       docAmount: "100000.00",
       fulfilledQty: 10,
       unequal: true,
     });
-    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "75000.00");
-    assertMoney(schedule.activeOrderResidualSchedule[1]!.residualAmount, "125000.00");
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(schedule.activeOrderResidualSchedule[0]!.residualAmount, "200000.00");
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
   });
 
   it("10. Agenda manual não redistribui automaticamente", () => {
@@ -416,7 +419,7 @@ describe("FIN-13 motor — cenários obrigatórios", () => {
     assert.equal(schedule.realReceivables.length, 1);
   });
 
-  it("17. CR maior que base comercial — residual usa base de itens", () => {
+  it("17. CR maior que Doc — residual = ativo − cobertura nominal do CR", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule({
       salesOrderId: "so",
       orderCode: "PD X",
@@ -458,11 +461,10 @@ describe("FIN-13 motor — cenários obrigatórios", () => {
         },
       ],
     });
-    // FIN-13: residual comercial fica na base dos itens (200k); CR > Doc não
-    // aumenta consumo nem zera saldo das posições restantes.
+    // OP-05: 300000 − 101500 = 198500 (usa nominal do CR, não balance/qty).
     assertMoney(schedule.coverageSummary.itemActiveResidualTotal, "200000.00");
-    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "200000.00");
-    assertMoney(schedule.coverageSummary.activeOrderResidualTotal, "200000.00");
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "198500.00");
+    assertMoney(schedule.coverageSummary.activeOrderResidualTotal, "198500.00");
     assertMoney(schedule.realReceivables[0]!.amountReceivable, "101500.00");
   });
 

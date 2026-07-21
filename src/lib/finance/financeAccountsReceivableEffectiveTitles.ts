@@ -22,6 +22,11 @@ import {
   classifyFinanceArReceivableOrigin,
   type FinanceArReceivableOrigin,
 } from "@/src/lib/financeAccountsReceivableDeduplication.js";
+import {
+  extractFinanceArOrderCodeHint,
+  normalizeFinanceArOrderCodeKey,
+  suppressInferiorPreNfNomusArRows,
+} from "./financeArOperationalPortfolio.js";
 import type { SalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
 
 export type FinanceArEffectiveLineKind =
@@ -140,7 +145,7 @@ function syntheticExternalId(key: string): number {
 }
 
 function normalizeOrderCode(code: string | null | undefined): string {
-  return (code ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  return normalizeFinanceArOrderCodeKey(code);
 }
 
 function orderCodesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -345,9 +350,7 @@ export function buildFinanceArEffectiveTitles(
   summary: FinanceArEffectiveTitlesSummary;
 } {
   const referenceDate = input.referenceDate ?? new Date();
-  const nomusByExternalId = new Map(
-    dedupeFinanceArCrByExternalId(input.nomusRows).map((r) => [r.externalId, r] as const)
-  );
+  const dedupedNomus = dedupeFinanceArCrByExternalId(input.nomusRows);
 
   const crToOrder = new Map<
     number,
@@ -362,36 +365,41 @@ export function buildFinanceArEffectiveTitles(
     }
   }
 
-  // CR Nomus que menciona Pedido do contexto, mesmo fora de schedule.realReceivables
-  // (vínculo só por descrição) — usado para não emitir previsão duplicada.
-  // FIN-02: CR pré-NF (WITHOUT_NFE) NÃO cobre residual quando já há CR com NF no pedido.
+  // Vínculo por descrição aos pedidos do contexto (antes do suppress FIN-02).
+  for (const row of dedupedNomus) {
+    if (crToOrder.has(row.externalId)) continue;
+    for (const ctx of input.orderContexts) {
+      if (descriptionMentionsOrder(row.description, ctx.schedule.orderCode)) {
+        crToOrder.set(row.externalId, {
+          orderCode: ctx.schedule.orderCode,
+          salesOrderId: ctx.schedule.salesOrderId,
+        });
+        break;
+      }
+    }
+  }
+
+  // FIN-02 compartilhado: pré-NF omitido quando o Pedido já tem CR superior.
   const ordersWithSuperiorCr = new Set(
     input.orderContexts
       .filter((ctx) => ctx.schedule.realReceivables.length > 0)
       .map((ctx) => normalizeOrderCode(ctx.schedule.orderCode))
   );
+  const operationalNomus = suppressInferiorPreNfNomusArRows(dedupedNomus, {
+    superiorOrderCodes: ordersWithSuperiorCr,
+    resolveOrderCode: (row) =>
+      crToOrder.get(row.externalId)?.orderCode ??
+      extractFinanceArOrderCodeHint(row.description),
+  });
+  const nomusByExternalId = new Map(
+    operationalNomus.map((r) => [r.externalId, r] as const)
+  );
+
   const nomusCrCoverageByOrder = new Map<string, number>();
   for (const row of nomusByExternalId.values()) {
-    let linkedCode: string | null = crToOrder.get(row.externalId)?.orderCode ?? null;
-    if (!linkedCode) {
-      for (const ctx of input.orderContexts) {
-        if (descriptionMentionsOrder(row.description, ctx.schedule.orderCode)) {
-          linkedCode = ctx.schedule.orderCode;
-          crToOrder.set(row.externalId, {
-            orderCode: ctx.schedule.orderCode,
-            salesOrderId: ctx.schedule.salesOrderId,
-          });
-          break;
-        }
-      }
-    }
+    const linkedCode = crToOrder.get(row.externalId)?.orderCode ?? null;
     if (!linkedCode) continue;
     const key = normalizeOrderCode(linkedCode);
-    const origin = classifyFinanceArReceivableOrigin(row);
-    if (origin === "WITHOUT_NFE" && ordersWithSuperiorCr.has(key)) {
-      // Pré-NF órfão: não conta como cobertura nem como título operacional.
-      continue;
-    }
     nomusCrCoverageByOrder.set(
       key,
       roundMoney((nomusCrCoverageByOrder.get(key) ?? 0) + row.amountReceivable)
@@ -414,7 +422,6 @@ export function buildFinanceArEffectiveTitles(
     const personName = ctx.personName ?? null;
     const personCnpj = ctx.personCnpj ?? null;
     const companyName = ctx.companyName ?? null;
-    const hasSuperiorRealCr = schedule.realReceivables.length > 0;
 
     // CR oficiais: só os que passaram no filtro Nomus (status/ano/etc.).
     // Não reinsere CR liquidado via agenda do Pedido quando o grid pediu "Em aberto".
@@ -432,19 +439,11 @@ export function buildFinanceArEffectiveTitles(
     }
 
     // CR Nomus vinculado ao Pedido por descrição (ainda não emitido).
-    // Com CR real (NF) no pedido, pré-NF por descrição é substituído (FIN-02) — PD 02719.
-    // Sem CR real, pré-NF permanece como título operacional (PD 02740).
+    // Pré-NF inferior já removido por suppressInferiorPreNfNomusArRows (PD 02719).
     for (const row of nomusByExternalId.values()) {
       if (emittedCrIds.has(row.externalId)) continue;
       const meta = crToOrder.get(row.externalId);
       if (!meta || !orderCodesMatch(meta.orderCode, schedule.orderCode)) continue;
-      if (
-        hasSuperiorRealCr &&
-        classifyFinanceArReceivableOrigin(row) === "WITHOUT_NFE"
-      ) {
-        emittedCrIds.add(row.externalId);
-        continue;
-      }
       emittedCrIds.add(row.externalId);
       items.push(
         mapNomusToEffectiveItem(row, referenceDate, {
@@ -555,7 +554,7 @@ export function buildFinanceArEffectiveTitles(
   }
 
   // CR de outros pedidos (mesmo cliente) / sem vínculo de agenda — mantém.
-  // Pré-NF já marcado em emittedCrIds (suprimido por CR superior) não reaparece.
+  // Pré-NF inferior já removido do mapa por suppressInferiorPreNfNomusArRows.
   for (const row of nomusByExternalId.values()) {
     if (emittedCrIds.has(row.externalId)) continue;
     const meta = crToOrder.get(row.externalId) ?? null;
@@ -564,13 +563,6 @@ export function buildFinanceArEffectiveTitles(
         (meta && orderCodesMatch(meta.orderCode, input.orderCode)) ||
         descriptionMentionsOrder(row.description, input.orderCode);
       if (!linked) continue;
-      // Mesma regra FIN-02 no passe final (filtro por Pedido).
-      if (
-        classifyFinanceArReceivableOrigin(row) === "WITHOUT_NFE" &&
-        ordersWithSuperiorCr.has(normalizeOrderCode(input.orderCode))
-      ) {
-        continue;
-      }
     }
     items.push(
       mapNomusToEffectiveItem(

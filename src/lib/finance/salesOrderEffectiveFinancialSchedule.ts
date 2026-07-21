@@ -26,6 +26,8 @@ import {
 const ZERO = new Prisma.Decimal(0);
 const MONEY_DP = 2;
 const ROUND = Prisma.Decimal.ROUND_HALF_UP;
+/** Tolerância monetária canônica (centavos) — residual e fechamento. */
+export const EFFECTIVE_SCHEDULE_MONEY_TOLERANCE = new Prisma.Decimal("0.01");
 
 export type { EffectiveScheduleMaterializationMode };
 
@@ -35,7 +37,10 @@ export type EffectiveScheduleAlertCode =
   | "ORDER_RESIDUAL_OVERDUE"
   | "ORDER_RESIDUAL_WITHOUT_INSTALLMENTS"
   | "STAGED_RESIDUAL_WITHOUT_OPEN_POSITION"
-  | "STAGED_INCONCLUSIVE_RESIDUAL";
+  | "STAGED_INCONCLUSIVE_RESIDUAL"
+  | "REAL_AR_EXCEEDS_ACTIVE_ORDER_VALUE"
+  | "ACTIVE_ORDER_VALUE_UNAVAILABLE"
+  | "ORIGINAL_INSTALLMENT_SCHEDULE_UNAVAILABLE";
 
 export type EffectiveScheduleAlert = {
   code: EffectiveScheduleAlertCode;
@@ -198,6 +203,32 @@ function maxMoney(a: Prisma.Decimal, b: Prisma.Decimal): Prisma.Decimal {
 
 function minMoney(a: Prisma.Decimal, b: Prisma.Decimal): Prisma.Decimal {
   return a.lte(b) ? a : b;
+}
+
+/** Residual ≤ tolerância de centavos → zero (nunca negativo / -0,00). */
+function clampResidualToTolerance(value: Prisma.Decimal): Prisma.Decimal {
+  if (value.lte(EFFECTIVE_SCHEDULE_MONEY_TOLERANCE)) return ZERO;
+  return value.toDecimalPlaces(MONEY_DP, ROUND);
+}
+
+function residualNeedsLastInstallment(
+  activeOrderValue: Prisma.Decimal,
+  coveredByDefinitiveCr: Prisma.Decimal
+): boolean {
+  return clampResidualToTolerance(
+    maxMoney(ZERO, activeOrderValue.sub(coveredByDefinitiveCr))
+  ).gt(0);
+}
+
+/** OP-05: concentra o residual na última parcela original. */
+function allocateResidualToLastOriginalInstallment(
+  positionCount: number,
+  residualTotal: Prisma.Decimal
+): Prisma.Decimal[] {
+  const parts = Array.from({ length: positionCount }, () => ZERO);
+  if (positionCount <= 0 || residualTotal.lte(0)) return parts;
+  parts[positionCount - 1] = residualTotal.toDecimalPlaces(MONEY_DP, ROUND);
+  return parts;
 }
 
 /**
@@ -404,11 +435,22 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     .reduce((s, a) => s.add(a), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
 
-  // Residual comercial = FIN-04 (já líquido de Documento nos itens).
-  // FIN-13: com Documento/entrega, NÃO abater CR de novo — CR pode divergir
-  // (frete/imposto) e zeraria o saldo da 3ª parcela (regressão PD 02719).
-  // Exceção: CR sem qualquer Documento (ex. CR pré-NF / PD 02740) — aí o CR
-  // sozinho substitui a previsão na parte coberta.
+  // CR definitivo = vínculo estrutural com NF (sourceInvoiceId).
+  // Pré-NF (sem NF) não entra nesta cobertura — preserva PD 02740.
+  const definitiveReceivables = realReceivables.filter(
+    (r) => r.sourceInvoiceId != null
+  );
+  const hasDefinitiveCr = definitiveReceivables.length > 0;
+  const coveredByDefinitiveCr = definitiveReceivables
+    .reduce((s, r) => s.add(r.amountReceivable), ZERO)
+    .toDecimalPlaces(MONEY_DP, ROUND);
+
+  // Valor ativo do pedido (mesma base: planejado − corte − cancelado).
+  const activeOrderValue = maxMoney(
+    ZERO,
+    plannedNetTotal.sub(cutAmount).sub(canceledAmount)
+  ).toDecimalPlaces(MONEY_DP, ROUND);
+
   const itemDocCoverageTotal = itemAmounts
     .reduce((s, item) => s.add(item.coveredByValidDocuments), ZERO)
     .toDecimalPlaces(MONEY_DP, ROUND);
@@ -417,14 +459,6 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     (input.documents ?? []).some(
       (d) => d.isValid !== false && money(d.allocatedByOrderPrice).gt(0)
     );
-  const crOnlyCoverage = !hasDocumentCoverage
-    ? coveredByRealReceivables
-    : ZERO;
-
-  const residualToSchedule = maxMoney(
-    ZERO,
-    itemActiveResidualTotal.sub(crOnlyCoverage)
-  ).toDecimalPlaces(MONEY_DP, ROUND);
 
   const stagedDeliveryBlocks = buildStagedDeliveryBlocks({
     documents: input.documents,
@@ -435,42 +469,147 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     (input.manualResidualSchedule?.filter((l) => money(l.amount).gt(0)).length ??
       0) > 0;
 
-  const materializationMode = resolveEffectiveScheduleMaterializationMode({
-    itemAmounts,
-    deliveryBlockCount: stagedDeliveryBlocks.length,
-    originalPositionCount: original.length,
-    itemActiveResidualTotal: residualToSchedule,
-    cutAmount,
-    canceledAmount,
-    unresolvedAmount,
-    hasExplicitManualResidualSchedule: hasExplicitManual,
-  });
+  let residualToSchedule: Prisma.Decimal;
+  let materializationMode: EffectiveScheduleMaterializationMode;
+  let residualParts: Prisma.Decimal[];
+  let occupiedPositionIndexes: number[];
+  let stagedResidualWithoutPosition = ZERO;
 
-  const manualResidualParts =
-    hasExplicitManual && input.manualResidualSchedule
-      ? (() => {
-          const byNumber = new Map(
-            sortOriginalPositions(input.manualResidualSchedule!).map((p) => [
-              p.installmentNumber,
-              p.originalAmount,
-            ])
-          );
-          return original.map((p) => byNumber.get(p.installmentNumber) ?? ZERO);
-        })()
-      : null;
+  if (hasDefinitiveCr) {
+    // OP-05 / FIN-02 §CR definitivo:
+    // residual = valor ativo − cobertura nominal dos CRs com NF − docs sem CR.
+    // Uma única linha na última parcela original (não várias previsões intermediárias).
+    if (input.items.length === 0 && plannedNetTotal.eq(0)) {
+      alerts.push({
+        code: "ACTIVE_ORDER_VALUE_UNAVAILABLE",
+        severity: "warning",
+        message:
+          "Valor ativo do pedido indisponível — residual não inventado; CRs reais mantidos.",
+      });
+    }
+    if (
+      residualNeedsLastInstallment(activeOrderValue, coveredByDefinitiveCr) &&
+      original.length === 0
+    ) {
+      alerts.push({
+        code: "ORIGINAL_INSTALLMENT_SCHEDULE_UNAVAILABLE",
+        severity: "warning",
+        message:
+          "Há residual após CR definitivo sem parcelas originais do Pedido para âncora.",
+      });
+    }
+    if (
+      coveredByDefinitiveCr.gt(
+        activeOrderValue.add(EFFECTIVE_SCHEDULE_MONEY_TOLERANCE)
+      )
+    ) {
+      alerts.push({
+        code: "REAL_AR_EXCEEDS_ACTIVE_ORDER_VALUE",
+        severity: "warning",
+        message:
+          "Cobertura nominal dos CRs definitivos excede o valor ativo do pedido — CRs mantidos; residual não negativo.",
+      });
+    }
 
-  const stagedAllocation = resolveResidualPartsForMaterializationMode({
-    mode: materializationMode,
-    positions: original,
-    deliveryBlocks: stagedDeliveryBlocks,
-    residualTotal: residualToSchedule,
-    proportionalAllocator: allocateResidualToOriginalInstallments,
-    manualResidualParts,
-  });
+    residualToSchedule = clampResidualToTolerance(
+      maxMoney(
+        ZERO,
+        activeOrderValue
+          .sub(coveredByDefinitiveCr)
+          .sub(coveredByDocumentsWithoutCr)
+      ).toDecimalPlaces(MONEY_DP, ROUND)
+    );
 
-  const residualParts = stagedAllocation.residualParts;
-  let stagedResidualWithoutPosition = stagedAllocation.stagedResidualWithoutPosition;
-  const occupiedPositionIndexes = stagedAllocation.occupiedPositionIndexes;
+    if (original.length === 0) {
+      residualParts = [];
+      occupiedPositionIndexes = [];
+      stagedResidualWithoutPosition = residualToSchedule;
+      materializationMode =
+        residualToSchedule.gt(0) ? "INCONCLUSIVE" : "FULL_SUBSTITUTION";
+    } else if (hasExplicitManual && input.manualResidualSchedule) {
+      // Agenda manual explícita ainda prevalece sobre redistribuição automática.
+      const byNumber = new Map(
+        sortOriginalPositions(input.manualResidualSchedule).map((p) => [
+          p.installmentNumber,
+          p.originalAmount,
+        ])
+      );
+      residualParts = original.map((p) => byNumber.get(p.installmentNumber) ?? ZERO);
+      occupiedPositionIndexes = residualParts
+        .map((amount, i) => (amount.lte(0) ? i : -1))
+        .filter((i) => i >= 0);
+      // Se manual não cobre posições com residual zero no início, marca ocupadas as zeradas.
+      if (occupiedPositionIndexes.length === 0 && residualToSchedule.gt(0)) {
+        occupiedPositionIndexes = residualParts
+          .map((amount, i) => (amount.lte(0) ? i : -1))
+          .filter((i) => i >= 0);
+      }
+      materializationMode = "STAGED_MANUAL";
+    } else {
+      residualParts = allocateResidualToLastOriginalInstallment(
+        original.length,
+        residualToSchedule
+      );
+      occupiedPositionIndexes =
+        residualToSchedule.gt(0) && original.length > 1
+          ? Array.from({ length: original.length - 1 }, (_, i) => i)
+          : residualToSchedule.lte(0)
+            ? Array.from({ length: original.length }, (_, i) => i)
+            : [];
+      materializationMode =
+        residualToSchedule.gt(0) ? "PROPORTIONAL_FALLBACK" : "FULL_SUBSTITUTION";
+    }
+  } else {
+    // Sem CR definitivo: FIN-04 + FIN-13 (pré-NF / só Documento / só previsão).
+    // Com Documento, não abater CR pré-NF de novo. Sem Documento, CR pré-NF cobre.
+    const crOnlyCoverage = !hasDocumentCoverage
+      ? coveredByRealReceivables
+      : ZERO;
+
+    residualToSchedule = clampResidualToTolerance(
+      maxMoney(ZERO, itemActiveResidualTotal.sub(crOnlyCoverage)).toDecimalPlaces(
+        MONEY_DP,
+        ROUND
+      )
+    );
+
+    materializationMode = resolveEffectiveScheduleMaterializationMode({
+      itemAmounts,
+      deliveryBlockCount: stagedDeliveryBlocks.length,
+      originalPositionCount: original.length,
+      itemActiveResidualTotal: residualToSchedule,
+      cutAmount,
+      canceledAmount,
+      unresolvedAmount,
+      hasExplicitManualResidualSchedule: hasExplicitManual,
+    });
+
+    const manualResidualParts =
+      hasExplicitManual && input.manualResidualSchedule
+        ? (() => {
+            const byNumber = new Map(
+              sortOriginalPositions(input.manualResidualSchedule!).map((p) => [
+                p.installmentNumber,
+                p.originalAmount,
+              ])
+            );
+            return original.map((p) => byNumber.get(p.installmentNumber) ?? ZERO);
+          })()
+        : null;
+
+    const stagedAllocation = resolveResidualPartsForMaterializationMode({
+      mode: materializationMode,
+      positions: original,
+      deliveryBlocks: stagedDeliveryBlocks,
+      residualTotal: residualToSchedule,
+      proportionalAllocator: allocateResidualToOriginalInstallments,
+      manualResidualParts,
+    });
+
+    residualParts = stagedAllocation.residualParts;
+    stagedResidualWithoutPosition = stagedAllocation.stagedResidualWithoutPosition;
+    occupiedPositionIndexes = stagedAllocation.occupiedPositionIndexes;
+  }
 
   if (residualToSchedule.gt(0) && original.length === 0) {
     alerts.push({
@@ -571,7 +710,9 @@ export function buildSalesOrderEffectiveFinancialSchedule(
   const coverageSummary: EffectiveScheduleCoverageSummary = {
     plannedNetTotal,
     itemActiveResidualTotal,
-    coveredByRealReceivables,
+    coveredByRealReceivables: hasDefinitiveCr
+      ? coveredByDefinitiveCr
+      : coveredByRealReceivables,
     coveredByDocumentsWithoutCr,
     documentAwaitingAmount,
     activeOrderResidualTotal: finalActiveTotal,
@@ -582,7 +723,7 @@ export function buildSalesOrderEffectiveFinancialSchedule(
     stagedResidualWithoutPosition,
     materializationMode,
     precedenceSource: resolvePrecedenceSource({
-      cr: coveredByRealReceivables,
+      cr: hasDefinitiveCr ? coveredByDefinitiveCr : coveredByRealReceivables,
       docWithoutCr: coveredByDocumentsWithoutCr,
       orderResidual: finalActiveTotal.add(unresolvedAmount),
     }),

@@ -407,6 +407,9 @@ export function buildEffectiveScheduleConsumerAlerts(input: {
 
   for (const planned of activeResidual) {
     const dueLabel = planned.dueDate ?? "sem vencimento";
+    const hasRealCr = input.schedule.realReceivables.some(
+      (r) => r.sourceInvoiceId != null
+    );
     if (planned.statusLabel === "Vencido") {
       alerts.push({
         code: "PLANNED_RECEIVABLE_OVERDUE_WITHOUT_REAL_CR",
@@ -416,6 +419,20 @@ export function buildEffectiveScheduleConsumerAlerts(input: {
         origin: "Agenda efetiva FIN-05 / residual do Pedido",
         action:
           "Confirmar emissão da NF e sync do Contas a Receber para regularizar o CR real.",
+        financialImpact: round2(planned.openAmount),
+        installmentNumber: planned.installmentNumber,
+      });
+    } else if (planned.openAmount > 0.009 && hasRealCr) {
+      alerts.push({
+        code: "PLANNED_RECEIVABLE_REMAINING_AFTER_REAL_CR",
+        severity: "info",
+        title: "Previsão residual após CR real",
+        description: `${planned.reference} — residual ativo na última parcela após cobertura nominal dos CRs (${formatMoneyShort(
+          planned.openAmount
+        )}).`,
+        origin: "Agenda efetiva FIN-05 / residual pós-CR",
+        action:
+          "Acompanhar faturamento restante; residual fecha valor ativo − Σ CR nominais.",
         financialImpact: round2(planned.openAmount),
         installmentNumber: planned.installmentNumber,
       });
@@ -498,6 +515,28 @@ export function buildEffectiveScheduleConsumerAlerts(input: {
       });
     }
     // ORDER_RESIDUAL_OVERDUE já coberto pelas linhas residual com status Vencido.
+    if (a.code === "REAL_AR_EXCEEDS_ACTIVE_ORDER_VALUE") {
+      alerts.push({
+        code: "REAL_AR_EXCEEDS_ACTIVE_ORDER_VALUE",
+        severity: "warning",
+        title: "CR excede valor ativo do pedido",
+        description: a.message,
+        origin: "Agenda efetiva FIN-05",
+        action: "Revisar alocação de CR/NF — residual não fica negativo; CRs reais preservados.",
+        financialImpact: null,
+      });
+    }
+    if (a.code === "ACTIVE_ORDER_VALUE_UNAVAILABLE") {
+      alerts.push({
+        code: "ACTIVE_ORDER_VALUE_UNAVAILABLE",
+        severity: "warning",
+        title: "Valor ativo do pedido indisponível",
+        description: a.message,
+        origin: "Agenda efetiva FIN-05",
+        action: "Completar itens/valores do pedido antes de confiar no residual.",
+        financialImpact: null,
+      });
+    }
   }
 
   // Corte: nunca vira alerta de aberto/vencido financeiro (política FIN-02).

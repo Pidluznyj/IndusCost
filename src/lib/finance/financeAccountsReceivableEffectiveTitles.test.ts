@@ -421,7 +421,7 @@ describe("FIN-08 — CR só Nomus não duplica previsão do Pedido (PD 02740)", 
     assert.equal(summary.totalOpenValue, 175600);
   });
 
-  it("PD 02719: CR com NF substitui CR pré-NF órfão (Doc = código do pedido)", () => {
+  it("caso 3 parcelas + 2 CRs com NF + 2 pré-NF textuais: 2 CR + 1 residual final", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule({
       salesOrderId: "so-pd-02719",
       orderCode: "PD 02719",
@@ -557,14 +557,15 @@ describe("FIN-08 — CR só Nomus não duplica previsão do Pedido (PD 02740)", 
       .sort((a, b) => a - b);
     assert.deepEqual(crIds, [17874, 18076]);
     assert.ok(!items.some((i) => i.externalId === 18077 || i.externalId === 18079));
-    assert.equal(
-      items.filter(
-        (i) =>
-          i.lineKind === "ORDER_RESIDUAL_FORECAST" ||
-          i.lineKind === "ORDER_PLAN_FORECAST"
-      ).length,
-      0,
-      "previsão substituída não reaparece na grade"
+
+    const residuals = items.filter((i) => i.lineKind === "ORDER_RESIDUAL_FORECAST");
+    assert.equal(residuals.length, 1, "exatamente uma previsão residual final");
+    assert.equal(residuals[0]!.amountReceivable, 161111);
+    assert.equal(158505 + 146974 + residuals[0]!.amountReceivable, 466590);
+    assert.ok(
+      residuals[0]!.description?.includes("Parcela 3") ||
+        residuals[0]!.dueDate?.startsWith("2026-09-30"),
+      "residual ancorado na 3ª parcela"
     );
   });
 

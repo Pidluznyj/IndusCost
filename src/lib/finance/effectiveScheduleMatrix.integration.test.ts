@@ -78,7 +78,7 @@ function sumCrReceivable(schedule: SalesOrderEffectiveFinancialSchedule): Prisma
     .toDecimalPlaces(2);
 }
 
-/** Invariantes transversais da política FIN-02. */
+/** Invariantes transversais da política FIN-02 / OP-05. */
 function assertCoreInvariants(
   schedule: SalesOrderEffectiveFinancialSchedule,
   label: string
@@ -89,13 +89,34 @@ function assertCoreInvariants(
     schedule.coverageSummary.activeOrderResidualTotal.toFixed(2),
     `${label}: soma residual exata`
   );
-  assert.equal(
-    residual
-      .add(schedule.coverageSummary.stagedResidualWithoutPosition)
-      .toFixed(2),
-    schedule.coverageSummary.itemActiveResidualTotal.toFixed(2),
-    `${label}: residual agenda + orphan staged = residual de itens`
+
+  const hasDefinitiveCr = schedule.realReceivables.some((r) => r.sourceInvoiceId != null);
+  const placedPlusOrphan = residual.add(
+    schedule.coverageSummary.stagedResidualWithoutPosition
   );
+  if (hasDefinitiveCr) {
+    const activeOrderValue = schedule.coverageSummary.plannedNetTotal
+      .sub(schedule.coverageSummary.cutAmount)
+      .sub(schedule.coverageSummary.canceledAmount);
+    const rawExpected = activeOrderValue
+      .sub(schedule.coverageSummary.coveredByRealReceivables)
+      .sub(schedule.coverageSummary.coveredByDocumentsWithoutCr);
+    const expected =
+      rawExpected.lte(0) || rawExpected.lte(new Prisma.Decimal("0.01"))
+        ? new Prisma.Decimal(0)
+        : rawExpected.toDecimalPlaces(2);
+    assert.equal(
+      placedPlusOrphan.toFixed(2),
+      expected.toFixed(2),
+      `${label}: residual = valor ativo − Σ CR nominais − docs sem CR`
+    );
+  } else {
+    assert.equal(
+      placedPlusOrphan.toFixed(2),
+      schedule.coverageSummary.itemActiveResidualTotal.toFixed(2),
+      `${label}: residual agenda + orphan staged = residual de itens`
+    );
+  }
 
   // Corte fora da agenda ativa (não soma residual/doc/CR).
   assert.ok(
@@ -424,8 +445,8 @@ describe("FIN-11 — matriz completa (24 cenários)", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule(matrixDiferencaDocumentoCr());
     assert.equal(schedule.documentSchedule.length, 0, "Doc não soma com CR da mesma NF");
     assertMoney(sumCrReceivable(schedule), "9500.00");
-    // Item totalmente atendido → residual comercial 0; CR oficial 9500 preservado.
-    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "0.00");
+    // OP-05: valor ativo 10000 − CR nominal 9500 = residual 500 na última parcela.
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "500.00");
     assertMoney(schedule.itemAmounts[0]!.crReceivableRaw, "9500.00");
     assertCoreInvariants(schedule, "16");
   });

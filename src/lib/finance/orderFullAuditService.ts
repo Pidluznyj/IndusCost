@@ -7729,6 +7729,21 @@ function getAlertMetadata(code: string): AlertMetadata | null {
       severity: "info",
       linkedTab: "financial",
     },
+    PLANNED_RECEIVABLE_REMAINING_AFTER_REAL_CR: {
+      category: "RECEIVABLE",
+      severity: "info",
+      linkedTab: "financial",
+    },
+    REAL_AR_EXCEEDS_ACTIVE_ORDER_VALUE: {
+      category: "RECEIVABLE",
+      severity: "warning",
+      linkedTab: "financial",
+    },
+    ACTIVE_ORDER_VALUE_UNAVAILABLE: {
+      category: "RECEIVABLE",
+      severity: "warning",
+      linkedTab: "financial",
+    },
     DOCUMENT_AWAITING_FINANCIAL_SCHEDULE: {
       category: "RECEIVABLE",
       severity: "warning",

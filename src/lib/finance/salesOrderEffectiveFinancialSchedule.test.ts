@@ -270,7 +270,7 @@ describe("CR sem Documento não duplica previsão (PD 02740)", () => {
 });
 
 describe("Entrega parcial com Documento+CR não zera saldo (PD 02719)", () => {
-  it("2 entregas em 3 parcelas → posições 1–2 ocupadas; residual na 3ª", () => {
+  it("2 CRs definitivos → residual = valor ativo − Σ nominal CR na última parcela", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule(
       fixtureOrder10000Base({
         orderCode: "PD 02719",
@@ -333,24 +333,16 @@ describe("Entrega parcial com Documento+CR não zera saldo (PD 02719)", () => {
       })
     );
 
-    assert.equal(schedule.coverageSummary.materializationMode, "STAGED_AUTOMATIC");
-    assert.ok(schedule.activeOrderResidualSchedule.length >= 1);
-    assert.ok(
-      Number(schedule.coverageSummary.activeOrderResidualTotal.toFixed(2)) > 0.009,
-      "saldo da 3ª parcela não pode zerar só porque há CR das 2 NFs"
-    );
-    assert.ok(
-      !schedule.supersededOrderSchedule.every((l) => l.installmentNumber <= 3) ||
-        schedule.activeOrderResidualSchedule.some((l) => l.installmentNumber === 3),
-      "parcela 3 deve permanecer ativa (residual), não substituída integral"
-    );
-    // Residual = min(saldo qty, não coberto por Doc) — não pode ser zerado pelo CR.
-    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "155530.00");
+    // 466590 − (158505 + 146974) = 161111 na 3ª parcela.
+    assert.equal(schedule.activeOrderResidualSchedule.length, 1);
+    assertMoney(sumActiveOrderResidual(schedule.activeOrderResidualSchedule), "161111.00");
     assert.equal(schedule.activeOrderResidualSchedule[0]!.installmentNumber, 3);
-    assert.equal(
-      schedule.supersededOrderSchedule.filter((l) => l.installmentNumber === 3).length,
-      0,
-      "parcela 3 não entra como substituída enquanto houver residual"
+    assert.equal(schedule.activeOrderResidualSchedule[0]!.dueDate, "2026-09-30");
+    assertMoney(
+      schedule.coverageSummary.coveredByRealReceivables.add(
+        schedule.coverageSummary.activeOrderResidualTotal
+      ),
+      "466590.00"
     );
   });
 });
