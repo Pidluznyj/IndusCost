@@ -8,6 +8,10 @@ import { getOrderFullAudit } from "./orderFullAuditService.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import { extractFinanceArOrderCodeHint } from "@/src/lib/financeAccountsReceivableTitles.js";
+import {
+  buildFinanceArEffectiveSalesOrderWhere,
+} from "@/src/lib/financeArCancelledSalesOrderExclusion.server.js";
+import { shouldIncludeSalesOrderInOperationalReceivables } from "@/src/lib/financeArCancelledSalesOrderExclusion.js";
 
 const DEFAULT_ORDER_LIMIT = 24;
 
@@ -76,11 +80,17 @@ export async function loadFinanceArEffectiveOrderContexts(
 
   if (whereParts.length === 0) return [];
 
+  const commercialWhere =
+    whereParts.length === 1 ? whereParts[0]! : { AND: whereParts };
+  const where = buildFinanceArEffectiveSalesOrderWhere(commercialWhere);
+
   const orders = await prisma.salesOrder.findMany({
-    where: whereParts.length === 1 ? whereParts[0]! : { AND: whereParts },
+    where: where as never,
     select: {
       id: true,
       orderCode: true,
+      status: true,
+      sourcePresenceStatus: true,
       externalCustomerId: true,
       Customer: { select: { companyName: true, taxId: true } },
     },
@@ -97,6 +107,14 @@ export async function loadFinanceArEffectiveOrderContexts(
     const slice = orders.slice(i, i + CONCURRENCY);
     const settled = await Promise.all(
       slice.map(async (order) => {
+        if (
+          !shouldIncludeSalesOrderInOperationalReceivables({
+            status: order.status,
+            sourcePresenceStatus: order.sourcePresenceStatus,
+          })
+        ) {
+          return null;
+        }
         try {
           const audit = await getOrderFullAudit({
             salesOrderId: order.id,

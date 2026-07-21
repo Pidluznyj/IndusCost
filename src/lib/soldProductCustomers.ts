@@ -6,7 +6,7 @@
 import { prisma } from "@/src/lib/prisma.js";
 import { buildCustomerIntelligenceFinancial } from "@/src/lib/customerIntelligenceFinancial.js";
 import { resolveCustomerIntelligenceRegion } from "@/src/lib/customerIntelligenceUtils.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import {
   computeSoldProductsAverageUnitPrice,
   computeSoldProductsSharePercent,

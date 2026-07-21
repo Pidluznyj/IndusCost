@@ -8,17 +8,15 @@ import {
   parseFinanceArTitlesQuery,
 } from "./financeAccountsReceivableTitles.js";
 import type { FinanceArDashboardRow } from "./financeAccountsReceivableDashboard.js";
-import {
-  loadFinanceArOpenHorizonRowsFromPrisma,
-  type AccountsReceivableOpenHorizon,
-  type AccountsReceivableOpenHorizonBucketKey,
+import type {
+  AccountsReceivableOpenHorizon,
+  AccountsReceivableOpenHorizonBucketKey,
 } from "./financeAccountsReceivableHorizon.js";
 import {
-  parseFinanceAgingBucketParam,
   resolveFinanceAgingBucketMeta,
   type FinanceAgingBucketSelectionMeta,
 } from "./financeDashboardAgingBuckets.js";
-import type { PrismaClient } from "@prisma/client";
+import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import { roundHorizonMoney } from "./financeHorizonBuckets.js";
 
 export type FinanceArHorizonAppliedFilterLine = {
@@ -178,13 +176,13 @@ export function buildFinanceArHorizonAppliedFilterLines(input: {
   return lines;
 }
 
-export async function buildFinanceArHorizonExportPayloadDefault(
-  db: Pick<PrismaClient, "nomusAccountsReceivable">,
+export function buildFinanceArHorizonExportPayloadFromRows(
+  rows: FinanceArDashboardRow[],
+  syncCutoff: NomusArReportSyncCutoff | null,
   query: ReturnType<typeof parseFinanceArHorizonExportQuery>,
   userContext: { userName: string | null },
   referenceDate: Date = new Date()
-): Promise<FinanceArHorizonExportPayload> {
-  const { rows, syncCutoff } = await loadFinanceArOpenHorizonRowsFromPrisma(db, referenceDate);
+): FinanceArHorizonExportPayload {
   const horizon = buildOfficialAccountsReceivableRulesResult({
     rows,
     referenceDate,

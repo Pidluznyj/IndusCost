@@ -32,8 +32,8 @@ import {
   buildCashFlowApPrismaWhere,
 } from "./financeCashFlowRowFilters.js";
 import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
-import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
-import { loadFinanceArOpenHorizonRowsFromPrisma } from "./financeAccountsReceivableHorizon.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
+import { loadFinanceArOpenHorizonRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 import { mergeFinanceDataSanitization } from "./financeInternalGroupExclusions.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveExecutiveDashboardYearContext } from "./executiveDashboardYear.js";

@@ -188,6 +188,10 @@ export function buildSalesOrderListWhere(
 
   const and: Prisma.SalesOrderWhereInput[] = [];
   if (status && isValidSalesOrderListStatus(status)) and.push({ status });
+  else {
+    // Operacional: pedidos cancelados não entram na população (exceto filtro explícito CANCELLED).
+    and.push({ status: { not: "CANCELLED" } });
+  }
   if (customerId) and.push({ customerId });
   if (hasIssueDateFilter) and.push({ issueDate });
   if (searchOr) and.push({ OR: searchOr });

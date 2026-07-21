@@ -117,12 +117,19 @@ describe("salesOrdersListSummary", () => {
       },
       noPresence
     );
-    assert.deepEqual(where, { externalSellerId: { in: [464] } });
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    assert.ok(and!.some((c) => c.status && JSON.stringify(c.status).includes("CANCELLED")));
+    assert.ok(and!.some((c) => JSON.stringify(c).includes("464")));
+    assert.ok(!JSON.stringify(where).includes('"responsible"'));
   });
 
   it("buildSalesOrderListWhere filtra issueDate por ano", () => {
     const where = buildSalesOrderListWhere({ year: 2026 }, noPresence);
-    assert.deepEqual(where.issueDate, {
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    const issue = and!.find((c) => c.issueDate) as { issueDate: unknown };
+    assert.deepEqual(issue.issueDate, {
       gte: new Date(2026, 0, 1, 0, 0, 0, 0),
       lt: new Date(2027, 0, 1, 0, 0, 0, 0),
     });
@@ -130,7 +137,10 @@ describe("salesOrdersListSummary", () => {
 
   it("buildSalesOrderListWhere filtra issueDate por ano e mês", () => {
     const where = buildSalesOrderListWhere({ year: 2026, month: 6 }, noPresence);
-    assert.deepEqual(where.issueDate, {
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    const issue = and!.find((c) => c.issueDate) as { issueDate: unknown };
+    assert.deepEqual(issue.issueDate, {
       gte: new Date(2026, 5, 1, 0, 0, 0, 0),
       lt: new Date(2026, 6, 1, 0, 0, 0, 0),
     });
@@ -138,7 +148,10 @@ describe("salesOrdersListSummary", () => {
 
   it("buildSalesOrderListWhere calcula corretamente o fim de dezembro", () => {
     const where = buildSalesOrderListWhere({ year: 2026, month: 12 }, noPresence);
-    assert.deepEqual(where.issueDate, {
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    const issue = and!.find((c) => c.issueDate) as { issueDate: unknown };
+    assert.deepEqual(issue.issueDate, {
       gte: new Date(2026, 11, 1, 0, 0, 0, 0),
       lt: new Date(2027, 0, 1, 0, 0, 0, 0),
     });
@@ -164,7 +177,9 @@ describe("salesOrdersListSummary", () => {
       },
       noPresence
     );
-    assert.deepEqual(where, { externalSellerId: 464 });
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    assert.ok(and!.some((c) => c.externalSellerId === 464));
   });
 
   it("buildSalesOrderListWhere com sellerKey sem vendedor", () => {
@@ -174,7 +189,14 @@ describe("salesOrdersListSummary", () => {
       },
       noPresence
     );
-    assert.deepEqual(where, { externalSellerId: null });
+    const and = (where as { AND?: Array<Record<string, unknown>> }).AND;
+    assert.ok(Array.isArray(and));
+    assert.ok(and!.some((c) => c.externalSellerId === null));
+  });
+
+  it("buildSalesOrderListWhere exclui CANCELLED por padrão na população operacional", () => {
+    const where = buildSalesOrderListWhere({}, noPresence);
+    assert.match(JSON.stringify(where), /"not":"CANCELLED"/);
   });
 
   it("buildSalesOrderListWhere filtra Com NF via nfeLinks válidos", () => {

@@ -12,7 +12,7 @@ import {
   FinanceArOverdueFilterParseError,
   parseFinanceArOverdueFilters,
 } from "./financeAccountsReceivableOverdue.js";
-import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 import type { FinanceArDashboardFilters } from "./financeAccountsReceivableDashboard.js";
 import { prisma } from "./prisma.js";
 import {

@@ -2,7 +2,7 @@ import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { buildOfficialNomusAccountsReceivableSummaryResponse } from "@/src/lib/financeAccountsReceivableRulesAdapter.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {

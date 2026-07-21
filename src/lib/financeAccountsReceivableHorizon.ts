@@ -132,6 +132,7 @@ export async function loadFinanceArOpenHorizonRowsFromPrisma(
   db: Pick<PrismaClient, "nomusAccountsReceivable">,
   referenceDate: Date = new Date()
 ): Promise<{ rows: FinanceArDashboardRow[]; syncCutoff: NomusArReportSyncCutoff | null }> {
+  void referenceDate;
   const syncCutoff = await resolveNomusArReportSyncCutoffFromPrisma(db);
   const where = buildFinanceArPrismaWhereForOpenHorizon(syncCutoff);
   const rows = await db.nomusAccountsReceivable.findMany({

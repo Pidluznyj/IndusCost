@@ -5,7 +5,7 @@ import {
   CustomerIntelligenceFilterParseError,
   parseCustomerIntelligenceFilters,
 } from "@/src/lib/customerIntelligenceUtils.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.js";
+import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
 import {
   normalizeCustomerDocument,
   salesOrderHasInvoicing,

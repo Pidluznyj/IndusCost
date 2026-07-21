@@ -1,10 +1,8 @@
 import type express from "express";
 import type { RequestHandler } from "express";
 import type { AppAuthContext } from "./appAuth.js";
-import {
-  filterFinanceArManagementReportRows,
-  loadFinanceArManagementRowsFromPrisma,
-} from "./financeAccountsReceivableManagement.js";
+import { filterFinanceArManagementReportRows } from "./financeAccountsReceivableManagement.js";
+import { loadFinanceArManagementRowsFromPrisma } from "./financeAccountsReceivableManagement.server.js";
 import {
   buildOfficialApDueRadarPayload,
   filterOfficialApManagementTitles,

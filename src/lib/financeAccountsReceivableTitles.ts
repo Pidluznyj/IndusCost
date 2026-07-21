@@ -606,6 +606,8 @@ export function buildFinanceArTitlesPayload(
     // FIN-08 — agenda efetiva no contexto Pedido/cliente.
     // Quando há hint de Pedido mas ainda sem contexts, filtra CR por Pedido
     // e marca lineKind; contexts vazios não inventam residual.
+  // Residual/Doc/CR da agenda não podem burlar status/ano/mês do grid.
+    // Pedidos cancelados/ausentes não geram contexts — sem previsão inventada.
     const effective = buildFinanceArEffectiveTitles({
       nomusRows: filtered,
       orderContexts,
@@ -615,14 +617,20 @@ export function buildFinanceArTitlesPayload(
       customerCnpj: query.extended?.customerCnpj,
       referenceDate,
     });
-    // Residual/Doc/CR da agenda não podem burlar status/ano/mês do grid.
-    const effectiveFiltered = filterFinanceArEffectiveTitlesByDashboardFilters(
-      effective.items,
-      query.filters,
-      referenceDate
-    );
-    mapped = effectiveFiltered;
-    summary = computeFinanceArEffectiveTitlesSummary(effectiveFiltered);
+    // Se o usuário buscou um Pedido excluído (cancelado/ausente) e não há
+    // contexts operacionais, não lista CR órfão nem inventa previsão.
+    if (orderCodeHint && orderContexts.length === 0) {
+      mapped = [];
+      summary = computeFinanceArTitlesSummary([], referenceDate);
+    } else {
+      const effectiveFiltered = filterFinanceArEffectiveTitlesByDashboardFilters(
+        effective.items,
+        query.filters,
+        referenceDate
+      );
+      mapped = effectiveFiltered;
+      summary = computeFinanceArEffectiveTitlesSummary(effectiveFiltered);
+    }
   } else {
     mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
     summary = computeFinanceArTitlesSummary(mapped, referenceDate);
