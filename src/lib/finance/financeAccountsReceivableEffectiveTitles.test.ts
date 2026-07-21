@@ -421,6 +421,153 @@ describe("FIN-08 — CR só Nomus não duplica previsão do Pedido (PD 02740)", 
     assert.equal(summary.totalOpenValue, 175600);
   });
 
+  it("PD 02719: CR com NF substitui CR pré-NF órfão (Doc = código do pedido)", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-pd-02719",
+      orderCode: "PD 02719",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-09-10", amount: "155530.00" },
+        { installmentNumber: 2, dueDate: "2026-09-20", amount: "155530.00" },
+        { installmentNumber: 3, dueDate: "2026-09-30", amount: "155530.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "466590.00",
+          status: 4,
+          orderedQuantity: 100,
+          fulfilledQuantity: 100,
+          documentAllocations: [
+            { allocationKey: "doc-7311", allocatedByOrderPrice: "158505.00" },
+            { allocationKey: "doc-7382", allocatedByOrderPrice: "146974.00" },
+          ],
+          crAllocations: [
+            {
+              allocationKey: "cr-17874",
+              amountReceivable: "158505.00",
+              amountReceived: "1755.00",
+              balanceReceivable: "156750.00",
+            },
+            {
+              allocationKey: "cr-18076",
+              amountReceivable: "146974.00",
+              amountReceived: "0.00",
+              balanceReceivable: "146974.00",
+            },
+          ],
+        },
+      ],
+      documents: [
+        {
+          documentKey: "doc-7311",
+          sourceInvoiceId: 7311,
+          allocatedByOrderPrice: "158505.00",
+          provenInstallments: [
+            { installmentNumber: 1, dueDate: "2026-09-10", amount: "158505.00" },
+          ],
+        },
+        {
+          documentKey: "doc-7382",
+          sourceInvoiceId: 7382,
+          allocatedByOrderPrice: "146974.00",
+          provenInstallments: [
+            { installmentNumber: 1, dueDate: "2026-09-20", amount: "146974.00" },
+          ],
+        },
+      ],
+      realReceivables: [
+        {
+          externalId: 17874,
+          sourceInvoiceId: 7311,
+          dueDate: "2026-09-10",
+          amountReceivable: "158505.00",
+          amountReceived: "1755.00",
+          balanceReceivable: "156750.00",
+        },
+        {
+          externalId: 18076,
+          sourceInvoiceId: 7382,
+          dueDate: "2026-09-20",
+          amountReceivable: "146974.00",
+          amountReceived: "0.00",
+          balanceReceivable: "146974.00",
+        },
+      ],
+      referenceDate: REF,
+    });
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [
+        nomusCr({
+          externalId: 17874,
+          sourceInvoiceId: 7311,
+          sourceInvoiceNumber: "7311",
+          description: "Pedido PD 02719 NF 7311",
+          amountReceivable: 158505,
+          amountReceived: 1755,
+          balanceReceivable: 156750,
+          dueDate: new Date(2026, 8, 10),
+        }),
+        nomusCr({
+          externalId: 18077,
+          sourceInvoiceId: null,
+          sourceInvoiceNumber: null,
+          description: "Pedido PD 02719 — Depósito Bancário",
+          amountReceivable: 158505,
+          amountReceived: 0,
+          balanceReceivable: 158505,
+          dueDate: new Date(2026, 8, 10),
+        }),
+        nomusCr({
+          externalId: 18076,
+          sourceInvoiceId: 7382,
+          sourceInvoiceNumber: "7382",
+          description: "Pedido PD 02719 NF 7382",
+          amountReceivable: 146974,
+          amountReceived: 0,
+          balanceReceivable: 146974,
+          dueDate: new Date(2026, 8, 20),
+        }),
+        nomusCr({
+          externalId: 18079,
+          sourceInvoiceId: null,
+          sourceInvoiceNumber: null,
+          description: "Pedido PD 02719 — Depósito Bancário",
+          amountReceivable: 161111,
+          amountReceived: 0,
+          balanceReceivable: 161111,
+          dueDate: new Date(2026, 8, 30),
+        }),
+      ],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      orderCode: "PD 02719",
+      referenceDate: REF,
+    });
+
+    const crIds = items
+      .filter((i) => i.lineKind === "CR_REAL")
+      .map((i) => i.externalId)
+      .sort((a, b) => a - b);
+    assert.deepEqual(crIds, [17874, 18076]);
+    assert.ok(!items.some((i) => i.externalId === 18077 || i.externalId === 18079));
+    assert.equal(
+      items.filter(
+        (i) =>
+          i.lineKind === "ORDER_RESIDUAL_FORECAST" ||
+          i.lineKind === "ORDER_PLAN_FORECAST"
+      ).length,
+      0,
+      "previsão substituída não reaparece na grade"
+    );
+  });
+
   it("sem CR: previsão sem materialização usa ORDER_PLAN_FORECAST", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule({
       salesOrderId: "so-plan",

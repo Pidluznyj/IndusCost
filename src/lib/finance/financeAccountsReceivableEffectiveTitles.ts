@@ -364,6 +364,12 @@ export function buildFinanceArEffectiveTitles(
 
   // CR Nomus que menciona Pedido do contexto, mesmo fora de schedule.realReceivables
   // (vínculo só por descrição) — usado para não emitir previsão duplicada.
+  // FIN-02: CR pré-NF (WITHOUT_NFE) NÃO cobre residual quando já há CR com NF no pedido.
+  const ordersWithSuperiorCr = new Set(
+    input.orderContexts
+      .filter((ctx) => ctx.schedule.realReceivables.length > 0)
+      .map((ctx) => normalizeOrderCode(ctx.schedule.orderCode))
+  );
   const nomusCrCoverageByOrder = new Map<string, number>();
   for (const row of nomusByExternalId.values()) {
     let linkedCode: string | null = crToOrder.get(row.externalId)?.orderCode ?? null;
@@ -381,6 +387,11 @@ export function buildFinanceArEffectiveTitles(
     }
     if (!linkedCode) continue;
     const key = normalizeOrderCode(linkedCode);
+    const origin = classifyFinanceArReceivableOrigin(row);
+    if (origin === "WITHOUT_NFE" && ordersWithSuperiorCr.has(key)) {
+      // Pré-NF órfão: não conta como cobertura nem como título operacional.
+      continue;
+    }
     nomusCrCoverageByOrder.set(
       key,
       roundMoney((nomusCrCoverageByOrder.get(key) ?? 0) + row.amountReceivable)
@@ -403,6 +414,7 @@ export function buildFinanceArEffectiveTitles(
     const personName = ctx.personName ?? null;
     const personCnpj = ctx.personCnpj ?? null;
     const companyName = ctx.companyName ?? null;
+    const hasSuperiorRealCr = schedule.realReceivables.length > 0;
 
     // CR oficiais: só os que passaram no filtro Nomus (status/ano/etc.).
     // Não reinsere CR liquidado via agenda do Pedido quando o grid pediu "Em aberto".
@@ -420,10 +432,19 @@ export function buildFinanceArEffectiveTitles(
     }
 
     // CR Nomus vinculado ao Pedido por descrição (ainda não emitido).
+    // Com CR real (NF) no pedido, pré-NF por descrição é substituído (FIN-02) — PD 02719.
+    // Sem CR real, pré-NF permanece como título operacional (PD 02740).
     for (const row of nomusByExternalId.values()) {
       if (emittedCrIds.has(row.externalId)) continue;
       const meta = crToOrder.get(row.externalId);
       if (!meta || !orderCodesMatch(meta.orderCode, schedule.orderCode)) continue;
+      if (
+        hasSuperiorRealCr &&
+        classifyFinanceArReceivableOrigin(row) === "WITHOUT_NFE"
+      ) {
+        emittedCrIds.add(row.externalId);
+        continue;
+      }
       emittedCrIds.add(row.externalId);
       items.push(
         mapNomusToEffectiveItem(row, referenceDate, {
@@ -534,6 +555,7 @@ export function buildFinanceArEffectiveTitles(
   }
 
   // CR de outros pedidos (mesmo cliente) / sem vínculo de agenda — mantém.
+  // Pré-NF já marcado em emittedCrIds (suprimido por CR superior) não reaparece.
   for (const row of nomusByExternalId.values()) {
     if (emittedCrIds.has(row.externalId)) continue;
     const meta = crToOrder.get(row.externalId) ?? null;
@@ -542,6 +564,13 @@ export function buildFinanceArEffectiveTitles(
         (meta && orderCodesMatch(meta.orderCode, input.orderCode)) ||
         descriptionMentionsOrder(row.description, input.orderCode);
       if (!linked) continue;
+      // Mesma regra FIN-02 no passe final (filtro por Pedido).
+      if (
+        classifyFinanceArReceivableOrigin(row) === "WITHOUT_NFE" &&
+        ordersWithSuperiorCr.has(normalizeOrderCode(input.orderCode))
+      ) {
+        continue;
+      }
     }
     items.push(
       mapNomusToEffectiveItem(
