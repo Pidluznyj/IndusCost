@@ -6,10 +6,12 @@ import type {
   InventoryCountLine,
   InventoryCountSession,
   InventoryItem,
+  InventoryLocation,
   InventoryMovement,
   InventoryWarehouse,
 } from "@prisma/client";
 import { hasCountDivergence } from "./inventoryCountMath.js";
+import { formatLocationAddress } from "./inventoryLocationRules.js";
 
 export function inventoryDec(value: unknown): number {
   if (value == null) return 0;
@@ -64,6 +66,34 @@ export function serializeInventoryWarehouse(row: InventoryWarehouse) {
     allowsMovements: row.allowsMovements,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    createdByUserId: row.createdByUserId ?? null,
+    updatedByUserId: row.updatedByUserId ?? null,
+  };
+}
+
+export function serializeInventoryLocation(row: InventoryLocation) {
+  return {
+    id: row.id,
+    warehouseId: row.warehouseId,
+    code: row.code,
+    name: row.name,
+    status: row.status,
+    locationType: row.locationType,
+    isDefault: row.isDefault,
+    parentLocationId: row.parentLocationId,
+    aisle: row.aisle,
+    shelf: row.shelf,
+    position: row.position,
+    addressLabel: formatLocationAddress({
+      aisle: row.aisle,
+      shelf: row.shelf,
+      position: row.position,
+    }),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    createdByUserId: row.createdByUserId,
+    updatedByUserId: row.updatedByUserId,
   };
 }
 

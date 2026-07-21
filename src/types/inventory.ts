@@ -22,6 +22,8 @@ export type InventoryWarehouseStatus = "ACTIVE" | "INACTIVE";
 
 export type InventoryLocationStatus = "ACTIVE" | "INACTIVE";
 
+export type InventoryLocationType = "PHYSICAL" | "QUARANTINE" | "PRODUCTION";
+
 export type InventoryMovementType =
   | "MANUAL_ENTRY"
   | "PURCHASE_ENTRY"
@@ -124,6 +126,28 @@ export type InventoryWarehouseRow = {
   allowsMovements: boolean;
   createdAt: string;
   updatedAt: string;
+  createdByUserId?: string | null;
+  updatedByUserId?: string | null;
+};
+
+export type InventoryLocationRow = {
+  id: string;
+  warehouseId: string;
+  code: string;
+  name: string;
+  status: InventoryLocationStatus;
+  locationType: InventoryLocationType;
+  isDefault: boolean;
+  parentLocationId: string | null;
+  aisle: string | null;
+  shelf: string | null;
+  position: string | null;
+  addressLabel: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
 };
 
 export type InventoryBalanceRow = {

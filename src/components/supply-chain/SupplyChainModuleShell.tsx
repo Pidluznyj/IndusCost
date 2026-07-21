@@ -25,8 +25,8 @@ const MODULE_COPY: Record<
   "sc-inventory": {
     title: "Estoque SC",
     description:
-      "Casca controlada para evolução do almoxarifado na Cadeia de Suprimentos. Sem operações de negócio nesta fase.",
-    legacyHint: { label: "Abrir Estoque / Almoxarifado (legado)", to: "/inventory" },
+      "Módulo controlado da Cadeia de Suprimentos. Cadastro de almoxarifados e locais opera no Estoque / Almoxarifado (permissões operations.inventory.warehouses), atrás da flag SUPPLY_CHAIN_INVENTORY_MODULE_ENABLED nesta casca.",
+    legacyHint: { label: "Abrir Estoque / Almoxarifado", to: "/inventory/warehouses" },
   },
   "sc-receiving": {
     title: "Recebimentos",

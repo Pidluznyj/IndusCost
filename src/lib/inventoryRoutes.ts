@@ -42,10 +42,17 @@ import {
   serializeInventoryCountSession,
   serializeInventoryCountSessionListRow,
   serializeInventoryItem,
+  serializeInventoryLocation,
   serializeInventoryMovement,
   serializeInventoryMovementEnriched,
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
+import {
+  assertWarehouseCanBeDeactivated,
+  createInventoryLocation,
+  setInventoryLocationStatus,
+  updateInventoryLocation,
+} from "@/src/lib/inventory/inventoryLocationService.server.js";
 import {
   cancelInventoryReservation,
   createInventoryMovement,
@@ -54,11 +61,13 @@ import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js"
 import {
   parseCancelReservationBody,
   parseCreateInventoryItemBody,
+  parseCreateInventoryLocationBody,
   parseCreateInventoryMovementBody,
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
   parseStatusPatchBody,
   parseUpdateInventoryItemBody,
+  parseUpdateInventoryLocationBody,
   parseUpdateInventoryWarehouseBody,
 } from "@/src/lib/inventory/inventoryValidation.js";
 
@@ -83,13 +92,17 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
   const status =
     error.code === "ITEM_NOT_FOUND" ||
     error.code === "WAREHOUSE_NOT_FOUND" ||
+    error.code === "LOCATION_NOT_FOUND" ||
+    error.code === "LOCATION_PARENT_NOT_FOUND" ||
     error.code === "RESERVATION_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND"
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
-        : 400;
+        : error.code === "LOCATION_CODE_DUPLICATE"
+          ? 409
+          : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
@@ -565,6 +578,8 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           description: input.description,
           status: input.status,
           allowsMovements: input.allowsMovements,
+          createdByUserId: user.id,
+          updatedByUserId: user.id,
         },
       });
 
@@ -615,6 +630,9 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
 
       const patch = parseUpdateInventoryWarehouseBody(req.body);
+      if (patch.status === "INACTIVE" && existing.status === "ACTIVE") {
+        await assertWarehouseCanBeDeactivated(prisma, id);
+      }
       const updated = await prisma.inventoryWarehouse.update({
         where: { id },
         data: {
@@ -625,6 +643,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           ...(patch.allowsMovements !== undefined
             ? { allowsMovements: patch.allowsMovements }
             : {}),
+          updatedByUserId: user.id,
         },
       });
 
@@ -658,9 +677,16 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
 
       const status = parseStatusPatchBody(req.body);
+      if (status === "INACTIVE" && existing.status === "ACTIVE") {
+        await assertWarehouseCanBeDeactivated(prisma, id);
+      }
+
       const updated = await prisma.inventoryWarehouse.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          updatedByUserId: user.id,
+        },
       });
 
       await writeInventoryAuditLog(prisma, {
@@ -680,6 +706,166 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       res.status(500).json(inventoryApiError("Erro ao alterar status do almoxarifado."));
     }
   });
+
+  app.get("/api/inventory/warehouses/:warehouseId/locations", ...view, async (req, res) => {
+    try {
+      const { warehouseId } = req.params;
+      if (!isUuid(warehouseId)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const warehouse = await prisma.inventoryWarehouse.findUnique({ where: { id: warehouseId } });
+      if (!warehouse) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
+
+      const statusQ = String(req.query.status ?? "").trim();
+      const typeQ = String(req.query.locationType ?? "").trim();
+      const search = String(req.query.search ?? "").trim();
+
+      const rows = await prisma.inventoryLocation.findMany({
+        where: {
+          warehouseId,
+          ...(statusQ === "ACTIVE" || statusQ === "INACTIVE" ? { status: statusQ } : {}),
+          ...(typeQ === "PHYSICAL" || typeQ === "QUARANTINE" || typeQ === "PRODUCTION"
+            ? { locationType: typeQ }
+            : {}),
+          ...(search
+            ? {
+                OR: [
+                  { code: { contains: search, mode: "insensitive" } },
+                  { name: { contains: search, mode: "insensitive" } },
+                  { aisle: { contains: search, mode: "insensitive" } },
+                  { shelf: { contains: search, mode: "insensitive" } },
+                  { position: { contains: search, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ isDefault: "desc" }, { code: "asc" }],
+      });
+
+      res.json({
+        warehouseId,
+        rows: rows.map(serializeInventoryLocation),
+        total: rows.length,
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/warehouses/:warehouseId/locations", e);
+      res.status(500).json(inventoryApiError("Erro ao listar locais."));
+    }
+  });
+
+  app.post("/api/inventory/warehouses/:warehouseId/locations", ...warehouseManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { warehouseId } = req.params;
+      if (!isUuid(warehouseId)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const input = parseCreateInventoryLocationBody(req.body);
+      const created = await createInventoryLocation(prisma, warehouseId, input, {
+        id: user.id,
+        name: user.name,
+      });
+
+      res.status(201).json({ location: serializeInventoryLocation(created) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res.status(409).json(inventoryApiError("Código de local já cadastrado neste almoxarifado."));
+      }
+      console.error("POST /api/inventory/warehouses/:warehouseId/locations", e);
+      res.status(500).json(inventoryApiError("Erro ao criar local."));
+    }
+  });
+
+  app.get(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId",
+    ...view,
+    async (req, res) => {
+      try {
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const location = await prisma.inventoryLocation.findFirst({
+          where: { id: locationId, warehouseId },
+        });
+        if (!location) return res.status(404).json(inventoryApiError("Local não encontrado."));
+
+        res.json({ location: serializeInventoryLocation(location) });
+      } catch (e: unknown) {
+        console.error("GET /api/inventory/warehouses/:warehouseId/locations/:locationId", e);
+        res.status(500).json(inventoryApiError("Erro ao carregar local."));
+      }
+    }
+  );
+
+  app.put(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId",
+    ...warehouseManage,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const patch = parseUpdateInventoryLocationBody(req.body);
+        const updated = await updateInventoryLocation(prisma, warehouseId, locationId, patch, {
+          id: user.id,
+          name: user.name,
+        });
+
+        res.json({ location: serializeInventoryLocation(updated) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          return res
+            .status(409)
+            .json(inventoryApiError("Código de local já cadastrado neste almoxarifado."));
+        }
+        console.error("PUT /api/inventory/warehouses/:warehouseId/locations/:locationId", e);
+        res.status(500).json(inventoryApiError("Erro ao atualizar local."));
+      }
+    }
+  );
+
+  app.patch(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId/status",
+    ...warehouseManage,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const status = parseStatusPatchBody(req.body);
+        const updated = await setInventoryLocationStatus(
+          prisma,
+          warehouseId,
+          locationId,
+          status,
+          { id: user.id, name: user.name }
+        );
+
+        res.json({ location: serializeInventoryLocation(updated) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error(
+          "PATCH /api/inventory/warehouses/:warehouseId/locations/:locationId/status",
+          e
+        );
+        res.status(500).json(inventoryApiError("Erro ao alterar status do local."));
+      }
+    }
+  );
 
   app.get("/api/inventory/balances", ...view, async (req, res) => {
     try {

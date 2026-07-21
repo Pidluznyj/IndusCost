@@ -297,3 +297,81 @@ export function parseCancelReservationBody(body: unknown): string {
   const data = (body ?? {}) as Record<string, unknown>;
   return requireNonEmpty(data.reason ?? data.motivo, "reason");
 }
+
+export type CreateInventoryLocationInput = {
+  code: string;
+  name: string;
+  status: "ACTIVE" | "INACTIVE";
+  locationType: "PHYSICAL" | "QUARANTINE" | "PRODUCTION";
+  isDefault: boolean;
+  parentLocationId: string | null;
+  aisle: string | null;
+  shelf: string | null;
+  position: string | null;
+  notes: string | null;
+};
+
+const LOCATION_STATUSES = new Set(["ACTIVE", "INACTIVE"]);
+const LOCATION_TYPES = new Set(["PHYSICAL", "QUARANTINE", "PRODUCTION"]);
+
+export function parseCreateInventoryLocationBody(body: unknown): CreateInventoryLocationInput {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const statusRaw = safeTrim(data.status);
+  const status =
+    statusRaw && LOCATION_STATUSES.has(statusRaw)
+      ? (statusRaw as "ACTIVE" | "INACTIVE")
+      : "ACTIVE";
+  const typeRaw = safeTrim(data.locationType) || "PHYSICAL";
+  if (!LOCATION_TYPES.has(typeRaw)) {
+    throw new InventoryValidationError("Tipo de local inválido.", "LOCATION_TYPE_INVALID");
+  }
+
+  return {
+    code: requireNonEmpty(data.code, "code"),
+    name: requireNonEmpty(data.name, "name"),
+    status,
+    locationType: typeRaw as CreateInventoryLocationInput["locationType"],
+    isDefault: data.isDefault === true || data.isDefault === "true",
+    parentLocationId: safeTrim(data.parentLocationId) || null,
+    aisle: safeTrim(data.aisle) || null,
+    shelf: safeTrim(data.shelf) || null,
+    position: safeTrim(data.position) || null,
+    notes: safeTrim(data.notes) || null,
+  };
+}
+
+export function parseUpdateInventoryLocationBody(
+  body: unknown
+): Partial<CreateInventoryLocationInput> {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const out: Partial<CreateInventoryLocationInput> = {};
+
+  if (data.code !== undefined) out.code = requireNonEmpty(data.code, "code");
+  if (data.name !== undefined) out.name = requireNonEmpty(data.name, "name");
+  if (data.status !== undefined) {
+    const s = requireNonEmpty(data.status, "status");
+    if (!LOCATION_STATUSES.has(s)) {
+      throw new InventoryValidationError("Status inválido.", "INVALID_STATUS");
+    }
+    out.status = s as "ACTIVE" | "INACTIVE";
+  }
+  if (data.locationType !== undefined) {
+    const t = requireNonEmpty(data.locationType, "locationType");
+    if (!LOCATION_TYPES.has(t)) {
+      throw new InventoryValidationError("Tipo de local inválido.", "LOCATION_TYPE_INVALID");
+    }
+    out.locationType = t as CreateInventoryLocationInput["locationType"];
+  }
+  if (data.isDefault !== undefined) {
+    out.isDefault = data.isDefault === true || data.isDefault === "true";
+  }
+  if (data.parentLocationId !== undefined) {
+    out.parentLocationId = safeTrim(data.parentLocationId) || null;
+  }
+  if (data.aisle !== undefined) out.aisle = safeTrim(data.aisle) || null;
+  if (data.shelf !== undefined) out.shelf = safeTrim(data.shelf) || null;
+  if (data.position !== undefined) out.position = safeTrim(data.position) || null;
+  if (data.notes !== undefined) out.notes = safeTrim(data.notes) || null;
+
+  return out;
+}

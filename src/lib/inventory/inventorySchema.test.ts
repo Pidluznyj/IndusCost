@@ -41,6 +41,9 @@ describe("inventory Prisma schema", () => {
     assert.match(SCHEMA, /InventoryCountLine[\s\S]*generatedMovement\s+InventoryMovement/);
     assert.match(SCHEMA, /InventoryBlock[\s\S]*movements\s+InventoryMovement\[\]/);
     assert.match(SCHEMA, /InventoryStockSnapshot[\s\S]*lines\s+InventoryStockSnapshotLine\[\]/);
+    assert.match(SCHEMA, /InventoryLocation[\s\S]*locationType\s+InventoryLocationType/);
+    assert.match(SCHEMA, /InventoryLocation[\s\S]*parentLocation/);
+    assert.match(SCHEMA, /InventoryLocation[\s\S]*isDefault/);
   });
 
   it("3. unique de saldo item+balanceKey existe", () => {
@@ -91,6 +94,7 @@ describe("inventory Prisma schema", () => {
       "enum InventoryBlockStatus",
       "enum InventoryBlockReasonType",
       "enum InventoryStockSnapshotSource",
+      "enum InventoryLocationType",
       "enum InventoryCountSessionStatus",
       "FINISHED_PRODUCT",
       "MANUAL_ENTRY",
@@ -99,6 +103,8 @@ describe("inventory Prisma schema", () => {
       "REVERSAL",
       "WAITING_APPROVAL",
       "RECALCULATION",
+      "QUARANTINE",
+      "PRODUCTION",
     ]) {
       assert.match(SCHEMA, new RegExp(en));
     }

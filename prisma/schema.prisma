@@ -5141,6 +5141,13 @@ enum InventoryLocationStatus {
   INACTIVE
 }
 
+/// Tipo operacional do local interno do almoxarifado.
+enum InventoryLocationType {
+  PHYSICAL
+  QUARANTINE
+  PRODUCTION
+}
+
 enum InventoryMovementType {
   MANUAL_ENTRY
   PURCHASE_ENTRY
@@ -5295,12 +5302,25 @@ model InventoryLocation {
   code            String
   name            String
   status          InventoryLocationStatus @default(ACTIVE)
+  /// Físico, quarentena ou produção.
+  locationType    InventoryLocationType   @default(PHYSICAL)
+  /// Único local padrão ativo por almoxarifado (garantido em serviço + índice parcial).
+  isDefault       Boolean                 @default(false)
+  /// Hierarquia opcional (ex.: corredor → estante → posição).
+  parentLocationId String?                @db.Uuid
+  /// Endereçamento: corredor / estante / posição (quando modelado).
+  aisle           String?
+  shelf           String?
+  position        String?
+  notes           String?
   createdAt       DateTime                @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
   createdByUserId String?
   updatedByUserId String?
 
   warehouse            InventoryWarehouse     @relation(fields: [warehouseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  parentLocation       InventoryLocation?     @relation("InventoryLocationHierarchy", fields: [parentLocationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  childLocations       InventoryLocation[]    @relation("InventoryLocationHierarchy")
   balances             InventoryBalance[]
   sourceMovements      InventoryMovement[]    @relation("MovementSourceLocation")
   destinationMovements InventoryMovement[]    @relation("MovementDestinationLocation")
@@ -5312,6 +5332,9 @@ model InventoryLocation {
   @@unique([warehouseId, code])
   @@index([warehouseId])
   @@index([status])
+  @@index([locationType])
+  @@index([parentLocationId])
+  @@index([isDefault])
 }
 
 /// Movimento imutável (ledger). Sem updatedAt de negócio — correção só via REVERSAL.
