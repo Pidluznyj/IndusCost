@@ -113,6 +113,7 @@ export const ANALISTA_COMPRAS_DENY_MODULES = [
   "operations-performance",
   "production-orders",
   "employees",
+  "org-chart",
   "settings",
   "guide",
 ] as const;
@@ -137,6 +138,7 @@ export const ANALISTA_COMPRAS_DENY_PATHS = [
   "/operations-performance",
   "/production-orders",
   "/employees",
+  "/org-chart",
   "/settings",
   "/guide",
 ] as const;

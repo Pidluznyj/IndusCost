@@ -30,6 +30,7 @@ export interface EmployeeHrProfileFields {
   managerName?: string | null;
   managerId?: string | null;
   costCenterId?: string | null;
+  departmentId?: string | null;
   professionalNotes?: string | null;
   address?: string | null;
   adminNotes?: string | null;
@@ -68,6 +69,20 @@ export interface Employee extends EmployeeHrProfileFields {
     code: string;
     name: string;
     status: string;
+  } | null;
+  orgDepartment?: {
+    id: string;
+    name: string;
+    status: string;
+    directorateId: string;
+    leaderEmployeeId: string;
+    directorate?: { id: string; name: string; status: string } | null;
+    leader?: {
+      id: string;
+      name: string;
+      socialName: string | null;
+      status: string | null;
+    } | null;
   } | null;
   manager?: {
     id: string;

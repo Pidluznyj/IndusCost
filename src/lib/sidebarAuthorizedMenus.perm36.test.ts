@@ -116,8 +116,8 @@ describe("PERM-36 — filterOfficialSidebarByEffectiveAccess", () => {
   it("módulo sem filhos permitidos (grupo vazio) não aparece", () => {
     const dto = effectiveAccessDtoFromAllowedResources(["admin.employees"]);
     const nav = filterOfficialSidebarByEffectiveAccess(dto);
-    assert.ok(nav.groups.some((g) => g.id === "administracao"));
-    assert.deepEqual(groupItemIds(nav, "administracao"), ["employees"]);
+    assert.ok(nav.groups.some((g) => g.id === "gestao_pessoas"));
+    assert.deepEqual(groupItemIds(nav, "gestao_pessoas"), ["employees", "org-chart"]);
     assert.equal(nav.groups.some((g) => g.id === "comercial"), false);
     assert.equal(nav.groups.some((g) => g.id === "engenharia"), false);
     assert.equal(nav.groups.some((g) => g.id === "operacoes"), false);

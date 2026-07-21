@@ -29,6 +29,10 @@ import {
   type OrderToCashAuditFactAdapterInput,
 } from "./finance/orderToCashAuditToPortfolioFactsAdapter.js";
 import { yearDateBounds } from "./finance/orderToCashAuditApi.js";
+import {
+  filterFactsByOperationalPortfolioOrders,
+  isSalesOrderVisibleInPortfolioReconciliation,
+} from "./finance/financePortfolioOperationalOrderGate.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -299,8 +303,11 @@ export async function loadPortfolioReconciliationList(query: Record<string, unkn
   const facts = await loadPortfolioReconciliationFactsForRun(run.id, {
     customerExternalId: filters.customerExternalId,
   });
+  const gatedFacts = await filterFactsByOperationalPortfolioOrders(prisma, facts);
   const orderIds = [
-    ...new Set(facts.map((f) => f.salesOrderId).filter((id): id is string => id != null)),
+    ...new Set(
+      gatedFacts.map((f) => f.salesOrderId).filter((id): id is string => id != null)
+    ),
   ];
   const orderTotalBySalesOrderId = new Map<string, number>();
   if (orderIds.length > 0) {
@@ -316,7 +323,7 @@ export async function loadPortfolioReconciliationList(query: Record<string, unkn
 
   return buildListPayload({
     run,
-    facts,
+    facts: gatedFacts,
     filters,
     orderTotalBySalesOrderId,
     dataSource: "portfolio_reconciliation",
@@ -327,6 +334,19 @@ export async function loadPortfolioReconciliationOrderDetail(
   salesOrderId: string,
   query: Record<string, unknown>
 ) {
+  const visible = await isSalesOrderVisibleInPortfolioReconciliation(
+    prisma,
+    salesOrderId
+  );
+  if (!visible) {
+    return {
+      ok: false as const,
+      message:
+        "Pedido fora do universo operacional da Conciliação de Carteira.",
+      detail: null,
+    };
+  }
+
   const filters = parsePortfolioReconciliationListFilters(query);
   const o2c = await resolveOrderToCashAuditRunForIntelligence(filters.runId);
 
@@ -1033,5 +1053,6 @@ async function loadOrderToCashAuditFactsForIntelligence(
     where: { AND: and },
     orderBy: [{ orderCode: "asc" }, { salesOrderItemId: "asc" }, { id: "asc" }],
   });
-  return rows.map(mapO2cFactForAdapter);
+  const mapped = rows.map(mapO2cFactForAdapter);
+  return filterFactsByOperationalPortfolioOrders(prisma, mapped);
 }

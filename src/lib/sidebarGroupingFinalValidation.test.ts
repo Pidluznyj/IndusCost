@@ -66,9 +66,13 @@ const EXPECTED_MENU: Record<
   Engenharia: [
     MODULE_LABELS.products,
     MODULE_LABELS["transformation-simulator"],
-    MODULE_LABELS.materials,
     MODULE_LABELS.simulations,
     MODULE_LABELS.projects,
+  ],
+  "Cadeia de Suprimentos": [
+    MODULE_LABELS.materials,
+    MODULE_LABELS.purchases,
+    MODULE_LABELS.inventory,
   ],
   Comercial: [
     MODULE_LABELS["crm-commercial"],
@@ -89,19 +93,14 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.reports,
   ],
   Operações: [
-    MODULE_LABELS.inventory,
-    MODULE_LABELS.purchases,
     MODULE_LABELS.machines,
     MODULE_LABELS["operations-performance"],
     MODULE_LABELS["production-orders"],
     MODULE_LABELS.maintenance,
     MODULE_LABELS.fleet,
   ],
-  Administração: [
-    MODULE_LABELS.employees,
-    MODULE_LABELS.settings,
-    MODULE_LABELS.guide,
-  ],
+  "Gestão de pessoas": [MODULE_LABELS.employees, MODULE_LABELS["org-chart"]],
+  Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide],
 };
 
 describe("validação final — estrutura de menu agrupado", () => {

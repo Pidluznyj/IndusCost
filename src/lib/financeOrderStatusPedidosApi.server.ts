@@ -26,6 +26,11 @@ import {
   sortOrderStatusPedidosRows,
   type OrderStatusPedidosStatus,
 } from "./finance/orderStatusPedidosApi.js";
+import { filterPortfolioOrderRowsByOperationalOrders } from "./finance/financePortfolioOperationalOrderGate.js";
+import {
+  filterFactsByOperationalPortfolioOrders,
+  loadOperationalPortfolioSalesOrderIdSet,
+} from "./finance/financePortfolioOperationalOrderGate.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -425,9 +430,20 @@ export async function loadOrderStatusPedidosList(query: Record<string, unknown>)
     where,
     select: FACT_SELECT,
   });
-  const facts = rawFacts.map((r) => mapFact(r as FactRow));
+  const facts = await filterFactsByOperationalPortfolioOrders(
+    prisma,
+    rawFacts.map((r) => mapFact(r as FactRow))
+  );
 
   let orderRows = aggregateFactsToOrderStatusRows(facts);
+  const allowedOrderIds = await loadOperationalPortfolioSalesOrderIdSet(
+    prisma,
+    orderRows.map((row) => row.salesOrderId)
+  );
+  orderRows = filterPortfolioOrderRowsByOperationalOrders(
+    orderRows,
+    allowedOrderIds
+  );
   orderRows = filterOrderStatusPedidosRows(orderRows, {
     orderStatus: extra.orderStatus,
     onlyWithPendingItems: extra.onlyWithPendingItems,
@@ -501,10 +517,14 @@ export async function loadOrderStatusPedidosOrderDetail(
     select: FACT_SELECT,
     orderBy: [{ productCode: "asc" }, { lineType: "asc" }],
   });
+  const orderFacts = await filterFactsByOperationalPortfolioOrders(
+    prisma,
+    rawFacts.map((r) => mapFact(r as FactRow))
+  );
 
   return buildOrderStatusPedidosDetailPayload({
     run: resolved.run,
-    orderFacts: rawFacts.map((r) => mapFact(r as FactRow)),
-    message: rawFacts.length === 0 ? "Pedido não encontrado neste escopo." : null,
+    orderFacts,
+    message: orderFacts.length === 0 ? "Pedido não encontrado neste escopo." : null,
   });
 }

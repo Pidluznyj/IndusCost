@@ -58,7 +58,8 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   "production-orders": "operacoes",
   maintenance: "operacoes",
   fleet: "operacoes",
-  employees: "administracao",
+  employees: "gestao_pessoas",
+  "org-chart": "gestao_pessoas",
   settings: "administracao",
   guide: "administracao",
 };
@@ -144,7 +145,8 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       comercial: 8,
       financeiro: 6,
       operacoes: 5,
-      administracao: 3,
+      gestao_pessoas: 2,
+      administracao: 2,
     });
   });
 });

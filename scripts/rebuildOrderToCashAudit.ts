@@ -50,6 +50,7 @@ import {
   type OrderToCashDateAxis,
   type OrderToCashRebuildCliOptions,
 } from "../src/lib/sales/orderToCashAuditRebuild.ts";
+import { mergeSalesOrderWhereWithPortfolioOperationalGate } from "../src/lib/finance/financePortfolioOperationalOrderGate.server.ts";
 
 const prisma = new PrismaClient();
 const LOG = "[order-to-cash-audit-rebuild]";
@@ -249,7 +250,8 @@ function buildSalesOrderWhere(
     }
   }
 
-  return where;
+  // Mesmo universo operacional de Pedidos / CR (exclui CANCELLED/ERROR e MISSING_CONFIRMED).
+  return mergeSalesOrderWhereWithPortfolioOperationalGate(where);
 }
 
 async function loadBundle(options: OrderToCashRebuildCliOptions): Promise<{

@@ -8,6 +8,7 @@ import { PRODUCT_TAB_RESOURCE_KEYS } from "@/src/lib/moduleTabResources.js";
 export type AppModuleId =
   | "dashboard"
   | "employees"
+  | "org-chart"
   | "machines"
   | "materials"
   | "purchases"
@@ -50,6 +51,7 @@ export type PermissionChecker = {
 export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "dashboard",
   "employees",
+  "org-chart",
   "machines",
   "materials",
   "purchases",
@@ -115,6 +117,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
     case "pricing":
       return check.hasPermission("pricing.view");
     case "employees":
+      return check.hasPermission("employees.view");
+    case "org-chart":
       return check.hasPermission("employees.view");
     case "machines":
       return check.hasPermission("machines.view");
@@ -339,6 +343,7 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
 export const MODULE_LABELS: Record<AppModuleId, string> = {
   dashboard: "Dashboard",
   employees: "Pessoas / RH",
+  "org-chart": "Organograma",
   machines: "Máquinas",
   materials: "Suprimentos",
   purchases: "Compras",

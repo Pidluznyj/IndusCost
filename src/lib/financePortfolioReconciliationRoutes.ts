@@ -29,6 +29,8 @@ import {
   PortfolioOrderStatusApiParseError,
 } from "./financePortfolioOrderStatusApi.server.js";
 import { getOrderFullAudit } from "./finance/orderFullAuditService.js";
+import { isSalesOrderVisibleInPortfolioReconciliation } from "./finance/financePortfolioOperationalOrderGate.server.js";
+import { prisma } from "@/src/lib/prisma.js";
 import { OrderToCashAuditApiParseError } from "./finance/orderToCashAuditApi.js";
 import { OrderStatusPedidosApiParseError } from "./finance/orderStatusPedidosApi.js";
 import { PortfolioIntelligenceApiParseError } from "./finance/portfolioMaturityIntelligenceApi.js";
@@ -474,6 +476,27 @@ export function registerFinancePortfolioReconciliationRoutes(
     async (req, res) => {
       try {
         const salesOrderId = String(req.params.salesOrderId ?? "").trim();
+        if (!salesOrderId) {
+          res.status(400).json({
+            error: "salesOrderId obrigatório.",
+            message: "salesOrderId obrigatório.",
+          });
+          return;
+        }
+        const visible = await isSalesOrderVisibleInPortfolioReconciliation(
+          prisma,
+          salesOrderId
+        );
+        if (!visible) {
+          res.status(404).json({
+            error:
+              "Pedido fora do universo operacional da Conciliação de Carteira (ausente confirmado, cancelado ou erro).",
+            message:
+              "Pedido fora do universo operacional da Conciliação de Carteira (ausente confirmado, cancelado ou erro).",
+            code: "PORTFOLIO_ORDER_EXCLUDED",
+          });
+          return;
+        }
         const runId = typeof req.query.runId === "string"
           ? req.query.runId.trim() || null
           : null;

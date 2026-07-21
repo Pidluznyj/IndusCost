@@ -23,6 +23,7 @@ import {
 import type { PortfolioOrderStatusFact } from "./finance/portfolioOrderStatusService.js";
 import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
 import { loadManualCommercialOwnersForCustomers } from "./crmCustomerCommercialOwner.js";
+import { filterFactsByOperationalPortfolioOrders } from "./finance/financePortfolioOperationalOrderGate.server.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -439,7 +440,10 @@ export async function loadPortfolioOrderStatusList(
     select: FACT_SELECT,
   });
 
-  const mapped = rawFacts.map((r) => mapFact(r as FactRow));
+  const mapped = await filterFactsByOperationalPortfolioOrders(
+    prisma,
+    rawFacts.map((r) => mapFact(r as FactRow))
+  );
   const enriched = (await enrichFactsWithOrderItemStatus(
     mapped
   )) as PortfolioOrderStatusFact[];

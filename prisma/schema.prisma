@@ -88,6 +88,8 @@ model Employee {
   name                         String
   roleId                       String                     @db.Uuid
   department                   String
+  /// FK opcional ao departamento oficial RH (mantém `department` como rótulo/cache).
+  departmentId                 String?                    @db.Uuid
   costCenter                   String
   /// FK opcional ao cadastro oficial financeiro (mantém `costCenter` como rótulo legado/cache).
   costCenterId                 String?                    @db.Uuid
@@ -131,16 +133,60 @@ model Employee {
   updatedAt                    DateTime?                  @default(now()) @updatedAt @db.Timestamptz(6)
   Role                         Role                       @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   financialCostCenter          FinancialCostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  orgDepartment                HrDepartment?              @relation("EmployeeOrgDepartment", fields: [departmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   manager                      Employee?                  @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   directReports                Employee[]                 @relation("EmployeeManager")
   person                       Person?                    @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   EmployeePayrollComponent     EmployeePayrollComponent[]
   /// Conta de acesso do sistema (Configurações → Usuários), quando vinculada.
   appUser                      AppUser?
+  ledDirectorates              HrDirectorate[]            @relation("HrDirectorateLeader")
+  ledDepartments               HrDepartment[]             @relation("HrDepartmentLeader")
 
   @@unique([personId])
   @@index([costCenterId])
+  @@index([departmentId])
   @@index([managerId])
+}
+
+/// Diretoria organizacional (RH) — agrupa departamentos e exige líder responsável.
+model HrDirectorate {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String?        @unique
+  name             String         @unique
+  status           String         @default("ACTIVE")
+  leaderEmployeeId String         @db.Uuid
+  notes            String?
+  createdAt        DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+
+  leader      Employee       @relation("HrDirectorateLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  departments HrDepartment[]
+
+  @@index([status])
+  @@index([leaderEmployeeId])
+}
+
+/// Departamento oficial (RH) — sempre vinculado a uma diretoria e com líder designado.
+model HrDepartment {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code             String?  @unique
+  name             String
+  status           String   @default("ACTIVE")
+  directorateId    String   @db.Uuid
+  leaderEmployeeId String   @db.Uuid
+  notes            String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  directorate HrDirectorate @relation(fields: [directorateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leader      Employee      @relation("HrDepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  employees   Employee[]    @relation("EmployeeOrgDepartment")
+
+  @@unique([directorateId, name])
+  @@index([status])
+  @@index([directorateId])
+  @@index([leaderEmployeeId])
 }
 
 model PayrollComponent {

@@ -85,7 +85,7 @@ describe("sidebarNavigation — filtro por permissão", () => {
 });
 
 describe("sidebarNavigation — grupos oficiais", () => {
-  it("estrutura completa contém os seis grupos principais", () => {
+  it("estrutura completa contém os sete grupos principais", () => {
     const structure = buildGroupedNavigationStructure();
     const labels = structure.groups.map((group) => group.label);
     assert.deepEqual(labels, [...SIDEBAR_GROUP_UI_LABELS]);
@@ -185,10 +185,16 @@ describe("sidebarNavigation — grupos oficiais", () => {
     ]);
   });
 
-  it("Administração contém Pessoas/RH, Configurações e Guia", () => {
+  it("Administração contém Configurações e Guia", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "administracao");
-    assert.deepEqual(group?.items.map((i) => i.itemId), ["employees", "settings", "guide"]);
+    assert.deepEqual(group?.items.map((i) => i.itemId), ["settings", "guide"]);
+  });
+
+  it("Gestão de pessoas contém Pessoas/RH e Organograma", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    const group = nav.groups.find((g) => g.id === "gestao_pessoas");
+    assert.deepEqual(group?.items.map((i) => i.itemId), ["employees", "org-chart"]);
   });
 });
 
@@ -424,6 +430,7 @@ describe("Sidebar.tsx — acabamento visual e responsividade", () => {
       "Comercial",
       "Financeiro",
       "Operações",
+      "Gestão de pessoas",
       "Administração",
     ]);
   });
