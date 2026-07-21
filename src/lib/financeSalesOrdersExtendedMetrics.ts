@@ -174,12 +174,15 @@ export type CriticalOrderReason =
 
 export function buildCriticalOrders(
   rows: Array<FinanceSalesOrdersDashboardOrderRow & { logisticStatusCardId: BiLogisticStatusCardId }>,
-  limit = 15
+  limit = 15,
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
 ): FinanceSalesOrdersCriticalOrderRow[] {
   const candidates: FinanceSalesOrdersCriticalOrderRow[] = [];
 
   for (const row of rows) {
-    const hasInvoice = salesOrderHasInvoicing(row.nomusRawResponse);
+    const linked = linkedNfeContextMap?.get(row.id);
+    const hasInvoice =
+      linked != null ? linked.hasNfe : salesOrderHasInvoicing(row.nomusRawResponse);
     const reasons: CriticalOrderReason[] = [];
 
     if (row.logisticStatusCardId === "overduePending") {
@@ -231,7 +234,8 @@ export function buildCriticalOrders(
 
 export function buildOpenPortfolioEvolution(
   rows: FinanceSalesOrdersDashboardOrderRow[],
-  selectedYear: number
+  selectedYear: number,
+  linkedNfeContextMap?: Map<string, SalesOrderLinkedNfeContext>
 ): FinanceSalesOrdersOpenPortfolioEvolutionRow[] {
   const byMonth = new Map<number, { openAmount: number; openCount: number; totalAmount: number }>();
   for (let m = 1; m <= 12; m += 1) {
@@ -243,7 +247,10 @@ export function buildOpenPortfolioEvolution(
     const month = row.issueDate.getMonth() + 1;
     const bucket = byMonth.get(month)!;
     bucket.totalAmount += row.totalNetValue;
-    if (!salesOrderHasInvoicing(row.nomusRawResponse)) {
+    const linked = linkedNfeContextMap?.get(row.id);
+    const hasInvoice =
+      linked != null ? linked.hasNfe : salesOrderHasInvoicing(row.nomusRawResponse);
+    if (!hasInvoice) {
       bucket.openAmount += row.totalNetValue;
       bucket.openCount += 1;
     }
@@ -309,8 +316,12 @@ export function buildExtendedMetricsFromOrders(input: {
     manufacturingStatusBreakdown: buildManufacturingStatusBreakdown(filtered),
     logisticStatusBreakdown: buildLogisticStatusBreakdown(filtered),
     topSellers: buildTopSellersFromOrders(filtered),
-    criticalOrders: buildCriticalOrders(filtered),
-    openPortfolioEvolution: buildOpenPortfolioEvolution(filtered, input.filters.year),
+    criticalOrders: buildCriticalOrders(filtered, 15, input.linkedNfeContextMap),
+    openPortfolioEvolution: buildOpenPortfolioEvolution(
+      filtered,
+      input.filters.year,
+      input.linkedNfeContextMap
+    ),
     lastNomusSyncAt: resolveLastNomusSyncAt(input.orders),
     logisticCounts,
     logisticAmounts,
@@ -340,6 +351,6 @@ export function financeSalesOrdersExtendedMetricsAreFinite(metrics: {
 
 /** Agrupa pedidos por mês de emissão para carteira aberta (sem histórico de snapshot). */
 export const OPEN_PORTFOLIO_EVOLUTION_NOTE =
-  "Evolução por mês de emissão do pedido: valor em carteira = pedidos emitidos no mês ainda sem NF processada. Não há série histórica de snapshot diário.";
+  "Evolução por mês de emissão do pedido: valor em carteira = pedidos emitidos no mês ainda sem NF válida (SalesOrderNfeLink). Não há série histórica de snapshot diário.";
 
 export { emptyBiLogisticStatusCardCounts, emptyBiLogisticStatusCardAmounts, emptyManufacturingStatusBreakdown };

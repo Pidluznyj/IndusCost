@@ -6,20 +6,34 @@ import {
   endOfMonth,
 } from "./executiveDashboardHelpers.js";
 import {
+  countWorkdaysElapsedInYear,
+  countWorkdaysInMonth,
+  countWorkdaysInYear,
   endOfYear,
   startOfYear,
 } from "./executiveDashboardWorkdays.js";
+import { buildChartSeriesConfig } from "./executiveDashboardChartSeries.js";
 import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
-import { computeTicketAverage } from "./salesOrderDashboardRules.js";
+import {
+  computeMonthProjection,
+  computeTicketAverage,
+  computeYearProjection,
+  computeYtdDailyAverageByWorkday,
+} from "./salesOrderDashboardRules.js";
 import { buildSalesOrdersDashboardTab } from "./salesOrdersDashboardMetrics.js";
 import {
   parseExecutiveDashboardYear,
   resolveExecutiveDashboardYearContext,
   type ExecutiveDashboardYearContext,
 } from "./executiveDashboardYear.js";
-import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
+import {
+  buildSalesOrderListTotalsFromPrismaOrders,
+  type SalesOrderListFilters,
+} from "./salesOrdersListSummary.js";
 import {
   buildExtendedMetricsFromOrders,
+  enrichOrdersWithLogisticStatus,
+  filterOrdersByLogisticStatus,
   mapPrismaOrderToDashboardRow,
   OPEN_PORTFOLIO_EVOLUTION_NOTE,
 } from "./financeSalesOrdersExtendedMetrics.js";
@@ -30,20 +44,22 @@ import {
   isBiLogisticStatusCardId,
   type BiLogisticStatusCardId,
 } from "./salesOrderLogisticStatus.js";
+import { andSalesOrderListWhere } from "./salesOrderListReceivableFilter.js";
+import {
+  resolveSalesOrderListSellerWhere,
+  resolveSalesOrderOperationalPopulationWhere,
+} from "./salesOrderOperationalPopulation.server.js";
 import {
   buildOfficialSalesOrderRulesResult,
   buildOfficialSellerBreakdownFromManagementRows,
-  buildOfficialTopCustomersFromRulesOrders,
   mapFinanceSalesOrdersFiltersToRulesInput,
-  mapOfficialFinancePeriodAgg,
   mapOfficialFinancePortfolioFromManagementRows,
   mapOfficialSellerBreakdownToFinanceTopSellers,
   mapPrismaOrderToSalesOrderRulesInput,
-  buildOfficialMonthlyAmountMaps,
-  OFFICIAL_SO_RULES_SOURCE,
   SALES_ORDER_RULES_PRISMA_SELECT,
   type OfficialFinancePortfolioSnapshot,
 } from "./salesOrderRulesAdapter.js";
+import { SALES_ORDER_STATUS_LABELS } from "./materialDemandFilters.js";
 import type {
   FinanceSalesOrdersDashboardFilters,
   FinanceSalesOrdersDashboardPayload,
@@ -51,43 +67,127 @@ import type {
   FinanceSalesOrdersInvoiceStatus,
   FinanceSalesOrdersMonthlyComparisonRow,
   FinanceSalesOrdersRealizedProjectedRow,
+  FinanceSalesOrdersStatusBreakdownRow,
   FinanceSalesOrdersTopCustomerRow,
 } from "./financeSalesOrdersDashboardTypes.js";
 import {
   FINANCE_SALES_ORDERS_CALCULATION_RULES,
+  FINANCE_SALES_ORDERS_DATA_SOURCE,
   FINANCE_SALES_ORDERS_MONTH_LABELS,
 } from "./financeSalesOrdersDashboardTypes.js";
 
 export { getSalesOrderNetValue as resolveSalesOrderNetAmount };
 
+/** Paridade Comercial: KPIs de período não excluem clientes do grupo. */
+const FINANCE_SO_EXCLUDE_GROUP_COMPANIES = false;
+
+function invoiceStatusToHasInvoice(
+  invoiceStatus: FinanceSalesOrdersInvoiceStatus
+): boolean | null {
+  if (invoiceStatus === "with_invoice") return true;
+  if (invoiceStatus === "without_invoice") return false;
+  return null;
+}
+
+function buildFinanceExtraWhere(
+  filters: FinanceSalesOrdersDashboardFilters
+): Prisma.SalesOrderWhereInput | null {
+  const parts: Prisma.SalesOrderWhereInput[] = [];
+  if (filters.company) {
+    parts.push({
+      companyIssuer: { contains: filters.company, mode: "insensitive" },
+    });
+  }
+  if (filters.customerSearch) {
+    parts.push({
+      Customer: {
+        OR: [
+          {
+            companyName: {
+              contains: filters.customerSearch,
+              mode: "insensitive",
+            },
+          },
+          {
+            tradeName: {
+              contains: filters.customerSearch,
+              mode: "insensitive",
+            },
+          },
+        ],
+      },
+    });
+  }
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0]!;
+  return { AND: parts };
+}
+
+/**
+ * Where OP-02 alinhado à listagem Comercial (presença + CANCELLED + seller Nomus + NF).
+ * Empresa / busca de cliente são extras do dashboard financeiro.
+ */
+export async function resolveFinanceSalesOrdersOperationalWhere(
+  filters: FinanceSalesOrdersDashboardFilters,
+  opts: {
+    year: number;
+    month?: number | null;
+    /** Quando false, ignora filtro de NF (ex.: séries anuais internas). Default true. */
+    applyInvoiceFilter?: boolean;
+  }
+): Promise<Prisma.SalesOrderWhereInput> {
+  const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
+    sellerKeyRaw: "",
+    sellerText: filters.sellerName ?? "",
+  });
+  const hasInvoice =
+    opts.applyInvoiceFilter === false
+      ? null
+      : invoiceStatusToHasInvoice(filters.invoiceStatus);
+
+  const listFilters: SalesOrderListFilters = {
+    year: opts.year,
+    month: opts.month ?? null,
+    status: filters.status ?? undefined,
+    customerId: filters.customerId ?? undefined,
+    sellerWhere,
+    hasInvoice,
+  };
+
+  const base = await resolveSalesOrderOperationalPopulationWhere(prisma, {
+    listFilters,
+    context: "OPERATIONAL",
+  });
+  return andSalesOrderListWhere(base, buildFinanceExtraWhere(filters));
+}
+
 async function loadFinanceRulesOrders(
   filters: FinanceSalesOrdersDashboardFilters,
   years: number[]
 ) {
-  const where: Prisma.SalesOrderWhereInput = {
-    issueDate: {
-      gte: startOfYear(new Date(Math.min(...years), 0, 1)),
-      lte: endOfYear(new Date(Math.max(...years), 0, 1)),
-    },
-    ...buildSalesOrderListWhere({
+  const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
+    sellerKeyRaw: "",
+    sellerText: filters.sellerName ?? "",
+  });
+  const hasInvoice = invoiceStatusToHasInvoice(filters.invoiceStatus);
+  const base = await resolveSalesOrderOperationalPopulationWhere(prisma, {
+    listFilters: {
       status: filters.status ?? undefined,
       customerId: filters.customerId ?? undefined,
-      responsible: filters.sellerName ?? undefined,
+      sellerWhere,
+      hasInvoice,
+    },
+    context: "OPERATIONAL",
+  });
+  const where = andSalesOrderListWhere(
+    andSalesOrderListWhere(base, {
+      issueDate: {
+        gte: startOfYear(new Date(Math.min(...years), 0, 1)),
+        lte: endOfYear(new Date(Math.max(...years), 0, 1)),
+      },
     }),
-    ...(filters.company
-      ? { companyIssuer: { contains: filters.company, mode: "insensitive" } }
-      : {}),
-    ...(filters.customerSearch
-      ? {
-          Customer: {
-            OR: [
-              { companyName: { contains: filters.customerSearch, mode: "insensitive" } },
-              { tradeName: { contains: filters.customerSearch, mode: "insensitive" } },
-            ],
-          },
-        }
-      : {}),
-  };
+    buildFinanceExtraWhere(filters)
+  );
 
   const rows = await prisma.salesOrder.findMany({
     where,
@@ -102,8 +202,22 @@ async function buildOfficialFinanceRulesBundle(
   now: Date
 ) {
   const rulesInput = mapFinanceSalesOrdersFiltersToRulesInput(filters);
+  // Seller já resolvido no where OP-02 (Nomus) — não reaplicar `responsible` legado.
+  const listFiltersWithoutLegacySeller = {
+    ...rulesInput.listFilters,
+    responsible: undefined,
+    seller: undefined,
+    sellerWhere: undefined,
+  };
+  const managementWithoutLegacySeller = {
+    ...rulesInput.managementFilters,
+    responsible: undefined,
+  };
   const month = filters.month ?? now.getMonth() + 1;
-  const orders = await loadFinanceRulesOrders(filters, [filters.year, filters.year - 1]);
+  const orders = await loadFinanceRulesOrders(filters, [
+    filters.year,
+    filters.year - 1,
+  ]);
   const linkedMap = await loadSalesOrderLinkedNfeContextMap(
     orders.map((order) => ({
       id: order.id,
@@ -117,12 +231,14 @@ async function buildOfficialFinanceRulesBundle(
 
   const current = buildOfficialSalesOrderRulesResult({
     orders,
-    ...rulesInput,
+    listFilters: listFiltersWithoutLegacySeller,
+    managementFilters: managementWithoutLegacySeller,
     referenceDate: now,
     year: filters.year,
     month,
     linkedNfeContextMap: linkedMap,
     scope: "unified",
+    excludeGroupCompanyCustomers: FINANCE_SO_EXCLUDE_GROUP_COMPANIES,
   });
 
   const prevRef = new Date(
@@ -136,13 +252,17 @@ async function buildOfficialFinanceRulesBundle(
   );
   const previous = buildOfficialSalesOrderRulesResult({
     orders,
-    listFilters: { ...rulesInput.listFilters, year: filters.year - 1 },
-    managementFilters: { ...rulesInput.managementFilters, year: filters.year - 1 },
+    listFilters: { ...listFiltersWithoutLegacySeller, year: filters.year - 1 },
+    managementFilters: {
+      ...managementWithoutLegacySeller,
+      year: filters.year - 1,
+    },
     referenceDate: prevRef,
     year: filters.year - 1,
     month,
     linkedNfeContextMap: linkedMap,
     scope: "unified",
+    excludeGroupCompanyCustomers: FINANCE_SO_EXCLUDE_GROUP_COMPANIES,
   });
 
   return { current, previous, linkedMap, orders };
@@ -206,7 +326,6 @@ export function resolveFinanceSalesOrdersYearContext(
   };
 }
 
-
 export function resolveFinanceSalesOrdersPeriodBounds(
   filters: FinanceSalesOrdersDashboardFilters
 ): { from: Date; to: Date } {
@@ -216,34 +335,6 @@ export function resolveFinanceSalesOrdersPeriodBounds(
   }
   const anchor = new Date(filters.year, 0, 1);
   return { from: startOfYear(anchor), to: endOfYear(anchor) };
-}
-
-function buildPrismaPeriodWhere(
-  filters: FinanceSalesOrdersDashboardFilters,
-  from: Date,
-  to: Date
-): Prisma.SalesOrderWhereInput {
-  return {
-    issueDate: { gte: from, lte: to },
-    ...buildSalesOrderListWhere({
-      status: filters.status ?? undefined,
-      customerId: filters.customerId ?? undefined,
-      responsible: filters.sellerName ?? undefined,
-    }),
-    ...(filters.company
-      ? { companyIssuer: { contains: filters.company, mode: "insensitive" } }
-      : {}),
-    ...(filters.customerSearch
-      ? {
-          Customer: {
-            OR: [
-              { companyName: { contains: filters.customerSearch, mode: "insensitive" } },
-              { tradeName: { contains: filters.customerSearch, mode: "insensitive" } },
-            ],
-          },
-        }
-      : {}),
-  };
 }
 
 function growthPercent(current: number, previous: number): number | null {
@@ -271,32 +362,105 @@ function buildMonthlyComparison(
   });
 }
 
-function buildRealizedProjectedRows(
-  tab: Awaited<ReturnType<typeof buildSalesOrdersDashboardTab>>
-): FinanceSalesOrdersRealizedProjectedRow[] {
-  return tab.monthlySeries.map((point) => ({
-    month: point.month,
-    monthLabel: point.monthLabel,
-    realizedAmount: point.currentYearValue,
-    projectedAmount: point.projectedValue,
-    targetAmount: point.targetValue,
-    previousYearAmount: point.previousYearValue,
-  }));
+/** Séries mensais a partir da população OP-02 (mesmos filtros do Comercial, sem mês). */
+export function buildMonthlyAmountMapFromOrders(
+  orders: Array<{ issueDate: Date; totalNetValue: unknown }>,
+  year: number
+): Map<number, number> {
+  const map = new Map<number, number>();
+  for (let m = 1; m <= 12; m += 1) map.set(m, 0);
+  for (const order of orders) {
+    if (order.issueDate.getFullYear() !== year) continue;
+    const month = order.issueDate.getMonth() + 1;
+    const net = decimalToNumber(order.totalNetValue) ?? 0;
+    map.set(month, (map.get(month) ?? 0) + net);
+  }
+  return map;
 }
 
-function buildSummaryFromTab(
-  tab: Awaited<ReturnType<typeof buildSalesOrdersDashboardTab>>,
-  filters: FinanceSalesOrdersDashboardFilters,
-  periodAgg: { count: number; net: number; items: number },
-  portfolio: OfficialFinancePortfolioSnapshot
-): FinanceSalesOrdersDashboardSummary {
-  const monthAgg = tab.targets.monthly.actual ?? 0;
-  const prevMonth = tab.targets.monthly.previousPeriod ?? 0;
-  const ytd = tab.targets.annual.actualYtd ?? 0;
-  const prevYtd = tab.targets.annual.previousPeriod ?? 0;
-  const projectedMonth = tab.projection.monthlyProjection;
-  const projectedYear = tab.projection.annualProjection;
-  const monthTargetConfigured = false;
+function sumMapThroughMonth(map: Map<number, number>, throughMonth: number): number {
+  let sum = 0;
+  for (let m = 1; m <= throughMonth; m += 1) sum += map.get(m) ?? 0;
+  return sum;
+}
+
+function buildStatusBreakdownFromOrders(
+  orders: Array<{ status: string; totalNetValue: unknown }>
+): FinanceSalesOrdersStatusBreakdownRow[] {
+  const byStatus = new Map<string, { amount: number; orderCount: number }>();
+  for (const order of orders) {
+    const status = String(order.status ?? "").trim() || "UNKNOWN";
+    const current = byStatus.get(status) ?? { amount: 0, orderCount: 0 };
+    current.amount += decimalToNumber(order.totalNetValue) ?? 0;
+    current.orderCount += 1;
+    byStatus.set(status, current);
+  }
+  return [...byStatus.entries()]
+    .map(([status, row]) => ({
+      status,
+      label:
+        (SALES_ORDER_STATUS_LABELS as Record<string, string>)[status] ?? status,
+      amount: row.amount,
+      orderCount: row.orderCount,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
+function buildRealizedProjectedFromMonthlyMaps(
+  currentMap: Map<number, number>,
+  previousMap: Map<number, number>,
+  yearCtx: ExecutiveDashboardYearContext,
+  projectedMonth: number | null
+): FinanceSalesOrdersRealizedProjectedRow[] {
+  return FINANCE_SALES_ORDERS_MONTH_LABELS.map((monthLabel, i) => {
+    const month = i + 1;
+    const previousYearAmount = previousMap.get(month) ?? 0;
+    const realizedAmount =
+      month <= yearCtx.ytdMonthLimit ? (currentMap.get(month) ?? 0) : null;
+    const projectedAmount =
+      yearCtx.isSelectedYearCurrent &&
+      projectedMonth != null &&
+      month === yearCtx.ytdMonthLimit
+        ? projectedMonth
+        : null;
+    return {
+      month,
+      monthLabel,
+      realizedAmount,
+      projectedAmount,
+      targetAmount: null,
+      previousYearAmount,
+    };
+  });
+}
+
+function buildSummaryFromOperational(input: {
+  filters: FinanceSalesOrdersDashboardFilters;
+  yearCtx: ExecutiveDashboardYearContext;
+  periodAgg: { count: number; net: number; items: number };
+  portfolio: OfficialFinancePortfolioSnapshot;
+  currentMonthly: Map<number, number>;
+  previousMonthly: Map<number, number>;
+  now: Date;
+}): FinanceSalesOrdersDashboardSummary {
+  const { filters, yearCtx, periodAgg, portfolio, currentMonthly, previousMonthly, now } =
+    input;
+  const refMonth = filters.month ?? yearCtx.ytdMonthLimit;
+  const monthAgg = currentMonthly.get(refMonth) ?? 0;
+  const prevMonth = previousMonthly.get(refMonth) ?? 0;
+  const ytd = sumMapThroughMonth(currentMonthly, yearCtx.ytdMonthLimit);
+  const prevYtd = sumMapThroughMonth(previousMonthly, yearCtx.ytdMonthLimit);
+
+  const workdaysElapsed = yearCtx.isSelectedYearCurrent
+    ? countWorkdaysElapsedInYear(yearCtx.referenceDate)
+    : countWorkdaysInYear(filters.year);
+  const dailyAverageAmount = computeYtdDailyAverageByWorkday(ytd, workdaysElapsed);
+  const workdaysInMonth = countWorkdaysInMonth(filters.year, refMonth - 1);
+  const workdaysInYear = countWorkdaysInYear(filters.year);
+  const projectedMonth = computeMonthProjection(dailyAverageAmount, workdaysInMonth);
+  const projectedYear = computeYearProjection(dailyAverageAmount, workdaysInYear);
+
+  void now;
 
   return {
     selectedYear: filters.year,
@@ -312,14 +476,14 @@ function buildSummaryFromTab(
     ytdGrowthPercent: growthPercent(ytd, prevYtd),
     monthTargetAmount: null,
     yearTargetAmount: null,
-    monthTargetConfigured,
+    monthTargetConfigured: false,
     monthAchievementPercent: null,
     yearAchievementPercent: null,
     monthProjectedAmount: projectedMonth,
     yearProjectedAmount: projectedYear,
     projectedMonthAchievementPercent: null,
     projectedYearAchievementPercent: null,
-    dailyAverageAmount: tab.projection.ytdDailyAverage,
+    dailyAverageAmount,
     orderCount: periodAgg.count,
     itemCount: periodAgg.items,
     averageTicketAmount: computeTicketAverage(periodAgg.net, periodAgg.count),
@@ -336,19 +500,25 @@ function buildSummaryFromTab(
 
 async function loadDashboardOrders(
   filters: FinanceSalesOrdersDashboardFilters,
-  from: Date,
-  to: Date
+  year: number,
+  month: number | null
 ) {
-  const where = buildPrismaPeriodWhere(filters, from, to);
+  const where = await resolveFinanceSalesOrdersOperationalWhere(filters, {
+    year,
+    month,
+  });
   const orders = await prisma.salesOrder.findMany({
     where,
     select: {
       id: true,
       orderCode: true,
+      status: true,
       issueDate: true,
       expectedDeliveryDate: true,
       totalNetValue: true,
+      totalItems: true,
       responsible: true,
+      nomusSellerName: true,
       nomusRawResponse: true,
       updatedAt: true,
       sentToNomusAt: true,
@@ -358,7 +528,14 @@ async function loadDashboardOrders(
     },
     orderBy: { issueDate: "desc" },
   });
-  return orders.map(mapPrismaOrderToDashboardRow);
+  return orders.map((order) => ({
+    ...mapPrismaOrderToDashboardRow({
+      ...order,
+      responsible: order.nomusSellerName ?? order.responsible,
+    }),
+    status: order.status,
+    totalItems: order.totalItems,
+  }));
 }
 
 async function queryExcludedCounts(): Promise<{
@@ -387,38 +564,139 @@ async function queryExcludedCounts(): Promise<{
   }
 }
 
+function buildTopCustomersFromPeriodOrders(
+  orders: Array<{
+    id: string;
+    customerId: string;
+    customerName: string;
+    totalNetValue: number;
+  }>,
+  limit = 10
+): FinanceSalesOrdersTopCustomerRow[] {
+  const byCustomer = new Map<
+    string,
+    { customerName: string; orderCount: number; amount: number }
+  >();
+  for (const order of orders) {
+    const customerId = order.customerId?.trim() || order.id;
+    const current = byCustomer.get(customerId) ?? {
+      customerName: order.customerName,
+      orderCount: 0,
+      amount: 0,
+    };
+    current.orderCount += 1;
+    current.amount += order.totalNetValue;
+    byCustomer.set(customerId, current);
+  }
+  const ranked = [...byCustomer.entries()]
+    .sort((a, b) => b[1].amount - a[1].amount)
+    .slice(0, limit);
+  const totalAll = ranked.reduce((sum, [, row]) => sum + row.amount, 0);
+  return ranked.map(([customerId, row]) => {
+    const amount = Math.round(row.amount * 100) / 100;
+    return {
+      customerId,
+      customerName: row.customerName,
+      amount,
+      orderCount: row.orderCount,
+      averageTicketAmount: computeTicketAverage(amount, row.orderCount),
+      sharePercent: totalAll > 0 ? Math.round((amount / totalAll) * 10000) / 100 : null,
+    };
+  });
+}
+
 export async function buildFinanceSalesOrdersDashboard(
   query: Record<string, unknown> = {},
   now = new Date()
 ): Promise<FinanceSalesOrdersDashboardPayload> {
   const filters = parseFinanceSalesOrdersFilters(query, now);
   const yearCtx = resolveFinanceSalesOrdersYearContext(filters, now);
+  // Mantido no payload por compatibilidade de contrato; KPIs filtrados NÃO usam o tab.
   const tab = await buildSalesOrdersDashboardTab(yearCtx);
-  const periodBounds = resolveFinanceSalesOrdersPeriodBounds(filters);
   const rulesBundle = await buildOfficialFinanceRulesBundle(filters, now);
-  const rulesInput = mapFinanceSalesOrdersFiltersToRulesInput(filters);
 
-  const periodAgg = mapOfficialFinancePeriodAgg(rulesBundle.current);
-  const monthlyMaps = buildOfficialMonthlyAmountMaps(
-    rulesBundle.current.monthlyTimeline,
-    rulesBundle.previous.monthlyTimeline
+  // População do período = mesmo where da listagem Comercial (OP-02).
+  let periodOrders = await loadDashboardOrders(
+    filters,
+    filters.year,
+    filters.month
   );
-  const currentMonthly = monthlyMaps.current;
-  const previousMonthly = monthlyMaps.previous;
+  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+    periodOrders.map((order) => ({
+      id: order.id,
+      totalNetValue: order.totalNetValue,
+      issueDate: order.issueDate,
+      expectedDeliveryDate: order.expectedDeliveryDate,
+      nomusRawResponse: order.nomusRawResponse,
+    })),
+    now
+  );
+
+  if (filters.logisticStatus) {
+    const enriched = enrichOrdersWithLogisticStatus(
+      periodOrders,
+      now,
+      linkedNfeContextMap
+    );
+    const filtered = filterOrdersByLogisticStatus(enriched, filters.logisticStatus);
+    const allowed = new Set(filtered.map((row) => row.id));
+    periodOrders = periodOrders.filter((order) => allowed.has(order.id));
+  }
+
+  const periodTotals = buildSalesOrderListTotalsFromPrismaOrders(periodOrders);
+  const periodAgg = {
+    count: periodTotals.totalOrders,
+    net: periodTotals.totalNetAmount,
+    items: periodTotals.totalItems,
+  };
+
+  // Séries anuais: mesmos filtros Comercial, sem mês (comparativo / YTD / projeção).
+  const yearOrdersCurrent = await loadDashboardOrders(filters, filters.year, null);
+  const yearOrdersPrevious = await loadDashboardOrders(
+    filters,
+    filters.year - 1,
+    null
+  );
+  let yearScopedCurrent = yearOrdersCurrent;
+  let yearScopedPrevious = yearOrdersPrevious;
+  if (filters.logisticStatus) {
+    const enrichYear = async (
+      rows: typeof yearOrdersCurrent
+    ) => {
+      const map = await loadSalesOrderLinkedNfeContextMap(
+        rows.map((order) => ({
+          id: order.id,
+          totalNetValue: order.totalNetValue,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        })),
+        now
+      );
+      const enriched = enrichOrdersWithLogisticStatus(rows, now, map);
+      return filterOrdersByLogisticStatus(enriched, filters.logisticStatus);
+    };
+    yearScopedCurrent = await enrichYear(yearOrdersCurrent);
+    yearScopedPrevious = await enrichYear(yearOrdersPrevious);
+  }
+
+  const currentMonthly = buildMonthlyAmountMapFromOrders(
+    yearScopedCurrent,
+    filters.year
+  );
+  const previousMonthly = buildMonthlyAmountMapFromOrders(
+    yearScopedPrevious,
+    filters.year - 1
+  );
 
   const portfolio = mapOfficialFinancePortfolioFromManagementRows(
     rulesBundle.current.managementBundle.rows
   );
-  const topCustomers = buildOfficialTopCustomersFromRulesOrders(
-    rulesBundle.orders,
-    { ...rulesInput.listFilters, year: filters.year, month: filters.month ?? null },
-    10
-  );
+  const topCustomers = buildTopCustomersFromPeriodOrders(periodOrders, 10);
 
-  const dashboardOrders = await loadDashboardOrders(filters, periodBounds.from, periodBounds.to);
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
     prisma,
-    dashboardOrders.map((order) => ({
+    periodOrders.map((order) => ({
       id: order.id,
       issueDate: order.issueDate,
       nomusRawResponse: order.nomusRawResponse,
@@ -427,17 +705,9 @@ export async function buildFinanceSalesOrdersDashboard(
   const marginPortfolio = aggregateSalesOrderMarginSummaries(
     [...marginByOrder.values()].map((row) => row.marginSummary)
   );
-  const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
-    dashboardOrders.map((order) => ({
-      id: order.id,
-      totalNetValue: order.totalNetValue,
-      issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
-    }))
-  );
+
   const extended = buildExtendedMetricsFromOrders({
-    orders: dashboardOrders,
+    orders: periodOrders,
     filters,
     referenceDate: now,
     linkedNfeContextMap,
@@ -451,7 +721,15 @@ export async function buildFinanceSalesOrdersDashboard(
   const excluded = await queryExcludedCounts();
   const monthlyComparison = buildMonthlyComparison(currentMonthly, previousMonthly);
   const summary = {
-    ...buildSummaryFromTab(tab, filters, periodAgg, portfolio),
+    ...buildSummaryFromOperational({
+      filters,
+      yearCtx,
+      periodAgg,
+      portfolio,
+      currentMonthly,
+      previousMonthly,
+      now,
+    }),
     marginPortfolio,
   };
 
@@ -460,7 +738,9 @@ export async function buildFinanceSalesOrdersDashboard(
     warnings.push(`${excluded.cancelled} pedido(s) cancelado(s) excluído(s) dos indicadores.`);
   }
   if (excluded.error > 0) {
-    warnings.push(`${excluded.error} pedido(s) com erro excluído(s) dos indicadores.`);
+    warnings.push(
+      `${excluded.error} pedido(s) com status ERROR permanecem na população (paridade Comercial).`
+    );
   }
   if (summary.overdueOpenOrdersCount > 0 && summary.openPortfolioCount === 0) {
     warnings.push("Há pedidos atrasados na carteira filtrada.");
@@ -469,22 +749,26 @@ export async function buildFinanceSalesOrdersDashboard(
     warnings.push("Meta comercial não configurada no sistema — card exibe estado sem valor.");
   }
 
+  const chartSeries = buildChartSeriesConfig("salesOrders", yearCtx);
+
   return {
     generatedAt: now.toISOString(),
     filters,
     summary,
     monthlyComparison,
-    realizedProjected: buildRealizedProjectedRows(tab),
+    realizedProjected: buildRealizedProjectedFromMonthlyMaps(
+      currentMonthly,
+      previousMonthly,
+      yearCtx,
+      summary.monthProjectedAmount
+    ),
     topCustomers,
     topSellers: mapOfficialSellerBreakdownToFinanceTopSellers(
-      buildOfficialSellerBreakdownFromManagementRows(rulesBundle.current.managementBundle.rows)
+      buildOfficialSellerBreakdownFromManagementRows(
+        rulesBundle.current.managementBundle.rows
+      )
     ),
-    statusBreakdown: tab.statusBreakdown.map((row) => ({
-      status: row.status,
-      label: row.label,
-      amount: row.value ?? 0,
-      orderCount: row.count,
-    })),
+    statusBreakdown: buildStatusBreakdownFromOrders(periodOrders),
     manufacturingStatusBreakdown: extended.manufacturingStatusBreakdown,
     logisticStatusBreakdown: extended.logisticStatusBreakdown,
     criticalOrders,
@@ -499,11 +783,11 @@ export async function buildFinanceSalesOrdersDashboard(
       onTimeOpenAmount: Math.max(0, portfolio.open.net - portfolio.overdue.net),
       onTimeOpenCount: Math.max(0, portfolio.open.count - portfolio.overdue.count),
     },
-    chartSeries: tab.chartSeries,
+    chartSeries,
     tab,
     dataQuality: {
       warnings,
-      source: OFFICIAL_SO_RULES_SOURCE,
+      source: FINANCE_SALES_ORDERS_DATA_SOURCE,
       excludedCancelledOrdersCount: excluded.cancelled,
       excludedErrorOrdersCount: excluded.error,
       missingIssueDateCount: excluded.missingIssueDate,

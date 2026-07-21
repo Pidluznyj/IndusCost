@@ -12,6 +12,7 @@ import {
 } from "./salesOrderDashboardRules.js";
 import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
 import {
+  buildMonthlyAmountMapFromOrders,
   financeSalesOrdersMetricsAreFinite,
   parseFinanceSalesOrdersFilters,
   resolveFinanceSalesOrdersPeriodBounds,
@@ -23,11 +24,18 @@ import { buildFinanceSalesOrdersExportCsv } from "./financeSalesOrdersExport.js"
 import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboardTypes.js";
 
 describe("financeSalesOrdersDashboard", () => {
-  it("usa motor oficial de regras — prisma apenas para carga", () => {
+  it("usa motor OP-02 + totais da listagem Comercial", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
+    assert.match(src, /resolveSalesOrderOperationalPopulationWhere/);
+    assert.match(src, /buildSalesOrderListTotalsFromPrismaOrders/);
+    assert.match(src, /resolveSalesOrderListSellerWhere/);
+    assert.match(src, /excludeGroupCompanyCustomers:\s*FINANCE_SO_EXCLUDE_GROUP_COMPANIES/);
+    assert.match(src, /FINANCE_SO_EXCLUDE_GROUP_COMPANIES\s*=\s*false/);
     assert.match(src, /buildOfficialSalesOrderRulesResult/);
-    assert.match(src, /OFFICIAL_SO_RULES_SOURCE/);
     assert.match(src, /buildSalesOrdersDashboardTab/);
+    assert.match(src, /buildSummaryFromOperational/);
+    assert.doesNotMatch(src, /buildSummaryFromTab/);
+    assert.match(src, /buildMonthlyAmountMapFromOrders/);
     assert.doesNotMatch(src, /prisma\.salesOrder\.aggregate/);
     assert.doesNotMatch(src, /prisma\.proposal/i);
     assert.doesNotMatch(src, /Proposal/);
@@ -52,6 +60,21 @@ describe("financeSalesOrdersDashboard", () => {
   it("resolveSalesOrderNetAmount usa totalNetValue", () => {
     assert.equal(resolveSalesOrderNetAmount({ totalNetValue: 1500 }), 1500);
     assert.equal(getSalesOrderNetValue({ totalNetValue: null }), 0);
+  });
+
+  it("buildMonthlyAmountMapFromOrders agrega por mês de emissão", () => {
+    const map = buildMonthlyAmountMapFromOrders(
+      [
+        { issueDate: new Date(2026, 0, 5), totalNetValue: 100 },
+        { issueDate: new Date(2026, 0, 20), totalNetValue: 50 },
+        { issueDate: new Date(2026, 2, 1), totalNetValue: 200 },
+        { issueDate: new Date(2025, 0, 1), totalNetValue: 999 },
+      ],
+      2026
+    );
+    assert.equal(map.get(1), 150);
+    assert.equal(map.get(3), 200);
+    assert.equal(map.get(2), 0);
   });
 
   it("parseFinanceSalesOrdersFilters filtra ano e mês", () => {

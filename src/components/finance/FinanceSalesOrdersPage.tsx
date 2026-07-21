@@ -478,7 +478,7 @@ export function FinanceSalesOrdersPage() {
         <>
           <ExecutiveSummarySection
             title="Resumo do período"
-            eyebrow="Pedidos de venda no escopo filtrado — valores oficiais do módulo financeiro."
+            eyebrow="Mesma população e totais da listagem Comercial > Pedidos de Venda (motor OP-02)."
             testId="finance-sales-orders-executive-summary"
           >
             <SummaryKpiGrid minColumnWidth={220} className={SYSTEM_TOTALIZER_GRID_CLASS}>
@@ -488,7 +488,7 @@ export function FinanceSalesOrdersPage() {
               label="Pedidos emitidos"
               amount={summary.orderCount}
               amountFormat="number"
-              helperText="Total de pedidos válidos no período (issueDate)."
+              helperText="Paridade Comercial: quantidade de pedidos na população filtrada."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -497,7 +497,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.totalOrdersAmount}
               amountFormat="currency"
               tone="money"
-              helperText="Soma do valor líquido dos pedidos no filtro."
+              helperText="Paridade Comercial: Σ SalesOrder.totalNetValue no filtro."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -505,7 +505,7 @@ export function FinanceSalesOrdersPage() {
               label="Carteira aberta"
               amount={summary.openPortfolioCount}
               amountFormat="number"
-              helperText="Pedidos válidos sem NF processada."
+              helperText="Pedidos sem NF válida (SalesOrderNfeLink)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -514,7 +514,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.openPortfolioAmount}
               amountFormat="currency"
               tone="money"
-              helperText="Valor líquido dos pedidos ainda sem NF processada."
+              helperText="Valor líquido dos pedidos ainda sem NF válida."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -522,7 +522,7 @@ export function FinanceSalesOrdersPage() {
               label="Pedidos faturados"
               amount={summary.invoicedOrdersCount}
               amountFormat="number"
-              helperText="Pedidos com NF processada (dataProcessamento)."
+              helperText="Pedidos com NF válida (SalesOrderNfeLink)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -531,7 +531,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.invoicedOrdersAmount}
               amountFormat="currency"
               tone="success"
-              helperText="Valor líquido dos pedidos com NF processada."
+              helperText="Σ valor líquido dos pedidos com NF válida (não Σ NF)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -540,7 +540,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.averageTicketAmount}
               amountFormat="currency"
               tone="money"
-              helperText="Valor total ÷ quantidade de pedidos."
+              helperText="Paridade Comercial: valor vendido ÷ quantidade de pedidos."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -549,7 +549,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.dailyAverageAmount}
               amountFormat="currency"
               tone="money"
-              helperText="Valor YTD ÷ dias úteis decorridos (seg–sex)."
+              helperText="YTD filtrado (mesma população) ÷ dias úteis decorridos."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}

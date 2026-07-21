@@ -158,9 +158,13 @@ export type FinanceSalesOrdersPortfolioBreakdown = {
   onTimeOpenCount: number;
 };
 
+/** Fonte canônica do dashboard Financeiro > Pedidos (paridade Comercial OP-02). */
+export const FINANCE_SALES_ORDERS_DATA_SOURCE =
+  "op02-sales-order-operational-engine" as const;
+
 export type FinanceSalesOrdersDataQuality = {
   warnings: string[];
-  source: "SalesOrder/SalesOrderItem";
+  source: typeof FINANCE_SALES_ORDERS_DATA_SOURCE | "SalesOrder/SalesOrderItem";
   excludedCancelledOrdersCount: number;
   excludedErrorOrdersCount: number;
   missingIssueDateCount: number;
@@ -208,10 +212,11 @@ export const FINANCE_SALES_ORDERS_MONTH_LABELS = [
 ] as const;
 
 export const FINANCE_SALES_ORDERS_CALCULATION_RULES = [
-  "Pedido emitido: SalesOrder.issueDate no período filtrado.",
-  "Faturado: nfes.dataProcessamento presente no nomusRawResponse.",
-  "Carteira aberta: pedido válido sem NF processada.",
+  "População: mesmo where operacional da listagem Comercial (OP-02 / resolveSalesOrderListWhere).",
+  "Pedidos / valor / itens / ticket: Σ SalesOrder.totalNetValue e totalItems na população filtrada (paridade Comercial).",
+  "CANCELLED fora; ERROR permanece (paridade Comercial). Presença Nomus quando flag ativa.",
+  "Faturado / carteira: vínculo oficial SalesOrderNfeLink (NF válida com data de processamento).",
   "Status logístico BI: regra Power BI (DataPlanejada vs DataReal / status item 1–3).",
-  "Média diária: valor YTD ÷ dias úteis decorridos (seg–sex, sem feriados).",
+  "Média diária: valor YTD filtrado ÷ dias úteis decorridos (seg–sex, sem feriados).",
   "Status fabricação: código Nomus 1–6 por item mais pendente do pedido.",
 ] as const;

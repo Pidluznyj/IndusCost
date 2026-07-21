@@ -232,6 +232,7 @@ describe("OP-02 paridade de consumidores (wiring)", () => {
       ["src/lib/salesOrderMetricsEngine.ts", /buildSalesOrderListWhere/],
       ["src/lib/salesOrderOperationalPopulation.server.ts", /resolveSalesOrderListWhere/],
       ["src/lib/salesOrderOperationalEngine.server.ts", /runSalesOrderOperationalEngine/],
+      ["src/lib/financeSalesOrdersDashboard.ts", /resolveSalesOrderOperationalPopulationWhere|buildSalesOrderListTotalsFromPrismaOrders/],
     ];
     for (const [rel, re] of files) {
       assert.match(read(rel), re, rel);

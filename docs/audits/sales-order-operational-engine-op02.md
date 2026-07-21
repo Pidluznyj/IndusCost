@@ -43,6 +43,7 @@
 | CRM Gestão/Vendedor | `loadCrmSalesOrderMetrics` | **presença adicionada** | Médio (eixo comercial próprio) | Migrado presença |
 | Inteligência MP | `buildMaterialDemandSalesOrderWhere` | **presença + seller Nomus** | Médio (filtros MP) | Migrado |
 | Funil / Presidencial | `loadSalesOrderEnrichedMetricsForIssueYear` | **list where year** | Baixo | Alinhado |
+| Financeiro > Pedidos | `GET /api/finance/sales-orders/dashboard` | **OP-02 where + list totals** | Baixo | Paridade Comercial (sem exclusão de grupo) |
 | Detalhe por ID | `GET /api/sales-orders/:id` | sem exclusão | — | HISTORICAL_AUDIT (ok) |
 | Cliente 360 / reports | views próprias | parcial | Médio | Exceção: escopo cliente; presença futura |
 
