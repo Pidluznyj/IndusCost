@@ -6,11 +6,14 @@ import {
   HrOrgStructureError,
   assertHrDepartmentName,
   assertHrDirectorateName,
+  assertHrDirectorateParentLink,
   assertHrOrgLeaderIsActive,
   assertHrOrgLeaderRequired,
   normalizeHrOrgCode,
   normalizeHrOrgStatus,
+  normalizeOptionalParentDirectorateId,
   resolveForcedManagerFromOrgDepartment,
+  buildEmployeeOrgLeadershipSummary,
   type HrOrgStatus,
 } from "@/src/lib/hrOrgStructure.js";
 
@@ -56,6 +59,7 @@ export function serializeHrDirectorate(row: {
   name: string;
   status: string;
   leaderEmployeeId: string;
+  parentDirectorateId?: string | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -66,8 +70,14 @@ export function serializeHrDirectorate(row: {
     status: string | null;
     department: string;
   } | null;
+  parentDirectorate?: {
+    id: string;
+    name: string;
+    status: string;
+    code: string | null;
+  } | null;
   departments?: Array<{ id: string; name: string; status: string }> | null;
-  _count?: { departments: number } | null;
+  _count?: { departments: number; childDirectorates?: number } | null;
 }) {
   return {
     id: row.id,
@@ -75,6 +85,7 @@ export function serializeHrDirectorate(row: {
     name: row.name,
     status: row.status as HrOrgStatus,
     leaderEmployeeId: row.leaderEmployeeId,
+    parentDirectorateId: row.parentDirectorateId ?? null,
     notes: row.notes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -87,7 +98,16 @@ export function serializeHrDirectorate(row: {
           department: row.leader.department,
         }
       : null,
+    parentDirectorate: row.parentDirectorate
+      ? {
+          id: row.parentDirectorate.id,
+          name: row.parentDirectorate.name,
+          status: row.parentDirectorate.status,
+          code: row.parentDirectorate.code,
+        }
+      : null,
     departmentCount: row._count?.departments ?? row.departments?.length ?? 0,
+    childDirectorateCount: row._count?.childDirectorates ?? 0,
     departments: (row.departments ?? []).map((d) => ({
       id: d.id,
       name: d.name,
@@ -159,17 +179,49 @@ export function serializeHrDepartment(row: {
   };
 }
 
+const directorateInclude = {
+  leader: { select: leaderSelect },
+  parentDirectorate: {
+    select: { id: true, name: true, status: true, code: true },
+  },
+  departments: {
+    select: { id: true, name: true, status: true },
+    orderBy: { name: "asc" as const },
+  },
+  _count: { select: { departments: true, childDirectorates: true } },
+} as const;
+
+async function loadDirectorateParentMap(db: Db): Promise<Map<string, string | null>> {
+  const rows = await db.hrDirectorate.findMany({
+    select: { id: true, parentDirectorateId: true },
+  });
+  return new Map(rows.map((r) => [r.id, r.parentDirectorateId ?? null]));
+}
+
+async function resolveParentDirectorateId(
+  db: Db,
+  body: Record<string, unknown>,
+  options: { directorateId: string | null; existingParentId?: string | null; bodyHasParentField: boolean }
+): Promise<string | null> {
+  if (!options.bodyHasParentField) {
+    return options.existingParentId ?? null;
+  }
+  const rawParent = normalizeOptionalParentDirectorateId(body.parentDirectorateId);
+  if (rawParent && !isUuid(rawParent)) {
+    throw new HrOrgStructureError("Diretoria superior inválida.", "PARENT_INVALID", 400);
+  }
+  const parentById = await loadDirectorateParentMap(db);
+  return assertHrDirectorateParentLink({
+    directorateId: options.directorateId,
+    parentDirectorateId: rawParent,
+    parentById,
+  });
+}
+
 export async function listHrDirectorates(db: Db) {
   const rows = await db.hrDirectorate.findMany({
     orderBy: [{ status: "asc" }, { name: "asc" }],
-    include: {
-      leader: { select: leaderSelect },
-      departments: {
-        select: { id: true, name: true, status: true },
-        orderBy: { name: "asc" },
-      },
-      _count: { select: { departments: true } },
-    },
+    include: directorateInclude,
   });
   return rows.map(serializeHrDirectorate);
 }
@@ -223,6 +275,10 @@ export async function createHrDirectorate(
   const code = normalizeHrOrgCode(body.code);
   const notes =
     typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+  const parentDirectorateId = await resolveParentDirectorateId(db, body, {
+    directorateId: null,
+    bodyHasParentField: Object.prototype.hasOwnProperty.call(body, "parentDirectorateId"),
+  });
 
   try {
     const row = await db.hrDirectorate.create({
@@ -231,14 +287,12 @@ export async function createHrDirectorate(
         code,
         status,
         leaderEmployeeId,
+        parentDirectorateId,
         notes,
       },
-      include: {
-        leader: { select: leaderSelect },
-        departments: { select: { id: true, name: true, status: true } },
-        _count: { select: { departments: true } },
-      },
+      include: directorateInclude,
     });
+    await clearEmployeeMemberDepartmentForOrgLeader(db, leaderEmployeeId, name);
     return serializeHrDirectorate(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
@@ -294,17 +348,19 @@ export async function updateHrDirectorate(
         ? body.notes.trim()
         : null
       : existing.notes;
+  const parentDirectorateId = await resolveParentDirectorateId(db, body, {
+    directorateId: id.trim(),
+    existingParentId: existing.parentDirectorateId ?? null,
+    bodyHasParentField: Object.prototype.hasOwnProperty.call(body, "parentDirectorateId"),
+  });
 
   try {
     const row = await db.hrDirectorate.update({
       where: { id: id.trim() },
-      data: { name, code, status, leaderEmployeeId, notes },
-      include: {
-        leader: { select: leaderSelect },
-        departments: { select: { id: true, name: true, status: true } },
-        _count: { select: { departments: true } },
-      },
+      data: { name, code, status, leaderEmployeeId, parentDirectorateId, notes },
+      include: directorateInclude,
     });
+    await clearEmployeeMemberDepartmentForOrgLeader(db, leaderEmployeeId, name);
     return serializeHrDirectorate(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
@@ -383,6 +439,7 @@ export async function createHrDepartment(db: Db, body: Record<string, unknown>) 
         _count: { select: { employees: true } },
       },
     });
+    await clearEmployeeMemberDepartmentForOrgLeader(db, leaderEmployeeId, name);
     return serializeHrDepartment(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
@@ -528,6 +585,7 @@ export async function updateHrDepartment(
       });
     }
 
+    await clearEmployeeMemberDepartmentForOrgLeader(db, row.leaderEmployeeId, row.name);
     return serializeHrDepartment(row);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
@@ -651,4 +709,107 @@ export async function loadHrHierarchicalScopeForEmployee(
     departmentIds,
     isHierarchicalLeader: directorateIds.length > 0 || departmentIds.length > 0,
   };
+}
+
+/** Unidades ativas que o colaborador lidera (diretoria / departamento). */
+export async function loadEmployeeOrgLeadership(
+  db: Db,
+  employeeId: string | null | undefined
+) {
+  if (!employeeId || !isUuid(employeeId)) {
+    return buildEmployeeOrgLeadershipSummary({
+      employeeId: "",
+      ledDirectorates: [],
+      ledDepartments: [],
+    });
+  }
+  const id = employeeId.trim();
+  const [ledDirectorates, ledDepartments] = await Promise.all([
+    db.hrDirectorate.findMany({
+      where: { leaderEmployeeId: id, status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    db.hrDepartment.findMany({
+      where: { leaderEmployeeId: id, status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+  return buildEmployeeOrgLeadershipSummary({
+    employeeId: id,
+    ledDirectorates,
+    ledDepartments,
+  });
+}
+
+/**
+ * Líderes oficiais não ficam alocados como membros de departamento —
+ * aparecem só no organograma na posição de liderança.
+ */
+export async function clearEmployeeMemberDepartmentForOrgLeader(
+  db: Db,
+  leaderEmployeeId: string,
+  unitLabel: string
+) {
+  if (!isUuid(leaderEmployeeId)) return;
+  const label = unitLabel.trim() || "Liderança organizacional";
+  await db.employee.updateMany({
+    where: { id: leaderEmployeeId.trim() },
+    data: {
+      departmentId: null,
+      department: label,
+      managerId: null,
+      managerName: null,
+    },
+  });
+}
+
+/** Mapa employeeId → resumo de liderança (lote, para listagens). */
+export async function loadOrgLeadershipByEmployeeId(db: Db) {
+  const [dirs, depts] = await Promise.all([
+    db.hrDirectorate.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, name: true, leaderEmployeeId: true },
+    }),
+    db.hrDepartment.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, name: true, leaderEmployeeId: true },
+    }),
+  ]);
+  const byEmployee = new Map<
+    string,
+    { directorates: { id: string; name: string }[]; departments: { id: string; name: string }[] }
+  >();
+  for (const d of dirs) {
+    const bucket = byEmployee.get(d.leaderEmployeeId) ?? {
+      directorates: [],
+      departments: [],
+    };
+    bucket.directorates.push({ id: d.id, name: d.name });
+    byEmployee.set(d.leaderEmployeeId, bucket);
+  }
+  for (const d of depts) {
+    const bucket = byEmployee.get(d.leaderEmployeeId) ?? {
+      directorates: [],
+      departments: [],
+    };
+    bucket.departments.push({ id: d.id, name: d.name });
+    byEmployee.set(d.leaderEmployeeId, bucket);
+  }
+  const result = new Map<
+    string,
+    ReturnType<typeof buildEmployeeOrgLeadershipSummary>
+  >();
+  for (const [employeeId, bucket] of byEmployee) {
+    result.set(
+      employeeId,
+      buildEmployeeOrgLeadershipSummary({
+        employeeId,
+        ledDirectorates: bucket.directorates,
+        ledDepartments: bucket.departments,
+      })
+    );
+  }
+  return result;
 }

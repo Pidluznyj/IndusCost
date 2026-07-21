@@ -83,6 +83,71 @@ export function assertHrDirectorateName(name: string): string {
   return clean;
 }
 
+/**
+ * Normaliza o vínculo opcional Diretoria → Diretoria.
+ * Vazio / null / "none" = sem vínculo (raiz).
+ */
+export function normalizeOptionalParentDirectorateId(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value || value.toLowerCase() === "none" || value === "__none__") return null;
+  return value;
+}
+
+/**
+ * Valida vínculo entre diretorias: não pode apontar para si mesma nem criar ciclo.
+ * `parentById` deve conter todas as diretorias existentes (id → parentDirectorateId atual).
+ */
+export function assertHrDirectorateParentLink(input: {
+  directorateId: string | null;
+  parentDirectorateId: string | null;
+  parentById: ReadonlyMap<string, string | null | undefined>;
+}): string | null {
+  const parentId = input.parentDirectorateId?.trim() || null;
+  if (!parentId) return null;
+
+  const selfId = input.directorateId?.trim() || null;
+  if (selfId && parentId === selfId) {
+    throw new HrOrgStructureError(
+      "Uma diretoria não pode se vincular a si mesma.",
+      "PARENT_SELF",
+      400
+    );
+  }
+
+  if (!input.parentById.has(parentId)) {
+    throw new HrOrgStructureError(
+      "Diretoria superior não encontrada.",
+      "PARENT_NOT_FOUND",
+      404
+    );
+  }
+
+  let cursor: string | null | undefined = parentId;
+  const seen = new Set<string>();
+  while (cursor) {
+    if (selfId && cursor === selfId) {
+      throw new HrOrgStructureError(
+        "Este vínculo criaria um ciclo entre diretorias.",
+        "PARENT_CYCLE",
+        400
+      );
+    }
+    if (seen.has(cursor)) {
+      throw new HrOrgStructureError(
+        "Hierarquia de diretorias inconsistente (ciclo detectado).",
+        "PARENT_CYCLE",
+        400
+      );
+    }
+    seen.add(cursor);
+    cursor = input.parentById.get(cursor) ?? null;
+  }
+
+  return parentId;
+}
+
 export function assertHrDepartmentName(name: string): string {
   const clean = normalizeHrOrgName(name);
   if (!clean) {
@@ -93,6 +158,44 @@ export function assertHrDepartmentName(name: string): string {
   }
   return clean;
 }
+
+export type HrOrgLeadershipRole = {
+  kind: "directorate" | "department";
+  id: string;
+  name: string;
+};
+
+/** Monta resumo de liderança a partir de listas já carregadas (sem I/O). */
+export function buildEmployeeOrgLeadershipSummary(input: {
+  employeeId: string;
+  ledDirectorates: readonly { id: string; name: string }[];
+  ledDepartments: readonly { id: string; name: string }[];
+}): {
+  isOrgLeader: boolean;
+  roles: HrOrgLeadershipRole[];
+  label: string | null;
+} {
+  const roles: HrOrgLeadershipRole[] = [
+    ...input.ledDirectorates.map((d) => ({
+      kind: "directorate" as const,
+      id: d.id,
+      name: d.name,
+    })),
+    ...input.ledDepartments.map((d) => ({
+      kind: "department" as const,
+      id: d.id,
+      name: d.name,
+    })),
+  ];
+  if (roles.length === 0) {
+    return { isOrgLeader: false, roles: [], label: null };
+  }
+  const label = roles
+    .map((r) => `${r.name} (${r.kind === "directorate" ? "diretoria" : "departamento"})`)
+    .join(", ");
+  return { isOrgLeader: true, roles, label };
+}
+
 
 /** Escopo hierárquico: líder de diretoria vê departamentos; líder de depto vê membros. */
 export function buildHrHierarchicalViewerScope(input: {

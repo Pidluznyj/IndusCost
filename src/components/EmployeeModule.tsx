@@ -685,8 +685,19 @@ export const EmployeeModule = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          departmentId: editingEmployee?.orgLeadership?.isOrgLeader
+            ? null
+            : formData.departmentId || null,
+          department: editingEmployee?.orgLeadership?.isOrgLeader
+            ? editingEmployee.orgLeadership.label ?? formData.department
+            : formData.department,
+          managerId: editingEmployee?.orgLeadership?.isOrgLeader
+            ? null
+            : formData.managerId || null,
+          managerName: editingEmployee?.orgLeadership?.isOrgLeader
+            ? null
+            : formData.managerName || null,
           costCenterId: formData.costCenterId || null,
-          managerId: formData.managerId || null,
           corporateEmail: normalizeCorporateEmail(formData.corporateEmail) || null,
           personId:
             formData.personId && !String(formData.personId).includes(":")
@@ -1352,9 +1363,20 @@ export const EmployeeModule = () => {
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-muted-foreground uppercase">
-                              Departamento / setor *
+                              Departamento / setor
+                              {editingEmployee?.orgLeadership?.isOrgLeader ? "" : " *"}
                             </label>
-                            {orgDepartmentOptions.length > 0 || formData.departmentId ? (
+                            {editingEmployee?.orgLeadership?.isOrgLeader ? (
+                              <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2.5 text-xs text-sky-950">
+                                <p className="font-semibold">Liderança organizacional</p>
+                                <p className="mt-1 text-sky-900/80">
+                                  Esta pessoa já lidera:{" "}
+                                  {editingEmployee.orgLeadership.label ?? "unidade ativa"}.
+                                  No organograma ela aparece na posição de líder — não precisa
+                                  selecionar departamento como membro.
+                                </p>
+                              </div>
+                            ) : orgDepartmentOptions.length > 0 || formData.departmentId ? (
                               <>
                                 <SearchableSelect
                                   required
@@ -1474,7 +1496,12 @@ export const EmployeeModule = () => {
                             <label className="text-xs font-bold text-muted-foreground uppercase">
                               Gestor responsável
                             </label>
-                            {formData.departmentId ? (
+                            {editingEmployee?.orgLeadership?.isOrgLeader ? (
+                              <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground">
+                                Líderes de diretoria/departamento não ficam subordinados a um
+                                departamento-membro no organograma.
+                              </div>
+                            ) : formData.departmentId ? (
                               <>
                                 <input
                                   type="text"

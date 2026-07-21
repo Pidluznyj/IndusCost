@@ -5,12 +5,15 @@ import { describe, it } from "node:test";
 import {
   assertHrDepartmentName,
   assertHrDirectorateName,
+  assertHrDirectorateParentLink,
   assertHrOrgLeaderIsActive,
   assertHrOrgLeaderRequired,
+  buildEmployeeOrgLeadershipSummary,
   buildHrHierarchicalViewerScope,
   HrOrgStructureError,
   normalizeHrOrgCode,
   normalizeHrOrgStatus,
+  normalizeOptionalParentDirectorateId,
   resolveForcedManagerFromOrgDepartment,
 } from "./hrOrgStructure.js";
 
@@ -105,6 +108,68 @@ describe("hrOrgStructure", () => {
       }),
       { managerId: null, managerName: null }
     );
+  });
+
+  it("vínculo opcional entre diretorias bloqueia auto-referência e ciclo", () => {
+    const parentById = new Map<string, string | null>([
+      ["dir-a", null],
+      ["dir-b", "dir-a"],
+      ["dir-c", "dir-b"],
+    ]);
+    assert.equal(
+      assertHrDirectorateParentLink({
+        directorateId: "dir-d",
+        parentDirectorateId: "dir-a",
+        parentById,
+      }),
+      "dir-a"
+    );
+    assert.equal(
+      assertHrDirectorateParentLink({
+        directorateId: "dir-a",
+        parentDirectorateId: null,
+        parentById,
+      }),
+      null
+    );
+    assert.throws(
+      () =>
+        assertHrDirectorateParentLink({
+          directorateId: "dir-a",
+          parentDirectorateId: "dir-a",
+          parentById,
+        }),
+      (err: unknown) => err instanceof HrOrgStructureError && err.code === "PARENT_SELF"
+    );
+    assert.throws(
+      () =>
+        assertHrDirectorateParentLink({
+          directorateId: "dir-a",
+          parentDirectorateId: "dir-c",
+          parentById,
+        }),
+      (err: unknown) => err instanceof HrOrgStructureError && err.code === "PARENT_CYCLE"
+    );
+    assert.equal(normalizeOptionalParentDirectorateId(""), null);
+    assert.equal(normalizeOptionalParentDirectorateId("none"), null);
+    assert.equal(normalizeOptionalParentDirectorateId("  uuid-1  "), "uuid-1");
+  });
+
+  it("resumo de liderança identifica líder de diretoria/departamento", () => {
+    const empty = buildEmployeeOrgLeadershipSummary({
+      employeeId: "e1",
+      ledDirectorates: [],
+      ledDepartments: [],
+    });
+    assert.equal(empty.isOrgLeader, false);
+    const led = buildEmployeeOrgLeadershipSummary({
+      employeeId: "e1",
+      ledDirectorates: [{ id: "d1", name: "Administrativa" }],
+      ledDepartments: [{ id: "p1", name: "Financeiro" }],
+    });
+    assert.equal(led.isOrgLeader, true);
+    assert.match(led.label ?? "", /Administrativa/);
+    assert.match(led.label ?? "", /Financeiro/);
   });
 
   it("rotas e UI de RH consomem a estrutura", () => {

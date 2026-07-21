@@ -209,7 +209,7 @@ import {
   HrOrgStructureError,
   resolveForcedManagerFromOrgDepartment,
 } from "./src/lib/hrOrgStructure.js";
-import { resolveHrDepartmentLabel } from "./src/lib/hrOrgStructure.server.js";
+import { resolveHrDepartmentLabel, loadEmployeeOrgLeadership, loadOrgLeadershipByEmployeeId } from "./src/lib/hrOrgStructure.server.js";
 import {
   registerCanonicalPersonRoutes,
   resolvePersonIdFromEmployeeBody,
@@ -3008,6 +3008,8 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
     orderBy: { name: "asc" },
   });
 
+  const orgLeadershipByEmployee = await loadOrgLeadershipByEmployeeId(prisma);
+
   // Lógica de Cálculo de Custo (Motor de Custeio HH)
   const employeesWithCosts = employees.map((emp) => {
     const salary = Number(emp.salary);
@@ -3033,8 +3035,15 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
     const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
     const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
 
+    const orgLeadership = orgLeadershipByEmployee.get(emp.id) ?? {
+      isOrgLeader: false,
+      roles: [],
+      label: null,
+    };
+
     const enriched = {
       ...emp,
+      orgLeadership,
       costs: {
         salary,
         totalBenefits,
@@ -3489,24 +3498,36 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
       throw linkErr;
     }
 
-    const orgDept = await resolveHrDepartmentLabel(
-      prisma,
-      typeof departmentId === "string" ? departmentId : null,
-      typeof department === "string" ? department : ""
-    );
-    if (!orgDept.department) {
+    const orgLeadership = await loadEmployeeOrgLeadership(prisma, id);
+    const orgDept = orgLeadership.isOrgLeader
+      ? {
+          departmentId: null as string | null,
+          department: orgLeadership.label ?? "Liderança organizacional",
+          leaderEmployeeId: null as string | null,
+          leaderName: null as string | null,
+          directorateLeaderEmployeeId: null as string | null,
+          directorateLeaderName: null as string | null,
+        }
+      : await resolveHrDepartmentLabel(
+          prisma,
+          typeof departmentId === "string" ? departmentId : null,
+          typeof department === "string" ? department : ""
+        );
+    if (!orgLeadership.isOrgLeader && !orgDept.department) {
       return res.status(400).json({ error: "Departamento é obrigatório." });
     }
 
-    const forcedManager = orgDept.departmentId
-      ? resolveForcedManagerFromOrgDepartment({
-          employeeId: id,
-          departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
-          departmentLeaderName: orgDept.leaderName,
-          directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
-          directorateLeaderName: orgDept.directorateLeaderName,
-        })
-      : null;
+    const forcedManager = orgLeadership.isOrgLeader
+      ? { managerId: null as string | null, managerName: null as string | null }
+      : orgDept.departmentId
+        ? resolveForcedManagerFromOrgDepartment({
+            employeeId: id,
+            departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
+            departmentLeaderName: orgDept.leaderName,
+            directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
+            directorateLeaderName: orgDept.directorateLeaderName,
+          })
+        : null;
 
     const persisted = await prepareEmployeePersistedFields(
       prisma,
