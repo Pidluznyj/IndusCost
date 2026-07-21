@@ -4,14 +4,27 @@
  * runNomusSalesOrdersSync / runNomusAccountsReceivableSync / runNomusAccountsPayableSync
  * são as únicas funções de apply por entidade. CLI, shell, painel e orquestrador
  * apenas montam o request e chamam estes serviços.
+ *
+ * OP-04: lock canônico TypeScript usa pathname separado do flock do shell
+ * (CR/CP: `.canonical.lock`) para evitar autolock SKIPPED_LOCKED.
  */
 
-import { mkdirSync, openSync, closeSync, unlinkSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  openSync,
+  closeSync,
+  unlinkSync,
+  existsSync,
+  writeSync,
+  readFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import {
   buildCanonicalSyncExecution,
   emptyCanonicalCounters,
+  ENTITY_CANONICAL_LOCK_ENV,
   ENTITY_LOCK_FILE_DEFAULT,
+  ENTITY_SHELL_FLOCK_FILE_DEFAULT,
   planPostSyncHooks,
   type NomusCanonicalSyncExecution,
   type NomusCanonicalSyncLockName,
@@ -43,53 +56,156 @@ type HeldLock = {
 
 const heldByCorrelation = new Map<string, HeldLock>();
 
-function resolveLockPath(name: NomusCanonicalSyncLockName): string {
-  const envKey =
-    name === "nomus-sales-orders"
-      ? "NOMUS_SALES_ORDERS_SYNC_LOCK_FILE"
-      : name === "nomus-accounts-receivable"
-        ? "NOMUS_ACCOUNTS_RECEIVABLE_LOCK_FILE"
-        : name === "nomus-accounts-payable"
-          ? "NOMUS_ACCOUNTS_PAYABLE_LOCK_FILE"
-          : "NOMUS_SYNC_GLOBAL_LOCK_FILE";
-  const fromEnv = (process.env[envKey] ?? "").trim();
+/** Path do lock canônico interno (openSync wx) — exportado para testes OP-04. */
+export function resolveCanonicalEntityLockFile(
+  name: NomusCanonicalSyncLockName,
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  const envKey = ENTITY_CANONICAL_LOCK_ENV[name];
+  const fromEnv = envKey ? (env[envKey] ?? "").trim() : "";
   return fromEnv || ENTITY_LOCK_FILE_DEFAULT[name];
+}
+
+/** Path do flock do shell (CR/CP) — só documentação/teste; shell usa NOMUS_AR/AP_SYNC_LOCK_FILE. */
+export function resolveShellFlockLockFile(
+  name: "nomus-accounts-receivable" | "nomus-accounts-payable",
+  env: NodeJS.ProcessEnv = process.env
+): string {
+  const envKey =
+    name === "nomus-accounts-receivable"
+      ? "NOMUS_AR_SYNC_LOCK_FILE"
+      : "NOMUS_AP_SYNC_LOCK_FILE";
+  const fromEnv = (env[envKey] ?? "").trim();
+  return fromEnv || ENTITY_SHELL_FLOCK_FILE_DEFAULT[name];
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    // EPERM: processo existe mas sem permissão de sinal — não é stale.
+    if (code === "EPERM") return true;
+    return false;
+  }
+}
+
+/**
+ * Recupera lock canônico obsoleto somente com PID comprovadamente morto.
+ * Não remove por tempo. Não remove lock ativo de outro processo.
+ */
+export function tryRecoverStaleCanonicalLock(path: string): {
+  recovered: boolean;
+  reason: string;
+} {
+  if (!existsSync(path)) {
+    return { recovered: false, reason: "lock_absent" };
+  }
+  let raw = "";
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return { recovered: false, reason: "unreadable" };
+  }
+  const match = raw.match(/^pid=(\d+)\s*$/m);
+  if (!match) {
+    return {
+      recovered: false,
+      reason: "no_pid_metadata_no_blind_delete",
+    };
+  }
+  const pid = Number(match[1]);
+  if (isProcessAlive(pid)) {
+    return { recovered: false, reason: `owner_alive_pid=${pid}` };
+  }
+  try {
+    unlinkSync(path);
+    console.warn(
+      `[nomus-canonical-lock] stale lock recuperado path=${path} pid=${pid} (processo inexistente)`
+    );
+    return { recovered: true, reason: `stale_pid=${pid}` };
+  } catch {
+    return { recovered: false, reason: "unlink_failed" };
+  }
+}
+
+function writeCanonicalLockMetadata(
+  fd: number,
+  name: NomusCanonicalSyncLockName
+): void {
+  const body = [
+    `pid=${process.pid}`,
+    `name=${name}`,
+    `acquiredAt=${new Date().toISOString()}`,
+    "",
+  ].join("\n");
+  writeSync(fd, body);
 }
 
 /**
  * Lock por entidade (best-effort em Windows/Linux).
- * Em Linux, shells já usam flock no path global/AR/AP; este lock
+ * Em Linux, shells usam flock em path separado (CR/CP); este lock
  * serializa chamadas in-process / CLI concorrentes da mesma entidade.
  */
 export function tryAcquireCanonicalEntityLock(
   name: NomusCanonicalSyncLockName,
-  correlationId: string
-): { ok: true; path: string } | { ok: false; code: "LOCK_HELD"; path: string; message: string } {
-  const path = resolveLockPath(name);
+  correlationId: string,
+  options?: { env?: NodeJS.ProcessEnv }
+):
+  | { ok: true; path: string; recoveredStale?: boolean }
+  | { ok: false; code: "LOCK_HELD"; path: string; message: string } {
+  const env = options?.env ?? process.env;
+  const path = resolveCanonicalEntityLockFile(name, env);
   try {
     mkdirSync(dirname(path), { recursive: true });
   } catch {
     /* ignore */
   }
 
-  try {
-    const fd = openSync(path, "wx");
-    heldByCorrelation.set(correlationId, { name, fd, path });
-    return { ok: true, path };
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException)?.code;
-    if (code === "EEXIST") {
-      return {
-        ok: false,
-        code: "LOCK_HELD",
-        path,
-        message: `SKIPPED_LOCKED: lock ${name} já adquirido (${path}).`,
-      };
+  const attemptOpen = ():
+    | { ok: true; path: string; recoveredStale?: boolean }
+    | { ok: false; code: "LOCK_HELD"; path: string; message: string }
+    | { retry: true } => {
+    try {
+      const fd = openSync(path, "wx");
+      try {
+        writeCanonicalLockMetadata(fd, name);
+      } catch {
+        /* metadata best-effort — lock ainda vale */
+      }
+      heldByCorrelation.set(correlationId, { name, fd, path });
+      return { ok: true, path };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === "EEXIST") {
+        return { retry: true };
+      }
+      // Fallback: se filesystem não suporte wx exclusivo, não bloqueia apply
+      // (shell flock permanece autoridade no host).
+      return { ok: true, path };
     }
-    // Fallback: se filesystem não suporta wx exclusivo, não bloqueia apply
-    // (shell flock permanece autoridade no host).
-    return { ok: true, path };
+  };
+
+  const first = attemptOpen();
+  if (!("retry" in first)) return first;
+
+  const recovered = tryRecoverStaleCanonicalLock(path);
+  if (recovered.recovered) {
+    const second = attemptOpen();
+    if (!("retry" in second) && second.ok) {
+      return { ...second, recoveredStale: true };
+    }
+    if (!("retry" in second)) return second;
   }
+
+  return {
+    ok: false,
+    code: "LOCK_HELD",
+    path,
+    message: `SKIPPED_LOCKED: lock canônico ${name} já adquirido (${path}).`,
+  };
 }
 
 export function releaseCanonicalEntityLock(correlationId: string): void {
@@ -121,6 +237,9 @@ async function runCanonicalEntitySync(
 
   if (!lockAttempt.ok) {
     const finishedAt = new Date();
+    console.warn(
+      `[nomus-canonical-sync] SKIPPED_LOCKED entity=${execution.entity} correlationId=${execution.correlationId} path=${lockAttempt.path}`
+    );
     return {
       ok: true,
       status: "SKIPPED_LOCKED",
@@ -141,6 +260,12 @@ async function runCanonicalEntitySync(
       finishedAt: finishedAt.toISOString(),
     };
   }
+
+  console.info(
+    `[nomus-canonical-sync] RUN_STARTED entity=${execution.entity} correlationId=${execution.correlationId} lock=${lockAttempt.path}${
+      lockAttempt.recoveredStale ? " stale_recovered=1" : ""
+    }`
+  );
 
   try {
     // Propaga contexto para scripts/delegates e logs estruturados.
@@ -178,6 +303,9 @@ async function runCanonicalEntitySync(
     }));
 
     const finishedAt = new Date();
+    console.info(
+      `[nomus-canonical-sync] ${delegated.status} entity=${execution.entity} correlationId=${execution.correlationId}`
+    );
     return {
       ok:
         delegated.status === "SUCCESS" ||
@@ -196,6 +324,12 @@ async function runCanonicalEntitySync(
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt.toISOString(),
     };
+  } catch (error) {
+    console.error(
+      `[nomus-canonical-sync] FAILED entity=${execution.entity} correlationId=${execution.correlationId}`,
+      error
+    );
+    throw error;
   } finally {
     releaseCanonicalEntityLock(execution.correlationId);
   }

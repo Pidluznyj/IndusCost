@@ -139,13 +139,39 @@ export const ENTITY_LOCK_NAME: Record<
   ACCOUNTS_PAYABLE: "nomus-accounts-payable",
 };
 
+/**
+ * Lock interno TypeScript (`openSync("wx")`) — NÃO compartilha pathname com flock do shell.
+ * CR/CP: `.canonical.lock` (OP-04). Pedidos: entity lock próprio (shell usa global).
+ */
 export const ENTITY_LOCK_FILE_DEFAULT: Record<NomusCanonicalSyncLockName, string> =
   {
     "nomus-sales-orders": "/tmp/induscost-nomus-sales-orders.lock",
-    "nomus-accounts-receivable": "/tmp/induscost-nomus-accounts-receivable.lock",
-    "nomus-accounts-payable": "/tmp/induscost-nomus-accounts-payable.lock",
+    "nomus-accounts-receivable":
+      "/tmp/induscost-nomus-accounts-receivable.canonical.lock",
+    "nomus-accounts-payable":
+      "/tmp/induscost-nomus-accounts-payable.canonical.lock",
     "nomus-orchestrator-global": "/tmp/induscost-nomus-sync-global.lock",
   };
+
+/**
+ * Paths do flock do runner/shell (autoridade no host).
+ * Mantidos separados do lock canônico TypeScript (OP-04).
+ */
+export const ENTITY_SHELL_FLOCK_FILE_DEFAULT = {
+  "nomus-accounts-receivable": "/tmp/induscost-nomus-accounts-receivable.lock",
+  "nomus-accounts-payable": "/tmp/induscost-nomus-accounts-payable.lock",
+} as const;
+
+/** Env vars do lock canônico interno (não confundir com NOMUS_AR/AP_SYNC_LOCK_FILE do shell). */
+export const ENTITY_CANONICAL_LOCK_ENV: Partial<
+  Record<NomusCanonicalSyncLockName, string>
+> = {
+  "nomus-sales-orders": "NOMUS_SALES_ORDERS_SYNC_LOCK_FILE",
+  "nomus-accounts-receivable": "NOMUS_ACCOUNTS_RECEIVABLE_CANONICAL_LOCK_FILE",
+  "nomus-accounts-payable": "NOMUS_ACCOUNTS_PAYABLE_CANONICAL_LOCK_FILE",
+  "nomus-orchestrator-global": "NOMUS_SYNC_GLOBAL_LOCK_FILE",
+};
+
 
 /** Serviços canônicos — único ponto de apply por entidade. */
 export const CANONICAL_SYNC_SERVICE_NAMES = {
@@ -420,7 +446,7 @@ export const NOMUS_AUTOMATIC_SYNC_ROUTINES = [
     script: "scripts/runNomusAccountsReceivableSync.sh",
     strategy: "FULL_RECONCILIATION" as const,
     writes: true,
-    lock: "nomus-accounts-receivable",
+    lock: "flock shell (NOMUS_AR_SYNC_LOCK_FILE) + canonical (.canonical.lock)",
     canonicalService: CANONICAL_SYNC_SERVICE_NAMES.ACCOUNTS_RECEIVABLE,
     allowMissingDetection: false,
     allowMissingConfirmation: false,
@@ -433,7 +459,7 @@ export const NOMUS_AUTOMATIC_SYNC_ROUTINES = [
     script: "nomusAccountsReceivableSyncRunner → mesmo shell",
     strategy: "FULL_RECONCILIATION" as const,
     writes: true,
-    lock: "nomus-accounts-receivable",
+    lock: "flock shell + canonical (.canonical.lock)",
     canonicalService: CANONICAL_SYNC_SERVICE_NAMES.ACCOUNTS_RECEIVABLE,
     allowMissingDetection: false,
     allowMissingConfirmation: false,
@@ -445,7 +471,7 @@ export const NOMUS_AUTOMATIC_SYNC_ROUTINES = [
     script: "scripts/runNomusAccountsPayableSync.sh",
     strategy: "FULL_RECONCILIATION" as const,
     writes: true,
-    lock: "nomus-accounts-payable",
+    lock: "flock shell (NOMUS_AP_SYNC_LOCK_FILE) + canonical (.canonical.lock)",
     canonicalService: CANONICAL_SYNC_SERVICE_NAMES.ACCOUNTS_PAYABLE,
     allowMissingDetection: false,
     allowMissingConfirmation: false,
@@ -457,7 +483,7 @@ export const NOMUS_AUTOMATIC_SYNC_ROUTINES = [
     script: "nomusAccountsPayableSyncRunner → mesmo shell",
     strategy: "FULL_RECONCILIATION" as const,
     writes: true,
-    lock: "nomus-accounts-payable",
+    lock: "flock shell + canonical (.canonical.lock)",
     canonicalService: CANONICAL_SYNC_SERVICE_NAMES.ACCOUNTS_PAYABLE,
     allowMissingDetection: false,
     allowMissingConfirmation: false,

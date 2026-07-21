@@ -97,14 +97,17 @@ CREATE/UPDATE/reativação de retornados ativos.
 
 ## Locks
 
-| Nome | Uso |
-|------|-----|
-| `nomus-orchestrator-global` | daily + SO shells |
-| `nomus-sales-orders` | entity canonical |
-| `nomus-accounts-receivable` | CR |
-| `nomus-accounts-payable` | CP |
+| Nome | Path / uso |
+|------|------------|
+| `nomus-orchestrator-global` | flock daily + SO shells (`/tmp/induscost-nomus-sync-global.lock`) |
+| `nomus-sales-orders` | entity canonical SO |
+| flock CR (shell) | `/tmp/induscost-nomus-accounts-receivable.lock` (`NOMUS_AR_SYNC_LOCK_FILE`) |
+| canonical CR (TS) | `/tmp/induscost-nomus-accounts-receivable.canonical.lock` (`NOMUS_ACCOUNTS_RECEIVABLE_CANONICAL_LOCK_FILE`) |
+| flock CP (shell) | `/tmp/induscost-nomus-accounts-payable.lock` (`NOMUS_AP_SYNC_LOCK_FILE`) |
+| canonical CP (TS) | `/tmp/induscost-nomus-accounts-payable.canonical.lock` (`NOMUS_ACCOUNTS_PAYABLE_CANONICAL_LOCK_FILE`) |
 
-Colisão → `SKIPPED_LOCKED` (não destrutivo).
+OP-04: flock e lock canônico **não** compartilham pathname (evita autolock `SKIPPED_LOCKED`).
+Colisão real (segunda execução da mesma entidade) → `SKIPPED_LOCKED` (não destrutivo).
 
 ---
 
