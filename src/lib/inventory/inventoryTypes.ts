@@ -38,6 +38,8 @@ export const INVENTORY_MOVEMENT_TYPES = [
   "RETURN",
   "REVERSAL",
   "INITIAL_BALANCE",
+  "QUARANTINE_IN",
+  "QUARANTINE_OUT",
 ] as const;
 
 export type InventoryMovementType = (typeof INVENTORY_MOVEMENT_TYPES)[number];

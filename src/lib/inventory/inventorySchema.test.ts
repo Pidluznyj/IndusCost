@@ -99,6 +99,8 @@ describe("inventory Prisma schema", () => {
       "FINISHED_PRODUCT",
       "MANUAL_ENTRY",
       "INITIAL_BALANCE",
+      "QUARANTINE_IN",
+      "QUARANTINE_OUT",
       "TRANSFER",
       "BLOCK",
       "REVERSAL",

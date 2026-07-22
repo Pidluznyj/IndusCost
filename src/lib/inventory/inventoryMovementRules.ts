@@ -26,6 +26,8 @@ const MANUAL_REASON_TYPES = new Set<InventoryMovementType>([
   "RETURN",
   "TRANSFER",
   "INITIAL_BALANCE",
+  "QUARANTINE_IN",
+  "QUARANTINE_OUT",
 ]);
 
 const ADJUSTMENT_TYPES = new Set<InventoryMovementType>([
@@ -116,10 +118,18 @@ export function validateMovementRequest(
     );
   }
 
+  if (movement.movementType === "QUARANTINE_OUT" && balance.quarantineQuantity < qty) {
+    throw new InventoryValidationError(
+      "Quantidade de saída de quarentena excede saldo em quarentena.",
+      "INSUFFICIENT_QUARANTINE"
+    );
+  }
+
   const reducesAvailable =
     EXIT_TYPES.has(movement.movementType) ||
     movement.movementType === "RESERVE" ||
-    movement.movementType === "BLOCK";
+    movement.movementType === "BLOCK" ||
+    movement.movementType === "QUARANTINE_IN";
 
   if (
     reducesAvailable &&

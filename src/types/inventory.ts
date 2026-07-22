@@ -42,7 +42,9 @@ export type InventoryMovementType =
   | "SCRAP"
   | "RETURN"
   | "REVERSAL"
-  | "INITIAL_BALANCE";
+  | "INITIAL_BALANCE"
+  | "QUARANTINE_IN"
+  | "QUARANTINE_OUT";
 
 export type InventoryMovementOriginType =
   | "MANUAL"

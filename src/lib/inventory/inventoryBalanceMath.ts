@@ -65,6 +65,12 @@ export function resolveMovementImpact(
   if (movementType === "CANCEL_RESERVATION") {
     return { physicalDelta: 0, reservedDelta: -qty, blockedDelta: 0, quarantineDelta: 0 };
   }
+  if (movementType === "QUARANTINE_IN") {
+    return { physicalDelta: 0, reservedDelta: 0, blockedDelta: 0, quarantineDelta: qty };
+  }
+  if (movementType === "QUARANTINE_OUT") {
+    return { physicalDelta: 0, reservedDelta: 0, blockedDelta: 0, quarantineDelta: -qty };
+  }
   if (movementType === "REVERSAL") {
     throw new InventoryValidationError(
       "REVERSAL deve ser resolvido a partir do movimento original.",

@@ -38,6 +38,7 @@ import {
   inventoryDecOrNull,
   serializeInventoryBalance,
   serializeInventoryBalanceWithRelations,
+  serializeInventoryBlock,
   serializeInventoryCountLine,
   serializeInventoryCountSession,
   serializeInventoryCountSessionListRow,
@@ -45,6 +46,7 @@ import {
   serializeInventoryLocation,
   serializeInventoryMovement,
   serializeInventoryMovementEnriched,
+  serializeInventoryReservation,
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
 import {
@@ -62,7 +64,9 @@ import {
   cancelInventoryReservation,
   createInitialInventoryBalance,
   createInventoryMovement,
+  releaseInventoryBlock,
   reverseInventoryMovement,
+  transferBetweenPhysicalAndQuarantine,
   type CreateInventoryMovementInput,
 } from "@/src/lib/inventory/inventoryService.server.js";
 import { rebuildInventoryBalancesFromLedger } from "@/src/lib/inventory/inventoryBalanceRebuild.server.js";
@@ -74,12 +78,15 @@ import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js"
 import {
   parseCancelReservationBody,
   parseCreateInitialBalanceBody,
+  parseCreateInventoryBlockBody,
   parseCreateInventoryItemBody,
   parseCreateInventoryLocationBody,
   parseCreateInventoryMovementBody,
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
   parseLinkOfficialMaterialBody,
+  parseQuarantineTransferBody,
+  parseReleaseBlockBody,
   parseReverseMovementBody,
   parseStatusPatchBody,
   parseUpdateInventoryItemBody,
@@ -114,6 +121,7 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "OFFICIAL_MATERIAL_NOT_FOUND" ||
     error.code === "MOVEMENT_NOT_FOUND" ||
     error.code === "RESERVATION_NOT_FOUND" ||
+    error.code === "BLOCK_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND"
       ? 404
@@ -124,7 +132,9 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
             error.code === "INVENTORY_CODE_CONFLICT" ||
             error.code === "ALREADY_REVERSED" ||
             error.code === "INITIAL_BALANCE_DUPLICATE" ||
-            error.code === "INITIAL_BALANCE_SCOPE_NOT_EMPTY"
+            error.code === "INITIAL_BALANCE_SCOPE_NOT_EMPTY" ||
+            error.code === "RESERVATION_NOT_ACTIVE" ||
+            error.code === "BLOCK_NOT_ACTIVE"
           ? 409
           : 400;
   return res.status(status).json({ error: error.message, code: error.code });
@@ -1454,6 +1464,67 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  app.get("/api/inventory/reservations", ...view, async (req, res) => {
+    try {
+      const statusQ = String(req.query.status ?? "").trim();
+      const itemId = String(req.query.itemId ?? "").trim();
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const skip = (page - 1) * pageSize;
+      const where: Prisma.InventoryReservationWhereInput = {
+        ...(statusQ ? { status: statusQ as Prisma.EnumInventoryReservationStatusFilter } : {}),
+        ...(itemId && isUuid(itemId) ? { itemId } : {}),
+        ...(warehouseId && isUuid(warehouseId) ? { warehouseId } : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryReservation.findMany({
+          where,
+          include: {
+            item: { select: { code: true, description: true, unit: true } },
+            warehouse: { select: { code: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.inventoryReservation.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map(serializeInventoryReservation),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/reservations", e);
+      res.status(500).json(inventoryApiError("Erro ao listar reservas."));
+    }
+  });
+
+  app.get("/api/inventory/reservations/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+      const row = await prisma.inventoryReservation.findUnique({
+        where: { id },
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+        },
+      });
+      if (!row) return res.status(404).json(inventoryApiError("Reserva não encontrada."));
+      res.json({ reservation: serializeInventoryReservation(row) });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/reservations/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar reserva."));
+    }
+  });
+
   app.post("/api/inventory/reservations", ...reserveManage, async (req, res) => {
     try {
       const user = await auth.getCurrentAppUser(req);
@@ -1477,11 +1548,16 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           unit: item.unit,
           reason: body.reason,
           notes: body.notes,
-          originType: "MANUAL",
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? "MANUAL",
+          originId: body.originId,
+          reservationType: body.reservationType as CreateInventoryMovementInput["reservationType"],
+          responsibleUserId: body.responsibleUserId || user.id,
+          expiresAt: body.expiresAt,
         },
         {
           userId: user.id,
           permissions: user.effectivePermissions,
+          allowOverReservation: body.allowOverReservation,
         }
       );
 
@@ -1519,6 +1595,181 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/reservations/:id/cancel", e);
       res.status(500).json(inventoryApiError("Erro ao cancelar reserva."));
+    }
+  });
+
+  app.get("/api/inventory/blocks", ...view, async (req, res) => {
+    try {
+      const statusQ = String(req.query.status ?? "").trim();
+      const itemId = String(req.query.itemId ?? "").trim();
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const skip = (page - 1) * pageSize;
+      const where: Prisma.InventoryBlockWhereInput = {
+        ...(statusQ ? { status: statusQ as Prisma.EnumInventoryBlockStatusFilter } : {}),
+        ...(itemId && isUuid(itemId) ? { itemId } : {}),
+        ...(warehouseId && isUuid(warehouseId) ? { warehouseId } : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryBlock.findMany({
+          where,
+          include: {
+            item: { select: { code: true, description: true, unit: true } },
+            warehouse: { select: { code: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.inventoryBlock.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map(serializeInventoryBlock),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/blocks", e);
+      res.status(500).json(inventoryApiError("Erro ao listar bloqueios."));
+    }
+  });
+
+  app.get("/api/inventory/blocks/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+      const row = await prisma.inventoryBlock.findUnique({
+        where: { id },
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+        },
+      });
+      if (!row) return res.status(404).json(inventoryApiError("Bloqueio não encontrado."));
+      res.json({ block: serializeInventoryBlock(row) });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/blocks/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/blocks", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseCreateInventoryBlockBody(req.body);
+      const item = await prisma.inventoryItem.findUnique({
+        where: { id: body.itemId },
+        select: { unit: true },
+      });
+      if (!item) return res.status(404).json(inventoryApiError("Item não encontrado."));
+
+      const result = await createInventoryMovement(
+        prisma,
+        {
+          itemId: body.itemId,
+          sourceWarehouseId: body.warehouseId,
+          sourceLocationId: body.locationId,
+          movementType: "BLOCK",
+          quantity: body.quantity,
+          unit: item.unit,
+          reason: body.reason,
+          notes: body.notes,
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? "MANUAL",
+          originId: body.originId,
+          blockReasonType: body.reasonType as CreateInventoryMovementInput["blockReasonType"],
+          responsibleUserId: body.responsibleUserId || user.id,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        blockId: result.blockId,
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/blocks", e);
+      res.status(500).json(inventoryApiError("Erro ao criar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/blocks/:id/release", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const reason = parseReleaseBlockBody(req.body);
+      const result = await releaseInventoryBlock(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      }, reason);
+
+      res.json({
+        movement: serializeInventoryMovement(result.movement),
+        blockId: result.blockId,
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/blocks/:id/release", e);
+      res.status(500).json(inventoryApiError("Erro ao liberar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/quarantine/transfer", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseQuarantineTransferBody(req.body);
+      const result = await transferBetweenPhysicalAndQuarantine(
+        prisma,
+        {
+          itemId: body.itemId,
+          quantity: body.quantity,
+          reason: body.reason,
+          sourceWarehouseId: body.sourceWarehouseId,
+          sourceLocationId: body.sourceLocationId,
+          destinationWarehouseId: body.destinationWarehouseId,
+          destinationLocationId: body.destinationLocationId,
+          toQuarantine: body.toQuarantine,
+          notes: body.notes,
+          responsibleUserId: body.responsibleUserId || user.id,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        sourceBalance: result.sourceBalance
+          ? serializeInventoryBalanceFromSnapshot(result.sourceBalance)
+          : undefined,
+        destinationBalance: result.destinationBalance
+          ? serializeInventoryBalanceFromSnapshot(result.destinationBalance)
+          : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/quarantine/transfer", e);
+      res.status(500).json(inventoryApiError("Erro na transferência de quarentena."));
     }
   });
 

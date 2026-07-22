@@ -139,6 +139,36 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   },
   {
     method: "POST",
+    path: "/api/inventory/reservations*",
+    resourceKey: "operations.inventory",
+    action: "manage",
+  },
+  {
+    method: "GET",
+    path: "/api/inventory/reservations*",
+    resourceKey: "operations.inventory",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/inventory/blocks*",
+    resourceKey: "operations.inventory",
+    action: "manage",
+  },
+  {
+    method: "GET",
+    path: "/api/inventory/blocks*",
+    resourceKey: "operations.inventory",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/inventory/quarantine*",
+    resourceKey: "operations.inventory",
+    action: "manage",
+  },
+  {
+    method: "POST",
     path: "/api/inventory/count-sessions*",
     resourceKey: "operations.inventory.counts",
     action: "manage",

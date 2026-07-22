@@ -320,3 +320,99 @@ export function serializeInventoryCountSessionListRow(
     impactedQuantity,
   };
 }
+
+type ReservationRow = {
+  id: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: unknown;
+  reservationType: string;
+  status: string;
+  reason: string;
+  originType: string;
+  originId: string | null;
+  responsibleUserId: string | null;
+  expiresAt: Date | null;
+  createdByUserId: string | null;
+  canceledByUserId: string | null;
+  createdAt: Date;
+  canceledAt: Date | null;
+  notes: string | null;
+  item?: { code: string; description: string; unit: string } | null;
+  warehouse?: { code: string; name: string } | null;
+};
+
+export function serializeInventoryReservation(row: ReservationRow) {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    warehouseId: row.warehouseId,
+    locationId: row.locationId,
+    quantity: inventoryDec(row.quantity),
+    reservationType: row.reservationType,
+    status: row.status,
+    reason: row.reason,
+    originType: row.originType,
+    originId: row.originId,
+    responsibleUserId: row.responsibleUserId,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    createdByUserId: row.createdByUserId,
+    canceledByUserId: row.canceledByUserId,
+    createdAt: row.createdAt.toISOString(),
+    canceledAt: row.canceledAt?.toISOString() ?? null,
+    notes: row.notes,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    itemUnit: row.item?.unit ?? null,
+    warehouseCode: row.warehouse?.code ?? null,
+    warehouseName: row.warehouse?.name ?? null,
+  };
+}
+
+type BlockRow = {
+  id: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: unknown;
+  reasonType: string;
+  status: string;
+  reason: string;
+  originType: string;
+  originId: string | null;
+  responsibleUserId: string | null;
+  createdByUserId: string | null;
+  releasedByUserId: string | null;
+  createdAt: Date;
+  releasedAt: Date | null;
+  notes: string | null;
+  item?: { code: string; description: string; unit: string } | null;
+  warehouse?: { code: string; name: string } | null;
+};
+
+export function serializeInventoryBlock(row: BlockRow) {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    warehouseId: row.warehouseId,
+    locationId: row.locationId,
+    quantity: inventoryDec(row.quantity),
+    reasonType: row.reasonType,
+    status: row.status,
+    reason: row.reason,
+    originType: row.originType,
+    originId: row.originId,
+    responsibleUserId: row.responsibleUserId,
+    createdByUserId: row.createdByUserId,
+    releasedByUserId: row.releasedByUserId,
+    createdAt: row.createdAt.toISOString(),
+    releasedAt: row.releasedAt?.toISOString() ?? null,
+    notes: row.notes,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    itemUnit: row.item?.unit ?? null,
+    warehouseCode: row.warehouse?.code ?? null,
+    warehouseName: row.warehouse?.name ?? null,
+  };
+}

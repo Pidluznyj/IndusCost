@@ -609,6 +609,15 @@ function createMockPrisma(options?: {
         return row;
       },
     },
+    inventoryBlock: {
+      create: async ({ data }: { data: Record<string, unknown> }) => ({
+        id: `blk-${Date.now()}`,
+        ...data,
+      }),
+      findUnique: async () => null,
+      update: async () => ({}),
+      updateMany: async () => ({ count: 0 }),
+    },
     inventoryReservation: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `res-${state.reservations.length + 1}`, ...data };
@@ -628,6 +637,7 @@ function createMockPrisma(options?: {
         if (idx >= 0) state.reservations[idx] = { ...state.reservations[idx], ...data };
         return state.reservations[idx];
       },
+      updateMany: async () => ({ count: 0 }),
     },
     inventoryAuditLog: {
       create: async ({ data }: { data: Record<string, unknown> }) => {

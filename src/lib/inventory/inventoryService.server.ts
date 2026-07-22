@@ -41,6 +41,7 @@ import {
   validateInitialBalancePayload,
   type InitialBalancePayload,
 } from "./inventoryInitialBalance.js";
+import { resolveAllowOverReservation, INVENTORY_OVER_RESERVATION_POLICY } from "./inventoryReservationPolicy.js";
 
 export type CreateInventoryMovementInput = {
   itemId: string;
@@ -79,12 +80,31 @@ export type CreateInventoryMovementInput = {
   reversedMovementId?: string | null;
   /** Referência de evidência (doc/path/URL). */
   evidenceRef?: string | null;
+  /** Tipo da reserva (somente RESERVE). */
+  reservationType?:
+    | "SALES_ORDER"
+    | "PRODUCTION_ORDER"
+    | "INTERNAL_REQUISITION"
+    | "MAINTENANCE"
+    | "QUALITY"
+    | "MANUAL";
+  /** Motivo tipado do bloqueio (somente BLOCK). */
+  blockReasonType?:
+    | "QUALITY"
+    | "QUARANTINE"
+    | "DAMAGE"
+    | "AUDIT"
+    | "MANUAL"
+    | "OTHER";
+  expiresAt?: Date | null;
 };
 
 export type CreateInventoryMovementContext = {
   userId: string;
   permissions?: readonly string[];
   allowNegativeStock?: boolean;
+  /** Política explícita: permite reserva/bloqueio acima do disponível (exige override). */
+  allowOverReservation?: boolean;
   requestId?: string;
 };
 
@@ -94,6 +114,7 @@ export type InventoryMovementResult = {
   sourceBalance?: InventoryBalanceSnapshot;
   destinationBalance?: InventoryBalanceSnapshot;
   reservationId?: string | null;
+  blockId?: string | null;
   idempotent?: boolean;
 };
 
@@ -118,6 +139,8 @@ const SOURCE_WAREHOUSE_TYPES = new Set<InventoryMovementType>([
   "UNBLOCK",
   "RESERVE",
   "CANCEL_RESERVATION",
+  "QUARANTINE_IN",
+  "QUARANTINE_OUT",
 ]);
 
 type ItemRow = {
@@ -159,6 +182,21 @@ function resolveAllowNegative(context: CreateInventoryMovementContext): boolean 
   return (
     context.allowNegativeStock === true || hasPermission(context, "inventory.movements.override")
   );
+}
+
+function resolveMovementAvailablePolicy(context: CreateInventoryMovementContext): {
+  allowNegativeStock: boolean;
+  allowNegativeAvailable: boolean;
+} {
+  const allowNegativeStock = resolveAllowNegative(context);
+  const allowOver = resolveAllowOverReservation({
+    allowOverReservation: context.allowOverReservation,
+    permissions: context.permissions,
+  });
+  return {
+    allowNegativeStock,
+    allowNegativeAvailable: allowNegativeStock || allowOver,
+  };
 }
 
 async function assertActiveItem(tx: InventoryTx, itemId: string): Promise<ItemRow> {
@@ -269,7 +307,11 @@ async function createMovementRecord(
   item: ItemRow,
   before: InventoryBalanceSnapshot,
   after: InventoryBalanceSnapshot,
-  extra?: { reservationId?: string | null; reversedMovementId?: string | null }
+  extra?: {
+    reservationId?: string | null;
+    reversedMovementId?: string | null;
+    blockId?: string | null;
+  }
 ) {
   const movementDate = input.movementDate ?? new Date();
   const snapshots = movementBalanceSnapshots(before, after);
@@ -314,6 +356,7 @@ async function createMovementRecord(
       materialCodeSnapshot: item.materialCodeSnapshot,
       materialDescriptionSnapshot: item.materialDescriptionSnapshot,
       reservationId: extra?.reservationId ?? null,
+      blockId: extra?.blockId ?? null,
       reversedMovementId: extra?.reversedMovementId ?? input.reversedMovementId ?? null,
       previousPhysicalBalance: decimalQuantity(snapshots.previousPhysicalBalance),
       nextPhysicalBalance: decimalQuantity(snapshots.nextPhysicalBalance),
@@ -367,23 +410,36 @@ async function executeSimpleMovement(
         sourceLocationId: input.sourceLocationId,
         destinationLocationId: input.destinationLocationId,
       },
-      { allowNegativeStock: resolveAllowNegative(context) }
+      resolveMovementAvailablePolicy(context)
     );
   }
 
   let reservationId: string | null = null;
+  let blockId: string | null = null;
+
   if (input.movementType === "RESERVE") {
+    const reservationType = input.reservationType ?? "MANUAL";
+    if (
+      (reservationType === "SALES_ORDER" || reservationType === "PRODUCTION_ORDER") &&
+      !INVENTORY_OVER_RESERVATION_POLICY.integrationsAutoReserveFromSalesOrder &&
+      !INVENTORY_OVER_RESERVATION_POLICY.integrationsAutoReserveFromProductionOrder
+    ) {
+      // Fase 1: tipagem manual permitida como classificação, sem auto-orquestração OP/PV.
+      // Mantém soft-ref via originType/originId apenas.
+    }
     const reservation = await tx.inventoryReservation.create({
       data: {
         itemId: input.itemId,
         warehouseId,
         locationId: locationId ?? null,
         quantity: decimalQuantity(input.quantity),
-        reservationType: "MANUAL",
+        reservationType,
         status: "ACTIVE",
         reason: input.reason.trim(),
         originType: input.originType ?? "MANUAL",
         originId: input.originId ?? null,
+        responsibleUserId: input.responsibleUserId ?? context.userId,
+        expiresAt: input.expiresAt ?? null,
         createdByUserId: context.userId,
         notes: input.notes?.trim() || null,
       },
@@ -391,8 +447,36 @@ async function executeSimpleMovement(
     reservationId = reservation.id;
   }
 
+  if (input.movementType === "BLOCK") {
+    const block = await tx.inventoryBlock.create({
+      data: {
+        itemId: input.itemId,
+        warehouseId,
+        locationId: locationId ?? null,
+        quantity: decimalQuantity(input.quantity),
+        reasonType: input.blockReasonType ?? "MANUAL",
+        status: "ACTIVE",
+        reason: input.reason.trim(),
+        originType: input.originType ?? "MANUAL",
+        originId: input.originId ?? null,
+        responsibleUserId: input.responsibleUserId ?? context.userId,
+        createdByUserId: context.userId,
+        notes: input.notes?.trim() || null,
+      },
+    });
+    blockId = block.id;
+  }
+
+  if (input.movementType === "CANCEL_RESERVATION" && input.originId?.trim()) {
+    reservationId = input.originId.trim();
+  }
+  if (input.movementType === "UNBLOCK" && input.originId?.trim()) {
+    blockId = input.originId.trim();
+  }
+
   const movement = await createMovementRecord(tx, input, context, item, before, after, {
     reservationId,
+    blockId,
   });
 
   await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
@@ -412,13 +496,42 @@ async function executeSimpleMovement(
       entityType: "InventoryReservation",
       entityId: reservationId,
       action: "CREATE",
-      afterJson: { itemId: input.itemId, quantity: input.quantity, warehouseId },
+      afterJson: {
+        itemId: input.itemId,
+        quantity: input.quantity,
+        warehouseId,
+        reservationType: input.reservationType ?? "MANUAL",
+        responsibleUserId: input.responsibleUserId ?? context.userId,
+        expiresAt: input.expiresAt ?? null,
+        originType: input.originType ?? "MANUAL",
+        originId: input.originId ?? null,
+      },
       userId: context.userId,
       reason: input.reason,
     });
   }
 
-  if (input.movementType === "BLOCK" || input.movementType === "UNBLOCK") {
+  if (input.movementType === "BLOCK" && blockId) {
+    await writeInventoryAuditLog(prisma, {
+      entityType: "InventoryBlock",
+      entityId: blockId,
+      action: "CREATE",
+      afterJson: {
+        itemId: input.itemId,
+        quantity: input.quantity,
+        warehouseId,
+        reasonType: input.blockReasonType ?? "MANUAL",
+      },
+      userId: context.userId,
+      reason: input.reason,
+    });
+  }
+
+  if (
+    input.movementType === "QUARANTINE_IN" ||
+    input.movementType === "QUARANTINE_OUT" ||
+    input.movementType === "UNBLOCK"
+  ) {
     await writeInventoryAuditLog(prisma, {
       entityType: "InventoryBalance",
       entityId: balanceRow.id,
@@ -430,7 +543,7 @@ async function executeSimpleMovement(
     });
   }
 
-  return { movement, balance: after, reservationId };
+  return { movement, balance: after, reservationId, blockId };
 }
 
 async function executeTransfer(
@@ -477,7 +590,7 @@ async function executeTransfer(
       sourceLocationId: input.sourceLocationId,
       destinationLocationId: input.destinationLocationId,
     },
-    { allowNegativeStock: resolveAllowNegative(context) }
+    { allowNegativeStock: resolveAllowNegative(context), allowNegativeAvailable: resolveAllowNegative(context) }
   );
 
   const beforeDest = mapBalanceRowToSnapshot(destRow);
@@ -998,6 +1111,27 @@ export async function reverseInventoryMovement(
 
     await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
 
+    if (original.movementType === "BLOCK" && original.blockId) {
+      await tx.inventoryBlock.updateMany({
+        where: { id: original.blockId, status: "ACTIVE" },
+        data: {
+          status: "RELEASED",
+          releasedAt: new Date(),
+          releasedByUserId: context.userId,
+        },
+      });
+    }
+    if (original.movementType === "RESERVE" && original.reservationId) {
+      await tx.inventoryReservation.updateMany({
+        where: { id: original.reservationId, status: "ACTIVE" },
+        data: {
+          status: "CANCELED",
+          canceledAt: new Date(),
+          canceledByUserId: context.userId,
+        },
+      });
+    }
+
     await writeInventoryAuditLog(prisma, {
       entityType: "InventoryMovement",
       entityId: movement.id,
@@ -1071,6 +1205,155 @@ export async function cancelInventoryReservation(
 
     return result;
   });
+}
+
+/** Libera bloqueio ativo (histórico preservado) e registra UNBLOCK no ledger. */
+export async function releaseInventoryBlock(
+  prisma: PrismaClient,
+  blockId: string,
+  context: CreateInventoryMovementContext,
+  reason: string
+): Promise<InventoryMovementResult> {
+  if (!reason?.trim()) {
+    throw new InventoryValidationError("Motivo da liberação é obrigatório.", "REASON_REQUIRED");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    const block = await tx.inventoryBlock.findUnique({ where: { id: blockId } });
+    if (!block) {
+      throw new InventoryValidationError("Bloqueio não encontrado.", "BLOCK_NOT_FOUND");
+    }
+    if (block.status !== "ACTIVE") {
+      throw new InventoryValidationError("Bloqueio não está ativo.", "BLOCK_NOT_ACTIVE");
+    }
+
+    const item = await assertActiveItem(tx, block.itemId);
+    await assertActiveWarehouse(tx, block.warehouseId, "Almoxarifado");
+
+    const qty = Number(block.quantity);
+    const result = await executeSimpleMovement(
+      tx,
+      prisma,
+      {
+        itemId: block.itemId,
+        sourceWarehouseId: block.warehouseId,
+        sourceLocationId: block.locationId,
+        movementType: "UNBLOCK",
+        quantity: qty,
+        unit: item.unit,
+        reason: reason.trim(),
+        originType: "MANUAL",
+        originId: blockId,
+        responsibleUserId: context.userId,
+      },
+      context,
+      item,
+      block.warehouseId,
+      block.locationId
+    );
+
+    await tx.inventoryBlock.update({
+      where: { id: blockId },
+      data: {
+        status: "RELEASED",
+        releasedAt: new Date(),
+        releasedByUserId: context.userId,
+      },
+    });
+
+    await writeInventoryAuditLog(prisma, {
+      entityType: "InventoryBlock",
+      entityId: blockId,
+      action: "RELEASE",
+      userId: context.userId,
+      reason: reason.trim(),
+    });
+
+    return { ...result, blockId };
+  });
+}
+
+/**
+ * Transferência rastreável físico ↔ local de quarentena (locationType QUARANTINE).
+ * Usa TRANSFER no ledger; não integra OP/PV.
+ */
+export async function transferBetweenPhysicalAndQuarantine(
+  prisma: PrismaClient,
+  input: {
+    itemId: string;
+    quantity: number;
+    reason: string;
+    sourceWarehouseId: string;
+    sourceLocationId?: string | null;
+    destinationWarehouseId: string;
+    destinationLocationId: string;
+    /** true = destino deve ser QUARANTINE; false = origem deve ser QUARANTINE */
+    toQuarantine: boolean;
+    notes?: string | null;
+    responsibleUserId?: string | null;
+  },
+  context: CreateInventoryMovementContext
+): Promise<InventoryMovementResult> {
+  if (!input.reason?.trim()) {
+    throw new InventoryValidationError("Motivo é obrigatório.", "REASON_REQUIRED");
+  }
+
+  const quarantineLocationId = input.toQuarantine
+    ? input.destinationLocationId
+    : input.sourceLocationId;
+  if (!quarantineLocationId?.trim()) {
+    throw new InventoryValidationError(
+      "Local de quarentena é obrigatório para esta transferência.",
+      "LOCATION_REQUIRED"
+    );
+  }
+
+  const location = await prisma.inventoryLocation.findUnique({
+    where: { id: quarantineLocationId },
+    select: { id: true, locationType: true, warehouseId: true, status: true },
+  });
+  if (!location) {
+    throw new InventoryValidationError("Local não encontrado.", "LOCATION_NOT_FOUND");
+  }
+  if (location.locationType !== "QUARANTINE") {
+    throw new InventoryValidationError(
+      "Transferência físico↔quarentena exige local com tipo QUARANTINE.",
+      "QUARANTINE_LOCATION_REQUIRED"
+    );
+  }
+  if (location.status !== "ACTIVE") {
+    throw new InventoryValidationError("Local de quarentena inativo.", "LOCATION_INACTIVE");
+  }
+
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: input.itemId },
+    select: { unit: true },
+  });
+  if (!item) {
+    throw new InventoryValidationError("Item de estoque não encontrado.", "ITEM_NOT_FOUND");
+  }
+
+  return createInventoryMovement(
+    prisma,
+    {
+      itemId: input.itemId,
+      sourceWarehouseId: input.sourceWarehouseId,
+      sourceLocationId: input.sourceLocationId ?? null,
+      destinationWarehouseId: input.destinationWarehouseId,
+      destinationLocationId: input.destinationLocationId,
+      movementType: "TRANSFER",
+      quantity: input.quantity,
+      unit: item.unit,
+      reason: input.reason.trim(),
+      notes:
+        (input.notes?.trim() || "") +
+        (input.toQuarantine ? " [PHYSICAL→QUARANTINE]" : " [QUARANTINE→PHYSICAL]"),
+      originType: "OTHER",
+      originId: `quarantine-transfer:${input.toQuarantine ? "in" : "out"}:${Date.now()}`,
+      responsibleUserId: input.responsibleUserId ?? context.userId,
+    },
+    context
+  );
 }
 
 /** Exportado para testes de impacto puro em estorno. */

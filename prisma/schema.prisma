@@ -5168,6 +5168,10 @@ enum InventoryMovementType {
   REVERSAL
   /// Implantação inicial de estoque (saldo de abertura auditável).
   INITIAL_BALANCE
+  /// Entrada em quarentena (reduz disponível; não altera físico).
+  QUARANTINE_IN
+  /// Saída de quarentena (libera disponível; não altera físico).
+  QUARANTINE_OUT
 }
 
 enum InventoryMovementOriginType {
@@ -5493,6 +5497,10 @@ model InventoryReservation {
   reason           String
   originType       InventoryMovementOriginType @default(MANUAL)
   originId         String?
+  /// Responsável pela reserva (pode diferir do criador técnico).
+  responsibleUserId String?
+  /// Validade opcional da reserva.
+  expiresAt        DateTime?                   @db.Timestamptz(6)
   createdByUserId  String?
   canceledByUserId String?
   createdAt        DateTime                    @default(now()) @db.Timestamptz(6)
@@ -5509,6 +5517,8 @@ model InventoryReservation {
   @@index([status])
   @@index([reservationType])
   @@index([createdByUserId])
+  @@index([responsibleUserId])
+  @@index([expiresAt])
   @@index([createdAt])
 }
 
@@ -5524,6 +5534,7 @@ model InventoryBlock {
   reason          String
   originType      InventoryMovementOriginType @default(MANUAL)
   originId        String?
+  responsibleUserId String?
   createdByUserId String?
   releasedByUserId String?
   createdAt       DateTime                    @default(now()) @db.Timestamptz(6)
@@ -5540,6 +5551,7 @@ model InventoryBlock {
   @@index([status])
   @@index([reasonType])
   @@index([createdByUserId])
+  @@index([responsibleUserId])
   @@index([createdAt])
 }
 

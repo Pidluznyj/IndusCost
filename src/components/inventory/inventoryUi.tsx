@@ -54,6 +54,10 @@ export const INVENTORY_MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, strin
 
   INITIAL_BALANCE: "Saldo inicial",
 
+  QUARANTINE_IN: "Entrada quarentena",
+
+  QUARANTINE_OUT: "Saída quarentena",
+
 };
 
 
