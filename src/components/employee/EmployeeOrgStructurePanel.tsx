@@ -27,11 +27,14 @@ export type HrDepartmentRow = {
   name: string;
   status: "ACTIVE" | "INACTIVE";
   directorateId: string;
+  parentDepartmentId: string | null;
   leaderEmployeeId: string;
   notes: string | null;
   leader: { id: string; name: string; socialName: string | null; status: string | null } | null;
   directorate: { id: string; name: string; status: string; code: string | null } | null;
+  parentDepartment: { id: string; name: string; status: string; code: string | null } | null;
   employeeCount: number;
+  childDepartmentCount?: number;
 };
 
 type Props = {
@@ -60,6 +63,7 @@ function emptyDepartmentForm() {
     name: "",
     code: "",
     directorateId: "",
+    parentDepartmentId: "",
     leaderEmployeeId: "",
     notes: "",
     status: "ACTIVE" as const,
@@ -139,6 +143,27 @@ export function EmployeeOrgStructurePanel({
       }));
     return [{ value: "", label: "Sem vínculo (raiz)", searchTerms: "sem vinculo raiz" }, ...options];
   }, [directorates, editingDirId, dirForm.parentDirectorateId]);
+
+  const parentDepartmentOptions = useMemo(() => {
+    const options = departments
+      .filter((d) => d.directorateId === deptForm.directorateId)
+      .filter((d) => d.id !== editingDeptId)
+      .filter((d) => d.status === "ACTIVE" || d.id === deptForm.parentDepartmentId)
+      .map((d) => ({
+        value: d.id,
+        label: d.name,
+        searchTerms: `${d.name} ${d.code ?? ""}`,
+      }));
+    return [
+      { value: "", label: "Sem vínculo (raiz na diretoria)", searchTerms: "sem vinculo raiz" },
+      ...options,
+    ];
+  }, [
+    departments,
+    deptForm.directorateId,
+    deptForm.parentDepartmentId,
+    editingDeptId,
+  ]);
 
   async function saveDirectorate() {
     if (!canManage) return;
@@ -227,6 +252,7 @@ export function EmployeeOrgStructurePanel({
       name: row.name,
       code: row.code ?? "",
       directorateId: row.directorateId,
+      parentDepartmentId: row.parentDepartmentId ?? "",
       leaderEmployeeId: row.leaderEmployeeId,
       notes: row.notes ?? "",
       status: row.status,
@@ -254,7 +280,8 @@ export function EmployeeOrgStructurePanel({
             <h2 className="text-sm font-semibold">Estrutura organizacional</h2>
             <p className="mt-1 text-xs text-muted-foreground">
               Cadastre diretorias e departamentos com líder obrigatório. Uma diretoria pode
-              responder a outra (ou ficar sem vínculo). Essa hierarquia alimenta o Organograma.
+              responder a outra, e um departamento pode ficar dentro de outro (ex.: Expedição
+              dentro de Fabricação). Essa hierarquia alimenta o Organograma.
             </p>
           </div>
         </div>
@@ -428,7 +455,11 @@ export function EmployeeOrgStructurePanel({
                 options={directorateOptions}
                 value={deptForm.directorateId}
                 onChange={(v) => {
-                  setDeptForm((p) => ({ ...p, directorateId: v }));
+                  setDeptForm((p) => ({
+                    ...p,
+                    directorateId: v,
+                    parentDepartmentId: "",
+                  }));
                   setSelectedDirectorateId(v || null);
                 }}
                 unknownSelectionLabel="Selecione a diretoria"
@@ -444,6 +475,14 @@ export function EmployeeOrgStructurePanel({
                 placeholder="Código (opcional)"
                 value={deptForm.code}
                 onChange={(e) => setDeptForm((p) => ({ ...p, code: e.target.value }))}
+              />
+              <SearchableSelect
+                placeholder="Dentro de (departamento superior)"
+                options={parentDepartmentOptions}
+                value={deptForm.parentDepartmentId}
+                onChange={(v) => setDeptForm((p) => ({ ...p, parentDepartmentId: v }))}
+                unknownSelectionLabel="Sem vínculo (raiz na diretoria)"
+                pinOptionValues={[""]}
               />
               <SearchableSelect
                 placeholder="Líder do departamento *"
@@ -493,6 +532,9 @@ export function EmployeeOrgStructurePanel({
                     <p className="text-[11px] text-muted-foreground">
                       {row.directorate?.name ?? "—"} · Líder: {row.leader?.name ?? "—"} ·{" "}
                       {row.employeeCount} colaborador(es)
+                      {row.parentDepartment
+                        ? ` · Dentro de: ${row.parentDepartment.name}`
+                        : " · Sem vínculo"}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">

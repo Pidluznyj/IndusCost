@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   assertHrDepartmentName,
+  assertHrDepartmentParentLink,
   assertHrDirectorateName,
   assertHrDirectorateParentLink,
   assertHrOrgLeaderIsActive,
@@ -13,6 +14,7 @@ import {
   HrOrgStructureError,
   normalizeHrOrgCode,
   normalizeHrOrgStatus,
+  normalizeOptionalParentDepartmentId,
   normalizeOptionalParentDirectorateId,
   resolveForcedManagerFromOrgDepartment,
 } from "./hrOrgStructure.js";
@@ -77,7 +79,7 @@ describe("hrOrgStructure", () => {
     assert.deepEqual(scope.departmentIds.sort(), ["dept-a1", "dept-a2", "dept-x"]);
   });
 
-  it("gestor forçado = líder do departamento (ou líder da diretoria se for o próprio líder)", () => {
+  it("gestor forçado = líder do departamento (ou sobe para depto superior / diretoria)", () => {
     assert.deepEqual(
       resolveForcedManagerFromOrgDepartment({
         employeeId: "emp-1",
@@ -87,6 +89,18 @@ describe("hrOrgStructure", () => {
         directorateLeaderName: "Bruno Diretor",
       }),
       { managerId: "leader-dept", managerName: "Ana Líder" }
+    );
+    assert.deepEqual(
+      resolveForcedManagerFromOrgDepartment({
+        employeeId: "leader-dept",
+        departmentLeaderEmployeeId: "leader-dept",
+        departmentLeaderName: "Ana Líder",
+        parentDepartmentLeaderEmployeeId: "leader-parent",
+        parentDepartmentLeaderName: "Carla Fabricação",
+        directorateLeaderEmployeeId: "leader-dir",
+        directorateLeaderName: "Bruno Diretor",
+      }),
+      { managerId: "leader-parent", managerName: "Carla Fabricação" }
     );
     assert.deepEqual(
       resolveForcedManagerFromOrgDepartment({
@@ -108,6 +122,65 @@ describe("hrOrgStructure", () => {
       }),
       { managerId: null, managerName: null }
     );
+  });
+
+  it("vínculo opcional entre departamentos bloqueia ciclo e exige mesma diretoria", () => {
+    const parentById = new Map<string, string | null>([
+      ["fab", null],
+      ["exp", "fab"],
+      ["mon", "fab"],
+    ]);
+    const directorateById = new Map<string, string>([
+      ["fab", "dir-prod"],
+      ["exp", "dir-prod"],
+      ["mon", "dir-prod"],
+      ["ti", "dir-adm"],
+    ]);
+    assert.equal(
+      assertHrDepartmentParentLink({
+        departmentId: "exp",
+        parentDepartmentId: "fab",
+        directorateId: "dir-prod",
+        parentById,
+        directorateById,
+      }),
+      "fab"
+    );
+    assert.throws(
+      () =>
+        assertHrDepartmentParentLink({
+          departmentId: "fab",
+          parentDepartmentId: "fab",
+          directorateId: "dir-prod",
+          parentById,
+          directorateById,
+        }),
+      (err: unknown) => err instanceof HrOrgStructureError && err.code === "PARENT_SELF"
+    );
+    assert.throws(
+      () =>
+        assertHrDepartmentParentLink({
+          departmentId: "fab",
+          parentDepartmentId: "exp",
+          directorateId: "dir-prod",
+          parentById,
+          directorateById,
+        }),
+      (err: unknown) => err instanceof HrOrgStructureError && err.code === "PARENT_CYCLE"
+    );
+    assert.throws(
+      () =>
+        assertHrDepartmentParentLink({
+          departmentId: "ti",
+          parentDepartmentId: "fab",
+          directorateId: "dir-adm",
+          parentById,
+          directorateById,
+        }),
+      (err: unknown) =>
+        err instanceof HrOrgStructureError && err.code === "PARENT_DIRECTORATE_MISMATCH"
+    );
+    assert.equal(normalizeOptionalParentDepartmentId("none"), null);
   });
 
   it("vínculo opcional entre diretorias bloqueia auto-referência e ciclo", () => {

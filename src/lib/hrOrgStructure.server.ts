@@ -5,12 +5,14 @@ import type { PrismaClient } from "@prisma/client";
 import {
   HrOrgStructureError,
   assertHrDepartmentName,
+  assertHrDepartmentParentLink,
   assertHrDirectorateName,
   assertHrDirectorateParentLink,
   assertHrOrgLeaderIsActive,
   assertHrOrgLeaderRequired,
   normalizeHrOrgCode,
   normalizeHrOrgStatus,
+  normalizeOptionalParentDepartmentId,
   normalizeOptionalParentDirectorateId,
   resolveForcedManagerFromOrgDepartment,
   buildEmployeeOrgLeadershipSummary,
@@ -123,6 +125,7 @@ export function serializeHrDepartment(row: {
   status: string;
   directorateId: string;
   leaderEmployeeId: string;
+  parentDepartmentId?: string | null;
   notes: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -141,7 +144,15 @@ export function serializeHrDepartment(row: {
     leaderEmployeeId?: string;
     leader?: { id: string; name: string; socialName: string | null } | null;
   } | null;
-  _count?: { employees: number } | null;
+  parentDepartment?: {
+    id: string;
+    name: string;
+    status: string;
+    code: string | null;
+    leaderEmployeeId?: string;
+    leader?: { id: string; name: string; socialName: string | null } | null;
+  } | null;
+  _count?: { employees: number; childDepartments?: number } | null;
 }) {
   return {
     id: row.id,
@@ -150,6 +161,7 @@ export function serializeHrDepartment(row: {
     status: row.status as HrOrgStatus,
     directorateId: row.directorateId,
     leaderEmployeeId: row.leaderEmployeeId,
+    parentDepartmentId: row.parentDepartmentId ?? null,
     notes: row.notes,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -175,8 +187,87 @@ export function serializeHrDepartment(row: {
             null,
         }
       : null,
+    parentDepartment: row.parentDepartment
+      ? {
+          id: row.parentDepartment.id,
+          name: row.parentDepartment.name,
+          status: row.parentDepartment.status,
+          code: row.parentDepartment.code,
+          leaderEmployeeId: row.parentDepartment.leaderEmployeeId ?? null,
+          leaderName:
+            row.parentDepartment.leader?.socialName?.trim() ||
+            row.parentDepartment.leader?.name?.trim() ||
+            null,
+        }
+      : null,
     employeeCount: row._count?.employees ?? 0,
+    childDepartmentCount: row._count?.childDepartments ?? 0,
   };
+}
+
+const departmentInclude = {
+  leader: { select: leaderSelect },
+  directorate: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      code: true,
+      leaderEmployeeId: true,
+      leader: { select: { id: true, name: true, socialName: true } },
+    },
+  },
+  parentDepartment: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      code: true,
+      leaderEmployeeId: true,
+      leader: { select: { id: true, name: true, socialName: true } },
+    },
+  },
+  _count: { select: { employees: true, childDepartments: true } },
+} as const;
+
+async function loadDepartmentParentMaps(db: Db): Promise<{
+  parentById: Map<string, string | null>;
+  directorateById: Map<string, string>;
+}> {
+  const rows = await db.hrDepartment.findMany({
+    select: { id: true, parentDepartmentId: true, directorateId: true },
+  });
+  return {
+    parentById: new Map(rows.map((r) => [r.id, r.parentDepartmentId ?? null])),
+    directorateById: new Map(rows.map((r) => [r.id, r.directorateId])),
+  };
+}
+
+async function resolveParentDepartmentId(
+  db: Db,
+  body: Record<string, unknown>,
+  options: {
+    departmentId: string | null;
+    directorateId: string;
+    existingParentId?: string | null;
+    bodyHasParentField: boolean;
+  }
+): Promise<string | null> {
+  if (!options.bodyHasParentField) {
+    return options.existingParentId ?? null;
+  }
+  const rawParent = normalizeOptionalParentDepartmentId(body.parentDepartmentId);
+  if (rawParent && !isUuid(rawParent)) {
+    throw new HrOrgStructureError("Departamento superior inválido.", "PARENT_INVALID", 400);
+  }
+  const { parentById, directorateById } = await loadDepartmentParentMaps(db);
+  return assertHrDepartmentParentLink({
+    departmentId: options.departmentId,
+    parentDepartmentId: rawParent,
+    directorateId: options.directorateId,
+    parentById,
+    directorateById,
+  });
 }
 
 const directorateInclude = {
@@ -238,20 +329,7 @@ export async function listHrDepartments(
       ...(options?.status ? { status: options.status } : {}),
     },
     orderBy: [{ status: "asc" }, { name: "asc" }],
-    include: {
-      leader: { select: leaderSelect },
-      directorate: {
-        select: {
-          id: true,
-          name: true,
-          status: true,
-          code: true,
-          leaderEmployeeId: true,
-          leader: { select: { id: true, name: true, socialName: true } },
-        },
-      },
-      _count: { select: { employees: true } },
-    },
+    include: departmentInclude,
   });
   return rows.map(serializeHrDepartment);
 }
@@ -413,6 +491,11 @@ export async function createHrDepartment(db: Db, body: Record<string, unknown>) 
   const code = normalizeHrOrgCode(body.code);
   const notes =
     typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
+  const parentDepartmentId = await resolveParentDepartmentId(db, body, {
+    departmentId: null,
+    directorateId,
+    bodyHasParentField: Object.prototype.hasOwnProperty.call(body, "parentDepartmentId"),
+  });
 
   try {
     const row = await db.hrDepartment.create({
@@ -422,22 +505,10 @@ export async function createHrDepartment(db: Db, body: Record<string, unknown>) 
         status,
         directorateId,
         leaderEmployeeId,
+        parentDepartmentId,
         notes,
       },
-      include: {
-        leader: { select: leaderSelect },
-        directorate: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            code: true,
-            leaderEmployeeId: true,
-            leader: { select: { id: true, name: true, socialName: true } },
-          },
-        },
-        _count: { select: { employees: true } },
-      },
+      include: departmentInclude,
     });
     await clearEmployeeMemberDepartmentForOrgLeader(db, leaderEmployeeId, name);
     return serializeHrDepartment(row);
@@ -523,25 +594,38 @@ export async function updateHrDepartment(
         ? body.notes.trim()
         : null
       : existing.notes;
+  const bodyHasParentField = Object.prototype.hasOwnProperty.call(
+    body,
+    "parentDepartmentId"
+  );
+  let parentDepartmentId = await resolveParentDepartmentId(db, body, {
+    departmentId: id.trim(),
+    directorateId,
+    existingParentId: existing.parentDepartmentId ?? null,
+    bodyHasParentField,
+  });
+  // Ao mudar de diretoria sem informar o pai, limpa vínculo inválido entre diretorias.
+  if (
+    !bodyHasParentField &&
+    parentDepartmentId &&
+    directorateId !== existing.directorateId
+  ) {
+    parentDepartmentId = null;
+  }
 
   try {
     const row = await db.hrDepartment.update({
       where: { id: id.trim() },
-      data: { name, code, status, directorateId, leaderEmployeeId, notes },
-      include: {
-        leader: { select: leaderSelect },
-        directorate: {
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            code: true,
-            leaderEmployeeId: true,
-            leader: { select: { id: true, name: true, socialName: true } },
-          },
-        },
-        _count: { select: { employees: true } },
+      data: {
+        name,
+        code,
+        status,
+        directorateId,
+        leaderEmployeeId,
+        parentDepartmentId,
+        notes,
       },
+      include: departmentInclude,
     });
 
     // Mantém rótulo cache e gestor (líder do departamento) nos colaboradores vinculados.
@@ -561,9 +645,22 @@ export async function updateHrDepartment(
         leader: { select: { name: true, socialName: true } },
       },
     });
+    const parentDepartment = row.parentDepartmentId
+      ? await db.hrDepartment.findUnique({
+          where: { id: row.parentDepartmentId },
+          select: {
+            leaderEmployeeId: true,
+            leader: { select: { name: true, socialName: true } },
+          },
+        })
+      : null;
     const directorateLeaderName =
       directorate?.leader.socialName?.trim() ||
       directorate?.leader.name.trim() ||
+      null;
+    const parentDepartmentLeaderName =
+      parentDepartment?.leader.socialName?.trim() ||
+      parentDepartment?.leader.name.trim() ||
       null;
     const departmentLeaderName =
       row.leader.socialName?.trim() || row.leader.name.trim() || null;
@@ -573,6 +670,8 @@ export async function updateHrDepartment(
         employeeId: member.id,
         departmentLeaderEmployeeId: row.leaderEmployeeId,
         departmentLeaderName,
+        parentDepartmentLeaderEmployeeId: parentDepartment?.leaderEmployeeId ?? null,
+        parentDepartmentLeaderName,
         directorateLeaderEmployeeId: directorate?.leaderEmployeeId ?? null,
         directorateLeaderName,
       });
@@ -612,6 +711,8 @@ export async function resolveHrDepartmentLabel(
   department: string;
   leaderEmployeeId: string | null;
   leaderName: string | null;
+  parentDepartmentLeaderEmployeeId: string | null;
+  parentDepartmentLeaderName: string | null;
   directorateLeaderEmployeeId: string | null;
   directorateLeaderName: string | null;
 }> {
@@ -621,6 +722,8 @@ export async function resolveHrDepartmentLabel(
     department: legacy,
     leaderEmployeeId: null as string | null,
     leaderName: null as string | null,
+    parentDepartmentLeaderEmployeeId: null as string | null,
+    parentDepartmentLeaderName: null as string | null,
     directorateLeaderEmployeeId: null as string | null,
     directorateLeaderName: null as string | null,
   };
@@ -635,6 +738,12 @@ export async function resolveHrDepartmentLabel(
       status: true,
       leaderEmployeeId: true,
       leader: { select: { id: true, name: true, socialName: true } },
+      parentDepartment: {
+        select: {
+          leaderEmployeeId: true,
+          leader: { select: { id: true, name: true, socialName: true } },
+        },
+      },
       directorate: {
         select: {
           leaderEmployeeId: true,
@@ -652,6 +761,11 @@ export async function resolveHrDepartmentLabel(
   }
   const leaderName =
     row.leader.socialName?.trim() || row.leader.name.trim() || null;
+  const parentDepartmentLeaderName = row.parentDepartment
+    ? row.parentDepartment.leader.socialName?.trim() ||
+      row.parentDepartment.leader.name.trim() ||
+      null
+    : null;
   const directorateLeaderName =
     row.directorate.leader.socialName?.trim() ||
     row.directorate.leader.name.trim() ||
@@ -661,6 +775,9 @@ export async function resolveHrDepartmentLabel(
     department: row.name,
     leaderEmployeeId: row.leaderEmployeeId,
     leaderName,
+    parentDepartmentLeaderEmployeeId:
+      row.parentDepartment?.leaderEmployeeId ?? null,
+    parentDepartmentLeaderName,
     directorateLeaderEmployeeId: row.directorate.leaderEmployeeId,
     directorateLeaderName,
   };
@@ -697,9 +814,35 @@ export async function loadHrHierarchicalScopeForEmployee(
           select: { id: true },
         })
       : [];
+  const allActiveDepartments = await db.hrDepartment.findMany({
+    where: { status: "ACTIVE" },
+    select: { id: true, parentDepartmentId: true },
+  });
+  const childrenByParent = new Map<string, string[]>();
+  for (const dept of allActiveDepartments) {
+    const parentId = dept.parentDepartmentId?.trim();
+    if (!parentId) continue;
+    const list = childrenByParent.get(parentId) ?? [];
+    list.push(dept.id);
+    childrenByParent.set(parentId, list);
+  }
+  const ledDeptIds = ledDepartments.map((d) => d.id);
+  const descendantIds: string[] = [];
+  const queue = [...ledDeptIds];
+  const seen = new Set(queue);
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const childId of childrenByParent.get(current) ?? []) {
+      if (seen.has(childId)) continue;
+      seen.add(childId);
+      descendantIds.push(childId);
+      queue.push(childId);
+    }
+  }
   const departmentIds = [
     ...new Set([
-      ...ledDepartments.map((d) => d.id),
+      ...ledDeptIds,
+      ...descendantIds,
       ...departmentsInDirectorates.map((d) => d.id),
     ]),
   ];

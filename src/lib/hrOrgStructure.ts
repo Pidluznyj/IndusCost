@@ -1,6 +1,6 @@
 /**
  * Estrutura organizacional RH — Diretoria → Departamento + líderes.
- * Regras puras (sem Prisma). Visão hierárquica futura consome estes vínculos.
+ * Hierarquia: diretoria pode responder a outra; departamento pode ficar dentro de outro.
  */
 
 export const HR_ORG_STATUSES = ["ACTIVE", "INACTIVE"] as const;
@@ -159,6 +159,79 @@ export function assertHrDepartmentName(name: string): string {
   return clean;
 }
 
+/**
+ * Normaliza o vínculo opcional Departamento → Departamento.
+ * Vazio / null / "none" = sem vínculo (raiz na diretoria).
+ */
+export function normalizeOptionalParentDepartmentId(raw: unknown): string | null {
+  return normalizeOptionalParentDirectorateId(raw);
+}
+
+/**
+ * Valida vínculo entre departamentos: mesma diretoria, sem auto-referência nem ciclo.
+ * `parentById` = id → parentDepartmentId; `directorateById` = id → directorateId.
+ */
+export function assertHrDepartmentParentLink(input: {
+  departmentId: string | null;
+  parentDepartmentId: string | null;
+  directorateId: string;
+  parentById: ReadonlyMap<string, string | null | undefined>;
+  directorateById: ReadonlyMap<string, string | null | undefined>;
+}): string | null {
+  const parentId = input.parentDepartmentId?.trim() || null;
+  if (!parentId) return null;
+
+  const selfId = input.departmentId?.trim() || null;
+  if (selfId && parentId === selfId) {
+    throw new HrOrgStructureError(
+      "Um departamento não pode se vincular a si mesmo.",
+      "PARENT_SELF",
+      400
+    );
+  }
+
+  if (!input.parentById.has(parentId)) {
+    throw new HrOrgStructureError(
+      "Departamento superior não encontrado.",
+      "PARENT_NOT_FOUND",
+      404
+    );
+  }
+
+  const parentDirectorateId = (input.directorateById.get(parentId) ?? "").trim();
+  const selfDirectorateId = input.directorateId.trim();
+  if (!selfDirectorateId || parentDirectorateId !== selfDirectorateId) {
+    throw new HrOrgStructureError(
+      "O departamento superior precisa pertencer à mesma diretoria.",
+      "PARENT_DIRECTORATE_MISMATCH",
+      400
+    );
+  }
+
+  let cursor: string | null | undefined = parentId;
+  const seen = new Set<string>();
+  while (cursor) {
+    if (selfId && cursor === selfId) {
+      throw new HrOrgStructureError(
+        "Este vínculo criaria um ciclo entre departamentos.",
+        "PARENT_CYCLE",
+        400
+      );
+    }
+    if (seen.has(cursor)) {
+      throw new HrOrgStructureError(
+        "Hierarquia de departamentos inconsistente (ciclo detectado).",
+        "PARENT_CYCLE",
+        400
+      );
+    }
+    seen.add(cursor);
+    cursor = input.parentById.get(cursor) ?? null;
+  }
+
+  return parentId;
+}
+
 export type HrOrgLeadershipRole = {
   kind: "directorate" | "department";
   id: string;
@@ -226,17 +299,21 @@ export function buildHrHierarchicalViewerScope(input: {
 
 /**
  * Com departamento oficial, o gestor da pessoa é sempre o líder do departamento.
- * Se a própria pessoa é o líder, sobe para o líder da diretoria (quando distinto).
+ * Se a própria pessoa é o líder, sobe para o líder do departamento superior
+ * (quando houver) e, em seguida, para o líder da diretoria (quando distinto).
  */
 export function resolveForcedManagerFromOrgDepartment(input: {
   employeeId?: string | null;
   departmentLeaderEmployeeId: string | null | undefined;
   departmentLeaderName?: string | null;
+  parentDepartmentLeaderEmployeeId?: string | null;
+  parentDepartmentLeaderName?: string | null;
   directorateLeaderEmployeeId?: string | null;
   directorateLeaderName?: string | null;
 }): { managerId: string | null; managerName: string | null } {
   const employeeId = input.employeeId?.trim() || null;
   const deptLeaderId = input.departmentLeaderEmployeeId?.trim() || null;
+  const parentDeptLeaderId = input.parentDepartmentLeaderEmployeeId?.trim() || null;
   const dirLeaderId = input.directorateLeaderEmployeeId?.trim() || null;
 
   if (!deptLeaderId) {
@@ -244,6 +321,12 @@ export function resolveForcedManagerFromOrgDepartment(input: {
   }
 
   if (employeeId && employeeId === deptLeaderId) {
+    if (parentDeptLeaderId && parentDeptLeaderId !== employeeId) {
+      return {
+        managerId: parentDeptLeaderId,
+        managerName: (input.parentDepartmentLeaderName ?? "").trim() || null,
+      };
+    }
     if (dirLeaderId && dirLeaderId !== employeeId) {
       return {
         managerId: dirLeaderId,

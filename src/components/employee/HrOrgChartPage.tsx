@@ -178,19 +178,21 @@ export function HrOrgChartPage() {
   const filteredDirectorates = useMemo(() => {
     if (!chart) return [];
 
-    const nodeMatches = (dir: HrOrgChartDirectorateNode): boolean => {
-      if (!q) return true;
-      if (dir.name.toLowerCase().includes(q) || matchesPerson(dir.leader)) return true;
+    const deptMatches = (dep: HrOrgChartDepartmentNode): boolean => {
       if (
-        dir.departments.some(
-          (dep) =>
-            dep.name.toLowerCase().includes(q) ||
-            matchesPerson(dep.leader) ||
-            dep.members.some((m) => matchesPerson(m))
-        )
+        dep.name.toLowerCase().includes(q) ||
+        matchesPerson(dep.leader) ||
+        dep.members.some((m) => matchesPerson(m))
       ) {
         return true;
       }
+      return dep.childDepartments.some((child) => deptMatches(child));
+    };
+
+    const nodeMatches = (dir: HrOrgChartDirectorateNode): boolean => {
+      if (!q) return true;
+      if (dir.name.toLowerCase().includes(q) || matchesPerson(dir.leader)) return true;
+      if (dir.departments.some((dep) => deptMatches(dep))) return true;
       return dir.childDirectorates.some((child) => nodeMatches(child));
     };
 
@@ -471,6 +473,24 @@ export function HrOrgChartPage() {
   );
 }
 
+function departmentTreeMatches(
+  node: HrOrgChartDepartmentNode,
+  highlightQuery: string,
+  matchesPerson: (p: HrOrgChartPerson | null | undefined) => boolean
+): boolean {
+  if (!highlightQuery) return true;
+  if (
+    node.name.toLowerCase().includes(highlightQuery) ||
+    matchesPerson(node.leader) ||
+    node.members.some((m) => matchesPerson(m))
+  ) {
+    return true;
+  }
+  return node.childDepartments.some((child) =>
+    departmentTreeMatches(child, highlightQuery, matchesPerson)
+  );
+}
+
 function DirectorateBranch({
   node,
   collapsed,
@@ -494,11 +514,8 @@ function DirectorateBranch({
     highlightQuery &&
     !node.name.toLowerCase().includes(highlightQuery) &&
     !matchesPerson(node.leader) &&
-    !node.departments.some(
-      (d) =>
-        d.name.toLowerCase().includes(highlightQuery) ||
-        matchesPerson(d.leader) ||
-        d.members.some((m) => matchesPerson(m))
+    !node.departments.some((d) =>
+      departmentTreeMatches(d, highlightQuery, matchesPerson)
     ) &&
     node.childDirectorates.length === 0;
 
@@ -560,10 +577,10 @@ function DirectorateBranch({
               <DepartmentBranch
                 key={dep.id}
                 node={dep}
-                parentDirectorateName={node.name}
+                parentUnitName={node.name}
                 parentLeaderId={node.leader?.id ?? null}
-                collapsed={collapsedDepts.has(dep.id)}
-                onToggle={() => onToggleDept(dep.id)}
+                collapsedDepts={collapsedDepts}
+                onToggleDept={onToggleDept}
                 highlightQuery={highlightQuery}
                 matchesPerson={matchesPerson}
               />
@@ -577,31 +594,31 @@ function DirectorateBranch({
 
 function DepartmentBranch({
   node,
-  parentDirectorateName,
+  parentUnitName,
   parentLeaderId,
-  collapsed,
-  onToggle,
+  collapsedDepts,
+  onToggleDept,
   highlightQuery,
   matchesPerson,
 }: {
   node: HrOrgChartDepartmentNode;
-  parentDirectorateName?: string;
+  parentUnitName?: string;
   parentLeaderId?: string | null;
-  collapsed: boolean;
-  onToggle: () => void;
+  collapsedDepts: Set<string>;
+  onToggleDept: (id: string) => void;
   highlightQuery: string;
   matchesPerson: (p: HrOrgChartPerson | null | undefined) => boolean;
 }) {
+  const collapsed = collapsedDepts.has(node.id);
   const dim =
-    highlightQuery &&
-    !node.name.toLowerCase().includes(highlightQuery) &&
-    !matchesPerson(node.leader) &&
-    !node.members.some((m) => matchesPerson(m));
+    highlightQuery && !departmentTreeMatches(node, highlightQuery, matchesPerson);
 
-  const leaderSameAsDirectorate =
+  const leaderSameAsParent =
     Boolean(node.leader?.id) &&
     Boolean(parentLeaderId) &&
     node.leader!.id === parentLeaderId;
+
+  const hasChildren = node.members.length > 0 || node.childDepartments.length > 0;
 
   return (
     <div className={cn("flex flex-col items-center", dim && "opacity-35")}>
@@ -612,27 +629,27 @@ function DepartmentBranch({
               Departamento
             </p>
             <p className="text-sm font-semibold text-teal-950 dark:text-teal-50">{node.name}</p>
-            {parentDirectorateName ? (
+            {parentUnitName ? (
               <p className="mt-0.5 text-[10px] text-teal-800/60 dark:text-teal-200/60">
-                ⊂ {parentDirectorateName}
+                ⊂ {parentUnitName}
               </p>
             ) : null}
           </div>
-          {node.members.length > 0 ? (
+          {hasChildren ? (
             <button
               type="button"
-              onClick={onToggle}
+              onClick={() => onToggleDept(node.id)}
               className="rounded-md p-1 text-teal-700 hover:bg-teal-100 dark:text-teal-300 dark:hover:bg-teal-900"
-              title={collapsed ? "Ver equipe" : "Ocultar equipe"}
+              title={collapsed ? "Expandir" : "Recolher"}
             >
               {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
           ) : null}
         </div>
         {node.leader ? (
-          leaderSameAsDirectorate ? (
+          leaderSameAsParent ? (
             <p className="rounded-lg border border-teal-200/80 bg-white/70 px-2.5 py-1.5 text-[11px] text-teal-900/80 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-100/80">
-              Líder: mesmo da diretoria ({hrOrgChartPersonLabel(node.leader)})
+              Líder: mesmo do nível superior ({hrOrgChartPersonLabel(node.leader)})
             </p>
           ) : (
             <PersonCard person={node.leader} tone="department" subtitle="Líder do departamento" />
@@ -642,16 +659,33 @@ function DepartmentBranch({
         )}
         <p className="mt-2 text-[10px] text-teal-800/70 dark:text-teal-200/70">
           {node.memberCount} no time
+          {node.childDepartments.length > 0
+            ? ` · ${node.childDepartments.length} subdepto(s)`
+            : ""}
         </p>
       </div>
 
-      {!collapsed && node.members.length > 0 ? (
+      {!collapsed && hasChildren ? (
         <OrgTreeChildren lineClassName="bg-teal-400/70 dark:bg-teal-500/60">
-          <div className="flex max-w-[280px] flex-col items-center gap-2">
-            {node.members.map((m) => (
-              <PersonCard key={m.id} person={m} tone="member" />
-            ))}
-          </div>
+          {node.childDepartments.map((child) => (
+            <DepartmentBranch
+              key={child.id}
+              node={child}
+              parentUnitName={node.name}
+              parentLeaderId={node.leader?.id ?? null}
+              collapsedDepts={collapsedDepts}
+              onToggleDept={onToggleDept}
+              highlightQuery={highlightQuery}
+              matchesPerson={matchesPerson}
+            />
+          ))}
+          {node.members.length > 0 ? (
+            <div className="flex max-w-[280px] flex-col items-center gap-2">
+              {node.members.map((m) => (
+                <PersonCard key={m.id} person={m} tone="member" />
+              ))}
+            </div>
+          ) : null}
         </OrgTreeChildren>
       ) : null}
     </div>
@@ -826,28 +860,41 @@ function buildHrOrgChartPrintHtml(input: {
 </html>`;
 }
 
+function renderDepartmentPrint(
+  dep: HrOrgChartDepartmentNode,
+  parentName: string
+): string {
+  const leaderLabel = dep.leader ? hrOrgChartPersonLabel(dep.leader) : null;
+  const memberNames = dep.members.map((m) => hrOrgChartPersonLabel(m));
+  const teamLine = [
+    leaderLabel ? `Lider: ${leaderLabel}` : null,
+    memberNames.length ? memberNames.join(", ") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const children = dep.childDepartments
+    .map((child) => renderDepartmentPrint(child, dep.name))
+    .join("");
+
+  return `<div class="col">
+    <div class="card dept">
+      <div class="title-chip">Departamento</div>
+      <div class="name">${escapeHtml(dep.name)}</div>
+      <div class="parent-tag">de ${escapeHtml(parentName)}</div>
+      ${teamLine ? `<div class="members">${escapeHtml(teamLine)}</div>` : ""}
+    </div>
+    ${
+      children
+        ? `<div class="tree"><div class="stem"></div><div class="row">${children}</div></div>`
+        : ""
+    }
+  </div>`;
+}
+
 function renderDirectoratePrint(dir: HrOrgChartDirectorateNode): string {
   const childDirs = dir.childDirectorates.map((c) => renderDirectoratePrint(c)).join("");
   const depts = dir.departments
-    .map((dep) => {
-      const leaderLabel = dep.leader ? hrOrgChartPersonLabel(dep.leader) : null;
-      const memberNames = dep.members.map((m) => hrOrgChartPersonLabel(m));
-      const teamLine = [
-        leaderLabel ? `Lider: ${leaderLabel}` : null,
-        memberNames.length ? memberNames.join(", ") : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-
-      return `<div class="col">
-        <div class="card dept">
-          <div class="title-chip">Departamento</div>
-          <div class="name">${escapeHtml(dep.name)}</div>
-          <div class="parent-tag">de ${escapeHtml(dir.name)}</div>
-          ${teamLine ? `<div class="members">${escapeHtml(teamLine)}</div>` : ""}
-        </div>
-      </div>`;
-    })
+    .map((dep) => renderDepartmentPrint(dep, dir.name))
     .join("");
 
   return `<div class="col">

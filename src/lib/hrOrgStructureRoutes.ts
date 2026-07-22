@@ -170,6 +170,11 @@ export function registerHrOrgStructureRoutes(
             directorateName: r.directorate?.name ?? null,
             leaderEmployeeId: r.leaderEmployeeId,
             leaderName: r.leader?.name ?? null,
+            parentDepartmentId: r.parentDepartmentId,
+            parentDepartmentName: r.parentDepartment?.name ?? null,
+            parentDepartmentLeaderEmployeeId:
+              r.parentDepartment?.leaderEmployeeId ?? null,
+            parentDepartmentLeaderName: r.parentDepartment?.leaderName ?? null,
             directorateLeaderEmployeeId:
               r.directorate?.leaderEmployeeId ?? null,
             directorateLeaderName: r.directorate?.leaderName ?? null,

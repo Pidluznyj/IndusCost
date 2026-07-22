@@ -173,25 +173,31 @@ model HrDirectorate {
 }
 
 /// Departamento oficial (RH) — sempre vinculado a uma diretoria e com líder designado.
+/// Pode opcionalmente reportar a outro departamento (`parentDepartmentId`), formando hierarquia
+/// (ex.: Expedição e Montagem dentro de Fabricação).
 model HrDepartment {
-  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code             String?  @unique
-  name             String
-  status           String   @default("ACTIVE")
-  directorateId    String   @db.Uuid
-  leaderEmployeeId String   @db.Uuid
-  notes            String?
-  createdAt        DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code               String?  @unique
+  name               String
+  status             String   @default("ACTIVE")
+  directorateId      String   @db.Uuid
+  leaderEmployeeId   String   @db.Uuid
+  parentDepartmentId String?  @db.Uuid
+  notes              String?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  directorate HrDirectorate @relation(fields: [directorateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  leader      Employee      @relation("HrDepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  employees   Employee[]    @relation("EmployeeOrgDepartment")
+  directorate       HrDirectorate  @relation(fields: [directorateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leader            Employee       @relation("HrDepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  parentDepartment  HrDepartment?  @relation("HrDepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  childDepartments  HrDepartment[] @relation("HrDepartmentHierarchy")
+  employees         Employee[]     @relation("EmployeeOrgDepartment")
 
   @@unique([directorateId, name])
   @@index([status])
   @@index([directorateId])
   @@index([leaderEmployeeId])
+  @@index([parentDepartmentId])
 }
 
 model PayrollComponent {

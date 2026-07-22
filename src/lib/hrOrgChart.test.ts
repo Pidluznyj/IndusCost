@@ -159,6 +159,93 @@ describe("hrOrgChart", () => {
     assert.equal(chart.totals.directorates, 3);
   });
 
+  it("aninha departamento filho sob o superior na mesma diretoria", () => {
+    const chart = buildHrOrgChart({
+      directorates: [
+        {
+          id: "dir-1",
+          name: "Industrial",
+          code: "IND",
+          status: "ACTIVE",
+          leaderEmployeeId: "e-dir",
+        },
+      ],
+      departments: [
+        {
+          id: "fab",
+          name: "Fabricação",
+          code: "FAB",
+          status: "ACTIVE",
+          directorateId: "dir-1",
+          leaderEmployeeId: "e-fab",
+          parentDepartmentId: null,
+        },
+        {
+          id: "exp",
+          name: "Expedição",
+          code: "EXP",
+          status: "ACTIVE",
+          directorateId: "dir-1",
+          leaderEmployeeId: "e-exp",
+          parentDepartmentId: "fab",
+        },
+        {
+          id: "mon",
+          name: "Montagem",
+          code: "MON",
+          status: "ACTIVE",
+          directorateId: "dir-1",
+          leaderEmployeeId: "e-mon",
+          parentDepartmentId: "fab",
+        },
+      ],
+      employees: [
+        {
+          id: "e-dir",
+          name: "Diretor",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: null,
+          roleName: null,
+        },
+        {
+          id: "e-fab",
+          name: "Líder Fab",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: "fab",
+          roleName: null,
+        },
+        {
+          id: "e-exp",
+          name: "Líder Exp",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: "exp",
+          roleName: null,
+        },
+        {
+          id: "e-mon",
+          name: "Líder Mon",
+          socialName: null,
+          status: "ACTIVE",
+          departmentId: "mon",
+          roleName: null,
+        },
+      ],
+    });
+
+    assert.equal(chart.directorates[0].departments.length, 1);
+    const fab = chart.directorates[0].departments[0];
+    assert.equal(fab.id, "fab");
+    assert.equal(fab.childDepartments.length, 2);
+    assert.deepEqual(
+      fab.childDepartments.map((d) => d.id).sort(),
+      ["exp", "mon"]
+    );
+    assert.equal(chart.totals.departments, 3);
+  });
+
   it("líder de diretoria sem departamento não aparece em 'sem departamento'", () => {
     const chart = buildHrOrgChart({
       directorates: [

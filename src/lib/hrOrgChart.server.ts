@@ -30,6 +30,7 @@ export async function loadHrOrgChart(
         status: true,
         directorateId: true,
         leaderEmployeeId: true,
+        parentDepartmentId: true,
       },
       orderBy: { name: "asc" },
     }),

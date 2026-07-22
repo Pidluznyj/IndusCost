@@ -3267,6 +3267,8 @@ app.post("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KE
           employeeId: null,
           departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
           departmentLeaderName: orgDept.leaderName,
+          parentDepartmentLeaderEmployeeId: orgDept.parentDepartmentLeaderEmployeeId,
+          parentDepartmentLeaderName: orgDept.parentDepartmentLeaderName,
           directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
           directorateLeaderName: orgDept.directorateLeaderName,
         })
@@ -3505,6 +3507,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
           department: orgLeadership.label ?? "Liderança organizacional",
           leaderEmployeeId: null as string | null,
           leaderName: null as string | null,
+          parentDepartmentLeaderEmployeeId: null as string | null,
+          parentDepartmentLeaderName: null as string | null,
           directorateLeaderEmployeeId: null as string | null,
           directorateLeaderName: null as string | null,
         }
@@ -3524,6 +3528,8 @@ app.put("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOURCE
             employeeId: id,
             departmentLeaderEmployeeId: orgDept.leaderEmployeeId,
             departmentLeaderName: orgDept.leaderName,
+            parentDepartmentLeaderEmployeeId: orgDept.parentDepartmentLeaderEmployeeId,
+            parentDepartmentLeaderName: orgDept.parentDepartmentLeaderName,
             directorateLeaderEmployeeId: orgDept.directorateLeaderEmployeeId,
             directorateLeaderName: orgDept.directorateLeaderName,
           })
