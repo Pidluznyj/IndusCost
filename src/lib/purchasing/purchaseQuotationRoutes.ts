@@ -19,6 +19,14 @@ import {
   updatePurchaseQuotationMeta,
   upsertSupplierOffer,
 } from "@/src/lib/purchasing/purchaseQuotationService.server.js";
+import {
+  appendNegotiationRoundLines,
+  closeNegotiationRound,
+  computeOfferRoundSavings,
+  listNegotiationRounds,
+  mapNegotiationError,
+  openNegotiationRound,
+} from "@/src/lib/purchasing/negotiationRoundService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -173,4 +181,90 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
       }
     }
   );
+
+  app.get("/api/purchase-quotations/:id/rounds", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const rows = await listNegotiationRounds(prisma, id);
+      res.json({ rows });
+    } catch (e) {
+      console.error("negotiation rounds list error:", e);
+      res.status(500).json({ error: "Erro ao listar rodadas." });
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/rounds", ...update, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const row = await openNegotiationRound(
+        prisma,
+        id,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        { buyerReport: req.body?.buyerReport, notes: req.body?.notes }
+      );
+      res.status(201).json(row);
+    } catch (e) {
+      const mapped = mapNegotiationError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/rounds/:roundId/lines", ...update, async (req, res) => {
+    try {
+      const { id, roundId } = req.params;
+      if (!isUuid(id) || !isUuid(roundId)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+      const row = await appendNegotiationRoundLines(
+        prisma,
+        id,
+        roundId,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        lines
+      );
+      res.status(201).json(row);
+    } catch (e) {
+      const mapped = mapNegotiationError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/rounds/:roundId/close", ...update, async (req, res) => {
+    try {
+      const { id, roundId } = req.params;
+      if (!isUuid(id) || !isUuid(roundId)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const row = await closeNegotiationRound(
+        prisma,
+        id,
+        roundId,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        { buyerReport: req.body?.buyerReport, notes: req.body?.notes }
+      );
+      res.json(row);
+    } catch (e) {
+      const mapped = mapNegotiationError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/purchase-quotations/:id/offers/:offerId/savings", ...view, async (req, res) => {
+    try {
+      const { id, offerId } = req.params;
+      if (!isUuid(id) || !isUuid(offerId)) return res.status(400).json({ error: "ID inválido." });
+      const roundId = req.query.roundId ? String(req.query.roundId) : undefined;
+      if (roundId && !isUuid(roundId)) return res.status(400).json({ error: "roundId inválido." });
+      const result = await computeOfferRoundSavings(prisma, id, offerId, roundId);
+      res.json(result);
+    } catch (e) {
+      const mapped = mapNegotiationError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
 }

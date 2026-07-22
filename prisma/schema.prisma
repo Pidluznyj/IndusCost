@@ -5978,16 +5978,20 @@ model PurchaseQuotationOfferItem {
 
 /// Rodada de negociação — cabeçalho append-friendly (número monotônico por cotação).
 model PurchaseNegotiationRound {
-  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  quotationId     String                         @db.Uuid
-  roundNumber     Int
-  status          PurchaseNegotiationRoundStatus @default(ABERTA)
-  openedAt        DateTime                       @default(now()) @db.Timestamptz(6)
-  closedAt        DateTime?                      @db.Timestamptz(6)
-  openedByUserId  String?
-  closedByUserId  String?
-  notes           String?
-  createdAt       DateTime                       @default(now()) @db.Timestamptz(6)
+  id                   String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId          String                         @db.Uuid
+  roundNumber          Int
+  status               PurchaseNegotiationRoundStatus @default(ABERTA)
+  openedAt             DateTime                       @default(now()) @db.Timestamptz(6)
+  closedAt             DateTime?                      @db.Timestamptz(6)
+  openedByUserId       String?
+  closedByUserId       String?
+  /// Relato do comprador nesta rodada.
+  buyerReport          String?
+  /// Responsável (nome exibido; ID em openedByUserId).
+  responsibleUserName  String?
+  notes                String?
+  createdAt            DateTime                       @default(now()) @db.Timestamptz(6)
 
   quotation PurchaseQuotation              @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   lines     PurchaseNegotiationRoundLine[]
@@ -5998,20 +6002,38 @@ model PurchaseNegotiationRound {
 }
 
 /// Proposta de preço/condição na rodada — append-only (sem updatedAt).
+/// previous* = snapshot do estado anterior; campos sem prefixo = novos valores.
 model PurchaseNegotiationRoundLine {
-  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  roundId         String                   @db.Uuid
-  offerItemId     String                   @db.Uuid
-  unitPrice       Decimal                  @db.Decimal(20, 6)
-  quantity        Decimal?                 @db.Decimal(20, 6)
-  leadTimeDays    Int?
-  freightValue    Decimal?                 @db.Decimal(20, 6)
-  paymentTerms    String?
-  deliveryTerms   String?
-  proposedBy      PurchaseNegotiationActor
-  notes           String?
-  createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
-  createdByUserId String?
+  id                           String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId                      String                   @db.Uuid
+  offerItemId                  String                   @db.Uuid
+  unitPrice                    Decimal                  @db.Decimal(20, 6)
+  quantity                     Decimal?                 @db.Decimal(20, 6)
+  leadTimeDays                 Int?
+  freightValue                 Decimal?                 @db.Decimal(20, 6)
+  nonRecoverableTaxes          Decimal?                 @db.Decimal(20, 6)
+  expenses                     Decimal?                 @db.Decimal(20, 6)
+  discounts                    Decimal?                 @db.Decimal(20, 6)
+  minOrderQty                  Decimal?                 @db.Decimal(20, 6)
+  /// CIF | FOB | OTHER — CIF não entra no custo comparável do comprador.
+  freightIncoterm              String?
+  paymentTerms                 String?
+  deliveryTerms                String?
+  previousUnitPrice            Decimal?                 @db.Decimal(20, 6)
+  previousQuantity             Decimal?                 @db.Decimal(20, 6)
+  previousLeadTimeDays         Int?
+  previousFreightValue         Decimal?                 @db.Decimal(20, 6)
+  previousNonRecoverableTaxes  Decimal?                 @db.Decimal(20, 6)
+  previousExpenses             Decimal?                 @db.Decimal(20, 6)
+  previousDiscounts            Decimal?                 @db.Decimal(20, 6)
+  previousMinOrderQty          Decimal?                 @db.Decimal(20, 6)
+  previousPaymentTerms         String?
+  previousDeliveryTerms        String?
+  previousFreightIncoterm      String?
+  proposedBy                   PurchaseNegotiationActor
+  notes                        String?
+  createdAt                    DateTime                 @default(now()) @db.Timestamptz(6)
+  createdByUserId              String?
 
   round                   PurchaseNegotiationRound    @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   offerItem               PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)

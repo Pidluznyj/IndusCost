@@ -136,6 +136,46 @@ export function PurchaseQuotationModule() {
   const [supplierOptions, setSupplierOptions] = useState<SelectOption[]>([]);
   const [offerDrafts, setOfferDrafts] = useState<Record<string, OfferDraft>>({});
   const [meta, setMeta] = useState({ title: "", currency: "BRL", notes: "", expiresAt: "" });
+  const [rounds, setRounds] = useState<
+    Array<{
+      id: string;
+      roundNumber: number;
+      status: string;
+      openedAt: string;
+      closedAt: string | null;
+      buyerReport: string | null;
+      responsibleUserName: string | null;
+      lines: Array<{
+        id: string;
+        offerItemId: string;
+        unitPrice: string | number;
+        quantity: string | number | null;
+        freightValue: string | number | null;
+        freightIncoterm: string | null;
+        previousUnitPrice: string | number | null;
+        paymentTerms: string | null;
+        leadTimeDays: number | null;
+      }>;
+    }>
+  >([]);
+  const [buyerReport, setBuyerReport] = useState("");
+  const [savingsMap, setSavingsMap] = useState<
+    Record<
+      string,
+      {
+        totalGain: number;
+        unitGain: number | null;
+        percentGain: number | null;
+        initialComparableCost: number;
+        negotiatedComparableCost: number;
+        costIncreased: boolean;
+        conditionGains: Array<{ field: string; label: string; previousValue: unknown; newValue: unknown }>;
+      }
+    >
+  >({});
+  const [negoPrices, setNegoPrices] = useState<Record<string, string>>({});
+  const [negoFreightIncoterm, setNegoFreightIncoterm] = useState("FOB");
+
 
   const requestFilter = searchParams.get("purchaseRequestId") || undefined;
 
@@ -154,6 +194,15 @@ export function PurchaseQuotationModule() {
     }
   }, [requestFilter]);
 
+  const loadRounds = useCallback(async (id: string) => {
+    try {
+      const data = await fetchJsonOk<{ rows?: typeof rounds }>(`/api/purchase-quotations/${id}/rounds`);
+      setRounds(Array.isArray(data.rows) ? data.rows : []);
+    } catch {
+      setRounds([]);
+    }
+  }, []);
+
   const loadDetail = useCallback(async (id: string) => {
     setLoading(true);
     try {
@@ -171,13 +220,14 @@ export function PurchaseQuotationModule() {
         drafts[s.id] = emptyOfferDraft(row.items, offer, row.currency);
       }
       setOfferDrafts(drafts);
+      await loadRounds(id);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro ao abrir cotação.");
       navigate("/purchases/quotations");
     } finally {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, loadRounds]);
 
   const loadSuppliers = useCallback(async (q = "") => {
     try {
@@ -209,7 +259,87 @@ export function PurchaseQuotationModule() {
     if (quotationId && allowEdit) void loadSuppliers();
   }, [quotationId, allowEdit, loadSuppliers]);
 
-  const negotiationStarted = (detail?.rounds?.length ?? 0) > 0;
+  const negotiationStarted = rounds.length > 0;
+  const openRound = rounds.find((r) => r.status === "ABERTA") ?? null;
+
+  const openNegotiation = async () => {
+    if (!detail || !allowEdit) return;
+    setBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-quotations/${detail.id}/rounds`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerReport: buyerReport || null }),
+      });
+      await loadRounds(detail.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao abrir rodada.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitRoundLines = async (offerId: string, offerItemIds: string[]) => {
+    if (!detail || !openRound) return;
+    const lines = offerItemIds
+      .map((offerItemId) => {
+        const price = negoPrices[offerItemId];
+        if (price == null || price === "") return null;
+        return {
+          offerItemId,
+          unitPrice: Number(price),
+          freightIncoterm: negoFreightIncoterm,
+          proposedBy: "BUYER" as const,
+        };
+      })
+      .filter(Boolean);
+    if (lines.length === 0) {
+      alert("Informe ao menos um preço negociado.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-quotations/${detail.id}/rounds/${openRound.id}/lines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lines }),
+      });
+      await loadRounds(detail.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao registrar linhas.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeNegotiation = async () => {
+    if (!detail || !openRound) return;
+    setBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-quotations/${detail.id}/rounds/${openRound.id}/close`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerReport: buyerReport || null }),
+      });
+      await loadRounds(detail.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao fechar rodada.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshSavings = async (offerId: string) => {
+    if (!detail) return;
+    try {
+      const result = await fetchJsonOk<{
+        savings: (typeof savingsMap)[string];
+      }>(`/api/purchase-quotations/${detail.id}/offers/${offerId}/savings`);
+      setSavingsMap((prev) => ({ ...prev, [offerId]: result.savings }));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao calcular ganho.");
+    }
+  };
 
   const saveMeta = async () => {
     if (!detail || !allowEdit) return;
@@ -855,6 +985,183 @@ export function PurchaseQuotationModule() {
           </div>
         );
       })}
+
+      <div
+        className="rounded-2xl border border-border bg-card p-6 space-y-4"
+        data-testid="negotiation-rounds-panel"
+      >
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Rodadas de negociação
+            </h4>
+            <p className="text-sm text-muted-foreground mt-1">
+              Histórico imutável. Prazo/pagamento/lote não entram como economia monetária.
+            </p>
+          </div>
+          {allowEdit && !openRound && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void openNegotiation()}
+              className="px-3 py-1.5 rounded-lg text-sm bg-violet-700 text-white disabled:opacity-50"
+            >
+              Abrir rodada
+            </button>
+          ) : null}
+        </div>
+
+        <Field label="Relato do comprador">
+          <textarea
+            rows={2}
+            disabled={!allowEdit}
+            className={inputCls(!allowEdit)}
+            value={buyerReport}
+            onChange={(e) => setBuyerReport(e.target.value)}
+            placeholder="Registro da rodada / responsável / contexto"
+          />
+        </Field>
+
+        {openRound ? (
+          <div className="rounded-xl border border-amber-300/50 bg-amber-500/10 p-4 space-y-3">
+            <p className="text-sm font-medium">
+              Rodada #{openRound.roundNumber} aberta
+              {openRound.responsibleUserName ? ` · ${openRound.responsibleUserName}` : ""}
+              {" · "}
+              {new Date(openRound.openedAt).toLocaleString("pt-BR")}
+            </p>
+            <Field label="Incoterm do frete nesta rodada">
+              <select
+                className={inputCls(false)}
+                value={negoFreightIncoterm}
+                onChange={(e) => setNegoFreightIncoterm(e.target.value)}
+              >
+                <option value="FOB">FOB (frete no custo comparável)</option>
+                <option value="CIF">CIF (frete não soma no custo do comprador)</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+            </Field>
+            {detail.suppliers.map((supplier) => {
+              const offer = supplier.offers[0];
+              if (!offer || offer.status !== "RECEBIDA") return null;
+              return (
+                <div key={supplier.id} className="space-y-2 border-t border-border/50 pt-3">
+                  <p className="text-sm font-medium">{supplier.supplierDisplayNameSnapshot}</p>
+                  {offer.items.map((it) => (
+                    <div key={it.id} className="grid grid-cols-1 md:grid-cols-3 gap-2 items-end">
+                      <div className="md:col-span-2 text-xs text-muted-foreground">
+                        Item {it.quotationItem?.lineNumber ?? "—"} · inicial{" "}
+                        {numStr(it.initialUnitPrice)}
+                      </div>
+                      <Field label="Novo preço unitário">
+                        <input
+                          type="number"
+                          step="any"
+                          className={inputCls(false)}
+                          value={negoPrices[it.id] ?? ""}
+                          onChange={(e) =>
+                            setNegoPrices((prev) => ({ ...prev, [it.id]: e.target.value }))
+                          }
+                        />
+                      </Field>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void submitRoundLines(offer.id, offer.items.map((i) => i.id))}
+                    className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
+                  >
+                    Registrar linhas (append-only)
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void closeNegotiation()}
+              className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
+            >
+              Fechar rodada
+            </button>
+          </div>
+        ) : null}
+
+        {rounds.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma rodada registrada.</p>
+        ) : (
+          <ul className="space-y-3 text-sm">
+            {rounds.map((r) => (
+              <li key={r.id} className="border-b border-border/60 pb-3">
+                <div className="font-medium">
+                  Rodada #{r.roundNumber} · {r.status}
+                  {r.responsibleUserName ? ` · ${r.responsibleUserName}` : ""}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(r.openedAt).toLocaleString("pt-BR")}
+                  {r.closedAt ? ` → ${new Date(r.closedAt).toLocaleString("pt-BR")}` : ""}
+                </div>
+                {r.buyerReport ? <p className="mt-1 text-xs">{r.buyerReport}</p> : null}
+                <ul className="mt-2 space-y-1 text-xs">
+                  {r.lines.map((l) => (
+                    <li key={l.id}>
+                      {numStr(l.previousUnitPrice)} → {numStr(l.unitPrice)}
+                      {l.freightIncoterm ? ` · ${l.freightIncoterm}` : ""}
+                      {l.paymentTerms ? ` · pagto ${l.paymentTerms}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="space-y-3" data-testid="negotiation-savings">
+          <h5 className="text-xs font-bold uppercase text-muted-foreground">Ganho comparável</h5>
+          {detail.suppliers.map((supplier) => {
+            const offer = supplier.offers[0];
+            if (!offer || offer.status !== "RECEBIDA") return null;
+            const s = savingsMap[offer.id];
+            return (
+              <div key={offer.id} className="rounded-lg border border-border/70 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{supplier.supplierDisplayNameSnapshot}</span>
+                  <button
+                    type="button"
+                    className="text-sm text-primary hover:underline"
+                    onClick={() => void refreshSavings(offer.id)}
+                  >
+                    Calcular ganho
+                  </button>
+                </div>
+                {s ? (
+                  <div className="text-xs space-y-1">
+                    <div>
+                      Custo inicial: {s.initialComparableCost.toFixed(2)} · negociado:{" "}
+                      {s.negotiatedComparableCost.toFixed(2)}
+                    </div>
+                    <div>
+                      Ganho total: {s.totalGain.toFixed(2)} · unitário:{" "}
+                      {s.unitGain == null ? "—" : s.unitGain.toFixed(4)} · %:{" "}
+                      {s.percentGain == null ? "—" : `${s.percentGain.toFixed(2)}%`}
+                      {s.costIncreased ? " · custo aumentou" : ""}
+                    </div>
+                    {s.conditionGains.length > 0 ? (
+                      <div>
+                        Ganhos de condição (não monetizados):{" "}
+                        {s.conditionGains.map((c) => c.label).join("; ")}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Ainda não calculado.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
