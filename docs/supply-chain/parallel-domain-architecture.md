@@ -78,7 +78,7 @@ Legenda: **R** = leitura permitida à SC · **W** = escrita dono SC · **—** =
 | `InventoryCount*` / `AuditLog` | R | W | Já no módulo |
 | **PurchaseQuotation*** (novo) | R | W | Cotação/rodada SC (≠ MI) |
 | **PurchaseOrder*** (novo) | R | W | Formaliza `purchaseOrderId` soft |
-| **GoodsReceipt*** (novo) | R | W | Único gerador autorizado de `PURCHASE_ENTRY` via integração SC |
+| **GoodsReceipt*** (novo) | R | W | Único gerador autorizado de `PURCHASE_RECEIPT` via confirmação SC |
 | Anexos SC (novo, padrão MI) | R | W | `appLocalFileStorage` + `storageKey` |
 
 \* Nomes lógicos; schema definitivo em OP de modelo aditivo.
@@ -214,7 +214,7 @@ Oferta por fornecedor: `RECEBIDA` | `DESCARTADA` | `VENCEDORA`.
 | `ESTORNADO` | Estorno do recebimento (gera REVERSAL do movimento) |
 | `CANCELADO` | Terminal sem entrada |
 
-**Invariante:** somente recebimento **aprovado** dispara `PURCHASE_ENTRY` via `createInventoryMovement` (quando integração SC→estoque estiver habilitada no orquestrador).
+**Invariante:** somente recebimento **aprovado/confirmado** dispara `PURCHASE_RECEIPT` via `createInventoryMovement` (`confirmPurchaseReceipt`). Integrações cross-módulo genéricas permanecem com `INVENTORY_INTEGRATIONS_ENABLED = false`.
 
 ---
 
@@ -242,7 +242,7 @@ Alinhados ao código (`inventoryBalanceMath.ts`, `inventoryMovementRules.ts`, `i
 | Snapshots no movimento | Campos `previous*Balance` / `next*Balance` (físico, reservado, bloqueado, quarentena, disponível) |
 | Estorno | Novo movimento `REVERSAL` ligado por `reversedMovementId`; impacto = inverso do original |
 | Duplo estorno | Proibido estornar movimento já estornado (garantir no serviço) |
-| Recebimento estornado | Status `ESTORNADO` + `REVERSAL` do `PURCHASE_ENTRY` correspondente |
+| Recebimento estornado | Status `ESTORNADO` + `REVERSAL` do `PURCHASE_RECEIPT` correspondente |
 | Contagem | Ajustes via `POSITIVE_ADJUSTMENT` / `NEGATIVE_ADJUSTMENT`, nunca patch de saldo |
 
 ---
@@ -301,7 +301,7 @@ Padrão IndusCost (espelhar `salesOrderFlowFeatureFlags.ts`): **fail-closed**, e
 | SC cotação UI/API | `SUPPLY_CHAIN_QUOTATION_ENABLED` | Rotas/menu cotação | **off** |
 | SC pedido de compra | `SUPPLY_CHAIN_PURCHASE_ORDER_ENABLED` | Rotas/menu PO | **off** |
 | SC recebimento | `SUPPLY_CHAIN_RECEIVING_ENABLED` | Rotas/menu recebimento | **off** |
-| SC → estoque (orquestrador) | flag dedicada **além** da const inventory | Só o adaptador compras→`PURCHASE_ENTRY` | **off** até piloto estável |
+| SC → estoque (recebimento) | flags SC receiving/purchases | `confirmPurchaseReceipt` → `PURCHASE_RECEIPT` | flags **off** por padrão |
 
 Ativar `INVENTORY_INTEGRATIONS_ENABLED` **somente** no orquestrador, após recebimento testado — nunca no core de saldo.
 
@@ -342,7 +342,7 @@ Emitir (ou preparar envelope) **sem** subscribers na fase 1 — contratos tipado
 | `sc.purchase_order.cancelled` | PO cancelado | poId |
 | `sc.goods_receipt.approved` | Recebimento aprovado | receiptId, poId, lines[] |
 | `sc.goods_receipt.reversed` | Estorno | receiptId, reversalMovementId |
-| `sc.inventory.purchase_entry.posted` | Após `PURCHASE_ENTRY` | movementId, itemId, qty |
+| `sc.inventory.purchase_receipt.posted` | Após `PURCHASE_RECEIPT` | movementId, itemId, qty |
 | `sc.inventory.purchase_entry.reversed` | Após `REVERSAL` | movementId, originalId |
 
 **Não** consumir para: atualizar custo/BOM/preço/AP/Nomus stock (OP-00 §5).
@@ -360,7 +360,7 @@ Consumidores futuros possíveis (fora do escopo agora): indicadores SC, MI (só 
    (b) cotação SC →  
    (c) PO →  
    (d) recebimento **manual** sem postar estoque →  
-   (e) postar `PURCHASE_ENTRY` com flag orquestrador on **só no piloto**.
+   (e) confirmar recebimento postando `PURCHASE_RECEIPT` **só no piloto** (flags receiving on).
 4. Critérios de saída do piloto: invariantes de saldo verdes nos testes; zero writes em módulos protegidos (diff + testes de proteção); estorno de recebimento validado.
 5. Expandir almoxarifados/usuários; só então considerar outros ambientes.
 
@@ -392,7 +392,7 @@ Ordem obrigatória (cada passo: checklist OP-00 §8 → testes focados → typec
 | 4 | Modelo aditivo cotação SC (+ anexos padrão MI) | **Sim (aditiva)** — OP futuro |
 | 5 | Modelo aditivo PO; preencher soft `purchaseOrderId` | **Sim (aditiva)** |
 | 6 | Modelo aditivo recebimento; status sem postar estoque | **Sim (aditiva)** |
-| 7 | Adaptador SC→`createInventoryMovement` (`PURCHASE_ENTRY`) atrás de flag | Não (ou mínima se outbox) |
+| 7 | Confirmação SC→`createInventoryMovement` (`PURCHASE_RECEIPT`) atrás de flags receiving | Não (implementado na fase 1) |
 | 8 | Estorno recebimento → `REVERSAL` | Não |
 | 9 | Eventos tipados sem consumidores + indicadores SC read | Opcional |
 | 10 | Avaliar `INVENTORY_INTEGRATIONS_ENABLED` / demanda persistida | Só com autorização |
@@ -444,6 +444,6 @@ Leitura lateral (nunca write): Material / Product / FinancialSupplier / Nomus NF
 
 ## 20. Decisão final
 
-A arquitetura oficial da Cadeia de Suprimentos é **paralela e aditiva**: almoxarifado e solicitações **já existentes** são o núcleo; cotação SC, PO e recebimento nascem como entidades **novas** apenas onde o schema atual não cobre; motores oficiais entram **somente por contratos de leitura**; estoque local permanece o único saldo físico IndusCost, com movimentos imutáveis e estornos; flags desligadas por padrão; piloto antes de qualquer orquestração com `PURCHASE_ENTRY`.
+A arquitetura oficial da Cadeia de Suprimentos é **paralela e aditiva**: almoxarifado e solicitações **já existentes** são o núcleo; cotação SC, PO e recebimento nascem como entidades **novas** apenas onde o schema atual não cobre; motores oficiais entram **somente por contratos de leitura**; estoque local permanece o único saldo físico IndusCost, com movimentos imutáveis e estornos; flags desligadas por padrão; piloto antes de expandir confirmação com `PURCHASE_RECEIPT`. Operação: `operations-and-rollback-runbook.md` (OP-29).
 
 **Próximo OP sugerido:** modelo de dados aditivo (cotação / PO / recebimento / anexos) + flags/permissões — ainda sem ligar escrita em módulos protegidos e sem ativar integrações de estoque.
