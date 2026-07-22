@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
-import { Prisma } from "@prisma/client";
 import {
   assertInitialBalanceScopeEligible,
   buildBalancesReportCsv,
