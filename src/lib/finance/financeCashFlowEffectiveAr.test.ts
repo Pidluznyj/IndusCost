@@ -7,10 +7,14 @@ import { describe, it } from "node:test";
 import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "./financeCashFlowEffectiveAr.js";
 import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
-import { filterCashFlowArPortfolioRows } from "@/src/lib/financeCashFlowRowFilters.js";
+import {
+  filterCashFlowArPortfolioRows,
+  filterCashFlowArRowsScoped,
+} from "@/src/lib/financeCashFlowRowFilters.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import { toCashFlowPortfolioArFilters } from "@/src/lib/financeCashFlowDashboard.js";
 import { createDailyRadarDashboardFilters } from "@/src/lib/financeCashFlowDailyRadar.js";
+import { buildFinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles.js";
 
 const REF = new Date(2026, 6, 17, 12, 0, 0, 0);
 const CUSTOMER_ID = 88001;
@@ -252,6 +256,57 @@ describe("financeCashFlowEffectiveAr — PD 02719", () => {
       { orderContexts: [] }
     );
     assert.ok(legacy.some((r) => r.externalId === 18077), "contexts vazios = suppress legado");
+  });
+
+  it("setembro Britania: Fluxo de Caixa e Títulos concordam (3 linhas PD 02719)", () => {
+    const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
+    const nfeOrderLinks = [
+      { sourceInvoiceId: 7311, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+      { sourceInvoiceId: 7382, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+    ];
+    const cfFilters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+      month: 9,
+    };
+    const arFilters = { status: "all" as const, year: 2026, month: 9 };
+    const options = { orderContexts: [], nfeOrderLinks };
+
+    const cashFlow = filterCashFlowArRowsScoped(
+      rows,
+      cfFilters,
+      arFilters,
+      REF,
+      null,
+      options
+    );
+    const titles = buildFinanceArTitlesPayload(
+      rows,
+      {
+        page: 1,
+        limit: 50,
+        sortBy: "dueDate",
+        sortDirection: "asc",
+        filters: arFilters,
+        extended: {},
+      },
+      REF,
+      null,
+      options
+    );
+
+    assert.equal(cashFlow.length, 3);
+    assert.equal(titles.items.length, 3);
+    assert.deepEqual(
+      cashFlow.map((r) => r.externalId).sort((a, b) => a - b),
+      titles.items.map((i) => i.externalId).sort((a, b) => a - b)
+    );
+    assert.deepEqual(
+      cashFlow.map((r) => r.externalId).sort((a, b) => a - b),
+      [17874, 18076, 18079]
+    );
   });
 
   it("filterCashFlowArPortfolioRows repassa orderContexts (mesmo motor)", () => {

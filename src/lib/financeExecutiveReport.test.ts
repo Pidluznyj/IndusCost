@@ -133,7 +133,8 @@ describe("financeExecutiveReport", () => {
   it("serviço Fluxo usa buildFinanceCashFlowDashboard", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
     assert.ok(src.includes("buildFinanceCashFlowDashboard"));
-    assert.ok(src.includes("buildCashFlowArPrismaWhere"));
+    assert.ok(src.includes("loadFinanceArManagementRowsFromPrisma"));
+    assert.ok(src.includes("enrichFinanceCashFlowArLoadBundle"));
   });
 
   it("serviço Pedidos usa buildSalesOrdersDashboardTab (SalesOrder)", () => {

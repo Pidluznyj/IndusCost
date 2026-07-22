@@ -19,9 +19,7 @@ import {
 import {
   buildFinanceCashFlowDashboard,
   FINANCE_CASH_FLOW_AP_SELECT,
-  FINANCE_CASH_FLOW_AR_SELECT,
   mapPrismaRowToFinanceCashFlowApRow,
-  mapPrismaRowToFinanceCashFlowArRow,
   toApLoadFilters,
   toArLoadFilters,
   type FinanceCashFlowDashboardFilters,
@@ -29,7 +27,6 @@ import {
 import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
 import {
-  buildCashFlowArPrismaWhere,
   buildCashFlowApPrismaWhere,
 } from "./financeCashFlowRowFilters.js";
 import { FINANCE_AP_TITLE_SELECT } from "./financeAccountsPayableTitles.js";
@@ -68,7 +65,6 @@ import {
 import { getNomusAccountsReceivableSyncStatus } from "./nomusAccountsReceivableSyncRunner.js";
 import { getNomusAccountsPayableSyncStatus } from "./nomusAccountsPayableSyncRunner.js";
 import { getNomusNfesSyncStatus } from "./nomusNfesSyncRunner.js";
-import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 import { EXECUTIVE_DASHBOARD_MIN_YEAR } from "./executiveDashboardYear.js";
@@ -334,33 +330,29 @@ async function loadCashFlowRows(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ) {
-  const [arSyncCutoff, apSyncCutoff] = await Promise.all([
-    resolveNomusArReportSyncCutoffFromPrisma(db),
-    resolveNomusApReportSyncCutoffFromPrisma(db),
-  ]);
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
-  const arWhere = buildCashFlowArPrismaWhere(filters, arFilters, referenceDate, arSyncCutoff);
+  const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
+    await Promise.all([
+      loadFinanceArManagementRowsFromPrisma(db, arFilters, referenceDate),
+      resolveNomusApReportSyncCutoffFromPrisma(db),
+    ]);
   const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
+  const apPrisma = await db.nomusAccountsPayable.findMany({
+    where: apWhere,
+    select: FINANCE_CASH_FLOW_AP_SELECT,
+    orderBy: { dueDate: "asc" },
+  });
 
-  const [arPrisma, apPrisma] = await Promise.all([
-    db.nomusAccountsReceivable.findMany({
-      where: arWhere,
-      select: FINANCE_CASH_FLOW_AR_SELECT,
-      orderBy: { dueDate: "asc" },
-    }),
-    db.nomusAccountsPayable.findMany({
-      where: apWhere,
-      select: FINANCE_CASH_FLOW_AP_SELECT,
-      orderBy: { dueDate: "asc" },
-    }),
-  ]);
-
-  const arRows = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const arRows = arManagementRows as import("./financeCashFlowDashboard.js").FinanceCashFlowArRow[];
   const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
     db,
     arRows,
-    referenceDate
+    referenceDate,
+    {
+      customerName: filters.customerName,
+      personCnpj: filters.personCnpj,
+    }
   );
 
   return {

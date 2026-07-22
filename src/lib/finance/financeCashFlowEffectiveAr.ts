@@ -16,7 +16,12 @@ import {
   buildFinanceArEffectivePortfolioItems,
   type FinanceArNfeOrderLink,
 } from "./financeArEffectivePortfolio.js";
-import { extractFinanceArOrderCodeHint } from "./financeArOperationalPortfolio.js";
+import {
+  filterFinanceArOperationalPortfolioRows,
+  suppressInferiorPreNfNomusArRows,
+  extractFinanceArOrderCodeHint,
+} from "./financeArOperationalPortfolio.js";
+import { deduplicateFinanceArRows } from "@/src/lib/financeAccountsReceivableDeduplication.js";
 import type { NomusArReportSyncCutoff } from "@/src/lib/financeNomusArReportFreshness.js";
 
 export type BuildFinanceCashFlowEffectiveArPortfolioInput = {
@@ -76,12 +81,39 @@ export function mapFinanceArEffectiveTitleToCashFlowRow(
 export function buildFinanceCashFlowEffectiveArPortfolio(
   input: BuildFinanceCashFlowEffectiveArPortfolioInput
 ): FinanceCashFlowArRow[] {
+  return buildFinanceCashFlowArRowsAlignedWithTitles(input);
+}
+
+/**
+ * Mesma cadeia de Títulos: portfolio operacional → FIN-08 / legado NF→Pedido → mapa FC.
+ */
+export function buildFinanceCashFlowArRowsAlignedWithTitles(
+  input: BuildFinanceCashFlowEffectiveArPortfolioInput
+): FinanceCashFlowArRow[] {
   const referenceDate = input.referenceDate ?? new Date();
+  const orderContexts = input.orderContexts ?? [];
+  const nfeOrderLinks = input.nfeOrderLinks ?? [];
+
+  const operational = filterFinanceArOperationalPortfolioRows(
+    input.rows,
+    input.filters,
+    referenceDate,
+    input.syncCutoff
+  );
+
+  if (orderContexts.length === 0 && nfeOrderLinks.length === 0) {
+    return suppressInferiorPreNfNomusArRows(
+      deduplicateFinanceArRows(operational).rows
+    ) as FinanceCashFlowArRow[];
+  }
+
   const items = buildFinanceArEffectivePortfolioItems({
-    rows: input.rows,
+    rows: operational,
     filters: input.filters,
-    orderContexts: input.orderContexts ?? [],
-    nfeOrderLinks: input.nfeOrderLinks,
+    orderContexts,
+    nfeOrderLinks,
+    customerName: input.filters.personName,
+    customerCnpj: input.filters.personCnpj,
     referenceDate,
     syncCutoff: input.syncCutoff,
     applyOperationalPortfolioFilter: false,

@@ -29,13 +29,13 @@ import {
   type CashFlowMovementSlice,
 } from "./financeCashFlowLedger.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
-import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
-import { buildFinanceCashFlowEffectiveArPortfolio } from "./finance/financeCashFlowEffectiveAr.js";
+import { buildFinanceCashFlowArRowsAlignedWithTitles } from "./finance/financeCashFlowEffectiveAr.js";
 import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
 import {
   suppressInferiorPreNfNomusArRows,
   type FinanceArNfeOrderLink,
 } from "./finance/financeArOperationalPortfolio.js";
+import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -172,12 +172,23 @@ function applyCashFlowArOperationalPortfolio(
   arFilters: FinanceArDashboardFilters,
   referenceDate: Date,
   syncCutoff: NomusArReportSyncCutoff | null | undefined,
-  options?: FinanceCashFlowArFilterOptions
+  options?: FinanceCashFlowArFilterOptions,
+  portfolioScope = false
 ): FinanceCashFlowArRow[] {
+  const effectiveFilters = portfolioScope
+    ? {
+        ...arFilters,
+        year: undefined,
+        month: undefined,
+        dueDateFrom: undefined,
+        dueDateTo: undefined,
+      }
+    : arFilters;
+
   if (options?.orderContexts !== undefined || options?.nfeOrderLinks !== undefined) {
-    return buildFinanceCashFlowEffectiveArPortfolio({
+    return buildFinanceCashFlowArRowsAlignedWithTitles({
       rows,
-      filters: arFilters,
+      filters: effectiveFilters,
       orderContexts: options.orderContexts ?? [],
       nfeOrderLinks: options.nfeOrderLinks,
       referenceDate,
@@ -213,7 +224,8 @@ export function filterCashFlowArExecutiveTimelineRows(
     arFilters,
     referenceDate,
     syncCutoff,
-    options
+    options,
+    true
   );
 }
 
@@ -237,7 +249,8 @@ export function filterCashFlowArPortfolioRows(
     arFilters,
     referenceDate,
     syncCutoff,
-    options
+    options,
+    true
   );
 }
 
@@ -282,7 +295,8 @@ export function filterCashFlowArRowsScoped(
     arFilters,
     referenceDate,
     syncCutoff,
-    options
+    options,
+    false
   );
   return operational.filter((row) =>
     matchesCashFlowArPeriodScope(row, filters, referenceDate)
