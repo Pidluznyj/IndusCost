@@ -100,7 +100,8 @@ describe("financeArTitlesPrint", () => {
     assert.match(css, /finance-ar-titles-print-money--risk/);
     assert.match(css, /finance-ar-titles-print-summary-grid/);
     assert.match(css, /finance-ar-titles-print-filter-band/);
-    assert.match(css, /\.col-client[\s\S]*white-space:\s*nowrap/);
+    assert.match(css, /overflow-wrap:\s*anywhere/);
+    assert.match(css, /\.col-money[\s\S]*white-space:\s*nowrap/);
     assert.doesNotMatch(css, /\.col-company\s*\{/);
   });
 

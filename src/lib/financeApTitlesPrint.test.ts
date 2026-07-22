@@ -59,6 +59,15 @@ describe("financeApTitlesPrint", () => {
     );
   });
 
+  it("celulas de texto quebram linha sem sobrepor colunas", () => {
+    const css = read("src/components/finance/finance-ap-titles-print.css");
+    assert.match(css, /overflow:\s*hidden\s*!important/);
+    assert.match(css, /white-space:\s*normal\s*!important/);
+    assert.match(css, /overflow-wrap:\s*anywhere\s*!important/);
+    assert.match(css, /\.col-money[\s\S]*white-space:\s*nowrap/);
+    assert.doesNotMatch(css, /#ap-titles-print-root \* \{\s*\n\s*overflow:\s*visible/);
+  });
+
   it("global reports-print inclui rota AP", () => {
     const global = read("src/reports-print.css");
     assert.match(global, /body\.ap-titles-print-route #root[\s\S]*display:\s*none\s*!important/);
