@@ -219,6 +219,12 @@ export function PurchaseWorkstationModule() {
           >
             Pedidos
           </Link>
+          <Link
+            to="/purchases/shadow-planning"
+            className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent"
+          >
+            Planejamento sombra
+          </Link>
         </div>
       </div>
 

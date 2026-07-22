@@ -13,6 +13,7 @@ export type SupplyChainFeatureStatusResponse = {
     purchases: boolean;
     inventory: boolean;
     receiving: boolean;
+    shadowPlanning: boolean;
   };
   resources: typeof SUPPLY_CHAIN_FEATURE_RESOURCES;
   defaultWhenAbsent: false;

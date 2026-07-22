@@ -32,6 +32,7 @@ import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
 import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
+import { ShadowPurchasePlanningModule } from "./components/ShadowPurchasePlanningModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -534,6 +535,17 @@ export default function App() {
               description="Itens, lotes, documentos, evidências e movimentos PURCHASE_RECEIPT do ledger SC."
             >
               <PurchaseReceivingStationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/shadow-planning"
+          element={
+            <ModulePageShell
+              title="Planejamento de compra (sombra)"
+              description="Sugestão read-only: demanda + segurança − disponível − compras confirmadas no prazo. Não altera BOM/OP/custo; rascunho de SC só com ação humana."
+            >
+              <ShadowPurchasePlanningModule />
             </ModulePageShell>
           }
         />

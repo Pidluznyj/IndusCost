@@ -36,6 +36,7 @@ describe("supplyChainFeatureFlags", () => {
     assert.equal(snap.purchases, false);
     assert.equal(snap.inventory, false);
     assert.equal(snap.receiving, false);
+    assert.equal(snap.shadowPlanning, false);
     assert.equal(snap.defaultWhenAbsent, false);
   });
 
