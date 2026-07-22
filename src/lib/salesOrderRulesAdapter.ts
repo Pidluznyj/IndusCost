@@ -264,9 +264,13 @@ export type OfficialFinancePortfolioSnapshot = {
   overdue: { count: number; net: number };
 };
 
-/** Carteira NF/aberta/atrasada — agregação de linhas já classificadas pelo motor. */
+/** Carteira NF/aberta/atrasada — agregação de linhas já classificadas (gestão ou período filtrado). */
 export function mapOfficialFinancePortfolioFromManagementRows(
-  rows: SalesOrderManagementRow[]
+  rows: Array<{
+    hasInvoice: boolean;
+    totalNetValue?: number | null;
+    logisticStatusCardId?: string | null;
+  }>
 ): OfficialFinancePortfolioSnapshot {
   const open = { count: 0, net: 0 };
   const invoiced = { count: 0, net: 0 };
@@ -546,14 +550,22 @@ export type OfficialSellerBreakdownRow = {
   openOrdersValue: number;
 };
 
-function sellerRowKey(row: SalesOrderManagementRow): string {
+function sellerRowKey(row: {
+  sellerName?: string | null;
+  responsible?: string | null;
+}): string {
   const name = row.sellerName?.trim() || row.responsible?.trim() || "";
   return name ? name.toLowerCase() : "—";
 }
 
-/** Breakdown por vendedor — agrega linhas de gestão já classificadas pelo motor. */
+/** Breakdown por vendedor — agrega linhas já classificadas (gestão ou período filtrado). */
 export function buildOfficialSellerBreakdownFromManagementRows(
-  rows: SalesOrderManagementRow[]
+  rows: Array<{
+    hasInvoice: boolean;
+    totalNetValue?: number | null;
+    sellerName?: string | null;
+    responsible?: string | null;
+  }>
 ): OfficialSellerBreakdownRow[] {
   const bySeller = new Map<string, OfficialSellerBreakdownRow>();
 

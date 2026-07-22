@@ -14,6 +14,7 @@ import {
 } from "./executiveDashboardWorkdays.js";
 import { buildChartSeriesConfig } from "./executiveDashboardChartSeries.js";
 import { getSalesOrderNetValue } from "./crmCommercialOrderRules.js";
+import { salesOrderHasInvoicing } from "./customerCommercialSalesOrderView.js";
 import {
   computeMonthProjection,
   computeTicketAverage,
@@ -36,8 +37,12 @@ import {
   filterOrdersByLogisticStatus,
   mapPrismaOrderToDashboardRow,
   OPEN_PORTFOLIO_EVOLUTION_NOTE,
+  type FinanceSalesOrdersDashboardOrderRow,
 } from "./financeSalesOrdersExtendedMetrics.js";
-import { loadSalesOrderLinkedNfeContextMap } from "./salesOrderLinkedNfe.js";
+import {
+  loadSalesOrderLinkedNfeContextMap,
+  type SalesOrderLinkedNfeContext,
+} from "./salesOrderLinkedNfe.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
 import { calculateSalesOrderMarginsForOrders } from "./salesOrderMarginService.server.js";
 import {
@@ -50,13 +55,9 @@ import {
   resolveSalesOrderOperationalPopulationWhere,
 } from "./salesOrderOperationalPopulation.server.js";
 import {
-  buildOfficialSalesOrderRulesResult,
   buildOfficialSellerBreakdownFromManagementRows,
-  mapFinanceSalesOrdersFiltersToRulesInput,
   mapOfficialFinancePortfolioFromManagementRows,
   mapOfficialSellerBreakdownToFinanceTopSellers,
-  mapPrismaOrderToSalesOrderRulesInput,
-  SALES_ORDER_RULES_PRISMA_SELECT,
   type OfficialFinancePortfolioSnapshot,
 } from "./salesOrderRulesAdapter.js";
 import { SALES_ORDER_STATUS_LABELS } from "./materialDemandFilters.js";
@@ -78,8 +79,12 @@ import {
 
 export { getSalesOrderNetValue as resolveSalesOrderNetAmount };
 
-/** Paridade Comercial: KPIs de período não excluem clientes do grupo. */
+/**
+ * Paridade Comercial: KPIs de período não excluem clientes do grupo.
+ * Mantido como contrato de produto (OP-02 / resolveSalesOrderOperationalPopulationWhere).
+ */
 const FINANCE_SO_EXCLUDE_GROUP_COMPANIES = false;
+void FINANCE_SO_EXCLUDE_GROUP_COMPANIES;
 
 function invoiceStatusToHasInvoice(
   invoiceStatus: FinanceSalesOrdersInvoiceStatus
@@ -161,111 +166,38 @@ export async function resolveFinanceSalesOrdersOperationalWhere(
   return andSalesOrderListWhere(base, buildFinanceExtraWhere(filters));
 }
 
-async function loadFinanceRulesOrders(
-  filters: FinanceSalesOrdersDashboardFilters,
-  years: number[]
-) {
-  const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
-    sellerKeyRaw: "",
-    sellerText: filters.sellerName ?? "",
-  });
-  const hasInvoice = invoiceStatusToHasInvoice(filters.invoiceStatus);
-  const base = await resolveSalesOrderOperationalPopulationWhere(prisma, {
-    listFilters: {
-      status: filters.status ?? undefined,
-      customerId: filters.customerId ?? undefined,
-      sellerWhere,
+/**
+ * Linhas leves do período filtrado para carteira NF/aberta e top vendedores.
+ * Mesma classificação de NF (SalesOrderNfeLink) e status logístico BI dos cards.
+ */
+export function buildFinancePeriodPortfolioLiteRows(
+  orders: FinanceSalesOrdersDashboardOrderRow[],
+  linkedNfeContextMap: Map<string, SalesOrderLinkedNfeContext> | undefined,
+  referenceDate = new Date()
+): Array<{
+  hasInvoice: boolean;
+  totalNetValue: number;
+  logisticStatusCardId: BiLogisticStatusCardId;
+  sellerName: string | null;
+  responsible: string | null;
+}> {
+  const enriched = enrichOrdersWithLogisticStatus(
+    orders,
+    referenceDate,
+    linkedNfeContextMap
+  );
+  return enriched.map((row) => {
+    const linked = linkedNfeContextMap?.get(row.id);
+    const hasInvoice =
+      linked != null ? linked.hasNfe : salesOrderHasInvoicing(row.nomusRawResponse);
+    return {
       hasInvoice,
-    },
-    context: "OPERATIONAL",
+      totalNetValue: row.totalNetValue,
+      logisticStatusCardId: row.logisticStatusCardId,
+      sellerName: row.responsible,
+      responsible: row.responsible,
+    };
   });
-  const where = andSalesOrderListWhere(
-    andSalesOrderListWhere(base, {
-      issueDate: {
-        gte: startOfYear(new Date(Math.min(...years), 0, 1)),
-        lte: endOfYear(new Date(Math.max(...years), 0, 1)),
-      },
-    }),
-    buildFinanceExtraWhere(filters)
-  );
-
-  const rows = await prisma.salesOrder.findMany({
-    where,
-    select: SALES_ORDER_RULES_PRISMA_SELECT,
-    orderBy: { issueDate: "desc" },
-  });
-  return rows.map(mapPrismaOrderToSalesOrderRulesInput);
-}
-
-async function buildOfficialFinanceRulesBundle(
-  filters: FinanceSalesOrdersDashboardFilters,
-  now: Date
-) {
-  const rulesInput = mapFinanceSalesOrdersFiltersToRulesInput(filters);
-  // Seller já resolvido no where OP-02 (Nomus) — não reaplicar `responsible` legado.
-  const listFiltersWithoutLegacySeller = {
-    ...rulesInput.listFilters,
-    responsible: undefined,
-    seller: undefined,
-    sellerWhere: undefined,
-  };
-  const managementWithoutLegacySeller = {
-    ...rulesInput.managementFilters,
-    responsible: undefined,
-  };
-  const month = filters.month ?? now.getMonth() + 1;
-  const orders = await loadFinanceRulesOrders(filters, [
-    filters.year,
-    filters.year - 1,
-  ]);
-  const linkedMap = await loadSalesOrderLinkedNfeContextMap(
-    orders.map((order) => ({
-      id: order.id,
-      totalNetValue: order.totalNetValue,
-      issueDate: order.issueDate,
-      expectedDeliveryDate: order.expectedDeliveryDate,
-      nomusRawResponse: order.nomusRawResponse,
-    })),
-    now
-  );
-
-  const current = buildOfficialSalesOrderRulesResult({
-    orders,
-    listFilters: listFiltersWithoutLegacySeller,
-    managementFilters: managementWithoutLegacySeller,
-    referenceDate: now,
-    year: filters.year,
-    month,
-    linkedNfeContextMap: linkedMap,
-    scope: "unified",
-    excludeGroupCompanyCustomers: FINANCE_SO_EXCLUDE_GROUP_COMPANIES,
-  });
-
-  const prevRef = new Date(
-    filters.year - 1,
-    now.getMonth(),
-    now.getDate(),
-    23,
-    59,
-    59,
-    999
-  );
-  const previous = buildOfficialSalesOrderRulesResult({
-    orders,
-    listFilters: { ...listFiltersWithoutLegacySeller, year: filters.year - 1 },
-    managementFilters: {
-      ...managementWithoutLegacySeller,
-      year: filters.year - 1,
-    },
-    referenceDate: prevRef,
-    year: filters.year - 1,
-    month,
-    linkedNfeContextMap: linkedMap,
-    scope: "unified",
-    excludeGroupCompanyCustomers: FINANCE_SO_EXCLUDE_GROUP_COMPANIES,
-  });
-
-  return { current, previous, linkedMap, orders };
 }
 
 function parseMonthParam(value: unknown): number | null {
@@ -613,7 +545,6 @@ export async function buildFinanceSalesOrdersDashboard(
   const yearCtx = resolveFinanceSalesOrdersYearContext(filters, now);
   // Mantido no payload por compatibilidade de contrato; KPIs filtrados NÃO usam o tab.
   const tab = await buildSalesOrdersDashboardTab(yearCtx);
-  const rulesBundle = await buildOfficialFinanceRulesBundle(filters, now);
 
   // População do período = mesmo where da listagem Comercial (OP-02).
   let periodOrders = await loadDashboardOrders(
@@ -689,9 +620,13 @@ export async function buildFinanceSalesOrdersDashboard(
     filters.year - 1
   );
 
-  const portfolio = mapOfficialFinancePortfolioFromManagementRows(
-    rulesBundle.current.managementBundle.rows
+  // Carteira / faturado / atrasado: mesma população dos cards "emitidos" (período filtrado).
+  const periodLiteRows = buildFinancePeriodPortfolioLiteRows(
+    periodOrders,
+    linkedNfeContextMap,
+    now
   );
+  const portfolio = mapOfficialFinancePortfolioFromManagementRows(periodLiteRows);
   const topCustomers = buildTopCustomersFromPeriodOrders(periodOrders, 10);
 
   const marginByOrder = await calculateSalesOrderMarginsForOrders(
@@ -764,9 +699,7 @@ export async function buildFinanceSalesOrdersDashboard(
     ),
     topCustomers,
     topSellers: mapOfficialSellerBreakdownToFinanceTopSellers(
-      buildOfficialSellerBreakdownFromManagementRows(
-        rulesBundle.current.managementBundle.rows
-      )
+      buildOfficialSellerBreakdownFromManagementRows(periodLiteRows)
     ),
     statusBreakdown: buildStatusBreakdownFromOrders(periodOrders),
     manufacturingStatusBreakdown: extended.manufacturingStatusBreakdown,

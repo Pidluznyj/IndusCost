@@ -29,9 +29,8 @@ describe("financeSalesOrdersDashboard", () => {
     assert.match(src, /resolveSalesOrderOperationalPopulationWhere/);
     assert.match(src, /buildSalesOrderListTotalsFromPrismaOrders/);
     assert.match(src, /resolveSalesOrderListSellerWhere/);
-    assert.match(src, /excludeGroupCompanyCustomers:\s*FINANCE_SO_EXCLUDE_GROUP_COMPANIES/);
     assert.match(src, /FINANCE_SO_EXCLUDE_GROUP_COMPANIES\s*=\s*false/);
-    assert.match(src, /buildOfficialSalesOrderRulesResult/);
+    assert.match(src, /buildFinancePeriodPortfolioLiteRows/);
     assert.match(src, /buildSalesOrdersDashboardTab/);
     assert.match(src, /buildSummaryFromOperational/);
     assert.doesNotMatch(src, /buildSummaryFromTab/);
@@ -39,6 +38,7 @@ describe("financeSalesOrdersDashboard", () => {
     assert.doesNotMatch(src, /prisma\.salesOrder\.aggregate/);
     assert.doesNotMatch(src, /prisma\.proposal/i);
     assert.doesNotMatch(src, /Proposal/);
+    assert.doesNotMatch(src, /buildOfficialFinanceRulesBundle/);
   });
 
   it("auditoria não filtra issueDate/customerId null via Prisma (campos obrigatórios no schema)", () => {
@@ -109,11 +109,129 @@ describe("financeSalesOrdersDashboard", () => {
     assert.equal(semNf.invoiceStatus, "without_invoice");
   });
 
-  it("carteira NF/aberta usa motor oficial via mapOfficialFinancePortfolioFromManagementRows", () => {
+  it("carteira NF/aberta usa população do período filtrado (não ano inteiro)", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeSalesOrdersDashboard.ts"), "utf8");
     assert.match(src, /mapOfficialFinancePortfolioFromManagementRows/);
+    assert.match(src, /buildFinancePeriodPortfolioLiteRows\(\s*periodOrders/);
+    assert.doesNotMatch(src, /managementBundle\.rows/);
     assert.doesNotMatch(src, /orderIsInvoicedSql/);
     assert.doesNotMatch(src, /orderNotInvoicedSql/);
+  });
+
+  it("buildFinancePeriodPortfolioLiteRows classifica NF e atraso na população passada", async () => {
+    const { buildFinancePeriodPortfolioLiteRows } = await import("./financeSalesOrdersDashboard.js");
+    const { mapOfficialFinancePortfolioFromManagementRows } = await import(
+      "./salesOrderRulesAdapter.js"
+    );
+    const rows = buildFinancePeriodPortfolioLiteRows(
+      [
+        {
+          id: "a",
+          orderCode: "PD 1",
+          issueDate: new Date(2026, 6, 1),
+          expectedDeliveryDate: new Date(2026, 5, 1),
+          totalNetValue: 1000,
+          responsible: "Ana",
+          customerId: "c1",
+          customerName: "Cliente A",
+          nomusRawResponse: null,
+          updatedAt: new Date(),
+          sentToNomusAt: null,
+        },
+        {
+          id: "b",
+          orderCode: "PD 2",
+          issueDate: new Date(2026, 6, 2),
+          expectedDeliveryDate: new Date(2026, 7, 1),
+          totalNetValue: 2000,
+          responsible: "Ana",
+          customerId: "c2",
+          customerName: "Cliente B",
+          nomusRawResponse: null,
+          updatedAt: new Date(),
+          sentToNomusAt: null,
+        },
+      ],
+      new Map([
+        [
+          "a",
+          {
+            source: "linked",
+            hasNfe: true,
+            nfeCount: 1,
+            validInvoiceCount: 1,
+            canceledInvoiceCount: 0,
+            hasValidInvoice: true,
+            hasCanceledInvoice: false,
+            nfeNumbers: ["1"],
+            nfeKeys: [],
+            nfeStatuses: [100],
+            nfeTipoOperacao: [],
+            nfeLinks: [],
+            firstNfeProcessingDate: new Date(2026, 6, 3),
+            lastNfeProcessingDate: new Date(2026, 6, 3),
+            firstNfeIssueDate: null,
+            lastNfeIssueDate: null,
+            nfeTotalValue: 1000,
+            nfeTotalValueAll: 1000,
+            nfeProductsValue: 1000,
+            nfeHighlightedTaxesValue: 0,
+            invoiceCoveragePercent: 100,
+            isFullyInvoiced: true,
+            isPartiallyInvoiced: false,
+            isNotInvoiced: false,
+            isOnTime: true,
+            isLate: false,
+            hasCut: false,
+            isComplete: true,
+            hasValueDivergence: false,
+          } as never,
+        ],
+        [
+          "b",
+          {
+            source: "linked",
+            hasNfe: false,
+            nfeCount: 0,
+            validInvoiceCount: 0,
+            canceledInvoiceCount: 0,
+            hasValidInvoice: false,
+            hasCanceledInvoice: false,
+            nfeNumbers: [],
+            nfeKeys: [],
+            nfeStatuses: [],
+            nfeTipoOperacao: [],
+            nfeLinks: [],
+            firstNfeProcessingDate: null,
+            lastNfeProcessingDate: null,
+            firstNfeIssueDate: null,
+            lastNfeIssueDate: null,
+            nfeTotalValue: 0,
+            nfeTotalValueAll: 0,
+            nfeProductsValue: 0,
+            nfeHighlightedTaxesValue: 0,
+            invoiceCoveragePercent: null,
+            isFullyInvoiced: false,
+            isPartiallyInvoiced: false,
+            isNotInvoiced: true,
+            isOnTime: false,
+            isLate: false,
+            hasCut: false,
+            isComplete: false,
+            hasValueDivergence: false,
+          } as never,
+        ],
+      ]),
+      new Date(2026, 6, 15)
+    );
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]!.hasInvoice, true);
+    assert.equal(rows[1]!.hasInvoice, false);
+    const portfolio = mapOfficialFinancePortfolioFromManagementRows(rows);
+    assert.equal(portfolio.invoiced.count, 1);
+    assert.equal(portfolio.invoiced.net, 1000);
+    assert.equal(portfolio.open.count, 1);
+    assert.equal(portfolio.open.net, 2000);
   });
 
   it("parseFinanceSalesOrdersFilters — status logístico BI", () => {

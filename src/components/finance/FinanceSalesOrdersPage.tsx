@@ -505,7 +505,7 @@ export function FinanceSalesOrdersPage() {
               label="Carteira aberta"
               amount={summary.openPortfolioCount}
               amountFormat="number"
-              helperText="Pedidos sem NF válida (SalesOrderNfeLink)."
+              helperText="Pedidos sem NF válida no período filtrado (SalesOrderNfeLink)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -514,7 +514,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.openPortfolioAmount}
               amountFormat="currency"
               tone="money"
-              helperText="Valor líquido dos pedidos ainda sem NF válida."
+              helperText="Valor líquido dos pedidos ainda sem NF válida no período."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -522,7 +522,7 @@ export function FinanceSalesOrdersPage() {
               label="Pedidos faturados"
               amount={summary.invoicedOrdersCount}
               amountFormat="number"
-              helperText="Pedidos com NF válida (SalesOrderNfeLink)."
+              helperText="Pedidos com NF válida no período filtrado (SalesOrderNfeLink)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -531,7 +531,7 @@ export function FinanceSalesOrdersPage() {
               amount={summary.invoicedOrdersAmount}
               amountFormat="currency"
               tone="success"
-              helperText="Σ valor líquido dos pedidos com NF válida (não Σ NF)."
+              helperText="Σ valor líquido dos pedidos com NF válida no período (não Σ NF)."
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}

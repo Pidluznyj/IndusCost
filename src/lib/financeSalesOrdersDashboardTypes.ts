@@ -215,7 +215,7 @@ export const FINANCE_SALES_ORDERS_CALCULATION_RULES = [
   "População: mesmo where operacional da listagem Comercial (OP-02 / resolveSalesOrderListWhere).",
   "Pedidos / valor / itens / ticket: Σ SalesOrder.totalNetValue e totalItems na população filtrada (paridade Comercial).",
   "CANCELLED fora; ERROR permanece (paridade Comercial). Presença Nomus quando flag ativa.",
-  "Faturado / carteira: vínculo oficial SalesOrderNfeLink (NF válida com data de processamento).",
+  "Faturado / carteira: mesma população do período filtrado (issueDate + filtros); NF via SalesOrderNfeLink.",
   "Status logístico BI: regra Power BI (DataPlanejada vs DataReal / status item 1–3).",
   "Média diária: valor YTD filtrado ÷ dias úteis decorridos (seg–sex, sem feriados).",
   "Status fabricação: código Nomus 1–6 por item mais pendente do pedido.",

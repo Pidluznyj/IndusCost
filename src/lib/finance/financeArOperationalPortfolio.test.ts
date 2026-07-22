@@ -117,6 +117,99 @@ describe("financeArOperationalPortfolio", () => {
     assert.equal(kept.length, 0);
   });
 
+  it("PD 02607: omite pré-NF obsoleto quando Nomus recria a mesma parcela com novo vencimento", () => {
+    const rows = [
+      nomusCr({
+        externalId: 18102,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 02607 - Parcela 1 de 1",
+        amountReceivable: 202_860,
+        balanceReceivable: 202_860,
+        dueDate: new Date(2026, 8, 30),
+      }),
+      nomusCr({
+        externalId: 18198,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 02607 - Parcela 1 de 1",
+        amountReceivable: 202_860,
+        balanceReceivable: 202_860,
+        dueDate: new Date(2026, 9, 10),
+      }),
+    ];
+    const kept = suppressInferiorPreNfNomusArRows(rows);
+    assert.deepEqual(
+      kept.map((r) => r.externalId),
+      [18198]
+    );
+  });
+
+  it("PD 02607 fallback: sem rótulo de parcela, mesmo valor e vencimentos distintos → mantém o mais recente", () => {
+    const rows = [
+      nomusCr({
+        externalId: 18102,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 02607 — Depósito Bancário",
+        amountReceivable: 202_860,
+        balanceReceivable: 202_860,
+        dueDate: new Date(2026, 8, 30),
+      }),
+      nomusCr({
+        externalId: 18198,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 02607 — Depósito Bancário",
+        amountReceivable: 202_860,
+        balanceReceivable: 202_860,
+        dueDate: new Date(2026, 9, 10),
+      }),
+    ];
+    const kept = suppressInferiorPreNfNomusArRows(rows);
+    assert.deepEqual(
+      kept.map((r) => r.externalId),
+      [18198]
+    );
+  });
+
+  it("multi-parcela pré-NF com rótulos distintos permanece (1/3 e 2/3)", () => {
+    const rows = [
+      nomusCr({
+        externalId: 1,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 09999 - Parcela 1 de 3",
+        amountReceivable: 10_000,
+        balanceReceivable: 10_000,
+        dueDate: new Date(2026, 8, 10),
+      }),
+      nomusCr({
+        externalId: 2,
+        sourceInvoiceId: null,
+        sourceInvoiceNumber: null,
+        description: "Pedido PD 09999 - Parcela 2 de 3",
+        amountReceivable: 10_000,
+        balanceReceivable: 10_000,
+        dueDate: new Date(2026, 9, 10),
+      }),
+    ];
+    const kept = suppressInferiorPreNfNomusArRows(rows);
+    assert.deepEqual(
+      kept.map((r) => r.externalId).sort((a, b) => a - b),
+      [1, 2]
+    );
+  });
+
+  it("extractFinanceArInstallmentKey lê Parcela N de M", async () => {
+    const { extractFinanceArInstallmentKey } = await import(
+      "./financeArOperationalPortfolio.js"
+    );
+    assert.equal(extractFinanceArInstallmentKey("Pedido PD 02607 - Parcela 1 de 1"), "1/1");
+    assert.equal(extractFinanceArInstallmentKey("Parc 2/4"), "2/4");
+    assert.equal(extractFinanceArInstallmentKey("sem parcela"), null);
+  });
+
   it("filterFinanceArOperationalPortfolioRows aplica management + suppress", () => {
     const rows = [
       nomusCr({
