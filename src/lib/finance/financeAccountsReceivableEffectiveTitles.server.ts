@@ -347,6 +347,9 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     Customer: { select: { companyName: true, taxId: true } },
   } as const;
 
+  // Prioriza pedidos com vínculo NF→Pedido, mas NUNCA ultrapassa o cap:
+  // cada contexto FIN-05 chama getOrderFullAudit (pesado). Sem take, o FC
+  // carregava centenas de agendas e a tela ficava lenta.
   const priorityIds = [...new Set(fromLinks.salesOrderIds.filter(Boolean))];
   const priorityOrders =
     priorityIds.length > 0
@@ -355,6 +358,8 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
             id: { in: priorityIds },
           }) as never,
           select: orderSelect,
+          orderBy: { orderCode: "asc" },
+          take: cap,
         })
       : [];
 
