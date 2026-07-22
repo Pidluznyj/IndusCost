@@ -17,6 +17,7 @@ import {
   mapPurchaseOrderError,
   transitionPurchaseOrder,
 } from "@/src/lib/purchasing/purchaseOrderService.server.js";
+import { buildPurchaseOrderSavingsComparison } from "@/src/lib/purchasing/realizedSavingsService.server.js";
 import { buildPurchaseOrderPdfBuffer } from "@/src/lib/purchasing/purchaseOrderPdf.js";
 import type { PurchaseOrderAction } from "@/src/lib/purchasing/purchaseOrderWorkflow.js";
 
@@ -94,6 +95,19 @@ export function registerPurchaseOrderRoutes(app: express.Express, auth: AuthGuar
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
       const events = await listPurchaseOrderHistory(prisma, id);
       res.json({ events });
+    } catch (e) {
+      const mapped = mapPurchaseOrderError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/purchase-orders/:id/savings-comparison", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const row = await buildPurchaseOrderSavingsComparison(prisma, id);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(row);
     } catch (e) {
       const mapped = mapPurchaseOrderError(e);
       return res.status(mapped.status).json(mapped.body);

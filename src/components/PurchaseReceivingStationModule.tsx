@@ -645,6 +645,12 @@ export function PurchaseReceivingStationModule() {
           >
             Ver pedido
           </Link>
+          <Link
+            to={`/purchases/orders/${detail.order.id}/savings`}
+            className="text-sm px-3 py-2 rounded-lg border border-border hover:bg-accent"
+          >
+            Ganho negociado × realizado
+          </Link>
           {allowUpdate && detail.order.status !== "RECEBIDO" ? (
             <button
               type="button"

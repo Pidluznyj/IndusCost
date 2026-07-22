@@ -29,6 +29,7 @@ import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
+import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
@@ -544,6 +545,17 @@ export default function App() {
               description="Pedidos formais a partir da cotação adjudicada. Aprovação cria compromisso operacional sem estoque nem Contas a Pagar."
             >
               <PurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders/:orderId/savings"
+          element={
+            <ModulePageShell
+              title="Ganho negociado × realizado"
+              description="Compara preço inicial, negociado, pedido e custo efetivo recebido — sem alterar o mérito histórico da negociação."
+            >
+              <PurchaseSavingsComparisonModule />
             </ModulePageShell>
           }
         />

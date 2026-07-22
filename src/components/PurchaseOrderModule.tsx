@@ -259,6 +259,12 @@ export function PurchaseOrderModule() {
           >
             PDF / Imprimir
           </a>
+          <Link
+            to={`/purchases/orders/${detail.id}/savings`}
+            className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-muted"
+          >
+            Ganho × realizado
+          </Link>
           {detail.quotationId ? (
             <Link
               to={`/purchases/quotations/${detail.quotationId}/compare`}
