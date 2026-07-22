@@ -299,15 +299,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       try {
         const referenceDate = new Date();
         const year = parseAnnualComparisonYear(req.query.year, referenceDate);
-        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
-          await loadAnnualComparisonPortfolioRows(prisma, referenceDate);
+        const load = await loadAnnualComparisonPortfolioRows(prisma, referenceDate);
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts, nfeOrderLinks } = load;
         const payload = buildCashFlowAnnualComparison(
           arRows,
           apRows,
           year,
           referenceDate,
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          { orderContexts, nfeOrderLinks }
         );
         res.json(payload);
       } catch (error) {

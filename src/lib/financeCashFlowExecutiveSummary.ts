@@ -30,6 +30,7 @@ import {
   resolveYtdDateRange,
   sumArReceivedInPeriod,
 } from "./financeCashFlowExecutiveYtd.js";
+import type { FinanceCashFlowArFilterOptions } from "./financeCashFlowRowFilters.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
 import {
   resolveEffectiveNomusApReportSyncCutoff,
@@ -468,14 +469,21 @@ export function buildFinanceCashFlowExecutiveSummary(
     accumulatedBalance: number;
   },
   syncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowExecutiveSummary {
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
   const year = ytdFilters.year!;
   const { startDate, endDate, scopeLabel } = resolveYtdDateRange(year, referenceDate);
   const forward = resolveForwardYearRange(year, referenceDate);
 
-  const arYtd = filterArRowsForYtdReceived(allArRows, ytdFilters, referenceDate, syncCutoff);
+  const arYtd = filterArRowsForYtdReceived(
+    allArRows,
+    ytdFilters,
+    referenceDate,
+    syncCutoff,
+    arFilterOptions
+  );
   const apYtd = filterApRowsForCashFlowExecutiveTimeline(
     allApRows,
     ytdFilters,
@@ -485,7 +493,7 @@ export function buildFinanceCashFlowExecutiveSummary(
 
   const arOfficialFilters = toArLoadFilters(ytdFilters);
   const arOfficial = resolveOfficialArCashFlowExecutiveMetrics(
-    allArRows,
+    arYtd,
     arOfficialFilters,
     referenceDate,
     syncCutoff,

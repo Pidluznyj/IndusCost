@@ -26,6 +26,7 @@ import {
   toArLoadFilters,
   type FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
+import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 import type { FinanceCashFlowExecutiveMonthlyRow } from "./financeCashFlowExecutiveSummary.js";
 import {
   buildCashFlowArPrismaWhere,
@@ -329,7 +330,7 @@ async function loadApRows(
 }
 
 async function loadCashFlowRows(
-  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable">,
+  db: PrismaClient,
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date
 ) {
@@ -355,11 +356,20 @@ async function loadCashFlowRows(
     }),
   ]);
 
+  const arRows = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
+    db,
+    arRows,
+    referenceDate
+  );
+
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
+    orderContexts,
+    nfeOrderLinks,
   };
 }
 
@@ -668,7 +678,11 @@ export async function buildFinanceExecutiveReport(
     cashFlowFilters,
     referenceDate,
     cashFlowLoad.arSyncCutoff,
-    cashFlowLoad.apSyncCutoff
+    cashFlowLoad.apSyncCutoff,
+    {
+      orderContexts: cashFlowLoad.orderContexts,
+      nfeOrderLinks: cashFlowLoad.nfeOrderLinks,
+    }
   );
   const cashFlowAnnualPayload = buildFinanceCashFlowDashboard(
     cashFlowAnnualLoad.arRows,
@@ -676,7 +690,11 @@ export async function buildFinanceExecutiveReport(
     cashFlowAnnualFilters,
     referenceDate,
     cashFlowAnnualLoad.arSyncCutoff,
-    cashFlowAnnualLoad.apSyncCutoff
+    cashFlowAnnualLoad.apSyncCutoff,
+    {
+      orderContexts: cashFlowAnnualLoad.orderContexts,
+      nfeOrderLinks: cashFlowAnnualLoad.nfeOrderLinks,
+    }
   );
   const highlightMonthForChart = highlightMonth;
   const cashFlowAnnualChart = buildExecutiveReportCashFlowAnnualChart(
@@ -691,7 +709,11 @@ export async function buildFinanceExecutiveReport(
     filters.year,
     referenceDate,
     annualPortfolioLoad.arSyncCutoff,
-    annualPortfolioLoad.apSyncCutoff
+    annualPortfolioLoad.apSyncCutoff,
+    {
+      orderContexts: annualPortfolioLoad.orderContexts,
+      nfeOrderLinks: annualPortfolioLoad.nfeOrderLinks,
+    }
   );
   const annualComparisonPrevious = buildCashFlowAnnualComparison(
     annualPortfolioLoad.arRows,
@@ -699,7 +721,11 @@ export async function buildFinanceExecutiveReport(
     filters.year - 1,
     referenceDate,
     annualPortfolioLoad.arSyncCutoff,
-    annualPortfolioLoad.apSyncCutoff
+    annualPortfolioLoad.apSyncCutoff,
+    {
+      orderContexts: annualPortfolioLoad.orderContexts,
+      nfeOrderLinks: annualPortfolioLoad.nfeOrderLinks,
+    }
   );
 
   let costCenterSpending: FinanceExecutiveReport["costCenterSpending"];

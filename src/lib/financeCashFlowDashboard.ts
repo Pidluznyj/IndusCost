@@ -685,7 +685,16 @@ export function buildFinanceCashFlowDashboard(
       },
     }
   );
-  return buildFinanceCashFlowDashboardFromDataset(dataset, arRows, apRows, filters, referenceDate, arSyncCutoff, apSyncCutoff);
+  return buildFinanceCashFlowDashboardFromDataset(
+    dataset,
+    arRows,
+    apRows,
+    filters,
+    referenceDate,
+    arSyncCutoff,
+    apSyncCutoff,
+    datasetOptions
+  );
 }
 
 export function buildFinanceCashFlowDashboardFromDataset(
@@ -695,8 +704,16 @@ export function buildFinanceCashFlowDashboardFromDataset(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date = new Date(),
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  datasetOptions?: FinanceCashFlowDatasetOptions
 ): FinanceCashFlowDashboardPayload {
+  const arFilterOptions =
+    datasetOptions?.orderContexts !== undefined || datasetOptions?.nfeOrderLinks !== undefined
+      ? {
+          orderContexts: datasetOptions.orderContexts ?? [],
+          nfeOrderLinks: datasetOptions.nfeOrderLinks,
+        }
+      : undefined;
   const filteredAr = dataset.arRowsSanitized;
   const filteredAp = dataset.apRowsSanitized;
   const { blocks } = dataset;
@@ -835,7 +852,9 @@ export function buildFinanceCashFlowDashboardFromDataset(
     ytdMonthlySeries,
     arRows,
     filters,
-    referenceDate
+    referenceDate,
+    arFilterOptions,
+    arSyncCutoff
   );
   const executiveYtdReading = buildCashFlowExecutiveYtdReading(executiveYtd);
   const executiveSummary = buildFinanceCashFlowExecutiveSummary(
@@ -850,7 +869,8 @@ export function buildFinanceCashFlowDashboardFromDataset(
       accumulatedBalance: period.accumulated,
     },
     arSyncCutoff,
-    apSyncCutoff
+    apSyncCutoff,
+    arFilterOptions
   );
 
   const cashHealthScore = buildCashHealthScore(partialPayload);
@@ -882,10 +902,20 @@ export function buildFinanceCashFlowDashboardFromDataset(
     arSyncCutoff,
     apSyncCutoff,
   });
-  const arDashPortfolio = officialDash.arPortfolio;
   const apDashPortfolio = officialDash.apPortfolio;
-  const arDashPeriod = officialDash.arPeriod;
   const apDashPeriod = officialDash.apPeriod;
+  const arEffectivePortfolioRules = buildOfficialAccountsReceivableRulesResult({
+    rows: dataset.arPortfolioRows,
+    filters: toCashFlowPortfolioArFilters(filters),
+    referenceDate,
+    syncCutoff: arSyncCutoff,
+  });
+  const arEffectivePeriodRules = buildOfficialAccountsReceivableRulesResult({
+    rows: filteredAr,
+    filters: toArLoadFilters(filters),
+    referenceDate,
+    syncCutoff: arSyncCutoff,
+  });
   const ledgerPeriod = computeCashFlowLedgerPeriodTotals(
     filteredAr,
     filteredAp,
@@ -913,11 +943,11 @@ export function buildFinanceCashFlowDashboardFromDataset(
     ledgerPeriod,
     portfolio,
     {
-      arDashboardOpenPortfolio: arDashPortfolio.cards.totalOpenAmount,
-      arDashboardOpenPeriod: arDashPeriod.cards.totalOpenAmount,
+      arDashboardOpenPortfolio: arEffectivePortfolioRules.metrics.openAmount,
+      arDashboardOpenPeriod: arEffectivePeriodRules.metrics.openAmount,
       apDashboardOpenPortfolio: apDashPortfolio.cards.totalOpenAmount,
       apDashboardOpenPeriod: apDashPeriod.cards.totalOpenAmount,
-      arDashboardReceived: arDashPeriod.cards.totalReceivedAmount,
+      arDashboardReceived: arEffectivePeriodRules.cards.totalReceivedAmount,
       apDashboardPaid: roundMoney(apPaidInScope),
     },
     { openReceivableWithoutDueDate }

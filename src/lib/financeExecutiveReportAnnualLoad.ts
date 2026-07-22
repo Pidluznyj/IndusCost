@@ -19,9 +19,10 @@ import {
 } from "./financeCashFlowDashboard.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
+import { enrichFinanceCashFlowArLoadBundle } from "./finance/financeCashFlowEffectiveAr.server.js";
 
 export async function loadAnnualComparisonPortfolioRows(
-  db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable">,
+  db: PrismaClient,
   referenceDate = new Date(),
   cashFlowFilters: FinanceCashFlowDashboardFilters = createAnnualComparisonBaseFilters()
 ) {
@@ -48,10 +49,19 @@ export async function loadAnnualComparisonPortfolioRows(
     }),
   ]);
 
+  const arRows = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
+    db,
+    arRows,
+    referenceDate
+  );
+
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
+    orderContexts,
+    nfeOrderLinks,
   };
 }

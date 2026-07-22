@@ -32,7 +32,10 @@ import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "./finance/financeCashFlowEffectiveAr.js";
 import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
-import { suppressInferiorPreNfNomusArRows, type FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
+import {
+  suppressInferiorPreNfNomusArRows,
+  type FinanceArNfeOrderLink,
+} from "./finance/financeArOperationalPortfolio.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -184,6 +187,34 @@ function applyCashFlowArOperationalPortfolio(
   return suppressInferiorPreNfNomusArRows(
     deduplicateFinanceArRows(rows).rows
   ) as FinanceCashFlowArRow[];
+}
+
+/**
+ * Carteira AR para timeline executiva / comparativo anual — mesmo motor FIN-08 da grade de Títulos.
+ * Usa filtros de portfólio (sem recorte de mês/ano), igual ao YTD do fluxo planejado.
+ */
+export function filterCashFlowArExecutiveTimelineRows(
+  rows: FinanceCashFlowArRow[],
+  filters: FinanceCashFlowDashboardFilters,
+  arFilters: FinanceArDashboardFilters,
+  referenceDate: Date,
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: FinanceCashFlowArFilterOptions
+): FinanceCashFlowArRow[] {
+  const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
+  const portfolio = rows.filter(
+    (row) =>
+      matchesCashFlowArPortfolio(row, arFilters, referenceDate) &&
+      !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
+      isFinanceArAllowedInManagementReport(row, referenceDate)
+  );
+  return applyCashFlowArOperationalPortfolio(
+    portfolio,
+    arFilters,
+    referenceDate,
+    syncCutoff,
+    options
+  );
 }
 
 export function filterCashFlowArPortfolioRows(

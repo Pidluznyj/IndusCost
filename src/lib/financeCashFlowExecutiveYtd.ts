@@ -23,6 +23,10 @@ import type {
   FinanceCashFlowDashboardFilters,
 } from "./financeCashFlowDashboard.js";
 import { filterFinanceArOperationalPortfolioRows } from "./finance/financeArOperationalPortfolio.js";
+import type { FinanceCashFlowArFilterOptions } from "./financeCashFlowRowFilters.js";
+import {
+  filterCashFlowArExecutiveTimelineRows,
+} from "./financeCashFlowRowFilters.js";
 import type { FinanceCashFlowMonthlyPoint } from "./financeCashFlowDashboardTypes.js";
 import { buildNetCashPositionMetrics } from "./financeCashFlowIntelligence.js";
 import type { NomusArReportSyncCutoff } from "./financeNomusArReportFreshness.js";
@@ -152,9 +156,20 @@ export function filterArRowsForYtdReceived(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
   const arFilters = toReceivedArLoadFilters(filters);
+  if (arFilterOptions?.orderContexts !== undefined || arFilterOptions?.nfeOrderLinks !== undefined) {
+    return filterCashFlowArExecutiveTimelineRows(
+      rows,
+      filters,
+      arFilters,
+      referenceDate,
+      syncCutoff,
+      arFilterOptions
+    );
+  }
   return filterFinanceArOperationalPortfolioRows(
     rows,
     arFilters,
@@ -219,7 +234,9 @@ export function resolveReceivedComparisonDirection(
 export function buildYtdReceivedComparison(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  arFilterOptions?: FinanceCashFlowArFilterOptions,
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowExecutiveYtdReceived {
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
   const year = ytdFilters.year!;
@@ -227,7 +244,13 @@ export function buildYtdReceivedComparison(
   const { startDate: prevStart, endDate: prevEnd, previousYear } =
     resolvePreviousYtdComparableRange(year, referenceDate);
 
-  const filteredRows = filterArRowsForYtdReceived(rows, ytdFilters, referenceDate);
+  const filteredRows = filterArRowsForYtdReceived(
+    rows,
+    ytdFilters,
+    referenceDate,
+    syncCutoff,
+    arFilterOptions
+  );
   const currentAmount = sumArReceivedInPeriod(filteredRows, startDate, endDate);
   const previousAmount = sumArReceivedInPeriod(filteredRows, prevStart, prevEnd);
   const deltaAmount = roundMoney(currentAmount - previousAmount);
@@ -277,7 +300,9 @@ function enrichTrendWithReceived(
   points: FinanceCashFlowExecutiveYtdTrendPoint[],
   arRows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  arFilterOptions?: FinanceCashFlowArFilterOptions,
+  syncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowExecutiveYtdTrendPoint[] {
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
   const year = ytdFilters.year!;
@@ -286,7 +311,13 @@ function enrichTrendWithReceived(
   const capDate = isCurrentYear ? endDate : null;
   const previousYear = year - 1;
 
-  const filteredRows = filterArRowsForYtdReceived(arRows, ytdFilters, referenceDate);
+  const filteredRows = filterArRowsForYtdReceived(
+    arRows,
+    ytdFilters,
+    referenceDate,
+    syncCutoff,
+    arFilterOptions
+  );
   const currentByMonth = buildReceivedMonthlyAccumulated(
     filteredRows,
     year,
@@ -442,7 +473,9 @@ export function buildFinanceCashFlowExecutiveYtd(
   monthlySeries: FinanceCashFlowMonthlyPoint[],
   allArRows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
-  referenceDate: Date
+  referenceDate: Date,
+  arFilterOptions?: FinanceCashFlowArFilterOptions,
+  arSyncCutoff?: NomusArReportSyncCutoff | null
 ): FinanceCashFlowExecutiveYtd {
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
   const year = ytdFilters.year!;
@@ -456,10 +489,18 @@ export function buildFinanceCashFlowExecutiveYtd(
     mapMonthlyToYtdTrend(monthlySeries, endMonth),
     allArRows,
     filters,
-    referenceDate
+    referenceDate,
+    arFilterOptions,
+    arSyncCutoff
   );
   const trendMeta = resolveYtdTrendDirection(monthlyNetSeries);
-  const received = buildYtdReceivedComparison(allArRows, filters, referenceDate);
+  const received = buildYtdReceivedComparison(
+    allArRows,
+    filters,
+    referenceDate,
+    arFilterOptions,
+    arSyncCutoff
+  );
 
   let totalReceivableOpen = 0;
   let totalPayableOpen = 0;

@@ -126,7 +126,7 @@ export function FinanceCashFlowReconciliationPanel({
               {formatFinanceCurrency(receivable.cashFlowOpenPortfolio)}
             </p>
             <p className="text-[11px] text-[#6B7280]">
-              Card AR Em Aberto: {formatFinanceCurrency(receivable.arDashboardOpen)}
+              Card AR Em Aberto (carteira efetiva): {formatFinanceCurrency(receivable.arDashboardOpen)}
             </p>
             <MatchBadge
               ok={receivable.matchesArOpen}

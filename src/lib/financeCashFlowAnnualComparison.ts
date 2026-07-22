@@ -48,6 +48,7 @@ import {
   filterArRowsForYtdReceived,
 } from "./financeCashFlowExecutiveYtd.js";
 import { suppressInferiorPreNfNomusArRows } from "./finance/financeArOperationalPortfolio.js";
+import type { FinanceCashFlowArFilterOptions } from "./financeCashFlowRowFilters.js";
 
 export class FinanceCashFlowAnnualComparisonParseError extends Error {
   constructor(message: string) {
@@ -335,7 +336,8 @@ export function filterRowsForPlannedAnnualComparison(
   year: number,
   referenceDate: Date,
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): {
   arFiltered: FinanceCashFlowArRow[];
   apFiltered: FinanceCashFlowApRow[];
@@ -345,7 +347,13 @@ export function filterRowsForPlannedAnnualComparison(
     referenceDate
   );
   return {
-    arFiltered: filterArRowsForYtdReceived(arRows, filters, referenceDate, arSyncCutoff),
+    arFiltered: filterArRowsForYtdReceived(
+      arRows,
+      filters,
+      referenceDate,
+      arSyncCutoff,
+      arFilterOptions
+    ),
     apFiltered: filterApRowsForCashFlowExecutiveTimeline(
       apRows,
       filters,
@@ -442,7 +450,8 @@ export function buildCashFlowAnnualComparison(
   year: number,
   referenceDate = new Date(),
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowAnnualComparisonPayload {
   const { arFiltered, apFiltered } = filterRowsForPlannedAnnualComparison(
     arRows,
@@ -450,7 +459,8 @@ export function buildCashFlowAnnualComparison(
     year,
     referenceDate,
     arSyncCutoff,
-    apSyncCutoff
+    apSyncCutoff,
+    arFilterOptions
   );
 
   const ytdFilters = buildYtdDashboardFilters(
