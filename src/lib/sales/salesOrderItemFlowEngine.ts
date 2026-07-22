@@ -76,6 +76,15 @@ export type ResolveSalesOrderItemFlowInput = {
   nomusIsStale?: boolean | null;
   orderedQuantity?: Prisma.Decimal | string | number | null;
   fulfilledQuantity?: Prisma.Decimal | string | number | null;
+  /**
+   * Quantidade formalmente cortada (fonte oficial, quando existir além do status).
+   * Usada na obrigação ativa quando o status não é terminal FULFILLED_WITH_CUT.
+   */
+  officialCutQuantity?: Prisma.Decimal | string | number | null;
+  /**
+   * Quantidade formalmente cancelada (parcial). Cancelamento total continua via status CANCELED.
+   */
+  officialCanceledQuantity?: Prisma.Decimal | string | number | null;
   /** Qty produzida normalizada — null até existir no stage. */
   producedQuantity?: Prisma.Decimal | string | number | null;
   productionOrderLinks?: readonly SalesOrderItemFlowProductionLinkInput[];
@@ -367,6 +376,7 @@ export function resolveSalesOrderItemFlow(
   }
 
   // Quantidades de corte / cancelamento
+  // Regra: activeObligation = ordered − cut − canceled (nunca negativos).
   let canceledQuantity = ZERO;
   let cutQuantity = ZERO;
   if (fulfillment.classification === "CANCELED" || input.nomusIsCanceled === true) {
@@ -377,15 +387,30 @@ export function resolveSalesOrderItemFlow(
     } else if (orderedQuantity != null) {
       cutQuantity = max0(orderedQuantity);
     }
-  } else if (
-    input.nomusIsCut === true &&
-    fulfillment.classification !== "FULFILLED_WITH_CUT"
-  ) {
-    pushInconsistency(
-      inconsistencies,
-      "CUT_WITHOUT_OFFICIAL_STATUS",
-      "Flag de corte sem status oficial FULFILLED_WITH_CUT."
-    );
+  } else {
+    // Corte/cancelamento parcial oficial (quando a fonte expõe qty sem status terminal).
+    const officialCut = max0(qtyOrZero(input.officialCutQuantity));
+    const officialCanceled = max0(qtyOrZero(input.officialCanceledQuantity));
+    if (orderedQuantity != null) {
+      const ordered = max0(orderedQuantity);
+      canceledQuantity = minQty(officialCanceled, ordered);
+      const afterCancel = max0(ordered.sub(canceledQuantity));
+      cutQuantity = minQty(officialCut, afterCancel);
+    } else {
+      canceledQuantity = officialCanceled;
+      cutQuantity = officialCut;
+    }
+    if (
+      input.nomusIsCut === true &&
+      cutQuantity.lte(0) &&
+      fulfillment.classification !== "FULFILLED_WITH_CUT"
+    ) {
+      pushInconsistency(
+        inconsistencies,
+        "CUT_WITHOUT_OFFICIAL_STATUS",
+        "Flag de corte sem status oficial FULFILLED_WITH_CUT."
+      );
+    }
   }
 
   // Alvo operacional a cobrir com DS/NF (exclui cancelado e corte).
@@ -403,6 +428,7 @@ export function resolveSalesOrderItemFlow(
   const activeObligationQuantity = shipTargetQuantity;
   const fulfilledForObligation =
     fulfilledQuantity != null ? max0(fulfilledQuantity) : ZERO;
+  // Atendimento acima da obrigação ativa não gera saldo negativo.
   const remainingFulfillmentQuantity = max0(
     activeObligationQuantity.sub(fulfilledForObligation)
   );
@@ -593,7 +619,9 @@ export function resolveSalesOrderItemFlow(
       if (productionOrderQuantity.lt(productionCoverageTarget)) {
         currentStage = "WAITING_PRODUCTION_ORDER";
         stageReason =
-          "Saldo residual exige produção, mas linkedQuantity de OP é insuficiente.";
+          productionOrderQuantity.lte(0)
+            ? "Saldo residual exige produção e não há OP válida vinculada para cobri-lo."
+            : "Cobertura de OP insuficiente para o saldo residual — há OP parcial; falta complementar a cobertura (não é ausência total de OP).";
       } else if (
         producedQuantity != null &&
         producedQuantity.lt(productionCoverageTarget)

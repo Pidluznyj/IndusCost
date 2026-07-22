@@ -43,6 +43,7 @@ export type SalesOrderFlowBadge =
   | "INCONSISTENT"
   | "PARTIAL"
   | "CUT"
+  | "STOCK_FULFILLED"
   | "CANCELED"
   | "MIXED_STAGES"
   | "COMPLETED"
@@ -343,9 +344,10 @@ export function resolveSalesOrderFlow(
     }
 
     const cutPart = proportional(planned, item.cutQuantity, ordered);
+    // Residual monetário = saldo operacional (remainingFulfillment), não FIN-03 bruto.
     const residualPart = proportional(
       planned,
-      item.activeRemainingQuantity,
+      item.remainingFulfillmentQuantity,
       ordered
     );
     let fulfilledPart = planned.sub(cutPart).sub(residualPart);
@@ -458,10 +460,15 @@ export function resolveSalesOrderFlow(
   }
   if (
     itemResults.some(
-      (i) => i.fulfillment.classification === "PARTIALLY_FULFILLED"
+      (i) =>
+        i.fulfillment.classification === "PARTIALLY_FULFILLED" &&
+        i.remainingFulfillmentQuantity.gt(0)
     )
   ) {
     badges.push("PARTIAL");
+  }
+  if (itemResults.some((i) => i.fulfilledWithoutProduction)) {
+    badges.push("STOCK_FULFILLED");
   }
   if (uniqueActiveStages.size > 1) badges.push("MIXED_STAGES");
 

@@ -662,8 +662,8 @@ describe("sales order flow operational kanban (OP-67)", () => {
       "Enviado",
       "Finalizar produção",
       "Material pendente",
-      "Corte",
-      "Parcial",
+      "Atendido com corte",
+      "Parcial — saldo pendente",
       "Atraso",
     ]) {
       assert.ok(html.includes(expected), `deveria renderizar ${expected}`);

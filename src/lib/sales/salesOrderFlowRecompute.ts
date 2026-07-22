@@ -174,7 +174,8 @@ export function buildSalesOrderFlowRecomputeDraft(input: {
       documentedQuantity: result.documentedQuantity,
       invoicedQuantity: result.invoicedQuantity,
       shippedQuantity: result.shippedQuantity,
-      activeRemainingQuantity: result.activeRemainingQuantity,
+      // Snapshot "saldo ativo" = remainingFulfillment (obrigação − atendido), não FIN-03 bruto.
+      activeRemainingQuantity: result.remainingFulfillmentQuantity,
       shipTargetQuantity: result.shipTargetQuantity,
       cutQuantity: result.cutQuantity,
       canceledQuantity: result.canceledQuantity,

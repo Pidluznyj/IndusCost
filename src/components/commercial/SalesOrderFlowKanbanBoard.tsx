@@ -612,13 +612,18 @@ function resolveCardBadges(card: SalesOrderFlowListCard): Array<{
   const definitions = [
     {
       key: "CUT",
-      label: "Corte",
+      label: "Atendido com corte",
       className: "border-rose-200 bg-rose-50 text-rose-800",
     },
     {
       key: "PARTIAL",
-      label: "Parcial",
+      label: "Parcial — saldo pendente",
       className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    {
+      key: "STOCK_FULFILLED",
+      label: "Atendido sem OP",
+      className: "border-sky-200 bg-sky-50 text-sky-800",
     },
     {
       key: "OVERDUE",
