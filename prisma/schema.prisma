@@ -247,6 +247,10 @@ model Material {
   MaterialCostTableItem         MaterialCostTableItem[]
   /// Itens logísticos locais (SC) — vínculo read-only ao cadastro oficial de MP.
   InventoryItem                 InventoryItem[]
+  /// Domínio aditivo de Compras SC — linhas referenciam MP oficial (read-only).
+  PurchaseQuotationItem         PurchaseQuotationItem[]
+  PurchaseOrderItem             PurchaseOrderItem[]
+  PurchaseReceiptItem           PurchaseReceiptItem[]
 }
 
 enum MaterialMarketCriticality {
@@ -1464,6 +1468,9 @@ model PurchaseRequest {
   updatedAt           DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
   defaultCostCenter   CostCenter            @relation("PurchaseRequestDefaultCc", fields: [defaultCostCenterId], references: [id], onUpdate: NoAction)
   items               PurchaseRequestItem[]
+  /// Cotações SC originadas desta solicitação (domínio aditivo OP-13).
+  quotations          PurchaseQuotation[]
+  purchaseOrders      PurchaseOrder[]
 
   @@index([status])
   @@index([defaultCostCenterId])
@@ -1492,6 +1499,8 @@ model PurchaseRequestItem {
   costCenter            CostCenter?            @relation(fields: [costCenterId], references: [id], onUpdate: NoAction)
   material              Material?              @relation(fields: [materialId], references: [id], onUpdate: NoAction)
   purchaseRequest       PurchaseRequest        @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationItems        PurchaseQuotationItem[]
+  purchaseOrderItems    PurchaseOrderItem[]
 
   @@index([purchaseRequestId])
   @@index([materialId])
@@ -4748,6 +4757,9 @@ model FinancialSupplier {
   allocations          AccountsPayableCostCenterAllocation[]
   materialMarketQuotes MaterialMarketQuote[]
   serviceTerminations  SupplierServiceTermination[]
+  /// Compras SC — convites/ofertas/PO usam ID oficial (sem cadastro paralelo).
+  purchaseQuotationSuppliers PurchaseQuotationSupplier[]
+  purchaseOrders             PurchaseOrder[]
 
   @@index([normalizedDocument])
   @@index([normalizedName])
@@ -5667,6 +5679,487 @@ model InventoryAuditLog {
   @@index([userId])
   @@index([createdAt])
   @@index([action])
+}
+
+// ---------------------------------------------------------------------------
+// Domínio aditivo de Compras SC (OP-13) — cotação, negociação, PO, recebimento.
+// Não muta Material / FinancialSupplier / AP / estoque Nomus.
+// Preço: initial* imutável + rodadas append-only + awarded*/final* só na adjudicação.
+// InventoryMovement.purchaseOrderId permanece soft até orquestração futura.
+// ---------------------------------------------------------------------------
+
+enum PurchaseQuotationStatus {
+  RASCUNHO
+  ENVIADA
+  EM_ANALISE
+  ADJUDICADA
+  CANCELADA
+  EXPIRADA
+}
+
+enum PurchaseQuotationSupplierStatus {
+  CONVIDADO
+  RESPONDIDO
+  DESCARTADO
+  VENCEDOR
+  RECUSADO
+}
+
+enum PurchaseQuotationOfferStatus {
+  RASCUNHO
+  RECEBIDA
+  DESCARTADA
+  VENCEDORA
+}
+
+enum PurchaseNegotiationRoundStatus {
+  ABERTA
+  FECHADA
+  CANCELADA
+}
+
+enum PurchaseNegotiationActor {
+  BUYER
+  SUPPLIER
+}
+
+enum PurchaseApprovalTargetType {
+  QUOTATION
+  PURCHASE_ORDER
+  RECEIPT
+}
+
+enum PurchaseApprovalStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  CANCELADA
+}
+
+enum PurchaseOrderStatus {
+  RASCUNHO
+  EMITIDO
+  CONFIRMADO
+  PARCIALMENTE_RECEBIDO
+  RECEBIDO
+  CANCELADO
+  ENCERRADO
+}
+
+enum PurchaseReceiptStatus {
+  RASCUNHO
+  EM_CONFERENCIA
+  DIVERGENTE
+  APROVADO
+  ESTORNADO
+  CANCELADO
+}
+
+enum PurchaseEvidenceEntityType {
+  REQUEST
+  QUOTATION
+  QUOTATION_SUPPLIER
+  OFFER
+  NEGOTIATION_ROUND
+  APPROVAL
+  PURCHASE_ORDER
+  RECEIPT
+}
+
+enum PurchaseEvidenceType {
+  PDF
+  IMAGE
+  SPREADSHEET
+  EMAIL
+  PROPOSAL
+  OTHER
+}
+
+/// Cotação SC (RFQ) — distinta de MaterialMarketQuote (MI).
+model PurchaseQuotation {
+  id                String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String                  @unique
+  purchaseRequestId String?                 @db.Uuid
+  status            PurchaseQuotationStatus @default(RASCUNHO)
+  title             String?
+  currency          String                  @default("BRL")
+  neededByDate      DateTime?               @db.Date
+  expiresAt         DateTime?               @db.Timestamptz(6)
+  justification     String?
+  notes             String?
+  requestedByUserId String?
+  awardedAt         DateTime?               @db.Timestamptz(6)
+  awardedByUserId   String?
+  createdAt         DateTime                @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseRequest PurchaseRequest?             @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  items           PurchaseQuotationItem[]
+  suppliers       PurchaseQuotationSupplier[]
+  offers          PurchaseQuotationOffer[]
+  rounds          PurchaseNegotiationRound[]
+  approvals       PurchaseApproval[]           @relation("PurchaseApprovalQuotation")
+  purchaseOrders  PurchaseOrder[]
+
+  @@index([status])
+  @@index([purchaseRequestId])
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+/// Itens solicitados na cotação (demanda) — snapshot de MP oficial.
+model PurchaseQuotationItem {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId           String   @db.Uuid
+  purchaseRequestItemId String?  @db.Uuid
+  lineNumber            Int
+  materialId            String?  @db.Uuid
+  materialCodeSnapshot  String?
+  materialDescriptionSnapshot String?
+  materialUnitSnapshot  String?
+  description           String
+  quantity              Decimal  @db.Decimal(20, 6)
+  unit                  String
+  notes                 String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  quotation           PurchaseQuotation         @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseRequestItem PurchaseRequestItem?      @relation(fields: [purchaseRequestItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  material            Material?                 @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  offerItems          PurchaseQuotationOfferItem[]
+  purchaseOrderItems  PurchaseOrderItem[]
+
+  @@unique([quotationId, lineNumber])
+  @@index([quotationId])
+  @@index([materialId])
+  @@index([purchaseRequestItemId])
+}
+
+/// Fornecedor convidado na cotação — ID oficial FinancialSupplier + snapshots.
+model PurchaseQuotationSupplier {
+  id                         String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId                String                         @db.Uuid
+  supplierId                 String                         @db.Uuid
+  status                     PurchaseQuotationSupplierStatus @default(CONVIDADO)
+  supplierDisplayNameSnapshot String
+  supplierDocumentSnapshot   String?
+  invitedAt                  DateTime                       @default(now()) @db.Timestamptz(6)
+  respondedAt                DateTime?                      @db.Timestamptz(6)
+  notes                      String?
+  createdAt                  DateTime                       @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime                       @default(now()) @updatedAt @db.Timestamptz(6)
+
+  quotation PurchaseQuotation       @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  supplier  FinancialSupplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  offers    PurchaseQuotationOffer[]
+
+  @@unique([quotationId, supplierId])
+  @@index([quotationId])
+  @@index([supplierId])
+  @@index([status])
+}
+
+/// Cotação por fornecedor (oferta). Condições iniciais ≠ finais adjudicadas.
+model PurchaseQuotationOffer {
+  id                      String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId             String                      @db.Uuid
+  quotationSupplierId     String                      @db.Uuid
+  status                  PurchaseQuotationOfferStatus @default(RASCUNHO)
+  currency                String                      @default("BRL")
+  /// Condições da primeira resposta — não sobrescrever na negociação.
+  initialPaymentTerms     String?
+  initialDeliveryTerms    String?
+  initialFreightValue     Decimal?                    @db.Decimal(20, 6)
+  initialValidityDate     DateTime?                   @db.Date
+  initialLeadTimeDays     Int?
+  /// Condições adjudicadas — preenchidas só na adjudicação (cópia da rodada vencedora).
+  awardedPaymentTerms     String?
+  awardedDeliveryTerms    String?
+  awardedFreightValue     Decimal?                    @db.Decimal(20, 6)
+  awardedValidityDate     DateTime?                   @db.Date
+  awardedLeadTimeDays     Int?
+  awardedAt               DateTime?                   @db.Timestamptz(6)
+  submittedAt             DateTime?                   @db.Timestamptz(6)
+  notes                   String?
+  createdAt               DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  quotation         PurchaseQuotation           @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationSupplier PurchaseQuotationSupplier   @relation(fields: [quotationSupplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  items             PurchaseQuotationOfferItem[]
+  purchaseOrders    PurchaseOrder[]
+
+  @@unique([quotationId, quotationSupplierId])
+  @@index([quotationId])
+  @@index([quotationSupplierId])
+  @@index([status])
+}
+
+/// Item da oferta: preço inicial imutável + awarded* separado; histórico nas rodadas.
+model PurchaseQuotationOfferItem {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  offerId            String   @db.Uuid
+  quotationItemId    String   @db.Uuid
+  /// Preço unitário da primeira resposta — imutável após RECEBIDA.
+  initialUnitPrice   Decimal  @db.Decimal(20, 6)
+  initialQuantity    Decimal? @db.Decimal(20, 6)
+  initialLeadTimeDays Int?
+  initialFreightValue Decimal? @db.Decimal(20, 6)
+  initialNotes       String?
+  /// Preço/qtd adjudicados — nunca sobrescrevem initial*; preenchidos só na adjudicação.
+  awardedUnitPrice   Decimal? @db.Decimal(20, 6)
+  awardedQuantity    Decimal? @db.Decimal(20, 6)
+  awardedLeadTimeDays Int?
+  awardedFreightValue Decimal? @db.Decimal(20, 6)
+  awardedAt          DateTime? @db.Timestamptz(6)
+  /// Rodada de origem do preço adjudicado (rastreio).
+  awardedRoundLineId String?  @unique @db.Uuid
+  notes              String?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  offer            PurchaseQuotationOffer        @relation(fields: [offerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationItem    PurchaseQuotationItem         @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  roundLines       PurchaseNegotiationRoundLine[]
+  awardedRoundLine PurchaseNegotiationRoundLine? @relation("OfferItemAwardedRoundLine", fields: [awardedRoundLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([offerId, quotationItemId])
+  @@index([offerId])
+  @@index([quotationItemId])
+}
+
+/// Rodada de negociação — cabeçalho append-friendly (número monotônico por cotação).
+model PurchaseNegotiationRound {
+  id              String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId     String                         @db.Uuid
+  roundNumber     Int
+  status          PurchaseNegotiationRoundStatus @default(ABERTA)
+  openedAt        DateTime                       @default(now()) @db.Timestamptz(6)
+  closedAt        DateTime?                      @db.Timestamptz(6)
+  openedByUserId  String?
+  closedByUserId  String?
+  notes           String?
+  createdAt       DateTime                       @default(now()) @db.Timestamptz(6)
+
+  quotation PurchaseQuotation              @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lines     PurchaseNegotiationRoundLine[]
+
+  @@unique([quotationId, roundNumber])
+  @@index([quotationId])
+  @@index([status])
+}
+
+/// Proposta de preço/condição na rodada — append-only (sem updatedAt).
+model PurchaseNegotiationRoundLine {
+  id              String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roundId         String                   @db.Uuid
+  offerItemId     String                   @db.Uuid
+  unitPrice       Decimal                  @db.Decimal(20, 6)
+  quantity        Decimal?                 @db.Decimal(20, 6)
+  leadTimeDays    Int?
+  freightValue    Decimal?                 @db.Decimal(20, 6)
+  paymentTerms    String?
+  deliveryTerms   String?
+  proposedBy      PurchaseNegotiationActor
+  notes           String?
+  createdAt       DateTime                 @default(now()) @db.Timestamptz(6)
+  createdByUserId String?
+
+  round                   PurchaseNegotiationRound    @relation(fields: [roundId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offerItem               PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  awardedForOfferItem     PurchaseQuotationOfferItem? @relation("OfferItemAwardedRoundLine")
+
+  @@unique([roundId, offerItemId])
+  @@index([roundId])
+  @@index([offerItemId])
+  @@index([createdAt])
+}
+
+/// Aprovação formal (cotação / PO / recebimento).
+model PurchaseApproval {
+  id                String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  targetType        PurchaseApprovalTargetType
+  status            PurchaseApprovalStatus   @default(PENDENTE)
+  quotationId       String?                  @db.Uuid
+  purchaseOrderId   String?                  @db.Uuid
+  receiptId         String?                  @db.Uuid
+  sequence          Int                      @default(1)
+  requestedByUserId String?
+  decidedByUserId   String?
+  decidedAt         DateTime?                @db.Timestamptz(6)
+  reason            String?
+  notes             String?
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime                 @default(now()) @updatedAt @db.Timestamptz(6)
+
+  quotation     PurchaseQuotation? @relation("PurchaseApprovalQuotation", fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseOrder PurchaseOrder?     @relation("PurchaseApprovalPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  receipt       PurchaseReceipt?   @relation("PurchaseApprovalReceipt", fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([targetType, status])
+  @@index([quotationId])
+  @@index([purchaseOrderId])
+  @@index([receiptId])
+  @@index([createdAt])
+}
+
+/// Pedido de compra formal — preços congelados no emit; não movimenta estoque sozinho.
+model PurchaseOrder {
+  id                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                       String              @unique
+  status                     PurchaseOrderStatus @default(RASCUNHO)
+  purchaseRequestId          String?             @db.Uuid
+  quotationId                String?             @db.Uuid
+  awardedOfferId             String?             @db.Uuid
+  supplierId                 String              @db.Uuid
+  supplierDisplayNameSnapshot String
+  supplierDocumentSnapshot   String?
+  currency                   String              @default("BRL")
+  paymentTermsSnapshot       String?
+  deliveryTermsSnapshot      String?
+  freightValueSnapshot       Decimal?            @db.Decimal(20, 6)
+  totalAmountSnapshot        Decimal?            @db.Decimal(20, 6)
+  expectedDeliveryDate       DateTime?           @db.Date
+  issuedAt                   DateTime?           @db.Timestamptz(6)
+  confirmedAt                DateTime?           @db.Timestamptz(6)
+  issuedByUserId             String?
+  notes                      String?
+  createdAt                  DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseRequest PurchaseRequest?      @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  quotation       PurchaseQuotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  awardedOffer    PurchaseQuotationOffer? @relation(fields: [awardedOfferId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  supplier        FinancialSupplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items           PurchaseOrderItem[]
+  receipts        PurchaseReceipt[]
+  approvals       PurchaseApproval[]    @relation("PurchaseApprovalPurchaseOrder")
+
+  @@index([status])
+  @@index([supplierId])
+  @@index([purchaseRequestId])
+  @@index([quotationId])
+  @@index([issuedAt])
+  @@index([createdAt])
+}
+
+model PurchaseOrderItem {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId       String   @db.Uuid
+  lineNumber            Int
+  purchaseRequestItemId String?  @db.Uuid
+  quotationItemId       String?  @db.Uuid
+  materialId            String?  @db.Uuid
+  materialCodeSnapshot  String?
+  materialDescriptionSnapshot String?
+  materialUnitSnapshot  String?
+  description           String
+  quantityOrdered       Decimal  @db.Decimal(20, 6)
+  unit                  String
+  /// Preço unitário congelado na emissão do PO (cópia do awarded da oferta).
+  unitPriceSnapshot     Decimal  @db.Decimal(20, 6)
+  lineTotalSnapshot     Decimal  @db.Decimal(20, 6)
+  /// Soft link futuro ao item logístico local.
+  inventoryItemId       String?  @db.Uuid
+  notes                 String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseOrder       PurchaseOrder          @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseRequestItem PurchaseRequestItem?   @relation(fields: [purchaseRequestItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  quotationItem       PurchaseQuotationItem? @relation(fields: [quotationItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  material            Material?              @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  receiptItems        PurchaseReceiptItem[]
+
+  @@unique([purchaseOrderId, lineNumber])
+  @@index([purchaseOrderId])
+  @@index([materialId])
+  @@index([inventoryItemId])
+  @@index([quotationItemId])
+}
+
+/// Recebimento parcial/total — vínculo futuro a InventoryMovement via soft IDs.
+model PurchaseReceipt {
+  id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                  String                @unique
+  purchaseOrderId       String                @db.Uuid
+  status                PurchaseReceiptStatus @default(RASCUNHO)
+  receivedAt            DateTime?             @db.Timestamptz(6)
+  /// Soft: almoxarifado destino (InventoryWarehouse.id) — sem FK rígida nesta fase.
+  warehouseId           String?               @db.Uuid
+  warehouseCodeSnapshot String?
+  nfeNumber             String?
+  nfeId                 String?
+  notes                 String?
+  approvedAt            DateTime?             @db.Timestamptz(6)
+  approvedByUserId      String?
+  reversedAt            DateTime?             @db.Timestamptz(6)
+  /// Soft link futuro ao movimento PURCHASE_ENTRY gerado (InventoryMovement.id).
+  inventoryMovementId   String?               @unique @db.Uuid
+  /// Soft link futuro ao REVERSAL correspondente.
+  reversalMovementId    String?               @unique @db.Uuid
+  createdAt             DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
+
+  purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  items         PurchaseReceiptItem[]
+  approvals     PurchaseApproval[]    @relation("PurchaseApprovalReceipt")
+
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@index([receivedAt])
+  @@index([warehouseId])
+  @@index([createdAt])
+}
+
+model PurchaseReceiptItem {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptId             String   @db.Uuid
+  purchaseOrderItemId   String   @db.Uuid
+  materialId            String?  @db.Uuid
+  materialCodeSnapshot  String?
+  materialDescriptionSnapshot String?
+  quantityReceived      Decimal  @db.Decimal(20, 6)
+  quantityAccepted      Decimal  @db.Decimal(20, 6)
+  quantityRejected      Decimal  @default(0) @db.Decimal(20, 6)
+  unit                  String
+  unitCostSnapshot      Decimal? @db.Decimal(20, 6)
+  /// Soft link futuro a movimento de linha (se postagem por linha).
+  inventoryMovementId   String?  @db.Uuid
+  notes                 String?
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  receipt           PurchaseReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  purchaseOrderItem PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  material          Material?         @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([receiptId, purchaseOrderItemId])
+  @@index([receiptId])
+  @@index([purchaseOrderItemId])
+  @@index([materialId])
+  @@index([inventoryMovementId])
+}
+
+/// Evidências / anexos polimórficos do domínio de Compras SC.
+model PurchaseEvidence {
+  id               String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType       PurchaseEvidenceEntityType
+  entityId         String                    @db.Uuid
+  fileName         String
+  originalFileName String
+  mimeType         String
+  fileSize         Int
+  storageKey       String
+  evidenceType     PurchaseEvidenceType      @default(OTHER)
+  notes            String?
+  uploadedBy       String?
+  uploadedAt       DateTime                  @default(now()) @db.Timestamptz(6)
+
+  @@index([entityType, entityId])
+  @@index([uploadedAt])
+  @@index([storageKey])
 }
 
 // ---------------------------------------------------------------------------
