@@ -105,6 +105,10 @@ export interface PurchaseQuotationOfferRow {
   proposalReceivedNotes: string | null;
   submittedAt: string | null;
   notes: string | null;
+  selectionJustification?: string | null;
+  selectedAt?: string | null;
+  selectedByUserId?: string | null;
+  selectedByUserName?: string | null;
   items: PurchaseQuotationOfferItemRow[];
 }
 

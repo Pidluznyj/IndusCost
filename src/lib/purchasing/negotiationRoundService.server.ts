@@ -22,6 +22,7 @@ import {
   lockEvidencesForEntity,
 } from "./purchaseEvidenceService.server.js";
 import { PurchaseEvidenceError } from "./purchaseEvidenceRules.js";
+import { assertHumanWinnerSelection } from "./quotationComparisonEngine.js";
 
 export type NegotiationActor = {
   userId: string;
@@ -410,10 +411,26 @@ export async function markOfferAsWinner(
   actor: NegotiationActor,
   input: {
     buyerReport: string;
+    selectionJustification?: string | null;
+    autoPickByLowestPrice?: boolean;
     exceptionJustification?: string | null;
     hasExceptionPermission?: boolean;
   }
 ) {
+  let selectionJustification: string;
+  try {
+    selectionJustification = assertHumanWinnerSelection({
+      selectionJustification: input.selectionJustification,
+      autoPickByLowestPrice: Boolean(input.autoPickByLowestPrice),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const code = msg.startsWith("AUTO_PICK_FORBIDDEN")
+      ? "AUTO_PICK_FORBIDDEN"
+      : "JUSTIFICATION_REQUIRED";
+    throw new PurchaseQuotationWorkflowError(msg, code);
+  }
+
   const conclusion = await assertCanConcludeNegotiation(prisma, {
     quotationId,
     buyerReport: input.buyerReport,
@@ -446,12 +463,24 @@ export async function markOfferAsWinner(
 
     await tx.purchaseQuotationOffer.updateMany({
       where: { quotationId, status: "VENCEDORA", NOT: { id: offerId } },
-      data: { status: "DESCARTADA" },
+      data: {
+        status: "DESCARTADA",
+        selectionJustification: null,
+        selectedAt: null,
+        selectedByUserId: null,
+        selectedByUserName: null,
+      },
     });
 
     await tx.purchaseQuotationOffer.update({
       where: { id: offerId },
-      data: { status: "VENCEDORA" },
+      data: {
+        status: "VENCEDORA",
+        selectionJustification,
+        selectedAt: new Date(),
+        selectedByUserId: actor.userId,
+        selectedByUserName: actor.userName ?? null,
+      },
     });
     await tx.purchaseQuotationSupplier.update({
       where: { id: offer.quotationSupplierId },

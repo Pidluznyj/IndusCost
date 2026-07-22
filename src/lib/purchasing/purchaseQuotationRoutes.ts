@@ -27,6 +27,7 @@ import {
   mapNegotiationError,
   openNegotiationRound,
 } from "@/src/lib/purchasing/negotiationRoundService.server.js";
+import { buildQuotationComparison } from "@/src/lib/purchasing/quotationComparisonService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -181,6 +182,23 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
       }
     }
   );
+
+  app.get("/api/purchase-quotations/:id/comparison", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const result = await buildQuotationComparison(prisma, id, {
+        q: req.query.q ? String(req.query.q) : undefined,
+        status: req.query.status ? String(req.query.status) : undefined,
+        onlyComparable: req.query.onlyComparable === "1" || req.query.onlyComparable === "true",
+        onlyWithEvidence: req.query.onlyWithEvidence === "1" || req.query.onlyWithEvidence === "true",
+      });
+      res.json(result);
+    } catch (e) {
+      const mapped = mapPurchasingError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
 
   app.get("/api/purchase-quotations/:id/rounds", ...view, async (req, res) => {
     try {

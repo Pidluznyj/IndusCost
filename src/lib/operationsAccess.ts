@@ -338,6 +338,12 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   },
   {
     method: "GET",
+    path: "/api/purchase-quotations/:id/comparison",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "GET",
     path: "/api/purchase-quotations/:id/offers/:offerId/savings",
     resourceKey: "operations.purchases",
     action: "view",

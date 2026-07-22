@@ -27,6 +27,7 @@ import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagemen
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
+import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -485,6 +486,17 @@ export default function App() {
               description="Entrada de propostas iniciais por fornecedor. A primeira oferta fica congelada após o registro."
             >
               <PurchaseQuotationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations/:quotationId/compare"
+          element={
+            <ModulePageShell
+              title="Comparação de cotações"
+              description="Compare fornecedores na mesma base. A escolha do vencedor é humana e justificada — não automática pelo menor preço."
+            >
+              <PurchaseQuotationComparisonModule />
             </ModulePageShell>
           }
         />

@@ -430,12 +430,24 @@ export function PurchaseQuotationModule() {
       alert("Relato obrigatório.");
       return;
     }
+    const justification =
+      window.prompt(
+        "Justificativa humana da escolha (obrigatória, mín. 10 caracteres — não use só o menor preço):"
+      ) || "";
+    if (justification.trim().length < 10) {
+      alert("Justificativa humana obrigatória (mín. 10 caracteres).");
+      return;
+    }
     setBusy(true);
     try {
       await fetchJsonOk(`/api/purchase-quotations/${detail.id}/offers/${offerId}/mark-winner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buyerReport: report.trim() }),
+        body: JSON.stringify({
+          buyerReport: report.trim(),
+          selectionJustification: justification.trim(),
+          autoPickByLowestPrice: false,
+        }),
       });
       await loadDetail(detail.id);
     } catch (e) {
@@ -702,16 +714,31 @@ export function PurchaseQuotationModule() {
           </p>
         </div>
         {allowEdit && detail.status !== "CANCELADA" && detail.status !== "ADJUDICADA" ? (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void saveMeta()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              to={`/purchases/quotations/${detail.id}/compare`}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted"
+            >
+              Comparar fornecedores
+            </Link>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void saveMeta()}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Salvar cabeçalho
+            </button>
+          </div>
+        ) : (
+          <Link
+            to={`/purchases/quotations/${detail.id}/compare`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-border text-sm hover:bg-muted"
           >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Salvar cabeçalho
-          </button>
-        ) : null}
+            Comparar fornecedores
+          </Link>
+        )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6 grid grid-cols-1 md:grid-cols-2 gap-4">

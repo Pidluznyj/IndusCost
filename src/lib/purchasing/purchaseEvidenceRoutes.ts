@@ -154,6 +154,8 @@ export function registerPurchaseEvidenceRoutes(app: express.Express, auth: AuthG
         if (!actor) return res.status(401).json({ error: "Autenticação necessária." });
         const row = await markOfferAsWinner(prisma, id, offerId, actor, {
           buyerReport: String(req.body?.buyerReport ?? ""),
+          selectionJustification: req.body?.selectionJustification ?? null,
+          autoPickByLowestPrice: Boolean(req.body?.autoPickByLowestPrice),
           exceptionJustification: req.body?.exceptionJustification ?? null,
           hasExceptionPermission: Boolean(req.body?.useException),
         });
