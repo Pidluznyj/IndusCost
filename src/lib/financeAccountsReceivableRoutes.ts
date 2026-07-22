@@ -40,6 +40,7 @@ import {
   loadFinanceArEffectiveOrderContexts,
   loadFinanceArEffectiveOrderContextsForPortfolio,
   mergeFinanceArEffectiveOrderContexts,
+  resolveFinanceArNfeOrderLinksFromRows,
 } from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
@@ -180,12 +181,13 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
           referenceDate
         )
       );
+      const nfeOrderLinks = await resolveFinanceArNfeOrderLinksFromRows(prisma, rows);
       const payload = buildFinanceArTitlesPayload(
         rows,
         query,
         referenceDate,
         syncCutoff,
-        { orderContexts }
+        { orderContexts, nfeOrderLinks }
       );
       return res.json(payload);
     } catch (error) {
@@ -244,20 +246,21 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
           referenceDate
         )
       );
+      const nfeOrderLinks = await resolveFinanceArNfeOrderLinksFromRows(prisma, rows);
       const exportQuery = { ...query, page: 1, limit: 50_000 };
       const payload = buildFinanceArTitlesPayload(
         rows,
         exportQuery,
         referenceDate,
         syncCutoff,
-        { orderContexts }
+        { orderContexts, nfeOrderLinks }
       );
       const allPayload = buildFinanceArTitlesPayload(
         rows,
         { ...exportQuery, limit: Math.max(payload.total, 1) },
         referenceDate,
         syncCutoff,
-        { orderContexts }
+        { orderContexts, nfeOrderLinks }
       );
       const generatedAt = new Date().toISOString();
       const buffer = buildFinanceArTitlesExportBuffer(allPayload, allPayload.items, generatedAt);

@@ -1,15 +1,20 @@
 /**
- * Carga server-side de contextos FIN-05 para o Fluxo de Caixa.
+ * Carga server-side de contextos FIN-05 e vínculos NF→Pedido para Fluxo de Caixa.
  */
 
 import type { PrismaClient } from "@prisma/client";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
-import { loadFinanceArEffectiveOrderContextsForPortfolio } from "./financeAccountsReceivableEffectiveTitles.server.js";
+import type { FinanceArNfeOrderLink } from "./financeArOperationalPortfolio.js";
+import {
+  loadFinanceArEffectiveOrderContextsForPortfolio,
+  resolveFinanceArNfeOrderLinksFromRows,
+} from "./financeAccountsReceivableEffectiveTitles.server.js";
 
 export type FinanceCashFlowArLoadBundle = {
   arRows: FinanceCashFlowArRow[];
   orderContexts: FinanceArEffectiveOrderContext[];
+  nfeOrderLinks: FinanceArNfeOrderLink[];
 };
 
 export async function loadFinanceCashFlowArOrderContexts(
@@ -29,10 +34,9 @@ export async function enrichFinanceCashFlowArLoadBundle(
   arRows: FinanceCashFlowArRow[],
   referenceDate: Date = new Date()
 ): Promise<FinanceCashFlowArLoadBundle> {
-  const orderContexts = await loadFinanceCashFlowArOrderContexts(
-    prisma,
-    arRows,
-    referenceDate
-  );
-  return { arRows, orderContexts };
+  const [orderContexts, nfeOrderLinks] = await Promise.all([
+    loadFinanceCashFlowArOrderContexts(prisma, arRows, referenceDate),
+    resolveFinanceArNfeOrderLinksFromRows(prisma, arRows),
+  ]);
+  return { arRows, orderContexts, nfeOrderLinks };
 }

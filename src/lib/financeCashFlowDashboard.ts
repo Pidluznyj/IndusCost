@@ -630,8 +630,12 @@ export function buildFinanceCashFlowDashboard(
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
   const arFilterOptions: FinanceCashFlowArFilterOptions | undefined =
-    datasetOptions?.orderContexts !== undefined
-      ? { orderContexts: datasetOptions.orderContexts }
+    datasetOptions?.orderContexts !== undefined ||
+    datasetOptions?.nfeOrderLinks !== undefined
+      ? {
+          orderContexts: datasetOptions.orderContexts ?? [],
+          nfeOrderLinks: datasetOptions.nfeOrderLinks,
+        }
       : undefined;
   const arPortfolioRows = filterCashFlowArPortfolioRows(
     arRows,

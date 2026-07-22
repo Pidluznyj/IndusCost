@@ -178,8 +178,10 @@ describe("financeCashFlowEffectiveAr — PD 02719", () => {
   it("com FIN-08: 2 CR + 1 residual = 466.590 (sem parcela 1/3 duplicada)", () => {
     const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
     const schedule = pd02719Schedule();
+    const filters = { status: "all" as const };
     const effective = buildFinanceCashFlowEffectiveArPortfolio({
       rows,
+      filters,
       orderContexts: [
         {
           schedule,
@@ -212,7 +214,33 @@ describe("financeCashFlowEffectiveAr — PD 02719", () => {
     );
   });
 
-  it("filterCashFlowArPortfolioRows repassa orderContexts vazio (caminho FIN-08)", () => {
+  it("contexts vazios + NF link: remove duplicatas sem FIN-05", () => {
+    const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
+    const filters = createDailyRadarDashboardFilters();
+    const arFilters = toCashFlowPortfolioArFilters(filters);
+    const nfeOrderLinks = [
+      { sourceInvoiceId: 7311, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+      { sourceInvoiceId: 7382, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+    ];
+    const effective = filterCashFlowArPortfolioRows(
+      rows,
+      filters,
+      arFilters,
+      REF,
+      null,
+      { orderContexts: [], nfeOrderLinks }
+    );
+    assert.deepEqual(
+      effective.map((r) => r.externalId).sort((a, b) => a - b),
+      [17874, 18076, 18079]
+    );
+    assert.equal(
+      effective.reduce((s, r) => s + r.balanceReceivable, 0),
+      464835
+    );
+  });
+
+  it("filterCashFlowArPortfolioRows repassa orderContexts vazio sem NF link (legado)", () => {
     const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
     const filters = createDailyRadarDashboardFilters();
     const legacy = filterCashFlowArPortfolioRows(

@@ -32,7 +32,7 @@ import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
 import { buildFinanceCashFlowEffectiveArPortfolio } from "./finance/financeCashFlowEffectiveAr.js";
 import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
-import { suppressInferiorPreNfNomusArRows } from "./finance/financeArOperationalPortfolio.js";
+import { suppressInferiorPreNfNomusArRows, type FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -160,18 +160,25 @@ function matchesCashFlowApPortfolio(
 export type FinanceCashFlowArFilterOptions = {
   /** Agendas FIN-05 — habilita FIN-08 (mesma regra de Contas a Receber). */
   orderContexts?: FinanceArEffectiveOrderContext[];
+  /** Vínculos NF→Pedido para CR "Documento …" sem hint PD. */
+  nfeOrderLinks?: FinanceArNfeOrderLink[];
 };
 
 function applyCashFlowArOperationalPortfolio(
   rows: FinanceCashFlowArRow[],
+  arFilters: FinanceArDashboardFilters,
   referenceDate: Date,
+  syncCutoff: NomusArReportSyncCutoff | null | undefined,
   options?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
-  if (options?.orderContexts !== undefined) {
+  if (options?.orderContexts !== undefined || options?.nfeOrderLinks !== undefined) {
     return buildFinanceCashFlowEffectiveArPortfolio({
       rows,
-      orderContexts: options.orderContexts,
+      filters: arFilters,
+      orderContexts: options.orderContexts ?? [],
+      nfeOrderLinks: options.nfeOrderLinks,
       referenceDate,
+      syncCutoff,
     });
   }
   return suppressInferiorPreNfNomusArRows(
@@ -194,7 +201,13 @@ export function filterCashFlowArPortfolioRows(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  return applyCashFlowArOperationalPortfolio(portfolio, referenceDate, options);
+  return applyCashFlowArOperationalPortfolio(
+    portfolio,
+    arFilters,
+    referenceDate,
+    syncCutoff,
+    options
+  );
 }
 
 export function filterCashFlowApPortfolioRows(
@@ -235,7 +248,9 @@ export function filterCashFlowArRowsScoped(
   );
   const operational = applyCashFlowArOperationalPortfolio(
     portfolio,
+    arFilters,
     referenceDate,
+    syncCutoff,
     options
   );
   return operational.filter((row) =>

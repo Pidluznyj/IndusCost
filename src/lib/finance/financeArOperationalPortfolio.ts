@@ -58,6 +58,72 @@ export function extractFinanceArInstallmentKey(
   return `${current}/${total}`;
 }
 
+/** Vínculo Nomus NF → Pedido (SalesOrderNfeLink). */
+export type FinanceArNfeOrderLink = {
+  sourceInvoiceId: number;
+  orderCode: string;
+  salesOrderId: string;
+};
+
+/** Resolve Pedido na descrição ou pelo mapa NF→Pedido. */
+export function buildFinanceArOrderCodeResolverWithNfeLinks<
+  T extends Pick<FinanceArDashboardRow, "description" | "sourceInvoiceId">,
+>(rows: readonly T[], links: readonly FinanceArNfeOrderLink[]) {
+  const byInvoiceId = new Map<number, FinanceArNfeOrderLink>();
+  for (const link of links) {
+    if (link.sourceInvoiceId > 0) byInvoiceId.set(link.sourceInvoiceId, link);
+  }
+  return (row: T): string | null => {
+    const hint = extractFinanceArOrderCodeHint(row.description);
+    if (hint) return hint;
+    const invoiceId = row.sourceInvoiceId;
+    if (invoiceId == null || invoiceId <= 0) return null;
+    return byInvoiceId.get(invoiceId)?.orderCode ?? null;
+  };
+}
+
+/**
+ * Remove pré-NF do Pedido quando já existe CR com NF no mesmo vencimento civil.
+ * Mantém parcelas ainda não materializadas (ex.: parcela 3 do PD 02719).
+ */
+export function suppressPreNfReplacedByRealCrOnSameOrder<T extends PreNfSuppressRow>(
+  rows: T[],
+  options?: Pick<SuppressInferiorPreNfNomusArOptions, "resolveOrderCode">
+): T[] {
+  const resolve =
+    options?.resolveOrderCode ??
+    ((row: T) => extractFinanceArOrderCodeHint(row.description));
+
+  const realCrDueByOrder = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (classifyFinanceArReceivableOrigin(row) !== "WITH_NFE") continue;
+    const orderCode = resolve(row);
+    if (!orderCode) continue;
+    const orderKey = normalizeFinanceArOrderCodeKey(orderCode);
+    if (!orderKey) continue;
+    const dueKey = civilDueKey(row.dueDate);
+    if (!dueKey) continue;
+    const dueSet = realCrDueByOrder.get(orderKey) ?? new Set<string>();
+    dueSet.add(dueKey);
+    realCrDueByOrder.set(orderKey, dueSet);
+  }
+
+  if (realCrDueByOrder.size === 0) return rows;
+
+  return rows.filter((row) => {
+    if (classifyFinanceArReceivableOrigin(row) !== "WITHOUT_NFE") return true;
+    const orderCode = resolve(row);
+    if (!orderCode) return true;
+    const orderKey = normalizeFinanceArOrderCodeKey(orderCode);
+    if (!orderKey) return true;
+    const dueKey = civilDueKey(row.dueDate);
+    if (!dueKey) return true;
+    const realDates = realCrDueByOrder.get(orderKey);
+    if (!realDates) return true;
+    return !realDates.has(dueKey);
+  });
+}
+
 export type SuppressInferiorPreNfNomusArOptions = {
   /**
    * Pedidos que já têm CR superior (ex.: schedule.realReceivables),

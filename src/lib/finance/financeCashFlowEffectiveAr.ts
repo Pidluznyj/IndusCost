@@ -1,28 +1,31 @@
 /**
- * Fluxo de Caixa — agenda efetiva AR (FIN-08 compartilhado com Contas a Receber).
- *
- * Quando há contexto FIN-05 dos pedidos do portfólio, substitui o suppress isolado
- * por `buildFinanceArEffectiveTitles` — mesma regra do grid de Títulos e do Detalhe.
+ * Fluxo de Caixa — agenda efetiva AR (motor compartilhado com Contas a Receber).
  */
 
-import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
+import type {
+  FinanceArDashboardFilters,
+  FinanceArDashboardRow,
+} from "@/src/lib/financeAccountsReceivableDashboard.js";
 import { classifyFinanceArTitle, roundMoney } from "@/src/lib/financeAccountsReceivableDashboard.js";
-import { deduplicateFinanceArRows } from "@/src/lib/financeAccountsReceivableDeduplication.js";
 import type { FinanceCashFlowArRow } from "@/src/lib/financeCashFlowDashboard.js";
-import {
-  buildFinanceArEffectiveTitles,
-  type FinanceArEffectiveOrderContext,
-  type FinanceArEffectiveTitleListItem,
+import type {
+  FinanceArEffectiveOrderContext,
+  FinanceArEffectiveTitleListItem,
 } from "./financeAccountsReceivableEffectiveTitles.js";
 import {
-  extractFinanceArOrderCodeHint,
-  suppressInferiorPreNfNomusArRows,
-} from "./financeArOperationalPortfolio.js";
+  buildFinanceArEffectivePortfolioItems,
+  type FinanceArNfeOrderLink,
+} from "./financeArEffectivePortfolio.js";
+import { extractFinanceArOrderCodeHint } from "./financeArOperationalPortfolio.js";
+import type { NomusArReportSyncCutoff } from "@/src/lib/financeNomusArReportFreshness.js";
 
 export type BuildFinanceCashFlowEffectiveArPortfolioInput = {
   rows: FinanceCashFlowArRow[];
+  filters: FinanceArDashboardFilters;
   orderContexts: FinanceArEffectiveOrderContext[];
+  nfeOrderLinks?: FinanceArNfeOrderLink[];
   referenceDate?: Date;
+  syncCutoff?: NomusArReportSyncCutoff | null;
 };
 
 function parseIsoDateLocal(iso: string | null | undefined): Date | null {
@@ -69,28 +72,20 @@ export function mapFinanceArEffectiveTitleToCashFlowRow(
   return row;
 }
 
-/**
- * Portfólio AR efetivo para Fluxo de Caixa.
- * Com contexts FIN-05 → FIN-08; sem contexts → suppress FIN-02 legado.
- */
+/** Portfólio AR efetivo para Fluxo de Caixa — mesmo motor da grade de Títulos. */
 export function buildFinanceCashFlowEffectiveArPortfolio(
   input: BuildFinanceCashFlowEffectiveArPortfolioInput
 ): FinanceCashFlowArRow[] {
   const referenceDate = input.referenceDate ?? new Date();
-  const contexts = input.orderContexts ?? [];
-
-  if (contexts.length === 0) {
-    return suppressInferiorPreNfNomusArRows(
-      deduplicateFinanceArRows(input.rows).rows
-    ) as FinanceCashFlowArRow[];
-  }
-
-  const { items } = buildFinanceArEffectiveTitles({
-    nomusRows: input.rows,
-    orderContexts: contexts,
+  const items = buildFinanceArEffectivePortfolioItems({
+    rows: input.rows,
+    filters: input.filters,
+    orderContexts: input.orderContexts ?? [],
+    nfeOrderLinks: input.nfeOrderLinks,
     referenceDate,
+    syncCutoff: input.syncCutoff,
+    applyOperationalPortfolioFilter: false,
   });
-
   return items.map((item) => mapFinanceArEffectiveTitleToCashFlowRow(item, referenceDate));
 }
 

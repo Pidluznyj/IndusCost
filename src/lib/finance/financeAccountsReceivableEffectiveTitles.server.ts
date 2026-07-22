@@ -8,6 +8,7 @@ import { getOrderFullAudit } from "./orderFullAuditService.js";
 import { buildEffectiveScheduleInputFromAudit } from "@/src/lib/sales-orders/salesOrderDetailEffectiveFinancial.js";
 import type { FinanceArEffectiveOrderContext } from "./financeAccountsReceivableEffectiveTitles.js";
 import { extractFinanceArOrderCodeHint } from "./financeArOperationalPortfolio.js";
+import type { FinanceArNfeOrderLink } from "./financeArOperationalPortfolio.js";
 import { extractFinanceArOrderCodeHint as extractFinanceArOrderCodeHintFromQuery } from "@/src/lib/financeAccountsReceivableTitles.js";
 import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableDashboard.js";
 import {
@@ -40,6 +41,48 @@ export function buildExactPortfolioSalesOrderWhere(
   }
   if (orClauses.length === 0) return null;
   return orClauses.length === 1 ? orClauses[0]! : { OR: orClauses };
+}
+
+export async function resolveFinanceArNfeOrderLinksFromRows(
+  prisma: PrismaClient,
+  rows: Array<Pick<FinanceArDashboardRow, "sourceInvoiceId">>
+): Promise<FinanceArNfeOrderLink[]> {
+  const refs = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
+  if (refs.salesOrderIds.length === 0 && refs.orderCodes.length === 0) {
+    return [];
+  }
+
+  const nfeIds = [
+    ...new Set(
+      rows
+        .map((r) => r.sourceInvoiceId)
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ];
+  if (nfeIds.length === 0) return [];
+
+  const links = await prisma.salesOrderNfeLink.findMany({
+    where: { nfeExternalId: { in: nfeIds } },
+    select: {
+      nfeExternalId: true,
+      salesOrderId: true,
+      orderCode: true,
+      SalesOrder: { select: { id: true, orderCode: true } },
+    },
+  });
+
+  return links
+    .map((link) => {
+      const orderCode = (link.orderCode ?? link.SalesOrder?.orderCode ?? "").trim();
+      const salesOrderId = link.salesOrderId ?? link.SalesOrder?.id ?? "";
+      if (!orderCode || !salesOrderId || !link.nfeExternalId) return null;
+      return {
+        sourceInvoiceId: link.nfeExternalId,
+        orderCode,
+        salesOrderId,
+      };
+    })
+    .filter((link): link is FinanceArNfeOrderLink => link != null);
 }
 
 async function resolveFinanceArPortfolioSalesOrderRefs(

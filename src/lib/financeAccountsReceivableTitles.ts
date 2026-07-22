@@ -50,13 +50,13 @@ import type {
   FinanceTitlesBucketTotals,
 } from "./financeAgingBucketDrilldownTypes.js";
 import {
-  buildFinanceArEffectiveTitles,
   computeFinanceArEffectiveTitlesSummary,
-  filterFinanceArEffectiveTitlesByDashboardFilters,
   FINANCE_AR_EFFECTIVE_LINE_KIND_LABEL,
   type FinanceArEffectiveLineKind,
   type FinanceArEffectiveOrderContext,
 } from "./finance/financeAccountsReceivableEffectiveTitles.js";
+import { buildFinanceArEffectivePortfolioItems } from "./finance/financeArEffectivePortfolio.js";
+import type { FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
 import {
   extractFinanceArOrderCodeHint,
   filterFinanceArOperationalPortfolioRows,
@@ -154,6 +154,8 @@ export type FinanceArTitleListItem = {
 export type BuildFinanceArTitlesPayloadOptions = {
   /** Agendas FIN-05 dos pedidos no contexto (cliente/pedido). */
   orderContexts?: FinanceArEffectiveOrderContext[];
+  /** Vínculos NF→Pedido (SalesOrderNfeLink). */
+  nfeOrderLinks?: FinanceArNfeOrderLink[];
 };
 
 export type FinanceArTitlesPayload = {
@@ -596,40 +598,33 @@ export function buildFinanceArTitlesPayload(
   }
 
   const orderContexts = options?.orderContexts ?? [];
+  const nfeOrderLinks = options?.nfeOrderLinks ?? [];
   const orderCodeHint =
     extractFinanceArOrderCodeHint(query.search, query.extended?.document) ?? undefined;
 
   let mapped: FinanceArTitleListItem[];
   let summary: FinanceArTitlesSummary;
 
-  if (orderContexts.length > 0 || orderCodeHint) {
-    // FIN-08 — agenda efetiva no contexto Pedido/cliente.
-    // Quando há hint de Pedido mas ainda sem contexts, filtra CR por Pedido
-    // e marca lineKind; contexts vazios não inventam residual.
-  // Residual/Doc/CR da agenda não podem burlar status/ano/mês do grid.
-    // Pedidos cancelados/ausentes não geram contexts — sem previsão inventada.
-    const effective = buildFinanceArEffectiveTitles({
-      nomusRows: filtered,
+  if (orderContexts.length > 0 || orderCodeHint || nfeOrderLinks.length > 0) {
+    const portfolioItems = buildFinanceArEffectivePortfolioItems({
+      rows: filtered,
+      filters: query.filters,
       orderContexts,
+      nfeOrderLinks,
       orderCode: orderCodeHint,
       customerPersonId: query.extended?.customerId,
       customerName: query.extended?.customerName,
       customerCnpj: query.extended?.customerCnpj,
       referenceDate,
+      syncCutoff,
+      applyOperationalPortfolioFilter: false,
     });
-    // Se o usuário buscou um Pedido excluído (cancelado/ausente) e não há
-    // contexts operacionais, não lista CR órfão nem inventa previsão.
     if (orderCodeHint && orderContexts.length === 0) {
       mapped = [];
       summary = computeFinanceArTitlesSummary([], referenceDate);
     } else {
-      const effectiveFiltered = filterFinanceArEffectiveTitlesByDashboardFilters(
-        effective.items,
-        query.filters,
-        referenceDate
-      );
-      mapped = effectiveFiltered;
-      summary = computeFinanceArEffectiveTitlesSummary(effectiveFiltered);
+      mapped = portfolioItems;
+      summary = computeFinanceArEffectiveTitlesSummary(portfolioItems);
     }
   } else {
     mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));

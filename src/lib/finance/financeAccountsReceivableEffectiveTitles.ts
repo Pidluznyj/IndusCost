@@ -26,6 +26,7 @@ import {
   extractFinanceArOrderCodeHint,
   normalizeFinanceArOrderCodeKey,
   suppressInferiorPreNfNomusArRows,
+  type FinanceArNfeOrderLink,
 } from "./financeArOperationalPortfolio.js";
 import type { SalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
 
@@ -100,6 +101,8 @@ export type BuildFinanceArEffectiveTitlesInput = {
   nomusRows: FinanceArDashboardRow[];
   /** Pedidos com agenda efetiva FIN-05. */
   orderContexts: FinanceArEffectiveOrderContext[];
+  /** Vínculos NF→Pedido quando a descrição Nomus não traz hint PD. */
+  nfeOrderLinks?: FinanceArNfeOrderLink[];
   /** Filtro por Pedido — só linhas desse pedido. */
   orderCode?: string | null;
   /** Filtro por cliente (personId Nomus). */
@@ -223,6 +226,15 @@ function mapNomusToEffectiveItem(
     orderCode: orderMeta?.orderCode ?? null,
     salesOrderId: orderMeta?.salesOrderId ?? null,
   };
+}
+
+/** Mapeia linha Nomus para item FIN-08 (uso compartilhado CR + Fluxo). */
+export function mapFinanceArDashboardRowToEffectiveTitle(
+  row: FinanceArDashboardRow,
+  referenceDate: Date,
+  orderMeta: { orderCode: string | null; salesOrderId: string | null } | null
+): FinanceArEffectiveTitleListItem {
+  return mapNomusToEffectiveItem(row, referenceDate, orderMeta);
 }
 
 function buildSyntheticRow(input: {
@@ -379,12 +391,33 @@ export function buildFinanceArEffectiveTitles(
     }
   }
 
+  // Vínculo NF→Pedido (SalesOrderNfeLink) — CR "Documento …" sem hint PD.
+  for (const link of input.nfeOrderLinks ?? []) {
+    if (!link.sourceInvoiceId || !link.orderCode) continue;
+    for (const row of dedupedNomus) {
+      if (row.sourceInvoiceId !== link.sourceInvoiceId) continue;
+      if (!crToOrder.has(row.externalId)) {
+        crToOrder.set(row.externalId, {
+          orderCode: link.orderCode,
+          salesOrderId: link.salesOrderId,
+        });
+      }
+    }
+  }
+
   // FIN-02 compartilhado: pré-NF omitido quando o Pedido já tem CR superior.
   const ordersWithSuperiorCr = new Set(
     input.orderContexts
       .filter((ctx) => ctx.schedule.realReceivables.length > 0)
       .map((ctx) => normalizeOrderCode(ctx.schedule.orderCode))
   );
+  for (const row of dedupedNomus) {
+    if (classifyFinanceArReceivableOrigin(row) !== "WITH_NFE") continue;
+    const linked = crToOrder.get(row.externalId);
+    if (!linked?.orderCode) continue;
+    const key = normalizeOrderCode(linked.orderCode);
+    if (key) ordersWithSuperiorCr.add(key);
+  }
   const operationalNomus = suppressInferiorPreNfNomusArRows(dedupedNomus, {
     superiorOrderCodes: ordersWithSuperiorCr,
     resolveOrderCode: (row) =>
