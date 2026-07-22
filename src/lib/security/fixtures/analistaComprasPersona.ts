@@ -49,7 +49,7 @@ export const ANALISTA_COMPRAS_GRANTS: AnalistaComprasGrantMap = {
   [OPERATIONS_RESOURCE_KEYS.inventoryWarehouses]: ["view", "manage"],
   [OPERATIONS_RESOURCE_KEYS.inventoryMovements]: ["view", "create"],
   [OPERATIONS_RESOURCE_KEYS.inventoryCounts]: ["view", "manage", "approve"],
-  [OPERATIONS_RESOURCE_KEYS.purchases]: ["view", "create", "update", "delete"],
+  [OPERATIONS_RESOURCE_KEYS.purchases]: ["view", "create", "update", "delete", "approve"],
   [OPERATIONS_RESOURCE_KEYS.maintenance]: ["view", "manage"],
   [OPERATIONS_RESOURCE_KEYS.fleet]: ["view", "manage"],
 };

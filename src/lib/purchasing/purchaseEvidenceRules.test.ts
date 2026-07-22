@@ -22,6 +22,9 @@ describe("purchaseEvidenceRules (OP-17)", () => {
     );
     assert.equal(isAllowedPurchaseEvidenceUpload("message/rfc822", "a.eml"), true);
     assert.equal(isAllowedPurchaseEvidenceUpload("application/x-msdownload", "a.exe"), false);
+    // OP-27: extensão sozinha não basta (MIME spoofing)
+    assert.equal(isAllowedPurchaseEvidenceUpload("application/octet-stream", "malware.pdf"), false);
+    assert.equal(isAllowedPurchaseEvidenceUpload("application/pdf", "a.exe"), false);
   });
 
   it("valida tamanho e arquivo vazio", () => {

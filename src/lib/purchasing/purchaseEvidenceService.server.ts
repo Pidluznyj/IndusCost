@@ -390,6 +390,8 @@ export async function downloadPurchaseEvidence(prisma: PrismaClient, evidenceId:
   if (!evidence || evidence.deletedAt) {
     throw new PurchaseEvidenceError("Evidência não encontrada.", "NOT_FOUND");
   }
+  // Anti-IDOR: evidência só é baixável se a entidade pai ainda existir.
+  await assertEntityExists(prisma, evidence.entityType, evidence.entityId);
   const buf = await readAppLocalFile(evidence.storageKey);
   if (actor) {
     await writeHistory(prisma, {

@@ -36,6 +36,10 @@ import {
   rejectQuotationAward,
   submitQuotationAward,
 } from "@/src/lib/purchasing/quotationAwardService.server.js";
+import {
+  resolveEvidenceExceptionPermission,
+  safePurchasingLogError,
+} from "@/src/lib/purchasing/purchasingSecurity.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -44,6 +48,8 @@ type AuthGuards = {
     id: string;
     name?: string | null;
     email?: string | null;
+    effectivePermissions?: string[];
+    permissions?: string[];
   } | null>;
 };
 
@@ -279,12 +285,16 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
           buyerReport: req.body?.buyerReport,
           notes: req.body?.notes,
           exceptionJustification: req.body?.exceptionJustification ?? null,
-          hasExceptionPermission: Boolean(req.body?.useException),
+          hasExceptionPermission: resolveEvidenceExceptionPermission({
+            effectivePermissions: user.effectivePermissions ?? user.permissions ?? [],
+            clientClaimedUseException: Boolean(req.body?.useException),
+          }),
           requireEvidenceGate: Boolean(req.body?.conclude),
         }
       );
       res.json(row);
     } catch (e) {
+      safePurchasingLogError("close-negotiation-round", e);
       const mapped = mapNegotiationError(e);
       return res.status(mapped.status).json(mapped.body);
     }
@@ -345,11 +355,15 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
           })),
           notes: req.body?.notes ?? null,
           exceptionJustification: req.body?.exceptionJustification ?? null,
-          hasExceptionPermission: Boolean(req.body?.useException),
+          hasExceptionPermission: resolveEvidenceExceptionPermission({
+            effectivePermissions: user.effectivePermissions ?? user.permissions ?? [],
+            clientClaimedUseException: Boolean(req.body?.useException),
+          }),
         }
       );
       res.status(201).json(row);
     } catch (e) {
+      safePurchasingLogError("submit-quotation-award", e);
       const mapped = mapAwardError(e);
       return res.status(mapped.status).json(mapped.body);
     }

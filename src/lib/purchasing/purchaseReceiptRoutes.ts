@@ -31,6 +31,8 @@ type AuthGuards = {
     id: string;
     name?: string | null;
     email?: string | null;
+    effectivePermissions?: string[];
+    permissions?: string[];
   } | null>;
 };
 
@@ -190,12 +192,8 @@ export function registerPurchaseReceiptRoutes(app: express.Express, auth: AuthGu
         {
           userId: user.id,
           userName: user.name ?? user.email,
-          permissions: [
-            "inventory.movement.create",
-            "inventory.movements.create",
-            "inventory.manage",
-            "purchases.approve",
-          ],
+          // OP-27: permissões reais do usuário — sem forjar inventory.*.
+          permissions: user.effectivePermissions ?? user.permissions ?? [],
         },
         { idempotencyKey }
       );
@@ -220,12 +218,7 @@ export function registerPurchaseReceiptRoutes(app: express.Express, auth: AuthGu
         {
           userId: user.id,
           userName: user.name ?? user.email,
-          permissions: [
-            "inventory.movement.create",
-            "inventory.movements.create",
-            "inventory.manage",
-            "purchases.approve",
-          ],
+          permissions: user.effectivePermissions ?? user.permissions ?? [],
         },
         reason
       );

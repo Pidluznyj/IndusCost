@@ -972,6 +972,18 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["purchases.view"],
   }),
   perm({
+    key: "purchases.approve",
+    label: "Compras — Aprovar / evidência excepcional / recebimento",
+    group: COMP,
+    module: "purchases",
+    description:
+      "Aprovar/rejeitar solicitações e adjudicações, confirmar/estornar recebimento e autorizar exceção de evidência.",
+    type: "action",
+    parentKey: "purchases.view",
+    requires: ["purchases.view"],
+    risk: "sensitive",
+  }),
+  perm({
     key: "purchases.delete",
     label: "Compras — Excluir/cancelar",
     group: COMP,

@@ -11,7 +11,6 @@ import {
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess.js";
 import { createOfficialDataProviders } from "@/src/lib/supply-chain/officialDataProviders.server.js";
-import { saveAppLocalFile, readAppLocalFile } from "@/src/lib/appLocalFileStorage.js";
 import {
   approvePurchaseRequest,
   cancelPurchaseRequest,
@@ -23,6 +22,13 @@ import {
   submitPurchaseRequest,
 } from "@/src/lib/purchasing/purchaseRequestService.server.js";
 import { PurchaseRequestWorkflowError } from "@/src/lib/purchasing/purchaseRequestWorkflow.js";
+import {
+  downloadPurchaseEvidence,
+  mapEvidenceError,
+  uploadPurchaseEvidence,
+} from "@/src/lib/purchasing/purchaseEvidenceService.server.js";
+import { PURCHASE_EVIDENCE_MAX_BYTES } from "@/src/lib/purchasing/purchaseEvidenceRules.js";
+import { safePurchasingLogError } from "@/src/lib/purchasing/purchasingSecurity.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -31,6 +37,8 @@ type AuthGuards = {
     id: string;
     name?: string | null;
     email?: string | null;
+    effectivePermissions?: string[];
+    permissions?: string[];
   } | null>;
 };
 
@@ -46,13 +54,13 @@ function handleWorkflowError(res: express.Response, e: unknown) {
     const status = e.code === "NOT_FOUND" ? 404 : 400;
     return res.status(status).json({ error: e.message, code: e.code });
   }
-  console.error("purchase-request workflow error:", e);
+  safePurchasingLogError("purchase-request-workflow", e);
   return res.status(500).json({ error: "Erro no workflow da solicitação." });
 }
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 },
+  limits: { fileSize: PURCHASE_EVIDENCE_MAX_BYTES },
 });
 
 export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth: AuthGuards) {
@@ -67,6 +75,10 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
   const update = [
     auth.requireAppAuth,
     auth.requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update),
+  ] as const;
+  const approve = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.approve),
   ] as const;
 
   async function actorFromReq(req: express.Request) {
@@ -150,37 +162,24 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
       try {
         const { id } = req.params;
         if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
-        const row = await prisma.purchaseRequest.findUnique({ where: { id }, select: { id: true } });
-        if (!row) return res.status(404).json({ error: "Solicitação não encontrada." });
         const file = req.file;
         if (!file?.buffer?.length) return res.status(400).json({ error: "Arquivo obrigatório." });
 
         const actor = await actorFromReq(req);
-        const saved = await saveAppLocalFile({
-          namespace: "purchase-requests",
+        const evidence = await uploadPurchaseEvidence(prisma, {
+          entityType: "REQUEST",
           entityId: id,
-          originalFileName: file.originalname || "anexo",
           buffer: file.buffer,
-        });
-
-        const evidence = await prisma.purchaseEvidence.create({
-          data: {
-            entityType: "REQUEST",
-            entityId: id,
-            fileName: saved.fileName,
-            originalFileName: file.originalname || saved.fileName,
-            mimeType: file.mimetype || "application/octet-stream",
-            fileSize: saved.fileSize,
-            storageKey: saved.storageKey,
-            evidenceType: "OTHER",
-            notes: req.body?.notes ? String(req.body.notes) : null,
-            uploadedBy: actor?.userId ?? null,
-          },
+          originalName: file.originalname || "anexo",
+          mimeType: file.mimetype || "application/octet-stream",
+          notes: req.body?.notes ? String(req.body.notes) : null,
+          evidenceType: req.body?.evidenceType ?? null,
+          actor,
         });
         res.status(201).json({ evidence });
       } catch (e) {
-        console.error("purchase-request evidence upload error:", e);
-        res.status(500).json({ error: "Erro ao anexar evidência." });
+        const mapped = mapEvidenceError(e);
+        return res.status(mapped.status).json(mapped.body);
       }
     }
   );
@@ -189,20 +188,20 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
     try {
       const { id, evidenceId } = req.params;
       if (!isUuid(id) || !isUuid(evidenceId)) return res.status(400).json({ error: "ID inválido." });
-      const evidence = await prisma.purchaseEvidence.findFirst({
-        where: { id: evidenceId, entityType: "REQUEST", entityId: id },
-      });
-      if (!evidence) return res.status(404).json({ error: "Evidência não encontrada." });
-      const buf = await readAppLocalFile(evidence.storageKey);
+      const actor = await actorFromReq(req);
+      const { evidence, buffer } = await downloadPurchaseEvidence(prisma, evidenceId, actor);
+      if (evidence.entityType !== "REQUEST" || evidence.entityId !== id) {
+        return res.status(404).json({ error: "Evidência não encontrada." });
+      }
       res.setHeader("Content-Type", evidence.mimeType);
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${encodeURIComponent(evidence.originalFileName)}"`
       );
-      res.send(buf);
+      res.send(buffer);
     } catch (e) {
-      console.error("purchase-request evidence download error:", e);
-      res.status(500).json({ error: "Erro ao baixar evidência." });
+      const mapped = mapEvidenceError(e);
+      return res.status(mapped.status).json(mapped.body);
     }
   });
 
@@ -219,7 +218,7 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
     }
   });
 
-  app.post("/api/purchase-requests/:id/approve", ...update, async (req, res) => {
+  app.post("/api/purchase-requests/:id/approve", ...approve, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
@@ -232,7 +231,7 @@ export function registerPurchaseRequestWorkflowRoutes(app: express.Express, auth
     }
   });
 
-  app.post("/api/purchase-requests/:id/reject", ...update, async (req, res) => {
+  app.post("/api/purchase-requests/:id/reject", ...approve, async (req, res) => {
     try {
       const { id } = req.params;
       if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });

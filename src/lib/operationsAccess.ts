@@ -10,7 +10,7 @@
  * | operations.inventory.warehouses | view, manage |
  * | operations.inventory.movements | view, create |
  * | operations.inventory.counts | view, manage, approve |
- * | operations.purchases | view, create, update, delete |
+ * | operations.purchases | view, create, update, delete, approve |
  * | operations.performance | view, update |
  * | operations.maintenance | view, manage |
  * | operations.fleet | view, manage |
@@ -238,13 +238,13 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
     method: "POST",
     path: "/api/purchase-requests/:id/approve",
     resourceKey: "operations.purchases",
-    action: "update",
+    action: "approve",
   },
   {
     method: "POST",
     path: "/api/purchase-requests/:id/reject",
     resourceKey: "operations.purchases",
-    action: "update",
+    action: "approve",
   },
   {
     method: "POST",
@@ -455,6 +455,36 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
     path: "/api/purchase-evidences/:evidenceId/soft-delete",
     resourceKey: "operations.purchases",
     action: "update",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-receipts/:id/confirm",
+    resourceKey: "operations.purchases",
+    action: "approve",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-receipts/:id/reverse",
+    resourceKey: "operations.purchases",
+    action: "approve",
+  },
+  {
+    method: "GET",
+    path: "/api/receiving-station",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/shadow-purchase-planning",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/supply-chain/indicators",
+    resourceKey: "operations.purchases",
+    action: "view",
   },
   {
     method: "GET",

@@ -103,14 +103,15 @@ export function detectPurchaseEvidenceType(input: {
 export function isAllowedPurchaseEvidenceUpload(mimeType: string, fileName: string): boolean {
   const mime = mimeType.trim().toLowerCase();
   const ext = extensionOf(fileName);
-  if (PDF_MIMES.has(mime) && (ext === ".pdf" || !ext)) return true;
-  if (IMAGE_MIMES.has(mime) && (EXT_MAP[ext] === "IMAGE" || !ext)) return true;
-  if (SPREADSHEET_MIMES.has(mime) && (EXT_MAP[ext] === "SPREADSHEET" || !ext || ext === ".csv")) {
+  if (!ext) return false;
+
+  // MIME ∩ extensão obrigatórios (sem bypass só por extensão — OP-27).
+  if (PDF_MIMES.has(mime) && ext === ".pdf") return true;
+  if (IMAGE_MIMES.has(mime) && EXT_MAP[ext] === "IMAGE") return true;
+  if (SPREADSHEET_MIMES.has(mime) && (EXT_MAP[ext] === "SPREADSHEET" || ext === ".csv")) {
     return true;
   }
-  if (EMAIL_MIMES.has(mime) && (EXT_MAP[ext] === "EMAIL" || !ext)) return true;
-  if (ext && EXT_MAP[ext]) return true;
-  // Proposta comercial em office
+  if (EMAIL_MIMES.has(mime) && EXT_MAP[ext] === "EMAIL") return true;
   if (
     (mime === "application/msword" ||
       mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") &&

@@ -23,6 +23,10 @@ import {
 } from "@/src/lib/purchasing/purchaseEvidenceRules.js";
 import { markOfferAsWinner } from "@/src/lib/purchasing/negotiationRoundService.server.js";
 import { mapNegotiationError } from "@/src/lib/purchasing/negotiationRoundService.server.js";
+import {
+  resolveEvidenceExceptionPermission,
+  safePurchasingLogError,
+} from "@/src/lib/purchasing/purchasingSecurity.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -31,6 +35,8 @@ type AuthGuards = {
     id: string;
     name?: string | null;
     email?: string | null;
+    effectivePermissions?: string[];
+    permissions?: string[];
   } | null>;
 };
 
@@ -70,6 +76,23 @@ export function registerPurchaseEvidenceRoutes(app: express.Express, auth: AuthG
         return res.status(400).json({ error: "entityType/entityId inválidos." });
       }
       const includeDeleted = String(req.query.includeDeleted ?? "") === "1";
+      // Histórico soft-deleted exige update (dados comerciais sensíveis).
+      if (includeDeleted) {
+        // re-check via update gate: viewer puro não lista excluídos
+        const user = await auth.getCurrentAppUser(req);
+        const perms = user?.effectivePermissions ?? user?.permissions ?? [];
+        const canSeeDeleted =
+          perms.includes("purchases.edit") ||
+          perms.includes("operations.purchases.update") ||
+          perms.includes("purchases.approve") ||
+          perms.includes("operations.purchases.approve");
+        if (!canSeeDeleted) {
+          return res.status(403).json({
+            error: "Sem permissão para listar evidências excluídas.",
+            code: "FORBIDDEN_INCLUDE_DELETED",
+          });
+        }
+      }
       const rows = await listPurchaseEvidences(prisma, entityType, entityId, { includeDeleted });
       res.json({ rows });
     } catch (e) {
@@ -150,17 +173,23 @@ export function registerPurchaseEvidenceRoutes(app: express.Express, auth: AuthG
       try {
         const { id, offerId } = req.params;
         if (!isUuid(id) || !isUuid(offerId)) return res.status(400).json({ error: "ID inválido." });
-        const actor = await actorFromReq(req);
-        if (!actor) return res.status(401).json({ error: "Autenticação necessária." });
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+        const actor = { userId: user.id, userName: user.name ?? user.email ?? null };
         const row = await markOfferAsWinner(prisma, id, offerId, actor, {
           buyerReport: String(req.body?.buyerReport ?? ""),
           selectionJustification: req.body?.selectionJustification ?? null,
           autoPickByLowestPrice: Boolean(req.body?.autoPickByLowestPrice),
           exceptionJustification: req.body?.exceptionJustification ?? null,
-          hasExceptionPermission: Boolean(req.body?.useException),
+          // Nunca confiar em body.useException — só approve real (OP-27).
+          hasExceptionPermission: resolveEvidenceExceptionPermission({
+            effectivePermissions: user.effectivePermissions ?? user.permissions ?? [],
+            clientClaimedUseException: Boolean(req.body?.useException),
+          }),
         });
         res.json(row);
       } catch (e) {
+        safePurchasingLogError("mark-winner", e);
         const mapped = mapNegotiationError(e);
         return res.status(mapped.status).json(mapped.body);
       }
