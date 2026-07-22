@@ -36,7 +36,11 @@ import {
   isFinanceArHorizonTitlesQuery,
   parseFinanceArTitlesQuery,
 } from "@/src/lib/financeAccountsReceivableTitles.js";
-import { loadFinanceArEffectiveOrderContexts } from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js";
+import {
+  loadFinanceArEffectiveOrderContexts,
+  loadFinanceArEffectiveOrderContextsForPortfolio,
+  mergeFinanceArEffectiveOrderContexts,
+} from "@/src/lib/finance/financeAccountsReceivableEffectiveTitles.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { registerFinanceAccountsReceivableOverdueRoutes } from "@/src/lib/financeAccountsReceivableOverdueRoutes.js";
 import {
@@ -163,12 +167,19 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
         ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
         : await loadFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
-      const orderContexts = await loadFinanceArEffectiveOrderContexts(prisma, {
-        search: query.search,
-        document: query.extended?.document,
-        customerPersonId: query.extended?.customerId,
-        customerName: query.extended?.customerName,
-      }, referenceDate);
+      const orderContexts = mergeFinanceArEffectiveOrderContexts(
+        await loadFinanceArEffectiveOrderContexts(prisma, {
+          search: query.search,
+          document: query.extended?.document,
+          customerPersonId: query.extended?.customerId,
+          customerName: query.extended?.customerName,
+        }, referenceDate),
+        await loadFinanceArEffectiveOrderContextsForPortfolio(
+          prisma,
+          rows,
+          referenceDate
+        )
+      );
       const payload = buildFinanceArTitlesPayload(
         rows,
         query,
@@ -220,12 +231,19 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         prisma,
         financeArTitlesPrismaFilters(query)
       );
-      const orderContexts = await loadFinanceArEffectiveOrderContexts(prisma, {
-        search: query.search,
-        document: query.extended?.document,
-        customerPersonId: query.extended?.customerId,
-        customerName: query.extended?.customerName,
-      }, referenceDate);
+      const orderContexts = mergeFinanceArEffectiveOrderContexts(
+        await loadFinanceArEffectiveOrderContexts(prisma, {
+          search: query.search,
+          document: query.extended?.document,
+          customerPersonId: query.extended?.customerId,
+          customerName: query.extended?.customerName,
+        }, referenceDate),
+        await loadFinanceArEffectiveOrderContextsForPortfolio(
+          prisma,
+          rows,
+          referenceDate
+        )
+      );
       const exportQuery = { ...query, page: 1, limit: 50_000 };
       const payload = buildFinanceArTitlesPayload(
         rows,

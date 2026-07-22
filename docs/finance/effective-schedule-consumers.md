@@ -40,7 +40,7 @@ Este documento lista os consumidores que **devem** ler a agenda efetiva (FIN-05)
 | 5 | **Resolver por pedido** | `resolveReceivablesForSalesOrder` | FIN-05 | Migrado (FIN-08/09) |
 | 6 | **Cards / consolidação comercial** | `computeConsolidatedFinancialSummary` com `applicableExpected` FIN-05 | FIN-05 (via planned totals do audit) | Alinhado |
 | 7 | **Documentos de Saída** — evidência financeira | `resolveFinancialEvidenceWithoutDoubleCount` | max(CR, Doc) + residual pedido | Alinhado (sem soma CR+Doc) |
-| 8 | **Fluxo de Caixa oficial** | `financeCashFlowDataset` | AR/AP Nomus only | Confirmado: **não** inclui previsão de Pedido |
+| 8 | **Fluxo de Caixa oficial** | `financeCashFlowDataset` + `financeCashFlowEffectiveAr` | FIN-05/FIN-08 | Migrado — portfólio AR com agenda efetiva quando há pedidos no lote |
 | 9 | **Impressão/PDF Detalhe** | mesma payload FIN-05 do Detalhe | FIN-05 | Migrado |
 | 10 | **Impressão títulos AR** | linhas com `lineKind` quando contextualizado | FIN-05 (FIN-08) | Alinhado |
 

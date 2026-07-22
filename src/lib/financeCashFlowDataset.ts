@@ -1,7 +1,6 @@
 /**
  * Fluxo de Caixa oficial — entradas/saídas de AR/AP Nomus.
- * FIN-09: não importa previsão residual do Pedido (agenda efetiva).
- * Se no futuro incluir forecast de pedido, usar somente FIN-05.
+ * FIN-08/FIN-09: com contexto FIN-05 do portfólio, usa agenda efetiva (CR + residual).
  */
 import {
   classifyFinanceArTitle,
@@ -45,7 +44,9 @@ import {
   filterCashFlowApRowsScoped,
   filterCashFlowArPortfolioRows,
   filterCashFlowArRowsScoped,
+  type FinanceCashFlowArFilterOptions,
 } from "./financeCashFlowRowFilters.js";
+import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
 import type {
   FinanceCashFlowCriticalMovement,
   FinanceCashFlowPartySummary,
@@ -521,7 +522,7 @@ function traceForApRow(
   };
 }
 
-export type FinanceCashFlowDatasetOptions = {
+export type FinanceCashFlowDatasetOptions = FinanceCashFlowArFilterOptions & {
   /** Totais AR oficiais do motor — sobrescreve somatório do loop de blocos. */
   officialArBlockTotals?: Pick<
     FinanceCashFlowDatasetBlocks,
@@ -534,6 +535,8 @@ export type FinanceCashFlowDatasetOptions = {
   >;
 };
 
+export type { FinanceArEffectiveOrderContext };
+
 export function buildFinanceCashFlowDataset(
   arRows: FinanceCashFlowArRow[],
   apRows: FinanceCashFlowApRow[],
@@ -545,12 +548,17 @@ export function buildFinanceCashFlowDataset(
   apSyncCutoff?: NomusApReportSyncCutoff | null,
   options?: FinanceCashFlowDatasetOptions
 ): FinanceCashFlowDataset {
+  const arFilterOptions: FinanceCashFlowArFilterOptions | undefined =
+    options?.orderContexts?.length
+      ? { orderContexts: options.orderContexts }
+      : undefined;
   const arPortfolioRows = filterCashFlowArPortfolioRows(
     arRows,
     filters,
     arFilters,
     referenceDate,
-    arSyncCutoff
+    arSyncCutoff,
+    arFilterOptions
   );
   const apPortfolioRows = filterCashFlowApPortfolioRows(
     apRows,
@@ -564,7 +572,8 @@ export function buildFinanceCashFlowDataset(
     filters,
     arFilters,
     referenceDate,
-    arSyncCutoff
+    arSyncCutoff,
+    arFilterOptions
   );
   const apRowsSanitized = filterCashFlowApRowsScoped(
     apRows,

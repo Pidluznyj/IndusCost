@@ -22,7 +22,9 @@ import type { FinanceCashFlowDashboardFilters } from "./financeCashFlowDashboard
 import {
   filterCashFlowApPortfolioRows,
   filterCashFlowArPortfolioRows,
+  type FinanceCashFlowArFilterOptions,
 } from "./financeCashFlowRowFilters.js";
+import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
 import {
   resolveCashFlowApAmount,
   resolveCashFlowApMovementDate,
@@ -479,7 +481,8 @@ export function filterDailyRadarPortfolioRows(
   referenceDate: Date,
   arSyncCutoff?: NomusArReportSyncCutoff | null,
   apSyncCutoff?: NomusApReportSyncCutoff | null,
-  dashboardFilters?: FinanceCashFlowDashboardFilters
+  dashboardFilters?: FinanceCashFlowDashboardFilters,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): { arRows: FinanceCashFlowArRow[]; apRows: FinanceCashFlowApRow[] } {
   const filters = dashboardFilters ?? createDailyRadarDashboardFilters();
   return {
@@ -488,7 +491,8 @@ export function filterDailyRadarPortfolioRows(
       filters,
       toCashFlowPortfolioArFilters(filters),
       referenceDate,
-      arSyncCutoff
+      arSyncCutoff,
+      arFilterOptions
     ),
     apRows: filterCashFlowApPortfolioRows(
       apRows,
@@ -1065,6 +1069,7 @@ export type BuildCashFlowDailyRadarDataInput = {
   arSyncCutoff?: NomusArReportSyncCutoff | null;
   apSyncCutoff?: NomusApReportSyncCutoff | null;
   dashboardFilters?: FinanceCashFlowDashboardFilters;
+  orderContexts?: FinanceArEffectiveOrderContext[];
 };
 
 /**
@@ -1073,13 +1078,16 @@ export type BuildCashFlowDailyRadarDataInput = {
  */
 export function buildCashFlowDailyRadarData(input: BuildCashFlowDailyRadarDataInput): DailyRadarPayload {
   const referenceDate = input.referenceDate ?? input.baseDate;
+  const arFilterOptions =
+    input.orderContexts?.length ? { orderContexts: input.orderContexts } : undefined;
   const portfolio = filterDailyRadarPortfolioRows(
     input.arRows,
     input.apRows,
     referenceDate,
     input.arSyncCutoff,
     input.apSyncCutoff,
-    input.dashboardFilters
+    input.dashboardFilters,
+    arFilterOptions
   );
   const query: DailyRadarQuery = {
     baseDate: input.baseDate,

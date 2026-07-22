@@ -30,6 +30,8 @@ import {
 } from "./financeCashFlowLedger.js";
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import { buildFinanceCashFlowEffectiveArPortfolio } from "./finance/financeCashFlowEffectiveAr.js";
+import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
 import { suppressInferiorPreNfNomusArRows } from "./finance/financeArOperationalPortfolio.js";
 import {
   isFinanceApExcludedFromReports,
@@ -155,12 +157,35 @@ function matchesCashFlowApPortfolio(
   return matchesFinanceApDashboardFilters(row, portfolioFilters, referenceDate);
 }
 
+export type FinanceCashFlowArFilterOptions = {
+  /** Agendas FIN-05 — habilita FIN-08 (mesma regra de Contas a Receber). */
+  orderContexts?: FinanceArEffectiveOrderContext[];
+};
+
+function applyCashFlowArOperationalPortfolio(
+  rows: FinanceCashFlowArRow[],
+  referenceDate: Date,
+  options?: FinanceCashFlowArFilterOptions
+): FinanceCashFlowArRow[] {
+  if ((options?.orderContexts?.length ?? 0) > 0) {
+    return buildFinanceCashFlowEffectiveArPortfolio({
+      rows,
+      orderContexts: options!.orderContexts!,
+      referenceDate,
+    });
+  }
+  return suppressInferiorPreNfNomusArRows(
+    deduplicateFinanceArRows(rows).rows
+  ) as FinanceCashFlowArRow[];
+}
+
 export function filterCashFlowArPortfolioRows(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
   arFilters: FinanceArDashboardFilters,
   referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
   const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
   const portfolio = rows.filter(
@@ -169,9 +194,7 @@ export function filterCashFlowArPortfolioRows(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  return suppressInferiorPreNfNomusArRows(
-    deduplicateFinanceArRows(portfolio).rows
-  ) as FinanceCashFlowArRow[];
+  return applyCashFlowArOperationalPortfolio(portfolio, referenceDate, options);
 }
 
 export function filterCashFlowApPortfolioRows(
@@ -200,7 +223,8 @@ export function filterCashFlowArRowsScoped(
   filters: FinanceCashFlowDashboardFilters,
   arFilters: FinanceArDashboardFilters,
   referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  options?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
   const effectiveCutoff = resolveEffectiveNomusArReportSyncCutoff(rows, syncCutoff);
   const portfolio = rows.filter(
@@ -209,10 +233,12 @@ export function filterCashFlowArRowsScoped(
       !isFinanceArExcludedFromReports(row, effectiveCutoff) &&
       isFinanceArAllowedInManagementReport(row, referenceDate)
   );
-  const deduped = suppressInferiorPreNfNomusArRows(
-    deduplicateFinanceArRows(portfolio).rows
+  const operational = applyCashFlowArOperationalPortfolio(
+    portfolio,
+    referenceDate,
+    options
   );
-  return deduped.filter((row) =>
+  return operational.filter((row) =>
     matchesCashFlowArPeriodScope(row, filters, referenceDate)
   ) as FinanceCashFlowArRow[];
 }

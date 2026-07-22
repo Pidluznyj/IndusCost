@@ -58,6 +58,7 @@ import {
   buildFinanceCashFlowDataset,
   isFinanceCashFlowArOpenRow,
   type FinanceCashFlowDataset,
+  type FinanceCashFlowDatasetOptions,
 } from "./financeCashFlowDataset.js";
 import {
   buildCashFlowExecutiveReading,
@@ -623,16 +624,22 @@ export function buildFinanceCashFlowDashboard(
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date = new Date(),
   arSyncCutoff?: NomusArReportSyncCutoff | null,
-  apSyncCutoff?: NomusApReportSyncCutoff | null
+  apSyncCutoff?: NomusApReportSyncCutoff | null,
+  datasetOptions?: FinanceCashFlowDatasetOptions
 ): FinanceCashFlowDashboardPayload {
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
+  const arFilterOptions =
+    datasetOptions?.orderContexts?.length
+      ? { orderContexts: datasetOptions.orderContexts }
+      : undefined;
   const arPortfolioRows = filterCashFlowArPortfolioRows(
     arRows,
     filters,
     arFilters,
     referenceDate,
-    arSyncCutoff
+    arSyncCutoff,
+    arFilterOptions
   );
   const officialArPortfolio = buildOfficialAccountsReceivableRulesResult({
     rows: arPortfolioRows,
@@ -663,6 +670,7 @@ export function buildFinanceCashFlowDashboard(
     arSyncCutoff,
     apSyncCutoff,
     {
+      ...datasetOptions,
       officialArBlockTotals: {
         totalReceivableOpen: officialArPortfolio.metrics.openAmount,
         overdueReceivableAmount: officialArPortfolio.metrics.overdueAmount,

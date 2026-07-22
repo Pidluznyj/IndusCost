@@ -66,6 +66,7 @@ import {
   toCashFlowPortfolioArFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
 import { loadAnnualComparisonPortfolioRows } from "@/src/lib/financeExecutiveReportAnnualLoad.js";
+import { loadFinanceCashFlowArOrderContexts } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusArReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusArReportFreshness.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
@@ -124,11 +125,20 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
     }),
   ]);
 
+  const arRows = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const referenceDate = new Date();
+  const orderContexts = await loadFinanceCashFlowArOrderContexts(
+    prisma,
+    arRows,
+    referenceDate
+  );
+
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
+    orderContexts,
   };
 }
 
@@ -157,11 +167,19 @@ async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
     }),
   ]);
 
+  const arRows = arPrisma.map(mapPrismaRowToFinanceCashFlowArRow);
+  const orderContexts = await loadFinanceCashFlowArOrderContexts(
+    prisma,
+    arRows,
+    referenceDate
+  );
+
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
     arSyncCutoff,
     apSyncCutoff,
+    orderContexts,
   };
 }
 
@@ -179,7 +197,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
+        await loadCashFlowRows(filters);
       const dataset = buildFinanceCashFlowDataset(
         arRows,
         apRows,
@@ -188,7 +207,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         toApLoadFilters(filters),
         new Date(),
         arSyncCutoff,
-        apSyncCutoff
+        apSyncCutoff,
+        { orderContexts }
       );
       const audit = buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows);
       res.json(audit);
@@ -202,7 +222,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
+        await loadCashFlowRows(filters);
       const auditMode = String(req.query.audit ?? "").trim() === "1";
       if (auditMode) {
         const dataset = buildFinanceCashFlowDataset(
@@ -213,7 +234,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           toApLoadFilters(filters),
           new Date(),
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          { orderContexts }
         );
         return res.json(
           buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows)
@@ -225,7 +247,8 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         filters,
         new Date(),
         arSyncCutoff,
-        apSyncCutoff
+        apSyncCutoff,
+        { orderContexts }
       );
       res.json(payload);
     }
@@ -238,14 +261,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
       const filters = parseFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
 
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } = await loadCashFlowRows(filters);
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
+        await loadCashFlowRows(filters);
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,
         filters,
         new Date(),
         arSyncCutoff,
-        apSyncCutoff
+        apSyncCutoff,
+        { orderContexts }
       );
       const csv = buildFinanceCashFlowExportCsv(payload);
       const filename = financeCashFlowExportFilename(filters.year);
@@ -313,14 +338,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         } as typeof rawQuery;
 
         const referenceDate = new Date();
-        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
           await loadDailyRadarPortfolioRows(referenceDate);
         const portfolio = filterDailyRadarPortfolioRows(
           arRows,
           apRows,
           referenceDate,
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          undefined,
+          orderContexts.length > 0 ? { orderContexts } : undefined
         );
 
         const radar = buildFinanceCashFlowDailyRadar(
@@ -459,14 +486,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         } as typeof rawQuery;
 
         const referenceDate = new Date();
-        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
           await loadDailyRadarPortfolioRows(referenceDate);
         const portfolio = filterDailyRadarPortfolioRows(
           arRows,
           apRows,
           referenceDate,
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          undefined,
+          orderContexts.length > 0 ? { orderContexts } : undefined
         );
         const radar = buildFinanceCashFlowDailyRadar(
           portfolio.arRows,
@@ -550,14 +579,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         }
       }
       const referenceDate = new Date();
-      const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+      const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
         await loadDailyRadarPortfolioRows(referenceDate);
       const portfolio = filterDailyRadarPortfolioRows(
         arRows,
         apRows,
         referenceDate,
         arSyncCutoff,
-        apSyncCutoff
+        apSyncCutoff,
+        undefined,
+        orderContexts.length > 0 ? { orderContexts } : undefined
       );
       const payload = buildFinanceCashFlowDailyRadar(
         portfolio.arRows,
@@ -602,14 +633,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         if (!query) return;
 
         const referenceDate = new Date();
-        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
           await loadDailyRadarPortfolioRows(referenceDate);
         const portfolio = filterDailyRadarPortfolioRows(
           arRows,
           apRows,
           referenceDate,
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          undefined,
+          orderContexts.length > 0 ? { orderContexts } : undefined
         );
         const payload = buildFinanceCashFlowDailyRadarExportPayload(
           portfolio.arRows,
@@ -640,14 +673,16 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         if (!query) return;
 
         const referenceDate = new Date();
-        const { arRows, apRows, arSyncCutoff, apSyncCutoff } =
+        const { arRows, apRows, arSyncCutoff, apSyncCutoff, orderContexts } =
           await loadDailyRadarPortfolioRows(referenceDate);
         const portfolio = filterDailyRadarPortfolioRows(
           arRows,
           apRows,
           referenceDate,
           arSyncCutoff,
-          apSyncCutoff
+          apSyncCutoff,
+          undefined,
+          orderContexts.length > 0 ? { orderContexts } : undefined
         );
         const payload = buildFinanceCashFlowDailyRadarExportPayload(
           portfolio.arRows,

@@ -1,11 +1,10 @@
 /**
- * Carteira AR operacional compartilhada (Fase 1).
+ * Carteira AR operacional compartilhada (FIN-02 portfólio + FIN-08 no Fluxo de Caixa).
  *
  * Fonte única para Contas a Receber (grade) e Fluxo de Caixa:
  * saneamento gerencial + FIN-02 (pré-NF omitido quando o Pedido já tem CR com NF;
  * pré-NF obsoleto omitido quando o Nomus recria a mesma parcela com novo vencimento).
- *
- * Não injeta DOCUMENT_AWAITING_CR / ORDER_*_FORECAST (Fase 2).
+ * Com contexto FIN-05, Fluxo de Caixa e Títulos usam FIN-08 (`financeCashFlowEffectiveAr.ts`).
  */
 
 import {
