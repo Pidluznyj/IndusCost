@@ -812,4 +812,39 @@
     opacity: 0.7;
     font-style: italic;
   }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-print-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 7px;
+  }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-print-table th,
+  body.sales-orders-receivables-print-route .sales-orders-receivables-print-table td {
+    border: 1px solid #cbd5e1;
+    padding: 2px 3px;
+    vertical-align: top;
+    word-break: break-word;
+  }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-col-order {
+    width: 8%;
+  }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-col-customer {
+    width: 14%;
+  }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-col-month {
+    width: 5%;
+    text-align: right;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  body.sales-orders-receivables-print-route .sales-orders-receivables-print-totals-row td {
+    font-weight: 700;
+    background: #f8fafc;
+  }
 }

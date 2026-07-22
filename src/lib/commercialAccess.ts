@@ -90,6 +90,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/sales-orders/management", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/report", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/export*", resourceKey: "commercial.sales_orders", action: "view" },
+  { method: "GET", path: "/api/sales-orders/reports/monthly-receivables*", resourceKey: "commercial.sales_orders", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/detail", resourceKey: "commercial.sales_orders.detail", action: "view" },
   { method: "GET", path: "/api/sales-orders/:id/intelligence", resourceKey: "commercial.sales_orders.detail", action: "view" },

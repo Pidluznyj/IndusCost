@@ -25,6 +25,7 @@ import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
+import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
@@ -73,7 +74,7 @@ import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
-import { AlertCircle, BarChart3, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart3, CalendarRange, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -857,6 +858,25 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/monthly-receivables"
+          element={
+            <ModulePageShell
+              title="Recebíveis mensais por Pedido de Venda"
+              description="Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento."
+              headerActions={
+                <Link
+                  to="/sales-orders"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  Lista de pedidos
+                </Link>
+              }
+            >
+              <SalesOrderMonthlyReceivablesReportPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -880,6 +900,13 @@ export default function App() {
                   >
                     <TrendingUp className="h-4 w-4 text-primary" />
                     Resultado
+                  </Link>
+                  <Link
+                    to="/sales-orders/monthly-receivables"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <CalendarRange className="h-4 w-4 text-primary" />
+                    Recebíveis mensais
                   </Link>
                   <Link
                     to="/sales-orders/management"
