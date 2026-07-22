@@ -12,6 +12,7 @@
   body.material-demand-printing #root,
   body.cnpj-intelligence-printing #root,
   body.ar-titles-print-route #root,
+  body.ap-titles-print-route #root,
   body.sales-order-detail-print-route #root {
     display: none !important;
   }
@@ -34,6 +35,8 @@
   #cnpj-intelligence-print-root *,
   #ar-titles-print-root,
   #ar-titles-print-root *,
+  #ap-titles-print-root,
+  #ap-titles-print-root *,
   #sales-order-detail-print-root,
   #sales-order-detail-print-root * {
     visibility: visible !important;
