@@ -337,28 +337,51 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
     return [];
   }
 
-  const portfolioWhere = buildExactPortfolioSalesOrderWhere(
-    portfolioOrderCodes,
-    fromLinks.salesOrderIds
-  );
-  if (!portfolioWhere) return [];
-
-  const where = buildFinanceArEffectiveSalesOrderWhere(portfolioWhere);
   const cap = Math.min(Math.max(limit, 1), PORTFOLIO_ORDER_LIMIT);
+  const orderSelect = {
+    id: true,
+    orderCode: true,
+    status: true,
+    sourcePresenceStatus: true,
+    externalCustomerId: true,
+    Customer: { select: { companyName: true, taxId: true } },
+  } as const;
 
-  const orders = await prisma.salesOrder.findMany({
-    where: where as never,
-    select: {
-      id: true,
-      orderCode: true,
-      status: true,
-      sourcePresenceStatus: true,
-      externalCustomerId: true,
-      Customer: { select: { companyName: true, taxId: true } },
-    },
-    orderBy: { orderCode: "asc" },
-    take: cap,
-  });
+  const priorityIds = [...new Set(fromLinks.salesOrderIds.filter(Boolean))];
+  const priorityOrders =
+    priorityIds.length > 0
+      ? await prisma.salesOrder.findMany({
+          where: buildFinanceArEffectiveSalesOrderWhere({
+            id: { in: priorityIds },
+          }) as never,
+          select: orderSelect,
+        })
+      : [];
+
+  const loadedIds = new Set(priorityOrders.map((order) => order.id));
+  const remainingCap = Math.max(0, cap - priorityOrders.length);
+
+  let secondaryOrders: typeof priorityOrders = [];
+  if (remainingCap > 0) {
+    const secondaryWhere = buildExactPortfolioSalesOrderWhere(portfolioOrderCodes, []);
+    if (secondaryWhere) {
+      const where = buildFinanceArEffectiveSalesOrderWhere({
+        AND: [
+          secondaryWhere,
+          loadedIds.size > 0 ? { id: { notIn: [...loadedIds] } } : {},
+        ],
+      });
+      secondaryOrders = await prisma.salesOrder.findMany({
+        where: where as never,
+        select: orderSelect,
+        orderBy: { orderCode: "asc" },
+        take: remainingCap,
+      });
+    }
+  }
+
+  const orders = [...priorityOrders, ...secondaryOrders];
+  if (orders.length === 0) return [];
 
   return buildFinanceArEffectiveContextsForOrders(prisma, orders, referenceDate);
 }

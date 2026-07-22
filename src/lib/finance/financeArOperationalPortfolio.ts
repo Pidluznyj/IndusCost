@@ -134,6 +134,12 @@ export type SuppressInferiorPreNfNomusArOptions = {
   resolveOrderCode?: (
     row: Pick<FinanceArDashboardRow, "description" | "externalId">
   ) => string | null;
+  /**
+   * Quando true, não promove Pedido a "superior" só porque há CR com NF no lote.
+   * Usado no FIN-08 com vínculo NF→Pedido: suprime pré-NF inferior apenas se FIN-05
+   * carregou para aquele Pedido (evita perder residual quando o cap omitiu o contexto).
+   */
+  superiorFromProvidedCodesOnly?: boolean;
 };
 
 type PreNfSuppressRow = Pick<
@@ -254,7 +260,10 @@ export function suppressInferiorPreNfNomusArRows<T extends PreNfSuppressRow>(
     const key = normalizeFinanceArOrderCodeKey(code);
     if (!key) continue;
     orderKeyByExternalId.set(row.externalId, key);
-    if (classifyFinanceArReceivableOrigin(row) === "WITH_NFE") {
+    if (
+      !options?.superiorFromProvidedCodesOnly &&
+      classifyFinanceArReceivableOrigin(row) === "WITH_NFE"
+    ) {
       superior.add(key);
     }
   }

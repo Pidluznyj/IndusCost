@@ -569,6 +569,97 @@ describe("FIN-08 — CR só Nomus não duplica previsão do Pedido (PD 02740)", 
     );
   });
 
+  it("sem FIN-05 do PD 02719 mas com vínculo NF→Pedido: mantém CR 18079 (portfólio FC)", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-filler",
+      orderCode: "PD 00001",
+      originalInstallments: [{ installmentNumber: 1, dueDate: "2026-09-05", amount: "1000.00" }],
+      items: [
+        {
+          salesOrderItemId: "item-filler",
+          plannedNetValue: "1000.00",
+          status: 2,
+          orderedQuantity: 1,
+          fulfilledQuantity: 1,
+        },
+      ],
+      documents: [],
+      realReceivables: [
+        {
+          externalId: 99999,
+          sourceInvoiceId: 9001,
+          dueDate: "2026-09-05",
+          amountReceivable: "1000.00",
+          amountReceived: "0.00",
+          balanceReceivable: "1000.00",
+        },
+      ],
+      referenceDate: REF,
+    });
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: [
+        nomusCr({
+          externalId: 17874,
+          sourceInvoiceId: 7311,
+          sourceInvoiceNumber: "7311",
+          description: "Pedido PD 02719 NF 7311",
+          amountReceivable: 158505,
+          amountReceived: 1755,
+          balanceReceivable: 156750,
+          dueDate: new Date(2026, 8, 10),
+        }),
+        nomusCr({
+          externalId: 18077,
+          sourceInvoiceId: null,
+          sourceInvoiceNumber: null,
+          description: "Pedido PD 02719 — Depósito Bancário",
+          amountReceivable: 158505,
+          balanceReceivable: 158505,
+          dueDate: new Date(2026, 8, 10),
+        }),
+        nomusCr({
+          externalId: 18076,
+          sourceInvoiceId: 7382,
+          sourceInvoiceNumber: "7382",
+          description: "Pedido PD 02719 NF 7382",
+          amountReceivable: 146974,
+          balanceReceivable: 146974,
+          dueDate: new Date(2026, 8, 20),
+        }),
+        nomusCr({
+          externalId: 18079,
+          sourceInvoiceId: null,
+          sourceInvoiceNumber: null,
+          description: "Pedido PD 02719 - Parcela 3 de 3",
+          amountReceivable: 161111,
+          balanceReceivable: 161111,
+          dueDate: new Date(2026, 8, 30),
+        }),
+      ],
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: CUSTOMER_NAME,
+          personCnpj: CUSTOMER_CNPJ,
+        },
+      ],
+      nfeOrderLinks: [
+        { sourceInvoiceId: 7311, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+        { sourceInvoiceId: 7382, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+      ],
+      referenceDate: REF,
+    });
+
+    const crIds = items
+      .filter((i) => i.lineKind === "CR_REAL")
+      .map((i) => i.externalId)
+      .sort((a, b) => a - b);
+    assert.deepEqual(crIds, [17874, 18076, 18079]);
+    assert.ok(!items.some((i) => i.externalId === 18077));
+  });
+
   it("sem CR: previsão sem materialização usa ORDER_PLAN_FORECAST", () => {
     const schedule = buildSalesOrderEffectiveFinancialSchedule({
       salesOrderId: "so-plan",

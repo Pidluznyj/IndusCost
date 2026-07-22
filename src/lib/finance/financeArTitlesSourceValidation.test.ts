@@ -24,6 +24,11 @@ import {
   filterCashFlowArPortfolioRows,
 } from "@/src/lib/financeCashFlowRowFilters.js";
 import { resolveFinanceArCanonicalEffectiveTitles } from "./financeArEffectiveTitlesSource.js";
+import {
+  buildFinanceArEffectiveTitles,
+  type FinanceArEffectiveOrderContext,
+} from "./financeAccountsReceivableEffectiveTitles.js";
+import { buildSalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
 
 const REF = new Date(2026, 6, 17, 12, 0, 0, 0);
 const CUSTOMER_ID = 88001;
@@ -253,6 +258,54 @@ describe("financeArTitlesSourceValidation — entrega pedida", () => {
     assert.deepEqual(
       portfolio.map((r) => r.externalId).sort((a, b) => a - b),
       [17874, 18076, 18079]
+    );
+  });
+
+  it("FC portfólio: FIN-05 ausente (cap 80) + vínculo NF→Pedido mantém parcela 3", () => {
+    const rows = britaniaSeptemberRows();
+    const fillerSchedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-filler",
+      orderCode: "PD 00001",
+      originalInstallments: [{ installmentNumber: 1, dueDate: "2026-09-05", amount: "1000.00" }],
+      items: [
+        {
+          salesOrderItemId: "item-filler",
+          plannedNetValue: "1000.00",
+          status: 2,
+          orderedQuantity: 1,
+          fulfilledQuantity: 1,
+        },
+      ],
+      documents: [],
+      realReceivables: [
+        {
+          externalId: 99999,
+          sourceInvoiceId: 9001,
+          dueDate: "2026-09-05",
+          amountReceivable: "1000.00",
+          amountReceived: "0.00",
+          balanceReceivable: "1000.00",
+        },
+      ],
+      referenceDate: REF,
+    });
+    const fillerContext: FinanceArEffectiveOrderContext = {
+      schedule: fillerSchedule,
+      personId: 1,
+      personName: "Outro Cliente",
+    };
+
+    const { items } = buildFinanceArEffectiveTitles({
+      nomusRows: rows,
+      orderContexts: [fillerContext],
+      nfeOrderLinks: NFE_LINKS,
+      referenceDate: REF,
+    });
+
+    assert.deepEqual(
+      items.map((c) => c.externalId).sort((a, b) => a - b),
+      [17874, 18076, 18079],
+      "parcela 3 não pode sumir só porque FIN-05 do PD 02719 ficou fora do cap"
     );
   });
 

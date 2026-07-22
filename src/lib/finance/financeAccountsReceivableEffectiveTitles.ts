@@ -26,6 +26,8 @@ import {
   extractFinanceArOrderCodeHint,
   normalizeFinanceArOrderCodeKey,
   suppressInferiorPreNfNomusArRows,
+  suppressObsoleteOpenPreNfNomusArRows,
+  suppressPreNfReplacedByRealCrOnSameOrder,
   type FinanceArNfeOrderLink,
 } from "./financeArOperationalPortfolio.js";
 import type { SalesOrderEffectiveFinancialSchedule } from "./salesOrderEffectiveFinancialSchedule.js";
@@ -405,7 +407,18 @@ export function buildFinanceArEffectiveTitles(
     }
   }
 
-  // FIN-02 compartilhado: pré-NF omitido quando o Pedido já tem CR superior.
+  // FIN-02: só suprime pré-NF inferior quando FIN-05 carregou para o Pedido.
+  // Sem contexto (ex.: cap de 80 pedidos no portfólio FC), mantém residual pré-NF
+  // quando há vínculo NF→Pedido — paridade com Títulos filtrado por mês.
+  const ordersWithLoadedContext = new Set(
+    input.orderContexts.map((ctx) => normalizeOrderCode(ctx.schedule.orderCode))
+  );
+  const resolveLinkedOrderCode = (
+    row: Pick<FinanceArDashboardRow, "description" | "externalId">
+  ) =>
+    crToOrder.get(row.externalId)?.orderCode ??
+    extractFinanceArOrderCodeHint(row.description);
+
   const ordersWithSuperiorCr = new Set(
     input.orderContexts
       .filter((ctx) => ctx.schedule.realReceivables.length > 0)
@@ -416,13 +429,23 @@ export function buildFinanceArEffectiveTitles(
     const linked = crToOrder.get(row.externalId);
     if (!linked?.orderCode) continue;
     const key = normalizeOrderCode(linked.orderCode);
-    if (key) ordersWithSuperiorCr.add(key);
+    if (key && ordersWithLoadedContext.has(key)) {
+      ordersWithSuperiorCr.add(key);
+    }
   }
-  const operationalNomus = suppressInferiorPreNfNomusArRows(dedupedNomus, {
+
+  let operationalNomus = suppressPreNfReplacedByRealCrOnSameOrder(dedupedNomus, {
+    resolveOrderCode: resolveLinkedOrderCode,
+  });
+  if ((input.nfeOrderLinks ?? []).length > 0) {
+    operationalNomus = suppressObsoleteOpenPreNfNomusArRows(operationalNomus, {
+      resolveOrderCode: resolveLinkedOrderCode,
+    });
+  }
+  operationalNomus = suppressInferiorPreNfNomusArRows(operationalNomus, {
     superiorOrderCodes: ordersWithSuperiorCr,
-    resolveOrderCode: (row) =>
-      crToOrder.get(row.externalId)?.orderCode ??
-      extractFinanceArOrderCodeHint(row.description),
+    resolveOrderCode: resolveLinkedOrderCode,
+    superiorFromProvidedCodesOnly: (input.nfeOrderLinks ?? []).length > 0,
   });
   const nomusByExternalId = new Map(
     operationalNomus.map((r) => [r.externalId, r] as const)
