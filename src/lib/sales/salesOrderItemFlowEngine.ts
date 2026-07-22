@@ -120,8 +120,24 @@ export type ResolveSalesOrderItemFlowResult = {
   activeRemainingQuantity: QtyDecimal | null;
   cutQuantity: QtyDecimal;
   canceledQuantity: QtyDecimal;
-  /** Quantidade que ainda precisa cobrir doc/NF/OP no fluxo (exclui corte/cancelamento). */
+  /**
+   * Obrigação ativa comercial:
+   * orderedQuantity − cutQuantity − canceledQuantity.
+   */
+  activeObligationQuantity: QtyDecimal;
+  /**
+   * Saldo ainda não atendido:
+   * max(0, activeObligation − fulfilledQuantity).
+   * Só este residual pode exigir WAITING_PRODUCTION_ORDER.
+   */
+  remainingFulfillmentQuantity: QtyDecimal;
+  /** Quantidade que ainda precisa cobrir doc/NF no fluxo (exclui corte/cancelamento). */
   shipTargetQuantity: QtyDecimal;
+  /**
+   * true quando a obrigação comercial foi atendida sem cobertura de OP
+   * (classificação operacional — não afirma movimento de estoque).
+   */
+  fulfilledWithoutProduction: boolean;
   currentStage: SalesOrderItemFlowStage;
   stageReason: string;
   nextAction: string;
@@ -371,7 +387,8 @@ export function resolveSalesOrderItemFlow(
     );
   }
 
-  // Alvo operacional a cobrir com OP/DS/NF (exclui cancelado e corte).
+  // Alvo operacional a cobrir com DS/NF (exclui cancelado e corte).
+  // OP só é exigida sobre remainingFulfillment (saldo ainda não atendido).
   let shipTargetQuantity = ZERO;
   if (fulfillment.classification === "CANCELED" || input.nomusIsCanceled === true) {
     shipTargetQuantity = ZERO;
@@ -381,6 +398,13 @@ export function resolveSalesOrderItemFlow(
   } else if (orderedQuantity != null) {
     shipTargetQuantity = max0(orderedQuantity.sub(canceledQuantity).sub(cutQuantity));
   }
+
+  const activeObligationQuantity = shipTargetQuantity;
+  const fulfilledForObligation =
+    fulfilledQuantity != null ? max0(fulfilledQuantity) : ZERO;
+  const remainingFulfillmentQuantity = max0(
+    activeObligationQuantity.sub(fulfilledForObligation)
+  );
 
   const documentedQuantity = sumDocumentQty(input.documentAllocations);
   const nfeAgg = sumNfeQty(input.nfeAllocations, { onlyValid: true });
@@ -525,6 +549,7 @@ export function resolveSalesOrderItemFlow(
   } else {
     // Liberado ou além — evidência terminal de envio/conclusão prevalece
     // sobre ausência histórica de OP (regressão PD 02596 / OP-03).
+    // OP-06: WAITING_PRODUCTION_ORDER só sobre remainingFulfillment > 0.
     const needsProduction = requiresProduction === true;
     const skipProduction =
       requiresProduction === false || requiresProduction === null;
@@ -536,30 +561,46 @@ export function resolveSalesOrderItemFlow(
       fulfillmentClassification: fulfillment.classification,
     });
 
+    /** Cobertura de OP exigida apenas para o saldo ainda não atendido. */
+    const productionCoverageTarget = remainingFulfillmentQuantity;
+    const fulfilledWithoutProductionFlag =
+      needsProduction &&
+      remainingFulfillmentQuantity.lte(0) &&
+      activeObligationQuantity.gt(0) &&
+      productionOrderQuantity.lt(activeObligationQuantity);
+
+    if (fulfilledWithoutProductionFlag) {
+      pushInconsistency(
+        inconsistencies,
+        "FULFILLED_WITHOUT_PRODUCTION",
+        "Atendido pelo estoque / sem necessidade de OP (classificação operacional; não afirma movimento de estoque)."
+      );
+    }
+
     if (postProductionStage === "SHIPPED_COMPLETED") {
       currentStage = "SHIPPED_COMPLETED";
       stageReason = stageReasonFor(currentStage, {
         usedProductionProxy:
           needsProduction &&
           (producedQuantity == null ||
-            productionOrderQuantity.lt(shipTargetQuantity)),
+            productionOrderQuantity.lt(activeObligationQuantity)),
         completedWithoutProductionOrder:
-          needsProduction && productionOrderQuantity.lt(shipTargetQuantity),
+          needsProduction && productionOrderQuantity.lt(activeObligationQuantity),
+        fulfilledWithoutProduction: fulfilledWithoutProductionFlag,
       });
-    } else if (needsProduction && shipTargetQuantity.gt(0)) {
-      if (productionOrderQuantity.lt(shipTargetQuantity)) {
+    } else if (needsProduction && productionCoverageTarget.gt(0)) {
+      if (productionOrderQuantity.lt(productionCoverageTarget)) {
         currentStage = "WAITING_PRODUCTION_ORDER";
         stageReason =
-          "Liberado e exige produção, mas linkedQuantity de OP é insuficiente.";
+          "Saldo residual exige produção, mas linkedQuantity de OP é insuficiente.";
       } else if (
         producedQuantity != null &&
-        producedQuantity.lt(shipTargetQuantity)
+        producedQuantity.lt(productionCoverageTarget)
       ) {
         currentStage = "IN_PRODUCTION";
         stageReason =
-          "OP coberta, porém quantidade produzida ainda insuficiente.";
+          "OP coberta para o residual, porém quantidade produzida ainda insuficiente.";
       } else {
-        // OP suficiente; produced null → proxy OK
         currentStage = postProductionStage;
         stageReason = stageReasonFor(currentStage, {
           usedProductionProxy: producedQuantity == null && hasOfficialOpLink,
@@ -572,6 +613,7 @@ export function resolveSalesOrderItemFlow(
       currentStage = postProductionStage;
       stageReason = stageReasonFor(currentStage, {
         skippedProduction: skipProduction,
+        fulfilledWithoutProduction: fulfilledWithoutProductionFlag,
       });
     }
 
@@ -620,7 +662,14 @@ export function resolveSalesOrderItemFlow(
     activeRemainingQuantity,
     cutQuantity,
     canceledQuantity,
+    activeObligationQuantity,
+    remainingFulfillmentQuantity,
     shipTargetQuantity,
+    fulfilledWithoutProduction:
+      requiresProduction === true &&
+      remainingFulfillmentQuantity.lte(0) &&
+      activeObligationQuantity.gt(0) &&
+      productionOrderQuantity.lt(activeObligationQuantity),
     currentStage,
     stageReason,
     nextAction: SALES_ORDER_FLOW_STAGE_NEXT_ACTION[currentStage],
@@ -658,18 +707,25 @@ function stageReasonFor(
     usedProductionProxy?: boolean;
     skippedProduction?: boolean;
     completedWithoutProductionOrder?: boolean;
+    fulfilledWithoutProduction?: boolean;
   }
 ): string {
   switch (stage) {
     case "WAITING_OUTPUT_DOCUMENT":
+      if (flags.fulfilledWithoutProduction) {
+        return "Atendido pelo estoque / sem necessidade de OP; falta Documento de Saída (sem afirmar movimento de estoque).";
+      }
       return flags.skippedProduction
         ? "Produção não exigida/indefinida; falta cobertura documental suficiente."
         : "Produção satisfeita (ou proxy OP); falta Documento de Saída.";
     case "WAITING_NFE":
+      if (flags.fulfilledWithoutProduction) {
+        return "Atendido pelo estoque / sem necessidade de OP; documento presente, falta NF-e válida.";
+      }
       return "Documento presente; falta NF-e válida (proxy de envio).";
     case "SHIPPED_COMPLETED":
-      if (flags.completedWithoutProductionOrder) {
-        return "Obrigação coberta por NF-e válida; ausência histórica de OP não reabre obrigação de produção.";
+      if (flags.completedWithoutProductionOrder || flags.fulfilledWithoutProduction) {
+        return "Obrigação coberta por NF-e válida; ausência histórica de OP não reabre obrigação de produção (Atendido pelo estoque / sem necessidade de OP).";
       }
       return flags.usedProductionProxy
         ? "NF-e válida cobre a obrigação; produção por proxy de OP."
