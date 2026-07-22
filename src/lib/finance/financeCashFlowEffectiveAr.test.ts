@@ -212,6 +212,20 @@ describe("financeCashFlowEffectiveAr — PD 02719", () => {
     );
   });
 
+  it("filterCashFlowArPortfolioRows repassa orderContexts vazio (caminho FIN-08)", () => {
+    const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
+    const filters = createDailyRadarDashboardFilters();
+    const legacy = filterCashFlowArPortfolioRows(
+      rows,
+      filters,
+      toCashFlowPortfolioArFilters(filters),
+      REF,
+      null,
+      { orderContexts: [] }
+    );
+    assert.ok(legacy.some((r) => r.externalId === 18077), "contexts vazios = suppress legado");
+  });
+
   it("filterCashFlowArPortfolioRows repassa orderContexts (mesmo motor)", () => {
     const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
     const schedule = pd02719Schedule();

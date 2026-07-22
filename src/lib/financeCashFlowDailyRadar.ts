@@ -1079,7 +1079,9 @@ export type BuildCashFlowDailyRadarDataInput = {
 export function buildCashFlowDailyRadarData(input: BuildCashFlowDailyRadarDataInput): DailyRadarPayload {
   const referenceDate = input.referenceDate ?? input.baseDate;
   const arFilterOptions =
-    input.orderContexts?.length ? { orderContexts: input.orderContexts } : undefined;
+    input.orderContexts !== undefined
+      ? { orderContexts: input.orderContexts }
+      : undefined;
   const portfolio = filterDailyRadarPortfolioRows(
     input.arRows,
     input.apRows,

@@ -167,10 +167,10 @@ function applyCashFlowArOperationalPortfolio(
   referenceDate: Date,
   options?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
-  if ((options?.orderContexts?.length ?? 0) > 0) {
+  if (options?.orderContexts !== undefined) {
     return buildFinanceCashFlowEffectiveArPortfolio({
       rows,
-      orderContexts: options!.orderContexts!,
+      orderContexts: options.orderContexts,
       referenceDate,
     });
   }

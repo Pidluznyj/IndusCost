@@ -347,7 +347,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff,
           undefined,
-          orderContexts.length > 0 ? { orderContexts } : undefined
+          { orderContexts }
         );
 
         const radar = buildFinanceCashFlowDailyRadar(
@@ -495,7 +495,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff,
           undefined,
-          orderContexts.length > 0 ? { orderContexts } : undefined
+          { orderContexts }
         );
         const radar = buildFinanceCashFlowDailyRadar(
           portfolio.arRows,
@@ -588,7 +588,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
         arSyncCutoff,
         apSyncCutoff,
         undefined,
-        orderContexts.length > 0 ? { orderContexts } : undefined
+        { orderContexts }
       );
       const payload = buildFinanceCashFlowDailyRadar(
         portfolio.arRows,
@@ -642,7 +642,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff,
           undefined,
-          orderContexts.length > 0 ? { orderContexts } : undefined
+          { orderContexts }
         );
         const payload = buildFinanceCashFlowDailyRadarExportPayload(
           portfolio.arRows,
@@ -682,7 +682,7 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           arSyncCutoff,
           apSyncCutoff,
           undefined,
-          orderContexts.length > 0 ? { orderContexts } : undefined
+          { orderContexts }
         );
         const payload = buildFinanceCashFlowDailyRadarExportPayload(
           portfolio.arRows,

@@ -549,7 +549,7 @@ export function buildFinanceCashFlowDataset(
   options?: FinanceCashFlowDatasetOptions
 ): FinanceCashFlowDataset {
   const arFilterOptions: FinanceCashFlowArFilterOptions | undefined =
-    options?.orderContexts?.length
+    options?.orderContexts !== undefined
       ? { orderContexts: options.orderContexts }
       : undefined;
   const arPortfolioRows = filterCashFlowArPortfolioRows(

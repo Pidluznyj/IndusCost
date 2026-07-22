@@ -16,7 +16,68 @@ import {
 import { shouldIncludeSalesOrderInOperationalReceivables } from "@/src/lib/financeArCancelledSalesOrderExclusion.js";
 
 const DEFAULT_ORDER_LIMIT = 24;
-const PORTFOLIO_ORDER_LIMIT = 40;
+/** Teto de pedidos distintos por portfólio AR (descrição + NF). */
+const PORTFOLIO_ORDER_LIMIT = 80;
+
+export type FinanceArPortfolioSalesOrderRefs = {
+  orderCodes: string[];
+  salesOrderIds: string[];
+};
+
+/** Where exato — evita `contains` que estoura o take e omite pedidos (ex.: PD 02719). */
+export function buildExactPortfolioSalesOrderWhere(
+  orderCodes: string[],
+  salesOrderIds: string[]
+): Record<string, unknown> | null {
+  const orClauses: Array<Record<string, unknown>> = [];
+  const codes = [...new Set(orderCodes.map((c) => c.trim()).filter(Boolean))];
+  for (const code of codes) {
+    orClauses.push({ orderCode: { equals: code, mode: "insensitive" } });
+  }
+  const ids = [...new Set(salesOrderIds.filter(Boolean))];
+  if (ids.length > 0) {
+    orClauses.push({ id: { in: ids } });
+  }
+  if (orClauses.length === 0) return null;
+  return orClauses.length === 1 ? orClauses[0]! : { OR: orClauses };
+}
+
+async function resolveFinanceArPortfolioSalesOrderRefs(
+  prisma: PrismaClient,
+  rows: Array<Pick<FinanceArDashboardRow, "sourceInvoiceId">>
+): Promise<FinanceArPortfolioSalesOrderRefs> {
+  const nfeIds = [
+    ...new Set(
+      rows
+        .map((r) => r.sourceInvoiceId)
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ];
+  if (nfeIds.length === 0) {
+    return { orderCodes: [], salesOrderIds: [] };
+  }
+
+  const links = await prisma.salesOrderNfeLink.findMany({
+    where: { nfeExternalId: { in: nfeIds } },
+    select: {
+      salesOrderId: true,
+      orderCode: true,
+      SalesOrder: { select: { id: true, orderCode: true } },
+    },
+  });
+
+  const orderCodes = new Set<string>();
+  const salesOrderIds = new Set<string>();
+  for (const link of links) {
+    if (link.salesOrderId) salesOrderIds.add(link.salesOrderId);
+    const code = (link.orderCode ?? link.SalesOrder?.orderCode ?? "").trim();
+    if (code) orderCodes.add(code);
+  }
+  return {
+    orderCodes: [...orderCodes],
+    salesOrderIds: [...salesOrderIds],
+  };
+}
 
 export type LoadFinanceArEffectiveOrderContextsInput = {
   search?: string | null;
@@ -44,29 +105,8 @@ async function resolveFinanceArOrderCodesFromInvoiceLinks(
   prisma: PrismaClient,
   rows: Array<Pick<FinanceArDashboardRow, "sourceInvoiceId">>
 ): Promise<string[]> {
-  const nfeIds = [
-    ...new Set(
-      rows
-        .map((r) => r.sourceInvoiceId)
-        .filter((id): id is number => id != null && id > 0)
-    ),
-  ];
-  if (nfeIds.length === 0) return [];
-
-  const links = await prisma.salesOrderNfeLink.findMany({
-    where: { nfeExternalId: { in: nfeIds } },
-    select: {
-      nfeExternalId: true,
-      SalesOrder: { select: { orderCode: true } },
-    },
-  });
-
-  const codes = new Set<string>();
-  for (const link of links) {
-    const code = link.SalesOrder?.orderCode?.trim();
-    if (code) codes.add(code);
-  }
-  return [...codes];
+  const refs = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
+  return refs.orderCodes;
 }
 
 function shouldLoadEffectiveContexts(
@@ -245,18 +285,39 @@ export async function loadFinanceArEffectiveOrderContextsForPortfolio(
   limit = PORTFOLIO_ORDER_LIMIT
 ): Promise<FinanceArEffectiveOrderContext[]> {
   const fromDescriptions = collectFinanceArOrderCodesFromPortfolioRows(rows);
-  const fromInvoices = await resolveFinanceArOrderCodesFromInvoiceLinks(
-    prisma,
-    rows
-  );
-  const portfolioOrderCodes = [...new Set([...fromDescriptions, ...fromInvoices])];
-  if (portfolioOrderCodes.length === 0) return [];
+  const fromLinks = await resolveFinanceArPortfolioSalesOrderRefs(prisma, rows);
+  const portfolioOrderCodes = [
+    ...new Set([...fromDescriptions, ...fromLinks.orderCodes]),
+  ];
 
-  return loadFinanceArEffectiveOrderContexts(
-    prisma,
-    { portfolioOrderCodes, limit },
-    referenceDate
+  if (portfolioOrderCodes.length === 0 && fromLinks.salesOrderIds.length === 0) {
+    return [];
+  }
+
+  const portfolioWhere = buildExactPortfolioSalesOrderWhere(
+    portfolioOrderCodes,
+    fromLinks.salesOrderIds
   );
+  if (!portfolioWhere) return [];
+
+  const where = buildFinanceArEffectiveSalesOrderWhere(portfolioWhere);
+  const cap = Math.min(Math.max(limit, 1), PORTFOLIO_ORDER_LIMIT);
+
+  const orders = await prisma.salesOrder.findMany({
+    where: where as never,
+    select: {
+      id: true,
+      orderCode: true,
+      status: true,
+      sourcePresenceStatus: true,
+      externalCustomerId: true,
+      Customer: { select: { companyName: true, taxId: true } },
+    },
+    orderBy: { orderCode: "asc" },
+    take: cap,
+  });
+
+  return buildFinanceArEffectiveContextsForOrders(prisma, orders, referenceDate);
 }
 
 export function mergeFinanceArEffectiveOrderContexts(
