@@ -378,4 +378,178 @@ describe("salesOrderMonthlyReceivablesReport — paridade FIN-08", () => {
     assert.equal(row.outsidePeriodTotal, 6000);
     assert.equal(row.effectiveScheduleTotal, 10_000);
   });
+
+  it("dois CR reais + previsão residual (substituição parcial PD 02719)", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-pd-02719",
+      orderCode: "PD 02719",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-09-10", amount: "155530.00" },
+        { installmentNumber: 2, dueDate: "2026-09-20", amount: "155530.00" },
+        { installmentNumber: 3, dueDate: "2026-09-30", amount: "155530.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "466590.00",
+          status: 4,
+          orderedQuantity: 100,
+          fulfilledQuantity: 100,
+          documentAllocations: [
+            { allocationKey: "doc-7311", allocatedByOrderPrice: "158505.00" },
+            { allocationKey: "doc-7382", allocatedByOrderPrice: "146974.00" },
+          ],
+          crAllocations: [
+            {
+              allocationKey: "cr-17874",
+              amountReceivable: "158505.00",
+              amountReceived: "1755.00",
+              balanceReceivable: "156750.00",
+            },
+            {
+              allocationKey: "cr-18076",
+              amountReceivable: "146974.00",
+              amountReceived: "0.00",
+              balanceReceivable: "146974.00",
+            },
+          ],
+        },
+      ],
+      documents: [
+        {
+          documentKey: "doc-7311",
+          sourceInvoiceId: 7311,
+          allocatedByOrderPrice: "158505.00",
+          provenInstallments: [
+            { installmentNumber: 1, dueDate: "2026-09-10", amount: "158505.00" },
+          ],
+        },
+        {
+          documentKey: "doc-7382",
+          sourceInvoiceId: 7382,
+          allocatedByOrderPrice: "146974.00",
+          provenInstallments: [
+            { installmentNumber: 2, dueDate: "2026-09-20", amount: "146974.00" },
+          ],
+        },
+      ],
+      realReceivables: [
+        {
+          externalId: 17874,
+          sourceInvoiceId: 7311,
+          dueDate: "2026-09-10",
+          amountReceivable: "158505.00",
+          amountReceived: "1755.00",
+          balanceReceivable: "156750.00",
+        },
+        {
+          externalId: 18076,
+          sourceInvoiceId: 7382,
+          dueDate: "2026-09-20",
+          amountReceivable: "146974.00",
+          amountReceived: "0.00",
+          balanceReceivable: "146974.00",
+        },
+      ],
+      referenceDate: REF,
+    });
+
+    const lines = listEffectiveReceivableLinesFromSchedule({
+      schedule,
+      referenceDate: REF,
+    });
+    const crCount = lines.filter((l) => l.lineKind === "CR_REAL").length;
+    const residualCount = lines.filter(
+      (l) => l.lineKind === "ORDER_RESIDUAL_FORECAST"
+    ).length;
+    assert.equal(crCount, 2);
+    assert.equal(residualCount, 1);
+
+    const monthKeys = ["2026-09"];
+    const row = buildMonthlyReceivablesRowFromLines({
+      salesOrderId: "so-pd-02719",
+      orderCode: "PD 02719",
+      customerName: "Britania",
+      issueDate: "2026-07-01",
+      sellerName: "Ana",
+      status: "SENT_TO_NOMUS",
+      statusLabel: "Enviado",
+      orderCommercialTotal: 466_590,
+      monthKeys,
+      lines,
+    });
+    assert.equal(row.months["2026-09"]!.titleCount, 3);
+    assert.equal(row.months["2026-09"]!.amount, 466_590);
+    assert.equal(row.effectiveScheduleTotal, 466_590);
+  });
+
+  it("três CR reais substituem todas as previsões", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-full",
+      orderCode: "PD 09999",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-08-01", amount: "30000.00" },
+        { installmentNumber: 2, dueDate: "2026-09-01", amount: "30000.00" },
+        { installmentNumber: 3, dueDate: "2026-10-01", amount: "30000.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "90000.00",
+          status: 4,
+          orderedQuantity: 3,
+          fulfilledQuantity: 3,
+          documentAllocations: [
+            { allocationKey: "d1", allocatedByOrderPrice: "30000.00" },
+            { allocationKey: "d2", allocatedByOrderPrice: "30000.00" },
+            { allocationKey: "d3", allocatedByOrderPrice: "30000.00" },
+          ],
+          crAllocations: [
+            { allocationKey: "c1", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+            { allocationKey: "c2", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+            { allocationKey: "c3", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+          ],
+        },
+      ],
+      documents: [
+        {
+          documentKey: "d1",
+          sourceInvoiceId: 1,
+          allocatedByOrderPrice: "30000.00",
+          provenInstallments: [{ installmentNumber: 1, dueDate: "2026-08-01", amount: "30000.00" }],
+        },
+        {
+          documentKey: "d2",
+          sourceInvoiceId: 2,
+          allocatedByOrderPrice: "30000.00",
+          provenInstallments: [{ installmentNumber: 2, dueDate: "2026-09-01", amount: "30000.00" }],
+        },
+        {
+          documentKey: "d3",
+          sourceInvoiceId: 3,
+          allocatedByOrderPrice: "30000.00",
+          provenInstallments: [{ installmentNumber: 3, dueDate: "2026-10-01", amount: "30000.00" }],
+        },
+      ],
+      realReceivables: [
+        { externalId: 1, sourceInvoiceId: 1, dueDate: "2026-08-01", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+        { externalId: 2, sourceInvoiceId: 2, dueDate: "2026-09-01", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+        { externalId: 3, sourceInvoiceId: 3, dueDate: "2026-10-01", amountReceivable: "30000", amountReceived: "0", balanceReceivable: "30000" },
+      ],
+      referenceDate: REF,
+    });
+
+    const lines = listEffectiveReceivableLinesFromSchedule({
+      schedule,
+      referenceDate: REF,
+    });
+    assert.equal(lines.filter((l) => l.lineKind === "CR_REAL").length, 3);
+    assert.ok(
+      !lines.some(
+        (l) =>
+          l.lineKind === "ORDER_PLAN_FORECAST" ||
+          l.lineKind === "ORDER_RESIDUAL_FORECAST"
+      )
+    );
+  });
 });

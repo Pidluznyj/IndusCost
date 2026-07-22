@@ -34,6 +34,8 @@ import {
   type SalesOrderMonthlyReceivablesReportPayload,
 } from "@/src/lib/sales/salesOrderMonthlyReceivablesReport";
 import { SalesOrderMonthlyReceivablesReportPrintDocument } from "@/src/components/sales/SalesOrderMonthlyReceivablesReportPrintDocument";
+import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
+import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 const FILTER_CONTROL =
@@ -128,6 +130,10 @@ function buildReportQuery(input: {
   onlyIncompleteAgenda: boolean;
   orderCode: string;
   q: string;
+  startDate: string;
+  endDate: string;
+  hasInvoice: string;
+  receivableStatus: string;
   page: number;
 }): string {
   const params = new URLSearchParams();
@@ -135,6 +141,10 @@ function buildReportQuery(input: {
   if (input.dueMonthTo) params.set("dueMonthTo", input.dueMonthTo);
   if (input.customerId) params.set("customerId", input.customerId);
   if (input.sellerKey.trim()) params.set("sellerKey", input.sellerKey.trim());
+  if (input.startDate) params.set("startDate", input.startDate);
+  if (input.endDate) params.set("endDate", input.endDate);
+  if (input.hasInvoice) params.set("hasInvoice", input.hasInvoice);
+  if (input.receivableStatus) params.set("receivableStatus", input.receivableStatus);
   if (input.status) params.set("status", input.status);
   if (input.financialSituation !== "all") {
     params.set("financialSituation", input.financialSituation);
@@ -324,6 +334,10 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [onlyIncompleteAgenda, setOnlyIncompleteAgenda] = useState(false);
   const [orderCode, setOrderCode] = useState("");
   const [q, setQ] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [hasInvoice, setHasInvoice] = useState("");
+  const [receivableStatus, setReceivableStatus] = useState("");
   const [debouncedSellerKey, setDebouncedSellerKey] = useState("");
   const [debouncedOrderCode, setDebouncedOrderCode] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -371,6 +385,10 @@ export function SalesOrderMonthlyReceivablesReportPage() {
         onlyIncompleteAgenda,
         orderCode: debouncedOrderCode,
         q: debouncedQ,
+        startDate,
+        endDate,
+        hasInvoice,
+        receivableStatus,
         page,
       }),
     [
@@ -380,12 +398,16 @@ export function SalesOrderMonthlyReceivablesReportPage() {
       debouncedSellerKey,
       dueMonthFrom,
       dueMonthTo,
+      endDate,
       financialSituation,
+      hasInvoice,
       includeCancelled,
       onlyDivergent,
       onlyIncompleteAgenda,
       origin,
       page,
+      receivableStatus,
+      startDate,
       status,
     ]
   );
@@ -470,6 +492,10 @@ export function SalesOrderMonthlyReceivablesReportPage() {
     setOnlyIncompleteAgenda(false);
     setOrderCode("");
     setQ("");
+    setStartDate("");
+    setEndDate("");
+    setHasInvoice("");
+    setReceivableStatus("");
     setPage(1);
   };
 
@@ -637,6 +663,58 @@ export function SalesOrderMonthlyReceivablesReportPage() {
               value={sellerKey}
               onChange={(e) => setSellerKey(e.target.value)}
             />
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="receivables-issue-from">Emissão de</FilterLabel>
+            <input
+              id="receivables-issue-from"
+              type="date"
+              className={FILTER_CONTROL}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="receivables-issue-to">Emissão até</FilterLabel>
+            <input
+              id="receivables-issue-to"
+              type="date"
+              className={FILTER_CONTROL}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="receivables-has-invoice">Vínculo NF</FilterLabel>
+            <select
+              id="receivables-has-invoice"
+              className={FILTER_CONTROL}
+              value={hasInvoice}
+              onChange={(e) => setHasInvoice(e.target.value)}
+              data-testid="monthly-receivables-filter-has-invoice"
+            >
+              {INVOICE_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+            <FilterLabel htmlFor="receivables-cr-status">Status CR</FilterLabel>
+            <select
+              id="receivables-cr-status"
+              className={FILTER_CONTROL}
+              value={receivableStatus}
+              onChange={(e) => setReceivableStatus(e.target.value)}
+              data-testid="monthly-receivables-filter-receivable-status"
+            >
+              {RECEIVABLE_STATUS_FILTER_OPTIONS.map((o) => (
+                <option key={o.value || "all"} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="col-span-12 lg:col-span-4">
             <FilterLabel htmlFor="receivables-q">Busca inteligente</FilterLabel>
