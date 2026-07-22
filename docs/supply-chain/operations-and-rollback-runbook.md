@@ -10,6 +10,7 @@
 | **Arquitetura** | `docs/supply-chain/parallel-domain-architecture.md` (OP-02) |
 | **Auditoria de estado** | `docs/supply-chain/current-state-audit.md` (OP-01) |
 | **Validação E2E** | `npm run test:supply-chain:e2e` (OP-28) |
+| **Release candidate** | `docs/supply-chain/release-candidate-audit.md` (OP-30) |
 
 > **Este documento descreve operação e implantação para ambientes autorizados.**  
 > O Cursor / agentes locais **não** executam deploy, migrate ou alteração em produção e **não** possuem acesso confiável ao banco de produção.

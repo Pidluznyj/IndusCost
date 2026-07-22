@@ -5,6 +5,7 @@
 **Cadeado:** `.cursor/rules/supply-chain-guardrails.mdc` (OP-00)  
 **Fonte de estado atual:** `docs/supply-chain/current-state-audit.md` (OP-01)  
 **Operação / deploy / rollback:** `docs/supply-chain/operations-and-rollback-runbook.md` (OP-29) — prevalece em conflito com nomes históricos deste desenho  
+**Release candidate:** `docs/supply-chain/release-candidate-audit.md` (OP-30)  
 **Escopo deste documento:** desenho apenas — **sem migration**, sem alteração de schema/UI/API neste OP.
 
 ---

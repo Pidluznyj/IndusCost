@@ -154,7 +154,6 @@ export function snapshotFromBalance(input: Partial<InventoryBalanceSnapshot>): I
       reservedQuantity,
       blockedQuantity,
       quarantineQuantity,
-      availableQuantity: 0,
     }),
   });
 }
