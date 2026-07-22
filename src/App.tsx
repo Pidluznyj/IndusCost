@@ -28,6 +28,7 @@ import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
+import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -497,6 +498,28 @@ export default function App() {
               description="Compare fornecedores na mesma base. A escolha do vencedor é humana e justificada — não automática pelo menor preço."
             >
               <PurchaseQuotationComparisonModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders"
+          element={
+            <ModulePageShell
+              title="Pedidos de compra"
+              description="Pedidos formais a partir da cotação adjudicada. Aprovação cria compromisso operacional sem estoque nem Contas a Pagar."
+            >
+              <PurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders/:orderId"
+          element={
+            <ModulePageShell
+              title="Pedido de compra"
+              description="Snapshots congelados da negociação. Sem recebimento de estoque nesta etapa."
+            >
+              <PurchaseOrderModule />
             </ModulePageShell>
           }
         />

@@ -93,6 +93,7 @@ export function PurchaseQuotationAwardPanel({ quotationId, preferredOfferId, onC
   const [splitQty, setSplitQty] = useState<Record<string, string>>({});
   const [approveNotes, setApproveNotes] = useState("");
   const [rejectReason, setRejectReason] = useState("");
+  const [createdOrders, setCreatedOrders] = useState<Array<{ id: string; code: string }>>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -103,6 +104,18 @@ export function PurchaseQuotationAwardPanel({ quotationId, preferredOfferId, onC
       ]);
       setDetail(q);
       setAward(awards.current);
+      if (awards.current?.id) {
+        try {
+          const pos = await fetchJsonOk<{ rows: Array<{ id: string; code: string }> }>(
+            `/api/purchase-orders?awardId=${encodeURIComponent(awards.current.id)}`
+          );
+          setCreatedOrders(pos.rows.map((r) => ({ id: r.id, code: r.code })));
+        } catch {
+          setCreatedOrders([]);
+        }
+      } else {
+        setCreatedOrders([]);
+      }
       if (preferredOfferId) setSingleOfferId(preferredOfferId);
       else {
         const winner = q.suppliers.find((s) => s.offers[0]?.status === "VENCEDORA");
@@ -190,6 +203,27 @@ export function PurchaseQuotationAwardPanel({ quotationId, preferredOfferId, onC
       onChanged?.();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro ao submeter adjudicação.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createPurchaseOrders = async () => {
+    if (!award || !allowEdit || award.status !== "APROVADA") return;
+    setBusy(true);
+    try {
+      const data = await fetchJsonOk<{ rows: Array<{ id: string; code: string }> }>(
+        `/api/purchase-orders/from-award/${award.id}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }
+      );
+      setCreatedOrders(data.rows.map((r) => ({ id: r.id, code: r.code })));
+      onChanged?.();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao gerar pedido(s).");
     } finally {
       setBusy(false);
     }
@@ -378,6 +412,31 @@ export function PurchaseQuotationAwardPanel({ quotationId, preferredOfferId, onC
                   Rejeitar
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {award.status === "APROVADA" && allowEdit ? (
+            <div className="space-y-2 border-t border-border pt-3">
+              {createdOrders.length > 0 ? (
+                <ul className="text-sm space-y-1">
+                  {createdOrders.map((o) => (
+                    <li key={o.id}>
+                      <a className="text-primary hover:underline font-mono" href={`/purchases/orders/${o.id}`}>
+                        {o.code}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void createPurchaseOrders()}
+                  className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm disabled:opacity-50"
+                >
+                  Gerar pedido(s) de compra
+                </button>
+              )}
             </div>
           ) : null}
         </div>

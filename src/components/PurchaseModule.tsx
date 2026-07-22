@@ -670,6 +670,13 @@ export const PurchaseModule = () => {
             >
               Cotações
             </button>
+            <button
+              type="button"
+              onClick={() => navigate("/purchases/orders")}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
+            >
+              Pedidos
+            </button>
             {allowCreate ? (
               <button
                 type="button"

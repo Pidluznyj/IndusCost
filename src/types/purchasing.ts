@@ -22,6 +22,8 @@ export type PurchaseQuotationOfferStatus = "RASCUNHO" | "RECEBIDA" | "DESCARTADA
 
 export type PurchaseOrderStatus =
   | "RASCUNHO"
+  | "APROVADO"
+  | "ENVIADO"
   | "EMITIDO"
   | "CONFIRMADO"
   | "PARCIALMENTE_RECEBIDO"

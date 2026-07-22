@@ -5792,6 +5792,10 @@ enum PurchaseQuotationAwardHistoryAction {
 
 enum PurchaseOrderStatus {
   RASCUNHO
+  /// Aprovado — gera compromisso operacional / entrada futura (sem estoque/AP).
+  APROVADO
+  /// Enviado ao fornecedor (substitui semanticamente o uso de EMITIDO como “enviado”).
+  ENVIADO
   EMITIDO
   CONFIRMADO
   PARCIALMENTE_RECEBIDO
@@ -6152,6 +6156,7 @@ model PurchaseQuotationAward {
   allocations PurchaseQuotationAwardAllocation[]
   rejections  PurchaseQuotationAwardRejection[]
   history     PurchaseQuotationAwardHistoryEvent[]
+  purchaseOrders PurchaseOrder[]
 
   @@index([quotationId])
   @@index([status])
@@ -6224,7 +6229,7 @@ model PurchaseQuotationAwardHistoryEvent {
   @@index([action])
 }
 
-/// Pedido de compra formal — preços congelados no emit; não movimenta estoque sozinho.
+/// Pedido de compra formal — preços congelados; não movimenta estoque nem cria AP sozinho.
 model PurchaseOrder {
   id                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code                       String              @unique
@@ -6232,6 +6237,10 @@ model PurchaseOrder {
   purchaseRequestId          String?             @db.Uuid
   quotationId                String?             @db.Uuid
   awardedOfferId             String?             @db.Uuid
+  /// Adjudicação de origem (OP-19/OP-20).
+  awardId                    String?             @db.Uuid
+  finalRoundId               String?             @db.Uuid
+  approvalId                 String?             @db.Uuid
   supplierId                 String              @db.Uuid
   supplierDisplayNameSnapshot String
   supplierDocumentSnapshot   String?
@@ -6239,11 +6248,33 @@ model PurchaseOrder {
   paymentTermsSnapshot       String?
   deliveryTermsSnapshot      String?
   freightValueSnapshot       Decimal?            @db.Decimal(20, 6)
+  nonRecoverableTaxesSnapshot Decimal?           @db.Decimal(20, 6)
+  discountsSnapshot          Decimal?            @db.Decimal(20, 6)
+  leadTimeDaysSnapshot       Int?
   totalAmountSnapshot        Decimal?            @db.Decimal(20, 6)
+  initialComparableTotalSnapshot Decimal?        @db.Decimal(20, 6)
+  negotiatedComparableTotalSnapshot Decimal?     @db.Decimal(20, 6)
+  totalGainSnapshot          Decimal?            @db.Decimal(20, 6)
+  quotationCodeSnapshot      String?
+  awardJustificationSnapshot String?
+  evidenceCountSnapshot      Int                 @default(0)
+  evidenceIdsJson            Json?
+  /// Compromisso operacional (sem estoque / sem AP).
+  operationalCommitmentAt    DateTime?           @db.Timestamptz(6)
+  futureEntryPending         Boolean             @default(false)
+  futureEntryMarkedAt        DateTime?           @db.Timestamptz(6)
   expectedDeliveryDate       DateTime?           @db.Date
+  approvedAt                 DateTime?           @db.Timestamptz(6)
+  approvedByUserId           String?
+  approvedByUserName         String?
   issuedAt                   DateTime?           @db.Timestamptz(6)
+  sentAt                     DateTime?           @db.Timestamptz(6)
   confirmedAt                DateTime?           @db.Timestamptz(6)
+  cancelledAt                DateTime?           @db.Timestamptz(6)
+  cancelReason               String?
   issuedByUserId             String?
+  createdByUserId            String?
+  createdByUserName          String?
   notes                      String?
   createdAt                  DateTime            @default(now()) @db.Timestamptz(6)
   updatedAt                  DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
@@ -6251,15 +6282,18 @@ model PurchaseOrder {
   purchaseRequest PurchaseRequest?      @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   quotation       PurchaseQuotation?    @relation(fields: [quotationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   awardedOffer    PurchaseQuotationOffer? @relation(fields: [awardedOfferId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  award           PurchaseQuotationAward? @relation(fields: [awardId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   supplier        FinancialSupplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items           PurchaseOrderItem[]
   receipts        PurchaseReceipt[]
   approvals       PurchaseApproval[]    @relation("PurchaseApprovalPurchaseOrder")
+  history         PurchaseOrderHistoryEvent[]
 
   @@index([status])
   @@index([supplierId])
   @@index([purchaseRequestId])
   @@index([quotationId])
+  @@index([awardId])
   @@index([issuedAt])
   @@index([createdAt])
 }
@@ -6270,6 +6304,8 @@ model PurchaseOrderItem {
   lineNumber            Int
   purchaseRequestItemId String?  @db.Uuid
   quotationItemId       String?  @db.Uuid
+  offerItemId           String?  @db.Uuid
+  awardAllocationId     String?  @db.Uuid
   materialId            String?  @db.Uuid
   materialCodeSnapshot  String?
   materialDescriptionSnapshot String?
@@ -6277,9 +6313,16 @@ model PurchaseOrderItem {
   description           String
   quantityOrdered       Decimal  @db.Decimal(20, 6)
   unit                  String
-  /// Preço unitário congelado na emissão do PO (cópia do awarded da oferta).
+  /// Preço unitário inicial (primeira oferta) — congelado.
+  initialUnitPriceSnapshot Decimal? @db.Decimal(20, 6)
+  /// Preço negociado/adjudicado — congelado na emissão do PO.
   unitPriceSnapshot     Decimal  @db.Decimal(20, 6)
   lineTotalSnapshot     Decimal  @db.Decimal(20, 6)
+  lineGainSnapshot      Decimal? @db.Decimal(20, 6)
+  freightValueSnapshot  Decimal? @db.Decimal(20, 6)
+  nonRecoverableTaxesSnapshot Decimal? @db.Decimal(20, 6)
+  discountsSnapshot     Decimal? @db.Decimal(20, 6)
+  leadTimeDaysSnapshot  Int?
   /// Soft link futuro ao item logístico local.
   inventoryItemId       String?  @db.Uuid
   notes                 String?
@@ -6297,6 +6340,26 @@ model PurchaseOrderItem {
   @@index([materialId])
   @@index([inventoryItemId])
   @@index([quotationItemId])
+  @@index([offerItemId])
+}
+
+model PurchaseOrderHistoryEvent {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  purchaseOrderId String   @db.Uuid
+  action          String
+  fromStatus      PurchaseOrderStatus?
+  toStatus        PurchaseOrderStatus?
+  reason          String?
+  notes           String?
+  userId          String?
+  userName        String?
+  metaJson        Json?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([purchaseOrderId, createdAt])
+  @@index([action])
 }
 
 /// Recebimento parcial/total — vínculo futuro a InventoryMovement via soft IDs.

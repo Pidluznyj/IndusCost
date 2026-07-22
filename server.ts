@@ -430,6 +430,7 @@ import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
 import { registerPurchaseRequestWorkflowRoutes } from "./src/lib/purchasing/purchaseRequestRoutes.js";
 import { registerPurchaseQuotationCollectionRoutes } from "./src/lib/purchasing/purchaseQuotationRoutes.js";
 import { registerPurchaseEvidenceRoutes } from "./src/lib/purchasing/purchaseEvidenceRoutes.js";
+import { registerPurchaseOrderRoutes } from "./src/lib/purchasing/purchaseOrderRoutes.js";
 import { createOfficialDataProviders } from "./src/lib/supply-chain/officialDataProviders.server.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
@@ -15527,6 +15528,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerPurchaseEvidenceRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  registerPurchaseOrderRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
