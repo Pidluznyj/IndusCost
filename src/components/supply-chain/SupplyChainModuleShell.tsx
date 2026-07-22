@@ -1,5 +1,6 @@
 /**
- * Cascas informativas dos módulos SC controlados (sem operações de negócio).
+ * Cascas informativas dos módulos SC controlados.
+ * sc-purchases (flag on) → estação operacional OP-21.
  */
 
 import React from "react";
@@ -11,6 +12,7 @@ import {
 } from "@/src/lib/supply-chain/supplyChainAccess";
 import type { SupplyChainModuleId } from "@/src/lib/supply-chain/supplyChainFeatureFlags";
 import { fetchSupplyChainFeatureStatus } from "@/src/lib/supply-chain/supplyChainClient";
+import { PurchaseWorkstationModule } from "@/src/components/PurchaseWorkstationModule";
 
 const MODULE_COPY: Record<
   SupplyChainModuleId,
@@ -19,7 +21,7 @@ const MODULE_COPY: Record<
   "sc-purchases": {
     title: "Compras SC",
     description:
-      "Casca controlada da Cadeia de Suprimentos para evolução de compras (cotações, pedidos). Sem operações de negócio nesta fase.",
+      "Estação operacional de Compras da Cadeia de Suprimentos (solicitações, cotações, negociações, evidências, aprovações e pedidos).",
     legacyHint: { label: "Abrir Compras (legado)", to: "/purchases" },
   },
   "sc-inventory": {
@@ -87,6 +89,11 @@ export function SupplyChainModuleShell({
             {copy.legacyHint.label}
           </Link>
         ) : null}
+        {moduleId === "sc-purchases" ? (
+          <Link className="block text-sm font-medium text-amber-950 underline" to="/purchases/workstation">
+            Abrir estação operacional (legado /purchases/workstation)
+          </Link>
+        ) : null}
       </div>
     );
   }
@@ -101,6 +108,14 @@ export function SupplyChainModuleShell({
         <p className="text-sm text-rose-900 mt-1">
           Sem permissão de visualização deste módulo SC.
         </p>
+      </div>
+    );
+  }
+
+  if (moduleId === "sc-purchases") {
+    return (
+      <div data-testid={`sc-shell-ready-${moduleId}`}>
+        <PurchaseWorkstationModule />
       </div>
     );
   }

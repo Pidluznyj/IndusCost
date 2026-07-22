@@ -29,6 +29,7 @@ import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
+import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -502,6 +503,17 @@ export default function App() {
           }
         />
         <Route
+          path="purchases/workstation"
+          element={
+            <ModulePageShell
+              title="Estação de Compras"
+              description="Visão operacional integrada: solicitações, cotações, negociações, evidências, aprovações e pedidos."
+            >
+              <PurchaseWorkstationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="purchases/orders"
           element={
             <ModulePageShell
@@ -660,7 +672,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Compras SC"
-              description="Casca controlada da Cadeia de Suprimentos — compras."
+              description="Estação operacional da Cadeia de Suprimentos — compras (feature flag)."
             >
               <SupplyChainModuleShell moduleId="sc-purchases" />
             </ModulePageShell>
