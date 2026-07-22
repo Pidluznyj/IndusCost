@@ -5906,8 +5906,16 @@ model PurchaseQuotationOffer {
   initialPaymentTerms     String?
   initialDeliveryTerms    String?
   initialFreightValue     Decimal?                    @db.Decimal(20, 6)
+  initialNonRecoverableTaxes Decimal?                 @db.Decimal(20, 6)
+  initialExpenses         Decimal?                    @db.Decimal(20, 6)
+  initialDiscounts        Decimal?                    @db.Decimal(20, 6)
+  initialMinOrderQty      Decimal?                    @db.Decimal(20, 6)
   initialValidityDate     DateTime?                   @db.Date
   initialLeadTimeDays     Int?
+  /// Proposta comercial recebida (anexo/registro) — distinta de adjudicação.
+  proposalReceived        Boolean                     @default(false)
+  proposalReceivedAt      DateTime?                   @db.Timestamptz(6)
+  proposalReceivedNotes   String?
   /// Condições adjudicadas — preenchidas só na adjudicação (cópia da rodada vencedora).
   awardedPaymentTerms     String?
   awardedDeliveryTerms    String?
@@ -5936,11 +5944,15 @@ model PurchaseQuotationOfferItem {
   id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   offerId            String   @db.Uuid
   quotationItemId    String   @db.Uuid
-  /// Preço unitário da primeira resposta — imutável após RECEBIDA.
+  /// Preço unitário da primeira resposta — imutável após RECEBIDA / início de negociação.
   initialUnitPrice   Decimal  @db.Decimal(20, 6)
   initialQuantity    Decimal? @db.Decimal(20, 6)
   initialLeadTimeDays Int?
   initialFreightValue Decimal? @db.Decimal(20, 6)
+  initialNonRecoverableTaxes Decimal? @db.Decimal(20, 6)
+  initialExpenses    Decimal? @db.Decimal(20, 6)
+  initialDiscounts   Decimal? @db.Decimal(20, 6)
+  initialMinOrderQty Decimal? @db.Decimal(20, 6)
   initialNotes       String?
   /// Preço/qtd adjudicados — nunca sobrescrevem initial*; preenchidos só na adjudicação.
   awardedUnitPrice   Decimal? @db.Decimal(20, 6)

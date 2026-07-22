@@ -217,6 +217,9 @@ export const PurchaseModule = () => {
     import("@/src/types/purchase").PurchaseRequestHistoryEventRow[]
   >([]);
   const [evidences, setEvidences] = useState<import("@/src/types/purchase").PurchaseEvidenceRow[]>([]);
+  const [linkedQuotations, setLinkedQuotations] = useState<
+    Array<{ id: string; code: string; status: string }>
+  >([]);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [items, setItems] = useState<PurchaseItemDraft[]>([]);
   const [requestNumber, setRequestNumber] = useState<number | null>(null);
@@ -327,6 +330,7 @@ export const PurchaseModule = () => {
     setExternalReference("");
     setHistoryEvents([]);
     setEvidences([]);
+    setLinkedQuotations([]);
     setItems([]);
     setEditingId(null);
     setRequestNumber(null);
@@ -360,6 +364,7 @@ export const PurchaseModule = () => {
       setProjectId(row.projectId || "");
       setExternalReference(row.externalReference || "");
       setHistoryEvents(Array.isArray(row.historyEvents) ? row.historyEvents : []);
+      setLinkedQuotations(Array.isArray(row.quotations) ? row.quotations : []);
       setItems(row.items.length ? row.items.map(itemFromApi) : [emptyPurchaseItemDraft()]);
       try {
         const ev = await fetchJsonOk<{ rows?: import("@/src/types/purchase").PurchaseEvidenceRow[] }>(
@@ -469,13 +474,22 @@ export const PurchaseModule = () => {
     setWorkflowBusy(true);
     try {
       const path = `/api/purchase-requests/${editingId}/${action}`;
-      await fetchJsonOk(path, {
+      const result = await fetchJsonOk<{ quotations?: Array<{ id: string; code: string }> }>(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reason ? { reason } : {}),
       });
       await loadLists();
-      await openEdit(editingId, action === "forward-to-quotation" ? "view" : "edit");
+      if (action === "forward-to-quotation") {
+        const qid = result?.quotations?.[0]?.id;
+        if (qid) {
+          navigate(`/purchases/quotations/${qid}`);
+          return;
+        }
+        navigate(`/purchases/quotations?purchaseRequestId=${editingId}`);
+        return;
+      }
+      await openEdit(editingId, "edit");
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro na ação de workflow.");
     } finally {
@@ -649,6 +663,13 @@ export const PurchaseModule = () => {
           </div>
           <div className="flex items-center gap-2">
             <TourHelpButton onClick={() => setTourOpen(true)} />
+            <button
+              type="button"
+              onClick={() => navigate("/purchases/quotations")}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
+            >
+              Cotações
+            </button>
             {allowCreate ? (
               <button
                 type="button"
@@ -1118,6 +1139,28 @@ export const PurchaseModule = () => {
               </button>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {editingId && linkedQuotations.length > 0 ? (
+        <div className="rounded-2xl border border-violet-200 bg-violet-500/5 p-6 space-y-2">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Cotações vinculadas
+          </h4>
+          <ul className="space-y-1 text-sm">
+            {linkedQuotations.map((q) => (
+              <li key={q.id}>
+                <button
+                  type="button"
+                  className="text-primary hover:underline font-mono"
+                  onClick={() => navigate(`/purchases/quotations/${q.id}`)}
+                >
+                  {q.code}
+                </button>
+                <span className="text-xs text-muted-foreground ml-2">{q.status}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 

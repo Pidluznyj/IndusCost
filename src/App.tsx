@@ -26,6 +26,7 @@ import { SalesOrdersModule } from "./components/SalesOrdersModule";
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { PurchaseModule } from "./components/PurchaseModule";
+import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -462,6 +463,28 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/purchases/indicators" />}
             >
               <PurchaseModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations"
+          element={
+            <ModulePageShell
+              title="Cotações"
+              description="Coleta de propostas por fornecedor oficial. Sem adjudicação nem pedido nesta fase."
+            >
+              <PurchaseQuotationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations/:quotationId"
+          element={
+            <ModulePageShell
+              title="Cotação"
+              description="Entrada de propostas iniciais por fornecedor. A primeira oferta fica congelada após o registro."
+            >
+              <PurchaseQuotationModule />
             </ModulePageShell>
           }
         />

@@ -1622,6 +1622,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       "/api/purchase-requests/:id/submit",
       "/api/purchase-requests/:id/approve",
       "/api/purchase-requests/:id/forward-to-quotation",
+      "/api/purchase-quotations",
+      "/api/purchase-quotations/:id/invite-supplier",
     ],
     sensitivity: "high",
     appearsInSidebar: true,

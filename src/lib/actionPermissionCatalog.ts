@@ -190,6 +190,9 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
       { method: "POST", path: "/api/purchase-requests/:id/reopen-draft", action: "edit" },
       { method: "POST", path: "/api/purchase-requests/:id/forward-to-quotation", action: "edit" },
       { method: "POST", path: "/api/purchase-requests/:id/evidences", action: "edit" },
+      { method: "POST", path: "/api/purchase-quotations/:id/invite-supplier", action: "edit" },
+      { method: "PUT", path: "/api/purchase-quotations/:id/suppliers/:quotationSupplierId/offer", action: "edit" },
+      { method: "POST", path: "/api/purchase-quotations/:id/offers/:offerId/mark-received", action: "edit" },
     ],
   },
   {
