@@ -141,13 +141,14 @@ describe("salesOrderItemProductionRequirement", () => {
     assert.ok(r.evidence.notRequiredSignalCount >= 1);
   });
 
-  it("conflito: estoque + BOM → UNKNOWN", () => {
+  it("estoque + BOM legado de custeio → NOT_REQUIRED (sem OP)", () => {
     const r = resolveSalesOrderItemProductionRequirement({
       productCommercialClass: "STOCK",
       hasProductBom: true,
     });
-    assert.equal(r.classification, "UNKNOWN");
-    assert.equal(r.reasonCode, "CONFLICTING_EVIDENCE");
+    assert.equal(r.classification, "NOT_REQUIRED");
+    assert.equal(r.reasonCode, "PRODUCT_CLASS_STOCK");
+    assert.equal(r.requiresProduction, false);
   });
 
   it("regra IndusCost explícita true/false", () => {

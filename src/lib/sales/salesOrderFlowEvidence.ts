@@ -17,6 +17,8 @@ import {
   normalizeNfeStatus,
   type NormalizedNfeStatusResult,
 } from "@/src/lib/finance/nfeStatus.js";
+import { resolveSalesOrderItemProductCommercialClass } from "./salesOrderItemProductCommercialClass.js";
+import type { SalesOrderItemProductCommercialClass } from "./salesOrderItemProductionRequirement.js";
 
 export const SALES_ORDER_FLOW_EVIDENCE_NFE_SOURCES = [
   "SALES_ORDER_NFE_LINK",
@@ -103,6 +105,7 @@ export type SalesOrderFlowEvidenceItem = {
   productCostingMode: string | null;
   hasProductRouting: boolean | null;
   hasProductBom: boolean | null;
+  productCommercialClass: SalesOrderItemProductCommercialClass | null;
   fulfillment: ClassifySalesOrderItemFinancialFulfillmentResult;
 };
 
@@ -458,6 +461,12 @@ function mapItem(
     productCostingMode: product?.costingMode ?? null,
     hasProductRouting: product?.hasProductRouting ?? null,
     hasProductBom: product?.hasProductBom ?? null,
+    productCommercialClass: resolveSalesOrderItemProductCommercialClass({
+      productType: product?.type,
+      costingMode: product?.costingMode,
+      hasProductRouting: product?.hasProductRouting,
+      hasProductBom: product?.hasProductBom,
+    }),
     fulfillment,
   };
 }

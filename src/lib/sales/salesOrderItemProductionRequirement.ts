@@ -187,11 +187,25 @@ function hasOfficialOpLink(
   return true;
 }
 
+/** Estoque/revenda comprovados não herdam exigência de OP por BOM/roteiro legado de custeio. */
+function shouldInferManufacturingFromStructure(
+  input: ResolveSalesOrderItemProductionRequirementInput
+): boolean {
+  if (
+    input.productCommercialClass === "STOCK" ||
+    input.productCommercialClass === "RESALE"
+  ) {
+    return hasOfficialOpLink(input);
+  }
+  return true;
+}
+
 function collectSignals(
   input: ResolveSalesOrderItemProductionRequirementInput
 ): SalesOrderItemProductionRequirementSignal[] {
   const signals: SalesOrderItemProductionRequirementSignal[] = [];
   const costingMode = normalizeCostingMode(input.costingMode);
+  const inferStructure = shouldInferManufacturingFromStructure(input);
 
   // 1. Regra / classificação oficial do produto
   if (input.productCommercialClass === "MANUFACTURED") {
@@ -220,34 +234,36 @@ function collectSignals(
     });
   }
 
-  if (costingMode === "OWN_PROCESS") {
-    signals.push({
-      side: "REQUIRED",
-      sourceEntity: "PRODUCT",
-      reasonCode: "COSTING_MODE_OWN_PROCESS",
-      confidence: "MEDIUM",
-      detail: "Product.costingMode = OWN_PROCESS (regra oficial de custeio/processo).",
-    });
-  } else if (costingMode === "BOM_ONLY") {
-    signals.push({
-      side: "REQUIRED",
-      sourceEntity: "PRODUCT",
-      reasonCode: "COSTING_MODE_BOM_ONLY",
-      confidence: "MEDIUM",
-      detail: "Product.costingMode = BOM_ONLY implica estrutura produtiva.",
-    });
-  } else if (costingMode === "FINISHING_SERVICE") {
-    signals.push({
-      side: "REQUIRED",
-      sourceEntity: "PRODUCT",
-      reasonCode: "COSTING_MODE_FINISHING_SERVICE",
-      confidence: "MEDIUM",
-      detail: "Product.costingMode = FINISHING_SERVICE implica operação produtiva.",
-    });
+  if (inferStructure) {
+    if (costingMode === "OWN_PROCESS") {
+      signals.push({
+        side: "REQUIRED",
+        sourceEntity: "PRODUCT",
+        reasonCode: "COSTING_MODE_OWN_PROCESS",
+        confidence: "MEDIUM",
+        detail: "Product.costingMode = OWN_PROCESS (regra oficial de custeio/processo).",
+      });
+    } else if (costingMode === "BOM_ONLY") {
+      signals.push({
+        side: "REQUIRED",
+        sourceEntity: "PRODUCT",
+        reasonCode: "COSTING_MODE_BOM_ONLY",
+        confidence: "MEDIUM",
+        detail: "Product.costingMode = BOM_ONLY implica estrutura produtiva.",
+      });
+    } else if (costingMode === "FINISHING_SERVICE") {
+      signals.push({
+        side: "REQUIRED",
+        sourceEntity: "PRODUCT",
+        reasonCode: "COSTING_MODE_FINISHING_SERVICE",
+        confidence: "MEDIUM",
+        detail: "Product.costingMode = FINISHING_SERVICE implica operação produtiva.",
+      });
+    }
   }
 
   // 2. Roteiro / processo
-  if (hasRouting(input)) {
+  if (inferStructure && hasRouting(input)) {
     signals.push({
       side: "REQUIRED",
       sourceEntity: "ROUTING",
@@ -258,7 +274,7 @@ function collectSignals(
   }
 
   // 3. BOM / estrutura
-  if (hasBom(input)) {
+  if (inferStructure && hasBom(input)) {
     signals.push({
       side: "REQUIRED",
       sourceEntity: "BOM",

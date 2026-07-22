@@ -33,6 +33,7 @@ import {
   type SalesOrderItemProductCommercialClass,
 } from "./salesOrderItemProductionRequirement.js";
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
+import { buildSalesOrderItemFlowAllocationsFromEvidence } from "./salesOrderItemFlowAllocations.js";
 
 export type QtyDecimal = Prisma.Decimal;
 
@@ -753,62 +754,8 @@ export function resolveSalesOrderItemFlowFromEvidence(
         l.externalSalesOrderItemId === item.nomusItemExternalId)
   );
 
-  const allocations = pack.allocations.filter(
-    (a) => a.salesOrderItemId === item.id
-  );
-
-  const canceledDocIds = new Set(
-    pack.stockDocuments
-      .filter((d) => {
-        if (d.isCancelled === true) return true;
-        const raw = (d.statusRaw ?? "").toLowerCase();
-        return raw.includes("cancel");
-      })
-      .map((d) => d.externalId)
-  );
-
-  const documentAllocations: SalesOrderItemFlowDocumentAllocationInput[] =
-    allocations
-      .filter((a) => a.stockDocumentExternalId != null)
-      .map((a) => ({
-        allocationKey: a.auditKey,
-        quantity: a.quantityUsedForOrder ?? 0,
-        isCanceled: canceledDocIds.has(a.stockDocumentExternalId!),
-        isValid: !canceledDocIds.has(a.stockDocumentExternalId!),
-      }));
-
-  const nfeById = new Map(pack.nfes.map((n) => [n.externalId, n]));
-  const nfeAllocations: SalesOrderItemFlowNfeAllocationInput[] = [];
-  const seenNfe = new Set<number>();
-  for (const a of allocations) {
-    if (a.nfeExternalId == null || seenNfe.has(a.nfeExternalId)) continue;
-    seenNfe.add(a.nfeExternalId);
-    const nfe = nfeById.get(a.nfeExternalId);
-    const hasDocument = pack.stockDocuments.some(
-      (d) => d.idNfe === a.nfeExternalId
-    );
-    nfeAllocations.push({
-      nfeExternalId: a.nfeExternalId,
-      quantity: a.quantityUsedForOrder,
-      isCanceled: nfe?.isCanceled === true,
-      isValidForBilling: nfe?.isValidForBilling !== false && nfe?.isCanceled !== true,
-      hasDocument,
-      hasShipDate: false,
-    });
-  }
-  for (const nfe of pack.validNfes) {
-    if (seenNfe.has(nfe.externalId)) continue;
-    if (!nfe.linkedSalesOrderIds.includes(pack.orderId)) continue;
-    seenNfe.add(nfe.externalId);
-    nfeAllocations.push({
-      nfeExternalId: nfe.externalId,
-      quantity: item.quantity,
-      isCanceled: false,
-      isValidForBilling: true,
-      hasDocument: pack.stockDocuments.some((d) => d.idNfe === nfe.externalId),
-      hasShipDate: false,
-    });
-  }
+  const { documentAllocations, nfeAllocations } =
+    buildSalesOrderItemFlowAllocationsFromEvidence(pack, item);
 
   return resolveSalesOrderItemFlow({
     salesOrderItemId: item.id,
@@ -831,6 +778,7 @@ export function resolveSalesOrderItemFlowFromEvidence(
     referenceDate: options?.referenceDate ?? pack.meta.loadedAt,
     productType: item.productType as "PRODUCT" | "COMPONENT" | "MATERIAL" | null,
     costingMode: item.productCostingMode,
+    productCommercialClass: item.productCommercialClass,
     hasProductRouting: item.hasProductRouting,
     hasProductBom: item.hasProductBom,
   });
