@@ -115,7 +115,43 @@ function MovementBalancePreviewPanel({
   );
 }
 
-function MovementDetailPanel({ movement }: { movement: InventoryMovementRow }) {
+function MovementDetailPanel({
+  movement,
+  canReverse,
+  onReversed,
+}: {
+  movement: InventoryMovementRow;
+  canReverse: boolean;
+  onReversed: () => void;
+}) {
+  const [showReverse, setShowReverse] = useState(false);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reverseError, setReverseError] = useState<string | null>(null);
+  const [reversing, setReversing] = useState(false);
+
+  const isReversal = movement.movementType === "REVERSAL";
+
+  const handleReverse = async () => {
+    if (!reverseReason.trim()) {
+      setReverseError("Motivo do estorno é obrigatório.");
+      return;
+    }
+    setReversing(true);
+    setReverseError(null);
+    try {
+      await fetchJsonOk(`/api/inventory/movements/${movement.id}/reverse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reverseReason.trim() }),
+      });
+      onReversed();
+    } catch (e: unknown) {
+      setReverseError(formatInventoryApiError(e, "Não foi possível estornar a movimentação."));
+    } finally {
+      setReversing(false);
+    }
+  };
+
   return (
     <div className="space-y-4" data-testid="inventory-movement-detail">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -191,16 +227,81 @@ function MovementDetailPanel({ movement }: { movement: InventoryMovementRow }) {
         ) : null}
       </div>
 
-      {movement.movementType === "REVERSAL" || movement.reversedMovementId ? (
-        <p className="text-xs text-amber-700">
-          Estorno vinculado: {movement.reversedMovementId ?? "—"}
+      {isReversal ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Esta movimentação é um estorno autorizado do movimento{" "}
+          <span className="font-mono">{movement.reversedMovementId ?? "—"}</span>.
         </p>
       ) : null}
 
-      <p className="text-xs text-slate-500">
-        Estorno automático ainda não disponível no backend. Correções devem usar movimentações
-        compensatórias ou ajustes rastreáveis.
-      </p>
+      {!isReversal && canReverse ? (
+        <div
+          className="rounded-lg border border-slate-200 bg-white p-3"
+          data-testid="inventory-movement-reverse-panel"
+        >
+          {!showReverse ? (
+            <>
+              <p className="text-sm text-slate-700">
+                Correção exige estorno autorizado — o ledger original permanece imutável.
+              </p>
+              <button
+                type="button"
+                className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                onClick={() => setShowReverse(true)}
+                data-testid="inventory-movement-reverse-open"
+              >
+                Estornar movimentação
+              </button>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-slate-900">Estorno autorizado</p>
+              <textarea
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                rows={3}
+                placeholder="Motivo do estorno (obrigatório)"
+                value={reverseReason}
+                onChange={(e) => setReverseReason(e.target.value)}
+                data-testid="inventory-movement-reverse-reason"
+              />
+              {reverseError ? (
+                <p className="text-sm text-red-700" role="alert" data-testid="inventory-movement-reverse-error">
+                  {reverseError}
+                </p>
+              ) : null}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  onClick={() => {
+                    setShowReverse(false);
+                    setReverseReason("");
+                    setReverseError(null);
+                  }}
+                  disabled={reversing}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                  onClick={() => void handleReverse()}
+                  disabled={reversing}
+                  data-testid="inventory-movement-reverse-confirm"
+                >
+                  {reversing ? "Estornando…" : "Confirmar estorno"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {!isReversal && !canReverse ? (
+        <p className="text-xs text-slate-500">
+          Estorno autorizado requer permissão de criar movimentação.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -351,7 +452,7 @@ export function InventoryMovementFormSheet({
         sourceWarehouseId: form.sourceWarehouseId,
         destinationWarehouseId: form.destinationWarehouseId,
       });
-      if (!clientCheck.ok) {
+      if (clientCheck.ok === false) {
         setSubmitError(clientCheck.message);
         return;
       }
@@ -422,7 +523,13 @@ export function InventoryMovementFormSheet({
                 Carregando…
               </div>
             ) : movement ? (
-              <MovementDetailPanel movement={movement} />
+              <MovementDetailPanel
+                movement={movement}
+                canReverse={canCreate}
+                onReversed={() => {
+                  onSaved();
+                }}
+              />
             ) : (
               <InventoryEmptyState message="Movimentação não encontrada." />
             )

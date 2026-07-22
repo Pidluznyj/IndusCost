@@ -576,6 +576,28 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/reservations"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Reservas, bloqueios e cancelamentos autorizados."
+            >
+              <InventoryModule initialTab="reservations" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="inventory/audit"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Trilha de auditoria do módulo de estoque."
+            >
+              <InventoryModule initialTab="audit" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="supply-chain/purchases"
           element={
             <ModulePageShell

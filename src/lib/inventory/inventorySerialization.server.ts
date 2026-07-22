@@ -214,6 +214,7 @@ export type InventoryBalanceWithItem = InventoryBalance & {
     | "status"
     | "minimumStock"
     | "reorderPoint"
+    | "safetyStock"
     | "unit"
     | "family"
     | "group"
@@ -232,6 +233,7 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       status: row.item.status,
       minimumStock: inventoryDecOrNull(row.item.minimumStock),
       reorderPoint: inventoryDecOrNull(row.item.reorderPoint),
+      safetyStock: inventoryDecOrNull(row.item.safetyStock),
       unit: row.item.unit,
       family: row.item.family,
       group: row.item.group,

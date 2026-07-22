@@ -46,7 +46,7 @@ export const INVENTORY_FORM_MOVEMENT_TYPES: FormMovementTypeOption[] = [
     value: "REVERSAL",
     label: "Estorno",
     enabled: false,
-    hint: "Disponível quando o backend suportar estorno",
+    hint: "Use o botão Estornar no detalhe da movimentação",
   },
 ];
 

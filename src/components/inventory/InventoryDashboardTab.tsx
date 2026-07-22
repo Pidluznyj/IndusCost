@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   TrendingDown,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { FinanceExecutiveTotalizerCard } from "@/src/components/finance/shared/FinanceExecutiveTotalizerCard";
 import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
 import { SYSTEM_TOTALIZER_GRID_CLASS } from "@/src/components/ui/SystemTotalizerCard";
@@ -90,8 +91,15 @@ function RecentMovementsTable({ rows }: { rows: InventoryDashboardRecentMovement
   const empty = INVENTORY_EMPTY.noRecentMovements;
   return (
     <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <h3 className="text-sm font-semibold text-slate-900">Últimas movimentações</h3>
+        <Link
+          to="/inventory/movements"
+          className="text-xs font-medium text-slate-600 hover:text-slate-900 hover:underline"
+          data-testid="inventory-dashboard-movements-link"
+        >
+          Ver histórico
+        </Link>
       </div>
       {rows.length === 0 ? (
         <div className="p-4">
@@ -140,74 +148,110 @@ function RecentMovementsTable({ rows }: { rows: InventoryDashboardRecentMovement
   );
 }
 
+function KpiLink({
+  to,
+  children,
+  testId,
+}: {
+  to: string;
+  children: React.ReactNode;
+  testId: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="block rounded-xl transition hover:ring-2 hover:ring-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-500"
+      data-testid={testId}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function InventoryDashboardTab({ data, loading = false }: Props) {
   return (
     <div className="space-y-6" data-testid="inventory-dashboard">
       <SummaryKpiGrid className={SYSTEM_TOTALIZER_GRID_CLASS} testId="inventory-dashboard-kpis">
-        <FinanceExecutiveTotalizerCard
-          label="Valor total em estoque"
-          amount={data.totalInventoryValue}
-          amountFormat="currency"
-          tone="neutral"
-          icon={Boxes}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Itens cadastrados"
-          amount={data.itemsCount}
-          amountFormat="number"
-          tone="info"
-          icon={Package}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Abaixo do mínimo"
-          amount={data.belowMinimumCount}
-          amountFormat="number"
-          tone="warning"
-          icon={TrendingDown}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Abaixo do ponto de reposição"
-          amount={data.belowReorderPointCount}
-          amountFormat="number"
-          tone="warning"
-          icon={AlertTriangle}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Saldo negativo"
-          amount={data.negativeStockCount}
-          amountFormat="number"
-          tone="danger"
-          icon={ShieldAlert}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Bloqueados"
-          amount={data.blockedItemsCount}
-          amountFormat="number"
-          tone="neutral"
-          icon={Lock}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Reservados"
-          amount={data.reservedItemsCount}
-          amountFormat="number"
-          tone="info"
-          icon={ClipboardList}
-          loading={loading}
-        />
-        <FinanceExecutiveTotalizerCard
-          label="Quarentena"
-          amount={data.quarantineItemsCount}
-          amountFormat="number"
-          tone="neutral"
-          icon={Ban}
-          loading={loading}
-        />
+        <KpiLink to="/inventory/balances" testId="inventory-kpi-total-value">
+          <FinanceExecutiveTotalizerCard
+            label="Valor total em estoque"
+            amount={data.totalInventoryValue}
+            amountFormat="currency"
+            tone="neutral"
+            icon={Boxes}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/items" testId="inventory-kpi-items">
+          <FinanceExecutiveTotalizerCard
+            label="Itens cadastrados"
+            amount={data.itemsCount}
+            amountFormat="number"
+            tone="info"
+            icon={Package}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances?belowMinimum=1" testId="inventory-kpi-below-minimum">
+          <FinanceExecutiveTotalizerCard
+            label="Abaixo do mínimo"
+            amount={data.belowMinimumCount}
+            amountFormat="number"
+            tone="warning"
+            icon={TrendingDown}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances?belowReorderPoint=1" testId="inventory-kpi-below-reorder">
+          <FinanceExecutiveTotalizerCard
+            label="Abaixo do ponto de reposição"
+            amount={data.belowReorderPointCount}
+            amountFormat="number"
+            tone="warning"
+            icon={AlertTriangle}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances?negativeStock=1" testId="inventory-kpi-negative">
+          <FinanceExecutiveTotalizerCard
+            label="Saldo negativo"
+            amount={data.negativeStockCount}
+            amountFormat="number"
+            tone="danger"
+            icon={ShieldAlert}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances?hasBlocked=1" testId="inventory-kpi-blocked">
+          <FinanceExecutiveTotalizerCard
+            label="Bloqueados"
+            amount={data.blockedItemsCount}
+            amountFormat="number"
+            tone="neutral"
+            icon={Lock}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/reservations" testId="inventory-kpi-reserved">
+          <FinanceExecutiveTotalizerCard
+            label="Reservados"
+            amount={data.reservedItemsCount}
+            amountFormat="number"
+            tone="info"
+            icon={ClipboardList}
+            loading={loading}
+          />
+        </KpiLink>
+        <KpiLink to="/inventory/balances?hasQuarantine=1" testId="inventory-kpi-quarantine">
+          <FinanceExecutiveTotalizerCard
+            label="Quarentena"
+            amount={data.quarantineItemsCount}
+            amountFormat="number"
+            tone="neutral"
+            icon={Ban}
+            loading={loading}
+          />
+        </KpiLink>
       </SummaryKpiGrid>
 
       <InventoryBalanceGlossary compact />

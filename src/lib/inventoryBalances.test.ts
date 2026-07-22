@@ -189,6 +189,22 @@ describe("inventory routes balances", () => {
     assert.equal(resolveInventoryTabFromPath("/inventory/balances"), "balances");
   });
 
+  it("App.tsx rotas reservations e audit", () => {
+    const app = read("src/App.tsx");
+    assert.match(app, /path="inventory\/reservations"/);
+    assert.match(app, /path="inventory\/audit"/);
+    assert.equal(resolveInventoryTabFromPath("/inventory/reservations"), "reservations");
+    assert.equal(resolveInventoryTabFromPath("/inventory/audit"), "audit");
+  });
+
+  it("InventoryBalancesTab filtra local e exibe mínimo/segurança", () => {
+    const tab = read("src/components/inventory/InventoryBalancesTab.tsx");
+    assert.match(tab, /locationId/);
+    assert.match(tab, /minimumStock/);
+    assert.match(tab, /safetyStock/);
+    assert.match(tab, /inventory-balances-alerts/);
+  });
+
   it("InventoryModule renderiza aba balances", () => {
     const mod = read("src/components/InventoryModule.tsx");
     assert.match(mod, /InventoryBalancesTab/);

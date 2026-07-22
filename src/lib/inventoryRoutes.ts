@@ -11,7 +11,7 @@ import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess.js";
-import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
+import { writeInventoryAuditLog, listInventoryAuditLogs } from "@/src/lib/inventory/inventoryAudit.server.js";
 import {
   parseCreateCountSessionBody,
   parseUpdateCountLineBody,
@@ -1029,6 +1029,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
               status: true,
               minimumStock: true,
               reorderPoint: true,
+              safetyStock: true,
               unit: true,
               family: true,
               group: true,
@@ -1461,6 +1462,33 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/movements/:id/reverse", e);
       res.status(500).json(inventoryApiError("Erro ao estornar movimentação."));
+    }
+  });
+
+  app.get("/api/inventory/audit", ...view, async (req, res) => {
+    try {
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const entityType = String(req.query.entityType ?? "").trim();
+      const entityId = String(req.query.entityId ?? "").trim();
+      const action = String(req.query.action ?? "").trim();
+      const userId = String(req.query.userId ?? "").trim();
+
+      const result = await listInventoryAuditLogs(prisma, {
+        page,
+        pageSize,
+        ...(entityType ? { entityType } : {}),
+        ...(entityId ? { entityId } : {}),
+        ...(action ? { action } : {}),
+        ...(userId ? { userId } : {}),
+      });
+      res.json(result);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/audit", e);
+      res.status(500).json(inventoryApiError("Erro ao listar auditoria."));
     }
   });
 

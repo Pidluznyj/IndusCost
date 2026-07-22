@@ -22,6 +22,8 @@ const TAB_FILES = [
   "src/components/inventory/InventoryBalancesTab.tsx",
   "src/components/inventory/InventoryMovementsTab.tsx",
   "src/components/inventory/InventoryCountsTab.tsx",
+  "src/components/inventory/InventoryReservationsTab.tsx",
+  "src/components/inventory/InventoryAuditTab.tsx",
   "src/components/InventoryModule.tsx",
 ];
 
@@ -35,7 +37,8 @@ describe("inventoryUx", () => {
       "InventoryBalancesTab",
       "InventoryMovementsTab",
       "InventoryCountsTab",
-      "InventoryComingSoonTab",
+      "InventoryReservationsTab",
+      "InventoryAuditTab",
       'tab === "reservations"',
       'tab === "audit"',
     ]) {
@@ -49,8 +52,10 @@ describe("inventoryUx", () => {
     assert.equal(INVENTORY_EMPTY.noMovementsInPeriod.title, "Sem movimentações no período");
     assert.equal(INVENTORY_EMPTY.noBalancesForFilter.title, "Sem saldos para o filtro selecionado");
     assert.equal(INVENTORY_EMPTY.noCountsOpen.title, "Nenhuma conferência aberta");
+    assert.equal(INVENTORY_EMPTY.noReservationsActive.title, "Nenhuma reserva ativa");
+    assert.equal(INVENTORY_EMPTY.noAuditEntries.title, "Sem eventos de auditoria");
 
-    for (const file of TAB_FILES.slice(0, 6)) {
+    for (const file of TAB_FILES.filter((f) => f !== "src/components/InventoryModule.tsx")) {
       const src = read(file);
       assert.match(src, /INVENTORY_EMPTY|InventoryEmptyState/, `${file} deve usar estados vazios`);
     }
@@ -78,6 +83,7 @@ describe("inventoryUx", () => {
       "src/components/inventory/InventoryWarehousesTab.tsx",
       "src/components/inventory/InventoryBalancesTab.tsx",
       "src/components/inventory/InventoryMovementsTab.tsx",
+      "src/components/inventory/InventoryAuditTab.tsx",
     ];
     for (const file of filterTabs) {
       const src = read(file);
@@ -93,7 +99,7 @@ describe("inventoryUx", () => {
     assert.match(ui, /truncate/);
     assert.match(ui, /InventoryTableScroll/);
 
-    for (const file of TAB_FILES.slice(0, 6)) {
+    for (const file of TAB_FILES.filter((f) => f !== "src/components/InventoryModule.tsx")) {
       const src = read(file);
       assert.match(
         src,
@@ -131,7 +137,11 @@ describe("inventoryUx", () => {
     assert.equal(formatInventoryApiError(new Error("  "), "Falha."), "Falha.");
     assert.equal(formatInventoryApiError(new Error("Rede indisponível"), "Falha."), "Rede indisponível");
 
-    const errorTabs = TAB_FILES.filter((f) => f !== "src/components/inventory/InventoryDashboardTab.tsx");
+    const errorTabs = TAB_FILES.filter(
+      (f) =>
+        f !== "src/components/inventory/InventoryDashboardTab.tsx" &&
+        f !== "src/components/InventoryModule.tsx"
+    );
     for (const file of errorTabs) {
       const src = read(file);
       assert.match(src, /InventoryErrorBanner|formatInventoryApiError/, `${file} trata erros`);
@@ -143,5 +153,28 @@ describe("inventoryUx", () => {
     assert.equal(safeTrim(undefined), "");
     assert.equal(safeTrim(null), "");
     assert.equal(safeTrim("  ok  "), "ok");
+  });
+
+  it("10. saldos com local, mínimo, segurança e alertas", () => {
+    const balances = read("src/components/inventory/InventoryBalancesTab.tsx");
+    assert.match(balances, /inventory-balances-filter-location/);
+    assert.match(balances, /Mínimo/);
+    assert.match(balances, /Segurança/);
+    assert.match(balances, /inventory-balances-alerts/);
+    assert.match(balances, /safetyStock/);
+  });
+
+  it("11. estorno autorizado no detalhe da movimentação", () => {
+    const sheet = read("src/components/inventory/InventoryMovementFormSheet.tsx");
+    assert.match(sheet, /movements\/\$\{movement\.id\}\/reverse/);
+    assert.match(sheet, /inventory-movement-reverse-confirm/);
+    assert.doesNotMatch(sheet, /Estorno automático ainda não disponível/);
+  });
+
+  it("12. dashboard KPIs fazem drill-down", () => {
+    const dash = read("src/components/inventory/InventoryDashboardTab.tsx");
+    assert.match(dash, /\/inventory\/balances\?belowMinimum=1/);
+    assert.match(dash, /\/inventory\/reservations/);
+    assert.match(dash, /inventory-kpi-below-minimum/);
   });
 });

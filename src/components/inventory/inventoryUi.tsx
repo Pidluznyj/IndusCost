@@ -398,6 +398,8 @@ export function InventoryCollapsibleFilters({
 
   onClear,
 
+  testId = "inventory-collapsible-filters",
+
 }: {
 
   title?: string;
@@ -410,6 +412,8 @@ export function InventoryCollapsibleFilters({
 
   onClear?: () => void;
 
+  testId?: string;
+
 }) {
 
   const [open, setOpen] = useState(defaultOpen);
@@ -420,7 +424,7 @@ export function InventoryCollapsibleFilters({
 
       className="rounded-xl border border-slate-200 bg-white shadow-sm"
 
-      data-testid="inventory-collapsible-filters"
+      data-testid={testId}
 
     >
 

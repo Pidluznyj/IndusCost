@@ -49,14 +49,15 @@ describe("inventoryNavigation", () => {
     assert.equal(canAccessModule("inventory", checker(["settings.view"])), false);
   });
 
-  it("8. abas preparadas incluem placeholders", () => {
+  it("8. abas operacionais ativas (sem placeholders)", () => {
     const tabs = getVisibleInventoryTabs();
     assert.equal(tabs[0]?.id, "overview");
     assert.equal(tabs.some((t) => t.id === "items" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "warehouses" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "movements" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "balances" && !t.comingSoon), true);
-    assert.equal(tabs.some((t) => t.id === "audit" && t.comingSoon), true);
+    assert.equal(tabs.some((t) => t.id === "reservations" && !t.comingSoon), true);
+    assert.equal(tabs.some((t) => t.id === "audit" && !t.comingSoon), true);
     assert.equal(INVENTORY_TAB_DEFS.length, 9);
     assert.equal(tabs.some((t) => t.id === "implantation" && !t.comingSoon), true);
   });
@@ -151,6 +152,5 @@ describe("InventoryModule estados", () => {
     assert.match(mod, /InventoryLoading/);
     assert.match(mod, /InventoryErrorBanner/);
     assert.match(mod, /UnauthorizedAccessGate/);
-    assert.match(mod, /InventoryComingSoonTab/);
   });
 });
