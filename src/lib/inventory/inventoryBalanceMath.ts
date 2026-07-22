@@ -20,6 +20,7 @@ export type InventoryMovementImpact = {
 const PHYSICAL_IN_TYPES = new Set<InventoryMovementType>([
   "MANUAL_ENTRY",
   "PURCHASE_ENTRY",
+  "PURCHASE_RECEIPT",
   "PRODUCTION_ENTRY",
   "RETURN",
   "POSITIVE_ADJUSTMENT",

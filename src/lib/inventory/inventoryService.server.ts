@@ -121,6 +121,7 @@ export type InventoryMovementResult = {
 const ENTRY_TYPES = new Set<InventoryMovementType>([
   "MANUAL_ENTRY",
   "PURCHASE_ENTRY",
+  "PURCHASE_RECEIPT",
   "PRODUCTION_ENTRY",
   "RETURN",
   "POSITIVE_ADJUSTMENT",
@@ -697,8 +698,10 @@ async function assertInitialBalanceGuards(
 /**
  * Registra movimentação no ledger (transação + lock de saldo).
  * Idempotente quando `idempotencyKey` ou `originType+originId` já existir.
+ * Use `createInventoryMovementInTx` quando já estiver dentro de uma transação atômica.
  */
-export async function createInventoryMovement(
+export async function createInventoryMovementInTx(
+  tx: InventoryTx,
   prisma: PrismaClient,
   input: CreateInventoryMovementInput,
   context: CreateInventoryMovementContext
@@ -717,81 +720,89 @@ export async function createInventoryMovement(
   }
   assertMovementAuthorized(context, input.movementType);
 
-  try {
-    return await prisma.$transaction(async (tx) => {
-      const existing = await findIdempotentMovement(tx, input);
-      if (existing) {
-        return {
-          movement: existing,
-          balance: await rebuildBalanceFromMovement(existing),
-          idempotent: true,
-        };
-      }
+  const existing = await findIdempotentMovement(tx, input);
+  if (existing) {
+    return {
+      movement: existing,
+      balance: await rebuildBalanceFromMovement(existing),
+      idempotent: true,
+    };
+  }
 
-      const item = await assertActiveItem(tx, input.itemId);
-      assertItemFlagsForMovement(item, input.movementType);
+  const item = await assertActiveItem(tx, input.itemId);
+  assertItemFlagsForMovement(item, input.movementType);
 
-      if (ENTRY_TYPES.has(input.movementType)) {
-        const wh = input.destinationWarehouseId ?? input.sourceWarehouseId;
-        if (!wh) {
-          throw new InventoryValidationError(
-            "Almoxarifado de destino é obrigatório.",
-            "WAREHOUSE_REQUIRED"
-          );
-        }
-        await assertActiveWarehouse(tx, wh, "Almoxarifado de destino");
-        const locationId = input.destinationLocationId ?? input.sourceLocationId;
-        if (input.movementType === "INITIAL_BALANCE") {
-          await assertInitialBalanceGuards(tx, input, item, wh, locationId);
-        }
-        return executeSimpleMovement(
-          tx,
-          prisma,
-          { ...input, destinationWarehouseId: wh },
-          context,
-          item,
-          wh,
-          locationId
-        );
-      }
-
-      if (input.movementType === "TRANSFER") {
-        if (!input.sourceWarehouseId || !input.destinationWarehouseId) {
-          throw new InventoryValidationError(
-            "Transferência exige origem e destino.",
-            "TRANSFER_WAREHOUSE"
-          );
-        }
-        await assertActiveWarehouse(tx, input.sourceWarehouseId, "Almoxarifado de origem");
-        await assertActiveWarehouse(tx, input.destinationWarehouseId, "Almoxarifado de destino");
-        return executeTransfer(tx, prisma, input, context, item);
-      }
-
-      if (SOURCE_WAREHOUSE_TYPES.has(input.movementType)) {
-        const wh = input.sourceWarehouseId ?? input.destinationWarehouseId;
-        if (!wh) {
-          throw new InventoryValidationError(
-            "Almoxarifado de origem é obrigatório.",
-            "WAREHOUSE_REQUIRED"
-          );
-        }
-        await assertActiveWarehouse(tx, wh, "Almoxarifado de origem");
-        return executeSimpleMovement(
-          tx,
-          prisma,
-          { ...input, sourceWarehouseId: wh },
-          context,
-          item,
-          wh,
-          input.sourceLocationId ?? input.destinationLocationId
-        );
-      }
-
+  if (ENTRY_TYPES.has(input.movementType)) {
+    const wh = input.destinationWarehouseId ?? input.sourceWarehouseId;
+    if (!wh) {
       throw new InventoryValidationError(
-        `Tipo de movimento não suportado: ${input.movementType}.`,
-        "UNSUPPORTED_MOVEMENT_TYPE"
+        "Almoxarifado de destino é obrigatório.",
+        "WAREHOUSE_REQUIRED"
       );
-    });
+    }
+    await assertActiveWarehouse(tx, wh, "Almoxarifado de destino");
+    const locationId = input.destinationLocationId ?? input.sourceLocationId;
+    if (input.movementType === "INITIAL_BALANCE") {
+      await assertInitialBalanceGuards(tx, input, item, wh, locationId);
+    }
+    return executeSimpleMovement(
+      tx,
+      prisma,
+      { ...input, destinationWarehouseId: wh },
+      context,
+      item,
+      wh,
+      locationId
+    );
+  }
+
+  if (input.movementType === "TRANSFER") {
+    if (!input.sourceWarehouseId || !input.destinationWarehouseId) {
+      throw new InventoryValidationError(
+        "Transferência exige origem e destino.",
+        "TRANSFER_WAREHOUSE"
+      );
+    }
+    await assertActiveWarehouse(tx, input.sourceWarehouseId, "Almoxarifado de origem");
+    await assertActiveWarehouse(tx, input.destinationWarehouseId, "Almoxarifado de destino");
+    return executeTransfer(tx, prisma, input, context, item);
+  }
+
+  if (SOURCE_WAREHOUSE_TYPES.has(input.movementType)) {
+    const wh = input.sourceWarehouseId ?? input.destinationWarehouseId;
+    if (!wh) {
+      throw new InventoryValidationError(
+        "Almoxarifado de origem é obrigatório.",
+        "WAREHOUSE_REQUIRED"
+      );
+    }
+    await assertActiveWarehouse(tx, input.sourceWarehouseId ?? wh, "Almoxarifado de origem");
+    return executeSimpleMovement(
+      tx,
+      prisma,
+      { ...input, sourceWarehouseId: wh },
+      context,
+      item,
+      wh,
+      input.sourceLocationId ?? input.destinationLocationId
+    );
+  }
+
+  throw new InventoryValidationError(
+    `Tipo de movimento não suportado: ${input.movementType}.`,
+    "UNSUPPORTED_MOVEMENT_TYPE"
+  );
+}
+
+export async function createInventoryMovement(
+  prisma: PrismaClient,
+  input: CreateInventoryMovementInput,
+  context: CreateInventoryMovementContext
+): Promise<InventoryMovementResult> {
+  try {
+    return await prisma.$transaction(async (tx) =>
+      createInventoryMovementInTx(tx, prisma, input, context)
+    );
   } catch (e: unknown) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       // Corrida de idempotência — retorna o movimento já gravado.
@@ -894,192 +905,108 @@ export async function createInitialInventoryBalance(
 
 /**
  * Estorno: gera REVERSAL imutável vinculado ao original (sem editar/apagar o fato).
+ * Use `reverseInventoryMovementInTx` dentro de transação atômica do domínio chamador.
  */
-export async function reverseInventoryMovement(
+export async function reverseInventoryMovementInTx(
+  tx: InventoryTx,
   prisma: PrismaClient,
   originalMovementId: string,
   context: CreateInventoryMovementContext,
-  reason: string
+  reason: string,
+  options?: { idempotent?: boolean }
 ): Promise<InventoryMovementResult> {
   if (!reason?.trim()) {
     throw new InventoryValidationError("Motivo do estorno é obrigatório.", "REASON_REQUIRED");
   }
   assertMovementAuthorized(context, "REVERSAL");
 
-  return prisma.$transaction(async (tx) => {
-    const original = await tx.inventoryMovement.findUnique({
-      where: { id: originalMovementId },
-    });
-    if (!original) {
-      throw new InventoryValidationError("Movimentação original não encontrada.", "MOVEMENT_NOT_FOUND");
-    }
-    if (original.movementType === "REVERSAL") {
-      throw new InventoryValidationError(
-        "Não é possível estornar um estorno.",
-        "CANNOT_REVERSE_REVERSAL"
-      );
-    }
+  const original = await tx.inventoryMovement.findUnique({
+    where: { id: originalMovementId },
+  });
+  if (!original) {
+    throw new InventoryValidationError("Movimentação original não encontrada.", "MOVEMENT_NOT_FOUND");
+  }
+  if (original.movementType === "REVERSAL") {
+    throw new InventoryValidationError(
+      "Não é possível estornar um estorno.",
+      "CANNOT_REVERSE_REVERSAL"
+    );
+  }
 
-    const already = await tx.inventoryMovement.findFirst({
-      where: { reversedMovementId: original.id },
-    });
-    if (already) {
-      throw new InventoryValidationError(
-        "Movimentação já foi estornada.",
-        "ALREADY_REVERSED"
-      );
-    }
-
-    const item = await assertActiveItem(tx, original.itemId);
-    const qty = Number(original.quantity);
-    const impact = resolveReversalImpact(original.movementType, qty);
-    const movementDate = new Date();
-
-    if (original.movementType === "TRANSFER") {
-      if (!original.sourceWarehouseId || !original.destinationWarehouseId) {
-        throw new InventoryValidationError(
-          "Transferência original sem origem/destino.",
-          "TRANSFER_WAREHOUSE"
-        );
-      }
-      await assertActiveWarehouse(tx, original.sourceWarehouseId, "Almoxarifado de origem");
-      await assertActiveWarehouse(tx, original.destinationWarehouseId, "Almoxarifado de destino");
-
-      const locked = await getOrCreateBalancesForUpdateOrdered(tx, [
-        {
-          itemId: original.itemId,
-          warehouseId: original.sourceWarehouseId,
-          locationId: original.sourceLocationId,
-        },
-        {
-          itemId: original.itemId,
-          warehouseId: original.destinationWarehouseId,
-          locationId: original.destinationLocationId,
-        },
-      ]);
-      const sourceRow = locked.get(
-        inventoryBalanceLockKey({
-          itemId: original.itemId,
-          warehouseId: original.sourceWarehouseId,
-          locationId: original.sourceLocationId,
-        })
-      )!;
-      const destRow = locked.get(
-        inventoryBalanceLockKey({
-          itemId: original.itemId,
-          warehouseId: original.destinationWarehouseId,
-          locationId: original.destinationLocationId,
-        })
-      )!;
-
-      const beforeSource = mapBalanceRowToSnapshot(sourceRow);
-      const beforeDest = mapBalanceRowToSnapshot(destRow);
-      // Estorno de transferência: devolve à origem e remove do destino.
-      const afterSource = applyMovementImpactToBalance(beforeSource, {
-        physicalDelta: qty,
-        reservedDelta: 0,
-        blockedDelta: 0,
-        quarantineDelta: 0,
-      });
-      const afterDest = applyMovementImpactToBalance(beforeDest, {
-        physicalDelta: -qty,
-        reservedDelta: 0,
-        blockedDelta: 0,
-        quarantineDelta: 0,
-      });
-      if (afterDest.physicalQuantity < 0 && !resolveAllowNegative(context)) {
-        throw new InventoryValidationError(
-          "Estorno deixaria saldo físico negativo no destino.",
-          "INSUFFICIENT_PHYSICAL"
-        );
-      }
-
-      const movement = await createMovementRecord(
-        tx,
-        {
-          itemId: original.itemId,
-          sourceWarehouseId: original.destinationWarehouseId,
-          destinationWarehouseId: original.sourceWarehouseId,
-          sourceLocationId: original.destinationLocationId,
-          destinationLocationId: original.sourceLocationId,
-          movementType: "REVERSAL",
-          quantity: qty,
-          unit: original.unit,
-          reason: reason.trim(),
-          originType: "REVERSAL",
-          originId: original.id,
-          documentNumber: original.documentNumber,
-          unitCost: original.unitCost != null ? Number(original.unitCost) : null,
-          costCenterId: original.costCenterId,
-          financialCostCenterId: original.financialCostCenterId,
-        },
-        context,
-        item,
-        beforeSource,
-        afterSource,
-        { reversedMovementId: original.id }
-      );
-
-      await persistInventoryBalanceSnapshot(
-        tx,
-        sourceRow.id,
-        afterSource,
-        movementDate,
-        movement.id
-      );
-      await persistInventoryBalanceSnapshot(tx, destRow.id, afterDest, movementDate, movement.id);
-
-      await writeInventoryAuditLog(prisma, {
-        entityType: "InventoryMovement",
-        entityId: movement.id,
-        action: "REVERSAL",
-        beforeJson: { originalId: original.id, source: beforeSource, destination: beforeDest },
-        afterJson: { source: afterSource, destination: afterDest },
-        userId: context.userId,
-        reason: reason.trim(),
-      });
-
+  const already = await tx.inventoryMovement.findFirst({
+    where: { reversedMovementId: original.id },
+  });
+  if (already) {
+    if (options?.idempotent) {
       return {
-        movement,
-        sourceBalance: afterSource,
-        destinationBalance: afterDest,
-        balance: afterSource,
+        movement: already,
+        balance: await rebuildBalanceFromMovement(already),
+        idempotent: true,
       };
     }
+    throw new InventoryValidationError("Movimentação já foi estornada.", "ALREADY_REVERSED");
+  }
 
-    const warehouseId =
-      ENTRY_TYPES.has(original.movementType)
-        ? original.destinationWarehouseId ?? original.sourceWarehouseId
-        : original.sourceWarehouseId ?? original.destinationWarehouseId;
-    if (!warehouseId) {
-      throw new InventoryValidationError("Almoxarifado do movimento original ausente.", "WAREHOUSE_REQUIRED");
-    }
-    await assertActiveWarehouse(tx, warehouseId, "Almoxarifado");
+  const item = await assertActiveItem(tx, original.itemId);
+  const qty = Number(original.quantity);
+  const impact = resolveReversalImpact(original.movementType, qty);
+  const movementDate = new Date();
 
-    const locationId =
-      ENTRY_TYPES.has(original.movementType)
-        ? original.destinationLocationId ?? original.sourceLocationId
-        : original.sourceLocationId ?? original.destinationLocationId;
-
-    const balanceRow = await getOrCreateInventoryBalanceForUpdate(
-      tx,
-      original.itemId,
-      warehouseId,
-      locationId
-    );
-    const before = mapBalanceRowToSnapshot(balanceRow);
-    const after = applyMovementImpactToBalance(before, impact);
-
-    if (after.physicalQuantity < 0 && !resolveAllowNegative(context)) {
+  if (original.movementType === "TRANSFER") {
+    if (!original.sourceWarehouseId || !original.destinationWarehouseId) {
       throw new InventoryValidationError(
-        "Estorno deixaria saldo físico negativo.",
-        "INSUFFICIENT_PHYSICAL"
+        "Transferência original sem origem/destino.",
+        "TRANSFER_WAREHOUSE"
       );
     }
-    if (after.reservedQuantity < 0 || after.blockedQuantity < 0) {
+    await assertActiveWarehouse(tx, original.sourceWarehouseId, "Almoxarifado de origem");
+    await assertActiveWarehouse(tx, original.destinationWarehouseId, "Almoxarifado de destino");
+
+    const locked = await getOrCreateBalancesForUpdateOrdered(tx, [
+      {
+        itemId: original.itemId,
+        warehouseId: original.sourceWarehouseId,
+        locationId: original.sourceLocationId,
+      },
+      {
+        itemId: original.itemId,
+        warehouseId: original.destinationWarehouseId,
+        locationId: original.destinationLocationId,
+      },
+    ]);
+    const sourceRow = locked.get(
+      inventoryBalanceLockKey({
+        itemId: original.itemId,
+        warehouseId: original.sourceWarehouseId,
+        locationId: original.sourceLocationId,
+      })
+    )!;
+    const destRow = locked.get(
+      inventoryBalanceLockKey({
+        itemId: original.itemId,
+        warehouseId: original.destinationWarehouseId,
+        locationId: original.destinationLocationId,
+      })
+    )!;
+
+    const beforeSource = mapBalanceRowToSnapshot(sourceRow);
+    const beforeDest = mapBalanceRowToSnapshot(destRow);
+    const afterSource = applyMovementImpactToBalance(beforeSource, {
+      physicalDelta: qty,
+      reservedDelta: 0,
+      blockedDelta: 0,
+      quarantineDelta: 0,
+    });
+    const afterDest = applyMovementImpactToBalance(beforeDest, {
+      physicalDelta: -qty,
+      reservedDelta: 0,
+      blockedDelta: 0,
+      quarantineDelta: 0,
+    });
+    if (afterDest.physicalQuantity < 0 && !resolveAllowNegative(context)) {
       throw new InventoryValidationError(
-        "Estorno deixaria saldo reservado/bloqueado inválido.",
-        "REVERSAL_BALANCE_INVALID"
+        "Estorno deixaria saldo físico negativo no destino.",
+        "INSUFFICIENT_PHYSICAL"
       );
     }
 
@@ -1087,10 +1014,10 @@ export async function reverseInventoryMovement(
       tx,
       {
         itemId: original.itemId,
-        sourceWarehouseId: original.sourceWarehouseId,
-        destinationWarehouseId: original.destinationWarehouseId,
-        sourceLocationId: original.sourceLocationId,
-        destinationLocationId: original.destinationLocationId,
+        sourceWarehouseId: original.destinationWarehouseId,
+        destinationWarehouseId: original.sourceWarehouseId,
+        sourceLocationId: original.destinationLocationId,
+        destinationLocationId: original.sourceLocationId,
         movementType: "REVERSAL",
         quantity: qty,
         unit: original.unit,
@@ -1104,46 +1031,143 @@ export async function reverseInventoryMovement(
       },
       context,
       item,
-      before,
-      after,
+      beforeSource,
+      afterSource,
       { reversedMovementId: original.id }
     );
 
-    await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
-
-    if (original.movementType === "BLOCK" && original.blockId) {
-      await tx.inventoryBlock.updateMany({
-        where: { id: original.blockId, status: "ACTIVE" },
-        data: {
-          status: "RELEASED",
-          releasedAt: new Date(),
-          releasedByUserId: context.userId,
-        },
-      });
-    }
-    if (original.movementType === "RESERVE" && original.reservationId) {
-      await tx.inventoryReservation.updateMany({
-        where: { id: original.reservationId, status: "ACTIVE" },
-        data: {
-          status: "CANCELED",
-          canceledAt: new Date(),
-          canceledByUserId: context.userId,
-        },
-      });
-    }
+    await persistInventoryBalanceSnapshot(
+      tx,
+      sourceRow.id,
+      afterSource,
+      movementDate,
+      movement.id
+    );
+    await persistInventoryBalanceSnapshot(tx, destRow.id, afterDest, movementDate, movement.id);
 
     await writeInventoryAuditLog(prisma, {
       entityType: "InventoryMovement",
       entityId: movement.id,
       action: "REVERSAL",
-      beforeJson: { originalId: original.id, before },
-      afterJson: after,
+      beforeJson: { originalId: original.id, source: beforeSource, destination: beforeDest },
+      afterJson: { source: afterSource, destination: afterDest },
       userId: context.userId,
       reason: reason.trim(),
     });
 
-    return { movement, balance: after };
+    return {
+      movement,
+      sourceBalance: afterSource,
+      destinationBalance: afterDest,
+      balance: afterSource,
+    };
+  }
+
+  const warehouseId = ENTRY_TYPES.has(original.movementType)
+    ? original.destinationWarehouseId ?? original.sourceWarehouseId
+    : original.sourceWarehouseId ?? original.destinationWarehouseId;
+  if (!warehouseId) {
+    throw new InventoryValidationError("Almoxarifado do movimento original ausente.", "WAREHOUSE_REQUIRED");
+  }
+  await assertActiveWarehouse(tx, warehouseId, "Almoxarifado");
+
+  const locationId = ENTRY_TYPES.has(original.movementType)
+    ? original.destinationLocationId ?? original.sourceLocationId
+    : original.sourceLocationId ?? original.destinationLocationId;
+
+  const balanceRow = await getOrCreateInventoryBalanceForUpdate(
+    tx,
+    original.itemId,
+    warehouseId,
+    locationId
+  );
+  const before = mapBalanceRowToSnapshot(balanceRow);
+  const after = applyMovementImpactToBalance(before, impact);
+
+  if (after.physicalQuantity < 0 && !resolveAllowNegative(context)) {
+    throw new InventoryValidationError(
+      "Estorno deixaria saldo físico negativo.",
+      "INSUFFICIENT_PHYSICAL"
+    );
+  }
+  if (after.reservedQuantity < 0 || after.blockedQuantity < 0) {
+    throw new InventoryValidationError(
+      "Estorno deixaria saldo reservado/bloqueado inválido.",
+      "REVERSAL_BALANCE_INVALID"
+    );
+  }
+
+  const movement = await createMovementRecord(
+    tx,
+    {
+      itemId: original.itemId,
+      sourceWarehouseId: original.sourceWarehouseId,
+      destinationWarehouseId: original.destinationWarehouseId,
+      sourceLocationId: original.sourceLocationId,
+      destinationLocationId: original.destinationLocationId,
+      movementType: "REVERSAL",
+      quantity: qty,
+      unit: original.unit,
+      reason: reason.trim(),
+      originType: "REVERSAL",
+      originId: original.id,
+      documentNumber: original.documentNumber,
+      unitCost: original.unitCost != null ? Number(original.unitCost) : null,
+      costCenterId: original.costCenterId,
+      financialCostCenterId: original.financialCostCenterId,
+    },
+    context,
+    item,
+    before,
+    after,
+    { reversedMovementId: original.id }
+  );
+
+  await persistInventoryBalanceSnapshot(tx, balanceRow.id, after, movementDate, movement.id);
+
+  if (original.movementType === "BLOCK" && original.blockId) {
+    await tx.inventoryBlock.updateMany({
+      where: { id: original.blockId, status: "ACTIVE" },
+      data: {
+        status: "RELEASED",
+        releasedAt: new Date(),
+        releasedByUserId: context.userId,
+      },
+    });
+  }
+  if (original.movementType === "RESERVE" && original.reservationId) {
+    await tx.inventoryReservation.updateMany({
+      where: { id: original.reservationId, status: "ACTIVE" },
+      data: {
+        status: "CANCELED",
+        canceledAt: new Date(),
+        canceledByUserId: context.userId,
+      },
+    });
+  }
+
+  await writeInventoryAuditLog(prisma, {
+    entityType: "InventoryMovement",
+    entityId: movement.id,
+    action: "REVERSAL",
+    beforeJson: { originalId: original.id, before },
+    afterJson: after,
+    userId: context.userId,
+    reason: reason.trim(),
   });
+
+  return { movement, balance: after };
+}
+
+export async function reverseInventoryMovement(
+  prisma: PrismaClient,
+  originalMovementId: string,
+  context: CreateInventoryMovementContext,
+  reason: string
+): Promise<InventoryMovementResult> {
+  return prisma.$transaction(async (tx) =>
+    reverseInventoryMovementInTx(tx, prisma, originalMovementId, context, reason)
+  );
 }
 
 /** Cancela reserva ativa e registra movimento CANCEL_RESERVATION. */

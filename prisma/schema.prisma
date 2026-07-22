@@ -5197,6 +5197,8 @@ enum InventoryLocationType {
 enum InventoryMovementType {
   MANUAL_ENTRY
   PURCHASE_ENTRY
+  /// Entrada gerada por recebimento de compra confirmado (OP-22).
+  PURCHASE_RECEIPT
   PRODUCTION_ENTRY
   MANUAL_EXIT
   REQUISITION_EXIT
@@ -6362,25 +6364,42 @@ model PurchaseOrderHistoryEvent {
   @@index([action])
 }
 
-/// Recebimento parcial/total — vínculo futuro a InventoryMovement via soft IDs.
+/// Recebimento parcial/total — ledger só na confirmação (PURCHASE_RECEIPT).
 model PurchaseReceipt {
   id                    String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   code                  String                @unique
   purchaseOrderId       String                @db.Uuid
   status                PurchaseReceiptStatus @default(RASCUNHO)
   receivedAt            DateTime?             @db.Timestamptz(6)
-  /// Soft: almoxarifado destino (InventoryWarehouse.id) — sem FK rígida nesta fase.
+  /// Soft: almoxarifado destino (InventoryWarehouse.id).
   warehouseId           String?               @db.Uuid
   warehouseCodeSnapshot String?
+  /// Soft: local destino (InventoryLocation.id).
+  locationId            String?               @db.Uuid
+  /// Documento operacional de entrada (não fiscal).
+  documentNumber        String?
+  /// NF-e / documento de entrada — somente referência (não integra AP/Nomus).
+  entryDocumentRef      String?
   nfeNumber             String?
   nfeId                 String?
+  /// Frete e despesas reais do recebimento (informativos do domínio SC).
+  freightValueActual    Decimal?              @db.Decimal(20, 6)
+  expensesActual        Decimal?              @db.Decimal(20, 6)
   notes                 String?
+  responsibleUserId     String?
+  responsibleUserName   String?
   approvedAt            DateTime?             @db.Timestamptz(6)
   approvedByUserId      String?
+  confirmedAt           DateTime?             @db.Timestamptz(6)
+  confirmedByUserId     String?
+  /// Idempotência de confirmação (evita postagem duplicada no ledger).
+  confirmIdempotencyKey String?               @unique
   reversedAt            DateTime?             @db.Timestamptz(6)
-  /// Soft link futuro ao movimento PURCHASE_ENTRY gerado (InventoryMovement.id).
+  reversedByUserId      String?
+  reverseReason         String?
+  /// Soft link (primeiro movimento / legado); linhas têm seus próprios IDs.
   inventoryMovementId   String?               @unique @db.Uuid
-  /// Soft link futuro ao REVERSAL correspondente.
+  /// Soft link ao REVERSAL correspondente (primeiro / legado).
   reversalMovementId    String?               @unique @db.Uuid
   createdAt             DateTime              @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime              @default(now()) @updatedAt @db.Timestamptz(6)
@@ -6388,6 +6407,7 @@ model PurchaseReceipt {
   purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   items         PurchaseReceiptItem[]
   approvals     PurchaseApproval[]    @relation("PurchaseApprovalReceipt")
+  history       PurchaseReceiptHistoryEvent[]
 
   @@index([purchaseOrderId])
   @@index([status])
@@ -6407,9 +6427,15 @@ model PurchaseReceiptItem {
   quantityAccepted      Decimal  @db.Decimal(20, 6)
   quantityRejected      Decimal  @default(0) @db.Decimal(20, 6)
   unit                  String
+  lotNumber             String?
+  /// Custo unitário efetivo recebido (informativo SC — não publica custo oficial).
   unitCostSnapshot      Decimal? @db.Decimal(20, 6)
-  /// Soft link futuro a movimento de linha (se postagem por linha).
+  effectiveUnitCost     Decimal? @db.Decimal(20, 6)
+  effectiveLineCost     Decimal? @db.Decimal(20, 6)
+  /// Soft link ao movimento PURCHASE_RECEIPT da linha.
   inventoryMovementId   String?  @db.Uuid
+  /// Soft link ao REVERSAL da linha (cancelamento não apaga o original).
+  reversalMovementId    String?  @db.Uuid
   notes                 String?
   createdAt             DateTime @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime @default(now()) @updatedAt @db.Timestamptz(6)
@@ -6423,6 +6449,27 @@ model PurchaseReceiptItem {
   @@index([purchaseOrderItemId])
   @@index([materialId])
   @@index([inventoryMovementId])
+  @@index([lotNumber])
+}
+
+/// Histórico append-only de recebimentos (OP-22).
+model PurchaseReceiptHistoryEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  receiptId String   @db.Uuid
+  action    String
+  fromStatus PurchaseReceiptStatus?
+  toStatus   PurchaseReceiptStatus?
+  reason    String?
+  notes     String?
+  userId    String?
+  userName  String?
+  metaJson  Json?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  receipt PurchaseReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([receiptId, createdAt])
+  @@index([action])
 }
 
 /// Evidências / anexos polimórficos do domínio de Compras SC.

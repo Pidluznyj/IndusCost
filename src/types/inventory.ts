@@ -27,6 +27,7 @@ export type InventoryLocationType = "PHYSICAL" | "QUARANTINE" | "PRODUCTION";
 export type InventoryMovementType =
   | "MANUAL_ENTRY"
   | "PURCHASE_ENTRY"
+  | "PURCHASE_RECEIPT"
   | "PRODUCTION_ENTRY"
   | "MANUAL_EXIT"
   | "REQUISITION_EXIT"

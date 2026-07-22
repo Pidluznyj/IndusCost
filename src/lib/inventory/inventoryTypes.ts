@@ -22,6 +22,7 @@ export type InventoryItemType = (typeof INVENTORY_ITEM_TYPES)[number];
 export const INVENTORY_MOVEMENT_TYPES = [
   "MANUAL_ENTRY",
   "PURCHASE_ENTRY",
+  "PURCHASE_RECEIPT",
   "PRODUCTION_ENTRY",
   "MANUAL_EXIT",
   "REQUISITION_EXIT",

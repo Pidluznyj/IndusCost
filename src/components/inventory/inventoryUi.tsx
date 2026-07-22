@@ -22,6 +22,8 @@ export const INVENTORY_MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, strin
 
   PURCHASE_ENTRY: "Entrada compra",
 
+  PURCHASE_RECEIPT: "Recebimento compra",
+
   PRODUCTION_ENTRY: "Entrada produção",
 
   MANUAL_EXIT: "Saída manual",

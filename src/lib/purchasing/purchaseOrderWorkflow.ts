@@ -1,6 +1,6 @@
 /**
- * Workflow puro do Pedido de Compra (OP-20).
- * Sem estoque / Contas a Pagar / recebimento físico nesta fase.
+ * Workflow puro do Pedido de Compra (OP-20/OP-22).
+ * Recebimento físico atualiza status via serviço de receipts (sem AP / Nomus / custo publicado).
  */
 
 export const PURCHASE_ORDER_STATUSES = [
@@ -46,21 +46,20 @@ const TRANSITIONS: Record<
     from: ["RASCUNHO", "APROVADO", "ENVIADO", "EMITIDO"],
     to: "CANCELADO",
   },
-  // Recebimento físico fica para OP futura — estados modelados, transição bloqueada aqui.
-  MARK_PARTIAL_RECEIVED: { from: ["CONFIRMADO"], to: "PARCIALMENTE_RECEBIDO" },
-  MARK_RECEIVED: { from: ["CONFIRMADO", "PARCIALMENTE_RECEBIDO"], to: "RECEBIDO" },
+  MARK_PARTIAL_RECEIVED: {
+    from: ["CONFIRMADO", "PARCIALMENTE_RECEBIDO", "RECEBIDO"],
+    to: "PARCIALMENTE_RECEBIDO",
+  },
+  MARK_RECEIVED: {
+    from: ["CONFIRMADO", "PARCIALMENTE_RECEBIDO"],
+    to: "RECEBIDO",
+  },
 };
 
 export function resolvePurchaseOrderTransition(
   current: PurchaseOrderStatusName,
   action: PurchaseOrderAction
 ): PurchaseOrderStatusName {
-  if (action === "MARK_PARTIAL_RECEIVED" || action === "MARK_RECEIVED") {
-    throw new PurchaseOrderWorkflowError(
-      "Recebimento físico ainda não implementado — status reservado para OP futura.",
-      "RECEIPT_NOT_IMPLEMENTED"
-    );
-  }
   const rule = TRANSITIONS[action];
   if (!(PURCHASE_ORDER_STATUSES as readonly string[]).includes(current)) {
     throw new PurchaseOrderWorkflowError(`Status inválido: ${current}.`, "STATUS_INVALID");
@@ -92,7 +91,7 @@ export function assertQuotationAdjudicated(quotationStatus: string): void {
   }
 }
 
-/** Aprovação cria compromisso operacional + marca entrada futura (sem estoque/AP). */
+/** Aprovação cria compromisso operacional + marca entrada futura (sem AP). */
 export function buildOperationalCommitmentMeta(nowIso: string) {
   return {
     operationalCommitmentAt: nowIso,

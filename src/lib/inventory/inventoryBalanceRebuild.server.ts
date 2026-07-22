@@ -65,6 +65,7 @@ function toLedgerFact(row: {
   const isEntry =
     movementType === "MANUAL_ENTRY" ||
     movementType === "PURCHASE_ENTRY" ||
+    movementType === "PURCHASE_RECEIPT" ||
     movementType === "PRODUCTION_ENTRY" ||
     movementType === "RETURN" ||
     movementType === "POSITIVE_ADJUSTMENT" ||

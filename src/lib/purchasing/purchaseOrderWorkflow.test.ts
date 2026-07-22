@@ -16,10 +16,19 @@ describe("purchaseOrderWorkflow (OP-20)", () => {
     assert.equal(resolvePurchaseOrderTransition("ENVIADO", "CONFIRM"), "CONFIRMADO");
   });
 
-  it("bloqueia recebimento físico nesta fase", () => {
-    assert.throws(
-      () => resolvePurchaseOrderTransition("CONFIRMADO", "MARK_RECEIVED"),
-      (e: unknown) => e instanceof PurchaseOrderWorkflowError && e.code === "RECEIPT_NOT_IMPLEMENTED"
+  it("permite marcar recebimento parcial/total a partir de confirmado", () => {
+    assert.equal(
+      resolvePurchaseOrderTransition("CONFIRMADO", "MARK_PARTIAL_RECEIVED"),
+      "PARCIALMENTE_RECEBIDO"
+    );
+    assert.equal(resolvePurchaseOrderTransition("CONFIRMADO", "MARK_RECEIVED"), "RECEBIDO");
+    assert.equal(
+      resolvePurchaseOrderTransition("PARCIALMENTE_RECEBIDO", "MARK_RECEIVED"),
+      "RECEBIDO"
+    );
+    assert.equal(
+      resolvePurchaseOrderTransition("RECEBIDO", "MARK_PARTIAL_RECEIVED"),
+      "PARCIALMENTE_RECEBIDO"
     );
   });
 
