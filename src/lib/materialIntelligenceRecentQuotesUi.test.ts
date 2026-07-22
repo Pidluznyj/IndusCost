@@ -15,6 +15,21 @@ describe("materialIntelligenceRecentQuotes UI", () => {
     assert.match(detail, /MaterialIntelligenceRecentQuotesSection/);
   });
 
+  it("gráfico de evolução e indicadores ficam antes do grid de preços", () => {
+    const detail = read("src/components/materials/MaterialsMarketIntelligenceDetailPage.tsx");
+    const sectionsStart = detail.indexOf('data-testid="material-intelligence-360-sections"');
+    assert.ok(sectionsStart > 0);
+    const sections = detail.slice(sectionsStart);
+    const historyIdx = sections.indexOf("<MaterialIntelligencePriceHistoryChart");
+    const analyticsIdx = sections.indexOf("<MaterialIntelligencePriceAnalyticsSection");
+    const quotesIdx = sections.indexOf("<MaterialIntelligenceRecentQuotesSection");
+    assert.ok(historyIdx >= 0);
+    assert.ok(analyticsIdx >= 0);
+    assert.ok(quotesIdx >= 0);
+    assert.ok(historyIdx < quotesIdx);
+    assert.ok(analyticsIdx < quotesIdx);
+  });
+
   it("tabela principal mantém colunas financeiras e fornecedor", () => {
     const quotes = read("src/components/materials/MaterialIntelligenceRecentQuotesSection.tsx");
     assert.match(quotes, /material-intelligence-market-quotes-table/);

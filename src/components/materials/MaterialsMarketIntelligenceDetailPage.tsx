@@ -231,6 +231,10 @@ export function MaterialsMarketIntelligenceDetailPage() {
             className="grid gap-4 xl:grid-cols-2"
             data-testid="material-intelligence-360-sections"
           >
+            <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
+
+            <MaterialIntelligencePriceAnalyticsSection materialId={item.id} />
+
             <div
               className="min-w-0 xl:col-span-2"
               data-testid="material-intelligence-recent-quotes-full-width"
@@ -247,11 +251,7 @@ export function MaterialsMarketIntelligenceDetailPage() {
               />
             </div>
 
-            <MaterialIntelligencePriceHistoryChart materialId={item.id} unit={item.unit} />
-
             <MaterialIntelligenceComparativeChart materialId={item.id} unit={item.unit} />
-
-            <MaterialIntelligencePriceAnalyticsSection materialId={item.id} />
 
             <MaterialIntelligenceFxDecompositionSection
               materialId={item.id}
