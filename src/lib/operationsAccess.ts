@@ -356,6 +356,30 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   },
   {
     method: "GET",
+    path: "/api/purchase-quotations/:id/awards",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-quotations/:id/awards",
+    resourceKey: "operations.purchases",
+    action: "update",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-quotations/:id/awards/:awardId/approve",
+    resourceKey: "operations.purchases",
+    action: "approve",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-quotations/:id/awards/:awardId/reject",
+    resourceKey: "operations.purchases",
+    action: "approve",
+  },
+  {
+    method: "GET",
     path: "/api/purchase-evidences",
     resourceKey: "operations.purchases",
     action: "view",

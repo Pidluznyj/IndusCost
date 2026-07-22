@@ -28,6 +28,14 @@ import {
   openNegotiationRound,
 } from "@/src/lib/purchasing/negotiationRoundService.server.js";
 import { buildQuotationComparison } from "@/src/lib/purchasing/quotationComparisonService.server.js";
+import {
+  approveQuotationAward,
+  getQuotationAwardDetail,
+  listQuotationAwards,
+  mapAwardError,
+  rejectQuotationAward,
+  submitQuotationAward,
+} from "@/src/lib/purchasing/quotationAwardService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -54,6 +62,10 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
   const update = [
     auth.requireAppAuth,
     auth.requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.update),
+  ] as const;
+  const approve = [
+    auth.requireAppAuth,
+    auth.requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.approve),
   ] as const;
 
   app.get("/api/purchase-quotations/official-refs/suppliers", ...view, async (req, res) => {
@@ -288,6 +300,97 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
       res.json(result);
     } catch (e) {
       const mapped = mapNegotiationError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/purchase-quotations/:id/awards", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const rows = await listQuotationAwards(prisma, id);
+      const current = await getQuotationAwardDetail(prisma, id);
+      res.json({ rows, current });
+    } catch (e) {
+      const mapped = mapAwardError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/awards", ...update, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const mode = String(req.body?.mode ?? "SINGLE").toUpperCase() === "SPLIT" ? "SPLIT" : "SINGLE";
+      const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
+      const rejections = Array.isArray(req.body?.rejections) ? req.body.rejections : [];
+      const row = await submitQuotationAward(
+        prisma,
+        id,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        {
+          mode,
+          justification: String(req.body?.justification ?? ""),
+          finalRoundId: req.body?.finalRoundId ?? null,
+          allocations: allocations.map((a: { offerId?: string; quotationItemId?: string; quantityAwarded?: number }) => ({
+            offerId: String(a.offerId ?? ""),
+            quotationItemId: String(a.quotationItemId ?? ""),
+            quantityAwarded: Number(a.quantityAwarded),
+          })),
+          rejections: rejections.map((r: { offerId?: string; reason?: string }) => ({
+            offerId: String(r.offerId ?? ""),
+            reason: String(r.reason ?? ""),
+          })),
+          notes: req.body?.notes ?? null,
+          exceptionJustification: req.body?.exceptionJustification ?? null,
+          hasExceptionPermission: Boolean(req.body?.useException),
+        }
+      );
+      res.status(201).json(row);
+    } catch (e) {
+      const mapped = mapAwardError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/awards/:awardId/approve", ...approve, async (req, res) => {
+    try {
+      const { id, awardId } = req.params;
+      if (!isUuid(id) || !isUuid(awardId)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const row = await approveQuotationAward(
+        prisma,
+        id,
+        awardId,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        { notes: req.body?.notes ?? null }
+      );
+      res.json(row);
+    } catch (e) {
+      const mapped = mapAwardError(e);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.post("/api/purchase-quotations/:id/awards/:awardId/reject", ...approve, async (req, res) => {
+    try {
+      const { id, awardId } = req.params;
+      if (!isUuid(id) || !isUuid(awardId)) return res.status(400).json({ error: "ID inválido." });
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json({ error: "Autenticação necessária." });
+      const row = await rejectQuotationAward(
+        prisma,
+        id,
+        awardId,
+        { userId: user.id, userName: user.name ?? user.email ?? null },
+        { reason: String(req.body?.reason ?? "") }
+      );
+      res.json(row);
+    } catch (e) {
+      const mapped = mapAwardError(e);
       return res.status(mapped.status).json(mapped.body);
     }
   });

@@ -10,6 +10,7 @@ import {
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess";
 import { PURCHASE_QUOTATION_STATUS_LABEL } from "@/src/types/purchasing";
+import { PurchaseQuotationAwardPanel } from "@/src/components/PurchaseQuotationAwardPanel";
 
 type ComparisonAlert = {
   code: string;
@@ -489,6 +490,12 @@ export function PurchaseQuotationComparisonModule() {
           ) : null}
         </div>
       </div>
+
+      <PurchaseQuotationAwardPanel
+        quotationId={data.quotation.id}
+        preferredOfferId={selectedOfferId}
+        onChanged={() => void load()}
+      />
     </div>
   );
 }

@@ -5771,6 +5771,25 @@ enum PurchaseApprovalStatus {
   CANCELADA
 }
 
+enum PurchaseQuotationAwardStatus {
+  PENDENTE_APROVACAO
+  APROVADA
+  REJEITADA
+  CANCELADA
+}
+
+enum PurchaseQuotationAwardMode {
+  SINGLE
+  SPLIT
+}
+
+enum PurchaseQuotationAwardHistoryAction {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum PurchaseOrderStatus {
   RASCUNHO
   EMITIDO
@@ -5845,6 +5864,7 @@ model PurchaseQuotation {
   offers          PurchaseQuotationOffer[]
   rounds          PurchaseNegotiationRound[]
   approvals       PurchaseApproval[]           @relation("PurchaseApprovalQuotation")
+  awards          PurchaseQuotationAward[]
   purchaseOrders  PurchaseOrder[]
 
   @@index([status])
@@ -5875,6 +5895,7 @@ model PurchaseQuotationItem {
   material            Material?                 @relation(fields: [materialId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   offerItems          PurchaseQuotationOfferItem[]
   purchaseOrderItems  PurchaseOrderItem[]
+  awardAllocations    PurchaseQuotationAwardAllocation[]
 
   @@unique([quotationId, lineNumber])
   @@index([quotationId])
@@ -5948,6 +5969,8 @@ model PurchaseQuotationOffer {
   quotationSupplier PurchaseQuotationSupplier   @relation(fields: [quotationSupplierId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   items             PurchaseQuotationOfferItem[]
   purchaseOrders    PurchaseOrder[]
+  awardAllocations  PurchaseQuotationAwardAllocation[]
+  awardRejections   PurchaseQuotationAwardRejection[]
 
   @@unique([quotationId, quotationSupplierId])
   @@index([quotationId])
@@ -5986,6 +6009,7 @@ model PurchaseQuotationOfferItem {
   quotationItem    PurchaseQuotationItem         @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   roundLines       PurchaseNegotiationRoundLine[]
   awardedRoundLine PurchaseNegotiationRoundLine? @relation("OfferItemAwardedRoundLine", fields: [awardedRoundLineId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  awardAllocations PurchaseQuotationAwardAllocation[]
 
   @@unique([offerId, quotationItemId])
   @@index([offerId])
@@ -6011,6 +6035,7 @@ model PurchaseNegotiationRound {
 
   quotation PurchaseQuotation              @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   lines     PurchaseNegotiationRoundLine[]
+  awardsAsFinalRound PurchaseQuotationAward[] @relation("AwardFinalRound")
 
   @@unique([quotationId, roundNumber])
   @@index([quotationId])
@@ -6083,6 +6108,7 @@ model PurchaseApproval {
   quotation       PurchaseQuotation? @relation("PurchaseApprovalQuotation", fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   purchaseOrder   PurchaseOrder?     @relation("PurchaseApprovalPurchaseOrder", fields: [purchaseOrderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   receipt         PurchaseReceipt?   @relation("PurchaseApprovalReceipt", fields: [receiptId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quotationAward  PurchaseQuotationAward? @relation("AwardPurchaseApproval")
 
   @@index([targetType, status])
   @@index([purchaseRequestId])
@@ -6090,6 +6116,112 @@ model PurchaseApproval {
   @@index([purchaseOrderId])
   @@index([receiptId])
   @@index([createdAt])
+}
+
+/// Pacote formal de adjudicação (OP-19) — escolha + aprovação; sem PO/recebimento.
+model PurchaseQuotationAward {
+  id                         String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId                String                      @db.Uuid
+  status                     PurchaseQuotationAwardStatus @default(PENDENTE_APROVACAO)
+  mode                       PurchaseQuotationAwardMode  @default(SINGLE)
+  finalRoundId               String?                     @db.Uuid
+  justification              String
+  responsibleUserId          String?
+  responsibleUserName        String?
+  approverUserId             String?
+  approverUserName           String?
+  submittedAt                DateTime                    @default(now()) @db.Timestamptz(6)
+  decidedAt                  DateTime?                   @db.Timestamptz(6)
+  decisionReason             String?
+  currency                   String                      @default("BRL")
+  initialComparableTotal     Decimal?                    @db.Decimal(20, 6)
+  awardedComparableTotal     Decimal?                    @db.Decimal(20, 6)
+  totalGain                  Decimal?                    @db.Decimal(20, 6)
+  percentGain                Decimal?                    @db.Decimal(20, 6)
+  evidenceCountSnapshot      Int                         @default(0)
+  usedEvidenceException      Boolean                     @default(false)
+  commercialConditionsJson   Json?
+  notes                      String?
+  approvalId                 String?                     @unique @db.Uuid
+  createdAt                  DateTime                    @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)
+
+  quotation   PurchaseQuotation                 @relation(fields: [quotationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  finalRound  PurchaseNegotiationRound?         @relation("AwardFinalRound", fields: [finalRoundId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  approval    PurchaseApproval?                 @relation("AwardPurchaseApproval", fields: [approvalId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  allocations PurchaseQuotationAwardAllocation[]
+  rejections  PurchaseQuotationAwardRejection[]
+  history     PurchaseQuotationAwardHistoryEvent[]
+
+  @@index([quotationId])
+  @@index([status])
+  @@index([finalRoundId])
+  @@index([submittedAt])
+}
+
+model PurchaseQuotationAwardAllocation {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  awardId            String   @db.Uuid
+  offerId            String   @db.Uuid
+  offerItemId        String   @db.Uuid
+  quotationItemId    String   @db.Uuid
+  supplierId         String   @db.Uuid
+  supplierNameSnapshot String
+  quantityAwarded    Decimal  @db.Decimal(20, 6)
+  unitPriceAwarded   Decimal  @db.Decimal(20, 6)
+  lineTotalAwarded   Decimal  @db.Decimal(20, 6)
+  roundLineId        String?  @db.Uuid
+  paymentTermsSnapshot String?
+  deliveryTermsSnapshot String?
+  freightValueSnapshot Decimal? @db.Decimal(20, 6)
+  leadTimeDaysSnapshot Int?
+  validityDateSnapshot DateTime? @db.Date
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+
+  award         PurchaseQuotationAward      @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offer         PurchaseQuotationOffer      @relation(fields: [offerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  offerItem     PurchaseQuotationOfferItem  @relation(fields: [offerItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  quotationItem PurchaseQuotationItem       @relation(fields: [quotationItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([awardId])
+  @@index([offerId])
+  @@index([offerItemId])
+  @@index([quotationItemId])
+  @@unique([awardId, offerItemId])
+}
+
+model PurchaseQuotationAwardRejection {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  awardId              String   @db.Uuid
+  offerId              String   @db.Uuid
+  quotationSupplierId  String   @db.Uuid
+  supplierId           String   @db.Uuid
+  supplierNameSnapshot String
+  reason               String
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+
+  award PurchaseQuotationAward @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  offer PurchaseQuotationOffer @relation(fields: [offerId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@unique([awardId, offerId])
+  @@index([awardId])
+  @@index([offerId])
+}
+
+model PurchaseQuotationAwardHistoryEvent {
+  id        String                             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  awardId   String                             @db.Uuid
+  action    PurchaseQuotationAwardHistoryAction
+  reason    String?
+  userId    String?
+  userName  String?
+  metaJson  Json?
+  createdAt DateTime                           @default(now()) @db.Timestamptz(6)
+
+  award PurchaseQuotationAward @relation(fields: [awardId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([awardId, createdAt])
+  @@index([action])
 }
 
 /// Pedido de compra formal — preços congelados no emit; não movimenta estoque sozinho.

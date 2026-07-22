@@ -180,7 +180,7 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
     id: "purchases",
     label: "Compras",
     resourceKey: OPERATIONS_RESOURCE_KEYS.purchases,
-    actions: ["create", "edit", "delete"],
+    actions: ["create", "edit", "delete", "approve"],
     writeEndpoints: [
       { method: "POST", path: "/api/purchase-requests", action: "create" },
       { method: "POST", path: "/api/purchase-requests/:id/submit", action: "create" },
@@ -197,6 +197,9 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
       { method: "POST", path: "/api/purchase-quotations/:id/rounds/:roundId/lines", action: "edit" },
       { method: "POST", path: "/api/purchase-quotations/:id/rounds/:roundId/close", action: "edit" },
       { method: "POST", path: "/api/purchase-quotations/:id/offers/:offerId/mark-winner", action: "edit" },
+      { method: "POST", path: "/api/purchase-quotations/:id/awards", action: "edit" },
+      { method: "POST", path: "/api/purchase-quotations/:id/awards/:awardId/approve", action: "approve" },
+      { method: "POST", path: "/api/purchase-quotations/:id/awards/:awardId/reject", action: "approve" },
       { method: "POST", path: "/api/purchase-evidences", action: "edit" },
       { method: "POST", path: "/api/purchase-evidences/:evidenceId/soft-delete", action: "edit" },
     ],
