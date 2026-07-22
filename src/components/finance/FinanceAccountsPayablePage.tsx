@@ -1125,6 +1125,7 @@ export function FinanceAccountsPayablePage() {
                 setTitlesLocalFilter(parseFinanceApTitlesLocalFilter(v))
               }
               canManageAllocations={canManageAllocations}
+              canExport={canExport}
             />
           ) : null}
           {executiveTab === "suppliers" ? (

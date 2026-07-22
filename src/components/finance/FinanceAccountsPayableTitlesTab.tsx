@@ -1,8 +1,15 @@
+import "@/src/components/print/print-document.css";
+import "./finance-ap-titles-print.css";
+
 import React, { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, ChevronRight, Loader2, Printer } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import type { FinanceApTitlesPayload } from "@/src/lib/financeAccountsPayableTitles.js";
+import type {
+  FinanceApTitleListItem,
+  FinanceApTitlesPayload,
+} from "@/src/lib/financeAccountsPayableTitles.js";
 import {
   buildFinanceApTitlesQuery,
   type FinanceApDataQualityAlertKey,
@@ -13,6 +20,7 @@ import {
   parseFinanceApTitlesLocalFilter,
   type FinanceApTitlesLocalFilter,
 } from "@/src/lib/financeAccountsPayableTitlesLocalFilter";
+import { FINANCE_AP_TITLES_PRINT_PAGE_SIZE } from "@/src/lib/financeApTitlesPrint";
 import { cn } from "@/src/lib/utils";
 import {
   displayFinanceText,
@@ -23,7 +31,6 @@ import {
   formatFinanceInteger,
 } from "@/src/lib/financeAccountsPayableFormat";
 import {
-  formatNomusStatusLabel,
   StatusBadge,
   TabEmpty,
 } from "@/src/components/finance/FinanceAccountsPayableTabPanels";
@@ -34,6 +41,7 @@ import {
   FinanceApStickyTableHead,
 } from "@/src/components/finance/FinanceAccountsPayableUiShared";
 import { FinanceApTitleClassificationSheet } from "@/src/components/finance/FinanceApTitleClassificationSheet";
+import { FinanceAccountsPayableTitlesPrintDocument } from "@/src/components/finance/FinanceAccountsPayableTitlesPrintDocument";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { canManageFinanceApAllocations } from "@/src/lib/financeAccountsPayablePermissions";
@@ -41,6 +49,7 @@ import {
   FINANCE_AP_NO_CLASSIFICATION,
   FINANCE_AP_UNIDENTIFIED_SUPPLIER,
 } from "@/src/lib/financeAccountsPayableCostCenterShared";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 export function FinanceApTitlesTab({
   filters,
@@ -49,6 +58,7 @@ export function FinanceApTitlesTab({
   localFilter,
   onLocalFilterChange,
   canManageAllocations,
+  canExport = false,
 }: {
   filters: FinanceApUiFilters;
   qualityAlert?: FinanceApDataQualityAlertKey | null;
@@ -56,6 +66,7 @@ export function FinanceApTitlesTab({
   localFilter: FinanceApTitlesLocalFilter;
   onLocalFilterChange: (value: FinanceApTitlesLocalFilter) => void;
   canManageAllocations?: boolean;
+  canExport?: boolean;
 }) {
   const auth = useAuth();
   const permissions = usePermissions();
@@ -72,6 +83,10 @@ export function FinanceApTitlesTab({
   const [data, setData] = useState<FinanceApTitlesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const [printItems, setPrintItems] = useState<FinanceApTitleListItem[] | null>(null);
+  const [printRequestId, setPrintRequestId] = useState(0);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 400);
@@ -116,10 +131,67 @@ export function FinanceApTitlesTab({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
+      .then(setBranding)
+      .catch(() => setBranding(DEFAULT_BRANDING));
+  }, []);
+
+  useEffect(() => {
+    if (printRequestId === 0 || !printItems) return;
+
+    document.body.classList.add("ap-titles-print-route");
+
+    const onAfterPrint = () => {
+      document.body.classList.remove("ap-titles-print-route");
+      setPrintItems(null);
+      setPrintRequestId(0);
+      setPrinting(false);
+    };
+
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+    const timer = window.setTimeout(() => {
+      window.print();
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printRequestId, printItems]);
+
+  const handleExportPdf = async () => {
+    if (!canExport || printing) return;
+    setPrinting(true);
+    setError(null);
+    try {
+      const qs = buildFinanceApTitlesQuery(filters, {
+        page: 1,
+        limit: FINANCE_AP_TITLES_PRINT_PAGE_SIZE,
+        sortBy,
+        sortDirection,
+        search: debouncedSearch,
+        localFilter,
+        qualityAlert: qualityAlert ?? undefined,
+      });
+      const payload = await fetchJsonOk<FinanceApTitlesPayload>(
+        `/api/finance/accounts-payable/titles?${qs}`
+      );
+      setPrintItems(payload.items);
+      setPrintRequestId((id) => id + 1);
+    } catch (e) {
+      setError(
+        buildFinanceTabLoadError("Erro ao preparar PDF de títulos a pagar.", e)
+      );
+      setPrinting(false);
+    }
+  };
+
   const initialLoad = loading && !data && !error;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="finance-ap-titles-tab">
       {qualityAlert ? (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           <span>Filtro de alerta de qualidade ativo.</span>
@@ -135,28 +207,41 @@ export function FinanceApTitlesTab({
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <p className="text-[10px] font-bold uppercase text-muted-foreground">Filtros locais</p>
-        <p className="text-[10px] text-muted-foreground">
-          Refinam o grid sem alterar filtros globais aplicados.
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {FINANCE_AP_TITLES_LOCAL_FILTER_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => onLocalFilterChange(parseFinanceApTitlesLocalFilter(opt.value))}
-              className={cn(
-                "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                localFilter === opt.value
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-[#E5E7EB] bg-white text-muted-foreground hover:bg-muted/50"
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-2">
+          <p className="text-[10px] font-bold uppercase text-muted-foreground">Filtros locais</p>
+          <p className="text-[10px] text-muted-foreground">
+            Refinam o grid sem alterar filtros globais aplicados.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {FINANCE_AP_TITLES_LOCAL_FILTER_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onLocalFilterChange(parseFinanceApTitlesLocalFilter(opt.value))}
+                className={cn(
+                  "rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                  localFilter === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-[#E5E7EB] bg-white text-muted-foreground hover:bg-muted/50"
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
+        {canExport ? (
+          <button
+            type="button"
+            onClick={() => void handleExportPdf()}
+            disabled={printing || loading}
+            className="ap-titles-no-print inline-flex h-9 items-center gap-1.5 rounded-lg border border-border px-3 text-xs font-semibold hover:bg-accent disabled:opacity-50"
+          >
+            {printing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+            Exportar PDF
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap gap-3 items-end">
@@ -347,6 +432,19 @@ export function FinanceApTitlesTab({
         canEdit={canEditClassification}
         onClose={() => setSelectedExternalId(null)}
       />
+
+      {printItems
+        ? createPortal(
+            <FinanceAccountsPayableTitlesPrintDocument
+              filters={filters}
+              allItems={printItems}
+              generatedAt={new Date().toISOString()}
+              emitterName={auth.user?.name}
+              branding={branding}
+            />,
+            document.body
+          )
+        : null}
     </div>
   );
 }

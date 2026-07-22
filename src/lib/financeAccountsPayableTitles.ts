@@ -135,7 +135,8 @@ export function parseFinanceApTitlesQuery(query: Record<string, unknown>): Finan
   const qualityAlert = isFinanceApQualityAlertKey(qualityRaw) ? qualityRaw : undefined;
   return {
     page: parsePositiveInt(query.page, 1, 10_000),
-    limit: parsePositiveInt(query.limit, 50, 200),
+    // UI pagina em 50; PDF/exportação pode pedir até 50k (mesmo padrão AR).
+    limit: parsePositiveInt(query.limit, 50, 50_000),
     sortBy,
     sortDirection,
     filters: parseFinanceApDashboardFilters(query),
