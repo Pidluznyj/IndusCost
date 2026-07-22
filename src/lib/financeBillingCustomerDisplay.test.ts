@@ -69,4 +69,12 @@ describe("financeBillingCustomerDisplay", () => {
     assert.match(ui, /row\.customerName/);
     assert.doesNotMatch(ui, /\{row\.xmlDestCnpjCpf \?\? "—"\}/);
   });
+
+  it("SQL de xNome no dashboard evita escapes JS \\s\\S inválidos no PostgreSQL", () => {
+    const dash = read("src/lib/financeBillingNfeDashboard.ts");
+    assert.match(dash, /nfeXmlDestNameSql/);
+    assert.match(dash, /NFE_XML_DEST_XNOME_REGEXP/);
+    assert.doesNotMatch(dash, /\[\\\\s\\\\S\]/);
+    assert.match(dash, /'is'/);
+  });
 });

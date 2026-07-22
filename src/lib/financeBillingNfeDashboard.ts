@@ -59,9 +59,18 @@ import type {
 const RECENT_NFE_LIMIT = 15;
 const TOP_CUSTOMERS_LIMIT = 10;
 
+/**
+ * Extrai xNome do destinatário no XML da NF-e (PostgreSQL ARE).
+ * Usa `.*?` + flag `s` (`.` casa newline). Não usar `\s`/`\S` — PG rejeita (2201B).
+ */
+const NFE_XML_DEST_XNOME_REGEXP = "<dest[^>]*>.*?<xNome>([^<]+)</xNome>";
+
 export const FISCAL_NFE_BILLING_NOTE =
   "Faturamento fiscal NF-e: status 4 (Autorizada), venda de mercado, classificação MARKET_REVENUE, valor líquido da NF-e. Alinhado ao BI fiscal.";
 
+function nfeXmlDestNameSql(xmlExpr: Prisma.Sql): Prisma.Sql {
+  return Prisma.sql`NULLIF(TRIM((regexp_match(COALESCE(${xmlExpr}, ''), ${NFE_XML_DEST_XNOME_REGEXP}, 'is'))[1]), '')`;
+}
 function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase, alias = ""): Prisma.Sql {
   const prefix = alias ? `${alias}.` : "";
   if (dateBase === "processamento") {
@@ -203,7 +212,7 @@ async function queryRecentFiscalNfes(
         COALESCE(
           NULLIF(TRIM(c."tradeName"), ''),
           NULLIF(TRIM(c."companyName"), ''),
-          NULLIF(TRIM((regexp_match(COALESCE(n."xmlRaw", ''), '<dest[^>]*>[\\s\\S]*?<xNome>([^<]+)</xNome>', 'i'))[1]), ''),
+          ${nfeXmlDestNameSql(Prisma.sql`n."xmlRaw"`)},
           n."xmlDestCnpjCpf"
         ) AS dest_name,
         ${dateExpr} AS competence,
@@ -247,7 +256,7 @@ async function queryTopFiscalNfeCustomers(
         COALESCE(
           MAX(NULLIF(TRIM(c."tradeName"), '')),
           MAX(NULLIF(TRIM(c."companyName"), '')),
-          MAX(NULLIF(TRIM((regexp_match(COALESCE(n."xmlRaw", ''), '<dest[^>]*>[\\s\\S]*?<xNome>([^<]+)</xNome>', 'i'))[1]), '')),
+          MAX(${nfeXmlDestNameSql(Prisma.sql`n."xmlRaw"`)}),
           MAX(n."xmlDestCnpjCpf"),
           '—'
         ) AS customer_name,
