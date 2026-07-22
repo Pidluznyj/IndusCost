@@ -45,6 +45,61 @@ export type BuildFinanceArEffectivePortfolioInput = {
   applyOperationalPortfolioFilter?: boolean;
 };
 
+/** Filtros do motor efetivo — sem recorte de mês/ano (paridade grade de Títulos). */
+export function stripFinanceArEffectiveMotorPeriodFilters(
+  filters: FinanceArDashboardFilters
+): FinanceArDashboardFilters {
+  return {
+    ...filters,
+    year: undefined,
+    month: undefined,
+    dueDateFrom: undefined,
+    dueDateTo: undefined,
+  };
+}
+
+/**
+ * Mesma cadeia de `buildFinanceArTitlesPayload` antes da paginação UI.
+ * Entrada única para Títulos (via portfolioItems) e Fluxo de Caixa.
+ */
+export function buildFinanceArEffectiveTitleItemsLikeTitlesGrid(
+  input: BuildFinanceArEffectivePortfolioInput
+): FinanceArEffectiveTitleListItem[] {
+  const referenceDate = input.referenceDate ?? new Date();
+  const motorFilters = stripFinanceArEffectiveMotorPeriodFilters(input.filters);
+  const orderContexts = input.orderContexts ?? [];
+  const nfeOrderLinks = input.nfeOrderLinks ?? [];
+  const orderCode = input.orderCode?.trim() || null;
+
+  const operational =
+    input.applyOperationalPortfolioFilter !== false
+      ? filterFinanceArOperationalPortfolioRows(
+          input.rows,
+          motorFilters,
+          referenceDate,
+          input.syncCutoff
+        )
+      : input.rows;
+
+  if (orderContexts.length > 0 || orderCode || nfeOrderLinks.length > 0) {
+    return buildFinanceArEffectivePortfolioItems({
+      ...input,
+      rows: operational,
+      filters: motorFilters,
+      orderContexts,
+      nfeOrderLinks,
+      orderCode,
+      referenceDate,
+      syncCutoff: input.syncCutoff,
+      applyOperationalPortfolioFilter: false,
+    });
+  }
+
+  return operational.map((row) =>
+    mapFinanceArDashboardRowToEffectiveTitle(row, referenceDate, null)
+  );
+}
+
 /**
  * Agenda efetiva do portfólio AR — mesma regra da grade de Títulos (FIN-08).
  */

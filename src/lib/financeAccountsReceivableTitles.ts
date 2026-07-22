@@ -55,7 +55,7 @@ import {
   type FinanceArEffectiveLineKind,
   type FinanceArEffectiveOrderContext,
 } from "./finance/financeAccountsReceivableEffectiveTitles.js";
-import { buildFinanceArEffectivePortfolioItems } from "./finance/financeArEffectivePortfolio.js";
+import { resolveFinanceArCanonicalEffectiveTitles } from "./finance/financeArEffectiveTitlesSource.js";
 import type { FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
 import {
   extractFinanceArOrderCodeHint,
@@ -602,33 +602,31 @@ export function buildFinanceArTitlesPayload(
   const orderCodeHint =
     extractFinanceArOrderCodeHint(query.search, query.extended?.document) ?? undefined;
 
+  const portfolioItems = resolveFinanceArCanonicalEffectiveTitles({
+    rows: filtered,
+    filters: query.filters,
+    orderContexts,
+    nfeOrderLinks,
+    orderCode: orderCodeHint,
+    customerPersonId: query.extended?.customerId,
+    customerName: query.extended?.customerName,
+    customerCnpj: query.extended?.customerCnpj,
+    referenceDate,
+    syncCutoff,
+    applyOperationalPortfolioFilter: false,
+  });
+
   let mapped: FinanceArTitleListItem[];
   let summary: FinanceArTitlesSummary;
-
-  if (orderContexts.length > 0 || orderCodeHint || nfeOrderLinks.length > 0) {
-    const portfolioItems = buildFinanceArEffectivePortfolioItems({
-      rows: filtered,
-      filters: query.filters,
-      orderContexts,
-      nfeOrderLinks,
-      orderCode: orderCodeHint,
-      customerPersonId: query.extended?.customerId,
-      customerName: query.extended?.customerName,
-      customerCnpj: query.extended?.customerCnpj,
-      referenceDate,
-      syncCutoff,
-      applyOperationalPortfolioFilter: false,
-    });
-    if (orderCodeHint && orderContexts.length === 0) {
-      mapped = [];
-      summary = computeFinanceArTitlesSummary([], referenceDate);
-    } else {
-      mapped = portfolioItems;
-      summary = computeFinanceArEffectiveTitlesSummary(portfolioItems);
-    }
+  if (orderCodeHint && orderContexts.length === 0) {
+    mapped = [];
+    summary = computeFinanceArTitlesSummary([], referenceDate);
   } else {
-    mapped = filtered.map((row) => mapRowToTitleListItem(row, referenceDate));
-    summary = computeFinanceArTitlesSummary(mapped, referenceDate);
+    mapped = portfolioItems;
+    summary =
+      orderContexts.length > 0 || orderCodeHint || nfeOrderLinks.length > 0
+        ? computeFinanceArEffectiveTitlesSummary(portfolioItems)
+        : computeFinanceArTitlesSummary(portfolioItems, referenceDate);
   }
 
   mapped.sort((a, b) => compareTitles(a, b, query.sortBy, query.sortDirection));

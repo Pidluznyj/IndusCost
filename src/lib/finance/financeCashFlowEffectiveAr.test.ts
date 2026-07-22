@@ -309,6 +309,47 @@ describe("financeCashFlowEffectiveAr — PD 02719", () => {
     );
   });
 
+  it("setembro Britania com FIN-08: motor portfólio amplo + recorte mensal = 3 linhas", () => {
+    const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
+    const schedule = pd02719Schedule();
+    const cfFilters = {
+      viewMode: "projected" as const,
+      dateBase: "due" as const,
+      status: "all" as const,
+      year: 2026,
+      month: 9,
+    };
+    const arFilters = { status: "all" as const, year: 2026, month: 9 };
+    const options = {
+      orderContexts: [
+        {
+          schedule,
+          personId: CUSTOMER_ID,
+          personName: "Britania Eletrodomesticos SA",
+        },
+      ],
+      nfeOrderLinks: [
+        { sourceInvoiceId: 7311, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+        { sourceInvoiceId: 7382, orderCode: "PD 02719", salesOrderId: "so-pd-02719" },
+      ],
+    };
+
+    const cashFlow = filterCashFlowArRowsScoped(
+      rows,
+      cfFilters,
+      arFilters,
+      REF,
+      null,
+      options
+    );
+
+    assert.equal(cashFlow.length, 3);
+    assert.equal(
+      cashFlow.reduce((s, r) => s + r.balanceReceivable, 0),
+      464835
+    );
+  });
+
   it("filterCashFlowArPortfolioRows repassa orderContexts (mesmo motor)", () => {
     const rows = pd02719NomusRowsDocumentoLabels() as FinanceCashFlowArRow[];
     const schedule = pd02719Schedule();

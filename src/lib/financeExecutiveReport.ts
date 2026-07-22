@@ -843,6 +843,8 @@ export async function buildFinanceExecutiveReport(
     arSyncCutoff: dailyRadarPortfolio.arSyncCutoff,
     apSyncCutoff: dailyRadarPortfolio.apSyncCutoff,
     dashboardFilters: dailyRadarPortfolio.dashboardFilters,
+    orderContexts: dailyRadarPortfolio.orderContexts,
+    nfeOrderLinks: dailyRadarPortfolio.nfeOrderLinks,
     exportAll: true,
   });
 

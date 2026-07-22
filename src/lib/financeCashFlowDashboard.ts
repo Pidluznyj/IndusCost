@@ -108,6 +108,7 @@ import {
   filterCashFlowApRowsScoped,
   filterCashFlowArPortfolioRows,
   filterCashFlowApPortfolioRows,
+  type FinanceCashFlowArFilterOptions,
 } from "./financeCashFlowRowFilters.js";
 
 export class FinanceCashFlowFilterParseError extends Error {
@@ -448,9 +449,17 @@ export function filterCashFlowArRows(
   rows: FinanceCashFlowArRow[],
   filters: FinanceCashFlowDashboardFilters,
   referenceDate: Date,
-  syncCutoff?: NomusArReportSyncCutoff | null
+  syncCutoff?: NomusArReportSyncCutoff | null,
+  arFilterOptions?: FinanceCashFlowArFilterOptions
 ): FinanceCashFlowArRow[] {
-  return filterCashFlowArRowsScoped(rows, filters, toArLoadFilters(filters), referenceDate, syncCutoff);
+  return filterCashFlowArRowsScoped(
+    rows,
+    filters,
+    toArLoadFilters(filters),
+    referenceDate,
+    syncCutoff,
+    arFilterOptions
+  );
 }
 
 export function filterCashFlowApRows(
@@ -838,7 +847,13 @@ export function buildFinanceCashFlowDashboardFromDataset(
   };
 
   const ytdFilters = buildYtdDashboardFilters(filters, referenceDate);
-  const ytdAr = filterCashFlowArRows(arRows, ytdFilters, referenceDate, arSyncCutoff);
+  const ytdAr = filterCashFlowArRows(
+    arRows,
+    ytdFilters,
+    referenceDate,
+    arSyncCutoff,
+    arFilterOptions
+  );
   const ytdAp = filterCashFlowApRows(apRows, ytdFilters, referenceDate, apSyncCutoff);
   const ytdMonthlySeries = buildFinanceCashFlowMonthlySeries(
     ytdAr,

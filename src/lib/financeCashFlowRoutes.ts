@@ -63,8 +63,8 @@ import {
   toCashFlowPortfolioArFilters,
 } from "@/src/lib/financeCashFlowDashboard.js";
 import { loadAnnualComparisonPortfolioRows } from "@/src/lib/financeExecutiveReportAnnualLoad.js";
-import { enrichFinanceCashFlowArLoadBundle } from "@/src/lib/finance/financeCashFlowEffectiveAr.server.js";
-import { loadFinanceArManagementRowsFromPrisma } from "@/src/lib/financeAccountsReceivableManagement.server.js";
+import { loadFinanceArTitlesSourceBundle } from "@/src/lib/finance/financeArEffectiveTitlesSource.server.js";
+import type { FinanceArTitlesSourceBundle } from "@/src/lib/finance/financeArEffectiveTitlesSource.server.js";
 import { prisma } from "@/src/lib/prisma.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "@/src/lib/financeNomusApReportFreshness.js";
 
@@ -103,11 +103,13 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
   const referenceDate = new Date();
   const arFilters = toArLoadFilters(filters);
   const apFilters = toApLoadFilters(filters);
-  const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
-    await Promise.all([
-      loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate),
-      resolveNomusApReportSyncCutoffFromPrisma(prisma),
-    ]);
+  const [arBundle, apSyncCutoff] = await Promise.all([
+    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate, {
+      customerName: filters.customerName,
+      personCnpj: filters.personCnpj,
+    }),
+    resolveNomusApReportSyncCutoffFromPrisma(prisma),
+  ]);
   const apWhere = buildCashFlowApPrismaWhere(filters, apFilters, referenceDate, apSyncCutoff);
   const apPrisma = await prisma.nomusAccountsPayable.findMany({
     where: apWhere,
@@ -115,24 +117,13 @@ async function loadCashFlowRows(filters: ReturnType<typeof parseFinanceCashFlowD
     orderBy: { dueDate: "asc" },
   });
 
-  const arRows = arManagementRows as FinanceCashFlowArRow[];
-  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
-    prisma,
-    arRows,
-    referenceDate,
-    {
-      customerName: filters.customerName,
-      personCnpj: filters.personCnpj,
-    }
-  );
-
   return {
-    arRows,
+    arRows: arBundle.arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff,
+    arSyncCutoff: arBundle.syncCutoff,
     apSyncCutoff,
-    orderContexts,
-    nfeOrderLinks,
+    orderContexts: arBundle.orderContexts,
+    nfeOrderLinks: arBundle.nfeOrderLinks,
   };
 }
 
@@ -141,11 +132,10 @@ async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
   const filters = createDailyRadarDashboardFilters();
   const arFilters = toCashFlowPortfolioArFilters(filters);
   const apFilters = toCashFlowPortfolioApFilters(filters);
-  const [{ rows: arManagementRows, syncCutoff: arSyncCutoff }, apSyncCutoff] =
-    await Promise.all([
-      loadFinanceArManagementRowsFromPrisma(prisma, arFilters, referenceDate),
-      resolveNomusApReportSyncCutoffFromPrisma(prisma),
-    ]);
+  const [arBundle, apSyncCutoff] = await Promise.all([
+    loadFinanceArTitlesSourceBundle(prisma, arFilters, referenceDate),
+    resolveNomusApReportSyncCutoffFromPrisma(prisma),
+  ]);
   const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
   const apPrisma = await prisma.nomusAccountsPayable.findMany({
     where: apWhere,
@@ -153,27 +143,17 @@ async function loadDailyRadarPortfolioRows(referenceDate = new Date()) {
     orderBy: { dueDate: "asc" },
   });
 
-  const arRows = arManagementRows as FinanceCashFlowArRow[];
-  const { orderContexts, nfeOrderLinks } = await enrichFinanceCashFlowArLoadBundle(
-    prisma,
-    arRows,
-    referenceDate
-  );
-
   return {
-    arRows,
+    arRows: arBundle.arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff,
+    arSyncCutoff: arBundle.syncCutoff,
     apSyncCutoff,
-    orderContexts,
-    nfeOrderLinks,
+    orderContexts: arBundle.orderContexts,
+    nfeOrderLinks: arBundle.nfeOrderLinks,
   };
 }
 
-function cashFlowArFilterOptions(bundle: {
-  orderContexts: Awaited<ReturnType<typeof enrichFinanceCashFlowArLoadBundle>>["orderContexts"];
-  nfeOrderLinks: Awaited<ReturnType<typeof enrichFinanceCashFlowArLoadBundle>>["nfeOrderLinks"];
-}) {
+function cashFlowArFilterOptions(bundle: Pick<FinanceArTitlesSourceBundle, "orderContexts" | "nfeOrderLinks">) {
   return { orderContexts: bundle.orderContexts, nfeOrderLinks: bundle.nfeOrderLinks };
 }
 

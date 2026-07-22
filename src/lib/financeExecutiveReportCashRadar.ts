@@ -3,10 +3,9 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import { buildFinanceApPrismaWhere } from "./financeAccountsPayableDashboard.js";
-import { buildFinanceArPrismaWhere } from "./financeAccountsReceivableDashboard.js";
+import { loadFinanceArTitlesSourceBundle } from "./finance/financeArEffectiveTitlesSource.server.js";
 import {
   FINANCE_CASH_FLOW_AP_SELECT,
-  FINANCE_CASH_FLOW_AR_SELECT,
   mapPrismaRowToFinanceCashFlowApRow,
   mapPrismaRowToFinanceCashFlowArRow,
   toCashFlowPortfolioApFilters,
@@ -26,7 +25,6 @@ import {
 import type { FinanceExecutiveReportFilters } from "./financeExecutiveReportTypes.js";
 import { parseFinanceManagementScope } from "./financeInternalGroupExclusions.js";
 import { resolveNomusApReportSyncCutoffFromPrisma } from "./financeNomusApReportFreshness.js";
-import { resolveNomusArReportSyncCutoffFromPrisma } from "./financeNomusArReportFreshness.js";
 import { prisma as defaultPrisma } from "./prisma.js";
 
 function mapExecutiveReportCompanyToFilter(company: string | undefined): string | undefined {
@@ -99,34 +97,27 @@ export async function loadExecutiveReportDailyRadarPortfolioRows(
   db: Pick<PrismaClient, "nomusAccountsReceivable" | "nomusAccountsPayable"> = defaultPrisma
 ) {
   const dashboardFilters = buildExecutiveReportDailyRadarCashFlowFilters(filters);
-  const [arSyncCutoff, apSyncCutoff] = await Promise.all([
-    resolveNomusArReportSyncCutoffFromPrisma(db),
-    resolveNomusApReportSyncCutoffFromPrisma(db),
-  ]);
   const arFilters = toCashFlowPortfolioArFilters(dashboardFilters);
   const apFilters = toCashFlowPortfolioApFilters(dashboardFilters);
-  const arWhere = buildFinanceArPrismaWhere(arFilters, referenceDate, arSyncCutoff);
-  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
-
-  const [arPrisma, apPrisma] = await Promise.all([
-    db.nomusAccountsReceivable.findMany({
-      where: arWhere,
-      select: FINANCE_CASH_FLOW_AR_SELECT,
-      orderBy: { dueDate: "asc" },
-    }),
-    db.nomusAccountsPayable.findMany({
-      where: apWhere,
-      select: FINANCE_CASH_FLOW_AP_SELECT,
-      orderBy: { dueDate: "asc" },
-    }),
+  const [arBundle, apSyncCutoff] = await Promise.all([
+    loadFinanceArTitlesSourceBundle(db as PrismaClient, arFilters, referenceDate),
+    resolveNomusApReportSyncCutoffFromPrisma(db),
   ]);
+  const apWhere = buildFinanceApPrismaWhere(apFilters, apSyncCutoff);
+  const apPrisma = await db.nomusAccountsPayable.findMany({
+    where: apWhere,
+    select: FINANCE_CASH_FLOW_AP_SELECT,
+    orderBy: { dueDate: "asc" },
+  });
 
   return {
-    arRows: arPrisma.map(mapPrismaRowToFinanceCashFlowArRow),
+    arRows: arBundle.arRows,
     apRows: apPrisma.map(mapPrismaRowToFinanceCashFlowApRow),
-    arSyncCutoff,
+    arSyncCutoff: arBundle.syncCutoff,
     apSyncCutoff,
     dashboardFilters,
+    orderContexts: arBundle.orderContexts,
+    nfeOrderLinks: arBundle.nfeOrderLinks,
   };
 }
 
@@ -190,9 +181,11 @@ export function buildExecutiveReportCashRadarBlock(input: {
   apRows: ReturnType<typeof mapPrismaRowToFinanceCashFlowApRow>[];
   filters: FinanceExecutiveReportFilters;
   referenceDate: Date;
-  arSyncCutoff: Awaited<ReturnType<typeof resolveNomusArReportSyncCutoffFromPrisma>>;
+  arSyncCutoff: Awaited<ReturnType<typeof loadExecutiveReportDailyRadarPortfolioRows>>["arSyncCutoff"];
   apSyncCutoff: Awaited<ReturnType<typeof resolveNomusApReportSyncCutoffFromPrisma>>;
   dashboardFilters: FinanceCashFlowDashboardFilters;
+  orderContexts?: import("./finance/financeAccountsReceivableEffectiveTitles.js").FinanceArEffectiveOrderContext[];
+  nfeOrderLinks?: import("./finance/financeArOperationalPortfolio.js").FinanceArNfeOrderLink[];
   rangeKey?: DailyRadarRangeKey;
   day?: string;
   search?: string;
@@ -212,6 +205,8 @@ export function buildExecutiveReportCashRadarBlock(input: {
     arSyncCutoff: input.arSyncCutoff,
     apSyncCutoff: input.apSyncCutoff,
     dashboardFilters: input.dashboardFilters,
+    orderContexts: input.orderContexts,
+    nfeOrderLinks: input.nfeOrderLinks,
     query: {
       rangeKey,
       day: input.day,

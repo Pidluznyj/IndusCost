@@ -31,11 +31,7 @@ import {
 import { isFinanceCashFlowArOpenRow } from "./financeCashFlowDataset.js";
 import { buildFinanceCashFlowArRowsAlignedWithTitles } from "./finance/financeCashFlowEffectiveAr.js";
 import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
-import {
-  suppressInferiorPreNfNomusArRows,
-  type FinanceArNfeOrderLink,
-} from "./finance/financeArOperationalPortfolio.js";
-import { deduplicateFinanceArRows } from "./financeAccountsReceivableDeduplication.js";
+import type { FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
 import {
   isFinanceApExcludedFromReports,
   resolveEffectiveNomusApReportSyncCutoff,
@@ -173,31 +169,17 @@ function applyCashFlowArOperationalPortfolio(
   referenceDate: Date,
   syncCutoff: NomusArReportSyncCutoff | null | undefined,
   options?: FinanceCashFlowArFilterOptions,
-  portfolioScope = false
+  _portfolioScope = false
 ): FinanceCashFlowArRow[] {
-  const effectiveFilters = portfolioScope
-    ? {
-        ...arFilters,
-        year: undefined,
-        month: undefined,
-        dueDateFrom: undefined,
-        dueDateTo: undefined,
-      }
-    : arFilters;
-
-  if (options?.orderContexts !== undefined || options?.nfeOrderLinks !== undefined) {
-    return buildFinanceCashFlowArRowsAlignedWithTitles({
-      rows,
-      filters: effectiveFilters,
-      orderContexts: options.orderContexts ?? [],
-      nfeOrderLinks: options.nfeOrderLinks,
-      referenceDate,
-      syncCutoff,
-    });
-  }
-  return suppressInferiorPreNfNomusArRows(
-    deduplicateFinanceArRows(rows).rows
-  ) as FinanceCashFlowArRow[];
+  void _portfolioScope;
+  return buildFinanceCashFlowArRowsAlignedWithTitles({
+    rows,
+    filters: arFilters,
+    orderContexts: options?.orderContexts ?? [],
+    nfeOrderLinks: options?.nfeOrderLinks,
+    referenceDate,
+    syncCutoff,
+  });
 }
 
 /**

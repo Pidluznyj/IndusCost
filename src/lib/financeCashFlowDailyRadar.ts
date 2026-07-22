@@ -25,6 +25,7 @@ import {
   type FinanceCashFlowArFilterOptions,
 } from "./financeCashFlowRowFilters.js";
 import type { FinanceArEffectiveOrderContext } from "./finance/financeAccountsReceivableEffectiveTitles.js";
+import type { FinanceArNfeOrderLink } from "./finance/financeArOperationalPortfolio.js";
 import {
   resolveCashFlowApAmount,
   resolveCashFlowApMovementDate,
@@ -1070,6 +1071,7 @@ export type BuildCashFlowDailyRadarDataInput = {
   apSyncCutoff?: NomusApReportSyncCutoff | null;
   dashboardFilters?: FinanceCashFlowDashboardFilters;
   orderContexts?: FinanceArEffectiveOrderContext[];
+  nfeOrderLinks?: FinanceArNfeOrderLink[];
 };
 
 /**
@@ -1079,8 +1081,11 @@ export type BuildCashFlowDailyRadarDataInput = {
 export function buildCashFlowDailyRadarData(input: BuildCashFlowDailyRadarDataInput): DailyRadarPayload {
   const referenceDate = input.referenceDate ?? input.baseDate;
   const arFilterOptions =
-    input.orderContexts !== undefined
-      ? { orderContexts: input.orderContexts }
+    input.orderContexts !== undefined || input.nfeOrderLinks !== undefined
+      ? {
+          orderContexts: input.orderContexts ?? [],
+          nfeOrderLinks: input.nfeOrderLinks,
+        }
       : undefined;
   const portfolio = filterDailyRadarPortfolioRows(
     input.arRows,
