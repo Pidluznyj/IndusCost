@@ -245,7 +245,13 @@ export function registerPurchaseQuotationCollectionRoutes(app: express.Express, 
         id,
         roundId,
         { userId: user.id, userName: user.name ?? user.email ?? null },
-        { buyerReport: req.body?.buyerReport, notes: req.body?.notes }
+        {
+          buyerReport: req.body?.buyerReport,
+          notes: req.body?.notes,
+          exceptionJustification: req.body?.exceptionJustification ?? null,
+          hasExceptionPermission: Boolean(req.body?.useException),
+          requireEvidenceGate: Boolean(req.body?.conclude),
+        }
       );
       res.json(row);
     } catch (e) {

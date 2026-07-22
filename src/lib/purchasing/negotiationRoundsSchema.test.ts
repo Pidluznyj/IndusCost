@@ -40,13 +40,13 @@ describe("negotiation rounds schema/routes (OP-16)", () => {
     assert.match(MIGRATION, /ADD COLUMN IF NOT EXISTS "buyerReport"/);
   });
 
-  it("3. serviço append-only sem PO/adjudicação", () => {
+  it("3. serviço append-only; mark-winner exige evidência (OP-17)", () => {
     assert.match(SERVICE, /appendNegotiationRoundLines/);
     assert.match(SERVICE, /assertRoundHistoryAppendOnly/);
     assert.match(SERVICE, /computeOfferRoundSavings/);
+    assert.match(SERVICE, /markOfferAsWinner/);
+    assert.match(SERVICE, /assertCanConcludeNegotiation/);
     assert.doesNotMatch(SERVICE, /purchaseOrder\.create/i);
-    assert.doesNotMatch(SERVICE, /status:\s*"VENCEDOR"/);
-    assert.doesNotMatch(SERVICE, /status:\s*"ADJUDICADA"/);
   });
 
   it("4. rotas de rodada e savings registradas", () => {

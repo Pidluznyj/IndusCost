@@ -343,6 +343,36 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
     action: "view",
   },
   {
+    method: "POST",
+    path: "/api/purchase-quotations/:id/offers/:offerId/mark-winner",
+    resourceKey: "operations.purchases",
+    action: "update",
+  },
+  {
+    method: "GET",
+    path: "/api/purchase-evidences",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-evidences",
+    resourceKey: "operations.purchases",
+    action: "update",
+  },
+  {
+    method: "GET",
+    path: "/api/purchase-evidences/:evidenceId/download",
+    resourceKey: "operations.purchases",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/purchase-evidences/:evidenceId/soft-delete",
+    resourceKey: "operations.purchases",
+    action: "update",
+  },
+  {
     method: "GET",
     path: "/api/cost-centers",
     resourceKey: "operations.purchases",

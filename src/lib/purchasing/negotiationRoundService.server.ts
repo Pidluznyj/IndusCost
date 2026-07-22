@@ -17,6 +17,11 @@ import {
   type ConditionGain,
 } from "./negotiationSavingsEngine.js";
 import { PurchaseQuotationWorkflowError } from "./purchaseQuotationWorkflow.js";
+import {
+  assertCanConcludeNegotiation,
+  lockEvidencesForEntity,
+} from "./purchaseEvidenceService.server.js";
+import { PurchaseEvidenceError } from "./purchaseEvidenceRules.js";
 
 export type NegotiationActor = {
   userId: string;
@@ -338,8 +343,16 @@ export async function closeNegotiationRound(
   quotationId: string,
   roundId: string,
   actor: NegotiationActor,
-  input?: { buyerReport?: string | null; notes?: string | null }
+  input?: {
+    buyerReport?: string | null;
+    notes?: string | null;
+    exceptionJustification?: string | null;
+    hasExceptionPermission?: boolean;
+    /** true = conclusão final da negociação (exige evidência/relato). */
+    requireEvidenceGate?: boolean;
+  }
 ) {
+  const requireGate = input?.requireEvidenceGate === true;
   return prisma.$transaction(async (tx) => {
     const round = await tx.purchaseNegotiationRound.findFirst({
       where: { id: roundId, quotationId },
@@ -358,6 +371,17 @@ export async function closeNegotiationRound(
       );
     }
 
+    const buyerReport = input?.buyerReport ?? round.buyerReport;
+    if (requireGate) {
+      await assertCanConcludeNegotiation(prisma, {
+        quotationId,
+        roundId,
+        buyerReport,
+        exceptionJustification: input?.exceptionJustification,
+        hasExceptionPermission: Boolean(input?.hasExceptionPermission),
+      });
+    }
+
     return tx.purchaseNegotiationRound.update({
       where: { id: roundId },
       data: {
@@ -371,6 +395,106 @@ export async function closeNegotiationRound(
         ...(actor.userName ? { responsibleUserName: actor.userName } : {}),
       },
       include: ROUND_INCLUDE,
+    });
+  });
+}
+
+/**
+ * Marca oferta como vencedora (sem criar PO). Exige relato + evidência (ou exceção).
+ * Trava evidências da cotação/rodada/oferta contra exclusão silenciosa.
+ */
+export async function markOfferAsWinner(
+  prisma: PrismaClient,
+  quotationId: string,
+  offerId: string,
+  actor: NegotiationActor,
+  input: {
+    buyerReport: string;
+    exceptionJustification?: string | null;
+    hasExceptionPermission?: boolean;
+  }
+) {
+  const conclusion = await assertCanConcludeNegotiation(prisma, {
+    quotationId,
+    buyerReport: input.buyerReport,
+    exceptionJustification: input.exceptionJustification,
+    hasExceptionPermission: Boolean(input.hasExceptionPermission),
+  });
+
+  return prisma.$transaction(async (tx) => {
+    const quotation = await tx.purchaseQuotation.findUnique({ where: { id: quotationId } });
+    if (!quotation) {
+      throw new PurchaseQuotationWorkflowError("Cotação não encontrada.", "NOT_FOUND");
+    }
+    if (quotation.status === "CANCELADA" || quotation.status === "ADJUDICADA") {
+      throw new PurchaseQuotationWorkflowError("Cotação bloqueada.", "QUOTATION_LOCKED");
+    }
+
+    const offer = await tx.purchaseQuotationOffer.findFirst({
+      where: { id: offerId, quotationId },
+      include: { quotationSupplier: true },
+    });
+    if (!offer) {
+      throw new PurchaseQuotationWorkflowError("Oferta não encontrada.", "NOT_FOUND");
+    }
+    if (offer.status !== "RECEBIDA" && offer.status !== "VENCEDORA") {
+      throw new PurchaseQuotationWorkflowError(
+        "Só ofertas RECEBIDAS podem ser marcadas como vencedoras.",
+        "OFFER_STATUS"
+      );
+    }
+
+    await tx.purchaseQuotationOffer.updateMany({
+      where: { quotationId, status: "VENCEDORA", NOT: { id: offerId } },
+      data: { status: "DESCARTADA" },
+    });
+
+    await tx.purchaseQuotationOffer.update({
+      where: { id: offerId },
+      data: { status: "VENCEDORA" },
+    });
+    await tx.purchaseQuotationSupplier.update({
+      where: { id: offer.quotationSupplierId },
+      data: { status: "VENCEDOR" },
+    });
+    await tx.purchaseQuotationSupplier.updateMany({
+      where: {
+        quotationId,
+        status: "VENCEDOR",
+        NOT: { id: offer.quotationSupplierId },
+      },
+      data: { status: "DESCARTADO" },
+    });
+
+    // Nota: não seta ADJUDICADA aqui para não conflitar com OP futura de adjudicação formal.
+    const lockReason = conclusion.usedException
+      ? `Vencedor com exceção: ${String(input.exceptionJustification).trim()}`
+      : "Oferta escolhida — evidências protegidas";
+
+    await lockEvidencesForEntity(tx as unknown as PrismaClient, "QUOTATION", quotationId, lockReason, actor);
+    await lockEvidencesForEntity(tx as unknown as PrismaClient, "OFFER", offerId, lockReason, actor);
+    await lockEvidencesForEntity(tx as unknown as PrismaClient, "CONFIRMATION", quotationId, lockReason, actor);
+
+    const rounds = await tx.purchaseNegotiationRound.findMany({
+      where: { quotationId },
+      select: { id: true },
+    });
+    for (const r of rounds) {
+      await lockEvidencesForEntity(
+        tx as unknown as PrismaClient,
+        "NEGOTIATION_ROUND",
+        r.id,
+        lockReason,
+        actor
+      );
+    }
+
+    return tx.purchaseQuotation.findUniqueOrThrow({
+      where: { id: quotationId },
+      include: {
+        offers: { include: { quotationSupplier: true, items: true } },
+        suppliers: true,
+      },
     });
   });
 }
@@ -497,7 +621,8 @@ export function mapNegotiationError(e: unknown): {
   if (
     e instanceof PurchaseQuotationWorkflowError ||
     e instanceof PurchasingInvariantError ||
-    e instanceof NegotiationSavingsError
+    e instanceof NegotiationSavingsError ||
+    e instanceof PurchaseEvidenceError
   ) {
     const status = e.code === "NOT_FOUND" ? 404 : 400;
     return { status, body: { error: e.message, code: e.code } };

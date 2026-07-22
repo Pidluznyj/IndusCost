@@ -175,6 +175,25 @@ export function PurchaseQuotationModule() {
   >({});
   const [negoPrices, setNegoPrices] = useState<Record<string, string>>({});
   const [negoFreightIncoterm, setNegoFreightIncoterm] = useState("FOB");
+  const [evidences, setEvidences] = useState<
+    Array<{
+      id: string;
+      originalFileName: string;
+      evidenceType: string;
+      description: string | null;
+      contentHash: string | null;
+      uploadedAt: string;
+      uploadedByName: string | null;
+      lockedAt: string | null;
+      deletedAt: string | null;
+    }>
+  >([]);
+  const [evidenceEntityType, setEvidenceEntityType] = useState<
+    "QUOTATION" | "NEGOTIATION_ROUND" | "CONFIRMATION" | "OFFER"
+  >("QUOTATION");
+  const [evidenceEntityId, setEvidenceEntityId] = useState("");
+  const [evidenceDescription, setEvidenceDescription] = useState("");
+
 
 
   const requestFilter = searchParams.get("purchaseRequestId") || undefined;
@@ -193,6 +212,21 @@ export function PurchaseQuotationModule() {
       setLoading(false);
     }
   }, [requestFilter]);
+
+  const loadEvidences = useCallback(async (entityType: string, entityId: string) => {
+    if (!entityId) {
+      setEvidences([]);
+      return;
+    }
+    try {
+      const data = await fetchJsonOk<{ rows?: typeof evidences }>(
+        `/api/purchase-evidences?entityType=${encodeURIComponent(entityType)}&entityId=${encodeURIComponent(entityId)}&includeDeleted=1`
+      );
+      setEvidences(Array.isArray(data.rows) ? data.rows : []);
+    } catch {
+      setEvidences([]);
+    }
+  }, []);
 
   const loadRounds = useCallback(async (id: string) => {
     try {
@@ -220,14 +254,17 @@ export function PurchaseQuotationModule() {
         drafts[s.id] = emptyOfferDraft(row.items, offer, row.currency);
       }
       setOfferDrafts(drafts);
+      setEvidenceEntityType("QUOTATION");
+      setEvidenceEntityId(row.id);
       await loadRounds(id);
+      await loadEvidences("QUOTATION", row.id);
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro ao abrir cotação.");
       navigate("/purchases/quotations");
     } finally {
       setLoading(false);
     }
-  }, [navigate, loadRounds]);
+  }, [navigate, loadRounds, loadEvidences]);
 
   const loadSuppliers = useCallback(async (q = "") => {
     try {
@@ -338,6 +375,73 @@ export function PurchaseQuotationModule() {
       setSavingsMap((prev) => ({ ...prev, [offerId]: result.savings }));
     } catch (e) {
       alert(e instanceof Error ? e.message : "Erro ao calcular ganho.");
+    }
+  };
+
+  const uploadEvidenceFile = async (file: File) => {
+    if (!detail || !evidenceEntityId) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("entityType", evidenceEntityType);
+    fd.append("entityId", evidenceEntityId);
+    if (evidenceDescription.trim()) fd.append("description", evidenceDescription.trim());
+    setBusy(true);
+    try {
+      const res = await fetch("/api/purchase-evidences", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || "Falha no upload.");
+      }
+      setEvidenceDescription("");
+      await loadEvidences(evidenceEntityType, evidenceEntityId);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao anexar evidência.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const softDeleteEvidence = async (evidenceId: string) => {
+    const reason = window.prompt("Motivo da exclusão (obrigatório — histórico preservado):");
+    if (!reason?.trim()) return;
+    setBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-evidences/${evidenceId}/soft-delete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      await loadEvidences(evidenceEntityType, evidenceEntityId);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao excluir evidência.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const markWinner = async (offerId: string) => {
+    if (!detail) return;
+    const report = buyerReport.trim() || window.prompt("Relato do comprador (obrigatório):") || "";
+    if (!report.trim()) {
+      alert("Relato obrigatório.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await fetchJsonOk(`/api/purchase-quotations/${detail.id}/offers/${offerId}/mark-winner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buyerReport: report.trim() }),
+      });
+      await loadDetail(detail.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao marcar vencedor.");
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1121,19 +1225,34 @@ export function PurchaseQuotationModule() {
           <h5 className="text-xs font-bold uppercase text-muted-foreground">Ganho comparável</h5>
           {detail.suppliers.map((supplier) => {
             const offer = supplier.offers[0];
-            if (!offer || offer.status !== "RECEBIDA") return null;
+            if (!offer || (offer.status !== "RECEBIDA" && offer.status !== "VENCEDORA")) return null;
             const s = savingsMap[offer.id];
             return (
               <div key={offer.id} className="rounded-lg border border-border/70 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <span className="text-sm font-medium">{supplier.supplierDisplayNameSnapshot}</span>
-                  <button
-                    type="button"
-                    className="text-sm text-primary hover:underline"
-                    onClick={() => void refreshSavings(offer.id)}
-                  >
-                    Calcular ganho
-                  </button>
+                  <span className="text-sm font-medium">
+                    {supplier.supplierDisplayNameSnapshot}
+                    {offer.status === "VENCEDORA" ? " · vencedora" : ""}
+                  </span>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      className="text-sm text-primary hover:underline"
+                      onClick={() => void refreshSavings(offer.id)}
+                    >
+                      Calcular ganho
+                    </button>
+                    {allowEdit && offer.status === "RECEBIDA" ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="text-sm text-emerald-700 hover:underline disabled:opacity-50"
+                        onClick={() => void markWinner(offer.id)}
+                      >
+                        Marcar vencedora
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 {s ? (
                   <div className="text-xs space-y-1">
@@ -1161,6 +1280,109 @@ export function PurchaseQuotationModule() {
             );
           })}
         </div>
+      </div>
+
+      <div
+        className="rounded-2xl border border-border bg-card p-6 space-y-4"
+        data-testid="purchase-evidence-trail"
+      >
+        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+          Evidências da negociação
+        </h4>
+        <p className="text-sm text-muted-foreground">
+          Anexos com hash e histórico. Após vencedor/pedido, exclusão exige justificativa (sem apagar
+          silenciosamente).
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Field label="Vínculo">
+            <select
+              className={inputCls(false)}
+              value={evidenceEntityType}
+              onChange={(e) => {
+                const t = e.target.value as typeof evidenceEntityType;
+                setEvidenceEntityType(t);
+                if (!detail) return;
+                if (t === "QUOTATION" || t === "CONFIRMATION") {
+                  setEvidenceEntityId(detail.id);
+                  void loadEvidences(t, detail.id);
+                } else if (t === "NEGOTIATION_ROUND") {
+                  const rid = openRound?.id || rounds[rounds.length - 1]?.id || "";
+                  setEvidenceEntityId(rid);
+                  if (rid) void loadEvidences(t, rid);
+                } else if (t === "OFFER") {
+                  const oid = detail.suppliers.find((s) => s.offers[0])?.offers[0]?.id || "";
+                  setEvidenceEntityId(oid);
+                  if (oid) void loadEvidences(t, oid);
+                }
+              }}
+            >
+              <option value="QUOTATION">Cotação inicial</option>
+              <option value="NEGOTIATION_ROUND">Rodada de negociação</option>
+              <option value="CONFIRMATION">Confirmação final</option>
+              <option value="OFFER">Oferta / proposta</option>
+            </select>
+          </Field>
+          <Field label="Descrição">
+            <input
+              className={inputCls(!allowEdit)}
+              disabled={!allowEdit}
+              value={evidenceDescription}
+              onChange={(e) => setEvidenceDescription(e.target.value)}
+              placeholder="Ex.: e-mail de confirmação"
+            />
+          </Field>
+          {allowEdit ? (
+            <Field label="Arquivo">
+              <input
+                type="file"
+                className="text-sm"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadEvidenceFile(f);
+                  e.target.value = "";
+                }}
+              />
+            </Field>
+          ) : null}
+        </div>
+        {evidences.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma evidência neste vínculo.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {evidences.map((ev) => (
+              <li key={ev.id} className="border-b border-border/50 pb-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <a
+                    className="text-primary hover:underline"
+                    href={`/api/purchase-evidences/${ev.id}/download`}
+                  >
+                    {ev.originalFileName}
+                  </a>
+                  <span className="text-xs text-muted-foreground">
+                    {ev.evidenceType}
+                    {ev.lockedAt ? " · protegida" : ""}
+                    {ev.deletedAt ? " · excluída (histórico)" : ""}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(ev.uploadedAt).toLocaleString("pt-BR")}
+                  {ev.uploadedByName ? ` · ${ev.uploadedByName}` : ""}
+                  {ev.contentHash ? ` · sha256:${ev.contentHash.slice(0, 12)}…` : ""}
+                </div>
+                {ev.description ? <p className="text-xs mt-1">{ev.description}</p> : null}
+                {allowEdit && !ev.deletedAt ? (
+                  <button
+                    type="button"
+                    className="text-xs text-red-700 hover:underline mt-1"
+                    onClick={() => void softDeleteEvidence(ev.id)}
+                  >
+                    Excluir com justificativa
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );
