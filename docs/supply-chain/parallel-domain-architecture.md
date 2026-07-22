@@ -269,7 +269,7 @@ Impactos por tipo (`resolveMovementImpact`):
 
 | Tipo | Físico | Reservado | Bloqueado |
 |------|--------|-----------|-----------|
-| Entradas (`MANUAL_ENTRY`, `PURCHASE_ENTRY`, `PRODUCTION_ENTRY`, `RETURN`, `POSITIVE_ADJUSTMENT`) | + | — | — |
+| Entradas (`MANUAL_ENTRY`, `PURCHASE_ENTRY`, `PURCHASE_RECEIPT`, `PRODUCTION_ENTRY`, `RETURN`, `POSITIVE_ADJUSTMENT`, `INITIAL_BALANCE`) | + | — | — |
 | Saídas / perda / scrap / ajuste − | − | — | — |
 | `TRANSFER` (origem) | − | — | — |
 | `BLOCK` / `UNBLOCK` | — | — | + / − |
