@@ -37,6 +37,7 @@ export const INVENTORY_MOVEMENT_TYPES = [
   "SCRAP",
   "RETURN",
   "REVERSAL",
+  "INITIAL_BALANCE",
 ] as const;
 
 export type InventoryMovementType = (typeof INVENTORY_MOVEMENT_TYPES)[number];

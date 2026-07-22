@@ -145,6 +145,7 @@ export function serializeInventoryMovement(row: InventoryMovement) {
     originType: row.originType,
     originId: row.originId,
     documentNumber: row.documentNumber,
+    evidenceRef: row.evidenceRef,
     costCenterId: row.costCenterId,
     financialCostCenterId: row.financialCostCenterId,
     reservationId: row.reservationId,
@@ -218,6 +219,7 @@ export type InventoryBalanceWithItem = InventoryBalance & {
     | "group"
   >;
   warehouse: Pick<InventoryWarehouse, "code" | "name" | "status">;
+  location?: Pick<InventoryLocation, "code" | "name" | "status"> | null;
 };
 
 export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWithItem) {
@@ -239,6 +241,13 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       name: row.warehouse.name,
       status: row.warehouse.status,
     },
+    location: row.location
+      ? {
+          code: row.location.code,
+          name: row.location.name,
+          status: row.location.status,
+        }
+      : null,
   };
 }
 

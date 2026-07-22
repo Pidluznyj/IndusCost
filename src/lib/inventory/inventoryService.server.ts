@@ -30,10 +30,17 @@ import {
   type InventoryTx,
 } from "./inventoryRepository.server.js";
 import {
+  buildInventoryBalanceKey,
   InventoryValidationError,
   type InventoryBalanceSnapshot,
   type InventoryItemType,
 } from "./inventoryTypes.js";
+import {
+  assertInitialBalanceScopeEligible,
+  buildInitialBalanceIdempotencyKey,
+  validateInitialBalancePayload,
+  type InitialBalancePayload,
+} from "./inventoryInitialBalance.js";
 
 export type CreateInventoryMovementInput = {
   itemId: string;
@@ -70,6 +77,8 @@ export type CreateInventoryMovementInput = {
   lotNumber?: string | null;
   serialNumber?: string | null;
   reversedMovementId?: string | null;
+  /** Referência de evidência (doc/path/URL). */
+  evidenceRef?: string | null;
 };
 
 export type CreateInventoryMovementContext = {
@@ -94,6 +103,7 @@ const ENTRY_TYPES = new Set<InventoryMovementType>([
   "PRODUCTION_ENTRY",
   "RETURN",
   "POSITIVE_ADJUSTMENT",
+  "INITIAL_BALANCE",
 ]);
 
 const SOURCE_WAREHOUSE_TYPES = new Set<InventoryMovementType>([
@@ -116,6 +126,7 @@ type ItemRow = {
   itemType: InventoryItemType;
   unit: string;
   controlsStock: boolean;
+  controlsLocation: boolean;
   allowsReservation: boolean;
   allowsBlock: boolean;
   materialId: string | null;
@@ -166,6 +177,7 @@ async function assertActiveItem(tx: InventoryTx, itemId: string): Promise<ItemRo
       materialDescriptionSnapshot: true,
       lastKnownCost: true,
       averageCost: true,
+      controlsLocation: true,
     },
   });
   if (!item) throw new InventoryValidationError("Item de estoque não encontrado.", "ITEM_NOT_FOUND");
@@ -289,6 +301,7 @@ async function createMovementRecord(
       originId: input.originId?.trim() || null,
       idempotencyKey: input.idempotencyKey?.trim() || null,
       documentNumber: input.documentNumber?.trim() || null,
+      evidenceRef: input.evidenceRef?.trim() || null,
       unitCost: decimalOrNull(Number.isFinite(unitCost as number) ? (unitCost as number) : null),
       costCenterId: input.costCenterId ?? null,
       financialCostCenterId: input.financialCostCenterId ?? null,
@@ -512,6 +525,62 @@ async function rebuildBalanceFromMovement(
   };
 }
 
+async function assertInitialBalanceGuards(
+  tx: InventoryTx,
+  input: CreateInventoryMovementInput,
+  item: ItemRow,
+  warehouseId: string,
+  locationId?: string | null
+): Promise<void> {
+  if (item.controlsLocation && !locationId?.trim()) {
+    throw new InventoryValidationError(
+      "Local é obrigatório para item com controle de localização.",
+      "LOCATION_REQUIRED"
+    );
+  }
+  if (!input.movementDate) {
+    throw new InventoryValidationError("Data da contagem é obrigatória.", "INVALID_DATE");
+  }
+  if (!input.responsibleUserId?.trim()) {
+    throw new InventoryValidationError("Responsável é obrigatório.", "FIELD_REQUIRED");
+  }
+
+  const balanceKey = buildInventoryBalanceKey(warehouseId, locationId);
+  const existingInitials = await tx.inventoryMovement.findMany({
+    where: {
+      itemId: input.itemId,
+      movementType: "INITIAL_BALANCE",
+      destinationWarehouseId: warehouseId,
+      ...(locationId
+        ? { destinationLocationId: locationId }
+        : { destinationLocationId: null }),
+    },
+    select: { id: true },
+  });
+
+  let hasActiveInitialBalance = false;
+  for (const initial of existingInitials) {
+    const reversal = await tx.inventoryMovement.findFirst({
+      where: { reversedMovementId: initial.id, movementType: "REVERSAL" },
+      select: { id: true },
+    });
+    if (!reversal) {
+      hasActiveInitialBalance = true;
+      break;
+    }
+  }
+
+  const balanceRow = await tx.inventoryBalance.findUnique({
+    where: { itemId_balanceKey: { itemId: input.itemId, balanceKey } },
+  });
+  const physicalQuantity = balanceRow ? Number(balanceRow.physicalQuantity) : 0;
+
+  assertInitialBalanceScopeEligible({
+    physicalQuantity,
+    hasActiveInitialBalance,
+  });
+}
+
 /**
  * Registra movimentação no ledger (transação + lock de saldo).
  * Idempotente quando `idempotencyKey` ou `originType+originId` já existir.
@@ -558,6 +627,10 @@ export async function createInventoryMovement(
           );
         }
         await assertActiveWarehouse(tx, wh, "Almoxarifado de destino");
+        const locationId = input.destinationLocationId ?? input.sourceLocationId;
+        if (input.movementType === "INITIAL_BALANCE") {
+          await assertInitialBalanceGuards(tx, input, item, wh, locationId);
+        }
         return executeSimpleMovement(
           tx,
           prisma,
@@ -565,7 +638,7 @@ export async function createInventoryMovement(
           context,
           item,
           wh,
-          input.destinationLocationId ?? input.sourceLocationId
+          locationId
         );
       }
 
@@ -620,6 +693,90 @@ export async function createInventoryMovement(
     }
     throw e;
   }
+}
+
+/**
+ * Implantação inicial de estoque (OP-10) — sempre via ledger INITIAL_BALANCE.
+ * Não preenche InventoryBalance diretamente.
+ */
+export async function createInitialInventoryBalance(
+  prisma: PrismaClient,
+  raw: InitialBalancePayload & { unit?: string },
+  context: CreateInventoryMovementContext
+): Promise<InventoryMovementResult> {
+  const payload = validateInitialBalancePayload({
+    ...raw,
+    responsibleUserId: raw.responsibleUserId || context.userId,
+  });
+
+  const item = await prisma.inventoryItem.findUnique({
+    where: { id: payload.itemId },
+    select: { unit: true, controlsLocation: true },
+  });
+  if (!item) {
+    throw new InventoryValidationError("Item de estoque não encontrado.", "ITEM_NOT_FOUND");
+  }
+  if (item.controlsLocation && !payload.locationId) {
+    throw new InventoryValidationError(
+      "Local é obrigatório para item com controle de localização.",
+      "LOCATION_REQUIRED"
+    );
+  }
+
+  const baseKey = buildInitialBalanceIdempotencyKey(
+    payload.itemId,
+    payload.warehouseId,
+    payload.locationId
+  );
+
+  // Após estorno, a chave base permanece no ledger imutável — gera geração seguinte.
+  const priorInitials = await prisma.inventoryMovement.findMany({
+    where: {
+      itemId: payload.itemId,
+      movementType: "INITIAL_BALANCE",
+      destinationWarehouseId: payload.warehouseId,
+      ...(payload.locationId
+        ? { destinationLocationId: payload.locationId }
+        : { destinationLocationId: null }),
+    },
+    select: { id: true, idempotencyKey: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  let generation = 0;
+  for (const prior of priorInitials) {
+    const reversal = await prisma.inventoryMovement.findFirst({
+      where: { reversedMovementId: prior.id, movementType: "REVERSAL" },
+      select: { id: true },
+    });
+    if (reversal) generation += 1;
+  }
+
+  const originId = generation === 0 ? baseKey : `${baseKey}:g${generation}`;
+  const idempotencyKey = originId;
+
+  return createInventoryMovement(
+    prisma,
+    {
+      itemId: payload.itemId,
+      destinationWarehouseId: payload.warehouseId,
+      destinationLocationId: payload.locationId,
+      movementType: "INITIAL_BALANCE",
+      quantity: payload.quantity,
+      unit: raw.unit ?? item.unit,
+      reason: payload.justification,
+      notes: payload.notes,
+      documentNumber: payload.documentNumber,
+      evidenceRef: payload.evidenceRef,
+      unitCost: payload.unitCost,
+      responsibleUserId: payload.responsibleUserId,
+      movementDate: payload.countDate,
+      originType: "OTHER",
+      originId,
+      idempotencyKey,
+    },
+    context
+  );
 }
 
 /**

@@ -23,6 +23,7 @@ const PHYSICAL_IN_TYPES = new Set<InventoryMovementType>([
   "PRODUCTION_ENTRY",
   "RETURN",
   "POSITIVE_ADJUSTMENT",
+  "INITIAL_BALANCE",
 ]);
 
 const PHYSICAL_OUT_TYPES = new Set<InventoryMovementType>([

@@ -28,6 +28,7 @@ const REASON_REQUIRED_MOVEMENT_TYPES = new Set<InventoryMovementType>([
   "SCRAP",
   "RETURN",
   "TRANSFER",
+  "INITIAL_BALANCE",
 ]);
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -232,6 +233,8 @@ export type CreateInventoryMovementBody = {
   idempotencyKey: string | null;
   unitCost: number | null;
   lotNumber: string | null;
+  evidenceRef: string | null;
+  responsibleUserId: string | null;
 };
 
 export function parseCreateInventoryMovementBody(body: unknown): CreateInventoryMovementBody {
@@ -250,6 +253,12 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     throw new InventoryValidationError(
       "Estorno deve usar POST /api/inventory/movements/:id/reverse.",
       "REVERSAL_USE_DEDICATED_API"
+    );
+  }
+  if (movementType === "INITIAL_BALANCE") {
+    throw new InventoryValidationError(
+      "Implantação inicial deve usar POST /api/inventory/initial-balances.",
+      "INITIAL_BALANCE_USE_DEDICATED_API"
     );
   }
 
@@ -282,6 +291,62 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     idempotencyKey: safeTrim(data.idempotencyKey) || null,
     unitCost: parseNonNegative(data.unitCost, "unitCost"),
     lotNumber: safeTrim(data.lotNumber) || null,
+    evidenceRef: safeTrim(data.evidenceRef) || null,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+  };
+}
+
+export type CreateInitialBalanceBody = {
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: number;
+  countDate: Date;
+  responsibleUserId: string | null;
+  justification: string;
+  evidenceRef: string | null;
+  documentNumber: string | null;
+  notes: string | null;
+  unitCost: number | null;
+  requireEvidence: boolean;
+};
+
+export function parseCreateInitialBalanceBody(body: unknown): CreateInitialBalanceBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const justification = requireNonEmpty(
+    data.justification ?? data.reason ?? data.motivo,
+    "justification"
+  );
+
+  let countDate: Date;
+  const rawDate = data.countDate ?? data.movementDate ?? data.dataContagem;
+  if (rawDate == null || !safeTrim(rawDate)) {
+    throw new InventoryValidationError("Data da contagem é obrigatória.", "INVALID_DATE");
+  }
+  countDate = new Date(String(rawDate));
+  if (Number.isNaN(countDate.getTime())) {
+    throw new InventoryValidationError("Data da contagem inválida.", "INVALID_DATE");
+  }
+
+  return {
+    itemId: requireNonEmpty(data.itemId, "itemId"),
+    warehouseId: requireNonEmpty(
+      data.warehouseId ?? data.destinationWarehouseId,
+      "warehouseId"
+    ),
+    locationId: safeTrim(data.locationId ?? data.destinationLocationId) || null,
+    quantity: parseQuantity(data.quantity ?? data.countedQuantity),
+    countDate,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+    justification,
+    evidenceRef: safeTrim(data.evidenceRef) || null,
+    documentNumber: safeTrim(data.documentNumber) || null,
+    notes: safeTrim(data.notes) || null,
+    unitCost: parseNonNegative(data.unitCost, "unitCost"),
+    requireEvidence:
+      data.requireEvidence === true ||
+      data.requireEvidence === "true" ||
+      data.requireEvidence === 1,
   };
 }
 

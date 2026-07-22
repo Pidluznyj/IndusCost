@@ -115,6 +115,30 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   },
   {
     method: "POST",
+    path: "/api/inventory/initial-balances",
+    resourceKey: "operations.inventory.movements",
+    action: "create",
+  },
+  {
+    method: "GET",
+    path: "/api/inventory/initial-balances*",
+    resourceKey: "operations.inventory",
+    action: "view",
+  },
+  {
+    method: "GET",
+    path: "/api/inventory/balances/export",
+    resourceKey: "operations.inventory",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/inventory/balances/rebuild",
+    resourceKey: "operations.inventory",
+    action: "manage",
+  },
+  {
+    method: "POST",
     path: "/api/inventory/count-sessions*",
     resourceKey: "operations.inventory.counts",
     action: "manage",

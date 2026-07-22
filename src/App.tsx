@@ -554,6 +554,17 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/implantation"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Implantação inicial de estoque auditável."
+            >
+              <InventoryModule initialTab="implantation" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="inventory/counts"
           element={
             <ModulePageShell

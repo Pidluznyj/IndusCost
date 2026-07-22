@@ -243,6 +243,7 @@ function createMinimalMockPrisma() {
     itemType: "RAW_MATERIAL" as const,
     unit: "UN",
     controlsStock: true,
+    controlsLocation: false,
     allowsReservation: true,
     allowsBlock: true,
     materialId: null as string | null,

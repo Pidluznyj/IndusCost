@@ -41,7 +41,8 @@ export type InventoryMovementType =
   | "LOSS"
   | "SCRAP"
   | "RETURN"
-  | "REVERSAL";
+  | "REVERSAL"
+  | "INITIAL_BALANCE";
 
 export type InventoryMovementOriginType =
   | "MANUAL"

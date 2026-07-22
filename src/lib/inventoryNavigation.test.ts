@@ -57,7 +57,8 @@ describe("inventoryNavigation", () => {
     assert.equal(tabs.some((t) => t.id === "movements" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "balances" && !t.comingSoon), true);
     assert.equal(tabs.some((t) => t.id === "audit" && t.comingSoon), true);
-    assert.equal(INVENTORY_TAB_DEFS.length, 8);
+    assert.equal(INVENTORY_TAB_DEFS.length, 9);
+    assert.equal(tabs.some((t) => t.id === "implantation" && !t.comingSoon), true);
   });
 
   it("3. InventoryModule chama API do dashboard", () => {

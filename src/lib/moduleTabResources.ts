@@ -189,6 +189,7 @@ export const INVENTORY_UI_TABS: ReadonlyArray<{
     label: "Almoxarifados",
   },
   { id: "balances", resourceKey: "operations.inventory", label: "Saldos" },
+  { id: "implantation", resourceKey: "operations.inventory.movements", label: "Implantação" },
   {
     id: "movements",
     resourceKey: "operations.inventory.movements",

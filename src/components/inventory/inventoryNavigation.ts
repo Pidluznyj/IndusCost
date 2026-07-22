@@ -7,6 +7,7 @@ export const INVENTORY_TAB_IDS = [
   "items",
   "warehouses",
   "balances",
+  "implantation",
   "movements",
   "counts",
   "reservations",
@@ -55,6 +56,13 @@ export const INVENTORY_TAB_DEFS: InventoryTabDef[] = [
     navOrder: 40,
   },
   {
+    id: "implantation",
+    label: "Implantação",
+    description: "Saldo inicial auditável e relatório de implantação.",
+    showInNav: true,
+    navOrder: 45,
+  },
+  {
     id: "movements",
     label: "Movimentações",
     description: "Histórico e registro de movimentações.",
@@ -101,6 +109,7 @@ export function resolveInventoryTabFromPath(pathname: string): InventoryTabId {
   if (pathname.includes("/inventory/warehouses")) return "warehouses";
   if (pathname.includes("/inventory/movements")) return "movements";
   if (pathname.includes("/inventory/balances")) return "balances";
+  if (pathname.includes("/inventory/implantation")) return "implantation";
   if (pathname.includes("/inventory/counts")) return "counts";
   return "overview";
 }

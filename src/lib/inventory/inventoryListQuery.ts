@@ -39,6 +39,7 @@ export type InventoryBalancesListQuery = {
   hasBlocked: boolean;
   hasQuarantine: boolean;
   negativeStock: boolean;
+  locationId: string | null;
 };
 
 export type InventoryMovementsListQuery = {
@@ -142,6 +143,7 @@ export function parseInventoryBalancesListQuery(
     hasBlocked: parseBool(query.hasBlocked),
     hasQuarantine: parseBool(query.hasQuarantine),
     negativeStock: parseBool(query.negativeStock),
+    locationId: optTrim(query.locationId),
   };
 }
 

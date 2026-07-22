@@ -60,13 +60,20 @@ import {
 } from "@/src/lib/inventory/inventoryLocationService.server.js";
 import {
   cancelInventoryReservation,
+  createInitialInventoryBalance,
   createInventoryMovement,
   reverseInventoryMovement,
   type CreateInventoryMovementInput,
 } from "@/src/lib/inventory/inventoryService.server.js";
+import { rebuildInventoryBalancesFromLedger } from "@/src/lib/inventory/inventoryBalanceRebuild.server.js";
+import {
+  buildBalancesReportCsv,
+  buildInitialBalanceReportCsv,
+} from "@/src/lib/inventory/inventoryInitialBalance.js";
 import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js";
 import {
   parseCancelReservationBody,
+  parseCreateInitialBalanceBody,
   parseCreateInventoryItemBody,
   parseCreateInventoryLocationBody,
   parseCreateInventoryMovementBody,
@@ -115,7 +122,9 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
         : error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
             error.code === "INVENTORY_CODE_CONFLICT" ||
-            error.code === "ALREADY_REVERSED"
+            error.code === "ALREADY_REVERSED" ||
+            error.code === "INITIAL_BALANCE_DUPLICATE" ||
+            error.code === "INITIAL_BALANCE_SCOPE_NOT_EMPTY"
           ? 409
           : 400;
   return res.status(status).json({ error: error.message, code: error.code });
@@ -987,6 +996,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const where: Prisma.InventoryBalanceWhereInput = {
         ...(q.itemId ? { itemId: q.itemId } : {}),
         ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
+        ...(q.locationId ? { locationId: q.locationId } : {}),
         ...(q.hasReservation ? { reservedQuantity: { gt: 0 } } : {}),
         ...(q.hasBlocked ? { blockedQuantity: { gt: 0 } } : {}),
         ...(q.hasQuarantine ? { quarantineQuantity: { gt: 0 } } : {}),
@@ -1015,6 +1025,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
             },
           },
           warehouse: { select: { code: true, name: true, status: true } },
+          location: { select: { code: true, name: true, status: true } },
         },
         orderBy: [{ item: { code: "asc" } }, { warehouse: { code: "asc" } }],
       });
@@ -1050,6 +1061,206 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances", e);
       res.status(500).json(inventoryApiError("Erro ao consultar saldos."));
+    }
+  });
+
+  app.get("/api/inventory/balances/export", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const where: Prisma.InventoryBalanceWhereInput = {
+        ...(q.itemId ? { itemId: q.itemId } : {}),
+        ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
+        ...(q.locationId ? { locationId: q.locationId } : {}),
+      };
+      const rows = await prisma.inventoryBalance.findMany({
+        where,
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+          location: { select: { code: true } },
+        },
+        orderBy: [{ item: { code: "asc" } }, { warehouse: { code: "asc" } }],
+        take: 10_000,
+      });
+      const csv = buildBalancesReportCsv(
+        rows.map((row) => ({
+          itemCode: row.item.code,
+          itemDescription: row.item.description,
+          warehouseCode: row.warehouse.code,
+          warehouseName: row.warehouse.name,
+          locationCode: row.location?.code ?? null,
+          physicalQuantity: inventoryDec(row.physicalQuantity),
+          reservedQuantity: inventoryDec(row.reservedQuantity),
+          blockedQuantity: inventoryDec(row.blockedQuantity),
+          quarantineQuantity: inventoryDec(row.quarantineQuantity),
+          availableQuantity: inventoryDec(row.availableQuantity),
+          unit: row.item.unit,
+        }))
+      );
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="inventory-balances.csv"');
+      res.send(csv);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/export", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar saldos."));
+    }
+  });
+
+  app.post("/api/inventory/balances/rebuild", ...manage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const result = await rebuildInventoryBalancesFromLedger(
+        prisma,
+        {
+          itemId: typeof body.itemId === "string" ? body.itemId : null,
+          warehouseId: typeof body.warehouseId === "string" ? body.warehouseId : null,
+          dryRun: body.dryRun === true || body.dryRun === "true",
+          reason: typeof body.reason === "string" ? body.reason : null,
+        },
+        { userId: user.id, userName: user.name ?? null }
+      );
+      res.json(result);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/balances/rebuild", e);
+      res.status(500).json(inventoryApiError("Erro ao reconstruir saldos."));
+    }
+  });
+
+  app.get("/api/inventory/initial-balances", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
+      const where: Prisma.InventoryMovementWhereInput = {
+        movementType: "INITIAL_BALANCE",
+        ...(q.itemId ? { itemId: q.itemId } : {}),
+        ...(q.warehouseId
+          ? {
+              OR: [
+                { sourceWarehouseId: q.warehouseId },
+                { destinationWarehouseId: q.warehouseId },
+              ],
+            }
+          : {}),
+        ...(q.startDate || q.endDate
+          ? {
+              movementDate: {
+                ...(q.startDate ? { gte: q.startDate } : {}),
+                ...(q.endDate ? { lte: q.endDate } : {}),
+              },
+            }
+          : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryMovement.findMany({
+          where,
+          include: {
+            ...MOVEMENT_LIST_INCLUDES,
+            destinationLocation: { select: { code: true, name: true } },
+          },
+          orderBy: { movementDate: "desc" },
+          skip: q.skip,
+          take: q.pageSize,
+        }),
+        prisma.inventoryMovement.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map((row) => ({
+          ...serializeInventoryMovementEnriched(row),
+          destinationLocationCode: row.destinationLocation?.code ?? null,
+          evidenceRef: row.evidenceRef,
+        })),
+        total,
+        page: q.page,
+        pageSize: q.pageSize,
+        totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/initial-balances", e);
+      res.status(500).json(inventoryApiError("Erro ao listar implantações."));
+    }
+  });
+
+  app.get("/api/inventory/initial-balances/report", ...view, async (req, res) => {
+    try {
+      const rows = await prisma.inventoryMovement.findMany({
+        where: { movementType: "INITIAL_BALANCE" },
+        include: {
+          item: { select: { code: true, description: true } },
+          destinationWarehouse: { select: { code: true, name: true } },
+          destinationLocation: { select: { code: true } },
+        },
+        orderBy: { movementDate: "desc" },
+        take: 10_000,
+      });
+      const csv = buildInitialBalanceReportCsv(
+        rows.map((row) => ({
+          movementId: row.id,
+          movementDate: row.movementDate.toISOString(),
+          itemCode: row.item?.code ?? "",
+          itemDescription: row.item?.description ?? "",
+          warehouseCode: row.destinationWarehouse?.code ?? "",
+          warehouseName: row.destinationWarehouse?.name ?? "",
+          locationCode: row.destinationLocation?.code ?? null,
+          quantity: inventoryDec(row.quantity),
+          unit: row.unit,
+          responsibleUserId: row.responsibleUserId,
+          reason: row.reason,
+          evidenceRef: row.evidenceRef,
+          documentNumber: row.documentNumber,
+        }))
+      );
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="inventory-initial-balance-report.csv"'
+      );
+      res.send(csv);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/initial-balances/report", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar relatório de implantação."));
+    }
+  });
+
+  app.post("/api/inventory/initial-balances", ...moveCreate, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseCreateInitialBalanceBody(req.body);
+      const result = await createInitialInventoryBalance(
+        prisma,
+        {
+          itemId: body.itemId,
+          warehouseId: body.warehouseId,
+          locationId: body.locationId,
+          quantity: body.quantity,
+          countDate: body.countDate,
+          responsibleUserId: body.responsibleUserId || user.id,
+          justification: body.justification,
+          evidenceRef: body.evidenceRef,
+          documentNumber: body.documentNumber,
+          notes: body.notes,
+          unitCost: body.unitCost,
+          requireEvidence: body.requireEvidence,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(result.idempotent ? 200 : 201).json({
+        movement: serializeInventoryMovement(result.movement),
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+        idempotent: result.idempotent === true,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/initial-balances", e);
+      res.status(500).json(inventoryApiError("Erro ao registrar saldo inicial."));
     }
   });
 

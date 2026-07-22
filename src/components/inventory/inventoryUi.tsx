@@ -52,6 +52,8 @@ export const INVENTORY_MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, strin
 
   REVERSAL: "Estorno",
 
+  INITIAL_BALANCE: "Saldo inicial",
+
 };
 
 

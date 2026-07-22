@@ -25,6 +25,7 @@ const MANUAL_REASON_TYPES = new Set<InventoryMovementType>([
   "SCRAP",
   "RETURN",
   "TRANSFER",
+  "INITIAL_BALANCE",
 ]);
 
 const ADJUSTMENT_TYPES = new Set<InventoryMovementType>([

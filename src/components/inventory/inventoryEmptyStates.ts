@@ -60,4 +60,10 @@ export const INVENTORY_EMPTY = {
     title: "Sem movimentações recentes",
     description: "As últimas entradas e saídas aparecerão aqui quando forem registradas.",
   },
+  noImplantation: {
+    title: "Nenhuma implantação registrada",
+    description:
+      "Registre o saldo inicial auditável por item e almoxarifado. Correções usam estorno — nunca edição direta do saldo.",
+    actionLabel: "Nova implantação",
+  },
 } as const;

@@ -469,6 +469,7 @@ function createCountMockPrisma(options?: {
     materialDescriptionSnapshot: null as string | null,
     lastKnownCost: null as unknown,
     averageCost: null as unknown,
+    controlsLocation: false,
   };
 
   const warehouse = (id: string) => ({
@@ -520,6 +521,7 @@ function createCountMockPrisma(options?: {
           if (where.idempotencyKey && m.idempotencyKey === where.idempotencyKey) return true;
           return false;
         }) ?? null,
+      findMany: async () => [...state.movements],
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);

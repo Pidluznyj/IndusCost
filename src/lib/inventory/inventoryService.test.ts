@@ -495,6 +495,7 @@ function createMockPrisma(options?: {
     itemType: "RAW_MATERIAL" as const,
     unit: "UN",
     controlsStock: true,
+    controlsLocation: false,
     allowsReservation: true,
     allowsBlock: true,
     materialId: null as string | null,
@@ -580,6 +581,28 @@ function createMockPrisma(options?: {
       },
       findUnique: async ({ where }: { where: { id: string } }) =>
         state.movements.find((m) => m.id === where.id) ?? null,
+      findMany: async ({ where }: { where?: Record<string, unknown> } = {}) => {
+        if (!where) return [...state.movements];
+        return state.movements.filter((m) => {
+          if (where.movementType && m.movementType !== where.movementType) return false;
+          if (where.itemId && m.itemId !== where.itemId) return false;
+          if (
+            where.destinationWarehouseId &&
+            m.destinationWarehouseId !== where.destinationWarehouseId
+          ) {
+            return false;
+          }
+          if ("destinationLocationId" in where) {
+            if ((m.destinationLocationId ?? null) !== (where.destinationLocationId ?? null)) {
+              return false;
+            }
+          }
+          if (where.reversedMovementId && m.reversedMovementId !== where.reversedMovementId) {
+            return false;
+          }
+          return true;
+        });
+      },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);
@@ -618,6 +641,7 @@ function createMockPrisma(options?: {
     $transaction: async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx),
     inventoryAuditLog: tx.inventoryAuditLog,
     inventoryMovement: tx.inventoryMovement,
+    inventoryItem: tx.inventoryItem,
   };
 
   return { prisma, state, tx };

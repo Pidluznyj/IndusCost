@@ -5166,6 +5166,8 @@ enum InventoryMovementType {
   SCRAP
   RETURN
   REVERSAL
+  /// Implantação inicial de estoque (saldo de abertura auditável).
+  INITIAL_BALANCE
 }
 
 enum InventoryMovementOriginType {
@@ -5377,6 +5379,8 @@ model InventoryMovement {
   originType                InventoryMovementOriginType @default(MANUAL)
   originId                  String?
   documentNumber            String?
+  /// Referência de evidência (doc/path/URL) — opcional enquanto não há store de anexos de estoque.
+  evidenceRef               String?
   costCenterId              String?                     @db.Uuid
   financialCostCenterId     String?                     @db.Uuid
   purchaseOrderId           String?                     @db.Uuid

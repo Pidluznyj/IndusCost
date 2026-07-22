@@ -98,6 +98,7 @@ describe("inventory Prisma schema", () => {
       "enum InventoryCountSessionStatus",
       "FINISHED_PRODUCT",
       "MANUAL_ENTRY",
+      "INITIAL_BALANCE",
       "TRANSFER",
       "BLOCK",
       "REVERSAL",
