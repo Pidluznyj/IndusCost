@@ -19,6 +19,7 @@ export const SUPPLY_CHAIN_FEATURE_RESOURCES = {
   inventory: "operations.supply_chain.inventory.enabled",
   receiving: "operations.supply_chain.receiving.enabled",
   shadowPlanning: "operations.supply_chain.shadow_planning.enabled",
+  indicators: "operations.supply_chain.indicators.enabled",
 } as const;
 
 /** Env vars oficiais (server-side). */
@@ -27,6 +28,7 @@ export const SUPPLY_CHAIN_FEATURE_ENV = {
   inventory: "SUPPLY_CHAIN_INVENTORY_MODULE_ENABLED",
   receiving: "SUPPLY_CHAIN_RECEIVING_MODULE_ENABLED",
   shadowPlanning: "SUPPLY_CHAIN_SHADOW_PLANNING_ENABLED",
+  indicators: "SUPPLY_CHAIN_INDICATORS_ENABLED",
 } as const;
 
 export type SupplyChainFeatureKey = keyof typeof SUPPLY_CHAIN_FEATURE_ENV;
@@ -65,6 +67,12 @@ export function isSupplyChainShadowPlanningEnabled(
   return isEnvFlagEnabled(SUPPLY_CHAIN_FEATURE_ENV.shadowPlanning, env);
 }
 
+export function isSupplyChainIndicatorsEnabled(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  return isEnvFlagEnabled(SUPPLY_CHAIN_FEATURE_ENV.indicators, env);
+}
+
 export function isSupplyChainModuleEnabled(
   moduleId: SupplyChainModuleId,
   env: Record<string, string | undefined> = process.env
@@ -86,6 +94,7 @@ export type SupplyChainFeatureFlagsSnapshot = {
   inventory: boolean;
   receiving: boolean;
   shadowPlanning: boolean;
+  indicators: boolean;
   resources: typeof SUPPLY_CHAIN_FEATURE_RESOURCES;
   defaultWhenAbsent: false;
 };
@@ -98,6 +107,7 @@ export function getSupplyChainFeatureFlags(
     inventory: isSupplyChainInventoryModuleEnabled(env),
     receiving: isSupplyChainReceivingModuleEnabled(env),
     shadowPlanning: isSupplyChainShadowPlanningEnabled(env),
+    indicators: isSupplyChainIndicatorsEnabled(env),
     resources: SUPPLY_CHAIN_FEATURE_RESOURCES,
     defaultWhenAbsent: false,
   };

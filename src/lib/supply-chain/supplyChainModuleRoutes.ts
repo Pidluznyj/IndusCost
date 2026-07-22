@@ -34,6 +34,7 @@ export function registerSupplyChainModuleRoutes(
           inventory: flags.inventory,
           receiving: flags.receiving,
           shadowPlanning: flags.shadowPlanning,
+          indicators: flags.indicators,
         },
         resources: SUPPLY_CHAIN_FEATURE_RESOURCES,
         defaultWhenAbsent: false as const,

@@ -454,7 +454,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Compras — Indicadores"
-              description="Panorama das solicitações já registradas no módulo de compras."
+              description="Indicadores executivos SC (valores, ganhos, estoque, atrasos) com bases declaradas — sem alterar relatórios oficiais. Panorama legado de solicitações permanece abaixo."
             >
               <PurchaseIndicatorsDashboard />
             </ModulePageShell>
