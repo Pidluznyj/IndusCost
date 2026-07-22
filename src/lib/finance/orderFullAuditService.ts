@@ -1094,6 +1094,19 @@ export const ORDER_FULL_AUDIT_COMMISSION_PERSON_SELECT = {
   name: true,
 } as const;
 
+/** Select Prisma válido de Product no bloco Proposal (schema usa `sku`, não `skuCode`). */
+export const ORDER_FULL_AUDIT_PROPOSAL_PRODUCT_SELECT = {
+  sku: true,
+  name: true,
+} as const;
+
+/** SKU do produto vinculado ao ProposalItem — contrato de saída `productSku`. */
+export function readOrderFullAuditProposalProductSku(
+  product: { sku: string } | null | undefined
+): string | null {
+  return product?.sku ?? null;
+}
+
 /**
  * Mapeia exceção de cliente para o DTO da auditoria.
  * Nome canônico = CommissionPerson.name via resolvedor oficial de comissões.
@@ -3581,7 +3594,7 @@ async function loadProposalBlock(
         items: {
           include: {
             Product: {
-              select: { skuCode: true, name: true },
+              select: ORDER_FULL_AUDIT_PROPOSAL_PRODUCT_SELECT,
             },
           },
           orderBy: { createdAt: "asc" },
@@ -3634,7 +3647,7 @@ async function loadProposalBlock(
       return {
         proposalItemId: pi.id,
         productId: pi.productId,
-        productSku: pi.Product?.skuCode ?? null,
+        productSku: readOrderFullAuditProposalProductSku(pi.Product),
         productName: pi.Product?.name ?? null,
         unit: pi.unit ?? null,
         quantity: proposalQty,
