@@ -40,7 +40,10 @@ import {
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   ABERTA: "Aberta",
+  REJEITADA: "Rejeitada",
+  EM_COTACAO: "Em cotação",
   CANCELADA: "Cancelada",
   ENCERRADA: "Encerrada",
 };
@@ -207,6 +210,14 @@ export const PurchaseModule = () => {
   const [justification, setJustification] = useState("");
   const [defaultCostCenterId, setDefaultCostCenterId] = useState("");
   const [notes, setNotes] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [externalReference, setExternalReference] = useState("");
+  const [projectOptions, setProjectOptions] = useState<SelectOption[]>([]);
+  const [historyEvents, setHistoryEvents] = useState<
+    import("@/src/types/purchase").PurchaseRequestHistoryEventRow[]
+  >([]);
+  const [evidences, setEvidences] = useState<import("@/src/types/purchase").PurchaseEvidenceRow[]>([]);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
   const [items, setItems] = useState<PurchaseItemDraft[]>([]);
   const [requestNumber, setRequestNumber] = useState<number | null>(null);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
@@ -224,6 +235,8 @@ export const PurchaseModule = () => {
   const [listCostCenterId, setListCostCenterId] = useState("");
 
   const readOnly = formMode === "view";
+  const contentLocked = status !== "RASCUNHO" && status !== "REJEITADA";
+  const fieldsDisabled = readOnly || (formMode === "edit" && contentLocked);
 
   /** Inclui materiais inativos já vinculados à linha para o seletor não ficar “órfão” na edição */
   const mpSelectableMaterials = useMemo(() => {
@@ -271,14 +284,24 @@ export const PurchaseModule = () => {
   const loadLists = useCallback(async () => {
     setLoadingList(true);
     try {
-      const [reqs, mats, ccs] = await Promise.all([
+      const [reqs, mats, ccs, projectsRes] = await Promise.all([
         fetchJsonOk<PurchaseRequestRow[]>("/api/purchase-requests"),
         fetchJsonOk<Material[]>("/api/materials"),
         fetchJsonOk<CostCenterRow[]>("/api/cost-centers"),
+        fetchJsonOk<{ rows?: Array<{ id: string; code: string; title: string }> }>(
+          "/api/purchase-requests/official-refs/projects"
+        ).catch(() => ({ rows: [] })),
       ]);
       setRequests(Array.isArray(reqs) ? reqs : []);
       setMaterials(Array.isArray(mats) ? mats : []);
       setCostCenters(Array.isArray(ccs) ? ccs : []);
+      setProjectOptions(
+        (projectsRes.rows ?? []).map((p) => ({
+          value: p.id,
+          label: `${p.code} — ${p.title}`,
+          searchTerms: `${p.code} ${p.title}`,
+        }))
+      );
     } catch (e) {
       console.error(e);
       alert(e instanceof Error ? e.message : "Erro ao carregar dados de compras.");
@@ -300,6 +323,10 @@ export const PurchaseModule = () => {
     setJustification("");
     setDefaultCostCenterId("");
     setNotes("");
+    setProjectId("");
+    setExternalReference("");
+    setHistoryEvents([]);
+    setEvidences([]);
     setItems([]);
     setEditingId(null);
     setRequestNumber(null);
@@ -330,7 +357,18 @@ export const PurchaseModule = () => {
       setJustification(row.justification);
       setDefaultCostCenterId(row.defaultCostCenterId);
       setNotes(row.notes || "");
+      setProjectId(row.projectId || "");
+      setExternalReference(row.externalReference || "");
+      setHistoryEvents(Array.isArray(row.historyEvents) ? row.historyEvents : []);
       setItems(row.items.length ? row.items.map(itemFromApi) : [emptyPurchaseItemDraft()]);
+      try {
+        const ev = await fetchJsonOk<{ rows?: import("@/src/types/purchase").PurchaseEvidenceRow[] }>(
+          `/api/purchase-requests/${id}/evidences`
+        );
+        setEvidences(Array.isArray(ev.rows) ? ev.rows : []);
+      } catch {
+        setEvidences([]);
+      }
       setMaterials((prev) => {
         const ids = new Set(prev.map((x) => x.id));
         const add: Material[] = [];
@@ -387,10 +425,11 @@ export const PurchaseModule = () => {
       department,
       requestCategory: requestCategory.trim() || null,
       priority,
-      status,
       justification,
       defaultCostCenterId,
       notes: notes.trim() || null,
+      projectId: projectId || null,
+      externalReference: externalReference.trim() || null,
       items: items.map((it) => {
         const isMp = it.lineType === "MATERIA_PRIMA";
         return {
@@ -413,6 +452,62 @@ export const PurchaseModule = () => {
       }),
     };
     return body;
+  };
+
+  const runWorkflow = async (
+    action: "submit" | "approve" | "reject" | "cancel" | "reopen-draft" | "forward-to-quotation"
+  ) => {
+    if (!editingId) return;
+    let reason: string | undefined;
+    if (action === "reject" || action === "cancel") {
+      reason = window.prompt(action === "reject" ? "Motivo da rejeição:" : "Motivo do cancelamento:") ?? "";
+      if (!reason.trim()) {
+        alert("Motivo é obrigatório.");
+        return;
+      }
+    }
+    setWorkflowBusy(true);
+    try {
+      const path = `/api/purchase-requests/${editingId}/${action}`;
+      await fetchJsonOk(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reason ? { reason } : {}),
+      });
+      await loadLists();
+      await openEdit(editingId, action === "forward-to-quotation" ? "view" : "edit");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro na ação de workflow.");
+    } finally {
+      setWorkflowBusy(false);
+    }
+  };
+
+  const uploadEvidence = async (file: File) => {
+    if (!editingId) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    setWorkflowBusy(true);
+    try {
+      await fetch(`/api/purchase-requests/${editingId}/evidences`, {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      }).then(async (r) => {
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          throw new Error(j.error || "Falha no upload.");
+        }
+      });
+      const ev = await fetchJsonOk<{ rows?: import("@/src/types/purchase").PurchaseEvidenceRow[] }>(
+        `/api/purchase-requests/${editingId}/evidences`
+      );
+      setEvidences(Array.isArray(ev.rows) ? ev.rows : []);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Erro ao anexar.");
+    } finally {
+      setWorkflowBusy(false);
+    }
   };
 
   const validateClient = (): string | null => {
@@ -683,6 +778,9 @@ export const PurchaseModule = () => {
                             "text-[10px] font-bold uppercase px-2 py-1 rounded-full",
                             r.status === "ABERTA" && "bg-blue-500/15 text-blue-700",
                             r.status === "RASCUNHO" && "bg-muted text-muted-foreground",
+                            r.status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
+                            r.status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
+                            r.status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
                             r.status === "CANCELADA" && "bg-red-500/15 text-red-700",
                             r.status === "ENCERRADA" && "bg-green-500/15 text-green-800"
                           )}
@@ -785,7 +883,7 @@ export const PurchaseModule = () => {
         </div>
         <div className="flex flex-wrap gap-2">
           <TourHelpButton onClick={() => setTourOpen(true)} />
-          {!readOnly && (
+          {!fieldsDisabled && (
             <button
               type="button"
               onClick={handleSave}
@@ -818,7 +916,7 @@ export const PurchaseModule = () => {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Solicitante *</label>
             <input
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               value={requester}
               onChange={(e) => setRequester(e.target.value)}
@@ -827,7 +925,7 @@ export const PurchaseModule = () => {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Departamento / área *</label>
             <input
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               value={department}
               onChange={(e) => setDepartment(e.target.value)}
@@ -836,7 +934,7 @@ export const PurchaseModule = () => {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Tipo / categoria (opcional)</label>
             <input
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               placeholder="Ex.: reforma, projeto X, consumo geral"
               value={requestCategory}
@@ -846,7 +944,7 @@ export const PurchaseModule = () => {
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Prioridade</label>
             <select
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               value={priority}
               onChange={(e) => setPriority(e.target.value as PurchasePriority)}
@@ -860,23 +958,50 @@ export const PurchaseModule = () => {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-muted-foreground uppercase">Status</label>
-            <select
-              disabled={readOnly}
+            <div className="flex flex-wrap items-center gap-2 min-h-[40px]">
+              <span
+                className={cn(
+                  "text-xs font-bold uppercase px-2.5 py-1 rounded-full",
+                  status === "ABERTA" && "bg-blue-500/15 text-blue-700",
+                  status === "RASCUNHO" && "bg-muted text-muted-foreground",
+                  status === "AGUARDANDO_APROVACAO" && "bg-amber-500/15 text-amber-900",
+                  status === "REJEITADA" && "bg-orange-500/15 text-orange-800",
+                  status === "EM_COTACAO" && "bg-violet-500/15 text-violet-800",
+                  status === "CANCELADA" && "bg-red-500/15 text-red-700",
+                  status === "ENCERRADA" && "bg-green-500/15 text-green-800"
+                )}
+              >
+                {STATUS_LABEL[status]}
+              </span>
+              <span className="text-[11px] text-muted-foreground">
+                Use as ações de workflow (não edite o status manualmente).
+              </span>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Projeto (oficial, opcional)</label>
+            <SearchableSelect
+              options={[{ value: "", label: "— Sem projeto —" }, ...projectOptions]}
+              value={projectId}
+              onChange={setProjectId}
+              placeholder="Buscar projeto oficial…"
+              disabled={fieldsDisabled}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-muted-foreground uppercase">Referência externa (opcional)</label>
+            <input
+              disabled={fieldsDisabled}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
-              value={status}
-              onChange={(e) => setStatus(e.target.value as PurchaseRequestStatus)}
-            >
-              {(Object.keys(STATUS_LABEL) as PurchaseRequestStatus[]).map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABEL[s]}
-                </option>
-              ))}
-            </select>
+              placeholder="OS, contrato, etc."
+              value={externalReference}
+              onChange={(e) => setExternalReference(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5 md:col-span-2">
-            <label className="text-xs font-bold text-muted-foreground uppercase">Justificativa *</label>
+            <label className="text-xs font-bold text-muted-foreground uppercase">Justificativa / motivo *</label>
             <textarea
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               rows={3}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               value={justification}
@@ -894,11 +1019,11 @@ export const PurchaseModule = () => {
                   value={defaultCostCenterId}
                   onChange={setDefaultCostCenterId}
                   placeholder="Selecione o centro de custo..."
-                  disabled={readOnly}
+                  disabled={fieldsDisabled}
                   required
                 />
               </div>
-              {!readOnly && (
+              {!fieldsDisabled && (
                 <button
                   type="button"
                   onClick={() => setCcModalOpen(true)}
@@ -912,7 +1037,7 @@ export const PurchaseModule = () => {
           <div className="space-y-1.5 md:col-span-2">
             <label className="text-xs font-bold text-muted-foreground uppercase">Observações</label>
             <textarea
-              disabled={readOnly}
+              disabled={fieldsDisabled}
               rows={2}
               className="w-full p-2 rounded-lg border border-border bg-background text-sm"
               value={notes}
@@ -922,10 +1047,152 @@ export const PurchaseModule = () => {
         </div>
       </div>
 
+      {editingId ? (
+        <div
+          className="rounded-2xl border border-border bg-card p-6 space-y-3"
+          data-testid="purchase-request-workflow"
+        >
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Workflow
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {(status === "RASCUNHO" || status === "REJEITADA") && allowCreate ? (
+              <button
+                type="button"
+                disabled={workflowBusy}
+                onClick={() => void runWorkflow("submit")}
+                className="px-3 py-1.5 rounded-lg text-sm bg-slate-900 text-white disabled:opacity-50"
+              >
+                Enviar para aprovação
+              </button>
+            ) : null}
+            {status === "AGUARDANDO_APROVACAO" && allowEdit ? (
+              <>
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("approve")}
+                  className="px-3 py-1.5 rounded-lg text-sm bg-emerald-700 text-white disabled:opacity-50"
+                >
+                  Aprovar
+                </button>
+                <button
+                  type="button"
+                  disabled={workflowBusy}
+                  onClick={() => void runWorkflow("reject")}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-orange-300 text-orange-900 disabled:opacity-50"
+                >
+                  Rejeitar
+                </button>
+              </>
+            ) : null}
+            {status === "REJEITADA" && allowEdit ? (
+              <button
+                type="button"
+                disabled={workflowBusy}
+                onClick={() => void runWorkflow("reopen-draft")}
+                className="px-3 py-1.5 rounded-lg text-sm border border-border disabled:opacity-50"
+              >
+                Reabrir rascunho
+              </button>
+            ) : null}
+            {status === "ABERTA" && allowEdit ? (
+              <button
+                type="button"
+                disabled={workflowBusy}
+                onClick={() => void runWorkflow("forward-to-quotation")}
+                className="px-3 py-1.5 rounded-lg text-sm bg-violet-700 text-white disabled:opacity-50"
+                data-testid="purchase-request-forward-quotation"
+              >
+                Encaminhar para cotação
+              </button>
+            ) : null}
+            {status !== "CANCELADA" && status !== "ENCERRADA" && allowEdit ? (
+              <button
+                type="button"
+                disabled={workflowBusy}
+                onClick={() => void runWorkflow("cancel")}
+                className="px-3 py-1.5 rounded-lg text-sm border border-red-200 text-red-800 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {editingId ? (
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Anexos / evidências
+            </h4>
+            {allowEdit ? (
+              <label className="text-sm text-primary hover:underline cursor-pointer">
+                + Anexar arquivo
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void uploadEvidence(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            ) : null}
+          </div>
+          {evidences.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nenhum anexo.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {evidences.map((ev) => (
+                <li key={ev.id}>
+                  <a
+                    className="text-primary hover:underline"
+                    href={`/api/purchase-requests/${editingId}/evidences/${ev.id}/download`}
+                  >
+                    {ev.originalFileName}
+                  </a>
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({Math.round(ev.fileSize / 1024)} KB)
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+
+      {historyEvents.length > 0 ? (
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-3" data-testid="purchase-request-history">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Histórico
+          </h4>
+          <ul className="space-y-2 text-sm">
+            {historyEvents.map((h) => (
+              <li key={h.id} className="border-b border-border/60 pb-2">
+                <div className="font-medium">
+                  {h.action}
+                  {h.fromStatus || h.toStatus
+                    ? ` · ${h.fromStatus ?? "—"} → ${h.toStatus ?? "—"}`
+                    : ""}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(h.createdAt).toLocaleString("pt-BR")}
+                  {h.userName ? ` · ${h.userName}` : ""}
+                  {h.reason ? ` · ${h.reason}` : ""}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border border-border bg-card p-6 space-y-4" data-tour="purchases-items-block">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Itens</h4>
-          {!readOnly && (
+          {!fieldsDisabled && (
             <button
               type="button"
               onClick={addItem}
@@ -956,7 +1223,7 @@ export const PurchaseModule = () => {
             >
               <div className="flex items-center justify-between gap-2 flex-wrap">
                 <span className="text-sm font-semibold">Item {idx + 1}</span>
-                {!readOnly && allowDelete && items.length > 1 && (
+                {!fieldsDisabled && allowDelete && items.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeItem(it.tempId)}
@@ -972,7 +1239,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Tipo do item *</label>
                   <select
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.lineType}
                     onChange={(e) =>
@@ -986,7 +1253,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Status da linha</label>
                   <select
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.lineStatus}
                     onChange={(e) =>
@@ -1013,10 +1280,10 @@ export const PurchaseModule = () => {
                             value={it.materialId}
                             onChange={(v) => updateItem(it.tempId, { materialId: v })}
                             placeholder="Pesquisar por código, descrição, unidade…"
-                            disabled={readOnly}
+                            disabled={fieldsDisabled}
                           />
                         </div>
-                        {!readOnly && (
+                        {!fieldsDisabled && (
                           <div className="flex flex-wrap gap-2 shrink-0">
                             <button
                               type="button"
@@ -1052,7 +1319,7 @@ export const PurchaseModule = () => {
 
                     {selectedMaterial ? (
                       <div className="md:col-span-2">
-                        <MaterialMpSummaryCard material={selectedMaterial} readOnly={readOnly} />
+                        <MaterialMpSummaryCard material={selectedMaterial} readOnly={fieldsDisabled} />
                       </div>
                     ) : it.materialId ? (
                       <div className="md:col-span-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-950">
@@ -1065,7 +1332,7 @@ export const PurchaseModule = () => {
                         Referência no fornecedor (opcional)
                       </label>
                       <input
-                        disabled={readOnly}
+                        disabled={fieldsDisabled}
                         placeholder="Código / item na lista do fornecedor"
                         className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                         value={it.supplierReference}
@@ -1077,7 +1344,7 @@ export const PurchaseModule = () => {
                         Embalagem / apresentação (opcional)
                       </label>
                       <input
-                        disabled={readOnly}
+                        disabled={fieldsDisabled}
                         placeholder="Ex.: fardo 25 kg, bobina, caixa"
                         className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                         value={it.packagingPresentation}
@@ -1089,7 +1356,7 @@ export const PurchaseModule = () => {
                         Qtd. mínima sugerida — MOQ (opcional)
                       </label>
                       <input
-                        disabled={readOnly}
+                        disabled={fieldsDisabled}
                         type="number"
                         min={0}
                         step="any"
@@ -1107,7 +1374,7 @@ export const PurchaseModule = () => {
                     {it.lineType === "MATERIA_PRIMA" ? "Descrição na solicitação *" : "Descrição *"}
                   </label>
                   <input
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.description}
                     onChange={(e) => updateItem(it.tempId, { description: e.target.value })}
@@ -1122,7 +1389,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Quantidade *</label>
                   <input
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     type="number"
                     min={0}
                     step="any"
@@ -1136,7 +1403,7 @@ export const PurchaseModule = () => {
                     Unidade *{it.lineType === "MATERIA_PRIMA" ? " (alinhada ao cadastro)" : ""}
                   </label>
                   <input
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.unit}
                     onChange={(e) => updateItem(it.tempId, { unit: e.target.value })}
@@ -1152,7 +1419,7 @@ export const PurchaseModule = () => {
                     value={it.costCenterId}
                     onChange={(v) => updateItem(it.tempId, { costCenterId: v })}
                     placeholder="Herdar ou sobrescrever..."
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                   />
                   <p className="text-[11px] text-muted-foreground mt-1">
                     CC efetivo: <strong>{resolvedCcLabel(it)}</strong>
@@ -1162,7 +1429,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Data desejada</label>
                   <input
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     type="date"
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.desiredDate}
@@ -1172,7 +1439,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Prioridade do item</label>
                   <select
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.priority}
                     onChange={(e) =>
@@ -1193,7 +1460,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Fornecedor sugerido (opcional)</label>
                   <input
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.suggestedSupplier}
                     onChange={(e) => updateItem(it.tempId, { suggestedSupplier: e.target.value })}
@@ -1203,7 +1470,7 @@ export const PurchaseModule = () => {
                 <div className="space-y-1.5 md:col-span-2">
                   <label className="text-xs font-bold text-muted-foreground uppercase">Observação do item</label>
                   <textarea
-                    disabled={readOnly}
+                    disabled={fieldsDisabled}
                     rows={2}
                     className="w-full p-2 rounded-lg border border-border bg-background text-sm"
                     value={it.notes}

@@ -427,6 +427,7 @@ import {
 } from "./src/lib/salesOrderPeriodFilter.js";
 import { registerProjectsRoutes } from "./src/lib/projectsRoutes.js";
 import { registerInventoryRoutes } from "./src/lib/inventoryRoutes.js";
+import { registerPurchaseRequestWorkflowRoutes } from "./src/lib/purchasing/purchaseRequestRoutes.js";
 import { createOfficialDataProviders } from "./src/lib/supply-chain/officialDataProviders.server.js";
 import { registerCommissionsRoutes } from "./src/lib/commissionsRoutes.js";
 import { registerCostPriceMarginAuditRoutes } from "./src/lib/costPriceMarginAuditRoutes.js";
@@ -5778,10 +5779,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   const purchaseInclude = {
     defaultCostCenter: true,
+    project: { select: { id: true, code: true, title: true, status: true } },
     items: {
       include: { material: true, costCenter: true },
       orderBy: { id: "asc" as const },
     },
+    historyEvents: { orderBy: { createdAt: "desc" as const }, take: 50 },
+    quotations: { select: { id: true, code: true, status: true }, orderBy: { createdAt: "desc" as const } },
   };
 
   app.get("/api/purchase-requests", requireAppAuth, requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.view), async (_req, res) => {
@@ -5789,6 +5793,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const rows = await prisma.purchaseRequest.findMany({
         include: {
           defaultCostCenter: true,
+          project: { select: { id: true, code: true, title: true, status: true } },
           items: { include: { material: true, costCenter: true } },
         },
         orderBy: { number: "desc" },
@@ -5825,9 +5830,25 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return "Centro de custo do cabeçalho é obrigatório.";
     }
     const st = body.status;
-    if (st && !["RASCUNHO", "ABERTA", "CANCELADA", "ENCERRADA"].includes(st)) return "Status inválido.";
+    if (
+      st &&
+      ![
+        "RASCUNHO",
+        "AGUARDANDO_APROVACAO",
+        "ABERTA",
+        "REJEITADA",
+        "EM_COTACAO",
+        "CANCELADA",
+        "ENCERRADA",
+      ].includes(st)
+    ) {
+      return "Status inválido.";
+    }
     const pr = body.priority;
     if (pr && !["BAIXA", "NORMAL", "ALTA", "URGENTE"].includes(pr)) return "Prioridade inválida.";
+    if (body.projectId != null && body.projectId !== "" && !isUuid(body.projectId)) {
+      return "Projeto inválido.";
+    }
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0) return "Inclua ao menos um item na solicitação.";
     for (let i = 0; i < items.length; i++) {
@@ -5900,10 +5921,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         department,
         requestCategory,
         priority = "NORMAL",
-        status = "RASCUNHO",
         justification,
         defaultCostCenterId,
         notes,
+        projectId,
+        externalReference,
         items = [],
       } = req.body;
 
@@ -5913,6 +5935,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
 
+      const { resolveOptionalProjectSnapshots } = await import(
+        "./src/lib/purchasing/purchaseRequestService.server.js"
+      );
+      const projectSnap = await resolveOptionalProjectSnapshots(
+        prisma,
+        projectId && String(projectId).trim() ? String(projectId).trim() : null
+      );
+
+      const user = await getCurrentAppUser(req);
+
       const created = await prisma.$transaction(async (tx) => {
         const txReads = createOfficialDataProviders(tx);
         const header = await tx.purchaseRequest.create({
@@ -5921,10 +5953,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             department: String(department).trim(),
             requestCategory: requestCategory != null ? String(requestCategory) : null,
             priority,
-            status,
+            status: "RASCUNHO",
             justification: String(justification).trim(),
             defaultCostCenterId,
             notes: notes != null ? String(notes) : null,
+            projectId: projectSnap.projectId,
+            projectCodeSnapshot: projectSnap.projectCodeSnapshot,
+            projectTitleSnapshot: projectSnap.projectTitleSnapshot,
+            externalReference:
+              externalReference != null && String(externalReference).trim()
+                ? String(externalReference).trim()
+                : null,
           },
         });
 
@@ -5961,6 +6000,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           });
         }
 
+        await tx.purchaseRequestHistoryEvent.create({
+          data: {
+            purchaseRequestId: header.id,
+            action: "CREATE",
+            fromStatus: null,
+            toStatus: "RASCUNHO",
+            userId: user?.id ?? null,
+            userName: user?.name ?? user?.email ?? null,
+          },
+        });
+
         return tx.purchaseRequest.findUniqueOrThrow({
           where: { id: header.id },
           include: purchaseInclude,
@@ -5970,7 +6020,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       res.json(created);
     } catch (e: any) {
       console.error("purchase-request create error:", e);
-      res.status(500).json({ error: e.message || "Erro ao criar solicitação de compra." });
+      const msg = e?.message || "Erro ao criar solicitação de compra.";
+      const status = e?.code === "PROJECT_NOT_FOUND" || /Projeto oficial/.test(msg) ? 400 : 500;
+      res.status(status).json({ error: msg });
     }
   });
 
@@ -5986,14 +6038,25 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       if (!existing) return res.status(404).json({ error: "Solicitação não encontrada." });
 
       const {
+        assertContentEditable,
+        resolveOptionalProjectSnapshots,
+      } = await import("./src/lib/purchasing/purchaseRequestService.server.js");
+      try {
+        assertContentEditable(existing.status);
+      } catch (lockErr: any) {
+        return res.status(400).json({ error: lockErr.message || "Conteúdo bloqueado.", code: lockErr.code });
+      }
+
+      const {
         requester,
         department,
         requestCategory,
         priority = "NORMAL",
-        status = "RASCUNHO",
         justification,
         defaultCostCenterId,
         notes,
+        projectId,
+        externalReference,
         items = [],
       } = req.body;
 
@@ -6002,6 +6065,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       if (!cc || !cc.isActive) {
         return res.status(400).json({ error: "Centro de custo do cabeçalho inválido ou inativo." });
       }
+
+      const projectSnap = await resolveOptionalProjectSnapshots(
+        prisma,
+        projectId && String(projectId).trim() ? String(projectId).trim() : null
+      );
+      const user = await getCurrentAppUser(req);
 
       const updated = await prisma.$transaction(async (tx) => {
         const txReads = createOfficialDataProviders(tx);
@@ -6012,10 +6081,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             department: String(department).trim(),
             requestCategory: requestCategory != null ? String(requestCategory) : null,
             priority,
-            status,
             justification: String(justification).trim(),
             defaultCostCenterId,
             notes: notes != null ? String(notes) : null,
+            projectId: projectSnap.projectId,
+            projectCodeSnapshot: projectSnap.projectCodeSnapshot,
+            projectTitleSnapshot: projectSnap.projectTitleSnapshot,
+            externalReference:
+              externalReference != null && String(externalReference).trim()
+                ? String(externalReference).trim()
+                : null,
           },
         });
 
@@ -6054,6 +6129,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           });
         }
 
+        await tx.purchaseRequestHistoryEvent.create({
+          data: {
+            purchaseRequestId: id,
+            action: "UPDATE_CONTENT",
+            fromStatus: existing.status as any,
+            toStatus: existing.status as any,
+            userId: user?.id ?? null,
+            userName: user?.name ?? user?.email ?? null,
+          },
+        });
+
         return tx.purchaseRequest.findUniqueOrThrow({
           where: { id },
           include: purchaseInclude,
@@ -6063,7 +6149,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       res.json(updated);
     } catch (e: any) {
       console.error("purchase-request update error:", e);
-      res.status(500).json({ error: e.message || "Erro ao atualizar solicitação de compra." });
+      const msg = e?.message || "Erro ao atualizar solicitação de compra.";
+      const status = e?.code === "PROJECT_NOT_FOUND" || /Projeto oficial/.test(msg) ? 400 : 500;
+      res.status(status).json({ error: msg });
     }
   });
 
@@ -15419,6 +15507,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   );
 
   registerInventoryRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  registerPurchaseRequestWorkflowRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,

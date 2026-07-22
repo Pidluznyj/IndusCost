@@ -16,12 +16,23 @@ import { cn } from "@/src/lib/utils";
 
 const STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
   RASCUNHO: "Rascunho",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   ABERTA: "Aberta",
+  REJEITADA: "Rejeitada",
+  EM_COTACAO: "Em cotação",
   CANCELADA: "Cancelada",
   ENCERRADA: "Encerrada",
 };
 
-const BAR_TONE = ["bg-slate-700", "bg-slate-500", "bg-slate-400", "bg-slate-300"];
+const BAR_TONE = [
+  "bg-slate-700",
+  "bg-amber-600",
+  "bg-slate-500",
+  "bg-orange-500",
+  "bg-violet-600",
+  "bg-slate-400",
+  "bg-slate-300",
+];
 
 export function PurchaseIndicatorsDashboard() {
   const [rows, setRows] = useState<PurchaseRequestRow[] | null>(null);

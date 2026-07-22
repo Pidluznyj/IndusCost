@@ -1,6 +1,14 @@
 import type { Material } from "@/src/types/material";
 
-export type PurchaseRequestStatus = "RASCUNHO" | "ABERTA" | "CANCELADA" | "ENCERRADA";
+export type PurchaseRequestStatus =
+  | "RASCUNHO"
+  | "AGUARDANDO_APROVACAO"
+  | "ABERTA"
+  | "REJEITADA"
+  | "EM_COTACAO"
+  | "CANCELADA"
+  | "ENCERRADA";
+
 export type PurchasePriority = "BAIXA" | "NORMAL" | "ALTA" | "URGENTE";
 export type PurchaseLineType = "MATERIA_PRIMA" | "INDIRETO";
 export type PurchaseItemLineStatus = "ABERTA" | "CANCELADA";
@@ -14,6 +22,25 @@ export interface CostCenterRow {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PurchaseRequestProjectRef {
+  id: string;
+  code: string;
+  title: string;
+  status?: string;
+}
+
+export interface PurchaseRequestHistoryEventRow {
+  id: string;
+  action: string;
+  fromStatus: PurchaseRequestStatus | null;
+  toStatus: PurchaseRequestStatus | null;
+  reason: string | null;
+  notes: string | null;
+  userId: string | null;
+  userName: string | null;
+  createdAt: string;
 }
 
 export interface PurchaseRequestItemRow {
@@ -48,10 +75,29 @@ export interface PurchaseRequestRow {
   justification: string;
   defaultCostCenterId: string;
   notes: string | null;
+  projectId?: string | null;
+  projectCodeSnapshot?: string | null;
+  projectTitleSnapshot?: string | null;
+  externalReference?: string | null;
   createdAt: string;
   updatedAt: string;
   defaultCostCenter: CostCenterRow;
+  project?: PurchaseRequestProjectRef | null;
   items: PurchaseRequestItemRow[];
+  historyEvents?: PurchaseRequestHistoryEventRow[];
+  quotations?: Array<{ id: string; code: string; status: string }>;
+}
+
+export interface PurchaseEvidenceRow {
+  id: string;
+  fileName: string;
+  originalFileName: string;
+  mimeType: string;
+  fileSize: number;
+  evidenceType: string;
+  notes: string | null;
+  uploadedBy: string | null;
+  uploadedAt: string;
 }
 
 export interface PurchaseItemDraft {
@@ -93,3 +139,13 @@ export function emptyPurchaseItemDraft(): PurchaseItemDraft {
     lineStatus: "ABERTA",
   };
 }
+
+export const PURCHASE_REQUEST_STATUS_LABEL: Record<PurchaseRequestStatus, string> = {
+  RASCUNHO: "Rascunho",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
+  ABERTA: "Aberta",
+  REJEITADA: "Rejeitada",
+  EM_COTACAO: "Em cotação",
+  CANCELADA: "Cancelada",
+  ENCERRADA: "Encerrada",
+};

@@ -183,6 +183,13 @@ export const ACTION_PERMISSION_SURFACES: readonly ActionPermissionSurface[] = [
     actions: ["create", "edit", "delete"],
     writeEndpoints: [
       { method: "POST", path: "/api/purchase-requests", action: "create" },
+      { method: "POST", path: "/api/purchase-requests/:id/submit", action: "create" },
+      { method: "POST", path: "/api/purchase-requests/:id/approve", action: "edit" },
+      { method: "POST", path: "/api/purchase-requests/:id/reject", action: "edit" },
+      { method: "POST", path: "/api/purchase-requests/:id/cancel", action: "edit" },
+      { method: "POST", path: "/api/purchase-requests/:id/reopen-draft", action: "edit" },
+      { method: "POST", path: "/api/purchase-requests/:id/forward-to-quotation", action: "edit" },
+      { method: "POST", path: "/api/purchase-requests/:id/evidences", action: "edit" },
     ],
   },
   {

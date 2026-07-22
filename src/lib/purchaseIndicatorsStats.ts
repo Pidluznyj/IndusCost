@@ -1,11 +1,22 @@
 import type { PurchaseRequestRow, PurchaseRequestStatus } from "@/src/types/purchase";
 
-const STATUS_ORDER: PurchaseRequestStatus[] = ["RASCUNHO", "ABERTA", "CANCELADA", "ENCERRADA"];
+const STATUS_ORDER: PurchaseRequestStatus[] = [
+  "RASCUNHO",
+  "AGUARDANDO_APROVACAO",
+  "ABERTA",
+  "REJEITADA",
+  "EM_COTACAO",
+  "CANCELADA",
+  "ENCERRADA",
+];
 
 export function purchaseStatusCounts(rows: PurchaseRequestRow[]): Record<PurchaseRequestStatus, number> {
   const out: Record<PurchaseRequestStatus, number> = {
     RASCUNHO: 0,
+    AGUARDANDO_APROVACAO: 0,
     ABERTA: 0,
+    REJEITADA: 0,
+    EM_COTACAO: 0,
     CANCELADA: 0,
     ENCERRADA: 0,
   };

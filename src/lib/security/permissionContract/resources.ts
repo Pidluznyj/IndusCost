@@ -1617,7 +1617,12 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
       U(["purchases.edit"]),
       D(["purchases.delete"], "chave no catálogo; superfície API limitada"),
     ],
-    relatedEndpoints: ["/api/purchase-requests"],
+    relatedEndpoints: [
+      "/api/purchase-requests",
+      "/api/purchase-requests/:id/submit",
+      "/api/purchase-requests/:id/approve",
+      "/api/purchase-requests/:id/forward-to-quotation",
+    ],
     sensitivity: "high",
     appearsInSidebar: true,
     isTab: false,
