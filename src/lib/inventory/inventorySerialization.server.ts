@@ -153,6 +153,8 @@ export function serializeInventoryMovement(row: InventoryMovement) {
     nextPhysicalBalance: inventoryDec(row.nextPhysicalBalance),
     previousAvailableBalance: inventoryDec(row.previousAvailableBalance),
     nextAvailableBalance: inventoryDec(row.nextAvailableBalance),
+    unitCost: inventoryDecOrNull(row.unitCost),
+    idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };
 }

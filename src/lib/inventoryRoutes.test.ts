@@ -272,6 +272,7 @@ describe("inventoryRoutes — imutabilidade de movimentação", () => {
     assert.doesNotMatch(src, /inventoryMovement\.update/);
     assert.doesNotMatch(src, /inventoryMovement\.delete/);
     assert.doesNotMatch(src, /PUT\s*\/api\/inventory\/movements/);
+    assert.match(src, /movements\/:id\/reverse/);
   });
 });
 

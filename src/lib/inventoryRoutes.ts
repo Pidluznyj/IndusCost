@@ -61,6 +61,8 @@ import {
 import {
   cancelInventoryReservation,
   createInventoryMovement,
+  reverseInventoryMovement,
+  type CreateInventoryMovementInput,
 } from "@/src/lib/inventory/inventoryService.server.js";
 import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js";
 import {
@@ -71,6 +73,7 @@ import {
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
   parseLinkOfficialMaterialBody,
+  parseReverseMovementBody,
   parseStatusPatchBody,
   parseUpdateInventoryItemBody,
   parseUpdateInventoryLocationBody,
@@ -102,6 +105,7 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
     error.code === "LOCATION_NOT_FOUND" ||
     error.code === "LOCATION_PARENT_NOT_FOUND" ||
     error.code === "OFFICIAL_MATERIAL_NOT_FOUND" ||
+    error.code === "MOVEMENT_NOT_FOUND" ||
     error.code === "RESERVATION_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND"
@@ -110,7 +114,8 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
         ? 403
         : error.code === "LOCATION_CODE_DUPLICATE" ||
             error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
-            error.code === "INVENTORY_CODE_CONFLICT"
+            error.code === "INVENTORY_CODE_CONFLICT" ||
+            error.code === "ALREADY_REVERSED"
           ? 409
           : 400;
   return res.status(status).json({ error: error.message, code: error.code });
@@ -1182,6 +1187,11 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           financialCostCenterId: body.financialCostCenterId,
           documentNumber: body.documentNumber,
           movementDate: body.movementDate ?? undefined,
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? undefined,
+          originId: body.originId,
+          idempotencyKey: body.idempotencyKey,
+          unitCost: body.unitCost,
+          lotNumber: body.lotNumber,
         },
         {
           userId: user.id,
@@ -1189,15 +1199,47 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         }
       );
 
-      res.status(201).json({
+      res.status(result.idempotent ? 200 : 201).json({
         movement: serializeInventoryMovement(result.movement),
         balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
         reservationId: "reservationId" in result ? result.reservationId : undefined,
+        idempotent: result.idempotent === true,
       });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/movements", e);
       res.status(500).json(inventoryApiError("Erro ao registrar movimentação."));
+    }
+  });
+
+  app.post("/api/inventory/movements/:id/reverse", ...moveCreate, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const reason = parseReverseMovementBody(req.body);
+      const result = await reverseInventoryMovement(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      }, reason);
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+        sourceBalance: result.sourceBalance
+          ? serializeInventoryBalanceFromSnapshot(result.sourceBalance)
+          : undefined,
+        destinationBalance: result.destinationBalance
+          ? serializeInventoryBalanceFromSnapshot(result.destinationBalance)
+          : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/movements/:id/reverse", e);
+      res.status(500).json(inventoryApiError("Erro ao estornar movimentação."));
     }
   });
 

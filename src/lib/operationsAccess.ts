@@ -109,6 +109,12 @@ export const OPERATIONS_PILOT_ENDPOINTS = [
   },
   {
     method: "POST",
+    path: "/api/inventory/movements/*/reverse",
+    resourceKey: "operations.inventory.movements",
+    action: "create",
+  },
+  {
+    method: "POST",
     path: "/api/inventory/count-sessions*",
     resourceKey: "operations.inventory.counts",
     action: "manage",

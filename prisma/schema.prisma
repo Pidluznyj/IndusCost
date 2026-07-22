@@ -5407,6 +5407,10 @@ model InventoryMovement {
   nextQuarantineBalance     Decimal                     @default(0) @db.Decimal(20, 6)
   previousAvailableBalance  Decimal                     @db.Decimal(20, 6)
   nextAvailableBalance      Decimal                     @db.Decimal(20, 6)
+  /// Custo unitário informativo (não fiscal) no momento do fato.
+  unitCost                  Decimal?                    @db.Decimal(20, 6)
+  /// Chave de idempotência explícita (alternativa a originType+originId).
+  idempotencyKey            String?
   reversedMovementId        String?                     @db.Uuid
   reservationId             String?                     @db.Uuid
   blockId                   String?                     @db.Uuid

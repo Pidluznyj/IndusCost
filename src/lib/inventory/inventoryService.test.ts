@@ -4,10 +4,16 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { Prisma } from "@prisma/client";
 import { InventoryValidationError } from "./inventoryTypes.js";
-import { createInventoryMovement, cancelInventoryReservation } from "./inventoryService.server.js";
+import {
+  createInventoryMovement,
+  cancelInventoryReservation,
+  reverseInventoryMovement,
+} from "./inventoryService.server.js";
 import { mapBalanceRowToSnapshot } from "./inventoryRepository.server.js";
 import { validateMovementRequest } from "./inventoryMovementRules.js";
+import { orderBalanceLockTargets } from "./inventoryLedgerConcurrency.js";
 import { snapshotFromBalance } from "./inventoryTypes.js";
+import { resolveReversalImpact } from "./inventoryBalanceMath.js";
 
 const MOVEMENT_CTX = { userId: "user-1", permissions: ["inventory.movements.create"] as const };
 const RESERVE_CTX = { userId: "user-1", permissions: ["inventory.reservations.manage"] as const };
@@ -351,6 +357,103 @@ describe("inventoryService", () => {
       assert.doesNotMatch(src, /from "react"/);
     }
   });
+
+  it("16. estorno inverte saldo e impede duplo estorno", async () => {
+    const { prisma, state } = createMockPrisma();
+    const entry = await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        destinationWarehouseId: "wh-1",
+        movementType: "MANUAL_ENTRY",
+        quantity: 12,
+        unit: "UN",
+        reason: "Entrada",
+      },
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
+    );
+
+    const reversed = await reverseInventoryMovement(
+      prisma as never,
+      entry.movement.id as string,
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] },
+      "Estorno teste"
+    );
+
+    assert.equal(reversed.balance?.physicalQuantity, 0);
+    assert.equal(state.movements.length, 2);
+    assert.equal(state.movements[1].movementType, "REVERSAL");
+    assert.equal(state.movements[1].reversedMovementId, entry.movement.id);
+
+    await assert.rejects(
+      () =>
+        reverseInventoryMovement(
+          prisma as never,
+          entry.movement.id as string,
+          { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] },
+          "Segundo estorno"
+        ),
+      (err: unknown) =>
+        err instanceof InventoryValidationError && err.code === "ALREADY_REVERSED"
+    );
+  });
+
+  it("17. idempotência por originId não duplica movimento", async () => {
+    const { prisma, state } = createMockPrisma();
+    const first = await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        destinationWarehouseId: "wh-1",
+        movementType: "MANUAL_ENTRY",
+        quantity: 3,
+        unit: "UN",
+        reason: "Entrada",
+        originType: "INTEGRATION",
+        originId: "evt-1",
+      },
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
+    );
+    const second = await createInventoryMovement(
+      prisma as never,
+      {
+        itemId: "item-1",
+        destinationWarehouseId: "wh-1",
+        movementType: "MANUAL_ENTRY",
+        quantity: 3,
+        unit: "UN",
+        reason: "Entrada",
+        originType: "INTEGRATION",
+        originId: "evt-1",
+      },
+      { userId: MOVEMENT_CTX.userId, permissions: [...MOVEMENT_CTX.permissions] }
+    );
+    assert.equal(second.idempotent, true);
+    assert.equal(first.movement.id, second.movement.id);
+    assert.equal(state.movements.length, 1);
+    assert.equal(Number(state.balances[0].physicalQuantity), 3);
+  });
+
+  it("18. locks de transferência são ordenados de forma estável", () => {
+    const ordered = orderBalanceLockTargets([
+      { itemId: "b", warehouseId: "wh-2" },
+      { itemId: "a", warehouseId: "wh-1" },
+      { itemId: "a", warehouseId: "wh-2" },
+    ]);
+    assert.deepEqual(
+      ordered.map((t) => `${t.itemId}:${t.warehouseId}`),
+      ["a:wh-1", "a:wh-2", "b:wh-2"]
+    );
+  });
+
+  it("19. impacto de estorno e imutabilidade de rotas", () => {
+    assert.equal(resolveReversalImpact("MANUAL_ENTRY", 20).physicalDelta, -20);
+    assert.equal(resolveReversalImpact("BLOCK", 4).blockedDelta, -4);
+    const routes = readFileSync(join(process.cwd(), "src/lib/inventoryRoutes.ts"), "utf8");
+    assert.doesNotMatch(routes, /app\.(put|patch|delete)\("\/api\/inventory\/movements/);
+    assert.match(routes, /movements\/:id\/reverse/);
+    assert.match(routes, /reverseInventoryMovement/);
+  });
 });
 
 type MockBalance = {
@@ -391,6 +494,14 @@ function createMockPrisma(options?: {
     status: "ACTIVE" as const,
     itemType: "RAW_MATERIAL" as const,
     unit: "UN",
+    controlsStock: true,
+    allowsReservation: true,
+    allowsBlock: true,
+    materialId: null as string | null,
+    materialCodeSnapshot: null as string | null,
+    materialDescriptionSnapshot: null as string | null,
+    lastKnownCost: null as unknown,
+    averageCost: null as unknown,
   };
 
   const warehouse = (id: string) => ({
@@ -400,6 +511,7 @@ function createMockPrisma(options?: {
   });
 
   const tx = {
+    $queryRaw: async () => [{ "?column?": 1 }],
     inventoryItem: {
       findUnique: async () => item,
     },
@@ -410,13 +522,22 @@ function createMockPrisma(options?: {
       findUnique: async ({
         where,
       }: {
-        where: { itemId_balanceKey: { itemId: string; balanceKey: string } };
-      }) =>
-        state.balances.find(
-          (b) =>
-            b.itemId === where.itemId_balanceKey.itemId &&
-            b.balanceKey === where.itemId_balanceKey.balanceKey
-        ) ?? null,
+        where: { itemId_balanceKey?: { itemId: string; balanceKey: string }; id?: string };
+      }) => {
+        if (where.id) {
+          return state.balances.find((b) => b.id === where.id) ?? null;
+        }
+        if (where.itemId_balanceKey) {
+          return (
+            state.balances.find(
+              (b) =>
+                b.itemId === where.itemId_balanceKey!.itemId &&
+                b.balanceKey === where.itemId_balanceKey!.balanceKey
+            ) ?? null
+          );
+        }
+        return null;
+      },
       create: async ({ data }: { data: MockBalance }) => {
         const row = { ...data, id: data.id ?? `bal-${state.balances.length + 1}` };
         state.balances.push(row);
@@ -435,6 +556,30 @@ function createMockPrisma(options?: {
       },
     },
     inventoryMovement: {
+      findFirst: async ({
+        where,
+      }: {
+        where: Record<string, unknown>;
+      }) => {
+        return (
+          state.movements.find((m) => {
+            if (where.idempotencyKey && m.idempotencyKey === where.idempotencyKey) return true;
+            if (
+              where.originId &&
+              m.originId === where.originId &&
+              m.originType === (where.originType ?? m.originType)
+            ) {
+              return true;
+            }
+            if (where.reversedMovementId && m.reversedMovementId === where.reversedMovementId) {
+              return true;
+            }
+            return false;
+          }) ?? null
+        );
+      },
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        state.movements.find((m) => m.id === where.id) ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);
@@ -472,6 +617,7 @@ function createMockPrisma(options?: {
   const prisma = {
     $transaction: async (fn: (inner: typeof tx) => Promise<unknown>) => fn(tx),
     inventoryAuditLog: tx.inventoryAuditLog,
+    inventoryMovement: tx.inventoryMovement,
   };
 
   return { prisma, state, tx };

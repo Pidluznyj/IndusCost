@@ -227,6 +227,11 @@ export type CreateInventoryMovementBody = {
   financialCostCenterId: string | null;
   documentNumber: string | null;
   movementDate: Date | null;
+  originType: string | null;
+  originId: string | null;
+  idempotencyKey: string | null;
+  unitCost: number | null;
+  lotNumber: string | null;
 };
 
 export function parseCreateInventoryMovementBody(body: unknown): CreateInventoryMovementBody {
@@ -239,6 +244,12 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     throw new InventoryValidationError(
       "Motivo é obrigatório para esta movimentação.",
       "REASON_REQUIRED"
+    );
+  }
+  if (movementType === "REVERSAL") {
+    throw new InventoryValidationError(
+      "Estorno deve usar POST /api/inventory/movements/:id/reverse.",
+      "REVERSAL_USE_DEDICATED_API"
     );
   }
 
@@ -266,7 +277,17 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     financialCostCenterId: safeTrim(data.financialCostCenterId) || null,
     documentNumber: safeTrim(data.documentNumber) || null,
     movementDate,
+    originType: safeTrim(data.originType) || null,
+    originId: safeTrim(data.originId) || null,
+    idempotencyKey: safeTrim(data.idempotencyKey) || null,
+    unitCost: parseNonNegative(data.unitCost, "unitCost"),
+    lotNumber: safeTrim(data.lotNumber) || null,
   };
+}
+
+export function parseReverseMovementBody(body: unknown): string {
+  const data = (body ?? {}) as Record<string, unknown>;
+  return requireNonEmpty(data.reason ?? data.motivo, "reason");
 }
 
 export type CreateInventoryReservationBody = {

@@ -135,6 +135,7 @@ export function canCreateInventoryMovementType(
   if (BLOCK_TYPES.has(movementType)) return canManageInventoryBlock(perms);
   if (movementType === "TRANSFER") return canCreateInventoryTransfer(perms);
   if (RESERVATION_TYPES.has(movementType)) return canManageInventoryReservations(perms);
+  // REVERSAL e demais tipos básicos (entrada/saída/perda/devolução)
   return canCreateBasicInventoryMovement(perms);
 }
 
