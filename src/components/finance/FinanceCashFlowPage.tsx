@@ -12,12 +12,9 @@ import {
   FINANCE_CASH_FLOW_INVOICE_OPTIONS,
   FINANCE_CASH_FLOW_MONTH_OPTIONS,
   FINANCE_CASH_FLOW_STATUS_OPTIONS,
-  FINANCE_CASH_FLOW_TABS,
   FINANCE_CASH_FLOW_VIEW_OPTIONS,
   normalizeFinanceCashFlowUiFilters,
-  PHASE1_FINANCE_CASH_FLOW_TABS,
   type FinanceCashFlowDashboardPayload,
-  type FinanceCashFlowTabId,
   type FinanceCashFlowUiFilters,
 } from "@/src/lib/financeCashFlowDashboardTypes";
 import {
@@ -29,8 +26,6 @@ import {
   canExportFinanceCashFlow,
   canViewFinanceCashFlow,
 } from "@/src/lib/financeCashFlowPermissions";
-import { FinanceCashFlowCalendar } from "@/src/components/finance/cash-flow/FinanceCashFlowCalendar";
-import { FinanceCashFlowRiskTab } from "@/src/components/finance/cash-flow/FinanceCashFlowRiskTab";
 import { FinanceCashFlowDailyRadar } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadar";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
@@ -41,7 +36,6 @@ import { FinanceCashFlowNumbersAuditSection } from "@/src/components/finance/cas
 import { FinanceCashFlowAnnualComparisonChart } from "@/src/components/finance/cash-flow/FinanceCashFlowAnnualComparisonChart";
 import { FinanceCashFlowBlockTitle } from "@/src/components/finance/cash-flow/FinanceCashFlowBlockTitle";
 import {
-  FINANCE_CF_HELP_CALENDAR,
   FINANCE_CF_HELP_TOP_CUSTOMERS,
   FINANCE_CF_HELP_TOP_SUPPLIERS,
 } from "@/src/lib/financeCashFlowBlockHelp";
@@ -96,22 +90,15 @@ export function FinanceCashFlowPage() {
     createDefaultFinanceCashFlowUiFilters()
   );
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const [activeTab, setActiveTab] = useState<FinanceCashFlowTabId>("overview");
   const [payload, setPayload] = useState<FinanceCashFlowDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [calendarDisplayMonth, setCalendarDisplayMonth] = useState(() => new Date().getMonth() + 1);
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
 
   const appliedQuery = useMemo(
-    () =>
-      buildFinanceCashFlowDashboardQuery(appliedFilters, {
-        calendarDisplayMonth: appliedFilters.month.trim()
-          ? undefined
-          : calendarDisplayMonth,
-      }),
-    [appliedFilters, calendarDisplayMonth]
+    () => buildFinanceCashFlowDashboardQuery(appliedFilters),
+    [appliedFilters]
   );
   const draftQuery = useMemo(
     () => buildFinanceCashFlowDashboardQuery(draftFilters),
@@ -144,21 +131,6 @@ export function FinanceCashFlowPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
-
-  useEffect(() => {
-    if (appliedFilters.month.trim()) return;
-    const year = appliedFilters.year.trim()
-      ? Number(appliedFilters.year)
-      : new Date().getFullYear();
-    const now = new Date();
-    setCalendarDisplayMonth(year === now.getFullYear() ? now.getMonth() + 1 : 1);
-  }, [appliedFilters.year, appliedFilters.month]);
-
-  useEffect(() => {
-    if (payload?.calendar.displayMonth) {
-      setCalendarDisplayMonth(payload.calendar.displayMonth);
-    }
-  }, [payload?.calendar.displayMonth]);
 
   const handleApplyFilters = () => {
     setAppliedFilters(normalizeFinanceCashFlowUiFilters(draftFilters));
@@ -487,31 +459,6 @@ export function FinanceCashFlowPage() {
         </div>
       </FinanceBiFilterPanel>
 
-      <nav className="flex flex-wrap gap-2 border-b border-[#E5E7EB] pb-2">
-        {FINANCE_CASH_FLOW_TABS.map((tab) => {
-          const enabled = PHASE1_FINANCE_CASH_FLOW_TABS.includes(tab.id);
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              disabled={!enabled}
-              onClick={() => enabled && setActiveTab(tab.id)}
-              className={cn(
-                "rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-                activeTab === tab.id && enabled
-                  ? "bg-primary text-primary-foreground"
-                  : enabled
-                    ? "text-muted-foreground hover:bg-accent"
-                    : "text-muted-foreground/50 cursor-not-allowed"
-              )}
-              title={enabled ? undefined : "Disponível em fase posterior"}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </nav>
-
       {error ? (
         <FinanceModuleErrorBanner
           message={error}
@@ -524,7 +471,7 @@ export function FinanceCashFlowPage() {
         <FinanceModulePageLoading label="Carregando fluxo de caixa…" />
       ) : null}
 
-      {payload && activeTab === "overview" ? (
+      {payload ? (
         <div className="space-y-6">
           <FinanceCashFlowExecutiveSummaryPanel
             summary={payload.executiveSummary}
@@ -580,28 +527,6 @@ export function FinanceCashFlowPage() {
           <FinanceCashFlowDailyRadar />
         </div>
       ) : null}
-
-      {payload && activeTab === "calendar" ? (
-        <FinanceCashFlowCalendar
-          calendar={payload.calendar}
-          viewMode={appliedFilters.viewMode}
-          filterYearLabel={appliedFilters.year.trim() || String(payload.calendar.year)}
-          viewModeLabel={
-            appliedFilters.viewMode === "realized"
-              ? "Realizado"
-              : appliedFilters.viewMode === "combined"
-                ? "Realizado + Previsto"
-                : "Previsto"
-          }
-          onDisplayMonthChange={
-            appliedFilters.month.trim()
-              ? undefined
-              : (month) => setCalendarDisplayMonth(month)
-          }
-        />
-      ) : null}
-
-      {payload && activeTab === "risk" ? <FinanceCashFlowRiskTab payload={payload} /> : null}
       </div>
       </main>
       </div>

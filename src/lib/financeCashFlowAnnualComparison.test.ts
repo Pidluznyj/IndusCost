@@ -532,10 +532,9 @@ describe("financeCashFlowAnnualComparison UI", () => {
 
   it("inserido entre auditoria e fluxo planejado", () => {
     const page = read("src/components/finance/FinanceCashFlowPage.tsx");
-    const overview = page.slice(page.indexOf('activeTab === "overview"'));
-    const auditIdx = overview.indexOf("FinanceCashFlowNumbersAuditSection");
-    const annualIdx = overview.indexOf("FinanceCashFlowAnnualComparisonChart");
-    const plannedIdx = overview.indexOf("<FinanceCashFlowMonthlyPlannedChart");
+    const auditIdx = page.indexOf("FinanceCashFlowNumbersAuditSection");
+    const annualIdx = page.indexOf("FinanceCashFlowAnnualComparisonChart");
+    const plannedIdx = page.indexOf("<FinanceCashFlowMonthlyPlannedChart");
     assert.ok(auditIdx >= 0 && annualIdx > auditIdx && plannedIdx > annualIdx);
   });
 

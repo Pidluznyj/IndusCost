@@ -249,23 +249,14 @@ export const FINANCE_CASH_FLOW_MONTH_OPTIONS = [
   { value: "12", label: "Dezembro" },
 ] as const;
 
+/** Abas da tela Fluxo de Caixa — apenas Visão Geral (demais removidas da UI). */
 export const FINANCE_CASH_FLOW_TABS = [
   { id: "overview", label: "Visão Geral" },
-  { id: "calendar", label: "Calendário" },
-  { id: "accumulated", label: "Acumulado" },
-  { id: "detailed", label: "Detalhado" },
-  { id: "inflows", label: "Entradas" },
-  { id: "outflows", label: "Saídas" },
-  { id: "risk", label: "Risco de Caixa" },
 ] as const;
 
 export type FinanceCashFlowTabId = (typeof FINANCE_CASH_FLOW_TABS)[number]["id"];
 
-export const PHASE1_FINANCE_CASH_FLOW_TABS: FinanceCashFlowTabId[] = [
-  "overview",
-  "calendar",
-  "risk",
-];
+export const PHASE1_FINANCE_CASH_FLOW_TABS: FinanceCashFlowTabId[] = ["overview"];
 
 export function createDefaultFinanceCashFlowUiFilters(
   referenceYear = new Date().getFullYear()

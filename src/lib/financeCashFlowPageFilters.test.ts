@@ -25,10 +25,12 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(q.includes("year=2026"));
   });
 
-  it("abas ativas incluem visão geral, calendário e risco", () => {
-    assert.deepEqual(PHASE1_FINANCE_CASH_FLOW_TABS, ["overview", "calendar", "risk"]);
-    assert.ok(FINANCE_CASH_FLOW_TABS.some((t) => t.id === "calendar"));
-    assert.ok(FINANCE_CASH_FLOW_TABS.some((t) => t.id === "risk"));
+  it("tela Fluxo de Caixa expõe apenas a aba Visão Geral", () => {
+    assert.deepEqual(
+      FINANCE_CASH_FLOW_TABS.map((t) => t.id),
+      ["overview"]
+    );
+    assert.deepEqual(PHASE1_FINANCE_CASH_FLOW_TABS, ["overview"]);
   });
 
   it("FinanceCashFlowPage usa padrão BI executivo e posição líquida", () => {
@@ -83,8 +85,9 @@ describe("financeCashFlowPageFilters", () => {
     assert.ok(!page.includes("cash-flow-largest-inflows"));
     assert.ok(page.includes("cash-flow-top-customers"));
     assert.ok(page.includes("FinanceCashFlowBlockTitle"));
-    assert.ok(page.includes("FinanceCashFlowRiskTab"));
-    assert.ok(page.includes("FinanceCashFlowCalendar"));
+    assert.ok(!page.includes("FinanceCashFlowRiskTab"));
+    assert.ok(!page.includes("FinanceCashFlowCalendar"));
+    assert.ok(!page.includes("FINANCE_CASH_FLOW_TABS"));
     assert.ok(charts.includes("FINANCE_CASH_FLOW_CHART_HEIGHT"));
     assert.ok(charts.includes("cash-flow-main-chart"));
     assert.ok(!page.includes("FinanceCashFlowMonthlyChart"));

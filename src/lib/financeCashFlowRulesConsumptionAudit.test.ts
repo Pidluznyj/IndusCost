@@ -54,7 +54,8 @@ describe("financeCashFlowRulesConsumptionAudit", () => {
     assert.match(page, /FinanceCashFlowMonthlyPlannedChart/);
     assert.match(page, /FinanceCashFlowExecutiveSummaryPanel/);
     assert.match(page, /FinanceCashFlowAnnualComparisonChart/);
-    assert.match(page, /FinanceCashFlowCalendar/);
+    assert.doesNotMatch(page, /FinanceCashFlowCalendar/);
+    assert.doesNotMatch(page, /FinanceCashFlowRiskTab/);
   });
 
   it("rotas de exportação e radar existem", () => {
