@@ -74,8 +74,9 @@ Fontes oficiais (não inventar segunda verdade): status Nomus do item + FIN-03, 
 
 | | Critério |
 |--|----------|
-| **Entrada** | Item liberado **e** `requiresProduction === true` **e** sem cobertura suficiente de OP (`linkedQuantity` agregada &lt; quantidade ativa a produzir) **e** obrigação operacional ainda não encerrada por NF-e válida / residual zero. |
-| **Saída** | Existe vínculo OP com cobertura suficiente **ou** item deixa de exigir produção **ou** residual zero (corte/cancelamento) **ou** evidência terminal de envio/conclusão (NF-e válida cobrindo o alvo — prevalece sobre ausência histórica de OP). |
+| **Entrada** | Item liberado **e** `requiresProduction === true` **e** `remainingFulfillment = max(0, activeObligation − fulfilledQuantity) > 0` **e** cobertura de OP (`linkedQuantity`) insuficiente para esse residual. |
+| **Não entrar** | Quando `fulfilledQuantity >= activeObligation` — nunca `WAITING_PRODUCTION_ORDER` (mesmo sem OP). Seguir precedência documental/fiscal (`WAITING_OUTPUT_DOCUMENT` / `WAITING_NFE` / `SHIPPED_COMPLETED`) e classificar `FULFILLED_WITHOUT_PRODUCTION` (INFO). |
+| **Saída** | OP cobre o residual **ou** item deixa de exigir produção **ou** residual zero **ou** evidência terminal de envio/conclusão (NF-e válida cobrindo o alvo). |
 | **Próxima ação** | Abrir ou vincular Ordem de Produção aos itens liberados. |
 | **Gap (OP-45)** | Se `requiresProduction` não estiver contratado → não inventar; emitir `REQUIRES_PRODUCTION_UNKNOWN` e **não** forçar esta coluna só por ausência de OP. |
 
@@ -217,6 +218,7 @@ Severidades: `INFO` &lt; `WARNING` &lt; `ERROR` &lt; `CRITICAL`.
 | `PARTIAL_WITHOUT_REMAINING_QTY` | WARNING | Parcial sem residual coerente |
 | `CUT_WITHOUT_OFFICIAL_STATUS` | ERROR | Corte sem status oficial |
 | `FULFILLED_WITHOUT_COVERAGE` | WARNING | Atendido sem cobertura doc/fiscal |
+| `FULFILLED_WITHOUT_PRODUCTION` | INFO | Atendido pelo estoque / sem necessidade de OP (não afirma movimento de estoque) |
 | `STALE_ITEM_PRESENT` | INFO | Item stale no pedido |
 | `MIXED_ACTIVE_ITEM_STAGES` | INFO | Itens ativos em estágios distintos |
 | `O2C_ALLOCATION_STALE` | WARNING | Alocação O2C defasada |
