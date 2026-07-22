@@ -30,6 +30,7 @@ import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
 import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
 import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
+import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -514,6 +515,28 @@ export default function App() {
           }
         />
         <Route
+          path="purchases/receiving"
+          element={
+            <ModulePageShell
+              title="Estação de Recebimento"
+              description="Conferência e recebimento físico. Pedido confirmado não é estoque — só o recebimento confirmado altera o saldo."
+            >
+              <PurchaseReceivingStationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/receiving/:orderId"
+          element={
+            <ModulePageShell
+              title="Recebimento do pedido"
+              description="Itens, lotes, documentos, evidências e movimentos PURCHASE_RECEIPT do ledger SC."
+            >
+              <PurchaseReceivingStationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="purchases/orders"
           element={
             <ModulePageShell
@@ -693,8 +716,8 @@ export default function App() {
           path="supply-chain/receiving"
           element={
             <ModulePageShell
-              title="Recebimentos"
-              description="Casca controlada da Cadeia de Suprimentos — recebimentos."
+              title="Recebimentos SC"
+              description="Estação operacional de recebimento — feature flag SUPPLY_CHAIN_RECEIVING_MODULE_ENABLED."
             >
               <SupplyChainModuleShell moduleId="sc-receiving" />
             </ModulePageShell>

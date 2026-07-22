@@ -19,6 +19,10 @@ import {
   mapPurchaseReceiptError,
   reversePurchaseReceipt,
 } from "@/src/lib/purchasing/purchaseReceiptService.server.js";
+import {
+  getReceivingStationOrderDetail,
+  listReceivingStationBoard,
+} from "@/src/lib/purchasing/receivingStationService.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -60,6 +64,36 @@ export function registerPurchaseReceiptRoutes(app: express.Express, auth: AuthGu
     flag,
     auth.requireResource(OPERATIONS_RESOURCE_KEYS.purchases, OPERATIONS_ACTIONS.approve),
   ] as const;
+
+  app.get("/api/receiving-station", ...view, async (req, res) => {
+    try {
+      const result = await listReceivingStationBoard(prisma, {
+        q: req.query.q ? String(req.query.q) : undefined,
+        poStatus: req.query.poStatus ? String(req.query.poStatus) : undefined,
+        supplierId: req.query.supplierId ? String(req.query.supplierId) : undefined,
+        page: req.query.page ? Number(req.query.page) : 1,
+        pageSize: req.query.pageSize ? Number(req.query.pageSize) : 20,
+      });
+      res.setHeader("Cache-Control", "no-store");
+      res.json(result);
+    } catch (e) {
+      const mapped = mapPurchaseReceiptError(e);
+      res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  app.get("/api/receiving-station/orders/:orderId", ...view, async (req, res) => {
+    try {
+      const orderId = String(req.params.orderId);
+      if (!isUuid(orderId)) return res.status(400).json({ error: "orderId inválido." });
+      const row = await getReceivingStationOrderDetail(prisma, orderId);
+      res.setHeader("Cache-Control", "no-store");
+      res.json(row);
+    } catch (e) {
+      const mapped = mapPurchaseReceiptError(e);
+      res.status(mapped.status).json(mapped.body);
+    }
+  });
 
   app.get("/api/purchase-receipts", ...view, async (req, res) => {
     try {

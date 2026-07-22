@@ -665,6 +665,13 @@ export const PurchaseModule = () => {
             <TourHelpButton onClick={() => setTourOpen(true)} />
             <button
               type="button"
+              onClick={() => navigate("/purchases/receiving")}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
+            >
+              Recebimento
+            </button>
+            <button
+              type="button"
               onClick={() => navigate("/purchases/workstation")}
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-sm hover:bg-accent"
             >

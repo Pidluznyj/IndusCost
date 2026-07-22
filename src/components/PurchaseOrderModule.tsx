@@ -185,9 +185,14 @@ export function PurchaseOrderModule() {
               estoque nem Contas a Pagar.
             </p>
           </div>
-          <Link to="/purchases" className="text-sm text-primary hover:underline">
-            Voltar às solicitações
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link to="/purchases/receiving" className="text-sm text-primary hover:underline">
+              Estação de recebimento
+            </Link>
+            <Link to="/purchases" className="text-sm text-primary hover:underline">
+              Voltar às solicitações
+            </Link>
+          </div>
         </div>
         {list.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum pedido. Gere a partir de uma adjudicação aprovada.</p>

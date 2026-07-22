@@ -1,6 +1,7 @@
 /**
  * Cascas informativas dos módulos SC controlados.
- * sc-purchases (flag on) → estação operacional OP-21.
+ * sc-purchases → estação Compras (OP-21)
+ * sc-receiving → estação Recebimento (OP-23)
  */
 
 import React from "react";
@@ -13,6 +14,7 @@ import {
 import type { SupplyChainModuleId } from "@/src/lib/supply-chain/supplyChainFeatureFlags";
 import { fetchSupplyChainFeatureStatus } from "@/src/lib/supply-chain/supplyChainClient";
 import { PurchaseWorkstationModule } from "@/src/components/PurchaseWorkstationModule";
+import { PurchaseReceivingStationModule } from "@/src/components/PurchaseReceivingStationModule";
 
 const MODULE_COPY: Record<
   SupplyChainModuleId,
@@ -31,9 +33,10 @@ const MODULE_COPY: Record<
     legacyHint: { label: "Abrir Estoque / Almoxarifado", to: "/inventory/items" },
   },
   "sc-receiving": {
-    title: "Recebimentos",
+    title: "Recebimentos SC",
     description:
-      "Casca controlada de recebimentos físicos. Conferência e entrada em estoque serão implementadas em OPs posteriores.",
+      "Estação operacional de recebimento físico. Pedido confirmado não é estoque — somente o recebimento confirmado altera o saldo físico (PURCHASE_RECEIPT).",
+    legacyHint: { label: "Abrir estação de recebimento", to: "/purchases/receiving" },
   },
 };
 
@@ -116,6 +119,14 @@ export function SupplyChainModuleShell({
     return (
       <div data-testid={`sc-shell-ready-${moduleId}`}>
         <PurchaseWorkstationModule />
+      </div>
+    );
+  }
+
+  if (moduleId === "sc-receiving") {
+    return (
+      <div data-testid={`sc-shell-ready-${moduleId}`}>
+        <PurchaseReceivingStationModule />
       </div>
     );
   }
