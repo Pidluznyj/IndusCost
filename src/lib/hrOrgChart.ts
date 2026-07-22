@@ -1,5 +1,5 @@
 /**
- * Organograma RH — árvore visual a partir de Diretoria (aninhada) → Departamento → Pessoas.
+ * Organograma RH — árvore visual a partir de Diretoria (aninhada) → Departamento (aninhado) → Pessoas.
  */
 
 export type HrOrgChartPerson = {
@@ -17,9 +17,11 @@ export type HrOrgChartDepartmentNode = {
   name: string;
   code: string | null;
   status: string;
+  parentDepartmentId: string | null;
   leader: HrOrgChartPerson | null;
   members: HrOrgChartPerson[];
   memberCount: number;
+  childDepartments: HrOrgChartDepartmentNode[];
 };
 
 export type HrOrgChartDirectorateNode = {
@@ -66,6 +68,7 @@ export type HrOrgChartDepartmentInput = {
   status: string;
   directorateId: string;
   leaderEmployeeId: string;
+  parentDepartmentId?: string | null;
 };
 
 export type HrOrgChartDirectorateInput = {
@@ -107,10 +110,26 @@ function countDirectoratesInTree(nodes: readonly HrOrgChartDirectorateNode[]): n
   );
 }
 
+function countDepartmentsInDeptTree(nodes: readonly HrOrgChartDepartmentNode[]): number {
+  return nodes.reduce(
+    (sum, n) => sum + 1 + countDepartmentsInDeptTree(n.childDepartments),
+    0
+  );
+}
+
 function countDepartmentsInTree(nodes: readonly HrOrgChartDirectorateNode[]): number {
   return nodes.reduce(
     (sum, n) =>
-      sum + n.departments.length + countDepartmentsInTree(n.childDirectorates),
+      sum +
+      countDepartmentsInDeptTree(n.departments) +
+      countDepartmentsInTree(n.childDirectorates),
+    0
+  );
+}
+
+function countPeopleInDeptTree(nodes: readonly HrOrgChartDepartmentNode[]): number {
+  return nodes.reduce(
+    (sum, n) => sum + n.memberCount + countPeopleInDeptTree(n.childDepartments),
     0
   );
 }
@@ -120,6 +139,58 @@ function countPeopleInTree(nodes: readonly HrOrgChartDirectorateNode[]): number 
     (sum, n) => sum + n.peopleCount + countPeopleInTree(n.childDirectorates),
     0
   );
+}
+
+function buildDepartmentNode(
+  dept: HrOrgChartDepartmentInput,
+  byId: Map<string, HrOrgChartEmployeeInput>,
+  employeesByDepartment: Map<string, HrOrgChartEmployeeInput[]>,
+  orgLeaderIds: Set<string>,
+  activeDeptIds: Set<string>
+): HrOrgChartDepartmentNode {
+  const leader = toPerson(byId.get(dept.leaderEmployeeId), true);
+  const rawMembers = employeesByDepartment.get(dept.id) ?? [];
+  const members = rawMembers
+    .filter((m) => m.id !== dept.leaderEmployeeId && !orgLeaderIds.has(m.id))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+    .map((m) => toPerson(m, false)!)
+    .filter(Boolean);
+  const parentId = dept.parentDepartmentId?.trim() || null;
+  return {
+    id: dept.id,
+    kind: "department" as const,
+    name: dept.name,
+    code: dept.code,
+    status: dept.status,
+    parentDepartmentId:
+      parentId && activeDeptIds.has(parentId) ? parentId : null,
+    leader,
+    members,
+    memberCount: members.length + (leader ? 1 : 0),
+    childDepartments: [],
+  };
+}
+
+function nestDepartmentTree(
+  flat: HrOrgChartDepartmentNode[]
+): HrOrgChartDepartmentNode[] {
+  const nodeById = new Map(flat.map((n) => [n.id, n]));
+  const roots: HrOrgChartDepartmentNode[] = [];
+  for (const node of flat) {
+    const parentId = node.parentDepartmentId;
+    if (parentId && nodeById.has(parentId)) {
+      nodeById.get(parentId)!.childDepartments.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+  const sortDeptTree = (nodes: HrOrgChartDepartmentNode[]) => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    for (const n of nodes) sortDeptTree(n.childDepartments);
+  };
+  sortDeptTree(roots);
+  return roots;
 }
 
 export function buildHrOrgChart(input: {
@@ -139,6 +210,7 @@ export function buildHrOrgChart(input: {
     (d) => includeInactive || d.status === "ACTIVE"
   );
   const activeDirIds = new Set(activeDirectorates.map((d) => d.id));
+  const activeDeptIds = new Set(activeDepartments.map((d) => d.id));
 
   /** Líderes oficiais já aparecem no organograma — não entram como membro nem em "sem departamento". */
   const orgLeaderIds = new Set<string>();
@@ -173,32 +245,12 @@ export function buildHrOrgChart(input: {
 
   const nodeById = new Map<string, HrOrgChartDirectorateNode>();
   for (const dir of activeDirectorates) {
-    const deptInputs = (departmentsByDirectorate.get(dir.id) ?? [])
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-
-    const departments: HrOrgChartDepartmentNode[] = deptInputs.map((dept) => {
-      const leader = toPerson(byId.get(dept.leaderEmployeeId), true);
-      const rawMembers = employeesByDepartment.get(dept.id) ?? [];
-      const members = rawMembers
-        .filter((m) => m.id !== dept.leaderEmployeeId && !orgLeaderIds.has(m.id))
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
-        .map((m) => toPerson(m, false)!)
-        .filter(Boolean);
-      return {
-        id: dept.id,
-        kind: "department" as const,
-        name: dept.name,
-        code: dept.code,
-        status: dept.status,
-        leader,
-        members,
-        memberCount: members.length + (leader ? 1 : 0),
-      };
-    });
-
-    const peopleCount = departments.reduce((sum, d) => sum + d.memberCount, 0);
+    const deptInputs = departmentsByDirectorate.get(dir.id) ?? [];
+    const flatDepartments = deptInputs.map((dept) =>
+      buildDepartmentNode(dept, byId, employeesByDepartment, orgLeaderIds, activeDeptIds)
+    );
+    const departments = nestDepartmentTree(flatDepartments);
+    const peopleCount = countPeopleInDeptTree(departments);
     const parentId = dir.parentDirectorateId?.trim() || null;
 
     nodeById.set(dir.id, {

@@ -33,6 +33,7 @@ import {
   formatEmployeeDate,
   type EmployeeFichaTabId,
 } from "@/src/lib/employeeHrUi";
+import { resolveForcedManagerFromOrgDepartment } from "@/src/lib/hrOrgStructure";
 import {
   assertCorporateEmailFormat,
   CorporateEmailError,
@@ -244,6 +245,8 @@ export const EmployeeModule = () => {
       leaderEmployeeId?: string | null;
       leaderName?: string | null;
       directorateName?: string | null;
+      parentDepartmentLeaderEmployeeId?: string | null;
+      parentDepartmentLeaderName?: string | null;
       directorateLeaderEmployeeId?: string | null;
       directorateLeaderName?: string | null;
     }[]
@@ -392,6 +395,8 @@ export const EmployeeModule = () => {
             directorateName: string | null;
             leaderEmployeeId: string | null;
             leaderName: string | null;
+            parentDepartmentLeaderEmployeeId: string | null;
+            parentDepartmentLeaderName: string | null;
             directorateLeaderEmployeeId: string | null;
             directorateLeaderName: string | null;
           }[];
@@ -440,6 +445,8 @@ export const EmployeeModule = () => {
           leaderEmployeeId: r.leaderEmployeeId,
           leaderName: r.leaderName,
           directorateName: r.directorateName,
+          parentDepartmentLeaderEmployeeId: r.parentDepartmentLeaderEmployeeId,
+          parentDepartmentLeaderName: r.parentDepartmentLeaderName,
           directorateLeaderEmployeeId: r.directorateLeaderEmployeeId,
           directorateLeaderName: r.directorateLeaderName,
         }))
@@ -1386,28 +1393,26 @@ export const EmployeeModule = () => {
                                   onChange={(v) => {
                                     const opt = orgDepartmentOptions.find((o) => o.value === v);
                                     const employeeId = editingEmployee?.id ?? null;
-                                    const isSelfLeader =
-                                      Boolean(employeeId) &&
-                                      opt?.leaderEmployeeId === employeeId;
-                                    const nextManagerId = isSelfLeader
-                                      ? opt?.directorateLeaderEmployeeId &&
-                                        opt.directorateLeaderEmployeeId !== employeeId
-                                        ? opt.directorateLeaderEmployeeId
-                                        : ""
-                                      : opt?.leaderEmployeeId ?? "";
-                                    const nextManagerName = isSelfLeader
-                                      ? nextManagerId
-                                        ? opt?.directorateLeaderName ?? ""
-                                        : ""
-                                      : opt?.leaderName ?? "";
+                                    const forced = resolveForcedManagerFromOrgDepartment({
+                                      employeeId,
+                                      departmentLeaderEmployeeId: opt?.leaderEmployeeId,
+                                      departmentLeaderName: opt?.leaderName,
+                                      parentDepartmentLeaderEmployeeId:
+                                        opt?.parentDepartmentLeaderEmployeeId,
+                                      parentDepartmentLeaderName:
+                                        opt?.parentDepartmentLeaderName,
+                                      directorateLeaderEmployeeId:
+                                        opt?.directorateLeaderEmployeeId,
+                                      directorateLeaderName: opt?.directorateLeaderName,
+                                    });
                                     lookupContextRef.current.selectedManagerId =
-                                      nextManagerId || undefined;
+                                      forced.managerId || undefined;
                                     setFormData({
                                       ...formData,
                                       departmentId: v,
                                       department: opt?.name ?? formData.department,
-                                      managerId: nextManagerId,
-                                      managerName: nextManagerName,
+                                      managerId: forced.managerId ?? "",
+                                      managerName: forced.managerName ?? "",
                                     });
                                   }}
                                   remoteSearch
