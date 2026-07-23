@@ -370,6 +370,9 @@ describe("salesOrdersListSummary", () => {
     assert.ok(page.includes("SalesOrderListSummaryCards"));
     assert.ok(cards.includes("Pedidos filtrados"));
     assert.ok(cards.includes("Valor vendido"));
+    assert.ok(cards.includes("Imposto a pagar"));
+    assert.ok(cards.includes("taxAmount"));
+    assert.ok(cards.includes("sales-order-list-tax-payable-card"));
     assert.ok(cards.includes("Custo estimado"));
     assert.ok(cards.includes("totalCost"));
     assert.ok(cards.includes("costBreakdown"));

@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Info, Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
+import { BadgePercent, Info, Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
@@ -139,6 +139,18 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
         })
       : null;
 
+  const taxUnavailable = !showMarginCard || marginUnavailable;
+  const taxAmount =
+    loading || taxUnavailable ? null : (marginSummary?.taxAmount ?? null);
+  const taxShareOfSold =
+    !loading && !taxUnavailable
+      ? shareOfSoldValuePercent(marginSummary?.taxAmount ?? 0, soldValueForShare)
+      : null;
+  const taxShareSubtitle =
+    taxShareOfSold != null
+      ? `${formatSalesOrderMarginPercent(taxShareOfSold)} do valor vendido`
+      : undefined;
+
   const costCard = (
     <SystemTotalizerCard
       className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
@@ -188,7 +200,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
       className="sales-order-list-overview-kpi"
     >
       <SummaryKpiGrid
-        minColumnWidth={168}
+        minColumnWidth={152}
         className={`${SYSTEM_TOTALIZER_GRID_CLASS} sales-order-list-summary-grid`}
       >
         <SystemTotalizerCard
@@ -211,6 +223,33 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
+        {showMarginCard ? (
+          <div data-testid="sales-order-list-tax-payable-card" className="min-w-0">
+            <SystemTotalizerCard
+              className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+              label="Imposto a pagar"
+              amount={taxAmount}
+              amountFormat="currency"
+              value={
+                loading
+                  ? undefined
+                  : taxUnavailable
+                    ? "Indisponível"
+                    : undefined
+              }
+              subtitle={loading || taxUnavailable ? undefined : taxShareSubtitle}
+              tone={taxUnavailable ? "neutral" : "warning"}
+              icon={BadgePercent}
+              helperText={
+                taxUnavailable
+                  ? "Sem regra fiscal suficiente nos pedidos filtrados."
+                  : "Impostos da regra fiscal deduzidos da margem nos pedidos filtrados."
+              }
+              valueSize={taxUnavailable && !loading ? "text" : "default"}
+              loading={loading}
+            />
+          </div>
+        ) : null}
         {costBreakdownTooltip ? (
           <SalesOrderListCostHoverTooltip text={costBreakdownTooltip}>
             {costCard}

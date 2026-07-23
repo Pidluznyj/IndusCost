@@ -17,6 +17,9 @@ describe("salesOrderListMarginSummary", () => {
     assert.match(cards, /sales-order-list-general-margin-card/);
     assert.match(cards, /SalesOrderMarginInfoTooltip/);
     assert.match(cards, /Margem geral ponderada/);
+    assert.match(cards, /Imposto a pagar/);
+    assert.match(cards, /sales-order-list-tax-payable-card/);
+    assert.match(cards, /marginSummary\?\.taxAmount/);
     assert.match(module, /marginSummary/);
     assert.match(module, /showMarginCard=\{showMarginEconomics\}/);
   });

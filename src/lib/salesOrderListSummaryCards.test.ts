@@ -13,11 +13,15 @@ describe("salesOrderListSummaryCards visual", () => {
   it("usa grid e CSS executivo estável", () => {
     const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const css = read("src/components/sales/sales-order-list-summary-cards.css");
+    const totalizerCss = read("src/components/ui/system-totalizer-card.css");
     assert.match(cards, /sales-order-list-summary-grid/);
     assert.match(cards, /sales-order-list-summary-cards\.css/);
-    assert.match(css, /white-space: nowrap/);
-    assert.match(css, /font-weight: 600/);
-    assert.match(css, /min-height: 108px/);
+    assert.match(cards, /Imposto a pagar/);
+    assert.match(cards, /sales-order-list-tax-payable-card/);
+    assert.match(css, /--metric-card-min:\s*152px/);
+    assert.match(totalizerCss, /white-space:\s*nowrap/);
+    assert.match(totalizerCss, /font-weight:\s*600/);
+    assert.match(totalizerCss, /min-height:\s*108px/);
     assert.doesNotMatch(cards, /absolute top-2 right-10/);
     assert.match(cards, /sales-order-list-summary-margin-badge/);
     assert.match(cards, /footer=/);

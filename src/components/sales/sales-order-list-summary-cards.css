@@ -3,6 +3,11 @@
   overflow: visible;
 }
 
+/* 6 cards (inclui Imposto a pagar) na mesma faixa em desktop. */
+.sales-order-list-summary-grid {
+  --metric-card-min: 152px;
+}
+
 /* Badge de margem parcial. */
 .sales-order-list-summary-margin-badge {
   display: inline-flex;
