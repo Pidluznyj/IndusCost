@@ -53,6 +53,15 @@ export type SalesOrderCostSource =
   | "MANUAL_COST"
   | "MISSING_COST";
 
+/** Discriminação unitária CIU (MP / HH / HM / demais) — mesma tabela da margem. */
+export type SalesOrderMarginProductionCostUnitBreakdown = {
+  materialCost: number;
+  laborCost: number;
+  machineCost: number;
+  /** process + overhead + other da tabela oficial */
+  otherCost: number;
+};
+
 /** Metadados do custo vigente na tabela oficial de produção (margem). */
 export type SalesOrderMarginProductionCostMeta = {
   costTableVersionId: string;
@@ -64,6 +73,8 @@ export type SalesOrderMarginProductionCostMeta = {
   publishedAt: string | null;
   orderIssueDate: string | null;
   warning?: string | null;
+  /** Custos unitários da tabela vigente (quando a publicação trouxe breakdown). */
+  unitBreakdown?: SalesOrderMarginProductionCostUnitBreakdown | null;
 };
 
 /** Metadados do preço oficial publicado na tabela comercial vigente na data do pedido. */

@@ -455,6 +455,18 @@ export function mapEffectiveProductionCostToMarginMeta(
   orderIssueDate: Date | string | null | undefined
 ): SalesOrderMarginProductionCostMeta {
   const warning = readPartialWarningFromSnapshot(effective.calculationSnapshot);
+  const b = effective.breakdown;
+  const materialCost = Number.isFinite(b?.materialCost) ? Math.max(0, b.materialCost) : 0;
+  const laborCost = Number.isFinite(b?.laborCost) ? Math.max(0, b.laborCost) : 0;
+  const machineCost = Number.isFinite(b?.machineCost) ? Math.max(0, b.machineCost) : 0;
+  const otherCost = Math.max(
+    0,
+    (Number.isFinite(b?.processCost) ? b.processCost : 0) +
+      (Number.isFinite(b?.overheadCost) ? b.overheadCost : 0) +
+      (Number.isFinite(b?.otherCost) ? b.otherCost : 0)
+  );
+  const hasBreakdown =
+    materialCost > 0 || laborCost > 0 || machineCost > 0 || otherCost > 0;
   return {
     costTableVersionId: effective.costTableVersionId,
     costTableItemId: effective.costTableItemId,
@@ -465,6 +477,9 @@ export function mapEffectiveProductionCostToMarginMeta(
     publishedAt: effective.publishedAt?.toISOString() ?? null,
     orderIssueDate: orderIssueDate ? toCivilDateKey(orderIssueDate) : null,
     warning,
+    unitBreakdown: hasBreakdown
+      ? { materialCost, laborCost, machineCost, otherCost }
+      : null,
   };
 }
 

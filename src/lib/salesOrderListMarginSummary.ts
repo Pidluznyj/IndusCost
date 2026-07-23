@@ -6,6 +6,10 @@ import type {
   SalesOrderMarginSummaryPayload,
 } from "./salesOrderMarginTypes.js";
 import type { SalesMarginTaxMode } from "./salesMarginRulesEngine.types.js";
+import {
+  EMPTY_SALES_ORDER_LIST_COST_BREAKDOWN,
+  type SalesOrderListCostBreakdown,
+} from "./salesOrderListCostBreakdown.js";
 
 export type SalesOrderListMarginSummary = {
   totalOrdersCount: number;
@@ -15,6 +19,8 @@ export type SalesOrderListMarginSummary = {
   grossSalesAmount: number;
   taxAmount: number;
   totalCost: number;
+  /** Discriminação MP/HH/HM/impostos do filtro (hover do card de custo). */
+  costBreakdown: SalesOrderListCostBreakdown;
   marginCoverage: SalesOrderMarginCostCoverageStatus;
   itemsWithoutCost: number;
   ordersWithoutFullMargin: number;
@@ -34,6 +40,7 @@ export const EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY: SalesOrderListMarginSummary 
   grossSalesAmount: 0,
   taxAmount: 0,
   totalCost: 0,
+  costBreakdown: { ...EMPTY_SALES_ORDER_LIST_COST_BREAKDOWN },
   marginCoverage: "NONE",
   itemsWithoutCost: 0,
   ordersWithoutFullMargin: 0,

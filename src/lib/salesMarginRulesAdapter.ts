@@ -22,6 +22,7 @@ import {
   EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY,
   type SalesOrderListMarginSummary,
 } from "./salesOrderListMarginSummary.js";
+import { aggregateSalesOrderListCostBreakdown } from "./salesOrderListCostBreakdown.js";
 import {
   refineSalesOrderMarginSummaryStatus,
   resolveSalesOrderMarginStatusMeta,
@@ -877,6 +878,11 @@ export async function buildOfficialSalesOrderListMarginSummary(
   ).length;
 
   const available = scoped.costCoverageStatus !== "NONE";
+  const costBreakdown = aggregateSalesOrderListCostBreakdown({
+    marginByOrder: marginByOrder.values(),
+    totalIndustrialCost: scoped.totalCost,
+    taxAmount: scoped.taxAmount,
+  });
 
   return {
     totalOrdersCount: orders.length,
@@ -886,6 +892,7 @@ export async function buildOfficialSalesOrderListMarginSummary(
     grossSalesAmount: scoped.grossSalesAmount,
     taxAmount: scoped.taxAmount,
     totalCost: scoped.totalCost,
+    costBreakdown,
     marginCoverage: scoped.costCoverageStatus,
     itemsWithoutCost: scoped.itemsWithoutCost,
     ordersWithoutFullMargin,

@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
+import { Info, Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
@@ -11,9 +11,11 @@ import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMa
 import { SALES_ORDER_LIST_KPI_SECTION } from "@/src/lib/salesOrderManagementKpiLabels";
 import { formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
+import { buildSalesOrderListCostBreakdownTooltipText } from "@/src/lib/salesOrderListCostBreakdown";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import "./sales-order-list-summary-cards.css";
+import "./sales-order-list-table.css";
 
 export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCards({
   summary,
@@ -37,10 +39,10 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
   const costUnavailable = !showMarginCard || marginUnavailable;
   const costAmount =
     loading || costUnavailable ? null : (marginSummary?.totalCost ?? null);
-  const taxSubtitle =
-    loading || costUnavailable
-      ? undefined
-      : `Impostos (margem): ${formatCompactCurrency(marginSummary?.taxAmount ?? 0)}`;
+  const costBreakdownTooltip =
+    !loading && !costUnavailable
+      ? buildSalesOrderListCostBreakdownTooltipText(marginSummary?.costBreakdown)
+      : null;
 
   return (
     <SalesOrderKpiSection
@@ -72,7 +74,10 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
-        <div data-testid="sales-order-list-estimated-cost-card" className="min-w-0">
+        <div
+          data-testid="sales-order-list-estimated-cost-card"
+          className="sales-order-margin-tooltip-wrap relative min-w-0"
+        >
           <SystemTotalizerCard
             className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
             label="Custo estimado"
@@ -87,7 +92,6 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
                     : "—"
                   : undefined
             }
-            subtitle={taxSubtitle}
             tone={costUnavailable ? "neutral" : "internal"}
             icon={Scale}
             helperText={
@@ -95,13 +99,31 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
                 ? "Custo industrial interno (requer permissão de custo/margem)."
                 : costUnavailable
                   ? "Sem custo publicado suficiente nos pedidos filtrados."
-                  : marginPartial
-                    ? "CIU (MP + HH + HM + demais) do filtro — cobertura parcial."
-                    : "CIU (MP + HH + HM + demais) dos pedidos filtrados — mesmo custo da margem."
+                  : "Passe o mouse para ver MP, HH, HM, demais e impostos."
             }
             valueSize={costUnavailable && !loading ? "text" : "default"}
+            labelAccessory={
+              costBreakdownTooltip ? (
+                <span
+                  className="inline-flex text-muted-foreground"
+                  aria-hidden
+                  title="Discriminação do custo"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </span>
+              ) : undefined
+            }
             loading={loading}
           />
+          {costBreakdownTooltip ? (
+            <div
+              className="sales-order-margin-tooltip-panel text-left whitespace-pre-line"
+              role="tooltip"
+              data-testid="sales-order-list-estimated-cost-tooltip"
+            >
+              {costBreakdownTooltip}
+            </div>
+          ) : null}
         </div>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}

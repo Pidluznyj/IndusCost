@@ -372,7 +372,8 @@ describe("salesOrdersListSummary", () => {
     assert.ok(cards.includes("Valor vendido"));
     assert.ok(cards.includes("Custo estimado"));
     assert.ok(cards.includes("totalCost"));
-    assert.ok(cards.includes("taxAmount"));
+    assert.ok(cards.includes("costBreakdown"));
+    assert.ok(cards.includes("buildSalesOrderListCostBreakdownTooltipText"));
     assert.ok(cards.includes("Ticket médio"));
     assert.ok(cards.includes("Margem geral"));
     assert.doesNotMatch(cards, /label="Itens"/);
