@@ -626,6 +626,81 @@ function resolveCardBadges(card: SalesOrderFlowListCard): Array<{
       className: "border-sky-200 bg-sky-50 text-sky-800",
     },
     {
+      key: "OP_LINKED",
+      label: "OP vinculada",
+      className: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    },
+    {
+      key: "OP_PARTIAL",
+      label: "OP parcial",
+      className: "border-amber-200 bg-amber-50 text-amber-900",
+    },
+    {
+      key: "DS_LINKED",
+      label: "DS vinculado",
+      className: "border-teal-200 bg-teal-50 text-teal-800",
+    },
+    {
+      key: "DS_PARTIAL",
+      label: "DS parcial",
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    {
+      key: "NFE_AUTHORIZED",
+      label: "NF autorizada",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    },
+    {
+      key: "NFE_CANCELLED",
+      label: "NF cancelada",
+      className: "border-rose-200 bg-rose-50 text-rose-800",
+    },
+    {
+      key: "SHIPMENT_COMPLETE",
+      label: "Envio completo",
+      className: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    },
+    {
+      key: "AMBIGUOUS_LINK",
+      label: "Vínculo ambíguo",
+      className: "border-orange-200 bg-orange-50 text-orange-900",
+    },
+    {
+      key: "ITEM_UNRESOLVED",
+      label: "Item não resolvido",
+      className: "border-orange-200 bg-orange-50 text-orange-800",
+    },
+    {
+      key: "EXCESS_COVERAGE",
+      label: "Cobertura excedente",
+      className: "border-violet-200 bg-violet-50 text-violet-800",
+    },
+    {
+      key: "PARTIAL_COVERAGE",
+      label: "Cobertura parcial",
+      className: "border-amber-200 bg-amber-50 text-amber-800",
+    },
+    {
+      key: "DS_UNRECOGNIZED",
+      label: "DS não reconhecido",
+      className: "border-orange-200 bg-orange-50 text-orange-900",
+    },
+    {
+      key: "NFE_UNLINKED",
+      label: "NF sem vínculo",
+      className: "border-orange-200 bg-orange-50 text-orange-800",
+    },
+    {
+      key: "OP_UNLINKED",
+      label: "OP sem vínculo",
+      className: "border-amber-200 bg-amber-50 text-amber-900",
+    },
+    {
+      key: "SNAPSHOT_DIVERGENT",
+      label: "Snapshot divergente",
+      className: "border-rose-200 bg-rose-50 text-rose-900",
+    },
+    {
       key: "OVERDUE",
       label: "Atraso",
       className: "border-rose-200 bg-rose-50 text-rose-800",

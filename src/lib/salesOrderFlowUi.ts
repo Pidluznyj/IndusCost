@@ -133,6 +133,12 @@ export type SalesOrderFlowUiFilters = {
   partiallyShipped: boolean | null;
   withCut: boolean | null;
   withActiveResidual: boolean | null;
+  unrecognizedDs: boolean | null;
+  nfeUnlinked: boolean | null;
+  opUnlinked: boolean | null;
+  partialCoverage: boolean | null;
+  ambiguousLink: boolean | null;
+  snapshotDivergent: boolean | null;
   priority: SalesOrderFlowUiPriority | null;
   /** Vazio = todas as etapas. */
   stages: SalesOrderFlowStage[];
@@ -157,6 +163,12 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
   partiallyShipped: null,
   withCut: null,
   withActiveResidual: null,
+  unrecognizedDs: null,
+  nfeUnlinked: null,
+  opUnlinked: null,
+  partialCoverage: null,
+  ambiguousLink: null,
+  snapshotDivergent: null,
   priority: null,
   stages: [],
 };
@@ -241,6 +253,12 @@ export function areSalesOrderFlowUiFiltersEqual(
     a.partiallyShipped === b.partiallyShipped &&
     a.withCut === b.withCut &&
     a.withActiveResidual === b.withActiveResidual &&
+    a.unrecognizedDs === b.unrecognizedDs &&
+    a.nfeUnlinked === b.nfeUnlinked &&
+    a.opUnlinked === b.opUnlinked &&
+    a.partialCoverage === b.partialCoverage &&
+    a.ambiguousLink === b.ambiguousLink &&
+    a.snapshotDivergent === b.snapshotDivergent &&
     a.priority === b.priority &&
     a.stages.length === b.stages.length &&
     a.stages.every((stage, index) => stage === b.stages[index])
@@ -502,6 +520,18 @@ export function parseSalesOrderFlowFiltersFromSearchParams(
     withActiveResidual: parseSalesOrderFlowBooleanParam(
       params.get("withActiveResidual")
     ),
+    unrecognizedDs: parseSalesOrderFlowBooleanParam(
+      params.get("unrecognizedDs")
+    ),
+    nfeUnlinked: parseSalesOrderFlowBooleanParam(params.get("nfeUnlinked")),
+    opUnlinked: parseSalesOrderFlowBooleanParam(params.get("opUnlinked")),
+    partialCoverage: parseSalesOrderFlowBooleanParam(
+      params.get("partialCoverage")
+    ),
+    ambiguousLink: parseSalesOrderFlowBooleanParam(params.get("ambiguousLink")),
+    snapshotDivergent: parseSalesOrderFlowBooleanParam(
+      params.get("snapshotDivergent")
+    ),
     priority: parseSalesOrderFlowPriorityParam(params.get("priority")),
     stages: parseSalesOrderFlowStagesParam(params.get("stages")),
   };
@@ -535,6 +565,14 @@ export function buildSalesOrderFlowSearchParams(
   if (filters.withCut === true) params.set("withCut", "true");
   if (filters.withActiveResidual === true) {
     params.set("withActiveResidual", "true");
+  }
+  if (filters.unrecognizedDs === true) params.set("unrecognizedDs", "true");
+  if (filters.nfeUnlinked === true) params.set("nfeUnlinked", "true");
+  if (filters.opUnlinked === true) params.set("opUnlinked", "true");
+  if (filters.partialCoverage === true) params.set("partialCoverage", "true");
+  if (filters.ambiguousLink === true) params.set("ambiguousLink", "true");
+  if (filters.snapshotDivergent === true) {
+    params.set("snapshotDivergent", "true");
   }
   if (filters.priority) params.set("priority", filters.priority);
   if (filters.stages.length > 0) {
@@ -676,6 +714,12 @@ export function hasActiveSalesOrderFlowFilters(
       filters.partiallyShipped === true ||
       filters.withCut === true ||
       filters.withActiveResidual === true ||
+      filters.unrecognizedDs === true ||
+      filters.nfeUnlinked === true ||
+      filters.opUnlinked === true ||
+      filters.partialCoverage === true ||
+      filters.ambiguousLink === true ||
+      filters.snapshotDivergent === true ||
       filters.priority ||
       filters.stages.length > 0
   );
@@ -719,6 +763,12 @@ export function salesOrderFlowFiltersToClientQuery(
   partiallyShipped: boolean | null;
   withCut: boolean | null;
   withActiveResidual: boolean | null;
+  unrecognizedDs: boolean | null;
+  nfeUnlinked: boolean | null;
+  opUnlinked: boolean | null;
+  partialCoverage: boolean | null;
+  ambiguousLink: boolean | null;
+  snapshotDivergent: boolean | null;
   priority: SalesOrderFlowUiPriority | null;
   stages: SalesOrderFlowStage[] | null;
 } {
@@ -742,6 +792,12 @@ export function salesOrderFlowFiltersToClientQuery(
     partiallyShipped: filters.partiallyShipped,
     withCut: filters.withCut,
     withActiveResidual: filters.withActiveResidual,
+    unrecognizedDs: filters.unrecognizedDs,
+    nfeUnlinked: filters.nfeUnlinked,
+    opUnlinked: filters.opUnlinked,
+    partialCoverage: filters.partialCoverage,
+    ambiguousLink: filters.ambiguousLink,
+    snapshotDivergent: filters.snapshotDivergent,
     priority: filters.priority,
     stages: filters.stages.length > 0 ? filters.stages : null,
   };

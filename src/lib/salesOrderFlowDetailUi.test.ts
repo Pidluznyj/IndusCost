@@ -187,6 +187,7 @@ function detailFixture(
       },
     ],
     badges: ["OVERDUE"],
+    operationalDiagnostics: null,
     management: {
       priority: "HIGH",
       responsibleUserId: null,
@@ -272,6 +273,124 @@ describe("sales order flow detail drawer (OP-69)", () => {
       assert.ok(html.includes(expected), `deveria renderizar ${expected}`);
     }
     assert.match(html, /sales-order-flow-detail-summary/);
+    assert.match(html, /Por que está nesta coluna\?/);
+    assert.match(html, /Diagnóstico operacional indisponível/);
+  });
+
+  it("KAN-LINK-08: painel de diagnóstico renderiza evidências da API sem recalcular", () => {
+    const html = renderDetailTab(
+      detailFixture({
+        badges: ["DS_LINKED", "NFE_AUTHORIZED", "AMBIGUOUS_LINK"],
+        operationalDiagnostics: {
+          contractVersion: "sales-order-flow-operational-diagnostics/v1",
+          title: "Por que está nesta coluna?",
+          stageLabel: "Aguardando envio",
+          stageReason: "Documentado e faturado; falta envio.",
+          bottleneckItemLabel: "Item 00010 · Peça A",
+          bottleneckReason: "Item aguardando envio",
+          nextAction: "Registrar envio",
+          responsibleArea: "Expedição",
+          pendingObligation: true,
+          totals: {
+            activeObligation: 474,
+            fulfilledQuantity: 0,
+            remainingFulfillment: 474,
+            cutQuantity: 0,
+            canceledQuantity: 0,
+            productionOrderQuantity: 0,
+            documentedQuantity: 474,
+            invoicedQuantity: 474,
+            shippedQuantity: 0,
+            linkedProductionOrderCount: 0,
+            linkedOutputDocumentCount: 1,
+            linkedNfeCount: 1,
+          },
+          productionOrderLabels: [],
+          outputDocumentLabels: ["4525"],
+          nfeLabels: ["7394/2"],
+          evidencesFound: [
+            {
+              kind: "OUTPUT_DOCUMENT",
+              label: "Documento de Saída reconhecido: 4525",
+              detail: "Cobertura 474",
+              quantity: 474,
+              present: true,
+              sourceLabel:
+                "Referência oficial do Pedido de Venda no item do documento",
+            },
+            {
+              kind: "NFE",
+              label: "NF-e: 7394/2 — autorizada",
+              detail: "Cobertura 474",
+              quantity: 474,
+              present: true,
+              sourceLabel: "Vínculo persistido Pedido ↔ NF-e",
+            },
+          ],
+          evidencesMissing: [
+            {
+              kind: "PRODUCTION_ORDER",
+              label: "Ordem de Produção",
+              detail: "Nenhuma OP vinculada cobrindo o residual",
+              quantity: null,
+              present: false,
+              sourceLabel: null,
+            },
+          ],
+          items: [
+            {
+              salesOrderItemId: "item-1",
+              sequence: "00010",
+              productLabel: "Peça A",
+              linkStatus: "RESOLVED",
+              coverageStatus: "PARTIAL",
+              activeObligation: 114,
+              fulfilledQuantity: 0,
+              remainingFulfillment: 114,
+              cutQuantity: 0,
+              canceledQuantity: 0,
+              productionOrderQuantity: 0,
+              productionCoverage: "NONE",
+              documentedQuantity: 114,
+              documentedCoverage: "SUFFICIENT",
+              invoicedQuantity: 114,
+              invoicedCoverage: "SUFFICIENT",
+              shippedQuantity: 0,
+              shippedCoverage: "NONE",
+              sourceSummary: [],
+              warnings: [],
+            },
+          ],
+          warnings: ["Vínculo ambíguo em linha documental"],
+          badges: ["DS_LINKED", "NFE_AUTHORIZED", "AMBIGUOUS_LINK"],
+          computedAt: "2026-07-22T12:00:00.000Z",
+          computationVersion: "sales-order-flow/v2",
+          expectedComputationVersion: "sales-order-flow/v2",
+          snapshotDivergent: false,
+        },
+      }),
+      "resumo"
+    );
+
+    assert.match(html, /sales-order-flow-operational-diagnostics/);
+    assert.match(html, /Documento de Saída reconhecido: 4525/);
+    assert.match(html, /7394\/2 — autorizada/);
+    assert.match(
+      html,
+      /Origem do vínculo: Referência oficial do Pedido de Venda no item do documento/
+    );
+    assert.match(html, /Evidências ausentes/);
+    assert.match(html, /Ordem de Produção/);
+    assert.match(html, /Cobertura por item/);
+    assert.match(html, /Item 00010 · Peça A/);
+    assert.match(html, /sales-order-flow\/v2/);
+    assert.match(html, /DS vinculado/);
+    assert.match(html, /NF autorizada/);
+    assert.match(html, /Vínculo ambíguo/);
+    assert.match(html, /Obrigação ativa/);
+    assert.match(html, /Quantidade documentada/);
+    assert.doesNotMatch(html, /resolveSalesOrderFlow\(/);
+    assert.doesNotMatch(html, /buildSalesOrderFlowOperationalDiagnostics/);
   });
 
   it("renderiza Itens com progresso e evidência, sem ocultar inconsistente", () => {

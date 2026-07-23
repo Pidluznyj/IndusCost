@@ -40,6 +40,13 @@ export type SalesOrderFlowSummaryFilters = {
   partiallyShipped: boolean | null;
   withCut: boolean | null;
   withActiveResidual: boolean | null;
+  /** KAN-LINK-08 — filtros por badge diagnóstico. */
+  unrecognizedDs: boolean | null;
+  nfeUnlinked: boolean | null;
+  opUnlinked: boolean | null;
+  partialCoverage: boolean | null;
+  ambiguousLink: boolean | null;
+  snapshotDivergent: boolean | null;
   priority: SalesOrderFlowSummaryPriority | null;
 };
 
@@ -81,6 +88,12 @@ export type SalesOrderFlowSummaryPayload = {
     partiallyShipped: boolean | null;
     withCut: boolean | null;
     withActiveResidual: boolean | null;
+    unrecognizedDs: boolean | null;
+    nfeUnlinked: boolean | null;
+    opUnlinked: boolean | null;
+    partialCoverage: boolean | null;
+    ambiguousLink: boolean | null;
+    snapshotDivergent: boolean | null;
     priority: SalesOrderFlowSummaryPriority | null;
   };
   columns: SalesOrderFlowSummaryColumn[];
@@ -193,6 +206,20 @@ export function parseSalesOrderFlowSummaryQuery(
     withActiveResidual: parseOptionalBoolean(
       query.withActiveResidual ?? query.comSaldoAtivo
     ),
+    unrecognizedDs: parseOptionalBoolean(
+      query.unrecognizedDs ?? query.dsNaoReconhecido
+    ),
+    nfeUnlinked: parseOptionalBoolean(query.nfeUnlinked ?? query.nfSemVinculo),
+    opUnlinked: parseOptionalBoolean(query.opUnlinked ?? query.opSemVinculo),
+    partialCoverage: parseOptionalBoolean(
+      query.partialCoverage ?? query.coberturaParcial
+    ),
+    ambiguousLink: parseOptionalBoolean(
+      query.ambiguousLink ?? query.vinculoAmbiguo
+    ),
+    snapshotDivergent: parseOptionalBoolean(
+      query.snapshotDivergent ?? query.snapshotDivergente
+    ),
     priority: parsePriority(query.priority ?? query.prioridade),
   };
 }
@@ -218,6 +245,12 @@ export function serializeSalesOrderFlowSummaryFilters(
     partiallyShipped: filters.partiallyShipped,
     withCut: filters.withCut,
     withActiveResidual: filters.withActiveResidual,
+    unrecognizedDs: filters.unrecognizedDs,
+    nfeUnlinked: filters.nfeUnlinked,
+    opUnlinked: filters.opUnlinked,
+    partialCoverage: filters.partialCoverage,
+    ambiguousLink: filters.ambiguousLink,
+    snapshotDivergent: filters.snapshotDivergent,
     priority: filters.priority,
   };
 }
@@ -357,6 +390,23 @@ export function buildSalesOrderFlowSummarySnapshotWhere(input: {
         : { activeResidualValue: 0 }
     );
   }
+  const badgeFilter = (
+    enabled: boolean | null,
+    badge: string
+  ): void => {
+    if (enabled == null) return;
+    snapshotAnd.push(
+      enabled
+        ? { badgesJson: { array_contains: [badge] } }
+        : { NOT: { badgesJson: { array_contains: [badge] } } }
+    );
+  };
+  badgeFilter(filters.unrecognizedDs, "DS_UNRECOGNIZED");
+  badgeFilter(filters.nfeUnlinked, "NFE_UNLINKED");
+  badgeFilter(filters.opUnlinked, "OP_UNLINKED");
+  badgeFilter(filters.partialCoverage, "PARTIAL_COVERAGE");
+  badgeFilter(filters.ambiguousLink, "AMBIGUOUS_LINK");
+  badgeFilter(filters.snapshotDivergent, "SNAPSHOT_DIVERGENT");
 
   if (snapshotAnd.length === 0) return {};
   if (snapshotAnd.length === 1) return snapshotAnd[0]!;

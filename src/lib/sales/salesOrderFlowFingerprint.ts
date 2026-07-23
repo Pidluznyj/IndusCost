@@ -7,9 +7,9 @@ import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { ResolveSalesOrderFlowResult } from "./salesOrderFlowEngine.js";
 import type { ResolveSalesOrderItemFlowResult } from "./salesOrderItemFlowEngine.js";
+import { SALES_ORDER_FLOW_COMPUTATION_VERSION } from "./salesOrderFlowComputationVersion.js";
 
-/** KAN-LINK-07 — motor consome exclusivamente o grafo canônico de evidências. */
-export const SALES_ORDER_FLOW_COMPUTATION_VERSION = "sales-order-flow/v2";
+export { SALES_ORDER_FLOW_COMPUTATION_VERSION };
 
 function hashPayload(parts: Array<string | number | boolean | null | undefined>): string {
   return createHash("sha256")

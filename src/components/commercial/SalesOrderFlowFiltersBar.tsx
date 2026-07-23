@@ -466,6 +466,54 @@ export function SalesOrderFlowFiltersBar({
             onPatchDraft({ withActiveResidual: checked ? true : null })
           }
         />
+        <BooleanFilter
+          testId="sales-order-flow-filter-unrecognized-ds"
+          label="DS não reconhecido"
+          checked={draftFilters.unrecognizedDs === true}
+          onChange={(checked) =>
+            onPatchDraft({ unrecognizedDs: checked ? true : null })
+          }
+        />
+        <BooleanFilter
+          testId="sales-order-flow-filter-nfe-unlinked"
+          label="NF sem vínculo"
+          checked={draftFilters.nfeUnlinked === true}
+          onChange={(checked) =>
+            onPatchDraft({ nfeUnlinked: checked ? true : null })
+          }
+        />
+        <BooleanFilter
+          testId="sales-order-flow-filter-op-unlinked"
+          label="OP sem vínculo"
+          checked={draftFilters.opUnlinked === true}
+          onChange={(checked) =>
+            onPatchDraft({ opUnlinked: checked ? true : null })
+          }
+        />
+        <BooleanFilter
+          testId="sales-order-flow-filter-partial-coverage"
+          label="Cobertura parcial"
+          checked={draftFilters.partialCoverage === true}
+          onChange={(checked) =>
+            onPatchDraft({ partialCoverage: checked ? true : null })
+          }
+        />
+        <BooleanFilter
+          testId="sales-order-flow-filter-ambiguous-link"
+          label="Vínculo ambíguo"
+          checked={draftFilters.ambiguousLink === true}
+          onChange={(checked) =>
+            onPatchDraft({ ambiguousLink: checked ? true : null })
+          }
+        />
+        <BooleanFilter
+          testId="sales-order-flow-filter-snapshot-divergent"
+          label="Snapshot divergente"
+          checked={draftFilters.snapshotDivergent === true}
+          onChange={(checked) =>
+            onPatchDraft({ snapshotDivergent: checked ? true : null })
+          }
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

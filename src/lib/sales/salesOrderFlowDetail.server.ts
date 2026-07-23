@@ -25,6 +25,11 @@ import {
   type SalesOrderFlowEventsPayload,
 } from "./salesOrderFlowDetail.js";
 import { parseSalesOrderFlowBadges, parseSalesOrderFlowInconsistencies } from "./salesOrderFlowList.js";
+import { buildSalesOrderFlowOperationalDiagnosticsFromPack } from "./salesOrderFlowOperationalDiagnostics.js";
+import {
+  SALES_ORDER_FLOW_STAGE_LABELS,
+  isSalesOrderFlowStage,
+} from "./salesOrderFlowCatalog.js";
 
 export type SalesOrderFlowDetailDb = Pick<
   PrismaClient,
@@ -422,6 +427,23 @@ export async function loadSalesOrderFlowDetail(
     badges: orderSnapshot
       ? parseSalesOrderFlowBadges(orderSnapshot.badgesJson)
       : [],
+    operationalDiagnostics: buildSalesOrderFlowOperationalDiagnosticsFromPack({
+      pack: evidence,
+      stageLabel: columnExplanation.stage
+        ? SALES_ORDER_FLOW_STAGE_LABELS[columnExplanation.stage]
+        : orderSnapshot?.currentStage &&
+            isSalesOrderFlowStage(orderSnapshot.currentStage)
+          ? SALES_ORDER_FLOW_STAGE_LABELS[orderSnapshot.currentStage]
+          : null,
+      stageReason: columnExplanation.reason,
+      bottleneckSalesOrderItemId:
+        orderSnapshot?.bottleneckSalesOrderItemId ?? null,
+      bottleneckReason: orderSnapshot?.bottleneckReason ?? null,
+      nextAction: columnExplanation.nextAction,
+      responsibleArea: columnExplanation.responsibleArea,
+      computedAt: dateIso(orderSnapshot?.computedAt ?? null),
+      computationVersion: orderSnapshot?.computationVersion ?? null,
+    }),
     management: mapManagement(management),
     officialLinks: buildSalesOrderFlowOfficialLinks(
       salesOrderId,

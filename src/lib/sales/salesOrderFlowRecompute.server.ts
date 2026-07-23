@@ -16,7 +16,10 @@ import {
   type LoadSalesOrderFlowEvidenceBatchOptions,
   type SalesOrderFlowEvidencePrisma,
 } from "./salesOrderFlowEvidence.server.js";
-import { resolveSalesOrderFlow } from "./salesOrderFlowEngine.js";
+import {
+  resolveSalesOrderFlow,
+  type ResolveSalesOrderFlowResult,
+} from "./salesOrderFlowEngine.js";
 import { buildSalesOrderFlowCompletionContextFromPack } from "./salesOrderFlowCompletionDates.js";
 import { resolveSalesOrderItemFlowFromEvidence } from "./salesOrderItemFlowEngine.js";
 import {
@@ -32,6 +35,10 @@ import {
   type SalesOrderFlowRepositoryDb,
 } from "./salesOrderFlowRepository.server.js";
 import { SALES_ORDER_FLOW_COMPUTATION_VERSION } from "./salesOrderFlowFingerprint.js";
+import {
+  buildSalesOrderFlowOperationalDiagnosticsFromPack,
+  mergeSalesOrderFlowBadgesWithDiagnostics,
+} from "./salesOrderFlowOperationalDiagnostics.js";
 import {
   buildSalesOrderFlowRecomputeFailureObservability,
   buildSalesOrderFlowRecomputeObservability,
@@ -163,7 +170,7 @@ export async function recomputeSalesOrderFlow(
       persistedCompletedAt: existingOrderRow?.completedAt ?? null,
     });
 
-    const orderResult = resolveSalesOrderFlow(itemResults, {
+    const orderResultBase = resolveSalesOrderFlow(itemResults, {
       salesOrderId,
       orderStatus: pack.order.status,
       promisedDeliveryAt: pack.order.expectedDeliveryDate,
@@ -171,6 +178,27 @@ export async function recomputeSalesOrderFlow(
       itemFinancials,
       ...completionCtx,
     });
+
+    // KAN-LINK-08 — badges diagnósticos no snapshot (filtros/listagem).
+    const diagnostics = buildSalesOrderFlowOperationalDiagnosticsFromPack({
+      pack,
+      stageLabel: null,
+      stageReason: null,
+      bottleneckSalesOrderItemId:
+        orderResultBase.currentBottleneck?.salesOrderItemId ?? null,
+      bottleneckReason: orderResultBase.currentBottleneck?.stageReason ?? null,
+      nextAction: orderResultBase.nextAction,
+      responsibleArea: orderResultBase.responsibleArea,
+      computedAt: null,
+      computationVersion: SALES_ORDER_FLOW_COMPUTATION_VERSION,
+    });
+    const orderResult = {
+      ...orderResultBase,
+      badges: mergeSalesOrderFlowBadgesWithDiagnostics(
+        orderResultBase.badges,
+        diagnostics.badges
+      ) as ResolveSalesOrderFlowResult["badges"],
+    };
 
     const existingItems = existingItemRows.map((r) => ({
       salesOrderItemId: r.salesOrderItemId,

@@ -17,6 +17,7 @@ import {
 } from "./salesOrderFlowList.js";
 import { SALES_ORDER_FLOW_EVENT_TYPES } from "./salesOrderFlowTimeline.shared.js";
 import { isUuidLike } from "./salesOrderFlowRebuild.js";
+import type { SalesOrderFlowOperationalDiagnostics } from "./salesOrderFlowOperationalDiagnostics.shared.js";
 
 export class SalesOrderFlowDetailQueryError extends Error {
   constructor(message: string) {
@@ -125,6 +126,11 @@ export type SalesOrderFlowDetailPayload = {
   financialSituation: SalesOrderFlowDetailFinancialSituation | null;
   inconsistencies: SalesOrderFlowListInconsistency[];
   badges: string[];
+  /**
+   * KAN-LINK-08 — diagnóstico canônico pronto para o painel
+   * “Por que está nesta coluna?” (sem recálculo no FE).
+   */
+  operationalDiagnostics: SalesOrderFlowOperationalDiagnostics | null;
   management: SalesOrderFlowDetailManagement | null;
   officialLinks: SalesOrderFlowDetailOfficialLinks;
   valuesVisible: boolean;

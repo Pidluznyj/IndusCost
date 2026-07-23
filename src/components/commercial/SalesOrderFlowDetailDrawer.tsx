@@ -47,6 +47,7 @@ import {
   type SalesOrderFlowManagementUiCapabilities,
 } from "@/src/lib/salesOrderFlowDetailUi";
 import { SALES_ORDER_FLOW_EVENT_TYPES } from "@/src/lib/sales/salesOrderFlowTimeline.shared";
+import { SALES_ORDER_FLOW_DIAGNOSTIC_BADGE_LABELS } from "@/src/lib/sales/salesOrderFlowOperationalDiagnostics.shared";
 import { SalesOrderFlowManagementPanel } from "@/src/components/commercial/SalesOrderFlowManagementPanel";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { cn } from "@/src/lib/utils";
@@ -523,8 +524,18 @@ function SummaryTab({
       <OverlaySection title="Situação operacional">
         <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           <InfoField
+            label="Pedido de Venda"
+            value={detail.order.orderCode}
+          />
+          <InfoField label="Cliente" value={detail.order.customerName} />
+          <InfoField
             label="Etapa"
             value={formatSalesOrderFlowStageLabel(detail.columnExplanation.stage)}
+          />
+          <InfoField
+            label="Explicação"
+            value={detail.columnExplanation.reason}
+            className="sm:col-span-2 xl:col-span-3"
           />
           <InfoField
             label="Próxima ação"
@@ -535,11 +546,6 @@ function SummaryTab({
             value={
               detail.responsibleArea ?? detail.columnExplanation.responsibleArea
             }
-          />
-          <InfoField
-            label="Explicação"
-            value={detail.columnExplanation.reason}
-            className="sm:col-span-2 xl:col-span-3"
           />
           <InfoField
             label="Gargalo"
@@ -555,8 +561,117 @@ function SummaryTab({
             }
             className="sm:col-span-2 xl:col-span-3"
           />
+          <InfoField
+            label="Obrigação ativa"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.activeObligation
+            )}
+          />
+          <InfoField
+            label="Quantidade atendida"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.fulfilledQuantity
+            )}
+          />
+          <InfoField
+            label="Saldo"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.remainingFulfillment
+            )}
+          />
+          <InfoField
+            label="Corte"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.cutQuantity
+            )}
+          />
+          <InfoField
+            label="Cancelamento"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.canceledQuantity
+            )}
+          />
+          <InfoField
+            label="Envio"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.shippedQuantity
+            )}
+          />
+          <InfoField
+            label="OPs vinculadas"
+            value={
+              detail.operationalDiagnostics
+                ? detail.operationalDiagnostics.productionOrderLabels.length > 0
+                  ? detail.operationalDiagnostics.productionOrderLabels.join(", ")
+                  : "Nenhuma"
+                : "—"
+            }
+          />
+          <InfoField
+            label="Cobertura das OPs"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.productionOrderQuantity
+            )}
+          />
+          <InfoField
+            label="Documentos de Saída"
+            value={
+              detail.operationalDiagnostics
+                ? detail.operationalDiagnostics.outputDocumentLabels.length > 0
+                  ? detail.operationalDiagnostics.outputDocumentLabels.join(", ")
+                  : "Nenhum"
+                : "—"
+            }
+          />
+          <InfoField
+            label="Quantidade documentada"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.documentedQuantity
+            )}
+          />
+          <InfoField
+            label="NF-e"
+            value={
+              detail.operationalDiagnostics
+                ? detail.operationalDiagnostics.nfeLabels.length > 0
+                  ? detail.operationalDiagnostics.nfeLabels.join(", ")
+                  : "Nenhuma"
+                : "—"
+            }
+          />
+          <InfoField
+            label="Quantidade faturada"
+            value={formatSalesOrderFlowDetailQuantity(
+              detail.operationalDiagnostics?.totals.invoicedQuantity
+            )}
+          />
+          <InfoField
+            label="Inconsistências"
+            value={
+              detail.inconsistenciesVisible
+                ? String(detail.inconsistencies.length)
+                : "—"
+            }
+          />
         </dl>
+        {detail.badges.length > 0 ? (
+          <div
+            className="mt-3 flex flex-wrap gap-1.5"
+            data-testid="sales-order-flow-detail-badges"
+          >
+            {detail.badges.map((badge) => (
+              <span
+                key={badge}
+                className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground"
+              >
+                {formatSalesOrderFlowBadgeLabel(badge)}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </OverlaySection>
+
+      <OperationalDiagnosticsPanel detail={detail} />
 
       <OverlaySection title="Identificação">
         <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -601,6 +716,20 @@ function SummaryTab({
             label="Valor cortado"
             value={formatSalesOrderFlowDetailMoney(
               financial?.cutValue,
+              valuesVisible
+            )}
+          />
+          <InfoField
+            label="Valor cancelado"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.canceledValue,
+              valuesVisible
+            )}
+          />
+          <InfoField
+            label="Valor atendido"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.fulfilledValue,
               valuesVisible
             )}
           />
@@ -1458,6 +1587,228 @@ function InconsistenciesTab({
         )}
       </OverlaySection>
     </div>
+  );
+}
+
+function OperationalDiagnosticsPanel({
+  detail,
+}: {
+  detail: SalesOrderFlowDetailPayload;
+}) {
+  const diag = detail.operationalDiagnostics;
+  if (!diag) {
+    return (
+      <OverlaySection title="Por que está nesta coluna?">
+        <EmptyPanel text="Diagnóstico operacional indisponível para este pedido." />
+      </OverlaySection>
+    );
+  }
+
+  return (
+    <OverlaySection title={diag.title}>
+      <div
+        className="space-y-4"
+        data-testid="sales-order-flow-operational-diagnostics"
+      >
+        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <InfoField
+            label="Obrigação ainda pendente"
+            value={diag.pendingObligation ? "Sim" : "Não"}
+          />
+          <InfoField
+            label="Item gargalo"
+            value={diag.bottleneckItemLabel}
+          />
+          <InfoField label="Motivo do gargalo" value={diag.bottleneckReason} />
+          <InfoField label="Próxima ação" value={diag.nextAction} />
+          <InfoField label="Área responsável" value={diag.responsibleArea} />
+          <InfoField
+            label="Último cálculo"
+            value={formatSalesOrderFlowDetailDate(diag.computedAt)}
+          />
+          <InfoField
+            label="Versão do cálculo"
+            value={
+              diag.computationVersion
+                ? diag.snapshotDivergent
+                  ? `${diag.computationVersion} (esperada ${diag.expectedComputationVersion})`
+                  : diag.computationVersion
+                : diag.expectedComputationVersion
+            }
+            className="sm:col-span-2"
+          />
+          <InfoField
+            label="Por que esta coluna"
+            value={diag.stageReason}
+            className="sm:col-span-2 xl:col-span-3"
+          />
+        </dl>
+
+        {diag.evidencesFound.length > 0 ? (
+          <div data-testid="sales-order-flow-diagnostics-found">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Evidências encontradas
+            </p>
+            <ul className="space-y-2">
+              {diag.evidencesFound.map((line, index) => (
+                <li
+                  key={`found-${index}-${line.label}`}
+                  className="rounded-xl border border-emerald-200/80 bg-emerald-50/50 px-3 py-2 text-sm text-emerald-950"
+                >
+                  <p className="font-medium">{line.label}</p>
+                  {line.detail ? (
+                    <p className="mt-0.5 text-emerald-900/80">{line.detail}</p>
+                  ) : null}
+                  {line.sourceLabel ? (
+                    <p className="mt-1 text-[11px] text-emerald-900/70">
+                      Origem do vínculo: {line.sourceLabel}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <EmptyPanel text="Nenhuma evidência operacional avançada encontrada." />
+        )}
+
+        {diag.evidencesMissing.length > 0 ? (
+          <div data-testid="sales-order-flow-diagnostics-missing">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Evidências ausentes
+            </p>
+            <ul className="space-y-2">
+              {diag.evidencesMissing.map((line, index) => (
+                <li
+                  key={`missing-${index}-${line.label}`}
+                  className="rounded-xl border border-amber-200/80 bg-amber-50/50 px-3 py-2 text-sm text-amber-950"
+                >
+                  <p className="font-medium">{line.label}</p>
+                  {line.detail ? (
+                    <p className="mt-0.5 text-amber-900/80">{line.detail}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {diag.items.length > 0 ? (
+          <div data-testid="sales-order-flow-diagnostics-items">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Cobertura por item
+            </p>
+            <div className="overflow-x-auto rounded-xl border border-border">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-semibold">Item</th>
+                    <th className="px-3 py-2 font-semibold">Obrigação</th>
+                    <th className="px-3 py-2 font-semibold">Saldo</th>
+                    <th className="px-3 py-2 font-semibold">OP</th>
+                    <th className="px-3 py-2 font-semibold">DS</th>
+                    <th className="px-3 py-2 font-semibold">NF</th>
+                    <th className="px-3 py-2 font-semibold">Envio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diag.items.map((item) => (
+                    <tr
+                      key={item.salesOrderItemId}
+                      className="border-t border-border"
+                      data-testid={`sales-order-flow-diagnostics-item-${item.sequence ?? item.salesOrderItemId}`}
+                    >
+                      <td className="px-3 py-2">
+                        {[item.sequence ? `Item ${item.sequence}` : null, item.productLabel]
+                          .filter(Boolean)
+                          .join(" · ") || "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(item.activeObligation)}
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(
+                          item.remainingFulfillment
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(
+                          item.productionOrderQuantity
+                        )}{" "}
+                        <span className="text-[11px] text-muted-foreground">
+                          ({item.productionCoverage})
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(
+                          item.documentedQuantity
+                        )}{" "}
+                        <span className="text-[11px] text-muted-foreground">
+                          ({item.documentedCoverage})
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(
+                          item.invoicedQuantity
+                        )}{" "}
+                        <span className="text-[11px] text-muted-foreground">
+                          ({item.invoicedCoverage})
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        {formatSalesOrderFlowDetailQuantity(item.shippedQuantity)}{" "}
+                        <span className="text-[11px] text-muted-foreground">
+                          ({item.shippedCoverage})
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        {diag.warnings.length > 0 ? (
+          <div data-testid="sales-order-flow-diagnostics-warnings">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Alertas
+            </p>
+            <ul className="space-y-1.5">
+              {diag.warnings.map((warning, index) => (
+                <li
+                  key={`warn-${index}`}
+                  className="rounded-lg border border-amber-200/70 bg-amber-50/40 px-3 py-2 text-sm text-amber-950"
+                >
+                  {warning}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </OverlaySection>
+  );
+}
+
+const SALES_ORDER_FLOW_BASE_BADGE_LABELS: Record<string, string> = {
+  OVERDUE: "Atrasado",
+  INCONSISTENT: "Inconsistente",
+  PARTIAL: "Parcial — saldo pendente",
+  CUT: "Atendido com corte",
+  CANCELED: "Cancelado",
+  MIXED_STAGES: "Etapas mistas",
+  COMPLETED: "Concluído",
+  OUT_OF_ACTIVE_COLUMNS: "Fora das colunas ativas",
+};
+
+function formatSalesOrderFlowBadgeLabel(badge: string): string {
+  return (
+    SALES_ORDER_FLOW_DIAGNOSTIC_BADGE_LABELS[
+      badge as keyof typeof SALES_ORDER_FLOW_DIAGNOSTIC_BADGE_LABELS
+    ] ??
+    SALES_ORDER_FLOW_BASE_BADGE_LABELS[badge] ??
+    badge
   );
 }
 

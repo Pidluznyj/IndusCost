@@ -43,6 +43,12 @@ describe("salesOrderFlowSummary (OP-59)", () => {
       parcialmenteEnviado: "true",
       comCorte: "true",
       comSaldoAtivo: "0",
+      unrecognizedDs: "true",
+      nfeUnlinked: "true",
+      opUnlinked: "true",
+      partialCoverage: "true",
+      ambiguousLink: "true",
+      snapshotDivergent: "true",
     });
     assert.ok(filters.issueFrom);
     assert.ok(filters.issueTo);
@@ -54,6 +60,12 @@ describe("salesOrderFlowSummary (OP-59)", () => {
     assert.equal(filters.partiallyShipped, true);
     assert.equal(filters.withCut, true);
     assert.equal(filters.withActiveResidual, false);
+    assert.equal(filters.unrecognizedDs, true);
+    assert.equal(filters.nfeUnlinked, true);
+    assert.equal(filters.opUnlinked, true);
+    assert.equal(filters.partialCoverage, true);
+    assert.equal(filters.ambiguousLink, true);
+    assert.equal(filters.snapshotDivergent, true);
   });
 
   it("rejeita prioridade inválida", () => {
@@ -75,6 +87,12 @@ describe("salesOrderFlowSummary (OP-59)", () => {
         comCorte: "true",
         comSaldoAtivo: "true",
         inconsistente: "true",
+        unrecognizedDs: "true",
+        nfeUnlinked: "true",
+        opUnlinked: "true",
+        partialCoverage: "true",
+        ambiguousLink: "true",
+        snapshotDivergent: "true",
         setor: "PCP",
         empresa: "Laz",
       }),
@@ -93,6 +111,12 @@ describe("salesOrderFlowSummary (OP-59)", () => {
     assert.match(json, /"inconsistentItems"/);
     assert.match(json, /"responsible"/);
     assert.match(json, /"companyIssuer"/);
+    assert.match(json, /DS_UNRECOGNIZED/);
+    assert.match(json, /NFE_UNLINKED/);
+    assert.match(json, /OP_UNLINKED/);
+    assert.match(json, /PARTIAL_COVERAGE/);
+    assert.match(json, /AMBIGUOUS_LINK/);
+    assert.match(json, /SNAPSHOT_DIVERGENT/);
     assert.doesNotMatch(json, /"include"/);
   });
 

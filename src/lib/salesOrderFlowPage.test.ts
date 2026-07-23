@@ -256,6 +256,12 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(filtersBar, /sales-order-flow-filter-partially-shipped/);
     assert.match(filtersBar, /sales-order-flow-filter-with-cut/);
     assert.match(filtersBar, /sales-order-flow-filter-with-active-residual/);
+    assert.match(filtersBar, /sales-order-flow-filter-unrecognized-ds/);
+    assert.match(filtersBar, /sales-order-flow-filter-nfe-unlinked/);
+    assert.match(filtersBar, /sales-order-flow-filter-op-unlinked/);
+    assert.match(filtersBar, /sales-order-flow-filter-partial-coverage/);
+    assert.match(filtersBar, /sales-order-flow-filter-ambiguous-link/);
+    assert.match(filtersBar, /sales-order-flow-filter-snapshot-divergent/);
     assert.match(filtersBar, /sales-order-flow-filter-priority/);
     assert.match(filtersBar, /sales-order-flow-filter-product/);
     assert.match(filtersBar, /sales-order-flow-filter-sector/);
@@ -416,6 +422,12 @@ describe("sales order flow filters (OP-65)", () => {
       promisedTo: "2026-02-28",
       overdue: true,
       inconsistent: true,
+      unrecognizedDs: true,
+      nfeUnlinked: true,
+      opUnlinked: true,
+      partialCoverage: true,
+      ambiguousLink: true,
+      snapshotDivergent: true,
       priority: "URGENT" as const,
       stages: ["IN_PRODUCTION" as const],
     };

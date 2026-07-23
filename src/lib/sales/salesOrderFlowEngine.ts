@@ -47,7 +47,23 @@ export type SalesOrderFlowBadge =
   | "CANCELED"
   | "MIXED_STAGES"
   | "COMPLETED"
-  | "OUT_OF_ACTIVE_COLUMNS";
+  | "OUT_OF_ACTIVE_COLUMNS"
+  /** KAN-LINK-08 — badges diagnósticos de vínculo/cobertura. */
+  | "OP_LINKED"
+  | "OP_PARTIAL"
+  | "DS_LINKED"
+  | "DS_PARTIAL"
+  | "DS_UNRECOGNIZED"
+  | "NFE_AUTHORIZED"
+  | "NFE_CANCELLED"
+  | "NFE_UNLINKED"
+  | "OP_UNLINKED"
+  | "SHIPMENT_COMPLETE"
+  | "AMBIGUOUS_LINK"
+  | "ITEM_UNRESOLVED"
+  | "EXCESS_COVERAGE"
+  | "PARTIAL_COVERAGE"
+  | "SNAPSHOT_DIVERGENT";
 
 export type ResolveSalesOrderFlowItemFinancial = {
   salesOrderItemId: string;
