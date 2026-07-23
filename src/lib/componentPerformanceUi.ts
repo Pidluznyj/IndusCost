@@ -97,3 +97,118 @@ export function formatPerformanceDateTime(value: string | null | undefined): str
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("pt-BR");
 }
+
+/** Filtros livres por coluna da lista de Performance. */
+export type ComponentPerformanceColumnFilters = {
+  sku: string;
+  name: string;
+  type: string;
+  cycle: string;
+  cavities: string;
+  setup: string;
+  piecesPerHour: string;
+  lastChange: string;
+};
+
+export const EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS: ComponentPerformanceColumnFilters = {
+  sku: "",
+  name: "",
+  type: "",
+  cycle: "",
+  cavities: "",
+  setup: "",
+  piecesPerHour: "",
+  lastChange: "",
+};
+
+export function hasActivePerformanceColumnFilters(
+  filters: ComponentPerformanceColumnFilters
+): boolean {
+  return Object.values(filters).some((value) => value.trim().length > 0);
+}
+
+function containsNormalized(haystack: string, needle: string): boolean {
+  const n = needle.trim().toLowerCase();
+  if (!n) return true;
+  return haystack.toLowerCase().includes(n);
+}
+
+function matchesTextOrEmptyDisplay(
+  display: string,
+  raw: string | number | null | undefined,
+  needle: string
+): boolean {
+  const n = needle.trim().toLowerCase();
+  if (!n) return true;
+  if (containsNormalized(display, needle)) return true;
+  if (raw == null || raw === "") {
+    return n === "—" || n === "-" || n === "vazio" || n === "sem";
+  }
+  return String(raw).toLowerCase().includes(n);
+}
+
+export function itemMatchesPerformanceColumnFilters(
+  item: {
+    sku: string;
+    name: string;
+    type: string;
+    process: {
+      cycleTimeSeconds: number | null;
+      cavities: number | null;
+      setupTimeMin: number | null;
+    };
+    estimatedPiecesPerHour: number | null;
+    lastPerformanceChangeAt: string | null;
+  },
+  filters: ComponentPerformanceColumnFilters
+): boolean {
+  if (!containsNormalized(item.sku ?? "", filters.sku)) return false;
+  if (!containsNormalized(item.name ?? "", filters.name)) return false;
+  if (!containsNormalized(item.type ?? "", filters.type)) return false;
+  if (
+    !matchesTextOrEmptyDisplay(
+      formatPerformanceNumber(item.process.cycleTimeSeconds),
+      item.process.cycleTimeSeconds,
+      filters.cycle
+    )
+  ) {
+    return false;
+  }
+  if (
+    !matchesTextOrEmptyDisplay(
+      formatPerformanceNumber(item.process.cavities, 0),
+      item.process.cavities,
+      filters.cavities
+    )
+  ) {
+    return false;
+  }
+  if (
+    !matchesTextOrEmptyDisplay(
+      formatPerformanceNumber(item.process.setupTimeMin),
+      item.process.setupTimeMin,
+      filters.setup
+    )
+  ) {
+    return false;
+  }
+  if (
+    !matchesTextOrEmptyDisplay(
+      formatPerformanceNumber(item.estimatedPiecesPerHour, 0),
+      item.estimatedPiecesPerHour,
+      filters.piecesPerHour
+    )
+  ) {
+    return false;
+  }
+  if (
+    !matchesTextOrEmptyDisplay(
+      formatPerformanceDateTime(item.lastPerformanceChangeAt),
+      item.lastPerformanceChangeAt,
+      filters.lastChange
+    )
+  ) {
+    return false;
+  }
+  return true;
+}

@@ -29,4 +29,14 @@ describe("operations performance navigation", () => {
     assert.match(moduleSrc, /Setup \(min\)/);
     assert.match(moduleSrc, /item\.process\.setupTimeMin/);
   });
+
+  it("lista tem filtro livre por coluna", () => {
+    const moduleSrc = read("src/components/operations/OperationsPerformanceModule.tsx");
+    assert.match(moduleSrc, /performance-column-filters/);
+    assert.match(moduleSrc, /itemMatchesPerformanceColumnFilters/);
+    assert.match(moduleSrc, /performance-filter-sku/);
+    assert.match(moduleSrc, /performance-filter-setup/);
+    assert.match(moduleSrc, /performance-filter-last-change/);
+    assert.match(moduleSrc, /Limpar filtros de coluna/);
+  });
 });

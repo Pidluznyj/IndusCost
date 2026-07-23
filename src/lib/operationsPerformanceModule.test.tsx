@@ -7,10 +7,82 @@ import {
   snapshotFromProduct,
 } from "./componentPerformanceChange.js";
 import {
+  EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+  itemMatchesPerformanceColumnFilters,
   OPERATIONS_PERFORMANCE_FROZEN_COST_NOTICE,
   validatePerformanceEditForm,
 } from "./componentPerformanceUi.js";
 import { ComponentPerformanceEditDrawer } from "../components/operations/ComponentPerformanceEditDrawer.js";
+
+describe("componentPerformanceUi — filtros de coluna", () => {
+  const row = {
+    sku: "301.05AA",
+    name: "Reservatório PP Azul",
+    type: "COMPONENT",
+    process: {
+      cycleTimeSeconds: 45,
+      cavities: 1,
+      setupTimeMin: 10,
+    },
+    estimatedPiecesPerHour: 80,
+    lastPerformanceChangeAt: "2024-07-22T12:00:00.000Z",
+  };
+
+  it("aceita linha quando filtros estão vazios", () => {
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(row, EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS),
+      true
+    );
+  });
+
+  it("filtra por SKU, setup e tipo com contains", () => {
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(row, {
+        ...EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+        sku: "301",
+        setup: "10",
+        type: "comp",
+      }),
+      true
+    );
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(row, {
+        ...EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+        sku: "999",
+      }),
+      false
+    );
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(row, {
+        ...EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+        setup: "99",
+      }),
+      false
+    );
+  });
+
+  it("permite buscar valores vazios com —", () => {
+    const incomplete = {
+      ...row,
+      process: { ...row.process, setupTimeMin: null },
+      lastPerformanceChangeAt: null,
+    };
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(incomplete, {
+        ...EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+        setup: "—",
+      }),
+      true
+    );
+    assert.equal(
+      itemMatchesPerformanceColumnFilters(row, {
+        ...EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
+        setup: "—",
+      }),
+      false
+    );
+  });
+});
 
 describe("componentPerformanceUi", () => {
   it("validatePerformanceEditForm exige responsável", () => {

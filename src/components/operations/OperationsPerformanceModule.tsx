@@ -5,7 +5,7 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
-  Search,
+  X,
 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
@@ -23,8 +23,12 @@ import {
   canEditComponentPerformance,
   canViewComponentPerformance,
   COMPONENT_PERFORMANCE_FILTER_OPTIONS,
+  EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS,
   formatPerformanceDateTime,
   formatPerformanceNumber,
+  hasActivePerformanceColumnFilters,
+  itemMatchesPerformanceColumnFilters,
+  type ComponentPerformanceColumnFilters,
   type ComponentPerformanceFilterId,
 } from "@/src/lib/componentPerformanceUi";
 import {
@@ -39,6 +43,9 @@ import { ComponentPerformanceEditDrawer } from "@/src/components/operations/Comp
 import { ComponentPerformanceHistoryDrawer } from "@/src/components/operations/ComponentPerformanceHistoryDrawer";
 
 const PAGE_SIZE = 50;
+
+const COLUMN_FILTER_INPUT_CLASS =
+  "w-full min-w-[4.5rem] rounded-md border border-border bg-background px-2 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground/80 focus:ring-2 focus:ring-primary/25";
 
 function filterToQuery(
   filter: ComponentPerformanceFilterId,
@@ -82,8 +89,9 @@ export function OperationsPerformanceModule() {
     canEditComponentPerformance(auth) ||
     permissions.canPerformAction(OPERATIONS_RESOURCE_KEYS.performance, OPERATIONS_ACTIONS.update);
 
-  const [skuSearch, setSkuSearch] = useState("");
-  const [nameSearch, setNameSearch] = useState("");
+  const [columnFilters, setColumnFilters] = useState<ComponentPerformanceColumnFilters>(
+    EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS
+  );
   const [filter, setFilter] = useState<ComponentPerformanceFilterId>("all");
   const [items, setItems] = useState<ComponentPerformanceListItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -107,9 +115,29 @@ export function OperationsPerformanceModule() {
   const [historyRows, setHistoryRows] = useState<ComponentPerformanceChangeLogItem[]>([]);
 
   const query = useMemo(
-    () => filterToQuery(filter, skuSearch, nameSearch, offset),
-    [filter, skuSearch, nameSearch, offset]
+    () => filterToQuery(filter, columnFilters.sku, columnFilters.name, offset),
+    [filter, columnFilters.sku, columnFilters.name, offset]
   );
+
+  const filteredItems = useMemo(
+    () => items.filter((item) => itemMatchesPerformanceColumnFilters(item, columnFilters)),
+    [items, columnFilters]
+  );
+
+  const columnFiltersActive = hasActivePerformanceColumnFilters(columnFilters);
+
+  const updateColumnFilter = useCallback(
+    (key: keyof ComponentPerformanceColumnFilters, value: string) => {
+      setOffset(0);
+      setColumnFilters((prev) => ({ ...prev, [key]: value }));
+    },
+    []
+  );
+
+  const clearColumnFilters = useCallback(() => {
+    setOffset(0);
+    setColumnFilters(EMPTY_COMPONENT_PERFORMANCE_COLUMN_FILTERS);
+  }, []);
 
   const loadCoverage = useCallback(async () => {
     if (!canView) return;
@@ -280,80 +308,65 @@ export function OperationsPerformanceModule() {
       ) : null}
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="search"
-              value={skuSearch}
-              onChange={(e) => {
+        <div className="flex flex-wrap gap-2" data-testid="performance-status-chips">
+          {COMPONENT_PERFORMANCE_FILTER_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => {
                 setOffset(0);
-                setSkuSearch(e.target.value);
+                setFilter(option.id);
               }}
-              placeholder="Buscar por SKU / código"
-              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm"
-              data-testid="performance-search-sku"
-            />
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="search"
-              value={nameSearch}
-              onChange={(e) => {
-                setOffset(0);
-                setNameSearch(e.target.value);
-              }}
-              placeholder="Buscar por nome"
-              className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-2 text-sm"
-              data-testid="performance-search-name"
-            />
-          </div>
-          <div className="md:col-span-2 flex flex-wrap gap-2">
-            {COMPONENT_PERFORMANCE_FILTER_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => {
-                  setOffset(0);
-                  setFilter(option.id);
-                }}
-                className={cn(
-                  "px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors",
-                  filter === option.id
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-background border-border hover:bg-accent"
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+              className={cn(
+                "px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors",
+                filter === option.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-background border-border hover:bg-accent"
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
-        <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span>
-            {total} componente(s) encontrado(s)
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+          <span data-testid="performance-list-count">
+            {columnFiltersActive
+              ? `${filteredItems.length} exibido(s) de ${items.length} na página · ${total} no recorte`
+              : `${total} componente(s) encontrado(s)`}
             {loading ? " — carregando…" : ""}
           </span>
-          <button
-            type="button"
-            onClick={() => void loadList()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent"
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            Atualizar
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void loadList();
-              void loadCoverage();
-            }}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent text-xs"
-          >
-            Recarregar cobertura
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {columnFiltersActive ? (
+              <button
+                type="button"
+                onClick={clearColumnFilters}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent text-xs"
+                data-testid="performance-clear-column-filters"
+              >
+                <X className="h-3.5 w-3.5" />
+                Limpar filtros de coluna
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void loadList()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent"
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+              Atualizar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void loadList();
+                void loadCoverage();
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 hover:bg-accent text-xs"
+            >
+              Recarregar cobertura
+            </button>
+          </div>
         </div>
       </div>
 
@@ -375,7 +388,7 @@ export function OperationsPerformanceModule() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" data-testid="performance-components-table">
               <thead className="bg-muted/50 text-left">
                 <tr>
                   <th className="px-4 py-3 font-semibold">SKU</th>
@@ -388,59 +401,162 @@ export function OperationsPerformanceModule() {
                   <th className="px-4 py-3 font-semibold">Última alteração</th>
                   <th className="px-4 py-3 font-semibold text-right">Ações</th>
                 </tr>
+                <tr className="border-t border-border/70 bg-muted/30" data-testid="performance-column-filters">
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.sku}
+                      onChange={(e) => updateColumnFilter("sku", e.target.value)}
+                      placeholder="Filtrar SKU"
+                      className={COLUMN_FILTER_INPUT_CLASS}
+                      data-testid="performance-filter-sku"
+                      aria-label="Filtrar por SKU"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.name}
+                      onChange={(e) => updateColumnFilter("name", e.target.value)}
+                      placeholder="Filtrar nome"
+                      className={COLUMN_FILTER_INPUT_CLASS}
+                      data-testid="performance-filter-name"
+                      aria-label="Filtrar por nome"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.type}
+                      onChange={(e) => updateColumnFilter("type", e.target.value)}
+                      placeholder="Filtrar tipo"
+                      className={COLUMN_FILTER_INPUT_CLASS}
+                      data-testid="performance-filter-type"
+                      aria-label="Filtrar por tipo"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.cycle}
+                      onChange={(e) => updateColumnFilter("cycle", e.target.value)}
+                      placeholder="Filtrar ciclo"
+                      className={cn(COLUMN_FILTER_INPUT_CLASS, "text-right")}
+                      data-testid="performance-filter-cycle"
+                      aria-label="Filtrar por ciclo"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.cavities}
+                      onChange={(e) => updateColumnFilter("cavities", e.target.value)}
+                      placeholder="Filtrar cav."
+                      className={cn(COLUMN_FILTER_INPUT_CLASS, "text-right")}
+                      data-testid="performance-filter-cavities"
+                      aria-label="Filtrar por cavidades"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.setup}
+                      onChange={(e) => updateColumnFilter("setup", e.target.value)}
+                      placeholder="Filtrar setup"
+                      className={cn(COLUMN_FILTER_INPUT_CLASS, "text-right")}
+                      data-testid="performance-filter-setup"
+                      aria-label="Filtrar por setup"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.piecesPerHour}
+                      onChange={(e) => updateColumnFilter("piecesPerHour", e.target.value)}
+                      placeholder="Filtrar p/h"
+                      className={cn(COLUMN_FILTER_INPUT_CLASS, "text-right")}
+                      data-testid="performance-filter-pieces"
+                      aria-label="Filtrar por peças por hora"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal">
+                    <input
+                      type="search"
+                      value={columnFilters.lastChange}
+                      onChange={(e) => updateColumnFilter("lastChange", e.target.value)}
+                      placeholder="Filtrar data"
+                      className={COLUMN_FILTER_INPUT_CLASS}
+                      data-testid="performance-filter-last-change"
+                      aria-label="Filtrar por última alteração"
+                    />
+                  </th>
+                  <th className="px-3 py-2 font-normal" aria-hidden="true" />
+                </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} className="border-t border-border hover:bg-muted/20">
-                    <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
-                    <td className="px-4 py-3 max-w-[240px] truncate" title={item.name}>
-                      {item.name}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-700">
-                        <Gauge className="h-3 w-3" />
-                        {item.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {formatPerformanceNumber(item.process.cycleTimeSeconds)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {formatPerformanceNumber(item.process.cavities, 0)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {formatPerformanceNumber(item.process.setupTimeMin)}
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {formatPerformanceNumber(item.estimatedPiecesPerHour, 0)}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {formatPerformanceDateTime(item.lastPerformanceChangeAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(item)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
-                          data-testid={`performance-edit-${item.id}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => void openHistory(item)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
-                          data-testid={`performance-history-${item.id}`}
-                        >
-                          <History className="h-3.5 w-3.5" />
-                          Histórico
-                        </button>
-                      </div>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-sm text-muted-foreground"
+                      data-testid="performance-column-filter-empty"
+                    >
+                      Nenhum componente nesta página corresponde aos filtros de coluna.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredItems.map((item) => (
+                    <tr key={item.id} className="border-t border-border hover:bg-muted/20">
+                      <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
+                      <td className="px-4 py-3 max-w-[240px] truncate" title={item.name}>
+                        {item.name}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                          <Gauge className="h-3 w-3" />
+                          {item.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatPerformanceNumber(item.process.cycleTimeSeconds)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatPerformanceNumber(item.process.cavities, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatPerformanceNumber(item.process.setupTimeMin)}
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {formatPerformanceNumber(item.estimatedPiecesPerHour, 0)}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {formatPerformanceDateTime(item.lastPerformanceChangeAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(item)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                            data-testid={`performance-edit-${item.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void openHistory(item)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium hover:bg-accent"
+                            data-testid={`performance-history-${item.id}`}
+                          >
+                            <History className="h-3.5 w-3.5" />
+                            Histórico
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
