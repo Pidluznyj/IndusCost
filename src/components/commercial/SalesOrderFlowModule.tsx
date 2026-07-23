@@ -566,19 +566,34 @@ export function SalesOrderFlowModule() {
     setDraftFilters((current) => ({ ...current, ...patch }));
   };
 
+  const normalizeFlowFilters = (
+    input: SalesOrderFlowUiFilters
+  ): SalesOrderFlowUiFilters => ({
+    ...input,
+    q: input.q.trim(),
+    customerId: input.customerId.trim(),
+    sellerKey: input.sellerKey.trim(),
+    company: input.company.trim(),
+    product: input.product.trim(),
+    sector: input.sector.trim(),
+  });
+
   const applyFilters = () => {
     if (areSalesOrderFlowFilterDateRangesInvalid(draftFilters)) return;
-    const next: SalesOrderFlowUiFilters = {
-      ...draftFilters,
-      q: draftFilters.q.trim(),
-      customerId: draftFilters.customerId.trim(),
-      sellerKey: draftFilters.sellerKey.trim(),
-      company: draftFilters.company.trim(),
-      product: draftFilters.product.trim(),
-      sector: draftFilters.sector.trim(),
-    };
+    const next = normalizeFlowFilters(draftFilters);
     setDraftFilters(next);
     setFilters(next);
+  };
+
+  /** Aplica patch + refetch (Kanban fullscreen: pedido/cliente). */
+  const applyFilterPatch = (patch: Partial<SalesOrderFlowUiFilters> = {}) => {
+    setDraftFilters((current) => {
+      const next = normalizeFlowFilters({ ...current, ...patch });
+      if (!areSalesOrderFlowFilterDateRangesInvalid(next)) {
+        setFilters(next);
+      }
+      return next;
+    });
   };
 
   if (!canView) {
@@ -916,6 +931,11 @@ export function SalesOrderFlowModule() {
           onOpenOrder={openOrderDrawer}
           onLoadMore={handleLoadMore}
           onRetryColumn={handleRetryColumn}
+          orderSearch={draftFilters.q}
+          customerId={draftFilters.customerId}
+          searching={loading}
+          onOrderSearchChange={(value) => patchDraftFilters({ q: value })}
+          onApplySearch={(patch) => applyFilterPatch(patch)}
         />
       ) : null}
 

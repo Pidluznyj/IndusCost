@@ -626,6 +626,21 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(mod, /fetchSalesOrderFlowSummary/);
     assert.match(mod, /loadColumnPage/);
     assert.match(mod, /Mantém o último Kanban\/indicadores válidos/);
+    assert.match(mod, /applyFilterPatch/);
+    assert.match(mod, /onApplySearch/);
+  });
+
+  it("Kanban fullscreen permite buscar por pedido e cliente", () => {
+    const fullscreen = read(
+      "src/components/commercial/SalesOrderFlowKanbanFullscreen.tsx"
+    );
+    assert.match(fullscreen, /sales-order-flow-kanban-search/);
+    assert.match(fullscreen, /sales-order-flow-kanban-filter-order/);
+    assert.match(fullscreen, /sales-order-flow-kanban-filter-customer/);
+    assert.match(fullscreen, /sales-order-flow-kanban-search-apply/);
+    assert.match(fullscreen, /CustomerAutocompleteFilter/);
+    assert.match(fullscreen, /onApplySearch/);
+    assert.match(fullscreen, /Código do pedido/);
   });
 });
 
