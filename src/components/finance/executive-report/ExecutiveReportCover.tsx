@@ -1,8 +1,6 @@
 import React from "react";
 import type { FinanceExecutiveReportCover } from "@/src/lib/financeExecutiveReportTypes";
 import { formatFinanceDateTime } from "@/src/lib/financeAccountsReceivableFormat";
-import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
-import { cn } from "@/src/lib/utils";
 
 export function ExecutiveReportCover({
   cover,
@@ -32,13 +30,8 @@ export function ExecutiveReportCover({
 
 function CoverMetaCard({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      className={cn(
-        financeBiCardClass,
-        "border-white/15 bg-white/10 p-4 shadow-none backdrop-blur-sm"
-      )}
-    >
-      <p className="text-slate-300 uppercase text-[10px] tracking-wider font-bold">{label}</p>
+    <div className="rounded-xl border border-white/25 bg-slate-950/35 p-4 shadow-none backdrop-blur-sm">
+      <p className="text-slate-200 uppercase text-[10px] tracking-wider font-bold">{label}</p>
       <p className="text-lg font-semibold text-white mt-1">{value}</p>
     </div>
   );

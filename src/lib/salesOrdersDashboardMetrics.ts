@@ -1,9 +1,5 @@
 import { prisma } from "@/src/lib/prisma.js";
 import {
-  safeMetricNumber,
-  startOfMonth,
-} from "@/src/lib/executiveDashboardHelpers.js";
-import {
   formatExecutiveCompactCurrency,
   formatExecutiveCurrency,
   formatExecutiveInteger,
@@ -13,8 +9,6 @@ import {
   countWorkdaysElapsedInYear,
   countWorkdaysInMonth,
   countWorkdaysInYear,
-  endOfYear,
-  startOfYear,
 } from "@/src/lib/executiveDashboardWorkdays.js";
 import {
   computeAchievementPercent,
@@ -22,7 +16,6 @@ import {
   computeMonthProjection,
   computeRealizedMinusTarget,
   computeTargetGap,
-  computeTicketAverage,
   computeYearProjection,
   computeYtdDailyAverageByWorkday,
   EXECUTIVE_ACHIEVEMENT_HINT,
@@ -47,6 +40,7 @@ import {
   SALES_ORDER_RULES_PRISMA_SELECT,
 } from "@/src/lib/salesOrderRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "@/src/lib/salesOrderLinkedNfe.js";
+import { buildSalesOrderListWhere } from "@/src/lib/salesOrdersListSummary.js";
 import {
   buildAccumulatedSeriesPoints,
   buildChartSeriesConfig,
@@ -62,6 +56,7 @@ import type {
   SalesOrdersProjectionBlock,
   SalesOrdersTargetsBlock,
 } from "@/src/lib/executiveDashboardTypes.js";
+import type { Prisma } from "@prisma/client";
 
 const OVERDUE_LIST_LIMIT = 15;
 
@@ -109,39 +104,59 @@ function buildTargetBlock(
   };
 }
 
+/**
+ * População alinhada à listagem Comercial → Pedidos de venda
+ * (`buildSalesOrderListWhere`: exclui CANCELLED + MISSING_CONFIRMED operacional).
+ */
 async function loadOrdersForExecutiveYear(year: number, companyIssuer?: string) {
-  const from = startOfYear(new Date(year, 0, 1));
-  const to = endOfYear(new Date(year, 0, 1));
+  const listWhere = buildSalesOrderListWhere({ year });
+  const where: Prisma.SalesOrderWhereInput = companyIssuer
+    ? {
+        AND: [
+          listWhere,
+          { companyIssuer: { contains: companyIssuer, mode: "insensitive" } },
+        ],
+      }
+    : listWhere;
+
   return prisma.salesOrder.findMany({
-    where: {
-      issueDate: { gte: from, lte: to },
-      ...(companyIssuer
-        ? { companyIssuer: { contains: companyIssuer, mode: "insensitive" } }
-        : {}),
-    },
+    where,
     select: SALES_ORDER_RULES_PRISMA_SELECT,
   });
 }
 
 export type SalesOrdersDashboardTabOptions = {
   companyIssuer?: string;
+  /** Mês 1–12 do KPI “Pedidos mês”; default = mês de yearCtx.referenceDate. */
+  month?: number;
+  /**
+   * Paridade com listagem Comercial (inclui clientes do grupo).
+   * Default false — não altera o default global do salesOrderRulesEngine.
+   */
+  excludeGroupCompanyCustomers?: boolean;
 };
 
 function resolveExecutiveRulesMetrics(
   yearCtx: ExecutiveDashboardYearContext,
   orders: Awaited<ReturnType<typeof loadOrdersForExecutiveYear>>,
   linkedMap: Map<string, import("@/src/lib/salesOrderLinkedNfe.js").SalesOrderLinkedNfeContext>,
-  companyIssuer?: string
+  options: {
+    companyIssuer?: string;
+    month: number;
+    excludeGroupCompanyCustomers: boolean;
+  }
 ) {
   const ref = yearCtx.referenceDate;
-  const month = ref.getMonth() + 1;
   return resolveOfficialSalesOrderExecutiveMetrics(
     orders.map(mapPrismaOrderToSalesOrderRulesInput),
     ref,
     yearCtx.selectedYear,
-    month,
+    options.month,
     linkedMap,
-    { companyIssuer }
+    {
+      companyIssuer: options.companyIssuer,
+      excludeGroupCompanyCustomers: options.excludeGroupCompanyCustomers,
+    }
   );
 }
 
@@ -211,12 +226,18 @@ export async function buildSalesOrdersDashboardTab(
   options: SalesOrdersDashboardTabOptions = {}
 ): Promise<SalesOrdersDashboardTab> {
   const companyIssuer = options.companyIssuer?.trim() || undefined;
+  const excludeGroupCompanyCustomers = options.excludeGroupCompanyCustomers ?? false;
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
   const previousYear = yearCtx.previousYear;
+  const metricMonth =
+    options.month != null && Number.isInteger(options.month) && options.month >= 1 && options.month <= 12
+      ? options.month
+      : ref.getMonth() + 1;
   const operationalNow = new Date();
-  const periodLabel = ref.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  const monthCompareLabel = `${ref.toLocaleDateString("pt-BR", { month: "long" })}/${previousYear}`;
+  const monthAnchor = new Date(year, metricMonth - 1, 1);
+  const periodLabel = monthAnchor.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const monthCompareLabel = `${monthAnchor.toLocaleDateString("pt-BR", { month: "long" })}/${previousYear}`;
 
   const [currentYearOrders, previousYearOrders] = await Promise.all([
     loadOrdersForExecutiveYear(year, companyIssuer),
@@ -234,33 +255,34 @@ export async function buildSalesOrdersDashboardTab(
     ref
   );
 
-  const official = resolveExecutiveRulesMetrics(yearCtx, currentYearOrders, linkedMap, companyIssuer);
-  const prevYearRef = new Date(previousYear, ref.getMonth(), ref.getDate(), 23, 59, 59, 999);
+  const official = resolveExecutiveRulesMetrics(yearCtx, currentYearOrders, linkedMap, {
+    companyIssuer,
+    month: metricMonth,
+    excludeGroupCompanyCustomers,
+  });
+  const prevYearRef = new Date(previousYear, metricMonth - 1, Math.min(ref.getDate(), 28), 23, 59, 59, 999);
   const prevOfficial = resolveOfficialSalesOrderExecutiveMetrics(
     previousYearOrders.map(mapPrismaOrderToSalesOrderRulesInput),
     prevYearRef,
     previousYear,
-    ref.getMonth() + 1,
+    metricMonth,
     linkedMap,
-    { companyIssuer }
+    { companyIssuer, excludeGroupCompanyCustomers }
   );
 
   const monthAgg = { count: official.metrics.ordersMonth, net: official.metrics.soldAmountMonth };
   const ytdAgg = { count: official.metrics.ordersYtd, net: official.metrics.soldAmountYtd };
   const prevMonthAgg = {
     count: null,
-    net: official.metrics.soldAmountPreviousYearMonth,
+    net: prevOfficial.metrics.soldAmountMonth,
   };
   const prevYearTotalAgg = {
     count: null,
     net: prevOfficial.metrics.soldAmountYtd,
   };
-  const yearAgg = {
-    count: currentYearOrders.filter((o) => o.status !== "CANCELLED").length,
-    net: official.monthlyTimeline.reduce((sum, p) => sum + p.soldAmount, 0),
-  };
-
   const [
+
+
     openPortfolio,
     overdueSummary,
     overdueList,
@@ -304,7 +326,7 @@ export async function buildSalesOrdersDashboardTab(
   };
 
   const yearWorkdaysElapsed = countWorkdaysElapsedInYear(ref);
-  const workdaysInMonth = countWorkdaysInMonth(year, ref.getMonth());
+  const workdaysInMonth = countWorkdaysInMonth(year, metricMonth - 1);
   const workdaysInYear = countWorkdaysInYear(year);
   const dailyAvgYtd = computeYtdDailyAverageByWorkday(ytdAgg.net, yearWorkdaysElapsed);
   const projectedMonth = official.metrics.monthProjection ?? computeMonthProjection(dailyAvgYtd, workdaysInMonth);
@@ -389,7 +411,7 @@ export async function buildSalesOrdersDashboardTab(
     rulesEngineVersion: official.rulesEngineVersion,
     selectedYear: year,
     previousYear,
-    currentMonth: ref.getMonth() + 1,
+    currentMonth: metricMonth,
     periodLabel,
     yearLabel: year,
     summaryCards,

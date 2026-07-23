@@ -575,6 +575,7 @@ export async function buildFinanceExecutiveReport(
   const filters = parseFinanceExecutiveReportQuery(query);
   const referenceDate = resolveExecutiveReportReferenceDate(filters);
   const yearCtx = resolveExecutiveDashboardYearContext(filters.year, referenceDate);
+  const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
   const arPortfolioFilters = buildExecutiveReportArPortfolioFilters(filters);
   const apPortfolioFilters = buildExecutiveReportApPortfolioFilters(filters);
   const cashFlowFilters = buildExecutiveReportCashFlowFilters(filters);
@@ -619,7 +620,11 @@ export async function buildFinanceExecutiveReport(
       unavailableSections.push("billing");
       return null;
     }),
-    buildSalesOrdersDashboardTab(yearCtx, { companyIssuer }).catch((e) => {
+    buildSalesOrdersDashboardTab(yearCtx, {
+      companyIssuer,
+      month: highlightMonth,
+      excludeGroupCompanyCustomers: false,
+    }).catch((e) => {
       console.error("executive-report salesOrders", e);
       unavailableSections.push("salesOrders");
       return null;
@@ -630,7 +635,6 @@ export async function buildFinanceExecutiveReport(
     loadExecutiveReportDailyRadarPortfolioRows(filters, referenceDate, db),
   ]);
 
-  const highlightMonth = resolveExecutiveReportHighlightMonth(filters.month, referenceDate);
   const arPayload = buildOfficialAccountsReceivableDashboard({
     rows: arLoad.rows,
     filters: arPortfolioFilters,

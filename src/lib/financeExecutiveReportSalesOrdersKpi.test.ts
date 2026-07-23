@@ -12,6 +12,9 @@ import {
 } from "./financeExecutiveReportUxCopy.js";
 import { mapSalesOrdersMonthlyToChart } from "./financeExecutiveReportPresentation.js";
 import type { DashboardMonthlySeriesPoint } from "./executiveDashboardTypes.js";
+import { buildSalesOrderListWhere } from "./salesOrdersListSummary.js";
+import { resolveOfficialSalesOrderExecutiveMetrics } from "./salesOrderRulesAdapter.js";
+import type { SalesOrderRulesOrderInput } from "./salesOrderRulesEngine.types.js";
 
 describe("financeExecutiveReportSalesOrdersKpi", () => {
   it("documento expõe card Pedidos mês na seção Pedidos de Venda", () => {
@@ -37,6 +40,86 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
     assert.ok(metrics.includes("OFFICIAL_SO_RULES_SOURCE") || metrics.includes("salesOrderRulesAdapter"));
     assert.ok(!metrics.includes("nomusNfe"));
     assert.ok(!metrics.includes("proposal"));
+  });
+
+  it("Presidencial alinha população e universo à listagem Comercial de Pedidos", () => {
+    const report = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
+    const metrics = readFileSync(
+      join(process.cwd(), "src/lib/salesOrdersDashboardMetrics.ts"),
+      "utf8"
+    );
+    assert.match(metrics, /buildSalesOrderListWhere\(\{\s*year\s*\}\)/);
+    assert.match(metrics, /excludeGroupCompanyCustomers\s*=\s*options\.excludeGroupCompanyCustomers\s*\?\?\s*false/);
+    assert.match(
+      report,
+      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*false,/
+    );
+    assert.match(metrics, /MISSING_CONFIRMED/);
+  });
+
+  it("capa do Presidencial não usa financeBiCardClass nos meta-cards (contraste)", () => {
+    const cover = readFileSync(
+      join(process.cwd(), "src/components/finance/executive-report/ExecutiveReportCover.tsx"),
+      "utf8"
+    );
+    assert.doesNotMatch(cover, /financeBiCardClass/);
+    assert.match(cover, /bg-slate-950\/35/);
+    assert.match(cover, /text-white/);
+    assert.match(cover, /text-slate-200/);
+  });
+
+  it("where da listagem (mesmo do Presidencial) exclui MISSING_CONFIRMED com flag on", () => {
+    const where = buildSalesOrderListWhere(
+      { year: 2026, month: 7 },
+      { env: { NOMUS_OPS_EXCLUDE_MISSING_SALES_ORDERS_ENABLED: "true" } }
+    );
+    assert.match(JSON.stringify(where), /MISSING_CONFIRMED/);
+  });
+
+  it("Pedidos mês com excludeGroupCompanyCustomers=false soma Σ totalNetValue do mês (paridade listagem)", () => {
+    const ref = new Date(2026, 6, 22, 23, 59, 59, 999);
+    const market: SalesOrderRulesOrderInput = {
+      id: "a",
+      orderCode: "PD 1",
+      status: "SENT_TO_NOMUS",
+      issueDate: new Date(2026, 6, 5),
+      expectedDeliveryDate: null,
+      totalNetValue: 667_071.6,
+      totalItems: 1,
+      companyIssuer: "Lazarios",
+      Customer: { companyName: "Cliente Mercado", taxId: "12345678000199" },
+      items: [{ id: "i1", quantity: 1 }],
+    };
+    const group: SalesOrderRulesOrderInput = {
+      ...market,
+      id: "b",
+      orderCode: "PD 2",
+      issueDate: new Date(2026, 6, 10),
+      totalNetValue: 10_000,
+      Customer: {
+        companyName: "Koppetel Comercio de Plasticos LTDA",
+        taxId: "14.055.501/0001-80",
+      },
+      items: [{ id: "i2", quantity: 1 }],
+    };
+    const cancelled: SalesOrderRulesOrderInput = {
+      ...market,
+      id: "c",
+      orderCode: "PD 3",
+      status: "CANCELLED",
+      issueDate: new Date(2026, 6, 12),
+      totalNetValue: 50_000,
+      items: [{ id: "i3", quantity: 1 }],
+    };
+    const orders = [market, group, cancelled];
+    const withGroup = resolveOfficialSalesOrderExecutiveMetrics(orders, ref, 2026, 7, undefined, {
+      excludeGroupCompanyCustomers: false,
+    });
+    const marketOnly = resolveOfficialSalesOrderExecutiveMetrics(orders, ref, 2026, 7, undefined, {
+      excludeGroupCompanyCustomers: true,
+    });
+    assert.equal(withGroup.metrics.soldAmountMonth, 677_071.6);
+    assert.equal(marketOnly.metrics.soldAmountMonth, 667_071.6);
   });
 
   it("vendido no mês vem de target.actual (monthAgg) — separado do YTD", () => {

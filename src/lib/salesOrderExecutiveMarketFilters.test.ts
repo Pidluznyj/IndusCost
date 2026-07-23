@@ -117,7 +117,10 @@ describe("financeExecutiveReport company filter wiring", () => {
   it("relatório presidencial repassa company a billing e pedidos", () => {
     const src = readFileSync(join(process.cwd(), "src/lib/financeExecutiveReport.ts"), "utf8");
     assert.match(src, /company: filters\.company/);
-    assert.match(src, /buildSalesOrdersDashboardTab\(yearCtx, \{ companyIssuer \}\)/);
+    assert.match(
+      src,
+      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*false,/
+    );
   });
 
   it("faturamento NF-e aplica filtro cnpjEmitente", () => {
@@ -136,10 +139,17 @@ describe("financeExecutiveReportPresidentialAudit matrix", () => {
       (row) => row.status === "PRECISA_VALIDACAO"
     );
     assert.equal(pending.length, 0);
+    const pedidosRows = PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX.filter(
+      (r) => r.section === "Pedidos de Venda"
+    );
+    assert.ok(pedidosRows.length >= 2);
     assert.ok(
-      PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX.some((r) =>
-        r.componentOrBuilder.includes("applySalesOrderRulesUniverseFilters")
+      pedidosRows.some((r) =>
+        String(r.currentSource ?? "").includes("excludeGroupCompanyCustomers: false")
       )
+    );
+    assert.ok(
+      pedidosRows.some((r) => String(r.currentSource ?? "").includes("buildSalesOrderListWhere"))
     );
   });
 });

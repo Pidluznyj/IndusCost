@@ -103,10 +103,11 @@ export const FINANCE_EXECUTIVE_REPORT_OFFICIAL_SOURCES = {
     description: "Métricas de faturamento de mercado, metas (+30%), média diária e projeção.",
   },
   salesOrders: {
-    module: "salesOrderRulesAdapter.ts",
-    builder: "buildSalesOrdersDashboardTab → resolveOfficialSalesOrderExecutiveMetrics",
+    module: "salesOrdersDashboardMetrics.ts",
+    builder:
+      "buildSalesOrderListWhere → buildSalesOrdersDashboardTab → resolveOfficialSalesOrderExecutiveMetrics",
     description:
-      "Pedidos de venda — motor oficial salesOrderRulesEngine; metas, projeção e carteira; não usa Proposta comercial.",
+      "Pedidos de venda — mesma população da listagem Comercial (CANCELLED + MISSING_CONFIRMED); inclui clientes do grupo; não usa Proposta.",
   },
   salesOrderRules: {
     module: "salesOrderDashboardRules.ts",
