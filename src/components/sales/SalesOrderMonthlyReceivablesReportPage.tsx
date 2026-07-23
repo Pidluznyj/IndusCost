@@ -346,7 +346,9 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [startDate, setStartDate] = useState(initialYearFilters.startDate);
   const [endDate, setEndDate] = useState(initialYearFilters.endDate);
   const [hasInvoice, setHasInvoice] = useState("");
-  const [receivableStatus, setReceivableStatus] = useState("open");
+  // Default "Todos": mesma população ampla do Fluxo de Caixa / Pedidos (FIN-05/FIN-08).
+  // "CR em aberto" restringe a pedidos com CR oficial via NF antes do motor efetivo.
+  const [receivableStatus, setReceivableStatus] = useState("");
   const [debouncedSellerKey, setDebouncedSellerKey] = useState("");
   const [debouncedOrderCode, setDebouncedOrderCode] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");

@@ -42,14 +42,16 @@ describe("salesOrderMonthlyReceivablesReport wiring", () => {
     assert.match(app, /SalesOrderMonthlyReceivablesReportPage/);
   });
 
-  it("UI inicia com filtro do ano calendário corrente e Status CR em aberto", () => {
+  it("UI inicia com filtro do ano calendário corrente e Status CR = Todos", () => {
     const page = read(
       "src/components/sales/SalesOrderMonthlyReceivablesReportPage.tsx"
     );
     assert.match(page, /defaultMonthlyReceivablesYearFilters/);
     assert.match(page, /initialYearFilters\.dueMonthFrom/);
     assert.match(page, /initialYearFilters\.startDate/);
-    assert.match(page, /useState\("open"\)/);
+    // População ampla (previstos + CR + doc), alinhada ao Fluxo de Caixa — não default "open"
+    assert.match(page, /useState\(""\)/);
+    assert.doesNotMatch(page, /useState\("open"\)/);
     assert.match(page, /monthly-receivables-filter-receivable-status/);
   });
 
