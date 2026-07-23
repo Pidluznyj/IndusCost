@@ -209,6 +209,16 @@ export function parseOutputDocumentsListQuery(
     company: optTrim(query.company ?? query.companyName),
     companyExternalId: parseOptionalInt(query.companyExternalId),
     customer: optTrim(query.customer ?? query.customerName ?? query.personName),
+    customerId: (() => {
+      const raw = optTrim(query.customerId);
+      if (!raw) return null;
+      // UUID IndusCost
+      return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        raw
+      )
+        ? raw
+        : null;
+    })(),
     personExternalId: parseOptionalInt(
       query.personExternalId ?? query.customerExternalId
     ),
@@ -248,6 +258,7 @@ export function serializeOutputDocumentsListFilters(
     company: filters.company,
     companyExternalId: filters.companyExternalId,
     customer: filters.customer,
+    customerId: filters.customerId,
     personExternalId: filters.personExternalId,
     status: filters.status,
     cancelled: filters.cancelled,

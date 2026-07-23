@@ -260,6 +260,29 @@ describe("outputDocumentsUi", () => {
         customer: "",
         from: "",
         to: "",
+        year: "2026",
+        defaultYear: "2026",
+      }),
+      false,
+      "ano padrão não conta como filtro extra"
+    );
+    assert.equal(
+      hasActiveOutputDocumentsFilters({
+        search: "",
+        customer: "",
+        from: "",
+        to: "",
+        year: "2025",
+        defaultYear: "2026",
+      }),
+      true
+    );
+    assert.equal(
+      hasActiveOutputDocumentsFilters({
+        search: "",
+        customer: "",
+        from: "",
+        to: "",
         financialStatus: "aguardando_cr",
       }),
       true
@@ -423,6 +446,12 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /String\(currentYear\)/);
     assert.match(source, /output-documents-year/);
     assert.match(source, /output-documents-month/);
+    assert.match(source, /customerId/);
+    assert.match(
+      source,
+      /Documento, pedido, NF-e, cliente ou status/
+    );
+    assert.doesNotMatch(source, /SKU ou status/);
     assert.match(source, /OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS/);
     assert.doesNotMatch(source, /output-documents-company/);
     assert.doesNotMatch(source, /setCompanyDraft/);

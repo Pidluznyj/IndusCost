@@ -70,9 +70,12 @@ export type OutputDocumentsActiveFiltersInput = {
   to: string;
   year?: string;
   month?: string;
+  /** Ano padrão da tela (ex.: ano corrente) — não conta como filtro “extra”. */
+  defaultYear?: string;
   status?: string;
   order?: string;
   nfe?: string;
+  customerId?: string | null;
   personExternalId?: string | number | null;
   financialStatus?: string | null;
   cancelled?: string | null;
@@ -84,13 +87,17 @@ export function hasActiveOutputDocumentsFilters(
 ): boolean {
   const personExternalId =
     input.personExternalId == null ? "" : String(input.personExternalId).trim();
+  const defaultYear = (input.defaultYear ?? "").trim();
+  const year = (input.year ?? "").trim();
+  const yearIsExtra = Boolean(year && year !== defaultYear);
   return Boolean(
     input.search.trim() ||
       input.customer.trim() ||
+      input.customerId?.trim() ||
       personExternalId ||
       input.from ||
       input.to ||
-      input.year?.trim() ||
+      yearIsExtra ||
       input.month?.trim() ||
       input.status?.trim() ||
       input.order?.trim() ||

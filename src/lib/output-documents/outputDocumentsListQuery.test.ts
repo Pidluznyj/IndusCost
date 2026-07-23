@@ -98,6 +98,7 @@ describe("parseOutputDocumentsListQuery", () => {
       search: "  PD02590  ",
       company: "Koppetel",
       customer: "Cliente X",
+      customerId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
       status: "Aberto",
       order: "PD02590",
       nfe: "12345",
@@ -108,12 +109,18 @@ describe("parseOutputDocumentsListQuery", () => {
     assert.equal(q.search, "PD02590");
     assert.equal(q.company, "Koppetel");
     assert.equal(q.customer, "Cliente X");
+    assert.equal(q.customerId, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     assert.equal(q.status, "Aberto");
     assert.equal(q.order, "PD02590");
     assert.equal(q.nfe, "12345");
     assert.equal(q.idNfe, 7208);
     assert.equal(q.companyExternalId, 10);
     assert.equal(q.personExternalId, 20);
+  });
+
+  it("ignora customerId que não é UUID", () => {
+    const q = parseOutputDocumentsListQuery({ customerId: "20" });
+    assert.equal(q.customerId, null);
   });
 
   it("interpreta cancelado e com/sem CR (tri-state)", () => {

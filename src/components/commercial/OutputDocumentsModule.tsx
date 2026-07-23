@@ -129,12 +129,14 @@ function initialPersonExternalId(params: URLSearchParams): number | null {
 
 function customerSelectionFromFilters(
   customer: string,
-  personExternalId: number | null
+  personExternalId: number | null,
+  customerId: string | null
 ): EntityAutocompleteSelection | null {
   const name = customer.trim();
-  if (!name && personExternalId == null) return null;
+  if (!name && personExternalId == null && !customerId) return null;
   return {
-    name: name || `Cliente ${personExternalId}`,
+    id: customerId ?? undefined,
+    name: name || (personExternalId != null ? `Cliente ${personExternalId}` : "Cliente"),
     code: personExternalId != null ? String(personExternalId) : null,
     source: "induscost",
   };
@@ -179,11 +181,19 @@ export function OutputDocumentsModule() {
   const [personExternalId, setPersonExternalId] = useState<number | null>(() =>
     initialPersonExternalId(searchParams)
   );
+  const [customerId, setCustomerId] = useState<string | null>(() => {
+    const raw = initialParam(searchParams, "customerId");
+    return /^[0-9a-f-]{36}$/i.test(raw) ? raw : null;
+  });
   const [customerSelection, setCustomerSelection] =
     useState<EntityAutocompleteSelection | null>(() =>
       customerSelectionFromFilters(
         initialParam(searchParams, "customer"),
-        initialPersonExternalId(searchParams)
+        initialPersonExternalId(searchParams),
+        (() => {
+          const raw = initialParam(searchParams, "customerId");
+          return /^[0-9a-f-]{36}$/i.test(raw) ? raw : null;
+        })()
       )
     );
   const [status, setStatus] = useState(() =>
@@ -309,6 +319,7 @@ export function OutputDocumentsModule() {
     if (page > 1) next.set("page", String(page));
     if (search) next.set("search", search);
     if (customer) next.set("customer", customer);
+    if (customerId) next.set("customerId", customerId);
     if (personExternalId != null) {
       next.set("personExternalId", String(personExternalId));
     }
@@ -332,6 +343,7 @@ export function OutputDocumentsModule() {
     page,
     search,
     customer,
+    customerId,
     personExternalId,
     status,
     order,
@@ -365,7 +377,9 @@ export function OutputDocumentsModule() {
       page,
       pageSize: OUTPUT_DOCUMENTS_PAGE_SIZE,
       search,
-      customer: personExternalId != null ? undefined : customer,
+      customer:
+        customerId || personExternalId != null ? undefined : customer,
+      customerId: customerId ?? undefined,
       personExternalId: personExternalId ?? undefined,
       status,
       order,
@@ -430,6 +444,7 @@ export function OutputDocumentsModule() {
     page,
     search,
     customer,
+    customerId,
     personExternalId,
     status,
     order,
@@ -453,11 +468,13 @@ export function OutputDocumentsModule() {
   const filtersActive = hasActiveOutputDocumentsFilters({
     search,
     customer,
+    customerId,
     personExternalId,
     from,
     to,
     year,
     month,
+    defaultYear: String(currentYear),
     status,
     order,
     nfe,
@@ -468,6 +485,7 @@ export function OutputDocumentsModule() {
   const draftsActive = Boolean(
     searchDraft.trim() ||
       customer.trim() ||
+      customerId ||
       personExternalId != null ||
       status.trim() ||
       orderDraft.trim() ||
@@ -508,6 +526,7 @@ export function OutputDocumentsModule() {
     setSearchDraft("");
     setCustomerSelection(null);
     setCustomer("");
+    setCustomerId(null);
     setPersonExternalId(null);
     setStatus("");
     setOrderDraft("");
@@ -623,7 +642,7 @@ export function OutputDocumentsModule() {
               <input
                 className={cn(FILTER_CONTROL_CLASS, "pl-8")}
                 data-testid="output-documents-search"
-                placeholder="Documento, pedido, NF-e, SKU ou status…"
+                placeholder="Documento, pedido, NF-e, cliente ou status…"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
               />
@@ -634,16 +653,19 @@ export function OutputDocumentsModule() {
               compact
               label="Cliente"
               value={customerSelection}
+              customerId={customerId ?? undefined}
               placeholder="Buscar cliente…"
               onChange={(sel) => {
                 setCustomerSelection(sel);
                 setCustomer(sel?.name?.trim() ?? "");
+                setCustomerId(sel?.id?.trim() || null);
                 setPersonExternalId(personExternalIdFromSelection(sel));
                 setPage(1);
               }}
               onClear={() => {
                 setCustomerSelection(null);
                 setCustomer("");
+                setCustomerId(null);
                 setPersonExternalId(null);
                 setPage(1);
               }}

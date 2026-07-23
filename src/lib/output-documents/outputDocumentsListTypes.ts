@@ -35,6 +35,8 @@ export type OutputDocumentsListFilters = {
   company: string | null;
   companyExternalId: number | null;
   customer: string | null;
+  /** UUID IndusCost do Customer (autocomplete) — filtra via Pedido vinculado. */
+  customerId: string | null;
   personExternalId: number | null;
   status: string | null;
   cancelled: OutputDocumentsTriState;

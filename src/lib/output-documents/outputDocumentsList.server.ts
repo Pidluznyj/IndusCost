@@ -28,6 +28,7 @@ import type {
   OutputDocumentsSummaryPayload,
 } from "@/src/lib/output-documents/outputDocumentsListTypes.js";
 import type { OutputDocumentFinancialReceivableInput } from "@/src/lib/output-documents/outputDocumentFinancialStatusResolver.js";
+import { normalizeOutputDocumentOrderCode } from "@/src/lib/sales/salesOrderOutputDocumentLinkResolver.js";
 
 type PrismaLike = Pick<
   PrismaClient,
@@ -73,52 +74,73 @@ function emptyEnrichment(referenceDate?: Date): OutputDocumentListEnrichment {
   };
 }
 
+type LinkedDocumentKeys = { externalIds: number[]; idNfes: number[] };
+
+/** Termos de busca de pedido: "2716", "PD 02716", "PD02716". */
+export function buildOutputDocumentsOrderSearchTerms(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  const terms = new Set<string>([trimmed]);
+  const normalized = normalizeOutputDocumentOrderCode(trimmed);
+  if (normalized) {
+    terms.add(normalized);
+    const digits = normalized.replace(/^PD/i, "");
+    terms.add(`PD ${digits}`);
+    terms.add(digits);
+  }
+  const asInt = Number.parseInt(trimmed, 10);
+  if (Number.isFinite(asInt) && String(asInt) === trimmed) {
+    terms.add(`PD${asInt}`);
+    terms.add(`PD ${String(asInt).padStart(5, "0")}`);
+    terms.add(String(asInt).padStart(5, "0"));
+  }
+  return [...terms];
+}
+
 async function resolveOrderLinkedDocumentKeys(
   db: PrismaLike,
   order: string
-): Promise<{ externalIds: number[]; idNfes: number[] }> {
+): Promise<LinkedDocumentKeys> {
   const trimmed = order.trim();
   if (!trimmed) return { externalIds: [], idNfes: [] };
 
+  const terms = buildOutputDocumentsOrderSearchTerms(trimmed);
   const asInt = Number.parseInt(trimmed, 10);
   const numeric =
     Number.isFinite(asInt) && String(asInt) === trimmed ? asInt : null;
 
-  const orderWhere: Prisma.SalesOrderWhereInput = {
-    OR: [
-      { orderCode: { contains: trimmed, mode: "insensitive" } },
-      ...(numeric != null ? [{ externalSalesOrderId: numeric }] : []),
-    ],
-  };
+  const orderCodeOr: Prisma.SalesOrderWhereInput[] = terms.map((term) => ({
+    orderCode: { contains: term, mode: "insensitive" as const },
+  }));
+  if (numeric != null) {
+    orderCodeOr.push({ externalSalesOrderId: numeric });
+  }
+
+  const linkCodeOr: Prisma.SalesOrderNfeLinkWhereInput[] = terms.map((term) => ({
+    orderCode: { contains: term, mode: "insensitive" as const },
+  }));
+
+  const o2cOr: Prisma.OrderToCashAuditFactWhereInput[] = terms.map((term) => ({
+    orderCode: { contains: term, mode: "insensitive" as const },
+  }));
+  if (numeric != null) {
+    // só externalId do DS — não misturar com idNfe (ruído)
+    o2cOr.push({ stockDocumentExternalId: numeric });
+  }
 
   const [orders, links, o2cFacts] = await Promise.all([
     db.salesOrder.findMany({
-      where: orderWhere,
+      where: { OR: orderCodeOr },
       select: { id: true },
       take: 500,
     }),
     db.salesOrderNfeLink.findMany({
-      where: {
-        OR: [
-          { orderCode: { contains: trimmed, mode: "insensitive" } },
-          ...(numeric != null ? [{ nfeExternalId: numeric }] : []),
-        ],
-      },
+      where: { OR: linkCodeOr },
       select: { nfeExternalId: true },
       take: 2000,
     }),
     db.orderToCashAuditFact.findMany({
-      where: {
-        OR: [
-          { orderCode: { contains: trimmed, mode: "insensitive" } },
-          ...(numeric != null
-            ? [
-                { stockDocumentExternalId: numeric },
-                { nfeExternalId: numeric },
-              ]
-            : []),
-        ],
-      },
+      where: { OR: o2cOr },
       select: {
         stockDocumentExternalId: true,
         stockDocumentIdNfe: true,
@@ -141,6 +163,23 @@ async function resolveOrderLinkedDocumentKeys(
       take: 2000,
     });
     for (const link of moreLinks) idNfes.add(link.nfeExternalId);
+
+    const moreFacts = await db.orderToCashAuditFact.findMany({
+      where: { salesOrderId: { in: [...orderIds] } },
+      select: {
+        stockDocumentExternalId: true,
+        stockDocumentIdNfe: true,
+      },
+      take: 5000,
+    });
+    for (const fact of moreFacts) {
+      if (fact.stockDocumentExternalId != null) {
+        externalIds.add(fact.stockDocumentExternalId);
+      }
+      if (fact.stockDocumentIdNfe != null) {
+        idNfes.add(fact.stockDocumentIdNfe);
+      }
+    }
   }
 
   for (const fact of o2cFacts) {
@@ -152,15 +191,101 @@ async function resolveOrderLinkedDocumentKeys(
     }
   }
 
+  // chute: número puro = externalId do documento de estoque
   if (numeric != null) {
     externalIds.add(numeric);
-    idNfes.add(numeric);
   }
 
   return {
     externalIds: [...externalIds],
     idNfes: [...idNfes],
   };
+}
+
+/**
+ * Documentos ligados ao cliente via Pedido (SalesOrder.Customer / externalCustomerId),
+ * além do person* no stage — cobre linhas com Cliente enriquecido e personName nulo.
+ */
+async function resolveCustomerLinkedDocumentKeys(
+  db: PrismaLike,
+  filters: Pick<
+    OutputDocumentsListFilters,
+    "customer" | "customerId" | "personExternalId"
+  >
+): Promise<LinkedDocumentKeys | null> {
+  const hasCustomerFilter =
+    filters.customerId != null ||
+    filters.personExternalId != null ||
+    Boolean(filters.customer?.trim());
+  if (!hasCustomerFilter) return null;
+
+  const or: Prisma.SalesOrderWhereInput[] = [];
+  if (filters.customerId) {
+    or.push({ customerId: filters.customerId });
+  }
+  if (filters.personExternalId != null) {
+    or.push({ externalCustomerId: filters.personExternalId });
+  }
+  if (filters.customer?.trim()) {
+    const name = filters.customer.trim();
+    or.push({
+      Customer: { is: { companyName: { contains: name, mode: "insensitive" } } },
+    });
+    or.push({
+      Customer: { is: { tradeName: { contains: name, mode: "insensitive" } } },
+    });
+  }
+
+  const orders = await db.salesOrder.findMany({
+    where: { OR: or },
+    select: { id: true },
+    take: 1000,
+  });
+  if (orders.length === 0) return { externalIds: [], idNfes: [] };
+
+  const orderIds = orders.map((o) => o.id);
+  const [links, facts] = await Promise.all([
+    db.salesOrderNfeLink.findMany({
+      where: { salesOrderId: { in: orderIds } },
+      select: { nfeExternalId: true },
+      take: 5000,
+    }),
+    db.orderToCashAuditFact.findMany({
+      where: { salesOrderId: { in: orderIds } },
+      select: {
+        stockDocumentExternalId: true,
+        stockDocumentIdNfe: true,
+      },
+      take: 10_000,
+    }),
+  ]);
+
+  const idNfes = new Set<number>();
+  const externalIds = new Set<number>();
+  for (const link of links) idNfes.add(link.nfeExternalId);
+  for (const fact of facts) {
+    if (fact.stockDocumentExternalId != null) {
+      externalIds.add(fact.stockDocumentExternalId);
+    }
+    if (fact.stockDocumentIdNfe != null) {
+      idNfes.add(fact.stockDocumentIdNfe);
+    }
+  }
+  return { externalIds: [...externalIds], idNfes: [...idNfes] };
+}
+
+function linkedKeysToWhere(
+  keys: LinkedDocumentKeys
+): Prisma.NomusStockDocumentWhereInput | null {
+  const or: Prisma.NomusStockDocumentWhereInput[] = [];
+  if (keys.externalIds.length) {
+    or.push({ externalId: { in: keys.externalIds } });
+  }
+  if (keys.idNfes.length) {
+    or.push({ idNfe: { in: keys.idNfes } });
+  }
+  if (or.length === 0) return null;
+  return or.length === 1 ? or[0]! : { OR: or };
 }
 
 async function resolveNfeFilterIds(
@@ -220,12 +345,30 @@ async function buildStageWhere(
     });
   }
 
-  if (filters.personExternalId != null) {
-    and.push({ personExternalId: filters.personExternalId });
-  } else if (filters.customer) {
-    and.push({
-      personName: { contains: filters.customer, mode: "insensitive" },
-    });
+  const hasCustomerFilter =
+    filters.customerId != null ||
+    filters.personExternalId != null ||
+    Boolean(filters.customer?.trim());
+  if (hasCustomerFilter) {
+    const customerOr: Prisma.NomusStockDocumentWhereInput[] = [];
+    if (filters.personExternalId != null) {
+      customerOr.push({ personExternalId: filters.personExternalId });
+    }
+    if (filters.customer?.trim()) {
+      customerOr.push({
+        personName: {
+          contains: filters.customer.trim(),
+          mode: "insensitive",
+        },
+      });
+    }
+    const customerLinked = await resolveCustomerLinkedDocumentKeys(db, filters);
+    if (customerLinked) {
+      const linkedWhere = linkedKeysToWhere(customerLinked);
+      if (linkedWhere) customerOr.push(linkedWhere);
+    }
+    if (customerOr.length === 0) return null;
+    and.push(customerOr.length === 1 ? customerOr[0]! : { OR: customerOr });
   }
 
   if (filters.status) {
@@ -242,17 +385,9 @@ async function buildStageWhere(
 
   if (filters.order) {
     const linked = await resolveOrderLinkedDocumentKeys(db, filters.order);
-    if (linked.externalIds.length === 0 && linked.idNfes.length === 0) {
-      return null;
-    }
-    and.push({
-      OR: [
-        ...(linked.externalIds.length
-          ? [{ externalId: { in: linked.externalIds } }]
-          : []),
-        ...(linked.idNfes.length ? [{ idNfe: { in: linked.idNfes } }] : []),
-      ],
-    });
+    const linkedWhere = linkedKeysToWhere(linked);
+    if (!linkedWhere) return null;
+    and.push(linkedWhere);
   }
 
   if (filters.search) {
@@ -260,17 +395,30 @@ async function buildStageWhere(
     const asInt = Number.parseInt(q, 10);
     const numeric =
       Number.isFinite(asInt) && String(asInt) === q ? asInt : null;
-    and.push({
-      OR: [
-        { documentNumber: { contains: q, mode: "insensitive" } },
-        { personName: { contains: q, mode: "insensitive" } },
-        { companyName: { contains: q, mode: "insensitive" } },
-        { statusRaw: { contains: q, mode: "insensitive" } },
-        ...(numeric != null
-          ? [{ externalId: numeric }, { idNfe: numeric }]
-          : []),
-      ],
+    const searchOr: Prisma.NomusStockDocumentWhereInput[] = [
+      { documentNumber: { contains: q, mode: "insensitive" } },
+      { personName: { contains: q, mode: "insensitive" } },
+      { companyName: { contains: q, mode: "insensitive" } },
+      { statusRaw: { contains: q, mode: "insensitive" } },
+    ];
+    if (numeric != null) {
+      searchOr.push({ externalId: numeric }, { idNfe: numeric });
+    }
+
+    const orderKeys = await resolveOrderLinkedDocumentKeys(db, q);
+    const orderWhere = linkedKeysToWhere(orderKeys);
+    if (orderWhere) searchOr.push(orderWhere);
+
+    const searchNfeIds = await resolveNfeFilterIds(db, {
+      ...filters,
+      nfe: q,
+      idNfe: null,
     });
+    if (searchNfeIds && searchNfeIds.length > 0) {
+      searchOr.push({ idNfe: { in: searchNfeIds } });
+    }
+
+    and.push({ OR: searchOr });
   }
 
   return { AND: and };

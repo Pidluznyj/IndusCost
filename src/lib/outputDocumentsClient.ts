@@ -25,6 +25,7 @@ export type OutputDocumentsClientQuery = {
   month?: string | number;
   company?: string;
   customer?: string;
+  customerId?: string;
   personExternalId?: number;
   status?: string;
   cancelled?: OutputDocumentsTriState;
@@ -55,6 +56,7 @@ export function buildOutputDocumentsQueryString(
     ["to", query.to],
     ["company", query.company],
     ["customer", query.customer],
+    ["customerId", query.customerId],
     ["status", query.status],
     ["order", query.order],
     ["nfe", query.nfe],
