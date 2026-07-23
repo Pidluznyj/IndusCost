@@ -87,7 +87,9 @@ npx tsx scripts/rebuildSalesOrderFlow.ts --apply --from=2026-01-01 --to=2026-12-
 
 - Avança **somente** após um lote **completo** em apply (sucessos + erros isolados por pedido).
 - Lote incompleto (abort/crash no meio) **não** avança o checkpoint.
-- Retomada: lê checkpoint ou `--resume-from` e continua com `id > cursor`.
+- Checkpoint em disco **só** é usado com `--resume` ou `--resume-from` (evita apply com `ordersSelected: 0` por cursor no fim da fila).
+- Retomada: `--resume` (continua do checkpoint) ou `--resume-from=ID|CODE` → `id > cursor`.
+- Execução nova: omita `--resume*` (mesmo com arquivo de checkpoint residual).
 
 ## Contadores e exit codes
 

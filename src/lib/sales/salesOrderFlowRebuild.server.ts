@@ -83,7 +83,11 @@ async function resolveResumeAfterId(
     });
     return byCode?.id ?? null;
   }
-  return checkpoint?.lastSalesOrderId ?? null;
+  // Checkpoint só com --resume / --resume-from (evita apply com 0 pedidos).
+  if (options.resumeFromCheckpoint) {
+    return checkpoint?.lastSalesOrderId ?? null;
+  }
+  return null;
 }
 
 export async function listSalesOrderFlowRebuildCandidates(

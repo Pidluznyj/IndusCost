@@ -327,7 +327,7 @@ export function formatSalesOrderFlowIntegrityMarkdown(
   lines.push("");
   if (report.counts.FALSE_WAITING_OP + report.counts.STALE_SNAPSHOT > 0) {
     lines.push(
-      "1. Snapshots velhos → `npm run rebuild:sales-order-flow -- --apply` (mesma regra genérica)."
+      "1. Snapshots velhos → `npm run rebuild:sales-order-flow -- --apply --from=… --to=…` (sem `--resume` se for execução nova; checkpoint antigo no fim da fila resulta em 0 pedidos)."
     );
   }
   if (report.counts.MISSING_FISCAL_LINKS > 0) {

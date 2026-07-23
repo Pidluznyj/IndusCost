@@ -62,6 +62,7 @@ export async function runSalesOrderFlowIntegrityAudit(
         batchSize: take,
         includeCompleted: args.includeCompleted,
         resumeFrom: null,
+        resumeFromCheckpoint: false,
         checkpointFile: "",
         lockFile: "",
         maxBatches: null,

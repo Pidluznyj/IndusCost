@@ -88,9 +88,22 @@ describe("salesOrderFlowRebuild CLI (OP-56)", () => {
     assert.equal(opts.batchSize, 25);
     assert.equal(opts.includeCompleted, true);
     assert.equal(opts.resumeFrom, "PD 02000");
+    assert.equal(opts.resumeFromCheckpoint, true);
     assert.equal(opts.checkpointFile, "tmp/x.checkpoint.json");
     assert.equal(opts.lockFile, "tmp/x.lock");
     assert.equal(opts.maxBatches, 3);
+  });
+
+  it("sem --resume ignora checkpoint em disco (default)", () => {
+    assert.equal(
+      parseSalesOrderFlowRebuildCli(["--apply"]).resumeFromCheckpoint,
+      false
+    );
+    assert.equal(
+      parseSalesOrderFlowRebuildCli(["--apply", "--resume"])
+        .resumeFromCheckpoint,
+      true
+    );
   });
 
   it("default é preview; rejeita preview+apply", () => {
@@ -370,6 +383,27 @@ describe("runSalesOrderFlowRebuild (OP-56)", () => {
     // resume after B → nenhum candidato
     assert.equal(second.ordersSelected, 0);
     assert.equal(second.ordersProcessed, 0);
+
+    // Sem --resume: checkpoint residual não zera a seleção.
+    const third = await runSalesOrderFlowRebuild(
+      db as never,
+      parseSalesOrderFlowRebuildCli([
+        "--apply",
+        "--batch-size=10",
+        "--checkpoint-file=tmp/apply.ckpt",
+        "--lock-file=tmp/apply.lock",
+        "--max-batches=1",
+      ]),
+      {
+        ...io,
+        acquireLock: (args) =>
+          acquireSalesOrderFlowRebuildLock({ ...args, ...lockFs }),
+        releaseLock: (args) =>
+          releaseSalesOrderFlowRebuildLock({ ...args, ...lockFs }),
+      }
+    );
+    assert.equal(third.ordersSelected, 2);
+    assert.equal(third.ordersProcessed, 2);
   });
 
   it("lock bloqueia segunda apply concorrente", async () => {

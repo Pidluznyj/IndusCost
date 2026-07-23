@@ -33,6 +33,11 @@ export type SalesOrderFlowRebuildCliOptions = {
    * Processa pedidos com id estritamente maior que o resolvido.
    */
   resumeFrom: string | null;
+  /**
+   * Se true, usa checkpoint em disco quando `--resume-from` não foi informado.
+   * Default false — evita apply “vazio” por checkpoint antigo no fim da fila.
+   */
+  resumeFromCheckpoint: boolean;
   checkpointFile: string;
   lockFile: string;
   /** Limite defensivo de lotes por execução (null = até esgotar). */
@@ -125,6 +130,7 @@ export function printSalesOrderFlowRebuildHelp(): string {
     "  --to=YYYY-MM-DD            issueDate <= to (UTC fim do dia)",
     "  --batch-size=N             Tamanho do lote (default 50)",
     "  --include-completed        Inclui pedidos já SHIPPED_COMPLETED",
+    "  --resume                   Continua a partir do checkpoint em disco",
     "  --resume-from=ID|CODE      Retoma após salesOrderId ou orderCode",
     "  --checkpoint-file=PATH     Arquivo de checkpoint (default tmp/...)",
     "  --lock-file=PATH           Lock exclusivo apply (default tmp/...)",
@@ -182,6 +188,8 @@ export function parseSalesOrderFlowRebuildCli(
   }
 
   const resumeFrom = (parseArgValue(argv, "resume-from") ?? "").trim() || null;
+  const resumeFromCheckpoint =
+    resumeFrom != null || hasCliFlag(argv, "resume");
   const checkpointFile =
     (parseArgValue(argv, "checkpoint-file") ?? "").trim() ||
     (env[SALES_ORDER_FLOW_REBUILD_CHECKPOINT_ENV] ?? "").trim() ||
@@ -199,6 +207,7 @@ export function parseSalesOrderFlowRebuildCli(
     batchSize: Math.min(Math.max(1, batchSize), 500),
     includeCompleted: hasCliFlag(argv, "include-completed"),
     resumeFrom,
+    resumeFromCheckpoint,
     checkpointFile,
     lockFile,
     maxBatches,

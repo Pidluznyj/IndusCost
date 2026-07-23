@@ -44,6 +44,7 @@ async function main(): Promise<void> {
     batchSize: options.batchSize,
     includeCompleted: options.includeCompleted,
     resumeFrom: options.resumeFrom,
+    resumeFromCheckpoint: options.resumeFromCheckpoint,
   });
 
   const prisma = new PrismaClient();
