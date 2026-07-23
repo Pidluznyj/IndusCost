@@ -13,6 +13,18 @@ import {
   SALES_ORDER_FLOW_STAGES,
   type SalesOrderFlowStage,
 } from "@/src/lib/sales/salesOrderFlowCatalog.js";
+import {
+  parseSalesOrderMonthParam,
+  parseSalesOrderYearParam,
+  resolveSalesOrderIssueDateRange,
+  SALES_ORDER_MONTH_OPTIONS,
+  buildSalesOrderYearOptions,
+} from "@/src/lib/salesOrderPeriodFilter.js";
+
+export {
+  SALES_ORDER_MONTH_OPTIONS,
+  buildSalesOrderYearOptions,
+};
 
 export const SALES_ORDER_FLOW_MODULE_ID = "sales-order-flow" as const;
 export const SALES_ORDER_FLOW_ROUTE_PATH = "/commercial/sales-order-flow";
@@ -107,6 +119,10 @@ export type SalesOrderFlowUiFilters = {
   company: string;
   product: string;
   sector: string;
+  /** Ano de emissão (`""` = todos). Drive `issueFrom`/`issueTo` quando preenchido. */
+  year: string;
+  /** Mês 1-12 (`""` = todos). Exige `year`. */
+  month: string;
   issueFrom: string;
   issueTo: string;
   promisedFrom: string;
@@ -129,6 +145,8 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
   company: "",
   product: "",
   sector: "",
+  year: "",
+  month: "",
   issueFrom: "",
   issueTo: "",
   promisedFrom: "",
@@ -142,6 +160,53 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
   priority: null,
   stages: [],
 };
+
+function formatLocalDateOnly(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converte Ano/Mês (padrão Pedidos) em intervalo inclusivo issueFrom/issueTo.
+ */
+export function applySalesOrderFlowYearMonthToIssueDates(
+  year: string,
+  month: string
+): { issueFrom: string; issueTo: string } {
+  const yearNum =
+    year.trim() === "" || year.trim().toLowerCase() === "all"
+      ? null
+      : parseSalesOrderYearParam(year);
+  const monthNum =
+    month.trim() === "" ? null : parseSalesOrderMonthParam(month);
+  const range = resolveSalesOrderIssueDateRange(yearNum, monthNum);
+  if (!range) return { issueFrom: "", issueTo: "" };
+  const issueFrom = formatLocalDateOnly(range.gte);
+  const inclusiveEnd = new Date(range.lt.getTime() - 1);
+  return { issueFrom, issueTo: formatLocalDateOnly(inclusiveEnd) };
+}
+
+/** Aplica Ano/Mês e sincroniza emissão; limpa mês se ano for “todos”. */
+export function patchSalesOrderFlowYearMonth(
+  current: SalesOrderFlowUiFilters,
+  patch: { year?: string; month?: string }
+): SalesOrderFlowUiFilters {
+  const year =
+    patch.year !== undefined ? patch.year.trim() : current.year;
+  const monthRaw =
+    patch.month !== undefined ? patch.month.trim() : current.month;
+  const month = year === "" || year.toLowerCase() === "all" ? "" : monthRaw;
+  const dates = applySalesOrderFlowYearMonthToIssueDates(year, month);
+  return {
+    ...current,
+    year: year.toLowerCase() === "all" ? "" : year,
+    month,
+    issueFrom: dates.issueFrom,
+    issueTo: dates.issueTo,
+  };
+}
 
 /** Empresas do grupo — select no filtro (contains no backend). */
 export const SALES_ORDER_FLOW_COMPANY_OPTIONS: ReadonlyArray<{
@@ -164,6 +229,8 @@ export function areSalesOrderFlowUiFiltersEqual(
     a.company === b.company &&
     a.product === b.product &&
     a.sector === b.sector &&
+    a.year === b.year &&
+    a.month === b.month &&
     a.issueFrom === b.issueFrom &&
     a.issueTo === b.issueTo &&
     a.promisedFrom === b.promisedFrom &&
@@ -394,6 +461,21 @@ export function parseSalesOrderFlowBooleanParam(
 export function parseSalesOrderFlowFiltersFromSearchParams(
   params: URLSearchParams
 ): SalesOrderFlowUiFilters {
+  const yearRaw = params.get("year")?.trim() ?? "";
+  const monthRaw = params.get("month")?.trim() ?? "";
+  const yearNum = parseSalesOrderYearParam(yearRaw);
+  const monthNum = parseSalesOrderMonthParam(monthRaw);
+  const year = yearNum != null ? String(yearNum) : "";
+  const month = year && monthNum != null ? String(monthNum) : "";
+
+  let issueFrom = normalizeSalesOrderFlowDateParam(params.get("issueFrom"));
+  let issueTo = normalizeSalesOrderFlowDateParam(params.get("issueTo"));
+  if (year) {
+    const dates = applySalesOrderFlowYearMonthToIssueDates(year, month);
+    issueFrom = dates.issueFrom;
+    issueTo = dates.issueTo;
+  }
+
   return {
     q: params.get("q")?.trim() ?? "",
     customerId: params.get("customerId")?.trim() ?? "",
@@ -404,8 +486,10 @@ export function parseSalesOrderFlowFiltersFromSearchParams(
     company: params.get("company")?.trim() ?? "",
     product: params.get("product")?.trim() ?? "",
     sector: params.get("sector")?.trim() ?? "",
-    issueFrom: normalizeSalesOrderFlowDateParam(params.get("issueFrom")),
-    issueTo: normalizeSalesOrderFlowDateParam(params.get("issueTo")),
+    year,
+    month,
+    issueFrom,
+    issueTo,
     promisedFrom: normalizeSalesOrderFlowDateParam(params.get("promisedFrom")),
     promisedTo: normalizeSalesOrderFlowDateParam(params.get("promisedTo")),
     overdue: parseSalesOrderFlowBooleanParam(params.get("overdue")),
@@ -434,6 +518,10 @@ export function buildSalesOrderFlowSearchParams(
   if (filters.company.trim()) params.set("company", filters.company.trim());
   if (filters.product.trim()) params.set("product", filters.product.trim());
   if (filters.sector.trim()) params.set("sector", filters.sector.trim());
+  if (filters.year.trim()) params.set("year", filters.year.trim());
+  if (filters.year.trim() && filters.month.trim()) {
+    params.set("month", filters.month.trim());
+  }
   if (filters.issueFrom) params.set("issueFrom", filters.issueFrom);
   if (filters.issueTo) params.set("issueTo", filters.issueTo);
   if (filters.promisedFrom) params.set("promisedFrom", filters.promisedFrom);
@@ -576,6 +664,8 @@ export function hasActiveSalesOrderFlowFilters(
       filters.company.trim() ||
       filters.product.trim() ||
       filters.sector.trim() ||
+      filters.year.trim() ||
+      filters.month.trim() ||
       filters.issueFrom ||
       filters.issueTo ||
       filters.promisedFrom ||
@@ -632,6 +722,9 @@ export function salesOrderFlowFiltersToClientQuery(
   priority: SalesOrderFlowUiPriority | null;
   stages: SalesOrderFlowStage[] | null;
 } {
+  const issueDates = filters.year.trim()
+    ? applySalesOrderFlowYearMonthToIssueDates(filters.year, filters.month)
+    : { issueFrom: filters.issueFrom, issueTo: filters.issueTo };
   return {
     q: filters.q.trim() || null,
     customerId: filters.customerId.trim() || null,
@@ -639,8 +732,8 @@ export function salesOrderFlowFiltersToClientQuery(
     company: filters.company.trim() || null,
     product: filters.product.trim() || null,
     sector: filters.sector.trim() || null,
-    issueFrom: filters.issueFrom || null,
-    issueTo: filters.issueTo || null,
+    issueFrom: issueDates.issueFrom || null,
+    issueTo: issueDates.issueTo || null,
     promisedFrom: filters.promisedFrom || null,
     promisedTo: filters.promisedTo || null,
     overdue: filters.overdue,

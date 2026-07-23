@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -14,13 +13,12 @@ import {
   FolderKanban,
   Loader2,
   PackageCheck,
-  Search,
   ShieldAlert,
   Truck,
   WalletCards,
 } from "lucide-react";
-import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import { SalesOrderFlowAnalyticsPanel } from "@/src/components/commercial/SalesOrderFlowAnalyticsPanel";
+import { SalesOrderFlowFiltersBar } from "@/src/components/commercial/SalesOrderFlowFiltersBar";
 import { buildSalesOrderFlowKanbanColumnViews } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
 import { SalesOrderFlowKanbanFullscreen } from "@/src/components/commercial/SalesOrderFlowKanbanFullscreen";
 import { SalesOrderFlowDetailDrawer } from "@/src/components/commercial/SalesOrderFlowDetailDrawer";
@@ -65,24 +63,15 @@ import {
   collectSalesOrderFlowCardsFromColumnStates,
   EMPTY_SALES_ORDER_FLOW_FILTERS,
   hasActiveSalesOrderFlowFilters,
-  isSalesOrderFlowDateRangeInvalid,
   parseSalesOrderFlowDrawerFromSearchParams,
   parseSalesOrderFlowFiltersFromSearchParams,
   resolveSalesOrderFlowDrawerFromCards,
   resolveSalesOrderFlowExecutiveIndicators,
   SALES_ORDER_FLOW_BREADCRUMB,
-  SALES_ORDER_FLOW_COMPANY_OPTIONS,
-  SALES_ORDER_FLOW_PRIORITY_OPTIONS,
-  SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS,
   salesOrderFlowFiltersToClientQuery,
   type SalesOrderFlowUiFilters,
-  type SalesOrderFlowUiPriority,
 } from "@/src/lib/salesOrderFlowUi";
-import { cn } from "@/src/lib/utils";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog";
-
-const FILTER_CONTROL_CLASS =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
 
 /**
  * Fluxo de Pedidos Comercial (OP-64..OP-69).
@@ -115,6 +104,7 @@ export function SalesOrderFlowModule() {
   const [sellerOptions, setSellerOptions] = useState<
     SalesOrderSellerFilterOption[]
   >([]);
+  const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
 
   const [summary, setSummary] = useState<SalesOrderFlowSummaryPayload | null>(
     null
@@ -328,6 +318,7 @@ export function SalesOrderFlowModule() {
   useEffect(() => {
     if (!canView) return;
     const controller = new AbortController();
+    setSellerOptionsLoading(true);
     void fetchJsonOk<{ options: SalesOrderSellerFilterOption[] }>(
       getSalesOrderSellerFilterOptionsUrl(),
       { signal: controller.signal }
@@ -339,6 +330,9 @@ export function SalesOrderFlowModule() {
       })
       .catch(() => {
         if (!controller.signal.aborted) setSellerOptions([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => controller.abort();
   }, [canView]);
@@ -631,8 +625,6 @@ export function SalesOrderFlowModule() {
     totalOrders === 0 &&
     filtersActive;
   const initialLoading = loading && !hasLoadedOnce;
-  const stageSelectValue =
-    draftFilters.stages.length === 1 ? draftFilters.stages[0] : "";
   const draftFiltersActive = hasActiveSalesOrderFlowFilters(draftFilters);
   const indicators =
     summary != null
@@ -697,332 +689,19 @@ export function SalesOrderFlowModule() {
         </button>
       </div>
 
-      <section
-        className="rounded-xl border border-border bg-card p-3 space-y-3"
-        data-testid="sales-order-flow-filters"
-        aria-label="Filtros do Fluxo de Pedidos"
-      >
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <FilterField label="Busca geral">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                className={cn(FILTER_CONTROL_CLASS, "pl-8")}
-                data-testid="sales-order-flow-filter-q"
-                placeholder="Pedido, cliente…"
-                value={draftFilters.q}
-                onChange={(event) =>
-                  patchDraftFilters({ q: event.target.value })
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    applyFilters();
-                  }
-                }}
-              />
-            </div>
-          </FilterField>
-
-          <div data-testid="sales-order-flow-filter-customer">
-            <CustomerAutocompleteFilter
-              label="Cliente"
-              customerId={draftFilters.customerId || undefined}
-              placeholder="Todos os clientes"
-              onChange={(selection) => {
-                patchDraftFilters({
-                  customerId: selection?.id?.trim() ?? "",
-                });
-              }}
-              onClear={() => {
-                patchDraftFilters({ customerId: "" });
-              }}
-            />
-          </div>
-
-          <FilterField label="Vendedor">
-            <select
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-seller"
-              value={draftFilters.sellerKey}
-              onChange={(event) =>
-                patchDraftFilters({ sellerKey: event.target.value })
-              }
-            >
-              <option value="">Todos</option>
-              {sellerOptions.map((option) => (
-                <option key={option.sellerKey} value={option.sellerKey}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Empresa">
-            <select
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-company"
-              value={draftFilters.company}
-              onChange={(event) =>
-                patchDraftFilters({ company: event.target.value })
-              }
-            >
-              <option value="">Todas</option>
-              {SALES_ORDER_FLOW_COMPANY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-              {draftFilters.company &&
-              !SALES_ORDER_FLOW_COMPANY_OPTIONS.some(
-                (option) => option.value === draftFilters.company
-              ) ? (
-                <option value={draftFilters.company}>
-                  {draftFilters.company}
-                </option>
-              ) : null}
-            </select>
-          </FilterField>
-
-          <FilterField label="Etapa">
-            <select
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-stage"
-              value={stageSelectValue}
-              onChange={(event) => {
-                const value = event.target.value;
-                patchDraftFilters({
-                  stages: value ? [value as SalesOrderFlowStage] : [],
-                });
-              }}
-            >
-              <option value="">Todas</option>
-              {SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Prioridade">
-            <select
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-priority"
-              value={draftFilters.priority ?? ""}
-              onChange={(event) => {
-                const value = event.target.value;
-                patchDraftFilters({
-                  priority: value
-                    ? (value as SalesOrderFlowUiPriority)
-                    : null,
-                });
-              }}
-            >
-              <option value="">Todas</option>
-              {SALES_ORDER_FLOW_PRIORITY_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </FilterField>
-
-          <FilterField label="Produto">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-product"
-              placeholder="Código ou descrição"
-              value={draftFilters.product}
-              onChange={(event) =>
-                patchDraftFilters({ product: event.target.value })
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  applyFilters();
-                }
-              }}
-            />
-          </FilterField>
-
-          <FilterField label="Setor">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-sector"
-              placeholder="Setor"
-              value={draftFilters.sector}
-              onChange={(event) =>
-                patchDraftFilters({ sector: event.target.value })
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  applyFilters();
-                }
-              }}
-            />
-          </FilterField>
-
-          <FilterField label="Emissão de">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-issue-from"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.issueFrom,
-                draftFilters.issueTo
-              )}
-              value={draftFilters.issueFrom}
-              onChange={(event) =>
-                patchDraftFilters({ issueFrom: event.target.value })
-              }
-            />
-          </FilterField>
-
-          <FilterField label="Emissão até">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-issue-to"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.issueFrom,
-                draftFilters.issueTo
-              )}
-              value={draftFilters.issueTo}
-              onChange={(event) =>
-                patchDraftFilters({ issueTo: event.target.value })
-              }
-            />
-          </FilterField>
-
-          <FilterField label="Entrega prometida de">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-promised-from"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.promisedFrom,
-                draftFilters.promisedTo
-              )}
-              value={draftFilters.promisedFrom}
-              onChange={(event) =>
-                patchDraftFilters({ promisedFrom: event.target.value })
-              }
-            />
-          </FilterField>
-
-          <FilterField label="Entrega prometida até">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-promised-to"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.promisedFrom,
-                draftFilters.promisedTo
-              )}
-              value={draftFilters.promisedTo}
-              onChange={(event) =>
-                patchDraftFilters({ promisedTo: event.target.value })
-              }
-            />
-          </FilterField>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <BooleanFilter
-            testId="sales-order-flow-filter-overdue"
-            label="Atrasados"
-            checked={draftFilters.overdue === true}
-            onChange={(checked) =>
-              patchDraftFilters({ overdue: checked ? true : null })
-            }
-          />
-          <BooleanFilter
-            testId="sales-order-flow-filter-blocked"
-            label="Bloqueados"
-            checked={draftFilters.blocked === true}
-            onChange={(checked) =>
-              patchDraftFilters({ blocked: checked ? true : null })
-            }
-          />
-          <BooleanFilter
-            testId="sales-order-flow-filter-inconsistent"
-            label="Inconsistentes"
-            checked={draftFilters.inconsistent === true}
-            onChange={(checked) =>
-              patchDraftFilters({ inconsistent: checked ? true : null })
-            }
-          />
-          <BooleanFilter
-            testId="sales-order-flow-filter-partially-shipped"
-            label="Parcialmente enviados"
-            checked={draftFilters.partiallyShipped === true}
-            onChange={(checked) =>
-              patchDraftFilters({ partiallyShipped: checked ? true : null })
-            }
-          />
-          <BooleanFilter
-            testId="sales-order-flow-filter-with-cut"
-            label="Com corte"
-            checked={draftFilters.withCut === true}
-            onChange={(checked) =>
-              patchDraftFilters({ withCut: checked ? true : null })
-            }
-          />
-          <BooleanFilter
-            testId="sales-order-flow-filter-with-active-residual"
-            label="Com saldo ativo"
-            checked={draftFilters.withActiveResidual === true}
-            onChange={(checked) =>
-              patchDraftFilters({ withActiveResidual: checked ? true : null })
-            }
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-            data-testid="sales-order-flow-apply-filters"
-            disabled={
-              draftDateRangesInvalid || !hasPendingFilterChanges || loading
-            }
-            onClick={applyFilters}
-          >
-            <Search className="h-3.5 w-3.5" aria-hidden="true" />
-            Pesquisar
-          </button>
-          <button
-            type="button"
-            className="inline-flex rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-40"
-            data-testid="sales-order-flow-clear-filters"
-            disabled={!filtersActive && !draftFiltersActive}
-            onClick={clearFilters}
-          >
-            Limpar filtros
-          </button>
-          {hasPendingFilterChanges ? (
-            <span
-              className="text-xs text-amber-700"
-              data-testid="sales-order-flow-filters-pending"
-            >
-              Há alterações pendentes — clique em Pesquisar para aplicar.
-            </span>
-          ) : null}
-        </div>
-
-        {draftDateRangesInvalid ? (
-          <p
-            className="text-sm text-amber-700"
-            role="alert"
-            data-testid="sales-order-flow-date-range-invalid"
-          >
-            Intervalo de datas inválido: a data inicial não pode ser maior que a
-            final.
-          </p>
-        ) : null}
-      </section>
+      <SalesOrderFlowFiltersBar
+        draftFilters={draftFilters}
+        sellerOptions={sellerOptions}
+        sellerOptionsLoading={sellerOptionsLoading}
+        hasPendingFilterChanges={hasPendingFilterChanges}
+        draftDateRangesInvalid={draftDateRangesInvalid}
+        filtersActive={filtersActive}
+        draftFiltersActive={draftFiltersActive}
+        loading={loading}
+        onPatchDraft={patchDraftFilters}
+        onApply={applyFilters}
+        onClear={clearFilters}
+      />
 
       {showIndicators ? (
         <section
@@ -1280,42 +959,3 @@ export function SalesOrderFlowModule() {
   );
 }
 
-function FilterField({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-      {label}
-      {children}
-    </label>
-  );
-}
-
-function BooleanFilter({
-  testId,
-  label,
-  checked,
-  onChange,
-}: {
-  testId: string;
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="inline-flex items-center gap-2 text-sm text-foreground">
-      <input
-        type="checkbox"
-        className="h-4 w-4 rounded border-border"
-        data-testid={testId}
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      {label}
-    </label>
-  );
-}

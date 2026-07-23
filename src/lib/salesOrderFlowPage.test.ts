@@ -41,12 +41,14 @@ import {
   classifySalesOrderFlowListError,
   collectSalesOrderFlowCardsFromColumnStates,
   EMPTY_SALES_ORDER_FLOW_FILTERS,
+  applySalesOrderFlowYearMonthToIssueDates,
   hasActiveSalesOrderFlowFilters,
   parseSalesOrderFlowBooleanParam,
   parseSalesOrderFlowDrawerFromSearchParams,
   parseSalesOrderFlowFiltersFromSearchParams,
   parseSalesOrderFlowPriorityParam,
   parseSalesOrderFlowStagesParam,
+  patchSalesOrderFlowYearMonth,
   resolveSalesOrderFlowDrawerFromCards,
   SALES_ORDER_FLOW_BREADCRUMB,
   SALES_ORDER_FLOW_COMPANY_OPTIONS,
@@ -232,29 +234,36 @@ describe("salesOrderFlowClient", () => {
 describe("sales order flow filters (OP-65)", () => {
   it("expõe barra de filtros, limpeza e pesquisa sob demanda", () => {
     const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
-    assert.match(mod, /sales-order-flow-filters/);
-    assert.match(mod, /sales-order-flow-filter-q/);
-    assert.match(mod, /sales-order-flow-filter-customer/);
-    assert.match(mod, /sales-order-flow-filter-seller/);
-    assert.match(mod, /sales-order-flow-filter-company/);
-    assert.match(mod, /sales-order-flow-filter-stage/);
-    assert.match(mod, /sales-order-flow-filter-issue-from/);
-    assert.match(mod, /sales-order-flow-filter-issue-to/);
-    assert.match(mod, /sales-order-flow-filter-promised-from/);
-    assert.match(mod, /sales-order-flow-filter-promised-to/);
-    assert.match(mod, /sales-order-flow-filter-overdue/);
-    assert.match(mod, /sales-order-flow-filter-blocked/);
-    assert.match(mod, /sales-order-flow-filter-inconsistent/);
-    assert.match(mod, /sales-order-flow-filter-partially-shipped/);
-    assert.match(mod, /sales-order-flow-filter-with-cut/);
-    assert.match(mod, /sales-order-flow-filter-with-active-residual/);
-    assert.match(mod, /sales-order-flow-filter-priority/);
-    assert.match(mod, /sales-order-flow-filter-product/);
-    assert.match(mod, /sales-order-flow-filter-sector/);
-    assert.match(mod, /sales-order-flow-clear-filters/);
-    assert.match(mod, /sales-order-flow-apply-filters/);
-    assert.match(mod, /CustomerAutocompleteFilter/);
-    assert.match(mod, /SALES_ORDER_FLOW_COMPANY_OPTIONS/);
+    const filtersBar = read(
+      "src/components/commercial/SalesOrderFlowFiltersBar.tsx"
+    );
+    assert.match(mod, /SalesOrderFlowFiltersBar/);
+    assert.match(filtersBar, /sales-order-flow-filters/);
+    assert.match(filtersBar, /sales-order-flow-filter-year/);
+    assert.match(filtersBar, /sales-order-flow-filter-month/);
+    assert.match(filtersBar, /sales-order-flow-filter-q/);
+    assert.match(filtersBar, /sales-order-flow-filter-customer/);
+    assert.match(filtersBar, /sales-order-flow-filter-seller/);
+    assert.match(filtersBar, /sales-order-flow-filter-company/);
+    assert.match(filtersBar, /sales-order-flow-filter-stage/);
+    assert.match(filtersBar, /sales-order-flow-filter-issue-from/);
+    assert.match(filtersBar, /sales-order-flow-filter-issue-to/);
+    assert.match(filtersBar, /sales-order-flow-filter-promised-from/);
+    assert.match(filtersBar, /sales-order-flow-filter-promised-to/);
+    assert.match(filtersBar, /sales-order-flow-filter-overdue/);
+    assert.match(filtersBar, /sales-order-flow-filter-blocked/);
+    assert.match(filtersBar, /sales-order-flow-filter-inconsistent/);
+    assert.match(filtersBar, /sales-order-flow-filter-partially-shipped/);
+    assert.match(filtersBar, /sales-order-flow-filter-with-cut/);
+    assert.match(filtersBar, /sales-order-flow-filter-with-active-residual/);
+    assert.match(filtersBar, /sales-order-flow-filter-priority/);
+    assert.match(filtersBar, /sales-order-flow-filter-product/);
+    assert.match(filtersBar, /sales-order-flow-filter-sector/);
+    assert.match(filtersBar, /sales-order-flow-clear-filters/);
+    assert.match(filtersBar, /sales-order-flow-apply-filters/);
+    assert.match(filtersBar, /CustomerAutocompleteFilter/);
+    assert.match(filtersBar, /fetchCustomerByIdForAutocomplete/);
+    assert.match(filtersBar, /SALES_ORDER_FLOW_COMPANY_OPTIONS/);
     assert.match(mod, /draftFilters/);
     assert.match(mod, /applyFilters/);
     assert.match(mod, /getSalesOrderSellerFilterOptionsUrl/);
@@ -285,6 +294,29 @@ describe("sales order flow filters (OP-65)", () => {
     assert.deepEqual(parseSalesOrderFlowStagesParam("in_production"), [
       "IN_PRODUCTION",
     ]);
+  });
+
+  it("ano/mês sincronizam emissão e URL (padrão Pedidos)", () => {
+    const range = applySalesOrderFlowYearMonthToIssueDates("2026", "1");
+    assert.equal(range.issueFrom, "2026-01-01");
+    assert.equal(range.issueTo, "2026-01-31");
+    const patched = patchSalesOrderFlowYearMonth(EMPTY_SALES_ORDER_FLOW_FILTERS, {
+      year: "2026",
+      month: "12",
+    });
+    assert.equal(patched.issueFrom, "2026-12-01");
+    assert.equal(patched.issueTo, "2026-12-31");
+    const fromUrl = parseSalesOrderFlowFiltersFromSearchParams(
+      new URLSearchParams("year=2026&month=3")
+    );
+    assert.equal(fromUrl.year, "2026");
+    assert.equal(fromUrl.month, "3");
+    assert.equal(fromUrl.issueFrom, "2026-03-01");
+    assert.equal(fromUrl.issueTo, "2026-03-31");
+    const params = buildSalesOrderFlowSearchParams(fromUrl);
+    assert.equal(params.get("year"), "2026");
+    assert.equal(params.get("month"), "3");
+    assert.equal(params.get("issueFrom"), "2026-03-01");
   });
 
   it("serializa filtros canônicos e limpa estado vazio", () => {
@@ -395,8 +427,11 @@ describe("sales order flow filters (OP-65)", () => {
 
   it("empty com filtros ativos tem testid dedicado", () => {
     const mod = read("src/components/commercial/SalesOrderFlowModule.tsx");
+    const filtersBar = read(
+      "src/components/commercial/SalesOrderFlowFiltersBar.tsx"
+    );
     assert.match(mod, /sales-order-flow-empty-filters/);
-    assert.match(mod, /sales-order-flow-date-range-invalid/);
+    assert.match(filtersBar, /sales-order-flow-date-range-invalid/);
   });
 });
 
