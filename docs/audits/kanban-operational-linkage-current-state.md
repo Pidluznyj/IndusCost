@@ -496,6 +496,8 @@ SalesOrderItemOperationalLink {
 
 **KAN-LINK-05 (implementado):** resolvedor canônico OP→Pedido/item (`salesOrderProductionOrderLinkResolver.ts`) — cobertura sobre residual; OP cancelada/ambígua excluída; pack aceita link por `externalSalesOrderId` sem FK local.
 
+**KAN-LINK-06 (implementado):** reconciliação Pedido→OP→DS→NF (`salesOrderOperationalEvidenceReconciler.ts`) — sem cadeia artificial; evidência posterior prevalece; DS∪NF sem dupla contagem; diagnóstico `linkStatus` / `coverageStatus` / timeline no grafo.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

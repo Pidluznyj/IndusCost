@@ -29,6 +29,10 @@ import {
   type SalesOrderOperationalProductionCoverage,
   type SalesOrderOperationalShipmentCoverage,
 } from "./salesOrderOperationalEvidenceContract.js";
+import {
+  attachOperationalReconciliation,
+  type ReconcileSalesOrderOperationalEvidenceOptions,
+} from "./salesOrderOperationalEvidenceReconciler.js";
 
 export type BuildSalesOrderOperationalEvidenceGraphInput = {
   salesOrderId: string;
@@ -74,6 +78,8 @@ export type BuildSalesOrderOperationalEvidenceGraphInput = {
   }>;
   /** Alertas de auditoria (nunca viram vínculo). */
   auditAlerts?: SalesOrderOperationalAuditAlert[];
+  /** Opções de reconciliação KAN-LINK-06 (unidade / exigência de OP). */
+  reconciliationOptions?: ReconcileSalesOrderOperationalEvidenceOptions;
 };
 
 function sumQty(values: readonly number[]): number {
@@ -239,15 +245,19 @@ export function buildSalesOrderOperationalEvidenceGraph(
     }
   );
 
-  return {
-    contractVersion: "sales-order-operational-evidence/v1",
-    salesOrderId: input.salesOrderId,
-    orderCode: input.orderCode ?? null,
-    externalSalesOrderId: input.externalSalesOrderId ?? null,
-    items,
-    orderLinks,
-    warnings,
-  };
+  // KAN-LINK-06 — anexa reconciliação Pedido→OP→DS→NF (sem cadeia artificial).
+  return attachOperationalReconciliation(
+    {
+      contractVersion: "sales-order-operational-evidence/v1",
+      salesOrderId: input.salesOrderId,
+      orderCode: input.orderCode ?? null,
+      externalSalesOrderId: input.externalSalesOrderId ?? null,
+      items,
+      orderLinks,
+      warnings,
+    },
+    input.reconciliationOptions
+  );
 }
 
 export type OperationalEvidenceMotorAllocations = {

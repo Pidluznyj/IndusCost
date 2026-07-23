@@ -154,6 +154,125 @@ export type SalesOrderOperationalShipmentCoverage = {
   warnings: string[];
 };
 
+/** Nível de cobertura quantitativa (KAN-LINK-06). */
+export const SALES_ORDER_OPERATIONAL_COVERAGE_LEVELS = [
+  "NONE",
+  "PARTIAL",
+  "SUFFICIENT",
+  "NOT_REQUIRED",
+  "EXCESS",
+] as const;
+
+export type SalesOrderOperationalCoverageLevel =
+  (typeof SALES_ORDER_OPERATIONAL_COVERAGE_LEVELS)[number];
+
+/** Qualidade dos vínculos do item (KAN-LINK-06). */
+export const SALES_ORDER_OPERATIONAL_ITEM_LINK_STATUSES = [
+  "RESOLVED",
+  "PARTIAL",
+  "ORDER_LEVEL_ONLY",
+  "AMBIGUOUS",
+  "UNRESOLVED",
+  "NOT_REQUIRED",
+] as const;
+
+export type SalesOrderOperationalItemLinkStatus =
+  (typeof SALES_ORDER_OPERATIONAL_ITEM_LINK_STATUSES)[number];
+
+/**
+ * Estágio reconciliado do item — evidência posterior prevalece sobre
+ * ausência de elo intermediário (KAN-LINK-06).
+ */
+export const SALES_ORDER_OPERATIONAL_ITEM_COVERAGE_STATUSES = [
+  "OPEN",
+  "AWAITING_PRODUCTION",
+  "IN_PRODUCTION",
+  "DOCUMENTED",
+  "INVOICED",
+  "SHIPPED",
+  "FULFILLED_WITHOUT_PRODUCTION",
+  "CANCELED",
+  "INCONSISTENT",
+] as const;
+
+export type SalesOrderOperationalItemCoverageStatus =
+  (typeof SALES_ORDER_OPERATIONAL_ITEM_COVERAGE_STATUSES)[number];
+
+export type SalesOrderOperationalTimelineEventKind =
+  | "ORDER"
+  | "PRODUCTION_ORDER"
+  | "OUTPUT_DOCUMENT"
+  | "NFE"
+  | "SHIPMENT"
+  | "CUT"
+  | "CANCEL"
+  | "RETURN";
+
+export type SalesOrderOperationalTimelineEvent = {
+  at: string | null;
+  kind: SalesOrderOperationalTimelineEventKind;
+  label: string;
+  quantity: number | null;
+  /** false = histórico / não operacional (cancelado, estorno, devolução). */
+  operational: boolean;
+  sourceType: SalesOrderOperationalLinkSourceType | null;
+  entityId: string | null;
+  entityExternalId: number | string | null;
+};
+
+export type SalesOrderOperationalUnitConversionStatus =
+  | "NATIVE"
+  | "CONVERTED"
+  | "INCONSISTENT"
+  | "UNKNOWN";
+
+export type SalesOrderOperationalUnitConversion = {
+  officialUnitCode: string | null;
+  status: SalesOrderOperationalUnitConversionStatus;
+  detail: string | null;
+};
+
+/**
+ * Reconciliação operacional por item (KAN-LINK-06).
+ * Não exige cadeia artificial; evidência posterior não é apagada por
+ * ausência de OP/DS intermediário.
+ */
+export type SalesOrderOperationalItemReconciliation = {
+  salesOrderItemId: string;
+  linkStatus: SalesOrderOperationalItemLinkStatus;
+  coverageStatus: SalesOrderOperationalItemCoverageStatus;
+  activeObligation: number;
+  fulfilledQuantity: number;
+  remainingFulfillment: number;
+  productionOrderQuantity: number;
+  productionCoverage: SalesOrderOperationalCoverageLevel;
+  documentedQuantity: number;
+  documentedCoverage: SalesOrderOperationalCoverageLevel;
+  invoicedQuantity: number;
+  invoicedCoverage: SalesOrderOperationalCoverageLevel;
+  shippedQuantity: number;
+  shippedCoverage: SalesOrderOperationalCoverageLevel;
+  /**
+   * Cobertura de cadeia DS∪NF sem dupla contagem
+   * (pares DS↔NF contam uma vez).
+   */
+  chainCoveredQuantity: number;
+  sourceSummary: string[];
+  warnings: string[];
+  unresolvedEvidence: Array<{ code: string; detail: string }>;
+  operationalEvidenceTimeline: SalesOrderOperationalTimelineEvent[];
+  unitConversion: SalesOrderOperationalUnitConversion;
+};
+
+export type SalesOrderOperationalOrderReconciliation = {
+  contractVersion: "sales-order-operational-reconciliation/v1";
+  salesOrderId: string;
+  orderCode: string | null;
+  externalSalesOrderId: number | null;
+  items: SalesOrderOperationalItemReconciliation[];
+  warnings: string[];
+};
+
 export type SalesOrderOperationalItemEvidence = {
   salesOrderItemId: string;
   obligation: SalesOrderOperationalObligation;
@@ -170,6 +289,8 @@ export type SalesOrderOperationalItemEvidence = {
   };
   inconsistencies: Array<{ code: string; detail: string }>;
   links: SalesOrderOperationalLinkEdge[];
+  /** Diagnóstico reconciliado (KAN-LINK-06). */
+  reconciliation: SalesOrderOperationalItemReconciliation;
 };
 
 export type SalesOrderOperationalEvidenceGraph = {
@@ -181,6 +302,8 @@ export type SalesOrderOperationalEvidenceGraph = {
   /** Arestas no nível do pedido (ex.: SalesOrderNfeLink sem item). */
   orderLinks: SalesOrderOperationalLinkEdge[];
   warnings: string[];
+  /** Reconciliação agregada do pedido (KAN-LINK-06). */
+  reconciliation: SalesOrderOperationalOrderReconciliation;
 };
 
 /** Sinais de auditoria — nunca prova automática de vínculo. */
@@ -340,4 +463,22 @@ export function buildOperationalAuditAlert(
   detail: string
 ): SalesOrderOperationalAuditAlert {
   return { kind, detail, provesLink: false };
+}
+
+/**
+ * Cobertura quantitativa contra um alvo (obrigação / residual).
+ * EXCESS quando covered > target (histórico preservado; não apaga evidência).
+ */
+export function assessOperationalCoverageLevel(input: {
+  coveredQuantity: number;
+  targetQuantity: number;
+  required?: boolean;
+}): SalesOrderOperationalCoverageLevel {
+  const covered = Math.max(0, input.coveredQuantity);
+  const target = Math.max(0, input.targetQuantity);
+  if (input.required === false || target <= 1e-9) return "NOT_REQUIRED";
+  if (covered <= 1e-9) return "NONE";
+  if (covered + 1e-9 < target) return "PARTIAL";
+  if (covered > target + 1e-9) return "EXCESS";
+  return "SUFFICIENT";
 }

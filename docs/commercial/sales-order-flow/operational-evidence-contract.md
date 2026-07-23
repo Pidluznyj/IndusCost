@@ -90,3 +90,40 @@ Implementação: `src/lib/sales/salesOrderProductionOrderLinkResolver.ts` + inte
 Não prova: produto, qty, cliente, data, máquina, molde.
 
 **Cobertura:** compara OP à `remainingFulfillment` (residual). OP parcial ≠ ausência. `remainingFulfillment=0` → OP não obrigatória; DS/NF avançados não regridem para Aguardando OP.
+
+---
+
+## Reconciliação Pedido → OP → DS → NF (KAN-LINK-06)
+
+Implementação: `src/lib/sales/salesOrderOperationalEvidenceReconciler.ts`  
+Anexada automaticamente em `buildSalesOrderOperationalEvidenceGraph` (`item.reconciliation` + `graph.reconciliation`).
+
+**Modelo:** unifica evidências **sem cadeia artificial**. Elos válidos:
+
+- Pedido → OP → DS → NF → envio
+- Pedido → atendimento sem OP → DS → NF
+- Pedido → OP → DS (sem NF ainda)
+- Pedido → NF (sem OP)
+
+Ausência de elo intermediário **não apaga** evidência posterior.
+
+**Fórmulas (por item):**
+
+```
+activeObligation = ordered − cut − canceled   (ou obligation.active)
+remainingFulfillment = max(0, activeObligation − fulfilled)
+productionCoverage  → OP vs remainingFulfillment
+documentedCoverage  → DS vs activeObligation
+invoicedCoverage    → NF vs activeObligation
+shippedCoverage     → envio/proxy NF vs activeObligation
+chainCoveredQuantity = DS∪NF sem dupla contagem (pares DS↔idNfe contam 1×)
+```
+
+**Precedência de cobertura:** envio/NF → documento → (OP só se residual exigir) → atendimento sem OP.  
+Documento/NF **não** prova OP; ausência de OP **não** invalida DS/NF.
+
+**Diagnóstico no contrato:** `linkStatus`, `coverageStatus`, `sourceSummary`, `warnings`, `unresolvedEvidence`, `operationalEvidenceTimeline`.
+
+**Devoluções/cancelamentos:** evidência preservada na timeline com `operational=false`; não avança cobertura.
+
+**Unidades:** só converte com fator comprovado; senão `INCONSISTENT` (evidência visível, sem conclusão indevida).
