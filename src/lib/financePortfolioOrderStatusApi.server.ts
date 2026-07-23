@@ -24,6 +24,7 @@ import type { PortfolioOrderStatusFact } from "./finance/portfolioOrderStatusSer
 import { enrichFactsWithOrderItemStatus } from "./finance/orderToCashFactItemStatusEnrichment.server.js";
 import { loadManualCommercialOwnersForCustomers } from "./crmCustomerCommercialOwner.js";
 import { filterFactsByOperationalPortfolioOrders } from "./finance/financePortfolioOperationalOrderGate.server.js";
+import { normalizeOrderStatusSearch } from "./finance/portfolioOrderStatusSearch.js";
 
 function decimalToNumber(value: unknown): number | null {
   if (value == null) return null;
@@ -334,6 +335,24 @@ async function resolveRun(filters: PortfolioOrderStatusApiFilters): Promise<{
 }
 
 /**
+ * Busca pontual por código de pedido (orderCode / busca "02757" / "PD 02757").
+ * Nesse caso não cortamos por ano de emissão — o pedido de 2024 continua
+ * encontrável com Ano=2026 na UI.
+ */
+function isPointSalesOrderLookup(
+  filters: PortfolioOrderStatusApiFilters
+): boolean {
+  if (filters.orderCode?.trim()) return true;
+  const search = normalizeOrderStatusSearch(filters.search);
+  if (!search?.usable) return false;
+  if (search.kindHint === "SALES_ORDER") return true;
+  // Dígitos puros (ex.: 02757) — match prioritário de pedido na busca inteligente.
+  return (
+    search.digitVariants.length > 0 && !/[a-zà-ü]/i.test(search.text)
+  );
+}
+
+/**
  * Where de facts: run + filtros de escopo (cliente/ano/pedido/vendedor).
  * Filtros de status consolidado são aplicados após agregação.
  */
@@ -342,12 +361,18 @@ function buildFactWhere(
   runId: string,
   isGeneralRun: boolean
 ): Prisma.OrderToCashAuditFactWhereInput {
+  const pointOrderLookup = isPointSalesOrderLookup(filters);
+  const searchNorm = pointOrderLookup
+    ? normalizeOrderStatusSearch(filters.search)
+    : null;
+
   const base = buildOrderToCashAuditFactWhere(
     {
       customerExternalId: filters.customerExternalId,
       customerId: filters.customerId,
       customerName: filters.customerName,
-      year: filters.year,
+      // Ano no base só quando não é lookup pontual de pedido.
+      year: pointOrderLookup ? null : filters.year,
       page: 1,
       pageSize: 50,
       sortBy: "orderIssueDate",
@@ -373,10 +398,27 @@ function buildFactWhere(
       runId: null,
     },
     runId,
-    { isGeneralRun, applyYearOnIssueDate: isGeneralRun }
+    {
+      isGeneralRun,
+      applyYearOnIssueDate: isGeneralRun && !pointOrderLookup,
+    }
   ) as Prisma.OrderToCashAuditFactWhereInput;
 
   const and: Prisma.OrderToCashAuditFactWhereInput[] = [base];
+
+  // Narrow Prisma: busca "02757" → orderCode contains variantes (sem carregar o ano inteiro).
+  if (
+    pointOrderLookup &&
+    !filters.orderCode?.trim() &&
+    searchNorm &&
+    searchNorm.digitVariants.length > 0
+  ) {
+    and.push({
+      OR: searchNorm.digitVariants.map((digits) => ({
+        orderCode: { contains: digits, mode: "insensitive" as const },
+      })),
+    });
+  }
 
   if (filters.from || filters.to) {
     const issue: Prisma.DateTimeNullableFilter = {};
@@ -394,7 +436,13 @@ function buildFactWhere(
   }
 
   // year + from/to: se year informado e from/to ausentes, yearDateBounds já no base (run geral)
-  if (filters.year != null && !filters.from && !filters.to && !isGeneralRun) {
+  if (
+    filters.year != null &&
+    !filters.from &&
+    !filters.to &&
+    !isGeneralRun &&
+    !pointOrderLookup
+  ) {
     const bounds = yearDateBounds(filters.year);
     and.push({
       OR: [

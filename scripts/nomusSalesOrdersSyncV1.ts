@@ -27,6 +27,10 @@ import {
   runNomusProductionOrdersAfterSalesOrdersSync,
 } from "../src/lib/nomusProductionOrdersAfterSalesOrders.server.ts";
 import {
+  formatStockDocumentsAfterSalesOrdersLogLine,
+  runNomusStockDocumentsAfterSalesOrdersSync,
+} from "../src/lib/nomusStockDocumentsAfterSalesOrders.server.ts";
+import {
   buildSalesOrderFlowRecomputeAfterSyncTrigger,
   runSalesOrderFlowRecomputeAfterNomusSync,
 } from "../src/lib/sales/salesOrderFlowRecomputeAfterNomusSync.server.ts";
@@ -2176,7 +2180,35 @@ export async function executeNomusSalesOrdersSync(
       );
     }
 
-    // OP-57: recomputa fluxo após persistência de pedidos (+ OP pós-sync). Soft-fail.
+    // DS por idNfe dos vínculos SalesOrderNfeLink — antes do recompute do Kanban.
+    // Soft-fail: pedidos/OP já gravados permanecem válidos.
+    try {
+      hooksAlreadyRan.push("stockDocumentsAfterSalesOrders");
+      const dsResult = await runNomusStockDocumentsAfterSalesOrdersSync({
+        prisma,
+        salesOrderIds: applied?.affectedSalesOrderIds ?? [],
+      });
+      console.log(
+        `[nomusSalesOrdersSyncV1] ${formatStockDocumentsAfterSalesOrdersLogLine(dsResult)}`
+      );
+      if (
+        dsResult.sync &&
+        !dsResult.skipped &&
+        !dsResult.sync.lockBlocked &&
+        dsResult.sync.errors > 0
+      ) {
+        console.error(
+          `[nomusSalesOrdersSyncV1] stock-documents by-idNfe com falhas (sync de pedidos permanece válido): errors=${dsResult.sync.errors}`
+        );
+      }
+    } catch (err) {
+      console.error(
+        "[nomusSalesOrdersSyncV1] stock-documents sync falhou (sync de pedidos segue):",
+        err instanceof Error ? err.message : err
+      );
+    }
+
+    // OP-57: recomputa fluxo após persistência de pedidos (+ OP/DS pós-sync). Soft-fail.
     // Cobre também corte/atendimento/cancelamento gravados no apply de itens.
     try {
       hooksAlreadyRan.push("salesOrderFlowRecompute");

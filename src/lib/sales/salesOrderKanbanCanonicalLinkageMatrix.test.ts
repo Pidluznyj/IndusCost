@@ -399,9 +399,18 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       withDs: false,
       nfeWithoutLocalDs: true,
       withNfe: true,
+      fulfilled: true,
     });
     assert.equal(pack.stockDocuments.length, 0);
     assert.ok(pack.nfes.length >= 1 || pack.nfeLinks.length >= 1);
+    // Não inventar faturado/enviado sem DS — gargalo = Aguardando documento de saída.
+    const { order, items } = resolveOrderFromPack(pack);
+    assert.equal(order.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    for (const item of items) {
+      assert.equal(item.documentedQuantity.eq(0), true);
+      assert.equal(item.invoicedQuantity.eq(0), true);
+      assert.equal(item.shippedQuantity.eq(0), true);
+    }
   });
 
   it("#21 Pedido com DS/NF sem OP", () => {

@@ -453,10 +453,13 @@ function resolveDocumentAndNfeCoverageRows(pack: SalesOrderFlowEvidencePack): {
               docsForNfe.some((d) => d.externalId === l.stockDocumentExternalId)
             )
             .reduce((s, l) => s + l.quantity, 0);
+          // Cobertura NF só com DS real (ou qty já resolvida na linha DS).
+          // Sem DS local: não inventar faturado/enviado — o estágio permanece
+          // WAITING_OUTPUT_DOCUMENT até o sync de documentosEstoque por idNfe.
           const allocateQty =
             qtyFromResolved > 0
               ? Math.min(gap, qtyFromResolved)
-              : docsForNfe.length > 0 || validNfes.length > 0
+              : docsForNfe.length > 0
                 ? gap
                 : 0;
           if (allocateQty <= 0) continue;

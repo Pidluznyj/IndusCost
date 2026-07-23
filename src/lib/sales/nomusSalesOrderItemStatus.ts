@@ -195,16 +195,42 @@ export function parseNomusSalesOrderItemStatus(
 
   const quantityOrdered =
     asNumber(obj.quantidade) ?? asNumber(obj.qtd) ?? asNumber(obj.quantity);
-  const quantityFulfilled =
+  // Nomus frequentemente envia quantidadeAtendida=0 mesmo com status 4
+  // ("Atendido totalmente") e preenche só quantidadeFaturada / UI de produção.
+  // `??` não cai no próximo campo quando o valor é 0 — tratar 0 como ausente.
+  const rawAtendida =
     asNumber(obj.quantidadeAtendida) ??
     asNumber(obj.qtdAtendida) ??
-    asNumber(obj.quantidadeFaturada);
+    asNumber(obj.quantidadeAtendimento) ??
+    asNumber(obj.quantidadeAtendidaProducao) ??
+    asNumber(obj.qtdeAtendidaProducao);
+  const rawFaturada =
+    asNumber(obj.quantidadeFaturada) ??
+    asNumber(obj.qtdFaturada) ??
+    asNumber(obj.quantidadeNF);
+  let quantityFulfilled: number | null =
+    rawAtendida != null && rawAtendida > 0
+      ? rawAtendida
+      : rawFaturada != null && rawFaturada > 0
+        ? rawFaturada
+        : rawAtendida;
+  // Status 4 sem qty positiva: obrigação atendida = pedida (não inventa corte).
+  if (
+    (quantityFulfilled == null || quantityFulfilled <= 0) &&
+    statusNormalized === "FULFILLED" &&
+    quantityOrdered != null &&
+    quantityOrdered > 0
+  ) {
+    quantityFulfilled = quantityOrdered;
+  }
   const quantityCanceled =
     asNumber(obj.quantidadeCancelada) ?? asNumber(obj.qtdCancelada);
 
   let quantityCut: number | null = null;
   if (statusNormalized === "FULFILLED_WITH_CUT" && quantityOrdered != null) {
-    const fulfilled = quantityFulfilled ?? 0;
+    const fulfilled = quantityFulfilled != null && quantityFulfilled > 0
+      ? quantityFulfilled
+      : 0;
     quantityCut = Math.max(0, quantityOrdered - fulfilled);
   }
 

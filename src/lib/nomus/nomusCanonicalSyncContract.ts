@@ -184,6 +184,7 @@ export const POST_SYNC_HOOK_NAMES = [
   "commissionMaterialization",
   "crmCommercialOwnerAutoAssign",
   "productionOrdersAfterSalesOrders",
+  "stockDocumentsAfterSalesOrders",
   "salesOrderFlowRecompute",
 ] as const;
 

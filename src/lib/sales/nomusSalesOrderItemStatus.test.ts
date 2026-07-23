@@ -52,6 +52,28 @@ describe("nomusSalesOrderItemStatus", () => {
     assert.equal(fulfilled.quantityPending, 0);
   });
 
+  it("FULFILLED com quantidadeAtendida=0 usa faturada ou pedida (PD 02757)", () => {
+    const viaFaturada = parseNomusSalesOrderItemStatus({
+      quantidade: 114,
+      status: 4,
+      quantidadeAtendida: 0,
+      quantidadeFaturada: 114,
+    });
+    assert.equal(viaFaturada.statusNormalized, "FULFILLED");
+    assert.equal(viaFaturada.quantityFulfilled, 114);
+    assert.equal(viaFaturada.quantityPending, 0);
+
+    const viaOrdered = parseNomusSalesOrderItemStatus({
+      quantidade: 360,
+      status: 4,
+      quantidadeAtendida: 0,
+      quantidadeFaturada: 0,
+    });
+    assert.equal(viaOrdered.statusNormalized, "FULFILLED");
+    assert.equal(viaOrdered.quantityFulfilled, 360);
+    assert.equal(viaOrdered.quantityPending, 0);
+  });
+
   it("toOrderItemFulfillmentStorageStatus e flags inativos", () => {
     assert.equal(toOrderItemFulfillmentStorageStatus("CANCELED"), "CANCELADO");
     assert.equal(toOrderItemFulfillmentStorageStatus("FULFILLED"), "ATENDIDO");

@@ -93,7 +93,13 @@ const SALES_ORDER_ITEM_RAW_FIELD_ALIASES: Record<string, readonly string[]> = {
     "qtd_pedida",
     "quantidade_pedida",
   ],
-  quantityFulfilled: ["quantidadeAtendida", "qtdAtendida", "quantidadeAtendimento"],
+  quantityFulfilled: [
+    "quantidadeAtendida",
+    "qtdAtendida",
+    "quantidadeAtendimento",
+    "quantidadeAtendidaProducao",
+    "qtdeAtendidaProducao",
+  ],
   quantityInvoiced: ["quantidadeFaturada", "qtdFaturada", "quantidadeNF"],
   quantityCanceled: [
     "quantidadeCancelada",
