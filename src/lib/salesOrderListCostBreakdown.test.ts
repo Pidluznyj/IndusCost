@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   aggregateSalesOrderListCostBreakdown,
   buildSalesOrderListCostBreakdownTooltipText,
+  shareOfSoldValuePercent,
 } from "./salesOrderListCostBreakdown.js";
 import type { SalesOrderMarginItemResult } from "./salesOrderMarginTypes.js";
 
@@ -114,5 +115,27 @@ describe("salesOrderListCostBreakdown", () => {
     assert.match(text, /HH \(mão de obra\)/);
     assert.match(text, /HM \(máquina\)/);
     assert.match(text, /Impostos \(dedução da margem\)/);
+  });
+
+  it("shareOfSoldValuePercent e tooltip com % do valor vendido", () => {
+    assert.equal(shareOfSoldValuePercent(2411730.42, 9890931.88), 24.38);
+    assert.equal(shareOfSoldValuePercent(100, 0), null);
+    const text = buildSalesOrderListCostBreakdownTooltipText(
+      {
+        materialCost: 70,
+        laborCost: 30,
+        machineCost: 26,
+        otherIndustrialCost: 14,
+        taxAmount: 25.5,
+        totalIndustrialCost: 140,
+        residualCost: 0,
+        hasIndustrialBreakdown: true,
+        itemsWithBreakdown: 2,
+        itemsWithoutBreakdown: 0,
+      },
+      { soldValue: 1000 }
+    );
+    assert.match(text, /14[,.]00% do valor vendido/);
+    assert.match(text, /2[,.]55% do valor vendido/);
   });
 });

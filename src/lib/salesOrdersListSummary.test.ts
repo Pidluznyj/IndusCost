@@ -374,6 +374,8 @@ describe("salesOrdersListSummary", () => {
     assert.ok(cards.includes("totalCost"));
     assert.ok(cards.includes("costBreakdown"));
     assert.ok(cards.includes("buildSalesOrderListCostBreakdownTooltipText"));
+    assert.ok(cards.includes("shareOfSoldValuePercent"));
+    assert.ok(cards.includes("do valor vendido"));
     assert.ok(cards.includes("createPortal"));
     assert.ok(cards.includes("sales-order-list-cost-tooltip-panel"));
     assert.ok(cards.includes("Ticket médio"));

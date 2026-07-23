@@ -3,7 +3,10 @@
  * Agrega MP / HH / HM / demais a partir do breakdown unitário × quantidade.
  */
 
-import { formatSalesOrderMarginMoney } from "./salesOrderMarginDisplay.js";
+import {
+  formatSalesOrderMarginMoney,
+  formatSalesOrderMarginPercent,
+} from "./salesOrderMarginDisplay.js";
 import type { SalesOrderMarginItemResult } from "./salesOrderMarginTypes.js";
 
 type OrderWithItemResults = {
@@ -122,17 +125,41 @@ export function aggregateSalesOrderListCostBreakdown(input: {
   };
 }
 
+/** Parte ÷ total × 100 (ex.: custo industrial ÷ valor vendido). */
+export function shareOfSoldValuePercent(
+  part: number,
+  soldValue: number
+): number | null {
+  if (!Number.isFinite(part) || !Number.isFinite(soldValue) || soldValue <= 0) {
+    return null;
+  }
+  return round2((Math.max(0, part) / soldValue) * 100);
+}
+
 /** Texto do tooltip do card Custo estimado (hover). */
 export function buildSalesOrderListCostBreakdownTooltipText(
-  breakdown: SalesOrderListCostBreakdown | null | undefined
+  breakdown: SalesOrderListCostBreakdown | null | undefined,
+  options?: { soldValue?: number | null }
 ): string {
   if (!breakdown) {
     return "Custo industrial indisponível para o filtro atual.";
   }
+  const soldValue =
+    options?.soldValue != null && Number.isFinite(options.soldValue)
+      ? options.soldValue
+      : null;
+  const costShare = shareOfSoldValuePercent(
+    breakdown.totalIndustrialCost,
+    soldValue ?? 0
+  );
+  const taxShare = shareOfSoldValuePercent(breakdown.taxAmount, soldValue ?? 0);
+
   const lines: string[] = [
     "Custo considerado na margem",
     "",
-    `Custo industrial total: ${formatSalesOrderMarginMoney(breakdown.totalIndustrialCost)}`,
+    `Custo industrial total: ${formatSalesOrderMarginMoney(breakdown.totalIndustrialCost)}${
+      costShare != null ? ` (${formatSalesOrderMarginPercent(costShare)} do valor vendido)` : ""
+    }`,
   ];
 
   if (breakdown.hasIndustrialBreakdown) {
@@ -153,7 +180,9 @@ export function buildSalesOrderListCostBreakdownTooltipText(
 
   lines.push("");
   lines.push(
-    `Impostos (dedução da margem): ${formatSalesOrderMarginMoney(breakdown.taxAmount)}`
+    `Impostos (dedução da margem): ${formatSalesOrderMarginMoney(breakdown.taxAmount)}${
+      taxShare != null ? ` (${formatSalesOrderMarginPercent(taxShare)} do valor vendido)` : ""
+    }`
   );
   lines.push("Fonte: tabela de custo de produção vigente (mesmo CIU da margem).");
 

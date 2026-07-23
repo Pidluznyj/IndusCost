@@ -12,7 +12,10 @@ import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMa
 import { SALES_ORDER_LIST_KPI_SECTION } from "@/src/lib/salesOrderManagementKpiLabels";
 import { formatSalesOrderMarginPercent } from "@/src/lib/salesOrderMarginDisplay";
 import { formatCompactCurrency } from "@/src/lib/formatFinancialMetric";
-import { buildSalesOrderListCostBreakdownTooltipText } from "@/src/lib/salesOrderListCostBreakdown";
+import {
+  buildSalesOrderListCostBreakdownTooltipText,
+  shareOfSoldValuePercent,
+} from "@/src/lib/salesOrderListCostBreakdown";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import "./sales-order-list-summary-cards.css";
@@ -118,9 +121,22 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
   const costUnavailable = !showMarginCard || marginUnavailable;
   const costAmount =
     loading || costUnavailable ? null : (marginSummary?.totalCost ?? null);
+  const soldValueForShare =
+    marginSummary?.grossSalesAmount && marginSummary.grossSalesAmount > 0
+      ? marginSummary.grossSalesAmount
+      : summary.totalNetAmount;
+  const costShareOfSold = !loading && !costUnavailable
+    ? shareOfSoldValuePercent(marginSummary?.totalCost ?? 0, soldValueForShare)
+    : null;
+  const costShareSubtitle =
+    costShareOfSold != null
+      ? `${formatSalesOrderMarginPercent(costShareOfSold)} do valor vendido`
+      : undefined;
   const costBreakdownTooltip =
     !loading && !costUnavailable
-      ? buildSalesOrderListCostBreakdownTooltipText(marginSummary?.costBreakdown)
+      ? buildSalesOrderListCostBreakdownTooltipText(marginSummary?.costBreakdown, {
+          soldValue: soldValueForShare,
+        })
       : null;
 
   const costCard = (
@@ -138,6 +154,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
               : "—"
             : undefined
       }
+      subtitle={loading || costUnavailable ? undefined : costShareSubtitle}
       tone={costUnavailable ? "neutral" : "internal"}
       icon={Scale}
       helperText={
@@ -145,7 +162,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           ? "Custo industrial interno (requer permissão de custo/margem)."
           : costUnavailable
             ? "Sem custo publicado suficiente nos pedidos filtrados."
-            : "Passe o mouse para ver MP, HH, HM, demais e impostos."
+            : "Custo industrial ÷ valor vendido do filtro. Passe o mouse para MP/HH/HM e impostos."
       }
       valueSize={costUnavailable && !loading ? "text" : "default"}
       labelAccessory={
