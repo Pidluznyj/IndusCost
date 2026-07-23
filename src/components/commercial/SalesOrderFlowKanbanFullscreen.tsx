@@ -10,11 +10,14 @@ import {
   type SalesOrderFlowKanbanColumnView,
 } from "@/src/components/commercial/SalesOrderFlowKanbanBoard";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
+import { fetchJsonOk } from "@/src/lib/http";
+import { resolvePrintLogoSrc } from "@/src/lib/printBranding";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog";
+import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 import { cn } from "@/src/lib/utils";
 
 const FILTER_CONTROL_CLASS =
-  "w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
+  "h-9 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-50";
 
 type Props = {
   open: boolean;
@@ -34,6 +37,8 @@ type Props = {
   searching?: boolean;
   onOrderSearchChange: (value: string) => void;
   onApplySearch: (patch?: { q?: string; customerId?: string }) => void;
+  /** Limpa busca de pedido/cliente do Kanban (e sincroniza com a página). */
+  onClearSearch: () => void;
 };
 
 /**
@@ -57,9 +62,11 @@ export function SalesOrderFlowKanbanFullscreen({
   searching = false,
   onOrderSearchChange,
   onApplySearch,
+  onClearSearch,
 }: Props) {
   const [customerSelection, setCustomerSelection] =
     useState<EntityAutocompleteSelection | null>(null);
+  const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +81,21 @@ export function SalesOrderFlowKanbanFullscreen({
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings", {
+      signal: controller.signal,
+    })
+      .then((data) => {
+        if (!controller.signal.aborted) setBranding(data);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setBranding(DEFAULT_BRANDING);
+      });
+    return () => controller.abort();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -103,6 +125,9 @@ export function SalesOrderFlowKanbanFullscreen({
 
   if (!open || typeof document === "undefined") return null;
 
+  const logoSrc = resolvePrintLogoSrc(branding);
+  const searchActive = Boolean(orderSearch.trim() || customerId.trim());
+
   return createPortal(
     <div
       className="fixed inset-0 z-[80] flex flex-col bg-background"
@@ -112,7 +137,24 @@ export function SalesOrderFlowKanbanFullscreen({
       data-testid="sales-order-flow-kanban-fullscreen"
     >
       <header className="flex shrink-0 flex-col gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            className="flex shrink-0 items-center"
+            data-testid="sales-order-flow-kanban-brand"
+          >
+            {logoSrc ? (
+              <img
+                src={logoSrc}
+                alt={branding.companyName || "Lazarios / Koppetel"}
+                className="h-9 w-auto max-w-[9rem] object-contain object-left sm:h-10 sm:max-w-[11rem]"
+                data-testid="sales-order-flow-kanban-logo"
+              />
+            ) : (
+              <span className="text-xs font-semibold text-foreground sm:text-sm">
+                {branding.companyName || "Lazarios · Koppetel"}
+              </span>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <h2
               id="sales-order-flow-kanban-fullscreen-title"
@@ -154,7 +196,7 @@ export function SalesOrderFlowKanbanFullscreen({
         </div>
 
         <div
-          className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto]"
+          className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto_auto]"
           data-testid="sales-order-flow-kanban-search"
         >
           <label className="min-w-0">
@@ -162,7 +204,7 @@ export function SalesOrderFlowKanbanFullscreen({
               Pedido
             </span>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
                 className={cn(FILTER_CONTROL_CLASS, "pl-8")}
                 data-testid="sales-order-flow-kanban-filter-order"
@@ -206,13 +248,28 @@ export function SalesOrderFlowKanbanFullscreen({
           <div className="flex items-end">
             <button
               type="button"
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50 sm:text-sm"
+              className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-primary/30 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:text-sm"
               data-testid="sales-order-flow-kanban-search-apply"
               disabled={searching}
               onClick={() => onApplySearch({ q: orderSearch })}
             >
               <Search className="h-3.5 w-3.5" aria-hidden="true" />
               Buscar
+            </button>
+          </div>
+
+          <div className="flex items-end">
+            <button
+              type="button"
+              className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-40 sm:text-sm"
+              data-testid="sales-order-flow-kanban-clear-filters"
+              disabled={searching || !searchActive}
+              onClick={() => {
+                setCustomerSelection(null);
+                onClearSearch();
+              }}
+            >
+              Limpar filtros
             </button>
           </div>
         </div>

@@ -61,7 +61,7 @@ import {
   canViewSalesOrderFlow,
   classifySalesOrderFlowListError,
   collectSalesOrderFlowCardsFromColumnStates,
-  EMPTY_SALES_ORDER_FLOW_FILTERS,
+  createDefaultSalesOrderFlowFilters,
   hasActiveSalesOrderFlowFilters,
   parseSalesOrderFlowDrawerFromSearchParams,
   parseSalesOrderFlowFiltersFromSearchParams,
@@ -558,8 +558,9 @@ export function SalesOrderFlowModule() {
   }, []);
 
   const clearFilters = () => {
-    setDraftFilters({ ...EMPTY_SALES_ORDER_FLOW_FILTERS });
-    setFilters({ ...EMPTY_SALES_ORDER_FLOW_FILTERS });
+    const defaults = createDefaultSalesOrderFlowFilters();
+    setDraftFilters(defaults);
+    setFilters(defaults);
   };
 
   const patchDraftFilters = (patch: Partial<SalesOrderFlowUiFilters>) => {
@@ -607,7 +608,10 @@ export function SalesOrderFlowModule() {
     );
   }
 
-  const filtersActive = hasActiveSalesOrderFlowFilters(filters);
+  const defaultFilterYear = String(new Date().getFullYear());
+  const filtersActive = hasActiveSalesOrderFlowFilters(filters, {
+    defaultYear: defaultFilterYear,
+  });
   const indicatorList = buildSalesOrderFlowIndicatorListFromColumns({
     stages: visibleStages,
     columns: columnStates,
@@ -640,7 +644,9 @@ export function SalesOrderFlowModule() {
     totalOrders === 0 &&
     filtersActive;
   const initialLoading = loading && !hasLoadedOnce;
-  const draftFiltersActive = hasActiveSalesOrderFlowFilters(draftFilters);
+  const draftFiltersActive = hasActiveSalesOrderFlowFilters(draftFilters, {
+    defaultYear: defaultFilterYear,
+  });
   const indicators =
     summary != null
       ? resolveSalesOrderFlowExecutiveIndicators(summary, indicatorList)
@@ -936,6 +942,7 @@ export function SalesOrderFlowModule() {
           searching={loading}
           onOrderSearchChange={(value) => patchDraftFilters({ q: value })}
           onApplySearch={(patch) => applyFilterPatch(patch)}
+          onClearSearch={() => applyFilterPatch({ q: "", customerId: "" })}
         />
       ) : null}
 

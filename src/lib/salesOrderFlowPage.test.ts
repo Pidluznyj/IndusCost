@@ -40,6 +40,7 @@ import {
   canViewSalesOrderFlow,
   classifySalesOrderFlowListError,
   collectSalesOrderFlowCardsFromColumnStates,
+  createDefaultSalesOrderFlowFilters,
   EMPTY_SALES_ORDER_FLOW_FILTERS,
   applySalesOrderFlowYearMonthToIssueDates,
   hasActiveSalesOrderFlowFilters,
@@ -270,6 +271,9 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(filtersBar, /CustomerAutocompleteFilter/);
     assert.match(filtersBar, /fetchCustomerByIdForAutocomplete/);
     assert.match(filtersBar, /SALES_ORDER_FLOW_COMPANY_OPTIONS/);
+    assert.match(filtersBar, /grid-cols-12/);
+    assert.match(filtersBar, /bg-card\/60/);
+    assert.match(mod, /createDefaultSalesOrderFlowFilters/);
     assert.match(mod, /draftFilters/);
     assert.match(mod, /applyFilters/);
     assert.match(mod, /getSalesOrderSellerFilterOptionsUrl/);
@@ -280,6 +284,35 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(mod, /fetchSalesOrderFlowList/);
     assert.match(mod, /loadColumnPage/);
     assert.match(mod, /filterGenerationRef/);
+  });
+
+  it("abre com ano corrente por padrão e mantém campo Ano dedicado", () => {
+    const now = new Date(2026, 6, 23);
+    const defaults = createDefaultSalesOrderFlowFilters(now);
+    assert.equal(defaults.year, "2026");
+    assert.equal(defaults.month, "");
+    assert.equal(defaults.issueFrom, "2026-01-01");
+    assert.equal(defaults.issueTo, "2026-12-31");
+    const fromEmptyUrl = parseSalesOrderFlowFiltersFromSearchParams(
+      new URLSearchParams(""),
+      now
+    );
+    assert.equal(fromEmptyUrl.year, "2026");
+    assert.equal(fromEmptyUrl.issueFrom, "2026-01-01");
+    const allYears = parseSalesOrderFlowFiltersFromSearchParams(
+      new URLSearchParams("year=all"),
+      now
+    );
+    assert.equal(allYears.year, "");
+    assert.equal(allYears.issueFrom, "");
+    assert.equal(
+      hasActiveSalesOrderFlowFilters(defaults, { defaultYear: "2026" }),
+      false
+    );
+    assert.equal(
+      hasActiveSalesOrderFlowFilters(allYears, { defaultYear: "2026" }),
+      true
+    );
   });
 
   it("normaliza URL inválida com segurança", () => {
@@ -346,12 +379,16 @@ describe("sales order flow filters (OP-65)", () => {
       buildSalesOrderFlowSearchParams(EMPTY_SALES_ORDER_FLOW_FILTERS).toString(),
       ""
     );
-    assert.equal(hasActiveSalesOrderFlowFilters(EMPTY_SALES_ORDER_FLOW_FILTERS), false);
+    const defaults2026 = createDefaultSalesOrderFlowFilters(new Date(2026, 0, 1));
     assert.equal(
-      hasActiveSalesOrderFlowFilters({
-        ...EMPTY_SALES_ORDER_FLOW_FILTERS,
-        overdue: true,
-      }),
+      hasActiveSalesOrderFlowFilters(defaults2026, { defaultYear: "2026" }),
+      false
+    );
+    assert.equal(
+      hasActiveSalesOrderFlowFilters(
+        { ...EMPTY_SALES_ORDER_FLOW_FILTERS, overdue: true },
+        { defaultYear: "2026" }
+      ),
       true
     );
     assert.equal(
@@ -638,9 +675,28 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(fullscreen, /sales-order-flow-kanban-filter-order/);
     assert.match(fullscreen, /sales-order-flow-kanban-filter-customer/);
     assert.match(fullscreen, /sales-order-flow-kanban-search-apply/);
+    assert.match(fullscreen, /sales-order-flow-kanban-clear-filters/);
+    assert.match(fullscreen, /Limpar filtros/);
     assert.match(fullscreen, /CustomerAutocompleteFilter/);
     assert.match(fullscreen, /onApplySearch/);
+    assert.match(fullscreen, /onClearSearch/);
     assert.match(fullscreen, /Código do pedido/);
+    assert.match(fullscreen, /resolvePrintLogoSrc/);
+    assert.match(fullscreen, /sales-order-flow-kanban-logo/);
+    assert.match(fullscreen, /\/api\/branding-settings/);
+  });
+
+  it("Overlay canônico fica acima do Kanban fullscreen (modal DS/detalhe)", () => {
+    const fullscreen = read(
+      "src/components/commercial/SalesOrderFlowKanbanFullscreen.tsx"
+    );
+    const overlay = read("src/components/ui/overlay/Overlay.tsx");
+    assert.match(fullscreen, /z-\[80\]/);
+    assert.match(overlay, /z-\[100\]/);
+    assert.match(
+      overlay,
+      /OutputDocumentDetailOverlay|Acima de fullscreen operacional/
+    );
   });
 });
 

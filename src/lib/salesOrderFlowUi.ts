@@ -173,6 +173,24 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
   stages: [],
 };
 
+/**
+ * Filtros iniciais / limpar — padrão Pedidos de venda e Documentos de Saída:
+ * ano corrente preenchido, mês em branco (todo o ano).
+ */
+export function createDefaultSalesOrderFlowFilters(
+  now: Date = new Date()
+): SalesOrderFlowUiFilters {
+  const year = String(now.getFullYear());
+  const dates = applySalesOrderFlowYearMonthToIssueDates(year, "");
+  return {
+    ...EMPTY_SALES_ORDER_FLOW_FILTERS,
+    year,
+    month: "",
+    issueFrom: dates.issueFrom,
+    issueTo: dates.issueTo,
+  };
+}
+
 function formatLocalDateOnly(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -477,21 +495,37 @@ export function parseSalesOrderFlowBooleanParam(
  * Lê URL e normaliza valores inválidos (descarta em vez de falhar).
  */
 export function parseSalesOrderFlowFiltersFromSearchParams(
-  params: URLSearchParams
+  params: URLSearchParams,
+  now: Date = new Date()
 ): SalesOrderFlowUiFilters {
   const yearRaw = params.get("year")?.trim() ?? "";
   const monthRaw = params.get("month")?.trim() ?? "";
-  const yearNum = parseSalesOrderYearParam(yearRaw);
+  const yearIsAll =
+    yearRaw.toLowerCase() === "all" || yearRaw.toLowerCase() === "todos";
+  const yearNum = yearIsAll ? null : parseSalesOrderYearParam(yearRaw);
   const monthNum = parseSalesOrderMonthParam(monthRaw);
-  const year = yearNum != null ? String(yearNum) : "";
-  const month = year && monthNum != null ? String(monthNum) : "";
+  let year = yearNum != null ? String(yearNum) : "";
+  let month = year && monthNum != null ? String(monthNum) : "";
 
   let issueFrom = normalizeSalesOrderFlowDateParam(params.get("issueFrom"));
   let issueTo = normalizeSalesOrderFlowDateParam(params.get("issueTo"));
-  if (year) {
+
+  // Sem ano e sem emissão na URL → ano corrente (padrão Pedidos / DS).
+  // year=all|todos → todos os anos. Só issueFrom/issueTo → faixa manual (ano vazio).
+  if (!yearIsAll && !year && !issueFrom && !issueTo) {
+    const defaults = createDefaultSalesOrderFlowFilters(now);
+    year = defaults.year;
+    month = "";
+    issueFrom = defaults.issueFrom;
+    issueTo = defaults.issueTo;
+  } else if (year) {
     const dates = applySalesOrderFlowYearMonthToIssueDates(year, month);
     issueFrom = dates.issueFrom;
     issueTo = dates.issueTo;
+  } else if (yearIsAll) {
+    issueFrom = "";
+    issueTo = "";
+    month = "";
   }
 
   return {
@@ -693,8 +727,31 @@ export function collectSalesOrderFlowCardsFromColumnStates(
 }
 
 export function hasActiveSalesOrderFlowFilters(
-  filters: SalesOrderFlowUiFilters
+  filters: SalesOrderFlowUiFilters,
+  options?: { defaultYear?: string; now?: Date }
 ): boolean {
+  const defaultYear = (
+    options?.defaultYear ?? String((options?.now ?? new Date()).getFullYear())
+  ).trim();
+  const year = filters.year.trim();
+  const month = filters.month.trim();
+  const yearIsDefault = Boolean(year && year === defaultYear);
+  const defaultDates = yearIsDefault
+    ? applySalesOrderFlowYearMonthToIssueDates(defaultYear, "")
+    : null;
+  const issueIsDefaultYearWindow =
+    yearIsDefault &&
+    !month &&
+    filters.issueFrom === defaultDates?.issueFrom &&
+    filters.issueTo === defaultDates?.issueTo;
+
+  // Ano corrente sem mês/outros filtros = estado padrão (não conta como “ativo”).
+  // Ano vazio (todos) ou outro ano conta como filtro ativo para habilitar Limpar.
+  const yearIsExtra = Boolean(year) && !yearIsDefault;
+  const yearMissingVsDefault = !year && Boolean(defaultYear);
+  const issueIsExtra =
+    Boolean(filters.issueFrom || filters.issueTo) && !issueIsDefaultYearWindow;
+
   return Boolean(
     filters.q.trim() ||
       filters.customerId.trim() ||
@@ -702,10 +759,10 @@ export function hasActiveSalesOrderFlowFilters(
       filters.company.trim() ||
       filters.product.trim() ||
       filters.sector.trim() ||
-      filters.year.trim() ||
-      filters.month.trim() ||
-      filters.issueFrom ||
-      filters.issueTo ||
+      yearIsExtra ||
+      yearMissingVsDefault ||
+      month ||
+      issueIsExtra ||
       filters.promisedFrom ||
       filters.promisedTo ||
       filters.overdue === true ||

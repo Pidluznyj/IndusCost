@@ -765,7 +765,9 @@ describe("ProductionOrderAuditContent", () => {
     assert.match(drawer, /production-order-detail-error/);
     assert.match(drawer, /copyProductionOrderTechnicalEvidence\(detail, navigator\.clipboard\)/);
     assert.match(drawer, /aria-live="polite"/);
-    assert.match(overlay, /event\.key === "Escape"/);
+    assert.match(overlay, /event\.key !== "Escape"/);
+    assert.match(overlay, /stopImmediatePropagation/);
+    assert.match(overlay, /addEventListener\("keydown", onKey, true\)/);
     assert.match(overlay, /event\.target === event\.currentTarget/);
     assert.match(overlay, /role="dialog"/);
   });

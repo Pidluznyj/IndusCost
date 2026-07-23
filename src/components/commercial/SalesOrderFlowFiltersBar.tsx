@@ -20,11 +20,15 @@ import {
 import { cn } from "@/src/lib/utils";
 import type { SalesOrderFlowStage } from "@/src/lib/sales/salesOrderFlowCatalog";
 
+/** Controles no padrão executivo Comercial (Pedidos de venda). */
 const FILTER_CONTROL_CLASS =
-  "mt-1 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition-shadow focus:border-primary focus:ring-2 focus:ring-primary/20";
+  "h-9 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:text-muted-foreground";
 
 const LABEL_CLASS =
   "text-[10px] font-bold uppercase tracking-wider text-muted-foreground";
+
+const ACTION_BUTTON_CLASS =
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50";
 
 export function SalesOrderFlowFiltersBar({
   draftFilters,
@@ -110,16 +114,18 @@ export function SalesOrderFlowFiltersBar({
 
   return (
     <section
-      className="rounded-xl border border-border bg-card p-3 space-y-3 shadow-sm"
+      className="space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
       data-testid="sales-order-flow-filters"
       aria-label="Filtros do Fluxo de Pedidos"
     >
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-        <div className="grid grid-cols-1 sm:grid-cols-[minmax(7rem,8rem)_minmax(7rem,8rem)_minmax(12rem,1fr)_minmax(14rem,1.4fr)] gap-2 flex-1 min-w-0">
-          <FilterField label="Ano">
+      <div className="grid grid-cols-12 gap-2">
+        <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+          <FilterField label="Ano" htmlFor="sales-order-flow-filter-year">
             <select
+              id="sales-order-flow-filter-year"
               className={FILTER_CONTROL_CLASS}
               data-testid="sales-order-flow-filter-year"
+              aria-label="Filtrar por ano de emissão"
               value={draftFilters.year || "all"}
               onChange={(event) => {
                 const value = event.target.value;
@@ -140,11 +146,15 @@ export function SalesOrderFlowFiltersBar({
               ) : null}
             </select>
           </FilterField>
+        </div>
 
-          <FilterField label="Mês">
+        <div className="col-span-6 sm:col-span-3 lg:col-span-2">
+          <FilterField label="Mês" htmlFor="sales-order-flow-filter-month">
             <select
+              id="sales-order-flow-filter-month"
               className={FILTER_CONTROL_CLASS}
               data-testid="sales-order-flow-filter-month"
+              aria-label="Filtrar por mês de emissão"
               value={draftFilters.month}
               disabled={!draftFilters.year}
               onChange={(event) =>
@@ -159,11 +169,14 @@ export function SalesOrderFlowFiltersBar({
               ))}
             </select>
           </FilterField>
+        </div>
 
-          <FilterField label="Busca geral">
+        <div className="col-span-12 sm:col-span-6 lg:col-span-4">
+          <FilterField label="Busca geral" htmlFor="sales-order-flow-filter-q">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input
+                id="sales-order-flow-filter-q"
                 className={cn(FILTER_CONTROL_CLASS, "pl-8")}
                 data-testid="sales-order-flow-filter-q"
                 placeholder="Pedido, cliente…"
@@ -178,119 +191,135 @@ export function SalesOrderFlowFiltersBar({
               />
             </div>
           </FilterField>
+        </div>
 
-          <div data-testid="sales-order-flow-filter-customer" className="min-w-0">
-            <CustomerAutocompleteFilter
-              label="Cliente"
-              value={customerSelection}
-              customerId={draftFilters.customerId || undefined}
-              placeholder="Todos os clientes"
-              onChange={(selection) => {
-                setCustomerSelection(selection);
+        <div
+          className="col-span-12 sm:col-span-6 lg:col-span-4 min-w-0"
+          data-testid="sales-order-flow-filter-customer"
+        >
+          <CustomerAutocompleteFilter
+            label="Cliente"
+            value={customerSelection}
+            customerId={draftFilters.customerId || undefined}
+            placeholder="Todos os clientes"
+            onChange={(selection) => {
+              setCustomerSelection(selection);
+              onPatchDraft({
+                customerId: selection?.id?.trim() ?? "",
+              });
+            }}
+            onClear={() => {
+              setCustomerSelection(null);
+              onPatchDraft({ customerId: "" });
+            }}
+          />
+        </div>
+
+        <div className="col-span-12 sm:col-span-6 lg:col-span-3">
+          <FilterField label="Vendedor" htmlFor="sales-order-flow-filter-seller">
+            <select
+              id="sales-order-flow-filter-seller"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-seller"
+              value={draftFilters.sellerKey}
+              disabled={sellerOptionsLoading}
+              onChange={(event) =>
+                onPatchDraft({ sellerKey: event.target.value })
+              }
+            >
+              <option value="">Todos</option>
+              {sellerOptions.map((option) => (
+                <option key={option.sellerKey} value={option.sellerKey}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="col-span-6 sm:col-span-3 lg:col-span-3">
+          <FilterField label="Empresa" htmlFor="sales-order-flow-filter-company">
+            <select
+              id="sales-order-flow-filter-company"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-company"
+              value={draftFilters.company}
+              onChange={(event) => onPatchDraft({ company: event.target.value })}
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_COMPANY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+              {draftFilters.company &&
+              !SALES_ORDER_FLOW_COMPANY_OPTIONS.some(
+                (option) => option.value === draftFilters.company
+              ) ? (
+                <option value={draftFilters.company}>
+                  {draftFilters.company}
+                </option>
+              ) : null}
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="col-span-6 sm:col-span-3 lg:col-span-3">
+          <FilterField label="Etapa" htmlFor="sales-order-flow-filter-stage">
+            <select
+              id="sales-order-flow-filter-stage"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-stage"
+              value={stageSelectValue}
+              onChange={(event) => {
+                const value = event.target.value;
                 onPatchDraft({
-                  customerId: selection?.id?.trim() ?? "",
+                  stages: value ? [value as SalesOrderFlowStage] : [],
                 });
               }}
-              onClear={() => {
-                setCustomerSelection(null);
-                onPatchDraft({ customerId: "" });
-              }}
-            />
-          </div>
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
         </div>
-      </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        <FilterField label="Vendedor">
-          <select
-            className={FILTER_CONTROL_CLASS}
-            data-testid="sales-order-flow-filter-seller"
-            value={draftFilters.sellerKey}
-            disabled={sellerOptionsLoading}
-            onChange={(event) =>
-              onPatchDraft({ sellerKey: event.target.value })
-            }
+        <div className="col-span-12 sm:col-span-6 lg:col-span-3">
+          <FilterField
+            label="Prioridade"
+            htmlFor="sales-order-flow-filter-priority"
           >
-            <option value="">Todos</option>
-            {sellerOptions.map((option) => (
-              <option key={option.sellerKey} value={option.sellerKey}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </FilterField>
-
-        <FilterField label="Empresa">
-          <select
-            className={FILTER_CONTROL_CLASS}
-            data-testid="sales-order-flow-filter-company"
-            value={draftFilters.company}
-            onChange={(event) => onPatchDraft({ company: event.target.value })}
-          >
-            <option value="">Todas</option>
-            {SALES_ORDER_FLOW_COMPANY_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-            {draftFilters.company &&
-            !SALES_ORDER_FLOW_COMPANY_OPTIONS.some(
-              (option) => option.value === draftFilters.company
-            ) ? (
-              <option value={draftFilters.company}>
-                {draftFilters.company}
-              </option>
-            ) : null}
-          </select>
-        </FilterField>
-
-        <FilterField label="Etapa">
-          <select
-            className={FILTER_CONTROL_CLASS}
-            data-testid="sales-order-flow-filter-stage"
-            value={stageSelectValue}
-            onChange={(event) => {
-              const value = event.target.value;
-              onPatchDraft({
-                stages: value ? [value as SalesOrderFlowStage] : [],
-              });
-            }}
-          >
-            <option value="">Todas</option>
-            {SALES_ORDER_FLOW_STAGE_FILTER_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </FilterField>
-
-        <FilterField label="Prioridade">
-          <select
-            className={FILTER_CONTROL_CLASS}
-            data-testid="sales-order-flow-filter-priority"
-            value={draftFilters.priority ?? ""}
-            onChange={(event) => {
-              const value = event.target.value;
-              onPatchDraft({
-                priority: value ? (value as SalesOrderFlowUiPriority) : null,
-              });
-            }}
-          >
-            <option value="">Todas</option>
-            {SALES_ORDER_FLOW_PRIORITY_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </FilterField>
+            <select
+              id="sales-order-flow-filter-priority"
+              className={FILTER_CONTROL_CLASS}
+              data-testid="sales-order-flow-filter-priority"
+              value={draftFilters.priority ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                onPatchDraft({
+                  priority: value ? (value as SalesOrderFlowUiPriority) : null,
+                });
+              }}
+            >
+              <option value="">Todas</option>
+              {SALES_ORDER_FLOW_PRIORITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+          className={ACTION_BUTTON_CLASS}
           data-testid="sales-order-flow-advanced-filters-toggle"
           aria-expanded={advancedOpen}
           onClick={() => setAdvancedOpen((open) => !open)}
@@ -306,118 +335,151 @@ export function SalesOrderFlowFiltersBar({
 
       {advancedOpen ? (
         <div
-          className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4 border-t border-border pt-3"
+          className="grid grid-cols-12 gap-2 border-t border-border pt-3"
           data-testid="sales-order-flow-advanced-filters"
         >
-          <FilterField label="Produto">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-product"
-              placeholder="Código ou descrição"
-              value={draftFilters.product}
-              onChange={(event) =>
-                onPatchDraft({ product: event.target.value })
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  onApply();
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3">
+            <FilterField
+              label="Produto"
+              htmlFor="sales-order-flow-filter-product"
+            >
+              <input
+                id="sales-order-flow-filter-product"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-product"
+                placeholder="Código ou descrição"
+                value={draftFilters.product}
+                onChange={(event) =>
+                  onPatchDraft({ product: event.target.value })
                 }
-              }}
-            />
-          </FilterField>
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    onApply();
+                  }
+                }}
+              />
+            </FilterField>
+          </div>
 
-          <FilterField label="Setor">
-            <input
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-sector"
-              placeholder="Setor"
-              value={draftFilters.sector}
-              onChange={(event) => onPatchDraft({ sector: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  onApply();
+          <div className="col-span-12 sm:col-span-6 lg:col-span-3">
+            <FilterField label="Setor" htmlFor="sales-order-flow-filter-sector">
+              <input
+                id="sales-order-flow-filter-sector"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-sector"
+                placeholder="Setor"
+                value={draftFilters.sector}
+                onChange={(event) => onPatchDraft({ sector: event.target.value })}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    onApply();
+                  }
+                }}
+              />
+            </FilterField>
+          </div>
+
+          <div className="col-span-6 lg:col-span-3">
+            <FilterField
+              label="Emissão de"
+              htmlFor="sales-order-flow-filter-issue-from"
+            >
+              <input
+                id="sales-order-flow-filter-issue-from"
+                type="date"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-issue-from"
+                aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                  draftFilters.issueFrom,
+                  draftFilters.issueTo
+                )}
+                value={draftFilters.issueFrom}
+                onChange={(event) =>
+                  onPatchDraft({
+                    year: "",
+                    month: "",
+                    issueFrom: event.target.value,
+                  })
                 }
-              }}
-            />
-          </FilterField>
+              />
+            </FilterField>
+          </div>
 
-          <FilterField label="Emissão de">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-issue-from"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.issueFrom,
-                draftFilters.issueTo
-              )}
-              value={draftFilters.issueFrom}
-              onChange={(event) =>
-                onPatchDraft({
-                  year: "",
-                  month: "",
-                  issueFrom: event.target.value,
-                })
-              }
-            />
-          </FilterField>
+          <div className="col-span-6 lg:col-span-3">
+            <FilterField
+              label="Emissão até"
+              htmlFor="sales-order-flow-filter-issue-to"
+            >
+              <input
+                id="sales-order-flow-filter-issue-to"
+                type="date"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-issue-to"
+                aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                  draftFilters.issueFrom,
+                  draftFilters.issueTo
+                )}
+                value={draftFilters.issueTo}
+                onChange={(event) =>
+                  onPatchDraft({
+                    year: "",
+                    month: "",
+                    issueTo: event.target.value,
+                  })
+                }
+              />
+            </FilterField>
+          </div>
 
-          <FilterField label="Emissão até">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-issue-to"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.issueFrom,
-                draftFilters.issueTo
-              )}
-              value={draftFilters.issueTo}
-              onChange={(event) =>
-                onPatchDraft({
-                  year: "",
-                  month: "",
-                  issueTo: event.target.value,
-                })
-              }
-            />
-          </FilterField>
+          <div className="col-span-6 lg:col-span-3">
+            <FilterField
+              label="Entrega prometida de"
+              htmlFor="sales-order-flow-filter-promised-from"
+            >
+              <input
+                id="sales-order-flow-filter-promised-from"
+                type="date"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-promised-from"
+                aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                  draftFilters.promisedFrom,
+                  draftFilters.promisedTo
+                )}
+                value={draftFilters.promisedFrom}
+                onChange={(event) =>
+                  onPatchDraft({ promisedFrom: event.target.value })
+                }
+              />
+            </FilterField>
+          </div>
 
-          <FilterField label="Entrega prometida de">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-promised-from"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.promisedFrom,
-                draftFilters.promisedTo
-              )}
-              value={draftFilters.promisedFrom}
-              onChange={(event) =>
-                onPatchDraft({ promisedFrom: event.target.value })
-              }
-            />
-          </FilterField>
-
-          <FilterField label="Entrega prometida até">
-            <input
-              type="date"
-              className={FILTER_CONTROL_CLASS}
-              data-testid="sales-order-flow-filter-promised-to"
-              aria-invalid={isSalesOrderFlowDateRangeInvalid(
-                draftFilters.promisedFrom,
-                draftFilters.promisedTo
-              )}
-              value={draftFilters.promisedTo}
-              onChange={(event) =>
-                onPatchDraft({ promisedTo: event.target.value })
-              }
-            />
-          </FilterField>
+          <div className="col-span-6 lg:col-span-3">
+            <FilterField
+              label="Entrega prometida até"
+              htmlFor="sales-order-flow-filter-promised-to"
+            >
+              <input
+                id="sales-order-flow-filter-promised-to"
+                type="date"
+                className={FILTER_CONTROL_CLASS}
+                data-testid="sales-order-flow-filter-promised-to"
+                aria-invalid={isSalesOrderFlowDateRangeInvalid(
+                  draftFilters.promisedFrom,
+                  draftFilters.promisedTo
+                )}
+                value={draftFilters.promisedTo}
+                onChange={(event) =>
+                  onPatchDraft({ promisedTo: event.target.value })
+                }
+              />
+            </FilterField>
+          </div>
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/70 pt-3">
         <BooleanFilter
           testId="sales-order-flow-filter-overdue"
           label="Atrasados"
@@ -516,10 +578,10 @@ export function SalesOrderFlowFiltersBar({
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-3">
         <button
           type="button"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-primary/30 bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
           data-testid="sales-order-flow-apply-filters"
           disabled={
             draftDateRangesInvalid || !hasPendingFilterChanges || loading
@@ -531,7 +593,7 @@ export function SalesOrderFlowFiltersBar({
         </button>
         <button
           type="button"
-          className="inline-flex rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-40"
+          className={ACTION_BUTTON_CLASS}
           data-testid="sales-order-flow-clear-filters"
           disabled={!filtersActive && !draftFiltersActive}
           onClick={onClear}
@@ -564,13 +626,15 @@ export function SalesOrderFlowFiltersBar({
 
 function FilterField({
   label,
+  htmlFor,
   children,
 }: {
   label: string;
+  htmlFor?: string;
   children: ReactNode;
 }) {
   return (
-    <label className={cn("flex min-w-0 flex-col", LABEL_CLASS)}>
+    <label htmlFor={htmlFor} className={cn("flex min-w-0 flex-col gap-1", LABEL_CLASS)}>
       {label}
       {children}
     </label>

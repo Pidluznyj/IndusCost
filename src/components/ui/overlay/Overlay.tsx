@@ -84,14 +84,17 @@ export function Overlay({
 
   useEffect(() => {
     if (!open || !dismissOnEsc) return;
+    // Capture + stopImmediatePropagation: fecha só o overlay, sem derrubar
+    // camadas abaixo (ex.: Kanban fullscreen que também escuta Esc).
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        onClose();
-      }
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      onClose();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open, dismissOnEsc, onClose]);
 
   useEffect(() => {
@@ -120,7 +123,8 @@ export function Overlay({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto p-4 sm:items-center"
+      // Acima de fullscreen operacional (ex.: Kanban Fluxo z-[80]) e abaixo de tooltips (z-[200]).
+      className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto p-4 sm:items-center"
       style={{ backgroundColor: "var(--color-overlay-scrim)" }}
       onClick={handleBackdropClick}
       data-testid={testId}
