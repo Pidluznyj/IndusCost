@@ -64,6 +64,7 @@ src/lib/sales/salesOrderItemProductionRequirement.test.ts
 src/lib/sales/salesOrderFlowEvidence.test.ts
 src/lib/sales/salesOrderItemFlowEngine.test.ts
 src/lib/sales/salesOrderOperationalEvidenceGraph.test.ts
+src/lib/sales/salesOrderOperationalLinkageAudit.test.ts
 src/lib/sales/salesOrderFlowCompletionPrecedence.test.ts
 src/lib/sales/salesOrderFlowEngine.test.ts
 src/lib/sales/salesOrderFlowSchema.test.ts

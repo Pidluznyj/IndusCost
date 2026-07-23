@@ -490,6 +490,8 @@ SalesOrderItemOperationalLink {
 
 **KAN-LINK-02 (implementado):** contrato `SalesOrderOperationalEvidenceGraph` — ver `docs/commercial/sales-order-flow/operational-evidence-contract.md` e `src/lib/sales/salesOrderOperationalEvidence*.ts`. Não é um segundo motor; adapta coberturas válidas para `resolveSalesOrderItemFlow`.
 
+**KAN-LINK-03 (implementado):** auditoria read-only `npm run audit:sales-order:operational-links -- --order="PD 02757"` (`src/lib/sales/salesOrderOperationalLinkageAudit*.ts`). Sem writes/Nomus; saída só com `--output` + `--json`/`--markdown`.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

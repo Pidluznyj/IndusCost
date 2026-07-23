@@ -50,3 +50,18 @@ Somente evidências com vínculo elegível **e** validade que avança (`VALID`/`
 ## Granularidade
 
 Cobertura e inconsistências são **por item**. Um DS pode atender parte do pedido, vários itens, pedidos distintos ou linhas repetidas do mesmo produto; OPs podem cobrir residual parcial ou inexistir se o item foi atendido sem produção.
+
+---
+
+## Auditoria read-only (KAN-LINK-03)
+
+```bash
+npm run audit:sales-order:operational-links -- --order="PD 02757"
+npm run audit:sales-order:operational-links -- --active --limit=100
+npm run audit:sales-order:operational-links -- --order="PD 02757" --json --markdown --output=tmp-audits/operational-links
+```
+
+- Sem `--output`: só terminal (não cria arquivo).
+- JSON/Markdown só com `--json` / `--markdown`.
+- Exit `0` sem divergência crítica; `1` com crítica; `2` erro técnico.
+- Garantias: `databaseWrites=false`, `nomusCalls=false`.
