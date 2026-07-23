@@ -117,6 +117,7 @@ export type SalesOrderFlowEvidenceProductionLink = {
   salesOrderItemId: string | null;
   externalSalesOrderId: number;
   externalSalesOrderItemId: number;
+  itemNumber: string | null;
   linkedQuantity: number | null;
   isCurrent: boolean;
   linkKey: string;
@@ -339,6 +340,7 @@ export type SalesOrderFlowEvidenceProductionLinkRow = {
   salesOrderItemId?: string | null;
   externalSalesOrderId: number;
   externalSalesOrderItemId: number;
+  itemNumber?: string | null;
   linkedQuantity?: unknown;
   isCurrent: boolean;
 };
@@ -691,7 +693,12 @@ export function assembleSalesOrderFlowEvidenceBatch(
     );
 
     const productionLinks = (input.productionLinks ?? [])
-      .filter((l) => l.salesOrderId === order.id)
+      .filter(
+        (l) =>
+          l.salesOrderId === order.id ||
+          (order.externalSalesOrderId != null &&
+            l.externalSalesOrderId === order.externalSalesOrderId)
+      )
       .map((l) => ({
         id: l.id,
         productionOrderId: l.productionOrderId,
@@ -700,6 +707,7 @@ export function assembleSalesOrderFlowEvidenceBatch(
         salesOrderItemId: l.salesOrderItemId ?? null,
         externalSalesOrderId: l.externalSalesOrderId,
         externalSalesOrderItemId: l.externalSalesOrderItemId,
+        itemNumber: l.itemNumber?.trim() || null,
         linkedQuantity: dec(l.linkedQuantity),
         isCurrent: l.isCurrent,
         linkKey: `${l.productionOrderExternalId}:${l.externalSalesOrderItemId}`,

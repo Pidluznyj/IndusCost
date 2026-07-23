@@ -494,6 +494,8 @@ SalesOrderItemOperationalLink {
 
 **KAN-LINK-04 (implementado):** resolvedor canônico DS→Pedido/item (`salesOrderOutputDocumentLinkResolver.ts`) — refs oficiais no `rawJson` (sem migration); DS com vínculo direto entra no pack sem exigir NF; produto só se inequívoco no pedido.
 
+**KAN-LINK-05 (implementado):** resolvedor canônico OP→Pedido/item (`salesOrderProductionOrderLinkResolver.ts`) — cobertura sobre residual; OP cancelada/ambígua excluída; pack aceita link por `externalSalesOrderId` sem FK local.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

@@ -34,6 +34,7 @@ import {
 } from "./salesOrderItemProductionRequirement.js";
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import { buildSalesOrderItemFlowAllocationsFromEvidence } from "./salesOrderItemFlowAllocations.js";
+import { buildProductionOrderLinksForItemFlow } from "./salesOrderProductionOrderLinkResolver.js";
 
 export type QtyDecimal = Prisma.Decimal;
 
@@ -775,15 +776,14 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const item = pack.items.find((i) => i.id === salesOrderItemId);
   if (!item) return null;
 
-  const links = pack.productionLinks.filter(
-    (l) =>
-      l.salesOrderItemId === item.id ||
-      (item.nomusItemExternalId != null &&
-        l.externalSalesOrderItemId === item.nomusItemExternalId)
-  );
-
   const { documentAllocations, nfeAllocations } =
     buildSalesOrderItemFlowAllocationsFromEvidence(pack, item);
+
+  // KAN-LINK-05 — vínculos OP canônicos (cancela/ambíguo/etiqueta filtrados).
+  const { motorLinks: productionOrderLinks } = buildProductionOrderLinksForItemFlow(
+    pack,
+    item.id
+  );
 
   return resolveSalesOrderItemFlow({
     salesOrderItemId: item.id,
@@ -796,10 +796,7 @@ export function resolveSalesOrderItemFlowFromEvidence(
     orderedQuantity: item.quantity,
     fulfilledQuantity: item.nomusQuantityFulfilled,
     producedQuantity: null,
-    productionOrderLinks: links.map((l) => ({
-      linkedQuantity: l.linkedQuantity,
-      isCurrent: l.isCurrent,
-    })),
+    productionOrderLinks,
     documentAllocations,
     nfeAllocations,
     promisedDeliveryAt: pack.order.expectedDeliveryDate,

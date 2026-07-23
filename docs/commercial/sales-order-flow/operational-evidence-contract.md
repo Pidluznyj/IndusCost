@@ -77,3 +77,16 @@ Implementação: `src/lib/sales/salesOrderOutputDocumentLinkResolver.ts` + integ
 **Multi-pedido / item:** linhas resolvidas independentemente; produto só se inequívoco no pedido; ambíguo = cobertura ORDER_LEVEL / AMBIGUOUS sem rateio.
 
 **Sem migration:** refs lidas do `rawJson` na carga; DS com vínculo direto entra no pack mesmo sem NF sincronizada.
+
+---
+
+## Resolvedor OP → Pedido/item (KAN-LINK-05)
+
+Implementação: `src/lib/sales/salesOrderProductionOrderLinkResolver.ts` + integração em `resolveSalesOrderItemFlowFromEvidence`.
+
+**Campos oficiais:** `itensPedido[].idPedido`, `itensPedido[].id`, `item`/`sequencia`, `quantidade`, FK `NomusProductionOrderSalesLink`, status da OP, nome/identificação (etiqueta PD inequívoca).
+
+**Precedência:** idPedido → idItem → etiqueta inequívoca (+ item) → vínculo persistido → referência normalizada → sem vínculo.  
+Não prova: produto, qty, cliente, data, máquina, molde.
+
+**Cobertura:** compara OP à `remainingFulfillment` (residual). OP parcial ≠ ausência. `remainingFulfillment=0` → OP não obrigatória; DS/NF avançados não regridem para Aguardando OP.

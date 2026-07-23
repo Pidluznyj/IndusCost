@@ -259,6 +259,7 @@ export async function loadSalesOrderFlowEvidenceBatch(
           salesOrderItemId: true,
           externalSalesOrderId: true,
           externalSalesOrderItemId: true,
+          itemNumber: true,
           linkedQuantity: true,
           isCurrent: true,
         },
