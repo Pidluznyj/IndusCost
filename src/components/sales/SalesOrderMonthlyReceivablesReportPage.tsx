@@ -27,7 +27,9 @@ import {
   getSalesOrderMonthlyReceivablesXlsxUrl,
 } from "@/src/lib/sales/salesOrderMonthlyReceivablesReportExportUi";
 import {
+  currentYearMonthKey,
   defaultMonthlyReceivablesYearFilters,
+  scrollLeftToAlignMonthAfterSticky,
   SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE,
   type SalesOrderMonthlyReceivablesDetailPayload,
   type SalesOrderMonthlyReceivablesFinancialSituation,
@@ -36,6 +38,10 @@ import {
   type SalesOrderMonthlyReceivablesReportPayload,
 } from "@/src/lib/sales/salesOrderMonthlyReceivablesReport";
 import { SalesOrderMonthlyReceivablesReportPrintDocument } from "@/src/components/sales/SalesOrderMonthlyReceivablesReportPrintDocument";
+import {
+  TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
+  useTableHorizontalScrollSync,
+} from "@/src/components/finance/portfolio-reconciliation/useTableHorizontalScrollSync";
 import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
 import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
@@ -340,7 +346,7 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [startDate, setStartDate] = useState(initialYearFilters.startDate);
   const [endDate, setEndDate] = useState(initialYearFilters.endDate);
   const [hasInvoice, setHasInvoice] = useState("");
-  const [receivableStatus, setReceivableStatus] = useState("");
+  const [receivableStatus, setReceivableStatus] = useState("open");
   const [debouncedSellerKey, setDebouncedSellerKey] = useState("");
   const [debouncedOrderCode, setDebouncedOrderCode] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
@@ -357,17 +363,9 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [printRequestId, setPrintRequestId] = useState(0);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
-  const matrixScrollRef = useRef<HTMLDivElement | null>(null);
   const [monthScrollMax, setMonthScrollMax] = useState(0);
   const [monthScrollPos, setMonthScrollPos] = useState(0);
-
-  const syncMonthScrollMetrics = useCallback(() => {
-    const el = matrixScrollRef.current;
-    if (!el) return;
-    const max = Math.max(0, el.scrollWidth - el.clientWidth);
-    setMonthScrollMax(max);
-    setMonthScrollPos(Math.min(max, Math.max(0, el.scrollLeft)));
-  }, []);
+  const didScrollToCurrentMonthRef = useRef(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSellerKey(sellerKey), 350);
@@ -431,6 +429,29 @@ export function SalesOrderMonthlyReceivablesReportPage() {
     [queryString]
   );
   const prevFilterKeyRef = useRef<string | null>(null);
+
+  const monthColumnsForScroll = payload?.period.months ?? [];
+  const rowsForScroll = payload?.rows ?? [];
+
+  const {
+    topScrollRef,
+    mainScrollRef: matrixScrollRef,
+    tableRef: matrixTableRef,
+    handleTopScroll,
+    handleMainScroll,
+    scrollContentWidth,
+  } = useTableHorizontalScrollSync({
+    minWidth: 960,
+    deps: [rowsForScroll.length, monthColumnsForScroll.length, filterKey],
+  });
+
+  const syncMonthScrollMetrics = useCallback(() => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
+    setMonthScrollMax(max);
+    setMonthScrollPos(Math.min(max, Math.max(0, el.scrollLeft)));
+  }, [matrixScrollRef]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -558,6 +579,10 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const totalRows = pagination?.totalRows ?? 0;
 
   useEffect(() => {
+    didScrollToCurrentMonthRef.current = false;
+  }, [filterKey]);
+
+  useEffect(() => {
     if (rows.length === 0) {
       setMonthScrollMax(0);
       setMonthScrollPos(0);
@@ -565,27 +590,113 @@ export function SalesOrderMonthlyReceivablesReportPage() {
     }
     const el = matrixScrollRef.current;
     if (!el) return;
-    syncMonthScrollMetrics();
-    const onScroll = () => syncMonthScrollMetrics();
-    el.addEventListener("scroll", onScroll, { passive: true });
     const ro =
       typeof ResizeObserver !== "undefined"
         ? new ResizeObserver(() => syncMonthScrollMetrics())
         : null;
     ro?.observe(el);
     window.addEventListener("resize", syncMonthScrollMetrics);
+    syncMonthScrollMetrics();
     return () => {
-      el.removeEventListener("scroll", onScroll);
       ro?.disconnect();
       window.removeEventListener("resize", syncMonthScrollMetrics);
     };
-  }, [rows.length, monthColumns.length, syncMonthScrollMetrics]);
+  }, [rows.length, monthColumns.length, syncMonthScrollMetrics, matrixScrollRef]);
 
-  const scrollMonthsBy = useCallback((delta: number) => {
-    const el = matrixScrollRef.current;
-    if (!el) return;
-    el.scrollBy({ left: delta, behavior: "smooth" });
-  }, []);
+  useEffect(() => {
+    if (rows.length === 0 || monthColumns.length === 0) return;
+    if (didScrollToCurrentMonthRef.current) return;
+    const scrollEl = matrixScrollRef.current;
+    const table = matrixTableRef.current;
+    if (!scrollEl || !table) return;
+
+    const monthKey = currentYearMonthKey();
+    const monthTh = table.querySelector<HTMLElement>(
+      `th.mr-month[data-month-key="${monthKey}"]`
+    );
+    const valorTh = table.querySelector<HTMLElement>("th.mr-sticky-valor");
+    if (!monthTh || !valorTh) {
+      didScrollToCurrentMonthRef.current = true;
+      syncMonthScrollMetrics();
+      return;
+    }
+
+    const target = scrollLeftToAlignMonthAfterSticky({
+      monthOffsetLeft: monthTh.offsetLeft,
+      stickyRightOffset: valorTh.offsetLeft + valorTh.offsetWidth,
+    });
+    scrollEl.scrollLeft = target;
+    if (topScrollRef.current) topScrollRef.current.scrollLeft = target;
+    didScrollToCurrentMonthRef.current = true;
+    syncMonthScrollMetrics();
+  }, [
+    rows.length,
+    monthColumns.length,
+    matrixScrollRef,
+    matrixTableRef,
+    topScrollRef,
+    syncMonthScrollMetrics,
+  ]);
+
+  const scrollMonthsBy = useCallback(
+    (delta: number) => {
+      const el = matrixScrollRef.current;
+      if (!el) return;
+      el.scrollBy({ left: delta, behavior: "smooth" });
+    },
+    [matrixScrollRef]
+  );
+
+  const setMonthScrollLeft = useCallback(
+    (next: number) => {
+      const el = matrixScrollRef.current;
+      if (!el || !Number.isFinite(next)) return;
+      el.scrollLeft = next;
+      if (topScrollRef.current) topScrollRef.current.scrollLeft = next;
+      setMonthScrollPos(next);
+    },
+    [matrixScrollRef, topScrollRef]
+  );
+
+  const monthSliderControls =
+    monthScrollMax > 0 ? (
+      <div
+        className="flex flex-wrap items-center gap-2 px-3 py-2"
+        data-testid="monthly-receivables-month-slider"
+      >
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+          Meses
+        </span>
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          aria-label="Rolar meses para a esquerda"
+          disabled={monthScrollPos <= 0}
+          onClick={() => scrollMonthsBy(-220)}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <input
+          type="range"
+          min={0}
+          max={monthScrollMax}
+          step={1}
+          value={monthScrollPos}
+          className="monthly-receivables-month-slider h-2 min-w-[10rem] flex-1 cursor-pointer"
+          aria-label="Deslizar colunas de meses"
+          onChange={(e) => setMonthScrollLeft(Number(e.target.value))}
+        />
+        <button
+          type="button"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+          aria-label="Rolar meses para a direita"
+          disabled={monthScrollPos >= monthScrollMax - 1}
+          onClick={() => scrollMonthsBy(220)}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    ) : null;
 
   return (
     <div className="space-y-6" data-testid="monthly-receivables-report-page">
@@ -887,18 +998,42 @@ export function SalesOrderMonthlyReceivablesReportPage() {
         ) : null}
 
         {rows.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-0">
+            <div className="border-b border-border/70 bg-card">
+              {monthSliderControls}
+            </div>
             <div
+              ref={topScrollRef}
+              className={cn(
+                TABLE_HORIZONTAL_TOP_SCROLL_CLASS,
+                "monthly-receivables-top-scroll"
+              )}
+              onScroll={handleTopScroll}
+              data-testid="monthly-receivables-scroll-top"
+              aria-label="Rolagem horizontal da matriz (topo)"
+              role="scrollbar"
+              aria-orientation="horizontal"
+              aria-controls="monthly-receivables-matrix-scroll"
+            >
+              <div style={{ width: scrollContentWidth, height: 12 }} aria-hidden />
+            </div>
+            <div
+              id="monthly-receivables-matrix-scroll"
               ref={matrixScrollRef}
               className="monthly-receivables-matrix-scroll"
               data-testid="monthly-receivables-matrix-scroll"
+              onScroll={() => {
+                handleMainScroll();
+                syncMonthScrollMetrics();
+              }}
             >
               <table
+                ref={matrixTableRef}
                 className="monthly-receivables-matrix text-sm"
                 data-testid="monthly-receivables-matrix"
               >
                 <thead>
-                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <tr className="border-b border-border bg-muted text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     <th className="mr-sticky-pedido border-r border-border px-3 py-2">
                       Pedido
                     </th>
@@ -912,7 +1047,11 @@ export function SalesOrderMonthlyReceivablesReportPage() {
                     <th className="px-3 py-2 text-right">Diferença</th>
                     <th className="px-3 py-2">Qualidade</th>
                     {monthColumns.map((m) => (
-                      <th key={m.key} className="mr-month px-2 py-2 text-right">
+                      <th
+                        key={m.key}
+                        data-month-key={m.key}
+                        className="mr-month px-2 py-2 text-right"
+                      >
                         {m.label}
                       </th>
                     ))}
@@ -1024,51 +1163,6 @@ export function SalesOrderMonthlyReceivablesReportPage() {
                 </tbody>
               </table>
             </div>
-
-            {monthScrollMax > 0 ? (
-              <div
-                className="flex flex-wrap items-center gap-2 border-t border-border/70 px-3 py-2"
-                data-testid="monthly-receivables-month-slider"
-              >
-                <span className="shrink-0 text-xs font-medium text-muted-foreground">
-                  Meses
-                </span>
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                  aria-label="Rolar meses para a esquerda"
-                  disabled={monthScrollPos <= 0}
-                  onClick={() => scrollMonthsBy(-220)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={monthScrollMax}
-                  step={1}
-                  value={monthScrollPos}
-                  className="monthly-receivables-month-slider h-2 min-w-[10rem] flex-1 cursor-pointer"
-                  aria-label="Deslizar colunas de meses"
-                  onChange={(e) => {
-                    const next = Number(e.target.value);
-                    const el = matrixScrollRef.current;
-                    if (!el || !Number.isFinite(next)) return;
-                    el.scrollLeft = next;
-                    setMonthScrollPos(next);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
-                  aria-label="Rolar meses para a direita"
-                  disabled={monthScrollPos >= monthScrollMax - 1}
-                  onClick={() => scrollMonthsBy(220)}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            ) : null}
           </div>
         ) : null}
       </div>

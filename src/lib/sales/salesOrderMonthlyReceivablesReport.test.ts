@@ -9,9 +9,11 @@ import type { FinanceArDashboardRow } from "@/src/lib/financeAccountsReceivableD
 import {
   buildMonthColumns,
   computeMonthlyReceivablesTotalsFromRows,
+  currentYearMonthKey,
   defaultDueMonthRange,
   defaultMonthlyReceivablesYearFilters,
   formatYearMonthKey,
+  scrollLeftToAlignMonthAfterSticky,
   yearMonthKeyFromDueIso,
 } from "./salesOrderMonthlyReceivablesReport.js";
 import {
@@ -347,6 +349,24 @@ describe("salesOrderMonthlyReceivablesReport — paridade FIN-08", () => {
     assert.equal(filters.dueMonthTo, "2026-12");
     assert.equal(filters.startDate, "2026-01-01");
     assert.equal(filters.endDate, "2026-12-31");
+  });
+
+  it("mês corrente YYYY-MM e scrollLeft alinham após colunas sticky", () => {
+    assert.equal(currentYearMonthKey(new Date(2026, 6, 23)), "2026-07");
+    assert.equal(
+      scrollLeftToAlignMonthAfterSticky({
+        monthOffsetLeft: 820,
+        stickyRightOffset: 440,
+      }),
+      380
+    );
+    assert.equal(
+      scrollLeftToAlignMonthAfterSticky({
+        monthOffsetLeft: 100,
+        stickyRightOffset: 440,
+      }),
+      0
+    );
   });
 
   it("fora do período entra em outsidePeriodTotal", () => {

@@ -207,6 +207,29 @@ export function parseYearMonthKey(raw: string | null | undefined): {
   return { year, month };
 }
 
+/** Chave YYYY-MM do mês civil corrente (referência local). */
+export function currentYearMonthKey(referenceDate = new Date()): string {
+  return formatYearMonthKey(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth() + 1
+  );
+}
+
+/**
+ * scrollLeft para alinhar a coluna do mês à direita das colunas sticky
+ * (Pedido / Cliente / Valor pedido).
+ */
+export function scrollLeftToAlignMonthAfterSticky(args: {
+  monthOffsetLeft: number;
+  stickyRightOffset: number;
+}): number {
+  const month = Number.isFinite(args.monthOffsetLeft) ? args.monthOffsetLeft : 0;
+  const sticky = Number.isFinite(args.stickyRightOffset)
+    ? args.stickyRightOffset
+    : 0;
+  return Math.max(0, Math.round(month - sticky));
+}
+
 export function formatYearMonthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }

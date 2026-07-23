@@ -13,12 +13,12 @@
 }
 
 .monthly-receivables-matrix-scroll::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground) / 0.35);
+  background: #98a2b3;
   border-radius: 999px;
 }
 
 .monthly-receivables-matrix-scroll::-webkit-scrollbar-track {
-  background: hsl(var(--muted) / 0.5);
+  background: #f2f4f7;
 }
 
 .monthly-receivables-matrix {
@@ -27,9 +27,15 @@
   --mr-col-valor: 8.5rem;
   --mr-left-cliente: var(--mr-col-pedido);
   --mr-left-valor: calc(var(--mr-col-pedido) + var(--mr-col-cliente));
+  /* Fundos opacos — Tailwind v4 usa --color-card/--color-muted (já resolvidos). */
+  --mr-bg-body: var(--color-card, #ffffff);
+  --mr-bg-header: var(--color-muted, #f3f4f6);
+  --mr-bg-hover: #eef2f7;
+  --mr-bg-totals: var(--color-muted, #f3f4f6);
   border-collapse: separate;
   border-spacing: 0;
   min-width: 100%;
+  background: var(--mr-bg-body);
 }
 
 .monthly-receivables-matrix th.mr-sticky-pedido,
@@ -67,19 +73,21 @@
 .monthly-receivables-matrix thead th.mr-sticky-cliente,
 .monthly-receivables-matrix thead th.mr-sticky-valor {
   z-index: 4;
-  background: hsl(var(--muted) / 0.95);
+  background-color: var(--mr-bg-header);
+  background-clip: padding-box;
 }
 
 .monthly-receivables-matrix tbody td.mr-sticky-pedido,
 .monthly-receivables-matrix tbody td.mr-sticky-cliente,
 .monthly-receivables-matrix tbody td.mr-sticky-valor {
-  background: hsl(var(--card));
+  background-color: var(--mr-bg-body);
+  background-clip: padding-box;
 }
 
 .monthly-receivables-matrix tbody tr:hover td.mr-sticky-pedido,
 .monthly-receivables-matrix tbody tr:hover td.mr-sticky-cliente,
 .monthly-receivables-matrix tbody tr:hover td.mr-sticky-valor {
-  background: hsl(var(--muted) / 0.35);
+  background-color: var(--mr-bg-hover);
 }
 
 .monthly-receivables-matrix tfoot td.mr-sticky-pedido,
@@ -88,7 +96,8 @@
 .monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-pedido,
 .monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-cliente,
 .monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-valor {
-  background: hsl(var(--muted) / 0.95);
+  background-color: var(--mr-bg-totals);
+  background-clip: padding-box;
 }
 
 .monthly-receivables-matrix th.mr-month,
@@ -98,5 +107,33 @@
 }
 
 .monthly-receivables-month-slider {
-  accent-color: hsl(var(--primary));
+  accent-color: hsl(221.2 83.2% 53.3%);
+}
+
+.monthly-receivables-top-scroll {
+  width: 100%;
+  overflow-x: scroll;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+  scrollbar-width: auto;
+  scrollbar-color: #98a2b3 #f2f4f7;
+}
+
+.monthly-receivables-top-scroll::-webkit-scrollbar {
+  height: 12px;
+}
+
+.monthly-receivables-top-scroll::-webkit-scrollbar-track {
+  background: #f2f4f7;
+}
+
+.monthly-receivables-top-scroll::-webkit-scrollbar-thumb {
+  background: #98a2b3;
+  border-radius: 999px;
+}
+
+.monthly-receivables-top-scroll::-webkit-scrollbar-thumb:hover {
+  background: #667085;
 }

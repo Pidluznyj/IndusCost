@@ -41,16 +41,18 @@ describe("salesOrderMonthlyReceivablesReport wiring", () => {
     assert.match(app, /SalesOrderMonthlyReceivablesReportPage/);
   });
 
-  it("UI inicia com filtro do ano calendário corrente", () => {
+  it("UI inicia com filtro do ano calendário corrente e Status CR em aberto", () => {
     const page = read(
       "src/components/sales/SalesOrderMonthlyReceivablesReportPage.tsx"
     );
     assert.match(page, /defaultMonthlyReceivablesYearFilters/);
     assert.match(page, /initialYearFilters\.dueMonthFrom/);
     assert.match(page, /initialYearFilters\.startDate/);
+    assert.match(page, /useState\("open"\)/);
+    assert.match(page, /monthly-receivables-filter-receivable-status/);
   });
 
-  it("matriz congela Pedido/Cliente/Valor e tem slider dos meses", () => {
+  it("matriz congela Pedido/Cliente/Valor com fundo opaco, slider no topo e mês corrente", () => {
     const page = read(
       "src/components/sales/SalesOrderMonthlyReceivablesReportPage.tsx"
     );
@@ -61,7 +63,15 @@ describe("salesOrderMonthlyReceivablesReport wiring", () => {
     assert.match(page, /mr-sticky-cliente/);
     assert.match(page, /mr-sticky-valor/);
     assert.match(page, /monthly-receivables-month-slider/);
+    assert.match(page, /monthly-receivables-scroll-top/);
+    assert.match(page, /useTableHorizontalScrollSync/);
+    assert.match(page, /currentYearMonthKey/);
+    assert.match(page, /scrollLeftToAlignMonthAfterSticky/);
+    assert.match(page, /data-month-key/);
     assert.match(css, /position:\s*sticky/);
     assert.match(css, /--mr-left-valor/);
+    assert.match(css, /--mr-bg-body/);
+    assert.match(css, /background-color:\s*var\(--mr-bg-body\)/);
+    assert.doesNotMatch(css, /background(?:-color)?:\s*hsl\(var\(--(?:card|muted)/);
   });
 });
