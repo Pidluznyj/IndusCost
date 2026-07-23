@@ -26,10 +26,13 @@ import {
 } from "@/src/lib/financeDreCostCenterRoles.js";
 import {
   allocateOrderCmvToNfeMonths,
+  buildFinanceDreInformativeReport,
   buildFinanceDreLines,
+  buildFinanceDreSourceChecks,
   emptyDreSeries,
   financeDreMonthLabels,
   roundDreMoney,
+  ytdThroughMonth,
 } from "@/src/lib/financeDreMath.js";
 import {
   FINANCE_DRE_OFFICIAL_SOURCES,
@@ -98,10 +101,18 @@ function companyLabel(company: FinanceDreCompany): string {
 async function loadMonthlyCmvFromOfficialMargin(
   year: number,
   emitterCnpjDigits?: string
-): Promise<{ cmv: number[]; unlinkedCount: number; unlinkedRevenue: number }> {
+): Promise<{
+  cmv: number[];
+  unlinkedCount: number;
+  unlinkedRevenueByMonth: number[];
+}> {
   const nfes = await queryFiscalNfesForDreCmv(year, "emissao", emitterCnpjDigits);
   if (nfes.length === 0) {
-    return { cmv: emptyDreSeries(), unlinkedCount: 0, unlinkedRevenue: 0 };
+    return {
+      cmv: emptyDreSeries(),
+      unlinkedCount: 0,
+      unlinkedRevenueByMonth: emptyDreSeries(),
+    };
   }
 
   const externalIds = [...new Set(nfes.map((n) => n.nfeExternalId))];
@@ -118,14 +129,16 @@ async function loadMonthlyCmvFromOfficialMargin(
   }
 
   let unlinkedCount = 0;
-  let unlinkedRevenue = 0;
+  const unlinkedRevenueByMonth = createEmptyMonthlySeries();
   const nfesByOrder = new Map<string, Array<{ month: number; valorLiquido: number }>>();
 
   for (const nfe of nfes) {
     const orderId = orderIdByNfeExternal.get(nfe.nfeExternalId);
     if (!orderId) {
       unlinkedCount += 1;
-      unlinkedRevenue += nfe.valorLiquido;
+      if (nfe.month >= 1 && nfe.month <= 12) {
+        unlinkedRevenueByMonth[nfe.month - 1] += nfe.valorLiquido;
+      }
       continue;
     }
     const list = nfesByOrder.get(orderId) ?? [];
@@ -138,7 +151,7 @@ async function loadMonthlyCmvFromOfficialMargin(
     return {
       cmv: emptyDreSeries(),
       unlinkedCount,
-      unlinkedRevenue: roundDreMoney(unlinkedRevenue),
+      unlinkedRevenueByMonth: unlinkedRevenueByMonth.map(roundDreMoney),
     };
   }
 
@@ -190,7 +203,7 @@ async function loadMonthlyCmvFromOfficialMargin(
   return {
     cmv: cmv.map(roundDreMoney),
     unlinkedCount,
-    unlinkedRevenue: roundDreMoney(unlinkedRevenue),
+    unlinkedRevenueByMonth: unlinkedRevenueByMonth.map(roundDreMoney),
   };
 }
 
@@ -244,6 +257,14 @@ export async function buildFinanceDreReport(
   );
 
   const despesasAdmin = sumSeriesSafeLocal(ccBuckets.admin, ccBuckets.unclassified);
+  const unlinkedYtd = ytdThroughMonth(
+    cmvBundle.unlinkedRevenueByMonth,
+    filters.highlightMonth
+  );
+  const unclassifiedYtd = ytdThroughMonth(
+    ccBuckets.unclassified,
+    filters.highlightMonth
+  );
 
   const costCenterBreakdown: FinanceDreCostCenterBreakdownRow[] = roleRows.map((row) => ({
     costCenterId: row.costCenterId,
@@ -274,9 +295,25 @@ export async function buildFinanceDreReport(
     unclassifiedCcAmount: ccBuckets.unclassified,
     quality: {
       unlinkedNfeCount: cmvBundle.unlinkedCount,
-      unlinkedNfeRevenue: cmvBundle.unlinkedRevenue,
+      unlinkedNfeRevenue: roundDreMoney(unlinkedYtd),
       taxSummaryGapCount: deductions.taxSummaryGapCount,
     },
+  });
+
+  const sourceChecks = buildFinanceDreSourceChecks({
+    unlinkedNfeCount: cmvBundle.unlinkedCount,
+    taxSummaryGapCount: deductions.taxSummaryGapCount,
+    unclassifiedYtd,
+  });
+
+  const informativeReport = buildFinanceDreInformativeReport({
+    highlightMonth: filters.highlightMonth,
+    despesasPessoal: ccBuckets.personnel,
+    impostosCc: ccBuckets.tax,
+    materiaPrimaCc: ccBuckets.rawMaterial,
+    unclassifiedCcAmount: ccBuckets.unclassified,
+    unlinkedNfeRevenueByMonth: cmvBundle.unlinkedRevenueByMonth,
+    unlinkedNfeCount: cmvBundle.unlinkedCount,
   });
 
   const monthName = financeDreMonthLabels()[filters.highlightMonth - 1] ?? String(filters.highlightMonth);
@@ -293,6 +330,8 @@ export async function buildFinanceDreReport(
     monthLabels: financeDreMonthLabels(),
     kpis,
     lines,
+    sourceChecks,
+    informativeReport,
     costCenterBreakdown,
     qualityAlerts,
     sources: FINANCE_DRE_OFFICIAL_SOURCES,

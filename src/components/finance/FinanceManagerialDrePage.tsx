@@ -22,6 +22,7 @@ import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiCardClass, financeBiShellClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
 import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
+import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
@@ -312,6 +313,8 @@ export function FinanceManagerialDrePage() {
             <FinanceDreGrid report={report} showAllMonths={false} />
             <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
           </div>
+
+          <FinanceDreInformativeReport report={report} />
 
           {report.costCenterBreakdown.length > 0 ? (
             <section

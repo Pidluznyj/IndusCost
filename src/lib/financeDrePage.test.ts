@@ -9,7 +9,9 @@ import {
 } from "@/src/lib/financeDreCostCenterRoles.js";
 import {
   allocateOrderCmvToNfeMonths,
+  buildFinanceDreInformativeReport,
   buildFinanceDreLines,
+  buildFinanceDreSourceChecks,
   emptyDreSeries,
   resolveBilledOrderCmv,
   roundDreMoney,
@@ -126,7 +128,7 @@ describe("financeDreCostCenterRoles", () => {
 });
 
 describe("financeDreMath", () => {
-  it("monta DRE com sinais e pessoal informativo fora do resultado", () => {
+  it("monta DRE com custos oficiais e pessoal fora do resultado", () => {
     const receita = emptyDreSeries();
     receita[0] = 1000;
     const pis = emptyDreSeries();
@@ -167,16 +169,28 @@ describe("financeDreMath", () => {
     assert.equal(kpis.lucroBruto, 500);
     assert.equal(kpis.resultadoOperacional, 400);
     assert.equal(kpis.lucroLiquidoAproximado, 400);
-
-    const pessoalLine = lines.find((l) => l.id === "despesas_pessoal_info");
-    assert.equal(pessoalLine?.informativeOnly, true);
-    assert.equal(pessoalLine?.values.highlight, -250);
     assert.ok(lines.some((l) => l.id === "embalagens"));
-    assert.ok(lines.some((l) => l.id === "impostos_cc_info" && l.informativeOnly));
-    assert.ok(lines.some((l) => l.id === "materia_prima_cc_info" && l.informativeOnly));
+    assert.ok(!lines.some((l) => l.id === "despesas_pessoal_info"));
 
     const resultLine = lines.find((l) => l.id === "resultado_operacional");
     assert.equal(resultLine?.values.highlight, 400);
+
+    const info = buildFinanceDreInformativeReport({
+      highlightMonth: 1,
+      despesasPessoal: pessoal,
+      impostosCc: emptyDreSeries(),
+      materiaPrimaCc: emptyDreSeries(),
+      unclassifiedCcAmount: emptyDreSeries(),
+      unlinkedNfeRevenueByMonth: emptyDreSeries(),
+      unlinkedNfeCount: 0,
+    });
+    assert.ok(info.items.some((i) => i.id === "pessoal_cc" && i.highlightAmount === 250));
+    assert.ok(info.items.some((i) => i.id === "resultado_financeiro_fora_escopo"));
+    assert.ok(buildFinanceDreSourceChecks({
+      unlinkedNfeCount: 0,
+      taxSummaryGapCount: 0,
+      unclassifiedYtd: 0,
+    }).some((c) => c.id === "receita_nfe" && c.appliedToResult));
   });
 
   it("aloca CMV por peso das NF-e e só da parcela faturada", () => {
@@ -274,6 +288,14 @@ describe("financeDreViewModel & export", () => {
         },
       ],
       costCenterBreakdown: [],
+      sourceChecks: [],
+      informativeReport: {
+        title: "Relatório informativo",
+        subtitle: "",
+        items: [],
+        totalNotAppliedHighlight: 0,
+        totalNotAppliedYtd: 0,
+      },
       qualityAlerts: [],
       sources: FINANCE_DRE_OFFICIAL_SOURCES,
     };
@@ -289,9 +311,11 @@ describe("finance dre presentation UX", () => {
   it("página abre modal fullscreen de apresentação", () => {
     const page = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
     assert.match(page, /FinanceDrePresentationModal/);
+    assert.match(page, /FinanceDreInformativeReport/);
     assert.match(page, /finance-dre-open-presentation/);
     const modal = readSrc("src/components/finance/dre/FinanceDrePresentationModal.tsx");
     assert.match(modal, /showAllMonths/);
+    assert.match(modal, /FinanceDreInformativeReport/);
     assert.match(modal, /z-\[85\]/);
     const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
     assert.match(grid, /showAllMonths/);

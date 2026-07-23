@@ -4,11 +4,13 @@
  */
 
 import type {
+  FinanceDreInformativeItem,
   FinanceDreKpis,
   FinanceDreLine,
   FinanceDreLineId,
   FinanceDreMonthValues,
   FinanceDreQualityAlert,
+  FinanceDreSourceCheck,
 } from "@/src/lib/financeDreTypes.js";
 import { createEmptyMonthlySeries } from "@/src/lib/financeDreCostCenterRoles.js";
 
@@ -146,9 +148,6 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const lucroBruto = subSeries(receitaLiquida, custosAbs);
 
   const adminNeg = negateSeries(input.despesasAdmin);
-  const pessoalNeg = negateSeries(input.despesasPessoal);
-  const impostosCcNeg = negateSeries(input.impostosCc);
-  const mpCcNeg = negateSeries(input.materiaPrimaCc);
 
   // Resultado operacional = lucro bruto − admin (pessoal/imposto CC/MP CC NÃO entram)
   const resultado = subSeries(lucroBruto, input.despesasAdmin);
@@ -241,45 +240,6 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
           "CC exceto Folha, Benefícios, Montagem, Mão de obra, Imposto, MP, Logística e Embalagens",
       }
     ),
-    line(
-      "despesas_pessoal_info",
-      "Despesas com pessoal (informativo)",
-      "informative",
-      null,
-      pessoalNeg,
-      m,
-      netHighlight,
-      {
-        informativeOnly: true,
-        sourceNote: "Folha + Benefícios + Montagem + Mão de obra — já no CMV; só exibição",
-      }
-    ),
-    line(
-      "impostos_cc_info",
-      "Impostos via centro de custo (informativo)",
-      "informative",
-      null,
-      impostosCcNeg,
-      m,
-      netHighlight,
-      {
-        informativeOnly: true,
-        sourceNote: "AP em CC Imposto — não entra no resultado (deduções fiscais vêm da NF-e)",
-      }
-    ),
-    line(
-      "materia_prima_cc_info",
-      "Matéria-prima via centro de custo (informativo)",
-      "informative",
-      null,
-      mpCcNeg,
-      m,
-      netHighlight,
-      {
-        informativeOnly: true,
-        sourceNote: "AP em CC Matéria-prima — não entra no resultado (já contemplado no CMV)",
-      }
-    ),
     line("resultado_operacional", "Resultado operacional", "result", null, resultado, m, netHighlight),
     line(
       "lucro_liquido_aproximado",
@@ -334,6 +294,219 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   }
 
   return { lines, kpis, qualityAlerts };
+}
+
+/** Checklist de fontes oficiais aplicadas no DRE. */
+export function buildFinanceDreSourceChecks(input: {
+  unlinkedNfeCount: number;
+  taxSummaryGapCount: number;
+  unclassifiedYtd: number;
+}): FinanceDreSourceCheck[] {
+  return [
+    {
+      id: "receita_nfe",
+      label: "Receita bruta (NF-e)",
+      officialMotor: "financeBillingNfeDashboard.queryMonthlyFiscalNfe",
+      appliedToResult: true,
+      status: "ok",
+      note: "MARKET_REVENUE autorizada · valorLiquido · competência emissão",
+    },
+    {
+      id: "deducoes_fiscais",
+      label: "Deduções fiscais (PIS/COFINS/ICMS/ST/IPI/devoluções)",
+      officialMotor: "financeDreNfeQueries.queryMonthlyFiscalNfeDeductions",
+      appliedToResult: true,
+      status: input.taxSummaryGapCount > 0 ? "gap" : "ok",
+      note:
+        input.taxSummaryGapCount > 0
+          ? `${input.taxSummaryGapCount} NF-e sem resumo fiscal completo`
+          : "Totais do NomusNfeFiscalSummary + devoluções finalidade=4",
+    },
+    {
+      id: "cmv_margem",
+      label: "CMV (custo gerencial da parcela faturada)",
+      officialMotor: "salesOrderMarginService.calculateSalesOrderMarginsForOrders",
+      appliedToResult: true,
+      status: input.unlinkedNfeCount > 0 ? "gap" : "ok",
+      note:
+        input.unlinkedNfeCount > 0
+          ? `${input.unlinkedNfeCount} NF-e sem vínculo com pedido (CMV incompleto)`
+          : "VERSIONED_PRODUCTION_COST alocado ao mês da NF-e",
+    },
+    {
+      id: "fretes_cc",
+      label: "Fretes (CC Logística/Expedição)",
+      officialMotor: "financeCostCenterDashboard.monthlySeries.byCostCenter",
+      appliedToResult: true,
+      status: "ok",
+      note: "AP alocado — entra em Custos",
+    },
+    {
+      id: "embalagens_cc",
+      label: "Embalagens (CC Embalagens)",
+      officialMotor: "financeCostCenterDashboard.monthlySeries.byCostCenter",
+      appliedToResult: true,
+      status: "ok",
+      note: "AP alocado — entra em Custos",
+    },
+    {
+      id: "admin_cc",
+      label: "Despesas administrativas (demais CCs)",
+      officialMotor: "financeCostCenterDashboard.monthlySeries.byCostCenter",
+      appliedToResult: true,
+      status: input.unclassifiedYtd > 0.009 ? "gap" : "ok",
+      note:
+        input.unclassifiedYtd > 0.009
+          ? "Inclui AP sem CC de forma provisória"
+          : "Exclui Folha, Benefícios, Montagem, MO, Imposto, MP, Logística, Embalagens",
+    },
+    {
+      id: "pessoal_cc",
+      label: "Pessoal (Folha/Benefícios/Montagem/MO)",
+      officialMotor: "financeCostCenterDashboard.monthlySeries.byCostCenter",
+      appliedToResult: false,
+      status: "info",
+      note: "Não entra no resultado — já embutido no CMV da ficha",
+    },
+    {
+      id: "financeiro_ir",
+      label: "Resultado financeiro + IR/CSLL",
+      officialMotor: "n/a (fora do escopo v1)",
+      appliedToResult: false,
+      status: "info",
+      note: "Não disponíveis no IndusCost como DRE contábil — ficam no relatório informativo",
+    },
+  ];
+}
+
+/** Relatório final dos custos/itens não aplicados (ou provisórios). */
+export function buildFinanceDreInformativeReport(input: {
+  highlightMonth: number;
+  despesasPessoal: number[];
+  impostosCc: number[];
+  materiaPrimaCc: number[];
+  unclassifiedCcAmount: number[];
+  unlinkedNfeRevenueByMonth: number[];
+  unlinkedNfeCount: number;
+}): {
+  title: string;
+  subtitle: string;
+  items: FinanceDreInformativeItem[];
+  totalNotAppliedHighlight: number;
+  totalNotAppliedYtd: number;
+} {
+  const m = Math.min(12, Math.max(1, input.highlightMonth || 1));
+  const items: FinanceDreInformativeItem[] = [];
+
+  const pushSeries = (
+    id: FinanceDreInformativeItem["id"],
+    label: string,
+    reason: string,
+    source: string,
+    series: number[],
+    appliedToResult: boolean,
+    count?: number
+  ) => {
+    const highlightAmount = roundDreMoney(series[m - 1] ?? 0);
+    const ytdAmount = ytdThroughMonth(series, m);
+    if (Math.abs(highlightAmount) < 0.005 && Math.abs(ytdAmount) < 0.005 && !count) return;
+    items.push({
+      id,
+      label,
+      reason,
+      source,
+      appliedToResult,
+      highlightAmount,
+      ytdAmount,
+      count,
+    });
+  };
+
+  pushSeries(
+    "pessoal_cc",
+    "Despesas com pessoal (CC)",
+    "Não entra no resultado operacional — custo de mão de obra já compõe o CMV da ficha de produção.",
+    "Centros de custo: Folha + Benefícios + Montagem + Mão de obra",
+    input.despesasPessoal,
+    false
+  );
+  pushSeries(
+    "impostos_cc",
+    "Impostos via centro de custo (AP)",
+    "Não entra no resultado — deduções oficiais vêm dos impostos destacados na NF-e.",
+    "Centro de custo Imposto / Tributos",
+    input.impostosCc,
+    false
+  );
+  pushSeries(
+    "materia_prima_cc",
+    "Matéria-prima via centro de custo (AP)",
+    "Não entra no resultado — matéria-prima do produto vendido já está no CMV gerencial.",
+    "Centro de custo Matéria-prima",
+    input.materiaPrimaCc,
+    false
+  );
+
+  const unlinkedHighlight = roundDreMoney(input.unlinkedNfeRevenueByMonth[m - 1] ?? 0);
+  const unlinkedYtd = ytdThroughMonth(input.unlinkedNfeRevenueByMonth, m);
+  if (input.unlinkedNfeCount > 0 || unlinkedHighlight > 0.009 || unlinkedYtd > 0.009) {
+    items.push({
+      id: "receita_sem_cmv",
+      label: "Receita de NF-e sem CMV (sem vínculo com pedido)",
+      reason:
+        "Receita entrou no DRE, mas o CMV correspondente não pôde ser calculado — resultado pode estar otimista.",
+      source: "NF-e MARKET_REVENUE sem SalesOrderNfeLink",
+      appliedToResult: false,
+      highlightAmount: unlinkedHighlight,
+      ytdAmount: unlinkedYtd,
+      count: input.unlinkedNfeCount,
+    });
+  }
+
+  pushSeries(
+    "ap_sem_cc_provisorio",
+    "AP sem centro de custo (provisório)",
+    "Incluído provisoriamente em Despesas administrativas para não omitir gasto.",
+    "financeCostCenterDashboard.monthlySeries.totals.unclassifiedAmount",
+    input.unclassifiedCcAmount,
+    true
+  );
+
+  items.push({
+    id: "resultado_financeiro_fora_escopo",
+    label: "Resultado financeiro (juros, tarifas, IOF…)",
+    reason: "Fora do escopo do DRE gerencial v1 — não há motor contábil de resultado financeiro.",
+    source: "Não aplicável no IndusCost",
+    appliedToResult: false,
+    highlightAmount: 0,
+    ytdAmount: 0,
+  });
+  items.push({
+    id: "ir_csll_fora_escopo",
+    label: "Provisão de IRPJ / CSLL",
+    reason: "Fora do escopo do DRE gerencial v1 — lucro líquido é aproximado.",
+    source: "Não aplicável no IndusCost",
+    appliedToResult: false,
+    highlightAmount: 0,
+    ytdAmount: 0,
+  });
+
+  const notApplied = items.filter((i) => !i.appliedToResult && (i.highlightAmount > 0 || i.ytdAmount > 0));
+  const totalNotAppliedHighlight = roundDreMoney(
+    notApplied.reduce((acc, i) => acc + Math.abs(i.highlightAmount), 0)
+  );
+  const totalNotAppliedYtd = roundDreMoney(
+    notApplied.reduce((acc, i) => acc + Math.abs(i.ytdAmount), 0)
+  );
+
+  return {
+    title: "Relatório informativo — custos não aplicados ao resultado",
+    subtitle:
+      "Itens abaixo foram identificados nas fontes oficiais, mas não reduzem o lucro líquido aproximado (exceto quando marcados como provisórios).",
+    items,
+    totalNotAppliedHighlight,
+    totalNotAppliedYtd,
+  };
 }
 
 export function emptyDreSeries(): number[] {

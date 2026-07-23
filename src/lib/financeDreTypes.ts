@@ -62,11 +62,39 @@ export type FinanceDreLineId =
   | "lucro_bruto"
   | "despesas_operacionais"
   | "despesas_administrativas"
-  | "despesas_pessoal_info"
-  | "impostos_cc_info"
-  | "materia_prima_cc_info"
   | "resultado_operacional"
   | "lucro_liquido_aproximado";
+
+/** Itens do relatório informativo (não entram no resultado). */
+export type FinanceDreInformativeItemId =
+  | "pessoal_cc"
+  | "impostos_cc"
+  | "materia_prima_cc"
+  | "receita_sem_cmv"
+  | "ap_sem_cc_provisorio"
+  | "resultado_financeiro_fora_escopo"
+  | "ir_csll_fora_escopo";
+
+export type FinanceDreSourceCheck = {
+  id: string;
+  label: string;
+  officialMotor: string;
+  appliedToResult: boolean;
+  status: "ok" | "gap" | "info";
+  note: string;
+};
+
+export type FinanceDreInformativeItem = {
+  id: FinanceDreInformativeItemId;
+  label: string;
+  reason: string;
+  source: string;
+  /** true = valor entra no resultado (só nota); false = fora do resultado */
+  appliedToResult: boolean;
+  highlightAmount: number;
+  ytdAmount: number;
+  count?: number;
+};
 
 export type FinanceDreCostCenterRole =
   | "logistics"
@@ -143,6 +171,16 @@ export type FinanceDreReport = {
   monthLabels: string[];
   kpis: FinanceDreKpis;
   lines: FinanceDreLine[];
+  /** Checklist: cada bloco do DRE e se a fonte oficial está aplicada. */
+  sourceChecks: FinanceDreSourceCheck[];
+  /** Relatório final: custos/itens não aplicados (ou provisórios) ao resultado. */
+  informativeReport: {
+    title: string;
+    subtitle: string;
+    items: FinanceDreInformativeItem[];
+    totalNotAppliedHighlight: number;
+    totalNotAppliedYtd: number;
+  };
   /** Mapa de CCs usados no DRE (mês destaque + YTD) para auditoria. */
   costCenterBreakdown: FinanceDreCostCenterBreakdownRow[];
   qualityAlerts: FinanceDreQualityAlert[];
