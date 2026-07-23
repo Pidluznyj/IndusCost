@@ -70,6 +70,7 @@ src/lib/sales/salesOrderProductionOrderLinkResolver.test.ts
 src/lib/sales/salesOrderOperationalEvidenceReconciler.test.ts
 src/lib/sales/salesOrderKanbanCanonicalEvidence.test.ts
 src/lib/sales/salesOrderFlowOperationalDiagnostics.test.ts
+src/lib/sales/salesOrderKanbanCanonicalLinkageMatrix.test.ts
 src/lib/sales/salesOrderFlowCompletionPrecedence.test.ts
 src/lib/sales/salesOrderFlowEngine.test.ts
 src/lib/sales/salesOrderFlowSchema.test.ts

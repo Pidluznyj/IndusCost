@@ -320,6 +320,7 @@
     "test:sales-order:operational-reconciliation": "tsx --test src/lib/sales/salesOrderOperationalEvidenceReconciler.test.ts",
     "test:sales-order:kanban-canonical-evidence": "tsx --test src/lib/sales/salesOrderKanbanCanonicalEvidence.test.ts",
     "test:sales-order:operational-diagnostics": "tsx --test src/lib/sales/salesOrderFlowOperationalDiagnostics.test.ts src/lib/salesOrderFlowDetailUi.test.ts",
+    "test:sales-order:kanban-canonical-linkage-matrix": "tsx --test src/lib/sales/salesOrderKanbanCanonicalLinkageMatrix.test.ts src/lib/sales/salesOrderKanbanCanonicalEvidence.test.ts src/lib/sales/salesOrderFlowLifecycleMatrix.test.ts src/lib/sales/salesOrderFlowKanVal01Parity.audit.test.ts src/lib/sales/salesOrderFlowPerformance.test.ts",
     "test:finance:effective-schedule-matrix": "tsx --test src/lib/finance/effectiveScheduleMatrix.integration.test.ts",
     "test:finance:staged-delivery": "tsx --test src/lib/finance/salesOrderStagedDeliverySchedule.test.ts",
     "repair:staged-delivery-schedules:preview": "tsx scripts/repairStagedDeliverySchedules.ts preview",
