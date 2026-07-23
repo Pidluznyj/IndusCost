@@ -115,6 +115,7 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "POST", path: "/api/commissions/receipt-closing/apply", resourceKey: "commercial.commissions.monthly_closing", action: "close" },
   { method: "POST", path: "/api/commissions/payment-batches*", resourceKey: "commercial.commissions.monthly_closing", action: "manage" },
   { method: "GET", path: "/api/commissions/closings*", resourceKey: "commercial.commissions.closings", action: "view" },
+  { method: "GET", path: "/api/commissions/order-provision*", resourceKey: "commercial.commissions.reports", action: "view" },
   { method: "GET", path: "/api/commissions/*export*", resourceKey: "commercial.commissions.reports", action: "export" },
   { method: "POST", path: "/api/commissions/reprocess*", resourceKey: "commercial.commissions.reprocess", action: "reprocess" },
   { method: "POST", path: "/api/commissions/recalculate*", resourceKey: "commercial.commissions.reprocess", action: "execute" },

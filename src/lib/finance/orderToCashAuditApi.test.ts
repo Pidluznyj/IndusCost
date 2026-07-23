@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   ORDER_TO_CASH_AUDIT_CUSTOMER_EXTERNAL_REQUIRED,
   ORDER_TO_CASH_AUDIT_DEFAULT_SORT_BY,
+  ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
   ORDER_TO_CASH_AUDIT_NO_RUN_MESSAGE,
   ORDER_TO_CASH_AUDIT_SORT_WHITELIST,
   buildOrderToCashAuditFactWhere,
@@ -12,8 +13,11 @@ import {
   buildOrderToCashAuditListSummary,
   buildOrderToCashAuditListSummaryFromRun,
   buildOrderToCashAuditPrismaOrderBy,
+  buildOrderToCashAuditSpecificCustomerYearRunWhere,
   decideOrderToCashAuditRunPolicy,
+  isOrderToCashAuditGeneralRunScope,
   mapOrderToCashAuditFactToListRow,
+  matchesOrderToCashAuditSpecificCustomerYearRun,
   orderToCashAuditHasFactScopeFilters,
   parseOrderToCashAuditListFilters,
   resolveOrderToCashAuditLineBilledValue,
@@ -511,5 +515,130 @@ describe("orderToCashAuditApi", () => {
     assert.equal(row.receivableTotalValue, null);
     assert.equal(row.nfeNumber, null);
     assert.equal(row.evidenceLevel, "ORDER_TITLE");
+  });
+});
+
+describe("OP-22 — run O2C geral vs escopado", () => {
+  it("A. run geral válido é elegível como geral", () => {
+    assert.equal(
+      isOrderToCashAuditGeneralRunScope({
+        customerFilter: null,
+        sellerFilter: null,
+        orderFilter: null,
+      }),
+      true
+    );
+    assert.deepEqual(ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE, {
+      status: "SUCCESS",
+      customerFilter: null,
+      sellerFilter: null,
+      orderFilter: null,
+    });
+  });
+
+  it("B. run escopado por pedido não é elegível como geral", () => {
+    assert.equal(
+      isOrderToCashAuditGeneralRunScope({
+        customerFilter: null,
+        sellerFilter: null,
+        orderFilter: "PD 02716",
+      }),
+      false
+    );
+  });
+
+  it("C. run escopado por vendedor não é elegível como geral", () => {
+    assert.equal(
+      isOrderToCashAuditGeneralRunScope({
+        customerFilter: null,
+        sellerFilter: "VENDEDOR X",
+        orderFilter: null,
+      }),
+      false
+    );
+  });
+
+  it("D. run específico de cliente/ano (sem pedido/vendedor) é elegível", () => {
+    assert.equal(
+      matchesOrderToCashAuditSpecificCustomerYearRun(
+        {
+          status: "SUCCESS",
+          year: 2026,
+          customerFilter: "200",
+          sellerFilter: null,
+          orderFilter: null,
+        },
+        200,
+        2026
+      ),
+      true
+    );
+    assert.deepEqual(
+      buildOrderToCashAuditSpecificCustomerYearRunWhere(200, 2026),
+      {
+        status: "SUCCESS",
+        year: 2026,
+        customerFilter: "200",
+        sellerFilter: null,
+        orderFilter: null,
+      }
+    );
+  });
+
+  it("E. run específico de cliente com orderFilter não é elegível", () => {
+    assert.equal(
+      matchesOrderToCashAuditSpecificCustomerYearRun(
+        {
+          status: "SUCCESS",
+          year: 2026,
+          customerFilter: "200",
+          sellerFilter: null,
+          orderFilter: "PD 02716",
+        },
+        200,
+        2026
+      ),
+      false
+    );
+  });
+
+  it("F. runId explícito continua sendo respeitado", () => {
+    const decision = decideOrderToCashAuditRunPolicy({
+      runId: "explicit-run-id",
+      customerExternalId: 200,
+      year: 2026,
+      specificRunId: BRITANIA_RUN_ID,
+      generalRunId: GENERAL_RUN_ID,
+    });
+    assert.equal(decision.kind, "explicit");
+    assert.equal(decision.runId, "explicit-run-id");
+  });
+
+  it("consumidores de produção reutilizam o where compartilhado do run geral", () => {
+    const consumers = [
+      "src/lib/financeOrderToCashAuditApi.server.ts",
+      "src/lib/financeOrderStatusPedidosApi.server.ts",
+      "src/lib/financePortfolioOrderStatusApi.server.ts",
+      "src/lib/financePortfolioReconciliationApi.server.ts",
+    ];
+    for (const file of consumers) {
+      const src = read(file);
+      assert.match(src, /ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE/);
+      assert.doesNotMatch(
+        src,
+        /where:\s*\{\s*status:\s*"SUCCESS",\s*customerFilter:\s*null\s*\}/
+      );
+    }
+    const withSpecific = [
+      "src/lib/financeOrderToCashAuditApi.server.ts",
+      "src/lib/financeOrderStatusPedidosApi.server.ts",
+      "src/lib/financePortfolioOrderStatusApi.server.ts",
+    ];
+    for (const file of withSpecific) {
+      assert.match(
+        read(file),
+        /buildOrderToCashAuditSpecificCustomerYearRunWhere/
+      );
+    }
   });
 });

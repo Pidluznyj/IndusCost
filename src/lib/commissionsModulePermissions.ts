@@ -19,6 +19,7 @@ const LIVE_SECTION_RESOURCE: Partial<Record<CommissionsSectionId, string>> = {
   monthlyClosing: TabResourceKeys.COMISSOES_FECHAMENTO,
   closings: TabResourceKeys.COMISSOES_FECHAMENTOS,
   customerExclusions: TabResourceKeys.COMISSOES_EXCECOES,
+  orderProvision: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
   reports: TabResourceKeys.COMISSOES_RELATORIOS,
   reprocess: TabResourceKeys.COMISSOES_REPROCESSAR,
 };
@@ -52,6 +53,9 @@ export function canViewCommissionsSection(
   }
   if (sectionId === "customerExclusions") {
     return check.hasAnyPermission([...COMMISSIONS_EXCEPTIONS_VIEW_PERMISSIONS]);
+  }
+  if (sectionId === "orderProvision") {
+    return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
   }
   if (sectionId === "reports") {
     return check.hasAnyPermission([...COMMISSIONS_VIEW_PERMISSIONS]);
@@ -88,6 +92,13 @@ export function canReprocessCommissions(check: PermissionChecker): boolean {
 
 export function listAllowedCommissionsLiveSectionIds(
   canViewResource: (key: string) => boolean
-): Array<"monthlyClosing" | "closings" | "customerExclusions" | "reports" | "reprocess"> {
+): Array<
+  | "monthlyClosing"
+  | "closings"
+  | "customerExclusions"
+  | "orderProvision"
+  | "reports"
+  | "reprocess"
+> {
   return COMMISSIONS_LIVE_UI_TABS.filter((t) => canViewResource(t.resourceKey)).map((t) => t.id);
 }

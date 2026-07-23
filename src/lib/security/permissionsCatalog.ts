@@ -40,6 +40,7 @@ export const PermissionResourceKeys = {
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
   COMISSOES_TAB_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_TAB_EXCECOES_CLIENTE: "comissoes.tab.excecoes_cliente",
+  COMISSOES_TAB_PROVISAO_PEDIDO: "comissoes.tab.provisao_pedido",
   COMISSOES_TAB_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_TAB_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_TAB_DASHBOARD: "comissoes.tab.dashboard",

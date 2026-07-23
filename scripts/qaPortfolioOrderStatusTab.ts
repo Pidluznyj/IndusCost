@@ -487,7 +487,9 @@ async function liveLoaders(): Promise<void> {
       (await prisma.orderToCashAuditRun.findFirst({
         where: {
           status: "SUCCESS",
-          OR: [{ customerFilter: null }, { customerFilter: "" }],
+          customerFilter: null,
+          sellerFilter: null,
+          orderFilter: null,
         },
         orderBy: [{ finishedAt: "desc" }, { createdAt: "desc" }],
       }));

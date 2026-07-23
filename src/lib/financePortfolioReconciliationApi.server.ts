@@ -28,7 +28,10 @@ import {
   ORDER_TO_CASH_AUDIT_INTELLIGENCE_SOURCE,
   type OrderToCashAuditFactAdapterInput,
 } from "./finance/orderToCashAuditToPortfolioFactsAdapter.js";
-import { yearDateBounds } from "./finance/orderToCashAuditApi.js";
+import {
+  ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
+  yearDateBounds,
+} from "./finance/orderToCashAuditApi.js";
 import {
   filterFactsByOperationalPortfolioOrders,
   isSalesOrderVisibleInPortfolioReconciliation,
@@ -797,7 +800,7 @@ export async function loadPortfolioIntelligenceOrderDetail(
 
 async function findLatestGeneralOrderToCashAuditRunId(): Promise<string | null> {
   const run = await prisma.orderToCashAuditRun.findFirst({
-    where: { status: "SUCCESS", customerFilter: null },
+    where: ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
     orderBy: [{ createdAt: "desc" }],
     select: { id: true },
   });
@@ -818,7 +821,7 @@ async function resolveOrderToCashAuditRunForIntelligence(runId: string | null) {
     if (isPortfolio) return null;
   }
   return prisma.orderToCashAuditRun.findFirst({
-    where: { status: "SUCCESS", customerFilter: null },
+    where: ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
     orderBy: [{ createdAt: "desc" }],
   });
 }

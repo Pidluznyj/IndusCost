@@ -13,6 +13,7 @@ export const COMMISSIONS_UI_SECTION_IDS = [
   "monthlyClosing",
   "closings",
   "customerExclusions",
+  "orderProvision",
   "reports",
   "reprocess",
 ] as const;
@@ -79,6 +80,7 @@ export const COMMISSIONS_SECTION_PATHS: Record<CommissionsSectionId, string> = {
   receivableForecast: "/commissions/previsao",
   visualAudit: "/commissions/auditoria",
   customerExclusions: "/commissions/exclusoes-cliente",
+  orderProvision: "/commissions/provisao-pedido",
   reports: "/commissions/relatorios",
   reprocess: "/commissions/reprocessar",
 };
@@ -113,6 +115,13 @@ export const COMMISSIONS_SECTIONS: CommissionsSectionDef[] = [
     path: COMMISSIONS_SECTION_PATHS.customerExclusions,
     description:
       "Clientes que não geram comissão — regra auditável com vigência, sem ocultar vendas",
+  },
+  {
+    id: "orderProvision",
+    label: "Provisão por pedido",
+    path: COMMISSIONS_SECTION_PATHS.orderProvision,
+    description:
+      "Comissão acumulada por pedidos (snapshot oficial), sem depender do período de pagamento",
   },
   {
     id: "reports",
@@ -160,6 +169,7 @@ export function isCommissionsCanonicalPath(pathname: string): boolean {
   if (firstSegment === "previsao") return true;
   if (firstSegment === "fechamentos") return true;
   if (firstSegment === "exclusoes-cliente") return true;
+  if (firstSegment === "provisao-pedido") return true;
   if (firstSegment === "relatorios") return true;
   if (firstSegment === "reprocessar") return true;
   if (isCommissionsSectionId(firstSegment)) return true;
@@ -178,6 +188,7 @@ export function parseCommissionsSectionFromPath(pathname: string): CommissionsSe
   if (next === "auditoria" || next === "previsao") return "monthlyClosing";
   if (next === "fechamentos") return "closings";
   if (next === "exclusoes-cliente") return "customerExclusions";
+  if (next === "provisao-pedido") return "orderProvision";
   if (next === "relatorios") return "reports";
   if (next === "reprocessar") return "reprocess";
   if (isCommissionsLegacySectionSegment(next)) return "monthlyClosing";

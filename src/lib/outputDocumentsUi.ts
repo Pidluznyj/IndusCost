@@ -13,6 +13,11 @@ import type {
 } from "@/src/lib/output-documents/outputDocumentsListTypes.js";
 import type { OutputDocumentDetailItem } from "@/src/lib/output-documents/outputDocumentsDetailTypes.js";
 import type { OverlayBadgeTone } from "@/src/components/ui/overlay";
+import { normalizeNfeStatus } from "@/src/lib/finance/nfeStatus.js";
+import {
+  isWeakOutputDocumentProductName,
+  isWeakOutputDocumentProductSku,
+} from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
 import { formatCurrency } from "@/src/lib/utils.js";
 
 export const OUTPUT_DOCUMENTS_MODULE_ID = "output-documents" as const;
@@ -437,6 +442,16 @@ export function formatOutputDocumentNfeCancellation(nfe: {
   return nfe.isCancelled ? "Cancelada" : "Não";
 }
 
+/** Label humano do status fiscal Nomus (ex.: 4 → Autorizada). */
+export function formatOutputDocumentNfeStatusLabel(nfe: {
+  status: number | null;
+  isCancelled: boolean;
+}): string {
+  if (nfe.isCancelled) return "Cancelada";
+  if (nfe.status == null) return "Ativa";
+  return normalizeNfeStatus({ status: nfe.status }).label;
+}
+
 export function formatOutputDocumentNfeDocumentaryDiffs(
   nfe: {
     externalId: number;
@@ -599,7 +614,11 @@ export function formatOutputDocumentItemCode(
     "sku" | "externalProductId" | "externalItemId"
   >
 ): string {
-  if (item.sku?.trim()) return item.sku.trim();
+  const sku = item.sku?.trim() || null;
+  if (sku && !isWeakOutputDocumentProductSku(sku, item.externalProductId)) {
+    return sku;
+  }
+  if (sku) return sku;
   if (item.externalProductId != null) return String(item.externalProductId);
   if (item.externalItemId != null) return `Item ${item.externalItemId}`;
   return "—";
@@ -611,10 +630,15 @@ export function formatOutputDocumentItemSkuLabel(
     "sku" | "externalProductId" | "externalItemId"
   >
 ): string {
-  const code = formatOutputDocumentItemCode(item);
-  if (code === "—") return "—";
-  if (item.sku?.trim()) return code;
-  return `SKU ${code}`;
+  const sku = item.sku?.trim() || null;
+  if (sku && !isWeakOutputDocumentProductSku(sku, item.externalProductId)) {
+    return sku;
+  }
+  if (item.externalProductId != null) {
+    return `ID Nomus ${item.externalProductId}`;
+  }
+  if (item.externalItemId != null) return `Item ${item.externalItemId}`;
+  return "—";
 }
 
 export function formatOutputDocumentItemDescription(
@@ -623,7 +647,8 @@ export function formatOutputDocumentItemDescription(
     "productName" | "externalProductId" | "alerts"
   >
 ): string {
-  if (item.productName?.trim()) return item.productName.trim();
+  const name = item.productName?.trim() || null;
+  if (name && !isWeakOutputDocumentProductName(name)) return name;
   if (item.externalProductId != null) {
     return `Produto Nomus #${item.externalProductId}`;
   }
@@ -638,11 +663,17 @@ export function formatOutputDocumentItemUnit(
 }
 
 export function formatOutputDocumentItemLocalProduct(
-  item: Pick<OutputDocumentDetailItem, "productLink" | "sku">
+  item: Pick<
+    OutputDocumentDetailItem,
+    "productLink" | "sku" | "externalProductId"
+  >
 ): string {
-  if (item.sku?.trim()) return `SKU ${item.sku.trim()}`;
+  const sku = item.sku?.trim() || null;
+  if (sku && !isWeakOutputDocumentProductSku(sku, item.externalProductId)) {
+    return sku;
+  }
   return item.productLink.hasProductId
-    ? `ID ${item.productLink.externalProductId}`
+    ? `ID Nomus ${item.productLink.externalProductId}`
     : "Não vinculado";
 }
 

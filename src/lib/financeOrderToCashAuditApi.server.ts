@@ -12,7 +12,10 @@ import {
   buildOrderToCashAuditFactWhere,
   buildOrderToCashAuditListPayload,
   buildOrderToCashAuditPrismaOrderBy,
+  buildOrderToCashAuditSpecificCustomerYearRunWhere,
   decideOrderToCashAuditRunPolicy,
+  isOrderToCashAuditGeneralRunScope,
+  ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
   orderToCashAuditHasFactScopeFilters,
   parseOrderToCashAuditListFilters,
   type OrderToCashAuditFactRecord,
@@ -177,6 +180,8 @@ type RunRow = {
   mode: string;
   year: number | null;
   customerFilter: string | null;
+  sellerFilter?: string | null;
+  orderFilter?: string | null;
   periodFrom: Date | null;
   periodTo: Date | null;
   totalOrders: number;
@@ -266,7 +271,7 @@ function mapFact(row: FactRow): OrderToCashAuditFactRecord {
 }
 
 function serializeRun(run: RunRow): OrderToCashAuditRunMeta {
-  const isGeneralRun = run.customerFilter == null || String(run.customerFilter).trim() === "";
+  const isGeneralRun = isOrderToCashAuditGeneralRunScope(run);
   return {
     runId: run.id,
     startedAt: run.startedAt?.toISOString() ?? null,
@@ -313,11 +318,10 @@ async function findSpecificSuccessRunId(
   year: number
 ): Promise<string | null> {
   const run = await prisma.orderToCashAuditRun.findFirst({
-    where: {
-      status: "SUCCESS",
-      year,
-      customerFilter: String(customerExternalId),
-    },
+    where: buildOrderToCashAuditSpecificCustomerYearRunWhere(
+      customerExternalId,
+      year
+    ),
     orderBy: [{ createdAt: "desc" }],
     select: { id: true },
   });
@@ -326,10 +330,7 @@ async function findSpecificSuccessRunId(
 
 async function findLatestGeneralSuccessRunId(): Promise<string | null> {
   const run = await prisma.orderToCashAuditRun.findFirst({
-    where: {
-      status: "SUCCESS",
-      customerFilter: null,
-    },
+    where: ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
     orderBy: [{ createdAt: "desc" }],
     select: { id: true },
   });

@@ -10,6 +10,7 @@ export const TabResourceKeys = {
   COMISSOES_FECHAMENTO: "comissoes.tab.fechamento_mes",
   COMISSOES_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_EXCECOES: "comissoes.tab.excecoes_cliente",
+  COMISSOES_PROVISAO_PEDIDO: "comissoes.tab.provisao_pedido",
   COMISSOES_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_DASHBOARD: "comissoes.tab.dashboard",
@@ -59,6 +60,7 @@ export type CommissionsLiveTabId =
   | "monthlyClosing"
   | "closings"
   | "customerExclusions"
+  | "orderProvision"
   | "reports"
   | "reprocess";
 
@@ -81,6 +83,11 @@ export const COMMISSIONS_LIVE_UI_TABS: ReadonlyArray<{
     id: "customerExclusions",
     resourceKey: TabResourceKeys.COMISSOES_EXCECOES,
     label: "Exceções por cliente",
+  },
+  {
+    id: "orderProvision",
+    resourceKey: TabResourceKeys.COMISSOES_PROVISAO_PEDIDO,
+    label: "Provisão por pedido",
   },
   {
     id: "reports",

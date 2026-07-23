@@ -7,7 +7,10 @@ import { prisma } from "@/src/lib/prisma.js";
 import type { Prisma } from "@prisma/client";
 import {
   buildOrderToCashAuditFactWhere,
+  buildOrderToCashAuditSpecificCustomerYearRunWhere,
   decideOrderToCashAuditRunPolicy,
+  isOrderToCashAuditGeneralRunScope,
+  ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
   yearDateBounds,
   type OrderToCashAuditFactRecord,
 } from "./finance/orderToCashAuditApi.js";
@@ -167,6 +170,8 @@ type RunRow = {
   mode: string;
   year: number | null;
   customerFilter: string | null;
+  sellerFilter?: string | null;
+  orderFilter?: string | null;
   periodFrom: Date | null;
   periodTo: Date | null;
   totalOrders: number;
@@ -252,8 +257,7 @@ function mapFact(row: FactRow): PortfolioOrderStatusFact {
 }
 
 function toRunMeta(run: RunRow): PortfolioOrderStatusRunMeta {
-  const isGeneralRun =
-    run.customerFilter == null || String(run.customerFilter).trim() === "";
+  const isGeneralRun = isOrderToCashAuditGeneralRunScope(run);
   return {
     runId: run.id,
     createdAt: run.createdAt?.toISOString() ?? null,
@@ -286,11 +290,10 @@ async function findSpecificSuccessRunId(
   year: number
 ): Promise<string | null> {
   const run = await prisma.orderToCashAuditRun.findFirst({
-    where: {
-      status: "SUCCESS",
-      year,
-      customerFilter: String(customerExternalId),
-    },
+    where: buildOrderToCashAuditSpecificCustomerYearRunWhere(
+      customerExternalId,
+      year
+    ),
     orderBy: [{ createdAt: "desc" }],
     select: { id: true },
   });
@@ -299,7 +302,7 @@ async function findSpecificSuccessRunId(
 
 async function findLatestGeneralSuccessRunId(): Promise<string | null> {
   const run = await prisma.orderToCashAuditRun.findFirst({
-    where: { status: "SUCCESS", customerFilter: null },
+    where: ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE,
     orderBy: [{ createdAt: "desc" }],
     select: { id: true },
   });

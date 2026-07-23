@@ -25,7 +25,12 @@ import {
 } from "@/src/lib/output-documents/outputDocumentsDetail.js";
 import type { OutputDocumentDetailPayload } from "@/src/lib/output-documents/outputDocumentsDetailTypes.js";
 import type { ResolvedOutputDocument } from "@/src/lib/output-documents/nomusOutputDocumentResolver.js";
-import { extractOutputDocumentItemProductIdentity } from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
+import {
+  extractOutputDocumentItemProductIdentity,
+  mergeOutputDocumentItemProductIdentity,
+  type OutputDocumentItemProductIdentity,
+} from "@/src/lib/output-documents/outputDocumentItemProductIdentity.js";
+import type { OutputDocumentAllocationProjection } from "@/src/lib/output-documents/outputDocumentAllocationProjection.js";
 
 type PrismaLike = Pick<
   PrismaClient,
@@ -37,6 +42,8 @@ type PrismaLike = Pick<
   | "salesOrderItem"
   | "orderToCashAuditFact"
   | "nomusAccountsReceivable"
+  | "nomusProductCatalog"
+  | "product"
 >;
 
 const DETAIL_LOOKUP_SELECT = {
@@ -291,6 +298,132 @@ async function loadFinancialForDetail(
 }
 
 /**
+ * Completa SKU/descrição/unidade quando o raw do DS só tem idProduto.
+ * Fontes: item do pedido (skuSnapshot), catálogo Nomus e Product local.
+ */
+async function enrichItemProductHints(
+  prisma: PrismaLike,
+  projection: OutputDocumentAllocationProjection,
+  baseHints: ReadonlyMap<string, OutputDocumentItemProductIdentity>
+): Promise<Map<string, OutputDocumentItemProductIdentity>> {
+  const salesOrderItemIds = [
+    ...new Set(
+      projection.items.flatMap((item) =>
+        item.links
+          .map((link) => link.salesOrderItemId)
+          .filter((id): id is string => Boolean(id))
+      )
+    ),
+  ];
+  const externalProductIds = [
+    ...new Set(
+      projection.items
+        .map((item) => item.externalProductId)
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ];
+  const externalProductIdKeys = externalProductIds.map(String);
+
+  const [orderItems, catalogRows, products] = await Promise.all([
+    salesOrderItemIds.length > 0
+      ? prisma.salesOrderItem.findMany({
+          where: { id: { in: salesOrderItemIds } },
+          select: {
+            id: true,
+            skuSnapshot: true,
+            productNameSnapshot: true,
+            unit: true,
+            Product: { select: { sku: true, name: true } },
+          },
+        })
+      : Promise.resolve([]),
+    externalProductIdKeys.length > 0
+      ? prisma.nomusProductCatalog.findMany({
+          where: { externalProductId: { in: externalProductIdKeys } },
+          select: {
+            externalProductId: true,
+            code: true,
+            description: true,
+          },
+        })
+      : Promise.resolve([]),
+    externalProductIdKeys.length > 0
+      ? prisma.product.findMany({
+          where: { sourceExternalId: { in: externalProductIdKeys } },
+          select: { sourceExternalId: true, sku: true, name: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const orderItemById = new Map(orderItems.map((row) => [row.id, row]));
+  const catalogByExternalId = new Map(
+    catalogRows
+      .filter((row) => row.externalProductId?.trim())
+      .map((row) => [row.externalProductId!.trim(), row])
+  );
+  const productByExternalId = new Map(
+    products
+      .filter((row) => row.sourceExternalId?.trim())
+      .map((row) => [row.sourceExternalId!.trim(), row])
+  );
+
+  const enriched = new Map<string, OutputDocumentItemProductIdentity>();
+  for (const item of projection.items) {
+    const base =
+      baseHints.get(item.stockDocumentItemId) ?? {
+        sku: null,
+        productName: null,
+        unitCode: null,
+      };
+    const orderEnrichments = item.links.map((link) => {
+      if (!link.salesOrderItemId) return null;
+      const orderItem = orderItemById.get(link.salesOrderItemId);
+      if (!orderItem) return null;
+      return {
+        sku: orderItem.skuSnapshot || orderItem.Product?.sku || null,
+        productName:
+          orderItem.productNameSnapshot || orderItem.Product?.name || null,
+        unitCode: orderItem.unit,
+      };
+    });
+    const catalog =
+      item.externalProductId != null
+        ? catalogByExternalId.get(String(item.externalProductId))
+        : null;
+    const localProduct =
+      item.externalProductId != null
+        ? productByExternalId.get(String(item.externalProductId))
+        : null;
+
+    enriched.set(
+      item.stockDocumentItemId,
+      mergeOutputDocumentItemProductIdentity(
+        base,
+        [
+          ...orderEnrichments,
+          catalog
+            ? {
+                sku: catalog.code,
+                productName: catalog.description,
+                unitCode: null,
+              }
+            : null,
+          localProduct
+            ? {
+                sku: localProduct.sku,
+                productName: localProduct.name,
+                unitCode: null,
+              }
+            : null,
+        ],
+        item.externalProductId
+      )
+    );
+  }
+  return enriched;
+}
+
+/**
  * Carrega detalhe completo. Retorna null se não existir no stage.
  * O2C só enriquece relações — não é requisito para achar o documento.
  */
@@ -373,11 +506,16 @@ export async function loadOutputDocumentDetail(
     select: { id: true, rawJson: true },
     orderBy: { createdAt: "asc" },
   });
-  const itemProductHints = new Map(
+  const rawItemProductHints = new Map(
     itemRaws.map((row) => [
       row.id,
       extractOutputDocumentItemProductIdentity(row.rawJson),
     ])
+  );
+  const itemProductHints = await enrichItemProductHints(
+    options.prisma,
+    projection,
+    rawItemProductHints
   );
 
   let raw: { document: unknown; items: unknown[] } | null = null;

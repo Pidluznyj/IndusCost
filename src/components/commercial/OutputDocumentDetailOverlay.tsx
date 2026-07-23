@@ -39,6 +39,7 @@ import {
   formatOutputDocumentMoney,
   formatOutputDocumentNfeCancellation,
   formatOutputDocumentNfeDocumentaryDiffs,
+  formatOutputDocumentNfeStatusLabel,
   formatOutputDocumentNumber,
   formatOutputDocumentPrimaryNfe,
   formatOutputDocumentStatusLabel,
@@ -785,11 +786,7 @@ function NfesPanel({ detail }: { detail: OutputDocumentDetailPayload }) {
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>
                     <OverlayBadge tone={nfe.isCancelled ? "rose" : "emerald"}>
-                      {nfe.isCancelled
-                        ? "Cancelada"
-                        : nfe.status != null
-                          ? `Status ${nfe.status}`
-                          : "Ativa"}
+                      {formatOutputDocumentNfeStatusLabel(nfe)}
                     </OverlayBadge>
                   </OverlayTable.Cell>
                   <OverlayTable.Cell>

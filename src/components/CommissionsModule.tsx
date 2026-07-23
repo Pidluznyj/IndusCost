@@ -25,6 +25,7 @@ import { CommissionsReceiptClosingPage } from "@/src/components/commissions/page
 import { CommissionsClosingsPage } from "@/src/components/commissions/pages/CommissionsClosingsPage";
 import { CommissionsCustomerExclusionsPage } from "@/src/components/commissions/pages/CommissionsCustomerExclusionsPage";
 import { CommissionsReportsPage } from "@/src/components/commissions/pages/CommissionsReportsPage";
+import { CommissionsOrderProvisionPage } from "@/src/components/commissions/pages/CommissionsOrderProvisionPage";
 import { CommissionsReprocessPage } from "@/src/components/commissions/pages/CommissionsReprocessPage";
 
 function CommissionsHomeRedirect({ path }: { path: string }) {
@@ -151,6 +152,10 @@ export function CommissionsModule() {
         <Route
           path="exclusoes-cliente"
           element={guard("customerExclusions", <CommissionsCustomerExclusionsPage />)}
+        />
+        <Route
+          path="provisao-pedido"
+          element={guard("orderProvision", <CommissionsOrderProvisionPage />)}
         />
         <Route path="relatorios" element={guard("reports", <CommissionsReportsPage />)} />
         <Route path="reprocessar" element={guard("reprocess", <CommissionsReprocessPage />)} />

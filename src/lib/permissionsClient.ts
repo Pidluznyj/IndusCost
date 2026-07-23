@@ -54,6 +54,7 @@ export const ResourceKeys = {
   COMISSOES_TAB_FECHAMENTO_MES: "comissoes.tab.fechamento_mes",
   COMISSOES_TAB_FECHAMENTOS: "comissoes.tab.fechamentos",
   COMISSOES_TAB_EXCECOES_CLIENTE: "comissoes.tab.excecoes_cliente",
+  COMISSOES_TAB_PROVISAO_PEDIDO: "comissoes.tab.provisao_pedido",
   COMISSOES_TAB_RELATORIOS: "comissoes.tab.relatorios",
   COMISSOES_TAB_REPROCESSAR: "comissoes.tab.reprocessar",
   COMISSOES_TAB_DASHBOARD: "comissoes.tab.dashboard",
@@ -369,6 +370,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMISSOES,
     legacyAliasKeys: ["commissions.rules.view", "commissions.view"],
+  },
+  {
+    key: ResourceKeys.COMISSOES_TAB_PROVISAO_PEDIDO,
+    label: "Provisão por pedido",
+    type: "TAB",
+    parentKey: ResourceKeys.COMISSOES,
+    legacyAliasKeys: ["commissions.dashboard.view", "commissions.view"],
   },
   {
     key: ResourceKeys.COMISSOES_TAB_RELATORIOS,
@@ -1021,7 +1029,12 @@ export type PermissionsApi = {
   listVisiblePortfolioReconciliationTabs: () => PortfolioReconciliationVisibleTabId[];
   listAllowedCrmTabs: () => Array<"general" | "seller" | "portfolio">;
   listAllowedCommissionsLiveTabs: () => Array<
-    "monthlyClosing" | "customerExclusions" | "reports" | "reprocess"
+    | "monthlyClosing"
+    | "closings"
+    | "customerExclusions"
+    | "orderProvision"
+    | "reports"
+    | "reprocess"
   >;
   listAllowedMaterialsSections: () => Array<"catalog" | "marketIntelligence">;
   canViewPortfolioModule: () => boolean;

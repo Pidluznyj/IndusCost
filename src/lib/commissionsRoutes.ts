@@ -161,6 +161,7 @@ import {
   exportCommissionReportsXlsx,
   getCommissionReportsPage,
 } from "@/src/lib/commissions/commissionReports.server.js";
+import { getCommissionOrderProvisionPage } from "@/src/lib/commissions/commissionOrderProvision.server.js";
 import {
   buildCommissionClosingSellerXlsx,
   buildCommissionClosingSellerXlsxFilename,
@@ -464,6 +465,27 @@ export function registerCommissionsRoutes(app: express.Express, auth: AuthGuards
       } catch {
         console.error("GET /api/commissions/reports", error);
         return res.status(500).json({ error: "Erro ao carregar relatório de comissões." });
+      }
+    }
+  });
+
+  app.get("/api/commissions/order-provision", ...reportsGuard, async (req, res) => {
+    try {
+      const ctx = await resolveScopeOrRespond(req, res, getCurrentAppUser);
+      if (!ctx) return;
+      const payload = await getCommissionOrderProvisionPage(
+        req.query as Record<string, unknown>,
+        ctx.scope
+      );
+      return res.json(payload);
+    } catch (error) {
+      try {
+        return handleQueryError(res, error);
+      } catch {
+        console.error("GET /api/commissions/order-provision", error);
+        return res.status(500).json({
+          error: "Erro ao carregar provisão de comissão por pedido.",
+        });
       }
     }
   });

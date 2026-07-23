@@ -34,10 +34,12 @@ import {
   formatOutputDocumentItemDescription,
   formatOutputDocumentItemLinkStatusLabel,
   formatOutputDocumentItemLocalProduct,
+  formatOutputDocumentItemSkuLabel,
   formatOutputDocumentMoney,
   formatOutputDocumentNfe,
   formatOutputDocumentNfeCancellation,
   formatOutputDocumentNfeDocumentaryDiffs,
+  formatOutputDocumentNfeStatusLabel,
   formatOutputDocumentNumber,
   formatOutputDocumentOrdersCount,
   formatOutputDocumentOrdersLabel,
@@ -665,7 +667,7 @@ describe("output documents detail drawer", () => {
           externalId: 7208,
           numero: "98765",
           serie: "1",
-          status: 100,
+          status: 4,
           isCancelled: false,
           dataEmissao: "2026-06-01T00:00:00.000Z",
           dataProcessamento: null,
@@ -805,11 +807,27 @@ describe("output documents detail drawer", () => {
   it("helpers de item cobrem SKU, descrição e vínculo local", () => {
     assert.equal(
       formatOutputDocumentItemCode({
-        sku: "ABC-01",
-        externalProductId: 100,
+        sku: "610.10AA",
+        externalProductId: 397,
         externalItemId: 10,
       }),
-      "ABC-01"
+      "610.10AA"
+    );
+    assert.equal(
+      formatOutputDocumentItemSkuLabel({
+        sku: "610.10AA",
+        externalProductId: 397,
+        externalItemId: 10,
+      }),
+      "610.10AA"
+    );
+    assert.equal(
+      formatOutputDocumentItemSkuLabel({
+        sku: null,
+        externalProductId: 397,
+        externalItemId: 10,
+      }),
+      "ID Nomus 397"
     );
     assert.equal(
       formatOutputDocumentItemCode({
@@ -829,7 +847,16 @@ describe("output documents detail drawer", () => {
     );
     assert.equal(
       formatOutputDocumentItemLocalProduct({
+        sku: "610.10AA",
+        externalProductId: 397,
+        productLink: { externalProductId: 397, hasProductId: true },
+      }),
+      "610.10AA"
+    );
+    assert.equal(
+      formatOutputDocumentItemLocalProduct({
         sku: null,
+        externalProductId: null,
         productLink: { externalProductId: null, hasProductId: false },
       }),
       "Não vinculado"
@@ -904,6 +931,8 @@ describe("output documents detail drawer", () => {
     assert.match(nfes, /98765/);
     assert.match(nfes, /Diferenças documentais/);
     assert.match(nfes, /Cancelamento/);
+    assert.match(nfes, /Autorizada/);
+    assert.doesNotMatch(nfes, /Status 4/);
 
     const financeiro = renderToStaticMarkup(
       React.createElement(OutputDocumentDetailContent, {
@@ -1025,7 +1054,7 @@ describe("output documents detail drawer", () => {
           externalId: 7208,
           numero: "98765",
           serie: "1",
-          status: 100,
+          status: 4,
           isCancelled: false,
           dataEmissao: "2026-06-01T00:00:00.000Z",
           dataProcessamento: "2026-06-01T12:00:00.000Z",
@@ -1039,7 +1068,7 @@ describe("output documents detail drawer", () => {
           externalId: 7209,
           numero: "98766",
           serie: "1",
-          status: 100,
+          status: 7,
           isCancelled: true,
           dataEmissao: "2026-06-03T00:00:00.000Z",
           dataProcessamento: null,
@@ -1220,6 +1249,18 @@ describe("output documents detail drawer", () => {
   });
 
   it("helpers de NF-e e permissão raw", () => {
+    assert.equal(
+      formatOutputDocumentNfeStatusLabel({ status: 4, isCancelled: false }),
+      "Autorizada"
+    );
+    assert.equal(
+      formatOutputDocumentNfeStatusLabel({ status: 7, isCancelled: true }),
+      "Cancelada"
+    );
+    assert.equal(
+      formatOutputDocumentNfeStatusLabel({ status: null, isCancelled: false }),
+      "Ativa"
+    );
     assert.equal(
       formatOutputDocumentNfeCancellation({ isCancelled: true }),
       "Cancelada"

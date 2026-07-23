@@ -633,9 +633,77 @@ export type OrderToCashAuditRunResolutionKind =
   | "general"
   | "none";
 
+function isBlankOrderToCashAuditRunFilter(
+  value: string | null | undefined
+): boolean {
+  return value == null || String(value).trim() === "";
+}
+
+/**
+ * Run GERAL: sem escopo de cliente, vendedor ou pedido.
+ * OP-22 — run escopado (ex.: orderFilter="PD 02716") não pode ser tratado como geral.
+ */
+export function isOrderToCashAuditGeneralRunScope(run: {
+  customerFilter?: string | null;
+  sellerFilter?: string | null;
+  orderFilter?: string | null;
+}): boolean {
+  return (
+    isBlankOrderToCashAuditRunFilter(run.customerFilter) &&
+    isBlankOrderToCashAuditRunFilter(run.sellerFilter) &&
+    isBlankOrderToCashAuditRunFilter(run.orderFilter)
+  );
+}
+
+/** Where Prisma canônico do último run O2C geral (SUCCESS). */
+export const ORDER_TO_CASH_AUDIT_GENERAL_SUCCESS_RUN_WHERE = {
+  status: "SUCCESS",
+  customerFilter: null,
+  sellerFilter: null,
+  orderFilter: null,
+} as const;
+
+/** Where Prisma canônico de run específico cliente+ano (sem escopo pedido/vendedor). */
+export function buildOrderToCashAuditSpecificCustomerYearRunWhere(
+  customerExternalId: number,
+  year: number
+) {
+  return {
+    status: "SUCCESS" as const,
+    year,
+    customerFilter: String(customerExternalId),
+    sellerFilter: null,
+    orderFilter: null,
+  };
+}
+
+/**
+ * Predicado puro: elegibilidade de run específico cliente+ano.
+ * Exige sellerFilter/orderFilter nulos para não pegar rebuild escopado.
+ */
+export function matchesOrderToCashAuditSpecificCustomerYearRun(
+  run: {
+    status?: string | null;
+    year?: number | null;
+    customerFilter?: string | null;
+    sellerFilter?: string | null;
+    orderFilter?: string | null;
+  },
+  customerExternalId: number,
+  year: number
+): boolean {
+  return (
+    run.status === "SUCCESS" &&
+    run.year === year &&
+    String(run.customerFilter ?? "").trim() === String(customerExternalId) &&
+    isBlankOrderToCashAuditRunFilter(run.sellerFilter) &&
+    isBlankOrderToCashAuditRunFilter(run.orderFilter)
+  );
+}
+
 /**
  * Política pura de escolha de run (testável sem Prisma).
- * a) específica cliente+ano → b) geral customerFilter null → c) none
+ * a) específica cliente+ano → b) geral (sem customer/seller/order filter) → c) none
  */
 export function decideOrderToCashAuditRunPolicy(input: {
   runId: string | null;
