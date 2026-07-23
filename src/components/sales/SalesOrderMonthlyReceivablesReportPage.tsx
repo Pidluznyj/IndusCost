@@ -1,5 +1,6 @@
 import "@/src/components/print/print-document.css";
 import "@/src/components/sales/sales-order-report-print.css";
+import "@/src/components/sales/sales-order-monthly-receivables-matrix.css";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -26,6 +27,7 @@ import {
   getSalesOrderMonthlyReceivablesXlsxUrl,
 } from "@/src/lib/sales/salesOrderMonthlyReceivablesReportExportUi";
 import {
+  defaultMonthlyReceivablesYearFilters,
   SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE,
   type SalesOrderMonthlyReceivablesDetailPayload,
   type SalesOrderMonthlyReceivablesFinancialSituation,
@@ -318,8 +320,9 @@ function MonthlyReceivablesDetailDialog({
 }
 
 export function SalesOrderMonthlyReceivablesReportPage() {
-  const [dueMonthFrom, setDueMonthFrom] = useState("");
-  const [dueMonthTo, setDueMonthTo] = useState("");
+  const initialYearFilters = useMemo(() => defaultMonthlyReceivablesYearFilters(), []);
+  const [dueMonthFrom, setDueMonthFrom] = useState(initialYearFilters.dueMonthFrom);
+  const [dueMonthTo, setDueMonthTo] = useState(initialYearFilters.dueMonthTo);
   const [customerId, setCustomerId] = useState("");
   const [customerSelection, setCustomerSelection] = useState<EntityAutocompleteSelection | null>(
     null
@@ -334,8 +337,8 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [onlyIncompleteAgenda, setOnlyIncompleteAgenda] = useState(false);
   const [orderCode, setOrderCode] = useState("");
   const [q, setQ] = useState("");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(initialYearFilters.startDate);
+  const [endDate, setEndDate] = useState(initialYearFilters.endDate);
   const [hasInvoice, setHasInvoice] = useState("");
   const [receivableStatus, setReceivableStatus] = useState("");
   const [debouncedSellerKey, setDebouncedSellerKey] = useState("");
@@ -354,6 +357,17 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const [printRequestId, setPrintRequestId] = useState(0);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
+  const matrixScrollRef = useRef<HTMLDivElement | null>(null);
+  const [monthScrollMax, setMonthScrollMax] = useState(0);
+  const [monthScrollPos, setMonthScrollPos] = useState(0);
+
+  const syncMonthScrollMetrics = useCallback(() => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
+    setMonthScrollMax(max);
+    setMonthScrollPos(Math.min(max, Math.max(0, el.scrollLeft)));
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSellerKey(sellerKey), 350);
@@ -479,8 +493,9 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   }, [printRequestId, printPayload]);
 
   const handleClearFilters = () => {
-    setDueMonthFrom("");
-    setDueMonthTo("");
+    const yearFilters = defaultMonthlyReceivablesYearFilters();
+    setDueMonthFrom(yearFilters.dueMonthFrom);
+    setDueMonthTo(yearFilters.dueMonthTo);
     setCustomerId("");
     setCustomerSelection(null);
     setSellerKey("");
@@ -492,8 +507,8 @@ export function SalesOrderMonthlyReceivablesReportPage() {
     setOnlyIncompleteAgenda(false);
     setOrderCode("");
     setQ("");
-    setStartDate("");
-    setEndDate("");
+    setStartDate(yearFilters.startDate);
+    setEndDate(yearFilters.endDate);
     setHasInvoice("");
     setReceivableStatus("");
     setPage(1);
@@ -541,6 +556,36 @@ export function SalesOrderMonthlyReceivablesReportPage() {
   const pagination = payload?.pagination;
   const totalPages = pagination?.totalPages ?? 1;
   const totalRows = pagination?.totalRows ?? 0;
+
+  useEffect(() => {
+    if (rows.length === 0) {
+      setMonthScrollMax(0);
+      setMonthScrollPos(0);
+      return;
+    }
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    syncMonthScrollMetrics();
+    const onScroll = () => syncMonthScrollMetrics();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => syncMonthScrollMetrics())
+        : null;
+    ro?.observe(el);
+    window.addEventListener("resize", syncMonthScrollMetrics);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      ro?.disconnect();
+      window.removeEventListener("resize", syncMonthScrollMetrics);
+    };
+  }, [rows.length, monthColumns.length, syncMonthScrollMetrics]);
+
+  const scrollMonthsBy = useCallback((delta: number) => {
+    const el = matrixScrollRef.current;
+    if (!el) return;
+    el.scrollBy({ left: delta, behavior: "smooth" });
+  }, []);
 
   return (
     <div className="space-y-6" data-testid="monthly-receivables-report-page">
@@ -842,125 +887,188 @@ export function SalesOrderMonthlyReceivablesReportPage() {
         ) : null}
 
         {rows.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table
-              className="min-w-full border-collapse text-sm"
-              data-testid="monthly-receivables-matrix"
+          <div className="space-y-2">
+            <div
+              ref={matrixScrollRef}
+              className="monthly-receivables-matrix-scroll"
+              data-testid="monthly-receivables-matrix-scroll"
             >
-              <thead>
-                <tr className="border-b border-border bg-muted/30 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="sticky left-0 z-20 min-w-[7rem] border-r border-border bg-muted/95 px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
-                    Pedido
-                  </th>
-                  <th className="sticky left-[7rem] z-20 min-w-[12rem] border-r border-border bg-muted/95 px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
-                    Cliente
-                  </th>
-                  <th className="px-3 py-2 text-right">Valor pedido</th>
-                  <th className="px-3 py-2 text-right">Agenda</th>
-                  <th className="px-3 py-2 text-right">Diferença</th>
-                  <th className="px-3 py-2">Qualidade</th>
-                  {monthColumns.map((m) => (
-                    <th key={m.key} className="min-w-[6.5rem] px-2 py-2 text-right">
-                      {m.label}
+              <table
+                className="monthly-receivables-matrix text-sm"
+                data-testid="monthly-receivables-matrix"
+              >
+                <thead>
+                  <tr className="border-b border-border bg-muted/30 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <th className="mr-sticky-pedido border-r border-border px-3 py-2">
+                      Pedido
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.salesOrderId} className="border-b border-border/70 hover:bg-muted/20">
-                    <td className="sticky left-0 z-10 border-r border-border bg-card px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
-                      <Link
-                        to={`/sales-orders/${row.salesOrderId}`}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        {row.orderCode}
-                      </Link>
-                    </td>
-                    <td
-                      className="sticky left-[7rem] z-10 max-w-[12rem] truncate border-r border-border bg-card px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]"
-                      title={row.customerName}
-                    >
-                      {row.customerName}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(row.orderCommercialTotal)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {money(row.effectiveScheduleTotal)}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-3 py-2 text-right tabular-nums",
-                        Math.abs(row.difference) > 1 ? "text-amber-700" : ""
-                      )}
-                    >
-                      {money(row.difference)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={cn(
-                          "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                          qualityTone(row.qualityStatus)
-                        )}
-                      >
-                        {row.qualityStatusLabel}
-                      </span>
-                    </td>
-                    {monthColumns.map((m) => {
-                      const cell = row.months[m.key];
-                      const clickable = (cell?.titleCount ?? 0) > 0;
-                      return (
-                        <td key={m.key} className="px-1 py-1 text-right">
-                          {clickable ? (
-                            <button
-                              type="button"
-                              className="w-full rounded-md px-2 py-1 text-right tabular-nums transition-colors hover:bg-primary/10 hover:text-primary"
-                              title={cell?.sourceSummary || undefined}
-                              onClick={() =>
-                                setDrilldown({
-                                  salesOrderId: row.salesOrderId,
-                                  orderCode: row.orderCode,
-                                  monthKey: m.key,
-                                  monthLabel: m.label,
-                                })
-                              }
-                            >
-                              {money(cell?.amount ?? 0)}
-                            </button>
-                          ) : (
-                            <span className="block px-2 py-1 tabular-nums text-muted-foreground/70">
-                              —
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-                {totals ? (
-                  <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-                    <td
-                      className="sticky left-0 z-10 border-r border-border bg-muted/95 px-3 py-2 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
-                      colSpan={2}
-                    >
-                      Totais ({totalRows} pedidos)
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {money(totals.orderCommercialTotal)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {money(totals.effectiveScheduleTotal)}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{money(totals.difference)}</td>
-                    <td />
+                    <th className="mr-sticky-cliente border-r border-border px-3 py-2">
+                      Cliente
+                    </th>
+                    <th className="mr-sticky-valor border-r border-border px-3 py-2 text-right">
+                      Valor pedido
+                    </th>
+                    <th className="px-3 py-2 text-right">Agenda</th>
+                    <th className="px-3 py-2 text-right">Diferença</th>
+                    <th className="px-3 py-2">Qualidade</th>
                     {monthColumns.map((m) => (
-                      <td key={m.key} className="px-2 py-2 text-right tabular-nums">
-                        {money(totals.monthly[m.key]?.amount ?? 0)}
-                      </td>
+                      <th key={m.key} className="mr-month px-2 py-2 text-right">
+                        {m.label}
+                      </th>
                     ))}
                   </tr>
-                ) : null}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr
+                      key={row.salesOrderId}
+                      className="border-b border-border/70 hover:bg-muted/20"
+                    >
+                      <td className="mr-sticky-pedido border-r border-border px-3 py-2">
+                        <Link
+                          to={`/sales-orders/${row.salesOrderId}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {row.orderCode}
+                        </Link>
+                      </td>
+                      <td
+                        className="mr-sticky-cliente truncate border-r border-border px-3 py-2"
+                        title={row.customerName}
+                      >
+                        {row.customerName}
+                      </td>
+                      <td className="mr-sticky-valor border-r border-border px-3 py-2 text-right tabular-nums">
+                        {money(row.orderCommercialTotal)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {money(row.effectiveScheduleTotal)}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-3 py-2 text-right tabular-nums",
+                          Math.abs(row.difference) > 1 ? "text-amber-700" : ""
+                        )}
+                      >
+                        {money(row.difference)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span
+                          className={cn(
+                            "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                            qualityTone(row.qualityStatus)
+                          )}
+                        >
+                          {row.qualityStatusLabel}
+                        </span>
+                      </td>
+                      {monthColumns.map((m) => {
+                        const cell = row.months[m.key];
+                        const clickable = (cell?.titleCount ?? 0) > 0;
+                        return (
+                          <td key={m.key} className="mr-month px-1 py-1 text-right">
+                            {clickable ? (
+                              <button
+                                type="button"
+                                className="w-full rounded-md px-2 py-1 text-right tabular-nums transition-colors hover:bg-primary/10 hover:text-primary"
+                                title={cell?.sourceSummary || undefined}
+                                onClick={() =>
+                                  setDrilldown({
+                                    salesOrderId: row.salesOrderId,
+                                    orderCode: row.orderCode,
+                                    monthKey: m.key,
+                                    monthLabel: m.label,
+                                  })
+                                }
+                              >
+                                {money(cell?.amount ?? 0)}
+                              </button>
+                            ) : (
+                              <span className="block px-2 py-1 tabular-nums text-muted-foreground/70">
+                                —
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                  {totals ? (
+                    <tr className="mr-totals-row border-t-2 border-border bg-muted/40 font-semibold">
+                      <td className="mr-sticky-pedido border-r border-border px-3 py-2">
+                        Totais
+                      </td>
+                      <td className="mr-sticky-cliente border-r border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+                        {totalRows} pedidos
+                      </td>
+                      <td className="mr-sticky-valor border-r border-border px-3 py-2 text-right tabular-nums">
+                        {money(totals.orderCommercialTotal)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {money(totals.effectiveScheduleTotal)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {money(totals.difference)}
+                      </td>
+                      <td />
+                      {monthColumns.map((m) => (
+                        <td
+                          key={m.key}
+                          className="mr-month px-2 py-2 text-right tabular-nums"
+                        >
+                          {money(totals.monthly[m.key]?.amount ?? 0)}
+                        </td>
+                      ))}
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            {monthScrollMax > 0 ? (
+              <div
+                className="flex flex-wrap items-center gap-2 border-t border-border/70 px-3 py-2"
+                data-testid="monthly-receivables-month-slider"
+              >
+                <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                  Meses
+                </span>
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  aria-label="Rolar meses para a esquerda"
+                  disabled={monthScrollPos <= 0}
+                  onClick={() => scrollMonthsBy(-220)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={monthScrollMax}
+                  step={1}
+                  value={monthScrollPos}
+                  className="monthly-receivables-month-slider h-2 min-w-[10rem] flex-1 cursor-pointer"
+                  aria-label="Deslizar colunas de meses"
+                  onChange={(e) => {
+                    const next = Number(e.target.value);
+                    const el = matrixScrollRef.current;
+                    if (!el || !Number.isFinite(next)) return;
+                    el.scrollLeft = next;
+                    setMonthScrollPos(next);
+                  }}
+                />
+                <button
+                  type="button"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+                  aria-label="Rolar meses para a direita"
+                  disabled={monthScrollPos >= monthScrollMax - 1}
+                  onClick={() => scrollMonthsBy(220)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -1,0 +1,102 @@
+/* Matriz de recebíveis: Pedido / Cliente / Valor pedido fixos; meses rolam no eixo X. */
+
+.monthly-receivables-matrix-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.monthly-receivables-matrix-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.monthly-receivables-matrix-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.35);
+  border-radius: 999px;
+}
+
+.monthly-receivables-matrix-scroll::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.monthly-receivables-matrix {
+  --mr-col-pedido: 7rem;
+  --mr-col-cliente: 12rem;
+  --mr-col-valor: 8.5rem;
+  --mr-left-cliente: var(--mr-col-pedido);
+  --mr-left-valor: calc(var(--mr-col-pedido) + var(--mr-col-cliente));
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+}
+
+.monthly-receivables-matrix th.mr-sticky-pedido,
+.monthly-receivables-matrix td.mr-sticky-pedido {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: var(--mr-col-pedido);
+  width: var(--mr-col-pedido);
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+}
+
+.monthly-receivables-matrix th.mr-sticky-cliente,
+.monthly-receivables-matrix td.mr-sticky-cliente {
+  position: sticky;
+  left: var(--mr-left-cliente);
+  z-index: 3;
+  min-width: var(--mr-col-cliente);
+  width: var(--mr-col-cliente);
+  max-width: var(--mr-col-cliente);
+  box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.08);
+}
+
+.monthly-receivables-matrix th.mr-sticky-valor,
+.monthly-receivables-matrix td.mr-sticky-valor {
+  position: sticky;
+  left: var(--mr-left-valor);
+  z-index: 3;
+  min-width: var(--mr-col-valor);
+  width: var(--mr-col-valor);
+  box-shadow: 4px 0 8px -2px rgba(0, 0, 0, 0.12);
+}
+
+.monthly-receivables-matrix thead th.mr-sticky-pedido,
+.monthly-receivables-matrix thead th.mr-sticky-cliente,
+.monthly-receivables-matrix thead th.mr-sticky-valor {
+  z-index: 4;
+  background: hsl(var(--muted) / 0.95);
+}
+
+.monthly-receivables-matrix tbody td.mr-sticky-pedido,
+.monthly-receivables-matrix tbody td.mr-sticky-cliente,
+.monthly-receivables-matrix tbody td.mr-sticky-valor {
+  background: hsl(var(--card));
+}
+
+.monthly-receivables-matrix tbody tr:hover td.mr-sticky-pedido,
+.monthly-receivables-matrix tbody tr:hover td.mr-sticky-cliente,
+.monthly-receivables-matrix tbody tr:hover td.mr-sticky-valor {
+  background: hsl(var(--muted) / 0.35);
+}
+
+.monthly-receivables-matrix tfoot td.mr-sticky-pedido,
+.monthly-receivables-matrix tfoot td.mr-sticky-cliente,
+.monthly-receivables-matrix tfoot td.mr-sticky-valor,
+.monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-pedido,
+.monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-cliente,
+.monthly-receivables-matrix tr.mr-totals-row td.mr-sticky-valor {
+  background: hsl(var(--muted) / 0.95);
+}
+
+.monthly-receivables-matrix th.mr-month,
+.monthly-receivables-matrix td.mr-month {
+  min-width: 6.5rem;
+  white-space: nowrap;
+}
+
+.monthly-receivables-month-slider {
+  accent-color: hsl(var(--primary));
+}

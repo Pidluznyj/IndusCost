@@ -40,4 +40,28 @@ describe("salesOrderMonthlyReceivablesReport wiring", () => {
     assert.match(app, /sales-orders\/monthly-receivables/);
     assert.match(app, /SalesOrderMonthlyReceivablesReportPage/);
   });
+
+  it("UI inicia com filtro do ano calendário corrente", () => {
+    const page = read(
+      "src/components/sales/SalesOrderMonthlyReceivablesReportPage.tsx"
+    );
+    assert.match(page, /defaultMonthlyReceivablesYearFilters/);
+    assert.match(page, /initialYearFilters\.dueMonthFrom/);
+    assert.match(page, /initialYearFilters\.startDate/);
+  });
+
+  it("matriz congela Pedido/Cliente/Valor e tem slider dos meses", () => {
+    const page = read(
+      "src/components/sales/SalesOrderMonthlyReceivablesReportPage.tsx"
+    );
+    const css = read(
+      "src/components/sales/sales-order-monthly-receivables-matrix.css"
+    );
+    assert.match(page, /mr-sticky-pedido/);
+    assert.match(page, /mr-sticky-cliente/);
+    assert.match(page, /mr-sticky-valor/);
+    assert.match(page, /monthly-receivables-month-slider/);
+    assert.match(css, /position:\s*sticky/);
+    assert.match(css, /--mr-left-valor/);
+  });
 });

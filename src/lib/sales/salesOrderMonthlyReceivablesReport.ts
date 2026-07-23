@@ -263,6 +263,27 @@ export function defaultDueMonthRange(referenceDate = new Date()): {
   return { dueMonthFrom: from, dueMonthTo: formatYearMonthKey(ey, em) };
 }
 
+/**
+ * Filtro inicial da UI: ano calendário corrente (emissão + vencimento).
+ * Alinha a tela ao padrão de Pedidos de Venda (ano atual).
+ */
+export function defaultMonthlyReceivablesYearFilters(referenceDate = new Date()): {
+  dueMonthFrom: string;
+  dueMonthTo: string;
+  startDate: string;
+  endDate: string;
+  year: number;
+} {
+  const year = referenceDate.getFullYear();
+  return {
+    year,
+    dueMonthFrom: formatYearMonthKey(year, 1),
+    dueMonthTo: formatYearMonthKey(year, 12),
+    startDate: `${year}-01-01`,
+    endDate: `${year}-12-31`,
+  };
+}
+
 export function emptyMonthCell(): SalesOrderMonthlyReceivablesCell {
   return {
     amount: 0,

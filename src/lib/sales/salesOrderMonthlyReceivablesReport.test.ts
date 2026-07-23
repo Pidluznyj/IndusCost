@@ -10,6 +10,7 @@ import {
   buildMonthColumns,
   computeMonthlyReceivablesTotalsFromRows,
   defaultDueMonthRange,
+  defaultMonthlyReceivablesYearFilters,
   formatYearMonthKey,
   yearMonthKeyFromDueIso,
 } from "./salesOrderMonthlyReceivablesReport.js";
@@ -337,6 +338,15 @@ describe("salesOrderMonthlyReceivablesReport — paridade FIN-08", () => {
     assert.equal(range.dueMonthFrom, "2026-07");
     assert.equal(range.dueMonthTo, "2027-06");
     assert.equal(formatYearMonthKey(2026, 7), "2026-07");
+  });
+
+  it("filtro inicial da UI = ano calendário (emissão + vencimento)", () => {
+    const filters = defaultMonthlyReceivablesYearFilters(new Date(2026, 6, 17));
+    assert.equal(filters.year, 2026);
+    assert.equal(filters.dueMonthFrom, "2026-01");
+    assert.equal(filters.dueMonthTo, "2026-12");
+    assert.equal(filters.startDate, "2026-01-01");
+    assert.equal(filters.endDate, "2026-12-31");
   });
 
   it("fora do período entra em outsidePeriodTotal", () => {
