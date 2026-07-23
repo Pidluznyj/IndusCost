@@ -6,7 +6,11 @@ import { describe, it } from "node:test";
 import {
   computeStockDocumentsIncrementalWindow,
 } from "./nomusStockDocumentsSyncLifecycle.js";
-import { parseStockDocumentsSyncCli } from "./nomusStockDocumentsSyncLogic.js";
+import {
+  buildStockDocumentsQuery,
+  parseStockDocumentsSyncCli,
+  resolveStockDocumentsNomusEmissionWindow,
+} from "./nomusStockDocumentsSyncLogic.js";
 import {
   isStockDocumentsRunnerLogFileName,
   parseStockDocumentsRunnerLogContent,
@@ -32,6 +36,18 @@ describe("DS-03.10 stock documents sync integration", () => {
     assert.equal(window.source, "checkpoint_overlap");
     assert.equal(window.from, "2026-07-03");
     assert.equal(window.to, "2026-07-17");
+    // DS-SYNC-03: janela guarda to inclusivo; só a query Nomus aplica +1 dia
+    const emission = resolveStockDocumentsNomusEmissionWindow(window);
+    assert.equal(emission.requestedToInclusive, "2026-07-17");
+    assert.equal(emission.nomusToBoundExclusive, "2026-07-18");
+    assert.match(
+      buildStockDocumentsQuery({
+        tipo: "DocumentoSaida",
+        from: window.from,
+        to: window.to,
+      }),
+      /dataEmissao<=18\/07\/2026/
+    );
   });
 
   it("janela inicial usa lookback quando não há checkpoint", () => {

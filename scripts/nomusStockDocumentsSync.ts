@@ -12,6 +12,9 @@
  *   npx tsx scripts/nomusStockDocumentsSync.ts apply --from=2025-07-01 --to=2026-07-10 --tipo=DocumentoSaida
  *   npx tsx scripts/nomusStockDocumentsSync.ts preview --idNfe=6937,7188,7377
  *   NOMUS_STOCK_DOCUMENTS_INCREMENTAL=1 npx tsx scripts/nomusStockDocumentsSync.ts apply
+ *
+ * `--from` / `--to` são dias-calendário inclusivos para o operador (America/Sao_Paulo).
+ * Na API Nomus, o limite superior efetivo de dataEmissao é o próximo dia civil (DS-SYNC-03).
  */
 import "dotenv/config";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -34,6 +37,7 @@ import {
   parseStockDocumentsSyncCli,
   pickStockDocumentsArray,
   planStockDocumentPersist,
+  resolveStockDocumentsNomusEmissionWindow,
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
   type StockDocumentsSyncCliOptions,
@@ -418,6 +422,18 @@ async function main(): Promise<void> {
       console.warn(
         `${LOG_PREFIX} modo=${options.mode} from=${options.from ?? "-"} to=${options.to ?? "-"} tipo=${options.tipo} pageSize=${options.pageSize} maxPages=${options.maxPages ?? "∞"} idNfes=${options.idNfes.join(",") || "-"}`
       );
+      if (options.from || options.to) {
+        const emissionWindow = resolveStockDocumentsNomusEmissionWindow({
+          from: options.from,
+          to: options.to,
+        });
+        console.warn(
+          `${LOG_PREFIX} intervalo solicitado (inclusivo): from=${emissionWindow.requestedFrom ?? "-"} to=${emissionWindow.requestedToInclusive ?? "-"}`
+        );
+        console.warn(
+          `${LOG_PREFIX} limite superior efetivo Nomus (dataEmissao<=, dia exclusivo): ${emissionWindow.nomusToBoundExclusive ?? "-"}`
+        );
+      }
       console.warn(`${LOG_PREFIX} env Nomus (redigido): ${JSON.stringify(envForLog)}`);
       console.warn(
         `${LOG_PREFIX} credencial: ${JSON.stringify(

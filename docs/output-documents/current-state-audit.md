@@ -179,7 +179,7 @@ NomusAccountsReceivable.sourceInvoiceId ≡ NomusNfe.externalId
 |---|---|---|
 | `scripts/nomusStockDocumentsSync.ts` | Sync manual documentosEstoque | upsert header + replace itens; sem cron/lock/IntegrationRun/hash |
 | `src/lib/nomusStockDocumentsMapper.ts` | Mapper | descarta item sem qtde/unitário |
-| `src/lib/nomusStockDocumentsSyncLogic.ts` | CLI/query/paginação | default tipo `DocumentoSaida`; filtro `dataEmissao` |
+| `src/lib/nomusStockDocumentsSyncLogic.ts` | CLI/query/paginação | default tipo `DocumentoSaida`; filtro `dataEmissao`; `--to` inclusivo → bound exclusivo +1 dia (DS-SYNC-03) |
 | `scripts/probe-nomus-stock-documents.ts` | Probe read-only | âncora histórica PD 02339 / docs 7951,8175,8422 |
 | `scripts/nomusNfesSync.ts` | Sync NF-e | hash + cancelamento status 7; cron dedicado documentado |
 | `scripts/nomusAccountsReceivableSync.ts` | Sync CR | upsert por hash; liga à NF |

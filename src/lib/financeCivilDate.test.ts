@@ -5,7 +5,7 @@ import {
   collectDailyRadarMovements,
 } from "./financeCashFlowDailyRadar.js";
 import type { FinanceCashFlowApRow } from "./financeCashFlowDashboard.js";
-import { formatCivilDate, toCivilDateKey } from "./financeCivilDate.js";
+import { addCivilDays, formatCivilDate, toCivilDateKey } from "./financeCivilDate.js";
 import { formatFinanceDate } from "./financeAccountsReceivableFormat.js";
 import {
   buildFinanceCashFlowDailyRadarExportPayload,
@@ -55,6 +55,12 @@ describe("financeCivilDate", () => {
   it("ISO 2026-07-20T00:00:00.000Z mantém chave civil 2026-07-20", () => {
     assert.equal(toCivilDateKey("2026-07-20T00:00:00.000Z"), "2026-07-20");
     assert.equal(formatFinanceDate("2026-07-20T00:00:00.000Z"), "20/07/2026");
+  });
+
+  it("addCivilDays usa aritmética de calendário (mês/ano)", () => {
+    assert.equal(addCivilDays("2026-07-23", 1), "2026-07-24");
+    assert.equal(addCivilDays("2026-07-31", 1), "2026-08-01");
+    assert.equal(addCivilDays("2026-12-31", 1), "2027-01-01");
   });
 });
 

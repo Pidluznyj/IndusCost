@@ -1,5 +1,6 @@
 /** Lógica pura de CLI/query/paginação/persistência para sync de documentosEstoque. */
 
+import { addCivilDays } from "./financeCivilDate.js";
 import type {
   MappedNomusStockDocument,
   StockDocumentItemsReliability,
@@ -93,6 +94,46 @@ export function isoDateToNomusBrDate(iso: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/**
+ * DS-SYNC-03 — Nomus trata `dataEmissao<=DD/MM/AAAA` como limite exclusivo
+ * (início do dia informado). O `--to` do operador é dia-calendário inclusivo;
+ * na fronteira da API o bound superior efetivo é o próximo dia civil.
+ * Normalização única — call sites não devem pré-incrementar.
+ */
+export function resolveStockDocumentsNomusToBoundExclusive(
+  toInclusiveIso: string
+): string {
+  const next = addCivilDays(toInclusiveIso, 1);
+  if (!next) {
+    throw new Error(`--to inválida para bound Nomus: "${toInclusiveIso}".`);
+  }
+  return next;
+}
+
+export type StockDocumentsNomusEmissionWindow = {
+  requestedFrom: string | null;
+  requestedToInclusive: string | null;
+  nomusFrom: string | null;
+  /** Dia civil enviado em `dataEmissao<=` (exclusivo na semântica Nomus). */
+  nomusToBoundExclusive: string | null;
+};
+
+export function resolveStockDocumentsNomusEmissionWindow(input: {
+  from?: string | null;
+  to?: string | null;
+}): StockDocumentsNomusEmissionWindow {
+  const requestedFrom = input.from ?? null;
+  const requestedToInclusive = input.to ?? null;
+  return {
+    requestedFrom,
+    requestedToInclusive,
+    nomusFrom: requestedFrom,
+    nomusToBoundExclusive: requestedToInclusive
+      ? resolveStockDocumentsNomusToBoundExclusive(requestedToInclusive)
+      : null,
+  };
+}
+
 function parseIdNfeList(raw: string): number[] {
   return raw
     .split(",")
@@ -173,6 +214,7 @@ export function parseStockDocumentsSyncCli(
 /**
  * Monta filtro RSQL Nomus (documentosEstoque).
  * Período: dataEmissao>=dd/MM/yyyy;dataEmissao<=dd/MM/yyyy;tipoDocumentoEstoque==...
+ * `--to` do operador é inclusivo; o `<=` enviado usa o próximo dia civil (DS-SYNC-03).
  * Pontual: idNfe==N;tipoDocumentoEstoque==... (um id por request quando múltiplos).
  * Seletor de data: dataEmissao (não "data").
  */
@@ -186,11 +228,17 @@ export function buildStockDocumentsQuery(options: {
   if (options.idNfe != null) {
     parts.push(`idNfe==${options.idNfe}`);
   }
-  if (options.from) {
-    parts.push(`dataEmissao>=${isoDateToNomusBrDate(options.from)}`);
+  const window = resolveStockDocumentsNomusEmissionWindow({
+    from: options.from,
+    to: options.to,
+  });
+  if (window.nomusFrom) {
+    parts.push(`dataEmissao>=${isoDateToNomusBrDate(window.nomusFrom)}`);
   }
-  if (options.to) {
-    parts.push(`dataEmissao<=${isoDateToNomusBrDate(options.to)}`);
+  if (window.nomusToBoundExclusive) {
+    parts.push(
+      `dataEmissao<=${isoDateToNomusBrDate(window.nomusToBoundExclusive)}`
+    );
   }
   parts.push(`tipoDocumentoEstoque==${options.tipo}`);
   return parts.join(";");

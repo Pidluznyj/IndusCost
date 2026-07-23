@@ -2,6 +2,8 @@
 # Runner oficial do sync de Documentos de Saída (incremental + soft-fail).
 # Cadência: mesma frequência do ecossistema financeiro (2h), com offset próprio.
 # Backfill amplo: somente manual com --from/--to explícitos (não use este runner).
+# --from/--to (quando passados ao CLI) são dias-calendário inclusivos; o sync
+# converte o limite superior para o próximo dia civil na API Nomus (DS-SYNC-03).
 set -Eeuo pipefail
 
 APP_DIR="${INDUSCOST_APP_DIR:-/opt/induscost}"

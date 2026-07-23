@@ -24,10 +24,14 @@ import {
   isoDateToNomusBrDate,
   parseStockDocumentsSyncCli,
   planStockDocumentPersist,
+  resolveStockDocumentsNomusEmissionWindow,
+  resolveStockDocumentsNomusToBoundExclusive,
   resolveStockDocumentsSyncExitCode,
   shouldWriteStockDocuments,
   summarizeStockDocumentPersistPlans,
 } from "./nomusStockDocumentsSyncLogic.js";
+import { computeStockDocumentsIncrementalWindow } from "./nomusStockDocumentsSyncLifecycle.js";
+import { addCivilDays } from "./financeCivilDate.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -464,9 +468,10 @@ describe("nomusStockDocumentsSyncLogic", () => {
       from: "2025-07-01",
       to: "2026-07-10",
     });
+    // DS-SYNC-03: --to inclusivo → dataEmissao<= próximo dia civil
     assert.equal(
       periodQuery,
-      "dataEmissao>=01/07/2025;dataEmissao<=10/07/2026;tipoDocumentoEstoque==DocumentoSaida"
+      "dataEmissao>=01/07/2025;dataEmissao<=11/07/2026;tipoDocumentoEstoque==DocumentoSaida"
     );
     assert.ok(!periodQuery.includes("data>="));
     assert.ok(!periodQuery.includes("data<="));
@@ -480,6 +485,132 @@ describe("nomusStockDocumentsSyncLogic", () => {
       }),
       "idNfe==6937;tipoDocumentoEstoque==DocumentoSaida"
     );
+  });
+
+  describe("DS-SYNC-03 —to inclusivo → bound exclusivo Nomus", () => {
+    it("mesmo dia: 2026-07-23 → bound efetivo 2026-07-24", () => {
+      assert.equal(resolveStockDocumentsNomusToBoundExclusive("2026-07-23"), "2026-07-24");
+      assert.equal(addCivilDays("2026-07-23", 1), "2026-07-24");
+      const window = resolveStockDocumentsNomusEmissionWindow({
+        from: "2026-07-23",
+        to: "2026-07-23",
+      });
+      assert.equal(window.requestedToInclusive, "2026-07-23");
+      assert.equal(window.nomusToBoundExclusive, "2026-07-24");
+      assert.equal(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          from: "2026-07-23",
+          to: "2026-07-23",
+        }),
+        "dataEmissao>=23/07/2026;dataEmissao<=24/07/2026;tipoDocumentoEstoque==DocumentoSaida"
+      );
+    });
+
+    it("virada de mês: 2026-07-31 → 2026-08-01", () => {
+      assert.equal(resolveStockDocumentsNomusToBoundExclusive("2026-07-31"), "2026-08-01");
+      assert.equal(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          from: "2026-07-31",
+          to: "2026-07-31",
+        }),
+        "dataEmissao>=31/07/2026;dataEmissao<=01/08/2026;tipoDocumentoEstoque==DocumentoSaida"
+      );
+    });
+
+    it("virada de ano: 2026-12-31 → 2027-01-01", () => {
+      assert.equal(resolveStockDocumentsNomusToBoundExclusive("2026-12-31"), "2027-01-01");
+      assert.equal(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          from: "2026-12-31",
+          to: "2026-12-31",
+        }),
+        "dataEmissao>=31/12/2026;dataEmissao<=01/01/2027;tipoDocumentoEstoque==DocumentoSaida"
+      );
+    });
+
+    it("intervalo com vários dias mantém from e incrementa só o to", () => {
+      assert.equal(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          from: "2026-07-20",
+          to: "2026-07-23",
+        }),
+        "dataEmissao>=20/07/2026;dataEmissao<=24/07/2026;tipoDocumentoEstoque==DocumentoSaida"
+      );
+    });
+
+    it("intervalo inválido (data) preserva erro oficial do CLI", () => {
+      assert.throws(
+        () =>
+          parseStockDocumentsSyncCli([
+            "preview",
+            "--from=2026-07-32",
+            "--to=2026-07-23",
+          ]),
+        /--from inválida/
+      );
+      assert.throws(
+        () =>
+          parseStockDocumentsSyncCli([
+            "preview",
+            "--from=2026-07-23",
+            "--to=2026-02-30",
+          ]),
+        /--to inválida/
+      );
+    });
+
+    it("janela incremental/checkpoint não pré-incrementa o to", () => {
+      const window = computeStockDocumentsIncrementalWindow({
+        checkpointTo: "2026-07-10",
+        now: new Date("2026-07-17T15:00:00.000Z"),
+        overlapDays: 7,
+      });
+      assert.equal(window.to, "2026-07-17");
+      const emission = resolveStockDocumentsNomusEmissionWindow({
+        from: window.from,
+        to: window.to,
+      });
+      assert.equal(emission.requestedToInclusive, "2026-07-17");
+      assert.equal(emission.nomusToBoundExclusive, "2026-07-18");
+      const query = buildStockDocumentsQuery({
+        tipo: "DocumentoSaida",
+        from: window.from,
+        to: window.to,
+      });
+      assert.match(query, /dataEmissao<=18\/07\/2026/);
+      assert.doesNotMatch(query, /dataEmissao<=19\/07\/2026/);
+    });
+
+    it("sync por idNfe não altera query (sem from/to)", () => {
+      assert.equal(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          idNfe: 8721,
+        }),
+        "idNfe==8721;tipoDocumentoEstoque==DocumentoSaida"
+      );
+      assert.doesNotMatch(
+        buildStockDocumentsQuery({
+          tipo: "DocumentoSaida",
+          idNfe: 8721,
+        }),
+        /dataEmissao/
+      );
+    });
+
+    it("preview não habilita escrita (checkpoint/persistência)", () => {
+      const preview = parseStockDocumentsSyncCli([
+        "preview",
+        "--from=2026-07-23",
+        "--to=2026-07-23",
+      ]);
+      assert.equal(preview.mode, "preview");
+      assert.equal(shouldWriteStockDocuments(preview.mode), false);
+    });
   });
 
   it("preview não habilita escrita", () => {

@@ -66,3 +66,19 @@ export function diffCivilDays(from: Date | string, to: Date | string): number {
   const b = civilDateToLocalDate(toKey);
   return Math.round((b.getTime() - a.getTime()) / MS_PER_DAY);
 }
+
+/**
+ * Soma/subtrai dias em chave civil YYYY-MM-DD (aritmética de calendário UTC,
+ * sem somar 24h a um timestamp local).
+ */
+export function addCivilDays(value: Date | string, days: number): string | null {
+  const key = toCivilDateKey(value);
+  if (!key) return null;
+  const match = CIVIL_KEY_RE.exec(key);
+  if (!match) return null;
+  const dt = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  );
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return toCivilDateKey(dt);
+}

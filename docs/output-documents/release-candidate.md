@@ -99,6 +99,7 @@ Aditivas e retrocompatíveis. Não alteram Pedido / NF-e / AR / comissões.
 ### Sync
 
 ```bash
+# --from/--to = dias-calendário inclusivos (DS-SYNC-03: Nomus recebe to+1 dia no dataEmissao<=)
 npm run sync:nomus:stock-documents:preview -- --from=YYYY-MM-DD --to=YYYY-MM-DD
 npm run sync:nomus:stock-documents:apply -- --from=YYYY-MM-DD --to=YYYY-MM-DD
 ./scripts/runNomusStockDocumentsSync.sh apply   # incremental (cron)
