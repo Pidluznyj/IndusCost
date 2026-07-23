@@ -1,12 +1,16 @@
 # Rebuild do Fluxo de Pedidos (OP-56)
 
+> Vínculos canônicos KAN-LINK (`sales-order-flow/v2`): ver também
+> `canonical-operational-linkage-runbook.md` e `canonical-operational-linkage-release.md`.
+
 ## Metadados
 
 | Item | Valor |
 |------|--------|
 | Script | `scripts/rebuildSalesOrderFlow.ts` |
 | Comando npm | `rebuild:sales-order-flow` |
-| Motor | `recomputeSalesOrderFlow` (OP-54) + evidências locais (OP-49) |
+| Motor | `recomputeSalesOrderFlow` (OP-54) + evidências locais (OP-49) + grafo canônico (KAN-LINK) |
+| Computation | `sales-order-flow/v2` |
 | Tabelas gravadas | `SalesOrderItemFlowSnapshot`, `SalesOrderFlowSnapshot`, `SalesOrderFlowEvent` |
 | Lock | `tmp/sales-order-flow-rebuild.lock` (somente `--apply`) |
 | Checkpoint | `tmp/sales-order-flow-rebuild.checkpoint.json` |
