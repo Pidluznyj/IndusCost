@@ -390,7 +390,6 @@ import { registerSalesOrderFlowRoutes } from "./src/lib/salesOrderFlowRoutes.js"
 import { registerCustomerIntelligenceRoutes } from "./src/lib/customerIntelligenceRoutes.js";
 import { registerSalesOrderIntelligenceRoutes } from "./src/lib/salesOrderIntelligenceRoutes.js";
 import { registerSalesOrderToCashFunnelRoutes } from "./src/lib/salesOrderToCashFunnelRoutes.js";
-import { registerSalesOrderMarginIndicatorsRoutes } from "./src/lib/salesOrderMarginIndicatorsRoutes.js";
 import { registerSalesOrderResultRoutes } from "./src/lib/salesOrderResultRoutes.js";
 import { registerSalesOrderInternalMarginExportRoutes } from "./src/lib/salesOrderInternalMarginExportRoutes.js";
 import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderListReportExportRoutes.js";
@@ -14751,11 +14750,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerSalesOrderToCashFunnelRoutes(app, {
     requireAppAuth,
     requireAnyPermission,
-  });
-
-  registerSalesOrderMarginIndicatorsRoutes(app, {
-    requireAppAuth,
-    requireResource,
   });
 
   registerSalesOrderResultRoutes(app, {

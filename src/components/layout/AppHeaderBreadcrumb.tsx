@@ -46,9 +46,16 @@ export function AppHeaderBreadcrumb({ pathname }: { pathname: string }) {
                 <span
                   className={cn(
                     "truncate text-sm",
-                    isLast ? "font-semibold tracking-tight text-foreground" : "text-muted-foreground"
+                    isLast
+                      ? "font-semibold tracking-tight text-foreground"
+                      : "text-muted-foreground"
                   )}
                   aria-current={isLast ? "page" : undefined}
+                  title={
+                    !isLast && !segment.path
+                      ? "Grupo do menu — use a barra lateral"
+                      : undefined
+                  }
                 >
                   {segment.label}
                 </span>

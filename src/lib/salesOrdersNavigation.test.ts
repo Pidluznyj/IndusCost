@@ -57,4 +57,16 @@ describe("salesOrdersNavigation", () => {
     assert.match(app, /to="\/sales-orders\/management"/);
     assert.match(app, /to="\/sales-orders\/material-demand"/);
   });
+
+  it("header de Pedidos não inclui mais Rastreabilidade nem Indicadores", () => {
+    const app = read("src/App.tsx");
+    const start = app.indexOf('path="sales-orders"');
+    assert.ok(start >= 0);
+    // bloco da rota lista (antes do Fluxo de Pedidos)
+    const block = app.slice(start, app.indexOf('path="commercial/sales-order-flow"', start));
+    assert.doesNotMatch(block, /Rastreabilidade/);
+    assert.doesNotMatch(block, /sales-orders\/indicators/);
+    assert.doesNotMatch(block, /ModuleIndicatorsButton/);
+    assert.doesNotMatch(block, /cost-to-cash-trace/);
+  });
 });

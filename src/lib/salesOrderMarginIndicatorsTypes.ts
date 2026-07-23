@@ -129,7 +129,3 @@ export type SalesOrderMarginIndicatorsPayload = {
   byProduct: SalesOrderMarginIndicatorProductRow[];
   alerts: SalesOrderMarginIndicatorAlerts;
 };
-
-export function getSalesOrderMarginIndicatorsApiPath(query = ""): string {
-  return query ? `/api/sales-orders/margin-indicators?${query}` : "/api/sales-orders/margin-indicators";
-}

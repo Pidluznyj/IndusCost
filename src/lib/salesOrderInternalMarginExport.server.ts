@@ -17,10 +17,6 @@ import {
   type SalesOrderForMargin,
 } from "./salesOrderMarginService.server.js";
 import {
-  parseSalesOrderMarginIndicatorFilters,
-  buildSalesOrderMarginIndicatorWhere,
-} from "./salesOrderMarginIndicators.server.js";
-import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
 } from "./salesOrderPeriodFilter.js";
@@ -46,7 +42,7 @@ import {
   resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
 
-export type SalesOrderInternalMarginExportScope = "list" | "management" | "indicators";
+export type SalesOrderInternalMarginExportScope = "list" | "management";
 
 function parseDateQueryStart(value: unknown): Date | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -290,24 +286,6 @@ function buildManagementExportFilters(
   return rows;
 }
 
-function buildIndicatorsExportFilters(
-  filters: ReturnType<typeof parseSalesOrderMarginIndicatorFilters>
-): SalesOrderInternalMarginExportFilterRow[] {
-  const rows: SalesOrderInternalMarginExportFilterRow[] = [
-    { label: "Origem", value: "Indicadores de margem" },
-    { label: "Ano", value: String(filters.year) },
-  ];
-  if (filters.month) rows.push({ label: "Mês", value: String(filters.month) });
-  if (filters.customerId) rows.push({ label: "Cliente (ID)", value: filters.customerId });
-  if (filters.responsible) rows.push({ label: "Vendedor", value: filters.responsible });
-  if (filters.companyIssuer) rows.push({ label: "Empresa", value: filters.companyIssuer });
-  if (filters.productId) rows.push({ label: "Produto (ID)", value: filters.productId });
-  if (filters.status) rows.push({ label: "Status pedido", value: filters.status });
-  if (filters.marginStatus) rows.push({ label: "Status margem", value: filters.marginStatus });
-  if (filters.itemMarginStatus) rows.push({ label: "Status margem item", value: filters.itemMarginStatus });
-  return rows;
-}
-
 export async function loadSalesOrderInternalMarginExportPayload(
   prisma: PrismaClient,
   scope: SalesOrderInternalMarginExportScope,
@@ -370,76 +348,6 @@ export async function loadSalesOrderInternalMarginExportPayload(
     return buildPayloadFromMarginContext({
       scopeLabel: "Gestão de Pedidos de Venda",
       appliedFilters: buildManagementExportFilters(loaded.filters),
-      orders: exportOrders,
-      marginByOrder,
-    });
-  }
-
-  if (scope === "indicators") {
-    const filters = parseSalesOrderMarginIndicatorFilters(query);
-    const where = buildSalesOrderMarginIndicatorWhere(filters);
-    const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
-    const orders = await prisma.salesOrder.findMany({
-      where,
-      select: {
-        id: true,
-        orderCode: true,
-        issueDate: true,
-        externalSellerId: true,
-        customerId: true,
-        nomusRawResponse: true,
-        Customer: { select: { companyName: true, tradeName: true } },
-        items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
-      },
-    });
-
-    const marginByOrder = await calculateSalesOrderMarginsForOrders(
-      prisma,
-      orders as SalesOrderForMargin[]
-    );
-
-    const exportOrders = orders
-      .filter((order) => {
-        const marginResult = marginByOrder.get(order.id);
-        if (!marginResult) return false;
-        if (
-          filters.marginStatus &&
-          !matchesSalesOrderMarginStatusFilter(marginResult.marginSummary, filters.marginStatus)
-        ) {
-          return false;
-        }
-        return true;
-      })
-      .map((order) => {
-        const seller = buildSalesOrderNomusSellerDto(
-          {
-            externalSellerId: order.externalSellerId ?? null,
-            issueDate: order.issueDate,
-          },
-          sellerIdentityCtx
-        );
-        return {
-          id: order.id,
-          orderCode: order.orderCode,
-          issueDate: order.issueDate,
-          responsible: formatSalesOrderNomusSellerListLabel(seller),
-          customerName: customerDisplayName(order.Customer),
-          items: order.items.filter((item) => {
-            if (filters.productId && item.productId !== filters.productId) return false;
-            if (filters.itemMarginStatus) {
-              const itemResult = marginByOrder
-                .get(order.id)
-                ?.itemResults.find((r) => r.salesOrderItemId === item.id);
-              if (!itemResult || itemResult.status !== filters.itemMarginStatus) return false;
-            }
-            return true;
-          }),
-        };
-      });
-
-    return buildPayloadFromMarginContext({
-      scopeLabel: "Indicadores de margem",
-      appliedFilters: buildIndicatorsExportFilters(filters),
       orders: exportOrders,
       marginByOrder,
     });

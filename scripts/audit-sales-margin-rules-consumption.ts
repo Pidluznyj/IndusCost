@@ -398,14 +398,6 @@ function buildScreenMarginAuditRows(input: {
       metrics: rowMetrics(input.officialScoped, "OK"),
     },
     {
-      screen: "Produtos vendidos (Indicadores)",
-      endpoint: "GET /api/sales-orders/margin-indicators",
-      file: "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
-      exposesMargin: true,
-      operational: true,
-      metrics: rowMetrics(input.officialScoped, "OK"),
-    },
-    {
       screen: "Relatório Executivo / Presidencial",
       endpoint: "GET /api/reports/data",
       file: "src/components/ReportsModule.tsx",
@@ -415,7 +407,7 @@ function buildScreenMarginAuditRows(input: {
     },
     {
       screen: "Exportação margem interna",
-      endpoint: "GET /api/sales-orders/margin-indicators/export",
+      endpoint: "GET /api/sales-orders/export-internal.xlsx",
       file: "src/lib/salesOrderInternalMarginExport.server.ts",
       exposesMargin: true,
       operational: true,
@@ -770,7 +762,6 @@ async function main() {
       "src/components/sales/SalesOrderManagementMarginOverview.tsx",
       "src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx",
       "src/components/customers/CustomerCommercial360.tsx",
-      "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
     ];
     for (const file of uiFiles) {
       const src = readSrc(file);

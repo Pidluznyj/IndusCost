@@ -11,12 +11,6 @@ export function getSalesOrderManagementInternalMarginExportUrl(query = ""): stri
     : "/api/sales-orders/management/export-internal.xlsx";
 }
 
-export function getSalesOrderIndicatorsInternalMarginExportUrl(query = ""): string {
-  return query
-    ? `/api/sales-orders/margin-indicators/export-internal.xlsx?${query}`
-    : "/api/sales-orders/margin-indicators/export-internal.xlsx";
-}
-
 export async function downloadInternalMarginExport(url: string, fallbackFilename: string) {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error("export failed");

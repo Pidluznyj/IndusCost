@@ -3,6 +3,7 @@
  * Sem impacto em RBAC, rotas ou regras de negócio.
  */
 
+import { resolveNestedBreadcrumbSegments } from "@/src/lib/appHeaderBreadcrumbNesting.js";
 import {
   NAVIGATION_GROUP_DEFINITIONS,
   resolveNavigationGroupIdForModule,
@@ -82,7 +83,21 @@ export function resolveNavigationGroupLabel(groupId: NavigationGroupId): string 
   return groupId;
 }
 
-/** Trilha contextual para o header global (grupo › módulo). */
+function finalizeBreadcrumb(
+  crumbs: AppHeaderBreadcrumbSegment[]
+): AppHeaderBreadcrumbSegment[] {
+  if (crumbs.length === 0) return crumbs;
+  const last = crumbs[crumbs.length - 1]!;
+  crumbs[crumbs.length - 1] = { label: last.label };
+  return crumbs;
+}
+
+/**
+ * Trilha contextual do header global: Grupo › Módulo › [aba/subrota…].
+ * - Grupo (menu accordion): sem path — não é clicável.
+ * - Módulo e níveis intermediários: com path — voltam ao nível.
+ * - Último segmento: página atual (sem link).
+ */
 export function resolveAppHeaderBreadcrumb(pathname: string): AppHeaderBreadcrumbSegment[] {
   const moduleId = resolveModuleIdFromPath(pathname);
   if (!moduleId) {
@@ -91,14 +106,20 @@ export function resolveAppHeaderBreadcrumb(pathname: string): AppHeaderBreadcrum
 
   const moduleLabel = MODULE_LABELS[moduleId];
   const groupId = resolveNavigationGroupIdForModule(moduleId);
+  const nested = resolveNestedBreadcrumbSegments(pathname);
 
   if (groupId === "dashboard") {
-    return [{ label: moduleLabel }];
+    return finalizeBreadcrumb(
+      nested.length > 0
+        ? [{ label: moduleLabel, path: getModulePath(moduleId) }, ...nested]
+        : [{ label: moduleLabel }]
+    );
   }
 
   const groupLabel = resolveNavigationGroupLabel(groupId);
-  return [
+  return finalizeBreadcrumb([
     { label: groupLabel },
     { label: moduleLabel, path: getModulePath(moduleId) },
-  ];
+    ...nested,
+  ]);
 }

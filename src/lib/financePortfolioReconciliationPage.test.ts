@@ -87,10 +87,7 @@ describe("finance portfolio reconciliation menu + page", () => {
   it("breadcrumb Financeiro > Conciliação de Carteira", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/finance/portfolio-reconciliation"), [
       { label: "Financeiro" },
-      {
-        label: MODULE_LABELS["portfolio-reconciliation"],
-        path: "/finance/portfolio-reconciliation",
-      },
+      { label: MODULE_LABELS["portfolio-reconciliation"] },
     ]);
   });
 

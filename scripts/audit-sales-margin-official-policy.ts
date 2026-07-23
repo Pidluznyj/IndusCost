@@ -121,7 +121,6 @@ const OPERATIONAL_NEVER_TAX_MODE_NONE = new Set([
   "src/components/sales/SalesOrderManagementKpiSecondaryPanel.tsx",
   "src/components/customers/CustomerCommercial360.tsx",
   "src/components/crm/customer-intelligence/CustomerIntelligenceKpiGrid.tsx",
-  "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
   "src/components/ReportsModule.tsx",
   "src/components/finance/FinanceSalesOrdersPage.tsx",
 ]);
@@ -425,7 +424,6 @@ function scanDisplayPolicy(findings: PolicyFinding[]) {
   const partialUiFiles = [
     "src/components/sales/SalesOrderManagementMarginOverview.tsx",
     "src/components/customers/CustomerCommercial360.tsx",
-    "src/components/contextual/SalesOrdersIndicatorsDashboard.tsx",
   ];
   for (const file of partialUiFiles) {
     const src = readFileSync(join(process.cwd(), file), "utf8");

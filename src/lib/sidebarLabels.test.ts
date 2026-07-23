@@ -44,35 +44,96 @@ describe("sidebarLabels — breadcrumb do header", () => {
     ]);
   });
 
-  it("módulo em grupo retorna grupo › módulo", () => {
+  it("módulo em grupo retorna grupo › módulo (módulo sem link na página raiz)", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/materials"), [
       { label: "Cadeia de Suprimentos" },
-      { label: MODULE_LABELS.materials, path: "/materials" },
+      { label: MODULE_LABELS.materials },
     ]);
   });
 
   it("comercial › comissões", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/commissions"), [
       { label: "Comercial" },
-      { label: MODULE_LABELS.commissions, path: "/commissions" },
+      { label: MODULE_LABELS.commissions },
     ]);
   });
 
   it("financeiro › fornecedores", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/finance/suppliers"), [
       { label: "Financeiro" },
-      { label: MODULE_LABELS.suppliers, path: "/finance/suppliers" },
+      { label: MODULE_LABELS.suppliers },
     ]);
   });
 
   it("financeiro › relatórios", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/reports"), [
       { label: "Financeiro" },
-      { label: MODULE_LABELS.reports, path: "/reports" },
+      { label: MODULE_LABELS.reports },
     ]);
   });
 
   it("rota desconhecida cai em Dashboard", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/"), [{ label: MODULE_LABELS.dashboard }]);
+  });
+
+  it("pedidos › resultado: grupo sem path, módulo clicável, aba atual", () => {
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/sales-orders/result"), [
+      { label: "Comercial" },
+      { label: MODULE_LABELS["sales-orders"], path: "/sales-orders" },
+      { label: "Resultado" },
+    ]);
+  });
+
+  it("pedidos › recebíveis / gestão / produtos / MP", () => {
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/sales-orders/monthly-receivables"), [
+      { label: "Comercial" },
+      { label: MODULE_LABELS["sales-orders"], path: "/sales-orders" },
+      { label: "Recebíveis mensais" },
+    ]);
+    assert.equal(
+      resolveAppHeaderBreadcrumb("/sales-orders/management").at(-1)?.label,
+      "Gestão de Pedidos"
+    );
+    assert.equal(
+      resolveAppHeaderBreadcrumb("/sales-orders/sold-products").at(-1)?.label,
+      "Produtos Vendidos"
+    );
+    assert.equal(
+      resolveAppHeaderBreadcrumb("/sales-orders/material-demand").at(-1)?.label,
+      "Inteligência de Matéria-Prima"
+    );
+  });
+
+  it("produtos vendidos › clientes compradores mantém nível intermediário clicável", () => {
+    assert.deepEqual(
+      resolveAppHeaderBreadcrumb("/sales-orders/sold-products/abc/customers"),
+      [
+        { label: "Comercial" },
+        { label: MODULE_LABELS["sales-orders"], path: "/sales-orders" },
+        { label: "Produtos Vendidos", path: "/sales-orders/sold-products" },
+        { label: "Clientes compradores" },
+      ]
+    );
+  });
+
+  it("rastreabilidade fica sob Relatórios", () => {
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/reports/cost-to-cash-trace"), [
+      { label: "Financeiro" },
+      { label: MODULE_LABELS.reports, path: "/reports" },
+      { label: "Rastreabilidade" },
+    ]);
+  });
+
+  it("financeiro › contas a receber (aba do módulo)", () => {
+    assert.deepEqual(resolveAppHeaderBreadcrumb("/finance/accounts-receivable"), [
+      { label: "Financeiro" },
+      { label: MODULE_LABELS.finance, path: "/finance" },
+      { label: "Contas a Receber" },
+    ]);
+  });
+
+  it("grupo do menu nunca recebe path (não é link)", () => {
+    const crumbs = resolveAppHeaderBreadcrumb("/sales-orders/result");
+    assert.equal(crumbs[0]?.path, undefined);
   });
 });

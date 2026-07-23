@@ -60,7 +60,7 @@ describe("finance suppliers menu + route", () => {
   it("breadcrumb Financeiro > Fornecedores", () => {
     assert.deepEqual(resolveAppHeaderBreadcrumb("/finance/suppliers"), [
       { label: "Financeiro" },
-      { label: MODULE_LABELS.suppliers, path: "/finance/suppliers" },
+      { label: MODULE_LABELS.suppliers },
     ]);
   });
 

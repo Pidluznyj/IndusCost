@@ -55,7 +55,6 @@ import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { ProductBomWhereUsedDashboard } from "@/src/components/contextual/ProductBomWhereUsedDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
-import { SalesOrdersIndicatorsDashboard } from "@/src/components/contextual/SalesOrdersIndicatorsDashboard";
 import { SoldProductsReportPage } from "@/src/components/commercial/SoldProductsReportPage";
 import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
 import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
@@ -799,17 +798,6 @@ export default function App() {
           }
         />
         <Route
-          path="sales-orders/indicators"
-          element={
-            <ModulePageShell
-              title="Pedidos de Venda — Indicadores"
-              description="Dashboard executivo com visão consolidada de volume, valor líquido e distribuição por status."
-            >
-              <SalesOrdersIndicatorsDashboard />
-            </ModulePageShell>
-          }
-        />
-        <Route
           path="sales-orders/sold-products/:productId/customers"
           element={
             <ModulePageShell
@@ -941,14 +929,6 @@ export default function App() {
                     <Factory className="h-4 w-4 text-primary" />
                     Inteligência de Matéria-Prima
                   </Link>
-                  <Link
-                    to="/reports/cost-to-cash-trace"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
-                  >
-                    <GitBranch className="h-4 w-4 text-primary" />
-                    Rastreabilidade
-                  </Link>
-                  <ModuleIndicatorsButton to="/sales-orders/indicators" />
                 </>
               }
             >

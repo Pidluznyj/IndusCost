@@ -265,6 +265,6 @@ describe("salesOrderInternalMarginExport — rotas", () => {
     const routes = readFileSync(join(ROOT, "lib/salesOrderInternalMarginExportRoutes.ts"), "utf8");
     assert.match(routes, /export-internal\.xlsx/);
     assert.match(routes, /management\/export-internal/);
-    assert.match(routes, /margin-indicators\/export-internal/);
+    assert.doesNotMatch(routes, /margin-indicators\/export-internal/);
   });
 });

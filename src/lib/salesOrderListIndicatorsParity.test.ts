@@ -108,13 +108,9 @@ describe("salesOrderListIndicatorsParity", () => {
     assert.ok(Math.abs((summary.marginPercent ?? 0) - 20) < 0.001);
   });
 
-  it("UI de indicadores usa totalSoldAmount para valor vendido total", () => {
-    const ui = readFileSync(
-      join(ROOT, "components/contextual/SalesOrdersIndicatorsDashboard.tsx"),
-      "utf8"
-    );
-    assert.match(ui, /amount=\{summary\.totalSoldAmount\}/);
-    assert.match(ui, /sales-order-margin-kpi-item-revenue/);
-    assert.match(ui, /amount=\{summary\.totalSalesRevenueInScope\}/);
+  it("App não expõe mais rota /sales-orders/indicators", () => {
+    const app = readFileSync(join(ROOT, "App.tsx"), "utf8");
+    assert.doesNotMatch(app, /sales-orders\/indicators/);
+    assert.doesNotMatch(app, /SalesOrdersIndicatorsDashboard/);
   });
 });

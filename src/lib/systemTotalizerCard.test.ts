@@ -73,16 +73,6 @@ describe("SystemTotalizerCard — telas migradas fase 1", () => {
     assert.doesNotMatch(src, /FinanceKpiCard|FinanceBiKpiCard/);
   });
 
-  it("Comercial Pedidos de Venda Indicadores usa card padrão", () => {
-    const src = read("src/components/contextual/SalesOrdersIndicatorsDashboard.tsx");
-    assert.match(src, /SystemTotalizerCard/);
-    assert.match(src, /SYSTEM_TOTALIZER_GRID_CLASS/);
-    assert.doesNotMatch(src, /FinanceBiKpiCard|FinanceKpiCard/);
-    assert.doesNotMatch(src, /buildSalesOrderMarginCoverageHint/);
-    assert.match(src, /SalesOrderMarginInfoTooltip/);
-    assert.match(src, /amountFormat="currency"/);
-  });
-
   it("Comercial Gestão de Pedidos usa card padrão", () => {
     for (const file of [
       "src/components/sales/SalesOrderManagementKpiDashboard.tsx",

@@ -23,7 +23,6 @@ type AuthGuards = {
 const SCOPES: Record<string, SalesOrderInternalMarginExportScope> = {
   list: "list",
   management: "management",
-  indicators: "indicators",
 };
 
 function resolveScope(raw: unknown): SalesOrderInternalMarginExportScope {
@@ -75,15 +74,6 @@ export function registerSalesOrderInternalMarginExportRoutes(
       await handleInternalMarginExport(req, res, "management");
     } catch (error) {
       console.error("GET /api/sales-orders/management/export-internal.xlsx", error);
-      res.status(500).json({ error: "Erro ao exportar relatório interno de margem." });
-    }
-  });
-
-  app.get("/api/sales-orders/margin-indicators/export-internal.xlsx", ...guard, async (req, res) => {
-    try {
-      await handleInternalMarginExport(req, res, "indicators");
-    } catch (error) {
-      console.error("GET /api/sales-orders/margin-indicators/export-internal.xlsx", error);
       res.status(500).json({ error: "Erro ao exportar relatório interno de margem." });
     }
   });
