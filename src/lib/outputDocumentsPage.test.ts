@@ -378,6 +378,8 @@ describe("output documents page filters cards and grid", () => {
       "output-documents-grid",
       "output-documents-pagination",
       "output-documents-search",
+      "output-documents-year",
+      "output-documents-month",
       "output-documents-from",
       "output-documents-to",
       "output-documents-customer",
@@ -416,6 +418,11 @@ describe("output documents page filters cards and grid", () => {
     assert.match(source, /sortBy/);
     assert.match(source, /sortDir/);
     assert.match(source, /CustomerAutocompleteFilter/);
+    assert.match(source, /buildSalesOrderYearOptions/);
+    assert.match(source, /SALES_ORDER_MONTH_OPTIONS/);
+    assert.match(source, /String\(currentYear\)/);
+    assert.match(source, /output-documents-year/);
+    assert.match(source, /output-documents-month/);
     assert.match(source, /OUTPUT_DOCUMENT_STATUS_RAW_OPTIONS/);
     assert.doesNotMatch(source, /output-documents-company/);
     assert.doesNotMatch(source, /setCompanyDraft/);

@@ -7,6 +7,7 @@ import { describe, it } from "node:test";
 import {
   OutputDocumentsListQueryError,
   parseOutputDocumentsListQuery,
+  resolveOutputDocumentsEmissionDateBounds,
   serializeOutputDocumentsListFilters,
 } from "./outputDocumentsListQuery.js";
 
@@ -21,6 +22,36 @@ describe("parseOutputDocumentsListQuery", () => {
     assert.equal(q.cancelled, "all");
     assert.equal(q.hasReceivable, "all");
     assert.equal(q.financialStatus, null);
+    assert.equal(q.year, null);
+    assert.equal(q.month, null);
+  });
+
+  it("interpreta year/month no padrão Pedidos (emissão dataDocumento)", () => {
+    const q = parseOutputDocumentsListQuery({ year: "2026", month: "7" });
+    assert.equal(q.year, 2026);
+    assert.equal(q.month, 7);
+    const bounds = resolveOutputDocumentsEmissionDateBounds(q);
+    assert.ok(bounds);
+    assert.equal(bounds!.gte!.getFullYear(), 2026);
+    assert.equal(bounds!.gte!.getMonth(), 6);
+    assert.equal(bounds!.gte!.getDate(), 1);
+    assert.equal(bounds!.lt!.getFullYear(), 2026);
+    assert.equal(bounds!.lt!.getMonth(), 7);
+    assert.equal(bounds!.lt!.getDate(), 1);
+  });
+
+  it("ano sozinho cobre o calendário inteiro", () => {
+    const bounds = resolveOutputDocumentsEmissionDateBounds({
+      from: null,
+      to: null,
+      year: 2026,
+      month: null,
+    });
+    assert.ok(bounds);
+    assert.equal(bounds!.gte!.getFullYear(), 2026);
+    assert.equal(bounds!.gte!.getMonth(), 0);
+    assert.equal(bounds!.lt!.getFullYear(), 2027);
+    assert.equal(bounds!.lt!.getMonth(), 0);
   });
 
   it("clampa pageSize em 200 e calcula skip", () => {

@@ -28,6 +28,10 @@ export type OutputDocumentsListFilters = {
   search: string;
   from: Date | null;
   to: Date | null;
+  /** Ano civil de emissão (`dataDocumento`); null = sem filtro Ano. */
+  year: number | null;
+  /** Mês 1–12; só aplica com `year` válido. */
+  month: number | null;
   company: string | null;
   companyExternalId: number | null;
   customer: string | null;

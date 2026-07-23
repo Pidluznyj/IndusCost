@@ -10,6 +10,11 @@ import type {
   OutputDocumentsSortDir,
   OutputDocumentsTriState,
 } from "@/src/lib/output-documents/outputDocumentsListTypes.js";
+import {
+  parseSalesOrderMonthParam,
+  parseSalesOrderYearParam,
+  resolveSalesOrderIssueDateRange,
+} from "@/src/lib/salesOrderPeriodFilter.js";
 
 const SORT_BY_VALUES: ReadonlySet<string> = new Set([
   "dataDocumento",
@@ -142,6 +147,31 @@ function parseFinancialStatus(value: unknown): OutputDocumentFinancialStatus | n
 }
 
 /**
+ * Combina Ano/Mês (fim exclusivo) com from/to (fim inclusivo) sobre dataDocumento —
+ * mesma convenção de Pedidos de Venda (`resolveSalesOrderIssueDateRange`).
+ */
+export function resolveOutputDocumentsEmissionDateBounds(input: {
+  from: Date | null;
+  to: Date | null;
+  year: number | null;
+  month: number | null;
+}): { gte?: Date; lte?: Date; lt?: Date } | null {
+  const periodRange = resolveSalesOrderIssueDateRange(input.year, input.month);
+  const bounds: { gte?: Date; lte?: Date; lt?: Date } = {};
+  if (input.from) bounds.gte = input.from;
+  if (input.to) bounds.lte = input.to;
+  if (periodRange) {
+    const currentGte = bounds.gte ?? null;
+    if (!currentGte || periodRange.gte > currentGte) {
+      bounds.gte = periodRange.gte;
+    }
+    bounds.lt = periodRange.lt;
+  }
+  if (!bounds.gte && !bounds.lte && !bounds.lt) return null;
+  return bounds;
+}
+
+/**
  * Interpreta query de lista/resumo. Mesmos filtros para ambos os endpoints.
  */
 export function parseOutputDocumentsListQuery(
@@ -151,6 +181,8 @@ export function parseOutputDocumentsListQuery(
   const pageSize = parsePageSize(query.pageSize);
   const from = parseDateBound(query.from ?? query.startDate, false);
   const to = parseDateBound(query.to ?? query.endDate, true);
+  const year = parseSalesOrderYearParam(query.year);
+  const month = parseSalesOrderMonthParam(query.month);
 
   if (from && to && from.getTime() > to.getTime()) {
     throw new OutputDocumentsListQueryError(
@@ -172,6 +204,8 @@ export function parseOutputDocumentsListQuery(
     search: safeTrim(firstValue(query.search ?? query.q)),
     from,
     to,
+    year,
+    month,
     company: optTrim(query.company ?? query.companyName),
     companyExternalId: parseOptionalInt(query.companyExternalId),
     customer: optTrim(query.customer ?? query.customerName ?? query.personName),
@@ -209,6 +243,8 @@ export function serializeOutputDocumentsListFilters(
     search: filters.search,
     from: filters.from ? filters.from.toISOString() : null,
     to: filters.to ? filters.to.toISOString() : null,
+    year: filters.year,
+    month: filters.month,
     company: filters.company,
     companyExternalId: filters.companyExternalId,
     customer: filters.customer,

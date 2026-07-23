@@ -19,6 +19,7 @@ import {
 } from "@/src/lib/output-documents/outputDocumentsList.js";
 import {
   parseOutputDocumentsListQuery,
+  resolveOutputDocumentsEmissionDateBounds,
   serializeOutputDocumentsListFilters,
 } from "@/src/lib/output-documents/outputDocumentsListQuery.js";
 import type {
@@ -198,13 +199,14 @@ async function buildStageWhere(
     { tipoDocumentoEstoque: NOMUS_STOCK_DOCUMENT_TIPO_SAIDA },
   ];
 
-  if (filters.from || filters.to) {
-    and.push({
-      dataDocumento: {
-        ...(filters.from ? { gte: filters.from } : {}),
-        ...(filters.to ? { lte: filters.to } : {}),
-      },
-    });
+  const emissionBounds = resolveOutputDocumentsEmissionDateBounds({
+    from: filters.from,
+    to: filters.to,
+    year: filters.year,
+    month: filters.month,
+  });
+  if (emissionBounds) {
+    and.push({ dataDocumento: emissionBounds });
   }
 
   if (filters.cancelled === "yes") and.push({ isCancelled: true });

@@ -21,6 +21,8 @@ export type OutputDocumentsClientQuery = {
   search?: string;
   from?: string;
   to?: string;
+  year?: string | number;
+  month?: string | number;
   company?: string;
   customer?: string;
   personExternalId?: number;
@@ -62,6 +64,12 @@ export function buildOutputDocumentsQueryString(
   if (query.pageSize != null) params.set("pageSize", String(query.pageSize));
   if (query.sortBy) params.set("sortBy", query.sortBy);
   if (query.sortDir) params.set("sortDir", query.sortDir);
+  if (query.year != null && String(query.year).trim()) {
+    params.set("year", String(query.year).trim());
+  }
+  if (query.month != null && String(query.month).trim()) {
+    params.set("month", String(query.month).trim());
+  }
   if (
     query.personExternalId != null &&
     Number.isFinite(query.personExternalId)

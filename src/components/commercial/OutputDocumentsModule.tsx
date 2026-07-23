@@ -2,6 +2,7 @@ import React, {
   createElement,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -65,6 +66,10 @@ import { OutputDocumentGridTableRow } from "@/src/components/commercial/OutputDo
 import { OutputDocumentDetailOverlay } from "@/src/components/commercial/OutputDocumentDetailOverlay";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
+import {
+  buildSalesOrderYearOptions,
+  SALES_ORDER_MONTH_OPTIONS,
+} from "@/src/lib/salesOrderPeriodFilter";
 import { cn } from "@/src/lib/utils";
 
 const SalesOrderDetailDialog = React.lazy(() =>
@@ -154,6 +159,12 @@ export function OutputDocumentsModule() {
     hasPermission: auth.hasPermission,
   });
 
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const yearOptions = useMemo(
+    () => buildSalesOrderYearOptions(currentYear, 5),
+    [currentYear]
+  );
+
   const [searchDraft, setSearchDraft] = useState(() =>
     initialParam(searchParams, "search")
   );
@@ -182,6 +193,16 @@ export function OutputDocumentsModule() {
   const [nfe, setNfe] = useState(nfeDraft);
   const [from, setFrom] = useState(() => initialParam(searchParams, "from"));
   const [to, setTo] = useState(() => initialParam(searchParams, "to"));
+  const [year, setYear] = useState(() => {
+    const fromUrl = initialParam(searchParams, "year");
+    if (fromUrl) return fromUrl;
+    // Deep link só com emissão de/até: não força Ano.
+    if (initialParam(searchParams, "from") || initialParam(searchParams, "to")) {
+      return "";
+    }
+    return String(currentYear);
+  });
+  const [month, setMonth] = useState(() => initialParam(searchParams, "month"));
   const [financialStatus, setFinancialStatus] =
     useState<OutputDocumentFinancialStatus | null>(() =>
       parseOutputDocumentsFinancialStatusParam(
@@ -296,6 +317,8 @@ export function OutputDocumentsModule() {
     if (nfe) next.set("nfe", nfe);
     if (from) next.set("from", from);
     if (to) next.set("to", to);
+    if (year) next.set("year", year);
+    if (month) next.set("month", month);
     if (financialStatus) next.set("financialStatus", financialStatus);
     if (cancelled !== "all") next.set("cancelled", cancelled);
     if (hasReceivable !== "all") next.set("hasReceivable", hasReceivable);
@@ -315,6 +338,8 @@ export function OutputDocumentsModule() {
     nfe,
     from,
     to,
+    year,
+    month,
     financialStatus,
     cancelled,
     hasReceivable,
@@ -347,6 +372,8 @@ export function OutputDocumentsModule() {
       nfe,
       from,
       to,
+      year: year || undefined,
+      month: month || undefined,
       financialStatus: financialStatus ?? undefined,
       cancelled,
       hasReceivable,
@@ -409,6 +436,8 @@ export function OutputDocumentsModule() {
     nfe,
     from,
     to,
+    year,
+    month,
     financialStatus,
     cancelled,
     hasReceivable,
@@ -427,6 +456,8 @@ export function OutputDocumentsModule() {
     personExternalId,
     from,
     to,
+    year,
+    month,
     status,
     order,
     nfe,
@@ -443,6 +474,8 @@ export function OutputDocumentsModule() {
       nfeDraft.trim() ||
       from ||
       to ||
+      year !== String(currentYear) ||
+      month ||
       financialStatus ||
       cancelled !== "all" ||
       hasReceivable !== "all"
@@ -484,6 +517,8 @@ export function OutputDocumentsModule() {
     setNfe("");
     setFrom("");
     setTo("");
+    setYear(String(currentYear));
+    setMonth("");
     setFinancialStatus(null);
     setCancelled("all");
     setHasReceivable("all");
@@ -542,6 +577,46 @@ export function OutputDocumentsModule() {
         aria-label="Filtros de Documentos de Saída"
       >
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <FilterField label="Ano">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-year"
+              aria-label="Filtrar por ano de emissão"
+              value={year}
+              onChange={(event) => {
+                setPage(1);
+                setYear(event.target.value);
+                if (!event.target.value) setMonth("");
+              }}
+            >
+              <option value="">Todos os anos</option>
+              {yearOptions.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </FilterField>
+          <FilterField label="Mês">
+            <select
+              className={FILTER_CONTROL_CLASS}
+              data-testid="output-documents-month"
+              aria-label="Filtrar por mês de emissão"
+              value={month}
+              disabled={!year}
+              onChange={(event) => {
+                setPage(1);
+                setMonth(event.target.value);
+              }}
+            >
+              <option value="">Todos os meses</option>
+              {SALES_ORDER_MONTH_OPTIONS.map((m) => (
+                <option key={m.value} value={String(m.value)}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </FilterField>
           <FilterField label="Busca geral">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -554,6 +629,26 @@ export function OutputDocumentsModule() {
               />
             </div>
           </FilterField>
+          <div data-testid="output-documents-customer">
+            <CustomerAutocompleteFilter
+              compact
+              label="Cliente"
+              value={customerSelection}
+              placeholder="Buscar cliente…"
+              onChange={(sel) => {
+                setCustomerSelection(sel);
+                setCustomer(sel?.name?.trim() ?? "");
+                setPersonExternalId(personExternalIdFromSelection(sel));
+                setPage(1);
+              }}
+              onClear={() => {
+                setCustomerSelection(null);
+                setCustomer("");
+                setPersonExternalId(null);
+                setPage(1);
+              }}
+            />
+          </div>
           <FilterField label="Emissão de">
             <input
               type="date"
@@ -580,26 +675,6 @@ export function OutputDocumentsModule() {
               }}
             />
           </FilterField>
-          <div data-testid="output-documents-customer">
-            <CustomerAutocompleteFilter
-              compact
-              label="Cliente"
-              value={customerSelection}
-              placeholder="Buscar cliente…"
-              onChange={(sel) => {
-                setCustomerSelection(sel);
-                setCustomer(sel?.name?.trim() ?? "");
-                setPersonExternalId(personExternalIdFromSelection(sel));
-                setPage(1);
-              }}
-              onClear={() => {
-                setCustomerSelection(null);
-                setCustomer("");
-                setPersonExternalId(null);
-                setPage(1);
-              }}
-            />
-          </div>
           <FilterField label="Status">
             <select
               className={FILTER_CONTROL_CLASS}

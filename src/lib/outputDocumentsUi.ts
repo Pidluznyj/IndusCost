@@ -68,6 +68,8 @@ export type OutputDocumentsActiveFiltersInput = {
   customer: string;
   from: string;
   to: string;
+  year?: string;
+  month?: string;
   status?: string;
   order?: string;
   nfe?: string;
@@ -88,6 +90,8 @@ export function hasActiveOutputDocumentsFilters(
       personExternalId ||
       input.from ||
       input.to ||
+      input.year?.trim() ||
+      input.month?.trim() ||
       input.status?.trim() ||
       input.order?.trim() ||
       input.nfe?.trim() ||
