@@ -20,9 +20,12 @@ export const FINANCE_DRE_OFFICIAL_SOURCES = {
     note: "Despesas/fretes via monthlySeries.byCostCenter do dashboard oficial de CC.",
   },
   cmv: {
-    module: "salesOrderMarginService.server.ts + SalesOrderNfeLink",
-    functions: ["calculateSalesOrderMarginsForOrders"],
-    note: "CMV = custo gerencial oficial alocado ao mês da NF-e emitida (não issueDate do pedido).",
+    module: "financeDreCmvFromNfe.server.ts + productionCostTables.server.ts",
+    functions: [
+      "loadMonthlyCmvFromNfeProductCosts",
+      "getEffectiveProductProductionCostsForPairs",
+    ],
+    note: "CMV = quantidade do item da NF-e × unitProductionCost vigente na data de emissão da nota.",
   },
 } as const;
 
@@ -70,6 +73,9 @@ export type FinanceDreInformativeItemId =
   | "pessoal_cc"
   | "impostos_cc"
   | "materia_prima_cc"
+  | "nfe_sem_itens"
+  | "item_sem_produto"
+  | "item_sem_custo"
   | "receita_sem_cmv"
   | "ap_sem_cc_provisorio"
   | "resultado_financeiro_fora_escopo"
@@ -141,7 +147,10 @@ export type FinanceDreLine = {
 
 export type FinanceDreQualityAlert = {
   code:
-    | "CMV_UNLINKED_NFE"
+    | "CMV_GAP"
+    | "CMV_MISSING_ITEMS"
+    | "CMV_MISSING_PRODUCT"
+    | "CMV_MISSING_COST"
     | "CC_UNCLASSIFIED"
     | "TAX_SUMMARY_GAP"
     | "PARTIAL_FISCAL";

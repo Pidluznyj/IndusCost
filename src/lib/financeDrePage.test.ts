@@ -16,6 +16,7 @@ import {
   resolveBilledOrderCmv,
   roundDreMoney,
 } from "@/src/lib/financeDreMath.js";
+import { extractDreNfeItemsFromRawPayload } from "@/src/lib/financeDreNfeItemExtract.js";
 import {
   buildFinanceDreQuery,
   createDefaultFinanceDreUiFilters,
@@ -75,8 +76,9 @@ describe("finance dre official motors wiring", () => {
     const service = readSrc("src/lib/financeDreService.server.ts");
     assert.match(service, /queryMonthlyFiscalNfe/);
     assert.match(service, /buildFinanceCostCenterDashboardDefault/);
-    assert.match(service, /calculateSalesOrderMarginsForOrders/);
+    assert.match(service, /loadMonthlyCmvFromNfeProductCosts/);
     assert.match(service, /queryMonthlyFiscalNfeDeductions/);
+    assert.doesNotMatch(service, /calculateSalesOrderMarginsForOrders/);
   });
 
   it("queries NF-e reutilizam predicado oficial do faturamento", () => {
@@ -186,11 +188,24 @@ describe("financeDreMath", () => {
     });
     assert.ok(info.items.some((i) => i.id === "pessoal_cc" && i.highlightAmount === 250));
     assert.ok(info.items.some((i) => i.id === "resultado_financeiro_fora_escopo"));
-    assert.ok(buildFinanceDreSourceChecks({
-      unlinkedNfeCount: 0,
-      taxSummaryGapCount: 0,
-      unclassifiedYtd: 0,
-    }).some((c) => c.id === "receita_nfe" && c.appliedToResult));
+    assert.ok(
+      buildFinanceDreSourceChecks({
+        unlinkedNfeCount: 0,
+        taxSummaryGapCount: 0,
+        unclassifiedYtd: 0,
+        pricedLineCount: 12,
+      }).some((c) => c.id === "cmv_nfe_custo" && c.appliedToResult)
+    );
+
+    const extracted = extractDreNfeItemsFromRawPayload({
+      itens: [
+        { idProduto: 99, codigoProduto: "SKU-1", quantidade: 2, valorUnitario: 10 },
+        { idProduto: 100, quantidade: 0 },
+      ],
+    });
+    assert.equal(extracted.length, 1);
+    assert.equal(extracted[0]?.externalProductId, 99);
+    assert.equal(extracted[0]?.quantity, 2);
   });
 
   it("aloca CMV por peso das NF-e e só da parcela faturada", () => {
@@ -214,7 +229,7 @@ describe("financeDreMath", () => {
     assert.equal(series[1], 25);
   });
 
-  it("gera alerta quando há NF-e sem vínculo", () => {
+  it("gera alerta quando há lacuna de CMV por item/custo", () => {
     const { qualityAlerts } = buildFinanceDreLines({
       highlightMonth: 1,
       receitaBruta: emptyDreSeries(),
@@ -232,9 +247,15 @@ describe("financeDreMath", () => {
       impostosCc: emptyDreSeries(),
       materiaPrimaCc: emptyDreSeries(),
       unclassifiedCcAmount: emptyDreSeries(),
-      quality: { unlinkedNfeCount: 3, unlinkedNfeRevenue: 1200, taxSummaryGapCount: 0 },
+      quality: {
+        unlinkedNfeCount: 3,
+        unlinkedNfeRevenue: 1200,
+        taxSummaryGapCount: 0,
+        missingCostLineCount: 3,
+        pricedLineCount: 10,
+      },
     });
-    assert.ok(qualityAlerts.some((a) => a.code === "CMV_UNLINKED_NFE"));
+    assert.ok(qualityAlerts.some((a) => a.code === "CMV_MISSING_COST"));
   });
 });
 
@@ -320,5 +341,24 @@ describe("finance dre presentation UX", () => {
     const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
     assert.match(grid, /showAllMonths/);
     assert.match(grid, /rowSeparators|border-t-2|border-l-\[3px\]/);
+  });
+
+  it("PDF/impressão usa documento paisagem dedicado (não fica em branco)", () => {
+    const page = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
+    assert.match(page, /FinanceDrePrintDocument/);
+    assert.match(page, /finance-dre-print-route/);
+    assert.match(page, /createPortal/);
+    const printDoc = readSrc("src/components/finance/dre/FinanceDrePrintDocument.tsx");
+    assert.match(printDoc, /finance-dre-print-root/);
+    assert.match(printDoc, /showAllMonths/);
+    assert.match(printDoc, /expandAll/);
+    const css = readSrc("src/components/finance/dre/finance-dre-print.css");
+    assert.match(css, /A4 landscape/);
+    assert.match(css, /body\.finance-dre-print-route #root/);
+    const globalPrint = readSrc("src/reports-print.css");
+    assert.match(globalPrint, /#finance-dre-print-root/);
+    assert.match(globalPrint, /body\.finance-dre-print-route #root/);
+    const main = readSrc("src/main.tsx");
+    assert.match(main, /finance-dre-print\.css/);
   });
 });

@@ -1,9 +1,9 @@
 /**
  * Orquestrador do DRE Gerencial Mensal.
  * Sempre consulta motores oficiais — não recalcula elegibilidade NF-e nem alocação AP.
+ * CMV = item NF-e × custo vigente na data da nota (tabela de custo de produtos).
  */
 
-import { prisma } from "@/src/lib/prisma.js";
 import { queryMonthlyFiscalNfe } from "@/src/lib/financeBillingNfeDashboard.js";
 import {
   buildFinanceCostCenterDashboardDefault,
@@ -14,18 +14,13 @@ import {
   mapExecutiveReportCompanyToFilter,
   parseFinanceExecutiveReportCompany,
 } from "@/src/lib/financeExecutiveReportCompany.js";
-import { calculateSalesOrderMarginsForOrders } from "@/src/lib/salesOrderMarginService.server.js";
-import {
-  queryFiscalNfesForDreCmv,
-  queryMonthlyFiscalNfeDeductions,
-} from "@/src/lib/financeDreNfeQueries.server.js";
+import { queryMonthlyFiscalNfeDeductions } from "@/src/lib/financeDreNfeQueries.server.js";
+import { loadMonthlyCmvFromNfeProductCosts } from "@/src/lib/financeDreCmvFromNfe.server.js";
 import {
   bucketCostCenterSpendByDreRole,
-  createEmptyMonthlySeries,
   type DreCostCenterRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
 import {
-  allocateOrderCmvToNfeMonths,
   buildFinanceDreInformativeReport,
   buildFinanceDreLines,
   buildFinanceDreSourceChecks,
@@ -98,115 +93,6 @@ function companyLabel(company: FinanceDreCompany): string {
   }
 }
 
-async function loadMonthlyCmvFromOfficialMargin(
-  year: number,
-  emitterCnpjDigits?: string
-): Promise<{
-  cmv: number[];
-  unlinkedCount: number;
-  unlinkedRevenueByMonth: number[];
-}> {
-  const nfes = await queryFiscalNfesForDreCmv(year, "emissao", emitterCnpjDigits);
-  if (nfes.length === 0) {
-    return {
-      cmv: emptyDreSeries(),
-      unlinkedCount: 0,
-      unlinkedRevenueByMonth: emptyDreSeries(),
-    };
-  }
-
-  const externalIds = [...new Set(nfes.map((n) => n.nfeExternalId))];
-  const links = await prisma.salesOrderNfeLink.findMany({
-    where: { nfeExternalId: { in: externalIds } },
-    select: { salesOrderId: true, nfeExternalId: true },
-  });
-
-  const orderIdByNfeExternal = new Map<number, string>();
-  for (const link of links) {
-    if (!orderIdByNfeExternal.has(link.nfeExternalId)) {
-      orderIdByNfeExternal.set(link.nfeExternalId, link.salesOrderId);
-    }
-  }
-
-  let unlinkedCount = 0;
-  const unlinkedRevenueByMonth = createEmptyMonthlySeries();
-  const nfesByOrder = new Map<string, Array<{ month: number; valorLiquido: number }>>();
-
-  for (const nfe of nfes) {
-    const orderId = orderIdByNfeExternal.get(nfe.nfeExternalId);
-    if (!orderId) {
-      unlinkedCount += 1;
-      if (nfe.month >= 1 && nfe.month <= 12) {
-        unlinkedRevenueByMonth[nfe.month - 1] += nfe.valorLiquido;
-      }
-      continue;
-    }
-    const list = nfesByOrder.get(orderId) ?? [];
-    list.push({ month: nfe.month, valorLiquido: nfe.valorLiquido });
-    nfesByOrder.set(orderId, list);
-  }
-
-  const orderIds = [...nfesByOrder.keys()];
-  if (orderIds.length === 0) {
-    return {
-      cmv: emptyDreSeries(),
-      unlinkedCount,
-      unlinkedRevenueByMonth: unlinkedRevenueByMonth.map(roundDreMoney),
-    };
-  }
-
-  const orders = await prisma.salesOrder.findMany({
-    where: { id: { in: orderIds } },
-    select: {
-      id: true,
-      proposalId: true,
-      issueDate: true,
-      nomusRawResponse: true,
-      items: {
-        select: {
-          id: true,
-          productId: true,
-          externalProductId: true,
-          skuSnapshot: true,
-          productNameSnapshot: true,
-          quantity: true,
-          negotiatedPrice: true,
-          totalNetValue: true,
-          unitCost: true,
-          nomusIsCanceled: true,
-          nomusIsStale: true,
-          nomusIsCut: true,
-          nomusItemStatusNormalized: true,
-        },
-      },
-    },
-  });
-
-  const marginByOrder = await calculateSalesOrderMarginsForOrders(prisma, orders);
-  const cmv = createEmptyMonthlySeries();
-
-  for (const order of orders) {
-    const margin = marginByOrder.get(order.id);
-    const totalCost = margin?.marginSummary?.totalCost ?? 0;
-    const orderNetRevenue = margin?.marginSummary?.netRevenue ?? 0;
-    const orderNfes = nfesByOrder.get(order.id) ?? [];
-    const allocated = allocateOrderCmvToNfeMonths({
-      orderTotalCost: Number(totalCost) || 0,
-      orderNetRevenue: Number(orderNetRevenue) || 0,
-      nfes: orderNfes,
-    });
-    for (let i = 0; i < 12; i += 1) {
-      cmv[i] += allocated[i] ?? 0;
-    }
-  }
-
-  return {
-    cmv: cmv.map(roundDreMoney),
-    unlinkedCount,
-    unlinkedRevenueByMonth: unlinkedRevenueByMonth.map(roundDreMoney),
-  };
-}
-
 function sumSeriesSafeLocal(a: number[], b: number[]): number[] {
   return Array.from({ length: 12 }, (_, i) => roundDreMoney((a[i] ?? 0) + (b[i] ?? 0)));
 }
@@ -230,7 +116,7 @@ export async function buildFinanceDreReport(
       }),
       referenceNow
     ),
-    loadMonthlyCmvFromOfficialMargin(filters.year, emitterCnpj),
+    loadMonthlyCmvFromNfeProductCosts(filters.year, emitterCnpj),
   ]);
 
   const receitaBruta = emptyDreSeries();
@@ -257,14 +143,20 @@ export async function buildFinanceDreReport(
   );
 
   const despesasAdmin = sumSeriesSafeLocal(ccBuckets.admin, ccBuckets.unclassified);
-  const unlinkedYtd = ytdThroughMonth(
-    cmvBundle.unlinkedRevenueByMonth,
-    filters.highlightMonth
+  const unclassifiedYtd = ytdThroughMonth(ccBuckets.unclassified, filters.highlightMonth);
+
+  const gapRevenueByMonth = sumSeriesSafeLocal(
+    sumSeriesSafeLocal(
+      cmvBundle.missingItemsRevenueByMonth,
+      cmvBundle.missingProductRevenueByMonth
+    ),
+    cmvBundle.missingCostRevenueByMonth
   );
-  const unclassifiedYtd = ytdThroughMonth(
-    ccBuckets.unclassified,
-    filters.highlightMonth
-  );
+  const gapRevenueYtd = ytdThroughMonth(gapRevenueByMonth, filters.highlightMonth);
+  const gapLineCount =
+    cmvBundle.missingItemsNfeCount +
+    cmvBundle.missingProductLineCount +
+    cmvBundle.missingCostLineCount;
 
   const costCenterBreakdown: FinanceDreCostCenterBreakdownRow[] = roleRows.map((row) => ({
     costCenterId: row.costCenterId,
@@ -294,16 +186,21 @@ export async function buildFinanceDreReport(
     materiaPrimaCc: ccBuckets.rawMaterial,
     unclassifiedCcAmount: ccBuckets.unclassified,
     quality: {
-      unlinkedNfeCount: cmvBundle.unlinkedCount,
-      unlinkedNfeRevenue: roundDreMoney(unlinkedYtd),
+      unlinkedNfeCount: gapLineCount,
+      unlinkedNfeRevenue: gapRevenueYtd,
       taxSummaryGapCount: deductions.taxSummaryGapCount,
+      missingItemsNfeCount: cmvBundle.missingItemsNfeCount,
+      missingProductLineCount: cmvBundle.missingProductLineCount,
+      missingCostLineCount: cmvBundle.missingCostLineCount,
+      pricedLineCount: cmvBundle.pricedLineCount,
     },
   });
 
   const sourceChecks = buildFinanceDreSourceChecks({
-    unlinkedNfeCount: cmvBundle.unlinkedCount,
+    unlinkedNfeCount: gapLineCount,
     taxSummaryGapCount: deductions.taxSummaryGapCount,
     unclassifiedYtd,
+    pricedLineCount: cmvBundle.pricedLineCount,
   });
 
   const informativeReport = buildFinanceDreInformativeReport({
@@ -312,8 +209,14 @@ export async function buildFinanceDreReport(
     impostosCc: ccBuckets.tax,
     materiaPrimaCc: ccBuckets.rawMaterial,
     unclassifiedCcAmount: ccBuckets.unclassified,
-    unlinkedNfeRevenueByMonth: cmvBundle.unlinkedRevenueByMonth,
-    unlinkedNfeCount: cmvBundle.unlinkedCount,
+    unlinkedNfeRevenueByMonth: gapRevenueByMonth,
+    unlinkedNfeCount: gapLineCount,
+    missingItemsNfeCount: cmvBundle.missingItemsNfeCount,
+    missingItemsRevenueByMonth: cmvBundle.missingItemsRevenueByMonth,
+    missingProductLineCount: cmvBundle.missingProductLineCount,
+    missingProductRevenueByMonth: cmvBundle.missingProductRevenueByMonth,
+    missingCostLineCount: cmvBundle.missingCostLineCount,
+    missingCostRevenueByMonth: cmvBundle.missingCostRevenueByMonth,
   });
 
   const monthName = financeDreMonthLabels()[filters.highlightMonth - 1] ?? String(filters.highlightMonth);
@@ -323,7 +226,7 @@ export async function buildFinanceDreReport(
     title: "DRE Gerencial Mensal",
     subtitle: `${companyLabel(filters.company)} · ${monthName}/${filters.year} · competência emissão NF-e`,
     disclaimer:
-      "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; despesas via centros de custo; CMV pela margem oficial da parcela faturada no mês da nota.",
+      "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; CMV = quantidade faturada × custo vigente na data da nota; despesas via centros de custo.",
     generatedAt: new Date().toISOString(),
     filters,
     companyLabel: companyLabel(filters.company),

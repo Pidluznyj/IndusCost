@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Download, Maximize2, Printer, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -24,8 +25,11 @@ import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceB
 import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
 import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
+import { FinanceDrePrintDocument } from "@/src/components/finance/dre/FinanceDrePrintDocument";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
+
+const DRE_PRINT_BODY_CLASS = "finance-dre-print-route";
 
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => String(new Date().getFullYear() - 3 + i));
 const MONTH_OPTIONS = [
@@ -87,6 +91,8 @@ export function FinanceManagerialDrePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [presentationOpen, setPresentationOpen] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const printCleanupRef = useRef<number | null>(null);
 
   const appliedQuery = useMemo(
     () => buildFinanceDreQuery(appliedFilters),
@@ -127,9 +133,46 @@ export function FinanceManagerialDrePage() {
     window.open(getFinanceDreExportPath(appliedQuery), "_blank", "noopener,noreferrer");
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
+  const handlePrint = useCallback(() => {
+    if (printing || loading || !report) return;
+
+    const clearPrintRoute = () => {
+      if (printCleanupRef.current != null) {
+        window.clearTimeout(printCleanupRef.current);
+        printCleanupRef.current = null;
+      }
+      document.body.classList.remove(DRE_PRINT_BODY_CLASS);
+      setPrinting(false);
+    };
+
+    setPrinting(true);
+    const onAfterPrint = () => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    };
+    window.addEventListener("afterprint", onAfterPrint);
+    printCleanupRef.current = window.setTimeout(() => {
+      window.removeEventListener("afterprint", onAfterPrint);
+      clearPrintRoute();
+    }, 60_000);
+
+    document.body.classList.add(DRE_PRINT_BODY_CLASS);
+    document.title = `DRE Gerencial ${report.filters.year}`;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setTimeout(() => window.print(), 200);
+      });
+    });
+  }, [loading, printing, report]);
+
+  useEffect(() => {
+    return () => {
+      if (printCleanupRef.current != null) {
+        window.clearTimeout(printCleanupRef.current);
+      }
+      document.body.classList.remove(DRE_PRINT_BODY_CLASS);
+    };
+  }, []);
 
   if (!canView) {
     return (
@@ -138,6 +181,7 @@ export function FinanceManagerialDrePage() {
   }
 
   return (
+    <>
     <div className={cn(financeBiShellClass, "space-y-5")} data-testid="finance-dre-page">
       <div className="flex flex-wrap items-start justify-between gap-3 no-print">
         <div>
@@ -173,10 +217,12 @@ export function FinanceManagerialDrePage() {
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+            disabled={!report || printing || loading}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+            data-testid="finance-dre-print-button"
           >
             <Printer className="h-4 w-4" />
-            Imprimir
+            {printing ? "Preparando PDF…" : "PDF / Imprimir"}
           </button>
           <button
             type="button"
@@ -369,5 +415,9 @@ export function FinanceManagerialDrePage() {
         </>
       ) : null}
     </div>
+    {report && typeof document !== "undefined"
+      ? createPortal(<FinanceDrePrintDocument report={report} />, document.body)
+      : null}
+    </>
   );
 }

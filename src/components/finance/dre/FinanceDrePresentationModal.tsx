@@ -111,9 +111,10 @@ export function FinanceDrePresentationModal({
                   type="button"
                   onClick={onPrint}
                   className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-medium hover:bg-white/15"
+                  data-testid="finance-dre-presentation-print"
                 >
                   <Printer className="h-4 w-4" />
-                  Imprimir
+                  PDF / Imprimir
                 </button>
                 <button
                   type="button"

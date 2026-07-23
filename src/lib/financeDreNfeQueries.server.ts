@@ -135,9 +135,11 @@ export type DreNfeForCmvRow = {
   nfeExternalId: number;
   month: number;
   valorLiquido: number;
+  /** Data de competência (emissão) para vigência da tabela de custo. */
+  competenceDate: Date;
 };
 
-/** NF-e MARKET_REVENUE do ano para alocação de CMV (competência emissão). */
+/** NF-e MARKET_REVENUE do ano para CMV por item (competência emissão). */
 export async function queryFiscalNfesForDreCmv(
   year: number,
   dateBase: FinanceBillingDateBase = "emissao",
@@ -153,6 +155,7 @@ export async function queryFiscalNfesForDreCmv(
       external_id: number;
       month: number;
       valor: unknown;
+      competence_date: Date;
     }[]
   >(
     Prisma.sql`
@@ -160,7 +163,8 @@ export async function queryFiscalNfesForDreCmv(
         n.id,
         n."externalId" AS external_id,
         EXTRACT(MONTH FROM ${dateExpr})::int AS month,
-        n."valorLiquido" AS valor
+        n."valorLiquido" AS valor,
+        ${dateExpr} AS competence_date
       FROM "NomusNfe" n
       WHERE ${fiscalNfeWhereSql(dateBase, emitterCnpjDigits, "n")}
         AND ${dateExpr} >= ${from}
@@ -173,5 +177,6 @@ export async function queryFiscalNfesForDreCmv(
     nfeExternalId: row.external_id,
     month: row.month,
     valorLiquido: decimalToNumber(row.valor) ?? 0,
+    competenceDate: new Date(row.competence_date),
   }));
 }

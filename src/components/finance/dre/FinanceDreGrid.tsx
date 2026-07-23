@@ -8,6 +8,8 @@ type Props = {
   report: FinanceDreReport;
   /** Exibe as 12 colunas mensais (modal de apresentação). */
   showAllMonths?: boolean;
+  /** Força todas as seções abertas (PDF / impressão). */
+  expandAll?: boolean;
   className?: string;
 };
 
@@ -40,7 +42,12 @@ function rowSeparators(line: FinanceDreLine): string {
   return "border-b border-slate-200/90";
 }
 
-export function FinanceDreGrid({ report, showAllMonths = false, className }: Props) {
+export function FinanceDreGrid({
+  report,
+  showAllMonths = false,
+  expandAll = false,
+  className,
+}: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     receita_bruta: true,
     deducoes: false,
@@ -51,9 +58,10 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
   const visibleLines = useMemo(() => {
     return report.lines.filter((line) => {
       if (!line.parentId) return true;
+      if (expandAll) return true;
       return Boolean(expanded[line.parentId]);
     });
-  }, [report.lines, expanded]);
+  }, [report.lines, expanded, expandAll]);
 
   const highlightIdx = report.filters.highlightMonth - 1;
 
@@ -99,8 +107,8 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
         </thead>
         <tbody>
           {visibleLines.map((line, rowIndex) => {
-            const isExpandable = line.expandable && line.kind === "total";
-            const isOpen = Boolean(expanded[line.id]);
+            const isExpandable = !expandAll && line.expandable && line.kind === "total";
+            const isOpen = expandAll || Boolean(expanded[line.id]);
             const isDetail = line.kind === "detail";
             const zebra = isDetail && rowIndex % 2 === 1 ? "bg-slate-50/80" : rowSurface(line);
             return (

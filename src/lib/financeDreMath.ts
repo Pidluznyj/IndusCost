@@ -1,6 +1,6 @@
 /**
  * Motor puro do DRE Gerencial — sem I/O.
- * Entradas já vêm dos motores oficiais (NF-e, CC, margem).
+ * Entradas já vêm dos motores oficiais (NF-e, custo de produtos, CC).
  */
 
 import type {
@@ -95,6 +95,10 @@ export type FinanceDreMathInput = {
     unlinkedNfeCount: number;
     unlinkedNfeRevenue: number;
     taxSummaryGapCount: number;
+    missingItemsNfeCount?: number;
+    missingProductLineCount?: number;
+    missingCostLineCount?: number;
+    pricedLineCount?: number;
   };
 };
 
@@ -193,10 +197,11 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     line("receita_liquida", "Receita líquida", "result", null, receitaLiquida, m, netHighlight),
     line("custos", "Custos", "total", null, custosNeg, m, netHighlight, {
       expandable: true,
-      sourceNote: "CMV (margem oficial) + Fretes (CC Logística) + Embalagens (CC)",
+      sourceNote: "CMV (NF-e × custo vigente) + Fretes (CC Logística) + Embalagens (CC)",
     }),
     line("cmv", "Custo das mercadorias vendidas", "detail", "custos", negateSeries(input.cmv), m, netHighlight, {
-      sourceNote: "Custo gerencial oficial da parcela faturada, alocado ao mês da NF-e",
+      sourceNote:
+        "Quantidade faturada na NF-e × custo vigente na data de emissão (tabela de custo de produtos)",
     }),
     line("fretes", "Fretes e carretos", "detail", "custos", negateSeries(input.fretes), m, netHighlight, {
       sourceNote: "AP alocado em centros de custo Logística/Expedição",
@@ -265,11 +270,40 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   };
 
   const qualityAlerts: FinanceDreQualityAlert[] = [];
-  if (input.quality.unlinkedNfeCount > 0) {
+  if ((input.quality.missingItemsNfeCount ?? 0) > 0) {
     qualityAlerts.push({
-      code: "CMV_UNLINKED_NFE",
+      code: "CMV_MISSING_ITEMS",
       severity: "warning",
-      message: `${input.quality.unlinkedNfeCount} NF-e sem vínculo com pedido — CMV pode estar incompleto.`,
+      message: `${input.quality.missingItemsNfeCount} NF-e sem itens parseáveis — CMV incompleto nessas notas.`,
+      count: input.quality.missingItemsNfeCount,
+    });
+  }
+  if ((input.quality.missingProductLineCount ?? 0) > 0) {
+    qualityAlerts.push({
+      code: "CMV_MISSING_PRODUCT",
+      severity: "warning",
+      message: `${input.quality.missingProductLineCount} itens de NF-e sem produto local resolvido.`,
+      count: input.quality.missingProductLineCount,
+    });
+  }
+  if ((input.quality.missingCostLineCount ?? 0) > 0) {
+    qualityAlerts.push({
+      code: "CMV_MISSING_COST",
+      severity: "warning",
+      message: `${input.quality.missingCostLineCount} itens sem custo vigente na data da nota.`,
+      count: input.quality.missingCostLineCount,
+    });
+  }
+  if (
+    input.quality.unlinkedNfeCount > 0 &&
+    !(input.quality.missingItemsNfeCount ||
+      input.quality.missingProductLineCount ||
+      input.quality.missingCostLineCount)
+  ) {
+    qualityAlerts.push({
+      code: "CMV_GAP",
+      severity: "warning",
+      message: `Há lacunas de CMV (receita associada ≈ ${roundDreMoney(input.quality.unlinkedNfeRevenue)}).`,
       count: input.quality.unlinkedNfeCount,
       amount: roundDreMoney(input.quality.unlinkedNfeRevenue),
     });
@@ -301,6 +335,7 @@ export function buildFinanceDreSourceChecks(input: {
   unlinkedNfeCount: number;
   taxSummaryGapCount: number;
   unclassifiedYtd: number;
+  pricedLineCount?: number;
 }): FinanceDreSourceCheck[] {
   return [
     {
@@ -323,15 +358,16 @@ export function buildFinanceDreSourceChecks(input: {
           : "Totais do NomusNfeFiscalSummary + devoluções finalidade=4",
     },
     {
-      id: "cmv_margem",
-      label: "CMV (custo gerencial da parcela faturada)",
-      officialMotor: "salesOrderMarginService.calculateSalesOrderMarginsForOrders",
+      id: "cmv_nfe_custo",
+      label: "CMV (item NF-e × custo vigente na data da nota)",
+      officialMotor:
+        "financeDreCmvFromNfe.loadMonthlyCmvFromNfeProductCosts + getEffectiveProductProductionCostsForPairs",
       appliedToResult: true,
       status: input.unlinkedNfeCount > 0 ? "gap" : "ok",
       note:
         input.unlinkedNfeCount > 0
-          ? `${input.unlinkedNfeCount} NF-e sem vínculo com pedido (CMV incompleto)`
-          : "VERSIONED_PRODUCTION_COST alocado ao mês da NF-e",
+          ? `${input.pricedLineCount ?? 0} linhas precificadas; ${input.unlinkedNfeCount} lacuna(s) de item/produto/custo`
+          : `Tabela de custo vigente na emissão · ${input.pricedLineCount ?? 0} linha(s) precificada(s)`,
     },
     {
       id: "fretes_cc",
@@ -388,6 +424,12 @@ export function buildFinanceDreInformativeReport(input: {
   unclassifiedCcAmount: number[];
   unlinkedNfeRevenueByMonth: number[];
   unlinkedNfeCount: number;
+  missingItemsNfeCount?: number;
+  missingItemsRevenueByMonth?: number[];
+  missingProductLineCount?: number;
+  missingProductRevenueByMonth?: number[];
+  missingCostLineCount?: number;
+  missingCostRevenueByMonth?: number[];
 }): {
   title: string;
   subtitle: string;
@@ -447,15 +489,54 @@ export function buildFinanceDreInformativeReport(input: {
     false
   );
 
+  const missingItems = input.missingItemsRevenueByMonth ?? emptyDreSeries();
+  const missingProduct = input.missingProductRevenueByMonth ?? emptyDreSeries();
+  const missingCost = input.missingCostRevenueByMonth ?? emptyDreSeries();
+
+  pushSeries(
+    "nfe_sem_itens",
+    "NF-e sem itens parseáveis",
+    "Receita entrou no DRE, mas não foi possível ler produtos/quantidades do payload nem do documento de estoque.",
+    "NomusNfe.rawPayload / NomusStockDocumentItem",
+    missingItems,
+    false,
+    input.missingItemsNfeCount
+  );
+  pushSeries(
+    "item_sem_produto",
+    "Itens de NF-e sem produto local",
+    "Quantidade faturada existe, mas o produto não foi resolvido no cadastro IndusCost (idProduto/SKU).",
+    "Product.sourceExternalId / Product.sku / NomusProductCatalog",
+    missingProduct,
+    false,
+    input.missingProductLineCount
+  );
+  pushSeries(
+    "item_sem_custo",
+    "Itens sem custo vigente na data da nota",
+    "Produto resolvido, porém sem tabela de custo PUBLISHED/SUPERSEDED vigente na data de emissão da NF-e.",
+    "getEffectiveProductProductionCostsForPairs(referenceDate = emissão NF-e)",
+    missingCost,
+    false,
+    input.missingCostLineCount
+  );
+
   const unlinkedHighlight = roundDreMoney(input.unlinkedNfeRevenueByMonth[m - 1] ?? 0);
   const unlinkedYtd = ytdThroughMonth(input.unlinkedNfeRevenueByMonth, m);
-  if (input.unlinkedNfeCount > 0 || unlinkedHighlight > 0.009 || unlinkedYtd > 0.009) {
+  const detailedGaps =
+    (input.missingItemsNfeCount ?? 0) +
+    (input.missingProductLineCount ?? 0) +
+    (input.missingCostLineCount ?? 0);
+  if (
+    detailedGaps === 0 &&
+    (input.unlinkedNfeCount > 0 || unlinkedHighlight > 0.009 || unlinkedYtd > 0.009)
+  ) {
     items.push({
       id: "receita_sem_cmv",
-      label: "Receita de NF-e sem CMV (sem vínculo com pedido)",
+      label: "Receita de NF-e sem CMV",
       reason:
         "Receita entrou no DRE, mas o CMV correspondente não pôde ser calculado — resultado pode estar otimista.",
-      source: "NF-e MARKET_REVENUE sem SalesOrderNfeLink",
+      source: "NF-e MARKET_REVENUE sem custo de item resolvido",
       appliedToResult: false,
       highlightAmount: unlinkedHighlight,
       ytdAmount: unlinkedYtd,

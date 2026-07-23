@@ -15,6 +15,7 @@ import "./project-executive-report-print.css";
 import "./project-intake-form-print.css";
 import "./components/finance/executive-report/finance-executive-report.css";
 import "./components/finance/executive-report/finance-executive-report-print.css";
+import "./components/finance/dre/finance-dre-print.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

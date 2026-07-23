@@ -1,0 +1,274 @@
+/* Impressão / PDF — DRE Gerencial Mensal (A4 landscape, estilo apresentação) */
+
+#finance-dre-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body.finance-dre-print-route #root {
+    display: none !important;
+  }
+
+  body.finance-dre-print-route > *:not(#finance-dre-print-root) {
+    display: none !important;
+  }
+
+  body.finance-dre-print-route #finance-dre-print-root,
+  body.finance-dre-print-route #finance-dre-print-root * {
+    visibility: visible !important;
+  }
+
+  .finance-dre-no-print,
+  body.finance-dre-print-route .no-print,
+  body.finance-dre-print-route button,
+  body.finance-dre-print-route nav,
+  body.finance-dre-print-route aside {
+    display: none !important;
+  }
+
+  #finance-dre-print-root {
+    display: block !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  #finance-dre-print-root * {
+    max-height: none !important;
+    box-shadow: none !important;
+  }
+
+  #finance-dre-print-root .finance-dre-print-document {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.5pt;
+    line-height: 1.3;
+    color: #0f172a;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  #finance-dre-print-root .finance-dre-print-header {
+    margin-bottom: 3mm;
+    padding-bottom: 2.5mm;
+    border-bottom: 1.5pt solid #0f172a;
+  }
+
+  #finance-dre-print-root .finance-dre-print-eyebrow {
+    font-size: 8pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #0369a1;
+  }
+
+  #finance-dre-print-root .finance-dre-print-title {
+    margin: 1mm 0 0;
+    font-size: 16pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  #finance-dre-print-root .finance-dre-print-subtitle {
+    margin: 1mm 0 0;
+    font-size: 9.5pt;
+    color: #334155;
+  }
+
+  #finance-dre-print-root .finance-dre-print-meta {
+    margin: 1mm 0 0;
+    font-size: 8pt;
+    color: #64748b;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2.5mm;
+    margin-bottom: 3.5mm;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi {
+    border: 0.6pt solid #cbd5e1;
+    border-radius: 1.5mm;
+    padding: 2mm 2.5mm;
+    background: #f8fafc;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--positive {
+    border-color: #86efac;
+    background: #f0fdf4;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--negative {
+    border-color: #fda4af;
+    background: #fff1f2;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi-label {
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi-value {
+    margin-top: 0.8mm;
+    font-size: 11pt;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #0f172a;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--positive .finance-dre-print-kpi-value {
+    color: #166534;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--negative .finance-dre-print-kpi-value {
+    color: #9f1239;
+  }
+
+  #finance-dre-print-root .finance-dre-print-section {
+    margin-top: 2.5mm;
+  }
+
+  #finance-dre-print-root .finance-dre-print-section-title {
+    margin: 0 0 1.5mm;
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid {
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+    font-size: 7pt !important;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid thead {
+    position: static !important;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid th,
+  #finance-dre-print-root .finance-dre-print-grid td {
+    position: static !important;
+    padding: 1.1mm 1mm !important;
+    border-bottom: 0.4pt solid #cbd5e1 !important;
+    white-space: nowrap;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid th:first-child,
+  #finance-dre-print-root .finance-dre-print-grid td:first-child {
+    white-space: normal;
+    min-width: 42mm !important;
+    max-width: 52mm;
+  }
+
+  #finance-dre-print-root .finance-dre-print-grid thead th {
+    background: #0f172a !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  #finance-dre-print-root .finance-dre-print-alerts ul {
+    margin: 0;
+    padding-left: 4mm;
+  }
+
+  #finance-dre-print-root .finance-dre-print-alerts li {
+    margin-bottom: 0.8mm;
+    color: #92400e;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-sub {
+    margin: 0 0 1.5mm;
+    font-size: 7.5pt;
+    color: #64748b;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 7.5pt;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-table th,
+  #finance-dre-print-root .finance-dre-print-info-table td {
+    border-bottom: 0.4pt solid #e2e8f0;
+    padding: 1.2mm 1.5mm;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-table th {
+    background: #f1f5f9;
+    font-size: 7pt;
+    text-transform: uppercase;
+    color: #475569;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-table .col-money {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    width: 28mm;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-label {
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  #finance-dre-print-root .finance-dre-print-info-note {
+    margin-top: 0.4mm;
+    font-size: 7pt;
+    color: #64748b;
+  }
+
+  #finance-dre-print-root .finance-dre-print-footer {
+    margin-top: 3mm;
+    padding-top: 2mm;
+    border-top: 0.6pt solid #cbd5e1;
+    font-size: 7pt;
+    color: #64748b;
+  }
+
+  #finance-dre-print-root .finance-dre-print-footer p {
+    margin: 0 0 0.8mm;
+  }
+}
