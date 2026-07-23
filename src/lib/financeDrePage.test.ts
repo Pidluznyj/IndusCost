@@ -11,6 +11,7 @@ import {
   allocateOrderCmvToNfeMonths,
   buildFinanceDreLines,
   emptyDreSeries,
+  resolveBilledOrderCmv,
   roundDreMoney,
 } from "@/src/lib/financeDreMath.js";
 import {
@@ -89,6 +90,8 @@ describe("finance dre official motors wiring", () => {
 describe("financeDreCostCenterRoles", () => {
   it("classifica papéis do Excel (Planilha2)", () => {
     assert.equal(classifyDreCostCenterRole("LOG", "Logística"), "logistics");
+    assert.equal(classifyDreCostCenterRole("EXP", "Expedição"), "logistics");
+    assert.equal(classifyDreCostCenterRole("EMB", "Embalagens"), "packaging");
     assert.equal(classifyDreCostCenterRole("FOLHA", "Folha de pagamento"), "payroll");
     assert.equal(classifyDreCostCenterRole("BEN", "Benefícios"), "benefits");
     assert.equal(classifyDreCostCenterRole("MONT", "Montagem"), "assembly");
@@ -98,20 +101,26 @@ describe("financeDreCostCenterRoles", () => {
     assert.equal(classifyDreCostCenterRole("ADM", "Administrativo"), "admin");
   });
 
-  it("separa fretes, pessoal e admin mensais", () => {
-    const buckets = bucketCostCenterSpendByDreRole(
+  it("separa fretes, embalagens, pessoal, imposto/MP e admin mensais", () => {
+    const { buckets } = bucketCostCenterSpendByDreRole(
       [
         { year: 2026, month: 3, code: "LOG", name: "Logística", amount: 100 },
+        { year: 2026, month: 3, code: "EMB", name: "Embalagens", amount: 40 },
         { year: 2026, month: 3, code: "FOLHA", name: "Folha", amount: 200 },
         { year: 2026, month: 3, code: "ADM", name: "Aluguel", amount: 300 },
         { year: 2026, month: 3, code: "MP", name: "Matéria prima", amount: 999 },
+        { year: 2026, month: 3, code: "IMP", name: "Impostos", amount: 80 },
       ],
       2026,
-      [{ year: 2026, month: 3, unclassifiedAmount: 50 }]
+      [{ year: 2026, month: 3, unclassifiedAmount: 50 }],
+      3
     );
     assert.equal(buckets.logistics[2], 100);
+    assert.equal(buckets.packaging[2], 40);
     assert.equal(buckets.personnel[2], 200);
     assert.equal(buckets.admin[2], 300);
+    assert.equal(buckets.rawMaterial[2], 999);
+    assert.equal(buckets.tax[2], 80);
     assert.equal(buckets.unclassified[2], 50);
   });
 });
@@ -131,6 +140,8 @@ describe("financeDreMath", () => {
     const pessoal = emptyDreSeries();
     pessoal[0] = 250;
 
+    const embalagens = emptyDreSeries();
+    embalagens[0] = 30;
     const { lines, kpis } = buildFinanceDreLines({
       highlightMonth: 1,
       receitaBruta: receita,
@@ -142,29 +153,44 @@ describe("financeDreMath", () => {
       devolucoes: emptyDreSeries(),
       cmv,
       fretes,
+      embalagens,
       despesasAdmin: admin,
       despesasPessoal: pessoal,
+      impostosCc: emptyDreSeries(),
+      materiaPrimaCc: emptyDreSeries(),
       unclassifiedCcAmount: emptyDreSeries(),
       quality: { unlinkedNfeCount: 0, unlinkedNfeRevenue: 0, taxSummaryGapCount: 0 },
     });
 
-    // 1000 - 20 = 980 líquida; custos 450; lucro bruto 530; admin 100 → 430
+    // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400
     assert.equal(kpis.receitaLiquida, 980);
-    assert.equal(kpis.lucroBruto, 530);
-    assert.equal(kpis.resultadoOperacional, 430);
-    assert.equal(kpis.lucroLiquidoAproximado, 430);
+    assert.equal(kpis.lucroBruto, 500);
+    assert.equal(kpis.resultadoOperacional, 400);
+    assert.equal(kpis.lucroLiquidoAproximado, 400);
 
     const pessoalLine = lines.find((l) => l.id === "despesas_pessoal_info");
     assert.equal(pessoalLine?.informativeOnly, true);
     assert.equal(pessoalLine?.values.highlight, -250);
+    assert.ok(lines.some((l) => l.id === "embalagens"));
+    assert.ok(lines.some((l) => l.id === "impostos_cc_info" && l.informativeOnly));
+    assert.ok(lines.some((l) => l.id === "materia_prima_cc_info" && l.informativeOnly));
 
     const resultLine = lines.find((l) => l.id === "resultado_operacional");
-    assert.equal(resultLine?.values.highlight, 430);
+    assert.equal(resultLine?.values.highlight, 400);
   });
 
-  it("aloca CMV por peso das NF-e do pedido", () => {
+  it("aloca CMV por peso das NF-e e só da parcela faturada", () => {
+    assert.equal(
+      resolveBilledOrderCmv({
+        orderTotalCost: 100,
+        orderNetRevenue: 200,
+        linkedNfeValorLiquidoSum: 50,
+      }),
+      25
+    );
     const series = allocateOrderCmvToNfeMonths({
       orderTotalCost: 100,
+      orderNetRevenue: 100,
       nfes: [
         { month: 1, valorLiquido: 75 },
         { month: 2, valorLiquido: 25 },
@@ -186,8 +212,11 @@ describe("financeDreMath", () => {
       devolucoes: emptyDreSeries(),
       cmv: emptyDreSeries(),
       fretes: emptyDreSeries(),
+      embalagens: emptyDreSeries(),
       despesasAdmin: emptyDreSeries(),
       despesasPessoal: emptyDreSeries(),
+      impostosCc: emptyDreSeries(),
+      materiaPrimaCc: emptyDreSeries(),
       unclassifiedCcAmount: emptyDreSeries(),
       quality: { unlinkedNfeCount: 3, unlinkedNfeRevenue: 1200, taxSummaryGapCount: 0 },
     });
@@ -244,6 +273,7 @@ describe("financeDreViewModel & export", () => {
           expandable: true,
         },
       ],
+      costCenterBreakdown: [],
       qualityAlerts: [],
       sources: FINANCE_DRE_OFFICIAL_SOURCES,
     };
@@ -265,5 +295,6 @@ describe("finance dre presentation UX", () => {
     assert.match(modal, /z-\[85\]/);
     const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
     assert.match(grid, /showAllMonths/);
+    assert.match(grid, /rowSeparators|border-t-2|border-l-\[3px\]/);
   });
 });

@@ -20,12 +20,24 @@ function moneyClass(value: number, kind: FinanceDreLine["kind"]): string {
   return "text-slate-800";
 }
 
-function rowBg(line: FinanceDreLine, expandedParent: boolean): string {
-  if (line.kind === "result") return "bg-slate-100/90";
-  if (line.kind === "total") return "bg-slate-50/80";
-  if (line.kind === "informative") return "bg-amber-50/40";
-  if (line.kind === "detail" && expandedParent) return "bg-white";
+function rowSurface(line: FinanceDreLine): string {
+  if (line.kind === "result") return "bg-slate-100";
+  if (line.kind === "total") return "bg-slate-50";
+  if (line.kind === "informative") return "bg-amber-50/70";
   return "bg-white";
+}
+
+function rowSeparators(line: FinanceDreLine): string {
+  if (line.kind === "result") {
+    return "border-t-2 border-b border-slate-300";
+  }
+  if (line.kind === "total") {
+    return "border-t border-b border-slate-200";
+  }
+  if (line.kind === "informative") {
+    return "border-y border-dashed border-amber-200";
+  }
+  return "border-b border-slate-200/90";
 }
 
 export function FinanceDreGrid({ report, showAllMonths = false, className }: Props) {
@@ -48,15 +60,15 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
   return (
     <div
       className={cn(
-        "overflow-auto rounded-xl border border-slate-200/80 bg-white shadow-sm",
+        "overflow-auto rounded-xl border border-slate-300 bg-white shadow-sm",
         className
       )}
       data-testid="finance-dre-grid"
     >
-      <table className="min-w-full border-collapse text-sm">
+      <table className="min-w-full border-separate border-spacing-0 text-sm">
         <thead className="sticky top-0 z-10 bg-slate-900 text-white">
           <tr>
-            <th className="sticky left-0 z-20 min-w-[240px] bg-slate-900 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">
+            <th className="sticky left-0 z-20 min-w-[240px] border-b border-slate-700 bg-slate-900 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide">
               Linha
             </th>
             {showAllMonths
@@ -64,7 +76,7 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
                   <th
                     key={label}
                     className={cn(
-                      "min-w-[88px] px-2 py-3 text-right text-[11px] font-semibold uppercase tracking-wide",
+                      "min-w-[88px] border-b border-slate-700 px-2 py-3 text-right text-[11px] font-semibold uppercase tracking-wide",
                       idx === highlightIdx && "bg-sky-800"
                     )}
                   >
@@ -72,39 +84,40 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
                   </th>
                 ))
               : null}
-            <th className="min-w-[104px] px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+            <th className="min-w-[104px] border-b border-slate-700 px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
               {showAllMonths ? "YTD" : report.monthLabels[highlightIdx] ?? "Mês"}
             </th>
             {showAllMonths ? null : (
-              <th className="min-w-[104px] px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+              <th className="min-w-[104px] border-b border-slate-700 px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
                 YTD
               </th>
             )}
-            <th className="min-w-[72px] px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
+            <th className="min-w-[72px] border-b border-slate-700 px-3 py-3 text-right text-[11px] font-semibold uppercase tracking-wide">
               % RL
             </th>
           </tr>
         </thead>
         <tbody>
-          {visibleLines.map((line) => {
+          {visibleLines.map((line, rowIndex) => {
             const isExpandable = line.expandable && line.kind === "total";
             const isOpen = Boolean(expanded[line.id]);
-            const indent = line.parentId ? "pl-8" : "pl-4";
+            const isDetail = line.kind === "detail";
+            const zebra = isDetail && rowIndex % 2 === 1 ? "bg-slate-50/80" : rowSurface(line);
             return (
               <tr
                 key={line.id}
-                className={cn(
-                  "border-b border-slate-100/90 transition-colors",
-                  rowBg(line, true),
-                  line.kind === "result" && "border-slate-200"
-                )}
+                className={cn(zebra, rowSeparators(line), "transition-colors")}
                 data-testid={`finance-dre-line-${line.id}`}
               >
                 <td
                   className={cn(
-                    "sticky left-0 z-[1] px-0 py-2.5",
-                    rowBg(line, true),
-                    indent
+                    "sticky left-0 z-[1] px-0 py-3",
+                    zebra,
+                    isDetail ? "pl-9" : "pl-4",
+                    isDetail && "border-l-[3px] border-l-slate-300",
+                    line.kind === "result" && "border-l-[3px] border-l-slate-700",
+                    line.kind === "total" && "border-l-[3px] border-l-sky-700",
+                    line.kind === "informative" && "border-l-[3px] border-l-amber-400"
                   )}
                 >
                   <div className="flex items-center gap-1.5 pr-3">
@@ -149,9 +162,9 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
                       <td
                         key={`${line.id}-${idx}`}
                         className={cn(
-                          "px-2 py-2.5 text-right tabular-nums",
+                          "px-2 py-3 text-right tabular-nums",
                           moneyClass(value, line.kind),
-                          idx === highlightIdx && "bg-sky-50/80"
+                          idx === highlightIdx && "bg-sky-50/90"
                         )}
                       >
                         {formatFinanceKpiCurrency(value)}
@@ -160,12 +173,12 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
                   : null}
                 <td
                   className={cn(
-                    "px-3 py-2.5 text-right tabular-nums",
+                    "px-3 py-3 text-right tabular-nums",
                     moneyClass(
                       showAllMonths ? line.values.ytd : line.values.highlight,
                       line.kind
                     ),
-                    !showAllMonths && "bg-sky-50/50"
+                    !showAllMonths && "bg-sky-50/60"
                   )}
                 >
                   {formatFinanceKpiCurrency(
@@ -175,14 +188,14 @@ export function FinanceDreGrid({ report, showAllMonths = false, className }: Pro
                 {showAllMonths ? null : (
                   <td
                     className={cn(
-                      "px-3 py-2.5 text-right tabular-nums",
+                      "px-3 py-3 text-right tabular-nums",
                       moneyClass(line.values.ytd, line.kind)
                     )}
                   >
                     {formatFinanceKpiCurrency(line.values.ytd)}
                   </td>
                 )}
-                <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                <td className="px-3 py-3 text-right tabular-nums text-slate-500">
                   {line.pctOfNetRevenue == null
                     ? "—"
                     : `${line.pctOfNetRevenue.toFixed(1).replace(".", ",")}%`}

@@ -313,6 +313,49 @@ export function FinanceManagerialDrePage() {
             <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
           </div>
 
+          {report.costCenterBreakdown.length > 0 ? (
+            <section
+              className={cn(financeBiCardClass, "p-4 no-print")}
+              data-testid="finance-dre-cc-breakdown"
+            >
+              <h3 className="text-sm font-semibold text-foreground">
+                Centros de custo usados no DRE
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Classificação automática por nome/código. Confira se Logística, Embalagens, Folha e
+                demais papéis estão corretos.
+              </p>
+              <div className="mt-3 overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-[11px] uppercase text-muted-foreground">
+                      <th className="py-2 pr-3">Código</th>
+                      <th className="py-2 pr-3">Nome</th>
+                      <th className="py-2 pr-3">Papel no DRE</th>
+                      <th className="py-2 pr-3 text-right">Mês</th>
+                      <th className="py-2 text-right">YTD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.costCenterBreakdown.map((row) => (
+                      <tr key={row.costCenterId} className="border-b border-border/70">
+                        <td className="py-2 pr-3 font-medium">{row.code}</td>
+                        <td className="py-2 pr-3">{row.name}</td>
+                        <td className="py-2 pr-3 text-muted-foreground">{row.roleLabel}</td>
+                        <td className="py-2 pr-3 text-right tabular-nums">
+                          {formatFinanceKpiCurrency(row.highlightAmount)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums">
+                          {formatFinanceKpiCurrency(row.ytdAmount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
+
           <FinanceDrePresentationModal
             open={presentationOpen}
             report={report}

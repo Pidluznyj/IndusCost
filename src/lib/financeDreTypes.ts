@@ -58,12 +58,36 @@ export type FinanceDreLineId =
   | "custos"
   | "cmv"
   | "fretes"
+  | "embalagens"
   | "lucro_bruto"
   | "despesas_operacionais"
   | "despesas_administrativas"
   | "despesas_pessoal_info"
+  | "impostos_cc_info"
+  | "materia_prima_cc_info"
   | "resultado_operacional"
   | "lucro_liquido_aproximado";
+
+export type FinanceDreCostCenterRole =
+  | "logistics"
+  | "packaging"
+  | "payroll"
+  | "benefits"
+  | "assembly"
+  | "labor"
+  | "tax"
+  | "raw_material"
+  | "admin";
+
+export type FinanceDreCostCenterBreakdownRow = {
+  costCenterId: string;
+  code: string;
+  name: string;
+  role: FinanceDreCostCenterRole;
+  roleLabel: string;
+  highlightAmount: number;
+  ytdAmount: number;
+};
 
 export type FinanceDreMonthValues = {
   /** Índices 1–12 */
@@ -119,6 +143,8 @@ export type FinanceDreReport = {
   monthLabels: string[];
   kpis: FinanceDreKpis;
   lines: FinanceDreLine[];
+  /** Mapa de CCs usados no DRE (mês destaque + YTD) para auditoria. */
+  costCenterBreakdown: FinanceDreCostCenterBreakdownRow[];
   qualityAlerts: FinanceDreQualityAlert[];
   sources: typeof FINANCE_DRE_OFFICIAL_SOURCES;
 };

@@ -22,6 +22,7 @@ import {
 import {
   bucketCostCenterSpendByDreRole,
   createEmptyMonthlySeries,
+  type DreCostCenterRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
 import {
   allocateOrderCmvToNfeMonths,
@@ -33,6 +34,7 @@ import {
 import {
   FINANCE_DRE_OFFICIAL_SOURCES,
   type FinanceDreCompany,
+  type FinanceDreCostCenterBreakdownRow,
   type FinanceDreFilters,
   type FinanceDreReport,
 } from "@/src/lib/financeDreTypes.js";
@@ -43,6 +45,18 @@ export class FinanceDreParseError extends Error {
     this.name = "FinanceDreParseError";
   }
 }
+
+const ROLE_LABELS: Record<DreCostCenterRole, string> = {
+  logistics: "Logística / Fretes",
+  packaging: "Embalagens",
+  payroll: "Folha",
+  benefits: "Benefícios",
+  assembly: "Montagem",
+  labor: "Mão de obra",
+  tax: "Imposto",
+  raw_material: "Matéria-prima",
+  admin: "Administrativo",
+};
 
 export function parseFinanceDreQuery(
   query: Record<string, unknown>,
@@ -98,7 +112,6 @@ async function loadMonthlyCmvFromOfficialMargin(
 
   const orderIdByNfeExternal = new Map<number, string>();
   for (const link of links) {
-    // Um NFe pode ter múltiplos pedidos em edge cases — mantém o primeiro estável
     if (!orderIdByNfeExternal.has(link.nfeExternalId)) {
       orderIdByNfeExternal.set(link.nfeExternalId, link.salesOrderId);
     }
@@ -162,9 +175,11 @@ async function loadMonthlyCmvFromOfficialMargin(
   for (const order of orders) {
     const margin = marginByOrder.get(order.id);
     const totalCost = margin?.marginSummary?.totalCost ?? 0;
+    const orderNetRevenue = margin?.marginSummary?.netRevenue ?? 0;
     const orderNfes = nfesByOrder.get(order.id) ?? [];
     const allocated = allocateOrderCmvToNfeMonths({
       orderTotalCost: Number(totalCost) || 0,
+      orderNetRevenue: Number(orderNetRevenue) || 0,
       nfes: orderNfes,
     });
     for (let i = 0; i < 12; i += 1) {
@@ -179,7 +194,6 @@ async function loadMonthlyCmvFromOfficialMargin(
   };
 }
 
-// re-export helper used above — keep local to avoid circular if math grows
 function sumSeriesSafeLocal(a: number[], b: number[]): number[] {
   return Array.from({ length: 12 }, (_, i) => roundDreMoney((a[i] ?? 0) + (b[i] ?? 0)));
 }
@@ -211,10 +225,11 @@ export async function buildFinanceDreReport(
     if (month >= 1 && month <= 12) receitaBruta[month - 1] = roundDreMoney(total);
   }
 
-  const ccBuckets = bucketCostCenterSpendByDreRole(
+  const { buckets: ccBuckets, roleRows } = bucketCostCenterSpendByDreRole(
     ccDashboard.monthlySeries.byCostCenter.map((row) => ({
       month: row.month,
       year: row.year,
+      costCenterId: row.costCenterId,
       code: row.code,
       name: row.name,
       amount: row.amount,
@@ -224,11 +239,21 @@ export async function buildFinanceDreReport(
       month: row.month,
       year: row.year,
       unclassifiedAmount: row.unclassifiedAmount,
-    }))
+    })),
+    filters.highlightMonth
   );
 
-  // AP sem CC entra em admin com alerta (não some do resultado)
   const despesasAdmin = sumSeriesSafeLocal(ccBuckets.admin, ccBuckets.unclassified);
+
+  const costCenterBreakdown: FinanceDreCostCenterBreakdownRow[] = roleRows.map((row) => ({
+    costCenterId: row.costCenterId,
+    code: row.code,
+    name: row.name,
+    role: row.role,
+    roleLabel: ROLE_LABELS[row.role],
+    highlightAmount: row.highlightAmount,
+    ytdAmount: row.ytdAmount,
+  }));
 
   const { lines, kpis, qualityAlerts } = buildFinanceDreLines({
     highlightMonth: filters.highlightMonth,
@@ -241,8 +266,11 @@ export async function buildFinanceDreReport(
     devolucoes: deductions.devolucoes,
     cmv: cmvBundle.cmv,
     fretes: ccBuckets.logistics,
+    embalagens: ccBuckets.packaging,
     despesasAdmin,
     despesasPessoal: ccBuckets.personnel,
+    impostosCc: ccBuckets.tax,
+    materiaPrimaCc: ccBuckets.rawMaterial,
     unclassifiedCcAmount: ccBuckets.unclassified,
     quality: {
       unlinkedNfeCount: cmvBundle.unlinkedCount,
@@ -258,13 +286,14 @@ export async function buildFinanceDreReport(
     title: "DRE Gerencial Mensal",
     subtitle: `${companyLabel(filters.company)} · ${monthName}/${filters.year} · competência emissão NF-e`,
     disclaimer:
-      "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; despesas via centros de custo; CMV pela margem oficial alocada ao mês da nota.",
+      "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; despesas via centros de custo; CMV pela margem oficial da parcela faturada no mês da nota.",
     generatedAt: new Date().toISOString(),
     filters,
     companyLabel: companyLabel(filters.company),
     monthLabels: financeDreMonthLabels(),
     kpis,
     lines,
+    costCenterBreakdown,
     qualityAlerts,
     sources: FINANCE_DRE_OFFICIAL_SOURCES,
   };

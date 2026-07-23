@@ -80,9 +80,14 @@ export type FinanceDreMathInput = {
   devolucoes: number[];
   cmv: number[];
   fretes: number[];
+  embalagens: number[];
   despesasAdmin: number[];
   /** Informativo — não entra no resultado */
   despesasPessoal: number[];
+  /** Informativo — CC Imposto (AP), não entra no resultado */
+  impostosCc: number[];
+  /** Informativo — CC Matéria-prima (AP), não entra no resultado */
+  materiaPrimaCc: number[];
   unclassifiedCcAmount: number[];
   quality: {
     unlinkedNfeCount: number;
@@ -136,16 +141,17 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const deducoesNeg = negateSeries(deducoesAbs);
   const receitaLiquida = subSeries(input.receitaBruta, deducoesAbs);
 
-  const custosAbs = sumSeries(input.cmv, input.fretes);
+  const custosAbs = sumSeries(sumSeries(input.cmv, input.fretes), input.embalagens);
   const custosNeg = negateSeries(custosAbs);
   const lucroBruto = subSeries(receitaLiquida, custosAbs);
 
   const adminNeg = negateSeries(input.despesasAdmin);
   const pessoalNeg = negateSeries(input.despesasPessoal);
+  const impostosCcNeg = negateSeries(input.impostosCc);
+  const mpCcNeg = negateSeries(input.materiaPrimaCc);
 
-  // Resultado operacional = lucro bruto − admin (pessoal NÃO entra)
+  // Resultado operacional = lucro bruto − admin (pessoal/imposto CC/MP CC NÃO entram)
   const resultado = subSeries(lucroBruto, input.despesasAdmin);
-  // Lucro líquido aproximado = mesmo do operacional no v1
   const lucroAprox = resultado;
 
   const netHighlight = roundDreMoney(receitaLiquida[m - 1] ?? 0);
@@ -188,14 +194,26 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     line("receita_liquida", "Receita líquida", "result", null, receitaLiquida, m, netHighlight),
     line("custos", "Custos", "total", null, custosNeg, m, netHighlight, {
       expandable: true,
-      sourceNote: "CMV (margem oficial) + Fretes (CC Logística)",
+      sourceNote: "CMV (margem oficial) + Fretes (CC Logística) + Embalagens (CC)",
     }),
     line("cmv", "Custo das mercadorias vendidas", "detail", "custos", negateSeries(input.cmv), m, netHighlight, {
-      sourceNote: "Custo gerencial oficial alocado ao mês da NF-e",
+      sourceNote: "Custo gerencial oficial da parcela faturada, alocado ao mês da NF-e",
     }),
     line("fretes", "Fretes e carretos", "detail", "custos", negateSeries(input.fretes), m, netHighlight, {
-      sourceNote: "AP alocado em centros de custo Logística",
+      sourceNote: "AP alocado em centros de custo Logística/Expedição",
     }),
+    line(
+      "embalagens",
+      "Embalagens",
+      "detail",
+      "custos",
+      negateSeries(input.embalagens),
+      m,
+      netHighlight,
+      {
+        sourceNote: "AP alocado em centros de custo Embalagens",
+      }
+    ),
     line("lucro_bruto", "Lucro bruto", "result", null, lucroBruto, m, netHighlight),
     line(
       "despesas_operacionais",
@@ -219,7 +237,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       m,
       netHighlight,
       {
-        sourceNote: "CC exceto Folha, Benefícios, Montagem, Mão de obra, Imposto, MP, Logística",
+        sourceNote:
+          "CC exceto Folha, Benefícios, Montagem, Mão de obra, Imposto, MP, Logística e Embalagens",
       }
     ),
     line(
@@ -233,6 +252,32 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       {
         informativeOnly: true,
         sourceNote: "Folha + Benefícios + Montagem + Mão de obra — já no CMV; só exibição",
+      }
+    ),
+    line(
+      "impostos_cc_info",
+      "Impostos via centro de custo (informativo)",
+      "informative",
+      null,
+      impostosCcNeg,
+      m,
+      netHighlight,
+      {
+        informativeOnly: true,
+        sourceNote: "AP em CC Imposto — não entra no resultado (deduções fiscais vêm da NF-e)",
+      }
+    ),
+    line(
+      "materia_prima_cc_info",
+      "Matéria-prima via centro de custo (informativo)",
+      "informative",
+      null,
+      mpCcNeg,
+      m,
+      netHighlight,
+      {
+        informativeOnly: true,
+        sourceNote: "AP em CC Matéria-prima — não entra no resultado (já contemplado no CMV)",
       }
     ),
     line("resultado_operacional", "Resultado operacional", "result", null, resultado, m, netHighlight),
@@ -274,7 +319,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     qualityAlerts.push({
       code: "CC_UNCLASSIFIED",
       severity: "warning",
-      message: "Há títulos AP sem centro de custo no período — despesas administrativas podem estar subestimadas.",
+      message:
+        "Há títulos AP sem centro de custo — valores incluídos provisoriamente em Despesas administrativas.",
       amount: unclassifiedYtd,
     });
   }
@@ -294,25 +340,50 @@ export function emptyDreSeries(): number[] {
   return createEmptyMonthlySeries();
 }
 
+/**
+ * Custo do pedido atribuível às NF-e vinculadas no ano.
+ * Evita jogar 100% do CMV do pedido quando só parte foi faturada.
+ */
+export function resolveBilledOrderCmv(input: {
+  orderTotalCost: number;
+  orderNetRevenue: number;
+  linkedNfeValorLiquidoSum: number;
+}): number {
+  const cost = Number.isFinite(input.orderTotalCost) ? Math.max(0, input.orderTotalCost) : 0;
+  if (cost <= 0) return 0;
+  const billed = Math.max(0, input.linkedNfeValorLiquidoSum || 0);
+  const orderNet = Math.max(0, input.orderNetRevenue || 0);
+  if (orderNet <= 0) {
+    // Sem receita do pedido: usa o menor entre custo e o que as NF-e sugerem proporcionalmente
+    return roundDreMoney(cost);
+  }
+  const ratio = Math.min(1, billed / orderNet);
+  return roundDreMoney(cost * ratio);
+}
+
 /** Aloca CMV do pedido às NF-e do ano por peso do valorLiquido. */
 export function allocateOrderCmvToNfeMonths(input: {
   orderTotalCost: number;
+  orderNetRevenue?: number;
   nfes: Array<{ month: number; valorLiquido: number }>;
 }): number[] {
   const series = createEmptyMonthlySeries();
-  const cost = Number.isFinite(input.orderTotalCost) ? input.orderTotalCost : 0;
+  const linkedSum = input.nfes.reduce((acc, n) => acc + Math.max(0, n.valorLiquido || 0), 0);
+  const cost = resolveBilledOrderCmv({
+    orderTotalCost: input.orderTotalCost,
+    orderNetRevenue: input.orderNetRevenue ?? 0,
+    linkedNfeValorLiquidoSum: linkedSum,
+  });
   if (cost <= 0 || input.nfes.length === 0) return series;
 
-  const weightSum = input.nfes.reduce((acc, n) => acc + Math.max(0, n.valorLiquido || 0), 0);
-  if (weightSum <= 0) {
-    // Sem peso: joga no mês da primeira NF-e
+  if (linkedSum <= 0) {
     const first = input.nfes[0];
     if (first) addMonth(series, first.month, cost);
     return series;
   }
 
   for (const nfe of input.nfes) {
-    const share = (Math.max(0, nfe.valorLiquido || 0) / weightSum) * cost;
+    const share = (Math.max(0, nfe.valorLiquido || 0) / linkedSum) * cost;
     addMonth(series, nfe.month, share);
   }
   return series.map(roundDreMoney);
