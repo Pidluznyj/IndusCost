@@ -127,3 +127,17 @@ Documento/NF **não** prova OP; ausência de OP **não** invalida DS/NF.
 **Devoluções/cancelamentos:** evidência preservada na timeline com `operational=false`; não avança cobertura.
 
 **Unidades:** só converte com fator comprovado; senão `INCONSISTENT` (evidência visível, sem conclusão indevida).
+
+---
+
+## Motor Kanban (KAN-LINK-07)
+
+Implementação: `src/lib/sales/salesOrderOperationalEvidenceFromPack.ts` + `resolveSalesOrderItemFlowFromEvidence`.
+
+**Caminho exclusivo:** pack OP-49 → grafo canônico (KAN-LINK-02/06) → `adaptOperationalEvidenceItemToMotorAllocations` → motor OP-50 → consolidação OP-51 → snapshot.
+
+Alocações (`buildSalesOrderItemFlowAllocationsFromEvidence`) delegam ao mesmo grafo — sem caminho paralelo.
+
+**Precedência de estágio:** obrigação → corte/cancelamento → evidências terminais/envio/NF/DS → necessidade produtiva residual → liberação → inconsistências. Evidência posterior não regride por ausência de OP.
+
+**Snapshots:** `computationVersion = sales-order-flow/v2`; fingerprint determinístico; preview/apply inalterados; pós-sync Pedido/OP/DS/NF reutiliza `runSalesOrderFlowRecomputeAfterNomusSync` (DS também resolve pedido por ref oficial no `rawJson`).

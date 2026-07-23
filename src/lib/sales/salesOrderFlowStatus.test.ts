@@ -8,6 +8,7 @@ import {
   SALES_ORDER_FLOW_ENABLED_ENV,
   SALES_ORDER_FLOW_FEATURE_RESOURCE,
 } from "./salesOrderFlowFeatureFlags.js";
+import { SALES_ORDER_FLOW_COMPUTATION_VERSION } from "./salesOrderFlowFingerprint.js";
 
 function createStatusDb(options?: { withFailure?: boolean }) {
   return {
@@ -33,7 +34,7 @@ function createStatusDb(options?: { withFailure?: boolean }) {
       },
       groupBy: async () => [
         {
-          computationVersion: "sales-order-flow/v1",
+          computationVersion: SALES_ORDER_FLOW_COMPUTATION_VERSION,
           _count: { _all: 4 },
         },
         {
@@ -85,7 +86,10 @@ describe("salesOrderFlowStatus (OP-58)", () => {
     assert.equal(status.feature.resource, SALES_ORDER_FLOW_FEATURE_RESOURCE);
     assert.equal(status.feature.enabled, true);
     assert.equal(status.feature.defaultWhenAbsent, false);
-    assert.equal(status.computation.expectedVersion, "sales-order-flow/v1");
+    assert.equal(
+      status.computation.expectedVersion,
+      SALES_ORDER_FLOW_COMPUTATION_VERSION
+    );
     assert.equal(
       status.computation.latestRecomputedAt,
       "2026-07-17T12:00:00.000Z"

@@ -18,6 +18,10 @@ import {
 import { loadSalesOrderFlowEvidenceBatch } from "./salesOrderFlowEvidence.server.js";
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import {
+  extractOutputDocumentOrderRefsFromRaw,
+  normalizeOutputDocumentOrderCode,
+} from "./salesOrderOutputDocumentLinkResolver.js";
+import {
   buildSalesOrderFlowRecomputeAfterSyncTrigger,
   emptySalesOrderFlowRecomputeAfterSyncSummary,
   formatSalesOrderFlowRecomputeAfterSyncLog,
@@ -36,6 +40,7 @@ export type SalesOrderFlowRecomputeAfterSyncDb = SalesOrderFlowRecomputeDb &
     | "nomusProductionOrderSalesLink"
     | "nomusStockDocument"
     | "orderToCashAuditFact"
+    | "salesOrder"
     | "integrationRun"
   >;
 
@@ -91,7 +96,13 @@ export async function resolveSalesOrderIdsFromProductionOrderExternalIds(
 }
 
 export async function resolveSalesOrderIdsFromStockDocumentExternalIds(
-  db: Pick<PrismaClient, "nomusStockDocument" | "salesOrderNfeLink" | "orderToCashAuditFact">,
+  db: Pick<
+    PrismaClient,
+    | "nomusStockDocument"
+    | "salesOrderNfeLink"
+    | "orderToCashAuditFact"
+    | "salesOrder"
+  >,
   stockDocumentExternalIds: readonly number[]
 ): Promise<string[]> {
   const unique = [
@@ -103,7 +114,13 @@ export async function resolveSalesOrderIdsFromStockDocumentExternalIds(
 
   const docs = await db.nomusStockDocument.findMany({
     where: { externalId: { in: unique } },
-    select: { externalId: true, idNfe: true },
+    select: {
+      id: true,
+      externalId: true,
+      idNfe: true,
+      rawJson: true,
+      items: { select: { rawJson: true } },
+    },
   });
   const nfeIds = docs
     .map((d) => d.idNfe)
@@ -120,7 +137,64 @@ export async function resolveSalesOrderIdsFromStockDocumentExternalIds(
     .map((f) => f.salesOrderId)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
 
-  return mergeSalesOrderFlowOrderIdBatches(fromNfeIds, fromFacts);
+  // KAN-LINK-07 — DS com ref oficial de pedido no raw (sem NF/O2C).
+  const externalOrderIds = new Set<number>();
+  const orderCodesNormalized = new Set<string>();
+  for (const doc of docs) {
+    const headerRefs = extractOutputDocumentOrderRefsFromRaw(doc.rawJson);
+    if (headerRefs.externalSalesOrderId != null) {
+      externalOrderIds.add(headerRefs.externalSalesOrderId);
+    }
+    if (headerRefs.orderCodeNormalized) {
+      orderCodesNormalized.add(headerRefs.orderCodeNormalized);
+    }
+    for (const item of doc.items ?? []) {
+      const itemRefs = extractOutputDocumentOrderRefsFromRaw(item.rawJson);
+      if (itemRefs.externalSalesOrderId != null) {
+        externalOrderIds.add(itemRefs.externalSalesOrderId);
+      }
+      if (itemRefs.orderCodeNormalized) {
+        orderCodesNormalized.add(itemRefs.orderCodeNormalized);
+      }
+    }
+  }
+
+  let fromRawRefs: string[] = [];
+  if (externalOrderIds.size > 0 || orderCodesNormalized.size > 0) {
+    const codeVariants = [...orderCodesNormalized].flatMap((code) => {
+      const digits = code.replace(/\D/g, "");
+      return digits
+        ? [code, `PD ${digits}`, `PD${digits}`, `pd ${digits}`]
+        : [code];
+    });
+    const orders = await db.salesOrder.findMany({
+      where: {
+        OR: [
+          ...(externalOrderIds.size > 0
+            ? [{ externalSalesOrderId: { in: [...externalOrderIds] } }]
+            : []),
+          ...(codeVariants.length > 0
+            ? [{ orderCode: { in: codeVariants } }]
+            : []),
+        ],
+      },
+      select: { id: true, orderCode: true, externalSalesOrderId: true },
+    });
+    fromRawRefs = orders
+      .filter((o) => {
+        if (
+          o.externalSalesOrderId != null &&
+          externalOrderIds.has(o.externalSalesOrderId)
+        ) {
+          return true;
+        }
+        const normalized = normalizeOutputDocumentOrderCode(o.orderCode);
+        return normalized != null && orderCodesNormalized.has(normalized);
+      })
+      .map((o) => o.id);
+  }
+
+  return mergeSalesOrderFlowOrderIdBatches(fromNfeIds, fromFacts, fromRawRefs);
 }
 
 export async function resolveSalesOrderFlowAffectedOrderIds(

@@ -25,7 +25,7 @@ function okResult(id: string): RecomputeSalesOrderFlowResult {
     orderCode: null,
     action: "unchanged",
     reason: "fingerprint_match",
-    computationVersion: "sales-order-flow/v1",
+    computationVersion: "sales-order-flow/v2",
     orderFingerprint: "fp",
     previousOrderStage: null,
     currentOrderStage: "WAITING_NFE",
@@ -39,7 +39,7 @@ function okResult(id: string): RecomputeSalesOrderFlowResult {
       previousStage: null,
       currentStage: "WAITING_NFE",
       reason: "fingerprint_match",
-      computationVersion: "sales-order-flow/v1",
+      computationVersion: "sales-order-flow/v2",
       sourceFingerprint: "fp".slice(0, 12),
       action: "unchanged",
       source: "post-sync",
@@ -54,7 +54,7 @@ function okResult(id: string): RecomputeSalesOrderFlowResult {
         inconsistencies: 0,
         failures: 0,
         durationMs: 1,
-        computationVersion: "sales-order-flow/v1",
+        computationVersion: "sales-order-flow/v2",
         source: "post-sync",
       },
     },
@@ -155,8 +155,8 @@ describe("salesOrderFlowRecomputeAfterNomusSync (OP-57)", () => {
     const db = {
       nomusStockDocument: {
         findMany: async () => [
-          { externalId: 9, idNfe: 77 },
-          { externalId: 10, idNfe: null },
+          { externalId: 9, idNfe: 77, rawJson: {}, items: [] },
+          { externalId: 10, idNfe: null, rawJson: {}, items: [] },
         ],
       },
       salesOrderNfeLink: {
@@ -168,12 +168,50 @@ describe("salesOrderFlowRecomputeAfterNomusSync (OP-57)", () => {
           { salesOrderId: ORDER_A },
         ],
       },
+      salesOrder: {
+        findMany: async () => [],
+      },
     };
     const ids = await resolveSalesOrderIdsFromStockDocumentExternalIds(
       db as never,
       [9, 10]
     );
     assert.deepEqual(ids.sort(), [ORDER_A, ORDER_B].sort());
+  });
+
+  it("origem stock-documents: resolve via ref oficial no rawJson (sem NF/O2C)", async () => {
+    const db = {
+      nomusStockDocument: {
+        findMany: async () => [
+          {
+            externalId: 4525,
+            idNfe: null,
+            rawJson: { idPedido: 2757, codigoPedido: "PD 02757" },
+            items: [
+              {
+                rawJson: { idPedido: 2757, idItemPedido: 9010, item: "00010" },
+              },
+            ],
+          },
+        ],
+      },
+      salesOrderNfeLink: { findMany: async () => [] },
+      orderToCashAuditFact: { findMany: async () => [] },
+      salesOrder: {
+        findMany: async () => [
+          {
+            id: ORDER_C,
+            orderCode: "PD 02757",
+            externalSalesOrderId: 2757,
+          },
+        ],
+      },
+    };
+    const ids = await resolveSalesOrderIdsFromStockDocumentExternalIds(
+      db as never,
+      [4525]
+    );
+    assert.deepEqual(ids, [ORDER_C]);
   });
 
   it("origem cut-fulfillment-cancel (via salesOrderIds) e links", async () => {

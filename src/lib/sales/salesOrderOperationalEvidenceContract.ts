@@ -415,7 +415,14 @@ export function classifyOutputDocumentValidity(input: {
   if (tipo.includes("transf") || raw.includes("transf")) return "TRANSFER";
   if (input.processing === true || raw.includes("process")) return "PROCESSING";
   if (input.idNfe == null) return "WITHOUT_NFE";
-  if (raw.includes("emit") || raw === "" || raw.includes("autoriz")) {
+  // emitido / autorizado / ativo (status operacional Nomus não-cancelado)
+  if (
+    raw === "" ||
+    raw.includes("emit") ||
+    raw.includes("autoriz") ||
+    raw.includes("ativo") ||
+    raw.includes("active")
+  ) {
     return "VALID";
   }
   if (raw) return "UNKNOWN";

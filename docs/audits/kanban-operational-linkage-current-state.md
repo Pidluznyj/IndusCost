@@ -498,6 +498,8 @@ SalesOrderItemOperationalLink {
 
 **KAN-LINK-06 (implementado):** reconciliação Pedido→OP→DS→NF (`salesOrderOperationalEvidenceReconciler.ts`) — sem cadeia artificial; evidência posterior prevalece; DS∪NF sem dupla contagem; diagnóstico `linkStatus` / `coverageStatus` / timeline no grafo.
 
+**KAN-LINK-07 (implementado):** motor/snapshots consomem exclusivamente o grafo canônico (`salesOrderOperationalEvidenceFromPack.ts`); `computationVersion=sales-order-flow/v2`; pós-sync DS resolve pedido também por ref no rawJson.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

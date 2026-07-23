@@ -2,7 +2,15 @@
  * OP-50 — Motor puro do fluxo por item do Pedido de Venda.
  *
  * Fonte normativa: `docs/commercial/sales-order-flow/state-machine.md`
- * Evidências: contrato OP-49 (`salesOrderFlowEvidence.ts`)
+ * Evidências operacionais (KAN-LINK-07): exclusivamente
+ * `SalesOrderOperationalEvidenceGraph` (pack → grafo → adapt → este motor).
+ *
+ * Precedência de estágio (validada no fluxo atual):
+ * 1) obrigação ativa (+ corte/cancelamento)
+ * 2) evidências terminais / envio / faturamento / documentação
+ * 3) necessidade produtiva residual (não reabre se evidência posterior cobre)
+ * 4) liberação comercial
+ * 5) inconsistências
  *
  * Reutiliza:
  * - FIN-03 `classifySalesOrderItemFinancialFulfillment`
@@ -33,8 +41,8 @@ import {
   type SalesOrderItemProductCommercialClass,
 } from "./salesOrderItemProductionRequirement.js";
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
-import { buildSalesOrderItemFlowAllocationsFromEvidence } from "./salesOrderItemFlowAllocations.js";
-import { buildProductionOrderLinksForItemFlow } from "./salesOrderProductionOrderLinkResolver.js";
+import { adaptOperationalEvidenceItemToMotorAllocations } from "./salesOrderOperationalEvidenceGraph.js";
+import { getSalesOrderOperationalEvidenceGraphFromPack } from "./salesOrderOperationalEvidenceFromPack.js";
 
 export type QtyDecimal = Prisma.Decimal;
 
@@ -767,6 +775,7 @@ function stageReasonFor(
 
 /**
  * Adapta um item do pack OP-49 para o motor OP-50.
+ * KAN-LINK-07: consome exclusivamente o grafo canônico de evidências.
  */
 export function resolveSalesOrderItemFlowFromEvidence(
   pack: SalesOrderFlowEvidencePack,
@@ -776,14 +785,12 @@ export function resolveSalesOrderItemFlowFromEvidence(
   const item = pack.items.find((i) => i.id === salesOrderItemId);
   if (!item) return null;
 
-  const { documentAllocations, nfeAllocations } =
-    buildSalesOrderItemFlowAllocationsFromEvidence(pack, item);
-
-  // KAN-LINK-05 — vínculos OP canônicos (cancela/ambíguo/etiqueta filtrados).
-  const { motorLinks: productionOrderLinks } = buildProductionOrderLinksForItemFlow(
-    pack,
-    item.id
-  );
+  const graph = getSalesOrderOperationalEvidenceGraphFromPack(pack);
+  const {
+    documentAllocations,
+    nfeAllocations,
+    productionLinks: productionOrderLinks,
+  } = adaptOperationalEvidenceItemToMotorAllocations(graph, item.id);
 
   return resolveSalesOrderItemFlow({
     salesOrderItemId: item.id,

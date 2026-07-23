@@ -410,7 +410,7 @@ describe("salesOrderFlowFingerprint (OP-54)", () => {
     const ofa = buildSalesOrderFlowFingerprint(order, [a]);
     const ofb = buildSalesOrderFlowFingerprint(order, [a]);
     assert.equal(ofa, ofb);
-    assert.equal(SALES_ORDER_FLOW_COMPUTATION_VERSION, "sales-order-flow/v1");
+    assert.equal(SALES_ORDER_FLOW_COMPUTATION_VERSION, "sales-order-flow/v2");
   });
 });
 
