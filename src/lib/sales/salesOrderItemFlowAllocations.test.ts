@@ -545,4 +545,78 @@ describe("salesOrderItemFlowAllocations", () => {
     assert.equal(alloc.documentAllocations.length, 0);
     assert.equal(alloc.nfeAllocations.length, 0);
   });
+
+  it("PD 02049-like: FULFILLED sem OP + SalesOrderNfeLink/DS → SHIPPED_COMPLETED (vínculos visíveis)", () => {
+    const ORDER_STOCK = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa02049";
+    const ITEM_STOCK = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbb02049";
+    const map = assembleSalesOrderFlowEvidenceBatch({
+      orders: [
+        {
+          id: ORDER_STOCK,
+          orderCode: "PD 02049",
+          status: "SENT_TO_NOMUS",
+          customerId: "c-netfiltros",
+          expectedDeliveryDate: "2026-01-19",
+          items: [
+            {
+              id: ITEM_STOCK,
+              salesOrderId: ORDER_STOCK,
+              productId: "p-stock",
+              externalProductId: 777001,
+              skuSnapshot: "FILTRO",
+              productNameSnapshot: "Filtro",
+              quantity: 15,
+              nomusQuantityFulfilled: 15,
+              nomusItemStatusRaw: "4",
+              nomusItemStatusNormalized: "FULFILLED",
+            },
+          ],
+        },
+      ],
+      products: [
+        {
+          id: "p-stock",
+          type: "PRODUCT",
+          costingMode: "OWN_PROCESS",
+          hasProductRouting: true,
+          hasProductBom: true,
+        },
+      ],
+      nfeLinks: [
+        {
+          id: "link-2049",
+          salesOrderId: ORDER_STOCK,
+          nfeExternalId: 92049,
+          nfeNumber: "92049",
+        },
+      ],
+      nomusNfes: [{ id: "nfe-2049", externalId: 92049, status: 100 }],
+      stockDocuments: [
+        {
+          id: "ds-2049",
+          externalId: 82049,
+          idNfe: 92049,
+          statusRaw: "EMITIDO",
+          isCancelled: false,
+        },
+      ],
+      // Sem linha DS por produto e sem O2C — só vínculo pedido↔NF↔DS.
+      stockDocumentItems: [],
+      allocations: [],
+      productionLinks: [],
+    });
+    const pack = map.get(ORDER_STOCK)!;
+    const alloc = buildSalesOrderItemFlowAllocationsFromEvidence(pack, pack.items[0]!);
+    assert.ok(alloc.nfeAllocations.length >= 1, "NF do pedido deve ficar visível");
+    assert.ok(alloc.documentAllocations.length >= 1, "DS via idNfe deve ficar visível");
+    assert.equal(alloc.nfeAllocations[0]!.nfeExternalId, 92049);
+    assert.equal(alloc.nfeAllocations[0]!.hasDocument, true);
+
+    const flow = resolveSalesOrderItemFlowFromEvidence(pack, ITEM_STOCK)!;
+    assert.equal(flow.requiresProduction, true);
+    assert.equal(flow.remainingFulfillmentQuantity.eq(0), true);
+    assert.equal(flow.fulfilledWithoutProduction, true);
+    assert.equal(flow.currentStage, "SHIPPED_COMPLETED");
+    assert.notEqual(flow.currentStage, "WAITING_PRODUCTION_ORDER");
+  });
 });

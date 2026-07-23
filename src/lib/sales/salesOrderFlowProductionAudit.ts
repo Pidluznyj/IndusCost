@@ -129,6 +129,8 @@ export type SalesOrderFlowProductionAuditItemRow = {
   orderedQuantity: string;
   fulfilledQuantity: string | null;
   activeRemainingQuantity: string | null;
+  activeObligationQuantity: string;
+  remainingFulfillmentQuantity: string;
   shipTargetQuantity: string;
   productionOrderQuantity: string;
   producedQuantity: string | null;
@@ -137,6 +139,7 @@ export type SalesOrderFlowProductionAuditItemRow = {
   shippedQuantity: string;
   cutQuantity: string;
   canceledQuantity: string;
+  fulfilledWithoutProduction: boolean;
   calculatedStage: SalesOrderFlowStage;
   calculatedStageLabel: string;
   stageReason: string;
@@ -245,6 +248,28 @@ export type SalesOrderFlowProductionAuditReport = {
     isCanceled: boolean;
     isValidForBilling: boolean;
   }>;
+  /**
+   * Visibilidade dos vínculos canônicos Pedido → OP → DS → NF para o Kanban.
+   * Contagens vindas do pack OP-49 (mesma evidência do motor).
+   */
+  canonicalLinks: {
+    salesOrderNfeLinkCount: number;
+    validNfeCount: number;
+    canceledNfeCount: number;
+    stockDocumentCount: number;
+    stockDocumentWithNfeCount: number;
+    stockDocumentItemCount: number;
+    o2cAllocationCount: number;
+    productionLinkCount: number;
+    productionLinkCurrentCount: number;
+    productionOrderCount: number;
+    itemsWithDocumentCoverage: number;
+    itemsWithNfeCoverage: number;
+    itemsWithProductionLink: number;
+    itemsTotal: number;
+    linksVisibleToKanban: boolean;
+    summary: string;
+  } | null;
   persistedOrderSnapshot: {
     present: boolean;
     currentStage: string | null;
@@ -340,6 +365,7 @@ export function buildUnavailableSalesOrderFlowProductionAuditReport(input: {
     productionOrders: [],
     stockDocuments: [],
     nfes: [],
+    canonicalLinks: null,
     persistedOrderSnapshot: null,
     divergence: {
       hasDivergence: false,
@@ -408,6 +434,30 @@ export function formatSalesOrderFlowProductionAuditMarkdown(
       `- Itens liberados ou além: ${report.releaseSummary.releasedOrBeyondItems}`
     );
     lines.push(`- Itens cancelados: ${report.releaseSummary.canceledItems}`);
+    lines.push("");
+  }
+
+  if (report.canonicalLinks) {
+    const links = report.canonicalLinks;
+    lines.push("## Vínculos canônicos (Pedido → OP → DS → NF)");
+    lines.push("");
+    lines.push(`- Visíveis ao Kanban: **${links.linksVisibleToKanban ? "sim" : "não"}**`);
+    lines.push(`- Resumo: ${links.summary}`);
+    lines.push(`- SalesOrderNfeLink: ${links.salesOrderNfeLinkCount}`);
+    lines.push(
+      `- NF-e válidas / canceladas: ${links.validNfeCount} / ${links.canceledNfeCount}`
+    );
+    lines.push(
+      `- Documentos de saída: ${links.stockDocumentCount} (${links.stockDocumentWithNfeCount} com idNfe)`
+    );
+    lines.push(`- Linhas de DS: ${links.stockDocumentItemCount}`);
+    lines.push(`- Alocações O2C: ${links.o2cAllocationCount}`);
+    lines.push(
+      `- Vínculos OP: ${links.productionLinkCount} (${links.productionLinkCurrentCount} atuais) · OPs: ${links.productionOrderCount}`
+    );
+    lines.push(
+      `- Itens com cobertura Doc / NF / OP: ${links.itemsWithDocumentCoverage} / ${links.itemsWithNfeCoverage} / ${links.itemsWithProductionLink} (de ${links.itemsTotal})`
+    );
     lines.push("");
   }
 

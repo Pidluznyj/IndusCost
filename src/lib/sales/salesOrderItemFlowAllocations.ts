@@ -5,6 +5,8 @@
  * - OrderToCashAuditFact (quantityUsedForOrder por salesOrderItemId) — preferencial
  * - NomusStockDocumentItem.externalProductId ↔ SalesOrderItem.externalProductId
  * - NomusStockDocument.idNfe (NF ligada ao DS, mesmo sem SalesOrderNfeLink)
+ * - Fallback: item comercialmente encerrado (FULLY_FULFILLED / FULFILLED_WITH_CUT)
+ *   + SalesOrderNfeLink / NF válida do pedido + DS por idNfe
  *
  * O pack OP-49 já é escoped por pedido; documentos nele são evidência canônica
  * do pedido (O2C ou DS cujo idNfe pertence ao pedido).
@@ -126,6 +128,65 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
     nfeQtyById.set(doc.idNfe, (nfeQtyById.get(doc.idNfe) ?? 0) + qtyFromItems);
   }
 
+  // 4) Fallback canônico — item já encerrado no Nomus + NF/DS do pedido.
+  // Garante que SalesOrderNfeLink / DS.idNfe sejam visíveis ao Kanban mesmo
+  // quando OrderToCashAuditFact ou match por produto estiverem incompletos.
+  const commerciallyClosedQty = resolveCommerciallyClosedCoverageQty(item);
+  if (commerciallyClosedQty > 0) {
+    const documentedSum = documentAllocations
+      .filter((d) => d.isCanceled !== true && d.isValid !== false)
+      .reduce((s, d) => s + (Number(d.quantity) || 0), 0);
+    const invoicedSum = [...nfeQtyById.values()].reduce((s, q) => s + q, 0);
+    const gap = Math.max(0, commerciallyClosedQty - Math.max(documentedSum, invoicedSum));
+
+    if (gap > 0.000_001) {
+      const validNfes = pack.nfes.filter(
+        (n) => n.isValidForBilling && !n.isCanceled
+      );
+      for (const nfe of validNfes) {
+        if (nfeQtyById.has(nfe.externalId)) continue;
+        const docsForNfe = pack.stockDocuments.filter(
+          (d) =>
+            d.idNfe === nfe.externalId &&
+            !isStockDocumentCanceled(pack, d.externalId)
+        );
+        const qtyFromDocs = docsForNfe.reduce((sum, doc) => {
+          const byProduct = sumStockDocumentItemQtyForProduct(
+            pack,
+            doc.externalId,
+            item.externalProductId
+          );
+          return sum + byProduct;
+        }, 0);
+        // Sem linha de produto: usa o gap comercial (pedido já encerrado no Nomus).
+        const allocateQty =
+          qtyFromDocs > 0
+            ? Math.min(gap, qtyFromDocs)
+            : docsForNfe.length > 0 || validNfes.length > 0
+              ? gap
+              : 0;
+        if (allocateQty <= 0) continue;
+
+        nfeQtyById.set(nfe.externalId, allocateQty);
+
+        if (docsForNfe.length > 0 && documentedSum + 0.000_001 < commerciallyClosedQty) {
+          const primaryDoc = docsForNfe[0]!;
+          const key = `ds-nfe-fallback:${primaryDoc.externalId}:item:${item.id}`;
+          if (!seenDocKeys.has(key)) {
+            seenDocKeys.add(key);
+            documentAllocations.push({
+              allocationKey: key,
+              quantity: allocateQty,
+              isValid: true,
+              isCanceled: false,
+            });
+          }
+        }
+        break;
+      }
+    }
+  }
+
   const nfeAllocations: SalesOrderItemFlowNfeAllocationInput[] = [];
   const seenNfe = new Set<number>();
 
@@ -154,4 +215,25 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
   }
 
   return { documentAllocations, nfeAllocations };
+}
+
+/** Qty coberta quando o Nomus já encerrou comercialmente o item. */
+function resolveCommerciallyClosedCoverageQty(
+  item: SalesOrderFlowEvidencePack["items"][number]
+): number {
+  const classification = item.fulfillment.classification;
+  const ordered = item.quantity ?? 0;
+  const fulfilled = item.nomusQuantityFulfilled ?? 0;
+  if (classification === "CANCELED") return 0;
+  if (classification === "FULFILLED_WITH_CUT") {
+    return Math.max(0, fulfilled > 0 ? fulfilled : 0);
+  }
+  if (classification === "FULLY_FULFILLED") {
+    return Math.max(0, fulfilled > 0 ? fulfilled : ordered);
+  }
+  // Atendido integral por qty mesmo se status ainda não normalizado.
+  if (ordered > 0 && fulfilled + 0.000_001 >= ordered) {
+    return Math.max(0, fulfilled);
+  }
+  return 0;
 }

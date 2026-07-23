@@ -7,6 +7,7 @@ import type { PrismaClient } from "@prisma/client";
 import { loadSalesOrderFlowEvidence } from "./salesOrderFlowEvidence.server.js";
 import { resolveSalesOrderItemFlowFromEvidence } from "./salesOrderItemFlowEngine.js";
 import { resolveSalesOrderFlow } from "./salesOrderFlowEngine.js";
+import { buildSalesOrderItemFlowAllocationsFromEvidence } from "./salesOrderItemFlowAllocations.js";
 import { buildSalesOrderFlowCompletionContextFromPack } from "./salesOrderFlowCompletionDates.js";
 import {
   findSalesOrderFlowEventsByOrderId,
@@ -236,6 +237,10 @@ export async function loadSalesOrderFlowProductionAudit(
             ? null
             : Number(evidenceItem.nomusQuantityFulfilled).toFixed(2),
         activeRemainingQuantity: decStr(result.activeRemainingQuantity),
+        activeObligationQuantity:
+          decStr(result.activeObligationQuantity) ?? "0.00",
+        remainingFulfillmentQuantity:
+          decStr(result.remainingFulfillmentQuantity) ?? "0.00",
         shipTargetQuantity: decStr(result.shipTargetQuantity) ?? "0.00",
         productionOrderQuantity: decStr(result.productionOrderQuantity) ?? "0.00",
         producedQuantity: decStr(result.producedQuantity),
@@ -244,6 +249,7 @@ export async function loadSalesOrderFlowProductionAudit(
         shippedQuantity: decStr(result.shippedQuantity) ?? "0.00",
         cutQuantity: decStr(result.cutQuantity) ?? "0.00",
         canceledQuantity: decStr(result.canceledQuantity) ?? "0.00",
+        fulfilledWithoutProduction: result.fulfilledWithoutProduction,
         calculatedStage: result.currentStage,
         calculatedStageLabel:
           stageLabel(result.currentStage) ?? result.currentStage,
@@ -330,6 +336,71 @@ export async function loadSalesOrderFlowProductionAudit(
   if (hasDivergence) status = "with_divergences";
   else if (inconsistencies.length > 0) status = "with_inconsistencies";
 
+  let itemsWithDocumentCoverage = 0;
+  let itemsWithNfeCoverage = 0;
+  let itemsWithProductionLink = 0;
+  for (const item of pack.items) {
+    const alloc = buildSalesOrderItemFlowAllocationsFromEvidence(pack, item);
+    if (alloc.documentAllocations.some((d) => (Number(d.quantity) || 0) > 0)) {
+      itemsWithDocumentCoverage += 1;
+    }
+    if (alloc.nfeAllocations.some((n) => (Number(n.quantity) || 0) > 0)) {
+      itemsWithNfeCoverage += 1;
+    }
+    if (
+      pack.productionLinks.some(
+        (l) => l.salesOrderItemId === item.id && l.isCurrent !== false
+      )
+    ) {
+      itemsWithProductionLink += 1;
+    }
+  }
+
+  const salesOrderNfeLinkCount = pack.nfes.filter((n) =>
+    n.sources.includes("SALES_ORDER_NFE_LINK")
+  ).length;
+  const validNfeCount = pack.nfes.filter(
+    (n) => n.isValidForBilling && !n.isCanceled
+  ).length;
+  const canceledNfeCount = pack.nfes.filter((n) => n.isCanceled).length;
+  const stockDocumentWithNfeCount = pack.stockDocuments.filter(
+    (d) => d.idNfe != null && !d.isCancelled
+  ).length;
+  const productionLinkCurrentCount = pack.productionLinks.filter(
+    (l) => l.isCurrent !== false
+  ).length;
+
+  const linksVisibleToKanban =
+    pack.items.length > 0 &&
+    (itemsWithDocumentCoverage > 0 ||
+      itemsWithNfeCoverage > 0 ||
+      validNfeCount > 0 ||
+      stockDocumentWithNfeCount > 0 ||
+      pack.allocations.length > 0);
+
+  const canonicalLinks: NonNullable<
+    SalesOrderFlowProductionAuditReport["canonicalLinks"]
+  > = {
+    salesOrderNfeLinkCount,
+    validNfeCount,
+    canceledNfeCount,
+    stockDocumentCount: pack.stockDocuments.length,
+    stockDocumentWithNfeCount,
+    stockDocumentItemCount: pack.stockDocumentItems.length,
+    o2cAllocationCount: pack.allocations.length,
+    productionLinkCount: pack.productionLinks.length,
+    productionLinkCurrentCount,
+    productionOrderCount: pack.productionOrders.length,
+    itemsWithDocumentCoverage,
+    itemsWithNfeCoverage,
+    itemsWithProductionLink,
+    itemsTotal: pack.items.length,
+    linksVisibleToKanban,
+    summary: linksVisibleToKanban
+      ? `Pedido com evidência fiscal/documental visível ao motor (${itemsWithNfeCoverage}/${pack.items.length} itens com NF; OP atual ${productionLinkCurrentCount}).`
+      : "Sem DS/NF/O2C visíveis ao motor — Kanban pode exigir OP ou documentação sem ver faturamento Nomus.",
+  };
+
   return {
     ok: true,
     mode: "READ_ONLY",
@@ -414,6 +485,7 @@ export async function loadSalesOrderFlowProductionAudit(
       isCanceled: nfe.isCanceled,
       isValidForBilling: nfe.isValidForBilling,
     })),
+    canonicalLinks,
     persistedOrderSnapshot: {
       present: existingOrderRow != null,
       currentStage: existingOrderRow?.currentStage ?? null,
