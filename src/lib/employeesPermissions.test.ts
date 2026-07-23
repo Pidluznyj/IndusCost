@@ -13,6 +13,7 @@ import {
   canViewEmployeeLinks,
   canViewEmployeePersonalData,
   canViewEmployeeSensitiveData,
+  canViewEmployeesDashboard,
   assertEmployeesDeleteSuperAdmin,
   EmployeesAccessError,
 } from "./employeesPermissions.ts";
@@ -47,6 +48,19 @@ describe("employeesPermissions — acesso efetivo legado", () => {
     assert.equal(canViewEmployeeSensitiveData(c), false);
     assert.equal(canManageEmployeeLinks(c), false);
     assert.equal(canViewEmployeeLinks(c), true);
+    assert.equal(canViewEmployeesDashboard(c), false);
+  });
+
+  it("dashboard.view libera painel sem sensitive; edit também libera", () => {
+    assert.equal(
+      canViewEmployeesDashboard(check(["employees.dashboard.view"])),
+      true
+    );
+    assert.equal(canViewEmployeesDashboard(check(["employees.edit"])), true);
+    assert.equal(
+      canViewEmployeeSensitiveData(check(["employees.dashboard.view"])),
+      false
+    );
   });
 
   it("deny específico de vínculos mantém view e barra manage", () => {

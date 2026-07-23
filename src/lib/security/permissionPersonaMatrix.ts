@@ -142,11 +142,22 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     id: "RH",
     label: "RH",
     role: "VIEWER",
-    permissions: ["dashboard.view", "employees.view", "guide.view"],
-    expectViewModules: ["dashboard", "employees", "org-chart", "guide"],
+    permissions: [
+      "dashboard.view",
+      "employees.view",
+      "employees.dashboard.view",
+      "guide.view",
+    ],
+    expectViewModules: [
+      "dashboard",
+      "employees-dashboard",
+      "employees",
+      "org-chart",
+      "guide",
+    ],
     expectDenyModules: ["finance", "settings", "crm-commercial", "products", "sales-orders"],
     notes:
-      "Listagem com employees.view; PII/salário/vínculos manage exigem facetas ou employees.edit.",
+      "Listagem com employees.view; dashboard com employees.dashboard.view; PII/salário exigem facetas ou employees.edit.",
   },
   {
     id: "viewer",
@@ -164,6 +175,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
       "finance",
       "settings",
       "employees",
+      "employees-dashboard",
       "org-chart",
     ],
     notes: "P07: bag vazia ⇒ nenhum módulo (sem ROLE_MATRIX.VIEWER).",
@@ -176,6 +188,7 @@ export const PERMISSION_PERSONA_MATRIX: readonly PersonaSpec[] = [
     expectViewModules: ["finance"],
     expectDenyModules: [
       "employees",
+      "employees-dashboard",
       "org-chart",
       "crm-commercial",
       "products",

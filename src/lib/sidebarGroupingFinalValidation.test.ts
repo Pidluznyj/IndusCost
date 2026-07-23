@@ -99,7 +99,11 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS.maintenance,
     MODULE_LABELS.fleet,
   ],
-  "Gestão de pessoas": [MODULE_LABELS.employees, MODULE_LABELS["org-chart"]],
+  "Gestão de pessoas": [
+    MODULE_LABELS["employees-dashboard"],
+    MODULE_LABELS.employees,
+    MODULE_LABELS["org-chart"],
+  ],
   Administração: [MODULE_LABELS.settings, MODULE_LABELS.guide],
 };
 
@@ -214,21 +218,22 @@ describe("validação final — permissões por perfil de role", () => {
     assert.ok(ids.includes("proposals"));
     assert.ok(ids.includes("sales-orders"));
     assert.ok(ids.includes("output-documents"));
-    assert.equal(canAccessModule("commissions", check), false);
+    // Seed role_commercial_manager inclui commissions.view — menu de comissões é esperado.
+    assert.equal(canAccessModule("commissions", check), true);
     assert.equal(canAccessModule("pricing", check), false);
-    assert.ok(!ids.includes("commissions"));
+    assert.ok(ids.includes("commissions"));
     assert.ok(!ids.includes("pricing"));
     assert.ok(!ids.includes("settings"));
   });
 
-  it("SELLER não ganha acesso indevido a Comissões, Configurações ou Financeiro", () => {
+  it("SELLER não ganha acesso indevido a Configurações, Financeiro ou RH", () => {
     const check = profileChecker("role_seller");
     const ids = accessibleModuleIds(check);
     const forbidden: AppModuleId[] = [
-      "commissions",
       "settings",
       "finance",
       "employees",
+      "employees-dashboard",
       "pricing",
       "inventory",
       "purchases",

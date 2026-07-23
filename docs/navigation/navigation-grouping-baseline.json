@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-21T20:35:01.633Z",
+  "generatedAt": "2026-07-23T14:16:47.834Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -17,6 +17,19 @@
     },
     {
       "order": 2,
+      "itemId": "employees-dashboard",
+      "label": "Dashboard de Pessoas",
+      "path": "/employees-dashboard",
+      "groupId": "gestao_pessoas",
+      "groupLabel": "Gestão de pessoas",
+      "isDirect": false,
+      "requiredPermissions": [
+        "employees.dashboard.view",
+        "employees.edit"
+      ]
+    },
+    {
+      "order": 3,
       "itemId": "employees",
       "label": "Pessoas / RH",
       "path": "/employees",
@@ -28,7 +41,7 @@
       ]
     },
     {
-      "order": 3,
+      "order": 4,
       "itemId": "org-chart",
       "label": "Organograma",
       "path": "/org-chart",
@@ -40,7 +53,7 @@
       ]
     },
     {
-      "order": 4,
+      "order": 5,
       "itemId": "machines",
       "label": "Máquinas",
       "path": "/machines",
@@ -52,7 +65,7 @@
       ]
     },
     {
-      "order": 5,
+      "order": 6,
       "itemId": "materials",
       "label": "Suprimentos",
       "path": "/materials",
@@ -64,7 +77,7 @@
       ]
     },
     {
-      "order": 6,
+      "order": 7,
       "itemId": "purchases",
       "label": "Compras",
       "path": "/purchases",
@@ -76,7 +89,7 @@
       ]
     },
     {
-      "order": 7,
+      "order": 8,
       "itemId": "maintenance",
       "label": "Manutenção Predial",
       "path": "/maintenance",
@@ -88,7 +101,7 @@
       ]
     },
     {
-      "order": 8,
+      "order": 9,
       "itemId": "inventory",
       "label": "Estoque / Almoxarifado",
       "path": "/inventory",
@@ -100,7 +113,7 @@
       ]
     },
     {
-      "order": 9,
+      "order": 10,
       "itemId": "operations-performance",
       "label": "Performance",
       "path": "/operations-performance",
@@ -114,7 +127,7 @@
       ]
     },
     {
-      "order": 10,
+      "order": 11,
       "itemId": "production-orders",
       "label": "Ordens de Produção",
       "path": "/production-orders",
@@ -126,7 +139,7 @@
       ]
     },
     {
-      "order": 11,
+      "order": 12,
       "itemId": "projects",
       "label": "Projetos",
       "path": "/projects",
@@ -138,7 +151,7 @@
       ]
     },
     {
-      "order": 12,
+      "order": 13,
       "itemId": "fleet",
       "label": "Gestão de Frota",
       "path": "/fleet",
@@ -151,7 +164,7 @@
       ]
     },
     {
-      "order": 13,
+      "order": 14,
       "itemId": "products",
       "label": "Produtos",
       "path": "/products",
@@ -163,7 +176,7 @@
       ]
     },
     {
-      "order": 14,
+      "order": 15,
       "itemId": "transformation-simulator",
       "label": "Simulador de Custo de Injeção",
       "path": "/transformation-simulator",
@@ -176,7 +189,7 @@
       ]
     },
     {
-      "order": 15,
+      "order": 16,
       "itemId": "opex",
       "label": "Custos Indiretos",
       "path": "/opex",
@@ -189,7 +202,7 @@
       ]
     },
     {
-      "order": 16,
+      "order": 17,
       "itemId": "taxes",
       "label": "Tributos",
       "path": "/taxes",
@@ -201,7 +214,7 @@
       ]
     },
     {
-      "order": 17,
+      "order": 18,
       "itemId": "pricing",
       "label": "Formação de Preço",
       "path": "/pricing",
@@ -213,7 +226,7 @@
       ]
     },
     {
-      "order": 18,
+      "order": 19,
       "itemId": "proposals",
       "label": "Propostas",
       "path": "/proposals",
@@ -225,7 +238,7 @@
       ]
     },
     {
-      "order": 19,
+      "order": 20,
       "itemId": "sales-orders",
       "label": "Pedidos de venda",
       "path": "/sales-orders",
@@ -237,7 +250,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "sales-order-flow",
       "label": "Fluxo de Pedidos",
       "path": "/commercial/sales-order-flow",
@@ -249,7 +262,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "output-documents",
       "label": "Documentos de Saída",
       "path": "/output-documents",
@@ -261,7 +274,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -273,7 +286,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -289,7 +302,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -310,7 +323,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -322,7 +335,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -335,7 +348,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -352,7 +365,7 @@
       ]
     },
     {
-      "order": 28,
+      "order": 29,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -366,7 +379,7 @@
       ]
     },
     {
-      "order": 29,
+      "order": 30,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -382,7 +395,7 @@
       ]
     },
     {
-      "order": 30,
+      "order": 31,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -395,7 +408,7 @@
       ]
     },
     {
-      "order": 31,
+      "order": 32,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -410,6 +423,7 @@
   ],
   "appModuleRoutes": {
     "dashboard": true,
+    "employees-dashboard": true,
     "employees": true,
     "org-chart": true,
     "machines": true,
@@ -494,6 +508,10 @@
     ],
     "employees": [
       "employees.view"
+    ],
+    "employees-dashboard": [
+      "employees.dashboard.view",
+      "employees.edit"
     ],
     "org-chart": [
       "employees.view"

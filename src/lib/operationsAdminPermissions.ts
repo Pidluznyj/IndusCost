@@ -179,6 +179,13 @@ export function canViewEmployees(auth: ResourceAwareChecker): boolean {
   );
 }
 
+export function canViewEmployeesDashboard(auth: ResourceAwareChecker): boolean {
+  return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS_DASHBOARD, "view", () =>
+    auth.hasPermission("employees.dashboard.view") ||
+      auth.hasPermission("employees.edit")
+  );
+}
+
 export function canEditEmployees(auth: ResourceAwareChecker): boolean {
   return dtoOrLegacy(auth, ResourceKeys.ADMIN_PESSOAS, "update", () =>
     auth.hasPermission("employees.edit")

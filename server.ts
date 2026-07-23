@@ -205,6 +205,8 @@ import {
 import { registerCrmCustomerCommercialOwnerRoutes } from "./src/lib/crmCustomerCommercialOwnerRoutes.js";
 import { registerEmployeeLookupRoutes } from "./src/lib/employeeLookupRoutes.js";
 import { registerHrOrgStructureRoutes } from "./src/lib/hrOrgStructureRoutes.js";
+import { registerEmployeesDashboardRoutes } from "./src/lib/employeesDashboardRoutes.js";
+import { buildEmployeeCosts } from "./src/lib/employeeCostEngine.js";
 import {
   HrOrgStructureError,
   resolveForcedManagerFromOrgDepartment,
@@ -3011,30 +3013,20 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
 
   const orgLeadershipByEmployee = await loadOrgLeadershipByEmployeeId(prisma);
 
-  // Lógica de Cálculo de Custo (Motor de Custeio HH)
+  // Motor de Custeio HH (fórmula canônica — employeeCostEngine)
   const employeesWithCosts = employees.map((emp) => {
-    const salary = Number(emp.salary);
-    let totalBenefits = 0;
-    let totalCharges = 0;
-    let totalProvisions = 0;
-
-    emp.EmployeePayrollComponent.forEach((rel) => {
-      const comp = rel.PayrollComponent;
-      const value = Number(comp.value);
-      const amount =
-        comp.calculationType === "PERCENTAGE"
-          ? (salary * value) / 100
-          : value;
-
-      if (comp.type === "BENEFIT") totalBenefits += amount;
-      if (comp.type === "CHARGE") totalCharges += amount;
-      if (comp.type === "PROVISION") totalProvisions += amount;
+    const costs = buildEmployeeCosts({
+      salary: emp.salary,
+      monthlyHours: emp.monthlyHours,
+      productivity: emp.productivity,
+      components: emp.EmployeePayrollComponent.map((rel) => ({
+        id: rel.PayrollComponent.id,
+        name: rel.PayrollComponent.name,
+        type: rel.PayrollComponent.type,
+        calculationType: rel.PayrollComponent.calculationType,
+        value: Number(rel.PayrollComponent.value),
+      })),
     });
-
-    const totalMonthlyCost = salary + totalBenefits + totalCharges + totalProvisions;
-    const costPerContractedHour = totalMonthlyCost / emp.monthlyHours;
-    const productiveHours = emp.monthlyHours * (Number(emp.productivity) / 100);
-    const costPerProductiveHour = totalMonthlyCost / (productiveHours || 1);
 
     const orgLeadership = orgLeadershipByEmployee.get(emp.id) ?? {
       isOrgLeader: false,
@@ -3045,16 +3037,7 @@ app.get("/api/employees", requireAppAuth, requireResource(EMPLOYEES_RESOURCE_KEY
     const enriched = {
       ...emp,
       orgLeadership,
-      costs: {
-        salary,
-        totalBenefits,
-        totalCharges,
-        totalProvisions,
-        totalMonthlyCost,
-        costPerContractedHour,
-        costPerProductiveHour,
-        productiveHours
-      }
+      costs,
     };
 
     const personalSafe = redactEmployeePersonalEmergencyForApi(
@@ -14027,6 +14010,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerHrOrgStructureRoutes(app, {
     requireAppAuth,
     requireResource,
+  });
+
+  registerEmployeesDashboardRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getPermissionCheck: async (req) => {
+      const authUser = await getCurrentAppUser(req);
+      return employeePermCheck(authUser);
+    },
   });
 
   registerCanonicalPersonRoutes(app, {

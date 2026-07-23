@@ -57,6 +57,7 @@ describe("PERMISSION_RESOURCE_SEEDS (P08 merge)", () => {
       "engineering",
       "engineering.products",
       "admin.employees",
+      "admin.employees.dashboard",
       "admin.employees.personal_data",
       "admin.guide",
       "admin.settings",

@@ -34,6 +34,7 @@ function auth(partial: {
     role: partial.role,
     permissions,
     effectivePermissions: permissions,
+    permissionsVersion: 1,
     accessProfileId: null,
     accessProfileName: null,
     employeeId: null,
@@ -47,12 +48,14 @@ function auth(partial: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "s1",
+    sessionPermissionsVersionAtIssue: 1,
   };
 }
 
 describe("employeesAccess — matriz piloto P15", () => {
   it("resourceKeys e actions reais do contrato", () => {
     assert.equal(EMPLOYEES_RESOURCE_KEYS.module, "admin.employees");
+    assert.equal(EMPLOYEES_RESOURCE_KEYS.dashboard, "admin.employees.dashboard");
     assert.equal(EMPLOYEES_RESOURCE_KEYS.personalData, "admin.employees.personal_data");
     assert.equal(
       EMPLOYEES_RESOURCE_KEYS.administrativeData,
@@ -128,6 +131,7 @@ describe("Pessoas/RH — Leticia / finance deny / SA", () => {
     assert.equal(canEffectiveAccess(result, "admin.employees.links", "view"), false);
     assert.equal(canEffectiveAccess(result, "admin.employees.user_link", "manage"), false);
     assert.equal(canEffectiveAccess(result, "admin.employees.epi", "manage"), false);
+    assert.equal(canEffectiveAccess(result, "admin.employees.dashboard", "view"), false);
   });
 
   it("API direta: costs.view / AP / finance NÃO abrem RH", () => {
@@ -179,6 +183,38 @@ describe("Pessoas/RH — Leticia / finance deny / SA", () => {
         { legacyCompatMode: true }
       ).ok,
       true
+    );
+  });
+
+  it("dashboard: employees.dashboard.view projeta 1:1; edit/view não (edit é alias amplo→update)", () => {
+    assert.equal(
+      authorizeRequireResource(
+        auth({ role: "VIEWER", permissions: ["employees.dashboard.view"] }),
+        EMPLOYEES_RESOURCE_KEYS.dashboard,
+        "view",
+        { legacyCompatMode: true }
+      ).ok,
+      true
+    );
+    // employees.edit é multi-recurso; projeção 1:1 mapeia só admin.employees:update.
+    // A rota do dashboard usa fallback canViewEmployeesDashboard (bag) para edit.
+    assert.equal(
+      authorizeRequireResource(
+        auth({ role: "VIEWER", permissions: ["employees.edit"] }),
+        EMPLOYEES_RESOURCE_KEYS.dashboard,
+        "view",
+        { legacyCompatMode: true }
+      ).ok,
+      false
+    );
+    assert.equal(
+      authorizeRequireResource(
+        auth({ role: "VIEWER", permissions: ["employees.view"] }),
+        EMPLOYEES_RESOURCE_KEYS.dashboard,
+        "view",
+        { legacyCompatMode: true }
+      ).ok,
+      false
     );
   });
 

@@ -59,6 +59,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   maintenance: "operacoes",
   fleet: "operacoes",
   employees: "gestao_pessoas",
+  "employees-dashboard": "gestao_pessoas",
   "org-chart": "gestao_pessoas",
   settings: "administracao",
   guide: "administracao",
@@ -145,7 +146,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       comercial: 8,
       financeiro: 6,
       operacoes: 5,
-      gestao_pessoas: 2,
+      gestao_pessoas: 3,
       administracao: 2,
     });
   });
@@ -168,6 +169,7 @@ describe("navigationGroups — permissões preservadas", () => {
       ["commissions", "commissions.view"],
       ["customers", "customers.view"],
       ["employees", "employees.view"],
+      ["employees-dashboard", "employees.dashboard.view"],
       ["reports", "reports.view"],
     ];
     for (const [moduleId, perm] of samples) {

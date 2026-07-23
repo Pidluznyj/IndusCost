@@ -38,6 +38,7 @@ import { getModulePath } from "@/src/lib/navigationGroups.js";
 export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]> = {
   dashboard: ["dashboard"],
   employees: ["admin.employees"],
+  "employees-dashboard": ["admin.employees.dashboard"],
   "org-chart": ["admin.employees"],
   machines: ["operations.machines"],
   /** Shell Suprimentos: catálogo e/ou qualquer folha de Inteligência de Mercado. */

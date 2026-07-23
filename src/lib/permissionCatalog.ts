@@ -1077,6 +1077,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   // —— Custos / Operação ——
   perm({ key: "employees.view", label: "Pessoas / RH", group: OPS, module: "employees", description: "Consultar colaboradores (módulo administrativo de RH).", type: "menu" }),
   perm({
+    key: "employees.dashboard.view",
+    label: "Pessoas / RH — Dashboard",
+    group: OPS,
+    module: "employees",
+    description:
+      "Dashboard executivo de headcount e custo estimado RH. Valores em R$ exigem também dados sensíveis.",
+    type: "menu",
+    parentKey: "employees.view",
+    requires: ["employees.view"],
+  }),
+  perm({
     key: "employees.edit",
     label: "Pessoas / RH — Editar",
     group: OPS,

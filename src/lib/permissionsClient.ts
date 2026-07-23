@@ -113,6 +113,7 @@ export const ResourceKeys = {
   OPERACOES_MANUTENCAO: "operations.maintenance",
   OPERACOES_FROTA: "operations.fleet",
   ADMIN_PESSOAS: "admin.employees",
+  ADMIN_PESSOAS_DASHBOARD: "admin.employees.dashboard",
   ADMIN_PESSOAS_PERSONAL_DATA: "admin.employees.personal_data",
   ADMIN_PESSOAS_ADMINISTRATIVE_DATA: "admin.employees.administrative_data",
   ADMIN_PESSOAS_SENSITIVE_DATA: "admin.employees.sensitive_data",
@@ -785,6 +786,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "SUBMENU",
     parentKey: ResourceKeys.ADMIN,
     legacyAliasKeys: ["employees.view", "employees.edit"],
+  },
+  {
+    key: ResourceKeys.ADMIN_PESSOAS_DASHBOARD,
+    label: "RH — Dashboard",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.ADMIN_PESSOAS,
+    legacyAliasKeys: ["employees.dashboard.view", "employees.edit"],
   },
   {
     key: ResourceKeys.ADMIN_PESSOAS_PERSONAL_DATA,

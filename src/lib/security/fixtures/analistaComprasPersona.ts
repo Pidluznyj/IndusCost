@@ -79,6 +79,7 @@ export const ANALISTA_COMPRAS_DENIED_RESOURCES = [
   OPERATIONS_RESOURCE_KEYS.performance,
   OPERATIONS_RESOURCE_KEYS.productionOrders,
   "admin.employees",
+  "admin.employees.dashboard",
   "admin.settings",
   "admin.guide",
 ] as const;
@@ -113,6 +114,7 @@ export const ANALISTA_COMPRAS_DENY_MODULES = [
   "operations-performance",
   "production-orders",
   "employees",
+  "employees-dashboard",
   "org-chart",
   "settings",
   "guide",
@@ -138,6 +140,7 @@ export const ANALISTA_COMPRAS_DENY_PATHS = [
   "/operations-performance",
   "/production-orders",
   "/employees",
+  "/employees-dashboard",
   "/org-chart",
   "/settings",
   "/guide",

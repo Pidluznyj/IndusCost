@@ -91,6 +91,7 @@ export const SIDEBAR_LAYOUT_MARKERS = {
 const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   dashboard: LayoutDashboard,
   employees: Users,
+  "employees-dashboard": LayoutDashboard,
   "org-chart": Network,
   machines: Cpu,
   materials: Truck,

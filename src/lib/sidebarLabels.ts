@@ -30,6 +30,7 @@ export const NAVIGATION_GROUP_SHORT_LABELS: Record<NavigationGroupId, string> = 
 export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   dashboard: "Home",
   employees: "RH",
+  "employees-dashboard": "Dash. Pessoas",
   "org-chart": "Org.",
   machines: "Máq.",
   materials: "Supr.",

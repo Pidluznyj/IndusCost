@@ -4,6 +4,7 @@ import { Layout } from "./components/layout/Layout";
 import { DashboardModule } from "./components/DashboardModule";
 import { EmployeeModule } from "./components/EmployeeModule";
 import { HrOrgChartPage } from "./components/employee/HrOrgChartPage";
+import { EmployeesDashboardPage } from "./components/employee/EmployeesDashboardPage";
 import { MachineModule } from "./components/MachineModule";
 import { MaterialsModule } from "./components/MaterialsModule";
 import { ProductModule } from "./components/ProductModule";
@@ -395,6 +396,17 @@ export default function App() {
               description="Operação e financeiro, ou funil comercial B2B (propostas, pipeline e responsáveis) — use as abas internas."
             >
               <DashboardModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="employees-dashboard"
+          element={
+            <ModulePageShell
+              title="Dashboard de Pessoas"
+              description="Headcount, qualidade cadastral e custo estimado RH (referência salarial + verbas). Não é folha oficial."
+            >
+              <EmployeesDashboardPage />
             </ModulePageShell>
           }
         />

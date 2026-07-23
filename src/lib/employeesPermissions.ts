@@ -8,6 +8,12 @@ export const EMPLOYEES_VIEW_PERMISSIONS = [
   "employees.edit",
 ] as const;
 
+/** Dashboard de Pessoas — headcount/qualidade; R$ ainda exige sensitive_data. */
+export const EMPLOYEES_DASHBOARD_VIEW_PERMISSIONS = [
+  "employees.dashboard.view",
+  "employees.edit",
+] as const;
+
 export const EMPLOYEES_CREATE_PERMISSIONS = [
   "employees.create",
   "employees.edit",
@@ -66,6 +72,7 @@ export const EMPLOYEES_PEOPLE_SEARCH_PERMISSIONS = [
 /** ResourceKeys do contrato (espelho FE). */
 export const EMPLOYEE_RESOURCE_KEYS = {
   module: "admin.employees",
+  dashboard: "admin.employees.dashboard",
   personalData: "admin.employees.personal_data",
   administrativeData: "admin.employees.administrative_data",
   sensitiveData: "admin.employees.sensitive_data",
@@ -88,6 +95,10 @@ function hasAny(check: EmployeePermissionBag, keys: readonly string[]): boolean 
 
 export function canListEmployees(check: EmployeePermissionBag): boolean {
   return hasAny(check, EMPLOYEES_VIEW_PERMISSIONS);
+}
+
+export function canViewEmployeesDashboard(check: EmployeePermissionBag): boolean {
+  return hasAny(check, EMPLOYEES_DASHBOARD_VIEW_PERMISSIONS);
 }
 
 export function canCreateEmployees(check: EmployeePermissionBag): boolean {

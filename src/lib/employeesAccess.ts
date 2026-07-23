@@ -5,6 +5,7 @@
  * | resourceKey | actions |
  * |-------------|---------|
  * | admin.employees | view, create, update |
+ * | admin.employees.dashboard | view |
  * | admin.employees.personal_data | view |
  * | admin.employees.administrative_data | view |
  * | admin.employees.sensitive_data | view |
@@ -15,6 +16,7 @@
 
 export const EMPLOYEES_RESOURCE_KEYS = {
   module: "admin.employees",
+  dashboard: "admin.employees.dashboard",
   personalData: "admin.employees.personal_data",
   administrativeData: "admin.employees.administrative_data",
   sensitiveData: "admin.employees.sensitive_data",
@@ -36,6 +38,12 @@ export type EmployeesContractAction =
 
 export const EMPLOYEES_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/employees", resourceKey: "admin.employees", action: "view" },
+  {
+    method: "GET",
+    path: "/api/employees/dashboard-summary",
+    resourceKey: "admin.employees.dashboard",
+    action: "view",
+  },
   { method: "POST", path: "/api/employees", resourceKey: "admin.employees", action: "create" },
   { method: "PUT", path: "/api/employees/:id", resourceKey: "admin.employees", action: "update" },
   { method: "DELETE", path: "/api/employees/:id", resourceKey: "admin.employees", action: "update" },

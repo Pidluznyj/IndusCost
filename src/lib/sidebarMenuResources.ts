@@ -34,6 +34,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   maintenance: ResourceKeys.OPERACOES_MANUTENCAO,
   fleet: ResourceKeys.OPERACOES_FROTA,
   employees: ResourceKeys.ADMIN_PESSOAS,
+  "employees-dashboard": ResourceKeys.ADMIN_PESSOAS_DASHBOARD,
   "org-chart": ResourceKeys.ADMIN_PESSOAS,
   guide: ResourceKeys.ADMIN_GUIA,
   opex: ResourceKeys.FINANCE_OPEX,

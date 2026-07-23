@@ -72,6 +72,7 @@ describe("resourceNavigationAccess — perfis", () => {
     const c = ctx("ADMIN", [
       "dashboard.view",
       "crm.view",
+      "crm.general.view",
       "finance.view",
       "sales_orders.view",
     ]);
@@ -85,6 +86,7 @@ describe("resourceNavigationAccess — perfis", () => {
     const c = ctx("COMMERCIAL_MANAGER", [
       "dashboard.view",
       "crm.view",
+      "crm.general.view",
       "sales_orders.view",
       "customers.view",
       "proposals.view",
@@ -97,7 +99,12 @@ describe("resourceNavigationAccess — perfis", () => {
   });
 
   it("vendedor: CRM + pedidos; sem settings", () => {
-    const c = ctx("SELLER", ["crm.view", "sales_orders.view", "dashboard.view"]);
+    const c = ctx("SELLER", [
+      "crm.view",
+      "crm.general.view",
+      "sales_orders.view",
+      "dashboard.view",
+    ]);
     assert.equal(canViewModule("crm-commercial", c), true);
     assert.equal(canViewModule("sales-orders", c), true);
     assert.equal(canViewModule("settings", c), false);
@@ -224,6 +231,14 @@ describe("resourceNavigationAccess — rota e navegação segura", () => {
     const rh = ctx("VIEWER", ["employees.view", "dashboard.view"]);
     assert.equal(canAccessPath("/employees", rh), true);
     assert.equal(canAccessPath("/org-chart", rh), true);
+    assert.equal(canAccessPath("/employees-dashboard", rh), false);
+
+    const rhDash = ctx("VIEWER", [
+      "employees.view",
+      "employees.dashboard.view",
+      "dashboard.view",
+    ]);
+    assert.equal(canAccessPath("/employees-dashboard", rhDash), true);
     assert.equal(canAccessPath("/machines", rh), false);
 
     const eng = ctx("VIEWER", ["products.view", "dashboard.view"]);
@@ -234,7 +249,12 @@ describe("resourceNavigationAccess — rota e navegação segura", () => {
     assert.equal(canAccessPath("/settings", admin), true);
     assert.equal(canAccessPath("/finance/accounts-payable", admin), false);
 
-    const comercial = ctx("VIEWER", ["crm.view", "sales_orders.view", "dashboard.view"]);
+    const comercial = ctx("VIEWER", [
+      "crm.view",
+      "crm.general.view",
+      "sales_orders.view",
+      "dashboard.view",
+    ]);
     assert.equal(canAccessPath("/crm-commercial", comercial), true);
     assert.equal(canAccessPath("/sales-orders", comercial), true);
     assert.equal(canAccessPath("/employees", comercial), false);

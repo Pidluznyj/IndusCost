@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { 
   Plus, 
   Search, 
@@ -164,9 +164,27 @@ function DetailField({
   );
 }
 
+const EMPLOYEE_LIST_GAP_KEYS = [
+  "withoutAppUser",
+  "withoutCorporateEmail",
+  "withoutCostCenter",
+  "withoutDepartment",
+  "withoutManager",
+  "withoutSalary",
+  "withoutPayrollComponents",
+] as const;
+
+type EmployeeListGapKey = (typeof EMPLOYEE_LIST_GAP_KEYS)[number];
+
+function isEmployeeListGapKey(value: string | null): value is EmployeeListGapKey {
+  return Boolean(value && (EMPLOYEE_LIST_GAP_KEYS as readonly string[]).includes(value));
+}
+
 export const EmployeeModule = () => {
   const auth = useAuth();
   const permissions = usePermissions();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const canEdit =
     canEditEmployees(auth) ||
     permissions.canPerformAction(EMPLOYEES_RESOURCE_KEYS.module, EMPLOYEES_ACTIONS.update);
@@ -275,6 +293,7 @@ export const EmployeeModule = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [listClassificationFilter, setListClassificationFilter] = useState<"" | CreateEmployeeInput["classification"]>("");
   const [listStatusFilter, setListStatusFilter] = useState<"" | "ACTIVE" | "INACTIVE">("");
+  const [listGapFilter, setListGapFilter] = useState<"" | EmployeeListGapKey>("");
   const [showLegacyEstimates, setShowLegacyEstimates] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
@@ -492,6 +511,27 @@ export const EmployeeModule = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    const status = searchParams.get("status");
+    if (status === "ACTIVE" || status === "INACTIVE") {
+      setListStatusFilter(status);
+    }
+    const classification = searchParams.get("classification");
+    if (
+      classification === "DIRETO" ||
+      classification === "INDIRETO" ||
+      classification === "APOIO"
+    ) {
+      setListClassificationFilter(classification);
+    }
+    const gap = searchParams.get("gap");
+    if (isEmployeeListGapKey(gap)) {
+      setListGapFilter(gap);
+    }
+    const q = searchParams.get("q");
+    if (q) setSearchTerm(q);
+  }, [searchParams]);
 
   useEffect(() => {
     return () => {
@@ -843,6 +883,18 @@ export const EmployeeModule = () => {
     return employees.filter((emp) => {
       if (listClassificationFilter && emp.classification !== listClassificationFilter) return false;
       if (listStatusFilter && emp.status !== listStatusFilter) return false;
+      if (listGapFilter === "withoutAppUser" && emp.appUser) return false;
+      if (listGapFilter === "withoutCorporateEmail" && emp.corporateEmail?.trim()) return false;
+      if (listGapFilter === "withoutCostCenter" && emp.costCenterId) return false;
+      if (listGapFilter === "withoutDepartment" && emp.departmentId) return false;
+      if (listGapFilter === "withoutManager" && emp.managerId) return false;
+      if (listGapFilter === "withoutSalary" && Number(emp.salary) > 0) return false;
+      if (
+        listGapFilter === "withoutPayrollComponents" &&
+        (emp.EmployeePayrollComponent?.length ?? 0) > 0
+      ) {
+        return false;
+      }
       if (!q) return true;
       return (
         (emp.name ?? "").toLowerCase().includes(q) ||
@@ -852,12 +904,32 @@ export const EmployeeModule = () => {
         (emp.department ?? "").toLowerCase().includes(q)
       );
     });
-  }, [employees, searchTerm, listClassificationFilter, listStatusFilter]);
+  }, [
+    employees,
+    searchTerm,
+    listClassificationFilter,
+    listStatusFilter,
+    listGapFilter,
+  ]);
+
+  const gapFilterLabels: Record<EmployeeListGapKey, string> = {
+    withoutAppUser: "Sem usuário de acesso",
+    withoutCorporateEmail: "Sem e-mail corporativo",
+    withoutCostCenter: "Sem centro de custo",
+    withoutDepartment: "Sem departamento",
+    withoutManager: "Sem gestor",
+    withoutSalary: "Sem referência salarial",
+    withoutPayrollComponents: "Sem verbas",
+  };
 
   const clearListFilters = () => {
     setSearchTerm("");
     setListClassificationFilter("");
     setListStatusFilter("");
+    setListGapFilter("");
+    if (searchParams.toString()) {
+      navigate("/employees", { replace: true });
+    }
   };
 
   const tableColSpan = 6 + (showLegacyEstimates && canViewSensitiveHr ? 3 : 0);
@@ -989,7 +1061,12 @@ export const EmployeeModule = () => {
             <button
               type="button"
               onClick={clearListFilters}
-              disabled={!searchTerm.trim() && !listClassificationFilter && !listStatusFilter}
+              disabled={
+                !searchTerm.trim() &&
+                !listClassificationFilter &&
+                !listStatusFilter &&
+                !listGapFilter
+              }
               className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-sm font-medium disabled:opacity-50 disabled:hover:bg-card"
               title="Limpar filtros"
             >
@@ -997,6 +1074,15 @@ export const EmployeeModule = () => {
               Limpar
             </button>
           </div>
+
+          {listGapFilter ? (
+            <p className="text-xs text-muted-foreground">
+              Filtro do dashboard:{" "}
+              <span className="font-medium text-foreground">
+                {gapFilterLabels[listGapFilter]}
+              </span>
+            </p>
+          ) : null}
 
           <p className="text-xs text-muted-foreground">
             Exibindo <span className="font-bold text-foreground">{filteredEmployees.length}</span> de{" "}
