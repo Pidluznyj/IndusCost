@@ -315,6 +315,7 @@
     "test:sales-order:operational-evidence": "tsx --test src/lib/sales/salesOrderOperationalEvidenceGraph.test.ts",
     "audit:sales-order:operational-links": "tsx scripts/auditSalesOrderOperationalLinks.ts",
     "test:sales-order:operational-links": "tsx --test src/lib/sales/salesOrderOperationalLinkageAudit.test.ts",
+    "test:sales-order:output-document-links": "tsx --test src/lib/sales/salesOrderOutputDocumentLinkResolver.test.ts src/lib/sales/salesOrderItemFlowAllocations.test.ts",
     "test:finance:effective-schedule-matrix": "tsx --test src/lib/finance/effectiveScheduleMatrix.integration.test.ts",
     "test:finance:staged-delivery": "tsx --test src/lib/finance/salesOrderStagedDeliverySchedule.test.ts",
     "repair:staged-delivery-schedules:preview": "tsx scripts/repairStagedDeliverySchedules.ts preview",

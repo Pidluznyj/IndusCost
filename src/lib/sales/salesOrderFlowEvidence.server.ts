@@ -25,6 +25,10 @@ import {
   type SalesOrderFlowEvidenceStockDocumentItemRow,
   type SalesOrderFlowEvidenceStockDocumentRow,
 } from "./salesOrderFlowEvidence.js";
+import {
+  buildStockDocumentOrderRefJsonPathFilters,
+  extractOutputDocumentOrderRefsFromRaw,
+} from "./salesOrderOutputDocumentLinkResolver.js";
 
 export type SalesOrderFlowEvidencePrisma = Pick<
   PrismaClient,
@@ -303,10 +307,28 @@ export async function loadSalesOrderFlowEvidenceBatch(
     ? uniqueNumbers(allocations.map((a) => a.stockDocumentExternalId))
     : [];
 
-  // 8) Documentos de saída: por externalId (O2C) e por idNfe (NF oficial)
+  // KAN-LINK-04 — descoberta por refs oficiais no raw (sem migration / sem NF obrigatória).
+  const orderExternalIds = includeFiscalEvidence
+    ? uniqueNumbers(orders.map((o) => o.externalSalesOrderId))
+    : [];
+  const itemExternalIds = includeFiscalEvidence
+    ? uniqueNumbers(
+        orders.flatMap((o) =>
+          (o.items ?? []).map((i) => i.nomusItemExternalId)
+        )
+      )
+    : [];
+  const orderRefFilters = buildStockDocumentOrderRefJsonPathFilters({
+    externalSalesOrderIds: orderExternalIds,
+    externalSalesOrderItemIds: itemExternalIds,
+  });
+
+  // 8) Documentos de saída: O2C · idNfe · refs oficiais no raw do cabeçalho
   const stockDocumentsRaw =
     includeFiscalEvidence &&
-    (stockExternalFromAlloc.length > 0 || nfeExternalIds.length > 0)
+    (stockExternalFromAlloc.length > 0 ||
+      nfeExternalIds.length > 0 ||
+      orderRefFilters.length > 0)
       ? await prisma.nomusStockDocument.findMany({
           where: {
             OR: [
@@ -316,6 +338,7 @@ export async function loadSalesOrderFlowEvidenceBatch(
               ...(nfeExternalIds.length > 0
                 ? [{ idNfe: { in: nfeExternalIds } }]
                 : []),
+              ...orderRefFilters.map((f) => f as never),
             ],
           },
           select: {
@@ -330,19 +353,82 @@ export async function loadSalesOrderFlowEvidenceBatch(
             isCancelled: true,
             cancelledAt: true,
             cancellationReason: true,
+            rawJson: true,
+          },
+        })
+      : [];
+
+  // Itens com ref oficial de pedido/item (podem apontar docs ainda não carregados).
+  const stockItemsByOrderRefRaw =
+    includeFiscalEvidence && orderRefFilters.length > 0
+      ? await prisma.nomusStockDocumentItem.findMany({
+          where: { OR: orderRefFilters.map((f) => f as never) },
+          select: {
+            id: true,
+            stockDocumentId: true,
+            externalItemId: true,
+            externalProductId: true,
+            quantity: true,
+            rawJson: true,
+          },
+        })
+      : [];
+
+  const extraDocIds = uniqueStrings(
+    stockItemsByOrderRefRaw.map((i) => i.stockDocumentId)
+  ).filter((id) => !stockDocumentsRaw.some((d) => d.id === id));
+
+  const extraDocsRaw =
+    includeFiscalEvidence && extraDocIds.length > 0
+      ? await prisma.nomusStockDocument.findMany({
+          where: { id: { in: extraDocIds } },
+          select: {
+            id: true,
+            externalId: true,
+            idNfe: true,
+            tipoDocumentoEstoque: true,
+            dataDocumento: true,
+            documentNumber: true,
+            totalValue: true,
+            statusRaw: true,
+            isCancelled: true,
+            cancelledAt: true,
+            cancellationReason: true,
+            rawJson: true,
           },
         })
       : [];
 
   // Dedup docs by externalId (query OR pode repetir)
-  const stockDocMap = new Map<number, SalesOrderFlowEvidenceStockDocumentRow>();
-  for (const doc of stockDocumentsRaw) {
-    stockDocMap.set(doc.externalId, doc);
+  const stockDocMap = new Map<
+    number,
+    SalesOrderFlowEvidenceStockDocumentRow & { rawJson?: unknown }
+  >();
+  for (const doc of [...stockDocumentsRaw, ...extraDocsRaw]) {
+    const headerRefs = extractOutputDocumentOrderRefsFromRaw(doc.rawJson);
+    stockDocMap.set(doc.externalId, {
+      id: doc.id,
+      externalId: doc.externalId,
+      idNfe: doc.idNfe,
+      tipoDocumentoEstoque: doc.tipoDocumentoEstoque,
+      dataDocumento: doc.dataDocumento,
+      documentNumber: doc.documentNumber,
+      totalValue: doc.totalValue,
+      statusRaw: doc.statusRaw,
+      isCancelled: doc.isCancelled,
+      cancelledAt: doc.cancelledAt,
+      cancellationReason: doc.cancellationReason,
+      externalSalesOrderId: headerRefs.externalSalesOrderId,
+      orderCodeNormalized: headerRefs.orderCodeNormalized,
+      rawJson: doc.rawJson,
+    });
   }
-  const stockDocuments = [...stockDocMap.values()];
+  const stockDocuments: SalesOrderFlowEvidenceStockDocumentRow[] = [
+    ...stockDocMap.values(),
+  ].map(({ rawJson: _raw, ...row }) => row);
   const stockDocumentIds = stockDocuments.map((d) => d.id);
 
-  // 9) Itens de documento
+  // 9) Itens de documento (+ refs oficiais do raw)
   const stockDocumentItemsRaw =
     includeFiscalEvidence && stockDocumentIds.length > 0
       ? await prisma.nomusStockDocumentItem.findMany({
@@ -353,11 +439,34 @@ export async function loadSalesOrderFlowEvidenceBatch(
             externalItemId: true,
             externalProductId: true,
             quantity: true,
+            rawJson: true,
           },
         })
       : [];
-  const stockDocumentItems: SalesOrderFlowEvidenceStockDocumentItemRow[] =
-    stockDocumentItemsRaw;
+
+  const itemById = new Map<string, (typeof stockDocumentItemsRaw)[number]>();
+  for (const row of [...stockDocumentItemsRaw, ...stockItemsByOrderRefRaw]) {
+    itemById.set(row.id, row);
+  }
+
+  const stockDocumentItems: SalesOrderFlowEvidenceStockDocumentItemRow[] = [
+    ...itemById.values(),
+  ].map((row) => {
+    const refs = extractOutputDocumentOrderRefsFromRaw(row.rawJson);
+    return {
+      id: row.id,
+      stockDocumentId: row.stockDocumentId,
+      externalItemId: row.externalItemId,
+      externalProductId: row.externalProductId ?? refs.externalProductId,
+      quantity: row.quantity,
+      externalSalesOrderId: refs.externalSalesOrderId,
+      externalSalesOrderItemId: refs.externalSalesOrderItemId,
+      orderCodeNormalized: refs.orderCodeNormalized,
+      salesOrderItemSequence: refs.salesOrderItemSequence,
+      unitCode: refs.unitCode,
+      descriptionHintOrderCode: refs.descriptionHintOrderCode,
+    };
+  });
 
   return assembleSalesOrderFlowEvidenceBatch({
     orders,

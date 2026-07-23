@@ -492,6 +492,8 @@ SalesOrderItemOperationalLink {
 
 **KAN-LINK-03 (implementado):** auditoria read-only `npm run audit:sales-order:operational-links -- --order="PD 02757"` (`src/lib/sales/salesOrderOperationalLinkageAudit*.ts`). Sem writes/Nomus; saída só com `--output` + `--json`/`--markdown`.
 
+**KAN-LINK-04 (implementado):** resolvedor canônico DS→Pedido/item (`salesOrderOutputDocumentLinkResolver.ts`) — refs oficiais no `rawJson` (sem migration); DS com vínculo direto entra no pack sem exigir NF; produto só se inequívoco no pedido.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

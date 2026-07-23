@@ -65,3 +65,15 @@ npm run audit:sales-order:operational-links -- --order="PD 02757" --json --markd
 - JSON/Markdown só com `--json` / `--markdown`.
 - Exit `0` sem divergência crítica; `1` com crítica; `2` erro técnico.
 - Garantias: `databaseWrites=false`, `nomusCalls=false`.
+
+---
+
+## Resolvedor DS → Pedido/item (KAN-LINK-04)
+
+Implementação: `src/lib/sales/salesOrderOutputDocumentLinkResolver.ts` + integração em `salesOrderFlowEvidence*.ts` / `salesOrderItemFlowAllocations.ts`.
+
+**Precedência:** idPedido → codigoPedido → idItemPedido/sequência → SalesOrderNfeLink → DS→NF autorizada → hint inequívoco → sem vínculo.
+
+**Multi-pedido / item:** linhas resolvidas independentemente; produto só se inequívoco no pedido; ambíguo = cobertura ORDER_LEVEL / AMBIGUOUS sem rateio.
+
+**Sem migration:** refs lidas do `rawJson` na carga; DS com vínculo direto entra no pack mesmo sem NF sincronizada.

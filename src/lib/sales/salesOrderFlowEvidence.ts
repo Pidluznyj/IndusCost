@@ -151,6 +151,9 @@ export type SalesOrderFlowEvidenceStockDocument = {
   cancelledAt: string | null;
   cancellationReason: string | null;
   itemCount: number;
+  /** Refs oficiais de cabeçalho (KAN-LINK-04). */
+  externalSalesOrderId?: number | null;
+  orderCodeNormalized?: string | null;
 };
 
 export type SalesOrderFlowEvidenceStockDocumentItem = {
@@ -160,6 +163,13 @@ export type SalesOrderFlowEvidenceStockDocumentItem = {
   externalItemId: number | null;
   externalProductId: number | null;
   quantity: number | null;
+  /** Refs oficiais extraídas do raw (KAN-LINK-04) — opcionais. */
+  externalSalesOrderId?: number | null;
+  externalSalesOrderItemId?: number | null;
+  orderCodeNormalized?: string | null;
+  salesOrderItemSequence?: string | null;
+  unitCode?: string | null;
+  descriptionHintOrderCode?: string | null;
 };
 
 export type SalesOrderFlowEvidenceAllocation = {
@@ -355,6 +365,9 @@ export type SalesOrderFlowEvidenceStockDocumentRow = {
   isCancelled?: boolean | null;
   cancelledAt?: Date | string | null;
   cancellationReason?: string | null;
+  /** Refs oficiais de cabeçalho (KAN-LINK-04). */
+  externalSalesOrderId?: number | null;
+  orderCodeNormalized?: string | null;
 };
 
 export type SalesOrderFlowEvidenceStockDocumentItemRow = {
@@ -363,6 +376,12 @@ export type SalesOrderFlowEvidenceStockDocumentItemRow = {
   externalItemId?: number | null;
   externalProductId?: number | null;
   quantity?: unknown;
+  externalSalesOrderId?: number | null;
+  externalSalesOrderItemId?: number | null;
+  orderCodeNormalized?: string | null;
+  salesOrderItemSequence?: string | null;
+  unitCode?: string | null;
+  descriptionHintOrderCode?: string | null;
 };
 
 export type SalesOrderFlowEvidenceAllocationRow = {
@@ -769,6 +788,60 @@ export function assembleSalesOrderFlowEvidenceBatch(
         if (doc.idNfe === nfe.externalId) stockExternalIds.add(doc.externalId);
       }
     }
+    // KAN-LINK-04 — refs oficiais pedido/item no DS (sem exigir NF sincronizada).
+    const orderCodeNorm = (() => {
+      const raw = (order.orderCode ?? order.externalSalesOrderCode ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, "");
+      const m = /^PD[-_]?(\d+)$/.exec(raw);
+      return m ? `PD${m[1]}` : null;
+    })();
+    for (const doc of stockDocsByExternalId.values()) {
+      if (
+        order.externalSalesOrderId != null &&
+        doc.externalSalesOrderId === order.externalSalesOrderId
+      ) {
+        stockExternalIds.add(doc.externalId);
+      }
+      if (
+        orderCodeNorm &&
+        doc.orderCodeNormalized &&
+        doc.orderCodeNormalized === orderCodeNorm
+      ) {
+        stockExternalIds.add(doc.externalId);
+      }
+    }
+    for (const si of stockItems) {
+      const parent = stockDocsById.get(si.stockDocumentId);
+      if (!parent) continue;
+      if (
+        order.externalSalesOrderId != null &&
+        si.externalSalesOrderId === order.externalSalesOrderId
+      ) {
+        stockExternalIds.add(parent.externalId);
+      }
+      if (
+        si.externalSalesOrderItemId != null &&
+        itemExternalIds.has(si.externalSalesOrderItemId)
+      ) {
+        stockExternalIds.add(parent.externalId);
+      }
+      if (
+        orderCodeNorm &&
+        si.orderCodeNormalized &&
+        si.orderCodeNormalized === orderCodeNorm
+      ) {
+        stockExternalIds.add(parent.externalId);
+      }
+      if (
+        orderCodeNorm &&
+        si.descriptionHintOrderCode &&
+        si.descriptionHintOrderCode === orderCodeNorm
+      ) {
+        stockExternalIds.add(parent.externalId);
+      }
+    }
 
     const stockDocuments: SalesOrderFlowEvidenceStockDocument[] = [];
     for (const externalId of stockExternalIds) {
@@ -788,6 +861,8 @@ export function assembleSalesOrderFlowEvidenceBatch(
         cancelledAt: iso(doc.cancelledAt),
         cancellationReason: doc.cancellationReason?.trim() || null,
         itemCount,
+        externalSalesOrderId: doc.externalSalesOrderId ?? null,
+        orderCodeNormalized: doc.orderCodeNormalized ?? null,
       });
     }
 
@@ -803,6 +878,12 @@ export function assembleSalesOrderFlowEvidenceBatch(
           externalItemId: i.externalItemId ?? null,
           externalProductId: i.externalProductId ?? null,
           quantity: dec(i.quantity),
+          externalSalesOrderId: i.externalSalesOrderId ?? null,
+          externalSalesOrderItemId: i.externalSalesOrderItemId ?? null,
+          orderCodeNormalized: i.orderCodeNormalized ?? null,
+          salesOrderItemSequence: i.salesOrderItemSequence ?? null,
+          unitCode: i.unitCode ?? null,
+          descriptionHintOrderCode: i.descriptionHintOrderCode ?? null,
         };
       });
 

@@ -1,15 +1,14 @@
 /**
  * Alocações documentais e fiscais por item — vínculo canônico Pedido → DS → NF-e.
  *
- * Fontes (sem fuzzy matching):
- * - OrderToCashAuditFact (quantityUsedForOrder por salesOrderItemId) — preferencial
- * - NomusStockDocumentItem.externalProductId ↔ SalesOrderItem.externalProductId
- * - NomusStockDocument.idNfe (NF ligada ao DS, mesmo sem SalesOrderNfeLink)
- * - Fallback: item comercialmente encerrado (FULLY_FULFILLED / FULFILLED_WITH_CUT)
- *   + SalesOrderNfeLink / NF válida do pedido + DS por idNfe
+ * KAN-LINK-04: resolvedor oficial de linhas DS → item (idItemPedido / sequência /
+ * NfeLink / produto inequívoco). Sem fuzzy por cliente/valor/data.
  *
- * O pack OP-49 já é escoped por pedido; documentos nele são evidência canônica
- * do pedido (O2C ou DS cujo idNfe pertence ao pedido).
+ * Fontes (precedência):
+ * - OrderToCashAuditFact (quantityUsedForOrder por salesOrderItemId)
+ * - Linhas DS resolvidas por refs oficiais (salesOrderOutputDocumentLinkResolver)
+ * - NF via DS.idNfe / SalesOrderNfeLink (mesmo qty documental — sem somar 2×)
+ * - Fallback: item comercialmente encerrado + NF/DS do pedido
  */
 
 import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
@@ -17,6 +16,15 @@ import type {
   SalesOrderItemFlowDocumentAllocationInput,
   SalesOrderItemFlowNfeAllocationInput,
 } from "./salesOrderItemFlowEngine.js";
+import {
+  nfeValidityFromStatus,
+  normalizeOutputDocumentOrderCode,
+  resolveOutputDocumentLineLinks,
+  sumDocumentedQuantityBySalesOrderItem,
+  type OutputDocumentLinkDocumentInput,
+  type OutputDocumentLinkLineInput,
+  type OutputDocumentOrderRefExtract,
+} from "./salesOrderOutputDocumentLinkResolver.js";
 
 function isStockDocumentCanceled(
   pack: SalesOrderFlowEvidencePack,
@@ -29,19 +37,114 @@ function isStockDocumentCanceled(
   return raw.includes("cancel");
 }
 
-function sumStockDocumentItemQtyForProduct(
-  pack: SalesOrderFlowEvidencePack,
-  stockDocumentExternalId: number,
-  externalProductId: number | null
-): number {
-  if (externalProductId == null) return 0;
-  let total = 0;
-  for (const row of pack.stockDocumentItems) {
-    if (row.stockDocumentExternalId !== stockDocumentExternalId) continue;
-    if (row.externalProductId !== externalProductId) continue;
-    total += row.quantity ?? 0;
-  }
-  return total;
+function refsFromEvidenceItem(
+  item: SalesOrderFlowEvidencePack["stockDocumentItems"][number]
+): OutputDocumentOrderRefExtract {
+  return {
+    externalSalesOrderId: item.externalSalesOrderId ?? null,
+    orderCode: null,
+    orderCodeNormalized: item.orderCodeNormalized ?? null,
+    externalSalesOrderItemId: item.externalSalesOrderItemId ?? null,
+    salesOrderItemSequence: item.salesOrderItemSequence ?? null,
+    externalProductId: item.externalProductId ?? null,
+    unitCode: item.unitCode ?? null,
+    descriptionHintOrderCode: item.descriptionHintOrderCode ?? null,
+  };
+}
+
+function buildCanonicalDocumentLinks(pack: SalesOrderFlowEvidencePack) {
+  const nfeLinked = new Set(
+    pack.nfes
+      .filter((n) => n.linkedSalesOrderIds.includes(pack.orderId))
+      .map((n) => n.externalId)
+  );
+  // Também considera NF presentes no pack (descobertas via O2C/idNfe).
+  for (const n of pack.nfes) nfeLinked.add(n.externalId);
+
+  const documents: OutputDocumentLinkDocumentInput[] = pack.stockDocuments.map(
+    (d) => {
+      const nfe =
+        d.idNfe != null
+          ? pack.nfes.find((n) => n.externalId === d.idNfe)
+          : null;
+      return {
+        id: d.id,
+        externalId: d.externalId,
+        idNfe: d.idNfe,
+        isCancelled: d.isCancelled,
+        statusRaw: d.statusRaw,
+        tipoDocumentoEstoque: d.tipoDocumentoEstoque,
+        headerRefs: {
+          externalSalesOrderId: d.externalSalesOrderId ?? null,
+          orderCode: null,
+          orderCodeNormalized: d.orderCodeNormalized ?? null,
+          externalSalesOrderItemId: null,
+          salesOrderItemSequence: null,
+          externalProductId: null,
+          unitCode: null,
+          descriptionHintOrderCode: null,
+        },
+        nfeValidity: nfe
+          ? nfeValidityFromStatus({
+              isCanceled: nfe.isCanceled,
+              isValidForBilling: nfe.isValidForBilling,
+              statusNormalized: nfe.statusNormalized.statusNormalized,
+            })
+          : d.idNfe == null
+            ? null
+            : "UNKNOWN",
+        linkedViaSalesOrderNfeLink: d.idNfe != null && nfeLinked.has(d.idNfe),
+      };
+    }
+  );
+
+  const lines: OutputDocumentLinkLineInput[] = pack.stockDocumentItems.map(
+    (line) => ({
+      id: line.id,
+      stockDocumentId: line.stockDocumentId,
+      stockDocumentExternalId: line.stockDocumentExternalId,
+      externalProductId: line.externalProductId,
+      quantity: line.quantity,
+      refs: refsFromEvidenceItem(line),
+    })
+  );
+
+  const items = pack.items.map((item) => ({
+    id: item.id,
+    salesOrderId: pack.orderId,
+    externalSalesOrderId: pack.order.externalSalesOrderId,
+    orderCodeNormalized: normalizeOutputDocumentOrderCode(pack.order.orderCode),
+    nomusItemExternalId: item.nomusItemExternalId,
+    nomusItemSequence: item.nomusItemSequence,
+    externalProductId: item.externalProductId,
+  }));
+
+  const links = resolveOutputDocumentLineLinks({
+    salesOrderId: pack.orderId,
+    externalSalesOrderId: pack.order.externalSalesOrderId,
+    orderCodeNormalized: normalizeOutputDocumentOrderCode(pack.order.orderCode),
+    items,
+    documents,
+    lines,
+    nfeExternalIdsLinked: nfeLinked,
+  });
+
+  const o2c = pack.allocations
+    .filter(
+      (a) =>
+        a.stockDocumentExternalId == null ||
+        !isStockDocumentCanceled(pack, a.stockDocumentExternalId)
+    )
+    .map((a) => ({
+      salesOrderItemId: a.salesOrderItemId,
+      stockDocumentExternalId: a.stockDocumentExternalId,
+      stockDocumentItemId: a.stockDocumentItemId,
+      quantityUsedForOrder: a.quantityUsedForOrder,
+      auditKey: a.auditKey,
+    }));
+
+  const documentedByItem = sumDocumentedQuantityBySalesOrderItem(links, o2c);
+  return { links, documentedByItem, nfeLinked };
 }
 
 export type SalesOrderItemFlowAllocationBuildResult = {
@@ -57,8 +160,12 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
   pack: SalesOrderFlowEvidencePack,
   item: SalesOrderFlowEvidencePack["items"][number]
 ): SalesOrderItemFlowAllocationBuildResult {
-  const itemAllocations = pack.allocations.filter((a) => a.salesOrderItemId === item.id);
+  const itemAllocations = pack.allocations.filter(
+    (a) => a.salesOrderItemId === item.id
+  );
   const nfeById = new Map(pack.nfes.map((n) => [n.externalId, n] as const));
+  const { links, documentedByItem, nfeLinked } =
+    buildCanonicalDocumentLinks(pack);
 
   const documentAllocations: SalesOrderItemFlowDocumentAllocationInput[] = [];
   const seenDocKeys = new Set<string>();
@@ -82,30 +189,45 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
     });
   }
 
-  // 2) DS do pack por produto (sem NF obrigatória; evita duplicar O2C).
-  for (const doc of pack.stockDocuments) {
-    if (o2cStockDocExternalIds.has(doc.externalId)) continue;
-    if (isStockDocumentCanceled(pack, doc.externalId)) continue;
-
-    const qtyFromItems = sumStockDocumentItemQtyForProduct(
-      pack,
-      doc.externalId,
-      item.externalProductId
-    );
-    if (qtyFromItems <= 0) continue;
-
-    const key = `ds:${doc.externalId}:product:${item.externalProductId ?? "na"}`;
+  // 2) Linhas DS resolvidas canonicamente para este item.
+  const itemLinks = links.filter(
+    (l) =>
+      l.salesOrderItemId === item.id &&
+      l.advancesKanban &&
+      l.itemCoverage === "RESOLVED"
+  );
+  for (const link of itemLinks) {
+    if (o2cStockDocExternalIds.has(link.stockDocumentExternalId)) continue;
+    const key = `ds-line:${link.stockDocumentItemId}`;
     if (seenDocKeys.has(key)) continue;
     seenDocKeys.add(key);
     documentAllocations.push({
       allocationKey: key,
-      quantity: qtyFromItems,
+      quantity: link.quantity,
       isValid: true,
       isCanceled: false,
     });
   }
 
-  // 3) NF — O2C preferencial; complemento via DS.idNfe → linhas do produto.
+  // Fallback de cobertura agregada do resolvedor (protege joins 1:N).
+  const resolvedQty = documentedByItem.get(item.id) ?? 0;
+  const allocatedSum = documentAllocations
+    .filter((d) => d.isCanceled !== true && d.isValid !== false)
+    .reduce((s, d) => s + (Number(d.quantity) || 0), 0);
+  if (resolvedQty > allocatedSum + 0.000_001) {
+    const key = `ds-resolved:${item.id}`;
+    if (!seenDocKeys.has(key)) {
+      seenDocKeys.add(key);
+      documentAllocations.push({
+        allocationKey: key,
+        quantity: resolvedQty - allocatedSum,
+        isValid: true,
+        isCanceled: false,
+      });
+    }
+  }
+
+  // 3) NF — O2C preferencial; complemento via DS.idNfe (mesma qty do documento, sem 2×).
   const nfeQtyById = new Map<number, number>();
   for (const a of itemAllocations) {
     if (a.nfeExternalId == null) continue;
@@ -114,30 +236,30 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
     nfeQtyById.set(a.nfeExternalId, (nfeQtyById.get(a.nfeExternalId) ?? 0) + q);
   }
 
-  for (const doc of pack.stockDocuments) {
-    if (doc.idNfe == null) continue;
+  for (const link of itemLinks) {
+    const doc = pack.stockDocuments.find(
+      (d) => d.externalId === link.stockDocumentExternalId
+    );
+    if (!doc?.idNfe) continue;
     if (nfeQtyById.has(doc.idNfe)) continue;
     if (isStockDocumentCanceled(pack, doc.externalId)) continue;
-
-    const qtyFromItems = sumStockDocumentItemQtyForProduct(
-      pack,
-      doc.externalId,
-      item.externalProductId
-    );
-    if (qtyFromItems <= 0) continue;
-    nfeQtyById.set(doc.idNfe, (nfeQtyById.get(doc.idNfe) ?? 0) + qtyFromItems);
+    const nfe = nfeById.get(doc.idNfe);
+    if (nfe?.isCanceled === true) continue;
+    if (nfe && !nfe.isValidForBilling) continue;
+    nfeQtyById.set(doc.idNfe, (nfeQtyById.get(doc.idNfe) ?? 0) + link.quantity);
   }
 
   // 4) Fallback canônico — item já encerrado no Nomus + NF/DS do pedido.
-  // Garante que SalesOrderNfeLink / DS.idNfe sejam visíveis ao Kanban mesmo
-  // quando OrderToCashAuditFact ou match por produto estiverem incompletos.
   const commerciallyClosedQty = resolveCommerciallyClosedCoverageQty(item);
   if (commerciallyClosedQty > 0) {
     const documentedSum = documentAllocations
       .filter((d) => d.isCanceled !== true && d.isValid !== false)
       .reduce((s, d) => s + (Number(d.quantity) || 0), 0);
     const invoicedSum = [...nfeQtyById.values()].reduce((s, q) => s + q, 0);
-    const gap = Math.max(0, commerciallyClosedQty - Math.max(documentedSum, invoicedSum));
+    const gap = Math.max(
+      0,
+      commerciallyClosedQty - Math.max(documentedSum, invoicedSum)
+    );
 
     if (gap > 0.000_001) {
       const validNfes = pack.nfes.filter(
@@ -150,18 +272,14 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
             d.idNfe === nfe.externalId &&
             !isStockDocumentCanceled(pack, d.externalId)
         );
-        const qtyFromDocs = docsForNfe.reduce((sum, doc) => {
-          const byProduct = sumStockDocumentItemQtyForProduct(
-            pack,
-            doc.externalId,
-            item.externalProductId
-          );
-          return sum + byProduct;
-        }, 0);
-        // Sem linha de produto: usa o gap comercial (pedido já encerrado no Nomus).
+        const qtyFromResolved = itemLinks
+          .filter((l) =>
+            docsForNfe.some((d) => d.externalId === l.stockDocumentExternalId)
+          )
+          .reduce((s, l) => s + l.quantity, 0);
         const allocateQty =
-          qtyFromDocs > 0
-            ? Math.min(gap, qtyFromDocs)
+          qtyFromResolved > 0
+            ? Math.min(gap, qtyFromResolved)
             : docsForNfe.length > 0 || validNfes.length > 0
               ? gap
               : 0;
@@ -169,7 +287,10 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
 
         nfeQtyById.set(nfe.externalId, allocateQty);
 
-        if (docsForNfe.length > 0 && documentedSum + 0.000_001 < commerciallyClosedQty) {
+        if (
+          docsForNfe.length > 0 &&
+          documentedSum + 0.000_001 < commerciallyClosedQty
+        ) {
           const primaryDoc = docsForNfe[0]!;
           const key = `ds-nfe-fallback:${primaryDoc.externalId}:item:${item.id}`;
           if (!seenDocKeys.has(key)) {
@@ -196,7 +317,9 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
     const nfe = nfeById.get(nfeExternalId);
     const hasDocument =
       pack.stockDocuments.some(
-        (d) => d.idNfe === nfeExternalId && !isStockDocumentCanceled(pack, d.externalId)
+        (d) =>
+          d.idNfe === nfeExternalId &&
+          !isStockDocumentCanceled(pack, d.externalId)
       ) ||
       itemAllocations.some(
         (a) =>
@@ -208,7 +331,8 @@ export function buildSalesOrderItemFlowAllocationsFromEvidence(
       nfeExternalId,
       quantity,
       isCanceled: nfe?.isCanceled === true,
-      isValidForBilling: nfe?.isValidForBilling !== false && nfe?.isCanceled !== true,
+      isValidForBilling:
+        nfe?.isValidForBilling !== false && nfe?.isCanceled !== true,
       hasDocument,
       hasShipDate: false,
     });
@@ -231,7 +355,6 @@ function resolveCommerciallyClosedCoverageQty(
   if (classification === "FULLY_FULFILLED") {
     return Math.max(0, fulfilled > 0 ? fulfilled : ordered);
   }
-  // Atendido integral por qty mesmo se status ainda não normalizado.
   if (ordered > 0 && fulfilled + 0.000_001 >= ordered) {
     return Math.max(0, fulfilled);
   }
