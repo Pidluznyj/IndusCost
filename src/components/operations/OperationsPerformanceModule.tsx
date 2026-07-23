@@ -383,6 +383,7 @@ export function OperationsPerformanceModule() {
                   <th className="px-4 py-3 font-semibold">Tipo</th>
                   <th className="px-4 py-3 font-semibold text-right">Ciclo (s)</th>
                   <th className="px-4 py-3 font-semibold text-right">Cavidades</th>
+                  <th className="px-4 py-3 font-semibold text-right">Setup (min)</th>
                   <th className="px-4 py-3 font-semibold text-right">Peças/h</th>
                   <th className="px-4 py-3 font-semibold">Última alteração</th>
                   <th className="px-4 py-3 font-semibold text-right">Ações</th>
@@ -406,6 +407,9 @@ export function OperationsPerformanceModule() {
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {formatPerformanceNumber(item.process.cavities, 0)}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {formatPerformanceNumber(item.process.setupTimeMin)}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {formatPerformanceNumber(item.estimatedPiecesPerHour, 0)}

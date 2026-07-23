@@ -23,4 +23,10 @@ describe("operations performance navigation", () => {
     assert.match(moduleSrc, /patchComponentPerformanceProduct/);
     assert.match(moduleSrc, /fetchComponentPerformanceHistory/);
   });
+
+  it("lista exibe coluna Setup (min)", () => {
+    const moduleSrc = read("src/components/operations/OperationsPerformanceModule.tsx");
+    assert.match(moduleSrc, /Setup \(min\)/);
+    assert.match(moduleSrc, /item\.process\.setupTimeMin/);
+  });
 });
