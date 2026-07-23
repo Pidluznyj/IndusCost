@@ -1,4 +1,9 @@
-/* Resumo comercial — Pedidos de Venda (listagem). Badge de margem parcial. */
+/* Resumo comercial — Pedidos de Venda (listagem). */
+.sales-order-list-overview-kpi.executive-summary-section {
+  overflow: visible;
+}
+
+/* Badge de margem parcial. */
 .sales-order-list-summary-margin-badge {
   display: inline-flex;
   align-items: center;
@@ -15,4 +20,22 @@
 .dark .sales-order-list-summary-margin-badge {
   background: rgb(69 26 3 / 0.45);
   color: rgb(253 230 138);
+}
+
+/* Tooltip de custo via portal (body) — acima de filtros, gráficos e tabela. */
+.sales-order-list-cost-tooltip-panel {
+  position: fixed;
+  z-index: 10050;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--color-border, hsl(214.3 31.8% 91.4%));
+  background: var(--color-popover, hsl(0 0% 100%));
+  color: var(--color-popover-foreground, hsl(222.2 84% 4.9%));
+  box-shadow:
+    0 12px 36px rgb(0 0 0 / 0.18),
+    0 2px 8px rgb(0 0 0 / 0.1);
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  pointer-events: none;
 }

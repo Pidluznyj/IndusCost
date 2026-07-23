@@ -1,4 +1,5 @@
-import React, { memo } from "react";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Info, Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
@@ -15,7 +16,85 @@ import { buildSalesOrderListCostBreakdownTooltipText } from "@/src/lib/salesOrde
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import "./sales-order-list-summary-cards.css";
-import "./sales-order-list-table.css";
+
+function SalesOrderListCostHoverTooltip({
+  text,
+  children,
+}: {
+  text: string;
+  children: React.ReactNode;
+}) {
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(
+    null
+  );
+
+  const updatePosition = useCallback(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const width = Math.min(22 * 16, Math.max(16 * 16, window.innerWidth * 0.7));
+    let left = rect.left;
+    if (left + width > window.innerWidth - 8) {
+      left = Math.max(8, window.innerWidth - width - 8);
+    }
+    setCoords({
+      top: rect.bottom + 8,
+      left,
+      width,
+    });
+  }, []);
+
+  const show = useCallback(() => {
+    updatePosition();
+    setOpen(true);
+  }, [updatePosition]);
+
+  const hide = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onReposition = () => updatePosition();
+    window.addEventListener("scroll", onReposition, true);
+    window.addEventListener("resize", onReposition);
+    return () => {
+      window.removeEventListener("scroll", onReposition, true);
+      window.removeEventListener("resize", onReposition);
+    };
+  }, [open, updatePosition]);
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative min-w-0"
+      data-testid="sales-order-list-estimated-cost-card"
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
+      {children}
+      {open && coords && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="sales-order-list-cost-tooltip-panel"
+              role="tooltip"
+              data-testid="sales-order-list-estimated-cost-tooltip"
+              style={{
+                top: coords.top,
+                left: coords.left,
+                width: coords.width,
+              }}
+            >
+              {text}
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
+  );
+}
 
 export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCards({
   summary,
@@ -44,11 +123,52 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
       ? buildSalesOrderListCostBreakdownTooltipText(marginSummary?.costBreakdown)
       : null;
 
+  const costCard = (
+    <SystemTotalizerCard
+      className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+      label="Custo estimado"
+      amount={costAmount}
+      amountFormat="currency"
+      value={
+        loading
+          ? undefined
+          : costUnavailable
+            ? showMarginCard
+              ? "Indisponível"
+              : "—"
+            : undefined
+      }
+      tone={costUnavailable ? "neutral" : "internal"}
+      icon={Scale}
+      helperText={
+        !showMarginCard
+          ? "Custo industrial interno (requer permissão de custo/margem)."
+          : costUnavailable
+            ? "Sem custo publicado suficiente nos pedidos filtrados."
+            : "Passe o mouse para ver MP, HH, HM, demais e impostos."
+      }
+      valueSize={costUnavailable && !loading ? "text" : "default"}
+      labelAccessory={
+        costBreakdownTooltip ? (
+          <span
+            className="inline-flex text-muted-foreground"
+            aria-hidden
+            title="Discriminação do custo"
+          >
+            <Info className="h-3.5 w-3.5" />
+          </span>
+        ) : undefined
+      }
+      loading={loading}
+    />
+  );
+
   return (
     <SalesOrderKpiSection
       testId="sales-order-list-overview"
       title={SALES_ORDER_LIST_KPI_SECTION.title}
       subtitle={SALES_ORDER_LIST_KPI_SECTION.subtitle}
+      className="sales-order-list-overview-kpi"
     >
       <SummaryKpiGrid
         minColumnWidth={168}
@@ -74,57 +194,15 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
-        <div
-          data-testid="sales-order-list-estimated-cost-card"
-          className="sales-order-margin-tooltip-wrap relative min-w-0"
-        >
-          <SystemTotalizerCard
-            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-            label="Custo estimado"
-            amount={costAmount}
-            amountFormat="currency"
-            value={
-              loading
-                ? undefined
-                : costUnavailable
-                  ? showMarginCard
-                    ? "Indisponível"
-                    : "—"
-                  : undefined
-            }
-            tone={costUnavailable ? "neutral" : "internal"}
-            icon={Scale}
-            helperText={
-              !showMarginCard
-                ? "Custo industrial interno (requer permissão de custo/margem)."
-                : costUnavailable
-                  ? "Sem custo publicado suficiente nos pedidos filtrados."
-                  : "Passe o mouse para ver MP, HH, HM, demais e impostos."
-            }
-            valueSize={costUnavailable && !loading ? "text" : "default"}
-            labelAccessory={
-              costBreakdownTooltip ? (
-                <span
-                  className="inline-flex text-muted-foreground"
-                  aria-hidden
-                  title="Discriminação do custo"
-                >
-                  <Info className="h-3.5 w-3.5" />
-                </span>
-              ) : undefined
-            }
-            loading={loading}
-          />
-          {costBreakdownTooltip ? (
-            <div
-              className="sales-order-margin-tooltip-panel text-left whitespace-pre-line"
-              role="tooltip"
-              data-testid="sales-order-list-estimated-cost-tooltip"
-            >
-              {costBreakdownTooltip}
-            </div>
-          ) : null}
-        </div>
+        {costBreakdownTooltip ? (
+          <SalesOrderListCostHoverTooltip text={costBreakdownTooltip}>
+            {costCard}
+          </SalesOrderListCostHoverTooltip>
+        ) : (
+          <div className="min-w-0" data-testid="sales-order-list-estimated-cost-card">
+            {costCard}
+          </div>
+        )}
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Ticket médio"
