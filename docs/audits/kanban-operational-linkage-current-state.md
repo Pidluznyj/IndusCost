@@ -488,6 +488,8 @@ SalesOrderItemOperationalLink {
 3. `SalesOrderNfeLink` continua obrigatório para descoberta DS↔PV **ou** evoluir discovery oficial sem cliente/valor/data.
 4. Um único resolvedor alimenta motor + auditoria + O2C (sem segundo classificador FE).
 
+**KAN-LINK-02 (implementado):** contrato `SalesOrderOperationalEvidenceGraph` — ver `docs/commercial/sales-order-flow/operational-evidence-contract.md` e `src/lib/sales/salesOrderOperationalEvidence*.ts`. Não é um segundo motor; adapta coberturas válidas para `resolveSalesOrderItemFlow`.
+
 ---
 
 ## 14. Comandos read-only para validar PD 02757 no servidor

@@ -312,6 +312,7 @@
     "audit:sales-order:flow": "tsx scripts/auditSalesOrderFlow.ts",
     "audit:sales-order:flow:integrity": "tsx scripts/auditSalesOrderFlowIntegrity.ts",
     "test:sales-order:flow-audit": "tsx --test src/lib/sales/salesOrderFlowProductionAudit.test.ts src/lib/sales/salesOrderFlowIntegrityAudit.test.ts",
+    "test:sales-order:operational-evidence": "tsx --test src/lib/sales/salesOrderOperationalEvidenceGraph.test.ts",
     "test:finance:effective-schedule-matrix": "tsx --test src/lib/finance/effectiveScheduleMatrix.integration.test.ts",
     "test:finance:staged-delivery": "tsx --test src/lib/finance/salesOrderStagedDeliverySchedule.test.ts",
     "repair:staged-delivery-schedules:preview": "tsx scripts/repairStagedDeliverySchedules.ts preview",
