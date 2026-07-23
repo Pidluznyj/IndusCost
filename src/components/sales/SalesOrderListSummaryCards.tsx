@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { Package, Percent, Receipt, ShoppingBag, Ticket } from "lucide-react";
+import { Percent, Receipt, Scale, ShoppingBag, Ticket } from "lucide-react";
 import {
   SYSTEM_TOTALIZER_GRID_CLASS,
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
@@ -34,6 +34,13 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
   const marginMoneyLabel = marginUnavailable
     ? "—"
     : formatCompactCurrency(marginSummary?.totalMarginValue ?? null);
+  const costUnavailable = !showMarginCard || marginUnavailable;
+  const costAmount =
+    loading || costUnavailable ? null : (marginSummary?.totalCost ?? null);
+  const taxSubtitle =
+    loading || costUnavailable
+      ? undefined
+      : `Impostos (margem): ${formatCompactCurrency(marginSummary?.taxAmount ?? 0)}`;
 
   return (
     <SalesOrderKpiSection
@@ -65,16 +72,37 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           helperText="Soma do valor líquido dos pedidos filtrados."
           loading={loading}
         />
-        <SystemTotalizerCard
-          className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-          label="Itens"
-          amount={loading ? null : summary.totalItems}
-          amountFormat="number"
-          tone="neutral"
-          icon={Package}
-          helperText="Quantidade de itens nos pedidos filtrados."
-          loading={loading}
-        />
+        <div data-testid="sales-order-list-estimated-cost-card" className="min-w-0">
+          <SystemTotalizerCard
+            className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
+            label="Custo estimado"
+            amount={costAmount}
+            amountFormat="currency"
+            value={
+              loading
+                ? undefined
+                : costUnavailable
+                  ? showMarginCard
+                    ? "Indisponível"
+                    : "—"
+                  : undefined
+            }
+            subtitle={taxSubtitle}
+            tone={costUnavailable ? "neutral" : "internal"}
+            icon={Scale}
+            helperText={
+              !showMarginCard
+                ? "Custo industrial interno (requer permissão de custo/margem)."
+                : costUnavailable
+                  ? "Sem custo publicado suficiente nos pedidos filtrados."
+                  : marginPartial
+                    ? "CIU (MP + HH + HM + demais) do filtro — cobertura parcial."
+                    : "CIU (MP + HH + HM + demais) dos pedidos filtrados — mesmo custo da margem."
+            }
+            valueSize={costUnavailable && !loading ? "text" : "default"}
+            loading={loading}
+          />
+        </div>
         <SystemTotalizerCard
           className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
           label="Ticket médio"

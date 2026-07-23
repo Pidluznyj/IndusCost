@@ -370,8 +370,12 @@ describe("salesOrdersListSummary", () => {
     assert.ok(page.includes("SalesOrderListSummaryCards"));
     assert.ok(cards.includes("Pedidos filtrados"));
     assert.ok(cards.includes("Valor vendido"));
+    assert.ok(cards.includes("Custo estimado"));
+    assert.ok(cards.includes("totalCost"));
+    assert.ok(cards.includes("taxAmount"));
     assert.ok(cards.includes("Ticket médio"));
     assert.ok(cards.includes("Margem geral"));
+    assert.doesNotMatch(cards, /label="Itens"/);
     assert.ok(page.includes("marginSummary"));
   });
 
