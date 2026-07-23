@@ -13,6 +13,7 @@ export const FINANCE_MODULE_RESOURCE_KEYS = {
   salesOrders: "finance.sales_orders",
   costCenters: "finance.cost_centers",
   executiveReport: "finance.executive_report",
+  dre: "finance.dre",
   suppliers: "finance.suppliers",
   suppliersServiceTermination: "finance.suppliers.service_termination",
   portfolio: "finance.portfolio_reconciliation",
@@ -76,6 +77,10 @@ export const FINANCE_MODULE_PILOT_ENDPOINTS = [
   // Relatório Presidencial
   { method: "GET", path: "/api/finance/executive-report", resourceKey: "finance.executive_report", action: "view" },
 
+  // DRE Gerencial
+  { method: "GET", path: "/api/finance/dre", resourceKey: "finance.dre", action: "view" },
+  { method: "GET", path: "/api/finance/dre/export", resourceKey: "finance.dre", action: "view" },
+
   // Fornecedores
   { method: "GET", path: "/api/finance/suppliers", resourceKey: "finance.suppliers", action: "view" },
   { method: "POST", path: "/api/finance/suppliers/apply", resourceKey: "finance.suppliers", action: "manage" },
@@ -123,6 +128,7 @@ export const FINANCE_LETICIA_DENIED_RESOURCE_KEYS = [
   FINANCE_MODULE_RESOURCE_KEYS.salesOrders,
   FINANCE_MODULE_RESOURCE_KEYS.costCenters,
   FINANCE_MODULE_RESOURCE_KEYS.executiveReport,
+  FINANCE_MODULE_RESOURCE_KEYS.dre,
   FINANCE_MODULE_RESOURCE_KEYS.suppliers,
   FINANCE_MODULE_RESOURCE_KEYS.suppliersServiceTermination,
   FINANCE_MODULE_RESOURCE_KEYS.portfolio,

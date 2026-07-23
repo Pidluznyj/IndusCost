@@ -22,7 +22,8 @@ export type FinanceModuleTabId =
   | "suppliers"
   | "portfolio-reconciliation"
   | "cost-centers"
-  | "executive-report";
+  | "executive-report"
+  | "dre";
 
 export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
   "cash-flow": "Fluxo de Caixa",
@@ -34,6 +35,7 @@ export const FINANCE_MODULE_TAB_LABELS: Record<FinanceModuleTabId, string> = {
   "portfolio-reconciliation": "Conciliação de Carteira",
   "cost-centers": "Centros de Custo",
   "executive-report": "Relatório Executivo",
+  dre: "DRE Gerencial",
 };
 
 export const FINANCE_MODULE_TAB_ENDPOINTS: Record<FinanceModuleTabId, string> = {
@@ -46,6 +48,7 @@ export const FINANCE_MODULE_TAB_ENDPOINTS: Record<FinanceModuleTabId, string> = 
   "portfolio-reconciliation": "/api/finance/portfolio-reconciliation",
   "cost-centers": "/api/finance/cost-centers/dashboard",
   "executive-report": "/api/finance/executive-report",
+  dre: "/api/finance/dre",
 };
 
 /** Breadcrumb padrão: FINANCEIRO · NOME DA ABA */

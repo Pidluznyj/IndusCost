@@ -23,6 +23,7 @@ export const FINANCE_SECTION_CONTRACT_KEYS: Record<FinanceSectionId, string> = {
   "sales-orders": "finance.sales_orders",
   "cost-centers": "finance.cost_centers",
   "executive-report": "finance.executive_report",
+  dre: "finance.dre",
 };
 
 /** Seções do FinanceModule → resourceKey FE (catálogo). */
@@ -34,6 +35,7 @@ export const FINANCE_SECTION_FE_RESOURCE_KEYS: Record<FinanceSectionId, string> 
   "sales-orders": "finance.sales_orders",
   "cost-centers": "finance.cost_centers",
   "executive-report": "finance.executive_report",
+  dre: "finance.dre",
 };
 
 export const FINANCE_UI_SECTIONS: ReadonlyArray<{
@@ -91,6 +93,13 @@ export const FINANCE_UI_SECTIONS: ReadonlyArray<{
     path: "/finance/executive-report",
     resourceKey: FINANCE_SECTION_FE_RESOURCE_KEYS["executive-report"],
     contractKey: FINANCE_SECTION_CONTRACT_KEYS["executive-report"],
+  },
+  {
+    id: "dre",
+    label: "DRE Gerencial",
+    path: "/finance/dre",
+    resourceKey: FINANCE_SECTION_FE_RESOURCE_KEYS.dre,
+    contractKey: FINANCE_SECTION_CONTRACT_KEYS.dre,
   },
 ];
 

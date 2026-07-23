@@ -1,0 +1,327 @@
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Download, Maximize2, Printer, RefreshCw } from "lucide-react";
+import { useAuth } from "@/src/contexts/AuthContext";
+import { fetchJsonOk } from "@/src/lib/http";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
+import type { FinanceDreReport } from "@/src/lib/financeDreTypes";
+import { canViewFinanceDre } from "@/src/lib/financeDrePermissions";
+import {
+  buildFinanceDreQuery,
+  createDefaultFinanceDreUiFilters,
+  financeDreFiltersEqual,
+  getFinanceDreApiPath,
+  getFinanceDreExportPath,
+  normalizeFinanceDreUiFilters,
+  type FinanceDreUiFilters,
+} from "@/src/lib/financeDreViewModel";
+import {
+  FinanceModuleErrorBanner,
+  FinanceModulePageLoading,
+} from "@/src/components/finance/shared/FinanceModuleStates";
+import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
+import { financeBiCardClass, financeBiShellClass } from "@/src/lib/financeBiDashboardTheme";
+import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
+import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
+import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
+import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
+import { cn } from "@/src/lib/utils";
+
+const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => String(new Date().getFullYear() - 3 + i));
+const MONTH_OPTIONS = [
+  { value: "1", label: "Janeiro" },
+  { value: "2", label: "Fevereiro" },
+  { value: "3", label: "Março" },
+  { value: "4", label: "Abril" },
+  { value: "5", label: "Maio" },
+  { value: "6", label: "Junho" },
+  { value: "7", label: "Julho" },
+  { value: "8", label: "Agosto" },
+  { value: "9", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+];
+
+function KpiCard({
+  label,
+  value,
+  hint,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  tone?: "default" | "positive" | "negative";
+}) {
+  return (
+    <div className={cn(financeBiCardClass, "p-4")}>
+      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-2 text-xl font-semibold tabular-nums",
+          tone === "positive" && "text-emerald-700",
+          tone === "negative" && "text-rose-700"
+        )}
+      >
+        {value}
+      </div>
+      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+    </div>
+  );
+}
+
+export function FinanceManagerialDrePage() {
+  const auth = useAuth();
+  const canView = canViewFinanceDre(auth);
+
+  const [draftFilters, setDraftFilters] = useState<FinanceDreUiFilters>(() =>
+    createDefaultFinanceDreUiFilters()
+  );
+  const [appliedFilters, setAppliedFilters] = useState<FinanceDreUiFilters>(() =>
+    createDefaultFinanceDreUiFilters()
+  );
+  const [report, setReport] = useState<FinanceDreReport | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [presentationOpen, setPresentationOpen] = useState(false);
+
+  const appliedQuery = useMemo(
+    () => buildFinanceDreQuery(appliedFilters),
+    [appliedFilters]
+  );
+  const hasPendingFilterChanges = !financeDreFiltersEqual(draftFilters, appliedFilters);
+  const filterStatus = resolveFinanceBiFilterStatus(true, hasPendingFilterChanges);
+
+  const loadReport = useCallback(async () => {
+    if (!canView) {
+      setLoading(false);
+      setError("Você não possui permissão para visualizar o DRE Gerencial.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const url = getFinanceDreApiPath(appliedQuery);
+      const payload = await fetchJsonOk<FinanceDreReport>(url);
+      setReport(payload);
+    } catch (err) {
+      setReport(null);
+      setError(buildFinanceTabLoadError("Falha ao carregar o DRE Gerencial.", err));
+    } finally {
+      setLoading(false);
+    }
+  }, [appliedQuery, canView]);
+
+  useEffect(() => {
+    void loadReport();
+  }, [loadReport]);
+
+  const applyFilters = () => {
+    setAppliedFilters(normalizeFinanceDreUiFilters(draftFilters));
+  };
+
+  const handleExport = () => {
+    window.open(getFinanceDreExportPath(appliedQuery), "_blank", "noopener,noreferrer");
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  if (!canView) {
+    return (
+      <FinanceModuleErrorBanner message="Você não possui permissão para visualizar o DRE Gerencial." />
+    );
+  }
+
+  return (
+    <div className={cn(financeBiShellClass, "space-y-5")} data-testid="finance-dre-page">
+      <div className="flex flex-wrap items-start justify-between gap-3 no-print">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+            Financeiro · DRE Gerencial
+          </div>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
+            DRE Gerencial Mensal
+          </h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Receita por NF-e emitida, deduções fiscais, CMV oficial e despesas por centro de custo —
+            pronto para apresentação ao conselho.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <FinanceBiFilterStatusBadge status={filterStatus} />
+          <button
+            type="button"
+            onClick={() => void loadReport()}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar
+          </button>
+          <button
+            type="button"
+            onClick={handleExport}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <Printer className="h-4 w-4" />
+            Imprimir
+          </button>
+          <button
+            type="button"
+            onClick={() => setPresentationOpen(true)}
+            disabled={!report}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#1e3a5f] px-3 py-2 text-sm font-semibold text-white hover:bg-[#163053] disabled:opacity-50"
+            data-testid="finance-dre-open-presentation"
+          >
+            <Maximize2 className="h-4 w-4" />
+            Abrir apresentação
+          </button>
+        </div>
+      </div>
+
+      <section className={cn(financeBiCardClass, "p-4 no-print")} data-testid="finance-dre-filters">
+        <div className="grid grid-cols-12 gap-3">
+          <label className="col-span-12 sm:col-span-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground">Ano</span>
+            <select
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              value={draftFilters.year}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, year: e.target.value }))}
+            >
+              {YEAR_OPTIONS.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="col-span-12 sm:col-span-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground">Mês destaque</span>
+            <select
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              value={draftFilters.month}
+              onChange={(e) => setDraftFilters((prev) => ({ ...prev, month: e.target.value }))}
+            >
+              {MONTH_OPTIONS.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="col-span-12 sm:col-span-3 space-y-1">
+            <span className="text-[10px] font-bold uppercase text-muted-foreground">Empresa</span>
+            <select
+              className="h-9 w-full rounded-lg border border-border bg-background px-3 text-sm"
+              value={draftFilters.company}
+              onChange={(e) =>
+                setDraftFilters((prev) => ({
+                  ...prev,
+                  company: e.target.value as FinanceDreUiFilters["company"],
+                }))
+              }
+            >
+              <option value="all">Todas</option>
+              <option value="lazarios">Lazarios</option>
+              <option value="koppetel">Koppetel</option>
+              <option value="sm">SM</option>
+            </select>
+          </label>
+          <div className="col-span-12 sm:col-span-3 flex items-end">
+            <button
+              type="button"
+              onClick={applyFilters}
+              className="h-9 w-full rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:opacity-95"
+            >
+              Aplicar filtros
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {error ? <FinanceModuleErrorBanner message={error} /> : null}
+      {loading ? <FinanceModulePageLoading label="Montando DRE Gerencial…" /> : null}
+
+      {!loading && report ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <KpiCard
+              label="Receita líquida (mês)"
+              value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+            />
+            <KpiCard
+              label="Lucro bruto (mês)"
+              value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
+              hint={
+                report.kpis.margemBrutaPct == null
+                  ? undefined
+                  : `Margem ${report.kpis.margemBrutaPct.toFixed(1).replace(".", ",")}%`
+              }
+              tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
+            />
+            <KpiCard
+              label="Resultado operacional"
+              value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
+              hint={
+                report.kpis.margemOperacionalPct == null
+                  ? undefined
+                  : `Margem ${report.kpis.margemOperacionalPct.toFixed(1).replace(".", ",")}%`
+              }
+              tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
+            />
+            <KpiCard
+              label="Lucro líquido aproximado"
+              value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
+              tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
+            />
+          </div>
+
+          {report.qualityAlerts.length > 0 ? (
+            <div className="space-y-2 no-print">
+              {report.qualityAlerts.map((alert) => (
+                <div
+                  key={alert.code}
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                >
+                  {alert.message}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="space-y-2">
+            <div className="flex items-end justify-between gap-2">
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">{report.subtitle}</h2>
+                <p className="text-xs text-muted-foreground">
+                  Visão resumida (mês + YTD). Abra a apresentação para comparar mês a mês.
+                </p>
+              </div>
+            </div>
+            <FinanceDreGrid report={report} showAllMonths={false} />
+            <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
+          </div>
+
+          <FinanceDrePresentationModal
+            open={presentationOpen}
+            report={report}
+            onClose={() => setPresentationOpen(false)}
+            onPrint={handlePrint}
+            onExport={handleExport}
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}

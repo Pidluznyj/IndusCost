@@ -71,7 +71,8 @@ export const FISCAL_NFE_BILLING_NOTE =
 function nfeXmlDestNameSql(xmlExpr: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`NULLIF(TRIM((regexp_match(COALESCE(${xmlExpr}, ''), ${NFE_XML_DEST_XNOME_REGEXP}, 'is'))[1]), '')`;
 }
-function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase, alias = ""): Prisma.Sql {
+/** Data de competência oficial do faturamento NF-e (exportada para motores derivados, ex.: DRE). */
+export function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase, alias = ""): Prisma.Sql {
   const prefix = alias ? `${alias}.` : "";
   if (dateBase === "processamento") {
     return Prisma.sql`COALESCE(${Prisma.raw(`${prefix}"dataProcessamento"`)}, ${Prisma.raw(`${prefix}"xmlDhEmi"`)})`;
@@ -79,7 +80,8 @@ function nfeCompetenceDateSql(dateBase: FinanceBillingDateBase, alias = ""): Pri
   return Prisma.sql`COALESCE(${Prisma.raw(`${prefix}"xmlDhEmi"`)}, ${Prisma.raw(`${prefix}"dataProcessamento"`)})`;
 }
 
-function fiscalNfeWhereSql(
+/** Predicado oficial MARKET_REVENUE autorizado (exportado para motores derivados, ex.: DRE). */
+export function fiscalNfeWhereSql(
   dateBase: FinanceBillingDateBase,
   emitterCnpjDigits?: string,
   alias = ""

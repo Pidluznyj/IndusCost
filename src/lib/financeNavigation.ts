@@ -10,6 +10,7 @@ export const FINANCE_SECTION_IDS = [
   "sales-orders",
   "cost-centers",
   "executive-report",
+  "dre",
 ] as const;
 
 export type FinanceSectionId = (typeof FINANCE_SECTION_IDS)[number];
@@ -30,6 +31,7 @@ export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   "sales-orders": "/finance/sales-orders",
   "cost-centers": "/finance/cost-centers",
   "executive-report": "/finance/executive-report",
+  dre: "/finance/dre",
 };
 
 export const FINANCE_DEFAULT_SECTION: FinanceSectionId = "accounts-receivable";
@@ -75,6 +77,11 @@ export const FINANCE_SECTIONS: FinanceSectionDef[] = [
     id: "executive-report",
     label: "Relatório Presidencial",
     path: FINANCE_SECTION_PATHS["executive-report"],
+  },
+  {
+    id: "dre",
+    label: "DRE Gerencial",
+    path: FINANCE_SECTION_PATHS.dre,
   },
 ];
 

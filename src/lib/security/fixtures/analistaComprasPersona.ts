@@ -71,6 +71,7 @@ export const ANALISTA_COMPRAS_DENIED_RESOURCES = [
   "finance.billing",
   "finance.sales_orders",
   "finance.executive_report",
+  "finance.dre",
   "finance.portfolio_reconciliation",
   "finance.opex",
   "finance.taxes",

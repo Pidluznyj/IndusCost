@@ -375,6 +375,7 @@ import { registerFinanceCashFlowRoutes } from "./src/lib/financeCashFlowRoutes.j
 import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financePortfolioReconciliationRoutes.js";
 import { registerFiscalSettlementRoutes } from "./src/lib/finance/fiscalSettlementRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
+import { registerFinanceDreRoutes } from "./src/lib/financeDreRoutes.js";
 import {
   FINANCE_MODULE_ACTIONS,
   FINANCE_MODULE_RESOURCE_KEYS,
@@ -15369,6 +15370,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   });
 
   registerFinanceExecutiveReportRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    getCurrentAppUser,
+  });
+
+  registerFinanceDreRoutes(app, {
     requireAppAuth,
     requireResource,
     getCurrentAppUser,

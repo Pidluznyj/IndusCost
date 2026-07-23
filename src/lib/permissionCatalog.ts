@@ -327,6 +327,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     risk: "sensitive",
   }),
   perm({
+    key: "finance.dre.view",
+    label: "Financeiro — DRE Gerencial Mensal",
+    group: FIN,
+    module: "finance",
+    description: "Consultar o DRE gerencial mensal (NF-e, centros de custo e CMV oficial).",
+    type: "section",
+    parentKey: "finance.view",
+    requires: ["finance.view"],
+    risk: "sensitive",
+  }),
+  perm({
     key: "finance.cost_center_rules.view",
     label: "Financeiro — Ver regras de classificação",
     group: FIN,
