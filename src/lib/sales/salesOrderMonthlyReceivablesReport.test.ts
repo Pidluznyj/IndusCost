@@ -13,6 +13,7 @@ import {
   defaultDueMonthRange,
   defaultMonthlyReceivablesYearFilters,
   formatYearMonthKey,
+  rowHasReceivablesInSelectedPeriod,
   scrollLeftToAlignMonthAfterSticky,
   yearMonthKeyFromDueIso,
 } from "./salesOrderMonthlyReceivablesReport.js";
@@ -407,6 +408,50 @@ describe("salesOrderMonthlyReceivablesReport — paridade FIN-08", () => {
     assert.equal(row.periodScheduleTotal, 4000);
     assert.equal(row.outsidePeriodTotal, 6000);
     assert.equal(row.effectiveScheduleTotal, 10_000);
+    assert.equal(rowHasReceivablesInSelectedPeriod(row), true);
+  });
+
+  it("pedido só com títulos fora do período não entra no grid", () => {
+    const schedule = buildSalesOrderEffectiveFinancialSchedule({
+      salesOrderId: "so-out",
+      orderCode: "PD 09999",
+      originalInstallments: [
+        { installmentNumber: 1, dueDate: "2026-05-01", amount: "3000.00" },
+        { installmentNumber: 2, dueDate: "2026-09-01", amount: "7000.00" },
+      ],
+      items: [
+        {
+          salesOrderItemId: "item-1",
+          plannedNetValue: "10000.00",
+          status: 1,
+          orderedQuantity: 1,
+          fulfilledQuantity: 0,
+        },
+      ],
+      referenceDate: REF,
+    });
+    const lines = listEffectiveReceivableLinesFromSchedule({
+      schedule,
+      referenceDate: REF,
+    });
+    const row = buildMonthlyReceivablesRowFromLines({
+      salesOrderId: "so-out",
+      orderCode: "PD 09999",
+      customerName: "C",
+      issueDate: null,
+      sellerName: "—",
+      status: "OPEN",
+      statusLabel: "Aberto",
+      orderCommercialTotal: 10_000,
+      monthKeys: ["2026-07"],
+      lines,
+    });
+    assert.equal(row.periodScheduleTotal, 0);
+    assert.equal(row.outsidePeriodTotal, 10_000);
+    assert.equal(rowHasReceivablesInSelectedPeriod(row), false);
+
+    const kept = [row].filter(rowHasReceivablesInSelectedPeriod);
+    assert.equal(kept.length, 0);
   });
 
   it("dois CR reais + previsão residual (substituição parcial PD 02719)", () => {

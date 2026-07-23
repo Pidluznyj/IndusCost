@@ -12,7 +12,7 @@ import {
 export const SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_TITLE =
   "Recebíveis mensais por Pedido de Venda";
 export const SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE =
-  "Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento";
+  "Agenda financeira efetiva (FIN-05/FIN-08) agrupada por mês de vencimento — só pedidos com recebível no período";
 export const SALES_ORDER_MONTHLY_RECEIVABLES_MAX_MONTHS = 24;
 export const SALES_ORDER_MONTHLY_RECEIVABLES_DEFAULT_HORIZON_MONTHS = 12;
 export const SALES_ORDER_MONTHLY_RECEIVABLES_ROWS_LIMIT = 500;
@@ -399,6 +399,13 @@ export function accumulateMonthCell(
       : tag;
   }
   return next;
+}
+
+/** Pedido entra no grid só se houver título com vencimento no intervalo filtrado. */
+export function rowHasReceivablesInSelectedPeriod(
+  row: Pick<SalesOrderMonthlyReceivablesRow, "periodScheduleTotal">
+): boolean {
+  return row.periodScheduleTotal > 0.009;
 }
 
 export function computeMonthlyReceivablesTotalsFromRows(

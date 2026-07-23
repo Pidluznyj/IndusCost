@@ -24,6 +24,7 @@ import {
   computeMonthlyReceivablesTotalsFromRows,
   defaultDueMonthRange,
   parseYearMonthKey,
+  rowHasReceivablesInSelectedPeriod,
   SALES_ORDER_MONTHLY_RECEIVABLES_MAX_MONTHS,
   SALES_ORDER_MONTHLY_RECEIVABLES_PAGE_SIZE_DEFAULT,
   SALES_ORDER_MONTHLY_RECEIVABLES_REPORT_SUBTITLE,
@@ -397,16 +398,13 @@ export async function loadSalesOrderMonthlyReceivablesReportPayload(
   }
 
   let filtered = builtRows.filter((row) => {
+    // Vencimento DE/ATÉ: só pedidos com ao menos um título no período (após demais filtros de linha).
+    if (!rowHasReceivablesInSelectedPeriod(row)) return false;
     if (onlyDivergent && Math.abs(row.difference) <= 1) return false;
     if (onlyIncompleteAgenda && !row.hasIncompleteAgenda && row.qualityStatus !== "SEM_AGENDA") {
       return false;
     }
     if (origin === "mixed" && !rowMatchesOriginFilter(row, "mixed")) return false;
-    if (origin !== "all" && origin !== "mixed" && !rowMatchesOriginFilter(row, origin)) {
-      // quando filtro de origem já aplicado nas linhas, pode sobrar linha vazia
-      const hasAny = Object.values(row.months).some((c) => c.titleCount > 0);
-      if (!hasAny && row.effectiveScheduleTotal <= 0.009) return false;
-    }
     return true;
   });
 

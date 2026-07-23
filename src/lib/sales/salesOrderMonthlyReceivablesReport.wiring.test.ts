@@ -16,6 +16,7 @@ describe("salesOrderMonthlyReceivablesReport wiring", () => {
     assert.match(svc, /resolveSalesOrderListWhere/);
     assert.match(svc, /buildSalesOrderEffectiveFinancialSchedule/);
     assert.match(svc, /listEffectiveReceivableLinesFromSchedule/);
+    assert.match(svc, /rowHasReceivablesInSelectedPeriod/);
     assert.doesNotMatch(svc, /buildSalesOrderPlannedReceivables/);
   });
 
