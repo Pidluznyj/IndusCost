@@ -31,7 +31,7 @@ describe("financeBillingUx", () => {
     assert.ok(page.includes("FinanceExecutivePageHeader"));
     assert.ok(page.includes('title="Faturamento"'));
     assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_SUBTITLE"));
-    assert.ok(page.includes('label: "Atualizar"'));
+    assert.ok(page.includes("FINANCE_HEADER_ACTION_REFRESH"));
     assert.ok(page.includes('label: "Exportar composição"'));
     assert.ok(page.includes('label: "Exportar CSV NF-e"'));
     assert.ok(page.includes("FinanceDataAuditButton"));
@@ -71,5 +71,19 @@ describe("financeBillingUx", () => {
     const page = readFileSync(pagePath, "utf8");
     assert.ok(page.includes("FINANCE_BILLING_SOURCE_DEFAULT"));
     assert.ok(page.includes("buildFinanceBillingDashboardQuery"));
+  });
+
+  it("comparativo e auditoria só carregam sob demanda (não no mount)", () => {
+    const page = readFileSync(pagePath, "utf8");
+    assert.match(page, /executiveTab !== "comparison"/);
+    assert.match(page, /executiveTab !== "audit"/);
+    assert.doesNotMatch(
+      page,
+      /useEffect\(\(\) => \{\s*void loadComparison\(\);\s*\}, \[loadComparison\]\)/
+    );
+    assert.doesNotMatch(
+      page,
+      /useEffect\(\(\) => \{\s*void loadAudit\(\);\s*\}, \[loadAudit\]\)/
+    );
   });
 });

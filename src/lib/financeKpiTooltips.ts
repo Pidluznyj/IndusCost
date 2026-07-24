@@ -4,7 +4,7 @@ export const FINANCE_KPI_BILLING_NET_REVENUE =
   "Total líquido de NF-e autorizadas dentro do período filtrado. Usa a fonte fiscal NF-e e respeita os filtros aplicados de ano, mês, cliente, empresa e status, quando disponíveis." as const;
 
 export const FINANCE_KPI_BILLING_GROSS_FOUND =
-  "Valor bruto total encontrado na auditoria fiscal. Pode incluir documentos analisados para conferência e não necessariamente representa o faturamento líquido gerencial." as const;
+  "Faturamento líquido acumulado do ano selecionado com NF-e autorizadas de mercado. O detalhe de auditoria (bruto encontrado, exclusões e lacunas) fica na aba Auditoria e no drawer de conferência." as const;
 
 export const FINANCE_KPI_BILLING_NFE_COUNT =
   "Quantidade de notas fiscais eletrônicas autorizadas no período filtrado, conforme a fonte fiscal NF-e." as const;

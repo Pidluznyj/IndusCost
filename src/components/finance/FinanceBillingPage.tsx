@@ -297,9 +297,6 @@ export function FinanceBillingPage() {
   useEffect(() => {
     void loadNfeList();
   }, [loadNfeList]);
-  useEffect(() => {
-    void loadComparison();
-  }, [loadComparison]);
 
   const handleApplyFilters = () => {
     setAppliedYear(draftYear.trim());
@@ -318,12 +315,6 @@ export function FinanceBillingPage() {
     setDraftNfeFilters(defaults);
     setAppliedNfeFilters(defaults);
     setNfeLocalFilter("all");
-  };
-
-  const handleRefreshAll = () => {
-    void loadDashboard();
-    void loadNfeList();
-    void loadComparison();
   };
 
   const auditQueryString = useMemo(() => {
@@ -367,9 +358,33 @@ export function FinanceBillingPage() {
     }
   }, [auditQueryString]);
 
+  /** Invalidar payloads pesados quando o recorte muda; recarregar só na aba ativa. */
   useEffect(() => {
+    setComparison(null);
+    setComparisonError(null);
+  }, [appliedYear]);
+
+  useEffect(() => {
+    setAudit(null);
+    setAuditError(null);
+  }, [auditQueryString]);
+
+  useEffect(() => {
+    if (executiveTab !== "comparison") return;
+    void loadComparison();
+  }, [executiveTab, loadComparison]);
+
+  useEffect(() => {
+    if (executiveTab !== "audit") return;
     void loadAudit();
-  }, [loadAudit]);
+  }, [executiveTab, loadAudit]);
+
+  const handleRefreshAll = () => {
+    void loadDashboard();
+    void loadNfeList();
+    if (executiveTab === "comparison") void loadComparison();
+    if (executiveTab === "audit") void loadAudit();
+  };
 
   const handleAuditExport = async () => {
     setAuditExporting(true);
@@ -603,8 +618,8 @@ export function FinanceBillingPage() {
               onSyncFinished={() => {
                 void loadDashboard();
                 void loadNfeList();
-                void loadComparison();
-                void loadAudit();
+                if (executiveTab === "comparison") void loadComparison();
+                if (executiveTab === "audit" || auditDrawerOpen) void loadAudit();
               }}
             />
           </div>
@@ -763,11 +778,13 @@ export function FinanceBillingPage() {
             />
             <FinanceExecutiveTotalizerCard
               icon={TrendingUp}
-              label="Bruto encontrado"
+              label="Faturamento do ano"
               value={
-                loading ? "…" : formatFinanceKpiCurrency(audit?.summary.grossFoundTotal ?? null)
+                loading
+                  ? "…"
+                  : formatFinanceKpiCurrency(summaryCard("billing-year")?.value ?? null)
               }
-              subtitle="Auditoria fiscal"
+              subtitle={`Ano ${appliedYear} — NF-e`}
               helperText={FINANCE_KPI_BILLING_GROSS_FOUND}
               loading={loading}
             />

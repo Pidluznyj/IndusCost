@@ -8,6 +8,23 @@ import {
 import { interpretFinanceBillingNfeSyncRunResponse } from "./financeBillingNfeSyncRun.js";
 import { canRunFinanceBillingNfeSync } from "./financeBillingPermissions.js";
 
+describe("financeBillingNfeList payload", () => {
+  it("listagem não seleciona xmlRaw na query principal", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const source = readFileSync(
+      join(process.cwd(), "src", "lib", "financeBillingNfeList.ts"),
+      "utf8"
+    );
+    const primarySelect = source.match(
+      /prisma\.nomusNfe\.findMany\(\{\s*where,\s*orderBy:[\s\S]*?select:\s*\{([\s\S]*?)\},?\s*\}\),\s*\]\)/
+    )?.[1];
+    assert.ok(primarySelect, "select principal da listagem");
+    assert.doesNotMatch(primarySelect, /xmlRaw/);
+    assert.match(source, /idsNeedingXmlName/);
+  });
+});
+
 describe("financeBillingNfeList filters", () => {
   it("parseFinanceBillingNfeFilters normalizes query", () => {
     const filters = parseFinanceBillingNfeFilters({

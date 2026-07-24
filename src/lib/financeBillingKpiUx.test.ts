@@ -21,7 +21,7 @@ describe("financeBillingKpiUx", () => {
     const page = readFileSync(pagePath, "utf8");
     const labels = [
       "Faturamento líquido",
-      "Bruto encontrado",
+      "Faturamento do ano",
       "NF-e no mês",
       "Ticket médio",
       "Previsto no mês",

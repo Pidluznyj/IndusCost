@@ -331,6 +331,12 @@ export async function buildBillingDashboardFromNfes(
   const comparisonYears = resolveFinanceBillingComparisonYears(year, 3);
   const extraYears = comparisonYears.filter((y) => y !== year && y !== yearCtx.previousYear);
 
+  /** Forecast (SalesOrder) começa assim que o mensal do ano estiver pronto, em paralelo com o restante. */
+  const currentYearMonthlyPromise = queryMonthlyFiscalNfe(year, dateBase, emitterCnpjDigits);
+  const forecastPromise = currentYearMonthlyPromise.then((monthly) =>
+    buildBillingForecastBlock(yearCtx, monthly)
+  );
+
   const [
     monthAgg,
     yearAgg,
@@ -342,6 +348,7 @@ export async function buildBillingDashboardFromNfes(
     previousYearMonthly,
     recentInvoiced,
     topCustomers,
+    forecast,
     ...extraYearMonthlies
   ] = await Promise.all([
     queryFiscalNfeInPeriod(monthStart, monthEnd, dateBase, emitterCnpjDigits),
@@ -350,10 +357,11 @@ export async function buildBillingDashboardFromNfes(
     queryFiscalNfeInPeriod(prevYearStart, prevYearEnd, dateBase, emitterCnpjDigits),
     queryFiscalNfeInPeriod(yearStart, ref, dateBase, emitterCnpjDigits),
     queryFiscalNfeInPeriod(prevYearStart, ytdPrevEnd, dateBase, emitterCnpjDigits),
-    queryMonthlyFiscalNfe(year, dateBase, emitterCnpjDigits),
+    currentYearMonthlyPromise,
     queryMonthlyFiscalNfe(yearCtx.previousYear, dateBase, emitterCnpjDigits),
     queryRecentFiscalNfes(dateBase, emitterCnpjDigits),
     queryTopFiscalNfeCustomers(yearStart, yearEnd, dateBase, emitterCnpjDigits),
+    forecastPromise,
     ...extraYears.map((y) => queryMonthlyFiscalNfe(y, dateBase, emitterCnpjDigits)),
   ]);
 
@@ -469,8 +477,6 @@ export async function buildBillingDashboardFromNfes(
     yearCtx.ytdMonthLimit,
     yearCtx.isSelectedYearCurrent
   );
-
-  const forecast = await buildBillingForecastBlock(yearCtx, currentYearMonthly);
 
   return {
     available: true,

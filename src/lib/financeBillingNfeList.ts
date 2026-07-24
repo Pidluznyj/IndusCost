@@ -192,7 +192,6 @@ export async function buildFinanceBillingNfeList(
         valorLiquido: true,
         isMarketSale: true,
         syncedAt: true,
-        xmlRaw: true,
       },
     }),
   ]);
@@ -224,13 +223,32 @@ export async function buildFinanceBillingNfeList(
     }
   }
 
+  /** Só busca xmlRaw quando o Customer não resolve o nome (evita transferir XML gigante na listagem). */
+  const idsNeedingXmlName = rows
+    .filter((row) => {
+      const digits = normalizeCnpj(row.xmlDestCnpjCpf);
+      const customer = digits ? customerByCnpj.get(digits) : undefined;
+      return !customer?.tradeName?.trim() && !customer?.companyName?.trim();
+    })
+    .map((row) => row.id);
+  const xmlDestNameById = new Map<string, string | null>();
+  if (idsNeedingXmlName.length > 0) {
+    const xmlRows = await prisma.nomusNfe.findMany({
+      where: { id: { in: idsNeedingXmlName } },
+      select: { id: true, xmlRaw: true },
+    });
+    for (const xmlRow of xmlRows) {
+      xmlDestNameById.set(xmlRow.id, extractNomusNfeDestNameFromXml(xmlRow.xmlRaw));
+    }
+  }
+
   return {
     filters,
     total,
     items: rows.map((row) => {
       const digits = normalizeCnpj(row.xmlDestCnpjCpf);
       const customer = digits ? customerByCnpj.get(digits) : undefined;
-      const xmlDestName = extractNomusNfeDestNameFromXml(row.xmlRaw);
+      const xmlDestName = xmlDestNameById.get(row.id) ?? null;
       return {
         id: row.id,
         externalId: row.externalId,
