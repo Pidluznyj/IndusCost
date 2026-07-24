@@ -80,6 +80,7 @@ export const FINANCE_MODULE_PILOT_ENDPOINTS = [
   // DRE Gerencial
   { method: "GET", path: "/api/finance/dre", resourceKey: "finance.dre", action: "view" },
   { method: "GET", path: "/api/finance/dre/export", resourceKey: "finance.dre", action: "view" },
+  { method: "GET", path: "/api/finance/dre/cash-bridge", resourceKey: "finance.dre", action: "view" },
 
   // Fornecedores
   { method: "GET", path: "/api/finance/suppliers", resourceKey: "finance.suppliers", action: "view" },

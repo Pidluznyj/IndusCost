@@ -5,6 +5,7 @@ import {
   buildFinanceDreReport,
   FinanceDreParseError,
 } from "@/src/lib/financeDreService.server.js";
+import { buildFinanceDreCashBridgeReport } from "@/src/lib/financeDreCashBridge.server.js";
 import { buildFinanceDreLineDrilldown } from "@/src/lib/financeDreDrilldown.server.js";
 import { buildFinanceDreSourceCheckDrilldown } from "@/src/lib/financeDreSourceCheckDrilldown.server.js";
 import {
@@ -64,6 +65,25 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
       }
       console.error("GET /api/finance/dre/export", error);
       return res.status(500).json({ error: "Erro ao exportar DRE Gerencial." });
+    }
+  });
+
+  app.get("/api/finance/dre/cash-bridge", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const payload = await buildFinanceDreCashBridgeReport(
+        req.query as Record<string, unknown>
+      );
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof FinanceDreParseError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("GET /api/finance/dre/cash-bridge", error);
+      return res.status(500).json({ error: "Erro ao montar a Ponte Lucro × Caixa." });
     }
   });
 

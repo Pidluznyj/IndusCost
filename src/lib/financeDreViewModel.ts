@@ -56,6 +56,12 @@ export function getFinanceDreExportPath(queryString: string): string {
   return queryString ? `/api/finance/dre/export?${queryString}` : "/api/finance/dre/export";
 }
 
+export function getFinanceDreCashBridgeApiPath(queryString: string): string {
+  return queryString
+    ? `/api/finance/dre/cash-bridge?${queryString}`
+    : "/api/finance/dre/cash-bridge";
+}
+
 export function getFinanceDreLineDrilldownPath(
   lineId: string,
   queryString: string,

@@ -5,12 +5,14 @@ import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type { FinanceDreReport } from "@/src/lib/financeDreTypes";
+import type { CashBridgeReport } from "@/src/lib/financeDreCashBridgeTypes";
 import { canViewFinanceDre } from "@/src/lib/financeDrePermissions";
 import {
   buildFinanceDreQuery,
   createDefaultFinanceDreUiFilters,
   financeDreFiltersEqual,
   getFinanceDreApiPath,
+  getFinanceDreCashBridgeApiPath,
   getFinanceDreExportPath,
   normalizeFinanceDreUiFilters,
   type FinanceDreUiFilters,
@@ -19,6 +21,7 @@ import {
   FinanceModuleErrorBanner,
   FinanceModulePageLoading,
 } from "@/src/components/finance/shared/FinanceModuleStates";
+import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
 import { resolveFinanceBiFilterStatus } from "@/src/lib/financeBiFilterState";
 import { financeBiCardClass, financeBiShellClass } from "@/src/lib/financeBiDashboardTheme";
 import { FinanceBiFilterStatusBadge } from "@/src/components/finance/bi/FinanceBiFilterStatusBadge";
@@ -27,11 +30,19 @@ import { FinanceDreInformativeReport } from "@/src/components/finance/dre/Financ
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
 import { FinanceDrePrintDocument } from "@/src/components/finance/dre/FinanceDrePrintDocument";
 import { FinanceDreLineDetailModal } from "@/src/components/finance/dre/FinanceDreLineDetailModal";
+import { FinanceDreCashBridgePanel } from "@/src/components/finance/dre/FinanceDreCashBridgePanel";
 import type { FinanceDreLineId } from "@/src/lib/financeDreTypes";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
 
 const DRE_PRINT_BODY_CLASS = "finance-dre-print-route";
+
+type DrePageTabId = "dre" | "cash-bridge";
+
+const DRE_PAGE_TABS = [
+  { id: "dre" as const, label: "DRE" },
+  { id: "cash-bridge" as const, label: "Ponte Lucro × Caixa" },
+];
 
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, i) => String(new Date().getFullYear() - 3 + i));
 const MONTH_OPTIONS = [
@@ -92,11 +103,16 @@ export function FinanceManagerialDrePage() {
   const [report, setReport] = useState<FinanceDreReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pageTab, setPageTab] = useState<DrePageTabId>("dre");
+  const [cashBridge, setCashBridge] = useState<CashBridgeReport | null>(null);
+  const [loadingCashBridge, setLoadingCashBridge] = useState(false);
+  const [cashBridgeError, setCashBridgeError] = useState<string | null>(null);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [drillLineId, setDrillLineId] = useState<FinanceDreLineId | null>(null);
   const [drillSourceCheckId, setDrillSourceCheckId] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const printCleanupRef = useRef<number | null>(null);
+  const cashBridgeAbortRef = useRef<AbortController | null>(null);
 
   const appliedQuery = useMemo(
     () => buildFinanceDreQuery(appliedFilters),
@@ -125,9 +141,45 @@ export function FinanceManagerialDrePage() {
     }
   }, [appliedQuery, canView]);
 
+  const loadCashBridge = useCallback(async () => {
+    if (!canView) return;
+    cashBridgeAbortRef.current?.abort();
+    const controller = new AbortController();
+    cashBridgeAbortRef.current = controller;
+    setLoadingCashBridge(true);
+    setCashBridgeError(null);
+    try {
+      const url = getFinanceDreCashBridgeApiPath(appliedQuery);
+      const payload = await fetchJsonOk<CashBridgeReport>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
+      setCashBridge(payload);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      setCashBridge(null);
+      setCashBridgeError(
+        buildFinanceTabLoadError("Falha ao carregar a Ponte Lucro × Caixa.", err)
+      );
+    } finally {
+      if (!controller.signal.aborted) setLoadingCashBridge(false);
+    }
+  }, [appliedQuery, canView]);
+
   useEffect(() => {
     void loadReport();
   }, [loadReport]);
+
+  useEffect(() => {
+    setCashBridge(null);
+    setCashBridgeError(null);
+  }, [appliedQuery]);
+
+  useEffect(() => {
+    if (pageTab !== "cash-bridge") return;
+    void loadCashBridge();
+  }, [pageTab, loadCashBridge]);
 
   const applyFilters = () => {
     setAppliedFilters(normalizeFinanceDreUiFilters(draftFilters));
@@ -204,7 +256,10 @@ export function FinanceManagerialDrePage() {
           <FinanceBiFilterStatusBadge status={filterStatus} />
           <button
             type="button"
-            onClick={() => void loadReport()}
+            onClick={() => {
+              void loadReport();
+              if (pageTab === "cash-bridge") void loadCashBridge();
+            }}
             className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
           >
             <RefreshCw className="h-4 w-4" />
@@ -301,154 +356,173 @@ export function FinanceManagerialDrePage() {
         </div>
       </section>
 
-      {error ? <FinanceModuleErrorBanner message={error} /> : null}
-      {loading ? <FinanceModulePageLoading label="Montando DRE Gerencial…" /> : null}
+      <div className="no-print" data-testid="finance-dre-page-tabs">
+        <FinanceDetailTabs
+          tabs={DRE_PAGE_TABS}
+          activeId={pageTab}
+          onChange={setPageTab}
+        />
+      </div>
 
-      {!loading && report ? (
+      {pageTab === "dre" ? (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="Receita líquida (mês)"
-              value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
-            />
-            <KpiCard
-              label="Lucro bruto (mês)"
-              value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
-              hint={
-                report.kpis.margemBrutaPct == null
-                  ? undefined
-                  : `Margem ${report.kpis.margemBrutaPct.toFixed(1).replace(".", ",")}%`
-              }
-              tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
-            />
-            <KpiCard
-              label="Resultado operacional"
-              value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
-              hint={
-                report.kpis.margemOperacionalPct == null
-                  ? undefined
-                  : `Margem ${report.kpis.margemOperacionalPct.toFixed(1).replace(".", ",")}%`
-              }
-              tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
-            />
-            <KpiCard
-              label="Lucro líquido aproximado"
-              value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
-              tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
-            />
-          </div>
+          {error ? <FinanceModuleErrorBanner message={error} /> : null}
+          {loading ? <FinanceModulePageLoading label="Montando DRE Gerencial…" /> : null}
 
-          {report.qualityAlerts.length > 0 ? (
-            <div className="space-y-2 no-print">
-              {report.qualityAlerts.map((alert) => (
-                <div
-                  key={alert.code}
-                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
-                >
-                  {alert.message}
+          {!loading && report ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <KpiCard
+                  label="Receita líquida (mês)"
+                  value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+                />
+                <KpiCard
+                  label="Lucro bruto (mês)"
+                  value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
+                  hint={
+                    report.kpis.margemBrutaPct == null
+                      ? undefined
+                      : `Margem ${report.kpis.margemBrutaPct.toFixed(1).replace(".", ",")}%`
+                  }
+                  tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
+                />
+                <KpiCard
+                  label="Resultado operacional"
+                  value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
+                  hint={
+                    report.kpis.margemOperacionalPct == null
+                      ? undefined
+                      : `Margem ${report.kpis.margemOperacionalPct.toFixed(1).replace(".", ",")}%`
+                  }
+                  tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
+                />
+                <KpiCard
+                  label="Lucro líquido aproximado"
+                  value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
+                  tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
+                />
+              </div>
+
+              {report.qualityAlerts.length > 0 ? (
+                <div className="space-y-2 no-print">
+                  {report.qualityAlerts.map((alert) => (
+                    <div
+                      key={alert.code}
+                      className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+                    >
+                      {alert.message}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : null}
+              ) : null}
 
-          <div className="space-y-2">
-            <div className="flex items-end justify-between gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">{report.subtitle}</h2>
-                <p className="text-xs text-muted-foreground">
-                  Visão resumida (mês + YTD). Abra a apresentação para comparar mês a mês.
-                </p>
+              <div className="space-y-2">
+                <div className="flex items-end justify-between gap-2">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">{report.subtitle}</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Visão resumida (mês + YTD). Abra a apresentação para comparar mês a mês.
+                    </p>
+                  </div>
+                </div>
+                <FinanceDreGrid
+                  report={report}
+                  showAllMonths={false}
+                  onLineClick={(lineId) => {
+                    setDrillSourceCheckId(null);
+                    setDrillLineId(lineId);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
               </div>
-            </div>
-            <FinanceDreGrid
-              report={report}
-              showAllMonths={false}
-              onLineClick={(lineId) => {
-                setDrillSourceCheckId(null);
-                setDrillLineId(lineId);
-              }}
-            />
-            <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
-          </div>
 
-          <FinanceDreInformativeReport
-            report={report}
-            onSourceCheckClick={(check) => {
-              setDrillLineId(null);
-              setDrillSourceCheckId(check.id);
-            }}
-          />
+              <FinanceDreInformativeReport
+                report={report}
+                onSourceCheckClick={(check) => {
+                  setDrillLineId(null);
+                  setDrillSourceCheckId(check.id);
+                }}
+              />
 
-          {report.costCenterBreakdown.length > 0 ? (
-            <section
-              className={cn(financeBiCardClass, "p-4 no-print")}
-              data-testid="finance-dre-cc-breakdown"
-            >
-              <h3 className="text-sm font-semibold text-foreground">
-                Centros de custo usados no DRE
-              </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Classificação automática por nome/código. Confira se Logística, Embalagens, Folha e
-                demais papéis estão corretos.
-              </p>
-              <div className="mt-3 overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-[11px] uppercase text-muted-foreground">
-                      <th className="py-2 pr-3">Código</th>
-                      <th className="py-2 pr-3">Nome</th>
-                      <th className="py-2 pr-3">Papel no DRE</th>
-                      <th className="py-2 pr-3 text-right">Mês</th>
-                      <th className="py-2 text-right">YTD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.costCenterBreakdown.map((row) => (
-                      <tr key={row.costCenterId} className="border-b border-border/70">
-                        <td className="py-2 pr-3 font-medium">{row.code}</td>
-                        <td className="py-2 pr-3">{row.name}</td>
-                        <td className="py-2 pr-3 text-muted-foreground">{row.roleLabel}</td>
-                        <td className="py-2 pr-3 text-right tabular-nums">
-                          {formatFinanceKpiCurrency(row.highlightAmount)}
-                        </td>
-                        <td className="py-2 text-right tabular-nums">
-                          {formatFinanceKpiCurrency(row.ytdAmount)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+              {report.costCenterBreakdown.length > 0 ? (
+                <section
+                  className={cn(financeBiCardClass, "p-4 no-print")}
+                  data-testid="finance-dre-cc-breakdown"
+                >
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Centros de custo usados no DRE
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Classificação automática por nome/código. Confira se Logística, Embalagens, Folha e
+                    demais papéis estão corretos.
+                  </p>
+                  <div className="mt-3 overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border text-left text-[11px] uppercase text-muted-foreground">
+                          <th className="py-2 pr-3">Código</th>
+                          <th className="py-2 pr-3">Nome</th>
+                          <th className="py-2 pr-3">Papel no DRE</th>
+                          <th className="py-2 pr-3 text-right">Mês</th>
+                          <th className="py-2 text-right">YTD</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.costCenterBreakdown.map((row) => (
+                          <tr key={row.costCenterId} className="border-b border-border/70">
+                            <td className="py-2 pr-3 font-medium">{row.code}</td>
+                            <td className="py-2 pr-3">{row.name}</td>
+                            <td className="py-2 pr-3 text-muted-foreground">{row.roleLabel}</td>
+                            <td className="py-2 pr-3 text-right tabular-nums">
+                              {formatFinanceKpiCurrency(row.highlightAmount)}
+                            </td>
+                            <td className="py-2 text-right tabular-nums">
+                              {formatFinanceKpiCurrency(row.ytdAmount)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              ) : null}
+
+              <FinanceDrePresentationModal
+                open={presentationOpen}
+                report={report}
+                onClose={() => setPresentationOpen(false)}
+                onPrint={handlePrint}
+                onExport={handleExport}
+                onLineClick={(lineId) => {
+                  setDrillSourceCheckId(null);
+                  setDrillLineId(lineId);
+                }}
+                onSourceCheckClick={(check) => {
+                  setDrillLineId(null);
+                  setDrillSourceCheckId(check.id);
+                }}
+              />
+              <FinanceDreLineDetailModal
+                open={drillLineId != null || drillSourceCheckId != null}
+                lineId={drillLineId}
+                sourceCheckId={drillSourceCheckId}
+                filters={appliedFilters}
+                onClose={() => {
+                  setDrillLineId(null);
+                  setDrillSourceCheckId(null);
+                }}
+              />
+            </>
           ) : null}
-
-          <FinanceDrePresentationModal
-            open={presentationOpen}
-            report={report}
-            onClose={() => setPresentationOpen(false)}
-            onPrint={handlePrint}
-            onExport={handleExport}
-            onLineClick={(lineId) => {
-              setDrillSourceCheckId(null);
-              setDrillLineId(lineId);
-            }}
-            onSourceCheckClick={(check) => {
-              setDrillLineId(null);
-              setDrillSourceCheckId(check.id);
-            }}
-          />
-          <FinanceDreLineDetailModal
-            open={drillLineId != null || drillSourceCheckId != null}
-            lineId={drillLineId}
-            sourceCheckId={drillSourceCheckId}
-            filters={appliedFilters}
-            onClose={() => {
-              setDrillLineId(null);
-              setDrillSourceCheckId(null);
-            }}
-          />
         </>
-      ) : null}
+      ) : (
+        <FinanceDreCashBridgePanel
+          report={cashBridge}
+          loading={loadingCashBridge}
+          error={cashBridgeError}
+          onRetry={() => void loadCashBridge()}
+        />
+      )}
     </div>
     {report && typeof document !== "undefined"
       ? createPortal(<FinanceDrePrintDocument report={report} />, document.body)
