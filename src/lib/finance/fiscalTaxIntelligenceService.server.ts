@@ -36,6 +36,16 @@ function dec(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Customer não tem `name` — exibição: tradeName → companyName. */
+function customerDisplayName(
+  customer: { tradeName?: string | null; companyName?: string | null } | null | undefined
+): string | null {
+  const trade = customer?.tradeName?.trim();
+  if (trade) return trade;
+  const company = customer?.companyName?.trim();
+  return company || null;
+}
+
 function parseDateOnly(value: string): Date {
   return new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
 }
@@ -321,7 +331,7 @@ export async function buildFiscalTaxIntelligenceReport(
             id: true,
             orderCode: true,
             customerId: true,
-            Customer: { select: { id: true, name: true } },
+            Customer: { select: { id: true, companyName: true, tradeName: true } },
           },
           take: 10000,
         });
@@ -406,7 +416,7 @@ export async function buildFiscalTaxIntelligenceReport(
           ? orderById.get(a.salesOrderId)?.customerId ?? null
           : null,
         customerName: a.salesOrderId
-          ? orderById.get(a.salesOrderId)?.Customer?.name ?? null
+          ? customerDisplayName(orderById.get(a.salesOrderId)?.Customer) ?? null
           : null,
         nomusNfeId: a.nomusNfeId,
       })),
@@ -522,7 +532,7 @@ export async function buildFiscalTaxIntelligenceReport(
       salesOrderId: l.salesOrderId,
       orderCode: orderById.get(l.salesOrderId)?.orderCode ?? l.orderCode,
       customerId: orderById.get(l.salesOrderId)?.customerId ?? null,
-      customerName: orderById.get(l.salesOrderId)?.Customer?.name ?? null,
+      customerName: customerDisplayName(orderById.get(l.salesOrderId)?.Customer) ?? null,
       nomusNfeId: l.nomusNfeId ?? nfe.id,
     }));
 
