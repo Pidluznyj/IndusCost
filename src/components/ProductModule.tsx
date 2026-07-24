@@ -1474,7 +1474,7 @@ export const ProductModule = () => {
               onClick={() => void handleBulkPublishProductionCostDrafts()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-publish-production-cost"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-100"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#FBBF24] bg-[#FDE68A] px-4 text-sm font-medium text-[#92400E] transition-colors hover:bg-[#FCD34D] disabled:cursor-not-allowed disabled:opacity-60"
               title="Publicar DRAFTs de custo de produção dos itens selecionados com pendência"
             >
               {publishBulkProgress ? (
