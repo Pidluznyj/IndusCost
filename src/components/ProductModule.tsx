@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   Download,
   BookOpen,
+  RefreshCw,
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
@@ -206,6 +207,10 @@ export const ProductModule = () => {
     ...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
   ]);
   const [snapshotRefreshingId, setSnapshotRefreshingId] = useState<string | null>(null);
+  const [snapshotBulkProgress, setSnapshotBulkProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [costPublicationStatus, setCostPublicationStatus] =
     useState<ProductProductionCostPublicationStatus | null>(null);
   const [costPublicationLoading, setCostPublicationLoading] = useState(false);
@@ -332,7 +337,7 @@ export const ProductModule = () => {
 
   const refreshFrozenCostSnapshot = useCallback(
     async (productId: string) => {
-      if (!canRefreshFrozenCost) return;
+      if (!canRefreshFrozenCost || snapshotBulkProgress) return;
       setSnapshotRefreshingId(productId);
       try {
         const result = await fetchJsonOk<{
@@ -357,8 +362,83 @@ export const ProductModule = () => {
         setSnapshotRefreshingId(null);
       }
     },
-    [canRefreshFrozenCost, fetchData, editingItem?.id]
+    [canRefreshFrozenCost, fetchData, editingItem?.id, snapshotBulkProgress]
   );
+
+  const handleBulkRefreshFrozenCostSnapshot = useCallback(async () => {
+    if (!canRefreshFrozenCost || selectedIds.length === 0 || snapshotBulkProgress) return;
+
+    if (
+      !confirm(
+        `Atualizar snapshot de custo de ${selectedIds.length} item(ns) selecionado(s)?\n\nCada item será recalculado individualmente.`
+      )
+    ) {
+      return;
+    }
+
+    const ids = [...selectedIds];
+    const nameById = new Map(items.map((item) => [item.id, item.name] as const));
+    let updated = 0;
+    const failures: Array<{ name: string; error: string }> = [];
+
+    setSnapshotBulkProgress({ current: 0, total: ids.length });
+    try {
+      for (let index = 0; index < ids.length; index += 1) {
+        const productId = ids[index]!;
+        setSnapshotBulkProgress({ current: index + 1, total: ids.length });
+        setSnapshotRefreshingId(productId);
+        try {
+          const result = await fetchJsonOk<{
+            status: string;
+            frozenCostSummary?: ProductWithCostSummary["frozenCostSummary"];
+            message?: string;
+          }>(`/api/products/${productId}/production-cost-snapshot`, { method: "POST" });
+          if (result.frozenCostSummary) {
+            setItems((prev) =>
+              prev.map((p) =>
+                p.id === productId ? { ...p, frozenCostSummary: result.frozenCostSummary } : p
+              )
+            );
+          }
+          updated += 1;
+        } catch (error) {
+          failures.push({
+            name: nameById.get(productId) ?? productId,
+            error: error instanceof Error ? error.message : "Falha ao atualizar snapshot.",
+          });
+        }
+      }
+
+      await fetchData();
+      if (editingItem?.id && ids.includes(editingItem.id)) {
+        setCostPublicationRefreshToken((token) => token + 1);
+      }
+
+      if (failures.length === 0) {
+        alert(`${updated} snapshot(s) atualizado(s) com sucesso.`);
+      } else {
+        const details = failures
+          .slice(0, 12)
+          .map((f) => `- ${f.name}: ${f.error}`)
+          .join("\n");
+        const extra =
+          failures.length > 12 ? `\n… e mais ${failures.length - 12} falha(s).` : "";
+        alert(
+          `${updated} atualizado(s), ${failures.length} falha(s):\n${details}${extra}`
+        );
+      }
+    } finally {
+      setSnapshotRefreshingId(null);
+      setSnapshotBulkProgress(null);
+    }
+  }, [
+    canRefreshFrozenCost,
+    selectedIds,
+    snapshotBulkProgress,
+    items,
+    fetchData,
+    editingItem?.id,
+  ]);
 
   const loadCostPublicationStatus = useCallback(async (productId: string) => {
     setCostPublicationLoading(true);
@@ -1268,13 +1348,35 @@ export const ProductModule = () => {
             onClick={() => setTourOpen(true)}
             className="h-10 shrink-0 rounded-lg px-3 py-0 text-sm font-medium"
           />
+          {selectedIds.length > 0 && canRefreshFrozenCost ? (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              onClick={() => void handleBulkRefreshFrozenCostSnapshot()}
+              disabled={Boolean(snapshotBulkProgress)}
+              data-testid="bulk-refresh-cost-snapshot"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-semibold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+              title="Recalcular o snapshot de custo dos itens selecionados"
+            >
+              {snapshotBulkProgress ? (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 shrink-0" />
+              )}
+              {snapshotBulkProgress
+                ? `Atualizando… (${snapshotBulkProgress.current}/${snapshotBulkProgress.total})`
+                : `Atualizar snapshots (${selectedIds.length})`}
+            </motion.button>
+          ) : null}
           {selectedIds.length > 0 && canDeleteProduct ? (
             <motion.button
               type="button"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               onClick={handleBulkDelete}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/15"
+              disabled={Boolean(snapshotBulkProgress)}
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
@@ -1555,7 +1657,10 @@ export const ProductModule = () => {
                                   <button
                                     type="button"
                                     className="text-[10px] text-primary hover:underline disabled:opacity-50"
-                                    disabled={snapshotRefreshingId === item.id}
+                                    disabled={
+                                      Boolean(snapshotBulkProgress) ||
+                                      snapshotRefreshingId === item.id
+                                    }
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       void refreshFrozenCostSnapshot(item.id);

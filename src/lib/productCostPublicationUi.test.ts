@@ -81,6 +81,14 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /production-cost-snapshot/);
   });
 
+  it("lista de engenharia oferece atualização de snapshot em lote dos selecionados", () => {
+    const mod = productModule();
+    assert.match(mod, /handleBulkRefreshFrozenCostSnapshot/);
+    assert.match(mod, /data-testid="bulk-refresh-cost-snapshot"/);
+    assert.match(mod, /Atualizar snapshots \(\$\{selectedIds\.length\}\)/);
+    assert.match(mod, /\/api\/products\/\$\{productId\}\/production-cost-snapshot/);
+  });
+
   it("alerta de pendência usa componente ExecutiveAlert com paleta executiva", () => {
     const src = card();
     const styles = read("src/lib/executiveAlertStyles.ts");
