@@ -24,7 +24,10 @@ const LINE_LABELS: Record<FinanceDreLineId, string> = {
   despesas_operacionais: "Despesas operacionais",
   despesas_administrativas: "Despesas administrativas",
   resultado_operacional: "Resultado operacional",
-  lucro_liquido_aproximado: "Lucro líquido aproximado",
+  provisoes_estimadas_irpj_csll: "Provisões estimadas para IRPJ e CSLL",
+  csll_estimada: "CSLL estimada",
+  irpj_estimado: "IRPJ estimado",
+  lucro_liquido_aproximado: "Lucro líquido após IRPJ e CSLL — aproximado",
 };
 
 /** Linhas com detalhe de origem (NF-e, CMV ou CC). */
@@ -51,8 +54,18 @@ const COMPOSITION: Partial<Record<FinanceDreLineId, FinanceDreLineId[]>> = {
   receita_liquida: ["receita_bruta", "deducoes"],
   lucro_bruto: ["receita_liquida", "custos"],
   resultado_operacional: ["lucro_bruto", "despesas_operacionais"],
-  lucro_liquido_aproximado: ["resultado_operacional"],
+  provisoes_estimadas_irpj_csll: ["csll_estimada", "irpj_estimado"],
+  lucro_liquido_aproximado: ["resultado_operacional", "provisoes_estimadas_irpj_csll"],
 };
+
+/** Linhas de provisão estimada — detalhe de cálculo (não origem NF-e/CC). */
+export function isFinanceDreEstimatedTaxLine(lineId: FinanceDreLineId): boolean {
+  return (
+    lineId === "provisoes_estimadas_irpj_csll" ||
+    lineId === "csll_estimada" ||
+    lineId === "irpj_estimado"
+  );
+}
 
 export function financeDreLineLabel(lineId: FinanceDreLineId): string {
   return LINE_LABELS[lineId] ?? lineId;

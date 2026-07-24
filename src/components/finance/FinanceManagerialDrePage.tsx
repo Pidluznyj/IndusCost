@@ -397,8 +397,9 @@ export function FinanceManagerialDrePage() {
                   tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
                 />
                 <KpiCard
-                  label="Lucro líquido aproximado"
+                  label="Lucro líquido após IRPJ e CSLL"
                   value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
+                  hint="Estimativa gerencial"
                   tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
                 />
               </div>
@@ -422,6 +423,12 @@ export function FinanceManagerialDrePage() {
                     <h2 className="text-sm font-semibold text-foreground">{report.subtitle}</h2>
                     <p className="text-xs text-muted-foreground">
                       Visão resumida (mês + YTD). Abra a apresentação para comparar mês a mês.
+                    </p>
+                    <p
+                      className="mt-1 text-[11px] text-muted-foreground/90"
+                      title={report.estimatedCorporateTaxes.disclaimer}
+                    >
+                      IRPJ/CSLL: estimativa gerencial (passe o mouse para o aviso completo).
                     </p>
                   </div>
                 </div>

@@ -10,7 +10,7 @@ export const FINANCE_DRE_CASH_BRIDGE_COVERAGE: readonly CashBridgeCoverageRow[] 
     label: "Resultado líquido (DRE)",
     status: "available",
     sourceLabel: "buildFinanceDreReport → kpis.lucroLiquidoAproximado",
-    limitation: "DRE aproximada (sem resultado financeiro / IR-CSLL).",
+    limitation: "DRE aproximada (sem resultado financeiro; IRPJ/CSLL como provisão gerencial estimada).",
   },
   {
     componentId: "non_cash_adjustments",

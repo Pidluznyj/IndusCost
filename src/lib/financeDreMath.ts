@@ -13,6 +13,10 @@ import type {
   FinanceDreSourceCheck,
 } from "@/src/lib/financeDreTypes.js";
 import { createEmptyMonthlySeries } from "@/src/lib/financeDreCostCenterRoles.js";
+import {
+  buildEstimatedCorporateTaxSeriesFromSingleBase,
+  type FinanceDreEstimatedCorporateTaxesBlock,
+} from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
 
 const MONTH_LABELS_PT = [
   "Jan",
@@ -100,7 +104,65 @@ export type FinanceDreMathInput = {
     missingCostLineCount?: number;
     pricedLineCount?: number;
   };
+  /**
+   * Quando informado (ex.: consolidação por PJ), usa estas provisões em vez de
+   * calcular sobre a base consolidada com um único limite de adicional.
+   */
+  estimatedCorporateTaxesOverride?: FinanceDreEstimatedCorporateTaxesBlock;
 };
+
+/**
+ * Base estimada de IRPJ/CSLL = resultado antes dos tributos.
+ * Na DRE atual não há resultado financeiro após o operacional → usa resultado operacional.
+ */
+export function computeFinanceDreEstimatedTaxBaseSeries(
+  input: Pick<
+    FinanceDreMathInput,
+    | "receitaBruta"
+    | "cofins"
+    | "icms"
+    | "icmsSt"
+    | "ipi"
+    | "pis"
+    | "devolucoes"
+    | "cmv"
+    | "fretes"
+    | "embalagens"
+    | "despesasAdmin"
+  >
+): number[] {
+  const deducoesAbs = sumSeries(
+    sumSeries(
+      sumSeries(sumSeries(sumSeries(input.cofins, input.icms), input.icmsSt), input.ipi),
+      input.pis
+    ),
+    input.devolucoes
+  );
+  const receitaLiquida = subSeries(input.receitaBruta, deducoesAbs);
+  const custosAbs = sumSeries(sumSeries(input.cmv, input.fretes), input.embalagens);
+  const lucroBruto = subSeries(receitaLiquida, custosAbs);
+  return subSeries(lucroBruto, input.despesasAdmin);
+}
+
+function taxLineValues(
+  byMonthAbs: number[],
+  ytdAbs: number,
+  highlightMonth: number,
+  netRevenueHighlight: number,
+  asNegative: boolean
+): { values: FinanceDreMonthValues; pctOfNetRevenue: number | null } {
+  const signedMonth = asNegative ? negateSeries(byMonthAbs) : byMonthAbs.map((v) => roundDreMoney(v));
+  const signedYtd = asNegative ? roundDreMoney(-ytdAbs) : roundDreMoney(ytdAbs);
+  const values: FinanceDreMonthValues = {
+    byMonth: signedMonth,
+    ytd: signedYtd,
+    highlight: roundDreMoney(signedMonth[highlightMonth - 1] ?? 0),
+  };
+  return {
+    values,
+    pctOfNetRevenue: safePct(values.highlight, netRevenueHighlight),
+  };
+}
 
 function line(
   id: FinanceDreLineId,
@@ -134,6 +196,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   lines: FinanceDreLine[];
   kpis: FinanceDreKpis;
   qualityAlerts: FinanceDreQualityAlert[];
+  estimatedCorporateTaxes: FinanceDreEstimatedCorporateTaxesBlock;
 } {
   const m = Math.min(12, Math.max(1, input.highlightMonth || 1));
 
@@ -154,13 +217,51 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const adminNeg = negateSeries(input.despesasAdmin);
 
   // Resultado operacional = lucro bruto − admin (pessoal/imposto CC/MP CC NÃO entram)
+  // Sem resultado financeiro na DRE atual → base estimada IRPJ/CSLL = resultado operacional.
   const resultado = subSeries(lucroBruto, input.despesasAdmin);
-  const lucroAprox = resultado;
+
+  const estimatedCorporateTaxes =
+    input.estimatedCorporateTaxesOverride ??
+    buildEstimatedCorporateTaxSeriesFromSingleBase(resultado, m);
+
+  const provisionNegByMonth = negateSeries(estimatedCorporateTaxes.provisionByMonth);
+  const lucroAprox = Array.from({ length: 12 }, (_, i) =>
+    roundDreMoney((resultado[i] ?? 0) + (provisionNegByMonth[i] ?? 0))
+  );
+  const resultadoYtd = ytdThroughMonth(resultado, m);
+  const lucroAproxYtd = roundDreMoney(resultadoYtd - estimatedCorporateTaxes.provisionYtd);
 
   const netHighlight = roundDreMoney(receitaLiquida[m - 1] ?? 0);
   const lucroBrutoH = roundDreMoney(lucroBruto[m - 1] ?? 0);
   const resultadoH = roundDreMoney(resultado[m - 1] ?? 0);
   const lucroAproxH = roundDreMoney(lucroAprox[m - 1] ?? 0);
+
+  const provisionVals = taxLineValues(
+    estimatedCorporateTaxes.provisionByMonth,
+    estimatedCorporateTaxes.provisionYtd,
+    m,
+    netHighlight,
+    true
+  );
+  const csllVals = taxLineValues(
+    estimatedCorporateTaxes.csllByMonth,
+    estimatedCorporateTaxes.csllYtd,
+    m,
+    netHighlight,
+    true
+  );
+  const irpjVals = taxLineValues(
+    estimatedCorporateTaxes.irpjByMonth,
+    estimatedCorporateTaxes.irpjYtd,
+    m,
+    netHighlight,
+    true
+  );
+  const lucroAproxValues: FinanceDreMonthValues = {
+    byMonth: lucroAprox,
+    ytd: lucroAproxYtd,
+    highlight: lucroAproxH,
+  };
 
   const lines: FinanceDreLine[] = [
     line("receita_bruta", "Receita bruta", "total", null, input.receitaBruta, m, netHighlight, {
@@ -246,18 +347,49 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       }
     ),
     line("resultado_operacional", "Resultado operacional", "result", null, resultado, m, netHighlight),
-    line(
-      "lucro_liquido_aproximado",
-      "Lucro líquido do exercício aproximado",
-      "result",
-      null,
-      lucroAprox,
-      m,
-      netHighlight,
-      {
-        sourceNote: "Sem resultado financeiro e sem IR/CSLL no v1",
-      }
-    ),
+    {
+      id: "provisoes_estimadas_irpj_csll",
+      label: "(-) Provisões estimadas para IRPJ e CSLL",
+      kind: "total",
+      parentId: null,
+      values: provisionVals.values,
+      pctOfNetRevenue: provisionVals.pctOfNetRevenue,
+      expandable: true,
+      sourceNote:
+        "Provisão gerencial estimada — não substitui a apuração fiscal (adições, exclusões, prejuízos, incentivos).",
+    },
+    {
+      id: "csll_estimada",
+      label: "(-) CSLL estimada",
+      kind: "detail",
+      parentId: "provisoes_estimadas_irpj_csll",
+      values: csllVals.values,
+      pctOfNetRevenue: csllVals.pctOfNetRevenue,
+      expandable: false,
+      sourceNote: "Estimativa gerencial: 9% sobre a base positiva antes do IRPJ/CSLL.",
+    },
+    {
+      id: "irpj_estimado",
+      label: "(-) IRPJ estimado",
+      kind: "detail",
+      parentId: "provisoes_estimadas_irpj_csll",
+      values: irpjVals.values,
+      pctOfNetRevenue: irpjVals.pctOfNetRevenue,
+      expandable: false,
+      sourceNote:
+        "Estimativa gerencial: 15% + adicional de 10% sobre o excedente de R$ 20.000 × meses do período.",
+    },
+    {
+      id: "lucro_liquido_aproximado",
+      label: "Lucro líquido após IRPJ e CSLL — aproximado",
+      kind: "result",
+      parentId: null,
+      values: lucroAproxValues,
+      pctOfNetRevenue: safePct(lucroAproxH, netHighlight),
+      expandable: false,
+      sourceNote:
+        "Resultado operacional − provisões estimadas de IRPJ e CSLL. Valor aproximado — estimativa gerencial.",
+    },
   ];
 
   const kpis: FinanceDreKpis = {
@@ -327,7 +459,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     });
   }
 
-  return { lines, kpis, qualityAlerts };
+  return { lines, kpis, qualityAlerts, estimatedCorporateTaxes };
 }
 
 /** Checklist de fontes oficiais aplicadas no DRE. */
@@ -406,11 +538,12 @@ export function buildFinanceDreSourceChecks(input: {
     },
     {
       id: "financeiro_ir",
-      label: "Resultado financeiro + IR/CSLL",
-      officialMotor: "n/a (fora do escopo v1)",
-      appliedToResult: false,
+      label: "Resultado financeiro + IR/CSLL estimado",
+      officialMotor: "financeDreEstimatedCorporateTaxes.calculateEstimatedCorporateIncomeTaxes",
+      appliedToResult: true,
       status: "info",
-      note: "Não disponíveis no IndusCost como DRE contábil — ficam no relatório informativo",
+      note:
+        "Resultado financeiro continua fora do escopo. IRPJ/CSLL entram como provisão gerencial estimada no lucro líquido aproximado (não é apuração fiscal).",
     },
   ];
 }
@@ -563,11 +696,12 @@ export function buildFinanceDreInformativeReport(input: {
     ytdAmount: 0,
   });
   items.push({
-    id: "ir_csll_fora_escopo",
-    label: "Provisão de IRPJ / CSLL",
-    reason: "Fora do escopo do DRE gerencial v1 — lucro líquido é aproximado.",
-    source: "Não aplicável no IndusCost",
-    appliedToResult: false,
+    id: "ir_csll_estimativa_gerencial",
+    label: "Provisão estimada de IRPJ / CSLL",
+    reason:
+      "Estimativa gerencial aplicada ao lucro líquido aproximado — não substitui a apuração fiscal (adições, exclusões, prejuízos, incentivos e retenções).",
+    source: "financeDreEstimatedCorporateTaxes (base = resultado operacional)",
+    appliedToResult: true,
     highlightAmount: 0,
     ytdAmount: 0,
   });
@@ -583,7 +717,7 @@ export function buildFinanceDreInformativeReport(input: {
   return {
     title: "Relatório informativo — custos não aplicados ao resultado",
     subtitle:
-      "Itens abaixo foram identificados nas fontes oficiais, mas não reduzem o lucro líquido aproximado (exceto quando marcados como provisórios).",
+      "Itens abaixo foram identificados nas fontes oficiais, mas não reduzem o resultado operacional (exceto quando marcados como provisórios). IRPJ/CSLL estimados entram no lucro líquido aproximado.",
     items,
     totalNotAppliedHighlight,
     totalNotAppliedYtd,

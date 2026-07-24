@@ -150,7 +150,7 @@ export function FinanceDrePresentationModal({
                 accent={opAccent}
               />
               <KpiChip
-                label="Lucro líquido aproximado"
+                label="Lucro líquido após IRPJ e CSLL"
                 value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
                 accent={opAccent}
               />

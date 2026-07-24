@@ -36,7 +36,7 @@ export function financeDreSourceCheckLabel(checkId: FinanceDreSourceCheckId): st
     case "pessoal_cc":
       return "Pessoal (fora do resultado)";
     case "financeiro_ir":
-      return "Resultado financeiro + IR/CSLL";
+      return "Resultado financeiro + IR/CSLL estimado";
     default:
       return checkId;
   }

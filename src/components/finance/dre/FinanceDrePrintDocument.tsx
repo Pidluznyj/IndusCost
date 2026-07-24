@@ -65,7 +65,7 @@ export function FinanceDrePrintDocument({ report }: Props) {
                 : "finance-dre-print-kpi finance-dre-print-kpi--negative"
             }
           >
-            <div className="finance-dre-print-kpi-label">Lucro líquido aproximado</div>
+            <div className="finance-dre-print-kpi-label">Lucro líquido após IRPJ e CSLL</div>
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
             </div>

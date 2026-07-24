@@ -3,6 +3,10 @@
  * Fontes oficiais documentadas em FINANCE_DRE_OFFICIAL_SOURCES.
  */
 
+import type { FinanceDreEstimatedCorporateTaxesBlock } from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
+
+export type { FinanceDreEstimatedCorporateTaxesBlock };
+
 export const FINANCE_DRE_OFFICIAL_SOURCES = {
   revenue: {
     module: "financeBillingNfeDashboard.ts",
@@ -66,6 +70,9 @@ export type FinanceDreLineId =
   | "despesas_operacionais"
   | "despesas_administrativas"
   | "resultado_operacional"
+  | "provisoes_estimadas_irpj_csll"
+  | "csll_estimada"
+  | "irpj_estimado"
   | "lucro_liquido_aproximado";
 
 /** Itens do relatório informativo (não entram no resultado). */
@@ -79,7 +86,7 @@ export type FinanceDreInformativeItemId =
   | "receita_sem_cmv"
   | "ap_sem_cc_provisorio"
   | "resultado_financeiro_fora_escopo"
-  | "ir_csll_fora_escopo";
+  | "ir_csll_estimativa_gerencial";
 
 export type FinanceDreSourceCheck = {
   id: string;
@@ -166,6 +173,7 @@ export type FinanceDreKpis = {
   margemBrutaPct: number | null;
   resultadoOperacional: number;
   margemOperacionalPct: number | null;
+  /** Lucro líquido após provisões estimadas de IRPJ e CSLL. */
   lucroLiquidoAproximado: number;
 };
 
@@ -180,6 +188,8 @@ export type FinanceDreReport = {
   monthLabels: string[];
   kpis: FinanceDreKpis;
   lines: FinanceDreLine[];
+  /** Detalhamento das provisões estimadas (mês e YTD) — não recalcular no frontend. */
+  estimatedCorporateTaxes: FinanceDreEstimatedCorporateTaxesBlock;
   /** Checklist: cada bloco do DRE e se a fonte oficial está aplicada. */
   sourceChecks: FinanceDreSourceCheck[];
   /** Relatório final: custos/itens não aplicados (ou provisórios) ao resultado. */

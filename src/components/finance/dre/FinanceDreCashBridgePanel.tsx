@@ -167,7 +167,7 @@ export function FinanceDreCashBridgePanel({ report, loading, error, onRetry }: P
         <BridgeKpiCard
           label={net != null && net < 0 ? "Prejuízo (DRE)" : "Lucro (DRE)"}
           value={formatFinanceKpiCurrency(net)}
-          hint="Lucro líquido aproximado do mês destaque"
+          hint="Lucro líquido após IRPJ/CSLL estimados (mês destaque)"
           tone={net == null ? "muted" : net >= 0 ? "positive" : "negative"}
         />
         <BridgeKpiCard

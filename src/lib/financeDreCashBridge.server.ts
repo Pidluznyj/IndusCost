@@ -78,7 +78,10 @@ function buildPartialLines(dreNetResult: number): CashBridgeLine[] {
     criteria:
       "Usa kpis.lucroLiquidoAproximado da DRE Gerencial no mês destaque (competência emissão NF-e).",
     sources: ["buildFinanceDreReport", "financeDreMath.buildFinanceDreLines"],
-    limitations: ["Sem resultado financeiro e sem IR/CSLL na v1 da DRE."],
+    limitations: [
+      "Sem resultado financeiro na DRE.",
+      "IRPJ/CSLL entram como provisão gerencial estimada (não apuração fiscal).",
+    ],
     lastSyncedAt: null,
     includeInExplained: true,
   };

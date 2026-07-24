@@ -7,6 +7,7 @@ import {
   classifyDreCostCenterRole,
   bucketCostCenterSpendByDreRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
+import { buildEstimatedCorporateTaxSeriesFromSingleBase } from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
 import {
   allocateOrderCmvToNfeMonths,
   buildFinanceDreInformativeReport,
@@ -176,13 +177,17 @@ describe("financeDreMath", () => {
       quality: { unlinkedNfeCount: 0, unlinkedNfeRevenue: 0, taxSummaryGapCount: 0 },
     });
 
-    // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400
+    // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400 operacional
+    // IRPJ/CSLL estimados sobre 400 → lucro líquido após provisões < 400
     assert.equal(kpis.receitaLiquida, 980);
     assert.equal(kpis.lucroBruto, 500);
     assert.equal(kpis.resultadoOperacional, 400);
-    assert.equal(kpis.lucroLiquidoAproximado, 400);
+    assert.ok(kpis.lucroLiquidoAproximado < 400);
     assert.ok(lines.some((l) => l.id === "embalagens"));
-    assert.ok(!lines.some((l) => l.id === "despesas_pessoal_info"));
+    assert.ok(lines.some((l) => l.id === "provisoes_estimadas_irpj_csll"));
+    assert.ok(lines.some((l) => l.id === "csll_estimada"));
+    assert.ok(lines.some((l) => l.id === "irpj_estimado"));
+    assert.ok(!lines.some((l) => (l.id as string) === "despesas_pessoal_info"));
 
     const resultLine = lines.find((l) => l.id === "resultado_operacional");
     assert.equal(resultLine?.values.highlight, 400);
@@ -307,6 +312,7 @@ describe("financeDreViewModel & export", () => {
         margemOperacionalPct: 100,
         lucroLiquidoAproximado: 10,
       },
+      estimatedCorporateTaxes: buildEstimatedCorporateTaxSeriesFromSingleBase(series, 1),
       lines: [
         {
           id: "receita_bruta",
@@ -419,6 +425,12 @@ describe("finance dre line drill-down", () => {
     const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
     assert.match(grid, /onLineClick/);
     assert.match(grid, /Ver origem/);
+    assert.match(grid, /Ver cálculo/);
+
+    const pageUi = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
+    assert.match(pageUi, /Lucro líquido após IRPJ e CSLL/);
+    assert.match(pageUi, /Estimativa gerencial/);
+    assert.doesNotMatch(pageUi, /0\.09|0\.15|20000|numberOfMonthsInPeriod/);
 
     const path = getFinanceDreLineDrilldownPath("icms", "year=2026&month=7", "highlight");
     assert.match(path, /\/api\/finance\/dre\/lines\/icms\/drilldown/);

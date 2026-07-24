@@ -27,10 +27,17 @@ import {
   financeDreCompositionChildren,
   financeDreLineLabel,
   isFinanceDreDrillableLine,
+  isFinanceDreEstimatedTaxLine,
   isFinanceDreSourceDrillLine,
   scopeMonthRange,
   sumDreDrilldownAmounts,
 } from "@/src/lib/financeDreDrilldownMath.js";
+import {
+  FINANCE_DRE_CSLL_RATE,
+  FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+  FINANCE_DRE_IRPJ_ADDITIONAL_RATE,
+  FINANCE_DRE_IRPJ_NORMAL_RATE,
+} from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
 import type {
   FinanceDreDrilldownColumn,
   FinanceDreDrilldownKind,
@@ -475,6 +482,226 @@ export async function buildFinanceDreLineDrilldown(
       "Detalhe gerado pelos mesmos motores oficiais do DRE. O total abaixo deve coincidir com a linha clicada.",
   };
 
+  // Provisões estimadas IRPJ/CSLL — detalhe de cálculo (valores do payload do DRE).
+  if (isFinanceDreEstimatedTaxLine(lineId) || lineId === "lucro_liquido_aproximado") {
+    const report = await buildFinanceDreReport(
+      {
+        year: filters.year,
+        month: filters.highlightMonth,
+        company: filters.company,
+      },
+      referenceNow
+    );
+    const tax = scope === "ytd" ? report.estimatedCorporateTaxes.ytd : report.estimatedCorporateTaxes.month;
+    const parent = report.lines.find((l) => l.id === lineId);
+    const expectedTotal = Math.abs(
+      scope === "ytd" ? (parent?.values.ytd ?? 0) : (parent?.values.highlight ?? 0)
+    );
+
+    if (lineId === "csll_estimada") {
+      const rows: FinanceDreDrilldownRow[] = [
+        {
+          id: "base",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "Base estimada (antes do IRPJ/CSLL)",
+          amount: tax.estimatedTaxBase,
+          competenceDate: null,
+          extra: "Resultado operacional — estimativa gerencial",
+        },
+        {
+          id: "csll",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: `CSLL estimada (alíquota ${(FINANCE_DRE_CSLL_RATE * 100).toFixed(0)}%)`,
+          amount: tax.estimatedCsll,
+          competenceDate: null,
+          extra: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+        },
+      ];
+      return {
+        ...baseMeta,
+        kind: "composition",
+        expectedTotal: roundDreMoney(expectedTotal),
+        rowsTotal: roundDreMoney(tax.estimatedCsll),
+        totalsMatch: dreDrilldownTotalsMatch(expectedTotal, tax.estimatedCsll),
+        rowCount: rows.length,
+        truncated: false,
+        columns: compositionColumns(),
+        rows,
+        sourceNote: "Ver cálculo — CSLL estimada (não substitui a apuração fiscal)",
+        disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+      };
+    }
+
+    if (lineId === "irpj_estimado") {
+      const rows: FinanceDreDrilldownRow[] = [
+        {
+          id: "base",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "Base estimada (antes do IRPJ/CSLL)",
+          amount: tax.estimatedTaxBase,
+          competenceDate: null,
+          extra: `Período: ${tax.numberOfMonthsInPeriod} mês(es)`,
+        },
+        {
+          id: "normal",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: `IRPJ normal (alíquota ${(FINANCE_DRE_IRPJ_NORMAL_RATE * 100).toFixed(0)}%)`,
+          amount: tax.estimatedIrpjNormal,
+          competenceDate: null,
+          extra: null,
+        },
+        {
+          id: "threshold",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "Limite do adicional (R$ 20.000 × meses)",
+          amount: tax.estimatedIrpjAdditionalThreshold,
+          competenceDate: null,
+          extra: null,
+        },
+        {
+          id: "excess_base",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "Base excedente",
+          amount: tax.estimatedIrpjAdditionalBase,
+          competenceDate: null,
+          extra: null,
+        },
+        {
+          id: "additional",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: `Adicional de IRPJ (alíquota ${(FINANCE_DRE_IRPJ_ADDITIONAL_RATE * 100).toFixed(0)}% sobre o excedente)`,
+          amount: tax.estimatedIrpjAdditional,
+          competenceDate: null,
+          extra: null,
+        },
+        {
+          id: "total",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "IRPJ total estimado",
+          amount: tax.estimatedIrpjTotal,
+          competenceDate: null,
+          extra: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+        },
+      ];
+      return {
+        ...baseMeta,
+        kind: "composition",
+        expectedTotal: roundDreMoney(expectedTotal),
+        rowsTotal: roundDreMoney(tax.estimatedIrpjTotal),
+        totalsMatch: dreDrilldownTotalsMatch(expectedTotal, tax.estimatedIrpjTotal),
+        rowCount: rows.length,
+        truncated: false,
+        columns: compositionColumns(),
+        rows,
+        sourceNote: "Ver cálculo — IRPJ estimado (composição do adicional sobre o excedente)",
+        disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+      };
+    }
+
+    if (lineId === "provisoes_estimadas_irpj_csll") {
+      const rows: FinanceDreDrilldownRow[] = [
+        {
+          id: "csll_estimada",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: financeDreLineLabel("csll_estimada"),
+          amount: tax.estimatedCsll,
+          competenceDate: null,
+          childLineId: "csll_estimada",
+          extra: "Estimativa gerencial",
+        },
+        {
+          id: "irpj_estimado",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: financeDreLineLabel("irpj_estimado"),
+          amount: tax.estimatedIrpjTotal,
+          competenceDate: null,
+          childLineId: "irpj_estimado",
+          extra: "Estimativa gerencial",
+        },
+      ];
+      const rowsTotal = sumDreDrilldownAmounts(rows.map((r) => r.amount));
+      return {
+        ...baseMeta,
+        kind: "composition",
+        expectedTotal: roundDreMoney(expectedTotal),
+        rowsTotal: roundDreMoney(rowsTotal),
+        totalsMatch: dreDrilldownTotalsMatch(expectedTotal, rowsTotal),
+        rowCount: rows.length,
+        truncated: false,
+        columns: compositionColumns(),
+        rows,
+        sourceNote: "Soma CSLL estimada + IRPJ estimado = provisão total",
+        disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+      };
+    }
+
+    // lucro_liquido_aproximado — composição resultado − provisões
+    const compositionRows: FinanceDreDrilldownRow[] = (
+      financeDreCompositionChildren(lineId) ?? []
+    ).map((childId) => {
+      const child = report.lines.find((l) => l.id === childId);
+      const amount = Math.abs(
+        scope === "ytd" ? (child?.values.ytd ?? 0) : (child?.values.highlight ?? 0)
+      );
+      return {
+        id: childId,
+        orderCode: null,
+        customerName: null,
+        nfeNumber: null,
+        nfeSerie: null,
+        documentLabel: financeDreLineLabel(childId),
+        amount: roundDreMoney(amount),
+        competenceDate: null,
+        childLineId: childId,
+        extra: child?.sourceNote ?? null,
+      };
+    });
+    return {
+      ...baseMeta,
+      kind: "composition",
+      expectedTotal: roundDreMoney(expectedTotal),
+      rowsTotal: roundDreMoney(expectedTotal),
+      totalsMatch: true,
+      rowCount: compositionRows.length,
+      truncated: false,
+      columns: compositionColumns(),
+      rows: compositionRows,
+      sourceNote:
+        "Lucro líquido aproximado = resultado operacional − provisões estimadas de IRPJ e CSLL",
+      disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
+    };
+  }
+
   // Composição (totais/resultados): filhos com valores do próprio DRE.
   const composition = financeDreCompositionChildren(lineId);
   if (composition && !isFinanceDreSourceDrillLine(lineId)) {
@@ -509,11 +736,11 @@ export async function buildFinanceDreLineDrilldown(
       };
     });
     // receita_liquida / lucro: soma dos |filhos| não é o resultado — expected = parent, rowsTotal = parent
+    // (lucro_liquido_aproximado e provisões IRPJ/CSLL já foram tratados acima)
     const isNetStyle =
       lineId === "receita_liquida" ||
       lineId === "lucro_bruto" ||
-      lineId === "resultado_operacional" ||
-      lineId === "lucro_liquido_aproximado";
+      lineId === "resultado_operacional";
     const rowsTotal = isNetStyle
       ? expectedTotal
       : sumDreDrilldownAmounts(rows.map((r) => r.amount));

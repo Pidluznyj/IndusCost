@@ -1,7 +1,10 @@
 import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { FinanceDreLine, FinanceDreLineId, FinanceDreReport } from "@/src/lib/financeDreTypes";
-import { isFinanceDreDrillableLine } from "@/src/lib/financeDreDrilldownMath";
+import {
+  isFinanceDreDrillableLine,
+  isFinanceDreEstimatedTaxLine,
+} from "@/src/lib/financeDreDrilldownMath";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
 
@@ -57,6 +60,7 @@ export function FinanceDreGrid({
     deducoes: false,
     custos: true,
     despesas_operacionais: true,
+    provisoes_estimadas_irpj_csll: true,
   });
 
   const visibleLines = useMemo(() => {
@@ -182,7 +186,12 @@ export function FinanceDreGrid({
                       {line.informativeOnly ? (
                         <div className="text-[10px] text-amber-700/80">Não entra no resultado</div>
                       ) : drillable ? (
-                        <div className="text-[10px] text-sky-700/80">Ver origem</div>
+                        <div className="text-[10px] text-sky-700/80">
+                          {isFinanceDreEstimatedTaxLine(line.id) ||
+                          line.id === "lucro_liquido_aproximado"
+                            ? "Ver cálculo"
+                            : "Ver origem"}
+                        </div>
                       ) : null}
                     </div>
                   </div>

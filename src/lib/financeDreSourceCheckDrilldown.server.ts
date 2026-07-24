@@ -394,13 +394,13 @@ export async function buildFinanceDreSourceCheckDrilldown(
   if (checkId === "financeiro_ir") {
     return {
       ...baseMeta,
-      lineId: "lucro_liquido_aproximado",
+      lineId: "provisoes_estimadas_irpj_csll",
       lineLabel: financeDreSourceCheckLabel(checkId),
       kind: "composition",
       expectedTotal: 0,
       rowsTotal: 0,
       totalsMatch: true,
-      rowCount: 0,
+      rowCount: 2,
       truncated: false,
       columns: [
         { key: "documentLabel", label: "Situação" },
@@ -414,14 +414,26 @@ export async function buildFinanceDreSourceCheckDrilldown(
           customerName: null,
           nfeNumber: null,
           nfeSerie: null,
-          documentLabel: "Fora do escopo v1",
+          documentLabel: "Resultado financeiro",
           amount: 0,
           competenceDate: null,
           extra:
-            "Resultado financeiro e IR/CSLL não entram no DRE gerencial — não há motor oficial no IndusCost para este bloco.",
+            "Continua fora do escopo do DRE gerencial — não há motor contábil de resultado financeiro.",
+        },
+        {
+          id: "ir_csll",
+          orderCode: null,
+          customerName: null,
+          nfeNumber: null,
+          nfeSerie: null,
+          documentLabel: "IRPJ/CSLL estimados",
+          amount: 0,
+          competenceDate: null,
+          extra:
+            "Provisão gerencial estimada sobre o resultado operacional — não substitui a apuração fiscal. Ver linhas de provisão no DRE.",
         },
       ],
-      sourceNote: "Informativo — não impacta o resultado operacional",
+      sourceNote: "IRPJ/CSLL estimados entram no lucro líquido aproximado; resultado financeiro permanece fora",
     };
   }
 
