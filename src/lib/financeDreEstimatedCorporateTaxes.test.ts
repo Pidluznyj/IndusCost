@@ -12,187 +12,238 @@ import {
   roundDreMoney,
 } from "@/src/lib/financeDreMath.js";
 
-describe("calculateEstimatedCorporateIncomeTaxes", () => {
+function entity(
+  key: string,
+  label: string,
+  cnpj: string,
+  byMonth: number[]
+) {
+  return {
+    companyKey: key,
+    companyLabel: label,
+    cnpjDigits: cnpj,
+    baseByMonth: byMonth,
+  };
+}
+
+describe("calculateEstimatedCorporateIncomeTaxes — estimativa mensal", () => {
   it("CSLL 9% sobre base positiva", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 100_000,
-      numberOfMonthsInPeriod: 1,
-    });
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
     assert.equal(r.estimatedCsll, 9_000);
   });
 
-  it("CSLL zero sobre base negativa", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: -50_000,
-      numberOfMonthsInPeriod: 1,
-    });
+  it("base mensal negativa gera provisao zero", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: -50_000 });
     assert.equal(r.estimatedCsll, 0);
     assert.equal(r.estimatedIrpjTotal, 0);
     assert.equal(r.estimatedIrpjCsllProvision, 0);
     assert.equal(r.estimatedNetIncomeAfterTaxes, -50_000);
   });
 
-  it("IRPJ 15% abaixo do limite mensal", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 15_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedIrpjNormal, 2_250);
-    assert.equal(r.estimatedIrpjAdditional, 0);
-    assert.equal(r.estimatedIrpjTotal, 2_250);
+  it("base mensal zero gera provisao zero", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 0 });
+    assert.equal(r.estimatedIrpjCsllProvision, 0);
+    assert.equal(r.estimatedNetIncomeAfterTaxes, 0);
   });
 
-  it("IRPJ exatamente no limite mensal sem adicional", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 20_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedIrpjAdditionalThreshold, 20_000);
-    assert.equal(r.estimatedIrpjAdditionalBase, 0);
+  it("base de R$ 10.000 sem adicional", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 10_000 });
+    assert.equal(r.estimatedCsll, 900);
+    assert.equal(r.estimatedIrpjTotal, 1_500);
     assert.equal(r.estimatedIrpjAdditional, 0);
+  });
+
+  it("base de R$ 20.000 sem adicional", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 20_000 });
+    assert.equal(r.estimatedCsll, 1_800);
     assert.equal(r.estimatedIrpjNormal, 3_000);
+    assert.equal(r.estimatedIrpjAdditional, 0);
+    assert.equal(r.estimatedIrpjAdditionalThreshold, 20_000);
   });
 
-  it("adicional de 10% apenas sobre o excedente", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 30_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedIrpjNormal, 4_500);
-    assert.equal(r.estimatedIrpjAdditionalBase, 10_000);
-    assert.equal(r.estimatedIrpjAdditional, 1_000);
-    assert.equal(r.estimatedIrpjTotal, 5_500);
+  it("base de R$ 20.001 gera adicional somente sobre R$ 1", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 20_001 });
+    assert.equal(r.estimatedIrpjAdditionalBase, 1);
+    assert.equal(r.estimatedIrpjAdditional, 0.1);
+  });
+
+  it("exemplo obrigatorio — base R$ 139.900 (uma PJ)", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 139_900 });
+    assert.equal(r.estimatedCsll, 12_591);
+    assert.equal(r.estimatedIrpjNormal, 20_985);
+    assert.equal(r.estimatedIrpjAdditionalBase, 119_900);
+    assert.equal(r.estimatedIrpjAdditional, 11_990);
+    assert.equal(r.estimatedIrpjTotal, 32_975);
+    assert.equal(r.estimatedIrpjCsllProvision, 45_566);
+    assert.equal(r.estimatedNetIncomeAfterTaxes, 94_334);
   });
 
   it("exemplo mensal base R$ 219.000", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 219_000,
-      numberOfMonthsInPeriod: 1,
-    });
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 219_000 });
     assert.equal(r.estimatedCsll, 19_710);
-    assert.equal(r.estimatedIrpjNormal, 32_850);
-    assert.equal(r.estimatedIrpjAdditional, 19_900);
     assert.equal(r.estimatedIrpjTotal, 52_750);
     assert.equal(r.estimatedIrpjCsllProvision, 72_460);
     assert.equal(r.estimatedNetIncomeAfterTaxes, 146_540);
   });
 
-  it("exemplo YTD julho base R$ 1.550.000", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 1_550_000,
-      numberOfMonthsInPeriod: 7,
-    });
-    assert.equal(r.estimatedIrpjAdditionalThreshold, 140_000);
-    assert.equal(r.estimatedCsll, 139_500);
-    assert.equal(r.estimatedIrpjNormal, 232_500);
-    assert.equal(r.estimatedIrpjAdditional, 141_000);
-    assert.equal(r.estimatedIrpjTotal, 373_500);
-    assert.equal(r.estimatedIrpjCsllProvision, 513_000);
-    assert.equal(r.estimatedNetIncomeAfterTaxes, 1_037_000);
-  });
-
-  it("janeiro usa limite de R$ 20.000", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 100_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedIrpjAdditionalThreshold, 20_000);
-  });
-
-  it("dezembro usa limite de R$ 240.000", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 100_000,
-      numberOfMonthsInPeriod: 12,
-    });
-    assert.equal(r.estimatedIrpjAdditionalThreshold, 240_000);
-    assert.equal(r.estimatedIrpjAdditional, 0);
-  });
-
-  it("base zero nao gera beneficio fiscal", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 0,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedIrpjCsllProvision, 0);
-    assert.equal(r.estimatedNetIncomeAfterTaxes, 0);
-  });
-
   it("CSLL nao reduz a base do IRPJ", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 100_000,
-      numberOfMonthsInPeriod: 1,
-    });
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
     assert.equal(r.estimatedIrpjNormal, roundDreMoney(100_000 * 0.15));
     assert.notEqual(r.estimatedIrpjNormal, roundDreMoney((100_000 - r.estimatedCsll) * 0.15));
   });
 
-  it("usa valor monetario exato arredondado a centavos", () => {
-    const r = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 219_000.004,
-      numberOfMonthsInPeriod: 1,
-    });
-    assert.equal(r.estimatedTaxBase, 219_000);
-    assert.equal(r.estimatedCsll, 19_710);
+  it("adicional nao incide sobre os primeiros R$ 20.000", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 30_000 });
+    assert.equal(r.estimatedIrpjAdditionalBase, 10_000);
+    assert.equal(r.estimatedIrpjAdditional, 1_000);
+  });
+
+  it("limite mensal e sempre R$ 20.000", () => {
+    const r = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
+    assert.equal(r.estimatedIrpjAdditionalThreshold, 20_000);
+    assert.equal(r.numberOfMonthsInPeriod, 1);
   });
 });
 
 describe("consolidacao por pessoa juridica", () => {
   it("lucro e prejuizo nao se compensam", () => {
-    const a = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 100_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    const b = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: -40_000,
-      numberOfMonthsInPeriod: 1,
-    });
+    const a = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
+    const b = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: -40_000 });
     const sum = sumEstimatedCorporateIncomeTaxes([a, b]);
     assert.equal(b.estimatedIrpjCsllProvision, 0);
     assert.equal(sum.estimatedIrpjCsllProvision, a.estimatedIrpjCsllProvision);
     assert.equal(sum.estimatedTaxBase, 60_000);
   });
 
-  it("limite adicional aplicado por PJ (duas com lucro)", () => {
-    const a = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 30_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    const b = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 30_000,
-      numberOfMonthsInPeriod: 1,
-    });
-    const consolidatedWrong = calculateEstimatedCorporateIncomeTaxes({
-      estimatedTaxBase: 60_000,
-      numberOfMonthsInPeriod: 1,
-    });
+  it("exemplo obrigatorio multiempresa R$ 215.600 e R$ -75.700", () => {
+    const a = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 215_600 });
+    const b = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: -75_700 });
     const sum = sumEstimatedCorporateIncomeTaxes([a, b]);
-    assert.equal(sum.estimatedIrpjAdditional, a.estimatedIrpjAdditional + b.estimatedIrpjAdditional);
-    // Cada PJ usa seu próprio limite de R$ 20.000 — consolidar bases com um único limite superestima o adicional.
-    assert.ok(sum.estimatedIrpjAdditional < consolidatedWrong.estimatedIrpjAdditional);
-    assert.equal(sum.estimatedIrpjAdditionalThreshold, 40_000);
+    assert.equal(a.estimatedCsll, 19_404);
+    assert.equal(a.estimatedIrpjNormal, 32_340);
+    assert.equal(a.estimatedIrpjAdditional, 19_560);
+    assert.equal(a.estimatedIrpjTotal, 51_900);
+    assert.equal(a.estimatedIrpjCsllProvision, 71_304);
+    assert.equal(b.estimatedIrpjCsllProvision, 0);
+    assert.equal(sum.estimatedTaxBase, 139_900);
+    assert.equal(sum.estimatedIrpjCsllProvision, 71_304);
+    assert.equal(sum.estimatedNetIncomeAfterTaxes, 68_596);
   });
 
-  it("series multi-PJ somam provisoes mensais e YTD por entidade", () => {
-    const entityA = emptyDreSeries();
-    const entityB = emptyDreSeries();
-    for (let i = 0; i < 7; i += 1) {
-      entityA[i] = 100_000;
-      entityB[i] = i === 6 ? -10_000 : 0;
-    }
+  it("diagnostico: provisao ~71,1 mil sobre consolidado 139,9 mil = CORRECT_MULTI_ENTITY", () => {
+    const aSeries = emptyDreSeries();
+    const bSeries = emptyDreSeries();
+    aSeries[6] = 215_600;
+    bSeries[6] = -75_700;
     const block = buildEstimatedCorporateTaxSeriesFromEntityBases(
-      [entityA, entityB],
+      [
+        entity("a", "Empresa A", "72569510000195", aSeries),
+        entity("b", "Empresa B", "14055501000180", bSeries),
+      ],
       7,
       "per_legal_entity"
     );
-    assert.equal(block.consolidationMode, "per_legal_entity");
-    assert.equal(block.month.estimatedIrpjCsllProvision, block.csllByMonth[6]! + block.irpjByMonth[6]!);
-    assert.equal(block.ytd.numberOfMonthsInPeriod, 7);
-    assert.equal(block.provisionYtd, block.ytd.estimatedIrpjCsllProvision);
+    assert.equal(block.month.estimatedTaxBase, 139_900);
+    assert.equal(block.month.estimatedIrpjCsllProvision, 71_304);
+    assert.equal(block.entitiesHighlightMonth.length, 2);
+    assert.ok(
+      block.month.estimatedIrpjCsllProvision >
+        calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 139_900 })
+          .estimatedIrpjCsllProvision
+    );
+  });
+
+  it("limite adicional aplicado por PJ (duas com lucro)", () => {
+    const a = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 30_000 });
+    const b = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 30_000 });
+    const wrong = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 60_000 });
+    const sum = sumEstimatedCorporateIncomeTaxes([a, b]);
+    assert.ok(sum.estimatedIrpjAdditional < wrong.estimatedIrpjAdditional);
+  });
+
+  it("unidades do mesmo CNPJ sao consolidadas antes do calculo", () => {
+    const u1 = emptyDreSeries();
+    const u2 = emptyDreSeries();
+    u1[0] = 25_000;
+    u2[0] = 25_000;
+    const block = buildEstimatedCorporateTaxSeriesFromEntityBases(
+      [
+        entity("filial-a", "Filial A", "72569510000195", u1),
+        entity("filial-b", "Filial B", "72569510000195", u2),
+      ],
+      1,
+      "per_legal_entity"
+    );
+    const expected = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 50_000 });
+    assert.equal(block.entitiesHighlightMonth.length, 1);
+    assert.equal(block.month.estimatedTaxBase, 50_000);
+    assert.equal(block.month.estimatedIrpjCsllProvision, expected.estimatedIrpjCsllProvision);
+    assert.equal(block.month.estimatedIrpjAdditional, 3_000);
+  });
+
+  it("YTD positiveBase soma bases positivas por PJ (sem compensar prejuizo)", () => {
+    const a = emptyDreSeries();
+    const b = emptyDreSeries();
+    a[0] = 100_000;
+    b[0] = -40_000;
+    const block = buildEstimatedCorporateTaxSeriesFromEntityBases(
+      [
+        entity("a", "A", "72569510000195", a),
+        entity("b", "B", "14055501000180", b),
+      ],
+      1,
+      "per_legal_entity"
+    );
+    assert.equal(block.month.estimatedTaxBase, 60_000);
+    assert.equal(block.month.positiveBase, 100_000);
+    assert.equal(block.ytd.positiveBase, 100_000);
+    assert.equal(block.ytd.estimatedIrpjAdditionalBase, 80_000);
+  });
+});
+
+describe("YTD = soma das estimativas mensais", () => {
+  it("YTD nao recalcula tributo sobre base acumulada", () => {
+    const series = emptyDreSeries();
+    for (let i = 0; i < 7; i += 1) series[i] = 100_000;
+    const block = buildEstimatedCorporateTaxSeriesFromSingleBase(series, 7);
+    const monthly = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
+    assert.equal(block.ytdMethod, "sum_of_monthly_estimates");
+    assert.equal(block.ytd.aggregation, "sum_of_monthly_estimates");
+    assert.equal(block.ytd.monthsSummed, 7);
+    assert.equal(block.csllYtd, roundDreMoney(monthly.estimatedCsll * 7));
+    assert.equal(block.provisionYtd, roundDreMoney(monthly.estimatedIrpjCsllProvision * 7));
+    // Recalcular uma única vez sobre a base acumulada (errado nesta tela) diverge da soma mensal
+    const wrongAccruedOnce = calculateEstimatedCorporateIncomeTaxes({
+      estimatedTaxBase: 700_000,
+    });
+    assert.notEqual(block.provisionYtd, wrongAccruedOnce.estimatedIrpjCsllProvision);
+  });
+
+  it("mes negativo nao reduz provisao de mes positivo", () => {
+    const series = emptyDreSeries();
+    series[0] = 100_000;
+    series[1] = -50_000;
+    const block = buildEstimatedCorporateTaxSeriesFromSingleBase(series, 2);
+    const jan = calculateEstimatedCorporateIncomeTaxes({ estimatedTaxBase: 100_000 });
+    assert.equal(block.provisionByMonth[0], jan.estimatedIrpjCsllProvision);
+    assert.equal(block.provisionByMonth[1], 0);
+    assert.equal(block.provisionYtd, jan.estimatedIrpjCsllProvision);
+  });
+
+  it("limite de R$ 20.000 e reaplicado a cada mes", () => {
+    const series = emptyDreSeries();
+    series[0] = 30_000;
+    series[1] = 30_000;
+    const block = buildEstimatedCorporateTaxSeriesFromSingleBase(series, 2);
+    assert.equal(block.irpjAdditionalByMonth[0], 1_000);
+    assert.equal(block.irpjAdditionalByMonth[1], 1_000);
+    assert.equal(block.ytd.estimatedIrpjAdditional, 2_000);
+    assert.equal(block.ytd.estimatedIrpjAdditionalThreshold, 20_000);
   });
 });
 
 describe("buildFinanceDreLines + provisoes estimadas", () => {
-  function baseInput(overrides = {}) {
+  function baseInput(overrides: Record<string, unknown> = {}) {
     const receita = emptyDreSeries();
     receita[0] = 1_000;
     const pis = emptyDreSeries();
@@ -241,40 +292,18 @@ describe("buildFinanceDreLines + provisoes estimadas", () => {
     const parent = lines.find((l) => l.id === "provisoes_estimadas_irpj_csll");
     const csll = lines.find((l) => l.id === "csll_estimada");
     const irpj = lines.find((l) => l.id === "irpj_estimado");
-    const net = lines.find((l) => l.id === "lucro_liquido_aproximado");
-    assert.ok(parent && csll && irpj && net);
+    assert.ok(parent && csll && irpj);
     assert.equal(
       roundDreMoney(Math.abs(parent.values.highlight)),
       roundDreMoney(Math.abs(csll.values.highlight) + Math.abs(irpj.values.highlight))
     );
-    assert.equal(parent.values.highlight, -estimatedCorporateTaxes.month.estimatedIrpjCsllProvision);
-    assert.equal(kpis.resultadoOperacional, 400);
     assert.equal(kpis.lucroLiquidoAproximado, estimatedCorporateTaxes.month.estimatedNetIncomeAfterTaxes);
-    assert.equal(
-      net.values.highlight,
-      roundDreMoney(400 - estimatedCorporateTaxes.month.estimatedIrpjCsllProvision)
-    );
   });
 
-  it("% RL e receita liquida zero", () => {
-    const { lines } = buildFinanceDreLines(
-      baseInput({
-        receitaBruta: emptyDreSeries(),
-        pis: emptyDreSeries(),
-        cmv: emptyDreSeries(),
-        fretes: emptyDreSeries(),
-        embalagens: emptyDreSeries(),
-        despesasAdmin: emptyDreSeries(),
-      })
-    );
-    const net = lines.find((l) => l.id === "lucro_liquido_aproximado");
-    assert.equal(net?.pctOfNetRevenue, null);
-  });
-
-  it("YTD usa mes selecionado no limite do adicional", () => {
+  it("YTD da linha e soma mensal das provisoes", () => {
     const receita = emptyDreSeries();
     for (let i = 0; i < 7; i += 1) receita[i] = 300_000;
-    const { estimatedCorporateTaxes } = buildFinanceDreLines(
+    const { lines, estimatedCorporateTaxes } = buildFinanceDreLines(
       baseInput({
         highlightMonth: 7,
         receitaBruta: receita,
@@ -285,22 +314,11 @@ describe("buildFinanceDreLines + provisoes estimadas", () => {
         despesasAdmin: emptyDreSeries(),
       })
     );
-    assert.equal(estimatedCorporateTaxes.ytd.numberOfMonthsInPeriod, 7);
-    assert.equal(estimatedCorporateTaxes.ytd.estimatedIrpjAdditionalThreshold, 140_000);
-    assert.equal(estimatedCorporateTaxes.month.numberOfMonthsInPeriod, 1);
-  });
-
-  it("API block retorna detalhamento completo", () => {
-    const { estimatedCorporateTaxes } = buildFinanceDreLines(baseInput());
-    assert.ok("estimatedTaxBase" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedCsll" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedIrpjNormal" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedIrpjAdditional" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedIrpjTotal" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedIrpjCsllProvision" in estimatedCorporateTaxes.month);
-    assert.ok("estimatedNetIncomeAfterTaxes" in estimatedCorporateTaxes.month);
-    assert.equal(estimatedCorporateTaxes.includesFinancialResult, false);
-    assert.equal(estimatedCorporateTaxes.baseSource, "resultado_operacional");
+    assert.equal(estimatedCorporateTaxes.ytdMethod, "sum_of_monthly_estimates");
+    assert.equal(estimatedCorporateTaxes.ytd.monthsSummed, 7);
+    assert.equal(estimatedCorporateTaxes.ytd.estimatedIrpjAdditionalThreshold, 20_000);
+    const parent = lines.find((l) => l.id === "provisoes_estimadas_irpj_csll");
+    assert.equal(parent?.values.ytd, -estimatedCorporateTaxes.provisionYtd);
   });
 
   it("override multi-PJ nao usa um unico limite consolidado", () => {
@@ -309,22 +327,46 @@ describe("buildFinanceDreLines + provisoes estimadas", () => {
     const b = emptyDreSeries();
     b[0] = 30_000;
     const override = buildEstimatedCorporateTaxSeriesFromEntityBases(
-      [a, b],
+      [
+        entity("a", "A", "72569510000195", a),
+        entity("b", "B", "14055501000180", b),
+      ],
       1,
       "per_legal_entity"
     );
-    const consolidated = emptyDreSeries();
-    consolidated[0] = 60_000;
-    const single = buildEstimatedCorporateTaxSeriesFromSingleBase(consolidated, 1);
+    const single = buildEstimatedCorporateTaxSeriesFromSingleBase(
+      (() => {
+        const s = emptyDreSeries();
+        s[0] = 60_000;
+        return s;
+      })(),
+      1
+    );
     assert.ok(override.month.estimatedIrpjAdditional < single.month.estimatedIrpjAdditional);
-    assert.equal(override.month.estimatedIrpjAdditionalThreshold, 40_000);
     const { estimatedCorporateTaxes } = buildFinanceDreLines(
       baseInput({ estimatedCorporateTaxesOverride: override })
     );
     assert.equal(estimatedCorporateTaxes.consolidationMode, "per_legal_entity");
+    assert.equal(estimatedCorporateTaxes.entitiesHighlightMonth.length, 2);
+  });
+
+  it("% RL mensal e YTD usam receita liquida", () => {
+    const { lines } = buildFinanceDreLines(baseInput());
+    const parent = lines.find((l) => l.id === "provisoes_estimadas_irpj_csll");
+    assert.ok(parent?.pctOfNetRevenue != null);
+    const zero = buildFinanceDreLines(
+      baseInput({
+        receitaBruta: emptyDreSeries(),
+        pis: emptyDreSeries(),
+        cmv: emptyDreSeries(),
+        fretes: emptyDreSeries(),
+        embalagens: emptyDreSeries(),
+        despesasAdmin: emptyDreSeries(),
+      })
+    );
     assert.equal(
-      estimatedCorporateTaxes.month.estimatedIrpjAdditional,
-      override.month.estimatedIrpjAdditional
+      zero.lines.find((l) => l.id === "lucro_liquido_aproximado")?.pctOfNetRevenue,
+      null
     );
   });
 });

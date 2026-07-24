@@ -24,11 +24,12 @@ function formatDreMarginPct(pct: number | null | undefined): string | null {
 }
 
 export function FinanceDrePrintDocument({ report }: Props) {
-  const opPositive = report.kpis.resultadoOperacional >= 0;
-  const receitaPct = formatDreMarginPct(report.kpis.receitaLiquidaPct);
-  const brutoPct = formatDreMarginPct(report.kpis.margemBrutaPct);
-  const opPct = formatDreMarginPct(report.kpis.margemOperacionalPct);
-  const liquidoPct = formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct);
+  const ytd = report.kpis.ytd;
+  const opPositive = ytd.resultadoOperacional >= 0;
+  const receitaPct = formatDreMarginPct(ytd.receitaLiquidaPct);
+  const brutoPct = formatDreMarginPct(ytd.margemBrutaPct);
+  const opPct = formatDreMarginPct(ytd.margemOperacionalPct);
+  const liquidoPct = formatDreMarginPct(ytd.margemLiquidaAproximadaPct);
 
   return (
     <div id="finance-dre-print-root" data-testid="finance-dre-print-root">
@@ -42,24 +43,24 @@ export function FinanceDrePrintDocument({ report }: Props) {
           </p>
         </header>
 
-        <section className="finance-dre-print-kpi-grid" aria-label="Indicadores do mês">
+        <section className="finance-dre-print-kpi-grid" aria-label="Indicadores acumulados (YTD)">
           <div className="finance-dre-print-kpi">
-            <div className="finance-dre-print-kpi-label">Receita líquida (mês)</div>
+            <div className="finance-dre-print-kpi-label">Receita líquida (YTD)</div>
             <div className="finance-dre-print-kpi-value">
-              {formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+              {formatFinanceKpiCurrency(ytd.receitaLiquida)}
             </div>
             {receitaPct ? <div className="finance-dre-print-kpi-hint">{receitaPct}</div> : null}
           </div>
           <div
             className={
-              report.kpis.lucroBruto >= 0
+              ytd.lucroBruto >= 0
                 ? "finance-dre-print-kpi finance-dre-print-kpi--positive"
                 : "finance-dre-print-kpi finance-dre-print-kpi--negative"
             }
           >
-            <div className="finance-dre-print-kpi-label">Lucro bruto (mês)</div>
+            <div className="finance-dre-print-kpi-label">Lucro bruto (YTD)</div>
             <div className="finance-dre-print-kpi-value">
-              {formatFinanceKpiCurrency(report.kpis.lucroBruto)}
+              {formatFinanceKpiCurrency(ytd.lucroBruto)}
             </div>
             {brutoPct ? <div className="finance-dre-print-kpi-hint">{brutoPct}</div> : null}
           </div>
@@ -70,22 +71,24 @@ export function FinanceDrePrintDocument({ report }: Props) {
                 : "finance-dre-print-kpi finance-dre-print-kpi--negative"
             }
           >
-            <div className="finance-dre-print-kpi-label">Resultado operacional</div>
+            <div className="finance-dre-print-kpi-label">Resultado operacional (YTD)</div>
             <div className="finance-dre-print-kpi-value">
-              {formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
+              {formatFinanceKpiCurrency(ytd.resultadoOperacional)}
             </div>
             {opPct ? <div className="finance-dre-print-kpi-hint">{opPct}</div> : null}
           </div>
           <div
             className={
-              report.kpis.lucroLiquidoAproximado >= 0
+              ytd.lucroLiquidoAproximado >= 0
                 ? "finance-dre-print-kpi finance-dre-print-kpi--positive"
                 : "finance-dre-print-kpi finance-dre-print-kpi--negative"
             }
           >
-            <div className="finance-dre-print-kpi-label">Lucro líquido após IRPJ e CSLL</div>
+            <div className="finance-dre-print-kpi-label">
+              Lucro líquido após IRPJ e CSLL (YTD)
+            </div>
             <div className="finance-dre-print-kpi-value">
-              {formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
+              {formatFinanceKpiCurrency(ytd.lucroLiquidoAproximado)}
             </div>
             {liquidoPct ? <div className="finance-dre-print-kpi-hint">{liquidoPct}</div> : null}
           </div>

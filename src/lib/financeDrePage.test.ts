@@ -14,8 +14,10 @@ import {
   buildFinanceDreLines,
   buildFinanceDreSourceChecks,
   emptyDreSeries,
+  resolveFinanceDreAvailableThroughMonth,
   resolveBilledOrderCmv,
   roundDreMoney,
+  zeroDreSeriesAfterMonth,
 } from "@/src/lib/financeDreMath.js";
 import { extractDreNfeItemsFromRawPayload } from "@/src/lib/financeDreNfeItemExtract.js";
 import {
@@ -187,6 +189,9 @@ describe("financeDreMath", () => {
     assert.equal(kpis.margemOperacionalPct, roundDreMoney((400 / 980) * 100));
     assert.ok(kpis.lucroLiquidoAproximado < 400);
     assert.ok(kpis.margemLiquidaAproximadaPct != null);
+    assert.ok(kpis.ytd);
+    assert.equal(kpis.ytd.receitaLiquida, 980);
+    assert.equal(kpis.ytd.resultadoOperacional, 400);
     assert.ok(lines.some((l) => l.id === "embalagens"));
     assert.ok(lines.some((l) => l.id === "provisoes_estimadas_irpj_csll"));
     assert.ok(lines.some((l) => l.id === "csll_estimada"));
@@ -317,6 +322,16 @@ describe("financeDreViewModel & export", () => {
         margemOperacionalPct: 100,
         lucroLiquidoAproximado: 10,
         margemLiquidaAproximadaPct: 100,
+        ytd: {
+          receitaLiquida: 10,
+          receitaLiquidaPct: 100,
+          lucroBruto: 10,
+          margemBrutaPct: 100,
+          resultadoOperacional: 10,
+          margemOperacionalPct: 100,
+          lucroLiquidoAproximado: 10,
+          margemLiquidaAproximadaPct: 100,
+        },
       },
       estimatedCorporateTaxes: buildEstimatedCorporateTaxSeriesFromSingleBase(series, 1),
       lines: [
@@ -356,10 +371,16 @@ describe("finance dre presentation UX", () => {
     assert.match(page, /FinanceDrePresentationModal/);
     assert.match(page, /FinanceDreInformativeReport/);
     assert.match(page, /finance-dre-open-presentation/);
+    assert.match(page, /Acumulado \(YTD\)/);
+    assert.match(page, /Mês destaque/);
+    assert.match(page, /kpis\.ytd/);
     const modal = readSrc("src/components/finance/dre/FinanceDrePresentationModal.tsx");
     assert.match(modal, /showAllMonths/);
     assert.match(modal, /FinanceDreInformativeReport/);
     assert.match(modal, /z-\[85\]/);
+    assert.match(modal, /Receita líquida \(YTD\)/);
+    assert.match(modal, /kpis\.ytd/);
+    assert.doesNotMatch(modal, /Receita líquida \(mês\)/);
     const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
     assert.match(grid, /showAllMonths/);
     assert.match(grid, /rowSeparators|border-t-2|border-l-\[3px\]/);
@@ -374,6 +395,9 @@ describe("finance dre presentation UX", () => {
     assert.match(printDoc, /finance-dre-print-root/);
     assert.match(printDoc, /showAllMonths/);
     assert.match(printDoc, /expandAll/);
+    assert.match(printDoc, /Receita líquida \(YTD\)/);
+    assert.match(printDoc, /kpis\.ytd/);
+    assert.doesNotMatch(printDoc, /Receita líquida \(mês\)/);
     const css = readSrc("src/components/finance/dre/finance-dre-print.css");
     assert.match(css, /A4 landscape/);
     assert.match(css, /body\.finance-dre-print-route #root/);
@@ -382,6 +406,56 @@ describe("finance dre presentation UX", () => {
     assert.match(globalPrint, /body\.finance-dre-print-route #root/);
     const main = readSrc("src/main.tsx");
     assert.match(main, /finance-dre-print\.css/);
+  });
+});
+
+describe("finance dre future months", () => {
+  it("resolveFinanceDreAvailableThroughMonth cobre passado/presente/futuro", () => {
+    const ref = new Date(2026, 6, 24); // Jul/2026
+    assert.equal(resolveFinanceDreAvailableThroughMonth(2025, ref), 12);
+    assert.equal(resolveFinanceDreAvailableThroughMonth(2026, ref), 7);
+    assert.equal(resolveFinanceDreAvailableThroughMonth(2027, ref), 0);
+  });
+
+  it("meses futuros ficam zerados na grade e nas provisoes", () => {
+    const receita = emptyDreSeries();
+    const fretes = emptyDreSeries();
+    const admin = emptyDreSeries();
+    for (let i = 0; i < 12; i += 1) {
+      receita[i] = 100_000;
+      fretes[i] = 26_300;
+      admin[i] = 40_000;
+    }
+    const { lines, estimatedCorporateTaxes } = buildFinanceDreLines({
+      highlightMonth: 7,
+      availableThroughMonth: 7,
+      receitaBruta: receita,
+      cofins: emptyDreSeries(),
+      icms: emptyDreSeries(),
+      icmsSt: emptyDreSeries(),
+      ipi: emptyDreSeries(),
+      pis: emptyDreSeries(),
+      devolucoes: emptyDreSeries(),
+      cmv: emptyDreSeries(),
+      fretes,
+      embalagens: emptyDreSeries(),
+      despesasAdmin: admin,
+      despesasPessoal: emptyDreSeries(),
+      impostosCc: emptyDreSeries(),
+      materiaPrimaCc: emptyDreSeries(),
+      unclassifiedCcAmount: emptyDreSeries(),
+      quality: { unlinkedNfeCount: 0, unlinkedNfeRevenue: 0, taxSummaryGapCount: 0 },
+    });
+    const resultado = lines.find((l) => l.id === "resultado_operacional");
+    const fretesLine = lines.find((l) => l.id === "fretes");
+    assert.ok(resultado && fretesLine);
+    for (let i = 7; i < 12; i += 1) {
+      assert.equal(resultado.values.byMonth[i], 0, `resultado mês ${i + 1}`);
+      assert.equal(fretesLine.values.byMonth[i], 0, `fretes mês ${i + 1}`);
+      assert.equal(estimatedCorporateTaxes.provisionByMonth[i], 0, `provisão mês ${i + 1}`);
+    }
+    assert.ok((resultado.values.byMonth[6] ?? 0) !== 0);
+    assert.deepEqual(zeroDreSeriesAfterMonth([1, 2, 3, 4], 2), [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   });
 });
 
@@ -436,6 +510,7 @@ describe("finance dre line drill-down", () => {
     const pageUi = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
     assert.match(pageUi, /Lucro líquido após IRPJ e CSLL/);
     assert.match(pageUi, /Estimativa gerencial/);
+    assert.match(pageUi, /Acumulado \(YTD\)/);
     assert.doesNotMatch(pageUi, /0\.09|0\.15|20000|numberOfMonthsInPeriod/);
 
     const path = getFinanceDreLineDrilldownPath("icms", "year=2026&month=7", "highlight");

@@ -167,7 +167,8 @@ export type FinanceDreQualityAlert = {
   amount?: number;
 };
 
-export type FinanceDreKpis = {
+/** Conjunto de KPIs (mês destaque ou YTD). */
+export type FinanceDreKpiSet = {
   receitaLiquida: number;
   /** % da receita líquida sobre si mesma (100 quando há receita). */
   receitaLiquidaPct: number | null;
@@ -179,6 +180,14 @@ export type FinanceDreKpis = {
   lucroLiquidoAproximado: number;
   /** % do lucro líquido aproximado sobre a receita líquida. */
   margemLiquidaAproximadaPct: number | null;
+};
+
+/**
+ * KPIs do cabeçalho: campos no raiz = mês destaque;
+ * `ytd` = acumulado jan→mês destaque (mesmos indicadores).
+ */
+export type FinanceDreKpis = FinanceDreKpiSet & {
+  ytd: FinanceDreKpiSet;
 };
 
 export type FinanceDreReport = {

@@ -5,6 +5,7 @@
 
 import type {
   FinanceDreInformativeItem,
+  FinanceDreKpiSet,
   FinanceDreKpis,
   FinanceDreLine,
   FinanceDreLineId,
@@ -39,7 +40,8 @@ export function financeDreMonthLabels(): string[] {
 
 export function roundDreMoney(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.round(value * 100) / 100;
+  const rounded = Math.round(value * 100) / 100;
+  return Object.is(rounded, -0) ? 0 : rounded;
 }
 
 export function ytdThroughMonth(byMonth: number[], highlightMonth: number): number {
@@ -47,6 +49,111 @@ export function ytdThroughMonth(byMonth: number[], highlightMonth: number): numb
   let sum = 0;
   for (let i = 0; i < end; i += 1) sum += byMonth[i] ?? 0;
   return roundDreMoney(sum);
+}
+
+/**
+ * Último mês com competência disponível no ano do relatório.
+ * Ano passado → 12; ano futuro → 0; ano corrente → mês de referenceNow.
+ */
+export function resolveFinanceDreAvailableThroughMonth(
+  year: number,
+  referenceNow: Date = new Date()
+): number {
+  const nowYear = referenceNow.getFullYear();
+  const nowMonth = referenceNow.getMonth() + 1;
+  if (!Number.isFinite(year)) return nowMonth;
+  if (year < nowYear) return 12;
+  if (year > nowYear) return 0;
+  return Math.min(12, Math.max(0, nowMonth));
+}
+
+/** Zera índices após `availableThroughMonth` (1–12). availableThroughMonth ≤ 0 → série toda zero. */
+export function zeroDreSeriesAfterMonth(
+  byMonth: readonly number[],
+  availableThroughMonth: number
+): number[] {
+  const end = Math.min(12, Math.max(0, Math.floor(availableThroughMonth)));
+  return Array.from({ length: 12 }, (_, i) =>
+    i < end ? roundDreMoney(byMonth[i] ?? 0) : 0
+  );
+}
+
+function clampEstimatedTaxBlockToAvailableMonths(
+  block: FinanceDreEstimatedCorporateTaxesBlock,
+  availableThroughMonth: number,
+  highlightMonth: number
+): FinanceDreEstimatedCorporateTaxesBlock {
+  const end = Math.min(12, Math.max(0, Math.floor(availableThroughMonth)));
+  const csllByMonth = zeroDreSeriesAfterMonth(block.csllByMonth, end);
+  const irpjByMonth = zeroDreSeriesAfterMonth(block.irpjByMonth, end);
+  const irpjNormalByMonth = zeroDreSeriesAfterMonth(block.irpjNormalByMonth, end);
+  const irpjAdditionalByMonth = zeroDreSeriesAfterMonth(block.irpjAdditionalByMonth, end);
+  const provisionByMonth = zeroDreSeriesAfterMonth(block.provisionByMonth, end);
+  const m = Math.min(Math.max(1, end || 1), Math.min(12, Math.max(1, highlightMonth)));
+  const sumThru = (series: number[]) => ytdThroughMonth(series, m);
+  const monthProvision = roundDreMoney(provisionByMonth[m - 1] ?? 0);
+  const monthCsll = roundDreMoney(csllByMonth[m - 1] ?? 0);
+  const monthIrpj = roundDreMoney(irpjByMonth[m - 1] ?? 0);
+  return {
+    ...block,
+    csllByMonth,
+    irpjByMonth,
+    irpjNormalByMonth,
+    irpjAdditionalByMonth,
+    provisionByMonth,
+    csllYtd: sumThru(csllByMonth),
+    irpjYtd: sumThru(irpjByMonth),
+    provisionYtd: sumThru(provisionByMonth),
+    month: {
+      ...block.month,
+      estimatedCsll: monthCsll,
+      estimatedIrpjNormal: roundDreMoney(irpjNormalByMonth[m - 1] ?? 0),
+      estimatedIrpjAdditional: roundDreMoney(irpjAdditionalByMonth[m - 1] ?? 0),
+      estimatedIrpjTotal: monthIrpj,
+      estimatedIrpjCsllProvision: monthProvision,
+    },
+    ytd: {
+      ...block.ytd,
+      estimatedCsll: sumThru(csllByMonth),
+      estimatedIrpjNormal: sumThru(irpjNormalByMonth),
+      estimatedIrpjAdditional: sumThru(irpjAdditionalByMonth),
+      estimatedIrpjTotal: sumThru(irpjByMonth),
+      estimatedIrpjCsllProvision: sumThru(provisionByMonth),
+      monthsSummed: m,
+    },
+  };
+}
+
+function clampFinanceDreMathInputToAvailableMonths(
+  input: FinanceDreMathInput
+): FinanceDreMathInput {
+  const available = input.availableThroughMonth ?? 12;
+  const z = (series: number[]) => zeroDreSeriesAfterMonth(series, available);
+  return {
+    ...input,
+    receitaBruta: z(input.receitaBruta),
+    cofins: z(input.cofins),
+    icms: z(input.icms),
+    icmsSt: z(input.icmsSt),
+    ipi: z(input.ipi),
+    pis: z(input.pis),
+    devolucoes: z(input.devolucoes),
+    cmv: z(input.cmv),
+    fretes: z(input.fretes),
+    embalagens: z(input.embalagens),
+    despesasAdmin: z(input.despesasAdmin),
+    despesasPessoal: z(input.despesasPessoal),
+    impostosCc: z(input.impostosCc),
+    materiaPrimaCc: z(input.materiaPrimaCc),
+    unclassifiedCcAmount: z(input.unclassifiedCcAmount),
+    estimatedCorporateTaxesOverride: input.estimatedCorporateTaxesOverride
+      ? clampEstimatedTaxBlockToAvailableMonths(
+          input.estimatedCorporateTaxesOverride,
+          available,
+          input.highlightMonth
+        )
+      : undefined,
+  };
 }
 
 export function toMonthValues(byMonth: number[], highlightMonth: number): FinanceDreMonthValues {
@@ -77,6 +184,11 @@ function safePct(part: number, base: number): number | null {
 
 export type FinanceDreMathInput = {
   highlightMonth: number;
+  /**
+   * Último mês com dados no ano (1–12). Meses posteriores são zerados
+   * (sem receita, custo, despesa nem provisão estimada). Default: 12.
+   */
+  availableThroughMonth?: number;
   receitaBruta: number[];
   cofins: number[];
   icms: number[];
@@ -198,30 +310,35 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   qualityAlerts: FinanceDreQualityAlert[];
   estimatedCorporateTaxes: FinanceDreEstimatedCorporateTaxesBlock;
 } {
-  const m = Math.min(12, Math.max(1, input.highlightMonth || 1));
+  const clamped = clampFinanceDreMathInputToAvailableMonths(input);
+  const available = clamped.availableThroughMonth ?? 12;
+  const m = Math.min(
+    Math.max(1, available || 1),
+    Math.min(12, Math.max(1, clamped.highlightMonth || 1))
+  );
 
   const deducoesAbs = sumSeries(
     sumSeries(
-      sumSeries(sumSeries(sumSeries(input.cofins, input.icms), input.icmsSt), input.ipi),
-      input.pis
+      sumSeries(sumSeries(sumSeries(clamped.cofins, clamped.icms), clamped.icmsSt), clamped.ipi),
+      clamped.pis
     ),
-    input.devolucoes
+    clamped.devolucoes
   );
   const deducoesNeg = negateSeries(deducoesAbs);
-  const receitaLiquida = subSeries(input.receitaBruta, deducoesAbs);
+  const receitaLiquida = subSeries(clamped.receitaBruta, deducoesAbs);
 
-  const custosAbs = sumSeries(sumSeries(input.cmv, input.fretes), input.embalagens);
+  const custosAbs = sumSeries(sumSeries(clamped.cmv, clamped.fretes), clamped.embalagens);
   const custosNeg = negateSeries(custosAbs);
   const lucroBruto = subSeries(receitaLiquida, custosAbs);
 
-  const adminNeg = negateSeries(input.despesasAdmin);
+  const adminNeg = negateSeries(clamped.despesasAdmin);
 
   // Resultado operacional = lucro bruto − admin (pessoal/imposto CC/MP CC NÃO entram)
   // Sem resultado financeiro na DRE atual → base estimada IRPJ/CSLL = resultado operacional.
-  const resultado = subSeries(lucroBruto, input.despesasAdmin);
+  const resultado = subSeries(lucroBruto, clamped.despesasAdmin);
 
   const estimatedCorporateTaxes =
-    input.estimatedCorporateTaxesOverride ??
+    clamped.estimatedCorporateTaxesOverride ??
     buildEstimatedCorporateTaxSeriesFromSingleBase(resultado, m);
 
   const provisionNegByMonth = negateSeries(estimatedCorporateTaxes.provisionByMonth);
@@ -235,6 +352,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const lucroBrutoH = roundDreMoney(lucroBruto[m - 1] ?? 0);
   const resultadoH = roundDreMoney(resultado[m - 1] ?? 0);
   const lucroAproxH = roundDreMoney(lucroAprox[m - 1] ?? 0);
+  const netYtd = ytdThroughMonth(receitaLiquida, m);
+  const lucroBrutoYtd = ytdThroughMonth(lucroBruto, m);
 
   const provisionVals = taxLineValues(
     estimatedCorporateTaxes.provisionByMonth,
@@ -264,7 +383,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   };
 
   const lines: FinanceDreLine[] = [
-    line("receita_bruta", "Receita bruta", "total", null, input.receitaBruta, m, netHighlight, {
+    line("receita_bruta", "Receita bruta", "total", null, clamped.receitaBruta, m, netHighlight, {
       expandable: true,
       sourceNote: "NF-e MARKET_REVENUE · valorLiquido (motor Faturamento)",
     }),
@@ -273,7 +392,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       "Venda de mercadorias",
       "detail",
       "receita_bruta",
-      input.receitaBruta,
+      clamped.receitaBruta,
       m,
       netHighlight
     ),
@@ -281,17 +400,17 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       expandable: true,
       sourceNote: "Impostos destacados + devoluções (XML fiscal)",
     }),
-    line("cofins", "(-) COFINS sobre vendas", "detail", "deducoes", negateSeries(input.cofins), m, netHighlight),
-    line("icms", "(-) ICMS sobre vendas", "detail", "deducoes", negateSeries(input.icms), m, netHighlight),
-    line("icms_st", "(-) ICMS substituição tributária", "detail", "deducoes", negateSeries(input.icmsSt), m, netHighlight),
-    line("ipi", "(-) IPI sobre vendas", "detail", "deducoes", negateSeries(input.ipi), m, netHighlight),
-    line("pis", "(-) PIS sobre vendas", "detail", "deducoes", negateSeries(input.pis), m, netHighlight),
+    line("cofins", "(-) COFINS sobre vendas", "detail", "deducoes", negateSeries(clamped.cofins), m, netHighlight),
+    line("icms", "(-) ICMS sobre vendas", "detail", "deducoes", negateSeries(clamped.icms), m, netHighlight),
+    line("icms_st", "(-) ICMS substituição tributária", "detail", "deducoes", negateSeries(clamped.icmsSt), m, netHighlight),
+    line("ipi", "(-) IPI sobre vendas", "detail", "deducoes", negateSeries(clamped.ipi), m, netHighlight),
+    line("pis", "(-) PIS sobre vendas", "detail", "deducoes", negateSeries(clamped.pis), m, netHighlight),
     line(
       "devolucoes",
       "(-) Devoluções de vendas",
       "detail",
       "deducoes",
-      negateSeries(input.devolucoes),
+      negateSeries(clamped.devolucoes),
       m,
       netHighlight
     ),
@@ -300,11 +419,11 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       expandable: true,
       sourceNote: "CMV (NF-e × custo vigente) + Fretes (CC Logística) + Embalagens (CC)",
     }),
-    line("cmv", "Custo das mercadorias vendidas", "detail", "custos", negateSeries(input.cmv), m, netHighlight, {
+    line("cmv", "Custo das mercadorias vendidas", "detail", "custos", negateSeries(clamped.cmv), m, netHighlight, {
       sourceNote:
         "Quantidade faturada na NF-e × custo vigente na data de emissão (tabela de custo de produtos)",
     }),
-    line("fretes", "Fretes e carretos", "detail", "custos", negateSeries(input.fretes), m, netHighlight, {
+    line("fretes", "Fretes e carretos", "detail", "custos", negateSeries(clamped.fretes), m, netHighlight, {
       sourceNote: "AP alocado em centros de custo Logística/Expedição",
     }),
     line(
@@ -312,7 +431,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       "Embalagens",
       "detail",
       "custos",
-      negateSeries(input.embalagens),
+      negateSeries(clamped.embalagens),
       m,
       netHighlight,
       {
@@ -377,7 +496,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       pctOfNetRevenue: irpjVals.pctOfNetRevenue,
       expandable: false,
       sourceNote:
-        "Estimativa gerencial: 15% + adicional de 10% sobre o excedente de R$ 20.000 × meses do período.",
+        "Estimativa gerencial: 15% + adicional de 10% sobre o excedente de R$ 20.000 por mês e por pessoa jurídica.",
     },
     {
       id: "lucro_liquido_aproximado",
@@ -392,7 +511,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     },
   ];
 
-  const kpis: FinanceDreKpis = {
+  const monthKpis: FinanceDreKpiSet = {
     receitaLiquida: netHighlight,
     receitaLiquidaPct: safePct(netHighlight, netHighlight),
     lucroBruto: lucroBrutoH,
@@ -402,47 +521,61 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     lucroLiquidoAproximado: lucroAproxH,
     margemLiquidaAproximadaPct: safePct(lucroAproxH, netHighlight),
   };
+  const ytdKpis: FinanceDreKpiSet = {
+    receitaLiquida: netYtd,
+    receitaLiquidaPct: safePct(netYtd, netYtd),
+    lucroBruto: lucroBrutoYtd,
+    margemBrutaPct: safePct(lucroBrutoYtd, netYtd),
+    resultadoOperacional: resultadoYtd,
+    margemOperacionalPct: safePct(resultadoYtd, netYtd),
+    lucroLiquidoAproximado: lucroAproxYtd,
+    margemLiquidaAproximadaPct: safePct(lucroAproxYtd, netYtd),
+  };
+  const kpis: FinanceDreKpis = {
+    ...monthKpis,
+    ytd: ytdKpis,
+  };
 
   const qualityAlerts: FinanceDreQualityAlert[] = [];
-  if ((input.quality.missingItemsNfeCount ?? 0) > 0) {
+  if ((clamped.quality.missingItemsNfeCount ?? 0) > 0) {
     qualityAlerts.push({
       code: "CMV_MISSING_ITEMS",
       severity: "warning",
-      message: `${input.quality.missingItemsNfeCount} NF-e sem itens parseáveis — CMV incompleto nessas notas.`,
-      count: input.quality.missingItemsNfeCount,
+      message: `${clamped.quality.missingItemsNfeCount} NF-e sem itens parseáveis — CMV incompleto nessas notas.`,
+      count: clamped.quality.missingItemsNfeCount,
     });
   }
-  if ((input.quality.missingProductLineCount ?? 0) > 0) {
+  if ((clamped.quality.missingProductLineCount ?? 0) > 0) {
     qualityAlerts.push({
       code: "CMV_MISSING_PRODUCT",
       severity: "warning",
-      message: `${input.quality.missingProductLineCount} itens de NF-e sem produto local resolvido.`,
-      count: input.quality.missingProductLineCount,
+      message: `${clamped.quality.missingProductLineCount} itens de NF-e sem produto local resolvido.`,
+      count: clamped.quality.missingProductLineCount,
     });
   }
-  if ((input.quality.missingCostLineCount ?? 0) > 0) {
+  if ((clamped.quality.missingCostLineCount ?? 0) > 0) {
     qualityAlerts.push({
       code: "CMV_MISSING_COST",
       severity: "warning",
-      message: `${input.quality.missingCostLineCount} itens sem custo vigente na data da nota.`,
-      count: input.quality.missingCostLineCount,
+      message: `${clamped.quality.missingCostLineCount} itens sem custo vigente na data da nota.`,
+      count: clamped.quality.missingCostLineCount,
     });
   }
   if (
-    input.quality.unlinkedNfeCount > 0 &&
-    !(input.quality.missingItemsNfeCount ||
-      input.quality.missingProductLineCount ||
-      input.quality.missingCostLineCount)
+    clamped.quality.unlinkedNfeCount > 0 &&
+    !(clamped.quality.missingItemsNfeCount ||
+      clamped.quality.missingProductLineCount ||
+      clamped.quality.missingCostLineCount)
   ) {
     qualityAlerts.push({
       code: "CMV_GAP",
       severity: "warning",
-      message: `Há lacunas de CMV (receita associada ≈ ${roundDreMoney(input.quality.unlinkedNfeRevenue)}).`,
-      count: input.quality.unlinkedNfeCount,
-      amount: roundDreMoney(input.quality.unlinkedNfeRevenue),
+      message: `Há lacunas de CMV (receita associada ≈ ${roundDreMoney(clamped.quality.unlinkedNfeRevenue)}).`,
+      count: clamped.quality.unlinkedNfeCount,
+      amount: roundDreMoney(clamped.quality.unlinkedNfeRevenue),
     });
   }
-  const unclassifiedYtd = ytdThroughMonth(input.unclassifiedCcAmount, m);
+  const unclassifiedYtd = ytdThroughMonth(clamped.unclassifiedCcAmount, m);
   if (unclassifiedYtd > 0.009) {
     qualityAlerts.push({
       code: "CC_UNCLASSIFIED",
@@ -452,12 +585,12 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
       amount: unclassifiedYtd,
     });
   }
-  if (input.quality.taxSummaryGapCount > 0) {
+  if (clamped.quality.taxSummaryGapCount > 0) {
     qualityAlerts.push({
       code: "TAX_SUMMARY_GAP",
       severity: "info",
-      message: `${input.quality.taxSummaryGapCount} NF-e sem resumo fiscal completo — deduções podem estar parciais.`,
-      count: input.quality.taxSummaryGapCount,
+      message: `${clamped.quality.taxSummaryGapCount} NF-e sem resumo fiscal completo — deduções podem estar parciais.`,
+      count: clamped.quality.taxSummaryGapCount,
     });
   }
 

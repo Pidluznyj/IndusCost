@@ -401,33 +401,89 @@ export function FinanceManagerialDrePage() {
 
           {!loading && report ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <KpiCard
-                  label="Receita líquida (mês)"
-                  value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
-                  hint={formatDreMarginPct(report.kpis.receitaLiquidaPct)}
-                />
-                <KpiCard
-                  label="Lucro bruto (mês)"
-                  value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
-                  hint={formatDreMarginPct(report.kpis.margemBrutaPct)}
-                  tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
-                />
-                <KpiCard
-                  label="Resultado operacional"
-                  value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
-                  hint={formatDreMarginPct(report.kpis.margemOperacionalPct)}
-                  tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
-                />
-                <KpiCard
-                  label="Lucro líquido após IRPJ e CSLL"
-                  value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
-                  hint={
-                    formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct) ??
-                    "Estimativa gerencial"
-                  }
-                  tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
-                />
+              <div className="space-y-3" data-testid="finance-dre-kpi-blocks">
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Acumulado (YTD)
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard
+                      label="Receita líquida (YTD)"
+                      value={formatFinanceKpiCurrency(report.kpis.ytd.receitaLiquida)}
+                      hint={formatDreMarginPct(report.kpis.ytd.receitaLiquidaPct)}
+                    />
+                    <KpiCard
+                      label="Lucro bruto (YTD)"
+                      value={formatFinanceKpiCurrency(report.kpis.ytd.lucroBruto)}
+                      hint={formatDreMarginPct(report.kpis.ytd.margemBrutaPct)}
+                      tone={report.kpis.ytd.lucroBruto >= 0 ? "positive" : "negative"}
+                    />
+                    <KpiCard
+                      label="Resultado operacional (YTD)"
+                      value={formatFinanceKpiCurrency(report.kpis.ytd.resultadoOperacional)}
+                      hint={formatDreMarginPct(report.kpis.ytd.margemOperacionalPct)}
+                      tone={
+                        report.kpis.ytd.resultadoOperacional >= 0 ? "positive" : "negative"
+                      }
+                    />
+                    <KpiCard
+                      label="Lucro líquido após IRPJ e CSLL (YTD)"
+                      value={formatFinanceKpiCurrency(report.kpis.ytd.lucroLiquidoAproximado)}
+                      hint={
+                        [
+                          formatDreMarginPct(report.kpis.ytd.margemLiquidaAproximadaPct),
+                          "Estimativa gerencial mensal",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      }
+                      tone={
+                        report.kpis.ytd.lucroLiquidoAproximado >= 0 ? "positive" : "negative"
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Mês destaque
+                  </p>
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <KpiCard
+                      label="Receita líquida (mês)"
+                      value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+                      hint={formatDreMarginPct(report.kpis.receitaLiquidaPct)}
+                    />
+                    <KpiCard
+                      label="Lucro bruto (mês)"
+                      value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
+                      hint={formatDreMarginPct(report.kpis.margemBrutaPct)}
+                      tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
+                    />
+                    <KpiCard
+                      label="Resultado operacional"
+                      value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
+                      hint={formatDreMarginPct(report.kpis.margemOperacionalPct)}
+                      tone={
+                        report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"
+                      }
+                    />
+                    <KpiCard
+                      label="Lucro líquido após IRPJ e CSLL"
+                      value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
+                      hint={
+                        [
+                          formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct),
+                          "Estimativa gerencial mensal",
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      }
+                      tone={
+                        report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"
+                      }
+                    />
+                  </div>
+                </div>
               </div>
 
               {report.qualityAlerts.length > 0 ? (

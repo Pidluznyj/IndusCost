@@ -498,18 +498,64 @@ export async function buildFinanceDreLineDrilldown(
       scope === "ytd" ? (parent?.values.ytd ?? 0) : (parent?.values.highlight ?? 0)
     );
 
+    const taxBlock = report.estimatedCorporateTaxes;
+    const entityRows: FinanceDreDrilldownRow[] =
+      scope === "highlight" && taxBlock.entitiesHighlightMonth.length > 1
+        ? taxBlock.entitiesHighlightMonth.map((entity) => {
+            const r = entity.result;
+            return {
+              id: `entity-${entity.companyKey}`,
+              orderCode: null,
+              customerName: null,
+              nfeNumber: null,
+              nfeSerie: null,
+              documentLabel: `${entity.companyLabel} (${entity.cnpjMasked})`,
+              amount: r.estimatedIrpjCsllProvision,
+              competenceDate: null,
+              extra:
+                `Resultado antes IRPJ/CSLL ${r.estimatedTaxBase.toFixed(2)} · ` +
+                `base positiva ${r.positiveBase.toFixed(2)} · ` +
+                `CSLL 9% ${r.estimatedCsll.toFixed(2)} · ` +
+                `IRPJ 15% ${r.estimatedIrpjNormal.toFixed(2)} · ` +
+                `limite adicional ${r.estimatedIrpjAdditionalThreshold.toFixed(2)} · ` +
+                `excedente ${r.estimatedIrpjAdditionalBase.toFixed(2)} · ` +
+                `adicional 10% ${r.estimatedIrpjAdditional.toFixed(2)} · ` +
+                `IRPJ total ${r.estimatedIrpjTotal.toFixed(2)} · ` +
+                `após provisão ${r.estimatedNetIncomeAfterTaxes.toFixed(2)}`,
+            };
+          })
+        : [];
+
     if (lineId === "csll_estimada") {
       const rows: FinanceDreDrilldownRow[] = [
+        ...entityRows.map((row) => {
+          const entity = taxBlock.entitiesHighlightMonth.find(
+            (e) => `entity-${e.companyKey}` === row.id
+          );
+          return {
+            ...row,
+            amount: entity?.result.estimatedCsll ?? 0,
+            extra: entity
+              ? `Base positiva ${entity.result.positiveBase.toFixed(2)} · alíquota ${(FINANCE_DRE_CSLL_RATE * 100).toFixed(0)}%`
+              : row.extra,
+          };
+        }),
         {
           id: "base",
           orderCode: null,
           customerName: null,
           nfeNumber: null,
           nfeSerie: null,
-          documentLabel: "Base estimada (antes do IRPJ/CSLL)",
+          documentLabel:
+            scope === "ytd"
+              ? "Base YTD (soma dos resultados mensais antes dos tributos)"
+              : "Base estimada do mês (antes do IRPJ/CSLL)",
           amount: tax.estimatedTaxBase,
           competenceDate: null,
-          extra: "Resultado operacional — estimativa gerencial",
+          extra:
+            scope === "ytd"
+              ? "YTD = soma das estimativas mensais — não é apuração acumulada"
+              : "Resultado operacional — estimativa gerencial mensal",
         },
         {
           id: "csll",
@@ -533,23 +579,41 @@ export async function buildFinanceDreLineDrilldown(
         truncated: false,
         columns: compositionColumns(),
         rows,
-        sourceNote: "Ver cálculo — CSLL estimada (não substitui a apuração fiscal)",
+        sourceNote: "Ver cálculo — CSLL estimada (provisão gerencial mensal)",
         disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
       };
     }
 
     if (lineId === "irpj_estimado") {
       const rows: FinanceDreDrilldownRow[] = [
+        ...entityRows.map((row) => {
+          const entity = taxBlock.entitiesHighlightMonth.find(
+            (e) => `entity-${e.companyKey}` === row.id
+          );
+          return {
+            ...row,
+            amount: entity?.result.estimatedIrpjTotal ?? 0,
+            extra: entity
+              ? `Normal ${entity.result.estimatedIrpjNormal.toFixed(2)} + adicional ${entity.result.estimatedIrpjAdditional.toFixed(2)}`
+              : row.extra,
+          };
+        }),
         {
           id: "base",
           orderCode: null,
           customerName: null,
           nfeNumber: null,
           nfeSerie: null,
-          documentLabel: "Base estimada (antes do IRPJ/CSLL)",
+          documentLabel:
+            scope === "ytd"
+              ? "Base YTD (soma dos resultados mensais)"
+              : "Base estimada do mês (antes do IRPJ/CSLL)",
           amount: tax.estimatedTaxBase,
           competenceDate: null,
-          extra: `Período: ${tax.numberOfMonthsInPeriod} mês(es)`,
+          extra:
+            scope === "ytd"
+              ? `Soma de ${tax.monthsSummed ?? taxBlock.ytd.monthsSummed ?? 1} mês(es) — limite de R$ 20.000 reaplicado a cada mês`
+              : "Estimativa gerencial mensal independente",
         },
         {
           id: "normal",
@@ -568,10 +632,10 @@ export async function buildFinanceDreLineDrilldown(
           customerName: null,
           nfeNumber: null,
           nfeSerie: null,
-          documentLabel: "Limite do adicional (R$ 20.000 × meses)",
+          documentLabel: "Limite mensal do adicional (R$ 20.000 por mês e PJ)",
           amount: tax.estimatedIrpjAdditionalThreshold,
           competenceDate: null,
-          extra: null,
+          extra: "Não usar R$ 20.000 × meses no YTD — o YTD soma os meses",
         },
         {
           id: "excess_base",
@@ -579,7 +643,7 @@ export async function buildFinanceDreLineDrilldown(
           customerName: null,
           nfeNumber: null,
           nfeSerie: null,
-          documentLabel: "Base excedente",
+          documentLabel: "Base excedente (soma dos excedentes mensais no YTD)",
           amount: tax.estimatedIrpjAdditionalBase,
           competenceDate: null,
           extra: null,
@@ -617,13 +681,14 @@ export async function buildFinanceDreLineDrilldown(
         truncated: false,
         columns: compositionColumns(),
         rows,
-        sourceNote: "Ver cálculo — IRPJ estimado (composição do adicional sobre o excedente)",
+        sourceNote: "Ver cálculo — IRPJ estimado (mensal independente; YTD = soma dos meses)",
         disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
       };
     }
 
     if (lineId === "provisoes_estimadas_irpj_csll") {
       const rows: FinanceDreDrilldownRow[] = [
+        ...entityRows,
         {
           id: "csll_estimada",
           orderCode: null,
@@ -634,7 +699,7 @@ export async function buildFinanceDreLineDrilldown(
           amount: tax.estimatedCsll,
           competenceDate: null,
           childLineId: "csll_estimada",
-          extra: "Estimativa gerencial",
+          extra: "Estimativa gerencial mensal",
         },
         {
           id: "irpj_estimado",
@@ -646,10 +711,13 @@ export async function buildFinanceDreLineDrilldown(
           amount: tax.estimatedIrpjTotal,
           competenceDate: null,
           childLineId: "irpj_estimado",
-          extra: "Estimativa gerencial",
+          extra: "Estimativa gerencial mensal",
         },
       ];
-      const rowsTotal = sumDreDrilldownAmounts(rows.map((r) => r.amount));
+      const rowsTotal = sumDreDrilldownAmounts([
+        tax.estimatedCsll,
+        tax.estimatedIrpjTotal,
+      ]);
       return {
         ...baseMeta,
         kind: "composition",
@@ -660,7 +728,10 @@ export async function buildFinanceDreLineDrilldown(
         truncated: false,
         columns: compositionColumns(),
         rows,
-        sourceNote: "Soma CSLL estimada + IRPJ estimado = provisão total",
+        sourceNote:
+          entityRows.length > 0
+            ? "Provisão consolidada = soma por pessoa jurídica (sem compensar prejuízo entre CNPJs)"
+            : "Soma CSLL estimada + IRPJ estimado = provisão total",
         disclaimer: FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
       };
     }

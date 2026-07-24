@@ -112,7 +112,8 @@ export function FinanceDrePresentationModal({
 
   if (!open || typeof document === "undefined") return null;
 
-  const opAccent = report.kpis.resultadoOperacional >= 0 ? "emerald" : "rose";
+  const ytd = report.kpis.ytd;
+  const opAccent = ytd.resultadoOperacional >= 0 ? "emerald" : "rose";
 
   return createPortal(
     <div
@@ -164,29 +165,27 @@ export function FinanceDrePresentationModal({
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <KpiChip
-                label="Receita líquida (mês)"
-                value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
-                hint={formatDreMarginPct(report.kpis.receitaLiquidaPct)}
+                label="Receita líquida (YTD)"
+                value={formatFinanceKpiCurrency(ytd.receitaLiquida)}
+                hint={formatDreMarginPct(ytd.receitaLiquidaPct)}
               />
               <KpiChip
-                label="Lucro bruto (mês)"
-                value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
-                hint={formatDreMarginPct(report.kpis.margemBrutaPct)}
-                accent={report.kpis.lucroBruto >= 0 ? "emerald" : "rose"}
+                label="Lucro bruto (YTD)"
+                value={formatFinanceKpiCurrency(ytd.lucroBruto)}
+                hint={formatDreMarginPct(ytd.margemBrutaPct)}
+                accent={ytd.lucroBruto >= 0 ? "emerald" : "rose"}
               />
               <KpiChip
-                label="Resultado operacional"
-                value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
-                hint={formatDreMarginPct(report.kpis.margemOperacionalPct)}
+                label="Resultado operacional (YTD)"
+                value={formatFinanceKpiCurrency(ytd.resultadoOperacional)}
+                hint={formatDreMarginPct(ytd.margemOperacionalPct)}
                 accent={opAccent}
               />
               <KpiChip
-                label="Lucro líquido após IRPJ e CSLL"
-                value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
-                hint={formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct)}
-                accent={
-                  report.kpis.lucroLiquidoAproximado >= 0 ? "emerald" : "rose"
-                }
+                label="Lucro líquido após IRPJ e CSLL (YTD)"
+                value={formatFinanceKpiCurrency(ytd.lucroLiquidoAproximado)}
+                hint={formatDreMarginPct(ytd.margemLiquidaAproximadaPct)}
+                accent={ytd.lucroLiquidoAproximado >= 0 ? "emerald" : "rose"}
               />
             </div>
           </header>

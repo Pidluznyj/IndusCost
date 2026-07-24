@@ -25,7 +25,9 @@ import {
   buildEstimatedCorporateTaxSeriesFromEntityBases,
   FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
   type FinanceDreEstimatedCorporateTaxesBlock,
+  type FinanceDreTaxEntitySeries,
 } from "@/src/lib/financeDreEstimatedCorporateTaxes.js";
+import { FINANCE_INTERNAL_GROUP_COMPANIES } from "@/src/lib/financeInternalGroupExclusions.js";
 import {
   buildFinanceDreInformativeReport,
   buildFinanceDreLines,
@@ -33,7 +35,9 @@ import {
   computeFinanceDreEstimatedTaxBaseSeries,
   emptyDreSeries,
   financeDreMonthLabels,
+  resolveFinanceDreAvailableThroughMonth,
   roundDreMoney,
+  zeroDreSeriesAfterMonth,
   ytdThroughMonth,
   type FinanceDreMathInput,
 } from "@/src/lib/financeDreMath.js";
@@ -81,9 +85,15 @@ export function parseFinanceDreQuery(
   const yearRaw = Number.parseInt(String(query.year ?? nowYear), 10);
   const year = Number.isFinite(yearRaw) && yearRaw >= 2000 && yearRaw <= 2100 ? yearRaw : nowYear;
 
+  const availableThroughMonth = resolveFinanceDreAvailableThroughMonth(year, referenceNow);
   const monthRaw = Number.parseInt(String(query.month ?? nowMonth), 10);
-  const highlightMonth =
+  const requestedMonth =
     Number.isFinite(monthRaw) && monthRaw >= 1 && monthRaw <= 12 ? monthRaw : nowMonth;
+  // Não destaca mês futuro: limita ao último mês com competência disponível.
+  const highlightMonth =
+    availableThroughMonth <= 0
+      ? 1
+      : Math.min(requestedMonth, availableThroughMonth);
 
   const company = parseFinanceExecutiveReportCompany(query.company) as FinanceDreCompany;
 
@@ -133,6 +143,10 @@ async function loadFinanceDreSeriesBundle(
   filters: FinanceDreFilters,
   referenceNow: Date
 ): Promise<DreSeriesBundle> {
+  const availableThroughMonth = resolveFinanceDreAvailableThroughMonth(
+    filters.year,
+    referenceNow
+  );
   const emitterCnpj = mapExecutiveReportCompanyToEmitterCnpj(filters.company);
   const companyName = mapExecutiveReportCompanyToFilter(filters.company);
 
@@ -199,23 +213,26 @@ async function loadFinanceDreSeriesBundle(
     ytdAmount: row.ytdAmount,
   }));
 
+  const clamp = (series: number[]) => zeroDreSeriesAfterMonth(series, availableThroughMonth);
+
   const mathInput: FinanceDreMathInput = {
     highlightMonth: filters.highlightMonth,
-    receitaBruta,
-    cofins: deductions.cofins,
-    icms: deductions.icms,
-    icmsSt: deductions.icmsSt,
-    ipi: deductions.ipi,
-    pis: deductions.pis,
-    devolucoes: deductions.devolucoes,
-    cmv: cmvBundle.cmv,
-    fretes: ccBuckets.logistics,
-    embalagens: ccBuckets.packaging,
-    despesasAdmin,
-    despesasPessoal: ccBuckets.personnel,
-    impostosCc: ccBuckets.tax,
-    materiaPrimaCc: ccBuckets.rawMaterial,
-    unclassifiedCcAmount: ccBuckets.unclassified,
+    availableThroughMonth,
+    receitaBruta: clamp(receitaBruta),
+    cofins: clamp(deductions.cofins),
+    icms: clamp(deductions.icms),
+    icmsSt: clamp(deductions.icmsSt),
+    ipi: clamp(deductions.ipi),
+    pis: clamp(deductions.pis),
+    devolucoes: clamp(deductions.devolucoes),
+    cmv: clamp(cmvBundle.cmv),
+    fretes: clamp(ccBuckets.logistics),
+    embalagens: clamp(ccBuckets.packaging),
+    despesasAdmin: clamp(despesasAdmin),
+    despesasPessoal: clamp(ccBuckets.personnel),
+    impostosCc: clamp(ccBuckets.tax),
+    materiaPrimaCc: clamp(ccBuckets.rawMaterial),
+    unclassifiedCcAmount: clamp(ccBuckets.unclassified),
     quality: {
       unlinkedNfeCount: gapLineCount,
       unlinkedNfeRevenue: gapRevenueYtd,
@@ -231,15 +248,15 @@ async function loadFinanceDreSeriesBundle(
     mathInput,
     costCenterBreakdown,
     unclassifiedYtd,
-    gapRevenueByMonth,
+    gapRevenueByMonth: clamp(gapRevenueByMonth),
     gapLineCount,
-    missingItemsRevenueByMonth: cmvBundle.missingItemsRevenueByMonth,
-    missingProductRevenueByMonth: cmvBundle.missingProductRevenueByMonth,
-    missingCostRevenueByMonth: cmvBundle.missingCostRevenueByMonth,
-    personnel: ccBuckets.personnel,
-    taxCc: ccBuckets.tax,
-    rawMaterial: ccBuckets.rawMaterial,
-    unclassified: ccBuckets.unclassified,
+    missingItemsRevenueByMonth: clamp(cmvBundle.missingItemsRevenueByMonth),
+    missingProductRevenueByMonth: clamp(cmvBundle.missingProductRevenueByMonth),
+    missingCostRevenueByMonth: clamp(cmvBundle.missingCostRevenueByMonth),
+    personnel: clamp(ccBuckets.personnel),
+    taxCc: clamp(ccBuckets.tax),
+    rawMaterial: clamp(ccBuckets.rawMaterial),
+    unclassified: clamp(ccBuckets.unclassified),
     pricedLineCount: cmvBundle.pricedLineCount,
     taxSummaryGapCount: deductions.taxSummaryGapCount,
   };
@@ -254,11 +271,22 @@ async function loadPerLegalEntityTaxOverride(
       loadFinanceDreSeriesBundle({ ...filters, company }, referenceNow)
     )
   );
-  const basesByEntity = bundles.map((bundle) =>
-    computeFinanceDreEstimatedTaxBaseSeries(bundle.mathInput)
-  );
+  const entities: FinanceDreTaxEntitySeries[] = LEGAL_ENTITY_COMPANIES.map((company, idx) => {
+    const cnpj =
+      mapExecutiveReportCompanyToEmitterCnpj(company) ??
+      FINANCE_INTERNAL_GROUP_COMPANIES.find((c) =>
+        c.aliases.some((a) => a.toLowerCase().includes(company))
+      )?.cnpj ??
+      "";
+    return {
+      companyKey: company,
+      companyLabel: companyLabel(company),
+      cnpjDigits: cnpj,
+      baseByMonth: computeFinanceDreEstimatedTaxBaseSeries(bundles[idx]!.mathInput),
+    };
+  });
   return buildEstimatedCorporateTaxSeriesFromEntityBases(
-    basesByEntity,
+    entities,
     filters.highlightMonth,
     "per_legal_entity"
   );
@@ -310,6 +338,8 @@ export async function buildFinanceDreReport(
     estimatedCorporateTaxes.consolidationMode === "per_legal_entity"
       ? " IRPJ/CSLL estimados por pessoa jurídica (CNPJ) e somados — sem compensação entre empresas."
       : "";
+  const ytdHint =
+    " YTD de IRPJ/CSLL = soma das estimativas mensais independentes (não é apuração acumulada com limite × meses).";
 
   return {
     schemaVersion: 1,
@@ -318,7 +348,8 @@ export async function buildFinanceDreReport(
     disclaimer:
       "Demonstrativo gerencial para o conselho. Não substitui o DRE contábil. Receita = NF-e emitida; CMV = quantidade faturada × custo vigente na data da nota; despesas via centros de custo. " +
       FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER +
-      consolidationHint,
+      consolidationHint +
+      ytdHint,
     generatedAt: new Date().toISOString(),
     filters,
     companyLabel: companyLabel(filters.company),
