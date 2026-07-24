@@ -7,6 +7,7 @@ import type { FinanceDreDrilldownPayload } from "@/src/lib/financeDreDrilldownTy
 import {
   buildFinanceDreQuery,
   getFinanceDreLineDrilldownPath,
+  getFinanceDreSourceCheckDrilldownPath,
   type FinanceDreUiFilters,
 } from "@/src/lib/financeDreViewModel";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -20,7 +21,10 @@ import { cn } from "@/src/lib/utils";
 
 type Props = {
   open: boolean;
-  lineId: FinanceDreLineId | null;
+  /** Detalhe de linha do DRE (mutuamente exclusivo com sourceCheckId). */
+  lineId?: FinanceDreLineId | null;
+  /** Detalhe de validação de fonte oficial. */
+  sourceCheckId?: string | null;
   filters: FinanceDreUiFilters;
   scope?: "highlight" | "ytd";
   onClose: () => void;
@@ -56,39 +60,54 @@ function cellValue(
 
 export function FinanceDreLineDetailModal({
   open,
-  lineId,
+  lineId = null,
+  sourceCheckId = null,
   filters,
-  scope = "highlight",
+  scope,
   onClose,
 }: Props) {
+  const defaultScope: "highlight" | "ytd" = sourceCheckId ? "ytd" : "highlight";
   const [payload, setPayload] = useState<FinanceDreDrilldownPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeLineId, setActiveLineId] = useState<FinanceDreLineId | null>(lineId);
-  const [activeScope, setActiveScope] = useState<"highlight" | "ytd">(scope);
+  const [activeSourceCheckId, setActiveSourceCheckId] = useState<string | null>(sourceCheckId);
+  const [activeScope, setActiveScope] = useState<"highlight" | "ytd">(scope ?? defaultScope);
 
   useEffect(() => {
     if (!open) return;
     setActiveLineId(lineId);
-    setActiveScope(scope);
-  }, [open, lineId, scope]);
+    setActiveSourceCheckId(sourceCheckId);
+    setActiveScope(scope ?? (sourceCheckId ? "ytd" : "highlight"));
+    setPayload(null);
+  }, [open, lineId, sourceCheckId, scope]);
 
   const load = useCallback(async () => {
-    if (!open || !activeLineId) return;
+    if (!open) return;
+    if (!activeSourceCheckId && !activeLineId) return;
     setLoading(true);
     setError(null);
     try {
       const qs = buildFinanceDreQuery(filters);
-      const url = getFinanceDreLineDrilldownPath(activeLineId, qs, activeScope);
+      const url = activeSourceCheckId
+        ? getFinanceDreSourceCheckDrilldownPath(activeSourceCheckId, qs, activeScope)
+        : getFinanceDreLineDrilldownPath(activeLineId!, qs, activeScope);
       const data = await fetchJsonOk<FinanceDreDrilldownPayload>(url);
       setPayload(data);
     } catch (err) {
       setPayload(null);
-      setError(buildFinanceTabLoadError("Falha ao carregar detalhe da linha do DRE.", err));
+      setError(
+        buildFinanceTabLoadError(
+          activeSourceCheckId
+            ? "Falha ao carregar detalhe da validação de fonte."
+            : "Falha ao carregar detalhe da linha do DRE.",
+          err
+        )
+      );
     } finally {
       setLoading(false);
     }
-  }, [open, activeLineId, activeScope, filters]);
+  }, [open, activeLineId, activeSourceCheckId, activeScope, filters]);
 
   useEffect(() => {
     void load();
@@ -109,14 +128,22 @@ export function FinanceDreLineDetailModal({
 
   if (!open || typeof document === "undefined") return null;
 
-  const title = payload?.lineLabel ?? "Detalhe da linha";
+  const title =
+    payload?.lineLabel ??
+    (activeSourceCheckId ? "Validação de fonte" : "Detalhe da linha");
   const subtitle = payload
     ? `${payload.periodLabel} · ${payload.companyLabel}`
-    : "Origem dos valores que compõem a linha do DRE";
+    : activeSourceCheckId
+      ? "Registros que explicam o status da validação de fontes oficiais"
+      : "Origem dos valores que compõem a linha do DRE";
 
   return createPortal(
     <CostCenterDialog
-      testId="finance-dre-line-detail-modal"
+      testId={
+        activeSourceCheckId
+          ? "finance-dre-source-check-detail-modal"
+          : "finance-dre-line-detail-modal"
+      }
       title={title}
       subtitle={subtitle}
       maxWidthClass="max-w-5xl"
@@ -132,21 +159,29 @@ export function FinanceDreLineDetailModal({
                   <span className="tabular-nums">
                     {formatFinanceKpiCurrency(payload.rowsTotal)}
                   </span>
-                  {" · "}
-                  Linha DRE:{" "}
-                  <span className="tabular-nums">
-                    {formatFinanceKpiCurrency(payload.expectedTotal)}
-                  </span>
+                  {activeSourceCheckId ? null : (
+                    <>
+                      {" · "}
+                      Linha DRE:{" "}
+                      <span className="tabular-nums">
+                        {formatFinanceKpiCurrency(payload.expectedTotal)}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div
                   className={cn(
                     "text-xs",
-                    payload.totalsMatch ? "text-emerald-700" : "text-rose-700"
+                    payload.totalsMatch ? "text-emerald-700" : "text-amber-800"
                   )}
                 >
-                  {payload.totalsMatch
-                    ? "Totais reconciliados com a linha do DRE"
-                    : "Atenção: total do detalhe diverge da linha do DRE"}
+                  {activeSourceCheckId
+                    ? payload.rowCount === 0
+                      ? "Nenhum registro problemático no período"
+                      : "Lista dos registros que explicam esta validação"
+                    : payload.totalsMatch
+                      ? "Totais reconciliados com a linha do DRE"
+                      : "Atenção: total do detalhe diverge da linha do DRE"}
                   {payload.truncated
                     ? ` · exibindo ${payload.rows.length} de ${payload.rowCount} linhas`
                     : ` · ${payload.rowCount} linha(s)`}
@@ -185,7 +220,15 @@ export function FinanceDreLineDetailModal({
         </div>
       }
     >
-      {loading ? <FinanceModuleLoadingBlock label="Carregando origem dos valores…" /> : null}
+      {loading ? (
+        <FinanceModuleLoadingBlock
+          label={
+            activeSourceCheckId
+              ? "Carregando registros da validação…"
+              : "Carregando origem dos valores…"
+          }
+        />
+      ) : null}
       {error ? <FinanceModuleErrorBanner message={error} /> : null}
 
       {!loading && payload ? (
@@ -231,7 +274,9 @@ export function FinanceDreLineDetailModal({
                           clickable && "cursor-pointer hover:bg-sky-50/80"
                         )}
                         onClick={() => {
-                          if (row.childLineId) setActiveLineId(row.childLineId);
+                          if (!row.childLineId) return;
+                          setActiveSourceCheckId(null);
+                          setActiveLineId(row.childLineId);
                         }}
                         data-testid={
                           row.childLineId

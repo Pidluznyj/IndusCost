@@ -6,6 +6,7 @@ import {
   FinanceDreParseError,
 } from "@/src/lib/financeDreService.server.js";
 import { buildFinanceDreLineDrilldown } from "@/src/lib/financeDreDrilldown.server.js";
+import { buildFinanceDreSourceCheckDrilldown } from "@/src/lib/financeDreSourceCheckDrilldown.server.js";
 import {
   buildFinanceDreExportCsv,
   buildFinanceDreExportFilename,
@@ -84,6 +85,29 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
       }
       console.error("GET /api/finance/dre/lines/:lineId/drilldown", error);
       return res.status(500).json({ error: "Erro ao detalhar linha do DRE Gerencial." });
+    }
+  });
+
+  app.get("/api/finance/dre/source-checks/:checkId/drilldown", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const checkId = String(req.params.checkId ?? "");
+      const payload = await buildFinanceDreSourceCheckDrilldown(
+        req.query as Record<string, unknown>,
+        checkId
+      );
+      return res.json(payload);
+    } catch (error) {
+      if (error instanceof FinanceDreParseError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("GET /api/finance/dre/source-checks/:checkId/drilldown", error);
+      return res.status(500).json({
+        error: "Erro ao detalhar validação de fonte do DRE Gerencial.",
+      });
     }
   });
 }

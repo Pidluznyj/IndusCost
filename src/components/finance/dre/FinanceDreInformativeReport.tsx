@@ -1,11 +1,12 @@
 import React from "react";
-import type { FinanceDreReport } from "@/src/lib/financeDreTypes";
+import type { FinanceDreReport, FinanceDreSourceCheck } from "@/src/lib/financeDreTypes";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
   report: FinanceDreReport;
   className?: string;
+  onSourceCheckClick?: (check: FinanceDreSourceCheck) => void;
 };
 
 function statusBadge(status: "ok" | "gap" | "info") {
@@ -18,7 +19,11 @@ function statusBadge(status: "ok" | "gap" | "info") {
   return "bg-slate-100 text-slate-700 border-slate-200";
 }
 
-export function FinanceDreInformativeReport({ report, className }: Props) {
+export function FinanceDreInformativeReport({
+  report,
+  className,
+  onSourceCheckClick,
+}: Props) {
   const { sourceChecks, informativeReport } = report;
 
   return (
@@ -26,34 +31,51 @@ export function FinanceDreInformativeReport({ report, className }: Props) {
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="text-sm font-semibold text-slate-900">Validação das fontes oficiais</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Confirma de onde cada bloco do DRE está puxando dados e se entra no resultado.
+          Confirma de onde cada bloco do DRE está puxando dados e se entra no resultado. Clique
+          para ver os registros (lacunas, NF-e, CCs).
         </p>
         <div className="mt-3 space-y-2">
-          {sourceChecks.map((check) => (
-            <div
-              key={check.id}
-              className="flex flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/60 px-3 py-2"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-slate-800">{check.label}</div>
-                <div className="text-[11px] text-slate-500">{check.officialMotor}</div>
-                <div className="mt-0.5 text-xs text-slate-600">{check.note}</div>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span
-                  className={cn(
-                    "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
-                    statusBadge(check.status)
-                  )}
-                >
-                  {check.status === "ok" ? "OK" : check.status === "gap" ? "Atenção" : "Info"}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {check.appliedToResult ? "Entra no resultado" : "Não entra no resultado"}
-                </span>
-              </div>
-            </div>
-          ))}
+          {sourceChecks.map((check) => {
+            const clickable = Boolean(onSourceCheckClick);
+            return (
+              <button
+                key={check.id}
+                type="button"
+                disabled={!clickable}
+                onClick={() => onSourceCheckClick?.(check)}
+                data-testid={`finance-dre-source-check-${check.id}`}
+                className={cn(
+                  "flex w-full flex-wrap items-start justify-between gap-2 rounded-lg border border-slate-150 bg-slate-50/60 px-3 py-2 text-left transition-colors",
+                  clickable && "cursor-pointer hover:border-sky-300 hover:bg-sky-50/70",
+                  !clickable && "cursor-default"
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-slate-800">{check.label}</div>
+                  <div className="text-[11px] text-slate-500">{check.officialMotor}</div>
+                  <div className="mt-0.5 text-xs text-slate-600">{check.note}</div>
+                  {clickable ? (
+                    <div className="mt-1 text-[10px] font-medium text-sky-700">
+                      Ver registros da validação
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
+                      statusBadge(check.status)
+                    )}
+                  >
+                    {check.status === "ok" ? "OK" : check.status === "gap" ? "Atenção" : "Info"}
+                  </span>
+                  <span className="text-[10px] text-slate-500">
+                    {check.appliedToResult ? "Entra no resultado" : "Não entra no resultado"}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 

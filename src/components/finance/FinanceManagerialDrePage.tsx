@@ -94,6 +94,7 @@ export function FinanceManagerialDrePage() {
   const [error, setError] = useState<string | null>(null);
   const [presentationOpen, setPresentationOpen] = useState(false);
   const [drillLineId, setDrillLineId] = useState<FinanceDreLineId | null>(null);
+  const [drillSourceCheckId, setDrillSourceCheckId] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const printCleanupRef = useRef<number | null>(null);
 
@@ -362,12 +363,21 @@ export function FinanceManagerialDrePage() {
             <FinanceDreGrid
               report={report}
               showAllMonths={false}
-              onLineClick={(lineId) => setDrillLineId(lineId)}
+              onLineClick={(lineId) => {
+                setDrillSourceCheckId(null);
+                setDrillLineId(lineId);
+              }}
             />
             <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
           </div>
 
-          <FinanceDreInformativeReport report={report} />
+          <FinanceDreInformativeReport
+            report={report}
+            onSourceCheckClick={(check) => {
+              setDrillLineId(null);
+              setDrillSourceCheckId(check.id);
+            }}
+          />
 
           {report.costCenterBreakdown.length > 0 ? (
             <section
@@ -418,13 +428,24 @@ export function FinanceManagerialDrePage() {
             onClose={() => setPresentationOpen(false)}
             onPrint={handlePrint}
             onExport={handleExport}
-            onLineClick={(lineId) => setDrillLineId(lineId)}
+            onLineClick={(lineId) => {
+              setDrillSourceCheckId(null);
+              setDrillLineId(lineId);
+            }}
+            onSourceCheckClick={(check) => {
+              setDrillLineId(null);
+              setDrillSourceCheckId(check.id);
+            }}
           />
           <FinanceDreLineDetailModal
-            open={drillLineId != null}
+            open={drillLineId != null || drillSourceCheckId != null}
             lineId={drillLineId}
+            sourceCheckId={drillSourceCheckId}
             filters={appliedFilters}
-            onClose={() => setDrillLineId(null)}
+            onClose={() => {
+              setDrillLineId(null);
+              setDrillSourceCheckId(null);
+            }}
           />
         </>
       ) : null}

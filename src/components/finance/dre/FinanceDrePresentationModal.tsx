@@ -1,7 +1,11 @@
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Download, Printer, X } from "lucide-react";
-import type { FinanceDreLineId, FinanceDreReport } from "@/src/lib/financeDreTypes";
+import type {
+  FinanceDreLineId,
+  FinanceDreReport,
+  FinanceDreSourceCheck,
+} from "@/src/lib/financeDreTypes";
 import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
 import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -14,6 +18,7 @@ type Props = {
   onPrint: () => void;
   onExport: () => void;
   onLineClick?: (lineId: FinanceDreLineId) => void;
+  onSourceCheckClick?: (check: FinanceDreSourceCheck) => void;
 };
 
 function KpiChip({
@@ -58,6 +63,7 @@ export function FinanceDrePresentationModal({
   onPrint,
   onExport,
   onLineClick,
+  onSourceCheckClick,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -166,7 +172,10 @@ export function FinanceDrePresentationModal({
                 ))}
               </ul>
             ) : null}
-            <FinanceDreInformativeReport report={report} />
+            <FinanceDreInformativeReport
+              report={report}
+              onSourceCheckClick={onSourceCheckClick}
+            />
           </div>
         </div>
       </div>

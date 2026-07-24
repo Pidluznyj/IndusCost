@@ -425,4 +425,32 @@ describe("finance dre line drill-down", () => {
     assert.match(path, /scope=highlight/);
     assert.match(path, /year=2026/);
   });
+
+  it("validação de fontes oficiais abre detalhe clicável das lacunas", () => {
+    const routes = readSrc("src/lib/financeDreRoutes.ts");
+    assert.match(routes, /\/api\/finance\/dre\/source-checks\/:checkId\/drilldown/);
+    assert.match(routes, /buildFinanceDreSourceCheckDrilldown/);
+
+    const server = readSrc("src/lib/financeDreSourceCheckDrilldown.server.ts");
+    assert.match(server, /loadCmvGapsForMonthRange/);
+    assert.match(server, /listUnclassifiedAccountsPayableDefault/);
+    assert.match(server, /cmvGapKindLabel|missing_cost|Sem custo vigente/);
+
+    const cmv = readSrc("src/lib/financeDreCmvFromNfe.server.ts");
+    assert.match(cmv, /DreCmvGapRow/);
+    assert.match(cmv, /loadCmvGapsForMonthRange/);
+
+    const info = readSrc("src/components/finance/dre/FinanceDreInformativeReport.tsx");
+    assert.match(info, /onSourceCheckClick/);
+    assert.match(info, /Ver registros da validação/);
+    assert.match(info, /finance-dre-source-check-/);
+
+    const page = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
+    assert.match(page, /drillSourceCheckId|setDrillSourceCheckId/);
+    assert.match(page, /onSourceCheckClick/);
+
+    const modal = readSrc("src/components/finance/dre/FinanceDreLineDetailModal.tsx");
+    assert.match(modal, /sourceCheckId/);
+    assert.match(modal, /getFinanceDreSourceCheckDrilldownPath/);
+  });
 });

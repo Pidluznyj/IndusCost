@@ -69,3 +69,17 @@ export function getFinanceDreLineDrilldownPath(
     ? `/api/finance/dre/lines/${encoded}/drilldown?${qs}`
     : `/api/finance/dre/lines/${encoded}/drilldown?scope=${scope}`;
 }
+
+export function getFinanceDreSourceCheckDrilldownPath(
+  checkId: string,
+  queryString: string,
+  scope: "highlight" | "ytd" = "ytd"
+): string {
+  const params = new URLSearchParams(queryString);
+  params.set("scope", scope);
+  const qs = params.toString();
+  const encoded = encodeURIComponent(checkId);
+  return qs
+    ? `/api/finance/dre/source-checks/${encoded}/drilldown?${qs}`
+    : `/api/finance/dre/source-checks/${encoded}/drilldown?scope=${scope}`;
+}

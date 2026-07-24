@@ -38,6 +38,23 @@ export type DreCmvByNfeRow = {
   amount: number;
 };
 
+/** Lacunas de CMV (mesmo motor) — para validação de fontes. */
+export type DreCmvGapKind = "missing_items" | "missing_product" | "missing_cost";
+
+export type DreCmvGapRow = {
+  kind: DreCmvGapKind;
+  nomusNfeId: string;
+  nfeExternalId: number;
+  month: number;
+  competenceDate: Date;
+  /** Receita associada à lacuna (mesma base do relatório informativo). */
+  amount: number;
+  externalProductId: number | null;
+  sku: string | null;
+  productId: string | null;
+  quantity: number | null;
+};
+
 async function loadStockItemsByNfeExternalId(
   nfeExternalIds: number[]
 ): Promise<Map<number, Array<{ externalProductId: number | null; quantity: number }>>> {
@@ -89,9 +106,13 @@ type ResolvedLine = {
 async function computeMonthlyCmvFromNfeProductCosts(
   year: number,
   emitterCnpjDigits?: string
-): Promise<{ result: DreCmvFromNfeResult; byNfe: DreCmvByNfeRow[] }> {
+): Promise<{ result: DreCmvFromNfeResult; byNfe: DreCmvByNfeRow[]; gaps: DreCmvGapRow[] }> {
   const nfes = await queryFiscalNfesForDreCmv(year, "emissao", emitterCnpjDigits);
-  const empty = (): { result: DreCmvFromNfeResult; byNfe: DreCmvByNfeRow[] } => ({
+  const empty = (): {
+    result: DreCmvFromNfeResult;
+    byNfe: DreCmvByNfeRow[];
+    gaps: DreCmvGapRow[];
+  } => ({
     result: {
       cmv: emptyDreSeries(),
       missingItemsNfeCount: 0,
@@ -103,6 +124,7 @@ async function computeMonthlyCmvFromNfeProductCosts(
       pricedLineCount: 0,
     },
     byNfe: [],
+    gaps: [],
   });
   if (nfes.length === 0) return empty();
 
@@ -125,6 +147,7 @@ async function computeMonthlyCmvFromNfeProductCosts(
   const missingCostRevenueByMonth = createEmptyMonthlySeries();
   let pricedLineCount = 0;
   const cmv = createEmptyMonthlySeries();
+  const gaps: DreCmvGapRow[] = [];
 
   type PendingLine = {
     nomusNfeId: string;
@@ -155,6 +178,18 @@ async function computeMonthlyCmvFromNfeProductCosts(
       if (nfe.month >= 1 && nfe.month <= 12) {
         missingItemsRevenueByMonth[nfe.month - 1] += nfe.valorLiquido;
       }
+      gaps.push({
+        kind: "missing_items",
+        nomusNfeId: nfe.nomusNfeId,
+        nfeExternalId: nfe.nfeExternalId,
+        month: nfe.month,
+        competenceDate: nfe.competenceDate,
+        amount: nfe.valorLiquido,
+        externalProductId: null,
+        sku: null,
+        productId: null,
+        quantity: null,
+      });
       continue;
     }
 
@@ -243,6 +278,18 @@ async function computeMonthlyCmvFromNfeProductCosts(
       if (line.month >= 1 && line.month <= 12) {
         missingProductRevenueByMonth[line.month - 1] += line.lineRevenue;
       }
+      gaps.push({
+        kind: "missing_product",
+        nomusNfeId: line.nomusNfeId,
+        nfeExternalId: line.nfeExternalId,
+        month: line.month,
+        competenceDate: line.competenceDate,
+        amount: line.lineRevenue,
+        externalProductId: line.externalProductId,
+        sku: line.sku,
+        productId: null,
+        quantity: line.quantity,
+      });
       continue;
     }
     resolved.push({
@@ -271,6 +318,18 @@ async function computeMonthlyCmvFromNfeProductCosts(
       if (line.month >= 1 && line.month <= 12) {
         missingCostRevenueByMonth[line.month - 1] += line.lineRevenue;
       }
+      gaps.push({
+        kind: "missing_cost",
+        nomusNfeId: line.nomusNfeId,
+        nfeExternalId: line.nfeExternalId,
+        month: line.month,
+        competenceDate: line.competenceDate,
+        amount: line.lineRevenue,
+        externalProductId: null,
+        sku: null,
+        productId: line.productId,
+        quantity: line.quantity,
+      });
       continue;
     }
     const amount = cost.unitProductionCost * line.quantity;
@@ -303,6 +362,10 @@ async function computeMonthlyCmvFromNfeProductCosts(
       pricedLineCount,
     },
     byNfe: [...byNfeMap.values()].map((row) => ({
+      ...row,
+      amount: roundDreMoney(row.amount),
+    })),
+    gaps: gaps.map((row) => ({
       ...row,
       amount: roundDreMoney(row.amount),
     })),
@@ -343,4 +406,15 @@ export async function loadCmvDrilldownBundle(
     monthlyCmv: result.cmv,
     byNfe: byNfe.filter((row) => row.month >= fromMonth && row.month <= toMonth),
   };
+}
+
+/** Lacunas de CMV no intervalo (para validação de fontes). */
+export async function loadCmvGapsForMonthRange(
+  year: number,
+  fromMonth: number,
+  toMonth: number,
+  emitterCnpjDigits?: string
+): Promise<DreCmvGapRow[]> {
+  const { gaps } = await computeMonthlyCmvFromNfeProductCosts(year, emitterCnpjDigits);
+  return gaps.filter((row) => row.month >= fromMonth && row.month <= toMonth);
 }
