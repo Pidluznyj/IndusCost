@@ -394,11 +394,13 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
 
   const kpis: FinanceDreKpis = {
     receitaLiquida: netHighlight,
+    receitaLiquidaPct: safePct(netHighlight, netHighlight),
     lucroBruto: lucroBrutoH,
     margemBrutaPct: safePct(lucroBrutoH, netHighlight),
     resultadoOperacional: resultadoH,
     margemOperacionalPct: safePct(resultadoH, netHighlight),
     lucroLiquidoAproximado: lucroAproxH,
+    margemLiquidaAproximadaPct: safePct(lucroAproxH, netHighlight),
   };
 
   const qualityAlerts: FinanceDreQualityAlert[] = [];

@@ -169,12 +169,16 @@ export type FinanceDreQualityAlert = {
 
 export type FinanceDreKpis = {
   receitaLiquida: number;
+  /** % da receita líquida sobre si mesma (100 quando há receita). */
+  receitaLiquidaPct: number | null;
   lucroBruto: number;
   margemBrutaPct: number | null;
   resultadoOperacional: number;
   margemOperacionalPct: number | null;
   /** Lucro líquido após provisões estimadas de IRPJ e CSLL. */
   lucroLiquidoAproximado: number;
+  /** % do lucro líquido aproximado sobre a receita líquida. */
+  margemLiquidaAproximadaPct: number | null;
 };
 
 export type FinanceDreReport = {

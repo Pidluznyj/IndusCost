@@ -146,6 +146,21 @@
     color: #0f172a;
   }
 
+  #finance-dre-print-root .finance-dre-print-kpi-hint {
+    margin-top: 0.6mm;
+    font-size: 7pt;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--positive .finance-dre-print-kpi-hint {
+    color: #14532d;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--negative .finance-dre-print-kpi-hint {
+    color: #881337;
+  }
+
   #finance-dre-print-root .finance-dre-print-kpi--positive .finance-dre-print-kpi-label {
     color: #14532d;
   }

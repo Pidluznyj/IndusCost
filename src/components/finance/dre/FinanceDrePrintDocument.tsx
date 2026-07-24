@@ -18,8 +18,17 @@ function formatGeneratedAt(iso: string): string {
  * Montado via portal em document.body — fora do #root — para não cair no
  * visibility:hidden global de reports-print.css.
  */
+function formatDreMarginPct(pct: number | null | undefined): string | null {
+  if (pct == null || !Number.isFinite(pct)) return null;
+  return `Margem ${pct.toFixed(1).replace(".", ",")}%`;
+}
+
 export function FinanceDrePrintDocument({ report }: Props) {
   const opPositive = report.kpis.resultadoOperacional >= 0;
+  const receitaPct = formatDreMarginPct(report.kpis.receitaLiquidaPct);
+  const brutoPct = formatDreMarginPct(report.kpis.margemBrutaPct);
+  const opPct = formatDreMarginPct(report.kpis.margemOperacionalPct);
+  const liquidoPct = formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct);
 
   return (
     <div id="finance-dre-print-root" data-testid="finance-dre-print-root">
@@ -39,12 +48,20 @@ export function FinanceDrePrintDocument({ report }: Props) {
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
             </div>
+            {receitaPct ? <div className="finance-dre-print-kpi-hint">{receitaPct}</div> : null}
           </div>
-          <div className="finance-dre-print-kpi">
+          <div
+            className={
+              report.kpis.lucroBruto >= 0
+                ? "finance-dre-print-kpi finance-dre-print-kpi--positive"
+                : "finance-dre-print-kpi finance-dre-print-kpi--negative"
+            }
+          >
             <div className="finance-dre-print-kpi-label">Lucro bruto (mês)</div>
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(report.kpis.lucroBruto)}
             </div>
+            {brutoPct ? <div className="finance-dre-print-kpi-hint">{brutoPct}</div> : null}
           </div>
           <div
             className={
@@ -57,6 +74,7 @@ export function FinanceDrePrintDocument({ report }: Props) {
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
             </div>
+            {opPct ? <div className="finance-dre-print-kpi-hint">{opPct}</div> : null}
           </div>
           <div
             className={
@@ -69,6 +87,7 @@ export function FinanceDrePrintDocument({ report }: Props) {
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
             </div>
+            {liquidoPct ? <div className="finance-dre-print-kpi-hint">{liquidoPct}</div> : null}
           </div>
         </section>
 

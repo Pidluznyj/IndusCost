@@ -60,6 +60,11 @@ const MONTH_OPTIONS = [
   { value: "12", label: "Dezembro" },
 ];
 
+function formatDreMarginPct(pct: number | null | undefined): string | undefined {
+  if (pct == null || !Number.isFinite(pct)) return undefined;
+  return `Margem ${pct.toFixed(1).replace(".", ",")}%`;
+}
+
 function KpiCard({
   label,
   value,
@@ -83,9 +88,9 @@ function KpiCard({
       <div
         className={cn(
           "text-[10px] font-bold uppercase tracking-wide",
-          tone === "positive" && "text-emerald-900",
-          tone === "negative" && "text-rose-900",
-          tone === "default" && "text-muted-foreground"
+          tone === "positive" && "text-emerald-950",
+          tone === "negative" && "text-rose-950",
+          tone === "default" && "text-[#4B5563]"
         )}
       >
         {label}
@@ -102,10 +107,10 @@ function KpiCard({
       {hint ? (
         <div
           className={cn(
-            "mt-1 text-xs",
-            tone === "positive" && "text-emerald-800",
-            tone === "negative" && "text-rose-800",
-            tone === "default" && "text-muted-foreground"
+            "mt-1 text-xs font-medium",
+            tone === "positive" && "text-emerald-900",
+            tone === "negative" && "text-rose-900",
+            tone === "default" && "text-[#374151]"
           )}
         >
           {hint}
@@ -400,31 +405,27 @@ export function FinanceManagerialDrePage() {
                 <KpiCard
                   label="Receita líquida (mês)"
                   value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+                  hint={formatDreMarginPct(report.kpis.receitaLiquidaPct)}
                 />
                 <KpiCard
                   label="Lucro bruto (mês)"
                   value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
-                  hint={
-                    report.kpis.margemBrutaPct == null
-                      ? undefined
-                      : `Margem ${report.kpis.margemBrutaPct.toFixed(1).replace(".", ",")}%`
-                  }
+                  hint={formatDreMarginPct(report.kpis.margemBrutaPct)}
                   tone={report.kpis.lucroBruto >= 0 ? "positive" : "negative"}
                 />
                 <KpiCard
                   label="Resultado operacional"
                   value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
-                  hint={
-                    report.kpis.margemOperacionalPct == null
-                      ? undefined
-                      : `Margem ${report.kpis.margemOperacionalPct.toFixed(1).replace(".", ",")}%`
-                  }
+                  hint={formatDreMarginPct(report.kpis.margemOperacionalPct)}
                   tone={report.kpis.resultadoOperacional >= 0 ? "positive" : "negative"}
                 />
                 <KpiCard
                   label="Lucro líquido após IRPJ e CSLL"
                   value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
-                  hint="Estimativa gerencial"
+                  hint={
+                    formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct) ??
+                    "Estimativa gerencial"
+                  }
                   tone={report.kpis.lucroLiquidoAproximado >= 0 ? "positive" : "negative"}
                 />
               </div>

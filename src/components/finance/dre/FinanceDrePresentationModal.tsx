@@ -21,13 +21,20 @@ type Props = {
   onSourceCheckClick?: (check: FinanceDreSourceCheck) => void;
 };
 
+function formatDreMarginPct(pct: number | null | undefined): string | undefined {
+  if (pct == null || !Number.isFinite(pct)) return undefined;
+  return `Margem ${pct.toFixed(1).replace(".", ",")}%`;
+}
+
 function KpiChip({
   label,
   value,
+  hint,
   accent,
 }: {
   label: string;
   value: string;
+  hint?: string;
   accent?: "emerald" | "slate" | "rose";
 }) {
   return (
@@ -60,6 +67,18 @@ function KpiChip({
       >
         {value}
       </div>
+      {hint ? (
+        <div
+          className={cn(
+            "mt-1 text-xs font-medium",
+            accent === "emerald" && "text-emerald-50",
+            accent === "rose" && "text-rose-50",
+            (!accent || accent === "slate") && "text-slate-200"
+          )}
+        >
+          {hint}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -147,20 +166,27 @@ export function FinanceDrePresentationModal({
               <KpiChip
                 label="Receita líquida (mês)"
                 value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}
+                hint={formatDreMarginPct(report.kpis.receitaLiquidaPct)}
               />
               <KpiChip
                 label="Lucro bruto (mês)"
                 value={formatFinanceKpiCurrency(report.kpis.lucroBruto)}
+                hint={formatDreMarginPct(report.kpis.margemBrutaPct)}
+                accent={report.kpis.lucroBruto >= 0 ? "emerald" : "rose"}
               />
               <KpiChip
                 label="Resultado operacional"
                 value={formatFinanceKpiCurrency(report.kpis.resultadoOperacional)}
+                hint={formatDreMarginPct(report.kpis.margemOperacionalPct)}
                 accent={opAccent}
               />
               <KpiChip
                 label="Lucro líquido após IRPJ e CSLL"
                 value={formatFinanceKpiCurrency(report.kpis.lucroLiquidoAproximado)}
-                accent={opAccent}
+                hint={formatDreMarginPct(report.kpis.margemLiquidaAproximadaPct)}
+                accent={
+                  report.kpis.lucroLiquidoAproximado >= 0 ? "emerald" : "rose"
+                }
               />
             </div>
           </header>

@@ -180,9 +180,13 @@ describe("financeDreMath", () => {
     // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400 operacional
     // IRPJ/CSLL estimados sobre 400 → lucro líquido após provisões < 400
     assert.equal(kpis.receitaLiquida, 980);
+    assert.equal(kpis.receitaLiquidaPct, 100);
     assert.equal(kpis.lucroBruto, 500);
+    assert.equal(kpis.margemBrutaPct, roundDreMoney((500 / 980) * 100));
     assert.equal(kpis.resultadoOperacional, 400);
+    assert.equal(kpis.margemOperacionalPct, roundDreMoney((400 / 980) * 100));
     assert.ok(kpis.lucroLiquidoAproximado < 400);
+    assert.ok(kpis.margemLiquidaAproximadaPct != null);
     assert.ok(lines.some((l) => l.id === "embalagens"));
     assert.ok(lines.some((l) => l.id === "provisoes_estimadas_irpj_csll"));
     assert.ok(lines.some((l) => l.id === "csll_estimada"));
@@ -306,11 +310,13 @@ describe("financeDreViewModel & export", () => {
       monthLabels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
       kpis: {
         receitaLiquida: 10,
+        receitaLiquidaPct: 100,
         lucroBruto: 10,
         margemBrutaPct: 100,
         resultadoOperacional: 10,
         margemOperacionalPct: 100,
         lucroLiquidoAproximado: 10,
+        margemLiquidaAproximadaPct: 100,
       },
       estimatedCorporateTaxes: buildEstimatedCorporateTaxSeriesFromSingleBase(series, 1),
       lines: [
