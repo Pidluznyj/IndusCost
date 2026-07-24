@@ -6,16 +6,17 @@ Integração segura das otimizações Pedidos + Financeiro (PERF 02–10).
 
 | Papel | Branch | Tip |
 |-------|--------|-----|
-| Base | `origin/main` | `83f17a2` |
+| Base | `origin/main` (pré) | `83f17a2` |
 | Trabalho | `perf/sales-finance` | `155a687` + `306f6ce` |
-| Integração | `integration/performance-sales-finance` | merge `67fd425` |
-| Oficial | `main` | após merge da integração |
+| Integração | `integration/performance-sales-finance` | merge `67fd425` + docs |
+| Oficial | `main` / `origin/main` | `72d3bd4` (push OK) |
 
 ## Commits
 
 1. `155a687` — `perf(sales-finance): otimizar carregamento e consultas`
 2. `306f6ce` — `perf(database): adicionar índices para pedidos e financeiro`
 3. `67fd425` — `merge: integrar otimizações de pedidos e financeiro`
+4. `72d3bd4` — `docs(perf): relatório de integração PERF 11 Pedidos e Financeiro`
 
 ## Excluídos do escopo (não commitados)
 
