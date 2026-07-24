@@ -181,6 +181,8 @@ describe("financeDreMath", () => {
 
     // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400 operacional
     // IRPJ/CSLL estimados sobre 400 → lucro líquido após provisões < 400
+    assert.equal(kpis.receitaBruta, 1000);
+    assert.equal(kpis.receitaBrutaPct, roundDreMoney((1000 / 980) * 100));
     assert.equal(kpis.receitaLiquida, 980);
     assert.equal(kpis.receitaLiquidaPct, 100);
     assert.equal(kpis.lucroBruto, 500);
@@ -314,6 +316,8 @@ describe("financeDreViewModel & export", () => {
       companyLabel: "Todas",
       monthLabels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
       kpis: {
+        receitaBruta: 12,
+        receitaBrutaPct: 120,
         receitaLiquida: 10,
         receitaLiquidaPct: 100,
         lucroBruto: 10,
@@ -323,6 +327,8 @@ describe("financeDreViewModel & export", () => {
         lucroLiquidoAproximado: 10,
         margemLiquidaAproximadaPct: 100,
         ytd: {
+          receitaBruta: 12,
+          receitaBrutaPct: 120,
           receitaLiquida: 10,
           receitaLiquidaPct: 100,
           lucroBruto: 10,
@@ -373,11 +379,14 @@ describe("finance dre presentation UX", () => {
     assert.match(page, /finance-dre-open-presentation/);
     assert.match(page, /Acumulado \(YTD\)/);
     assert.match(page, /Mês destaque/);
+    assert.match(page, /Receita bruta \(YTD\)/);
+    assert.match(page, /Receita bruta \(mês\)/);
     assert.match(page, /kpis\.ytd/);
     const modal = readSrc("src/components/finance/dre/FinanceDrePresentationModal.tsx");
     assert.match(modal, /showAllMonths/);
     assert.match(modal, /FinanceDreInformativeReport/);
     assert.match(modal, /z-\[85\]/);
+    assert.match(modal, /Receita bruta \(YTD\)/);
     assert.match(modal, /Receita líquida \(YTD\)/);
     assert.match(modal, /kpis\.ytd/);
     assert.doesNotMatch(modal, /Receita líquida \(mês\)/);
@@ -395,9 +404,12 @@ describe("finance dre presentation UX", () => {
     assert.match(printDoc, /finance-dre-print-root/);
     assert.match(printDoc, /showAllMonths/);
     assert.match(printDoc, /expandAll/);
+    assert.match(printDoc, /Receita bruta \(YTD\)/);
     assert.match(printDoc, /Receita líquida \(YTD\)/);
     assert.match(printDoc, /kpis\.ytd/);
     assert.doesNotMatch(printDoc, /Receita líquida \(mês\)/);
+    const printCss = readSrc("src/components/finance/dre/finance-dre-print.css");
+    assert.match(printCss, /repeat\(5, 1fr\)/);
     const css = readSrc("src/components/finance/dre/finance-dre-print.css");
     assert.match(css, /A4 landscape/);
     assert.match(css, /body\.finance-dre-print-route #root/);

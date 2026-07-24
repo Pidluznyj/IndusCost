@@ -163,7 +163,12 @@ export function FinanceDrePresentationModal({
                 </button>
               </div>
             </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <KpiChip
+                label="Receita bruta (YTD)"
+                value={formatFinanceKpiCurrency(ytd.receitaBruta)}
+                hint={formatDreMarginPct(ytd.receitaBrutaPct)}
+              />
               <KpiChip
                 label="Receita líquida (YTD)"
                 value={formatFinanceKpiCurrency(ytd.receitaLiquida)}

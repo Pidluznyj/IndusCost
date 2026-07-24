@@ -348,10 +348,12 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const resultadoYtd = ytdThroughMonth(resultado, m);
   const lucroAproxYtd = roundDreMoney(resultadoYtd - estimatedCorporateTaxes.provisionYtd);
 
+  const receitaBrutaH = roundDreMoney(clamped.receitaBruta[m - 1] ?? 0);
   const netHighlight = roundDreMoney(receitaLiquida[m - 1] ?? 0);
   const lucroBrutoH = roundDreMoney(lucroBruto[m - 1] ?? 0);
   const resultadoH = roundDreMoney(resultado[m - 1] ?? 0);
   const lucroAproxH = roundDreMoney(lucroAprox[m - 1] ?? 0);
+  const receitaBrutaYtd = ytdThroughMonth(clamped.receitaBruta, m);
   const netYtd = ytdThroughMonth(receitaLiquida, m);
   const lucroBrutoYtd = ytdThroughMonth(lucroBruto, m);
 
@@ -512,6 +514,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   ];
 
   const monthKpis: FinanceDreKpiSet = {
+    receitaBruta: receitaBrutaH,
+    receitaBrutaPct: safePct(receitaBrutaH, netHighlight),
     receitaLiquida: netHighlight,
     receitaLiquidaPct: safePct(netHighlight, netHighlight),
     lucroBruto: lucroBrutoH,
@@ -522,6 +526,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     margemLiquidaAproximadaPct: safePct(lucroAproxH, netHighlight),
   };
   const ytdKpis: FinanceDreKpiSet = {
+    receitaBruta: receitaBrutaYtd,
+    receitaBrutaPct: safePct(receitaBrutaYtd, netYtd),
     receitaLiquida: netYtd,
     receitaLiquidaPct: safePct(netYtd, netYtd),
     lucroBruto: lucroBrutoYtd,

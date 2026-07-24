@@ -406,7 +406,12 @@ export function FinanceManagerialDrePage() {
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Acumulado (YTD)
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <KpiCard
+                      label="Receita bruta (YTD)"
+                      value={formatFinanceKpiCurrency(report.kpis.ytd.receitaBruta)}
+                      hint={formatDreMarginPct(report.kpis.ytd.receitaBrutaPct)}
+                    />
                     <KpiCard
                       label="Receita líquida (YTD)"
                       value={formatFinanceKpiCurrency(report.kpis.ytd.receitaLiquida)}
@@ -447,7 +452,12 @@ export function FinanceManagerialDrePage() {
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Mês destaque
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    <KpiCard
+                      label="Receita bruta (mês)"
+                      value={formatFinanceKpiCurrency(report.kpis.receitaBruta)}
+                      hint={formatDreMarginPct(report.kpis.receitaBrutaPct)}
+                    />
                     <KpiCard
                       label="Receita líquida (mês)"
                       value={formatFinanceKpiCurrency(report.kpis.receitaLiquida)}

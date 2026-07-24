@@ -169,6 +169,9 @@ export type FinanceDreQualityAlert = {
 
 /** Conjunto de KPIs (mês destaque ou YTD). */
 export type FinanceDreKpiSet = {
+  receitaBruta: number;
+  /** % da receita bruta sobre a receita líquida. */
+  receitaBrutaPct: number | null;
   receitaLiquida: number;
   /** % da receita líquida sobre si mesma (100 quando há receita). */
   receitaLiquidaPct: number | null;
