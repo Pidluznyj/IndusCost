@@ -132,9 +132,17 @@ function clampPageSize(value: number | null): number {
   return Math.min(200, value);
 }
 
+/**
+ * Parsing canônico de months.
+ * - `months` tem precedência sobre `month` legado quando presente (mesmo vazio/"all").
+ * - Tokens inválidos (0, 13, abc) são descartados; se nada válido restar → `all`.
+ * - Duplicados são removidos; ordem sempre ascendente 1..12.
+ */
 function parseMonthsFilter(query: Record<string, unknown>): CommissionOrderProvisionMonthsFilter {
-  const monthsRaw = query.months;
-  if (monthsRaw != null && monthsRaw !== "") {
+  const hasMonthsKey = Object.prototype.hasOwnProperty.call(query, "months");
+  if (hasMonthsKey) {
+    const monthsRaw = query.months;
+    if (monthsRaw == null || monthsRaw === "") return "all";
     if (monthsRaw === "all") return "all";
     if (Array.isArray(monthsRaw)) {
       if (monthsRaw.length === 0) return "all";
@@ -157,6 +165,7 @@ function parseMonthsFilter(query: Record<string, unknown>): CommissionOrderProvi
       if (unique.length === 0 || unique.length === 12) return "all";
       return unique;
     }
+    return "all";
   }
 
   const monthRaw = asInt(query.month);
@@ -264,7 +273,7 @@ export function resolveCommissionOrderProvisionSaleDateBounds(
   };
 }
 
-/** Faixas mensais exatas (para OR Prisma quando há meses não contíguos). */
+/** Faixas mensais exatas (para OR Prisma quando há 2+ meses selecionados). */
 export function resolveCommissionOrderProvisionMonthRanges(
   query: CommissionOrderProvisionQuery
 ): Array<{ gte: Date; lte: Date }> | null {
@@ -276,6 +285,89 @@ export function resolveCommissionOrderProvisionMonthRanges(
     gte: new Date(query.year!, m - 1, 1, 0, 0, 0, 0),
     lte: new Date(query.year!, m, 0, 23, 59, 59, 999),
   }));
+}
+
+/**
+ * Filtro efetivo de saleDate usado pelo server:
+ * - `or_months`: OR de intervalos independentes (nunca envelope contínuo);
+ * - `range`: ano inteiro, um mês, ou from/to.
+ */
+export function resolveCommissionOrderProvisionSaleDateFilter(
+  query: CommissionOrderProvisionQuery
+):
+  | { kind: "none" }
+  | { kind: "range"; gte: Date; lte: Date }
+  | { kind: "or_months"; ranges: Array<{ gte: Date; lte: Date }> } {
+  const monthRanges = resolveCommissionOrderProvisionMonthRanges(query);
+  if (monthRanges) return { kind: "or_months", ranges: monthRanges };
+  const bounds = resolveCommissionOrderProvisionSaleDateBounds(query);
+  if (!bounds) return { kind: "none" };
+  return { kind: "range", gte: bounds.gte, lte: bounds.lte };
+}
+
+/** Chip ativo ↔ select (fonte: sellerId canônico ou rawSellerId do chip). */
+export function isCommissionOrderProvisionSellerChipActive(input: {
+  seller: { key: string; canonicalSellerId: string | null };
+  sellerId: string;
+  selectedSellerKey: string | null;
+  selectedRawSellerId: number | null;
+}): boolean {
+  const { seller, sellerId, selectedSellerKey, selectedRawSellerId } = input;
+  if (selectedSellerKey != null && selectedSellerKey === seller.key) return true;
+  if (
+    sellerId !== "all" &&
+    seller.canonicalSellerId != null &&
+    seller.canonicalSellerId === sellerId
+  ) {
+    return true;
+  }
+  if (
+    selectedRawSellerId != null &&
+    seller.key === `raw:${selectedRawSellerId}`
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Query string do frontend — nunca envia `month` legado nem months contraditórios. */
+export function buildCommissionOrderProvisionClientQuery(input: {
+  year: string;
+  months: CommissionOrderProvisionMonthsFilter;
+  sellerId: string;
+  selectedRawSellerId: number | null;
+  customer: string;
+  orderCode: string;
+  includeZeroCommission: boolean;
+  page: number;
+  pageSize?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (input.year) params.set("year", input.year);
+  if (
+    input.months === "all" ||
+    (Array.isArray(input.months) && input.months.length === 0)
+  ) {
+    params.set("months", "all");
+  } else {
+    const normalized = resolveCommissionOrderProvisionMonths(input.months);
+    params.set(
+      "months",
+      normalized.length === 12 ? "all" : normalized.join(",")
+    );
+  }
+  if (input.customer.trim()) params.set("customer", input.customer.trim());
+  if (input.orderCode.trim()) params.set("orderCode", input.orderCode.trim());
+  if (input.includeZeroCommission) params.set("includeZeroCommission", "true");
+  if (input.sellerId && input.sellerId !== "all") {
+    params.set("canonicalSellerId", input.sellerId);
+    params.set("sellerId", input.sellerId);
+  } else if (input.selectedRawSellerId != null) {
+    params.set("rawSellerId", String(input.selectedRawSellerId));
+  }
+  params.set("page", String(Math.max(1, input.page)));
+  params.set("pageSize", String(input.pageSize ?? 50));
+  return params.toString();
 }
 
 export function formatCommissionOrderProvisionPeriodLabel(

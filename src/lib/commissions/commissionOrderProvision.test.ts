@@ -4,10 +4,49 @@ import {
   aggregateCommissionOrderProvisionRows,
   assembleCommissionOrderProvisionPayload,
   buildCommissionOrderProvisionCards,
+  buildCommissionOrderProvisionClientQuery,
+  isCommissionOrderProvisionSellerChipActive,
   parseCommissionOrderProvisionQuery,
   resolveCommissionOrderProvisionMonthRanges,
+  resolveCommissionOrderProvisionMonths,
   resolveCommissionOrderProvisionSaleDateBounds,
+  resolveCommissionOrderProvisionSaleDateFilter,
 } from "./commissionOrderProvision.shared.js";
+
+const SELLER_A = "11111111-1111-4111-8111-111111111111";
+const SELLER_B = "22222222-2222-4222-8222-222222222222";
+
+function snap(partial: {
+  id: string;
+  salesOrderId: string;
+  orderCode: string;
+  saleDate: Date;
+  canonicalSellerId?: string | null;
+  canonicalSellerName?: string | null;
+  rawSellerId?: number | null;
+  rawSellerName?: string | null;
+  totalFinalCommissionAmount?: number;
+  totalSoldAmount?: number;
+  totalGrossCommissionAmount?: number;
+  hasCustomerExcludedItems?: boolean;
+}) {
+  return {
+    id: partial.id,
+    salesOrderId: partial.salesOrderId,
+    orderCode: partial.orderCode,
+    saleDate: partial.saleDate,
+    customerNameSnapshot: "Cliente",
+    canonicalSellerId: partial.canonicalSellerId ?? SELLER_A,
+    canonicalSellerName: partial.canonicalSellerName ?? "Maria",
+    rawSellerId: partial.rawSellerId ?? 10,
+    rawSellerName: partial.rawSellerName ?? "Maria",
+    nfeId: null as number | null,
+    totalSoldAmount: partial.totalSoldAmount ?? 100,
+    totalGrossCommissionAmount: partial.totalGrossCommissionAmount ?? 10,
+    totalFinalCommissionAmount: partial.totalFinalCommissionAmount ?? 10,
+    hasCustomerExcludedItems: partial.hasCustomerExcludedItems ?? false,
+  };
+}
 
 describe("commissionOrderProvision", () => {
   it("confirma agregação: comissão do pedido = soma dos snapshots/itens finais", () => {
@@ -81,38 +120,28 @@ describe("commissionOrderProvision", () => {
     const payload = assembleCommissionOrderProvisionPayload({
       query: parseCommissionOrderProvisionQuery({ year: "2026" }),
       snapshots: [
-        {
+        snap({
           id: "s1",
           salesOrderId: "o1",
           orderCode: "PD 1",
           saleDate: new Date(2026, 6, 1),
-          customerNameSnapshot: "A",
           canonicalSellerId: null,
           canonicalSellerName: "João",
           rawSellerId: 1,
           rawSellerName: "João",
-          nfeId: null,
-          totalSoldAmount: 100,
-          totalGrossCommissionAmount: 10,
-          totalFinalCommissionAmount: 10,
-          hasCustomerExcludedItems: false,
-        },
-        {
+        }),
+        snap({
           id: "s2",
           salesOrderId: "o2",
           orderCode: "PD 2",
           saleDate: new Date(2026, 6, 2),
-          customerNameSnapshot: "B",
           canonicalSellerId: null,
           canonicalSellerName: "João",
           rawSellerId: 1,
           rawSellerName: "João",
-          nfeId: null,
-          totalSoldAmount: 100,
-          totalGrossCommissionAmount: 10,
           totalFinalCommissionAmount: 0,
           hasCustomerExcludedItems: true,
-        },
+        }),
       ],
     });
 
@@ -122,87 +151,384 @@ describe("commissionOrderProvision", () => {
     assert.equal(payload.rows.length, 1);
     assert.equal(payload.rows[0]?.orderCode, "PD 1");
   });
+});
 
-  it("filtra saleDate por ano/mês", () => {
-    const bounds = resolveCommissionOrderProvisionSaleDateBounds(
-      parseCommissionOrderProvisionQuery({ year: "2026", month: "7" })
-    );
-    assert.ok(bounds);
-    assert.equal(bounds!.gte.getFullYear(), 2026);
-    assert.equal(bounds!.gte.getMonth(), 6);
-    assert.equal(bounds!.lte.getMonth(), 6);
+describe("commissionOrderProvision — months parsing", () => {
+  it("1. month legado continua funcionando", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", month: "6" });
+    assert.deepEqual(q.months, [6]);
+    assert.equal(q.month, 6);
   });
 
-  it("aceita months=6,7 e monta faixas mensais exatas", () => {
-    const query = parseCommissionOrderProvisionQuery({
+  it("2. months com um mês", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "6" });
+    assert.deepEqual(q.months, [6]);
+  });
+
+  it("3. months com dois meses contíguos", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "6,7" });
+    assert.deepEqual(q.months, [6, 7]);
+  });
+
+  it("4. months com meses não contíguos", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "1,3" });
+    assert.deepEqual(q.months, [1, 3]);
+  });
+
+  it("5. months=all", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "all" });
+    assert.equal(q.months, "all");
+    assert.equal(q.month, null);
+  });
+
+  it("6. janeiro e março não incluem fevereiro (OR exato)", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "1,3" });
+    const filter = resolveCommissionOrderProvisionSaleDateFilter(q);
+    assert.equal(filter.kind, "or_months");
+    if (filter.kind !== "or_months") return;
+    assert.equal(filter.ranges.length, 2);
+    assert.equal(filter.ranges[0]!.gte.getMonth(), 0);
+    assert.equal(filter.ranges[0]!.lte.getMonth(), 0);
+    assert.equal(filter.ranges[1]!.gte.getMonth(), 2);
+    assert.equal(filter.ranges[1]!.lte.getMonth(), 2);
+    const feb = new Date(2026, 1, 15);
+    const inRange = filter.ranges.some((r) => feb >= r.gte && feb <= r.lte);
+    assert.equal(inRange, false);
+  });
+
+  it("7. fevereiro e dezembro não incluem meses intermediários", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "2,12" });
+    const filter = resolveCommissionOrderProvisionSaleDateFilter(q);
+    assert.equal(filter.kind, "or_months");
+    if (filter.kind !== "or_months") return;
+    assert.equal(filter.ranges.length, 2);
+    for (const mid of [3, 4, 5, 6, 7, 8, 9, 10, 11]) {
+      const d = new Date(2026, mid - 1, 10);
+      assert.equal(
+        filter.ranges.some((r) => d >= r.gte && d <= r.lte),
+        false,
+        `mês ${mid} não deve entrar`
+      );
+    }
+  });
+
+  it("8. meses duplicados", () => {
+    const q = parseCommissionOrderProvisionQuery({
       year: "2026",
+      months: "1,1,3",
+    });
+    assert.deepEqual(q.months, [1, 3]);
+  });
+
+  it("9. mês inválido normaliza para all (descarta tokens)", () => {
+    assert.equal(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "0" }).months,
+      "all"
+    );
+    assert.equal(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "13" }).months,
+      "all"
+    );
+    assert.equal(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "abc" }).months,
+      "all"
+    );
+  });
+
+  it("10. parâmetro vazio / months=1,,3", () => {
+    assert.equal(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "" }).months,
+      "all"
+    );
+    assert.deepEqual(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "1,,3" }).months,
+      [1, 3]
+    );
+  });
+
+  it("11. month e months simultâneos — months prevalece", () => {
+    const q = parseCommissionOrderProvisionQuery({
+      year: "2026",
+      month: "3",
       months: "6,7",
     });
-    assert.deepEqual(query.months, [6, 7]);
-    assert.equal(query.month, null);
-    const bounds = resolveCommissionOrderProvisionSaleDateBounds(query);
-    assert.ok(bounds);
-    assert.equal(bounds!.gte.getMonth(), 5);
-    assert.equal(bounds!.lte.getMonth(), 6);
-    const ranges = resolveCommissionOrderProvisionMonthRanges(query);
+    assert.deepEqual(q.months, [6, 7]);
+    assert.equal(q.month, null);
+  });
+
+  it("12–13. mudança de ano e dezembro → janeiro seguinte", () => {
+    const jan25 = resolveCommissionOrderProvisionSaleDateBounds(
+      parseCommissionOrderProvisionQuery({ year: "2025", months: "1" })
+    );
+    assert.ok(jan25);
+    assert.equal(jan25!.gte.getFullYear(), 2025);
+    assert.equal(jan25!.gte.getMonth(), 0);
+    assert.equal(jan25!.gte.getDate(), 1);
+
+    const dec25 = resolveCommissionOrderProvisionSaleDateBounds(
+      parseCommissionOrderProvisionQuery({ year: "2025", months: "12" })
+    );
+    assert.ok(dec25);
+    assert.equal(dec25!.gte.getFullYear(), 2025);
+    assert.equal(dec25!.gte.getMonth(), 11);
+    assert.equal(dec25!.lte.getFullYear(), 2025);
+    assert.equal(dec25!.lte.getMonth(), 11);
+    assert.equal(dec25!.lte.getDate(), 31);
+    // dia seguinte ao lte é 1º de janeiro do ano seguinte
+    const next = new Date(dec25!.lte.getTime() + 1);
+    assert.equal(next.getFullYear(), 2026);
+    assert.equal(next.getMonth(), 0);
+    assert.equal(next.getDate(), 1);
+
+    const jan26 = resolveCommissionOrderProvisionSaleDateBounds(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "1" })
+    );
+    assert.equal(jan26!.gte.getFullYear(), 2026);
+    assert.equal(jan26!.gte.getMonth(), 0);
+
+    const dec26 = resolveCommissionOrderProvisionSaleDateBounds(
+      parseCommissionOrderProvisionQuery({ year: "2026", months: "12" })
+    );
+    assert.equal(dec26!.lte.getFullYear(), 2026);
+    assert.equal(dec26!.lte.getMonth(), 11);
+  });
+
+  it("23. sem months/month → all no ano default (comportamento anterior Todos os meses)", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026" });
+    assert.equal(q.months, "all");
+    const filter = resolveCommissionOrderProvisionSaleDateFilter(q);
+    assert.equal(filter.kind, "range");
+    if (filter.kind === "range") {
+      assert.equal(filter.gte.getMonth(), 0);
+      assert.equal(filter.lte.getMonth(), 11);
+    }
+  });
+
+  it("24. months=2,5,9 sem intermediários", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", months: "2,5,9" });
+    const ranges = resolveCommissionOrderProvisionMonthRanges(q);
     assert.ok(ranges);
-    assert.equal(ranges!.length, 2);
-    assert.equal(ranges![0]!.gte.getMonth(), 5);
-    assert.equal(ranges![1]!.gte.getMonth(), 6);
+    assert.equal(ranges!.length, 3);
+    assert.deepEqual(
+      ranges!.map((r) => r.gte.getMonth()),
+      [1, 4, 8]
+    );
   });
 
-  it("months=1,3 gera OR sem incluir fevereiro no filtro exato", () => {
-    const query = parseCommissionOrderProvisionQuery({
+  it("month inválido legado é ignorado → all", () => {
+    const q = parseCommissionOrderProvisionQuery({ year: "2026", month: "99" });
+    assert.equal(q.months, "all");
+  });
+
+  it("months=1,2,3,...,12 colapsa para all", () => {
+    const q = parseCommissionOrderProvisionQuery({
       year: "2026",
-      months: "1,3",
+      months: "1,2,3,4,5,6,7,8,9,10,11,12",
     });
-    const ranges = resolveCommissionOrderProvisionMonthRanges(query);
-    assert.ok(ranges);
-    assert.equal(ranges!.length, 2);
-    assert.equal(ranges![0]!.gte.getMonth(), 0);
-    assert.equal(ranges![0]!.lte.getMonth(), 0);
-    assert.equal(ranges![1]!.gte.getMonth(), 2);
-    assert.equal(ranges![1]!.lte.getMonth(), 2);
+    assert.equal(q.months, "all");
   });
+});
 
-  it("month legado vira months=[n]", () => {
-    const query = parseCommissionOrderProvisionQuery({ year: "2026", month: "3" });
-    assert.deepEqual(query.months, [3]);
-    assert.equal(query.month, 3);
-  });
-
-  it("sellerId UUID vira canonicalSellerId (padrão Relatórios)", () => {
-    const id = "11111111-1111-4111-8111-111111111111";
-    const query = parseCommissionOrderProvisionQuery({
+describe("commissionOrderProvision — client query + seller sync", () => {
+  it("frontend envia months=6,7 e months=all sem month legado", () => {
+    const multi = buildCommissionOrderProvisionClientQuery({
       year: "2026",
-      sellerId: id,
+      months: [6, 7],
+      sellerId: "all",
+      selectedRawSellerId: null,
+      customer: "",
+      orderCode: "",
+      includeZeroCommission: false,
+      page: 1,
     });
-    assert.equal(query.canonicalSellerId, id);
+    const p1 = new URLSearchParams(multi);
+    assert.equal(p1.get("months"), "6,7");
+    assert.equal(p1.get("month"), null);
+    assert.equal(p1.get("year"), "2026");
+
+    const all = buildCommissionOrderProvisionClientQuery({
+      year: "2026",
+      months: "all",
+      sellerId: "all",
+      selectedRawSellerId: null,
+      customer: "",
+      orderCode: "",
+      includeZeroCommission: false,
+      page: 1,
+    });
+    assert.equal(new URLSearchParams(all).get("months"), "all");
   });
 
-  it("payload inclui sellerOptions", () => {
+  it("14–16. vendedor ativo / inválido / todos", () => {
+    const withSeller = parseCommissionOrderProvisionQuery({
+      year: "2026",
+      sellerId: SELLER_A,
+    });
+    assert.equal(withSeller.canonicalSellerId, SELLER_A);
+
+    const invalid = parseCommissionOrderProvisionQuery({
+      year: "2026",
+      sellerId: "nao-uuid",
+    });
+    assert.equal(invalid.canonicalSellerId, null);
+
+    const all = parseCommissionOrderProvisionQuery({
+      year: "2026",
+      sellerId: "all",
+    });
+    assert.equal(all.canonicalSellerId, null);
+  });
+
+  it("17–19. vendedor + meses (um / vários / all) — query client e parse", () => {
+    const qs = buildCommissionOrderProvisionClientQuery({
+      year: "2026",
+      months: [1, 3],
+      sellerId: SELLER_A,
+      selectedRawSellerId: null,
+      customer: "",
+      orderCode: "",
+      includeZeroCommission: false,
+      page: 2,
+    });
+    const params = Object.fromEntries(new URLSearchParams(qs).entries());
+    assert.equal(params.months, "1,3");
+    assert.equal(params.sellerId, SELLER_A);
+    assert.equal(params.canonicalSellerId, SELLER_A);
+    assert.equal(params.page, "2");
+
+    const parsed = parseCommissionOrderProvisionQuery(params);
+    assert.deepEqual(parsed.months, [1, 3]);
+    assert.equal(parsed.canonicalSellerId, SELLER_A);
+    assert.equal(parsed.page, 2);
+
+    const allMonths = parseCommissionOrderProvisionQuery({
+      year: "2026",
+      months: "all",
+      sellerId: SELLER_B,
+    });
+    assert.equal(allMonths.months, "all");
+    assert.equal(allMonths.canonicalSellerId, SELLER_B);
+  });
+
+  it("20. sincronização lógica select ↔ chips", () => {
+    const seller = {
+      key: SELLER_A,
+      canonicalSellerId: SELLER_A,
+    };
+    assert.equal(
+      isCommissionOrderProvisionSellerChipActive({
+        seller,
+        sellerId: SELLER_A,
+        selectedSellerKey: null,
+        selectedRawSellerId: null,
+      }),
+      true
+    );
+    assert.equal(
+      isCommissionOrderProvisionSellerChipActive({
+        seller,
+        sellerId: "all",
+        selectedSellerKey: SELLER_A,
+        selectedRawSellerId: null,
+      }),
+      true
+    );
+    assert.equal(
+      isCommissionOrderProvisionSellerChipActive({
+        seller,
+        sellerId: "all",
+        selectedSellerKey: null,
+        selectedRawSellerId: null,
+      }),
+      false
+    );
+    assert.equal(
+      isCommissionOrderProvisionSellerChipActive({
+        seller: { key: "raw:99", canonicalSellerId: null },
+        sellerId: "all",
+        selectedSellerKey: "raw:99",
+        selectedRawSellerId: 99,
+      }),
+      true
+    );
+  });
+
+  it("21–22. totalizadores e paginação usam a mesma população filtrada", () => {
+    const snapshots = [
+      snap({
+        id: "a",
+        salesOrderId: "o1",
+        orderCode: "PD 1",
+        saleDate: new Date(2026, 0, 5),
+        canonicalSellerId: SELLER_A,
+        totalFinalCommissionAmount: 30,
+      }),
+      snap({
+        id: "b",
+        salesOrderId: "o2",
+        orderCode: "PD 2",
+        saleDate: new Date(2026, 0, 6),
+        canonicalSellerId: SELLER_B,
+        totalFinalCommissionAmount: 40,
+      }),
+      snap({
+        id: "c",
+        salesOrderId: "o3",
+        orderCode: "PD 3",
+        saleDate: new Date(2026, 2, 6),
+        canonicalSellerId: SELLER_A,
+        totalFinalCommissionAmount: 50,
+      }),
+    ];
+    // Simula filtro server já aplicado (só SELLER_A em jan+mar)
+    const filtered = snapshots.filter(
+      (s) =>
+        s.canonicalSellerId === SELLER_A &&
+        [0, 2].includes((s.saleDate as Date).getMonth())
+    );
     const payload = assembleCommissionOrderProvisionPayload({
-      query: parseCommissionOrderProvisionQuery({ year: "2026", months: "all" }),
-      snapshots: [
-        {
-          id: "s1",
-          salesOrderId: "o1",
-          orderCode: "PD 1",
-          saleDate: new Date(2026, 0, 1),
-          customerNameSnapshot: "A",
-          canonicalSellerId: "11111111-1111-4111-8111-111111111111",
-          canonicalSellerName: "Maria",
-          rawSellerId: 1,
-          rawSellerName: "Maria",
-          nfeId: null,
-          totalSoldAmount: 100,
-          totalGrossCommissionAmount: 10,
-          totalFinalCommissionAmount: 10,
-          hasCustomerExcludedItems: false,
-        },
-      ],
+      query: parseCommissionOrderProvisionQuery({
+        year: "2026",
+        months: "1,3",
+        sellerId: SELLER_A,
+        page: "1",
+        pageSize: "1",
+      }),
+      snapshots: filtered,
     });
-    assert.ok(payload.sellerOptions.some((o) => o.label === "Maria"));
-    assert.equal(payload.sellerOptions[0]?.value, "all");
+    assert.equal(payload.cards.orderCount, 2);
+    assert.equal(payload.cards.totalFinalCommissionAmount, 80);
+    assert.equal(payload.pagination.totalRows, 2);
+    assert.equal(payload.pagination.pageSize, 1);
+    assert.equal(payload.rows.length, 1);
+    assert.equal(payload.filters.canonicalSellerId, SELLER_A);
+    assert.deepEqual(payload.filters.months, [1, 3]);
+  });
+
+  it("alterar meses não muda sellerId na query client", () => {
+    const base = {
+      year: "2026",
+      sellerId: SELLER_A,
+      selectedRawSellerId: null as number | null,
+      customer: "",
+      orderCode: "",
+      includeZeroCommission: false,
+      page: 1,
+    };
+    const a = new URLSearchParams(
+      buildCommissionOrderProvisionClientQuery({ ...base, months: [1] })
+    );
+    const b = new URLSearchParams(
+      buildCommissionOrderProvisionClientQuery({ ...base, months: [1, 3] })
+    );
+    assert.equal(a.get("sellerId"), SELLER_A);
+    assert.equal(b.get("sellerId"), SELLER_A);
+    assert.equal(a.get("months"), "1");
+    assert.equal(b.get("months"), "1,3");
+  });
+
+  it("resolveCommissionOrderProvisionMonths é determinístico", () => {
+    assert.deepEqual(resolveCommissionOrderProvisionMonths([3, 1, 3, 2]), [1, 2, 3]);
+    assert.deepEqual(resolveCommissionOrderProvisionMonths("all").length, 12);
   });
 });

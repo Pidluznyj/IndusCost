@@ -8,8 +8,7 @@ import { decimalToNumber } from "./commission-money.js";
 import {
   assembleCommissionOrderProvisionPayload,
   parseCommissionOrderProvisionQuery,
-  resolveCommissionOrderProvisionMonthRanges,
-  resolveCommissionOrderProvisionSaleDateBounds,
+  resolveCommissionOrderProvisionSaleDateFilter,
   type CommissionOrderProvisionPayload,
   type CommissionOrderProvisionSnapshotInput,
 } from "./commissionOrderProvision.shared.js";
@@ -55,17 +54,16 @@ function applySellerScope(
 function buildSaleDateWhere(
   query: ReturnType<typeof parseCommissionOrderProvisionQuery>
 ): Prisma.CommissionOrderSnapshotWhereInput | null {
-  const monthRanges = resolveCommissionOrderProvisionMonthRanges(query);
-  if (monthRanges) {
+  const filter = resolveCommissionOrderProvisionSaleDateFilter(query);
+  if (filter.kind === "none") return null;
+  if (filter.kind === "or_months") {
     return {
-      OR: monthRanges.map((range) => ({
+      OR: filter.ranges.map((range) => ({
         saleDate: { gte: range.gte, lte: range.lte },
       })),
     };
   }
-  const bounds = resolveCommissionOrderProvisionSaleDateBounds(query);
-  if (!bounds) return null;
-  return { saleDate: { gte: bounds.gte, lte: bounds.lte } };
+  return { saleDate: { gte: filter.gte, lte: filter.lte } };
 }
 
 export async function getCommissionOrderProvisionPage(

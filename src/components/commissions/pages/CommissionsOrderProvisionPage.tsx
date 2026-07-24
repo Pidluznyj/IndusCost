@@ -23,7 +23,11 @@ import {
   SYSTEM_TOTALIZER_METRIC_CARD_CLASS,
 } from "@/src/components/ui/SystemTotalizerCard";
 import { cn } from "@/src/lib/utils";
-import type { CommissionOrderProvisionPayload } from "@/src/lib/commissions/commissionOrderProvision.shared";
+import {
+  buildCommissionOrderProvisionClientQuery,
+  isCommissionOrderProvisionSellerChipActive,
+  type CommissionOrderProvisionPayload,
+} from "@/src/lib/commissions/commissionOrderProvision.shared";
 import type { CommissionReportsMonthsFilter } from "@/src/lib/commissions/commissionReports.shared";
 import type { CommissionsPersonsPayload } from "@/src/components/commissions/commissionsTypes";
 import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
@@ -39,7 +43,13 @@ export function CommissionsOrderProvisionPage() {
   const yearOptions = useMemo(() => buildCommissionsYearOptions(), []);
   const [year, setYear] = useState(String(now.getFullYear()));
   const [months, setMonths] = useState<CommissionReportsMonthsFilter>("all");
+  /** Fonte única do select: "all" | CommissionPerson.id */
   const [sellerId, setSellerId] = useState("all");
+  /** Chip sem pessoa canônica (só rawSellerId no snapshot). */
+  const [selectedRawSellerId, setSelectedRawSellerId] = useState<number | null>(
+    null
+  );
+  const [selectedSellerKey, setSelectedSellerKey] = useState<string | null>(null);
   const [persons, setPersons] = useState<Array<{ id: string; name: string }>>([]);
   const [customer, setCustomer] = useState("");
   const [orderCode, setOrderCode] = useState("");
@@ -48,13 +58,6 @@ export function CommissionsOrderProvisionPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<CommissionOrderProvisionPayload | null>(
-    null
-  );
-  const [selectedSellerKey, setSelectedSellerKey] = useState<string | null>(null);
-  const [selectedCanonicalSellerId, setSelectedCanonicalSellerId] = useState<
-    string | null
-  >(null);
-  const [selectedRawSellerId, setSelectedRawSellerId] = useState<number | null>(
     null
   );
 
@@ -86,31 +89,19 @@ export function CommissionsOrderProvisionPage() {
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams();
-      if (year) params.set("year", year);
-      if (months === "all" || (Array.isArray(months) && months.length === 0)) {
-        params.set("months", "all");
-      } else {
-        params.set("months", months.join(","));
-      }
-      if (customer.trim()) params.set("customer", customer.trim());
-      if (orderCode.trim()) params.set("orderCode", orderCode.trim());
-      if (includeZero) params.set("includeZeroCommission", "true");
-
-      const effectiveCanonical =
-        selectedCanonicalSellerId ||
-        (sellerId !== "all" ? sellerId : null);
-      if (effectiveCanonical) {
-        params.set("canonicalSellerId", effectiveCanonical);
-        params.set("sellerId", effectiveCanonical);
-      } else if (selectedRawSellerId != null) {
-        params.set("rawSellerId", String(selectedRawSellerId));
-      }
-      params.set("page", String(page));
-      params.set("pageSize", "50");
-
+      const qs = buildCommissionOrderProvisionClientQuery({
+        year,
+        months,
+        sellerId,
+        selectedRawSellerId,
+        customer,
+        orderCode,
+        includeZeroCommission: includeZero,
+        page,
+        pageSize: 50,
+      });
       const data = await fetchJsonOk<CommissionOrderProvisionPayload>(
-        `/api/commissions/order-provision?${params.toString()}`
+        `/api/commissions/order-provision?${qs}`
       );
       setPayload(data);
     } catch (err) {
@@ -121,17 +112,7 @@ export function CommissionsOrderProvisionPage() {
     } finally {
       setLoading(false);
     }
-  }, [
-    year,
-    months,
-    customer,
-    orderCode,
-    includeZero,
-    page,
-    sellerId,
-    selectedCanonicalSellerId,
-    selectedRawSellerId,
-  ]);
+  }, [year, months, customer, orderCode, includeZero, page, sellerId, selectedRawSellerId]);
 
   useEffect(() => {
     void load();
@@ -162,7 +143,6 @@ export function CommissionsOrderProvisionPage() {
 
   function clearSellerFilter() {
     setSelectedSellerKey(null);
-    setSelectedCanonicalSellerId(null);
     setSelectedRawSellerId(null);
     setSellerId("all");
     setPage(1);
@@ -170,12 +150,12 @@ export function CommissionsOrderProvisionPage() {
 
   function onSellerSelectChange(value: string) {
     setSellerId(value);
-    setSelectedSellerKey(null);
     setSelectedRawSellerId(null);
     if (value === "all") {
-      setSelectedCanonicalSellerId(null);
+      setSelectedSellerKey(null);
     } else {
-      setSelectedCanonicalSellerId(value);
+      const match = payload?.cards.sellers.find((s) => s.canonicalSellerId === value);
+      setSelectedSellerKey(match?.key ?? value);
     }
     setPage(1);
   }
@@ -184,12 +164,17 @@ export function CommissionsOrderProvisionPage() {
     key: string;
     canonicalSellerId: string | null;
   }) {
-    if (selectedSellerKey === seller.key) {
+    const alreadyActive = isCommissionOrderProvisionSellerChipActive({
+      seller,
+      sellerId,
+      selectedSellerKey,
+      selectedRawSellerId,
+    });
+    if (alreadyActive) {
       clearSellerFilter();
       return;
     }
     setSelectedSellerKey(seller.key);
-    setSelectedCanonicalSellerId(seller.canonicalSellerId);
     if (seller.canonicalSellerId) {
       setSellerId(seller.canonicalSellerId);
       setSelectedRawSellerId(null);
@@ -245,10 +230,7 @@ export function CommissionsOrderProvisionPage() {
             <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Vendedor</span>
             <select
               className={COMMISSIONS_FILTER_FIELD_CLASS}
-              value={
-                selectedCanonicalSellerId ||
-                (sellerId !== "all" ? sellerId : "all")
-              }
+              value={sellerId}
               onChange={(e) => onSellerSelectChange(e.target.value)}
               aria-label="Vendedor"
               data-testid="commissions-order-provision-seller-filter"
@@ -399,11 +381,12 @@ export function CommissionsOrderProvisionPage() {
                     onClick={() => toggleSeller(seller)}
                     className={cn(
                       "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-                      selectedSellerKey === seller.key ||
-                        (seller.canonicalSellerId != null &&
-                          seller.canonicalSellerId ===
-                            (selectedCanonicalSellerId ||
-                              (sellerId !== "all" ? sellerId : null)))
+                      isCommissionOrderProvisionSellerChipActive({
+                        seller,
+                        sellerId,
+                        selectedSellerKey,
+                        selectedRawSellerId,
+                      })
                         ? "border-primary bg-primary/10"
                         : "border-border bg-card hover:bg-accent/40"
                     )}
