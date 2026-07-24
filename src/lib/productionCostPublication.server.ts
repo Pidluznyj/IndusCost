@@ -355,6 +355,10 @@ export type PublishProductionCostVersionInput = {
   versionId: string;
   publishedBy?: string | null;
   supersedeVersionId?: string | null;
+  auditContext?: {
+    source?: string | null;
+    batchRunId?: string | null;
+  } | null;
 };
 
 export async function publishProductionCostVersionFromDraft(
@@ -366,6 +370,10 @@ export async function publishProductionCostVersionFromDraft(
     select: { id: true, code: true, supersedesVersionId: true, status: true },
   });
   if (!version) throw new Error("Versão não encontrada.");
+
+  if (version.status === "PUBLISHED") {
+    throw new Error("Versão já publicada (imutável).");
+  }
 
   let supersedeId = input.supersedeVersionId ?? version.supersedesVersionId;
   if (!supersedeId) {
@@ -379,6 +387,7 @@ export async function publishProductionCostVersionFromDraft(
     versionId: input.versionId,
     publishedBy: input.publishedBy,
     supersedeVersionId: supersedeId,
+    auditContext: input.auditContext ?? null,
   });
 }
 

@@ -45,6 +45,8 @@ function buildPublicationAuditNote(
     itemsPublished: number;
     itemsExcluded: number;
     pendencies: ProductionCostPublicationPendency[];
+    source?: string | null;
+    batchRunId?: string | null;
   }
 ): string | null {
   const stamp = new Date().toISOString();
@@ -60,6 +62,8 @@ function buildPublicationAuditNote(
     `itens publicados: ${meta.itemsPublished}`,
     meta.itemsExcluded > 0 ? `excluídos por custo inválido: ${meta.itemsExcluded}` : null,
     preview ? `pendências (amostra): ${preview}${meta.pendencies.length > 8 ? "…" : ""}` : null,
+    meta.source?.trim() ? `origem: ${meta.source.trim()}` : null,
+    meta.batchRunId?.trim() ? `batchRunId: ${meta.batchRunId.trim()}` : null,
   ].filter(Boolean);
   const summary = lines.join(" · ");
   const base = existingNotes?.trim() || "";
@@ -290,6 +294,11 @@ export type PublishProductionCostTableVersionInput = {
   publishedBy?: string | null;
   /** Se informado, marca a versão anterior como SUPERSEDED após publicação. */
   supersedeVersionId?: string | null;
+  /** Metadados opcionais de auditoria (ex.: publicação em lote). */
+  auditContext?: {
+    source?: string | null;
+    batchRunId?: string | null;
+  } | null;
 };
 
 export type PublishProductionCostTableVersionResult = {
@@ -359,6 +368,8 @@ export async function publishProductionCostTableVersion(
     itemsPublished: validItemIds.length,
     itemsExcluded: invalidItemIds.length,
     pendencies,
+    source: input.auditContext?.source ?? null,
+    batchRunId: input.auditContext?.batchRunId ?? null,
   });
 
   const published = await db.$transaction(async (tx) => {

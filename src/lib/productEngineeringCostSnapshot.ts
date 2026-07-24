@@ -3,7 +3,10 @@
  */
 import { toCivilDateKey } from "./financeCivilDate.js";
 import type { OfficialProductFinalCostSuccess } from "./productOfficialFinalCost.js";
-import { resolveProductEngineeringCostWarning } from "./productEngineeringCostWarning.js";
+import {
+  hasProductionCostDifference,
+  resolveProductEngineeringCostWarning,
+} from "./productEngineeringCostWarning.js";
 
 export const PRODUCTION_COST_ENGINEERING_SNAPSHOT_SOURCE = "PRODUCT_ENGINEERING_CHANGE" as const;
 
@@ -118,9 +121,22 @@ export function resolveFrozenCostTraceStatus(input: {
     input.publishedCost != null &&
     input.publishedCost > 0;
 
-  const hasDraft = input.draftVersionStatus === "DRAFT" && input.draftHash != null;
+  const hasDraftRow = input.draftVersionStatus === "DRAFT" && input.draftHash != null;
+  const draftHash = input.draftHash?.trim() ?? "";
+  const liveHash = input.liveHash?.trim() ?? "";
+  const draftMatchesCurrent =
+    hasDraftRow &&
+    ((Boolean(draftHash && liveHash && draftHash === liveHash) ||
+      (input.draftUnitCost != null &&
+        !hasProductionCostDifference(input.draftUnitCost, input.liveCiu))));
 
-  if (!hasPublished && !hasDraft) return "SEM_CUSTO_CONGELADO";
+  /** Só DRAFT alinhado ao CIU atual conta como pendência de publicação. */
+  const hasDraft = draftMatchesCurrent;
+
+  if (!hasPublished && !hasDraft) {
+    if (hasDraftRow && !draftMatchesCurrent) return "CUSTO_DIVERGENTE";
+    return "SEM_CUSTO_CONGELADO";
+  }
 
   const calculatedCost =
     hasDraft && input.draftUnitCost != null && input.draftUnitCost > 0

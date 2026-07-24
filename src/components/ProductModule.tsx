@@ -102,9 +102,13 @@ import {
 } from "@/src/lib/productFrozenCostDisplay";
 import { executiveAlertInlineTextClass } from "@/src/lib/executiveAlertStyles";
 import { PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS } from "@/src/lib/productionCostTablesUi";
-import { selectPendingProductionCostDraftsForBulkPublish } from "@/src/lib/productEngineeringCostSnapshot";
 import type { ProductProductionCostPublicationStatus } from "@/src/lib/productProductionCostPublicationStatus";
+import type {
+  ProductionCostBulkPublishPreview,
+  ProductionCostBulkPublishResult,
+} from "@/src/lib/productionCostBulkPublish";
 import { ProductCostPublicationPendingCard } from "@/src/components/product/ProductCostPublicationPendingCard";
+import { ProductProductionCostBulkPublishDialog } from "@/src/components/product/ProductProductionCostBulkPublishDialog";
 import { ComponentInjectionCalculationBreakdown } from "@/src/components/product/ComponentInjectionCalculationBreakdown";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 
@@ -154,7 +158,8 @@ const Badge = ({
 }) => {
   const variants = {
     default: "bg-accent text-accent-foreground",
-    success: "bg-green-500/10 text-green-600",
+    success:
+      "bg-emerald-100 text-emerald-950 ring-1 ring-emerald-600/35 dark:bg-emerald-100 dark:text-emerald-950 dark:ring-emerald-600/40",
     warning:
       "bg-amber-100 text-amber-950 ring-1 ring-amber-500/35 dark:bg-amber-950/55 dark:text-amber-50 dark:ring-amber-400/35",
     danger: "bg-red-500/10 text-red-600",
@@ -223,7 +228,19 @@ export const ProductModule = () => {
     current: number;
     total: number;
   } | null>(null);
-  const isEngineeringBulkBusy = Boolean(snapshotBulkProgress || publishBulkProgress);
+  const [bulkPublishOpen, setBulkPublishOpen] = useState(false);
+  const [bulkPublishPhase, setBulkPublishPhase] = useState<"preview" | "confirm" | "result">(
+    "preview"
+  );
+  const [bulkPublishPreview, setBulkPublishPreview] =
+    useState<ProductionCostBulkPublishPreview | null>(null);
+  const [bulkPublishResult, setBulkPublishResult] =
+    useState<ProductionCostBulkPublishResult | null>(null);
+  const [bulkPublishError, setBulkPublishError] = useState<string | null>(null);
+  const [bulkPublishLoading, setBulkPublishLoading] = useState(false);
+  const isEngineeringBulkBusy = Boolean(
+    snapshotBulkProgress || publishBulkProgress || bulkPublishLoading
+  );
   const [costPublicationStatus, setCostPublicationStatus] =
     useState<ProductProductionCostPublicationStatus | null>(null);
   const [costPublicationLoading, setCostPublicationLoading] = useState(false);
@@ -383,7 +400,11 @@ export const ProductModule = () => {
 
     if (
       !confirm(
-        `Atualizar snapshot de custo de ${selectedIds.length} item(ns) selecionado(s)?\n\nCada item será recalculado individualmente (gera/atualiza DRAFT).\nIsso não publica o custo oficial — use "Publicar custos" depois.`
+        `Gerar rascunhos de custo para ${selectedIds.length} item(ns) selecionado(s)?\n\n` +
+          `• Novos custos serão calculados\n` +
+          `• Versões DRAFT de custo de produção serão criadas/atualizadas\n` +
+          `• Os custos ainda NÃO serão oficiais\n` +
+          `• Será necessária a ação "Publicar custos" depois`
       )
     ) {
       return;
@@ -428,7 +449,9 @@ export const ProductModule = () => {
       }
 
       if (failures.length === 0) {
-        alert(`${updated} snapshot(s) atualizado(s) com sucesso.`);
+        alert(
+          `${updated} rascunho(s) de custo gerado(s)/atualizado(s).\nAinda não são oficiais — use "Publicar custos" quando estiver pronto.`
+        );
       } else {
         const details = failures
           .slice(0, 12)
@@ -437,7 +460,7 @@ export const ProductModule = () => {
         const extra =
           failures.length > 12 ? `\n… e mais ${failures.length - 12} falha(s).` : "";
         alert(
-          `${updated} atualizado(s), ${failures.length} falha(s):\n${details}${extra}`
+          `${updated} rascunho(s) ok, ${failures.length} falha(s):\n${details}${extra}`
         );
       }
     } finally {
@@ -453,86 +476,94 @@ export const ProductModule = () => {
     editingItem?.id,
   ]);
 
-  const handleBulkPublishProductionCostDrafts = useCallback(async () => {
+  const openBulkPublishPreview = useCallback(async () => {
     if (!canPublishProductionCost || selectedIds.length === 0 || isEngineeringBulkBusy) return;
-
-    const selectedItems = items.filter((item) => selectedIds.includes(item.id));
-    const candidates = selectPendingProductionCostDraftsForBulkPublish(selectedItems);
-    const skipped = selectedIds.length - candidates.length;
-
-    if (candidates.length === 0) {
-      alert(
-        "Nenhum dos itens selecionados tem DRAFT com status \"Pendente de publicação\".\n\nAtualize os snapshots primeiro ou selecione itens com badge amarelo de pendência."
-      );
-      return;
-    }
-
-    if (
-      !confirm(
-        `Publicar o custo oficial de ${candidates.length} versão(ões) DRAFT?\n\n` +
-          `Isso torna oficiais os novos custos de produção. Versões publicadas são imutáveis.\n` +
-          (skipped > 0
-            ? `${skipped} selecionado(s) sem DRAFT pendente serão ignorados.\n`
-            : "") +
-          `\nContinuar?`
-      )
-    ) {
-      return;
-    }
-
-    let published = 0;
-    const failures: Array<{ name: string; error: string }> = [];
-
-    setPublishBulkProgress({ current: 0, total: candidates.length });
+    setBulkPublishOpen(true);
+    setBulkPublishPhase("preview");
+    setBulkPublishPreview(null);
+    setBulkPublishResult(null);
+    setBulkPublishError(null);
+    setBulkPublishLoading(true);
+    setPublishBulkProgress({ current: 0, total: selectedIds.length });
     try {
-      for (let index = 0; index < candidates.length; index += 1) {
-        const candidate = candidates[index]!;
-        setPublishBulkProgress({ current: index + 1, total: candidates.length });
-        try {
-          await fetchJsonOk(
-            `/api/production-cost-table-versions/${candidate.versionId}/publish`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({}),
-            }
-          );
-          published += 1;
-        } catch (error) {
-          failures.push({
-            name: candidate.name,
-            error: error instanceof Error ? error.message : "Falha ao publicar custo.",
-          });
+      const preview = await fetchJsonOk<ProductionCostBulkPublishPreview>(
+        "/api/products/production-cost/bulk-publish/preview",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productIds: selectedIds }),
+        }
+      );
+      setBulkPublishPreview(preview);
+      if (preview.summary.eligible === 0) {
+        setBulkPublishError(
+          "Nenhum item apto. Gere rascunhos de custo ou selecione itens Pendente de publicação."
+        );
+      }
+    } catch (error) {
+      setBulkPublishError(
+        error instanceof Error ? error.message : "Falha ao gerar prévia de publicação."
+      );
+    } finally {
+      setBulkPublishLoading(false);
+      setPublishBulkProgress(null);
+    }
+  }, [canPublishProductionCost, selectedIds, isEngineeringBulkBusy]);
+
+  const confirmBulkPublish = useCallback(async () => {
+    if (!canPublishProductionCost || !bulkPublishPreview || bulkPublishLoading) return;
+    setBulkPublishLoading(true);
+    setBulkPublishError(null);
+    setPublishBulkProgress({
+      current: 0,
+      total: Math.max(1, bulkPublishPreview.summary.eligible),
+    });
+    try {
+      const draftVersionIdsByProduct: Record<string, string> = {};
+      for (const row of bulkPublishPreview.rows) {
+        if (row.eligible && row.draftVersionId) {
+          draftVersionIdsByProduct[row.productId] = row.draftVersionId;
         }
       }
-
+      const result = await fetchJsonOk<ProductionCostBulkPublishResult>(
+        "/api/products/production-cost/bulk-publish",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productIds: selectedIds,
+            confirm: true,
+            batchRunId: bulkPublishPreview.batchRunId,
+            draftVersionIdsByProduct,
+          }),
+        }
+      );
+      setBulkPublishResult(result);
+      setBulkPublishPhase("result");
       await fetchData();
       if (editingItem?.id && selectedIds.includes(editingItem.id)) {
         setCostPublicationRefreshToken((token) => token + 1);
       }
-
-      if (failures.length === 0) {
-        alert(
-          `${published} custo(s) oficial(is) publicado(s) com sucesso.` +
-            (skipped > 0 ? `\n${skipped} selecionado(s) ignorado(s) (sem DRAFT pendente).` : "")
-        );
-      } else {
-        const details = failures
-          .slice(0, 12)
-          .map((f) => `- ${f.name}: ${f.error}`)
-          .join("\n");
-        const extra =
-          failures.length > 12 ? `\n… e mais ${failures.length - 12} falha(s).` : "";
-        alert(`${published} publicado(s), ${failures.length} falha(s):\n${details}${extra}`);
+      const publishedIds = result.rows
+        .filter((r) => r.status === "PUBLISHED")
+        .map((r) => r.productId);
+      if (publishedIds.length > 0) {
+        setSelectedIds((prev) => prev.filter((id) => !publishedIds.includes(id)));
       }
+    } catch (error) {
+      setBulkPublishError(
+        error instanceof Error ? error.message : "Falha na publicação em lote."
+      );
+      setBulkPublishPhase("confirm");
     } finally {
+      setBulkPublishLoading(false);
       setPublishBulkProgress(null);
     }
   }, [
     canPublishProductionCost,
+    bulkPublishPreview,
+    bulkPublishLoading,
     selectedIds,
-    isEngineeringBulkBusy,
-    items,
     fetchData,
     editingItem?.id,
   ]);
@@ -981,6 +1012,18 @@ export const ProductModule = () => {
     [items, appliedSearch, appliedStatusFilter]
   );
 
+  const selectPendingPublicationItems = useCallback(() => {
+    setSelectedIds(
+      filteredItems
+        .filter((item) => item.frozenCostSummary?.traceStatus === "PENDENTE_PUBLICACAO")
+        .map((item) => item.id)
+    );
+  }, [filteredItems]);
+
+  const selectAllFilteredItems = useCallback(() => {
+    setSelectedIds(filteredItems.map((item) => item.id));
+  }, [filteredItems]);
+
   const handleListSearchSubmit = (event?: React.FormEvent) => {
     event?.preventDefault();
     setAppliedSearch(draftSearch.trim());
@@ -1325,6 +1368,26 @@ export const ProductModule = () => {
 
   return (
     <div className="space-y-6" data-tour="products-root">
+      <ProductProductionCostBulkPublishDialog
+        open={bulkPublishOpen}
+        phase={bulkPublishPhase}
+        preview={bulkPublishPreview}
+        result={bulkPublishResult}
+        loading={bulkPublishLoading}
+        error={bulkPublishError}
+        onClose={() => {
+          if (bulkPublishLoading) return;
+          setBulkPublishOpen(false);
+          setBulkPublishPhase("preview");
+          setBulkPublishError(null);
+        }}
+        onBackToPreview={() => {
+          setBulkPublishPhase("preview");
+          setBulkPublishError(null);
+        }}
+        onRequestConfirm={() => setBulkPublishPhase("confirm")}
+        onConfirmPublish={() => void confirmBulkPublish()}
+      />
       {showNomusMaintenanceTab ? (
         <div
           className="flex flex-wrap gap-2 border-b border-border pb-3"
@@ -1434,7 +1497,42 @@ export const ProductModule = () => {
           <p className="text-xs text-muted-foreground">
             Exibindo <span className="font-medium text-foreground">{filteredItems.length}</span> de{" "}
             <span className="font-medium text-foreground">{items.length}</span> item(ns).
+            {selectedIds.length > 0 ? (
+              <>
+                {" "}
+                · Selecionados:{" "}
+                <span className="font-medium text-foreground">{selectedIds.length}</span>
+              </>
+            ) : null}
           </p>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <button
+              type="button"
+              className="text-primary underline-offset-2 hover:underline"
+              onClick={selectAllFilteredItems}
+              data-testid="select-all-filtered-products"
+            >
+              Selecionar filtrados ({filteredItems.length})
+            </button>
+            <button
+              type="button"
+              className="text-primary underline-offset-2 hover:underline"
+              onClick={selectPendingPublicationItems}
+              data-testid="select-pending-publication-products"
+            >
+              Selecionar pendentes de publicação
+            </button>
+            {selectedIds.length > 0 ? (
+              <button
+                type="button"
+                className="text-muted-foreground underline-offset-2 hover:underline"
+                onClick={() => setSelectedIds([])}
+                data-testid="clear-product-selection"
+              >
+                Limpar seleção
+              </button>
+            ) : null}
+          </div>
         </div>
         <div
           className="flex flex-wrap items-center gap-2 lg:justify-end"
@@ -1454,7 +1552,7 @@ export const ProductModule = () => {
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-refresh-cost-snapshot"
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
-              title="Recalcular o snapshot de custo dos itens selecionados (gera DRAFT, não publica)"
+              title="Recalcular custos e gerar versões DRAFT (não publica o custo oficial)"
             >
               {snapshotBulkProgress ? (
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -1462,8 +1560,8 @@ export const ProductModule = () => {
                 <RefreshCw className="h-4 w-4 shrink-0" />
               )}
               {snapshotBulkProgress
-                ? `Atualizando… (${snapshotBulkProgress.current}/${snapshotBulkProgress.total})`
-                : `Atualizar snapshots (${selectedIds.length})`}
+                ? `Gerando rascunhos… (${snapshotBulkProgress.current}/${snapshotBulkProgress.total})`
+                : `Gerar rascunhos de custo (${selectedIds.length})`}
             </motion.button>
           ) : null}
           {selectedIds.length > 0 && canPublishProductionCost ? (
@@ -1471,19 +1569,19 @@ export const ProductModule = () => {
               type="button"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              onClick={() => void handleBulkPublishProductionCostDrafts()}
+              onClick={() => void openBulkPublishPreview()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-publish-production-cost"
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#FBBF24] bg-[#FDE68A] px-4 text-sm font-medium text-[#92400E] transition-colors hover:bg-[#FCD34D] disabled:cursor-not-allowed disabled:opacity-60"
-              title="Publicar DRAFTs de custo de produção dos itens selecionados com pendência"
+              title="Prévia e publicação oficial dos DRAFTs elegíveis selecionados"
             >
-              {publishBulkProgress ? (
+              {publishBulkProgress || bulkPublishLoading ? (
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
               ) : (
                 <Upload className="h-4 w-4 shrink-0" />
               )}
-              {publishBulkProgress
-                ? `Publicando… (${publishBulkProgress.current}/${publishBulkProgress.total})`
+              {publishBulkProgress || bulkPublishLoading
+                ? `Publicando… (${publishBulkProgress?.current ?? 0}/${publishBulkProgress?.total ?? selectedIds.length})`
                 : `Publicar custos (${selectedIds.length})`}
             </motion.button>
           ) : null}

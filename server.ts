@@ -30,6 +30,11 @@ import {
   publishProductionCostVersionFromDraft,
 } from "./src/lib/productionCostPublication.server.js";
 import {
+  previewProductionCostBulkPublish,
+  executeProductionCostBulkPublish,
+  diagnoseProductionCostDrafts,
+} from "./src/lib/productionCostBulkPublish.server.js";
+import {
   generatePriceTableVersionDraftFromProductionCosts,
   previewProductionCostTableSourceForPriceDraft,
   resolvePublishedPriceTableVersionForDate,
@@ -59,6 +64,7 @@ import {
 } from "./src/lib/productionCostPublication.js";
 import {
   formatEffectiveProductionCostSummary,
+  PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS,
   PRODUCTION_COST_TABLE_VIEW_PERMISSIONS,
 } from "./src/lib/productionCostTablesUi.js";
 import {
@@ -9816,11 +9822,16 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/production-cost-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
+  app.post("/api/production-cost-table-versions/:id/publish", requireAppAuth, requireAnyPermission([...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS]), async (req, res) => {
     const { id } = req.params;
     const body = (req.body ?? {}) as { publishedBy?: unknown; supersedeVersionId?: unknown };
     const publishedBy =
-      typeof body.publishedBy === "string" && body.publishedBy.trim() ? body.publishedBy.trim() : null;
+      typeof body.publishedBy === "string" && body.publishedBy.trim()
+        ? body.publishedBy.trim()
+        : req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null;
     const supersedeVersionId =
       typeof body.supersedeVersionId === "string" && body.supersedeVersionId.trim()
         ? body.supersedeVersionId.trim()
@@ -11173,6 +11184,119 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         console.error("GET /api/products/:id/production-cost-publication-status", error);
         return res.status(500).json({
           error: error instanceof Error ? error.message : "Erro ao consultar status de publicação.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/products/production-cost/bulk-publish/preview",
+    requireAppAuth,
+    requireAnyPermission([...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const body = (req.body ?? {}) as { productIds?: unknown; batchRunId?: unknown };
+        const productIds = Array.isArray(body.productIds)
+          ? body.productIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+          : [];
+        if (productIds.length === 0) {
+          return res.status(400).json({ error: "Informe productIds (array não vazio)." });
+        }
+        const batchRunId =
+          typeof body.batchRunId === "string" && body.batchRunId.trim()
+            ? body.batchRunId.trim()
+            : null;
+        const preview = await previewProductionCostBulkPublish(prisma, costAnalysisEngine, {
+          productIds,
+          batchRunId,
+        });
+        return res.json(preview);
+      } catch (error) {
+        console.error("POST /api/products/production-cost/bulk-publish/preview", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro na prévia de publicação em lote.",
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/products/production-cost/bulk-publish",
+    requireAppAuth,
+    requireAnyPermission([...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const body = (req.body ?? {}) as {
+          productIds?: unknown;
+          confirm?: unknown;
+          batchRunId?: unknown;
+          draftVersionIdsByProduct?: unknown;
+        };
+        if (body.confirm !== true) {
+          return res.status(400).json({
+            error: "Confirmação explícita obrigatória (confirm: true).",
+          });
+        }
+        const productIds = Array.isArray(body.productIds)
+          ? body.productIds.filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+          : [];
+        if (productIds.length === 0) {
+          return res.status(400).json({ error: "Informe productIds (array não vazio)." });
+        }
+        const publishedBy =
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null;
+        const batchRunId =
+          typeof body.batchRunId === "string" && body.batchRunId.trim()
+            ? body.batchRunId.trim()
+            : null;
+        const draftVersionIdsByProduct =
+          body.draftVersionIdsByProduct &&
+          typeof body.draftVersionIdsByProduct === "object" &&
+          !Array.isArray(body.draftVersionIdsByProduct)
+            ? (body.draftVersionIdsByProduct as Record<string, string>)
+            : null;
+        const result = await executeProductionCostBulkPublish(prisma, costAnalysisEngine, {
+          productIds,
+          publishedBy,
+          batchRunId,
+          draftVersionIdsByProduct,
+        });
+        return res.json(result);
+      } catch (error) {
+        console.error("POST /api/products/production-cost/bulk-publish", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro na publicação em lote.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/products/production-cost/drafts/diagnose",
+    requireAppAuth,
+    requireAnyPermission([...PRODUCTION_COST_TABLE_PUBLISH_PERMISSIONS, ...PRODUCTION_COST_TABLE_VIEW_PERMISSIONS]),
+    async (req, res) => {
+      try {
+        const sinceRaw = typeof req.query.since === "string" ? req.query.since : null;
+        const since = sinceRaw ? new Date(sinceRaw) : null;
+        const source = typeof req.query.source === "string" ? req.query.source : null;
+        const createdBy = typeof req.query.createdBy === "string" ? req.query.createdBy : null;
+        const autoCodeOnly =
+          req.query.autoCodeOnly === "1" || req.query.autoCodeOnly === "true";
+        const report = await diagnoseProductionCostDrafts(prisma, {
+          since: since && Number.isFinite(since.getTime()) ? since : null,
+          source,
+          createdBy,
+          autoCodeOnly,
+        });
+        return res.json(report);
+      } catch (error) {
+        console.error("GET /api/products/production-cost/drafts/diagnose", error);
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Erro no diagnóstico de DRAFTs.",
         });
       }
     }

@@ -35,11 +35,13 @@ describe("executiveAlertStyles", () => {
     assert.match(tokens.title, /#991B1B/);
   });
 
-  it("success usa verde claro executivo", () => {
+  it("success usa verde com contraste executivo", () => {
     const tokens = EXECUTIVE_ALERT_VARIANTS.success;
-    assert.match(tokens.shell, /bg-\[#ECFDF5\]/);
-    assert.match(tokens.shell, /#86EFAC/);
-    assert.match(tokens.title, /#065F46/);
+    assert.match(tokens.shell, /bg-\[#D1FAE5\]/);
+    assert.match(tokens.shell, /#059669/);
+    assert.match(tokens.title, /#064E3B/);
+    assert.match(tokens.badge, /bg-\[#A7F3D0\]/);
+    assert.match(tokens.badge, /text-\[#064E3B\]/);
   });
 
   it("info usa cinza neutro claro", () => {

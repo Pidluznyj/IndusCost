@@ -82,25 +82,24 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /production-cost-snapshot/);
   });
 
-  it("lista de engenharia oferece atualização de snapshot em lote dos selecionados", () => {
+  it("lista de engenharia oferece geração de rascunhos em lote dos selecionados", () => {
     const mod = productModule();
     assert.match(mod, /handleBulkRefreshFrozenCostSnapshot/);
     assert.match(mod, /data-testid="bulk-refresh-cost-snapshot"/);
-    assert.match(mod, /Atualizar snapshots \(\$\{selectedIds\.length\}\)/);
+    assert.match(mod, /Gerar rascunhos de custo \(\$\{selectedIds\.length\}\)/);
     assert.match(mod, /\/api\/products\/\$\{productId\}\/production-cost-snapshot/);
   });
 
-  it("lista de engenharia oferece publicação em lote dos DRAFTs pendentes", () => {
+  it("lista de engenharia oferece publicação em lote com prévia canônica", () => {
     const mod = productModule();
-    assert.match(mod, /handleBulkPublishProductionCostDrafts/);
-    assert.match(mod, /selectPendingProductionCostDraftsForBulkPublish/);
+    assert.match(mod, /openBulkPublishPreview/);
+    assert.match(mod, /confirmBulkPublish/);
     assert.match(mod, /data-testid="bulk-publish-production-cost"/);
     assert.match(mod, /Publicar custos \(\$\{selectedIds\.length\}\)/);
-    assert.match(
-      mod,
-      /\/api\/production-cost-table-versions\/\$\{candidate\.versionId\}\/publish/
-    );
+    assert.match(mod, /\/api\/products\/production-cost\/bulk-publish\/preview/);
+    assert.match(mod, /\/api\/products\/production-cost\/bulk-publish/);
     assert.match(mod, /canPublishProductionCost/);
+    assert.match(mod, /select-pending-publication-products/);
   });
 
   it("seleciona só PENDENTE_PUBLICACAO com draftVersionId e deduplica versão", () => {
