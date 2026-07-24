@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import type { FinanceArTitlesPayload } from "@/src/lib/financeAccountsReceivableTitles.js";
 import {
   buildFinanceArTitlesQuery,
@@ -53,6 +53,7 @@ export function FinanceArTitlesTab({
   const [data, setData] = useState<FinanceArTitlesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Sincroniza a busca com `?search=` — permite deep-linking a partir da
   // Auditoria 360º (aba Financeiro → botão "Abrir no Contas a Receber").
@@ -74,6 +75,9 @@ export function FinanceArTitlesTab({
   }, [filters, debouncedSearch, localFilter, sortBy, sortDirection, qualityAlert]);
 
   const load = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -86,19 +90,23 @@ export function FinanceArTitlesTab({
         localFilter,
         qualityAlert: qualityAlert ?? undefined,
       });
-      const payload = await fetchJsonOk<FinanceArTitlesPayload>(
-        `/api/finance/accounts-receivable/titles?${qs}`
-      );
+      const url = `/api/finance/accounts-receivable/titles?${qs}`;
+      const payload = await fetchUiSessionCachedJson<FinanceArTitlesPayload>(url, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setData(payload);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Erro ao carregar títulos.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [filters, page, sortBy, sortDirection, debouncedSearch, localFilter, qualityAlert]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
 
   const initialLoad = loading && !data && !error;

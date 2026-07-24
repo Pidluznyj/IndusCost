@@ -136,11 +136,10 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const filters = parseFinanceArFiltersOrRespond(res, req.query as Record<string, unknown>);
       if (!filters) return;
       const referenceDate = new Date();
-      const { rows, syncCutoff } = await loadFinanceArRows(filters);
-      const { rows: horizonSourceRows } = await loadFinanceArOpenHorizonRowsFromPrisma(
-        prisma,
-        referenceDate
-      );
+      const [{ rows, syncCutoff }, { rows: horizonSourceRows }] = await Promise.all([
+        loadFinanceArRows(filters),
+        loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate),
+      ]);
       const payload = buildOfficialAccountsReceivableDashboard({
         rows,
         filters,
@@ -168,20 +167,24 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
       const { rows, syncCutoff } = isFinanceArHorizonTitlesQuery(query)
         ? await loadFinanceArOpenHorizonRowsFromPrisma(prisma, referenceDate)
         : await loadFinanceArManagementRowsFromPrisma(prisma, financeArTitlesPrismaFilters(query));
-      const orderContexts = mergeFinanceArEffectiveOrderContexts(
-        await loadFinanceArEffectiveOrderContexts(prisma, {
-          search: query.search,
-          document: query.extended?.document,
-          customerPersonId: query.extended?.customerId,
-          customerName: query.extended?.customerName,
-        }, referenceDate),
-        await loadFinanceArEffectiveOrderContextsForPortfolio(
+      const [customerContexts, portfolioContexts, nfeOrderLinks] = await Promise.all([
+        loadFinanceArEffectiveOrderContexts(
           prisma,
-          rows,
+          {
+            search: query.search,
+            document: query.extended?.document,
+            customerPersonId: query.extended?.customerId,
+            customerName: query.extended?.customerName,
+          },
           referenceDate
-        )
+        ),
+        loadFinanceArEffectiveOrderContextsForPortfolio(prisma, rows, referenceDate),
+        resolveFinanceArNfeOrderLinksFromRows(prisma, rows),
+      ]);
+      const orderContexts = mergeFinanceArEffectiveOrderContexts(
+        customerContexts,
+        portfolioContexts
       );
-      const nfeOrderLinks = await resolveFinanceArNfeOrderLinksFromRows(prisma, rows);
       const payload = buildFinanceArTitlesPayload(
         rows,
         query,
@@ -233,20 +236,24 @@ export function registerFinanceAccountsReceivableRoutes(app: express.Express, au
         prisma,
         financeArTitlesPrismaFilters(query)
       );
-      const orderContexts = mergeFinanceArEffectiveOrderContexts(
-        await loadFinanceArEffectiveOrderContexts(prisma, {
-          search: query.search,
-          document: query.extended?.document,
-          customerPersonId: query.extended?.customerId,
-          customerName: query.extended?.customerName,
-        }, referenceDate),
-        await loadFinanceArEffectiveOrderContextsForPortfolio(
+      const [customerContexts, portfolioContexts, nfeOrderLinks] = await Promise.all([
+        loadFinanceArEffectiveOrderContexts(
           prisma,
-          rows,
+          {
+            search: query.search,
+            document: query.extended?.document,
+            customerPersonId: query.extended?.customerId,
+            customerName: query.extended?.customerName,
+          },
           referenceDate
-        )
+        ),
+        loadFinanceArEffectiveOrderContextsForPortfolio(prisma, rows, referenceDate),
+        resolveFinanceArNfeOrderLinksFromRows(prisma, rows),
+      ]);
+      const orderContexts = mergeFinanceArEffectiveOrderContexts(
+        customerContexts,
+        portfolioContexts
       );
-      const nfeOrderLinks = await resolveFinanceArNfeOrderLinksFromRows(prisma, rows);
       const exportQuery = { ...query, page: 1, limit: 50_000 };
       const payload = buildFinanceArTitlesPayload(
         rows,

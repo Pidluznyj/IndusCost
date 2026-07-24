@@ -238,11 +238,32 @@ export function buildSalesOrderListSummary(input: {
  * Totais oficiais da listagem operacional — Σ `SalesOrder.totalNetValue` / contagem
  * dos pedidos já filtrados pelo mesmo `where` do GET /api/sales-orders.
  * Não reaplica filtros de mercado executivo (ex.: exclusão de clientes do grupo).
+ *
+ * Preferir `buildSalesOrderListSummary` a partir de `prisma.salesOrder.aggregate`
+ * na rota HTTP (PERF 05). Esta função permanece para dashboards/testes que já
+ * têm as linhas em memória.
  */
 export function buildSalesOrderListTotalsFromPrismaOrders(
   orders: Array<{ totalNetValue: unknown; totalItems: number }>
 ): SalesOrderListSummary {
   return summarizeSalesOrderListRows(orders);
+}
+
+/**
+ * Paridade: totais via aggregate (count/sum) ≡ totais via soma em memória
+ * da mesma população (mesmos campos, mesma ordem de conversão Decimal→number
+ * no total agregado).
+ */
+export function buildSalesOrderListSummaryFromAggregate(input: {
+  totalOrders: number;
+  sumNetValue: unknown;
+  sumItems: unknown;
+}): SalesOrderListSummary {
+  return buildSalesOrderListSummary({
+    totalOrders: input.totalOrders,
+    totalNetAmount: input.sumNetValue ?? 0,
+    totalItems: input.sumItems ?? 0,
+  });
 }
 
 /** Agrega linhas em memória — útil para testes de paridade com a tabela. */

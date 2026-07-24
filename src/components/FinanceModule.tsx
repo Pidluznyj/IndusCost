@@ -22,6 +22,7 @@ import {
 import { FINANCE_UI_SECTIONS } from "@/src/lib/internalSurfaceAccess";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { UnauthorizedAccessGate } from "@/src/components/UnauthorizedAccessGate";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 
 function FinanceCanonicalRedirect() {
   const location = useLocation();
@@ -30,6 +31,7 @@ function FinanceCanonicalRedirect() {
 }
 
 export function FinanceModule() {
+  noteDevPerfRender("FinanceModule");
   const location = useLocation();
   const requestedId = parseFinanceSectionFromPath(location.pathname);
   const { visibleTabs: visibleSections, isEmpty, activeId } = useAuthorizedTabs({

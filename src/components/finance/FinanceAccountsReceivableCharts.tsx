@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -69,14 +69,22 @@ const AGING_BUCKET_COLORS: Record<string, string> = {
   overdue90plus: "#991B1B",
 };
 
-export function FinanceArAgingChart({ buckets }: { buckets: FinanceArAgingBucket[] }) {
-  const data = (buckets ?? []).map((b) => ({
-    key: b.key,
-    label: b.label,
-    amount: b.amount,
-    count: b.count,
-    percent: b.percentOfOpenAmount,
-  }));
+export const FinanceArAgingChart = memo(function FinanceArAgingChart({
+  buckets,
+}: {
+  buckets: FinanceArAgingBucket[];
+}) {
+  const data = useMemo(
+    () =>
+      (buckets ?? []).map((b) => ({
+        key: b.key,
+        label: b.label,
+        amount: b.amount,
+        count: b.count,
+        percent: b.percentOfOpenAmount,
+      })),
+    [buckets]
+  );
   const empty = data.every((d) => d.amount === 0 && d.count === 0);
 
   return (
@@ -143,16 +151,24 @@ export function FinanceArAgingChart({ buckets }: { buckets: FinanceArAgingBucket
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceArMonthlyScheduleChart({ rows }: { rows: FinanceArMonthlyDue[] }) {
-  const data = (rows ?? []).map((r) => ({
-    label: formatFinanceMonthLabel(r.year, r.month),
-    overdue: r.overdueAmount,
-    upcoming: r.upcomingAmount,
-    openAmount: r.openAmount,
-    titlesCount: r.titlesCount,
-  }));
+export const FinanceArMonthlyScheduleChart = memo(function FinanceArMonthlyScheduleChart({
+  rows,
+}: {
+  rows: FinanceArMonthlyDue[];
+}) {
+  const data = useMemo(
+    () =>
+      (rows ?? []).map((r) => ({
+        label: formatFinanceMonthLabel(r.year, r.month),
+        overdue: r.overdueAmount,
+        upcoming: r.upcomingAmount,
+        openAmount: r.openAmount,
+        titlesCount: r.titlesCount,
+      })),
+    [rows]
+  );
   const empty = data.length === 0;
 
   return (
@@ -178,17 +194,23 @@ export function FinanceArMonthlyScheduleChart({ rows }: { rows: FinanceArMonthly
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceArTopDebtorsChart({ rows }: { rows: FinanceArTopDebtor[] }) {
-  const top5 = (rows ?? []).slice(0, 5);
-  const data = top5.map((r) => ({
-    key: r.personCnpj ?? r.personName ?? "cliente",
-    label: (r.personName ?? r.personCnpj ?? "Cliente").slice(0, 28),
-    totalOpenAmount: r.totalOpenAmount,
-    overdueAmount: r.overdueAmount,
-    percentOfPortfolio: r.percentOfPortfolio,
-  }));
+export const FinanceArTopDebtorsChart = memo(function FinanceArTopDebtorsChart({
+  rows,
+}: {
+  rows: FinanceArTopDebtor[];
+}) {
+  const data = useMemo(() => {
+    const top5 = (rows ?? []).slice(0, 5);
+    return top5.map((r) => ({
+      key: r.personCnpj ?? r.personName ?? "cliente",
+      label: (r.personName ?? r.personCnpj ?? "Cliente").slice(0, 28),
+      totalOpenAmount: r.totalOpenAmount,
+      overdueAmount: r.overdueAmount,
+      percentOfPortfolio: r.percentOfPortfolio,
+    }));
+  }, [rows]);
   const empty = data.length === 0;
   const maxAmount = Math.max(...data.map((d) => d.totalOpenAmount), 1);
 
@@ -224,19 +246,22 @@ export function FinanceArTopDebtorsChart({ rows }: { rows: FinanceArTopDebtor[] 
       </div>
     </ChartCard>
   );
-}
+});
 
-export function FinanceArPortfolioMixChart({
+export const FinanceArPortfolioMixChart = memo(function FinanceArPortfolioMixChart({
   openAmount,
   receivedAmount,
 }: {
   openAmount: number;
   receivedAmount: number;
 }) {
-  const data = [
-    { key: "open", label: "Em aberto", amount: openAmount, fill: "#2563EB" },
-    { key: "received", label: "Recebido", amount: receivedAmount, fill: "#059669" },
-  ];
+  const data = useMemo(
+    () => [
+      { key: "open", label: "Em aberto", amount: openAmount, fill: "#2563EB" },
+      { key: "received", label: "Recebido", amount: receivedAmount, fill: "#059669" },
+    ],
+    [openAmount, receivedAmount]
+  );
   const empty = openAmount <= 0 && receivedAmount <= 0;
 
   return (
@@ -264,18 +289,22 @@ export function FinanceArPortfolioMixChart({
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceArScheduleBucketsChart({
+export const FinanceArScheduleBucketsChart = memo(function FinanceArScheduleBucketsChart({
   buckets,
 }: {
   buckets: Array<{ label: string; amount: number; count: number }>;
 }) {
-  const data = (buckets ?? []).map((b) => ({
-    label: b.label,
-    amount: b.amount,
-    count: b.count,
-  }));
+  const data = useMemo(
+    () =>
+      (buckets ?? []).map((b) => ({
+        label: b.label,
+        amount: b.amount,
+        count: b.count,
+      })),
+    [buckets]
+  );
   const empty = data.every((d) => d.amount === 0);
 
   return (
@@ -299,15 +328,23 @@ export function FinanceArScheduleBucketsChart({
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceArPaymentMethodChart({ rows }: { rows: FinanceArPaymentSummary[] }) {
-  const data = (rows ?? []).slice(0, 8).map((r) => ({
-    label: (r.paymentMethodName?.trim() || "Sem forma").slice(0, 20),
-    openAmount: r.openAmount,
-    overdueAmount: r.overdueAmount,
-    titlesCount: r.titlesCount,
-  }));
+export const FinanceArPaymentMethodChart = memo(function FinanceArPaymentMethodChart({
+  rows,
+}: {
+  rows: FinanceArPaymentSummary[];
+}) {
+  const data = useMemo(
+    () =>
+      (rows ?? []).slice(0, 8).map((r) => ({
+        label: (r.paymentMethodName?.trim() || "Sem forma").slice(0, 20),
+        openAmount: r.openAmount,
+        overdueAmount: r.overdueAmount,
+        titlesCount: r.titlesCount,
+      })),
+    [rows]
+  );
   const empty = data.length === 0;
 
   return (
@@ -342,4 +379,4 @@ export function FinanceArPaymentMethodChart({ rows }: { rows: FinanceArPaymentSu
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});

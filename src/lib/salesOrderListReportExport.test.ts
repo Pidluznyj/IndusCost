@@ -151,7 +151,8 @@ describe("salesOrderListReportExport", () => {
     assert.match(text, /Relatorio de Pedidos de Venda por Vendedor/);
     assert.match(text, /GISLENE LIMA/);
     assert.match(text, /Pedidos a vista: 0/);
-    assert.match(text, /Condição/);
+    // Helvetica no PDF remove acentos → "Condicao" no stream; UI/XLSX mantém "Condição".
+    assert.match(text, /Condic(?:a|ã)o|Condicao/);
     assert.match(text, /PD-02705/);
   });
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { cn } from "@/src/lib/utils";
 import { resolveSalesOrderListMarginTextClass } from "@/src/lib/salesOrderListUi";
 import {
@@ -9,7 +9,7 @@ import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
 
-export function SalesOrderListMarginCell({
+export const SalesOrderListMarginCell = memo(function SalesOrderListMarginCell({
   marginSummary,
   marginItems,
   orderIssueDate,
@@ -18,9 +18,18 @@ export function SalesOrderListMarginCell({
   marginItems?: Array<SalesOrderItemMarginPayload | null | undefined>;
   orderIssueDate?: string | null;
 }) {
-  const percentLabel = pickSalesOrderListMarginPercent(marginSummary);
-  const valueLabel = pickSalesOrderListMarginValue(marginSummary);
-  const toneClass = resolveSalesOrderListMarginTextClass(marginSummary);
+  const percentLabel = useMemo(
+    () => pickSalesOrderListMarginPercent(marginSummary),
+    [marginSummary]
+  );
+  const valueLabel = useMemo(
+    () => pickSalesOrderListMarginValue(marginSummary),
+    [marginSummary]
+  );
+  const toneClass = useMemo(
+    () => resolveSalesOrderListMarginTextClass(marginSummary),
+    [marginSummary]
+  );
 
   if (!marginSummary) {
     return (
@@ -40,13 +49,11 @@ export function SalesOrderListMarginCell({
         <div className="min-w-0">
           <p className={cn("text-sm tabular-nums leading-tight", toneClass)}>{percentLabel}</p>
           <p className="text-[11px] tabular-nums text-muted-foreground mt-0.5">{valueLabel}</p>
-          {marginSummary ? (
-            <SalesOrderMarginStatusBadge
-              label={marginSummary.statusLabel}
-              status={marginSummary.status}
-              className="mt-1 !text-[9px] !px-1.5 !py-0 !normal-case !tracking-normal !font-semibold"
-            />
-          ) : null}
+          <SalesOrderMarginStatusBadge
+            label={marginSummary.statusLabel}
+            status={marginSummary.status}
+            className="mt-1 !text-[9px] !px-1.5 !py-0 !normal-case !tracking-normal !font-semibold"
+          />
         </div>
         <SalesOrderMarginInfoTooltip
           summary={marginSummary}
@@ -57,4 +64,4 @@ export function SalesOrderListMarginCell({
       </div>
     </div>
   );
-}
+});

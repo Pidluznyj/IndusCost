@@ -1,12 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { memo, useEffect, useMemo, useState } from "react";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { FinanceSalesOrdersMonthlyChart } from "@/src/components/finance/sales-orders/FinanceSalesOrdersMonthlyChart";
 import { SalesOrderListMonthlyMarginPercentChart } from "@/src/components/sales/SalesOrderListMonthlyMarginPercentChart";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { getSalesOrderResultApiPath } from "@/src/lib/salesOrderResultApi";
 import type { SalesOrderResultDashboardPayload } from "@/src/lib/salesOrderResultTypes";
 import { buildChartSeriesConfig } from "@/src/lib/executiveDashboardChartSeries";
 import { resolveExecutiveDashboardYearContext } from "@/src/lib/executiveDashboardYear";
 import type { FinanceSalesOrdersMonthlyComparisonRow } from "@/src/lib/financeSalesOrdersDashboardTypes";
+import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 
 export type SalesOrderListMonthlyChartsFilters = {
   year: number;
@@ -24,22 +26,25 @@ export type SalesOrderListMonthlyChartsFilters = {
  * Gráficos acima do grid: valor vendido YoY + margem % mês a mês.
  * Consome `/api/sales-orders/results` (mesma população OP-02 da listagem).
  */
-export function SalesOrderListMonthlyCharts({
+export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCharts({
   filters,
   showMarginChart,
 }: {
   filters: SalesOrderListMonthlyChartsFilters;
   showMarginChart: boolean;
 }) {
+  noteDevPerfRender("SalesOrderListMonthlyCharts");
+  const { ref: sectionRef, visible } = useSectionVisible<HTMLDivElement>();
   const [payload, setPayload] = useState<SalesOrderResultDashboardPayload | null>(
     null
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const filtersKey = useMemo(() => JSON.stringify(filters), [filters]);
 
   useEffect(() => {
+    if (!visible) return;
     const controller = new AbortController();
     setLoading(true);
     setError(null);
@@ -57,7 +62,7 @@ export function SalesOrderListMonthlyCharts({
       q: filters.q || undefined,
     });
 
-    void fetchJsonOk<SalesOrderResultDashboardPayload>(path, {
+    void fetchUiSessionCachedJson<SalesOrderResultDashboardPayload>(path, {
       signal: controller.signal,
     })
       .then((data) => {
@@ -79,7 +84,7 @@ export function SalesOrderListMonthlyCharts({
       });
 
     return () => controller.abort();
-  }, [filtersKey, filters]);
+  }, [filtersKey, filters, visible]);
 
   const yearCtx = useMemo(
     () => resolveExecutiveDashboardYearContext(filters.year, new Date()),
@@ -109,9 +114,10 @@ export function SalesOrderListMonthlyCharts({
     }));
   }, [payload?.monthlySalesComparison]);
 
-  if (loading) {
+  if (!visible || loading) {
     return (
       <div
+        ref={sectionRef}
         className="grid gap-4 xl:grid-cols-2"
         data-testid="sales-order-list-monthly-charts-loading"
       >
@@ -126,6 +132,7 @@ export function SalesOrderListMonthlyCharts({
   if (error) {
     return (
       <p
+        ref={sectionRef}
         className="text-sm text-amber-700 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
         data-testid="sales-order-list-monthly-charts-error"
       >
@@ -134,10 +141,13 @@ export function SalesOrderListMonthlyCharts({
     );
   }
 
-  if (!payload) return null;
+  if (!payload) {
+    return <div ref={sectionRef} className="hidden" aria-hidden />;
+  }
 
   return (
     <div
+      ref={sectionRef}
       className={`grid gap-4 ${showMarginChart ? "xl:grid-cols-2" : "grid-cols-1"}`}
       data-testid="sales-order-list-monthly-charts"
     >
@@ -155,4 +165,4 @@ export function SalesOrderListMonthlyCharts({
       ) : null}
     </div>
   );
-}
+});

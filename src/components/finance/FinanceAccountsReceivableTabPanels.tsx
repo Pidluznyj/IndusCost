@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import { cn } from "@/src/lib/utils";
 import {
   displayFinanceText,
@@ -116,7 +116,11 @@ export function FinanceArOverviewTab({
   );
 }
 
-export function FinanceArAgingTab({ data }: { data: FinanceArDashboardPayload | null }) {
+export const FinanceArAgingTab = memo(function FinanceArAgingTab({
+  data,
+}: {
+  data: FinanceArDashboardPayload | null;
+}) {
   if (!data?.agingBuckets?.length) return <TabEmpty message="Nenhuma faixa de aging disponível." />;
   return (
     <div className="space-y-4">
@@ -133,9 +137,13 @@ export function FinanceArAgingTab({ data }: { data: FinanceArDashboardPayload | 
       />
     </div>
   );
-}
+});
 
-export function FinanceArScheduleTab({ data }: { data: FinanceArDashboardPayload | null }) {
+export const FinanceArScheduleTab = memo(function FinanceArScheduleTab({
+  data,
+}: {
+  data: FinanceArDashboardPayload | null;
+}) {
   const buckets = data?.scheduleBuckets ?? [];
   const monthly = data?.monthlyDueSchedule ?? [];
   if (!buckets.length && !monthly.length) return <TabEmpty message="Sem agenda de recebimentos." />;
@@ -169,9 +177,13 @@ export function FinanceArScheduleTab({ data }: { data: FinanceArDashboardPayload
       </div>
     </div>
   );
-}
+});
 
-export function FinanceArCustomersTab({ data }: { data: FinanceArDashboardPayload | null }) {
+export const FinanceArCustomersTab = memo(function FinanceArCustomersTab({
+  data,
+}: {
+  data: FinanceArDashboardPayload | null;
+}) {
   const rows = data?.customerRanking ?? [];
   if (!rows.length) return <TabEmpty message="Nenhum cliente em aberto na seleção." />;
 
@@ -203,9 +215,13 @@ export function FinanceArCustomersTab({ data }: { data: FinanceArDashboardPayloa
       ])}
     />
   );
-}
+});
 
-export function FinanceArPaymentTab({ data }: { data: FinanceArDashboardPayload | null }) {
+export const FinanceArPaymentTab = memo(function FinanceArPaymentTab({
+  data,
+}: {
+  data: FinanceArDashboardPayload | null;
+}) {
   const rows = data?.paymentMethodSummary ?? [];
   if (!rows.length) return <TabEmpty message="Sem formas de pagamento na seleção." />;
 
@@ -225,9 +241,13 @@ export function FinanceArPaymentTab({ data }: { data: FinanceArDashboardPayload 
       />
     </div>
   );
-}
+});
 
-export function FinanceArCompaniesTab({ data }: { data: FinanceArDashboardPayload | null }) {
+export const FinanceArCompaniesTab = memo(function FinanceArCompaniesTab({
+  data,
+}: {
+  data: FinanceArDashboardPayload | null;
+}) {
   const rows = data?.companySummary ?? [];
   if (!rows.length) return <TabEmpty message="Sem empresas na seleção." />;
 
@@ -255,7 +275,7 @@ export function FinanceArCompaniesTab({ data }: { data: FinanceArDashboardPayloa
       ])}
     />
   );
-}
+});
 
 function CriticalTitlesSection({
   rows,
@@ -327,7 +347,7 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: string[][] })
   );
 }
 
-export function FinanceArAuditTab({
+export const FinanceArAuditTab = memo(function FinanceArAuditTab({
   alerts,
   dataSanitization,
   appliedFiltersLabel,
@@ -350,7 +370,7 @@ export function FinanceArAuditTab({
       <FinanceAccountsReceivableDataQualityPanel alerts={alerts} onViewTitles={onViewTitles} />
     </div>
   );
-}
+});
 
 export function TabLoading({ label }: { label: string }) {
   return <p className="text-sm text-muted-foreground py-6">Carregando {label}…</p>;

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 import { Info } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { buildOfficialSalesOrderMarginTooltipText } from "@/src/lib/salesOrderMarginDisplay";
@@ -10,8 +10,12 @@ type SalesOrderMarginInfoTooltipProps = SalesOrderMarginTooltipInput & {
   panelClassName?: string;
 };
 
-/** Ícone (i) com painel de tooltip — cálculo oficial de margem gerencial. */
-export function SalesOrderMarginInfoTooltip({
+/**
+ * Ícone (i) com painel de tooltip — cálculo oficial de margem gerencial.
+ * Memoizado: texto só reconstrói quando inputs oficiais mudam (não a cada
+ * re-render da lista ao digitar filtro).
+ */
+export const SalesOrderMarginInfoTooltip = memo(function SalesOrderMarginInfoTooltip({
   summary,
   itemMargins,
   orderIssueDate,
@@ -20,12 +24,16 @@ export function SalesOrderMarginInfoTooltip({
   testId = "sales-order-margin-tooltip",
   panelClassName,
 }: SalesOrderMarginInfoTooltipProps) {
-  const text = buildOfficialSalesOrderMarginTooltipText({
-    summary,
-    itemMargins,
-    orderIssueDate,
-    titleOverride,
-  });
+  const text = useMemo(
+    () =>
+      buildOfficialSalesOrderMarginTooltipText({
+        summary,
+        itemMargins,
+        orderIssueDate,
+        titleOverride,
+      }),
+    [summary, itemMargins, orderIssueDate, titleOverride]
+  );
 
   return (
     <span
@@ -49,4 +57,4 @@ export function SalesOrderMarginInfoTooltip({
       </div>
     </span>
   );
-}
+});

@@ -1,10 +1,11 @@
 import "./finance-ar-overdue-print.css";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Download, Loader2, Printer, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import {
   buildFinanceArOverdueExportQuery,
   buildFinanceArOverdueQuery,
@@ -76,30 +77,39 @@ export function FinanceAccountsReceivableOverdueTab({
   const [exporting, setExporting] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const query = useMemo(
     () => buildFinanceArOverdueQuery(globalFilters, overdueFilters),
     [globalFilters, overdueFilters]
   );
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { skipCache?: boolean }) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
+    const url = `/api/finance/accounts-receivable/overdue?${query}`;
     try {
-      const data = await fetchJsonOk<FinanceArOverduePayload>(
-        `/api/finance/accounts-receivable/overdue?${query}`
-      );
+      const data = await fetchUiSessionCachedJson<FinanceArOverduePayload>(url, {
+        signal: controller.signal,
+        skipCache: opts?.skipCache === true,
+      });
+      if (controller.signal.aborted) return;
       setPayload(data);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Falha ao carregar atrasados.");
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [query]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
 
   const handleExport = async () => {
@@ -192,7 +202,7 @@ export function FinanceAccountsReceivableOverdueTab({
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => void load()}
+              onClick={() => void load({ skipCache: true })}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm font-medium text-[#111827] hover:bg-[#F9FAFB]"
             >
               <RefreshCw className="h-4 w-4" />

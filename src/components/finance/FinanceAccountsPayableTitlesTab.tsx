@@ -1,10 +1,11 @@
 import "@/src/components/print/print-document.css";
 import "./finance-ap-titles-print.css";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Loader2, Printer } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import type {
   FinanceApTitleListItem,
@@ -87,6 +88,8 @@ export function FinanceApTitlesTab({
   const [printItems, setPrintItems] = useState<FinanceApTitleListItem[] | null>(null);
   const [printRequestId, setPrintRequestId] = useState(0);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const abortRef = useRef<AbortController | null>(null);
+  const brandingLoadedRef = useRef(false);
 
   useEffect(() => {
     const id = window.setTimeout(() => setDebouncedSearch(search), 400);
@@ -97,7 +100,27 @@ export function FinanceApTitlesTab({
     setPage(1);
   }, [filters, debouncedSearch, localFilter, sortBy, sortDirection, qualityAlert]);
 
+  const ensureBranding = useCallback(async () => {
+    if (brandingLoadedRef.current) return branding;
+    try {
+      const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>(
+        "/api/branding-settings",
+        { ttlMs: 300_000 }
+      );
+      brandingLoadedRef.current = true;
+      setBranding(next);
+      return next;
+    } catch {
+      brandingLoadedRef.current = true;
+      setBranding(DEFAULT_BRANDING);
+      return DEFAULT_BRANDING;
+    }
+  }, [branding]);
+
   const load = useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -110,11 +133,14 @@ export function FinanceApTitlesTab({
         localFilter,
         qualityAlert: qualityAlert ?? undefined,
       });
-      const payload = await fetchJsonOk<FinanceApTitlesPayload>(
-        `/api/finance/accounts-payable/titles?${qs}`
-      );
+      const url = `/api/finance/accounts-payable/titles?${qs}`;
+      const payload = await fetchUiSessionCachedJson<FinanceApTitlesPayload>(url, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setData(payload);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       console.error("FinanceApTitlesTab.load", e);
       setError(
         buildFinanceTabLoadError(
@@ -123,19 +149,14 @@ export function FinanceApTitlesTab({
         )
       );
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [filters, page, sortBy, sortDirection, debouncedSearch, localFilter, qualityAlert]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
-
-  useEffect(() => {
-    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
-      .then(setBranding)
-      .catch(() => setBranding(DEFAULT_BRANDING));
-  }, []);
 
   useEffect(() => {
     if (printRequestId === 0 || !printItems) return;
@@ -166,6 +187,7 @@ export function FinanceApTitlesTab({
     setPrinting(true);
     setError(null);
     try {
+      await ensureBranding();
       const qs = buildFinanceApTitlesQuery(filters, {
         page: 1,
         limit: FINANCE_AP_TITLES_PRINT_PAGE_SIZE,

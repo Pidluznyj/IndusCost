@@ -531,15 +531,29 @@ describe("salesOrderMarginService", () => {
 describe("salesOrderMarginService — rotas e segurança", () => {
   it("8. query/paginação da lista permanece no endpoint", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
+    const listQuery = readFileSync(
+      join(process.cwd(), "src", "lib", "salesOrderListQuery.server.ts"),
+      "utf8"
+    );
     assert.match(server, /attachMarginsToSalesOrders\(prisma, rows\)/);
-    assert.match(server, /pageSize = Math\.min\(parsePositiveIntQuery\(req\.query\.pageSize, 20\), 100\)/);
-    assert.match(server, /buildSalesOrderListWhere/);
+    assert.match(server, /parseSalesOrderListQuery/);
+    assert.match(server, /listQuery\.pageSize/);
+    assert.match(server, /resolveSalesOrderListWhere/);
+    assert.match(
+      listQuery,
+      /pageSize: Math\.min\(parsePositiveIntQuery\(query\.pageSize, 20\), 100\)/
+    );
   });
 
   it("9. busca inteligente permanece no endpoint", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    assert.match(server, /const q = String\(req\.query\.q/);
-    assert.match(server, /q: q \|\| undefined/);
+    const listQuery = readFileSync(
+      join(process.cwd(), "src", "lib", "salesOrderListQuery.server.ts"),
+      "utf8"
+    );
+    assert.match(server, /parseSalesOrderListQuery/);
+    assert.match(listQuery, /q: String\(query\.q \?\? ""\)\.trim\(\)/);
+    assert.match(listQuery, /q: query\.q \|\| undefined/);
   });
 
   it("11. relatório cliente não renderiza custo/margem", () => {
@@ -570,16 +584,22 @@ describe("salesOrderMarginService — rotas e segurança", () => {
 
   it("endpoints internos usam salesOrderMarginService", () => {
     const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
-    const mgmt = readFileSync(
-      join(process.cwd(), "src", "lib", "salesOrderIntelligenceRoutes.ts"),
+    const metrics = readFileSync(
+      join(process.cwd(), "src", "lib", "salesOrderManagementMetrics.server.ts"),
       "utf8"
     );
     const finance = readFileSync(
       join(process.cwd(), "src", "lib", "financeSalesOrdersDashboard.ts"),
       "utf8"
     );
-    assert.match(server, /attachMarginToSalesOrderDetail/);
-    assert.match(mgmt, /calculateOfficialSalesOrderMarginsForOrders|calculateSalesOrderMarginsForOrders/);
+    assert.match(
+      server,
+      /attachMarginsToSalesOrders|attachMarginToSalesOrderDetail/
+    );
+    assert.match(
+      metrics,
+      /calculateOfficialSalesOrderMarginsForOrders|calculateSalesOrderMarginsForOrders|attachMarginsToSalesOrders|marginEconomics/
+    );
     assert.match(finance, /marginPortfolio/);
   });
 });

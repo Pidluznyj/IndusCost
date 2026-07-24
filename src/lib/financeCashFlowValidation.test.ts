@@ -346,8 +346,16 @@ describe("financeCashFlowValidation — checklist ponta a ponta Fluxo × AR/AP",
       join(process.cwd(), "src", "components", "finance", "FinanceCashFlowPage.tsx"),
       "utf8"
     );
-    assert.ok(page.includes("calendarDisplayMonth"));
-    assert.ok(page.includes("onDisplayMonthChange"));
+    const calendar = readFileSync(
+      join(process.cwd(), "src", "lib", "financeCashFlowCalendar.ts"),
+      "utf8"
+    );
+    const types = readFileSync(
+      join(process.cwd(), "src", "lib", "financeCashFlowDashboardTypes.ts"),
+      "utf8"
+    );
+    assert.ok(calendar.includes("calendarDisplayMonth"));
+    assert.ok(types.includes("calendarDisplayMonth"));
     assert.ok(page.includes("FinanceCashFlowNumbersAuditSection"));
   });
 

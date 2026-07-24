@@ -421,13 +421,20 @@ import {
   OFFICIAL_SO_RULES_SOURCE,
   mapPrismaOrderToSalesOrderRulesInput,
   resolveOfficialScopedOrderMetrics,
-  SALES_ORDER_RULES_PRISMA_SELECT,
 } from "./src/lib/salesOrderRulesAdapter.js";
 import { SALES_ORDER_RULES_ENGINE_VERSION } from "./src/lib/salesOrderRulesEngine.js";
-import { buildSalesOrderListTotalsFromPrismaOrders } from "./src/lib/salesOrdersListSummary.js";
+import { buildSalesOrderListSummaryFromAggregate } from "./src/lib/salesOrdersListSummary.js";
 import { loadOfficialCommercial360MarginBundle, buildOfficialSalesOrderListMarginSummary } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import { resolveSalesOrderBillingStatus } from "./src/lib/sales/salesOrderListBillingStatus.js";
+import {
+  SALES_ORDER_LIST_PAGE_PRISMA_SELECT,
+  toSalesOrderListHttpRow,
+} from "./src/lib/salesOrderListApiDto.js";
+import {
+  SALES_ORDER_LEGACY_DETAIL_PRISMA_SELECT,
+  toSalesOrderLegacyDetailHttpRow,
+} from "./src/lib/salesOrderLegacyDetailApiDto.js";
 import {
   parseSalesOrderMonthParam,
   parseSalesOrderYearParam,
@@ -956,6 +963,17 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+  // PERFORMANCE 02 — linha de base (somente INDUSCOST_PERF_BASELINE=1, nunca produção)
+  try {
+    const { createDevPerfBaselineMiddleware, isDevPerfBaselineServerEnabled } =
+      await import("./src/lib/devPerfBaseline.server.js");
+    if (isDevPerfBaselineServerEnabled()) {
+      app.use(createDevPerfBaselineMiddleware());
+      console.info("[perf-baseline] middleware HTTP ativo (INDUSCOST_PERF_BASELINE=1)");
+    }
+  } catch (err) {
+    console.warn("[perf-baseline] middleware não carregado:", err);
+  }
 
   // Respostas de API nunca podem ser cacheadas pelo navegador. Sem isso, um
   // /api/auth/me autenticado pode ficar em cache e mostrar usuário logado
@@ -14761,21 +14779,20 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const pageSize = listQuery.pageSize;
       const skip = (page - 1) * pageSize;
 
-      const [rows, total, summaryOrders, marginOrders] = await Promise.all([
+      // Página + agregados (count/sum no banco) + margem filtrada — sem carregar
+      // todas as linhas só para somar. NF vinculada ‖ margem da página em paralelo.
+      const [rows, aggregates, marginOrders] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
           orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
           skip,
           take: pageSize,
-          include: {
-            Customer: true,
-            Proposal: { select: { id: true, number: true, externalProposalCode: true, title: true } },
-          },
+          select: SALES_ORDER_LIST_PAGE_PRISMA_SELECT,
         }),
-        prisma.salesOrder.count({ where }),
-        prisma.salesOrder.findMany({
+        prisma.salesOrder.aggregate({
           where,
-          select: SALES_ORDER_RULES_PRISMA_SELECT,
+          _count: { _all: true },
+          _sum: { totalNetValue: true, totalItems: true },
         }),
         canViewMarginEconomics
           ? prisma.salesOrder.findMany({
@@ -14785,24 +14802,26 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           : Promise.resolve([]),
       ]);
 
-      const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
-        rows.map((order) => ({
-          id: order.id,
-          totalNetValue: order.totalNetValue,
-          issueDate: order.issueDate,
-          expectedDeliveryDate: order.expectedDeliveryDate,
-          nomusRawResponse: order.nomusRawResponse,
-        }))
-      );
+      const total = aggregates._count._all;
+      const summary = buildSalesOrderListSummaryFromAggregate({
+        totalOrders: total,
+        sumNetValue: aggregates._sum.totalNetValue,
+        sumItems: aggregates._sum.totalItems,
+      });
 
-      const summary = buildSalesOrderListTotalsFromPrismaOrders(
-        summaryOrders.map((order) => ({
-          totalNetValue: order.totalNetValue,
-          totalItems: order.totalItems,
-        }))
-      );
+      const [linkedNfeContextMap, dataWithMargins] = await Promise.all([
+        loadSalesOrderLinkedNfeContextMap(
+          rows.map((order) => ({
+            id: order.id,
+            totalNetValue: order.totalNetValue,
+            issueDate: order.issueDate,
+            expectedDeliveryDate: order.expectedDeliveryDate,
+            nomusRawResponse: order.nomusRawResponse,
+          }))
+        ),
+        attachMarginsToSalesOrders(prisma, rows),
+      ]);
 
-      const dataWithMargins = await attachMarginsToSalesOrders(prisma, rows);
       const data = dataWithMargins.map((order) => {
         const seller = buildSalesOrderNomusSellerDto(
           {
@@ -14826,8 +14845,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           linked?.lastNfeProcessingDate?.toISOString() ??
           linked?.lastNfeIssueDate?.toISOString() ??
           null;
-        return {
-          ...order,
+        return toSalesOrderListHttpRow(order, {
           seller,
           hasInvoice: linked?.hasNfe ?? false,
           billingStatus,
@@ -14842,7 +14860,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
                 (seller.externalSellerId != null
                   ? `Vendedor Nomus não mapeado: ID ${seller.externalSellerId}`
                   : null),
-        };
+        });
       });
 
       const marginSummary = canViewMarginEconomics
@@ -14941,15 +14959,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
       const row = await prisma.salesOrder.findUnique({
         where: { id },
-        include: {
-          items: { orderBy: { createdAt: "asc" }, include: { Product: true, ProposalItem: true } },
-          Customer: true,
-          Proposal: true,
-        },
+        select: SALES_ORDER_LEGACY_DETAIL_PRISMA_SELECT,
       });
       if (!row) return res.status(404).json({ error: "Pedido de venda não encontrado." });
       const enriched = await attachMarginToSalesOrderDetail(prisma, row);
-      res.json(enriched);
+      res.json(toSalesOrderLegacyDetailHttpRow(enriched));
     } catch (e: any) {
       console.error("GET /api/sales-orders/:id", e);
       res.status(500).json({ error: e?.message || "Erro ao carregar pedido de venda." });

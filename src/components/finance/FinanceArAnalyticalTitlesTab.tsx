@@ -2,7 +2,7 @@ import "@/src/components/print/print-document.css";
 import "./finance-ar-titles-print.css";
 import "./finance-ar-analytical-titles-table.css";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, Download, Loader2, Printer, RotateCcw, AlertTriangle, CalendarClock, CheckCircle2, FileText, Receipt, Scale, Wallet } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -44,6 +44,7 @@ import type {
 } from "@/src/lib/financeAccountsReceivableTitles";
 import { resolveFinanceArTitleDocumentReference } from "@/src/lib/financeAccountsReceivableTitles";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { DEFAULT_BRANDING, type BrandingSettingsDTO } from "@/src/types/branding";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200] as const;
@@ -151,6 +152,8 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const abortRef = useRef<AbortController | null>(null);
+  const brandingLoadedRef = useRef(false);
 
   const query = useMemo(
     () =>
@@ -163,31 +166,50 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
     [appliedFilters, page, pageSize, sortBy, sortDirection]
   );
 
-  const load = useCallback(async () => {
+  const ensureBranding = useCallback(async () => {
+    if (brandingLoadedRef.current) return branding;
+    try {
+      const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>(
+        "/api/branding-settings",
+        { ttlMs: 300_000 }
+      );
+      brandingLoadedRef.current = true;
+      setBranding(next);
+      return next;
+    } catch {
+      brandingLoadedRef.current = true;
+      setBranding(DEFAULT_BRANDING);
+      return DEFAULT_BRANDING;
+    }
+  }, [branding]);
+
+  const load = useCallback(async (opts?: { skipCache?: boolean }) => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
+    const url = `/api/finance/accounts-receivable/titles?${query}`;
     try {
-      const payload = await fetchJsonOk<FinanceArTitlesPayload>(
-        `/api/finance/accounts-receivable/titles?${query}`
-      );
+      const payload = await fetchUiSessionCachedJson<FinanceArTitlesPayload>(url, {
+        signal: controller.signal,
+        skipCache: opts?.skipCache === true,
+      });
+      if (controller.signal.aborted) return;
       setData(payload);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Erro ao carregar títulos.");
       setData(null);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [query]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
-
-  useEffect(() => {
-    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
-      .then(setBranding)
-      .catch(() => setBranding(DEFAULT_BRANDING));
-  }, []);
 
   useEffect(() => {
     if (printRequestId === 0 || !printPayload || !printItems) return;
@@ -260,6 +282,7 @@ export function FinanceArAnalyticalTitlesTab({ canExport }: { canExport: boolean
     setPrinting(true);
     setError(null);
     try {
+      await ensureBranding();
       const qs = buildFinanceArAnalyticalTitlesExportQuery(appliedFilters);
       const payload = await fetchJsonOk<FinanceArTitlesPayload>(
         `/api/finance/accounts-receivable/titles?${qs}`

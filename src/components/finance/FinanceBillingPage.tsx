@@ -157,6 +157,7 @@ export function FinanceBillingPage() {
   const abortNfeRef = useRef<AbortController | null>(null);
   const abortComparisonRef = useRef<AbortController | null>(null);
   const abortAuditRef = useRef<AbortController | null>(null);
+  const prevNfeQueryRef = useRef<string | null>(null);
 
   const yearOptions = useMemo(() => buildFinanceBillingYearOptions(), []);
   const hasPendingFilterChanges = useMemo(
@@ -294,9 +295,25 @@ export function FinanceBillingPage() {
   useEffect(() => {
     void loadDashboard();
   }, [loadDashboard]);
+
+  /** NF-e list é exclusiva da aba Documentos — não buscar em comparison/audit/customers. */
   useEffect(() => {
+    if (executiveTab !== "documents") return;
+    if (nfeList != null) return;
     void loadNfeList();
-  }, [loadNfeList]);
+  }, [executiveTab, loadNfeList, nfeList]);
+
+  useEffect(() => {
+    // Query mudou (não no 1º mount): invalida lista para reload ao voltar a Documentos.
+    if (prevNfeQueryRef.current === null) {
+      prevNfeQueryRef.current = nfeQueryString;
+      return;
+    }
+    if (prevNfeQueryRef.current === nfeQueryString) return;
+    prevNfeQueryRef.current = nfeQueryString;
+    setNfeList(null);
+    setNfeError(null);
+  }, [nfeQueryString]);
 
   const handleApplyFilters = () => {
     setAppliedYear(draftYear.trim());
@@ -371,17 +388,19 @@ export function FinanceBillingPage() {
 
   useEffect(() => {
     if (executiveTab !== "comparison") return;
+    if (comparison != null) return;
     void loadComparison();
-  }, [executiveTab, loadComparison]);
+  }, [executiveTab, loadComparison, comparison]);
 
   useEffect(() => {
     if (executiveTab !== "audit") return;
+    if (audit != null) return;
     void loadAudit();
-  }, [executiveTab, loadAudit]);
+  }, [executiveTab, loadAudit, audit]);
 
   const handleRefreshAll = () => {
     void loadDashboard();
-    void loadNfeList();
+    if (executiveTab === "documents") void loadNfeList();
     if (executiveTab === "comparison") void loadComparison();
     if (executiveTab === "audit") void loadAudit();
   };
