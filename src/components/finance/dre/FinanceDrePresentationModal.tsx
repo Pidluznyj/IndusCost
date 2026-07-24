@@ -167,7 +167,6 @@ export function FinanceDrePresentationModal({
               <KpiChip
                 label="Receita bruta (YTD)"
                 value={formatFinanceKpiCurrency(ytd.receitaBruta)}
-                hint={formatDreMarginPct(ytd.receitaBrutaPct)}
               />
               <KpiChip
                 label="Receita líquida (YTD)"

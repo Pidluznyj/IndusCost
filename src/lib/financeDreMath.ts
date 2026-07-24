@@ -515,7 +515,8 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
 
   const monthKpis: FinanceDreKpiSet = {
     receitaBruta: receitaBrutaH,
-    receitaBrutaPct: safePct(receitaBrutaH, netHighlight),
+    // Não exibir % no card: bruta/líquida > 100% não é margem.
+    receitaBrutaPct: null,
     receitaLiquida: netHighlight,
     receitaLiquidaPct: safePct(netHighlight, netHighlight),
     lucroBruto: lucroBrutoH,
@@ -527,7 +528,7 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   };
   const ytdKpis: FinanceDreKpiSet = {
     receitaBruta: receitaBrutaYtd,
-    receitaBrutaPct: safePct(receitaBrutaYtd, netYtd),
+    receitaBrutaPct: null,
     receitaLiquida: netYtd,
     receitaLiquidaPct: safePct(netYtd, netYtd),
     lucroBruto: lucroBrutoYtd,

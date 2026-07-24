@@ -26,7 +26,6 @@ function formatDreMarginPct(pct: number | null | undefined): string | null {
 export function FinanceDrePrintDocument({ report }: Props) {
   const ytd = report.kpis.ytd;
   const opPositive = ytd.resultadoOperacional >= 0;
-  const brutaReceitaPct = formatDreMarginPct(ytd.receitaBrutaPct);
   const receitaPct = formatDreMarginPct(ytd.receitaLiquidaPct);
   const brutoPct = formatDreMarginPct(ytd.margemBrutaPct);
   const opPct = formatDreMarginPct(ytd.margemOperacionalPct);
@@ -50,9 +49,6 @@ export function FinanceDrePrintDocument({ report }: Props) {
             <div className="finance-dre-print-kpi-value">
               {formatFinanceKpiCurrency(ytd.receitaBruta)}
             </div>
-            {brutaReceitaPct ? (
-              <div className="finance-dre-print-kpi-hint">{brutaReceitaPct}</div>
-            ) : null}
           </div>
           <div className="finance-dre-print-kpi">
             <div className="finance-dre-print-kpi-label">Receita líquida (YTD)</div>

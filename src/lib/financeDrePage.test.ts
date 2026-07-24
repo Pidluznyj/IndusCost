@@ -182,7 +182,7 @@ describe("financeDreMath", () => {
     // 1000 - 20 = 980 líquida; custos 480; lucro bruto 500; admin 100 → 400 operacional
     // IRPJ/CSLL estimados sobre 400 → lucro líquido após provisões < 400
     assert.equal(kpis.receitaBruta, 1000);
-    assert.equal(kpis.receitaBrutaPct, roundDreMoney((1000 / 980) * 100));
+    assert.equal(kpis.receitaBrutaPct, null);
     assert.equal(kpis.receitaLiquida, 980);
     assert.equal(kpis.receitaLiquidaPct, 100);
     assert.equal(kpis.lucroBruto, 500);
@@ -317,7 +317,7 @@ describe("financeDreViewModel & export", () => {
       monthLabels: ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"],
       kpis: {
         receitaBruta: 12,
-        receitaBrutaPct: 120,
+        receitaBrutaPct: null,
         receitaLiquida: 10,
         receitaLiquidaPct: 100,
         lucroBruto: 10,
@@ -328,7 +328,7 @@ describe("financeDreViewModel & export", () => {
         margemLiquidaAproximadaPct: 100,
         ytd: {
           receitaBruta: 12,
-          receitaBrutaPct: 120,
+          receitaBrutaPct: null,
           receitaLiquida: 10,
           receitaLiquidaPct: 100,
           lucroBruto: 10,

@@ -410,7 +410,6 @@ export function FinanceManagerialDrePage() {
                     <KpiCard
                       label="Receita bruta (YTD)"
                       value={formatFinanceKpiCurrency(report.kpis.ytd.receitaBruta)}
-                      hint={formatDreMarginPct(report.kpis.ytd.receitaBrutaPct)}
                     />
                     <KpiCard
                       label="Receita líquida (YTD)"
@@ -456,7 +455,6 @@ export function FinanceManagerialDrePage() {
                     <KpiCard
                       label="Receita bruta (mês)"
                       value={formatFinanceKpiCurrency(report.kpis.receitaBruta)}
-                      hint={formatDreMarginPct(report.kpis.receitaBrutaPct)}
                     />
                     <KpiCard
                       label="Receita líquida (mês)"
