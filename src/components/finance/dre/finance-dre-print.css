@@ -135,7 +135,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #64748b;
+    color: #334155;
   }
 
   #finance-dre-print-root .finance-dre-print-kpi-value {
@@ -146,12 +146,20 @@
     color: #0f172a;
   }
 
+  #finance-dre-print-root .finance-dre-print-kpi--positive .finance-dre-print-kpi-label {
+    color: #14532d;
+  }
+
   #finance-dre-print-root .finance-dre-print-kpi--positive .finance-dre-print-kpi-value {
-    color: #166534;
+    color: #052e16;
+  }
+
+  #finance-dre-print-root .finance-dre-print-kpi--negative .finance-dre-print-kpi-label {
+    color: #881337;
   }
 
   #finance-dre-print-root .finance-dre-print-kpi--negative .finance-dre-print-kpi-value {
-    color: #9f1239;
+    color: #4c0519;
   }
 
   #finance-dre-print-root .finance-dre-print-section {

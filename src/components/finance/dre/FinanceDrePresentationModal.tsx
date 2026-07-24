@@ -34,19 +34,27 @@ function KpiChip({
     <div
       className={cn(
         "rounded-xl border px-4 py-3",
-        accent === "emerald" && "border-emerald-200 bg-emerald-50/70",
-        accent === "rose" && "border-rose-200 bg-rose-50/70",
+        // Fundo escuro no header escuro — evita label claro sobre pastel (ilegível).
+        accent === "emerald" && "border-emerald-400/45 bg-emerald-950/55",
+        accent === "rose" && "border-rose-400/45 bg-rose-950/55",
         (!accent || accent === "slate") && "border-white/15 bg-white/10"
       )}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+      <div
+        className={cn(
+          "text-[10px] font-semibold uppercase tracking-wide",
+          accent === "emerald" && "text-emerald-100",
+          accent === "rose" && "text-rose-100",
+          (!accent || accent === "slate") && "text-slate-300"
+        )}
+      >
         {label}
       </div>
       <div
         className={cn(
           "mt-1 text-lg font-semibold tabular-nums",
-          accent === "emerald" && "text-emerald-800",
-          accent === "rose" && "text-rose-800",
+          accent === "emerald" && "text-white",
+          accent === "rose" && "text-white",
           (!accent || accent === "slate") && "text-white"
         )}
       >

@@ -72,20 +72,45 @@ function KpiCard({
   tone?: "default" | "positive" | "negative";
 }) {
   return (
-    <div className={cn(financeBiCardClass, "p-4")}>
-      <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+    <div
+      className={cn(
+        financeBiCardClass,
+        "p-4",
+        tone === "positive" && "border-emerald-300 bg-emerald-50",
+        tone === "negative" && "border-rose-300 bg-rose-50"
+      )}
+    >
+      <div
+        className={cn(
+          "text-[10px] font-bold uppercase tracking-wide",
+          tone === "positive" && "text-emerald-900",
+          tone === "negative" && "text-rose-900",
+          tone === "default" && "text-muted-foreground"
+        )}
+      >
         {label}
       </div>
       <div
         className={cn(
-          "mt-2 text-xl font-semibold tabular-nums",
-          tone === "positive" && "text-emerald-700",
-          tone === "negative" && "text-rose-700"
+          "mt-2 text-xl font-semibold tabular-nums text-[#111827]",
+          tone === "positive" && "text-emerald-950",
+          tone === "negative" && "text-rose-950"
         )}
       >
         {value}
       </div>
-      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
+      {hint ? (
+        <div
+          className={cn(
+            "mt-1 text-xs",
+            tone === "positive" && "text-emerald-800",
+            tone === "negative" && "text-rose-800",
+            tone === "default" && "text-muted-foreground"
+          )}
+        >
+          {hint}
+        </div>
+      ) : null}
     </div>
   );
 }
