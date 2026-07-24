@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { FinanceDreLine, FinanceDreReport } from "@/src/lib/financeDreTypes";
+import type { FinanceDreLine, FinanceDreLineId, FinanceDreReport } from "@/src/lib/financeDreTypes";
+import { isFinanceDreDrillableLine } from "@/src/lib/financeDreDrilldownMath";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
 
@@ -10,6 +11,8 @@ type Props = {
   showAllMonths?: boolean;
   /** Força todas as seções abertas (PDF / impressão). */
   expandAll?: boolean;
+  /** Clique na linha abre detalhe de origem (desligado no PDF). */
+  onLineClick?: (lineId: FinanceDreLineId) => void;
   className?: string;
 };
 
@@ -46,6 +49,7 @@ export function FinanceDreGrid({
   report,
   showAllMonths = false,
   expandAll = false,
+  onLineClick,
   className,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
@@ -111,11 +115,25 @@ export function FinanceDreGrid({
             const isOpen = expandAll || Boolean(expanded[line.id]);
             const isDetail = line.kind === "detail";
             const zebra = isDetail && rowIndex % 2 === 1 ? "bg-slate-50/80" : rowSurface(line);
+            const drillable =
+              Boolean(onLineClick) &&
+              !expandAll &&
+              isFinanceDreDrillableLine(line.id) &&
+              !line.informativeOnly;
             return (
               <tr
                 key={line.id}
-                className={cn(zebra, rowSeparators(line), "transition-colors")}
+                className={cn(
+                  zebra,
+                  rowSeparators(line),
+                  "transition-colors",
+                  drillable && "cursor-pointer hover:bg-sky-50/70"
+                )}
                 data-testid={`finance-dre-line-${line.id}`}
+                onClick={() => {
+                  if (drillable) onLineClick?.(line.id);
+                }}
+                title={drillable ? "Clique para ver a origem dos valores" : undefined}
               >
                 <td
                   className={cn(
@@ -134,9 +152,10 @@ export function FinanceDreGrid({
                         type="button"
                         className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-500 hover:bg-slate-200/70"
                         aria-expanded={isOpen}
-                        onClick={() =>
-                          setExpanded((prev) => ({ ...prev, [line.id]: !prev[line.id] }))
-                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setExpanded((prev) => ({ ...prev, [line.id]: !prev[line.id] }));
+                        }}
                       >
                         {isOpen ? (
                           <ChevronDown className="h-3.5 w-3.5" />
@@ -154,13 +173,16 @@ export function FinanceDreGrid({
                           line.kind === "result" || line.kind === "total"
                             ? "font-semibold text-slate-900"
                             : "font-medium text-slate-700",
-                          line.informativeOnly && "italic text-slate-500"
+                          line.informativeOnly && "italic text-slate-500",
+                          drillable && "underline decoration-slate-300 underline-offset-2"
                         )}
                       >
                         {line.label}
                       </div>
                       {line.informativeOnly ? (
                         <div className="text-[10px] text-amber-700/80">Não entra no resultado</div>
+                      ) : drillable ? (
+                        <div className="text-[10px] text-sky-700/80">Ver origem</div>
                       ) : null}
                     </div>
                   </div>

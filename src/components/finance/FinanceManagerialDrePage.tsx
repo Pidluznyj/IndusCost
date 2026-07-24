@@ -26,6 +26,8 @@ import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
 import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { FinanceDrePresentationModal } from "@/src/components/finance/dre/FinanceDrePresentationModal";
 import { FinanceDrePrintDocument } from "@/src/components/finance/dre/FinanceDrePrintDocument";
+import { FinanceDreLineDetailModal } from "@/src/components/finance/dre/FinanceDreLineDetailModal";
+import type { FinanceDreLineId } from "@/src/lib/financeDreTypes";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import { cn } from "@/src/lib/utils";
 
@@ -91,6 +93,7 @@ export function FinanceManagerialDrePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [presentationOpen, setPresentationOpen] = useState(false);
+  const [drillLineId, setDrillLineId] = useState<FinanceDreLineId | null>(null);
   const [printing, setPrinting] = useState(false);
   const printCleanupRef = useRef<number | null>(null);
 
@@ -356,7 +359,11 @@ export function FinanceManagerialDrePage() {
                 </p>
               </div>
             </div>
-            <FinanceDreGrid report={report} showAllMonths={false} />
+            <FinanceDreGrid
+              report={report}
+              showAllMonths={false}
+              onLineClick={(lineId) => setDrillLineId(lineId)}
+            />
             <p className="text-xs text-muted-foreground">{report.disclaimer}</p>
           </div>
 
@@ -411,6 +418,13 @@ export function FinanceManagerialDrePage() {
             onClose={() => setPresentationOpen(false)}
             onPrint={handlePrint}
             onExport={handleExport}
+            onLineClick={(lineId) => setDrillLineId(lineId)}
+          />
+          <FinanceDreLineDetailModal
+            open={drillLineId != null}
+            lineId={drillLineId}
+            filters={appliedFilters}
+            onClose={() => setDrillLineId(null)}
           />
         </>
       ) : null}

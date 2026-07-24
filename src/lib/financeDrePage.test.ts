@@ -22,10 +22,20 @@ import {
   createDefaultFinanceDreUiFilters,
   financeDreFiltersEqual,
   getFinanceDreApiPath,
+  getFinanceDreLineDrilldownPath,
   normalizeFinanceDreUiFilters,
 } from "@/src/lib/financeDreViewModel.js";
 import { buildFinanceDreExportCsv } from "@/src/lib/financeDreExport.js";
 import { canViewFinanceDre } from "@/src/lib/financeDrePermissions.js";
+import {
+  amountInMonthRange,
+  dreDrilldownTotalsMatch,
+  financeDreCompositionChildren,
+  isFinanceDreDrillableLine,
+  isFinanceDreSourceDrillLine,
+  scopeMonthRange,
+  sumDreDrilldownAmounts,
+} from "@/src/lib/financeDreDrilldownMath.js";
 import { FINANCE_SECTION_IDS, FINANCE_SECTION_PATHS } from "@/src/lib/financeNavigation.js";
 import { FINANCE_UI_SECTIONS } from "@/src/lib/internalSurfaceAccess.js";
 import { FINANCE_MODULE_RESOURCE_KEYS, FINANCE_MODULE_PILOT_ENDPOINTS } from "@/src/lib/financeModulesAccess.js";
@@ -360,5 +370,59 @@ describe("finance dre presentation UX", () => {
     assert.match(globalPrint, /body\.finance-dre-print-route #root/);
     const main = readSrc("src/main.tsx");
     assert.match(main, /finance-dre-print\.css/);
+  });
+});
+
+describe("finance dre line drill-down", () => {
+  it("reconcilia totais e compõe linhas de resultado", () => {
+    assert.equal(isFinanceDreDrillableLine("icms"), true);
+    assert.equal(isFinanceDreSourceDrillLine("icms"), true);
+    assert.equal(isFinanceDreSourceDrillLine("deducoes"), false);
+    assert.deepEqual(financeDreCompositionChildren("deducoes"), [
+      "cofins",
+      "icms",
+      "icms_st",
+      "ipi",
+      "pis",
+      "devolucoes",
+    ]);
+    assert.deepEqual(scopeMonthRange("highlight", 7), { fromMonth: 7, toMonth: 7 });
+    assert.deepEqual(scopeMonthRange("ytd", 7), { fromMonth: 1, toMonth: 7 });
+
+    const series = emptyDreSeries();
+    series[0] = 10.005;
+    series[1] = 20.004;
+    assert.equal(amountInMonthRange(series, 1, 2), 30.01);
+    assert.equal(sumDreDrilldownAmounts([10.004, 20.005]), 30.01);
+    assert.equal(dreDrilldownTotalsMatch(100.01, 100.02), true);
+    assert.equal(dreDrilldownTotalsMatch(100, 100.05), false);
+  });
+
+  it("rota, UI e motores oficiais do drill-down", () => {
+    const routes = readSrc("src/lib/financeDreRoutes.ts");
+    assert.match(routes, /\/api\/finance\/dre\/lines\/:lineId\/drilldown/);
+    assert.match(routes, /buildFinanceDreLineDrilldown/);
+
+    const server = readSrc("src/lib/financeDreDrilldown.server.ts");
+    assert.match(server, /fiscalNfeWhereSql/);
+    assert.match(server, /SalesOrderNfeLink/);
+    assert.match(server, /loadCmvDrilldownBundle/);
+    assert.match(server, /buildFinanceCostCenterDashboardDefault/);
+    assert.match(server, /totalsMatch/);
+
+    const page = readSrc("src/components/finance/FinanceManagerialDrePage.tsx");
+    assert.match(page, /FinanceDreLineDetailModal/);
+    assert.match(page, /onLineClick/);
+    const modal = readSrc("src/components/finance/dre/FinanceDreLineDetailModal.tsx");
+    assert.match(modal, /finance-dre-line-detail-modal/);
+    assert.match(modal, /Totais reconciliados/);
+    const grid = readSrc("src/components/finance/dre/FinanceDreGrid.tsx");
+    assert.match(grid, /onLineClick/);
+    assert.match(grid, /Ver origem/);
+
+    const path = getFinanceDreLineDrilldownPath("icms", "year=2026&month=7", "highlight");
+    assert.match(path, /\/api\/finance\/dre\/lines\/icms\/drilldown/);
+    assert.match(path, /scope=highlight/);
+    assert.match(path, /year=2026/);
   });
 });

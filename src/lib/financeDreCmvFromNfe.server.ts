@@ -30,6 +30,14 @@ export type DreCmvFromNfeResult = {
   pricedLineCount: number;
 };
 
+/** CMV agregado por NF-e (mesmo motor do DRE) — usado no drill-down. */
+export type DreCmvByNfeRow = {
+  nomusNfeId: string;
+  nfeExternalId: number;
+  month: number;
+  amount: number;
+};
+
 async function loadStockItemsByNfeExternalId(
   nfeExternalIds: number[]
 ): Promise<Map<number, Array<{ externalProductId: number | null; quantity: number }>>> {
@@ -69,6 +77,8 @@ async function loadStockItemsByNfeExternalId(
 }
 
 type ResolvedLine = {
+  nomusNfeId: string;
+  nfeExternalId: number;
   month: number;
   productId: string;
   quantity: number;
@@ -76,20 +86,23 @@ type ResolvedLine = {
   lineRevenue: number;
 };
 
-export async function loadMonthlyCmvFromNfeProductCosts(
+async function computeMonthlyCmvFromNfeProductCosts(
   year: number,
   emitterCnpjDigits?: string
-): Promise<DreCmvFromNfeResult> {
+): Promise<{ result: DreCmvFromNfeResult; byNfe: DreCmvByNfeRow[] }> {
   const nfes = await queryFiscalNfesForDreCmv(year, "emissao", emitterCnpjDigits);
-  const empty = (): DreCmvFromNfeResult => ({
-    cmv: emptyDreSeries(),
-    missingItemsNfeCount: 0,
-    missingItemsRevenueByMonth: emptyDreSeries(),
-    missingProductLineCount: 0,
-    missingProductRevenueByMonth: emptyDreSeries(),
-    missingCostLineCount: 0,
-    missingCostRevenueByMonth: emptyDreSeries(),
-    pricedLineCount: 0,
+  const empty = (): { result: DreCmvFromNfeResult; byNfe: DreCmvByNfeRow[] } => ({
+    result: {
+      cmv: emptyDreSeries(),
+      missingItemsNfeCount: 0,
+      missingItemsRevenueByMonth: emptyDreSeries(),
+      missingProductLineCount: 0,
+      missingProductRevenueByMonth: emptyDreSeries(),
+      missingCostLineCount: 0,
+      missingCostRevenueByMonth: emptyDreSeries(),
+      pricedLineCount: 0,
+    },
+    byNfe: [],
   });
   if (nfes.length === 0) return empty();
 
@@ -114,6 +127,8 @@ export async function loadMonthlyCmvFromNfeProductCosts(
   const cmv = createEmptyMonthlySeries();
 
   type PendingLine = {
+    nomusNfeId: string;
+    nfeExternalId: number;
     month: number;
     competenceDate: Date;
     quantity: number;
@@ -150,6 +165,8 @@ export async function loadMonthlyCmvFromNfeProductCosts(
           ? (Math.max(0, item.lineRevenue) / revenueWeight) * nfe.valorLiquido
           : nfe.valorLiquido / items.length;
       pending.push({
+        nomusNfeId: nfe.nomusNfeId,
+        nfeExternalId: nfe.nfeExternalId,
         month: nfe.month,
         competenceDate: nfe.competenceDate,
         quantity: item.quantity,
@@ -229,6 +246,8 @@ export async function loadMonthlyCmvFromNfeProductCosts(
       continue;
     }
     resolved.push({
+      nomusNfeId: line.nomusNfeId,
+      nfeExternalId: line.nfeExternalId,
       month: line.month,
       productId,
       quantity: line.quantity,
@@ -243,6 +262,7 @@ export async function loadMonthlyCmvFromNfeProductCosts(
   }));
   const costs = await getEffectiveProductProductionCostsForPairs(prisma, pairs);
 
+  const byNfeMap = new Map<string, DreCmvByNfeRow>();
   for (const line of resolved) {
     const key = effectiveProductionCostLookupKey(line.productId, line.competenceDate);
     const cost = costs.get(key);
@@ -257,17 +277,70 @@ export async function loadMonthlyCmvFromNfeProductCosts(
     if (line.month >= 1 && line.month <= 12) {
       cmv[line.month - 1] += amount;
       pricedLineCount += 1;
+      const existing = byNfeMap.get(line.nomusNfeId);
+      if (existing) {
+        existing.amount += amount;
+      } else {
+        byNfeMap.set(line.nomusNfeId, {
+          nomusNfeId: line.nomusNfeId,
+          nfeExternalId: line.nfeExternalId,
+          month: line.month,
+          amount,
+        });
+      }
     }
   }
 
   return {
-    cmv: cmv.map(roundDreMoney),
-    missingItemsNfeCount,
-    missingItemsRevenueByMonth: missingItemsRevenueByMonth.map(roundDreMoney),
-    missingProductLineCount,
-    missingProductRevenueByMonth: missingProductRevenueByMonth.map(roundDreMoney),
-    missingCostLineCount,
-    missingCostRevenueByMonth: missingCostRevenueByMonth.map(roundDreMoney),
-    pricedLineCount,
+    result: {
+      cmv: cmv.map(roundDreMoney),
+      missingItemsNfeCount,
+      missingItemsRevenueByMonth: missingItemsRevenueByMonth.map(roundDreMoney),
+      missingProductLineCount,
+      missingProductRevenueByMonth: missingProductRevenueByMonth.map(roundDreMoney),
+      missingCostLineCount,
+      missingCostRevenueByMonth: missingCostRevenueByMonth.map(roundDreMoney),
+      pricedLineCount,
+    },
+    byNfe: [...byNfeMap.values()].map((row) => ({
+      ...row,
+      amount: roundDreMoney(row.amount),
+    })),
+  };
+}
+
+export async function loadMonthlyCmvFromNfeProductCosts(
+  year: number,
+  emitterCnpjDigits?: string
+): Promise<DreCmvFromNfeResult> {
+  const { result } = await computeMonthlyCmvFromNfeProductCosts(year, emitterCnpjDigits);
+  return result;
+}
+
+/** CMV por NF-e no intervalo de meses (mesmo cálculo do DRE). */
+export async function loadCmvByNfeForMonthRange(
+  year: number,
+  fromMonth: number,
+  toMonth: number,
+  emitterCnpjDigits?: string
+): Promise<DreCmvByNfeRow[]> {
+  const { byNfe } = await computeMonthlyCmvFromNfeProductCosts(year, emitterCnpjDigits);
+  return byNfe.filter((row) => row.month >= fromMonth && row.month <= toMonth);
+}
+
+/** Bundle drill-down: série mensal + CMV por NF-e (uma só passagem). */
+export async function loadCmvDrilldownBundle(
+  year: number,
+  fromMonth: number,
+  toMonth: number,
+  emitterCnpjDigits?: string
+): Promise<{ monthlyCmv: number[]; byNfe: DreCmvByNfeRow[] }> {
+  const { result, byNfe } = await computeMonthlyCmvFromNfeProductCosts(
+    year,
+    emitterCnpjDigits
+  );
+  return {
+    monthlyCmv: result.cmv,
+    byNfe: byNfe.filter((row) => row.month >= fromMonth && row.month <= toMonth),
   };
 }

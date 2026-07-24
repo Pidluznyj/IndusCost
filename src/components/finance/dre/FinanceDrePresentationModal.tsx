@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Download, Printer, X } from "lucide-react";
-import type { FinanceDreReport } from "@/src/lib/financeDreTypes";
+import type { FinanceDreLineId, FinanceDreReport } from "@/src/lib/financeDreTypes";
 import { FinanceDreGrid } from "@/src/components/finance/dre/FinanceDreGrid";
 import { FinanceDreInformativeReport } from "@/src/components/finance/dre/FinanceDreInformativeReport";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
@@ -13,6 +13,7 @@ type Props = {
   onClose: () => void;
   onPrint: () => void;
   onExport: () => void;
+  onLineClick?: (lineId: FinanceDreLineId) => void;
 };
 
 function KpiChip({
@@ -56,6 +57,7 @@ export function FinanceDrePresentationModal({
   onClose,
   onPrint,
   onExport,
+  onLineClick,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -150,7 +152,7 @@ export function FinanceDrePresentationModal({
           </header>
 
           <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5 space-y-4">
-            <FinanceDreGrid report={report} showAllMonths />
+            <FinanceDreGrid report={report} showAllMonths onLineClick={onLineClick} />
             <p className="text-xs leading-relaxed text-slate-500">{report.disclaimer}</p>
             {report.qualityAlerts.length > 0 ? (
               <ul className="space-y-1.5">

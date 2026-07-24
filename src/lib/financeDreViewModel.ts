@@ -55,3 +55,17 @@ export function getFinanceDreApiPath(queryString: string): string {
 export function getFinanceDreExportPath(queryString: string): string {
   return queryString ? `/api/finance/dre/export?${queryString}` : "/api/finance/dre/export";
 }
+
+export function getFinanceDreLineDrilldownPath(
+  lineId: string,
+  queryString: string,
+  scope: "highlight" | "ytd" = "highlight"
+): string {
+  const params = new URLSearchParams(queryString);
+  params.set("scope", scope);
+  const qs = params.toString();
+  const encoded = encodeURIComponent(lineId);
+  return qs
+    ? `/api/finance/dre/lines/${encoded}/drilldown?${qs}`
+    : `/api/finance/dre/lines/${encoded}/drilldown?scope=${scope}`;
+}

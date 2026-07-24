@@ -29,7 +29,7 @@ export function CostCenterDialog({
     <div
       className={cn(
         "fixed inset-0 flex items-end justify-center bg-black/45 p-0 sm:items-center sm:p-4",
-        stacked ? "z-[85]" : "z-50"
+        stacked ? "z-[95]" : "z-50"
       )}
     >
       <div
