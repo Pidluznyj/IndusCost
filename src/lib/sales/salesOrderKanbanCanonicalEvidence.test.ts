@@ -1,6 +1,6 @@
-/**
- * KAN-LINK-07 — Motor Kanban consome exclusivamente o grafo canônico.
- * Fixture genérica equivalente a PD 02757 (sem hardcode de estágio final).
+﻿/**
+ * KAN-LINK-07 â€” Motor Kanban consome exclusivamente o grafo canÃ´nico.
+ * Fixture genÃ©rica equivalente a PD 02757 (sem hardcode de estÃ¡gio final).
  */
 
 import assert from "node:assert/strict";
@@ -157,8 +157,8 @@ function pd02757EquivalentPack(options?: {
   }).get(ORDER)!;
 }
 
-describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
-  it("pack → grafo → adapt é a única fonte de alocações do motor", () => {
+describe("KAN-LINK-07 â€” consumo exclusivo do grafo canÃ´nico", () => {
+  it("pack â†’ grafo â†’ adapt Ã© a Ãºnica fonte de alocaÃ§Ãµes do motor", () => {
     const pack = pd02757EquivalentPack();
     const graph = getSalesOrderOperationalEvidenceGraphFromPack(pack);
     const viaGraph = adaptOperationalEvidenceItemToMotorAllocations(
@@ -198,13 +198,13 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
       orderStatus: pack.order.status,
     });
     assert.notEqual(order.currentStage, "WAITING_OUTPUT_DOCUMENT");
-    // Estágio final depende das evidências (não hardcode de pedido).
+    // EstÃ¡gio final depende das evidÃªncias (nÃ£o hardcode de pedido).
     assert.equal(order.currentStage, flow10.currentStage);
   });
 
-  it("pedido genérico equivalente sem hardcode de código", () => {
+  it("pedido genÃ©rico equivalente sem hardcode de cÃ³digo", () => {
     const pack = pd02757EquivalentPack();
-    // Troca só o código — mesma lógica.
+    // Troca sÃ³ o cÃ³digo â€” mesma lÃ³gica.
     const generic = {
       ...pack,
       order: { ...pack.order, orderCode: "PD 99999" },
@@ -214,7 +214,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
     assert.notEqual(flow.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });
 
-  it("múltiplos itens: gargalo = estágio mais anterior pendente", () => {
+  it("mÃºltiplos itens: gargalo = estÃ¡gio mais anterior pendente", () => {
     const pack = pd02757EquivalentPack({ withNfe: false, fulfilled: false });
     // Item 20 sem cobertura documental (remove linha).
     const trimmed = {
@@ -247,7 +247,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
       productionOrderLinks: [{ linkedQuantity: 60, isCurrent: true }],
       documentAllocations: [{ allocationKey: "d", quantity: 40 }],
       nfeAllocations: [],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -270,7 +270,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductBom: true,
     });
     assert.equal(cut.cutQuantity.eq(30), true);
@@ -292,14 +292,14 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductBom: true,
       hasProductRouting: true,
     });
     assert.notEqual(noOp.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.equal(noOp.currentStage, "SHIPPED_COMPLETED");
 
-    // Documento cancelado não cobre (histórico); qty documentada = 0.
+    // Documento cancelado nÃ£o cobre (histÃ³rico); qty documentada = 0.
     const canceledDoc = resolveSalesOrderItemFlow({
       salesOrderItemId: ITEM_10,
       statusNormalized: "RELEASED",
@@ -308,7 +308,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
         { allocationKey: "c", quantity: 10, isCanceled: true, isValid: false },
       ],
       nfeAllocations: [],
-      productCommercialClass: "STOCK_ITEM",
+      productCommercialClass: "STOCK",
       hasProductBom: true,
       hasProductRouting: false,
       explicitRequiresProduction: false,
@@ -318,7 +318,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
     assert.equal(canceledDoc.currentStage, "WAITING_OUTPUT_DOCUMENT");
   });
 
-  it("nenhuma regressão terminal: SHIPPED não volta por ausência de OP", () => {
+  it("nenhuma regressÃ£o terminal: SHIPPED nÃ£o volta por ausÃªncia de OP", () => {
     const r = resolveSalesOrderItemFlow({
       salesOrderItemId: ITEM_10,
       statusNormalized: "FULFILLED",
@@ -334,14 +334,14 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
     assert.equal(r.currentStage, "SHIPPED_COMPLETED");
   });
 
-  it("fingerprint determinístico e computationVersion v2", () => {
+  it("fingerprint determinÃ­stico e computationVersion v2", () => {
     assert.equal(SALES_ORDER_FLOW_COMPUTATION_VERSION, "sales-order-flow/v2");
     const pack = pd02757EquivalentPack();
     const item = resolveSalesOrderItemFlowFromEvidence(pack, ITEM_10)!;
@@ -407,7 +407,7 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
     assert.equal(w.computationVersion, SALES_ORDER_FLOW_COMPUTATION_VERSION);
   });
 
-  it("grafo fromPack expõe reconciliação sem recalcular estágio no FE", () => {
+  it("grafo fromPack expÃµe reconciliaÃ§Ã£o sem recalcular estÃ¡gio no FE", () => {
     const pack = pd02757EquivalentPack();
     const graph = buildSalesOrderOperationalEvidenceGraphFromPack(pack);
     const item = graph.items.find((i) => i.salesOrderItemId === ITEM_10)!;
@@ -417,3 +417,4 @@ describe("KAN-LINK-07 — consumo exclusivo do grafo canônico", () => {
     assert.equal(item.coverage.documentedQuantity, 114);
   });
 });
+

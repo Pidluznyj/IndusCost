@@ -425,7 +425,7 @@ export function SalesOrderFlowKanbanCard({
         <div className="mt-2 space-y-1.5">
           {card.progressProductionOrder != null ? (
             <CompactProgress
-              label="OP"
+              label="OP planejada"
               value={card.progressProductionOrder}
               icon={Factory}
             />

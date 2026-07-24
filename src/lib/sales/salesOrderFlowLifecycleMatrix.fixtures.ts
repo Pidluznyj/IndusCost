@@ -10,7 +10,10 @@ import {
   type ResolveSalesOrderFlowResult,
 } from "./salesOrderFlowEngine.js";
 import type { ResolveSalesOrderItemFlowResult } from "./salesOrderItemFlowEngine.js";
-import type { SalesOrderFlowStage } from "./salesOrderFlowCatalog.js";
+import type {
+  SalesOrderFlowInconsistencyCode,
+  SalesOrderFlowStage,
+} from "./salesOrderFlowCatalog.js";
 
 export const MATRIX_ORDER_ID = "order-op76-matrix";
 export const MATRIX_REF = "2026-07-17T12:00:00.000Z";
@@ -24,7 +27,7 @@ export type LifecycleMatrixCase = {
   order?: ResolveSalesOrderFlowResult;
   expectedItemStage: SalesOrderFlowStage;
   expectedOrderStage?: SalesOrderFlowStage;
-  expectedCodes?: readonly string[];
+  expectedCodes?: readonly SalesOrderFlowInconsistencyCode[];
   /** Asserções extras além do estágio/códigos. */
   extraAssert?: (ctx: {
     item: ResolveSalesOrderItemFlowResult;
@@ -75,7 +78,7 @@ function caseOf(
   },
   expectedItemStage: SalesOrderFlowStage,
   options?: {
-    expectedCodes?: readonly string[];
+    expectedCodes?: readonly SalesOrderFlowInconsistencyCode[];
     extraAssert?: LifecycleMatrixCase["extraAssert"];
   }
 ): LifecycleMatrixCase {

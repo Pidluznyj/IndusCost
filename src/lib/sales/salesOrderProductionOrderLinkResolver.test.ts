@@ -1,6 +1,6 @@
-/**
- * KAN-LINK-05 — Resolvedor canônico OP → Pedido/item.
- * Sem exceção por pedido na lógica (PD só em comentário/fixture).
+﻿/**
+ * KAN-LINK-05 â€” Resolvedor canÃ´nico OP â†’ Pedido/item.
+ * Sem exceÃ§Ã£o por pedido na lÃ³gica (PD sÃ³ em comentÃ¡rio/fixture).
  */
 
 import assert from "node:assert/strict";
@@ -74,13 +74,13 @@ function candidate(
   };
 }
 
-describe("salesOrderProductionOrderLinkResolver — campos e etiqueta", () => {
+describe("salesOrderProductionOrderLinkResolver â€” campos e etiqueta", () => {
   it("detecta OP cancelada", () => {
     assert.equal(isProductionOrderStatusCanceled("Cancelada"), true);
     assert.equal(isProductionOrderStatusCanceled("Encerrada"), false);
   });
 
-  it("etiqueta inequívoca vs ambígua", () => {
+  it("etiqueta inequÃ­voca vs ambÃ­gua", () => {
     const one = extractProductionOrderLabelOrderCodes({
       name: "OP 05800 - PD 02757",
     });
@@ -94,7 +94,7 @@ describe("salesOrderProductionOrderLinkResolver — campos e etiqueta", () => {
     assert.equal(many.unambiguous, null);
   });
 
-  it("alerta de mesmo produto nunca prova vínculo", () => {
+  it("alerta de mesmo produto nunca prova vÃ­nculo", () => {
     const alert = buildProductionOrderAuditAlert(
       "SAME_PRODUCT",
       "mesmo produto em pedidos distintos"
@@ -103,8 +103,8 @@ describe("salesOrderProductionOrderLinkResolver — campos e etiqueta", () => {
   });
 });
 
-describe("salesOrderProductionOrderLinkResolver — resolução", () => {
-  it("vínculo direto por idPedido + idItemPedido", () => {
+describe("salesOrderProductionOrderLinkResolver â€” resoluÃ§Ã£o", () => {
+  it("vÃ­nculo direto por idPedido + idItemPedido", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -118,7 +118,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(resolved[0]!.linkedQuantity, 600);
   });
 
-  it("vínculo por item (idItem) com pedido oficial", () => {
+  it("vÃ­nculo por item (idItem) com pedido oficial", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -137,7 +137,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(resolved[0]!.salesOrderItemId, ITEM);
   });
 
-  it("etiqueta inequívoca + número de item resolve", () => {
+  it("etiqueta inequÃ­voca + nÃºmero de item resolve", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: null,
@@ -161,7 +161,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(resolved[0]!.advancesKanban, true);
   });
 
-  it("etiqueta ambígua não avança", () => {
+  it("etiqueta ambÃ­gua nÃ£o avanÃ§a", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: null,
@@ -210,7 +210,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(assessment.waitingProductionOrder, false);
   });
 
-  it("várias OPs somam cobertura", () => {
+  it("vÃ¡rias OPs somam cobertura", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -225,7 +225,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(sumProductionCoverageQuantity(resolved), 600);
   });
 
-  it("OP cancelada não cobre", () => {
+  it("OP cancelada nÃ£o cobre", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -245,7 +245,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(sumProductionCoverageQuantity(resolved), 0);
   });
 
-  it("ausência de vínculo", () => {
+  it("ausÃªncia de vÃ­nculo", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -268,7 +268,7 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
     assert.equal(resolved[0]!.advancesKanban, false);
   });
 
-  it("produto igual em pedidos diferentes não prova vínculo", () => {
+  it("produto igual em pedidos diferentes nÃ£o prova vÃ­nculo", () => {
     const resolved = resolveSalesOrderProductionOrderLinks({
       salesOrderId: ORDER,
       externalSalesOrderId: EXT_ORDER,
@@ -302,8 +302,8 @@ describe("salesOrderProductionOrderLinkResolver — resolução", () => {
   });
 });
 
-describe("KAN-LINK-05 — integração pack/motor", () => {
-  it("atendimento integral sem OP → não Aguardando OP", () => {
+describe("KAN-LINK-05 â€” integraÃ§Ã£o pack/motor", () => {
+  it("atendimento integral sem OP â†’ nÃ£o Aguardando OP", () => {
     const map = assembleSalesOrderFlowEvidenceBatch({
       orders: [
         {
@@ -318,6 +318,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
               id: ITEM,
               salesOrderId: ORDER,
               productId: "p1",
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "Produto 1",
               externalProductId: 100,
               nomusItemExternalId: EXT_ITEM,
               nomusItemSequence: "00010",
@@ -376,6 +378,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
               id: ITEM,
               salesOrderId: ORDER,
               productId: "p1",
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "Produto 1",
               externalProductId: 100,
               nomusItemExternalId: EXT_ITEM,
               nomusItemSequence: "00010",
@@ -417,7 +421,7 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
     assert.notEqual(order.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 
-  it("OP parcial no residual mantém WAITING_PRODUCTION_ORDER com cobertura parcial", () => {
+  it("OP parcial no residual mantÃ©m WAITING_PRODUCTION_ORDER com cobertura parcial", () => {
     const map = assembleSalesOrderFlowEvidenceBatch({
       orders: [
         {
@@ -432,6 +436,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
               id: ITEM,
               salesOrderId: ORDER,
               productId: "p1",
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "Produto 1",
               externalProductId: 100,
               nomusItemExternalId: EXT_ITEM,
               nomusItemSequence: "00010",
@@ -484,7 +490,7 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
     assert.match(flow.stageReason, /parcial|complementar|insuficiente/i);
   });
 
-  it("OP cancelada no pack não entra no motor", () => {
+  it("OP cancelada no pack nÃ£o entra no motor", () => {
     const map = assembleSalesOrderFlowEvidenceBatch({
       orders: [
         {
@@ -499,6 +505,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
               id: ITEM,
               salesOrderId: ORDER,
               productId: "p1",
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "Produto 1",
               externalProductId: 100,
               nomusItemExternalId: EXT_ITEM,
               quantity: 100,
@@ -554,6 +562,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
               id: ITEM,
               salesOrderId: ORDER,
               productId: "p1",
+              skuSnapshot: "SKU-1",
+              productNameSnapshot: "Produto 1",
               externalProductId: 100,
               nomusItemExternalId: EXT_ITEM,
               quantity: 80,
@@ -593,7 +603,8 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
     assert.equal(pack.productionLinks.length, 1);
     const flow = resolveSalesOrderItemFlowFromEvidence(pack, ITEM)!;
     assert.equal(flow.productionOrderQuantity.eq(80), true);
-    // Liberada cobre planejamento, mas não prova execução → permanece em OP.
+    // Liberada cobre planejamento, mas nÃ£o prova execuÃ§Ã£o â†’ permanece em OP.
     assert.equal(flow.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 });
+

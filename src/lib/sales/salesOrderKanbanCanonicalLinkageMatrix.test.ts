@@ -1,4 +1,4 @@
-/**
+﻿/**
  * KAN-LINK-09 — Matriz completa de qualidade e regressão
  * Pedido → Item → OP → DS → NF-e → Envio → Kanban.
  */
@@ -21,6 +21,7 @@ import {
 } from "./salesOrderFlowPerformance.js";
 import { buildSalesOrderFlowRecomputeDraft } from "./salesOrderFlowRecompute.js";
 import { resolveSalesOrderFlow } from "./salesOrderFlowEngine.js";
+import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import {
   resolveSalesOrderItemFlow,
   resolveSalesOrderItemFlowFromEvidence,
@@ -90,7 +91,7 @@ function resolveOrderFromPack(
     stageLabel: order.currentStage,
     stageReason: null,
     bottleneckSalesOrderItemId: order.currentBottleneck?.salesOrderItemId ?? null,
-    bottleneckReason: order.currentBottleneck?.reason ?? null,
+    bottleneckReason: order.currentBottleneck?.stageReason ?? null,
     nextAction: order.nextAction,
     responsibleArea: order.responsibleArea,
     computedAt: "2026-07-22T12:00:00.000Z",
@@ -183,7 +184,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductBom: true,
       hasProductRouting: true,
     });
@@ -200,7 +201,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       productionOrderLinks: [{ linkedQuantity: 60, isCurrent: true }],
       documentAllocations: [{ allocationKey: "d", quantity: 40 }],
       nfeAllocations: [],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -225,7 +226,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductBom: true,
     });
     assert.equal(r.cutQuantity.eq(30), true);
@@ -239,8 +240,8 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       orderedQuantity: 100,
       fulfilledQuantity: 0,
       nomusIsCanceled: true,
-      canceledQuantity: 40,
-      productCommercialClass: "FINISHED_GOOD",
+      officialCanceledQuantity: 40,
+      productCommercialClass: "MANUFACTURED",
       hasProductBom: true,
     });
     assert.ok(r.canceledQuantity.gte(40) || r.currentStage === "CANCELED");
@@ -403,7 +404,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       fulfilled: true,
     });
     assert.equal(pack.stockDocuments.length, 0);
-    assert.ok(pack.nfes.length >= 1 || pack.nfeLinks.length >= 1);
+    assert.ok(pack.nfes.length >= 1);
     // Não inventar faturado/enviado sem DS — gargalo = Aguardando documento de saída.
     const { order, items } = resolveOrderFromPack(pack);
     assert.equal(order.currentStage, "WAITING_OUTPUT_DOCUMENT");
@@ -443,7 +444,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasShipDate: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -466,7 +467,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -490,7 +491,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -500,7 +501,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       orderedQuantity: 360,
       fulfilledQuantity: 0,
       productionOrderLinks: [],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -558,7 +559,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           orderCodeNormalized: null,
         },
       ],
-    };
+    } as SalesOrderFlowEvidencePack;
     const item = resolveSalesOrderItemFlowFromEvidence(polluted, MATRIX_ITEM_10)!;
     assert.equal(item.documentedQuantity.eq(0), true);
   });
@@ -587,7 +588,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       fulfilledQuantity: 0,
       productionOrderLinks: [{ linkedQuantity: 25, isCurrent: true }],
       producedQuantity: 25,
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -691,7 +692,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
           hasDocument: true,
         },
       ],
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
       hasProductRouting: true,
       hasProductBom: true,
     });
@@ -707,7 +708,7 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
       statusNormalized: "CANCELED",
       orderedQuantity: 10,
       nomusIsCanceled: true,
-      productCommercialClass: "FINISHED_GOOD",
+      productCommercialClass: "MANUFACTURED",
     });
     const order = resolveSalesOrderFlow([r], {
       salesOrderId: MATRIX_ORDER_A,
