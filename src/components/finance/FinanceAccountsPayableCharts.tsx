@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo } from "react";
 import {
   Bar,
   BarChart,
@@ -67,7 +67,11 @@ const AGING_BUCKET_COLORS: Record<string, string> = {
   overdue90plus: "#991B1B",
 };
 
-export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket[] }) {
+export const FinanceApAgingChart = memo(function FinanceApAgingChart({
+  buckets,
+}: {
+  buckets: FinanceApAgingBucket[];
+}) {
   const data = (buckets ?? []).map((b) => ({
     key: b.key,
     label: b.label,
@@ -141,9 +145,13 @@ export function FinanceApAgingChart({ buckets }: { buckets: FinanceApAgingBucket
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceApMonthlyScheduleChart({ rows }: { rows: FinanceApMonthlyDue[] }) {
+export const FinanceApMonthlyScheduleChart = memo(function FinanceApMonthlyScheduleChart({
+  rows,
+}: {
+  rows: FinanceApMonthlyDue[];
+}) {
   const data = (rows ?? []).map((r) => ({
     label: formatFinanceMonthLabel(r.year, r.month),
     overdue: r.overdueAmount,
@@ -168,9 +176,13 @@ export function FinanceApMonthlyScheduleChart({ rows }: { rows: FinanceApMonthly
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});
 
-export function FinanceApTopDebtorsChart({ rows }: { rows: FinanceApTopDebtor[] }) {
+export const FinanceApTopDebtorsChart = memo(function FinanceApTopDebtorsChart({
+  rows,
+}: {
+  rows: FinanceApTopDebtor[];
+}) {
   const top5 = (rows ?? []).slice(0, 5);
   const data = top5.map((r) => ({
     key: r.personCnpj ?? r.personName ?? "fornecedor",
@@ -214,9 +226,13 @@ export function FinanceApTopDebtorsChart({ rows }: { rows: FinanceApTopDebtor[] 
       </div>
     </ChartCard>
   );
-}
+});
 
-export function FinanceApPaymentMethodChart({ rows }: { rows: FinanceApPaymentSummary[] }) {
+export const FinanceApPaymentMethodChart = memo(function FinanceApPaymentMethodChart({
+  rows,
+}: {
+  rows: FinanceApPaymentSummary[];
+}) {
   const data = (rows ?? []).slice(0, 8).map((r) => ({
     label: (r.paymentMethodName?.trim() || "Sem forma").slice(0, 20),
     openAmount: r.openAmount,
@@ -240,4 +256,4 @@ export function FinanceApPaymentMethodChart({ rows }: { rows: FinanceApPaymentSu
       </ResponsiveContainer>
     </ChartCard>
   );
-}
+});

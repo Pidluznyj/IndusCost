@@ -184,20 +184,63 @@ describe("financeCashFlowReconciliationMap", () => {
       join(process.cwd(), "src/components/finance/cash-flow/FinanceCashFlowRiskTab.tsx"),
       "utf8"
     );
+    const panelSrc = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowReconciliationPanel.tsx"
+      ),
+      "utf8"
+    );
+    const numbersSrc = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowNumbersAuditSection.tsx"
+      ),
+      "utf8"
+    );
+    const ytdSrc = readFileSync(
+      join(
+        process.cwd(),
+        "src",
+        "components",
+        "finance",
+        "cash-flow",
+        "FinanceCashFlowYtdSummary.tsx"
+      ),
+      "utf8"
+    );
+    const typesSrc = readFileSync(
+      join(process.cwd(), "src", "lib", "financeCashFlowDashboardTypes.ts"),
+      "utf8"
+    );
+    const uiSurface = `${pageSrc}\n${panelSrc}\n${numbersSrc}\n${ytdSrc}\n${riskSrc}`;
     const pagePaths = [
       "executiveSummary",
       "reconciliation",
       "executiveYtd",
-      "largestProjectedInflows",
       "overdueReceivables",
       "overduePayables",
       "topCustomers",
       "topSuppliers",
-      "calendar",
     ];
     for (const path of pagePaths) {
-      assert.match(pageSrc, new RegExp(path), `FinanceCashFlowPage deve usar ${path}`);
+      assert.match(
+        uiSurface,
+        new RegExp(path),
+        `UI do Fluxo de Caixa deve referenciar ${path}`
+      );
     }
+    // Blocos ainda no contrato do payload (podem ser consumidos por abas/painéis).
+    assert.match(typesSrc, /largestProjectedInflows/);
+    assert.match(typesSrc, /calendar:/);
     const riskPaths = ["cashHealthScore", "conservativeScenario", "stressScenario", "cashForecast"];
     for (const path of riskPaths) {
       assert.match(riskSrc, new RegExp(path), `FinanceCashFlowRiskTab deve usar ${path}`);

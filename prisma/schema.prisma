@@ -1129,6 +1129,8 @@ model SalesOrder {
   @@index([customerId])
   @@index([status])
   @@index([issueDate])
+  @@index([createdAt(sort: Desc), issueDate(sort: Desc)])
+  @@index([externalSellerId])
   @@index([sourcePresenceStatus])
   @@index([lastSeenAt])
   @@index([lastSyncRunId])

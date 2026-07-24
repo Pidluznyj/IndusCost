@@ -51,6 +51,8 @@ export type SalesOrderListRowSnapshot = {
   totalMarginPerc?: unknown;
   totalMarginValue?: unknown;
   marginSummary?: SalesOrderMarginSummaryPayload;
+  /** Itens de margem para tooltip oficial (opcional no payload da lista). */
+  marginItems?: import("@/src/lib/salesOrderMarginTypes").SalesOrderItemMarginPayload[];
   /**
    * `true` se há pelo menos uma NF vinculada. Mantido por compat com clientes
    * antigos; nova UI usa `billingStatus`.

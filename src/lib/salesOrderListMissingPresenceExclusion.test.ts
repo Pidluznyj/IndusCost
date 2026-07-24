@@ -285,14 +285,14 @@ describe("HOTFIX-05 sales-orders MISSING_CONFIRMED operational exclusion", () =>
     );
   });
 
-  it("GET /api/sales-orders usa resolveSalesOrderListWhere (mesmo where para find/count/summary)", () => {
+  it("GET /api/sales-orders usa resolveSalesOrderListWhere (mesmo where para find/aggregate)", () => {
     const server = read("server.ts");
     const idx = server.indexOf('app.get("/api/sales-orders"');
     assert.ok(idx >= 0);
-    const slice = server.slice(idx, idx + 2500);
+    const slice = server.slice(idx, idx + 3500);
     assert.match(slice, /resolveSalesOrderListWhere/);
     assert.match(slice, /findMany\(\{\s*where/);
-    assert.match(slice, /count\(\{\s*where/);
-    assert.match(slice, /buildSalesOrderListTotalsFromPrismaOrders/);
+    assert.match(slice, /salesOrder\.aggregate/);
+    assert.match(slice, /buildSalesOrderListSummaryFromAggregate/);
   });
 });

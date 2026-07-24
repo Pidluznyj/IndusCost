@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { formatCurrency, formatNumber } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
@@ -27,6 +28,7 @@ import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginType
 import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
 import { canExportSalesOrders } from "@/src/lib/commercialEngineeringPermissions";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { noteDevPerfRender } from "@/src/lib/devPerfBaselineClient";
 import { ACTION_GATE_RESOURCES } from "@/src/lib/actionPermissionAccess";
 import { resolveSalesOrderListSellerLabel } from "@/src/lib/salesOrderListSellerUi";
 import {
@@ -160,6 +162,7 @@ function money(v: unknown, decimals = 2): string {
 }
 
 function SalesOrderList() {
+  noteDevPerfRender("SalesOrderList");
   const navigate = useNavigate();
   const auth = useAuth();
   const permissions = usePermissions();
@@ -206,6 +209,7 @@ function SalesOrderList() {
   );
   const [reportPrintRequestId, setReportPrintRequestId] = useState(0);
   const [branding, setBranding] = useState<BrandingSettingsDTO>(DEFAULT_BRANDING);
+  const brandingLoadedRef = useRef(false);
   const [summaryDrawerOpen, setSummaryDrawerOpen] = useState(false);
   const [summaryRow, setSummaryRow] = useState<SalesOrderRow | null>(null);
   // Modal Detalhe do Pedido — abre in-place (preserva filtros/paginação).
@@ -224,6 +228,69 @@ function SalesOrderList() {
     setDetailOrderId(null);
     setDetailOrderCode(null);
   }, []);
+
+  const handleRowOpenSummary = useCallback((row: SalesOrderRow) => {
+    setSummaryRow(row);
+    setSummaryDrawerOpen(true);
+  }, []);
+
+  const handleOpenDetailFromList = useCallback(
+    (orderId: string) => {
+      const row = rows.find((r) => r.id === orderId);
+      openDetail(orderId, row?.orderCode ?? null);
+    },
+    [rows, openDetail]
+  );
+
+  const handleCloseSummaryDrawer = useCallback(() => {
+    setSummaryDrawerOpen(false);
+    setSummaryRow(null);
+  }, []);
+
+  const handleOpenDetailFromSummary = useCallback(
+    (orderId: string) => {
+      const code = summaryRow?.orderCode ?? null;
+      setSummaryDrawerOpen(false);
+      openDetail(orderId, code);
+    },
+    [summaryRow?.orderCode, openDetail]
+  );
+
+  const handleOpenFullAudit = useCallback(
+    (id: string) => {
+      closeDetail();
+      navigate(`/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(id)}`);
+    },
+    [closeDetail, navigate]
+  );
+
+  const selectedOrderId = summaryDrawerOpen ? summaryRow?.id ?? null : null;
+
+  const monthlyChartsFilters = useMemo(
+    () => ({
+      year: year ? Number(year) : currentYear,
+      status: status || undefined,
+      hasInvoice: hasInvoice || undefined,
+      receivableStatus: receivableStatus || undefined,
+      customerId: customerId || undefined,
+      sellerKey: sellerKey || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      q: search || undefined,
+    }),
+    [
+      year,
+      currentYear,
+      status,
+      hasInvoice,
+      receivableStatus,
+      customerId,
+      sellerKey,
+      startDate,
+      endDate,
+      search,
+    ]
+  );
 
   useEffect(() => {
     const handle = setTimeout(() => setSearch(searchDraft.trim()), 300);
@@ -329,10 +396,28 @@ function SalesOrderList() {
     }
   }, [customerLabelForFilename, listExportQuery]);
 
+  const ensureBranding = useCallback(async () => {
+    if (brandingLoadedRef.current) return branding;
+    try {
+      const next = await fetchUiSessionCachedJson<BrandingSettingsDTO>(
+        "/api/branding-settings",
+        { ttlMs: 300_000 }
+      );
+      brandingLoadedRef.current = true;
+      setBranding(next);
+      return next;
+    } catch {
+      brandingLoadedRef.current = true;
+      setBranding(DEFAULT_BRANDING);
+      return DEFAULT_BRANDING;
+    }
+  }, [branding]);
+
   const handleExportReportPdf = useCallback(async () => {
     if (exportingReportPdf) return;
     setExportingReportPdf(true);
     try {
+      await ensureBranding();
       const payload = await fetchJsonOk<SalesOrderReportPayload>(
         getSalesOrderReportPayloadUrl(listExportQuery)
       );
@@ -343,12 +428,13 @@ function SalesOrderList() {
       alert("Não foi possível gerar o PDF de pedidos de venda.");
       setExportingReportPdf(false);
     }
-  }, [exportingReportPdf, listExportQuery]);
+  }, [ensureBranding, exportingReportPdf, listExportQuery]);
 
   const handleExportIndustrialResultPdf = useCallback(async () => {
     if (exportingIndustrialPdf) return;
     setExportingIndustrialPdf(true);
     try {
+      await ensureBranding();
       const payload = await fetchJsonOk<SalesOrderIndustrialResultReportPayload>(
         getSalesOrderIndustrialResultReportPayloadUrl(listExportQuery)
       );
@@ -359,13 +445,7 @@ function SalesOrderList() {
       alert("Não foi possível gerar o PDF de Resultado Industrial.");
       setExportingIndustrialPdf(false);
     }
-  }, [exportingIndustrialPdf, listExportQuery]);
-
-  useEffect(() => {
-    void fetchJsonOk<BrandingSettingsDTO>("/api/branding-settings")
-      .then(setBranding)
-      .catch(() => setBranding(DEFAULT_BRANDING));
-  }, []);
+  }, [ensureBranding, exportingIndustrialPdf, listExportQuery]);
 
   useEffect(() => {
     if (reportPrintRequestId === 0 || !reportPrintPayload) return;
@@ -521,7 +601,7 @@ function SalesOrderList() {
         if (!ac.signal.aborted) setSellerOptionsLoading(false);
       });
     return () => ac.abort();
-  }, [sellerOptionsFiltersKey, status, hasInvoice, receivableStatus, customerId, startDate, endDate, year, month, search]);
+  }, [sellerOptionsFiltersKey]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -860,48 +940,25 @@ function SalesOrderList() {
       />
 
       <SalesOrderListMonthlyCharts
-        filters={{
-          year: year ? Number(year) : currentYear,
-          status: status || undefined,
-          hasInvoice: hasInvoice || undefined,
-          receivableStatus: receivableStatus || undefined,
-          customerId: customerId || undefined,
-          sellerKey: sellerKey || undefined,
-          startDate: startDate || undefined,
-          endDate: endDate || undefined,
-          q: search || undefined,
-        }}
+        filters={monthlyChartsFilters}
         showMarginChart={showMarginEconomics}
       />
 
       <SalesOrderListTable
         rows={rows}
         loading={loading}
-        selectedOrderId={summaryDrawerOpen ? summaryRow?.id ?? null : null}
+        selectedOrderId={selectedOrderId}
         showMarginEconomics={showMarginEconomics}
-        onRowOpenSummary={(row) => {
-          setSummaryRow(row);
-          setSummaryDrawerOpen(true);
-        }}
-        onOpenDetail={(orderId) => {
-          const row = rows.find((r) => r.id === orderId);
-          openDetail(orderId, row?.orderCode ?? null);
-        }}
+        onRowOpenSummary={handleRowOpenSummary}
+        onOpenDetail={handleOpenDetailFromList}
       />
 
       <SalesOrderQuickSummaryDrawer
         open={summaryDrawerOpen}
         row={summaryRow}
         showMarginEconomics={showMarginEconomics}
-        onClose={() => {
-          setSummaryDrawerOpen(false);
-          setSummaryRow(null);
-        }}
-        onOpenDetail={(orderId) => {
-          const code = summaryRow?.orderCode ?? null;
-          setSummaryDrawerOpen(false);
-          openDetail(orderId, code);
-        }}
+        onClose={handleCloseSummaryDrawer}
+        onOpenDetail={handleOpenDetailFromSummary}
       />
 
       <SalesOrderDetailDialog
@@ -909,10 +966,7 @@ function SalesOrderList() {
         salesOrderId={detailOrderId}
         orderCode={detailOrderCode}
         onClose={closeDetail}
-        onOpenFullAudit={(id) => {
-          closeDetail();
-          navigate(`/finance/portfolio-reconciliation?auditOrderId=${encodeURIComponent(id)}`);
-        }}
+        onOpenFullAudit={handleOpenFullAudit}
       />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3">
@@ -981,6 +1035,7 @@ function SalesOrderDetailRoute({ id }: { id: string }) {
 }
 
 export function SalesOrdersModule() {
+  noteDevPerfRender("SalesOrdersModule");
   const { id } = useParams();
   if (id) return <SalesOrderDetailRoute id={id} />;
   return <SalesOrderList />;

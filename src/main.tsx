@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { VersionWatcher } from "./components/VersionWatcher.tsx";
 import App from "./App.tsx";
 import { AuthProvider } from "./contexts/AuthContext.tsx";
+import { installDevPerfBaselineClient } from "./lib/devPerfBaselineClient.ts";
 import "./index.css";
 import "./components/print/print-document.css";
 import "./sales-order-print.css";
@@ -16,6 +17,9 @@ import "./project-intake-form-print.css";
 import "./components/finance/executive-report/finance-executive-report.css";
 import "./components/finance/executive-report/finance-executive-report-print.css";
 import "./components/finance/dre/finance-dre-print.css";
+
+// PERFORMANCE 02 — observabilidade opcional (localStorage / VITE_PERF_BASELINE)
+installDevPerfBaselineClient();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

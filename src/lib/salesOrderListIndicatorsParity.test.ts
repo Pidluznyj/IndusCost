@@ -78,9 +78,10 @@ describe("salesOrderListIndicatorsParity", () => {
     assert.doesNotMatch(source, /notIn:\s*\[\s*"CANCELLED"\s*,\s*"ERROR"\s*\]/);
   });
 
-  it("GET /api/sales-orders agrega summary direto dos pedidos filtrados", () => {
+  it("GET /api/sales-orders agrega summary no banco (mesma população filtrada)", () => {
     const server = readFileSync(join(ROOT, "..", "server.ts"), "utf8");
-    assert.match(server, /buildSalesOrderListTotalsFromPrismaOrders/);
+    assert.match(server, /salesOrder\.aggregate/);
+    assert.match(server, /buildSalesOrderListSummaryFromAggregate/);
     assert.doesNotMatch(server, /buildOfficialSalesOrderListPayload\([\s\S]*summaryOrders/s);
   });
 

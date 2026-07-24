@@ -149,14 +149,14 @@ export function registerFinanceAccountsPayableRoutes(app: express.Express, auth:
         new Date(),
         syncCutoff
       );
-      const [costCenters, suppliers] = await Promise.all([
-        integrationDeps.loadCostCenters(),
-        integrationDeps.loadSuppliers(),
-      ]);
+      // Reusa mestres já carregados em `ctx` — evita 2º round-trip de CC/fornecedores.
       return res.json({
         ...payload,
         classificationSummary: computeApClassificationSummary(filteredForSummary, ctx),
-        classificationFilterOptions: buildApClassificationFilterOptions(costCenters, suppliers),
+        classificationFilterOptions: buildApClassificationFilterOptions(
+          [...ctx.costCenterById.values()],
+          ctx.suppliers
+        ),
       });
     } catch (error) {
       console.error("GET /api/finance/accounts-payable/dashboard", error);

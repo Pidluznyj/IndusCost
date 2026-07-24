@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, RefreshCw } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceCashFlowDashboardQuery,
@@ -95,6 +95,7 @@ export function FinanceCashFlowPage() {
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
+  const dashboardAbortRef = useRef<AbortController | null>(null);
 
   const appliedQuery = useMemo(
     () => buildFinanceCashFlowDashboardQuery(appliedFilters),
@@ -108,28 +109,37 @@ export function FinanceCashFlowPage() {
   const filterStatus = resolveFinanceBiFilterStatus(appliedQuery, hasPendingFilterChanges);
   const filtersActive = appliedQuery.length > 0;
 
-  const loadDashboard = useCallback(async () => {
+  const loadDashboard = useCallback(async (opts?: { skipCache?: boolean }) => {
     if (!canView) return;
+    dashboardAbortRef.current?.abort();
+    const controller = new AbortController();
+    dashboardAbortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
       const url = appliedQuery
         ? `/api/finance/cash-flow/dashboard?${appliedQuery}`
         : "/api/finance/cash-flow/dashboard";
-      const data = await fetchJsonOk<FinanceCashFlowDashboardPayload>(url);
+      const data = await fetchUiSessionCachedJson<FinanceCashFlowDashboardPayload>(url, {
+        signal: controller.signal,
+        skipCache: opts?.skipCache === true,
+      });
+      if (controller.signal.aborted) return;
       setPayload(data);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(
         buildFinanceTabLoadError("Não foi possível carregar o Fluxo de Caixa.", e)
       );
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [appliedQuery, canView]);
 
   useEffect(() => {
     void loadDashboard();
+    return () => dashboardAbortRef.current?.abort();
   }, [loadDashboard]);
 
   const handleApplyFilters = () => {
@@ -223,7 +233,7 @@ export function FinanceCashFlowPage() {
           {
             id: "refresh",
             label: FINANCE_HEADER_ACTION_REFRESH,
-            onClick: () => void loadDashboard(),
+            onClick: () => void loadDashboard({ skipCache: true }),
             disabled: loading,
             loading,
             icon: <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />,

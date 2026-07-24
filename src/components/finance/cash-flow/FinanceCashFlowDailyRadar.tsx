@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import {
   FinanceCostCenterGridPagination,
@@ -6,7 +6,8 @@ import {
   FinanceCostCenterGridTableShell,
   FinanceCostCenterSortableTh,
 } from "@/src/components/finance/cost-centers/FinanceCostCenterGridKit";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
+import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 import {
   buildDailyRadarQuery,
   dailyRadarDayCardLabel,
@@ -315,8 +316,10 @@ function DayCard({
 }
 
 export function FinanceCashFlowDailyRadar() {
+  const { ref: sectionRef, visible } = useSectionVisible<HTMLElement>();
+  const abortRef = useRef<AbortController | null>(null);
   const [payload, setPayload] = useState<DailyRadarPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<DailyRadarRangeKey | null>(null);
   const [selectedCustom, setSelectedCustom] = useState(false);
@@ -340,6 +343,10 @@ export function FinanceCashFlowDailyRadar() {
   });
 
   const load = useCallback(async () => {
+    if (!visible) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -359,9 +366,11 @@ export function FinanceCashFlowDailyRadar() {
         page,
         pageSize,
       });
-      const data = await fetchJsonOk<DailyRadarPayload>(
-        `/api/finance/cash-flow/daily-radar?${qs}`
-      );
+      const url = `/api/finance/cash-flow/daily-radar?${qs}`;
+      const data = await fetchUiSessionCachedJson<DailyRadarPayload>(url, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setPayload(data);
       if (data.customRangeError) {
         setCustomApplyError(data.customRangeError);
@@ -369,10 +378,11 @@ export function FinanceCashFlowDailyRadar() {
         setCustomApplyError(null);
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setPayload(null);
       setError(e instanceof Error ? e.message : "Não foi possível carregar o Radar Diário de Caixa.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [
     appliedCustomEnd,
@@ -385,10 +395,12 @@ export function FinanceCashFlowDailyRadar() {
     selectedCustom,
     selectedDay,
     selectedRange,
+    visible,
   ]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
 
   useEffect(() => {
@@ -478,8 +490,11 @@ export function FinanceCashFlowDailyRadar() {
   const showCustomDays =
     selectedCustom && customDays && customDays.length > 0 && payload?.selectedCustomRange;
 
+  const showInitialSkeleton = !visible || (loading && !payload);
+
   return (
     <section
+      ref={sectionRef}
       className="space-y-4"
       data-testid="cash-flow-daily-radar"
       aria-label="Radar Diário de Caixa"
@@ -496,7 +511,7 @@ export function FinanceCashFlowDailyRadar() {
         ) : null}
       </div>
 
-      {loading && !payload ? (
+      {showInitialSkeleton ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           {Array.from({ length: 6 }, (_, i) => (
             <div key={`radar-skel-${i}`} className={cn(financeBiCardClass, "h-28 animate-pulse bg-[#F9FAFB]")} />

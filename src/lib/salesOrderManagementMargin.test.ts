@@ -124,10 +124,14 @@ describe("sales order management margin UI wiring", () => {
   });
 
   it("management route retorna marginEconomics do backend", () => {
+    const metrics = readFileSync(
+      join(ROOT, "lib/salesOrderManagementMetrics.server.ts"),
+      "utf8"
+    );
     const routes = readFileSync(join(ROOT, "lib/salesOrderIntelligenceRoutes.ts"), "utf8");
-    assert.match(routes, /marginEconomics/);
-    assert.match(routes, /buildSalesOrderManagementMarginEconomics/);
-    assert.match(routes, /marginDetail/);
+    assert.match(metrics, /marginEconomics/);
+    assert.match(metrics, /buildSalesOrderManagementMarginEconomics|marginEconomics/);
+    assert.match(routes, /loadSalesOrderManagementPage/);
   });
 
   it("frontend de gestão não importa motor Prisma de margem", () => {

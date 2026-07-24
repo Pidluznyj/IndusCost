@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -18,6 +18,7 @@ import {
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
+import { invalidateUiSessionGetCache } from "@/src/lib/uiSessionGetCache";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { FINANCE_AR_OVERDUE_FISCAL_BACKING_NOTE } from "@/src/lib/financeAccountsReceivableManagement";
 import {
@@ -32,16 +33,25 @@ import {
   FINANCE_AR_STATUS_OPTIONS,
   FINANCE_AR_TABS,
   normalizeFinanceArUiFilters,
+  type FinanceArAgingBucket,
   type FinanceArCriticalTitle,
   type FinanceArDashboardPayload,
   type FinanceArDashboardCards,
   type FinanceArDataQualityAlertItem,
   type FinanceArDataQualityAlertKey,
+  type FinanceArMonthlyDue,
   type FinanceArPageViewId,
   type FinanceArTabId,
   type FinanceArTopDebtor,
   type FinanceArUiFilters,
 } from "@/src/lib/financeAccountsReceivableDashboardTypes";
+
+/** Referências estáveis — evita `?? []` recriar props e invalidar memo dos gráficos. */
+const EMPTY_AR_AGING_BUCKETS: FinanceArAgingBucket[] = [];
+const EMPTY_AR_TOP_DEBTORS: FinanceArTopDebtor[] = [];
+const EMPTY_AR_MONTHLY_DUE: FinanceArMonthlyDue[] = [];
+const EMPTY_AR_CRITICAL_TITLES: FinanceArCriticalTitle[] = [];
+const EMPTY_AR_QUALITY_ALERTS: FinanceArDataQualityAlertItem[] = [];
 import {
   displayFinanceText,
   financeArExportFilename,
@@ -543,27 +553,37 @@ export function FinanceAccountsReceivablePage() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
+  const dashboardAbortRef = useRef<AbortController | null>(null);
 
   const loadDashboard = useCallback(async () => {
+    dashboardAbortRef.current?.abort();
+    const controller = new AbortController();
+    dashboardAbortRef.current = controller;
     setLoading(true);
     setDashboardError(null);
     try {
       const url = queryString
         ? `/api/finance/accounts-receivable/dashboard?${queryString}`
         : "/api/finance/accounts-receivable/dashboard";
-      const payload = await fetchJsonOk<FinanceArDashboardPayload>(url);
+      const payload = await fetchJsonOk<FinanceArDashboardPayload>(url, {
+        signal: controller.signal,
+        credentials: "include",
+      });
+      if (controller.signal.aborted) return;
       setData(payload);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setDashboardError(
         buildFinanceTabLoadError("Não foi possível carregar Contas a Receber.", e)
       );
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [queryString]);
 
   useEffect(() => {
     void loadDashboard();
+    return () => dashboardAbortRef.current?.abort();
   }, [loadDashboard]);
 
   const handleExport = async () => {
@@ -615,6 +635,31 @@ export function FinanceAccountsReceivablePage() {
   };
 
   const cards = data?.cards;
+  const agingBuckets = data?.agingBuckets ?? EMPTY_AR_AGING_BUCKETS;
+  const topDebtors = data?.topDebtors ?? EMPTY_AR_TOP_DEBTORS;
+  const monthlyDueSchedule = data?.monthlyDueSchedule ?? EMPTY_AR_MONTHLY_DUE;
+  const criticalTitles = data?.criticalTitles ?? EMPTY_AR_CRITICAL_TITLES;
+  const qualityAlerts = data?.dataQualitySummary ?? EMPTY_AR_QUALITY_ALERTS;
+  const scheduleBucketChartRows = useMemo(
+    () =>
+      data?.scheduleBuckets?.map((b) => ({
+        label: b.label,
+        amount: b.amount,
+        count: b.count,
+      })) ?? null,
+    [data?.scheduleBuckets]
+  );
+  const agingCardTone = useCallback(
+    (key: string) => (key.startsWith("overdue") ? ("danger" as const) : ("neutral" as const)),
+    []
+  );
+  const agingDrilldownCards = useMemo(
+    () => mapArAgingBucketsToCards(agingBuckets),
+    [agingBuckets]
+  );
+  const handleSetActiveTab = useCallback((id: FinanceArTabId) => {
+    setActiveTab(id);
+  }, []);
   const filtersActive = !isDefaultFinanceArUiFilters(appliedFilters);
 
   const filterStatus = useMemo(
@@ -1007,10 +1052,10 @@ export function FinanceAccountsReceivablePage() {
         <div className="p-5">
           <FinanceAgingBucketDrilldownSection
             module="ar"
-            cards={mapArAgingBucketsToCards(data?.agingBuckets ?? [])}
+            cards={agingDrilldownCards}
             filters={appliedFilters}
             loadingCards={loading && !data}
-            cardTone={(key) => (key.startsWith("overdue") ? "danger" : "neutral")}
+            cardTone={agingCardTone}
           />
         </div>
       </section>
@@ -1026,37 +1071,31 @@ export function FinanceAccountsReceivablePage() {
           </>
         ) : (
           <>
-            <FinanceArAgingChart buckets={data?.agingBuckets ?? []} />
-            <FinanceArTopDebtorsChart rows={data?.topDebtors ?? []} />
+            <FinanceArAgingChart buckets={agingBuckets} />
+            <FinanceArTopDebtorsChart rows={topDebtors} />
             <FinanceArPortfolioMixChart
               openAmount={cards?.totalOpenAmount ?? 0}
               receivedAmount={cards?.totalReceivedAmount ?? 0}
             />
-            <FinanceArMonthlyScheduleChart rows={data?.monthlyDueSchedule ?? []} />
+            <FinanceArMonthlyScheduleChart rows={monthlyDueSchedule} />
           </>
         )}
       </div>
-      {!loading && data?.scheduleBuckets?.length ? (
-        <FinanceArScheduleBucketsChart
-          buckets={data.scheduleBuckets.map((b) => ({
-            label: b.label,
-            amount: b.amount,
-            count: b.count,
-          }))}
-        />
+      {!loading && scheduleBucketChartRows?.length ? (
+        <FinanceArScheduleBucketsChart buckets={scheduleBucketChartRows} />
       ) : null}
 
       {/* ─── ACTION CENTER + HIGHLIGHT TABLE ─── */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <FinanceArActionCenter
-          criticalTitles={data?.criticalTitles ?? []}
-          qualityAlerts={data?.dataQualitySummary ?? []}
-          topDebtors={data?.topDebtors ?? []}
+          criticalTitles={criticalTitles}
+          qualityAlerts={qualityAlerts}
+          topDebtors={topDebtors}
           cards={cards}
           loading={loading && !data}
         />
         <FinanceArHighlightTable
-          rows={data?.criticalTitles ?? []}
+          rows={criticalTitles}
           loading={loading && !data}
           onViewAll={() => setPageView("titles-analytical")}
         />
@@ -1082,7 +1121,7 @@ export function FinanceAccountsReceivablePage() {
           <FinanceDetailTabs
             tabs={FINANCE_AR_TABS}
             activeId={activeTab}
-            onChange={(id) => setActiveTab(id)}
+            onChange={handleSetActiveTab}
           />
           <div role="tabpanel" aria-label={FINANCE_AR_TABS.find((t) => t.id === activeTab)?.label}>
             {activeTab === "aging" ? (
@@ -1128,7 +1167,7 @@ export function FinanceAccountsReceivablePage() {
             ) : null}
             {activeTab === "audit" ? (
               <FinanceArAuditTab
-                alerts={data?.dataQualitySummary ?? []}
+                alerts={qualityAlerts}
                 dataSanitization={data?.dataSanitization}
                 appliedFiltersLabel={appliedFilterChips.map((c) => c.label).join(" · ")}
                 onViewTitles={handleViewTitlesFromAlert}
@@ -1144,7 +1183,10 @@ export function FinanceAccountsReceivablePage() {
 
       <FinanceAccountsReceivableSyncPanel
         canRun={canRunSync}
-        onSyncFinished={() => void loadDashboard()}
+        onSyncFinished={() => {
+          invalidateUiSessionGetCache("/api/finance/accounts-receivable/");
+          void loadDashboard();
+        }}
         defaultExpanded={false}
       />
     </FinanceBiDashboardShell>

@@ -18,6 +18,7 @@ import {
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { fetchJsonOk } from "@/src/lib/http";
+import { invalidateUiSessionGetCache } from "@/src/lib/uiSessionGetCache";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   buildFinanceApDashboardQuery,
@@ -33,6 +34,7 @@ import {
   FINANCE_AP_EXECUTIVE_TABS,
   FINANCE_AP_SECONDARY_TABS,
   normalizeFinanceApUiFilters,
+  type FinanceApAgingBucket,
   type FinanceApCriticalTitle,
   type FinanceApDashboardPayload,
   type FinanceApDataQualityAlertItem,
@@ -40,8 +42,14 @@ import {
   type FinanceApExecutiveTabId,
   type FinanceApPurchaseOrderScheduleAudit,
   type FinanceApSecondaryTabId,
+  type FinanceApTopDebtor,
   type FinanceApUiFilters,
 } from "@/src/lib/financeAccountsPayableDashboardTypes";
+
+const EMPTY_AP_AGING_BUCKETS: FinanceApAgingBucket[] = [];
+const EMPTY_AP_TOP_SUPPLIERS: FinanceApTopDebtor[] = [];
+const EMPTY_AP_CRITICAL_TITLES: FinanceApCriticalTitle[] = [];
+const EMPTY_AP_QUALITY_ALERTS: FinanceApDataQualityAlertItem[] = [];
 import {
   parseFinanceApTitlesLocalFilter,
   type FinanceApTitlesLocalFilter,
@@ -615,6 +623,18 @@ export function FinanceAccountsPayablePage() {
   };
 
   const cards = data?.cards;
+  const agingBuckets = data?.agingBuckets ?? EMPTY_AP_AGING_BUCKETS;
+  const topSuppliers = data?.topSuppliers ?? EMPTY_AP_TOP_SUPPLIERS;
+  const criticalTitles = data?.criticalTitles ?? EMPTY_AP_CRITICAL_TITLES;
+  const qualityAlerts = data?.dataQualitySummary ?? EMPTY_AP_QUALITY_ALERTS;
+  const agingDrilldownCards = useMemo(
+    () => mapApAgingBucketsToCards(agingBuckets),
+    [agingBuckets]
+  );
+  const agingCardTone = useCallback(
+    (key: string) => (key.startsWith("overdue") ? ("danger" as const) : ("neutral" as const)),
+    []
+  );
   const filtersActive = !isDefaultFinanceApUiFilters(appliedFilters);
 
   const filterStatus = useMemo(
@@ -732,7 +752,10 @@ export function FinanceAccountsPayablePage() {
           </h3>
           <FinanceAccountsPayableSyncPanel
             canRun={canRunSync}
-            onSyncFinished={() => void loadDashboard()}
+            onSyncFinished={() => {
+              invalidateUiSessionGetCache("/api/finance/accounts-payable/");
+              void loadDashboard();
+            }}
             embedded
           />
         </div>
@@ -1064,10 +1087,10 @@ export function FinanceAccountsPayablePage() {
         <div className="p-5">
           <FinanceAgingBucketDrilldownSection
             module="ap"
-            cards={mapApAgingBucketsToCards(data?.agingBuckets ?? [])}
+            cards={agingDrilldownCards}
             filters={appliedFilters}
             loadingCards={loading && !data}
-            cardTone={(key) => (key.startsWith("overdue") ? "danger" : "neutral")}
+            cardTone={agingCardTone}
           />
         </div>
       </section>
@@ -1080,21 +1103,21 @@ export function FinanceAccountsPayablePage() {
           </>
         ) : (
           <>
-            <FinanceApAgingChart buckets={data?.agingBuckets ?? []} />
-            <FinanceApTopDebtorsChart rows={data?.topSuppliers ?? []} />
+            <FinanceApAgingChart buckets={agingBuckets} />
+            <FinanceApTopDebtorsChart rows={topSuppliers} />
           </>
         )}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <FinanceApActionCenter
-          criticalTitles={data?.criticalTitles ?? []}
-          qualityAlerts={data?.dataQualitySummary ?? []}
+          criticalTitles={criticalTitles}
+          qualityAlerts={qualityAlerts}
           purchaseOrderAudit={data?.purchaseOrderScheduleAudit}
           loading={loading && !data}
         />
         <FinanceApHighlightTable
-          rows={data?.criticalTitles ?? []}
+          rows={criticalTitles}
           loading={loading && !data}
           onViewAll={() => setExecutiveTab("titles")}
         />
@@ -1144,7 +1167,7 @@ export function FinanceAccountsPayablePage() {
           ) : null}
           {executiveTab === "audit" ? (
             <FinanceApAuditTab
-              alerts={data?.dataQualitySummary ?? []}
+              alerts={qualityAlerts}
               dataSanitization={data?.dataSanitization}
               purchaseOrderAudit={data?.purchaseOrderScheduleAudit}
               appliedFiltersLabel={appliedFilterChips.map((c) => c.label).join(" · ")}

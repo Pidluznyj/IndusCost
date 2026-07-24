@@ -8,6 +8,7 @@ import {
   FinanceCostCenterSortableTh,
 } from "@/src/components/finance/cost-centers/FinanceCostCenterGridKit";
 import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import {
   buildDueRadarQuery,
   dailyRadarDayCardLabel,
@@ -271,6 +272,7 @@ export function FinanceDueRadar({
 }) {
   const copy = DUE_RADAR_COPY[mode];
   const sectionRef = useRef<HTMLElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [visible, setVisible] = useState(false);
   const [payload, setPayload] = useState<DueRadarPayload | null>(null);
   const [loading, setLoading] = useState(false);
@@ -307,6 +309,9 @@ export function FinanceDueRadar({
 
   const load = useCallback(async () => {
     if (!visible) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
@@ -319,18 +324,24 @@ export function FinanceDueRadar({
         page,
         pageSize,
       });
-      const data = await fetchJsonOk<DueRadarPayload>(buildDueRadarApiUrl(mode, dashboardQuery, radarQs));
+      const url = buildDueRadarApiUrl(mode, dashboardQuery, radarQs);
+      const data = await fetchUiSessionCachedJson<DueRadarPayload>(url, {
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
       setPayload(data);
     } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setPayload(null);
       setError(e instanceof Error ? e.message : "Não foi possível carregar o radar.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [visible, mode, dashboardQuery, selectedRange, selectedDay, search, sort, page, pageSize]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
 
   useEffect(() => {

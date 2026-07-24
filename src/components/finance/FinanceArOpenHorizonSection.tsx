@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { memo, useCallback, useMemo } from "react";
 import type {
   AccountsReceivableOpenHorizon,
 } from "@/src/lib/financeAccountsReceivableHorizon";
@@ -10,6 +10,9 @@ import { FinanceArHorizonExportButtons } from "@/src/components/finance/FinanceA
 import { createDefaultFinanceArUiFilters } from "@/src/lib/financeAccountsReceivableDashboardTypes";
 import { FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE } from "@/src/lib/financeAccountsReceivableHorizon";
 import type { FinanceAgingBucketCardSource } from "@/src/lib/financeAgingBucketDrilldownTypes";
+
+/** Filtros neutros estáveis para drilldown do horizonte (não recriar a cada render). */
+const HORIZON_DRILLDOWN_FILTERS = createDefaultFinanceArUiFilters();
 
 function HorizonDistributionBar({
   segments,
@@ -37,13 +40,18 @@ function HorizonDistributionBar({
   );
 }
 
-export function FinanceArOpenHorizonSection({
+export const FinanceArOpenHorizonSection = memo(function FinanceArOpenHorizonSection({
   horizon,
   loading = false,
 }: {
   horizon: AccountsReceivableOpenHorizon | null | undefined;
   loading?: boolean;
 }) {
+  const cardTone = useCallback(
+    (key: string) => (key === "overdue" ? ("danger" as const) : ("neutral" as const)),
+    []
+  );
+
   const cards = useMemo((): FinanceAgingBucketCardSource[] => {
     if (!horizon) return [];
     return [horizon.overdue, ...horizon.buckets, horizon.total60].map((bucket) => ({
@@ -112,15 +120,15 @@ export function FinanceArOpenHorizonSection({
         <FinanceAgingBucketDrilldownSection
           module="ar"
           cards={cards}
-          filters={createDefaultFinanceArUiFilters()}
+          filters={HORIZON_DRILLDOWN_FILTERS}
           horizonMode
           horizonDrilldownNote={FINANCE_AR_OPEN_HORIZON_DRILLDOWN_SCOPE_NOTE}
           loadingCards={loading && !horizon}
-          cardTone={(key) => (key === "overdue" ? "danger" : "neutral")}
+          cardTone={cardTone}
         />
 
         {horizon ? <HorizonDistributionBar segments={distributionSegments} /> : null}
       </div>
     </section>
   );
-}
+});

@@ -3,7 +3,7 @@ import "./sales-order-detail-print.css";
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, ExternalLink, Loader2, Printer, X } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { cn } from "@/src/lib/utils";
 import { triggerBrowserPrint } from "@/src/lib/usePrintDocument";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -66,8 +66,10 @@ export function SalesOrderDetailDialog({
     setLoading(true);
     setError(null);
     setActiveTab("geral");
-    fetchJsonOk<SalesOrderDetailResponse>(getSalesOrderDetailUrl(salesOrderId), {
+    const url = getSalesOrderDetailUrl(salesOrderId);
+    void fetchUiSessionCachedJson<SalesOrderDetailResponse>(url, {
       signal: ac.signal,
+      ttlMs: 30_000,
     })
       .then((data) => {
         if (ac.signal.aborted) return;

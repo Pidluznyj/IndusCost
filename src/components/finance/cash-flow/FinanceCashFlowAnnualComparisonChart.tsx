@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { fetchJsonOk } from "@/src/lib/http";
+import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import {
   annualComparisonHasChartData,
@@ -18,33 +18,45 @@ import { FinanceBiEmptyState } from "@/src/components/finance/bi/FinanceBiEmptyS
 import { financeBiCardClass } from "@/src/lib/financeBiDashboardTheme";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { MetricCardGrid } from "@/src/components/ui/MetricCardGrid";
+import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 
 /**
  * Gráfico anual independente dos filtros da página — busca endpoint dedicado.
+ * Carrega só quando a seção entra na viewport (abaixo da dobra).
  */
 export function FinanceCashFlowAnnualComparisonChart() {
+  const { ref: sectionRef, visible } = useSectionVisible<HTMLDivElement>();
+  const abortRef = useRef<AbortController | null>(null);
   const [payload, setPayload] = useState<FinanceCashFlowAnnualComparisonPayload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!visible) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchJsonOk<FinanceCashFlowAnnualComparisonPayload>(
-        "/api/finance/cash-flow/annual-comparison"
+      const data = await fetchUiSessionCachedJson<FinanceCashFlowAnnualComparisonPayload>(
+        "/api/finance/cash-flow/annual-comparison",
+        { signal: controller.signal }
       );
+      if (controller.signal.aborted) return;
       setPayload(data);
     } catch (e: unknown) {
-      setError(buildFinanceTabLoadError(e, "Não foi possível carregar o fluxo anual."));
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setError(buildFinanceTabLoadError("Não foi possível carregar o fluxo anual.", e));
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
     void load();
+    return () => abortRef.current?.abort();
   }, [load]);
 
   const chartData = useMemo(
@@ -61,9 +73,10 @@ export function FinanceCashFlowAnnualComparisonChart() {
   const subtitle =
     "Mesma base do fluxo de caixa planejado. Entradas mostram Recebido + A Receber; Saídas mostram Pago + A Pagar; o saldo é a diferença mensal.";
 
-  if (loading && !payload) {
+  if (!visible || (loading && !payload)) {
     return (
       <div
+        ref={sectionRef}
         className={`${financeBiCardClass} flex min-h-[420px] items-center justify-center gap-2 p-8 text-sm text-[#6B7280]`}
         data-testid="cash-flow-annual-comparison-loading"
       >
@@ -76,6 +89,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
   if (error) {
     return (
       <div
+        ref={sectionRef}
         className={`${financeBiCardClass} space-y-3 p-5`}
         data-testid="cash-flow-annual-comparison-error"
       >
@@ -94,10 +108,12 @@ export function FinanceCashFlowAnnualComparisonChart() {
 
   if (empty) {
     return (
-      <FinanceBiEmptyState
-        title={title}
-        description="Sem movimentações Nomus para montar o fluxo anual."
-      />
+      <div ref={sectionRef}>
+        <FinanceBiEmptyState
+          title={title}
+          description="Sem movimentações Nomus para montar o fluxo anual."
+        />
+      </div>
     );
   }
 
@@ -105,6 +121,7 @@ export function FinanceCashFlowAnnualComparisonChart() {
 
   return (
     <div
+      ref={sectionRef}
       data-testid="cash-flow-annual-comparison"
       className={`${financeBiCardClass} p-5 space-y-3 flex flex-col`}
     >
