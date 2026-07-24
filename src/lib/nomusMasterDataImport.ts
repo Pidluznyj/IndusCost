@@ -16,6 +16,11 @@
 import { prisma } from "@/src/lib/prisma";
 import { normalizeSku } from "@/src/lib/nomusBomComparison";
 import {
+  loadCatalogEntityLookupMaps,
+  materialBlocksProductMutation,
+  resolveCatalogEntityByCode,
+} from "@/src/lib/nomusCatalogEntityResolve";
+import {
   cleanNomusDescription,
   classificationLabelFor,
   isAssemblyLocalCode,
@@ -791,6 +796,23 @@ export async function applyNomusMasterDataImport(
 
     try {
       if (payload.kind === "PRODUCT") {
+        // Precedência Material: nunca criar Product se Material.code já existe.
+        const catalog = resolveCatalogEntityByCode(
+          payload.sku,
+          await loadCatalogEntityLookupMaps(prisma, [payload.sku])
+        );
+        if (materialBlocksProductMutation(catalog)) {
+          skippedExisting += 1;
+          report.push({
+            code: item.code,
+            description: item.description,
+            kind: "PRODUCT",
+            outcome: "SKIPPED_EXISTING",
+            message: catalog.message,
+            createdId: catalog.materialId,
+          });
+          continue;
+        }
         // Idempotência: verifica novamente antes de criar.
         const existing = await prisma.product.findFirst({
           where: { sku: { in: [payload.sku, normalizeSku(payload.sku)] } },

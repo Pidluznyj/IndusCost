@@ -14,10 +14,9 @@ import {
   getParentStageSnapshotMeta,
 } from "@/src/lib/nomusBomComponentStageSnapshot";
 import {
-  isRegistryActiveStatus,
-  pickRegistryRecordForAutoResolve,
-  resolveRegistryPairForComponentCode,
-} from "@/src/lib/nomusComponentRegistryResolve";
+  loadCatalogEntityLookupMaps,
+  resolveCatalogEntityByCode,
+} from "@/src/lib/nomusCatalogEntityResolve";
 import { parseLinkedPreferredExternalLineId } from "@/src/lib/nomusPreferredAlternativeLink";
 
 export function stageRowToNomusLine(row: {
@@ -260,72 +259,51 @@ export async function resolveNomusComponentCodes(
   const uniqueCodes = [...new Set(componentCodes.map((c) => c.trim()).filter(Boolean))];
   if (uniqueCodes.length === 0) return [];
 
-  const normalizedSet = new Set(uniqueCodes.map((c) => normalizeSku(c)));
-  const lookupValues = [...new Set([...uniqueCodes, ...normalizedSet])];
-
-  const [products, materials] = await Promise.all([
-    prisma.product.findMany({
-      where: { sku: { in: lookupValues } },
-      select: { id: true, sku: true, status: true },
-    }),
-    prisma.material.findMany({
-      where: { code: { in: lookupValues } },
-      select: { id: true, code: true, status: true },
-    }),
-  ]);
-
-  const productsBySku = new Map<string, typeof products>();
-  for (const product of products) {
-    const key = normalizeSku(product.sku);
-    const list = productsBySku.get(key) ?? [];
-    list.push(product);
-    productsBySku.set(key, list);
-  }
-
-  const materialsByCode = new Map<string, typeof materials>();
-  for (const material of materials) {
-    const key = normalizeSku(material.code);
-    const list = materialsByCode.get(key) ?? [];
-    list.push(material);
-    materialsByCode.set(key, list);
-  }
+  const maps = await loadCatalogEntityLookupMaps(prisma, uniqueCodes);
 
   return uniqueCodes.map((componentCode) => {
-    const key = normalizeSku(componentCode);
-    const productCandidates = productsBySku.get(key) ?? [];
-    const materialCandidates = materialsByCode.get(key) ?? [];
-
-    const product = pickRegistryRecordForAutoResolve({
-      records: productCandidates,
-      isActive: (r) => isRegistryActiveStatus(r.status),
-    });
-    const material = pickRegistryRecordForAutoResolve({
-      records: materialCandidates,
-      isActive: (r) => isRegistryActiveStatus(r.status),
-    });
-
-    const inactiveProductIds = productCandidates
-      .filter((r) => !isRegistryActiveStatus(r.status))
-      .map((r) => r.id);
-    const inactiveMaterialIds = materialCandidates
-      .filter((r) => !isRegistryActiveStatus(r.status))
-      .map((r) => r.id);
-
-    const resolved = resolveRegistryPairForComponentCode({
-      componentCode,
-      product,
-      material,
-      inactiveProductIds,
-      inactiveMaterialIds,
-    });
-
+    const r = resolveCatalogEntityByCode(componentCode, maps);
+    if (r.status === "material") {
+      const conflicting =
+        r.conflictingProductIds[0] ?? r.componentProductId ?? r.finishedProductId ?? null;
+      return {
+        componentCode,
+        productId: conflicting,
+        materialId: r.materialId,
+        resolvedKind: r.hasHistoricalConflict ? ("BOTH" as const) : ("MATERIAL" as const),
+        inactiveProductIds: [],
+        inactiveMaterialIds: [],
+      };
+    }
+    if (r.status === "material_inactive") {
+      const productId = r.componentProductId ?? r.finishedProductId ?? null;
+      return {
+        componentCode,
+        productId,
+        materialId: null,
+        resolvedKind: productId ? ("PRODUCT" as const) : ("NONE" as const),
+        inactiveProductIds: [],
+        inactiveMaterialIds: r.materialIds,
+      };
+    }
+    if (r.status === "component" || r.status === "product") {
+      const productId = r.componentProductId ?? r.finishedProductId;
+      return {
+        componentCode,
+        productId,
+        materialId: null,
+        resolvedKind: "PRODUCT" as const,
+        inactiveProductIds: [],
+        inactiveMaterialIds: [],
+      };
+    }
     return {
       componentCode,
-      productId: resolved.productId,
-      materialId: resolved.materialId,
-      resolvedKind: resolved.resolvedKind,
-      inactiveProductIds,
-      inactiveMaterialIds,
+      productId: null,
+      materialId: null,
+      resolvedKind: "NONE" as const,
+      inactiveProductIds: [],
+      inactiveMaterialIds: [],
     };
   });
 }

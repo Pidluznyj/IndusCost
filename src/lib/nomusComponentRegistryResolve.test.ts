@@ -62,13 +62,30 @@ describe("nomusComponentRegistryResolve", () => {
     assert.equal(prefersMaterialForNomusComponent("420.01A"), false);
   });
 
-  it("pickNomusApplyRegistryLink — BOTH ambíguo sem allowlist bloqueia", () => {
+  it("pickNomusApplyRegistryLink — BOTH usa Material por precedência global (sem allowlist)", () => {
     const r = pickNomusApplyRegistryLink({
       componentCode: "X.00",
       resolvedKind: "BOTH",
       productId: "p",
       materialId: "m",
     });
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.materialId, "m");
+      assert.equal(r.childProductId, null);
+      assert.equal(r.resolvedKind, "MATERIAL");
+    }
+  });
+
+  it("pickNomusApplyRegistryLink — Material inativo bloqueia revisão", () => {
+    const r = pickNomusApplyRegistryLink({
+      componentCode: "160.08--",
+      resolvedKind: "NONE",
+      productId: null,
+      materialId: null,
+      inactiveMaterialIds: ["mat-inactive"],
+    });
     assert.equal(r.ok, false);
+    if (!r.ok) assert.match(r.reason, /MATERIAL_INACTIVE/);
   });
 });

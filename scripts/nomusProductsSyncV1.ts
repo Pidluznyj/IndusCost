@@ -9,6 +9,12 @@ import {
   type NomusEligibleProduct as EligibleProduct,
   type NomusProductsMapDiagnostics as ProductsDiagnostics,
 } from "../src/lib/nomusProductsSyncMap.ts";
+import {
+  loadCatalogEntityLookupMaps,
+  materialBlocksProductMutation,
+  resolveCatalogEntityByCode,
+} from "../src/lib/nomusCatalogEntityResolve.ts";
+import { normalizeSku } from "../src/lib/nomusBomComparison.ts";
 
 const prisma = new PrismaClient();
 
@@ -161,6 +167,19 @@ async function runDry(eligible: EligibleProduct[]) {
     select: { id: true, sku: true, name: true, description: true, type: true },
   });
   const bySku = new Map(existing.map((p) => [p.sku, p]));
+  const catalogMaps = await loadCatalogEntityLookupMaps(
+    prisma,
+    eligible.map((p) => p.sku)
+  );
+  let recognizedAsMaterial = 0;
+  let inactiveMaterialsBlocked = 0;
+  let historicalClassificationConflicts = 0;
+  const materialPrecedencePreview: Array<{
+    sku: string;
+    materialId: string | null;
+    decision: string;
+    message: string;
+  }> = [];
   const createsPreview: Array<{
     externalId: number;
     sku: string;
@@ -238,6 +257,19 @@ async function runDry(eligible: EligibleProduct[]) {
     nomusTypeName: string | null;
   }> = [];
   for (const p of eligible) {
+    const resolution = resolveCatalogEntityByCode(p.sku, catalogMaps);
+    if (materialBlocksProductMutation(resolution)) {
+      if (resolution.status === "material_inactive") inactiveMaterialsBlocked += 1;
+      else recognizedAsMaterial += 1;
+      if (resolution.hasHistoricalConflict) historicalClassificationConflicts += 1;
+      materialPrecedencePreview.push({
+        sku: p.sku,
+        materialId: resolution.materialId,
+        decision: resolution.importDecision,
+        message: resolution.message,
+      });
+      continue;
+    }
     const current = bySku.get(p.sku);
     if (!current) {
       createCount += 1;
@@ -356,6 +388,10 @@ async function runDry(eligible: EligibleProduct[]) {
     createsUsingDescriptionAsNameCount,
     updatesPreservingExistingNameCount,
     updatesChangingNameCount,
+    recognizedAsMaterial,
+    inactiveMaterialsBlocked,
+    historicalClassificationConflicts,
+    materialPrecedencePreview: materialPrecedencePreview.slice(0, 50),
     createsUsingSkuAsNamePreview,
     nameChangesPreview,
     createsPreview: createsPreview.slice(0, 50),
@@ -363,11 +399,55 @@ async function runDry(eligible: EligibleProduct[]) {
   };
 }
 
-async function runApply(eligible: EligibleProduct[]): Promise<{ created: number; updated: number }> {
+async function runApply(eligible: EligibleProduct[]): Promise<{
+  created: number;
+  updated: number;
+  recognizedAsMaterial: number;
+  inactiveMaterialsBlocked: number;
+  historicalClassificationConflicts: number;
+  materialPrecedenceSkipped: Array<{
+    sku: string;
+    materialId: string | null;
+    decision: string;
+    message: string;
+  }>;
+}> {
   let created = 0;
   let updated = 0;
+  let recognizedAsMaterial = 0;
+  let inactiveMaterialsBlocked = 0;
+  let historicalClassificationConflicts = 0;
+  const materialPrecedenceSkipped: Array<{
+    sku: string;
+    materialId: string | null;
+    decision: string;
+    message: string;
+  }> = [];
+
+  const maps = await loadCatalogEntityLookupMaps(
+    prisma,
+    eligible.map((p) => p.sku)
+  );
+
   for (const p of eligible) {
-    const current = await prisma.product.findUnique({ where: { sku: p.sku }, select: { id: true, type: true, name: true } });
+    const resolution = resolveCatalogEntityByCode(p.sku, maps);
+    if (materialBlocksProductMutation(resolution)) {
+      if (resolution.status === "material_inactive") inactiveMaterialsBlocked += 1;
+      else recognizedAsMaterial += 1;
+      if (resolution.hasHistoricalConflict) historicalClassificationConflicts += 1;
+      materialPrecedenceSkipped.push({
+        sku: p.sku,
+        materialId: resolution.materialId,
+        decision: resolution.importDecision,
+        message: resolution.message,
+      });
+      continue;
+    }
+
+    const current = await prisma.product.findFirst({
+      where: { sku: { in: [p.sku, normalizeSku(p.sku)] } },
+      select: { id: true, type: true, name: true },
+    });
     const baseData = {
       description: p.description,
       status: "ACTIVE" as const,
@@ -382,18 +462,57 @@ async function runApply(eligible: EligibleProduct[]): Promise<{ created: number;
       await prisma.product.update({ where: { id: current.id }, data });
       updated += 1;
     } else {
-      await prisma.product.create({
-        data: {
-          ...baseData,
+      // Gate final: Material pode ter sido criado entre preview/lote e create.
+      const again = resolveCatalogEntityByCode(
+        p.sku,
+        await loadCatalogEntityLookupMaps(prisma, [p.sku])
+      );
+      if (materialBlocksProductMutation(again)) {
+        if (again.status === "material_inactive") inactiveMaterialsBlocked += 1;
+        else recognizedAsMaterial += 1;
+        if (again.hasHistoricalConflict) historicalClassificationConflicts += 1;
+        materialPrecedenceSkipped.push({
           sku: p.sku,
-          name: p.chosenName,
-          type: p.type,
-        },
-      });
-      created += 1;
+          materialId: again.materialId,
+          decision: again.importDecision,
+          message: again.message,
+        });
+        continue;
+      }
+      try {
+        await prisma.product.create({
+          data: {
+            ...baseData,
+            sku: p.sku,
+            name: p.chosenName,
+            type: p.type,
+          },
+        });
+        created += 1;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/unique|Unique constraint/i.test(msg)) {
+          materialPrecedenceSkipped.push({
+            sku: p.sku,
+            materialId: null,
+            decision: "UNIQUE_CONFLICT",
+            message: `Create ignorado por unique constraint: ${msg}`,
+          });
+          continue;
+        }
+        throw err;
+      }
     }
   }
-  return { created, updated };
+
+  return {
+    created,
+    updated,
+    recognizedAsMaterial,
+    inactiveMaterialsBlocked,
+    historicalClassificationConflicts,
+    materialPrecedenceSkipped,
+  };
 }
 
 async function main(): Promise<void> {
@@ -435,6 +554,10 @@ async function main(): Promise<void> {
           createCount: dry.createCount,
           updateCount: dry.updateCount,
           noChangeCount: dry.noChangeCount,
+          recognizedAsMaterial: dry.recognizedAsMaterial,
+          inactiveMaterialsBlocked: dry.inactiveMaterialsBlocked,
+          historicalClassificationConflicts: dry.historicalClassificationConflicts,
+          materialPrecedencePreview: dry.materialPrecedencePreview,
           nameChangeCount: dry.nameChangeCount,
           descriptionChangeCount: dry.descriptionChangeCount,
           createProductCount: dry.createProductCount,

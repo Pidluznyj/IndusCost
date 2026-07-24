@@ -121,17 +121,22 @@ describe("nomusRegistryAmbiguityResolution", () => {
 });
 
 describe("pickNomusApplyRegistryLink (ambiguidade)", () => {
-  it("BOTH sem allowlist → bloqueia", () => {
+  it("BOTH sem allowlist → Material por precedência global", () => {
     const r = pickNomusApplyRegistryLink({
       componentCode: "999.99X",
       resolvedKind: "BOTH",
       productId: "p1",
       materialId: "m1",
     });
-    assert.equal(r.ok, false);
+    assert.equal(r.ok, true);
+    if (r.ok) {
+      assert.equal(r.resolvedKind, "MATERIAL");
+      assert.equal(r.materialId, "m1");
+      assert.equal(r.childProductId, null);
+    }
   });
 
-  it("BOTH com allowlist → Material", () => {
+  it("BOTH com allowlist → Material (compatibilidade)", () => {
     assert.equal(prefersMaterialForNomusComponent("420.01A-"), true);
     const r = pickNomusApplyRegistryLink({
       componentCode: "420.01A-",
@@ -147,7 +152,7 @@ describe("pickNomusApplyRegistryLink (ambiguidade)", () => {
     }
   });
 
-  it("PRODUCT + Material inativo + allowlist → bloqueia até resolução", () => {
+  it("PRODUCT + Material inativo → bloqueia revisão (não usa Product)", () => {
     const r = pickNomusApplyRegistryLink({
       componentCode: "420.01A-",
       resolvedKind: "PRODUCT",
@@ -156,7 +161,7 @@ describe("pickNomusApplyRegistryLink (ambiguidade)", () => {
       inactiveMaterialIds: ["m-inactive"],
     });
     assert.equal(r.ok, false);
-    if (!r.ok) assert.match(r.reason, /resolução de ambiguidade/i);
+    if (!r.ok) assert.match(r.reason, /MATERIAL_INACTIVE/i);
   });
 
   it("após registerPreferMaterial + Material ativo em BOTH → Material", () => {

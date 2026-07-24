@@ -1,6 +1,11 @@
 import { normalizeSku } from "@/src/lib/nomusBomComparison";
 
-/** SKUs com resolução automática Product+Material → Material (regra de engenharia validada). */
+/**
+ * Allowlist histórica (compatibilidade / UI de ambiguidade).
+ * A fonte oficial de precedência Material é `resolveCatalogEntityByCode` /
+ * `pickNomusApplyRegistryLink` (match exato via normalizeSku) — códigos fora
+ * desta lista também usam Material quando houver correspondência.
+ */
 export const NOMUS_PREFER_MATERIAL_COMPONENT_CODES = new Set([normalizeSku("420.01A-")]);
 
 export function isRegistryActiveStatus(status: string | null | undefined): boolean {
@@ -40,19 +45,40 @@ export type NomusApplyRegistryLinkResult =
     };
 
 /**
- * Escolha de vínculo ProductBOM no apply Nomus — não decide às cegas em BOTH.
- * Requer allowlist PREFER_MATERIAL ou cadastro único ativo.
+ * Escolha de vínculo ProductBOM no apply Nomus.
+ *
+ * Política global (2026): Material ativo com match exato (normalizeSku) tem precedência
+ * sobre Product — inclusive em BOTH. Allowlist PREFER_MATERIAL permanece como
+ * compatibilidade histórica, mas não é mais pré-requisito para usar Material.
+ *
+ * Material inativo (mesmo com Product ativo) bloqueia a linha para revisão.
  */
 export function pickNomusApplyRegistryLink(
   input: NomusApplyRegistryLinkInput
 ): NomusApplyRegistryLinkResult {
-  const code = normalizeSku(input.componentCode);
-  const preferMaterial = prefersMaterialForNomusComponent(code);
   const inactiveMaterial = (input.inactiveMaterialIds ?? []).length > 0;
   const inactiveProduct = (input.inactiveProductIds ?? []).length > 0;
 
+  // Precedência: Material inativo impede create/link automático (revisão manual).
+  if (inactiveMaterial && !input.materialId) {
+    return {
+      ok: false,
+      reason:
+        "Matéria-prima inativa com o mesmo código — revisão manual necessária (MATERIAL_INACTIVE_REQUIRES_REVIEW).",
+    };
+  }
+
   if (input.resolvedKind === "NONE") {
     return { ok: false, reason: "Componente sem Material nem Product cadastrado." };
+  }
+
+  if (input.materialId && (input.resolvedKind === "MATERIAL" || input.resolvedKind === "BOTH")) {
+    return {
+      ok: true,
+      materialId: input.materialId,
+      childProductId: null,
+      resolvedKind: "MATERIAL",
+    };
   }
 
   if (input.resolvedKind === "MATERIAL" && input.materialId) {
@@ -65,42 +91,11 @@ export function pickNomusApplyRegistryLink(
   }
 
   if (input.resolvedKind === "PRODUCT" && input.productId) {
-    if (preferMaterial && inactiveMaterial) {
-      return {
-        ok: false,
-        reason:
-          "Material inativo com preferência MATERIAL — execute resolução de ambiguidade antes do apply.",
-      };
-    }
     return {
       ok: true,
       materialId: null,
       childProductId: input.productId,
       resolvedKind: "PRODUCT",
-    };
-  }
-
-  if (input.resolvedKind === "BOTH" && input.productId && input.materialId) {
-    if (preferMaterial) {
-      return {
-        ok: true,
-        materialId: input.materialId,
-        childProductId: null,
-        resolvedKind: "MATERIAL",
-      };
-    }
-    return {
-      ok: false,
-      reason:
-        "Código ambíguo (Product e Material ativos) — defina preferência MATERIAL ou PRODUCT (resolução de ambiguidade).",
-    };
-  }
-
-  if (input.resolvedKind === "BOTH" && inactiveMaterial && input.productId && preferMaterial) {
-    return {
-      ok: false,
-      reason:
-        "Material inativo com Product ativo e preferência MATERIAL — reative Material via resolução de ambiguidade.",
     };
   }
 

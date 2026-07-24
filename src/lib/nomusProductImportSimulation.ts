@@ -5,6 +5,11 @@ import { normalizeComponentCode, normalizeSku, toNumberSafe } from "@/src/lib/no
 import { buildEffectivePricingBomForParentCode } from "@/src/lib/nomusEffectivePricingBom";
 import type { EffectivePricingBomLine } from "@/src/lib/nomusEffectivePricingBomTypes";
 import { resolveNomusComponentCodes } from "@/src/lib/nomusBomComparisonLoad";
+import {
+  loadCatalogEntityLookupMaps,
+  materialBlocksProductMutation,
+  resolveCatalogEntityByCode,
+} from "@/src/lib/nomusCatalogEntityResolve";
 import type {
   NomusProductImportAmbiguousItem,
   NomusProductImportBomLinePlan,
@@ -82,6 +87,7 @@ function proposeComponentAction(params: {
   resolvedKind: "PRODUCT" | "MATERIAL" | "BOTH" | "NONE";
   productId: string | null;
   materialId: string | null;
+  inactiveMaterialIds?: string[];
   hasNomusSubBom: boolean;
   line: EffectivePricingBomLine;
 }): {
@@ -90,6 +96,7 @@ function proposeComponentAction(params: {
   ambiguous?: NomusProductImportAmbiguousItem;
 } {
   const { resolvedKind, productId, materialId, hasNomusSubBom, line } = params;
+  const inactiveMaterialIds = params.inactiveMaterialIds ?? [];
 
   if (line.decision === "BLOCKED" || !line.includedForPricing) {
     if (line.source?.includes("OPTIONAL") || line.decision === "BLOCKED") {
@@ -101,51 +108,56 @@ function proposeComponentAction(params: {
     return { action: "BLOCKED", reason: "Linha excluída da BOM efetiva de precificação." };
   }
 
-  if (resolvedKind === "PRODUCT" && productId) {
+  // Precedência global: Material inativo bloqueia create e vínculo automático.
+  if (inactiveMaterialIds.length > 0 && !materialId) {
     return {
-      action: "USE_EXISTING_PRODUCT",
-      reason: "Componente já cadastrado como Product no IndusCost.",
+      action: "MATERIAL_INACTIVE_REQUIRES_REVIEW",
+      reason: `${params.componentCode} — matéria-prima inativa impede criação de Product/COMPONENT e vínculo BOM automático.`,
     };
   }
 
   if (resolvedKind === "MATERIAL" && materialId) {
     return {
       action: "USE_EXISTING_MATERIAL",
-      reason: "Componente já cadastrado como Material no IndusCost.",
+      reason: "Componente já cadastrado como Material no IndusCost (precedência oficial).",
     };
   }
 
+  // BOTH: Material ativo tem precedência global (não exige allowlist).
   if (resolvedKind === "BOTH" && productId && materialId) {
-    const suggestedResolution: NomusProductImportAmbiguousItem["suggestedResolution"] =
-      hasNomusSubBom ? "PREFER_PRODUCT" : "PREFER_MATERIAL";
     const ambiguousBase: NomusProductImportAmbiguousItem = {
       componentCode: params.componentCode,
       productId,
       materialId,
-      reason: "Mesmo código em Product.sku e Material.code.",
-      suggestedResolution,
+      reason: "Mesmo código em Product.sku e Material.code — Material por precedência.",
+      suggestedResolution: "PREFER_MATERIAL",
+      resolutionMode: "PREFER_MATERIAL",
+      resolvedByRule: true,
     };
     if (
       canAutoResolveAmbiguityAsMaterial({
         componentCode: params.componentCode,
-        suggestedResolution,
+        suggestedResolution: "PREFER_MATERIAL",
       })
     ) {
       return {
         action: "USE_EXISTING_MATERIAL_BY_RULE",
         reason:
-          "Componente resolvido automaticamente como Material conforme regra de engenharia (PREFER_MATERIAL).",
-        ambiguous: {
-          ...ambiguousBase,
-          resolutionMode: "PREFER_MATERIAL",
-          resolvedByRule: true,
-        },
+          "Matéria-prima utilizada por precedência (allowlist histórica PREFER_MATERIAL). Product histórico não alterado.",
+        ambiguous: ambiguousBase,
       };
     }
     return {
-      action: "AMBIGUOUS_PRODUCT_AND_MATERIAL",
-      reason: "Mesmo código em Product.sku e Material.code — resolução manual ou regra Nomus apply.",
+      action: "HISTORICAL_CLASSIFICATION_CONFLICT",
+      reason: `${params.componentCode} — matéria-prima utilizada por precedência. Product histórico com o mesmo código não foi alterado.`,
       ambiguous: ambiguousBase,
+    };
+  }
+
+  if (resolvedKind === "PRODUCT" && productId) {
+    return {
+      action: "USE_EXISTING_PRODUCT",
+      reason: "Componente já cadastrado como Product no IndusCost.",
     };
   }
 
@@ -207,6 +219,7 @@ async function collectComponentActionsRecursive(params: {
       resolvedKind: res?.resolvedKind ?? "NONE",
       productId: res?.productId ?? null,
       materialId: res?.materialId ?? null,
+      inactiveMaterialIds: res?.inactiveMaterialIds ?? [],
       hasNomusSubBom,
       line,
     });
@@ -280,7 +293,8 @@ async function assessMissingCosts(
         .filter(
           (a) =>
             (a.proposedAction === "USE_EXISTING_MATERIAL" ||
-              a.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE") &&
+              a.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE" ||
+              a.proposedAction === "HISTORICAL_CLASSIFICATION_CONFLICT") &&
             a.materialId
         )
         .map((a) => a.materialId!)
@@ -470,16 +484,34 @@ function buildBomActions(
 
     switch (action.proposedAction) {
       case "USE_EXISTING_MATERIAL":
-        materialId = action.materialId;
-        break;
       case "USE_EXISTING_MATERIAL_BY_RULE":
+      case "HISTORICAL_CLASSIFICATION_CONFLICT":
         materialId = action.materialId;
         childProductId = null;
-        reason = "Resolvido como Material por regra PREFER_MATERIAL.";
+        reason =
+          action.proposedAction === "HISTORICAL_CLASSIFICATION_CONFLICT"
+            ? action.reason
+            : action.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE"
+              ? "Resolvido como Material por precedência / regra PREFER_MATERIAL."
+              : action.reason;
         break;
       case "USE_EXISTING_PRODUCT":
         childProductId = action.productId;
         break;
+      case "MATERIAL_INACTIVE_REQUIRES_REVIEW":
+        plans.push({
+          bomActionType: "BLOCKED_INACTIVE_MATERIAL",
+          componentCode: line.componentCode,
+          componentDescription: line.componentDescription,
+          quantity: line.quantity,
+          lossPercentage: 0,
+          materialId: null,
+          childProductId: null,
+          source: line.source,
+          willCreate: false,
+          reason: action.reason,
+        });
+        continue;
       case "CREATE_COMPONENT_PRODUCT_FROM_NOMUS":
       case "CREATE_PLACEHOLDER_COMPONENT_WITHOUT_COST":
         willCreate = true;
@@ -619,10 +651,30 @@ export async function buildNomusProductImportSimulationPreview(
 
   let productProposedAction: NomusProductImportActionType;
   let productReason: string;
+  const parentCatalog = existsInNomus
+    ? resolveCatalogEntityByCode(
+        trimmed,
+        await loadCatalogEntityLookupMaps(prisma, [trimmed, parentCode])
+      )
+    : null;
+
   if (!existsInNomus) {
     productProposedAction = "BLOCKED";
     productReason = "parentCode não encontrado no NomusBomComponentStage.";
     blockingReasons.push(productReason);
+  } else if (parentCatalog && materialBlocksProductMutation(parentCatalog)) {
+    // Precedência Material mesmo se já existir Product histórico com o mesmo código.
+    productProposedAction =
+      parentCatalog.status === "material_inactive"
+        ? "MATERIAL_INACTIVE_REQUIRES_REVIEW"
+        : parentCatalog.hasHistoricalConflict || existsInIndusCost
+          ? "HISTORICAL_CLASSIFICATION_CONFLICT"
+          : "USE_EXISTING_MATERIAL";
+    productReason = parentCatalog.message;
+    warnings.push(parentCatalog.message);
+    blockingReasons.push(
+      "Código do pai existe como Material — Product não será criado/atualizado (precedência de matéria-prima)."
+    );
   } else if (existsInIndusCost) {
     productProposedAction = "USE_EXISTING_PRODUCT";
     productReason = "Produto já cadastrado no IndusCost — não será recriado.";
@@ -760,9 +812,15 @@ export async function buildNomusProductImportSimulationPreview(
     blockingReasons.push("Ciclo detectado na árvore Nomus recursiva.");
   }
 
+  const parentBlockedByMaterialPrecedence =
+    productProposedAction === "USE_EXISTING_MATERIAL" ||
+    productProposedAction === "MATERIAL_INACTIVE_REQUIRES_REVIEW" ||
+    productProposedAction === "HISTORICAL_CLASSIFICATION_CONFLICT";
+
   const canImport =
     existsInNomus &&
     productProposedAction !== "BLOCKED" &&
+    !parentBlockedByMaterialPrecedence &&
     blockingReasons.filter((r) => r.includes("já possui BOM")).length === 0 &&
     optionalPendingItems.length === 0 &&
     !blockedAmbiguous &&
@@ -850,6 +908,13 @@ async function createProductFromNomus(params: {
   type: ItemType;
 }): Promise<CreatedProductRef> {
   const sku = normalizeSku(params.sku);
+  const resolution = resolveCatalogEntityByCode(
+    sku,
+    await loadCatalogEntityLookupMaps(prisma, [sku])
+  );
+  if (materialBlocksProductMutation(resolution)) {
+    throw new Error(resolution.message);
+  }
   const created = await prisma.product.create({
     data: {
       sku,
@@ -981,12 +1046,29 @@ export async function executeNomusProductImportSimulation(input: {
         action.componentDescription ??
         (await loadParentDescription(action.componentCode)) ??
         action.componentCode;
-      const created = await createProductFromNomus({
-        sku: action.componentCode,
-        name: desc,
-        description: desc,
-        type: "COMPONENT",
-      });
+      let created: CreatedProductRef;
+      try {
+        created = await createProductFromNomus({
+          sku: action.componentCode,
+          name: desc,
+          description: desc,
+          type: "COMPONENT",
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        warnings.push(message);
+        await prisma.nomusProductImportRunLine.create({
+          data: {
+            runId: run.id,
+            actionType: action.proposedAction,
+            componentCode: action.componentCode,
+            componentDescription: action.componentDescription,
+            status: "SKIPPED",
+            reason: message,
+          },
+        });
+        continue;
+      }
       skuToProductId.set(normalizeSku(created.sku), created.productId);
       importedProducts.push({ ...created, action: action.proposedAction });
       await prisma.nomusProductImportRunLine.create({
@@ -1005,7 +1087,9 @@ export async function executeNomusProductImportSimulation(input: {
       if (
         action.proposedAction === "USE_EXISTING_PRODUCT" ||
         action.proposedAction === "USE_EXISTING_MATERIAL" ||
-        action.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE"
+        action.proposedAction === "USE_EXISTING_MATERIAL_BY_RULE" ||
+        action.proposedAction === "HISTORICAL_CLASSIFICATION_CONFLICT" ||
+        action.proposedAction === "MATERIAL_INACTIVE_REQUIRES_REVIEW"
       ) {
         await prisma.nomusProductImportRunLine.create({
           data: {
@@ -1103,6 +1187,7 @@ export async function executeNomusProductImportSimulation(input: {
           resolvedKind: res?.resolvedKind ?? "NONE",
           productId: res?.productId ?? null,
           materialId: res?.materialId ?? null,
+          inactiveMaterialIds: res?.inactiveMaterialIds ?? [],
           hasNomusSubBom: hasSub,
           line,
         });

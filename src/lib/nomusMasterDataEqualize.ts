@@ -17,6 +17,11 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/src/lib/prisma";
 import { normalizeSku } from "@/src/lib/nomusBomComparison";
 import {
+  loadCatalogEntityLookupMaps,
+  materialBlocksProductMutation,
+  resolveCatalogEntityByCode,
+} from "@/src/lib/nomusCatalogEntityResolve";
+import {
   buildNomusMasterDataImportDiagnostic,
 } from "@/src/lib/nomusMasterDataImport";
 import {
@@ -480,7 +485,8 @@ function classifyRow(
     };
   }
 
-  // Caso: código existe em Product E Material (ambíguo).
+  // Caso: código existe em Product E Material — Material tem precedência;
+  // não criar/atualizar Product automaticamente; histórico fica para revisão.
   if (existingProduct && existingMaterial) {
     return {
       code: row.code,
@@ -492,9 +498,13 @@ function classifyRow(
       createPayload: null,
       fieldChanges: [],
       reason:
-        "Código existe simultaneamente como Product e Material — necessária decisão humana.",
-      blockers: ["Duplicidade Product/Material — revisar manualmente."],
-      warnings: [],
+        "Código existe como Material e como Product histórico. Precedência de matéria-prima: nenhum Product será criado ou atualizado automaticamente. Revisar conflito histórico manualmente.",
+      blockers: [
+        "Conflito histórico Product/Material — Material tem precedência; sem correção automática.",
+      ],
+      warnings: [
+        `${row.code} — matéria-prima utilizada por precedência. Product histórico não foi alterado.`,
+      ],
       isControlledByNomus: false,
       appearsInNomusStage: true,
     };
@@ -1167,6 +1177,22 @@ export async function applyNomusMasterDataEqualize(
             });
             break;
           }
+          const catalog = resolveCatalogEntityByCode(
+            payload.sku,
+            await loadCatalogEntityLookupMaps(prisma, [payload.sku])
+          );
+          if (materialBlocksProductMutation(catalog)) {
+            report.push({
+              code: row.code,
+              action: row.action,
+              target: row.target,
+              outcome: "SKIPPED",
+              message: catalog.message,
+              createdId: catalog.materialId,
+              fieldChangesApplied: [],
+            });
+            break;
+          }
           const existing = await prisma.product.findFirst({
             where: { sku: { in: [payload.sku, normalizeSku(payload.sku)] } },
             select: { id: true, sku: true },
@@ -1306,6 +1332,24 @@ export async function applyNomusMasterDataEqualize(
               fieldChangesApplied: [],
             });
             break;
+          }
+          {
+            const catalog = resolveCatalogEntityByCode(
+              row.code,
+              await loadCatalogEntityLookupMaps(prisma, [row.code])
+            );
+            if (materialBlocksProductMutation(catalog)) {
+              report.push({
+                code: row.code,
+                action: row.action,
+                target: row.target,
+                outcome: "SKIPPED",
+                message: catalog.message,
+                createdId: catalog.materialId,
+                fieldChangesApplied: [],
+              });
+              break;
+            }
           }
           // Backfill retroativo de histórico se ainda não houver entrada.
           await ensureNomusImportHistoryForProduct({
