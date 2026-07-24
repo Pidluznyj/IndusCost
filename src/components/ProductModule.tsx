@@ -1453,7 +1453,7 @@ export const ProductModule = () => {
               onClick={() => void handleBulkRefreshFrozenCostSnapshot()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-refresh-cost-snapshot"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-semibold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
               title="Recalcular o snapshot de custo dos itens selecionados (gera DRAFT, não publica)"
             >
               {snapshotBulkProgress ? (
@@ -1474,7 +1474,7 @@ export const ProductModule = () => {
               onClick={() => void handleBulkPublishProductionCostDrafts()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-publish-production-cost"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 text-sm font-semibold text-amber-900 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-100"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-500/15 disabled:cursor-not-allowed disabled:opacity-60 dark:text-amber-100"
               title="Publicar DRAFTs de custo de produção dos itens selecionados com pendência"
             >
               {publishBulkProgress ? (
@@ -1494,7 +1494,7 @@ export const ProductModule = () => {
               animate={{ opacity: 1, x: 0 }}
               onClick={handleBulkDelete}
               disabled={isEngineeringBulkBusy}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
@@ -1523,7 +1523,7 @@ export const ProductModule = () => {
             <button
               type="button"
               onClick={() => handleOpenModal()}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-opacity hover:opacity-90"
             >
               <Plus className="h-4 w-4 shrink-0" />
               Novo Item de Engenharia
