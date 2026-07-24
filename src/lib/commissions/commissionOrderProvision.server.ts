@@ -8,6 +8,7 @@ import { decimalToNumber } from "./commission-money.js";
 import {
   assembleCommissionOrderProvisionPayload,
   parseCommissionOrderProvisionQuery,
+  resolveCommissionOrderProvisionMonthRanges,
   resolveCommissionOrderProvisionSaleDateBounds,
   type CommissionOrderProvisionPayload,
   type CommissionOrderProvisionSnapshotInput,
@@ -51,30 +52,52 @@ function applySellerScope(
   return { AND: and };
 }
 
+function buildSaleDateWhere(
+  query: ReturnType<typeof parseCommissionOrderProvisionQuery>
+): Prisma.CommissionOrderSnapshotWhereInput | null {
+  const monthRanges = resolveCommissionOrderProvisionMonthRanges(query);
+  if (monthRanges) {
+    return {
+      OR: monthRanges.map((range) => ({
+        saleDate: { gte: range.gte, lte: range.lte },
+      })),
+    };
+  }
+  const bounds = resolveCommissionOrderProvisionSaleDateBounds(query);
+  if (!bounds) return null;
+  return { saleDate: { gte: bounds.gte, lte: bounds.lte } };
+}
+
 export async function getCommissionOrderProvisionPage(
   queryInput: Record<string, unknown>,
   scope: CommissionAccessScope
 ): Promise<CommissionOrderProvisionPayload> {
   const query = parseCommissionOrderProvisionQuery(queryInput);
-  const bounds = resolveCommissionOrderProvisionSaleDateBounds(query);
+  const saleDateWhere = buildSaleDateWhere(query);
 
-  const where: Prisma.CommissionOrderSnapshotWhereInput = {
-    status: "ACTIVE",
-    ...(bounds ? { saleDate: { gte: bounds.gte, lte: bounds.lte } } : {}),
-    ...applySellerScope(scope, query),
-  };
+  const and: Prisma.CommissionOrderSnapshotWhereInput[] = [
+    { status: "ACTIVE" },
+    applySellerScope(scope, query),
+  ];
+  if (saleDateWhere) and.push(saleDateWhere);
 
   if (query.customer) {
-    where.customerNameSnapshot = {
-      contains: query.customer,
-      mode: "insensitive",
-    };
+    and.push({
+      customerNameSnapshot: {
+        contains: query.customer,
+        mode: "insensitive",
+      },
+    });
   }
   if (query.orderCode) {
-    where.salesOrder = {
-      orderCode: { contains: query.orderCode, mode: "insensitive" },
-    };
+    and.push({
+      salesOrder: {
+        orderCode: { contains: query.orderCode, mode: "insensitive" },
+      },
+    });
   }
+
+  const where: Prisma.CommissionOrderSnapshotWhereInput = { AND: and };
 
   const rows = await prisma.commissionOrderSnapshot.findMany({
     where,

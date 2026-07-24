@@ -8,6 +8,7 @@ import {
   COMMISSIONS_FILTER_LABEL_CLASS,
   buildCommissionsYearOptions,
 } from "@/src/lib/commissionsPeriodFilter";
+import { CommissionsMonthsMultiSelect } from "@/src/components/commissions/CommissionsMonthsMultiSelect";
 import {
   CommissionsEmptyState,
   CommissionsErrorBanner,
@@ -23,23 +24,9 @@ import {
 } from "@/src/components/ui/SystemTotalizerCard";
 import { cn } from "@/src/lib/utils";
 import type { CommissionOrderProvisionPayload } from "@/src/lib/commissions/commissionOrderProvision.shared";
+import type { CommissionReportsMonthsFilter } from "@/src/lib/commissions/commissionReports.shared";
+import type { CommissionsPersonsPayload } from "@/src/components/commissions/commissionsTypes";
 import { formatSalesOrderDisplayCode } from "@/src/lib/salesOrderListUi";
-
-const MONTH_OPTIONS = [
-  { value: "", label: "Todos os meses" },
-  { value: "1", label: "Janeiro" },
-  { value: "2", label: "Fevereiro" },
-  { value: "3", label: "Março" },
-  { value: "4", label: "Abril" },
-  { value: "5", label: "Maio" },
-  { value: "6", label: "Junho" },
-  { value: "7", label: "Julho" },
-  { value: "8", label: "Agosto" },
-  { value: "9", label: "Setembro" },
-  { value: "10", label: "Outubro" },
-  { value: "11", label: "Novembro" },
-  { value: "12", label: "Dezembro" },
-];
 
 function formatDatePt(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-");
@@ -48,10 +35,12 @@ function formatDatePt(iso: string): string {
 }
 
 export function CommissionsOrderProvisionPage() {
+  const now = new Date();
   const yearOptions = useMemo(() => buildCommissionsYearOptions(), []);
-  const [year, setYear] = useState(String(new Date().getFullYear()));
-  const [month, setMonth] = useState("");
-  const [sellerName, setSellerName] = useState("");
+  const [year, setYear] = useState(String(now.getFullYear()));
+  const [months, setMonths] = useState<CommissionReportsMonthsFilter>("all");
+  const [sellerId, setSellerId] = useState("all");
+  const [persons, setPersons] = useState<Array<{ id: string; name: string }>>([]);
   const [customer, setCustomer] = useState("");
   const [orderCode, setOrderCode] = useState("");
   const [includeZero, setIncludeZero] = useState(false);
@@ -69,18 +58,51 @@ export function CommissionsOrderProvisionPage() {
     null
   );
 
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await fetchJsonOk<CommissionsPersonsPayload>(
+          "/api/commissions/persons?page=1&pageSize=200&active=true"
+        );
+        if (!cancelled) {
+          setPersons(
+            (data.items ?? [])
+              .filter((p) => !p.type || p.type === "SELLER")
+              .map((p) => ({ id: p.id, name: p.name }))
+              .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+          );
+        }
+      } catch {
+        if (!cancelled) setPersons([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
       if (year) params.set("year", year);
-      if (month) params.set("month", month);
+      if (months === "all" || (Array.isArray(months) && months.length === 0)) {
+        params.set("months", "all");
+      } else {
+        params.set("months", months.join(","));
+      }
       if (customer.trim()) params.set("customer", customer.trim());
       if (orderCode.trim()) params.set("orderCode", orderCode.trim());
       if (includeZero) params.set("includeZeroCommission", "true");
-      if (selectedCanonicalSellerId) {
-        params.set("canonicalSellerId", selectedCanonicalSellerId);
+
+      const effectiveCanonical =
+        selectedCanonicalSellerId ||
+        (sellerId !== "all" ? sellerId : null);
+      if (effectiveCanonical) {
+        params.set("canonicalSellerId", effectiveCanonical);
+        params.set("sellerId", effectiveCanonical);
       } else if (selectedRawSellerId != null) {
         params.set("rawSellerId", String(selectedRawSellerId));
       }
@@ -93,17 +115,20 @@ export function CommissionsOrderProvisionPage() {
       setPayload(data);
     } catch (err) {
       setPayload(null);
-      setError(formatCommissionsApiError(err));
+      setError(
+        formatCommissionsApiError(err, "Não foi possível carregar a provisão por pedido.")
+      );
     } finally {
       setLoading(false);
     }
   }, [
     year,
-    month,
+    months,
     customer,
     orderCode,
     includeZero,
     page,
+    sellerId,
     selectedCanonicalSellerId,
     selectedRawSellerId,
   ]);
@@ -112,19 +137,23 @@ export function CommissionsOrderProvisionPage() {
     void load();
   }, [load]);
 
-  const displayRows = useMemo(() => {
-    if (!payload) return [];
-    if (!sellerName.trim()) return payload.rows;
-    const needle = sellerName.trim().toLowerCase();
-    return payload.rows.filter((row) => {
-      const name = (
-        row.canonicalSellerName ||
-        row.rawSellerName ||
-        ""
-      ).toLowerCase();
-      return name.includes(needle);
-    });
-  }, [payload, sellerName]);
+  const sellerOptions = useMemo(() => {
+    const fromPersons = persons.map((p) => ({ value: p.id, label: p.name }));
+    const fromPayload = (payload?.sellerOptions ?? []).filter(
+      (opt) => opt.value !== "all"
+    );
+    const map = new Map<string, string>();
+    for (const opt of fromPersons) map.set(opt.value, opt.label);
+    for (const opt of fromPayload) {
+      if (!map.has(opt.value)) map.set(opt.value, opt.label);
+    }
+    return [
+      { value: "all", label: "Todos os vendedores" },
+      ...[...map.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, "pt-BR")),
+    ];
+  }, [persons, payload?.sellerOptions]);
 
   const selectedSellerTotal = useMemo(() => {
     if (!selectedSellerKey || !payload) return null;
@@ -135,6 +164,19 @@ export function CommissionsOrderProvisionPage() {
     setSelectedSellerKey(null);
     setSelectedCanonicalSellerId(null);
     setSelectedRawSellerId(null);
+    setSellerId("all");
+    setPage(1);
+  }
+
+  function onSellerSelectChange(value: string) {
+    setSellerId(value);
+    setSelectedSellerKey(null);
+    setSelectedRawSellerId(null);
+    if (value === "all") {
+      setSelectedCanonicalSellerId(null);
+    } else {
+      setSelectedCanonicalSellerId(value);
+    }
     setPage(1);
   }
 
@@ -149,11 +191,14 @@ export function CommissionsOrderProvisionPage() {
     setSelectedSellerKey(seller.key);
     setSelectedCanonicalSellerId(seller.canonicalSellerId);
     if (seller.canonicalSellerId) {
+      setSellerId(seller.canonicalSellerId);
       setSelectedRawSellerId(null);
     } else if (seller.key.startsWith("raw:")) {
+      setSellerId("all");
       const n = Number(seller.key.slice(4));
       setSelectedRawSellerId(Number.isFinite(n) ? n : null);
     } else {
+      setSellerId("all");
       setSelectedRawSellerId(null);
     }
     setPage(1);
@@ -166,99 +211,128 @@ export function CommissionsOrderProvisionPage() {
         description="Acumulado de comissão por pedidos (snapshot oficial). Soma das comissões por produto = comissão do pedido. Não usa período de pagamento/recebimento."
       />
 
-      <div className="grid gap-3 rounded-xl border border-border bg-card p-4 md:grid-cols-2 xl:grid-cols-6">
-        <label className="space-y-1 text-sm">
-          <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Ano da venda</span>
-          <select
-            className={COMMISSIONS_FILTER_FIELD_CLASS}
-            value={year}
-            onChange={(e) => {
-              setYear(e.target.value);
-              setPage(1);
-            }}
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={String(y)}>
-                {y}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Mês</span>
-          <select
-            className={COMMISSIONS_FILTER_FIELD_CLASS}
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value);
-              setPage(1);
-            }}
-          >
-            {MONTH_OPTIONS.map((m) => (
-              <option key={m.value || "all"} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1 text-sm xl:col-span-1">
-          <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Vendedor</span>
-          <input
-            className={COMMISSIONS_FILTER_FIELD_CLASS}
-            value={sellerName}
-            onChange={(e) => setSellerName(e.target.value)}
-            placeholder="Filtrar na lista"
-          />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Cliente</span>
-          <input
-            className={COMMISSIONS_FILTER_FIELD_CLASS}
-            value={customer}
-            onChange={(e) => {
-              setCustomer(e.target.value);
-              setPage(1);
-            }}
-            placeholder="Nome do cliente"
-          />
-        </label>
-        <label className="space-y-1 text-sm">
-          <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Pedido</span>
-          <input
-            className={COMMISSIONS_FILTER_FIELD_CLASS}
-            value={orderCode}
-            onChange={(e) => {
-              setOrderCode(e.target.value);
-              setPage(1);
-            }}
-            placeholder="PD 02716"
-          />
-        </label>
-        <div className="flex flex-col justify-end gap-2">
-          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={includeZero}
+      <div
+        className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4"
+        data-testid="commissions-order-provision-filters"
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="space-y-1 text-sm">
+            <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Ano da venda</span>
+            <select
+              className={COMMISSIONS_FILTER_FIELD_CLASS}
+              value={year}
               onChange={(e) => {
-                setIncludeZero(e.target.checked);
+                setYear(e.target.value);
                 setPage(1);
               }}
-            />
-            Incluir comissão zero (ex.: cliente excluído)
+              aria-label="Ano da venda"
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={String(y)}>
+                  {y}
+                </option>
+              ))}
+            </select>
           </label>
-          <button
-            type="button"
-            className={cn(financeBiButtonOutlineClass, "inline-flex items-center gap-2")}
-            onClick={() => void load()}
-            disabled={loading}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            Atualizar
-          </button>
+          <CommissionsMonthsMultiSelect
+            value={months}
+            onChange={(next) => {
+              setMonths(next);
+              setPage(1);
+            }}
+          />
+          <label className="space-y-1 text-sm">
+            <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Vendedor</span>
+            <select
+              className={COMMISSIONS_FILTER_FIELD_CLASS}
+              value={
+                selectedCanonicalSellerId ||
+                (sellerId !== "all" ? sellerId : "all")
+              }
+              onChange={(e) => onSellerSelectChange(e.target.value)}
+              aria-label="Vendedor"
+              data-testid="commissions-order-provision-seller-filter"
+            >
+              {sellerOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Cliente</span>
+            <input
+              className={COMMISSIONS_FILTER_FIELD_CLASS}
+              value={customer}
+              onChange={(e) => {
+                setCustomer(e.target.value);
+                setPage(1);
+              }}
+              placeholder="Nome do cliente"
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="space-y-1 text-sm">
+            <span className={COMMISSIONS_FILTER_LABEL_CLASS}>Pedido</span>
+            <input
+              className={COMMISSIONS_FILTER_FIELD_CLASS}
+              value={orderCode}
+              onChange={(e) => {
+                setOrderCode(e.target.value);
+                setPage(1);
+              }}
+              placeholder="PD 02716"
+            />
+          </label>
+          <div className="flex flex-col justify-end gap-2 sm:col-span-1 lg:col-span-3">
+            <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeZero}
+                onChange={(e) => {
+                  setIncludeZero(e.target.checked);
+                  setPage(1);
+                }}
+              />
+              Incluir comissão zero (ex.: cliente excluído)
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={cn(
+                  financeBiButtonOutlineClass,
+                  "inline-flex items-center gap-2"
+                )}
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                Atualizar
+              </button>
+              <button
+                type="button"
+                className={financeBiButtonOutlineClass}
+                onClick={() => {
+                  setYear(String(now.getFullYear()));
+                  setMonths("all");
+                  clearSellerFilter();
+                  setCustomer("");
+                  setOrderCode("");
+                  setIncludeZero(false);
+                  setPage(1);
+                }}
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -267,28 +341,35 @@ export function CommissionsOrderProvisionPage() {
 
       {payload ? (
         <>
-          <CommissionsKpiSection>
+          <CommissionsKpiSection
+            title="Resumo"
+            testId="commissions-order-provision-summary"
+          >
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Pedidos"
-              value={String(payload.cards.orderCount)}
-              hint={payload.periodLabel}
+              amount={payload.cards.orderCount}
+              amountFormat="number"
+              helperText={payload.periodLabel}
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão acumulada"
-              value={formatFinanceCurrency(payload.cards.totalFinalCommissionAmount)}
-              hint="Soma das comissões finais por pedido"
+              amount={payload.cards.totalFinalCommissionAmount}
+              amountFormat="currency"
+              helperText="Soma das comissões finais por pedido"
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Base vendida"
-              value={formatFinanceCurrency(payload.cards.totalSoldAmount)}
+              amount={payload.cards.totalSoldAmount}
+              amountFormat="currency"
             />
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
               label="Comissão bruta (antes exclusão)"
-              value={formatFinanceCurrency(payload.cards.totalGrossCommissionAmount)}
+              amount={payload.cards.totalGrossCommissionAmount}
+              amountFormat="currency"
             />
           </CommissionsKpiSection>
 
@@ -318,7 +399,11 @@ export function CommissionsOrderProvisionPage() {
                     onClick={() => toggleSeller(seller)}
                     className={cn(
                       "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
-                      selectedSellerKey === seller.key
+                      selectedSellerKey === seller.key ||
+                        (seller.canonicalSellerId != null &&
+                          seller.canonicalSellerId ===
+                            (selectedCanonicalSellerId ||
+                              (sellerId !== "all" ? sellerId : null)))
                         ? "border-primary bg-primary/10"
                         : "border-border bg-card hover:bg-accent/40"
                     )}
@@ -335,7 +420,7 @@ export function CommissionsOrderProvisionPage() {
             </div>
           ) : null}
 
-          {displayRows.length === 0 ? (
+          {payload.rows.length === 0 ? (
             <CommissionsEmptyState
               title="Sem pedidos neste filtro"
               description={
@@ -362,7 +447,7 @@ export function CommissionsOrderProvisionPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {displayRows.map((row) => (
+                  {payload.rows.map((row) => (
                     <tr
                       key={row.salesOrderId}
                       className="border-t border-border/70"

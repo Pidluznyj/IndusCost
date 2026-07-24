@@ -7,9 +7,18 @@
  * Cliente excluído → final do item = 0 (reflete no total do pedido).
  */
 
+import {
+  formatCommissionReportMonthsLabel,
+  type CommissionReportsMonthsFilter,
+} from "./commissionReports.shared.js";
+
+export type CommissionOrderProvisionMonthsFilter = CommissionReportsMonthsFilter;
+
 export type CommissionOrderProvisionQuery = {
   year: number | null;
+  /** @deprecated Preferir `months`. Mantido para compatibilidade de resposta. */
   month: number | null;
+  months: CommissionOrderProvisionMonthsFilter;
   from: string | null;
   to: string | null;
   canonicalSellerId: string | null;
@@ -19,6 +28,11 @@ export type CommissionOrderProvisionQuery = {
   includeZeroCommission: boolean;
   page: number;
   pageSize: number;
+};
+
+export type CommissionOrderProvisionSellerOption = {
+  value: string;
+  label: string;
 };
 
 export type CommissionOrderProvisionRow = {
@@ -62,6 +76,7 @@ export type CommissionOrderProvisionPayload = {
   periodLabel: string;
   filters: CommissionOrderProvisionQuery;
   cards: CommissionOrderProvisionCards;
+  sellerOptions: CommissionOrderProvisionSellerOption[];
   rows: CommissionOrderProvisionRow[];
   pagination: {
     page: number;
@@ -117,24 +132,89 @@ function clampPageSize(value: number | null): number {
   return Math.min(200, value);
 }
 
+function parseMonthsFilter(query: Record<string, unknown>): CommissionOrderProvisionMonthsFilter {
+  const monthsRaw = query.months;
+  if (monthsRaw != null && monthsRaw !== "") {
+    if (monthsRaw === "all") return "all";
+    if (Array.isArray(monthsRaw)) {
+      if (monthsRaw.length === 0) return "all";
+      const parsed = monthsRaw
+        .map((item) => asInt(item))
+        .filter((n): n is number => n != null && n >= 1 && n <= 12);
+      const unique = [...new Set(parsed)].sort((a, b) => a - b);
+      if (unique.length === 0 || unique.length === 12) return "all";
+      return unique;
+    }
+    if (typeof monthsRaw === "string") {
+      const trimmed = monthsRaw.trim();
+      if (!trimmed || trimmed.toLowerCase() === "all") return "all";
+      const parsed = trimmed
+        .split(/[,\s]+/)
+        .filter(Boolean)
+        .map((part) => asInt(part))
+        .filter((n): n is number => n != null && n >= 1 && n <= 12);
+      const unique = [...new Set(parsed)].sort((a, b) => a - b);
+      if (unique.length === 0 || unique.length === 12) return "all";
+      return unique;
+    }
+  }
+
+  const monthRaw = asInt(query.month);
+  if (monthRaw != null && monthRaw >= 1 && monthRaw <= 12) return [monthRaw];
+  return "all";
+}
+
+export function resolveCommissionOrderProvisionMonths(
+  months: CommissionOrderProvisionMonthsFilter
+): number[] {
+  if (months === "all" || (Array.isArray(months) && months.length === 0)) {
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+  }
+  return [...new Set(months.filter((m) => Number.isInteger(m) && m >= 1 && m <= 12))].sort(
+    (a, b) => a - b
+  );
+}
+
+export function isCommissionOrderProvisionAllMonths(
+  months: CommissionOrderProvisionMonthsFilter
+): boolean {
+  if (months === "all") return true;
+  return resolveCommissionOrderProvisionMonths(months).length === 12;
+}
+
 export function parseCommissionOrderProvisionQuery(
   query: Record<string, unknown>
 ): CommissionOrderProvisionQuery {
   const now = new Date();
   const yearRaw = asInt(query.year);
-  const monthRaw = asInt(query.month);
   const from = asTrimmed(query.from);
   const to = asTrimmed(query.to);
-  const hasExplicitRange = Boolean(from || to || yearRaw != null || monthRaw != null);
+  const months = parseMonthsFilter(query);
+  const hasExplicitRange = Boolean(
+    from || to || yearRaw != null || query.months != null || query.month != null
+  );
+
+  const resolvedMonths = isCommissionOrderProvisionAllMonths(months)
+    ? ("all" as const)
+    : resolveCommissionOrderProvisionMonths(months);
+  const legacyMonth =
+    Array.isArray(resolvedMonths) && resolvedMonths.length === 1
+      ? resolvedMonths[0]!
+      : null;
+
+  // sellerId no padrão Relatórios = CommissionPerson.id (canonical)
+  const sellerIdRaw = asTrimmed(query.sellerId);
+  const canonicalFromSellerId =
+    sellerIdRaw && sellerIdRaw !== "all" ? asUuid(sellerIdRaw) : null;
 
   return {
     year: yearRaw ?? (hasExplicitRange ? null : now.getFullYear()),
-    month:
-      monthRaw != null && monthRaw >= 1 && monthRaw <= 12 ? monthRaw : null,
+    month: legacyMonth,
+    months: resolvedMonths,
     from,
     to,
-    canonicalSellerId: asUuid(query.canonicalSellerId),
-    rawSellerId: asInt(query.rawSellerId ?? query.sellerId),
+    canonicalSellerId: asUuid(query.canonicalSellerId) ?? canonicalFromSellerId,
+    rawSellerId: asInt(query.rawSellerId),
     customer: asTrimmed(query.customer ?? query.customerName),
     orderCode: asTrimmed(query.orderCode ?? query.order),
     includeZeroCommission: asBool(query.includeZeroCommission, false),
@@ -143,6 +223,7 @@ export function parseCommissionOrderProvisionQuery(
   };
 }
 
+/** Intervalo contínuo (from/to, ano inteiro ou um único mês). */
 export function resolveCommissionOrderProvisionSaleDateBounds(
   query: CommissionOrderProvisionQuery
 ): { gte: Date; lte: Date } | null {
@@ -155,18 +236,46 @@ export function resolveCommissionOrderProvisionSaleDateBounds(
       : new Date(2099, 11, 31, 23, 59, 59, 999);
     return { gte, lte };
   }
-  if (query.year != null && query.month != null) {
-    const gte = new Date(query.year, query.month - 1, 1, 0, 0, 0, 0);
-    const lte = new Date(query.year, query.month, 0, 23, 59, 59, 999);
-    return { gte, lte };
-  }
-  if (query.year != null) {
+  if (query.year == null) return null;
+
+  if (isCommissionOrderProvisionAllMonths(query.months)) {
     return {
       gte: new Date(query.year, 0, 1, 0, 0, 0, 0),
       lte: new Date(query.year, 11, 31, 23, 59, 59, 999),
     };
   }
-  return null;
+
+  const months = resolveCommissionOrderProvisionMonths(query.months);
+  if (months.length === 1) {
+    const m = months[0]!;
+    return {
+      gte: new Date(query.year, m - 1, 1, 0, 0, 0, 0),
+      lte: new Date(query.year, m, 0, 23, 59, 59, 999),
+    };
+  }
+
+  // Vários meses (possivelmente não contíguos): envelope para pré-filtro;
+  // o server aplica OR mensal exato.
+  const min = months[0]!;
+  const max = months[months.length - 1]!;
+  return {
+    gte: new Date(query.year, min - 1, 1, 0, 0, 0, 0),
+    lte: new Date(query.year, max, 0, 23, 59, 59, 999),
+  };
+}
+
+/** Faixas mensais exatas (para OR Prisma quando há meses não contíguos). */
+export function resolveCommissionOrderProvisionMonthRanges(
+  query: CommissionOrderProvisionQuery
+): Array<{ gte: Date; lte: Date }> | null {
+  if (query.from || query.to || query.year == null) return null;
+  if (isCommissionOrderProvisionAllMonths(query.months)) return null;
+  const months = resolveCommissionOrderProvisionMonths(query.months);
+  if (months.length <= 1) return null;
+  return months.map((m) => ({
+    gte: new Date(query.year!, m - 1, 1, 0, 0, 0, 0),
+    lte: new Date(query.year!, m, 0, 23, 59, 59, 999),
+  }));
 }
 
 export function formatCommissionOrderProvisionPeriodLabel(
@@ -175,11 +284,30 @@ export function formatCommissionOrderProvisionPeriodLabel(
   if (query.from || query.to) {
     return `${query.from ?? "…"} → ${query.to ?? "…"}`;
   }
-  if (query.year != null && query.month != null) {
-    return `${String(query.month).padStart(2, "0")}/${query.year}`;
+  if (query.year != null) {
+    const monthsLabel = formatCommissionReportMonthsLabel(query.months);
+    if (isCommissionOrderProvisionAllMonths(query.months)) {
+      return `Ano ${query.year}`;
+    }
+    return `${monthsLabel} / ${query.year}`;
   }
-  if (query.year != null) return `Ano ${query.year}`;
   return "Todo o histórico materializado";
+}
+
+export function buildCommissionOrderProvisionSellerOptions(
+  sellers: ReadonlyArray<CommissionOrderProvisionSellerCard>
+): CommissionOrderProvisionSellerOption[] {
+  const options: CommissionOrderProvisionSellerOption[] = [
+    { value: "all", label: "Todos os vendedores" },
+  ];
+  const seen = new Set(["all"]);
+  for (const seller of sellers) {
+    const value = seller.canonicalSellerId ?? seller.key;
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    options.push({ value, label: seller.sellerName });
+  }
+  return options;
 }
 
 export type CommissionOrderProvisionSnapshotInput = {
@@ -361,6 +489,7 @@ export function assembleCommissionOrderProvisionPayload(input: {
     rows = rows.filter((r) => r.totalFinalCommissionAmount > 0.009);
   }
   const cards = buildCommissionOrderProvisionCards(rows);
+  const sellerOptions = buildCommissionOrderProvisionSellerOptions(cards.sellers);
   const page = paginateCommissionOrderProvisionRows(
     rows,
     input.query.page,
@@ -372,6 +501,7 @@ export function assembleCommissionOrderProvisionPayload(input: {
     periodLabel: formatCommissionOrderProvisionPeriodLabel(input.query),
     filters: input.query,
     cards,
+    sellerOptions,
     rows: page.rows,
     pagination: page.pagination,
     message:
