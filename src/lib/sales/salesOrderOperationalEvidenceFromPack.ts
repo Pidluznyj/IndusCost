@@ -603,6 +603,7 @@ export function buildSalesOrderOperationalEvidenceGraphFromPack(
     productionOrderExternalId: number | null;
     linkedQuantity: number;
     isCurrent?: boolean;
+    status?: string | null;
     link: SalesOrderOperationalLinkEdge;
   }> = [];
   const productionEdges: SalesOrderOperationalLinkEdge[] = [];
@@ -635,6 +636,7 @@ export function buildSalesOrderOperationalEvidenceGraphFromPack(
           productionOrderExternalId: r.productionOrderExternalId,
           linkedQuantity: r.linkedQuantity,
           isCurrent: r.isCurrent,
+          status: r.status,
           link,
         });
       } else if (r.sourceType === "AMBIGUOUS" || r.sourceType === "UNRESOLVED") {

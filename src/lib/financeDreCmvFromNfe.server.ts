@@ -5,7 +5,11 @@
 
 import { prisma } from "@/src/lib/prisma.js";
 import { queryFiscalNfesForDreCmv } from "@/src/lib/financeDreNfeQueries.server.js";
-import { extractDreNfeItemsFromRawPayload } from "@/src/lib/financeDreNfeItemExtract.js";
+import {
+  extractDreNfeItemsFromSources,
+  mapNomusNfeItemRecord,
+  type DreNfeExtractedItem,
+} from "@/src/lib/financeDreNfeItemExtract.js";
 import {
   getEffectiveProductProductionCostsForPairs,
   type EffectiveProductionCostPair,
@@ -17,7 +21,7 @@ import { decimalToNumber } from "@/src/lib/executiveDashboardHelpers.js";
 
 export type DreCmvFromNfeResult = {
   cmv: number[];
-  /** NF-e sem itens parseáveis (payload/estoque). */
+  /** NF-e sem itens parseáveis (payload/XML/estoque). */
   missingItemsNfeCount: number;
   missingItemsRevenueByMonth: number[];
   /** Itens sem produto local resolvido. */
@@ -55,15 +59,64 @@ export type DreCmvGapRow = {
   quantity: number | null;
 };
 
-async function loadStockItemsByNfeExternalId(
-  nfeExternalIds: number[]
-): Promise<Map<number, Array<{ externalProductId: number | null; quantity: number }>>> {
-  const out = new Map<number, Array<{ externalProductId: number | null; quantity: number }>>();
-  if (nfeExternalIds.length === 0) return out;
+function parseNfeNumeroAsInt(numero: string | null | undefined): number | null {
+  if (!numero?.trim()) return null;
+  const digits = numero.replace(/\D/g, "");
+  if (!digits) return null;
+  const n = Number.parseInt(digits, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function mapStockDocItemsToDre(
+  items: Array<{
+    externalProductId: number | null;
+    quantity: unknown;
+    unitValue?: unknown;
+    rawJson?: unknown;
+  }>
+): DreNfeExtractedItem[] {
+  const out: DreNfeExtractedItem[] = [];
+  for (const item of items) {
+    const fromRaw =
+      item.rawJson && typeof item.rawJson === "object" && !Array.isArray(item.rawJson)
+        ? mapNomusNfeItemRecord(item.rawJson as Record<string, unknown>)
+        : null;
+    const qty = fromRaw?.quantity ?? decimalToNumber(item.quantity) ?? 0;
+    if (qty <= 0) continue;
+    const unitValue = decimalToNumber(item.unitValue);
+    const lineRevenue =
+      fromRaw?.lineRevenue ??
+      (unitValue != null && Number.isFinite(unitValue) ? qty * unitValue : null);
+    out.push({
+      externalProductId: fromRaw?.externalProductId ?? item.externalProductId ?? null,
+      sku: fromRaw?.sku ?? null,
+      quantity: qty,
+      lineRevenue,
+    });
+  }
+  return out;
+}
+
+/**
+ * Itens do Documento de Saída vinculados à NF-e.
+ * Preferência: `idNfe === externalId` da nota; fallback: `idNfe === numero` impresso.
+ */
+async function loadStockItemsByNfeKeys(
+  keys: Array<{ nfeExternalId: number; numero: number | null }>
+): Promise<Map<number, DreNfeExtractedItem[]>> {
+  const out = new Map<number, DreNfeExtractedItem[]>();
+  if (keys.length === 0) return out;
+
+  const lookupIds = new Set<number>();
+  for (const k of keys) {
+    lookupIds.add(k.nfeExternalId);
+    if (k.numero != null) lookupIds.add(k.numero);
+  }
+  if (lookupIds.size === 0) return out;
 
   const docs = await prisma.nomusStockDocument.findMany({
     where: {
-      idNfe: { in: nfeExternalIds },
+      idNfe: { in: [...lookupIds] },
       isCancelled: false,
     },
     select: {
@@ -72,23 +125,33 @@ async function loadStockItemsByNfeExternalId(
         select: {
           externalProductId: true,
           quantity: true,
+          unitValue: true,
+          rawJson: true,
         },
       },
     },
   });
 
+  const byIdNfe = new Map<number, DreNfeExtractedItem[]>();
   for (const doc of docs) {
     if (doc.idNfe == null) continue;
-    const list = out.get(doc.idNfe) ?? [];
-    for (const item of doc.items) {
-      const qty = decimalToNumber(item.quantity) ?? 0;
-      if (qty <= 0) continue;
-      list.push({
-        externalProductId: item.externalProductId ?? null,
-        quantity: qty,
-      });
+    const mapped = mapStockDocItemsToDre(doc.items);
+    if (mapped.length === 0) continue;
+    const list = byIdNfe.get(doc.idNfe) ?? [];
+    list.push(...mapped);
+    byIdNfe.set(doc.idNfe, list);
+  }
+
+  for (const k of keys) {
+    const preferred = byIdNfe.get(k.nfeExternalId);
+    if (preferred && preferred.length > 0) {
+      out.set(k.nfeExternalId, preferred);
+      continue;
     }
-    out.set(doc.idNfe, list);
+    if (k.numero != null && k.numero !== k.nfeExternalId) {
+      const fallback = byIdNfe.get(k.numero);
+      if (fallback && fallback.length > 0) out.set(k.nfeExternalId, fallback);
+    }
   }
   return out;
 }
@@ -133,11 +196,27 @@ async function computeMonthlyCmvFromNfeProductCosts(
     select: {
       id: true,
       externalId: true,
+      numero: true,
       rawPayload: true,
+      xmlRaw: true,
     },
   });
-  const payloadById = new Map(nfeRows.map((row) => [row.id, row.rawPayload]));
-  const stockByNfe = await loadStockItemsByNfeExternalId(nfes.map((n) => n.nfeExternalId));
+  const nfeMetaById = new Map(
+    nfeRows.map((row) => [
+      row.id,
+      {
+        rawPayload: row.rawPayload,
+        xmlRaw: row.xmlRaw,
+        numero: parseNfeNumeroAsInt(row.numero),
+      },
+    ])
+  );
+  const stockByNfe = await loadStockItemsByNfeKeys(
+    nfes.map((n) => ({
+      nfeExternalId: n.nfeExternalId,
+      numero: nfeMetaById.get(n.nomusNfeId)?.numero ?? null,
+    }))
+  );
 
   let missingItemsNfeCount = 0;
   const missingItemsRevenueByMonth = createEmptyMonthlySeries();
@@ -162,16 +241,13 @@ async function computeMonthlyCmvFromNfeProductCosts(
   const pending: PendingLine[] = [];
 
   for (const nfe of nfes) {
-    const raw = payloadById.get(nfe.nomusNfeId);
-    let items = extractDreNfeItemsFromRawPayload(raw);
+    const meta = nfeMetaById.get(nfe.nomusNfeId);
+    let items = extractDreNfeItemsFromSources({
+      rawPayload: meta?.rawPayload,
+      xmlRaw: meta?.xmlRaw,
+    });
     if (items.length === 0) {
-      const stockItems = stockByNfe.get(nfe.nfeExternalId) ?? [];
-      items = stockItems.map((s) => ({
-        externalProductId: s.externalProductId,
-        sku: null,
-        quantity: s.quantity,
-        lineRevenue: null,
-      }));
+      items = stockByNfe.get(nfe.nfeExternalId) ?? [];
     }
     if (items.length === 0) {
       missingItemsNfeCount += 1;
@@ -241,26 +317,41 @@ async function computeMonthlyCmvFromNfeProductCosts(
     if (p.sku) bySku.set(p.sku.trim().toLowerCase(), p.id);
   }
 
-  // Catálogo Nomus → Product (quando sourceExternalId não bate)
-  if (externalIds.length > 0) {
+  // Catálogo Nomus → Product (id externo e/ou código comercial do XML)
+  const catalogWhere =
+    externalIds.length > 0 || skus.length > 0
+      ? {
+          OR: [
+            ...(externalIds.length > 0 ? [{ externalProductId: { in: externalIds } }] : []),
+            ...(skus.length > 0 ? [{ code: { in: skus } }] : []),
+          ],
+        }
+      : null;
+  if (catalogWhere) {
     const catalog = await prisma.nomusProductCatalog.findMany({
-      where: { externalProductId: { in: externalIds } },
+      where: catalogWhere,
       select: { externalProductId: true, code: true },
     });
-    const catalogCodes = catalog
-      .map((c) => c.code?.trim())
-      .filter((c): c is string => Boolean(c));
+    const catalogCodes = [
+      ...new Set(catalog.map((c) => c.code?.trim()).filter((c): c is string => Boolean(c))),
+    ];
     if (catalogCodes.length > 0) {
       const byCode = await prisma.product.findMany({
         where: { sku: { in: catalogCodes } },
-        select: { id: true, sku: true },
+        select: { id: true, sku: true, sourceExternalId: true },
       });
       const productBySku = new Map(byCode.map((p) => [p.sku.trim().toLowerCase(), p.id]));
+      for (const p of byCode) {
+        if (p.sourceExternalId) byExternalId.set(p.sourceExternalId, p.id);
+        if (p.sku) bySku.set(p.sku.trim().toLowerCase(), p.id);
+      }
       for (const c of catalog) {
-        if (c.externalProductId == null || !c.code) continue;
+        if (!c.code) continue;
         const pid = productBySku.get(c.code.trim().toLowerCase());
-        if (pid && !byExternalId.has(String(c.externalProductId))) {
-          byExternalId.set(String(c.externalProductId), pid);
+        if (!pid) continue;
+        bySku.set(c.code.trim().toLowerCase(), pid);
+        if (c.externalProductId != null && !byExternalId.has(c.externalProductId)) {
+          byExternalId.set(c.externalProductId, pid);
         }
       }
     }

@@ -63,12 +63,16 @@ function assertBusinessInvariants(c: LifecycleMatrixCase) {
     assert.equal(item.isActiveForKanban, false, `${label}: CANCELED fora da votação`);
   }
 
-  // UNKNOWN nunca SHIPPED_COMPLETED.
-  if (item.fulfillment.classification === "UNKNOWN") {
+  // UNKNOWN sem NF cobrindo não conclui como enviado.
+  // Com NF-e válida cobrindo a obrigação, SHIPPED_COMPLETED é permitido.
+  if (
+    item.fulfillment.classification === "UNKNOWN" &&
+    item.invoicedQuantity.lt(item.shipTargetQuantity)
+  ) {
     assert.notEqual(
       item.currentStage,
       "SHIPPED_COMPLETED",
-      `${label}: UNKNOWN não conclui envio`
+      `${label}: UNKNOWN sem NF cobrindo não conclui envio`
     );
   }
 

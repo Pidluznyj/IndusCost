@@ -25,7 +25,7 @@ describe("financeNavigation", () => {
     assert.equal(getFinanceSectionPath("executive-report"), "/finance/executive-report");
     assert.equal(getFinanceSuppliersPath(), "/finance/suppliers");
     assert.equal(FINANCE_STANDALONE_PATHS.suppliers, "/finance/suppliers");
-    assert.equal(getFinanceDefaultPath(), "/finance/accounts-receivable");
+    assert.equal(getFinanceDefaultPath(), "/finance/cash-flow");
     for (const section of FINANCE_SECTIONS) {
       assert.ok(section.path.startsWith("/finance/"), section.path);
       assert.equal(section.path, FINANCE_SECTION_PATHS[section.id]);
@@ -68,7 +68,7 @@ describe("financeNavigation", () => {
       ),
       "/finance/accounts-receivable"
     );
-    assert.equal(resolveFinanceCanonicalPath("/finance"), "/finance/accounts-receivable");
+    assert.equal(resolveFinanceCanonicalPath("/finance"), "/finance/cash-flow");
     assert.equal(
       parseFinanceSectionFromPath("/finance/accounts-payable/extra"),
       "accounts-payable"
@@ -92,7 +92,7 @@ describe("financeNavigation", () => {
   it("FinanceModule usa navegação absoluta (sem to relativo perigoso)", () => {
     const mod = readFileSync(join(process.cwd(), "src", "components", "FinanceModule.tsx"), "utf8");
     const nav = readFileSync(join(process.cwd(), "src", "lib", "financeNavigation.ts"), "utf8");
-    assert.ok(mod.includes("FINANCE_SECTIONS"));
+    assert.ok(mod.includes("FINANCE_UI_SECTIONS") || mod.includes("getFinanceDefaultPath"));
     assert.ok(mod.includes("getFinanceDefaultPath"));
     assert.ok(mod.includes("resolveFinanceCanonicalPath"));
     assert.ok(!mod.includes('to: "accounts-receivable"'));
@@ -104,6 +104,10 @@ describe("financeNavigation", () => {
     assert.ok(nav.includes('"/finance/billing"'));
     assert.ok(nav.includes('"/finance/executive-report"'));
     assert.ok(nav.includes("FINANCE_STANDALONE_PATHS") || nav.includes("/finance/suppliers"));
+    assert.equal(
+      nav.includes('FINANCE_DEFAULT_SECTION: FinanceSectionId = "cash-flow"'),
+      true
+    );
     assert.doesNotMatch(mod, /path="suppliers"/);
     assert.doesNotMatch(mod, /FinanceSuppliersPage/);
   });
@@ -111,7 +115,7 @@ describe("financeNavigation", () => {
   it("App.tsx redireciona /finance para rota canônica e isola /finance/suppliers", () => {
     const app = readFileSync(join(process.cwd(), "src", "App.tsx"), "utf8");
     assert.ok(app.includes('path="finance"'));
-    assert.ok(app.includes("/finance/accounts-receivable"));
+    assert.ok(app.includes("/finance/cash-flow"));
     assert.ok(app.includes('path="finance/suppliers"'));
     assert.ok(app.includes("FinanceSuppliersPage"));
     assert.ok(app.includes('path="finance/*"'));

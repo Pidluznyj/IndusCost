@@ -214,7 +214,7 @@ async function mapCmvGapsToRows(gaps: DreCmvGapRow[]): Promise<FinanceDreDrilldo
           : null,
         extra:
           gap.kind === "missing_items"
-            ? "Sem itens no payload/estoque"
+            ? "Sem itens no payload/XML/estoque"
             : gap.quantity != null
               ? `${productLabel} · qtd ${gap.quantity}`
               : productLabel,

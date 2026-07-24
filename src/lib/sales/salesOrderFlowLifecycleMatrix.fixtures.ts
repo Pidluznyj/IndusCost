@@ -152,18 +152,24 @@ export function buildLifecycleMatrixCases(): LifecycleMatrixCase[] {
   cases.push(
     caseOf(
       4,
-      "OP criada (cobertura suficiente, qty produzida não normalizada)",
+      "OP criada (cobertura planejada suficiente sem evidência de execução)",
       {
         costingMode: "OWN_PROCESS",
         hasProductRouting: true,
-        productionOrderLinks: [{ linkedQuantity: 10, isCurrent: true }],
+        productionOrderLinks: [
+          { linkedQuantity: 10, isCurrent: true, status: "Liberada" },
+        ],
       },
-      "WAITING_OUTPUT_DOCUMENT",
+      // Justificativa: qtde planejada da OP não prova produção concluída.
+      "WAITING_PRODUCTION_ORDER",
       {
         expectedCodes: ["PRODUCTION_QTY_NOT_NORMALIZED"],
         extraAssert: ({ item: r }) => {
           if (!r.productionOrderQuantity.eq(10)) {
             throw new Error("OP deve cobrir 10");
+          }
+          if (r.currentStage === "WAITING_OUTPUT_DOCUMENT") {
+            throw new Error("proxy planejada→DS removido");
           }
         },
       }
@@ -895,17 +901,18 @@ export function buildLifecycleMatrixCases(): LifecycleMatrixCase[] {
       id: 29,
       title: "Retorno após cancelamento de Documento",
       item: after,
-      expectedItemStage: "WAITING_OUTPUT_DOCUMENT",
+      // NF-e válida cobrindo a obrigação permanece terminal; DS cancelado gera alerta.
+      expectedItemStage: "SHIPPED_COMPLETED",
       expectedCodes: ["NFE_WITHOUT_DOCUMENT"],
       extraAssert: () => {
         if (before.currentStage !== "SHIPPED_COMPLETED") {
           throw new Error("antes: SHIPPED_COMPLETED");
         }
-        if (after.currentStage === before.currentStage) {
-          throw new Error("deve regredir após cancelar Documento");
-        }
         if (!after.documentedQuantity.eq(0)) {
           throw new Error("doc cancelado zera cobertura");
+        }
+        if (!after.invoicedQuantity.eq(10)) {
+          throw new Error("NF válida continua cobrindo a obrigação");
         }
       },
     });

@@ -92,6 +92,35 @@ export const SALES_ORDER_FLOW_STAGE_NEXT_ACTION = {
   CANCELED: "Nenhuma ação operacional — pedido/itens cancelados.",
 } as const satisfies Record<SalesOrderFlowStage, string>;
 
+/**
+ * Motivos determinísticos do estágio do item (auditoria / stageReason).
+ * Mensagens humanas permanecem em português; o código é o prefixo canônico.
+ */
+export const SALES_ORDER_ITEM_FLOW_STAGE_REASON = {
+  PRODUCTION_ORDER_MISSING:
+    "PRODUCTION_ORDER_MISSING — Saldo residual exige produção e não há OP válida vinculada para cobri-lo.",
+  PRODUCTION_ORDER_QUANTITY_INSUFFICIENT:
+    "PRODUCTION_ORDER_QUANTITY_INSUFFICIENT — Cobertura de OP insuficiente para o saldo residual — há OP parcial; falta complementar a cobertura (não é ausência total de OP).",
+  PRODUCTION_ORDER_RELEASED_AWAITING_EXECUTION:
+    "PRODUCTION_ORDER_RELEASED_AWAITING_EXECUTION — OP Liberada cobre o planejamento; aguarda evidência real de execução (não é produção concluída).",
+  PRODUCTION_ORDER_REQUISITIONED_AWAITING_EXECUTION_EVIDENCE:
+    "PRODUCTION_ORDER_REQUISITIONED_AWAITING_EXECUTION_EVIDENCE — OP Requisitada cobre o planejamento; aguarda evidência real de execução (não presume produção).",
+  PRODUCTION_ORDER_CLOSED_AWAITING_OUTPUT_DOCUMENT:
+    "PRODUCTION_ORDER_CLOSED_AWAITING_OUTPUT_DOCUMENT — OP Encerrada cobre a obrigação; falta Documento de Saída.",
+  PRODUCTION_ORDER_AWAITING_EXECUTION_EVIDENCE:
+    "PRODUCTION_ORDER_AWAITING_EXECUTION_EVIDENCE — OP planejada cobre o residual sem evidência de execução; permanece aguardando produção.",
+  PRODUCED_QUANTITY_PARTIAL:
+    "PRODUCED_QUANTITY_PARTIAL — Quantidade produzida real parcial; produção em andamento.",
+  DOCUMENTED_AWAITING_NFE:
+    "DOCUMENTED_AWAITING_NFE — Documento de Saída cobre a obrigação; falta NF-e válida.",
+  PARTIALLY_DOCUMENTED_AWAITING_REMAINING_OUTPUT:
+    "PARTIALLY_DOCUMENTED_AWAITING_REMAINING_OUTPUT — Documento de Saída parcial; falta complementar a cobertura documental.",
+  INVOICED_QUANTITY_COMPLETED:
+    "INVOICED_QUANTITY_COMPLETED — NF-e válida cobre a obrigação (envio/conclusão).",
+  UNKNOWN_STATUS_WITHOUT_DOWNSTREAM_EVIDENCE:
+    "UNKNOWN_STATUS_WITHOUT_DOWNSTREAM_EVIDENCE — Status comercial desconhecido sem evidência operacional de DS/NF-e; mantém aguardando liberação.",
+} as const;
+
 export const SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES = [
   "INFO",
   "WARNING",

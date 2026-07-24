@@ -593,6 +593,7 @@ describe("KAN-LINK-05 — integração pack/motor", () => {
     assert.equal(pack.productionLinks.length, 1);
     const flow = resolveSalesOrderItemFlowFromEvidence(pack, ITEM)!;
     assert.equal(flow.productionOrderQuantity.eq(80), true);
-    assert.notEqual(flow.currentStage, "WAITING_PRODUCTION_ORDER");
+    // Liberada cobre planejamento, mas não prova execução → permanece em OP.
+    assert.equal(flow.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 });

@@ -12,6 +12,7 @@ import type { SalesOrderFlowEvidencePack } from "./salesOrderFlowEvidence.js";
 import type { SalesOrderItemFlowProductionLinkInput } from "./salesOrderItemFlowEngine.js";
 import type { SalesOrderOperationalLinkSourceType } from "./salesOrderOperationalEvidenceContract.js";
 import { normalizeOutputDocumentOrderCode } from "./salesOrderOutputDocumentLinkResolver.js";
+import { isNomusProductionOrderStatusCanceled } from "./nomusProductionOrderStatus.js";
 
 export type ProductionOrderLinkSalesOrderItem = {
   id: string;
@@ -54,6 +55,8 @@ export type ResolvedProductionOrderLink = {
   advancesKanban: boolean;
   isCanceled: boolean;
   isCurrent: boolean;
+  /** Status bruto Nomus da OP (quando disponível no pack). */
+  status: string | null;
 };
 
 export type ProductionOrderAuditAlertKind =
@@ -73,9 +76,7 @@ export type ProductionOrderAuditAlert = {
 export function isProductionOrderStatusCanceled(
   status: string | null | undefined
 ): boolean {
-  if (status == null) return false;
-  const folded = status.trim().toLowerCase();
-  return folded.includes("cancel");
+  return isNomusProductionOrderStatusCanceled(status);
 }
 
 /**
@@ -187,6 +188,7 @@ export function resolveSalesOrderProductionOrderLinks(
         advancesKanban: false,
         isCanceled,
         isCurrent: candidate.isCurrent !== false,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -207,6 +209,7 @@ export function resolveSalesOrderProductionOrderLinks(
           !isCanceled && candidate.isCurrent !== false && qty > 0,
         isCanceled,
         isCurrent: candidate.isCurrent !== false,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -234,6 +237,7 @@ export function resolveSalesOrderProductionOrderLinks(
             !isCanceled && candidate.isCurrent !== false && qty > 0,
           isCanceled,
           isCurrent: candidate.isCurrent !== false,
+          status: candidate.productionOrderStatus ?? null,
         });
         continue;
       }
@@ -256,6 +260,7 @@ export function resolveSalesOrderProductionOrderLinks(
             !isCanceled && candidate.isCurrent !== false && qty > 0,
           isCanceled,
           isCurrent: candidate.isCurrent !== false,
+          status: candidate.productionOrderStatus ?? null,
         });
         continue;
       }
@@ -272,6 +277,7 @@ export function resolveSalesOrderProductionOrderLinks(
         advancesKanban: false,
         isCanceled,
         isCurrent: candidate.isCurrent !== false,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -294,6 +300,7 @@ export function resolveSalesOrderProductionOrderLinks(
         advancesKanban: false,
         isCanceled,
         isCurrent: candidate.isCurrent !== false,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -325,6 +332,7 @@ export function resolveSalesOrderProductionOrderLinks(
             !isCanceled && candidate.isCurrent !== false && qty > 0,
           isCanceled,
           isCurrent: candidate.isCurrent !== false,
+          status: candidate.productionOrderStatus ?? null,
         });
         continue;
       }
@@ -342,6 +350,7 @@ export function resolveSalesOrderProductionOrderLinks(
             !isCanceled && candidate.isCurrent !== false && qty > 0,
           isCanceled,
           isCurrent: candidate.isCurrent !== false,
+          status: candidate.productionOrderStatus ?? null,
         });
         continue;
       }
@@ -358,6 +367,7 @@ export function resolveSalesOrderProductionOrderLinks(
         advancesKanban: false,
         isCanceled,
         isCurrent: candidate.isCurrent !== false,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -380,6 +390,7 @@ export function resolveSalesOrderProductionOrderLinks(
         advancesKanban: !isCanceled && qty > 0,
         isCanceled,
         isCurrent: true,
+        status: candidate.productionOrderStatus ?? null,
       });
       continue;
     }
@@ -405,6 +416,7 @@ export function resolveSalesOrderProductionOrderLinks(
       advancesKanban: false,
       isCanceled,
       isCurrent: candidate.isCurrent !== false,
+      status: candidate.productionOrderStatus ?? null,
     });
   }
 
@@ -557,6 +569,10 @@ export function buildProductionOrderLinksForItemFlow(
     .map((r) => ({
       linkedQuantity: r.linkedQuantity,
       isCurrent: r.isCurrent,
+      status: r.status,
+      productionOrderId: r.productionOrderId,
+      productionOrderExternalId: r.productionOrderExternalId,
+      isCanceled: r.isCanceled,
     }));
 
   return { motorLinks, resolved };

@@ -34,7 +34,7 @@ export const FINANCE_SECTION_PATHS: Record<FinanceSectionId, string> = {
   dre: "/finance/dre",
 };
 
-export const FINANCE_DEFAULT_SECTION: FinanceSectionId = "accounts-receivable";
+export const FINANCE_DEFAULT_SECTION: FinanceSectionId = "cash-flow";
 
 export type FinanceSectionDef = {
   id: FinanceSectionId;

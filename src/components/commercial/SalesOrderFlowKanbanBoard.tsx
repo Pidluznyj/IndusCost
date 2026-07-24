@@ -170,7 +170,17 @@ export function SalesOrderFlowKanbanBoard({
                   className="rounded-lg border border-dashed border-border bg-background/70 p-5 text-center text-xs text-muted-foreground"
                   data-testid={`sales-order-flow-kanban-column-empty-${column.stage}`}
                 >
-                  Nenhum pedido nesta etapa.
+                  {column.stage === "IN_PRODUCTION" ? (
+                    <>
+                      <p>Sem apontamentos de produção integrados.</p>
+                      <p className="mt-1 opacity-80">
+                        A coluna será preenchida quando houver evidência real de
+                        quantidade produzida.
+                      </p>
+                    </>
+                  ) : (
+                    "Nenhum pedido nesta etapa."
+                  )}
                 </div>
               ) : null}
 

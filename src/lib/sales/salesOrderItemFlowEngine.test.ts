@@ -417,7 +417,8 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     assert.ok(r);
     assert.equal(r!.requiresProduction, true);
     assert.equal(r!.productionOrderQuantity.eq(10), true);
-    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    // Liberada + planejada suficiente não avança para DS (proxy removido).
+    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.ok(
       r!.inconsistencies.some((i) => i.code === "PRODUCTION_QTY_NOT_NORMALIZED")
     );
@@ -514,6 +515,7 @@ describe("salesOrderItemFlowEngine — matriz OP-50", () => {
     const r = resolveSalesOrderItemFlowFromEvidence(pack, ITEM);
     assert.ok(r);
     assert.equal(r!.documentedQuantity.eq(0), true);
-    assert.equal(r!.currentStage, "WAITING_OUTPUT_DOCUMENT");
+    // DS cancelado não conta; OP Liberada permanece aguardando execução.
+    assert.equal(r!.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 });

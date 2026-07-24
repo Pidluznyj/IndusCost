@@ -120,6 +120,8 @@ export type SalesOrderOperationalProductionCoverage = {
   productionOrderId: string | null;
   productionOrderExternalId: number | null;
   linkedQuantity: number;
+  /** Status bruto Nomus da OP (quantidade planejada; não é qty produzida). */
+  status: string | null;
   link: SalesOrderOperationalLinkEdge;
   advancesKanban: boolean;
 };

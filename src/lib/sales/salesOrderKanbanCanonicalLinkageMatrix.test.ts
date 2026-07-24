@@ -127,7 +127,8 @@ describe("KAN-LINK-09 — matriz canônica PV → OP → DS → NF → Envio →
     });
     const item = resolveSalesOrderItemFlowFromEvidence(pack, MATRIX_ITEM_10)!;
     assert.ok(item.productionOrderQuantity.gte(114));
-    assert.notEqual(item.currentStage, "WAITING_PRODUCTION_ORDER");
+    // Planejada suficiente sem Encerrada/producedQuantity real permanece em Aguardando OP.
+    assert.equal(item.currentStage, "WAITING_PRODUCTION_ORDER");
   });
 
   it("#03 Pedido com OP parcial", () => {

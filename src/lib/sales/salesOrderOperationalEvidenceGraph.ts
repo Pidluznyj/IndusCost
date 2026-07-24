@@ -74,6 +74,8 @@ export type BuildSalesOrderOperationalEvidenceGraphInput = {
     productionOrderExternalId: number | null;
     linkedQuantity: number;
     isCurrent?: boolean;
+    /** Status bruto Nomus da OP. */
+    status?: string | null;
     link: SalesOrderOperationalLinkEdge;
   }>;
   /** Alertas de auditoria (nunca viram vínculo). */
@@ -101,8 +103,8 @@ export function buildSalesOrderOperationalEvidenceGraph(
   }
 
   const orderLinks = input.links.filter((l) => l.salesOrderItemId == null);
-  const items: SalesOrderOperationalItemEvidence[] = input.obligations.map(
-    (obligation) => {
+  // Reconciliação (KAN-LINK-06) é anexada depois — tipagem parcial até lá.
+  const items = input.obligations.map((obligation) => {
       const itemId = obligation.salesOrderItemId;
       const itemLinks = input.links.filter((l) => l.salesOrderItemId === itemId);
 
@@ -119,6 +121,7 @@ export function buildSalesOrderOperationalEvidenceGraph(
             productionOrderId: p.productionOrderId,
             productionOrderExternalId: p.productionOrderExternalId,
             linkedQuantity: Math.max(0, p.linkedQuantity),
+            status: p.status ?? null,
             link: p.link,
             advancesKanban: advances,
           };
@@ -242,8 +245,7 @@ export function buildSalesOrderOperationalEvidenceGraph(
         inconsistencies,
         links: itemLinks,
       };
-    }
-  );
+  });
 
   // KAN-LINK-06 — anexa reconciliação Pedido→OP→DS→NF (sem cadeia artificial).
   return attachOperationalReconciliation(
@@ -252,7 +254,7 @@ export function buildSalesOrderOperationalEvidenceGraph(
       salesOrderId: input.salesOrderId,
       orderCode: input.orderCode ?? null,
       externalSalesOrderId: input.externalSalesOrderId ?? null,
-      items,
+      items: items as SalesOrderOperationalItemEvidence[],
       orderLinks,
       warnings,
     },
@@ -306,13 +308,17 @@ export function adaptOperationalEvidenceItemToMotorAllocations(
       hasShipDate: item.shipment.evidence === "EXPLICIT_SHIP_DATE",
     }));
 
-  // Motor só consome linkedQuantity/isCurrent; IDs ficam no grafo.
+  // Motor consome qty vinculada + status da OP (planejada ≠ produzida).
   const productionLinks: SalesOrderItemFlowProductionLinkInput[] =
     item.production
       .filter((p) => p.advancesKanban && p.linkedQuantity > 0)
       .map((p) => ({
         linkedQuantity: p.linkedQuantity,
         isCurrent: true,
+        status: p.status,
+        productionOrderId: p.productionOrderId,
+        productionOrderExternalId: p.productionOrderExternalId,
+        isCanceled: false,
       }));
 
   return { documentAllocations, nfeAllocations, productionLinks };

@@ -12,6 +12,7 @@ import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/Fi
 import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
 import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
 import {
+  FINANCE_DEFAULT_SECTION,
   getFinanceDefaultPath,
   isFinanceCanonicalPath,
   parseFinanceSectionFromPath,
@@ -38,6 +39,7 @@ export function FinanceModule() {
   const visibleIds = new Set(visibleSections.map((s) => s.id));
   const defaultPath =
     visibleSections.find((s) => s.id === activeId)?.path ??
+    visibleSections.find((s) => s.id === FINANCE_DEFAULT_SECTION)?.path ??
     visibleSections[0]?.path ??
     getFinanceDefaultPath();
 
