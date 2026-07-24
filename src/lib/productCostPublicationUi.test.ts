@@ -6,6 +6,7 @@ import {
   computeProductionCostPublicationDifference,
   formatProductionCostPublicationDelta,
 } from "./productProductionCostPublicationStatus.js";
+import { selectPendingProductionCostDraftsForBulkPublish } from "./productEngineeringCostSnapshot.js";
 
 function read(rel: string): string {
   return readFileSync(join(process.cwd(), rel), "utf8");
@@ -87,6 +88,70 @@ describe("productCostPublicationUi", () => {
     assert.match(mod, /data-testid="bulk-refresh-cost-snapshot"/);
     assert.match(mod, /Atualizar snapshots \(\$\{selectedIds\.length\}\)/);
     assert.match(mod, /\/api\/products\/\$\{productId\}\/production-cost-snapshot/);
+  });
+
+  it("lista de engenharia oferece publicação em lote dos DRAFTs pendentes", () => {
+    const mod = productModule();
+    assert.match(mod, /handleBulkPublishProductionCostDrafts/);
+    assert.match(mod, /selectPendingProductionCostDraftsForBulkPublish/);
+    assert.match(mod, /data-testid="bulk-publish-production-cost"/);
+    assert.match(mod, /Publicar custos \(\$\{selectedIds\.length\}\)/);
+    assert.match(
+      mod,
+      /\/api\/production-cost-table-versions\/\$\{candidate\.versionId\}\/publish/
+    );
+    assert.match(mod, /canPublishProductionCost/);
+  });
+
+  it("seleciona só PENDENTE_PUBLICACAO com draftVersionId e deduplica versão", () => {
+    const candidates = selectPendingProductionCostDraftsForBulkPublish([
+      {
+        id: "p1",
+        name: "A",
+        frozenCostSummary: {
+          draftVersionId: "v1",
+          traceStatus: "PENDENTE_PUBLICACAO",
+        },
+      },
+      {
+        id: "p2",
+        name: "B",
+        frozenCostSummary: {
+          draftVersionId: "v1",
+          traceStatus: "PENDENTE_PUBLICACAO",
+        },
+      },
+      {
+        id: "p3",
+        name: "C",
+        frozenCostSummary: {
+          draftVersionId: "v2",
+          traceStatus: "SNAPSHOT_TECNICO_SEM_IMPACTO",
+        },
+      },
+      {
+        id: "p4",
+        name: "D",
+        frozenCostSummary: {
+          draftVersionId: null,
+          traceStatus: "CUSTO_DIVERGENTE",
+        },
+      },
+      {
+        id: "p5",
+        name: "E",
+        frozenCostSummary: {
+          draftVersionId: "v3",
+          traceStatus: "PENDENTE_PUBLICACAO",
+        },
+      },
+    ]);
+    assert.deepEqual(
+      candidates.map((c) => c.versionId),
+      ["v1", "v3"]
+    );
+    assert.equal(candidates[0]?.productId, "p1");
+    assert.equal(candidates[1]?.productId, "p5");
   });
 
   it("alerta de pendência usa componente ExecutiveAlert com paleta executiva", () => {

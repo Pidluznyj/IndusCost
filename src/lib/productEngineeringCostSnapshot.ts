@@ -170,3 +170,41 @@ export function frozenCostTraceStatusLabel(status: FrozenCostTraceStatus): strin
       return status;
   }
 }
+
+export type BulkPublishProductionCostCandidate = {
+  productId: string;
+  name: string;
+  versionId: string;
+};
+
+/**
+ * Itens selecionados elegíveis à publicação em lote:
+ * só `PENDENTE_PUBLICACAO` com `draftVersionId` (ignora snapshot técnico sem impacto).
+ * Deduplica por versão DRAFT (uma publicação cobre todos os itens da versão).
+ */
+export function selectPendingProductionCostDraftsForBulkPublish(
+  items: ReadonlyArray<{
+    id: string;
+    name: string;
+    frozenCostSummary?: {
+      draftVersionId: string | null;
+      traceStatus: FrozenCostTraceStatus;
+    } | null;
+  }>
+): BulkPublishProductionCostCandidate[] {
+  const seenVersions = new Set<string>();
+  const out: BulkPublishProductionCostCandidate[] = [];
+  for (const item of items) {
+    const fc = item.frozenCostSummary;
+    if (!fc?.draftVersionId) continue;
+    if (fc.traceStatus !== "PENDENTE_PUBLICACAO") continue;
+    if (seenVersions.has(fc.draftVersionId)) continue;
+    seenVersions.add(fc.draftVersionId);
+    out.push({
+      productId: item.id,
+      name: item.name,
+      versionId: fc.draftVersionId,
+    });
+  }
+  return out;
+}
