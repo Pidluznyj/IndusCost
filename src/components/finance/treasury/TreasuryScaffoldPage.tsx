@@ -1,21 +1,29 @@
 /**
- * Placeholder FE da Central de Tesouraria — sem regras financeiras e sem wiring de rota ainda.
- * Nav/ACL entram em prompts seguintes.
+ * Visão geral da Central de Tesouraria — sem regras financeiras.
  */
 
-import { TREASURY_UI_LABEL } from "./treasuryFeatureUi.js";
+import { Link } from "react-router-dom";
+import { TREASURY_UI_LABEL, TREASURY_UI_SECTIONS } from "./treasuryFeatureUi.js";
 
 export function TreasuryScaffoldPage() {
+  const accounts = TREASURY_UI_SECTIONS.find((s) => s.id === "accounts");
+
   return (
-    <div className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-        {TREASURY_UI_LABEL}
-      </h1>
-      <p className="mt-3 text-sm leading-6 text-slate-600">
-        Módulo em scaffold. Contas, saldos, OFX e conciliação bancária serão
-        adicionados em entregas seguintes — sem duplicar o financeiro oficial
-        (Fluxo de Caixa, CR/CP Nomus ou Conciliação de Carteira).
+    <div className="mx-auto max-w-3xl space-y-4" data-testid="treasury-scaffold-page">
+      <p className="text-sm leading-6 text-muted-foreground">
+        {TREASURY_UI_LABEL} concentra contas financeiras locais, saldos manuais,
+        OFX e conciliação bancária — sem duplicar o financeiro oficial (Fluxo de
+        Caixa, CR/CP Nomus ou Conciliação de Carteira).
       </p>
+      {accounts ? (
+        <Link
+          to={accounts.path}
+          className="inline-flex rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground"
+          data-testid="treasury-scaffold-open-accounts"
+        >
+          Abrir {accounts.label}
+        </Link>
+      ) : null}
     </div>
   );
 }

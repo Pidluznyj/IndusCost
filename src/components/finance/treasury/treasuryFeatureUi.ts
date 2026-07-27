@@ -21,4 +21,9 @@ export const TREASURY_UI_SECTIONS = [
     path: TREASURY_UI_BASE_PATH,
     label: "Visão geral",
   },
+  {
+    id: "accounts",
+    path: `${TREASURY_UI_BASE_PATH}/accounts`,
+    label: "Contas financeiras",
+  },
 ] as const;

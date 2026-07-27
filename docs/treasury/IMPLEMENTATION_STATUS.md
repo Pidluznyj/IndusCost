@@ -32,8 +32,9 @@
 | **05** | Auditoria central Tesouraria | `DONE` | `07c4036` — `feat(treasury): adicionar auditoria central append-only com suporte a transaction` | `TreasuryAuditLog` append-only + trigger; `writeTreasuryAuditLog` aceita TX; helpers tipados; testes create/update/rollback/imutabilidade; migration `20260806120000_*`; `test:treasury` 54/54 |
 | **06** | Repository + service contas financeiras | `DONE` | `e7bc851` — `feat(treasury): adicionar repository e service de contas financeiras` | CRUD lógica (list/get/create/update/deactivate/reactivate/sort/min balance/liquidity/consolidado/access); ACL+máscara+optimistic lock+audit; sem exclusão com histórico; `test:treasury` 64/64; rotas/UI ainda pendentes |
 | **07** | APIs REST contas financeiras | `DONE` | `80fc494` — `feat(treasury): adicionar APIs REST de contas financeiras` | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
+| **08** | UI contas financeiras | `DONE` | *(este commit)* | `/finance/treasury/accounts`; listar/criar/editar/desativar/reativar; saldo mín./liquidez/consolidado/acessos; máscara; estados vazio/loading/erro/sem permissão; responsivo; `test:treasury` 80/80 |
 
-> **Nota de ordem:** service/repo = **06**; APIs REST contas = **07**. UI de contas fica para o próximo passo.
+> **Nota de ordem:** service/repo = **06**; APIs REST contas = **07**; UI contas = **08**.
 
 ---
 
@@ -41,7 +42,7 @@
 
 | Capabilidade | Status | Notas / reuso |
 |--------------|--------|---------------|
-| Contas financeiras | `PARTIAL` | Schema + service/repo + APIs REST; UI ainda pendente |
+| Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `PARTIAL` | Schema `TreasuryBalanceSnapshot` (idempotência por origem); API ainda P06 |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; APIs `/api/finance/accounts-receivable/*` |
@@ -66,7 +67,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 70 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 80 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -241,7 +242,7 @@
 2. Seed DB (`permissions:seed:contract:apply`) ainda a cargo do usuário/ops — contrato tipado já está no código.
 3. Migrations Tesouraria criadas mas **não deployadas** — usuário aplica com `migrate deploy`.
 4. Deploy produção permanece com o usuário.
-5. `TreasuryScaffoldPage` ainda sem wiring em `FinanceModule`/nav (proposital).
+5. Shell Tesouraria em `/finance/treasury/*` (standalone); aba no `FinanceModule` principal ainda não (proposital — evita ripple de `FinanceSectionId`).
 6. Alias relacional PT `financeiro.tesouraria` ainda não criado no seed legado (de propósito nesta etapa).
 7. IndusCost não tem model `Company` — Tesouraria usa `companyCode`/`companyName` até existir entidade canônica.
 
@@ -261,3 +262,4 @@
 | 2026-07-27 | Prompt 05: auditoria central append-only + TX; test:treasury 54/54; migration não deployada |
 | 2026-07-27 | Prompt 06: repository/service contas financeiras; test:treasury 64/64 |
 | 2026-07-27 | Prompt 07: APIs REST contas financeiras; test:treasury 70/70 |
+| 2026-07-27 | Prompt 08: UI contas financeiras; test:treasury 80/80 |

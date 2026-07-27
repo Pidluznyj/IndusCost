@@ -17,6 +17,7 @@ import { SettingsModule } from "./components/SettingsModule";
 import { FinanceModule } from "./components/FinanceModule";
 import { FinanceSuppliersPage } from "./components/finance/FinanceSuppliersPage";
 import { FinancePortfolioReconciliationPage } from "./components/finance/FinancePortfolioReconciliationPage";
+import { TreasuryModule } from "./components/finance/treasury/TreasuryModule";
 import { CommissionsModule } from "./components/CommissionsModule";
 import { ReportsModule } from "./components/ReportsModule";
 import { CustomerModule } from "./components/CustomerModule";
@@ -1055,6 +1056,17 @@ export default function App() {
         <Route
           path="finance/portfolio-reconciliation"
           element={<FinancePortfolioReconciliationPage />}
+        />
+        <Route
+          path="finance/treasury/*"
+          element={
+            <ModulePageShell
+              title="Central de Tesouraria"
+              description="Contas financeiras locais, saldos e operações de caixa — distinto do Fluxo de Caixa e da Conciliação de Carteira."
+            >
+              <TreasuryModule />
+            </ModulePageShell>
+          }
         />
         <Route
           path="finance"
