@@ -368,6 +368,35 @@ export const TREASURY_RECONCILIATION_MATCH_STATUSES = [
 export type TreasuryReconciliationMatchStatus =
   (typeof TREASURY_RECONCILIATION_MATCH_STATUSES)[number];
 
+/** Status do lote de importação bancária (OFX). */
+export const TREASURY_BANK_IMPORT_BATCH_STATUSES = [
+  "RECEIVED",
+  "PROCESSED",
+  "FAILED",
+  "DISCARDED",
+] as const;
+export type TreasuryBankImportBatchStatus =
+  (typeof TREASURY_BANK_IMPORT_BATCH_STATUSES)[number];
+
+export const TREASURY_BANK_OFX_FORMATS = ["OFX1", "OFX2", "UNKNOWN"] as const;
+export type TreasuryBankOfxFormat = (typeof TREASURY_BANK_OFX_FORMATS)[number];
+
+/** Direção do movimento bancário (espelha DEBIT/CREDIT do ledger). */
+export const TREASURY_BANK_MOVEMENT_DIRECTIONS = ["DEBIT", "CREDIT"] as const;
+export type TreasuryBankMovementDirection =
+  (typeof TREASURY_BANK_MOVEMENT_DIRECTIONS)[number];
+
+/** Status de conciliação do movimento (inclui PARTIAL para valor conciliado). */
+export const TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES = [
+  "PENDING",
+  "PARTIAL",
+  "MATCHED",
+  "UNMATCHED",
+  "IGNORED",
+] as const;
+export type TreasuryBankMovementReconciliationStatus =
+  (typeof TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES)[number];
+
 export const TREASURY_AVAILABILITY_STATUSES = [
   "available",
   "disabled",

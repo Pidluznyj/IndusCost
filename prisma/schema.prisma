@@ -2026,69 +2026,70 @@ model AccessProfile {
 }
 
 model AppUser {
-  id                                  String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                                String
-  email                               String                               @unique
-  passwordHash                        String
-  role                                AppUserRole                          @default(VIEWER)
-  permissions                         String[]                             @default([])
+  id                                   String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                 String
+  email                                String                               @unique
+  passwordHash                         String
+  role                                 AppUserRole                          @default(VIEWER)
+  permissions                          String[]                             @default([])
   /// Incrementado a cada mutação de ACL (P21). Sessões com epoch desatualizado são invalidadas.
-  permissionsVersion                  Int                                  @default(0)
-  accessProfileId                     String?                              @db.Uuid
+  permissionsVersion                   Int                                  @default(0)
+  accessProfileId                      String?                              @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
-  employeeId                          String?                              @unique @db.Uuid
+  employeeId                           String?                              @unique @db.Uuid
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
-  personId                            String?                              @unique @db.Uuid
-  isActive                            Boolean                              @default(true)
-  externalSellerId                    Int?
+  personId                             String?                              @unique @db.Uuid
+  isActive                             Boolean                              @default(true)
+  externalSellerId                     Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
-  externalSellerIds                   Int[]                                @default([])
-  sellerResponsibleName               String?
-  lastLoginAt                         DateTime?                            @db.Timestamptz(6)
-  createdAt                           DateTime                             @default(now()) @db.Timestamptz(6)
-  updatedAt                           DateTime                             @updatedAt @db.Timestamptz(6)
-  accessProfile                       AccessProfile?                       @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  employee                            Employee?                            @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  person                              Person?                              @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  sessions                            AppSession[]
-  permissionOverrides                 UserPermissionOverride[]
-  permissionAuditsAsActor             PermissionAuditLog[]                 @relation("PermissionAuditActor")
-  permissionAuditsAsTarget            PermissionAuditLog[]                 @relation("PermissionAuditTarget")
-  treasuryAccountsCreated             TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
-  treasuryAccountsDeactivated         TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
-  treasuryAccountAccessGrants         TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
-  treasuryAccountAccessGrantedBy      TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
-  treasuryBalanceSnapshotsCreated     TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
-  treasuryAuditLogs                   TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
-  treasuryTitleComplementsCreated     TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
-  treasuryTitleComplementsUpdated     TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
-  treasuryTitleComplementsCancelled   TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
-  treasuryTitleComplementsResponsible TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
-  treasuryPaymentPromisesCreated      TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCreatedBy")
-  treasuryPaymentPromisesUpdated      TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
-  treasuryPaymentPromisesCancelled    TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
-  treasuryPaymentPromisesResponsible  TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
-  treasuryCollectionActionsCreated    TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCreatedBy")
-  treasuryCollectionActionsUpdated    TreasuryCollectionAction[]           @relation("TreasuryCollectionActionUpdatedBy")
-  treasuryCollectionActionsCancelled  TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCancelledBy")
-  treasuryCollectionActionsResponsible TreasuryCollectionAction[]          @relation("TreasuryCollectionActionResponsible")
-  treasuryDisputesCreated             TreasuryDispute[]                    @relation("TreasuryDisputeCreatedBy")
-  treasuryDisputesUpdated             TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
-  treasuryDisputesCancelled           TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
-  treasuryDisputesResponsible         TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
-  treasuryProjectionRunsCreated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
-  treasuryProjectionRunsUpdated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
-  treasuryTransfersCreated            TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
-  treasuryTransfersUpdated            TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
-  treasuryTransfersCancelled          TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
-  treasuryExceptionsCreated           TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
-  treasuryExceptionsUpdated           TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
-  treasuryExceptionsCancelled         TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
-  treasuryExceptionsResponsible       TreasuryException[]                  @relation("TreasuryExceptionResponsible")
-  treasuryAlertSettingsUpdated        TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
-  treasuryDailyClosingsCreated        TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
-  treasuryDailyClosingsClosed         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
-  treasuryDailyClosingReopenings      TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
+  externalSellerIds                    Int[]                                @default([])
+  sellerResponsibleName                String?
+  lastLoginAt                          DateTime?                            @db.Timestamptz(6)
+  createdAt                            DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt                            DateTime                             @updatedAt @db.Timestamptz(6)
+  accessProfile                        AccessProfile?                       @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee                             Employee?                            @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                               Person?                              @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                             AppSession[]
+  permissionOverrides                  UserPermissionOverride[]
+  permissionAuditsAsActor              PermissionAuditLog[]                 @relation("PermissionAuditActor")
+  permissionAuditsAsTarget             PermissionAuditLog[]                 @relation("PermissionAuditTarget")
+  treasuryAccountsCreated              TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
+  treasuryAccountsDeactivated          TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
+  treasuryAccountAccessGrants          TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
+  treasuryAccountAccessGrantedBy       TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
+  treasuryBalanceSnapshotsCreated      TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
+  treasuryAuditLogs                    TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
+  treasuryTitleComplementsCreated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
+  treasuryTitleComplementsUpdated      TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
+  treasuryTitleComplementsCancelled    TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
+  treasuryTitleComplementsResponsible  TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
+  treasuryPaymentPromisesCreated       TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCreatedBy")
+  treasuryPaymentPromisesUpdated       TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
+  treasuryPaymentPromisesCancelled     TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
+  treasuryPaymentPromisesResponsible   TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
+  treasuryCollectionActionsCreated     TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCreatedBy")
+  treasuryCollectionActionsUpdated     TreasuryCollectionAction[]           @relation("TreasuryCollectionActionUpdatedBy")
+  treasuryCollectionActionsCancelled   TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCancelledBy")
+  treasuryCollectionActionsResponsible TreasuryCollectionAction[]           @relation("TreasuryCollectionActionResponsible")
+  treasuryDisputesCreated              TreasuryDispute[]                    @relation("TreasuryDisputeCreatedBy")
+  treasuryDisputesUpdated              TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
+  treasuryDisputesCancelled            TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
+  treasuryDisputesResponsible          TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
+  treasuryProjectionRunsCreated        TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
+  treasuryProjectionRunsUpdated        TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
+  treasuryTransfersCreated             TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
+  treasuryTransfersUpdated             TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
+  treasuryTransfersCancelled           TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
+  treasuryExceptionsCreated            TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
+  treasuryExceptionsUpdated            TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
+  treasuryExceptionsCancelled          TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
+  treasuryExceptionsResponsible        TreasuryException[]                  @relation("TreasuryExceptionResponsible")
+  treasuryAlertSettingsUpdated         TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
+  treasuryDailyClosingsCreated         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
+  treasuryDailyClosingsClosed          TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
+  treasuryDailyClosingReopenings       TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
+  treasuryBankImportBatchesCreated     TreasuryBankImportBatch[]            @relation("TreasuryBankImportBatchCreatedBy")
 
   @@index([role])
   @@index([isActive])
@@ -6821,18 +6822,20 @@ model TreasuryFinancialAccount {
   deactivatedByUserId   String?                      @db.Uuid
   deactivationReason    String?
 
-  createdByUser               AppUser                              @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  deactivatedByUser           AppUser?                             @relation("TreasuryAccountDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser               AppUser                               @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deactivatedByUser           AppUser?                              @relation("TreasuryAccountDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   accessGrants                TreasuryFinancialAccountAccess[]
   balanceSnapshots            TreasuryBalanceSnapshot[]
   titleOperationalComplements TreasuryTitleOperationalComplement[]
   projectionDayLines          TreasuryProjectionDayLine[]
-  transfersFrom               TreasuryTransfer[]                   @relation("TreasuryTransferFromAccount")
-  transfersTo                 TreasuryTransfer[]                   @relation("TreasuryTransferToAccount")
+  transfersFrom               TreasuryTransfer[]                    @relation("TreasuryTransferFromAccount")
+  transfersTo                 TreasuryTransfer[]                    @relation("TreasuryTransferToAccount")
   exceptions                  TreasuryException[]
   closingAccountPositions     TreasuryDailyClosingAccountPosition[]
   closingFrozenPendencies     TreasuryDailyClosingFrozenPendency[]
   closingFrozenExceptions     TreasuryDailyClosingFrozenException[]
+  bankImportBatches           TreasuryBankImportBatch[]
+  bankMovements               TreasuryBankMovement[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7134,25 +7137,25 @@ model TreasuryDispute {
   officialTitleId    String                    @db.Uuid
   officialExternalId Int
 
-  reason             String
-  amountDisputed     Decimal? @db.Decimal(20, 2)
-  responsibleUserId  String?  @db.Uuid
-  involvedArea       String?
-  dueDate            DateTime? @db.Date
-  notes              String?
-  status             TreasuryDisputeStatus @default(OPEN)
-  resolutionNote     String?
+  reason            String
+  amountDisputed    Decimal?              @db.Decimal(20, 2)
+  responsibleUserId String?               @db.Uuid
+  involvedArea      String?
+  dueDate           DateTime?             @db.Date
+  notes             String?
+  status            TreasuryDisputeStatus @default(OPEN)
+  resolutionNote    String?
 
   version Int @default(1)
 
-  openedAt           DateTime  @default(now()) @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
-  createdByUserId    String    @db.Uuid
-  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
-  updatedByUserId    String?   @db.Uuid
-  cancelledAt        DateTime? @db.Timestamptz(6)
-  cancelledByUserId  String?   @db.Uuid
-  resolvedAt         DateTime? @db.Timestamptz(6)
+  openedAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId   String    @db.Uuid
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?   @db.Uuid
+  cancelledAt       DateTime? @db.Timestamptz(6)
+  cancelledByUserId String?   @db.Uuid
+  resolvedAt        DateTime? @db.Timestamptz(6)
 
   responsibleUser AppUser? @relation("TreasuryDisputeResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   createdByUser   AppUser  @relation("TreasuryDisputeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
@@ -7225,7 +7228,7 @@ model TreasuryProjectionRun {
   periodTo   DateTime @db.Date
 
   /// Versão/hash da fonte de dados (snapshots, títulos, complementos…).
-  sourceVersion String
+  sourceVersion    String
   /// Versão do algoritmo/motor que gerou as linhas.
   algorithmVersion String
 
@@ -7245,13 +7248,13 @@ model TreasuryProjectionRun {
   lineCount Int @default(0)
   itemCount Int @default(0)
 
-  createdByUserId String  @db.Uuid
+  createdByUserId String   @db.Uuid
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
-  updatedByUserId String? @db.Uuid
+  updatedByUserId String?  @db.Uuid
 
-  createdByUser AppUser  @relation("TreasuryProjectionRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  updatedByUser AppUser? @relation("TreasuryProjectionRunUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser AppUser                     @relation("TreasuryProjectionRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser AppUser?                    @relation("TreasuryProjectionRunUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   dayLines      TreasuryProjectionDayLine[]
 
   @@unique([idempotencyKey])
@@ -7267,29 +7270,29 @@ model TreasuryProjectionRun {
 model TreasuryProjectionDayLine {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  runId     String @db.Uuid
-  accountId String @db.Uuid
+  runId     String   @db.Uuid
+  accountId String   @db.Uuid
   /// Data civil da linha.
   civilDate DateTime @db.Date
 
-  openingBalance        Decimal @db.Decimal(20, 2)
-  inflows               Decimal @default(0) @db.Decimal(20, 2)
-  outflows              Decimal @default(0) @db.Decimal(20, 2)
-  transfers             Decimal @default(0) @db.Decimal(20, 2)
-  realized              Decimal @default(0) @db.Decimal(20, 2)
-  closingBalance        Decimal @db.Decimal(20, 2)
-  uncertainReceivables  Decimal @default(0) @db.Decimal(20, 2)
-  minimumBalance        Decimal @default(0) @db.Decimal(20, 2)
-  riskAmount            Decimal @default(0) @db.Decimal(20, 2)
-  riskCode              TreasuryProjectionRiskCode @default(NONE)
-  itemCount             Int     @default(0)
+  openingBalance       Decimal                    @db.Decimal(20, 2)
+  inflows              Decimal                    @default(0) @db.Decimal(20, 2)
+  outflows             Decimal                    @default(0) @db.Decimal(20, 2)
+  transfers            Decimal                    @default(0) @db.Decimal(20, 2)
+  realized             Decimal                    @default(0) @db.Decimal(20, 2)
+  closingBalance       Decimal                    @db.Decimal(20, 2)
+  uncertainReceivables Decimal                    @default(0) @db.Decimal(20, 2)
+  minimumBalance       Decimal                    @default(0) @db.Decimal(20, 2)
+  riskAmount           Decimal                    @default(0) @db.Decimal(20, 2)
+  riskCode             TreasuryProjectionRiskCode @default(NONE)
+  itemCount            Int                        @default(0)
 
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  run               TreasuryProjectionRun              @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  account           TreasuryFinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  compositionItems  TreasuryProjectionCompositionItem[]
+  run              TreasuryProjectionRun               @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  account          TreasuryFinancialAccount            @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  compositionItems TreasuryProjectionCompositionItem[]
 
   @@unique([runId, accountId, civilDate])
   @@index([runId, civilDate])
@@ -7301,18 +7304,18 @@ model TreasuryProjectionDayLine {
 model TreasuryProjectionCompositionItem {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
 
-  dayLineId String                   @db.Uuid
-  itemKind  TreasuryProjectionItemKind
+  dayLineId       String                     @db.Uuid
+  itemKind        TreasuryProjectionItemKind
   /// Valor com sinal: positivo = entrada, negativo = saída (ou usar amount + direction).
-  amount    Decimal                  @db.Decimal(20, 2)
-  label     String?
+  amount          Decimal                    @db.Decimal(20, 2)
+  label           String?
   /// Referências opcionais a títulos/lançamentos oficiais ou locais.
-  officialTitleId    String? @db.Uuid
-  nomusExternalId    Int?
-  ledgerEntryId      String? @db.Uuid
-  transferGroupId    String? @db.Uuid
-  sourceRef          String?
-  metadataJson       Json?
+  officialTitleId String?                    @db.Uuid
+  nomusExternalId Int?
+  ledgerEntryId   String?                    @db.Uuid
+  transferGroupId String?                    @db.Uuid
+  sourceRef       String?
+  metadataJson    Json?
 
   sortOrder Int      @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
@@ -7325,6 +7328,7 @@ model TreasuryProjectionCompositionItem {
   @@index([nomusExternalId])
   @@index([transferGroupId])
 }
+
 /// Status da fila persistente de recálculo de projeção.
 enum TreasuryProjectionRecalcJobStatus {
   PENDING
@@ -7365,7 +7369,7 @@ model TreasuryProjectionRecalcJob {
   /// Chave estável para deduplicar eventos equivalentes enquanto ativos.
   deduplicationKey String
   /// Título/conta/grupo opcional do evento.
-  subjectId String?
+  subjectId        String?
 
   payloadJson Json?
 
@@ -7525,7 +7529,7 @@ model TreasuryException {
 
   companyCode String
   /// Chave estável da causa (dedupe enquanto aberta; histórico via recorrência).
-  uniqueKey String @unique
+  uniqueKey   String @unique
 
   type     TreasuryExceptionType
   severity TreasuryExceptionSeverity
@@ -7533,7 +7537,7 @@ model TreasuryException {
 
   entityKind      TreasuryExceptionEntityKind?
   entityId        String?
-  accountId       String? @db.Uuid
+  accountId       String?                      @db.Uuid
   nomusExternalId String?
 
   title       String
@@ -7563,11 +7567,11 @@ model TreasuryException {
   cancelledAt       DateTime? @db.Timestamptz(6)
   cancelledByUserId String?   @db.Uuid
 
-  account         TreasuryFinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  responsibleUser AppUser?                  @relation("TreasuryExceptionResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  createdByUser   AppUser                   @relation("TreasuryExceptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  updatedByUser   AppUser?                  @relation("TreasuryExceptionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  cancelledByUser AppUser?                  @relation("TreasuryExceptionCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  account                TreasuryFinancialAccount?             @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  responsibleUser        AppUser?                              @relation("TreasuryExceptionResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser          AppUser                               @relation("TreasuryExceptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser          AppUser?                              @relation("TreasuryExceptionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser        AppUser?                              @relation("TreasuryExceptionCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   closingFrozenSnapshots TreasuryDailyClosingFrozenException[]
 
   @@index([companyCode, status, severity])
@@ -7587,11 +7591,11 @@ model TreasuryAlertSettings {
 
   alertsEnabled Boolean @default(true)
 
-  relevantReceiptMinAmount              Decimal @default(10000.00) @db.Decimal(20, 2)
-  customerConcentrationTopN             Int     @default(3)
-  customerConcentrationMinSharePercent  Decimal @default(50.00) @db.Decimal(10, 2)
-  staleBalanceHours                     Int     @default(36)
-  syncMaxAgeHours                       Int     @default(24)
+  relevantReceiptMinAmount             Decimal @default(10000.00) @db.Decimal(20, 2)
+  customerConcentrationTopN            Int     @default(3)
+  customerConcentrationMinSharePercent Decimal @default(50.00) @db.Decimal(10, 2)
+  staleBalanceHours                    Int     @default(36)
+  syncMaxAgeHours                      Int     @default(24)
 
   /// Mapa kind → INFO|WARNING|CRITICAL
   severityByKindJson Json?
@@ -7615,10 +7619,10 @@ enum TreasuryDailyClosingStatus {
 /// Fechamento diário versionado — payload financeiro congelado após CLOSED.
 /// Reabertura cria nova versão e preserva a anterior (status REOPENED).
 model TreasuryDailyClosing {
-  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   companyCode String
   /// Data civil do fechamento (America/Sao_Paulo).
-  civilDate   DateTime @db.Date
+  civilDate   DateTime                   @db.Date
   /// Versão monotônica por empresa+data (1, 2, …). Reabertura incrementa.
   version     Int
   status      TreasuryDailyClosingStatus @default(OPEN)
@@ -7628,14 +7632,14 @@ model TreasuryDailyClosing {
   /// Hash de integridade do payload congelado (opcional até CLOSE).
   contentHash String?
 
-  openingBalance     Decimal @db.Decimal(20, 2)
-  realizedInflows    Decimal @default(0) @db.Decimal(20, 2)
-  realizedOutflows   Decimal @default(0) @db.Decimal(20, 2)
-  pendenciesAmount   Decimal @default(0) @db.Decimal(20, 2)
-  closingBalance     Decimal @db.Decimal(20, 2)
-  observedBalance    Decimal @db.Decimal(20, 2)
-  reconciledBalance  Decimal @db.Decimal(20, 2)
-  differenceAmount   Decimal @default(0) @db.Decimal(20, 2)
+  openingBalance    Decimal @db.Decimal(20, 2)
+  realizedInflows   Decimal @default(0) @db.Decimal(20, 2)
+  realizedOutflows  Decimal @default(0) @db.Decimal(20, 2)
+  pendenciesAmount  Decimal @default(0) @db.Decimal(20, 2)
+  closingBalance    Decimal @db.Decimal(20, 2)
+  observedBalance   Decimal @db.Decimal(20, 2)
+  reconciledBalance Decimal @db.Decimal(20, 2)
+  differenceAmount  Decimal @default(0) @db.Decimal(20, 2)
 
   exceptionsCount  Int     @default(0)
   exceptionsAmount Decimal @default(0) @db.Decimal(20, 2)
@@ -7643,8 +7647,8 @@ model TreasuryDailyClosing {
 
   notes String?
 
-  previousClosingId       String? @db.Uuid
-  supersededByClosingId   String? @db.Uuid
+  previousClosingId     String? @db.Uuid
+  supersededByClosingId String? @db.Uuid
 
   createdByUserId String    @db.Uuid
   createdAt       DateTime  @default(now()) @db.Timestamptz(6)
@@ -7660,12 +7664,12 @@ model TreasuryDailyClosing {
   supersededBy TreasuryDailyClosing?  @relation("TreasuryDailyClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   supersedes   TreasuryDailyClosing[] @relation("TreasuryDailyClosingSupersession")
 
-  accountPositions  TreasuryDailyClosingAccountPosition[]
-  frozenPendencies  TreasuryDailyClosingFrozenPendency[]
-  frozenExceptions  TreasuryDailyClosingFrozenException[]
-  caveats           TreasuryDailyClosingCaveat[]
-  reopenFrom        TreasuryDailyClosingReopening?  @relation("TreasuryDailyClosingReopenFrom")
-  reopenTo          TreasuryDailyClosingReopening?  @relation("TreasuryDailyClosingReopenTo")
+  accountPositions TreasuryDailyClosingAccountPosition[]
+  frozenPendencies TreasuryDailyClosingFrozenPendency[]
+  frozenExceptions TreasuryDailyClosingFrozenException[]
+  caveats          TreasuryDailyClosingCaveat[]
+  reopenFrom       TreasuryDailyClosingReopening?        @relation("TreasuryDailyClosingReopenFrom")
+  reopenTo         TreasuryDailyClosingReopening?        @relation("TreasuryDailyClosingReopenTo")
 
   @@unique([companyCode, civilDate, version])
   @@index([companyCode, civilDate, status])
@@ -7697,8 +7701,8 @@ model TreasuryDailyClosingAccountPosition {
   sortOrder Int      @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  closing TreasuryDailyClosing      @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  account TreasuryFinancialAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  closing TreasuryDailyClosing     @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
   @@unique([closingId, accountId])
   @@index([closingId, sortOrder])
@@ -7707,25 +7711,25 @@ model TreasuryDailyClosingAccountPosition {
 
 /// Pendência (CR/CP) congelada no momento do fechamento.
 model TreasuryDailyClosingFrozenPendency {
-  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  closingId String @db.Uuid
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId String  @db.Uuid
   accountId String? @db.Uuid
 
-  titleKind         TreasuryOfficialTitleKind
-  officialTitleId   String? @db.Uuid
-  nomusExternalId   Int?
-  dueDate           DateTime? @db.Date
-  expectedDate      DateTime? @db.Date
-  openAmount        Decimal @db.Decimal(20, 2)
-  statusSnapshot    String?
-  counterpartyName  String?
-  label             String?
-  metadataJson      Json?
+  titleKind        TreasuryOfficialTitleKind
+  officialTitleId  String?                   @db.Uuid
+  nomusExternalId  Int?
+  dueDate          DateTime?                 @db.Date
+  expectedDate     DateTime?                 @db.Date
+  openAmount       Decimal                   @db.Decimal(20, 2)
+  statusSnapshot   String?
+  counterpartyName String?
+  label            String?
+  metadataJson     Json?
 
   sortOrder Int      @default(0)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
 
-  closing TreasuryDailyClosing     @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  closing TreasuryDailyClosing      @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   account TreasuryFinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 
   @@index([closingId, sortOrder])
@@ -7737,18 +7741,18 @@ model TreasuryDailyClosingFrozenPendency {
 
 /// Exceção operacional congelada no fechamento (snapshot; não muta a exceção viva).
 model TreasuryDailyClosingFrozenException {
-  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  closingId         String @db.Uuid
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId         String  @db.Uuid
   sourceExceptionId String? @db.Uuid
   accountId         String? @db.Uuid
 
-  type        TreasuryExceptionType
-  severity    TreasuryExceptionSeverity
-  title       String
-  description String?
-  amount      Decimal? @db.Decimal(20, 2)
-  entityKind  TreasuryExceptionEntityKind?
-  entityId    String?
+  type         TreasuryExceptionType
+  severity     TreasuryExceptionSeverity
+  title        String
+  description  String?
+  amount       Decimal?                     @db.Decimal(20, 2)
+  entityKind   TreasuryExceptionEntityKind?
+  entityId     String?
   snapshotJson Json?
 
   sortOrder Int      @default(0)
@@ -7770,10 +7774,10 @@ model TreasuryDailyClosingCaveat {
   id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   closingId String @db.Uuid
 
-  code        String?
-  severity    TreasuryExceptionSeverity @default(WARNING)
-  message     String
-  acknowledged Boolean @default(false)
+  code         String?
+  severity     TreasuryExceptionSeverity @default(WARNING)
+  message      String
+  acknowledged Boolean                   @default(false)
   metadataJson Json?
 
   sortOrder Int      @default(0)
@@ -7788,9 +7792,9 @@ model TreasuryDailyClosingCaveat {
 
 /// Evento de reabertura — preserva vínculo versão anterior → nova versão.
 model TreasuryDailyClosingReopening {
-  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  fromClosingId String @unique @db.Uuid
-  toClosingId   String @unique @db.Uuid
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fromClosingId String  @unique @db.Uuid
+  toClosingId   String  @unique @db.Uuid
   reason        String
   requestId     String?
 
@@ -7806,3 +7810,121 @@ model TreasuryDailyClosingReopening {
   @@index([requestId])
 }
 
+// ---------------------------------------------------------------------------
+// Importação bancária OFX — lote + movimentos normalizados (sem raw OFX)
+// ---------------------------------------------------------------------------
+
+enum TreasuryBankImportBatchStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
+  DISCARDED
+}
+
+enum TreasuryBankOfxFormat {
+  OFX1
+  OFX2
+  UNKNOWN
+}
+
+enum TreasuryBankMovementDirection {
+  DEBIT
+  CREDIT
+}
+
+/// Status de conciliação do movimento bancário (valor parcial permitido).
+enum TreasuryBankMovementReconciliationStatus {
+  PENDING
+  PARTIAL
+  MATCHED
+  UNMATCHED
+  IGNORED
+}
+
+/// Lote de importação bancária (arquivo OFX). Não armazena o arquivo bruto.
+model TreasuryBankImportBatch {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyCode String
+  accountId   String @db.Uuid
+
+  /// SHA-256 do arquivo (fingerprint do lote) — idempotência de reimport.
+  fileSha256       String
+  originalFileName String
+  byteLength       Int
+  format           TreasuryBankOfxFormat         @default(UNKNOWN)
+  status           TreasuryBankImportBatchStatus @default(RECEIVED)
+
+  transactionCount Int   @default(0)
+  /// Resumo não sensível (contagens/avisos). Sem payload OFX completo.
+  summaryJson      Json?
+
+  requestId String?
+  notes     String?
+
+  createdByUserId String    @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  processedAt     DateTime? @db.Timestamptz(6)
+
+  account       TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser AppUser                  @relation("TreasuryBankImportBatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  movements     TreasuryBankMovement[]
+
+  @@unique([accountId, fileSha256])
+  @@index([companyCode, createdAt])
+  @@index([accountId, status])
+  @@index([status])
+  @@index([fileSha256])
+  @@index([createdByUserId])
+  @@index([requestId])
+}
+
+/// Movimento bancário normalizado (mínimo necessário para conciliação).
+/// Não persiste número de conta completo, SGML bruto nem metadados desnecessários.
+model TreasuryBankMovement {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  batchId     String @db.Uuid
+  companyCode String
+  accountId   String @db.Uuid
+
+  /// Fingerprint estável anti-duplicidade (por conta).
+  fingerprint String
+  /// FITID do OFX quando presente (unicidade complementar por conta).
+  fitId       String?
+
+  direction TreasuryBankMovementDirection
+  /// Valor absoluto (sempre >= 0); sinal vem de `direction`.
+  amount    Decimal                       @db.Decimal(20, 2)
+  currency  TreasuryCurrencyCode          @default(BRL)
+
+  postedCivilDate DateTime  @db.Date
+  userCivilDate   DateTime? @db.Date
+
+  description      String?
+  documentNumber   String?
+  counterpartyName String?
+  trnType          String?
+
+  reconciliationStatus TreasuryBankMovementReconciliationStatus @default(PENDING)
+  /// Valor já conciliado (0..amount).
+  reconciledAmount     Decimal                                  @default(0) @db.Decimal(20, 2)
+
+  /// Payload normalizado mínimo (sem raw OFX / sem dados bancários sensíveis).
+  normalizedPayloadJson Json?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  batch   TreasuryBankImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([accountId, fingerprint])
+  @@unique([accountId, fitId])
+  @@index([batchId, sortOrder])
+  @@index([companyCode, postedCivilDate])
+  @@index([accountId, postedCivilDate])
+  @@index([accountId, reconciliationStatus])
+  @@index([reconciliationStatus])
+  @@index([direction])
+  @@index([fitId])
+  @@index([documentNumber])
+}

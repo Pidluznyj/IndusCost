@@ -71,9 +71,10 @@
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 | **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
-| **47** | Base segura importação OFX | `DONE` | _(pending commit)_ | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; `test:treasury` 468/468 |
+| **47** | Base segura importação OFX | `DONE` | `c4d09c1` | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; `test:treasury` 468/468 |
+| **48** | Schema importação bancária + movimentos | `DONE` | _(pending commit)_ | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
 
-    > **Nota de ordem:** …; pós-fechamento = **46**; OFX base = **47**.
+    > **Nota de ordem:** …; pós-fechamento = **46**; OFX base = **47**; schema import OFX = **48**.
 
 ---
 
@@ -100,7 +101,7 @@
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
-| Importação OFX | `PARTIAL` | P47: parser/intake/temp seguros (`ofx-data-extractor`); sem persistência de transações ainda |
+| Importação OFX | `PARTIAL` | P47 parser; P48 schema lote+movimentos+fingerprint (persistência de serviço ainda pendente) |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
@@ -523,6 +524,16 @@
 - [x] Sem avanço automático
 ---
 
+### 48 — Schema Prisma lote/movimento bancário
+- [x] Models `TreasuryBankImportBatch` + `TreasuryBankMovement` (fingerprint, payload normalizado, conta, direção, valor, datas, descrição, documento, contraparte, status/valor conciliado)
+- [x] Enums de lote/formato/direção/conciliação (inclui `PARTIAL`)
+- [x] Unicidade anti-duplicidade: `(accountId, fileSha256)`, `(accountId, fingerprint)`, `(accountId, fitId)`
+- [x] Sem raw OFX / sem número de conta completo; `amount` absoluto + `direction`; `reconciledAmount` 0..amount (CHECK)
+- [x] Migration aditiva `20260818120000_treasury_bank_import_and_movements` (não aplicada em prod)
+- [x] Contratos client-safe + helper de fingerprint; testes de integridade; `test:treasury` 475/475
+- [x] Sem API/UI/import service neste passo; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -588,4 +599,5 @@
 | 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
 | 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
 | 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — `9760540` |
-| 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — _(pending commit)_ |
+| 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — `c4d09c1` |
+| 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — _(pending commit)_ |
