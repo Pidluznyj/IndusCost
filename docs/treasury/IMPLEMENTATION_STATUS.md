@@ -47,7 +47,7 @@
 | **20** | Programação de pagamentos (CP) | `DONE` | `5d06c5a` | `POST/PUT …/payables/:titleId/program-payment` + `/cancel`; parcial; acima do saldo c/ justificativa; impacto conta/consolidado + alerta negativo; optimistic lock; audit; recálculo; flag `payablesProgramming`; `test:treasury` 176/176 |
 | **21** | UI Contas a Pagar | `DONE` | `3240f2f` | `/finance/treasury/payables`; tabela paginada; filtros; totais; status/prioridade/programada/conta; impacto caixa; drawer; form programação com confirmação (saldo conta/consolidado/risco); bloqueio/adiamento/obs/histórico; responsivo; `test:treasury` 183/183 |
 | **22** | Serviço de posição financeira atual | `DONE` | `bedc17c` | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
-| **23** | Dashboard diário Tesouraria | `DONE` | _(pendente hash)_ | `GET /api/finance/treasury/dashboard`; freshness; observado/calculado/conciliado/diferença; CR/CP previsto/realizado/pendente; saldo atual + projetado encerramento; qtd títulos; posição por conta; exceções prioritárias; composição detalhável; filtros date/accountIds/scenario; agregação SQL; `test:treasury` 200/200 |
+| **23** | Dashboard diário Tesouraria | `DONE` | `ed88f66` | `GET /api/finance/treasury/dashboard`; freshness; observado/calculado/conciliado/diferença; CR/CP previsto/realizado/pendente; saldo atual + projetado encerramento; qtd títulos; posição por conta; exceções prioritárias; composição detalhável; filtros date/accountIds/scenario; agregação SQL; `test:treasury` 200/200 |
 
     > **Nota de ordem:** …; posição financeira = **22**; dashboard diário = **23**.
 
@@ -316,4 +316,4 @@
 | 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — `5d06c5a` |
 | 2026-07-27 | Prompt 21: UI Contas a Pagar Tesouraria (tabela/filtros/drawer/programação/impacto) — `3240f2f` |
 | 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — `bedc17c` |
-| 2026-07-27 | Prompt 23: dashboard diário Tesouraria (`GET /dashboard` + agregações + consistência totais) — _(pendente hash)_ |
+| 2026-07-27 | Prompt 23: dashboard diário Tesouraria (`GET /dashboard` + agregações + consistência totais) — `ed88f66` |
