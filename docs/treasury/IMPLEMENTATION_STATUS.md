@@ -576,4 +576,4 @@
 | 2026-07-27 | Prompt 43: preview fechamento diário — `7313c86` |
 | 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
 | 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
-| 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — _(pending commit)_ |
+| 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — `9760540` |
