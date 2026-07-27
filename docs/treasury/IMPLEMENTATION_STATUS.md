@@ -53,8 +53,9 @@
 | **26** | Regras puras data de movimento (projeção) | `DONE` | `b390439` | `treasuryMovementDateRules`: AR/AP × CONTRACTUAL/PROBABLE/CONFIRMED/MANUAL; fuso `America/Sao_Paulo`; vencido sem previsão ≠ hoje; testes virada de data; `test:treasury` 225/225 |
 | **27** | Identidade e precedência financeira | `DONE` | `4f6cd19` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
 | **28** | Motor determinístico de projeção | `DONE` | `0ac7098` | `treasuryProjectionEngine`: fluxo 16 passos; Decimal string; datas+identidade; day lines + risco + composição; sem Express/Prisma; `test:treasury` 260/260 |
+| **29** | Precisão Decimal + liquidez no motor | `DONE` | `3c6103a` | Money BigInt HALF_UP; aplicações IMMEDIATE/D+1/D+2/D+3; bloqueado; crédito separado; mínimo operacional; allowNegative; `test:treasury` 274/274 |
 
-    > **Nota de ordem:** …; identidade/precedência = **27**; motor projeção = **28**.
+    > **Nota de ordem:** …; motor projeção = **28**; precisão/liquidez = **29**.
 
 ---
 
@@ -326,6 +327,13 @@
 - [x] Testes extensivos (cenários, parcial, transfer invariante, determinismo); `test:treasury` 260/260
 - [x] Sem API/UI/persistência de run neste passo; sem avanço automático
 
+### 29 — Precisão Decimal + liquidez
+- [x] Money kit BigInt/centavos + arredondamento HALF_UP
+- [x] Aplicações IMMEDIATE / D+1 / D+2 / D+3 (indisponíveis até liquidez)
+- [x] Saldo bloqueado; limite de crédito separado; mínimo operacional; allowNegative
+- [x] Day line: available/blocked/investments/credit/totalPosition
+- [x] Testes obrigatórios (0.01+0.02, milhões, milhares de movimentos, centavos, transfer, liquidez); `test:treasury` 274/274
+- [x] Sem avanço automático
 ---
 
 ## Riscos / pendências abertas
