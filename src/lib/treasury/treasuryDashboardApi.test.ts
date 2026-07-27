@@ -138,6 +138,7 @@ const sampleDashboard: TreasuryDashboardDto = {
     alerts: [],
   },
   priorityExceptions: [],
+  alerts: [],
   composition: [],
   origins: {},
 };

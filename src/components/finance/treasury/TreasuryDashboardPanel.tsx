@@ -586,13 +586,39 @@ export function TreasuryDashboardPanel({
 
             <div className="space-y-2" data-testid="treasury-dashboard-alerts">
               <h2 className="text-sm font-semibold text-foreground">Alertas</h2>
-              {dashboard.freshness.sources.length === 0 &&
+              {(dashboard.alerts ?? []).length === 0 &&
+              dashboard.freshness.sources.length === 0 &&
               !dashboard.hasDivergence ? (
                 <p className="rounded-xl border border-border px-3 py-4 text-sm text-muted-foreground">
-                  Sem alertas de freshness ou divergência.
+                  Sem alertas no momento.
                 </p>
               ) : (
                 <ul className="space-y-2 text-sm">
+                  {(dashboard.alerts ?? []).map((alert) => (
+                    <li
+                      key={alert.id}
+                      className="rounded-xl border border-border px-3 py-3"
+                      data-testid={`treasury-dashboard-alert-${alert.kind}`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <OverlayBadge
+                          tone={severityTone(alert.severity)}
+                          variant="soft"
+                        >
+                          {TREASURY_DASHBOARD_SEVERITY_LABELS[alert.severity]}
+                        </OverlayBadge>
+                        <span className="text-xs font-semibold uppercase text-muted-foreground">
+                          {alert.kind}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-foreground">
+                        {alert.title}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {alert.description}
+                      </p>
+                    </li>
+                  ))}
                   {dashboard.hasDivergence ? (
                     <li className="rounded-xl border border-border px-3 py-3">
                       <strong>Divergência consolidada:</strong>{" "}

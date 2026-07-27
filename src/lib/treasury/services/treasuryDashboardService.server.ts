@@ -4,8 +4,12 @@
 
 import type { PrismaClient } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
-import type { TreasuryDashboardDto } from "../contracts/treasuryDto.js";
+import type {
+  TreasuryAlertItemDto,
+  TreasuryDashboardDto,
+} from "../contracts/treasuryDto.js";
 import type { TreasuryDashboardQuery } from "../contracts/treasurySchemas.js";
+import { DEFAULT_TREASURY_ALERT_SETTINGS } from "../contracts/treasuryAlertConfig.js";
 import { formatTreasuryTimestampIso } from "../contracts/treasuryTimestamp.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import {
@@ -13,6 +17,7 @@ import {
   buildFreshnessDto,
   buildTreasuryDashboardDto,
 } from "../domain/treasuryDashboardRules.js";
+import { buildTreasuryAlerts } from "../domain/treasuryAlertRules.js";
 import {
   createTreasuryDashboardDayFlowRepository,
   createTreasuryDashboardFreshnessRepository,
@@ -21,11 +26,19 @@ import {
   type TreasuryDashboardFreshnessRepository,
 } from "../repositories/treasuryDashboardDayFlowRepository.server.js";
 import {
+  createTreasuryAlertFactsRepository,
+  type TreasuryAlertFactsRepository,
+} from "../repositories/treasuryAlertFactsRepository.server.js";
+import {
   buildTreasuryFinancialPositionActor,
   createTreasuryFinancialPositionService,
   type TreasuryFinancialPositionActor,
   type TreasuryFinancialPositionService,
 } from "./treasuryFinancialPositionService.server.js";
+import {
+  createTreasuryAlertSettingsService,
+  type TreasuryAlertSettingsService,
+} from "./treasuryAlertSettingsService.server.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
 import { civilDateToLocalDate } from "@/src/lib/financeCivilDate.js";
 
@@ -53,11 +66,30 @@ export type TreasuryDashboardService = {
   ): Promise<TreasuryDashboardDto>;
 };
 
+function toAlertDto(
+  alerts: ReturnType<typeof buildTreasuryAlerts>
+): TreasuryAlertItemDto[] {
+  return alerts.map((a) => ({
+    id: a.id,
+    kind: a.kind,
+    severity: a.severity,
+    title: a.title,
+    description: a.description,
+    amount: a.amount,
+    accountId: a.accountId,
+    civilDate: a.civilDate,
+    entityId: a.entityId,
+    metadata: a.metadata,
+  }));
+}
+
 export function createTreasuryDashboardService(deps: {
   prisma?: PrismaClient;
   positionService?: TreasuryFinancialPositionService;
   dayFlowRepository?: TreasuryDashboardDayFlowRepository;
   freshnessRepository?: TreasuryDashboardFreshnessRepository;
+  alertSettingsService?: TreasuryAlertSettingsService;
+  alertFactsRepository?: TreasuryAlertFactsRepository;
 }): TreasuryDashboardService {
   const positionService =
     deps.positionService ??
@@ -68,6 +100,16 @@ export function createTreasuryDashboardService(deps: {
   const freshnessRepository =
     deps.freshnessRepository ??
     createTreasuryDashboardFreshnessRepository(deps.prisma!);
+  const alertSettingsService =
+    deps.alertSettingsService ??
+    (deps.prisma
+      ? createTreasuryAlertSettingsService({ prisma: deps.prisma })
+      : null);
+  const alertFactsRepository =
+    deps.alertFactsRepository ??
+    (deps.prisma
+      ? createTreasuryAlertFactsRepository(deps.prisma)
+      : null);
 
   return {
     async getDailyDashboard(actor, query) {
@@ -79,8 +121,8 @@ export function createTreasuryDashboardService(deps: {
       }
 
       const asOf = civilDateToLocalDate(query.date);
-      // fim do dia civil local para freshness/position
       asOf.setHours(23, 59, 59, 999);
+      const nowEpochMs = asOf.getTime();
 
       const [position, dayFlow, freshnessSources] = await Promise.all([
         positionService.getCurrentPosition(actor.positionActor, {
@@ -108,6 +150,62 @@ export function createTreasuryDashboardService(deps: {
         })),
       });
 
+      let alerts: TreasuryAlertItemDto[] = [];
+      if (alertSettingsService && alertFactsRepository) {
+        const settings = await alertSettingsService.getFields().catch(() => ({
+          ...DEFAULT_TREASURY_ALERT_SETTINGS,
+        }));
+        const accountIds = position.accounts.map((a) => a.accountId);
+        const [mins, receivables, promises, payables] = await Promise.all([
+          alertFactsRepository.loadAccountMinimums(accountIds),
+          alertFactsRepository.loadReceivables(),
+          alertFactsRepository.loadActivePromises(),
+          alertFactsRepository.loadCriticalPayables(),
+        ]);
+        const syncFreshness = freshness.sources
+          .filter(
+            (s) =>
+              /AR|AP|RECEIV|PAYAB|SYNC|NOMUS/i.test(s.source) ||
+              /AR|AP|receb|pag/i.test(s.label)
+          )
+          .map((s) => ({
+            side: s.source,
+            lastSuccessAtIso: s.lastSuccessAt,
+          }));
+        // Sempre inclui fontes AR/AP se existirem; senão usa todas stale como sync.
+        const syncFacts =
+          syncFreshness.length > 0
+            ? syncFreshness
+            : freshness.sources.map((s) => ({
+                side: s.source,
+                lastSuccessAtIso: s.lastSuccessAt,
+              }));
+
+        alerts = toAlertDto(
+          buildTreasuryAlerts(settings, {
+            asOfCivilDate: query.date,
+            nowEpochMs,
+            accounts: position.accounts.map((a) => {
+              const min = mins.get(a.accountId);
+              return {
+                accountId: a.accountId,
+                code: a.accountCode,
+                availableBalance:
+                  a.operationalAvailableBalance ?? a.observedBalance,
+                minimumBalance: min?.minimumBalance ?? "0.00",
+                allowNegativeBalance:
+                  min?.allowNegativeBalance ?? a.allowNegativeBalance,
+                lastBalanceAtIso: a.snapshotReferenceAt,
+              };
+            }),
+            receivables,
+            promises,
+            payables,
+            syncFreshness: syncFacts,
+          })
+        );
+      }
+
       const dto = buildTreasuryDashboardDto({
         civilDate: query.date,
         scenario: query.scenario,
@@ -120,6 +218,7 @@ export function createTreasuryDashboardService(deps: {
         freshness,
         highPriorityReceivableCount: dayFlow.highPriorityReceivableCount,
         highPriorityPayableCount: dayFlow.highPriorityPayableCount,
+        alerts,
       });
 
       assertTreasuryDashboardTotalsConsistent(dto);

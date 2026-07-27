@@ -149,6 +149,20 @@ function sampleDashboard(): TreasuryDashboardDto {
         source: "FINANCIAL_POSITION",
       },
     ],
+    alerts: [
+      {
+        id: "alert:STALE_BALANCE:acc-1",
+        kind: "STALE_BALANCE",
+        severity: "WARNING",
+        title: "Saldo desatualizado",
+        description: "Saldo da conta CX01 desatualizado.",
+        amount: "1500.00",
+        accountId: "acc-1",
+        civilDate: "2026-07-27",
+        entityId: "acc-1",
+        metadata: null,
+      },
+    ],
     composition: [
       {
         key: "observedBalance",

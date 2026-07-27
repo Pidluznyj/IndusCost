@@ -89,6 +89,7 @@ function sampleDto(
       alerts: [],
     },
     priorityExceptions: [],
+    alerts: [],
     composition: [],
     origins: {},
     ...overrides,

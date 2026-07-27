@@ -19,9 +19,11 @@ import { createTreasuryDashboardControllers } from "./controllers/treasuryDashbo
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
+import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
+  TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DASHBOARD_PATH,
@@ -79,6 +81,9 @@ export function registerTreasuryRoutes(
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
   const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
   const exceptions = createTreasuryExceptionControllers({ getCurrentAppUser });
+  const alertSettings = createTreasuryAlertSettingsControllers({
+    getCurrentAppUser,
+  });
 
   const viewDashboard = requireResource(
     TREASURY_RESOURCE_KEYS.dashboard,
@@ -176,6 +181,22 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewDashboard,
     dashboard.getDashboard
+  );
+
+  app.get(
+    TREASURY_ALERT_SETTINGS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewDashboard,
+    alertSettings.get
+  );
+
+  app.put(
+    TREASURY_ALERT_SETTINGS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    manageExceptions,
+    alertSettings.put
   );
 
   app.post(

@@ -30,6 +30,7 @@ export {
   TREASURY_SCAFFOLD_VERSION,
   TREASURY_TRANSFERS_PATH,
   TREASURY_EXCEPTIONS_PATH,
+  TREASURY_ALERT_SETTINGS_PATH,
 } from "./treasuryConstants.js";
 export type { TreasuryFieldLimitKey } from "./treasuryConstants.js";
 
@@ -82,6 +83,16 @@ export {
   TREASURY_TITLE_OPERATIONAL_PRIORITIES,
   TREASURY_TITLE_OPERATIONAL_STATUSES,
 } from "./treasuryEnums.js";
+export {
+  DEFAULT_TREASURY_ALERT_SETTINGS,
+  TREASURY_ALERT_KIND_LABELS,
+  TREASURY_ALERT_KINDS,
+  TREASURY_ALERT_SETTINGS_GLOBAL_ID,
+} from "./treasuryAlertConfig.js";
+export type {
+  TreasuryAlertKind,
+  TreasuryAlertSettingsFields,
+} from "./treasuryAlertConfig.js";
 export type {
   TreasuryAccountAccessLevel,
   TreasuryAccountLiquidity,
@@ -179,6 +190,7 @@ export type {
   TreasuryBalancePositionDto,
   TreasuryBalanceSnapshotDto,
   TreasuryConsolidatedFinancialPositionDto,
+  TreasuryAlertItemDto,
   TreasuryDashboardCashFlowBucketDto,
   TreasuryDashboardCompositionItemDto,
   TreasuryDashboardDto,

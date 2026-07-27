@@ -260,6 +260,20 @@ export type TreasuryDashboardExceptionItemDto = {
   source: string;
 };
 
+/** Alerta operacional (configurável) — dashboard/agenda. */
+export type TreasuryAlertItemDto = {
+  id: string;
+  kind: string;
+  severity: TreasuryExceptionSeverity;
+  title: string;
+  description: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  civilDate: TreasuryCivilDate | null;
+  entityId: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
 /** Resposta canônica GET /api/finance/treasury/dashboard */
 export type TreasuryDashboardDto = {
   ok: true;
@@ -283,6 +297,8 @@ export type TreasuryDashboardDto = {
   accounts: TreasuryAccountFinancialPositionDto[];
   consolidated: TreasuryConsolidatedFinancialPositionDto;
   priorityExceptions: TreasuryDashboardExceptionItemDto[];
+  /** Alertas configuráveis (limites/severidade em TreasuryAlertSettings). */
+  alerts: TreasuryAlertItemDto[];
   composition: TreasuryDashboardCompositionItemDto[];
   origins: Record<string, string>;
 };
@@ -614,6 +630,8 @@ export type TreasuryAgendaDayDto = {
   realized: TreasuryMoneyString;
   itemCount: number;
   items: TreasuryProjectionCompositionItemDto[] | null;
+  /** Alertas do dia (subconjunto de `alerts` da agenda). */
+  alerts: TreasuryAlertItemDto[];
 };
 
 export type TreasuryAgendaDto = {
@@ -629,6 +647,8 @@ export type TreasuryAgendaDto = {
   algorithmVersion: string | null;
   freshness: TreasuryProjectionFreshnessDto;
   days: TreasuryAgendaDayDto[];
+  /** Alertas do horizonte (configuráveis). */
+  alerts: TreasuryAlertItemDto[];
   maxHorizonDays: number;
 };
 

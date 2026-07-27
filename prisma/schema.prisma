@@ -2085,6 +2085,7 @@ model AppUser {
   treasuryExceptionsUpdated           TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
   treasuryExceptionsCancelled         TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
   treasuryExceptionsResponsible       TreasuryException[]                  @relation("TreasuryExceptionResponsible")
+  treasuryAlertSettingsUpdated        TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
 
   @@index([role])
   @@index([isActive])
@@ -7570,5 +7571,29 @@ model TreasuryException {
   @@index([detectedAt])
   @@index([dueAt])
   @@index([createdByUserId])
+}
+
+/// Configuração global de limiares/severidade de alertas da Tesouraria (singleton — id "GLOBAL").
+/// Padrão alinhado a MaterialMarketAlertGlobalConfig.
+model TreasuryAlertSettings {
+  id String @id @default("GLOBAL")
+
+  alertsEnabled Boolean @default(true)
+
+  relevantReceiptMinAmount              Decimal @default(10000.00) @db.Decimal(20, 2)
+  customerConcentrationTopN             Int     @default(3)
+  customerConcentrationMinSharePercent  Decimal @default(50.00) @db.Decimal(10, 2)
+  staleBalanceHours                     Int     @default(36)
+  syncMaxAgeHours                       Int     @default(24)
+
+  /// Mapa kind → INFO|WARNING|CRITICAL
+  severityByKindJson Json?
+  /// Mapa kind → boolean (alerta ligado/desligado)
+  enabledByKindJson  Json?
+
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId String?  @db.Uuid
+
+  updatedByUser AppUser? @relation("TreasuryAlertSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
 }
 

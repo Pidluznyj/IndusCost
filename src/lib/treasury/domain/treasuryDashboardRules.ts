@@ -5,6 +5,7 @@
 
 import type {
   TreasuryAccountFinancialPositionDto,
+  TreasuryAlertItemDto,
   TreasuryDashboardCashFlowBucketDto,
   TreasuryDashboardCompositionItemDto,
   TreasuryDashboardDto,
@@ -337,6 +338,7 @@ export function buildTreasuryDashboardDto(input: {
   freshness: TreasuryDashboardFreshnessDto;
   highPriorityReceivableCount?: number;
   highPriorityPayableCount?: number;
+  alerts?: TreasuryAlertItemDto[];
 }): TreasuryDashboardDto {
   const receipts = bucketFromAggregate(input.dayFlow.receivables, "RECEIPTS");
   const payments = bucketFromAggregate(input.dayFlow.payables, "PAYMENTS");
@@ -411,6 +413,7 @@ export function buildTreasuryDashboardDto(input: {
     accounts: input.position.accounts,
     consolidated: input.position.consolidated,
     priorityExceptions: exceptions,
+    alerts: input.alerts ?? [],
     composition,
     origins: {
       observed: "BALANCE_SNAPSHOT / consolidated",

@@ -48,6 +48,9 @@ export const TREASURY_TRANSFERS_PATH =
 export const TREASURY_EXCEPTIONS_PATH =
   `${TREASURY_API_PREFIX}/exceptions` as const;
 
+export const TREASURY_ALERT_SETTINGS_PATH =
+  `${TREASURY_API_PREFIX}/alert-settings` as const;
+
 /** Default; override via TREASURY_PROJECTION_MAX_HORIZON_DAYS. */
 export const TREASURY_PROJECTION_DEFAULT_MAX_HORIZON_DAYS = 90;
 

@@ -197,6 +197,25 @@ export function TreasuryAgendaPanel({
 
   return (
     <div className="space-y-4" data-testid="treasury-agenda-panel">
+      {agenda && (agenda.alerts ?? []).length > 0 ? (
+        <div
+          className="space-y-2 rounded-xl border border-border px-3 py-3"
+          data-testid="treasury-agenda-alerts"
+        >
+          <h2 className="text-sm font-semibold text-foreground">Alertas</h2>
+          <ul className="space-y-2 text-sm">
+            {(agenda.alerts ?? []).slice(0, 8).map((alert) => (
+              <li key={alert.id} data-testid={`treasury-agenda-alert-${alert.kind}`}>
+                <span className="font-medium">{alert.title}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  · {alert.severity} · {alert.description}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <FilterField label="Período">

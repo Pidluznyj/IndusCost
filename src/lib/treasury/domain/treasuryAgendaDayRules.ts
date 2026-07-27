@@ -152,6 +152,7 @@ export function buildTreasuryAgendaDay(input: {
     realized: realizedRaw,
     itemCount: primary?.itemCount ?? 0,
     items: input.items ?? null,
+    alerts: [],
   };
 }
 

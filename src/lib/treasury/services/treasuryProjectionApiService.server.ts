@@ -8,6 +8,7 @@ import type { PrismaClient } from "@prisma/client";
 import type {
   TreasuryAgendaDto,
   TreasuryAgendaDayDto,
+  TreasuryAlertItemDto,
   TreasuryProjectionComparisonDto,
   TreasuryProjectionCompositionItemDto,
   TreasuryProjectionCompositionResponseDto,
@@ -16,6 +17,12 @@ import type {
   TreasuryProjectionFreshnessDto,
   TreasuryProjectionRunDto,
 } from "../contracts/treasuryDto.js";
+import { DEFAULT_TREASURY_ALERT_SETTINGS } from "../contracts/treasuryAlertConfig.js";
+import {
+  buildTreasuryAlerts,
+  filterTreasuryAlertsForCivilDate,
+} from "../domain/treasuryAlertRules.js";
+import { createTreasuryAlertSettingsService } from "./treasuryAlertSettingsService.server.js";
 import type { TreasuryProjectionLayer } from "../contracts/treasuryEnums.js";
 import type {
   TreasuryAgendaQuery,
@@ -129,6 +136,7 @@ export type TreasuryProjectionApiDeps = {
   loadEngineInput: TreasuryProjectionEngineInputLoader;
   maxHorizonDays?: number;
   now?: () => Date;
+  prisma?: PrismaClient;
 };
 
 function assertCanViewProjection(actor: TreasuryProjectionApiActor) {
@@ -581,6 +589,7 @@ export function createTreasuryProjectionApiService(
           algorithmVersion: null,
           freshness: buildFreshness(null, now),
           days: [],
+          alerts: [],
           maxHorizonDays,
         };
       }
@@ -764,6 +773,62 @@ export function createTreasuryProjectionApiService(
         }
       }
 
+      let agendaAlerts: TreasuryAlertItemDto[] = [];
+      if (deps.prisma) {
+        const settingsService = createTreasuryAlertSettingsService({
+          prisma: deps.prisma,
+        });
+        const settings = await settingsService.getFields().catch(() => ({
+          ...DEFAULT_TREASURY_ALERT_SETTINGS,
+        }));
+        const built = buildTreasuryAlerts(settings, {
+          asOfCivilDate: query.baseDate,
+          nowEpochMs: now.getTime(),
+          projectionDays: days.map((d) => ({
+            civilDate: d.civilDate,
+            accountId: d.accountId,
+            closingBalance: d.closingBalance,
+          })),
+          syncFreshness: [
+            {
+              side: "PROJECTION_RUN",
+              lastSuccessAtIso: toIso(
+                primary.run.finishedAt ?? primary.run.requestedAt
+              ),
+            },
+          ],
+        });
+        agendaAlerts = built.map((a) => ({
+          id: a.id,
+          kind: a.kind,
+          severity: a.severity,
+          title: a.title,
+          description: a.description,
+          amount: a.amount,
+          accountId: a.accountId,
+          civilDate: a.civilDate,
+          entityId: a.entityId,
+          metadata: a.metadata,
+        }));
+        for (const day of days) {
+          day.alerts = filterTreasuryAlertsForCivilDate(
+            built,
+            day.civilDate
+          ).map((a) => ({
+            id: a.id,
+            kind: a.kind,
+            severity: a.severity,
+            title: a.title,
+            description: a.description,
+            amount: a.amount,
+            accountId: a.accountId,
+            civilDate: a.civilDate,
+            entityId: a.entityId,
+            metadata: a.metadata,
+          }));
+        }
+      }
+
       return {
         ok: true,
         runId: primary.run.id,
@@ -777,6 +842,7 @@ export function createTreasuryProjectionApiService(
         algorithmVersion: primary.algorithmVersion,
         freshness: buildFreshness(primary.run, now),
         days,
+        alerts: agendaAlerts,
         maxHorizonDays,
       };
     },
@@ -951,5 +1017,6 @@ export function createTreasuryProjectionApiDeps(
     loadEngineInput:
       options?.loadEngineInput ?? createEmptyTreasuryProjectionEngineInputLoader(),
     maxHorizonDays: options?.maxHorizonDays,
+    prisma: db,
   };
 }

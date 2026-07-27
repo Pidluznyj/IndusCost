@@ -429,9 +429,16 @@ function mergeDisplayRows(
       ),
       itemCount: acc.itemCount + row.itemCount,
       items: [...(acc.items ?? []), ...(row.items ?? [])],
+      alerts: [...(acc.alerts ?? []), ...(row.alerts ?? [])],
     };
   }
   acc.riskLabel = treasuryAgendaRiskLabel(acc.riskCode, acc.riskAmount);
+  const seen = new Set<string>();
+  acc.alerts = (acc.alerts ?? []).filter((a) => {
+    if (seen.has(a.id)) return false;
+    seen.add(a.id);
+    return true;
+  });
   return acc;
 }
 

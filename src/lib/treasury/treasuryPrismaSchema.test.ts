@@ -191,6 +191,21 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
 
+  it("schema e migration de configuração de alertas existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryAlertSettings/);
+    assert.match(schema, /relevantReceiptMinAmount/);
+    assert.match(schema, /severityByKindJson/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260816120000_treasury_alert_settings/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryAlertSettings"/);
+    assert.match(sql, /INSERT INTO "TreasuryAlertSettings"/);
+  });
+
   it("schema e migration de status da Central de Exceções existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /IN_ANALYSIS/);
