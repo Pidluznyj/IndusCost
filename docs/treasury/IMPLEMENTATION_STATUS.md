@@ -47,8 +47,9 @@
 | **20** | Programação de pagamentos (CP) | `DONE` | `5d06c5a` | `POST/PUT …/payables/:titleId/program-payment` + `/cancel`; parcial; acima do saldo c/ justificativa; impacto conta/consolidado + alerta negativo; optimistic lock; audit; recálculo; flag `payablesProgramming`; `test:treasury` 176/176 |
 | **21** | UI Contas a Pagar | `DONE` | `3240f2f` | `/finance/treasury/payables`; tabela paginada; filtros; totais; status/prioridade/programada/conta; impacto caixa; drawer; form programação com confirmação (saldo conta/consolidado/risco); bloqueio/adiamento/obs/histórico; responsivo; `test:treasury` 183/183 |
 | **22** | Serviço de posição financeira atual | `DONE` | `bedc17c` | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
+| **23** | Dashboard diário Tesouraria | `DONE` | _(pendente hash)_ | `GET /api/finance/treasury/dashboard`; freshness; observado/calculado/conciliado/diferença; CR/CP previsto/realizado/pendente; saldo atual + projetado encerramento; qtd títulos; posição por conta; exceções prioritárias; composição detalhável; filtros date/accountIds/scenario; agregação SQL; `test:treasury` 200/200 |
 
-    > **Nota de ordem:** …; consulta CP = **19**; programação CP = **20**; UI CP = **21**; posição financeira = **22** (plano original P09 balance engine).
+    > **Nota de ordem:** …; posição financeira = **22**; dashboard diário = **23**.
 
 ---
 
@@ -61,17 +62,18 @@
 | Saldo observado / calculado / conciliado | `DONE` | P22: serviço posição atual; observado≠calculado≠conciliado; divergência explícita; consolidado exclui `includeInConsolidated=false`; API/UI ainda pendentes |
 | Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
-| Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
+| Previsto vs realizado | `PARTIAL` | P23 dashboard dia (previsto/realizado/pendente CR/CP por cenário); cash-flow permanece separado |
+| Dashboard diário Tesouraria | `DONE` | P23: `GET …/dashboard`; freshness fontes; posição + fluxos do dia + projeção encerramento; composição/exceções; UI ainda pendente |
 | Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; não altera `dueDate`; histórico preservado; expiração automática |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | Cenários cash-flow + portfolio forecast |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P23 filtro `scenario` no dashboard (CONTRACTUAL/PROBABLE/CONFIRMED); motor projeção completo ainda pendente |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
-| Exceções / alertas | `PARTIAL` | Insights CFO derivados; sem exceções de tesouraria |
+| Exceções / alertas | `PARTIAL` | P23: exceções prioritárias derivadas (divergência/negativo/prioridade dia); CRUD `TreasuryException` ainda pendente |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
 | Reabertura | `NOT_STARTED` | — |
 | Importação OFX | `NOT_STARTED` | — |
@@ -81,7 +83,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 191/191; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 200/200; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -259,6 +261,18 @@
 - [x] `npm run test:treasury` 191/191
 - [x] Sem API/UI neste passo; sem avanço automático
 
+### 23 — Dashboard diário
+- [x] `GET /api/finance/treasury/dashboard` (auth + flag + `finance.treasury.dashboard` view)
+- [x] Freshness das fontes (snapshots, sync CR/CP, complementos)
+- [x] Observado / calculado / conciliado / diferença + posição por conta (via P22)
+- [x] Recebimentos/pagamentos previstos, realizados e pendentes (agregação SQL + memória testes)
+- [x] Saldo atual + saldo projetado de encerramento; quantidade de títulos
+- [x] Exceções prioritárias + composição detalhável com origem
+- [x] Filtros: `date`, `accountIds`, `scenario` (CONTRACTUAL/PROBABLE/CONFIRMED)
+- [x] Testes de consistência dos totais (composição ≡ resumo; projeção; divergência)
+- [x] `npm run test:treasury` 200/200
+- [x] Sem UI neste passo; sem avanço automático
+
 ---
 
 ## Riscos / pendências abertas
@@ -302,3 +316,4 @@
 | 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — `5d06c5a` |
 | 2026-07-27 | Prompt 21: UI Contas a Pagar Tesouraria (tabela/filtros/drawer/programação/impacto) — `3240f2f` |
 | 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — `bedc17c` |
+| 2026-07-27 | Prompt 23: dashboard diário Tesouraria (`GET /dashboard` + agregações + consistência totais) — _(pendente hash)_ |

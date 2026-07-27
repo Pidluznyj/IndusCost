@@ -15,10 +15,12 @@ import { createTreasuryPayableProgrammingControllers } from "./controllers/treas
 import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryPaymentPromiseController.js";
 import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
+import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
+  TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_PAYABLES_PATH,
   TREASURY_PROMISES_PATH,
@@ -66,7 +68,12 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const disputes = createTreasuryDisputeControllers({ getCurrentAppUser });
+  const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
 
+  const viewDashboard = requireResource(
+    TREASURY_RESOURCE_KEYS.dashboard,
+    TREASURY_ACTIONS.view
+  );
   const viewAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
     TREASURY_ACTIONS.view
@@ -122,6 +129,14 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     requireResource(TREASURY_RESOURCE_KEY, TREASURY_ACTIONS.view),
     treasuryAvailabilityHandler
+  );
+
+  app.get(
+    TREASURY_DASHBOARD_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewDashboard,
+    dashboard.getDashboard
   );
 
   app.get(

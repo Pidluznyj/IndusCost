@@ -30,6 +30,9 @@ export const TREASURY_COLLECTION_ACTIONS_PATH =
 export const TREASURY_DISPUTES_PATH =
   `${TREASURY_API_PREFIX}/disputes` as const;
 
+export const TREASURY_DASHBOARD_PATH =
+  `${TREASURY_API_PREFIX}/dashboard` as const;
+
 export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
 
 export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;

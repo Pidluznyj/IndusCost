@@ -28,6 +28,7 @@ import {
   TREASURY_PAYABLE_OPERATIONAL_STATUSES,
   TREASURY_PAYABLE_PROGRAMMING_STATUSES,
   TREASURY_PAYABLE_SORT_FIELDS,
+  TREASURY_PROJECTION_LAYERS,
   TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
   TREASURY_RECEIVABLE_SORT_FIELDS,
   TREASURY_SIDES,
@@ -46,12 +47,14 @@ import {
   type TreasuryPayableOperationalStatus,
   type TreasuryPayableProgrammingStatus,
   type TreasuryPayableSortField,
+  type TreasuryProjectionLayer,
   type TreasuryReceivableOperationalStatus,
   type TreasuryReceivableSortField,
   type TreasurySide,
   type TreasuryTitleOperationalPriority,
   type TreasuryTitleOperationalStatusCode,
 } from "./treasuryEnums.js";
+import type { TreasuryCivilDate } from "./treasuryCivilDate.js";
 import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
 import { TreasuryContractError } from "./treasuryErrorCodes.js";
 import {
@@ -1943,6 +1946,62 @@ export function parseTreasuryPayableHoldInput(
       "notes",
       { required: false }
     ),
+  };
+}
+
+export type TreasuryDashboardQuery = {
+  /** Data civil do dashboard (America/Sao_Paulo / YYYY-MM-DD). */
+  date: TreasuryCivilDate;
+  /** Filtro opcional de contas financeiras. */
+  accountIds: string[] | null;
+  /** Cenário de projeção que define a data de planejamento dos títulos. */
+  scenario: TreasuryProjectionLayer;
+};
+
+function todayCivilDateUtc(): TreasuryCivilDate {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(now.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}` as TreasuryCivilDate;
+}
+
+function parseAccountIdsFilter(raw: unknown): string[] | null {
+  if (raw == null || raw === "") return null;
+  const parts = Array.isArray(raw)
+    ? raw.map((v) => String(v))
+    : String(raw).split(/[,;]/);
+  const ids = [
+    ...new Set(
+      parts
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0 && p.length <= TREASURY_FIELD_LIMITS.accountId)
+    ),
+  ];
+  return ids.length ? ids : null;
+}
+
+export function parseTreasuryDashboardQuery(
+  query: Record<string, unknown>
+): TreasuryDashboardQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateUtc()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  const scenario =
+    parseTreasuryEnum(
+      query.scenario ?? query.cenario ?? query.layer,
+      TREASURY_PROJECTION_LAYERS,
+      "scenario",
+      false
+    ) ?? "PROBABLE";
+  return {
+    date,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    scenario,
   };
 }
 

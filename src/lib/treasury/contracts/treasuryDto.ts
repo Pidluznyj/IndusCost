@@ -196,6 +196,94 @@ export type TreasuryFinancialPositionDto = {
   alerts: string[];
 };
 
+/** Freshness de uma fonte do dashboard diário. */
+export type TreasuryDashboardSourceFreshnessDto = {
+  source:
+    | "BALANCE_SNAPSHOTS"
+    | "OFFICIAL_RECEIVABLES"
+    | "OFFICIAL_PAYABLES"
+    | "TITLE_COMPLEMENTS";
+  label: string;
+  lastSuccessAt: TreasuryTimestampIso | null;
+  isStale: boolean;
+  detail: string;
+};
+
+export type TreasuryDashboardFreshnessDto = {
+  asOf: TreasuryTimestampIso;
+  sources: TreasuryDashboardSourceFreshnessDto[];
+  hasStaleSource: boolean;
+  staleSourceCount: number;
+};
+
+export type TreasuryDashboardCashFlowBucketDto = {
+  kind: "RECEIPTS" | "PAYMENTS";
+  plannedAmount: TreasuryMoneyString;
+  plannedTitleCount: number;
+  realizedAmount: TreasuryMoneyString;
+  realizedTitleCount: number;
+  pendingAmount: TreasuryMoneyString;
+  pendingTitleCount: number;
+};
+
+export type TreasuryDashboardTitleCountDto = {
+  receivablesPlanned: number;
+  receivablesRealized: number;
+  receivablesPending: number;
+  payablesPlanned: number;
+  payablesRealized: number;
+  payablesPending: number;
+  totalBucketSum: number;
+  openOnDay: number;
+};
+
+export type TreasuryDashboardCompositionItemDto = {
+  key: string;
+  label: string;
+  amount: TreasuryMoneyString | null;
+  titleCount: number | null;
+  origin: string;
+  detailable: boolean;
+};
+
+export type TreasuryDashboardExceptionItemDto = {
+  id: string;
+  type: string;
+  severity: TreasuryExceptionSeverity;
+  status: TreasuryExceptionStatus;
+  title: string;
+  accountId: string | null;
+  nomusExternalId: string | null;
+  source: string;
+};
+
+/** Resposta canônica GET /api/finance/treasury/dashboard */
+export type TreasuryDashboardDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  scenario: TreasuryProjectionLayer;
+  accountIds: string[] | null;
+  asOf: TreasuryTimestampIso;
+  freshness: TreasuryDashboardFreshnessDto;
+  observedBalance: TreasuryMoneyString | null;
+  calculatedBalance: TreasuryMoneyString | null;
+  reconciledBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  hasDivergence: boolean;
+  receipts: TreasuryDashboardCashFlowBucketDto;
+  payments: TreasuryDashboardCashFlowBucketDto;
+  currentBalance: TreasuryMoneyString | null;
+  currentBalanceOrigin: string;
+  projectedClosingBalance: TreasuryMoneyString | null;
+  projectedClosingOrigin: string;
+  titleCount: TreasuryDashboardTitleCountDto;
+  accounts: TreasuryAccountFinancialPositionDto[];
+  consolidated: TreasuryConsolidatedFinancialPositionDto;
+  priorityExceptions: TreasuryDashboardExceptionItemDto[];
+  composition: TreasuryDashboardCompositionItemDto[];
+  origins: Record<string, string>;
+};
+
 export type TreasuryLedgerEntryDto = {
   id: string;
   accountId: string;
