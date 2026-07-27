@@ -54,7 +54,7 @@
 | **27** | Identidade e precedência financeira | `DONE` | `4f6cd19` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
 | **28** | Motor determinístico de projeção | `DONE` | `0ac7098` | `treasuryProjectionEngine`: fluxo 16 passos; Decimal string; datas+identidade; day lines + risco + composição; sem Express/Prisma; `test:treasury` 260/260 |
 | **29** | Precisão Decimal + liquidez no motor | `DONE` | `3c6103a` | Money BigInt HALF_UP; aplicações IMMEDIATE/D+1/D+2/D+3; bloqueado; crédito separado; mínimo operacional; allowNegative; `test:treasury` 274/274 |
-| **30** | Execução e persistência de projeção | `DONE` | `_pending_` | ProjectionRun RUNNING/SUCCEEDED/FAILED; advisory lock empresa+cenário; source/algorithm version; não substitui anterior; latest válida; `test:treasury` 279/279 |
+| **30** | Execução e persistência de projeção | `DONE` | `501056e` | ProjectionRun RUNNING/SUCCEEDED/FAILED; advisory lock empresa+cenário; source/algorithm version; não substitui anterior; latest válida; `test:treasury` 279/279 |
 
     > **Nota de ordem:** …; precisão/liquidez = **29**; execução/persistência = **30**.
 
@@ -395,4 +395,4 @@
 | 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
 | 2026-07-27 | Prompt 28: motor determinístico de projeção (day lines/risco/composição) — `0ac7098` |
 | 2026-07-27 | Prompt 29: precisão Decimal + liquidez no motor — `3c6103a` |
-| 2026-07-27 | Prompt 30: execução e persistência de projeção — `_pending_` |
+| 2026-07-27 | Prompt 30: execução e persistência de projeção — `501056e` |
