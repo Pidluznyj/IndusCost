@@ -1610,9 +1610,8 @@ export const ProposalModule = () => {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Client & Conditions */}
-          <div className="lg:col-span-1 space-y-6">
+        <div className="space-y-6">
+          {/* Top: Client & Conditions (full width) */}
             <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-6">
               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <User className="h-4 w-4" /> Cliente e Cabeçalho
@@ -1754,23 +1753,9 @@ export const ProposalModule = () => {
               </div>
             </div>
 
-            {/* Internal Notes */}
-            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
-              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Notas Internas</h4>
-              <textarea
-                rows={4}
-                placeholder="Observações que não aparecem no PDF da proposta..."
-                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
-                value={formData.internalNotes}
-                onChange={(e) => setFormData({...formData, internalNotes: e.target.value})}
-              />
-            </div>
-          </div>
-
-          {/* Right Column: Items Grid */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Middle: Items editor (full width) */}
             <div
-              className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]"
+              className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[70vh]"
               data-tour="proposals-form-items"
             >
               <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
@@ -2287,7 +2272,8 @@ export const ProposalModule = () => {
               }}
             />
 
-            {/* General Notes for PDF */}
+          {/* Bottom: Observações (PDF) + Notas internas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Info className="h-4 w-4" /> Observações da Proposta (PDF)
@@ -2298,6 +2284,16 @@ export const ProposalModule = () => {
                 className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              />
+            </div>
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Notas Internas</h4>
+              <textarea
+                rows={4}
+                placeholder="Observações que não aparecem no PDF da proposta..."
+                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                value={formData.internalNotes}
+                onChange={(e) => setFormData({...formData, internalNotes: e.target.value})}
               />
             </div>
           </div>
