@@ -375,4 +375,4 @@
 | 2026-07-27 | Prompt 26: regras puras data de movimento (AR/AP × cenários + virada SP) — `b390439` |
 | 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
 | 2026-07-27 | Prompt 28: motor determinístico de projeção (day lines/risco/composição) — `0ac7098` |
-| 2026-07-27 | Prompt 29: precisão Decimal + liquidez no motor — `_pending_` |
+| 2026-07-27 | Prompt 29: precisão Decimal + liquidez no motor — `3c6103a` |
