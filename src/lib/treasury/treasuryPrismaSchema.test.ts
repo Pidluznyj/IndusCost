@@ -128,4 +128,42 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
+
+  it("schema e migration de execução de projeção existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryProjectionRun \{/);
+    assert.match(schema, /model TreasuryProjectionDayLine \{/);
+    assert.match(schema, /model TreasuryProjectionCompositionItem \{/);
+    assert.match(schema, /enum TreasuryProjectionScenario/);
+    assert.match(schema, /enum TreasuryProjectionRunStatus/);
+    assert.match(schema, /sourceVersion\s+String/);
+    assert.match(schema, /algorithmVersion\s+String/);
+    assert.match(schema, /failureCode\s+String\?/);
+    assert.match(schema, /failureMessage\s+String\?/);
+    assert.match(schema, /failureDetail\s+Json\?/);
+    assert.match(schema, /openingBalance\s+Decimal/);
+    assert.match(schema, /uncertainReceivables\s+Decimal/);
+    assert.match(schema, /minimumBalance\s+Decimal/);
+    assert.match(schema, /riskAmount\s+Decimal/);
+    assert.match(schema, /riskCode\s+TreasuryProjectionRiskCode/);
+    assert.match(schema, /itemCount\s+Int/);
+    assert.match(schema, /@@unique\(\[runId, accountId, civilDate\]\)/);
+    assert.match(schema, /TreasuryProjectionRunCreatedBy/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260810120000_treasury_projection_run_and_day_lines/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryProjectionRun"/);
+    assert.match(sql, /CREATE TABLE "TreasuryProjectionDayLine"/);
+    assert.match(sql, /CREATE TABLE "TreasuryProjectionCompositionItem"/);
+    assert.match(sql, /'MANUAL'/);
+    assert.match(sql, /'CONTRACTUAL'/);
+    assert.match(sql, /REFERENCES "AppUser"/);
+    assert.match(sql, /REFERENCES "TreasuryFinancialAccount"/);
+    assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+    assert.doesNotMatch(sql, /ALTER TABLE "AppUser"/);
+  });
 });

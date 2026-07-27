@@ -131,8 +131,46 @@ export const TREASURY_PROJECTION_LAYERS = [
   "CONTRACTUAL",
   "PROBABLE",
   "CONFIRMED",
+  "MANUAL",
 ] as const;
 export type TreasuryProjectionLayer = (typeof TREASURY_PROJECTION_LAYERS)[number];
+
+/** Alias semântico alinhado ao enum Prisma `TreasuryProjectionScenario`. */
+export const TREASURY_PROJECTION_SCENARIOS = TREASURY_PROJECTION_LAYERS;
+export type TreasuryProjectionScenario = TreasuryProjectionLayer;
+
+export const TREASURY_PROJECTION_RUN_STATUSES = [
+  "PENDING",
+  "RUNNING",
+  "SUCCEEDED",
+  "FAILED",
+  "PARTIAL",
+  "CANCELLED",
+] as const;
+export type TreasuryProjectionRunStatus =
+  (typeof TREASURY_PROJECTION_RUN_STATUSES)[number];
+
+export const TREASURY_PROJECTION_RISK_CODES = [
+  "NONE",
+  "LOW",
+  "MEDIUM",
+  "HIGH",
+  "CRITICAL",
+] as const;
+export type TreasuryProjectionRiskCode =
+  (typeof TREASURY_PROJECTION_RISK_CODES)[number];
+
+export const TREASURY_PROJECTION_ITEM_KINDS = [
+  "RECEIVABLE",
+  "PAYABLE",
+  "TRANSFER",
+  "MANUAL_ENTRY",
+  "REALIZED",
+  "UNCERTAIN_RECEIVABLE",
+  "OTHER",
+] as const;
+export type TreasuryProjectionItemKind =
+  (typeof TREASURY_PROJECTION_ITEM_KINDS)[number];
 
 export const TREASURY_CLOSING_STATUSES = ["OPEN", "CLOSED", "REOPENED"] as const;
 export type TreasuryClosingStatus = (typeof TREASURY_CLOSING_STATUSES)[number];

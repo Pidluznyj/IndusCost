@@ -2076,6 +2076,8 @@ model AppUser {
   treasuryDisputesUpdated             TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
   treasuryDisputesCancelled           TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
   treasuryDisputesResponsible         TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
+  treasuryProjectionRunsCreated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
+  treasuryProjectionRunsUpdated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
 
   @@index([role])
   @@index([isActive])
@@ -6813,6 +6815,7 @@ model TreasuryFinancialAccount {
   accessGrants                TreasuryFinancialAccountAccess[]
   balanceSnapshots            TreasuryBalanceSnapshot[]
   titleOperationalComplements TreasuryTitleOperationalComplement[]
+  projectionDayLines          TreasuryProjectionDayLine[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7145,4 +7148,163 @@ model TreasuryDispute {
   @@index([responsibleUserId])
   @@index([createdByUserId])
   @@index([cancelledAt])
+}
+
+// ---------------------------------------------------------------------------
+// Central de Tesouraria — execução de projeção (runs / linhas diárias / itens)
+// Persistência versionada por fonte + algoritmo + cenário + período.
+// ---------------------------------------------------------------------------
+
+/// Cenário da projeção de caixa bancário da Tesouraria.
+enum TreasuryProjectionScenario {
+  CONTRACTUAL
+  PROBABLE
+  CONFIRMED
+  MANUAL
+}
+
+/// Ciclo de vida de uma execução de projeção.
+enum TreasuryProjectionRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+  CANCELLED
+}
+
+/// Classificação textual do risco da linha (não depende só de cor na UI).
+enum TreasuryProjectionRiskCode {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/// Origem do item de composição (rastreabilidade).
+enum TreasuryProjectionItemKind {
+  RECEIVABLE
+  PAYABLE
+  TRANSFER
+  MANUAL_ENTRY
+  REALIZED
+  UNCERTAIN_RECEIVABLE
+  OTHER
+}
+
+/// Execução de projeção — versão da fonte, algoritmo, cenário, período e falhas.
+model TreasuryProjectionRun {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  /// Discriminador operacional de empresa (sem model Company).
+  companyCode String?
+
+  scenario TreasuryProjectionScenario
+  status   TreasuryProjectionRunStatus @default(PENDING)
+
+  /// Período civil projetado (inclusive).
+  periodFrom DateTime @db.Date
+  periodTo   DateTime @db.Date
+
+  /// Versão/hash da fonte de dados (snapshots, títulos, complementos…).
+  sourceVersion String
+  /// Versão do algoritmo/motor que gerou as linhas.
+  algorithmVersion String
+
+  requestedAt DateTime  @default(now()) @db.Timestamptz(6)
+  startedAt   DateTime? @db.Timestamptz(6)
+  finishedAt  DateTime? @db.Timestamptz(6)
+
+  /// Falhas estruturadas (código + mensagem + detalhe JSON).
+  failureCode    String?
+  failureMessage String?
+  failureDetail  Json?
+
+  requestId      String?
+  idempotencyKey String?
+  notes          String?
+
+  lineCount Int @default(0)
+  itemCount Int @default(0)
+
+  createdByUserId String  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId String? @db.Uuid
+
+  createdByUser AppUser  @relation("TreasuryProjectionRunCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser AppUser? @relation("TreasuryProjectionRunUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  dayLines      TreasuryProjectionDayLine[]
+
+  @@unique([idempotencyKey])
+  @@index([companyCode, scenario, status])
+  @@index([scenario, periodFrom, periodTo])
+  @@index([sourceVersion, algorithmVersion])
+  @@index([status, requestedAt])
+  @@index([createdByUserId])
+  @@index([requestId])
+}
+
+/// Linha diária por conta dentro de uma execução de projeção.
+model TreasuryProjectionDayLine {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  runId     String @db.Uuid
+  accountId String @db.Uuid
+  /// Data civil da linha.
+  civilDate DateTime @db.Date
+
+  openingBalance        Decimal @db.Decimal(20, 2)
+  inflows               Decimal @default(0) @db.Decimal(20, 2)
+  outflows              Decimal @default(0) @db.Decimal(20, 2)
+  transfers             Decimal @default(0) @db.Decimal(20, 2)
+  realized              Decimal @default(0) @db.Decimal(20, 2)
+  closingBalance        Decimal @db.Decimal(20, 2)
+  uncertainReceivables  Decimal @default(0) @db.Decimal(20, 2)
+  minimumBalance        Decimal @default(0) @db.Decimal(20, 2)
+  riskAmount            Decimal @default(0) @db.Decimal(20, 2)
+  riskCode              TreasuryProjectionRiskCode @default(NONE)
+  itemCount             Int     @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  run               TreasuryProjectionRun              @relation(fields: [runId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  account           TreasuryFinancialAccount           @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  compositionItems  TreasuryProjectionCompositionItem[]
+
+  @@unique([runId, accountId, civilDate])
+  @@index([runId, civilDate])
+  @@index([accountId, civilDate])
+  @@index([riskCode])
+}
+
+/// Item de composição da linha diária — rastreabilidade do que formou entradas/saídas.
+model TreasuryProjectionCompositionItem {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  dayLineId String                   @db.Uuid
+  itemKind  TreasuryProjectionItemKind
+  /// Valor com sinal: positivo = entrada, negativo = saída (ou usar amount + direction).
+  amount    Decimal                  @db.Decimal(20, 2)
+  label     String?
+  /// Referências opcionais a títulos/lançamentos oficiais ou locais.
+  officialTitleId    String? @db.Uuid
+  nomusExternalId    Int?
+  ledgerEntryId      String? @db.Uuid
+  transferGroupId    String? @db.Uuid
+  sourceRef          String?
+  metadataJson       Json?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  dayLine TreasuryProjectionDayLine @relation(fields: [dayLineId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([dayLineId, sortOrder])
+  @@index([itemKind])
+  @@index([officialTitleId])
+  @@index([nomusExternalId])
+  @@index([transferGroupId])
 }

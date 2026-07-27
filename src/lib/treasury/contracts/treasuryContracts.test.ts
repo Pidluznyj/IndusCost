@@ -100,6 +100,8 @@ describe("treasuryContracts — enums", () => {
       "CHECKING"
     );
     assert.ok(TREASURY_PROJECTION_LAYERS.includes("CONTRACTUAL"));
+    assert.ok(TREASURY_PROJECTION_LAYERS.includes("MANUAL"));
+    assert.equal(TREASURY_PROJECTION_LAYERS.length, 4);
     assert.throws(
       () => parseTreasuryEnum("XYZ", TREASURY_SIDES, "side"),
       (err: unknown) =>

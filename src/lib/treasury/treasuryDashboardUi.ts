@@ -55,6 +55,7 @@ export const TREASURY_DASHBOARD_SCENARIO_LABELS: Record<
   CONTRACTUAL: "Contratual",
   PROBABLE: "Provável",
   CONFIRMED: "Confirmado",
+  MANUAL: "Manual",
 };
 
 export const TREASURY_DASHBOARD_SEVERITY_LABELS: Record<

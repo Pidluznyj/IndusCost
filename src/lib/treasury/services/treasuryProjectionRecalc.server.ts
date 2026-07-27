@@ -12,7 +12,12 @@ export type TreasuryProjectionRecalcRequest = {
   promisedDate?: string | null;
   /** Data programada de pagamento (CP). */
   scheduledDate?: string | null;
-  projectionLayer?: "CONTRACTUAL" | "PROBABLE" | "CONFIRMED" | null;
+  projectionLayer?:
+    | "CONTRACTUAL"
+    | "PROBABLE"
+    | "CONFIRMED"
+    | "MANUAL"
+    | null;
   requestedAt: Date;
   requestId?: string | null;
 };
