@@ -67,7 +67,7 @@
 | **40** | APIs + UI Central de Exceções | `DONE` | `a9a95ac` | Status 6 canônicos; list/sort/assign/due/status/resolve/ignore; deep-link; flag; `/exceptions`; `test:treasury` 395/395 |
 | **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
 | **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
-| **43** | Preview fechamento diário (GET) | `DONE` | `PENDING` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
+| **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
 
     > **Nota de ordem:** …; alertas = **41**; fechamento schema = **42**; preview = **43**.
 
