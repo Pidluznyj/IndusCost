@@ -61,8 +61,9 @@
 | **34** | UI agenda financeira | `DONE` | `12037b0` | `/finance/treasury/agenda`; colunas dia (saldo inicial/final, entradas previstas/confirmadas/realizadas, saídas previstas/programadas/realizadas, transferências, risco textual); períodos hoje/7/15/30/60/90/custom; visão consolidada/conta/grupo; gráfico evolução + tabela detalhável; DTO/API enriquecidos multi-cenário; `test:treasury` 319/319 |
 | **35** | Comparação contratual×provável×confirmado | `DONE` | `613f3ac` | `GET …/projections/compare` (só leitura, `recalculated:false`); UI `/finance/treasury/projections`; saldo/diff/incerteza/risco por dia; 1ª negativa + menor saldo; toggle local sem refetch; testes consistência; `test:treasury` 329/329 |
 | **36** | Auditoria do motor de projeção | `DONE` | `7628e55` | Correções: multi-baixa, promisedAmount, dedupe seeds, transfer órfã, ledger×settlement, includeInConsolidated, índice apps; algoritmo `1.2.0`; testes lacunas; sem UI nova; `test:treasury` 338/338 |
+| **37** | Transferências entre contas | `DONE` | _(hash no commit docs)_ | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
 
-    > **Nota de ordem:** …; comparação = **35**; auditoria motor = **36**.
+    > **Nota de ordem:** …; comparação = **35**; auditoria motor = **36**; transferências = **37**.
 
 ---
 
@@ -84,7 +85,7 @@
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
 | Projeção contratual / provável / confirmada | `DONE` | P25–P35: motor+fila+APIs+agenda+comparação UI/API (`/projections` + `/projections/compare`) |
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
-| Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
+| Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
 | Exceções / alertas | `PARTIAL` | P23: exceções prioritárias derivadas (divergência/negativo/prioridade dia); CRUD `TreasuryException` ainda pendente |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
@@ -408,6 +409,16 @@
 - [x] Sem avanço automático
 ---
 
+### 37 — Transferências entre contas
+- [x] Model `TreasuryTransfer` + enum status FORECAST|SCHEDULED|SENT|RECEIVED|RECONCILED|CANCELLED + migration `20260812120000_*`
+- [x] Regras: origem≠destino; valor positivo; saída/entrada; consolidado neutro; em trânsito (SENT); cancelamento auditado; ACL OPERATE nas duas contas
+- [x] Service/repo/controllers/APIs (`GET/POST …/transfers`, schedule/send/receive/reconcile/cancel) + flag `treasury.transfers.enabled`
+- [x] Recálculo de projeção (`transfer_*` → evento TRANSFER); seeds com status/pernas; algoritmo `1.3.0`
+- [x] UI `/finance/treasury/transfers` (lista + dialog + transições)
+- [x] Testes regras/integração/API/UI/schema; `test:treasury` 351/351
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -463,3 +474,4 @@
 | 2026-07-27 | Prompt 34: UI agenda financeira — `12037b0` |
 | 2026-07-27 | Prompt 35: comparação contratual×provável×confirmado — `613f3ac` |
 | 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
+| 2026-07-27 | Prompt 37: transferências entre contas — _(hash no commit docs)_ |
