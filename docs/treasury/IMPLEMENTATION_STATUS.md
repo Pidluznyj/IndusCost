@@ -31,7 +31,7 @@
 | **04** | Schema Prisma contas + acesso + snapshots | `DONE` | `365a4d8` — `feat(treasury): adicionar schema Prisma de contas, acesso e snapshots` | `TreasuryFinancialAccount`, `TreasuryFinancialAccountAccess`, `TreasuryBalanceSnapshot`; migration `20260805120000_*`; FKs `AppUser`; `companyCode` (sem model Company); prisma format/validate/generate OK; `test:treasury` 47/47; build OK; **não** aplicada em prod |
 | **05** | Auditoria central Tesouraria | `DONE` | `07c4036` — `feat(treasury): adicionar auditoria central append-only com suporte a transaction` | `TreasuryAuditLog` append-only + trigger; `writeTreasuryAuditLog` aceita TX; helpers tipados; testes create/update/rollback/imutabilidade; migration `20260806120000_*`; `test:treasury` 54/54 |
 | **06** | Repository + service contas financeiras | `DONE` | `e7bc851` — `feat(treasury): adicionar repository e service de contas financeiras` | CRUD lógica (list/get/create/update/deactivate/reactivate/sort/min balance/liquidity/consolidado/access); ACL+máscara+optimistic lock+audit; sem exclusão com histórico; `test:treasury` 64/64; rotas/UI ainda pendentes |
-| **07** | APIs REST contas financeiras | `DONE` | *(este commit)* | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
+| **07** | APIs REST contas financeiras | `DONE` | `80fc494` — `feat(treasury): adicionar APIs REST de contas financeiras` | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
 
 > **Nota de ordem:** service/repo = **06**; APIs REST contas = **07**. UI de contas fica para o próximo passo.
 
