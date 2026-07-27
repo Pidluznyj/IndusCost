@@ -17,10 +17,26 @@ export type {
 } from "./contracts/treasuryContracts.js";
 export {
   TREASURY_ENABLED_ENV,
+  TREASURY_FEATURE_FLAG_ENV,
+  TREASURY_FEATURE_FLAG_IDS,
   TREASURY_FEATURE_RESOURCE,
+  TREASURY_MASTER_FLAG,
   canShowTreasuryNavigation,
+  isTreasuryFeatureFlagEnabled,
   isTreasuryModuleEnabled,
+  listEnabledTreasuryFeatureFlags,
+  requireTreasuryFeatureFlag,
   requireTreasuryModuleEnabled,
 } from "./treasuryFeatureFlags.js";
-export { TREASURY_ACTIONS, TREASURY_RESOURCE_KEY } from "./treasuryAccess.js";
+export {
+  TREASURY_ACTIONS,
+  TREASURY_LEGACY_BAG_KEYS,
+  TREASURY_RESOURCE_KEY,
+  TREASURY_RESOURCE_KEYS,
+} from "./treasuryAccess.js";
+export {
+  TREASURY_CAPABILITY_MATRIX,
+  canTreasuryCapability,
+  resolveTreasuryCapabilities,
+} from "./treasuryPermissions.js";
 export { startTreasuryScheduledJobs, listTreasuryJobs } from "./jobs/treasuryJobs.js";

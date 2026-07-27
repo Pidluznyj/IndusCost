@@ -26,6 +26,7 @@
 | **00b** | Requirements mapping + plano de implementação | `DONE` | `7dbf0b4` — `docs(treasury): mapear requisitos e plano da Central de Tesouraria` | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
 | **00c** | Baseline real + branch `feature/treasury-center` | `DONE` | `2cdc68e` — `chore(treasury): registrar baseline e branch feature/treasury-center` | `04-BASELINE.md`; `validate:treasury-baseline`; WIP Lucro×Caixa stashed; build OK; lint 1236 preexistente; cash-flow 441/441 |
 | **01** | Foundation modular (flag, money, routes, scaffold FE) | `DONE` | `af2deff` — `feat(treasury): scaffold modular da Central de Tesouraria` | `src/lib/treasury/**`, `src/components/finance/treasury/**`, `GET /api/finance/treasury/availability`; `test:treasury` 16/16; build OK; sem regras financeiras |
+| **02** | Feature flags + permissões Tesouraria | `DONE` | *(este commit)* | Contrato `finance.treasury*`; bags; flags `treasury.*.enabled`; `requireResource` na availability; `test:treasury` 31/31 |
 
 ---
 
@@ -56,11 +57,11 @@
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
 | Auditoria domínio | `NOT_STARTED` | Padrão: `*AuditLog` por domínio |
-| Permissões | `NOT_STARTED` | Estender contrato (`finance.*` resources) |
+| Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` (scaffold 16 testes); suíte plena em P27 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 31 testes; suíte plena em P27 |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
-| Feature flags | `PARTIAL` | `TREASURY_MODULE_ENABLED` fail-closed (`treasuryFeatureFlags.ts`); ACL resource seed ainda P02 |
+| Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
 | Scripts deploy/validação | `NOT_STARTED` | Produção: usuário aplica; Cursor não deploya |
 
 ---
@@ -160,16 +161,25 @@
 - [x] Sem regras financeiras / sem schema Prisma novo
 - [x] Sem avanço automático para Prompt 02
 
+### 02 — Flags + permissões
+- [x] Flags `treasury.enabled` + subflags (accounts/projection/promises/payablesProgramming/dailyClosing/reconciliation/ofxImport)
+- [x] Bags mínimas no `permissionCatalog`
+- [x] Recursos `finance.treasury*` no contrato (`resources.ts`)
+- [x] `financeModulesAccess` + Leticia deny list + pilot availability
+- [x] `requireResource(finance.treasury, view)` na availability
+- [x] Testes deny>allow, unknown deny, isolation irmãos; `test:treasury` 31/31
+- [x] Sem avanço automático para Prompt 03
+
 ---
 
 ## Riscos / pendências abertas
 
-1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits; stashes de preservação existem.
-2. Money kit Tesouraria criado (P01); engines financeiros oficiais ainda usam Decimal→number (fora de escopo).
-3. Ausência total de model de conta bancária / ledger — migration em P03.
-4. Resource `finance.treasury` ainda sem seed no contrato — ACL no Prompt 02.
-5. Deploy produção permanece com o usuário.
-6. `TreasuryScaffoldPage` ainda sem wiring em `FinanceModule`/nav (proposital).
+1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
+2. Seed DB (`permissions:seed:contract:apply`) ainda a cargo do usuário/ops — contrato tipado já está no código.
+3. Ausência de model conta/ledger — migration em P03.
+4. Deploy produção permanece com o usuário.
+5. `TreasuryScaffoldPage` ainda sem wiring em `FinanceModule`/nav (proposital).
+6. Alias relacional PT `financeiro.tesouraria` ainda não criado no seed legado (de propósito nesta etapa).
 
 ---
 
@@ -181,3 +191,4 @@
 | 2026-07-27 | Prompt 00b: requirements mapping + implementation plan; sem código funcional |
 | 2026-07-27 | Prompt 00c: baseline em `feature/treasury-center`; WIP Lucro×Caixa protegido; build/tests adjacentes OK |
 | 2026-07-27 | Prompt 01: scaffold modular + availability endpoint; test:treasury 16/16; build OK |
+| 2026-07-27 | Prompt 02: flags + permissões Tesouraria; test:treasury 31/31 |

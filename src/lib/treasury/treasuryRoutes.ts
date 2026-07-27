@@ -1,21 +1,18 @@
 /**
  * Router principal da Central de Tesouraria.
- * Scaffold: apenas availability técnica protegida — sem regras financeiras.
- *
- * ACL `requireResource(finance.treasury)` entra no prompt de permissões.
- * Nesta etapa: sessão autenticada + feature flag fail-closed.
+ * Scaffold: availability técnica protegida por sessão + flag + requireResource.
  */
 
 import type express from "express";
 import type { RequestHandler } from "express";
 import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityController.js";
 import { TREASURY_AVAILABILITY_PATH } from "./contracts/treasuryContracts.js";
+import { TREASURY_ACTIONS, TREASURY_RESOURCE_KEY } from "./treasuryAccess.js";
 import { requireTreasuryModuleEnabled } from "./treasuryFeatureFlags.js";
 
 export type TreasuryAuthGuards = {
   requireAppAuth: RequestHandler;
-  /** Reservado para wiring futuro (prompt ACL); aceito para simetria com outros register*. */
-  requireResource?: (resourceKey: string, action?: string) => RequestHandler;
+  requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
 /**
@@ -25,12 +22,13 @@ export function registerTreasuryRoutes(
   app: express.Express,
   auth: TreasuryAuthGuards
 ): void {
-  const { requireAppAuth } = auth;
+  const { requireAppAuth, requireResource } = auth;
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
     requireAppAuth,
     requireTreasuryModuleEnabled(),
+    requireResource(TREASURY_RESOURCE_KEY, TREASURY_ACTIONS.view),
     treasuryAvailabilityHandler
   );
 }
