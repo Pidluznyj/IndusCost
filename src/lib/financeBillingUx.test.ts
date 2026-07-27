@@ -73,17 +73,15 @@ describe("financeBillingUx", () => {
     assert.ok(page.includes("buildFinanceBillingDashboardQuery"));
   });
 
-  it("comparativo e auditoria só carregam sob demanda (não no mount)", () => {
+  it("não renderiza grid de Detalhamento; comparativo/auditoria alimentam Centro de Ações", () => {
     const page = readFileSync(pagePath, "utf8");
-    assert.match(page, /executiveTab !== "comparison"/);
-    assert.match(page, /executiveTab !== "audit"/);
-    assert.doesNotMatch(
-      page,
-      /useEffect\(\(\) => \{\s*void loadComparison\(\);\s*\}, \[loadComparison\]\)/
-    );
-    assert.doesNotMatch(
-      page,
-      /useEffect\(\(\) => \{\s*void loadAudit\(\);\s*\}, \[loadAudit\]\)/
-    );
+    assert.equal(page.includes("Grid explicativo dos cards"), false);
+    assert.equal(page.includes("FinanceBillingNfeDetailsTable"), false);
+    assert.equal(page.includes("FINANCE_BILLING_EXECUTIVE_TABS"), false);
+    assert.ok(page.includes("FinanceBillingActionCenter"));
+    assert.match(page, /if \(comparison != null\) return;/);
+    assert.match(page, /if \(audit != null\) return;/);
+    assert.match(page, /void loadComparison\(\);/);
+    assert.match(page, /void loadAudit\(\);/);
   });
 });

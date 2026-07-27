@@ -39,7 +39,6 @@ describe("financeBillingPageFilters", () => {
     assert.ok(page.includes("FinanceBiFilterPanel"));
     assert.ok(page.includes("draftYear"));
     assert.ok(page.includes("appliedYear"));
-    assert.ok(page.includes("FINANCE_BILLING_EXECUTIVE_TABS"));
     assert.ok(page.includes("FINANCE_BILLING_ANALYSIS_TABS"));
     assert.ok(page.includes("FinanceDetailTabs"));
     assert.ok(page.includes("FinanceBillingActionCenter"));
@@ -47,8 +46,9 @@ describe("financeBillingPageFilters", () => {
     assert.ok(page.includes("FinanceBillingAccumulatedView"));
     assert.ok(page.includes("FinanceBillingMonthlyView"));
     assert.ok(page.includes("FinanceBillingProjectionView"));
-    assert.ok(page.includes("FinanceBillingComparisonPanel"));
-    assert.ok(page.includes("FinanceBillingNfeDetailsTable"));
+    assert.ok(page.includes("FinanceBillingCustomersTab"));
+    assert.equal(page.includes("FinanceBillingNfeDetailsTable"), false);
+    assert.equal(page.includes("Grid explicativo dos cards"), false);
     const views = readFileSync(
       join(process.cwd(), "src", "components", "finance", "billing", "FinanceBillingExecutiveViews.tsx"),
       "utf8"
