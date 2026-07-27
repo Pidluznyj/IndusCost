@@ -62,7 +62,7 @@
 | **35** | Comparação contratual×provável×confirmado | `DONE` | `613f3ac` | `GET …/projections/compare` (só leitura, `recalculated:false`); UI `/finance/treasury/projections`; saldo/diff/incerteza/risco por dia; 1ª negativa + menor saldo; toggle local sem refetch; testes consistência; `test:treasury` 329/329 |
 | **36** | Auditoria do motor de projeção | `DONE` | `7628e55` | Correções: multi-baixa, promisedAmount, dedupe seeds, transfer órfã, ledger×settlement, includeInConsolidated, índice apps; algoritmo `1.2.0`; testes lacunas; sem UI nova; `test:treasury` 338/338 |
 | **37** | Transferências entre contas | `DONE` | `2cdcba4` | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
-| **38** | Model + serviço de exceções | `DONE` | _(hash no commit docs)_ | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
+| **38** | Model + serviço de exceções | `DONE` | `e4b823f` | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
 
     > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**.
 
@@ -486,4 +486,4 @@
 | 2026-07-27 | Prompt 35: comparação contratual×provável×confirmado — `613f3ac` |
 | 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
 | 2026-07-27 | Prompt 37: transferências entre contas — `2cdcba4` |
-| 2026-07-27 | Prompt 38: model + serviço de exceções — _(hash no commit docs)_ |
+| 2026-07-27 | Prompt 38: model + serviço de exceções — `e4b823f` |
