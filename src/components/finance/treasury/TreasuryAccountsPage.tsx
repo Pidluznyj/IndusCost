@@ -160,7 +160,7 @@ export function TreasuryAccountsPage() {
       });
       if (controller.signal.aborted) return;
       setRows(payload.rows);
-      setTotal(payload.pagination.total);
+      setTotal(payload.pagination.totalRows);
       setTotalPages(payload.pagination.totalPages);
       const newest = payload.rows.reduce<string | null>((acc, row) => {
         if (!acc || row.updatedAt > acc) return row.updatedAt;

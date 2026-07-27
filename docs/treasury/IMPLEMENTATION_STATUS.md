@@ -34,8 +34,9 @@
 | **07** | APIs REST contas financeiras | `DONE` | `80fc494` — `feat(treasury): adicionar APIs REST de contas financeiras` | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
 | **08** | UI contas financeiras | `DONE` | `6a81b79` — `feat(treasury): adicionar tela de contas financeiras` | `/finance/treasury/accounts`; listar/criar/editar/desativar/reativar; saldo mín./liquidez/consolidado/acessos; máscara; estados vazio/loading/erro/sem permissão; responsivo; `test:treasury` 80/80 |
 | **09** | Backend/APIs snapshots de saldo | `DONE` | `30cfdb5` — `feat(treasury): adicionar APIs de snapshots de saldo` | `GET …/balances`, `GET …/balances/latest`, `POST …/balance-snapshots` + Idempotency-Key; observado/operacional/bloqueado/aplicações/limite; previousSnapshot; audit; Decimal+auth+idempotência; `test:treasury` 90/90 |
+| **10** | UI atualização de saldo | `DONE` | *(este commit)* | `/finance/treasury/accounts/:id/balances`; form pt-BR→decimal API; histórico; stale; confirmação; conflito; `test:treasury` 100/100 |
 
-> **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**.
+> **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**; UI saldo = **10**.
 
 ---
 
@@ -68,7 +69,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 90 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 100 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -265,3 +266,4 @@
 | 2026-07-27 | Prompt 07: APIs REST contas financeiras; test:treasury 70/70 |
 | 2026-07-27 | Prompt 08: UI contas financeiras; test:treasury 80/80 |
 | 2026-07-27 | Prompt 09: APIs snapshots de saldo; test:treasury 90/90 |
+| 2026-07-27 | Prompt 10: UI atualização de saldo; test:treasury 100/100 |

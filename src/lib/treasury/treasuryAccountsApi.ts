@@ -56,6 +56,17 @@ export async function fetchTreasuryAccounts(
   });
 }
 
+export async function fetchTreasuryAccount(
+  id: string,
+  signal?: AbortSignal
+): Promise<TreasuryFinancialAccountDto> {
+  const res = await fetchJsonOk<{ account: TreasuryFinancialAccountDto }>(
+    `${TREASURY_ACCOUNTS_PATH}/${encodeURIComponent(id)}`,
+    { credentials: "include", signal }
+  );
+  return res.account;
+}
+
 export async function createTreasuryAccount(
   body: TreasuryCreateAccountInput
 ): Promise<TreasuryFinancialAccountDto> {

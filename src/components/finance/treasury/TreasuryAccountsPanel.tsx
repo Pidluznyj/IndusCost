@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import type { TreasuryFinancialAccountDto } from "@/src/lib/treasury/contracts/index.js";
 import {
@@ -13,6 +14,7 @@ import {
   formatTreasuryUpdatedAt,
   type TreasuryAccountsViewKind,
 } from "@/src/lib/treasury/treasuryAccountsUi.js";
+import { buildTreasuryBalancePath } from "@/src/lib/treasury/treasuryBalancesUi.js";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import {
   FinanceModuleEmptyState,
@@ -375,48 +377,54 @@ function AccountActions({
   onReactivate: (row: TreasuryFinancialAccountDto) => void;
   onManageAccess: (row: TreasuryFinancialAccountDto) => void;
 }) {
-  if (!canManage) {
-    return (
-      <span className="text-xs text-muted-foreground">Somente leitura</span>
-    );
-  }
   return (
     <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
+      <Link
+        to={buildTreasuryBalancePath(row.id)}
         className="text-xs font-semibold text-primary"
-        onClick={() => onEdit(row)}
-        data-testid="treasury-accounts-edit"
+        data-testid="treasury-accounts-balance"
       >
-        Editar
-      </button>
-      <button
-        type="button"
-        className="text-xs font-semibold text-primary"
-        onClick={() => onManageAccess(row)}
-        data-testid="treasury-accounts-access"
-      >
-        Acessos
-      </button>
-      {row.isActive ? (
-        <button
-          type="button"
-          className="text-xs font-semibold text-amber-700"
-          onClick={() => onDeactivate(row)}
-          data-testid="treasury-accounts-deactivate"
-        >
-          Desativar
-        </button>
-      ) : (
-        <button
-          type="button"
-          className="text-xs font-semibold text-emerald-700"
-          onClick={() => onReactivate(row)}
-          data-testid="treasury-accounts-reactivate"
-        >
-          Reativar
-        </button>
-      )}
+        Saldo
+      </Link>
+      {canManage ? (
+        <>
+          <button
+            type="button"
+            className="text-xs font-semibold text-primary"
+            onClick={() => onEdit(row)}
+            data-testid="treasury-accounts-edit"
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            className="text-xs font-semibold text-primary"
+            onClick={() => onManageAccess(row)}
+            data-testid="treasury-accounts-access"
+          >
+            Acessos
+          </button>
+          {row.isActive ? (
+            <button
+              type="button"
+              className="text-xs font-semibold text-amber-700"
+              onClick={() => onDeactivate(row)}
+              data-testid="treasury-accounts-deactivate"
+            >
+              Desativar
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="text-xs font-semibold text-emerald-700"
+              onClick={() => onReactivate(row)}
+              data-testid="treasury-accounts-reactivate"
+            >
+              Reativar
+            </button>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }

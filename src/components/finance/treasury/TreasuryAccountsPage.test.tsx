@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { MemoryRouter } from "react-router-dom";
 import type { TreasuryFinancialAccountDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   TREASURY_ACCOUNTS_DENIED_MESSAGE,
@@ -104,12 +105,14 @@ describe("TreasuryAccountsPage — componentes e fluxo", () => {
   it("lista conta com saldo mínimo, liquidez, consolidado, máscara e última atualização", () => {
     const row = sampleRow();
     const html = renderToStaticMarkup(
-      <TreasuryAccountsPanel
-        {...panelBase}
-        viewKind="ready"
-        rows={[row]}
-        total={1}
-      />
+      <MemoryRouter>
+        <TreasuryAccountsPanel
+          {...panelBase}
+          viewKind="ready"
+          rows={[row]}
+          total={1}
+        />
+      </MemoryRouter>
     );
     assert.match(html, /treasury-accounts-table/);
     assert.match(html, /treasury-accounts-mobile-list/);
@@ -118,6 +121,7 @@ describe("TreasuryAccountsPage — componentes e fluxo", () => {
     assert.ok(html.includes("******89"));
     assert.ok(html.includes("D+1") || html.includes("D_PLUS_1") === false);
     assert.ok(html.includes("Sim"));
+    assert.ok(html.includes("Saldo"));
     assert.ok(html.includes("Editar"));
     assert.ok(html.includes("Acessos"));
     assert.ok(html.includes("Desativar"));
