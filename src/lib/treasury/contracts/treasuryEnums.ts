@@ -414,6 +414,16 @@ export const TREASURY_OFX_PREVIEW_DUPLICATE_REASONS = [
 export type TreasuryOfxPreviewDuplicateReason =
   (typeof TREASURY_OFX_PREVIEW_DUPLICATE_REASONS)[number];
 
+/** Buckets de filtro da UI de movimentos bancários. */
+export const TREASURY_BANK_MOVEMENT_FILTER_BUCKETS = [
+  "UNRECONCILED",
+  "PARTIAL",
+  "RECONCILED",
+  "DUPLICATES",
+] as const;
+export type TreasuryBankMovementFilterBucket =
+  (typeof TREASURY_BANK_MOVEMENT_FILTER_BUCKETS)[number];
+
 export const TREASURY_AVAILABILITY_STATUSES = [
   "available",
   "disabled",

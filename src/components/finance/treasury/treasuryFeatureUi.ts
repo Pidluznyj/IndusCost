@@ -52,6 +52,11 @@ export const TREASURY_UI_SECTIONS = [
     label: "Transferências",
   },
   {
+    id: "bank-movements",
+    path: `${TREASURY_UI_BASE_PATH}/bank-movements`,
+    label: "Movimentos bancários",
+  },
+  {
     id: "exceptions",
     path: `${TREASURY_UI_BASE_PATH}/exceptions`,
     label: "Exceções",

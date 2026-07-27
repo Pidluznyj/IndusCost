@@ -25,6 +25,7 @@ import { createTreasuryDailyClosingPreviewControllers } from "./controllers/trea
 import { createTreasuryDailyClosingControllers } from "./controllers/treasuryDailyClosingController.js";
 import { createTreasuryBankImportOfxPreviewControllers } from "./controllers/treasuryBankImportOfxPreviewController.js";
 import { createTreasuryBankImportOfxApplyControllers } from "./controllers/treasuryBankImportOfxApplyController.js";
+import { createTreasuryBankMovementQueryControllers } from "./controllers/treasuryBankMovementQueryController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -32,6 +33,8 @@ import {
   TREASURY_AVAILABILITY_PATH,
   TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
+  TREASURY_BANK_IMPORTS_PATH,
+  TREASURY_BANK_MOVEMENTS_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DAILY_CLOSING_PATH,
   TREASURY_DAILY_CLOSING_PREVIEW_PATH,
@@ -104,6 +107,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const ofxApply = createTreasuryBankImportOfxApplyControllers({
+    getCurrentAppUser,
+  });
+  const bankMovements = createTreasuryBankMovementQueryControllers({
     getCurrentAppUser,
   });
   const ofxUpload = multer({
@@ -210,9 +216,16 @@ export function registerTreasuryRoutes(
   const ofxImportEnabled = requireTreasuryFeatureFlag(
     "treasury.ofxImport.enabled"
   );
+  const viewReconciliation = requireResource(
+    TREASURY_RESOURCE_KEYS.reconciliation,
+    TREASURY_ACTIONS.view
+  );
   const manageReconciliation = requireResource(
     TREASURY_RESOURCE_KEYS.reconciliation,
     TREASURY_ACTIONS.manage
+  );
+  const reconciliationEnabled = requireTreasuryFeatureFlag(
+    "treasury.reconciliation.enabled"
   );
 
   app.get(
@@ -257,6 +270,33 @@ export function registerTreasuryRoutes(
     ofxImportEnabled,
     manageReconciliation,
     ofxApply.apply
+  );
+
+  app.get(
+    TREASURY_BANK_IMPORTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    bankMovements.listBatches
+  );
+
+  app.get(
+    TREASURY_BANK_MOVEMENTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    bankMovements.listMovements
+  );
+
+  app.get(
+    `${TREASURY_BANK_MOVEMENTS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    bankMovements.getMovement
   );
 
   app.get(

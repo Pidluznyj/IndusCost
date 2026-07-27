@@ -66,6 +66,9 @@ export const TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH =
 export const TREASURY_BANK_IMPORTS_OFX_APPLY_PATH =
   `${TREASURY_BANK_IMPORTS_PATH}/ofx/apply` as const;
 
+export const TREASURY_BANK_MOVEMENTS_PATH =
+  `${TREASURY_API_PREFIX}/bank-movements` as const;
+
 /** TTL do token de preview OFX (segundos). */
 export const TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS = 15 * 60;
 

@@ -42,7 +42,13 @@ import {
   TREASURY_EXCEPTION_STATUSES,
   TREASURY_EXCEPTION_TYPES,
   TREASURY_TRANSFER_STATUSES,
+  TREASURY_BANK_IMPORT_BATCH_STATUSES,
+  TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
+  TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
   type TreasuryAccountAccessLevel,
+  type TreasuryBankImportBatchStatus,
+  type TreasuryBankMovementFilterBucket,
+  type TreasuryBankMovementReconciliationStatus,
   type TreasuryAccountLiquidity,
   type TreasuryAccountSortField,
   type TreasuryAccountType,
@@ -2983,6 +2989,89 @@ export function parseTreasuryBankImportOfxApplyInput(
     required: false,
   });
   return { previewToken, contentHash, notes };
+}
+
+export type TreasuryBankImportsListQuery = {
+  page: number;
+  pageSize: number;
+  companyCode: string | null;
+  accountId: string | null;
+  status: TreasuryBankImportBatchStatus | null;
+  from: string | null;
+  to: string | null;
+};
+
+export type TreasuryBankMovementsListQuery = {
+  page: number;
+  pageSize: number;
+  companyCode: string | null;
+  accountId: string | null;
+  batchId: string | null;
+  bucket: TreasuryBankMovementFilterBucket | null;
+  reconciliationStatus: TreasuryBankMovementReconciliationStatus | null;
+  search: string | null;
+  from: string | null;
+  to: string | null;
+};
+
+export function parseTreasuryBankImportsListQuery(
+  query: Record<string, unknown>
+): TreasuryBankImportsListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const range = parseTreasuryDateRangeFilter(query);
+  return {
+    ...pagination,
+    companyCode: parseTreasuryBoundedString(query.companyCode, "companyCode", {
+      required: false,
+    }),
+    accountId: parseTreasuryBoundedString(query.accountId, "accountId", {
+      required: false,
+    }),
+    status: parseTreasuryEnum(
+      query.status,
+      TREASURY_BANK_IMPORT_BATCH_STATUSES,
+      "status",
+      false
+    ),
+    from: range.from,
+    to: range.to,
+  };
+}
+
+export function parseTreasuryBankMovementsListQuery(
+  query: Record<string, unknown>
+): TreasuryBankMovementsListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const range = parseTreasuryDateRangeFilter(query);
+  return {
+    ...pagination,
+    companyCode: parseTreasuryBoundedString(query.companyCode, "companyCode", {
+      required: false,
+    }),
+    accountId: parseTreasuryBoundedString(query.accountId, "accountId", {
+      required: false,
+    }),
+    batchId: parseTreasuryBoundedString(query.batchId, "id", {
+      required: false,
+    }),
+    bucket: parseTreasuryEnum(
+      query.bucket ?? query.filter ?? query.reconciliationBucket,
+      TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
+      "bucket",
+      false
+    ),
+    reconciliationStatus: parseTreasuryEnum(
+      query.reconciliationStatus ?? query.status,
+      TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
+      "reconciliationStatus",
+      false
+    ),
+    search: parseTreasuryBoundedString(query.search, "search", {
+      required: false,
+    }),
+    from: range.from,
+    to: range.to,
+  };
 }
 
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

@@ -26,6 +26,10 @@ import type {
   TreasuryLedgerStatus,
   TreasuryPositionValueOrigin,
   TreasuryProjectionLayer,
+  TreasuryBankImportBatchStatus,
+  TreasuryBankMovementDirection,
+  TreasuryBankMovementReconciliationStatus,
+  TreasuryBankOfxFormat,
   TreasuryPromiseStatus,
   TreasuryReconciliationMatchStatus,
   TreasuryScheduleStatus,
@@ -833,6 +837,50 @@ export type TreasuryReconciliationMatchDto = {
   nomusExternalId: string | null;
   status: TreasuryReconciliationMatchStatus;
   confidence: number | null;
+  createdAt: TreasuryTimestampIso;
+};
+
+export type TreasuryBankImportBatchDto = {
+  id: string;
+  companyCode: string;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  fileSha256: string;
+  originalFileName: string;
+  byteLength: number;
+  format: TreasuryBankOfxFormat | string;
+  status: TreasuryBankImportBatchStatus | string;
+  transactionCount: number;
+  summaryJson: Record<string, unknown> | null;
+  requestId: string | null;
+  notes: string | null;
+  createdByUserId: string;
+  createdAt: TreasuryTimestampIso;
+  processedAt: TreasuryTimestampIso | null;
+};
+
+export type TreasuryBankMovementDto = {
+  id: string;
+  batchId: string;
+  companyCode: string;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  fingerprint: string;
+  fitId: string | null;
+  direction: TreasuryBankMovementDirection | string;
+  amount: TreasuryMoneyString;
+  currency: TreasuryCurrency;
+  postedCivilDate: TreasuryCivilDate;
+  userCivilDate: TreasuryCivilDate | null;
+  description: string | null;
+  documentNumber: string | null;
+  counterpartyName: string | null;
+  trnType: string | null;
+  reconciliationStatus: TreasuryBankMovementReconciliationStatus | string;
+  reconciledAmount: TreasuryMoneyString;
+  sortOrder: number;
   createdAt: TreasuryTimestampIso;
 };
 

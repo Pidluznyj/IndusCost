@@ -75,8 +75,9 @@
 | **48** | Schema importação bancária + movimentos | `DONE` | `3d5d1ab` | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
 | **49** | Preview OFX (`POST …/bank-imports/ofx/preview`) | `DONE` | `99b527f` | permissão+conta; parse/normalize/fingerprint; NEW/DUPLICATE/INVALID; período/totais; token temporário; sem gravar TX; `test:treasury` 483/483 |
 | **50** | Apply OFX (`POST …/bank-imports/ofx/apply`) | `DONE` | `0465f29` | consome preview; TX; lote+movimentos; anti-dup; audit IMPORT; sugestões+recalc; idempotente por fileSha256; `test:treasury` 488/488 |
+| **51** | UI movimentos bancários + OFX | `DONE` | _(pending commit)_ | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
 
-    > **Nota de ordem:** …; schema import OFX = **48**; preview OFX = **49**; apply OFX = **50**.
+    > **Nota de ordem:** …; preview OFX = **49**; apply OFX = **50**; UI movimentos = **51**.
 
 ---
 
@@ -103,7 +104,7 @@
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
-| Importação OFX | `PARTIAL` | P47–P50: parser+schema+preview+apply persistente; sugestões/UI ainda pendentes |
+| Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; matching/sugestões reais ainda pendentes |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
@@ -557,6 +558,16 @@
 - [x] Sem UI/matching real neste passo; sem avanço automático
 ---
 
+### 51 — UI movimentos bancários / OFX
+- [x] Rota `/finance/treasury/bank-movements` + aba no shell
+- [x] Upload OFX → preview → confirmação (wizard) com estados/mensagens claras
+- [x] Histórico de lotes + lista de movimentos + detalhe (conta/contraparte/descrição/valor/data)
+- [x] Filtros: não conciliados / parcial / conciliados / duplicados (+ conta/empresa/busca/período)
+- [x] GET `/bank-imports` e `/bank-movements` (+ `:id`); permissões reconciliation view/manage
+- [x] Testes de fluxo UI + wiring; `test:treasury` 494/494
+- [x] Sem matching real neste passo; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -626,3 +637,4 @@
 | 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — `3d5d1ab` |
 | 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
 | 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — `0465f29` |
+| 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — _(pending commit)_ |

@@ -36,6 +36,7 @@ export {
   TREASURY_BANK_IMPORTS_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
   TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
+  TREASURY_BANK_MOVEMENTS_PATH,
   TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS,
 } from "./treasuryConstants.js";
 export type { TreasuryFieldLimitKey } from "./treasuryConstants.js";
@@ -92,6 +93,7 @@ export {
   TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
   TREASURY_OFX_PREVIEW_ROW_STATUSES,
   TREASURY_OFX_PREVIEW_DUPLICATE_REASONS,
+  TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
   TREASURY_SCHEDULE_STATUSES,
   TREASURY_SIDES,
   TREASURY_SORT_DIRECTIONS,
@@ -157,6 +159,7 @@ export type {
   TreasuryBankMovementReconciliationStatus,
   TreasuryOfxPreviewRowStatus,
   TreasuryOfxPreviewDuplicateReason,
+  TreasuryBankMovementFilterBucket,
   TreasuryScheduleStatus,
   TreasurySide,
   TreasurySortDirection,
@@ -258,6 +261,8 @@ export type {
   TreasuryProjectionSourceFreshnessDto,
   TreasuryReconciliationMatchDto,
   TreasuryTransferDto,
+  TreasuryBankImportBatchDto,
+  TreasuryBankMovementDto,
 } from "./treasuryDto.js";
 
 export {
@@ -274,6 +279,8 @@ export {
   parseTreasuryDailyClosingListQuery,
   parseTreasuryDailyClosingReopenInput,
   parseTreasuryBankImportOfxApplyInput,
+  parseTreasuryBankImportsListQuery,
+  parseTreasuryBankMovementsListQuery,
   parseTreasuryDateRangeFilter,
   parseTreasuryProjectionCalculateInput,
   parseTreasuryProjectionCompareQuery,
@@ -330,6 +337,8 @@ export type {
   TreasuryDailyClosingListQuery,
   TreasuryDailyClosingReopenInput,
   TreasuryBankImportOfxApplyInput,
+  TreasuryBankImportsListQuery,
+  TreasuryBankMovementsListQuery,
   TreasuryDailyClosingCaveatInput,
   TreasuryDeactivateAccountInput,
   TreasuryProjectionCalculateInput,

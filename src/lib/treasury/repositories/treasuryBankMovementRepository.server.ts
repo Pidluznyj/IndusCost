@@ -66,6 +66,28 @@ export type TreasuryBankImportBatchCreateData = {
   processedAt: Date | null;
 };
 
+export type TreasuryBankImportBatchListFilter = {
+  companyCode?: string | null;
+  accountId?: string | null;
+  status?: string | null;
+  from?: Date | null;
+  to?: Date | null;
+  page: number;
+  pageSize: number;
+};
+
+export type TreasuryBankMovementListFilter = {
+  companyCode?: string | null;
+  accountId?: string | null;
+  batchId?: string | null;
+  reconciliationStatuses?: string[] | null;
+  search?: string | null;
+  from?: Date | null;
+  to?: Date | null;
+  page: number;
+  pageSize: number;
+};
+
 export type TreasuryBankMovementRepository = {
   findExistingFingerprints(
     accountId: string,
@@ -94,6 +116,18 @@ export type TreasuryBankMovementRepository = {
     rows: readonly TreasuryBankMovementCreateData[],
     db?: TreasuryBankMovementDb
   ): Promise<{ id: string; fingerprint: string }[]>;
+  listBatches(
+    filter: TreasuryBankImportBatchListFilter,
+    db?: TreasuryBankMovementDb
+  ): Promise<{ rows: unknown[]; totalRows: number }>;
+  listMovements(
+    filter: TreasuryBankMovementListFilter,
+    db?: TreasuryBankMovementDb
+  ): Promise<{ rows: unknown[]; totalRows: number }>;
+  findMovementById(
+    id: string,
+    db?: TreasuryBankMovementDb
+  ): Promise<unknown | null>;
 };
 
 function mapBatch(
@@ -231,6 +265,77 @@ export function createTreasuryBankMovementRepository(
         created.push(inserted);
       }
       return created;
+    },
+
+    async listBatches(filter, db = prisma) {
+      const where: Prisma.TreasuryBankImportBatchWhereInput = {};
+      if (filter.companyCode?.trim()) where.companyCode = filter.companyCode.trim();
+      if (filter.accountId?.trim()) where.accountId = filter.accountId.trim();
+      if (filter.status?.trim()) {
+        where.status = filter.status.trim() as TreasuryBankImportBatchStatus;
+      }
+      if (filter.from || filter.to) {
+        where.createdAt = {};
+        if (filter.from) where.createdAt.gte = filter.from;
+        if (filter.to) where.createdAt.lte = filter.to;
+      }
+      const skip = (filter.page - 1) * filter.pageSize;
+      const [totalRows, rows] = await Promise.all([
+        db.treasuryBankImportBatch.count({ where }),
+        db.treasuryBankImportBatch.findMany({
+          where,
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: filter.pageSize,
+          include: { account: { select: { code: true, name: true } } },
+        }),
+      ]);
+      return { rows, totalRows };
+    },
+
+    async listMovements(filter, db = prisma) {
+      const where: Prisma.TreasuryBankMovementWhereInput = {};
+      if (filter.companyCode?.trim()) where.companyCode = filter.companyCode.trim();
+      if (filter.accountId?.trim()) where.accountId = filter.accountId.trim();
+      if (filter.batchId?.trim()) where.batchId = filter.batchId.trim();
+      if (filter.reconciliationStatuses?.length) {
+        where.reconciliationStatus = {
+          in: filter.reconciliationStatuses as never,
+        };
+      }
+      if (filter.from || filter.to) {
+        where.postedCivilDate = {};
+        if (filter.from) where.postedCivilDate.gte = filter.from;
+        if (filter.to) where.postedCivilDate.lte = filter.to;
+      }
+      const search = filter.search?.trim();
+      if (search) {
+        where.OR = [
+          { description: { contains: search, mode: "insensitive" } },
+          { counterpartyName: { contains: search, mode: "insensitive" } },
+          { documentNumber: { contains: search, mode: "insensitive" } },
+          { fitId: { contains: search, mode: "insensitive" } },
+        ];
+      }
+      const skip = (filter.page - 1) * filter.pageSize;
+      const [totalRows, rows] = await Promise.all([
+        db.treasuryBankMovement.count({ where }),
+        db.treasuryBankMovement.findMany({
+          where,
+          orderBy: [{ postedCivilDate: "desc" }, { sortOrder: "asc" }],
+          skip,
+          take: filter.pageSize,
+          include: { account: { select: { code: true, name: true } } },
+        }),
+      ]);
+      return { rows, totalRows };
+    },
+
+    async findMovementById(id, db = prisma) {
+      return db.treasuryBankMovement.findUnique({
+        where: { id },
+        include: { account: { select: { code: true, name: true } } },
+      });
     },
   };
 }

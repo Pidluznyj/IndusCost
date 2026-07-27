@@ -14,6 +14,7 @@ import { TreasuryPayablesPage } from "./TreasuryPayablesPage.js";
 import { TreasuryAgendaPage } from "./TreasuryAgendaPage.js";
 import { TreasuryProjectionComparisonPage } from "./TreasuryProjectionComparisonPage.js";
 import { TreasuryTransfersPage } from "./TreasuryTransfersPage.js";
+import { TreasuryBankMovementsPage } from "./TreasuryBankMovementsPage.js";
 import { TreasuryExceptionsPage } from "./TreasuryExceptionsPage.js";
 import { TreasuryDailyClosingPage } from "./TreasuryDailyClosingPage.js";
 
@@ -70,6 +71,7 @@ export function TreasuryModule() {
           element={<TreasuryProjectionComparisonPage />}
         />
         <Route path="transfers" element={<TreasuryTransfersPage />} />
+        <Route path="bank-movements" element={<TreasuryBankMovementsPage />} />
         <Route path="exceptions" element={<TreasuryExceptionsPage />} />
         <Route path="closing" element={<TreasuryDailyClosingPage />} />
         <Route
