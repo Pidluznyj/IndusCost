@@ -191,6 +191,22 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
 
+  it("schema e migration de status da Central de Exceções existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /IN_ANALYSIS/);
+    assert.match(schema, /WAITING_THIRD_PARTY/);
+    assert.match(schema, /\bIGNORED\b/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260815120000_treasury_exception_center_statuses/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /ADD VALUE 'IN_ANALYSIS'/);
+    assert.match(sql, /ADD VALUE 'WAITING_THIRD_PARTY'/);
+    assert.match(sql, /ADD VALUE 'IGNORED'/);
+  });
+
   it("schema e migration de tipos do motor de exceções existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /EXPECTED_RECEIPT_NOT_RECEIVED/);

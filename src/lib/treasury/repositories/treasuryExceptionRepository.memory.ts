@@ -74,17 +74,68 @@ export function createMemoryTreasuryExceptionRepository(
       if (filter.severity) {
         rows = rows.filter((r) => r.severity === filter.severity);
       }
+      if (filter.responsibleUserId) {
+        rows = rows.filter(
+          (r) => r.responsibleUserId === filter.responsibleUserId
+        );
+      }
+      if (filter.search?.trim()) {
+        const q = filter.search.trim().toLowerCase();
+        rows = rows.filter(
+          (r) =>
+            r.title.toLowerCase().includes(q) ||
+            (r.description ?? "").toLowerCase().includes(q) ||
+            r.uniqueKey.toLowerCase().includes(q) ||
+            (r.entityId ?? "").toLowerCase().includes(q)
+        );
+      }
       const severityRank: Record<string, number> = {
         CRITICAL: 0,
         WARNING: 1,
         INFO: 2,
       };
+      const dir = filter.sortDirection === "asc" ? 1 : -1;
+      const sortBy = filter.sortBy ?? "detectedAt";
       rows.sort((a, b) => {
-        const bySev =
-          (severityRank[String(a.severity)] ?? 9) -
-          (severityRank[String(b.severity)] ?? 9);
-        if (bySev !== 0) return bySev;
-        return b.detectedAt.getTime() - a.detectedAt.getTime();
+        let cmp = 0;
+        switch (sortBy) {
+          case "severity":
+            cmp =
+              (severityRank[String(a.severity)] ?? 9) -
+              (severityRank[String(b.severity)] ?? 9);
+            break;
+          case "status":
+            cmp = String(a.status).localeCompare(String(b.status));
+            break;
+          case "title":
+            cmp = a.title.localeCompare(b.title);
+            break;
+          case "amount": {
+            const av = a.amount == null ? 0 : Number(String(a.amount));
+            const bv = b.amount == null ? 0 : Number(String(b.amount));
+            cmp = av - bv;
+            break;
+          }
+          case "dueAt": {
+            const at = a.dueAt?.getTime() ?? 0;
+            const bt = b.dueAt?.getTime() ?? 0;
+            cmp = at - bt;
+            break;
+          }
+          case "ageDays":
+            cmp = a.detectedAt.getTime() - b.detectedAt.getTime();
+            // ageDays desc ≡ detectedAt asc → invert default dir mapping below
+            cmp = -cmp;
+            break;
+          case "detectedAt":
+          default:
+            cmp = a.detectedAt.getTime() - b.detectedAt.getTime();
+            break;
+        }
+        if (cmp === 0) {
+          return b.detectedAt.getTime() - a.detectedAt.getTime();
+        }
+        return cmp * dir;
       });
       const total = rows.length;
       const start = (filter.page - 1) * filter.pageSize;

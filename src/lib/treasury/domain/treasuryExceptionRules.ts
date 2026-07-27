@@ -2,8 +2,14 @@
  * Regras puras de exceções da Tesouraria (sem Prisma / sem I/O).
  */
 
-import type { TreasuryExceptionStatus } from "../contracts/treasuryEnums.js";
-import { TREASURY_OPEN_EXCEPTION_STATUSES } from "../contracts/treasuryEnums.js";
+import type {
+  TreasuryExceptionOperationalStatus,
+  TreasuryExceptionStatus,
+} from "../contracts/treasuryEnums.js";
+import {
+  TREASURY_EXCEPTION_OPERATIONAL_STATUSES,
+  TREASURY_OPEN_EXCEPTION_STATUSES,
+} from "../contracts/treasuryEnums.js";
 import { TreasuryDomainError } from "./treasuryErrors.js";
 
 export function isTreasuryExceptionOpenCause(
@@ -12,6 +18,14 @@ export function isTreasuryExceptionOpenCause(
   return (TREASURY_OPEN_EXCEPTION_STATUSES as readonly string[]).includes(
     status
   );
+}
+
+export function isTreasuryExceptionOperationalStatus(
+  status: string
+): status is TreasuryExceptionOperationalStatus {
+  return (
+    TREASURY_EXCEPTION_OPERATIONAL_STATUSES as readonly string[]
+  ).includes(status);
 }
 
 export function assertTreasuryExceptionVersionMatch(
@@ -29,12 +43,31 @@ export function assertTreasuryExceptionVersionMatch(
 
 export function assertTreasuryExceptionCanTransition(
   status: TreasuryExceptionStatus,
-  action: "acknowledge" | "resolve" | "ignore" | "cancel"
+  action:
+    | "acknowledge"
+    | "resolve"
+    | "ignore"
+    | "cancel"
+    | "assign"
+    | "setDueAt"
+    | "setStatus"
 ): void {
   if (!isTreasuryExceptionOpenCause(status)) {
     throw new TreasuryDomainError(
       "VALIDATION_ERROR",
       `Exceção ${status} não admite ${action}.`,
+      "status"
+    );
+  }
+}
+
+export function assertTreasuryExceptionOperationalTarget(
+  status: string
+): asserts status is TreasuryExceptionOperationalStatus {
+  if (!isTreasuryExceptionOperationalStatus(status)) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      "Status operacional inválido. Use OPEN, IN_ANALYSIS ou WAITING_THIRD_PARTY.",
       "status"
     );
   }

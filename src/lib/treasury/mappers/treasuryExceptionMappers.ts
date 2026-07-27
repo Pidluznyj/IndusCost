@@ -11,6 +11,11 @@ import type {
   TreasuryExceptionType,
 } from "../contracts/treasuryEnums.js";
 import { formatTreasuryTimestampIso } from "../contracts/treasuryTimestamp.js";
+import {
+  buildTreasuryExceptionEntityHref,
+  computeTreasuryExceptionAgeDays,
+  recommendTreasuryExceptionAction,
+} from "../domain/treasuryExceptionPresentation.js";
 import { normalizeTreasuryMoneyString } from "../treasuryMoney.js";
 
 export type TreasuryExceptionRow = {
@@ -62,23 +67,31 @@ function metadataOf(value: unknown): Record<string, unknown> | null {
 }
 
 export function toTreasuryExceptionDto(
-  row: TreasuryExceptionRow
+  row: TreasuryExceptionRow,
+  options?: { nowEpochMs?: number }
 ): TreasuryExceptionDto {
+  const detectedAt = formatTreasuryTimestampIso(row.detectedAt);
+  const type = row.type as TreasuryExceptionType;
+  const severity = row.severity as TreasuryExceptionSeverity;
+  const status = row.status as TreasuryExceptionStatus;
+  const entityKind =
+    (row.entityKind as TreasuryExceptionEntityKind) ?? null;
+  const nowEpochMs = options?.nowEpochMs ?? Date.now();
   return {
     id: row.id,
     companyCode: row.companyCode,
     uniqueKey: row.uniqueKey,
-    type: row.type as TreasuryExceptionType,
-    severity: row.severity as TreasuryExceptionSeverity,
-    status: row.status as TreasuryExceptionStatus,
-    entityKind: (row.entityKind as TreasuryExceptionEntityKind) ?? null,
+    type,
+    severity,
+    status,
+    entityKind,
     entityId: row.entityId,
     accountId: row.accountId,
     nomusExternalId: row.nomusExternalId,
     title: row.title,
     description: row.description,
     amount: moneyOrNull(row.amount),
-    detectedAt: formatTreasuryTimestampIso(row.detectedAt),
+    detectedAt,
     dueAt: row.dueAt ? toCivilDateKey(row.dueAt) : null,
     responsibleUserId: row.responsibleUserId,
     resolution: row.resolution,
@@ -100,5 +113,18 @@ export function toTreasuryExceptionDto(
       ? formatTreasuryTimestampIso(row.cancelledAt)
       : null,
     cancelledByUserId: row.cancelledByUserId,
+    ageDays: computeTreasuryExceptionAgeDays(detectedAt, nowEpochMs),
+    recommendedAction: recommendTreasuryExceptionAction({
+      type,
+      status,
+      severity,
+      responsibleUserId: row.responsibleUserId,
+    }),
+    entityHref: buildTreasuryExceptionEntityHref({
+      entityKind,
+      entityId: row.entityId,
+      accountId: row.accountId,
+      nomusExternalId: row.nomusExternalId,
+    }),
   };
 }

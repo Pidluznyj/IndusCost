@@ -81,7 +81,7 @@ describe("treasuryExceptionEngine — integração apply", () => {
       status: "OPEN",
       pageSize: 50,
     });
-    assert.equal(listedOpen.total, 2);
+    assert.equal(listedOpen.pagination.totalRows, 2);
 
     const second = await engineService.runAndApply(actor, {
       companyCode: "EMP1",

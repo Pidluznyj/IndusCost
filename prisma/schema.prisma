@@ -7461,7 +7461,10 @@ enum TreasuryExceptionSeverity {
 enum TreasuryExceptionStatus {
   OPEN
   ACK
+  IN_ANALYSIS
+  WAITING_THIRD_PARTY
   RESOLVED
+  IGNORED
   CANCELLED
 }
 

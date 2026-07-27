@@ -102,7 +102,7 @@ describe("treasuryException — integração", () => {
     assert.equal(second.exception.metadata?.wave, 2);
   });
 
-  it("preserva status ACK ao re-detectar e incrementa recorrência", async () => {
+  it("preserva status IN_ANALYSIS ao re-detectar e incrementa recorrência", async () => {
     const { service } = createHarness();
     const created = await service.upsertByUniqueKey(
       actor,
@@ -112,7 +112,7 @@ describe("treasuryException — integração", () => {
       expectedVersion: created.exception.version,
       justification: "Em análise",
     });
-    assert.equal(ack.status, "ACK");
+    assert.equal(ack.status, "IN_ANALYSIS");
 
     const again = await service.upsertByUniqueKey(
       actor,
@@ -121,7 +121,7 @@ describe("treasuryException — integração", () => {
         amount: "200.00",
       })
     );
-    assert.equal(again.exception.status, "ACK");
+    assert.equal(again.exception.status, "IN_ANALYSIS");
     assert.equal(again.exception.recurrenceCount, 2);
     assert.equal(again.exception.amount, "200.00");
   });
@@ -157,7 +157,7 @@ describe("treasuryException — integração", () => {
     assert.equal(reopened.exception.amount, "10.00");
   });
 
-  it("ignorar exige justificativa e cancela logicamente", async () => {
+  it("ignorar exige justificativa e marca IGNORED", async () => {
     const { service, audits } = createHarness();
     const created = await service.upsertByUniqueKey(
       actor,
@@ -175,7 +175,7 @@ describe("treasuryException — integração", () => {
       expectedVersion: created.exception.version,
       ignoreJustification: "Ruído conhecido da conta investimento.",
     });
-    assert.equal(ignored.status, "CANCELLED");
+    assert.equal(ignored.status, "IGNORED");
     assert.equal(
       ignored.ignoreJustification,
       "Ruído conhecido da conta investimento."
@@ -187,6 +187,29 @@ describe("treasuryException — integração", () => {
           (a.metadataJson as { ignored?: boolean })?.ignored === true
       )
     );
+  });
+
+  it("atribui, registra prazo e altera status operacional", async () => {
+    const { service } = createHarness();
+    const created = await service.upsertByUniqueKey(
+      actor,
+      parseTreasuryExceptionUpsertInput(baseBody)
+    );
+    const assigned = await service.assign(actor, created.exception.id, {
+      expectedVersion: created.exception.version,
+      responsibleUserId: "user-resp-9",
+    });
+    assert.equal(assigned.responsibleUserId, "user-resp-9");
+    const withDue = await service.setDueAt(actor, assigned.id, {
+      expectedVersion: assigned.version,
+      dueAt: "2026-08-20",
+    });
+    assert.equal(withDue.dueAt, "2026-08-20");
+    const waiting = await service.setStatus(actor, withDue.id, {
+      expectedVersion: withDue.version,
+      status: "WAITING_THIRD_PARTY",
+    });
+    assert.equal(waiting.status, "WAITING_THIRD_PARTY");
   });
 
   it("nega manage sem permissão", async () => {

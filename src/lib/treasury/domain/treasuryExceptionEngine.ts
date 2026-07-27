@@ -24,6 +24,7 @@ import {
   normalizeTreasuryMoneyString,
   type TreasuryMoneyString,
 } from "../treasuryMoney.js";
+import { isTreasuryExceptionOpenCause } from "./treasuryExceptionRules.js";
 
 export const TREASURY_EXCEPTION_ALGORITHM_VERSION = "1.0.0" as const;
 
@@ -917,7 +918,7 @@ function planAutoResolves(
 ): TreasuryExceptionAutoResolvePlan[] {
   const plans: TreasuryExceptionAutoResolvePlan[] = [];
   for (const row of openExceptions) {
-    if (row.status !== "OPEN" && row.status !== "ACK") continue;
+    if (!isTreasuryExceptionOpenCause(row.status)) continue;
     if (activeKeys.has(row.uniqueKey)) continue;
     if (!allowsTreasuryExceptionSafeAutoResolve(row.type)) continue;
     plans.push({

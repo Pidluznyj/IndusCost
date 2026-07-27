@@ -35,7 +35,10 @@ import {
   TREASURY_TITLE_OPERATIONAL_PRIORITIES,
   TREASURY_TITLE_OPERATIONAL_STATUSES,
   TREASURY_EXCEPTION_ENTITY_KINDS,
+  TREASURY_EXCEPTION_OPERATIONAL_STATUSES,
   TREASURY_EXCEPTION_SEVERITIES,
+  TREASURY_EXCEPTION_SORT_FIELDS,
+  TREASURY_EXCEPTION_STATUSES,
   TREASURY_EXCEPTION_TYPES,
   TREASURY_TRANSFER_STATUSES,
   type TreasuryAccountAccessLevel,
@@ -59,6 +62,7 @@ import {
   type TreasuryTitleOperationalStatusCode,
   type TreasuryExceptionEntityKind,
   type TreasuryExceptionSeverity,
+  type TreasuryExceptionStatus,
   type TreasuryExceptionType,
   type TreasuryTransferStatus,
 } from "./treasuryEnums.js";
@@ -203,6 +207,42 @@ export type TreasuryExceptionResolveInput = {
 export type TreasuryExceptionIgnoreInput = {
   expectedVersion: number;
   ignoreJustification: string;
+};
+
+export type TreasuryExceptionsListQuery = {
+  page: number;
+  pageSize: number;
+  sortBy: string;
+  sortDirection: "asc" | "desc";
+  companyCode: string | null;
+  status: TreasuryExceptionStatus | null;
+  type: TreasuryExceptionType | null;
+  severity: TreasuryExceptionSeverity | null;
+  responsibleUserId: string | null;
+  search: string | null;
+};
+
+export type TreasuryExceptionAssignInput = {
+  expectedVersion: number;
+  responsibleUserId: string | null;
+  justification?: string | null;
+};
+
+export type TreasuryExceptionSetDueAtInput = {
+  expectedVersion: number;
+  dueAt: string | null;
+  justification?: string | null;
+};
+
+export type TreasuryExceptionSetStatusInput = {
+  expectedVersion: number;
+  status: (typeof TREASURY_EXCEPTION_OPERATIONAL_STATUSES)[number];
+  justification?: string | null;
+};
+
+export type TreasuryExceptionCancelInput = {
+  expectedVersion: number;
+  justification: string;
 };
 
 export type TreasuryExceptionAcknowledgeInput = {
@@ -1063,6 +1103,159 @@ export function parseTreasuryExceptionAcknowledgeInput(
       "justification",
       { required: false }
     ),
+  };
+}
+
+export function parseTreasuryExceptionsListQuery(
+  query: Record<string, unknown>
+): TreasuryExceptionsListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const sort = parseTreasuryAuthorizedSort({
+    sortBy: query.sortBy,
+    sortDirection: query.sortDirection,
+    allowed: TREASURY_EXCEPTION_SORT_FIELDS,
+    defaultSortBy: "detectedAt",
+    defaultSortDirection: "desc",
+  });
+  return {
+    ...pagination,
+    ...sort,
+    companyCode: parseTreasuryBoundedString(query.companyCode, "companyCode", {
+      required: false,
+    }),
+    status: parseTreasuryEnum(
+      query.status,
+      TREASURY_EXCEPTION_STATUSES,
+      "status",
+      false
+    ),
+    type: parseTreasuryEnum(
+      query.type,
+      TREASURY_EXCEPTION_TYPES,
+      "type",
+      false
+    ),
+    severity: parseTreasuryEnum(
+      query.severity,
+      TREASURY_EXCEPTION_SEVERITIES,
+      "severity",
+      false
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      query.responsibleUserId,
+      "responsibleUserId",
+      { required: false }
+    ),
+    search: parseTreasuryBoundedString(query.search, "search", {
+      required: false,
+    }),
+  };
+}
+
+export function parseTreasuryExceptionAssignInput(
+  body: Record<string, unknown>
+): TreasuryExceptionAssignInput {
+  const hasResponsible =
+    Object.prototype.hasOwnProperty.call(body, "responsibleUserId") ||
+    Object.prototype.hasOwnProperty.call(body, "responsible");
+  if (!hasResponsible) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "responsibleUserId é obrigatório (use null para desatribuir).",
+      "responsibleUserId"
+    );
+  }
+  const raw = body.responsibleUserId ?? body.responsible;
+  let responsibleUserId: string | null = null;
+  if (raw != null && raw !== "") {
+    responsibleUserId = parseTreasuryBoundedString(
+      raw,
+      "responsibleUserId",
+      { required: true }
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    responsibleUserId,
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryExceptionSetDueAtInput(
+  body: Record<string, unknown>
+): TreasuryExceptionSetDueAtInput {
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    dueAt: parseOptionalTreasuryCivilDate(body.dueAt, "dueAt"),
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryExceptionSetStatusInput(
+  body: Record<string, unknown>
+): TreasuryExceptionSetStatusInput {
+  const status = parseTreasuryEnum(
+    body.status,
+    TREASURY_EXCEPTION_OPERATIONAL_STATUSES,
+    "status",
+    true
+  );
+  if (!status) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "status é obrigatório.",
+      "status"
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    status,
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryExceptionCancelInput(
+  body: Record<string, unknown>
+): TreasuryExceptionCancelInput {
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.cancellationReason,
+    "justification",
+    { required: true }
+  );
+  if (!justification?.trim()) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória para cancelar.",
+      "justification"
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    justification,
   };
 }
 

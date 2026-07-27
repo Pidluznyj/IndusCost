@@ -18,6 +18,7 @@ import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeC
 import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
+import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -25,6 +26,7 @@ import {
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
+  TREASURY_EXCEPTIONS_PATH,
   TREASURY_PAYABLES_PATH,
   TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
@@ -76,6 +78,7 @@ export function registerTreasuryRoutes(
   const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
   const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
+  const exceptions = createTreasuryExceptionControllers({ getCurrentAppUser });
 
   const viewDashboard = requireResource(
     TREASURY_RESOURCE_KEYS.dashboard,
@@ -139,12 +142,23 @@ export function registerTreasuryRoutes(
   const transfersEnabled = requireTreasuryFeatureFlag(
     "treasury.transfers.enabled"
   );
+  const exceptionsEnabled = requireTreasuryFeatureFlag(
+    "treasury.exceptions.enabled"
+  );
   const viewTransfers = requireResource(
     TREASURY_RESOURCE_KEYS.transfers,
     TREASURY_ACTIONS.view
   );
   const manageTransfers = requireResource(
     TREASURY_RESOURCE_KEYS.transfers,
+    TREASURY_ACTIONS.manage
+  );
+  const viewExceptions = requireResource(
+    TREASURY_RESOURCE_KEYS.exceptions,
+    TREASURY_ACTIONS.view
+  );
+  const manageExceptions = requireResource(
+    TREASURY_RESOURCE_KEYS.exceptions,
     TREASURY_ACTIONS.manage
   );
 
@@ -377,6 +391,87 @@ export function registerTreasuryRoutes(
     transfersEnabled,
     manageTransfers,
     transfers.cancel
+  );
+
+  app.get(
+    TREASURY_EXCEPTIONS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    viewExceptions,
+    exceptions.list
+  );
+
+  app.get(
+    `${TREASURY_EXCEPTIONS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    viewExceptions,
+    exceptions.getById
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/acknowledge`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.acknowledge
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/assign`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.assign
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/due-at`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.setDueAt
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/status`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.setStatus
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/resolve`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.resolve
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/ignore`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.ignore
+  );
+
+  app.post(
+    `${TREASURY_EXCEPTIONS_PATH}/:id/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    exceptionsEnabled,
+    manageExceptions,
+    exceptions.cancel
   );
 
   app.get(

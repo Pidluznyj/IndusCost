@@ -227,11 +227,24 @@ export type TreasuryClosingStatus = (typeof TREASURY_CLOSING_STATUSES)[number];
 
 export const TREASURY_EXCEPTION_STATUSES = [
   "OPEN",
+  /** Legado P38 — tratado como causa aberta; UI canônica usa IN_ANALYSIS. */
   "ACK",
+  "IN_ANALYSIS",
+  "WAITING_THIRD_PARTY",
   "RESOLVED",
+  "IGNORED",
   "CANCELLED",
 ] as const;
 export type TreasuryExceptionStatus = (typeof TREASURY_EXCEPTION_STATUSES)[number];
+
+/** Status operacionais alteráveis sem fechar a causa. */
+export const TREASURY_EXCEPTION_OPERATIONAL_STATUSES = [
+  "OPEN",
+  "IN_ANALYSIS",
+  "WAITING_THIRD_PARTY",
+] as const;
+export type TreasuryExceptionOperationalStatus =
+  (typeof TREASURY_EXCEPTION_OPERATIONAL_STATUSES)[number];
 
 export const TREASURY_EXCEPTION_SEVERITIES = [
   "INFO",
@@ -287,7 +300,24 @@ export type TreasuryExceptionEntityKind =
   (typeof TREASURY_EXCEPTION_ENTITY_KINDS)[number];
 
 /** Statuses que ainda representam causa aberta (dedupe por uniqueKey). */
-export const TREASURY_OPEN_EXCEPTION_STATUSES = ["OPEN", "ACK"] as const;
+export const TREASURY_OPEN_EXCEPTION_STATUSES = [
+  "OPEN",
+  "ACK",
+  "IN_ANALYSIS",
+  "WAITING_THIRD_PARTY",
+] as const;
+
+export const TREASURY_EXCEPTION_SORT_FIELDS = [
+  "detectedAt",
+  "dueAt",
+  "severity",
+  "status",
+  "amount",
+  "title",
+  "ageDays",
+] as const;
+export type TreasuryExceptionSortField =
+  (typeof TREASURY_EXCEPTION_SORT_FIELDS)[number];
 
 export const TREASURY_RECONCILIATION_MATCH_STATUSES = [
   "PENDING",

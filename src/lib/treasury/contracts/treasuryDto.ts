@@ -673,6 +673,11 @@ export type TreasuryExceptionDto = {
   resolvedAt: TreasuryTimestampIso | null;
   cancelledAt: TreasuryTimestampIso | null;
   cancelledByUserId: string | null;
+  /** Idade em dias civis desde detectedAt (calculada na leitura). */
+  ageDays: number;
+  recommendedAction: string;
+  /** Deep-link relativo para a entidade relacionada. */
+  entityHref: string | null;
 };
 
 export type TreasuryReconciliationMatchDto = {

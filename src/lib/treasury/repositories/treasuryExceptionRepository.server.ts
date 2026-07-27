@@ -123,6 +123,10 @@ export type TreasuryExceptionListFilter = {
   status?: TreasuryExceptionStatus | null;
   type?: TreasuryExceptionType | null;
   severity?: TreasuryExceptionSeverity | null;
+  responsibleUserId?: string | null;
+  search?: string | null;
+  sortBy?: string;
+  sortDirection?: "asc" | "desc";
   page: number;
   pageSize: number;
 };
@@ -179,11 +183,52 @@ export function createTreasuryExceptionRepository(
       if (filter.status) where.status = filter.status;
       if (filter.type) where.type = filter.type;
       if (filter.severity) where.severity = filter.severity;
+      if (filter.responsibleUserId) {
+        where.responsibleUserId = filter.responsibleUserId;
+      }
+      if (filter.search?.trim()) {
+        const q = filter.search.trim();
+        where.OR = [
+          { title: { contains: q, mode: "insensitive" } },
+          { description: { contains: q, mode: "insensitive" } },
+          { uniqueKey: { contains: q, mode: "insensitive" } },
+          { entityId: { contains: q, mode: "insensitive" } },
+        ];
+      }
+      const dir = filter.sortDirection === "asc" ? "asc" : "desc";
+      let orderBy: Prisma.TreasuryExceptionOrderByWithRelationInput[];
+      switch (filter.sortBy) {
+        case "dueAt":
+          orderBy = [{ dueAt: dir }, { detectedAt: "desc" }];
+          break;
+        case "severity":
+          orderBy = [{ severity: dir }, { detectedAt: "desc" }];
+          break;
+        case "status":
+          orderBy = [{ status: dir }, { detectedAt: "desc" }];
+          break;
+        case "amount":
+          orderBy = [{ amount: dir }, { detectedAt: "desc" }];
+          break;
+        case "title":
+          orderBy = [{ title: dir }];
+          break;
+        case "ageDays":
+          // idade desc = detectedAt asc
+          orderBy = [
+            { detectedAt: dir === "desc" ? "asc" : "desc" },
+          ];
+          break;
+        case "detectedAt":
+        default:
+          orderBy = [{ detectedAt: dir }];
+          break;
+      }
       const [total, rows] = await Promise.all([
         client(db).treasuryException.count({ where }),
         client(db).treasuryException.findMany({
           where,
-          orderBy: [{ severity: "asc" }, { detectedAt: "desc" }],
+          orderBy,
           skip: (filter.page - 1) * filter.pageSize,
           take: filter.pageSize,
         }),

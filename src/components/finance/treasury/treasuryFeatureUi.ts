@@ -51,4 +51,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/transfers`,
     label: "Transferências",
   },
+  {
+    id: "exceptions",
+    path: `${TREASURY_UI_BASE_PATH}/exceptions`,
+    label: "Exceções",
+  },
 ] as const;
