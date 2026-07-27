@@ -48,8 +48,9 @@
 | **21** | UI Contas a Pagar | `DONE` | `3240f2f` | `/finance/treasury/payables`; tabela paginada; filtros; totais; status/prioridade/programada/conta; impacto caixa; drawer; form programação com confirmação (saldo conta/consolidado/risco); bloqueio/adiamento/obs/histórico; responsivo; `test:treasury` 183/183 |
 | **22** | Serviço de posição financeira atual | `DONE` | `bedc17c` | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
 | **23** | Dashboard diário Tesouraria | `DONE` | `ed88f66` | `GET /api/finance/treasury/dashboard`; freshness; observado/calculado/conciliado/diferença; CR/CP previsto/realizado/pendente; saldo atual + projetado encerramento; qtd títulos; posição por conta; exceções prioritárias; composição detalhável; filtros date/accountIds/scenario; agregação SQL; `test:treasury` 200/200 |
+| **24** | UI tela principal Central de Tesouraria | `DONE` | _(pendente hash)_ | `/finance/treasury` dashboard; filtros data/período/conta/cenário; última atualização; cards saldo; previsto×realizado; posição por conta; CR/CP do dia; exceções/alertas/atalhos; detalhe Overlay; money pt-BR; estados loading/vazio/erro/denied/stale/recalculando; `test:treasury` 206/206 |
 
-    > **Nota de ordem:** …; posição financeira = **22**; dashboard diário = **23**.
+    > **Nota de ordem:** …; dashboard API = **23**; UI visão geral = **24**.
 
 ---
 
@@ -63,7 +64,7 @@
 | Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | P23 dashboard dia (previsto/realizado/pendente CR/CP por cenário); cash-flow permanece separado |
-| Dashboard diário Tesouraria | `DONE` | P23: `GET …/dashboard`; freshness fontes; posição + fluxos do dia + projeção encerramento; composição/exceções; UI ainda pendente |
+| Dashboard diário Tesouraria | `DONE` | P23 API + P24 UI `/finance/treasury`; freshness; posição; previsto×realizado; exceções/alertas; detalhe ao clicar |
 | Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; não altera `dueDate`; histórico preservado; expiração automática |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
@@ -83,7 +84,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 200/200; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 206/206; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -273,6 +274,17 @@
 - [x] `npm run test:treasury` 200/200
 - [x] Sem UI neste passo; sem avanço automático
 
+### 24 — UI tela principal (visão geral)
+- [x] `/finance/treasury` consome `GET …/dashboard`
+- [x] Filtros: data, período, conta, cenário; última atualização
+- [x] Cards de saldo; previsto×realizado; posição por conta; recebimentos/pagamentos do dia
+- [x] Exceções, alertas (freshness/divergência), atalhos
+- [x] Detalhamento Overlay ao clicar nos totais; rótulos textuais (não só cor)
+- [x] Formatação monetária pt-BR
+- [x] Estados: loading, vazio, erro, sem permissão, dados desatualizados, recálculo em andamento
+- [x] Testes UI + helpers; `test:treasury` 206/206
+- [x] Sem avanço automático
+
 ---
 
 ## Riscos / pendências abertas
@@ -317,3 +329,4 @@
 | 2026-07-27 | Prompt 21: UI Contas a Pagar Tesouraria (tabela/filtros/drawer/programação/impacto) — `3240f2f` |
 | 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — `bedc17c` |
 | 2026-07-27 | Prompt 23: dashboard diário Tesouraria (`GET /dashboard` + agregações + consistência totais) — `ed88f66` |
+| 2026-07-27 | Prompt 24: UI tela principal Central de Tesouraria (visão geral dashboard) — _(pendente hash)_ |

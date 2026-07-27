@@ -6,7 +6,7 @@ import {
   TREASURY_UI_LABEL,
   TREASURY_UI_SECTIONS,
 } from "./treasuryFeatureUi.js";
-import { TreasuryScaffoldPage } from "./TreasuryScaffoldPage.js";
+import { TreasuryDashboardPage } from "./TreasuryDashboardPage.js";
 import { TreasuryAccountsPage } from "./TreasuryAccountsPage.js";
 import { TreasuryAccountBalancePage } from "./TreasuryAccountBalancePage.js";
 import { TreasuryReceivablesPage } from "./TreasuryReceivablesPage.js";
@@ -51,7 +51,7 @@ export function TreasuryModule() {
       </nav>
 
       <Routes>
-        <Route index element={<TreasuryScaffoldPage />} />
+        <Route index element={<TreasuryDashboardPage />} />
         <Route path="accounts" element={<TreasuryAccountsPage />} />
         <Route
           path="accounts/:accountId/balances"

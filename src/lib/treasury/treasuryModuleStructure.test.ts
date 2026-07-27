@@ -35,6 +35,10 @@ describe("treasuryModuleStructure", () => {
     assert.ok(
       existsSync(join(repoRoot, "src/components/finance/treasury/TreasuryScaffoldPage.tsx"))
     );
+    assert.equal(
+      existsSync(join(repoRoot, "src/components/finance/treasury/TreasuryDashboardPage.tsx")),
+      true
+    );
   });
 
   it("repository scaffold lista vazio sem Prisma", async () => {

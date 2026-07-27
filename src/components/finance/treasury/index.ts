@@ -1,4 +1,5 @@
 export { TreasuryScaffoldPage } from "./TreasuryScaffoldPage.js";
+export { TreasuryDashboardPage } from "./TreasuryDashboardPage.js";
 export { TreasuryAccountsPage } from "./TreasuryAccountsPage.js";
 export { TreasuryAccountBalancePage } from "./TreasuryAccountBalancePage.js";
 export { TreasuryReceivablesPage } from "./TreasuryReceivablesPage.js";
