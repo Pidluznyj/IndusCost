@@ -69,7 +69,7 @@
 | **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
 | **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
-| **45** | UI fechamento diário | `DONE` | _(pending commit)_ | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
+| **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 
     > **Nota de ordem:** …; preview = **43**; close/reopen = **44**; UI = **45**.
 
@@ -564,4 +564,4 @@
 | 2026-07-27 | Prompt 42: schema fechamento diário + reabertura — `f39279f` |
 | 2026-07-27 | Prompt 43: preview fechamento diário — `7313c86` |
 | 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
-| 2026-07-27 | Prompt 45: UI fechamento diário — _(pending commit)_ |
+| 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
