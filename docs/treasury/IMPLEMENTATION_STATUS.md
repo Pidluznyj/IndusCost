@@ -625,4 +625,4 @@
 | 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — `c4d09c1` |
 | 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — `3d5d1ab` |
 | 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
-| 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — _(pending commit)_ |
+| 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — `0465f29` |
