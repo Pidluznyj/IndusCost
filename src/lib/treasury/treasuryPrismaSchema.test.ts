@@ -191,6 +191,24 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
 
+  it("schema e migration de tipos do motor de exceções existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /EXPECTED_RECEIPT_NOT_RECEIVED/);
+    assert.match(schema, /FINANCIAL_CHANGE_AFTER_CLOSING/);
+    assert.match(schema, /SUSPECTED_DUPLICATE/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260814120000_treasury_exception_engine_types/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /ALTER TYPE "TreasuryExceptionType" ADD VALUE 'EXPECTED_RECEIPT_NOT_RECEIVED'/);
+    assert.match(sql, /ALTER TYPE "TreasuryExceptionType" ADD VALUE 'SUSPECTED_DUPLICATE'/);
+    assert.match(sql, /ALTER TYPE "TreasuryExceptionType" ADD VALUE 'FINANCIAL_CHANGE_AFTER_CLOSING'/);
+    assert.doesNotMatch(sql, /DROP TABLE/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
+
   it("schema e migration de transferências internas existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /model TreasuryTransfer \{/);
