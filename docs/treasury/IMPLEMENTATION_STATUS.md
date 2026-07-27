@@ -60,8 +60,9 @@
 | **33** | APIs REST projeção + agenda | `DONE` | `faba85d` | `POST …/projections/calculate`, `GET …/latest`, `GET …/:id`, `GET …/:id/composition`, `GET …/agenda`; baseDate/endDate/cenário/contas/consolidação/detalhe dia; horizonte configurável (`TREASURY_PROJECTION_MAX_HORIZON_DAYS`); money string; freshness+sourceVersion+algorithmVersion; flag `treasury.projection.enabled`; `test:treasury` 304/304 |
 | **34** | UI agenda financeira | `DONE` | `12037b0` | `/finance/treasury/agenda`; colunas dia (saldo inicial/final, entradas previstas/confirmadas/realizadas, saídas previstas/programadas/realizadas, transferências, risco textual); períodos hoje/7/15/30/60/90/custom; visão consolidada/conta/grupo; gráfico evolução + tabela detalhável; DTO/API enriquecidos multi-cenário; `test:treasury` 319/319 |
 | **35** | Comparação contratual×provável×confirmado | `DONE` | `613f3ac` | `GET …/projections/compare` (só leitura, `recalculated:false`); UI `/finance/treasury/projections`; saldo/diff/incerteza/risco por dia; 1ª negativa + menor saldo; toggle local sem refetch; testes consistência; `test:treasury` 329/329 |
+| **36** | Auditoria do motor de projeção | `DONE` | `7628e55` | Correções: multi-baixa, promisedAmount, dedupe seeds, transfer órfã, ledger×settlement, includeInConsolidated, índice apps; algoritmo `1.2.0`; testes lacunas; sem UI nova; `test:treasury` 338/338 |
 
-    > **Nota de ordem:** …; UI agenda = **34**; comparação de cenários = **35**.
+    > **Nota de ordem:** …; comparação = **35**; auditoria motor = **36**.
 
 ---
 
@@ -95,7 +96,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 329/329 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 338/338 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -397,6 +398,16 @@
 - [x] Sem avanço automático
 ---
 
+### 36 — Auditoria exclusiva do motor de projeção
+- [x] Checklist: dupla contagem, parcial, cancelado, transferência, realizado, promessa, data esperada, vencido s/ previsão, timezone SP, Decimal, liquidez, fora do consolidado, diferença por conta, composição, performance
+- [x] Fix CRITICAL: múltiplas baixas parciais somam (`clusterRealizedClaims`)
+- [x] Fix HIGH: `promisedAmount` limita open; dedupe seeds título+parcela; transfer com perna ausente é ignorada (ambas)
+- [x] Fix MEDIUM: ledger linkado/nature baixa não duplica settlement; `includeInConsolidated` em movimentos; índice apps por conta
+- [x] Algoritmo `1.2.0`; testes de lacunas; sem telas novas
+- [x] `test:treasury` 338/338
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -451,3 +462,4 @@
 | 2026-07-27 | Prompt 33: APIs REST projeção + agenda — `faba85d` |
 | 2026-07-27 | Prompt 34: UI agenda financeira — `12037b0` |
 | 2026-07-27 | Prompt 35: comparação contratual×provável×confirmado — `613f3ac` |
+| 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
