@@ -678,4 +678,4 @@
 | 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — `0fd8a77` |
 | 2026-07-27 | Prompt 52: motor de sugestões de conciliação — `aa80d13` |
 | 2026-07-27 | Prompt 53: conciliação bancária match+allocations — `e158344` |
-| 2026-07-27 | Prompt 54: reverse conciliação bancária — _(hash no commit)_ |
+| 2026-07-27 | Prompt 54: reverse conciliação bancária — `15f4102` |
