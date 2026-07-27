@@ -65,8 +65,9 @@
 | **38** | Model + serviço de exceções | `DONE` | `e4b823f` | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
 | **39** | Motor determinístico de exceções | `DONE` | `5dcdc74` | 16 tipos; generate/update; auto-resolve só seguro; algo `1.0.0`; testes por tipo; sem API/UI; `test:treasury` 386/386 |
 | **40** | APIs + UI Central de Exceções | `DONE` | `a9a95ac` | Status 6 canônicos; list/sort/assign/due/status/resolve/ignore; deep-link; flag; `/exceptions`; `test:treasury` 395/395 |
+| **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
 
-    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**; motor = **39**; Central de Exceções API/UI = **40**.
+    > **Nota de ordem:** …; Central de Exceções = **40**; alertas dashboard/agenda = **41**.
 
 ---
 
@@ -90,7 +91,7 @@
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
-| Exceções / alertas | `DONE` | P23 dashboard; P38 model+service; P39 motor; P40 API+UI `/finance/treasury/exceptions` (filtro/ordem/atribuir/prazo/status/resolver/ignorar + entidade) |
+| Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
 | Reabertura | `NOT_STARTED` | — |
 | Importação OFX | `NOT_STARTED` | — |
@@ -447,7 +448,16 @@
 - [x] APIs: list (filtro/ordem), get, acknowledge, assign, due-at, status, resolve, ignore, cancel; flag `treasury.exceptions.enabled`
 - [x] DTO: severidade, valor, idade, responsável, ação recomendada, `entityHref`
 - [x] UI `/finance/treasury/exceptions` — filtros, ordenação, ações, abrir entidade
-- [x] Testes permissão + fluxo API/UI; `test:treasury` 395/395 |
+- [x] Testes permissão + fluxo API/UI; `test:treasury` 395/395
+- [x] Sem avanço automático
+---
+
+### 41 — Alertas no dashboard e na agenda
+- [x] 8 alertas: saldo negativo, abaixo do mínimo, recebimento relevante, concentração clientes, sync atrasada, saldo desatualizado, promessa vencida, pagamento crítico
+- [x] Config `TreasuryAlertSettings` singleton GLOBAL (padrão MaterialMarket) + GET/PUT `/alert-settings`; limiares e severidade por kind
+- [x] Motor puro `buildTreasuryAlerts`; integração dashboard (`alerts[]`) e agenda (`alerts[]` + por dia)
+- [x] Sem notificações externas (infra inexistente)
+- [x] Testes por tipo + permissão/fluxo settings; `test:treasury` 410/410
 - [x] Sem avanço automático
 ---
 
@@ -509,4 +519,5 @@
 | 2026-07-27 | Prompt 37: transferências entre contas — `2cdcba4` |
 | 2026-07-27 | Prompt 38: model + serviço de exceções — `e4b823f` |
 | 2026-07-27 | Prompt 39: motor determinístico de exceções — `5dcdc74` |
-| 2026-07-27 | Prompt 40: APIs + UI Central de Exceções — `PENDING` |
+| 2026-07-27 | Prompt 40: APIs + UI Central de Exceções — `a9a95ac` |
+| 2026-07-27 | Prompt 41: alertas dashboard/agenda + config — `0e6e655` |
