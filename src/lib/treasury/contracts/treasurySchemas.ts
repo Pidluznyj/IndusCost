@@ -46,7 +46,11 @@ import {
   TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
   TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
   TREASURY_RECONCILIATION_ALLOCATION_KINDS,
+  TREASURY_REPORT_KEYS,
+  TREASURY_PROMISE_STATUSES,
+  TREASURY_RECONCILIATION_MATCH_STATUSES,
   type TreasuryReconciliationAllocationKind,
+  type TreasuryReportKey,
   type TreasuryAccountAccessLevel,
   type TreasuryBankImportBatchStatus,
   type TreasuryBankMovementFilterBucket,
@@ -3354,6 +3358,130 @@ export function parseTreasuryReconciliationReverseInput(
     expectedVersion: base.expectedVersion,
     reason: base.reason,
     confirmPhrase,
+  };
+}
+
+export type TreasuryReportQuery = {
+  reportKey: TreasuryReportKey;
+  from: TreasuryCivilDate;
+  to: TreasuryCivilDate;
+  accountIds: string[] | null;
+  scenario: TreasuryProjectionLayer;
+  companyCode: string | null;
+  page: number;
+  pageSize: number;
+  status: string | null;
+  severity: TreasuryExceptionSeverity | null;
+  search: string | null;
+};
+
+export function parseTreasuryReportKey(
+  value: unknown,
+  field = "reportKey"
+): TreasuryReportKey {
+  return parseTreasuryEnum(value, TREASURY_REPORT_KEYS, field, true)!;
+}
+
+export function parseTreasuryReportQuery(
+  reportKeyRaw: unknown,
+  query: Record<string, unknown>
+): TreasuryReportQuery {
+  const reportKey = parseTreasuryReportKey(reportKeyRaw);
+  const fromRaw = query.from ?? query.periodFrom ?? query.startDate ?? query.date;
+  const toRaw = query.to ?? query.periodTo ?? query.endDate ?? query.date ?? fromRaw;
+  const from =
+    fromRaw == null || fromRaw === ""
+      ? todayCivilDateUtc()
+      : parseTreasuryCivilDate(fromRaw, "from");
+  const to =
+    toRaw == null || toRaw === ""
+      ? from
+      : parseTreasuryCivilDate(toRaw, "to");
+  if (to < from) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Período inválido: to deve ser >= from.",
+      "to"
+    );
+  }
+  const scenario =
+    parseTreasuryEnum(
+      query.scenario ?? query.cenario ?? query.layer,
+      TREASURY_PROJECTION_LAYERS,
+      "scenario",
+      false
+    ) ?? "PROBABLE";
+  const companyRaw = query.companyCode ?? query.empresa ?? query.company;
+  const companyCode =
+    companyRaw == null || companyRaw === ""
+      ? null
+      : parseTreasuryBoundedString(companyRaw, "companyCode", {
+          required: false,
+        });
+  const statusRaw = query.status;
+  let status: string | null = null;
+  if (statusRaw != null && statusRaw !== "") {
+    status = String(statusRaw).trim();
+    if (
+      reportKey === "promises" &&
+      !(TREASURY_PROMISE_STATUSES as readonly string[]).includes(status)
+    ) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        "status de promessa inválido.",
+        "status"
+      );
+    }
+    if (
+      reportKey === "exceptions" &&
+      !(TREASURY_EXCEPTION_STATUSES as readonly string[]).includes(status)
+    ) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        "status de exceção inválido.",
+        "status"
+      );
+    }
+    if (
+      reportKey === "reconciliations" &&
+      !(TREASURY_RECONCILIATION_MATCH_STATUSES as readonly string[]).includes(
+        status
+      )
+    ) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        "status de conciliação inválido.",
+        "status"
+      );
+    }
+  }
+  const severity =
+    parseTreasuryEnum(
+      query.severity,
+      TREASURY_EXCEPTION_SEVERITIES,
+      "severity",
+      false
+    ) ?? null;
+  const searchRaw = query.search ?? query.q;
+  const search =
+    searchRaw == null || searchRaw === ""
+      ? null
+      : parseTreasuryBoundedString(searchRaw, "search", { required: false });
+  const pagination = parseTreasuryPagination(query);
+  return {
+    reportKey,
+    from,
+    to,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    scenario,
+    companyCode: companyCode ?? null,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
+    status,
+    severity,
+    search,
   };
 }
 

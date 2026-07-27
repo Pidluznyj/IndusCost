@@ -475,6 +475,24 @@ export type TreasuryOfxPreviewDuplicateReason =
   (typeof TREASURY_OFX_PREVIEW_DUPLICATE_REASONS)[number];
 
 /** Buckets de filtro da UI de movimentos bancários. */
+/**
+ * Relatórios canônicos da Tesouraria (GET /reports/:reportKey).
+ * Valores estáveis na URL — kebab-case.
+ */
+export const TREASURY_REPORT_KEYS = [
+  "daily-position",
+  "cash-bridge",
+  "planned-vs-actual",
+  "delinquency",
+  "promises",
+  "predictability",
+  "position-by-account",
+  "exceptions",
+  "reconciliations",
+  "projection-by-scenario",
+] as const;
+export type TreasuryReportKey = (typeof TREASURY_REPORT_KEYS)[number];
+
 export const TREASURY_BANK_MOVEMENT_FILTER_BUCKETS = [
   "UNRECONCILED",
   "PARTIAL",

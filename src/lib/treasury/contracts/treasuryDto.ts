@@ -26,6 +26,7 @@ import type {
   TreasuryLedgerStatus,
   TreasuryPositionValueOrigin,
   TreasuryProjectionLayer,
+  TreasuryReportKey,
   TreasuryBankImportBatchStatus,
   TreasuryBankMovementDirection,
   TreasuryBankMovementReconciliationStatus,
@@ -938,4 +939,49 @@ export type TreasuryListResponse<T> = {
   pagination: TreasuryPaginationMeta;
   sortBy: string;
   sortDirection: TreasurySortDirection;
+};
+
+/** Item de composição de relatório (totais desdobráveis). */
+export type TreasuryReportCompositionItemDto = {
+  key: string;
+  label: string;
+  amount: TreasuryMoneyString;
+  count: number;
+  /** Participação percentual 0..100 com 2 casas; null se total zero. */
+  sharePercent: string | null;
+  meta?: Record<string, string | number | boolean | null>;
+};
+
+/** Linha detalhada paginada (formato estável por relatório). */
+export type TreasuryReportRowDto = {
+  id: string;
+  label: string;
+  amount: TreasuryMoneyString;
+  count?: number;
+  civilDate?: TreasuryCivilDate | null;
+  accountId?: string | null;
+  status?: string | null;
+  meta?: Record<string, string | number | boolean | null>;
+};
+
+/** Totais canônicos — amount/count sempre presentes; extras tipados frouxos. */
+export type TreasuryReportTotalsDto = {
+  amount: TreasuryMoneyString;
+  count: number;
+  extras: Record<string, string | number | boolean | null>;
+};
+
+/** Resposta canônica GET /api/finance/treasury/reports/:reportKey */
+export type TreasuryReportDto = {
+  ok: true;
+  reportKey: TreasuryReportKey;
+  period: { from: TreasuryCivilDate; to: TreasuryCivilDate };
+  accountIds: string[] | null;
+  authorizedAccountIds: string[];
+  scenario: TreasuryProjectionLayer | null;
+  filters: Record<string, string | number | boolean | null>;
+  totals: TreasuryReportTotalsDto;
+  composition: TreasuryReportCompositionItemDto[];
+  rows: TreasuryReportRowDto[];
+  pagination: TreasuryPaginationMeta | null;
 };

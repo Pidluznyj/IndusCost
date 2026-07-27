@@ -27,6 +27,7 @@ import { createTreasuryBankImportOfxPreviewControllers } from "./controllers/tre
 import { createTreasuryBankImportOfxApplyControllers } from "./controllers/treasuryBankImportOfxApplyController.js";
 import { createTreasuryBankMovementQueryControllers } from "./controllers/treasuryBankMovementQueryController.js";
 import { createTreasuryReconciliationMatchControllers } from "./controllers/treasuryReconciliationMatchController.js";
+import { createTreasuryReportControllers } from "./controllers/treasuryReportController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -47,6 +48,7 @@ import {
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
   TREASURY_RECONCILIATIONS_PATH,
+  TREASURY_REPORTS_PATH,
   TREASURY_TRANSFERS_PATH,
 } from "./contracts/treasuryContracts.js";
 import { TREASURY_OFX_MAX_FILE_BYTES } from "./ofx/treasuryOfxConstants.js";
@@ -117,6 +119,7 @@ export function registerTreasuryRoutes(
   const reconciliations = createTreasuryReconciliationMatchControllers({
     getCurrentAppUser,
   });
+  const reports = createTreasuryReportControllers({ getCurrentAppUser });
   const ofxUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
@@ -124,6 +127,10 @@ export function registerTreasuryRoutes(
 
   const viewDashboard = requireResource(
     TREASURY_RESOURCE_KEYS.dashboard,
+    TREASURY_ACTIONS.view
+  );
+  const viewReports = requireResource(
+    TREASURY_RESOURCE_KEYS.reports,
     TREASURY_ACTIONS.view
   );
   const viewAgenda = requireResource(
@@ -251,6 +258,14 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewDashboard,
     dashboard.getDashboard
+  );
+
+  app.get(
+    `${TREASURY_REPORTS_PATH}/:reportKey`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReports,
+    reports.getReport
   );
 
   app.get(

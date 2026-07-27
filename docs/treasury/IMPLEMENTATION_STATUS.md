@@ -79,8 +79,9 @@
 | **52** | Motor de sugestões de conciliação | `DONE` | `aa80d13` | Motor puro: valor/doc/CNPJ-CPF/data/nome/histórico/direção; faixas HIGH/MEDIUM/LOW; score+motivos; sem auto-match; exclui cancelados/realizados; `test:treasury` 505/505 |
 | **53** | Conciliação bancária (match+allocations) | `DONE` | `e158344` | Models/migration; 1:1/1:N/N:1; parcial; fee/juros/desconto/abatimento/diferença/unidentified/transfer/manual; service TX; status; audit; recalc; sem baixa Nomus; `test:treasury` 523/523 |
 | **54** | Reverse conciliação (`POST …/reconciliations/:id/reverse`) | `DONE` | `15f4102` | permissão reverse; justificativa+REVERTER; soft reverse; restaura movimentos; audit REVERSE; recalc; exceção dia fechado; UI confirmação forte; `test:treasury` 529/529 |
+| **55** | Queries/APIs relatórios Tesouraria | `DONE` | _(hash no commit)_ | `GET …/reports/:reportKey` (10 keys); período+contas autorizadas+filtros+totais+composição+paginação; agregações SQL; consistência totais; `test:treasury` 543/543 |
 
-    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**.
+    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**; relatórios = **55**.
 
 ---
 
@@ -109,12 +110,12 @@
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
 | Conciliação bancária | `PARTIAL` | P52–P54: sugestões + match/allocations + reverse API/UI; workspace completo ainda pendente |
-| Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
+| Relatórios tesouraria | `PARTIAL` | P55: 10 reportKeys via `GET /reports/:reportKey` (queries/APIs); UI/export ainda pendentes |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 529/529 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` (inclui relatórios P55) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -606,6 +607,16 @@
 - [x] Sem avanço automático
 ---
 
+### 55 — Queries e APIs de relatórios
+- [x] `GET /api/finance/treasury/reports/:reportKey` com 10 chaves canônicas
+- [x] Relatórios: posição diária, ponte de caixa, previsto×realizado, inadimplência, promessas, previsibilidade, posição por conta, exceções, conciliações, projeção por cenário
+- [x] Suporte a período, contas autorizadas (ACL), filtros, totais, composição e paginação
+- [x] Agregações eficientes (SQL SUM/COUNT/groupBy + joins)
+- [x] Permissão `finance.treasury.reports` view; regras puras de consistência de totais
+- [x] Testes de wiring/permissão + consistência de totais; sem UI/export neste passo
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -679,3 +690,4 @@
 | 2026-07-27 | Prompt 52: motor de sugestões de conciliação — `aa80d13` |
 | 2026-07-27 | Prompt 53: conciliação bancária match+allocations — `e158344` |
 | 2026-07-27 | Prompt 54: reverse conciliação bancária — `15f4102` |
+| 2026-07-27 | Prompt 55: queries/APIs relatórios Tesouraria — _(hash no commit)_ |
