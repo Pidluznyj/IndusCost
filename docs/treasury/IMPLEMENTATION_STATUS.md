@@ -50,8 +50,9 @@
 | **23** | Dashboard diário Tesouraria | `DONE` | `ed88f66` | `GET /api/finance/treasury/dashboard`; freshness; observado/calculado/conciliado/diferença; CR/CP previsto/realizado/pendente; saldo atual + projetado encerramento; qtd títulos; posição por conta; exceções prioritárias; composição detalhável; filtros date/accountIds/scenario; agregação SQL; `test:treasury` 200/200 |
 | **24** | UI tela principal Central de Tesouraria | `DONE` | `9876f03` | `/finance/treasury` dashboard; filtros data/período/conta/cenário; última atualização; cards saldo; previsto×realizado; posição por conta; CR/CP do dia; exceções/alertas/atalhos; detalhe Overlay; money pt-BR; estados loading/vazio/erro/denied/stale/recalculando; `test:treasury` 206/206 |
 | **25** | Schema Prisma execução de projeção | `DONE` | `7bfbc43` | Models `TreasuryProjectionRun` / `DayLine` / `CompositionItem`; cenários CONTRACTUAL\|PROBABLE\|CONFIRMED\|MANUAL; source/algorithm version; período; status; falhas; linhas com saldos/fluxos/risco/itens; migration `20260810120000_*`; índices; testes integridade; `test:treasury` 211/211 |
+| **26** | Regras puras data de movimento (projeção) | `DONE` | `_pending_` | `treasuryMovementDateRules`: AR/AP × CONTRACTUAL/PROBABLE/CONFIRMED/MANUAL; fuso `America/Sao_Paulo`; vencido sem previsão ≠ hoje; testes virada de data; `test:treasury` 225/225 |
 
-    > **Nota de ordem:** …; UI visão geral = **24**; schema projeção = **25**.
+    > **Nota de ordem:** …; UI visão geral = **24**; schema projeção = **25**; regras data movimento = **26**.
 
 ---
 
@@ -66,12 +67,12 @@
 | Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | P23 dashboard dia (previsto/realizado/pendente CR/CP por cenário); cash-flow permanece separado |
 | Dashboard diário Tesouraria | `DONE` | P23 API + P24 UI `/finance/treasury`; freshness; posição; previsto×realizado; exceções/alertas; detalhe ao clicar |
-| Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
-| Promessas de pagamento | `DONE` | Model + APIs + UI P16; não altera `dueDate`; histórico preservado; expiração automática |
+| Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15; resolução pura P26 (prioridade por cenário); `dueDate` oficial intacto; motor de projeção ainda stub |
+| Promessas de pagamento | `DONE` | Model + APIs + UI P16; P26 usa promessa ativa na data PROBABLE; não altera `dueDate`; histórico preservado |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25 schema run/linhas/composição (+ MANUAL); motor de cálculo ainda stub |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25 schema; P26 regras puras de data por cenário (AR/AP); motor de cálculo ainda stub |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
@@ -296,6 +297,15 @@
 - [x] Testes schema + integridade; `test:treasury` 211/211
 - [x] Migration **não** aplicada em produção; sem avanço automático
 
+### 26 — Regras puras data de movimento
+- [x] Funções puras em `treasuryMovementDateRules` (sem Prisma/I/O)
+- [x] Recebível: CONTRACTUAL=vencimento; PROBABLE=promessa→esperada→vencimento não vencido; CONFIRMED=confirmação/realização
+- [x] Pagável: CONTRACTUAL=vencimento; PROBABLE=programada→esperada→vencimento; CONFIRMED=realizado/AUTHORIZED/PROGRAMMED/confirmação
+- [x] Vencido sem previsão **não** entra automaticamente em hoje
+- [x] Fuso `America/Sao_Paulo` + testes de virada de data
+- [x] `npm run test:treasury` 225/225
+- [x] Sem motor de projeção / API / UI neste passo; sem avanço automático
+
 ---
 
 ## Riscos / pendências abertas
@@ -342,3 +352,4 @@
 | 2026-07-27 | Prompt 23: dashboard diário Tesouraria (`GET /dashboard` + agregações + consistência totais) — `ed88f66` |
 | 2026-07-27 | Prompt 24: UI tela principal Central de Tesouraria (visão geral dashboard) — `9876f03` |
 | 2026-07-27 | Prompt 25: schema Prisma execução de projeção (run/linhas/composição) — `7bfbc43` |
+| 2026-07-27 | Prompt 26: regras puras data de movimento (AR/AP × cenários + virada SP) — `_pending_` |
