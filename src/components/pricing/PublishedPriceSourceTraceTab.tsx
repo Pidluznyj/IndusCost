@@ -277,14 +277,32 @@ export function PublishedPriceSourceTraceTab({
         </TraceCard>
 
         <TraceCard title="Deduções">
-          <TraceRow label="Frete">
+          <TraceRow label="Frete estimado (%)">
+            <TraceValue
+              value={trace.deductions.freightPercent}
+              status={
+                trace.deductions.freightPercent != null ? "AVAILABLE" : "NOT_AVAILABLE"
+              }
+              format={(v) => `${formatNumber(v, 2)}%`}
+            />
+          </TraceRow>
+          <TraceRow label="Frete estimado (R$)">
+            <TraceValue
+              value={trace.deductions.freightPercentAmount}
+              status={
+                trace.deductions.freightPercentAmount != null ? "AVAILABLE" : "NOT_AVAILABLE"
+              }
+              format={(v) => formatCurrency(v, 2)}
+            />
+          </TraceRow>
+          <TraceRow label="Frete Saída (R$ absoluto)">
             <TraceValue
               value={trace.deductions.freightAmount}
               status={trace.deductions.status}
               format={(v) => formatCurrency(v, 2)}
             />
           </TraceRow>
-          <TraceRow label="Outras variáveis">
+          <TraceRow label="Outras variáveis (exclusivas)">
             <TraceValue
               value={trace.deductions.otherVariablesAmount}
               status={trace.deductions.status}
@@ -294,7 +312,7 @@ export function PublishedPriceSourceTraceTab({
           <TraceRow label="Arredondamento">
             <TraceValue value={trace.deductions.roundingAmount} status="NOT_AVAILABLE" />
           </TraceRow>
-          <TraceRow label="Outras congeladas (total)">
+          <TraceRow label="Deduções congeladas (total: comissão + fretes + outras)">
             <TraceValue
               value={trace.deductions.frozenOtherCostTotal}
               status={trace.deductions.status}

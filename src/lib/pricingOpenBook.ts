@@ -39,11 +39,23 @@ export type PricingPremissas = {
   taxRate: number;
   commRate: number;
   marginRate: number;
+  /** Frete absoluto (R$) no numerador — legado / simulação. */
   freight: number;
+  /** Frete estimado (%) no denominador — geração comercial moderna. */
+  freightPercent?: number;
+  /** Outras deduções (%) no denominador. */
+  otherRate?: number;
 };
 
 export function priceDivisorFromPremissas(p: PricingPremissas): number {
-  return 1 - Number(p.taxRate) / 100 - Number(p.commRate) / 100 - Number(p.marginRate) / 100;
+  return (
+    1 -
+    Number(p.taxRate) / 100 -
+    Number(p.commRate) / 100 -
+    Number(p.marginRate) / 100 -
+    Number(p.freightPercent ?? 0) / 100 -
+    Number(p.otherRate ?? 0) / 100
+  );
 }
 
 export function projectSuggestedPrice(industrialCost: number, p: PricingPremissas): number {

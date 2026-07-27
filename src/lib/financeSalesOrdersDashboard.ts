@@ -80,10 +80,10 @@ import {
 export { getSalesOrderNetValue as resolveSalesOrderNetAmount };
 
 /**
- * Paridade Comercial: KPIs de período não excluem clientes do grupo.
- * Mantido como contrato de produto (OP-02 / resolveSalesOrderOperationalPopulationWhere).
+ * População oficial: exclui clientes do grupo econômico (OP-02 via buildSalesOrderListWhere).
+ * Registros intercompany permanecem no banco para auditoria (HISTORICAL_AUDIT).
  */
-const FINANCE_SO_EXCLUDE_GROUP_COMPANIES = false;
+const FINANCE_SO_EXCLUDE_GROUP_COMPANIES = true;
 void FINANCE_SO_EXCLUDE_GROUP_COMPANIES;
 
 function invoiceStatusToHasInvoice(

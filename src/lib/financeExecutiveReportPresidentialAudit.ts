@@ -74,11 +74,11 @@ export const PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX: PresidentialAuditRow[] 
     section: "Pedidos de Venda",
     indicator: "Clientes do grupo (intercompany)",
     componentOrBuilder: "buildSalesOrdersDashboardTab → resolveOfficialSalesOrderExecutiveMetrics",
-    currentSource: "excludeGroupCompanyCustomers: false (override do path)",
-    officialMotor: "salesOrdersListSummary (listagem Comercial não exclui grupo)",
+    currentSource: "excludeGroupCompanyCustomers: true (população comercial oficial)",
+    officialMotor: "salesOrderRulesEngine + buildSalesOrderListWhere (exclui grupo)",
     status: "OK_USA_MOTOR_OFICIAL",
     notes:
-      "Presidencial inclui clientes do grupo para paridade com Valor vendido da listagem. Default global do engine permanece true.",
+      "Operações intercompany ficam fora dos KPIs oficiais; permanecem no banco para auditoria HISTORICAL_AUDIT.",
   },
   {
     section: "Pedidos de Venda",

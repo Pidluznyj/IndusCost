@@ -119,7 +119,7 @@ describe("financeExecutiveReport company filter wiring", () => {
     assert.match(src, /company: filters\.company/);
     assert.match(
       src,
-      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*false,/
+      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*true,/
     );
   });
 
@@ -145,7 +145,7 @@ describe("financeExecutiveReportPresidentialAudit matrix", () => {
     assert.ok(pedidosRows.length >= 2);
     assert.ok(
       pedidosRows.some((r) =>
-        String(r.currentSource ?? "").includes("excludeGroupCompanyCustomers: false")
+        String(r.currentSource ?? "").includes("excludeGroupCompanyCustomers: true")
       )
     );
     assert.ok(

@@ -623,7 +623,7 @@ export async function buildFinanceExecutiveReport(
     buildSalesOrdersDashboardTab(yearCtx, {
       companyIssuer,
       month: highlightMonth,
-      excludeGroupCompanyCustomers: false,
+      excludeGroupCompanyCustomers: true,
     }).catch((e) => {
       console.error("executive-report salesOrders", e);
       unavailableSections.push("salesOrders");

@@ -42,6 +42,8 @@ function presenceOptions(input: ResolveOperationalPopulationInput) {
   return {
     env: input.env,
     includeConfirmedMissing: input.context === "HISTORICAL_AUDIT",
+    // Auditoria histórica preserva intercompany; população operacional exclui.
+    excludeEconomicGroupCustomers: input.context !== "HISTORICAL_AUDIT",
   };
 }
 

@@ -5,6 +5,10 @@ import type {
   CommercialPublishedPriceGridRow,
   CommercialPublishedPriceGridTable,
 } from "./commercialPublishedPrices.types.js";
+import {
+  deriveFreightPercentAmount,
+  deriveOtherVariablesAmount,
+} from "./publishedPriceSourceTrace.js";
 
 export const PUBLISHED_COMPOSITION_FALLBACK_NOTE =
   "Composição detalhada de MP/BOM não está congelada neste item publicado. Exibindo custos industriais publicados (MP/HH/HM) e taxas do snapshot da tabela.";
@@ -57,8 +61,12 @@ export type PublishedFormationMeta = {
     commissionPercent: number | null;
     commissionValue: number | null;
     freightPercent: number | null;
+    freightPercentAmount: number | null;
+    freightAbsolute: number | null;
+    exclusiveOtherDeductions: number | null;
     taxAmount: number | null;
     frozenTotalCost: number | null;
+    /** Total congelado: comissão + fretes + outras (não usar cru como “outras”). */
     frozenOtherCost: number | null;
   };
 };
@@ -127,6 +135,9 @@ export type PublishedFormationCalculationResult = {
     contributionMargin: number | null;
     operationalMargin: number | null;
     markup: number | null;
+    freightPercentAmount: number | null;
+    exclusiveOtherDeductions: number | null;
+    /** Total congelado: comissão + fretes + outras. */
     frozenOtherCost: number | null;
   };
   openBook?: PricingOpenBookPayload | null;
@@ -139,12 +150,17 @@ function readRatesFromFormula(formulaSnapshotJson: Record<string, unknown> | nul
     formulaSnapshotJson?.rates != null && typeof formulaSnapshotJson.rates === "object"
       ? (formulaSnapshotJson.rates as Record<string, unknown>)
       : {};
+  const outputs =
+    formulaSnapshotJson?.outputs != null && typeof formulaSnapshotJson.outputs === "object"
+      ? (formulaSnapshotJson.outputs as Record<string, unknown>)
+      : {};
   const taxRate = Number(rates.taxRate);
   const commissionRate = Number(rates.commissionRate);
   const otherRate = Number(rates.otherRate);
   const freight = Number(formulaSnapshotJson?.freight);
   const freightRateFromRates = Number(rates.freightRate);
   const freightPercentFromSnapshot = Number(formulaSnapshotJson?.freightPercent);
+  const totalFreightPercentFromOutputs = Number(outputs.totalFreightPercent);
   let freightPercent: number | null = null;
   if (Number.isFinite(freightPercentFromSnapshot)) {
     freightPercent = freightPercentFromSnapshot;
@@ -157,6 +173,9 @@ function readRatesFromFormula(formulaSnapshotJson: Record<string, unknown> | nul
     otherRate: Number.isFinite(otherRate) ? otherRate : null,
     freight: Number.isFinite(freight) ? freight : 0,
     freightPercent,
+    totalFreightPercentFromOutputs: Number.isFinite(totalFreightPercentFromOutputs)
+      ? totalFreightPercentFromOutputs
+      : null,
   };
 }
 
@@ -334,27 +353,34 @@ export function mapPublishedPriceApiToFormationResult(
   if (!hasFormulaSnapshot || freight == null) unavailableFields.push("freight");
 
   const freightPercent = hasFormulaSnapshot ? formulaRates.freightPercent : null;
-  if (hasFormulaSnapshot && freightPercent == null) {
-    // Legado sem frete % — não marca indisponível; UI trata null como "não informado".
-  }
+  // Legado sem frete % — não marca indisponível; UI trata null como "não informado".
 
   const markup = custoFabril != null && custoFabril > 0 ? salePrice / custoFabril : null;
   if (markup == null) unavailableFields.push("markup");
 
-  const freightPercentValue =
-    freightPercent != null && Number.isFinite(freightPercent)
-      ? (salePrice * freightPercent) / 100
-      : 0;
+  const freightPercentAmount = hasFormulaSnapshot
+    ? deriveFreightPercentAmount({
+        salePrice,
+        freightPercent,
+        totalFreightPercentFromOutputs: formulaRates.totalFreightPercentFromOutputs,
+      })
+    : null;
+
+  const exclusiveOtherDeductions = hasFormulaSnapshot
+    ? deriveOtherVariablesAmount({
+        frozenOtherCost,
+        freight,
+        freightPercentAmount,
+        commissionValue,
+        salePrice,
+        otherRate,
+      })
+    : null;
 
   let contributionMargin: number | null = null;
-  if (
-    frozenTaxCost != null &&
-    commissionValue != null &&
-    custoFabril != null &&
-    freight != null
-  ) {
-    contributionMargin =
-      salePrice - frozenTaxCost - commissionValue - freight - freightPercentValue - custoFabril;
+  if (frozenTaxCost != null && frozenOtherCost != null && custoFabril != null) {
+    // frozenOtherCost = comissão + frete abs + frete% + outras exclusivas
+    contributionMargin = salePrice - frozenTaxCost - frozenOtherCost - custoFabril;
   } else {
     unavailableFields.push("contributionMargin");
   }
@@ -388,6 +414,9 @@ export function mapPublishedPriceApiToFormationResult(
       commissionPercent: commissionPerc,
       commissionValue,
       freightPercent,
+      freightPercentAmount,
+      freightAbsolute: freight,
+      exclusiveOtherDeductions,
       taxAmount: frozenTaxCost,
       frozenTotalCost: custoFabril,
       frozenOtherCost,
@@ -416,6 +445,8 @@ export function mapPublishedPriceApiToFormationResult(
       contributionMargin,
       operationalMargin: null,
       markup,
+      freightPercentAmount,
+      exclusiveOtherDeductions,
       frozenOtherCost,
     },
     openBook,

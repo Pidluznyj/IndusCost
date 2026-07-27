@@ -3150,7 +3150,10 @@ export const PricingModule = () => {
                            label: "Frete estimado",
                            value:
                              publishedFormationMeta.publishedSummary.freightPercent != null
-                               ? `${formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%`
+                               ? `${formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%` +
+                                 (publishedFormationMeta.publishedSummary.freightPercentAmount != null
+                                   ? ` · ${formatCurrency(publishedFormationMeta.publishedSummary.freightPercentAmount, 2)}`
+                                   : "")
                                : "—",
                          },
                          {
@@ -3258,8 +3261,26 @@ export const PricingModule = () => {
                                : formatCurrency(calculationResult.resultados.totalCommission, 5)}
                            </span>
                          </div>
+                         {publishedFormationMeta &&
+                         publishedFormationMeta.publishedSummary.freightPercent != null ? (
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
+                             <span className="text-xs font-medium">
+                               Frete estimado (
+                               {formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%)
+                             </span>
+                             <span className="text-sm font-bold">
+                               -
+                               {publishedFormationMeta.publishedSummary.freightPercentAmount != null
+                                 ? formatCurrency(
+                                     publishedFormationMeta.publishedSummary.freightPercentAmount,
+                                     5
+                                   )
+                                 : PUBLISHED_FIELD_UNAVAILABLE_LABEL}
+                             </span>
+                           </div>
+                         ) : null}
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
-                           <span className="text-xs font-medium">Frete Saída</span>
+                           <span className="text-xs font-medium">Frete Saída (R$ absoluto)</span>
                            <span className="text-sm font-bold">
                              -
                              {publishedFormationMeta
@@ -3275,7 +3296,7 @@ export const PricingModule = () => {
                          {publishedFormationMeta ? (
                            <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                              <span className="text-xs font-medium">
-                               Outras deduções congeladas (
+                               Outras deduções (
                                {formatPublishedFormationPercent(
                                  publishedFormationMeta,
                                  "otherRatePercent",
@@ -3288,7 +3309,7 @@ export const PricingModule = () => {
                                {formatPublishedFormationValue(
                                  publishedFormationMeta,
                                  "otherDeductions",
-                                 calculationResult.resultados.frozenOtherCost,
+                                 calculationResult.resultados.exclusiveOtherDeductions,
                                  (value) => formatCurrency(value, 5)
                                )}
                              </span>
@@ -3368,6 +3389,14 @@ export const PricingModule = () => {
                             commRate: Number(calculationResult.premissas?.commRate ?? 0),
                             marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
                             freight: Number(calculationResult.premissas?.freight ?? 0),
+                            freightPercent: Number(
+                              (calculationResult.premissas as { freightPercent?: number | null } | null)
+                                ?.freightPercent ?? 0
+                            ),
+                            otherRate: Number(
+                              (calculationResult.premissas as { otherRate?: number | null } | null)
+                                ?.otherRate ?? 0
+                            ),
                           }}
                         />
                       </div>
@@ -3379,6 +3408,14 @@ export const PricingModule = () => {
                           commRate: Number(calculationResult.premissas?.commRate ?? 0),
                           marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
                           freight: Number(calculationResult.premissas?.freight ?? 0),
+                          freightPercent: Number(
+                            (calculationResult.premissas as { freightPercent?: number | null } | null)
+                              ?.freightPercent ?? 0
+                          ),
+                          otherRate: Number(
+                            (calculationResult.premissas as { otherRate?: number | null } | null)
+                              ?.otherRate ?? 0
+                          ),
                         }}
                       />
                     )

@@ -14,7 +14,11 @@ import {
 
 describe("salesOrdersListSummary", () => {
   /** Isola testes estruturais da flag de presença (HOTFIX-05). */
-  const noPresence = { env: {} as Record<string, string | undefined> };
+  const noPresence = {
+    env: {} as Record<string, string | undefined>,
+    // Testes estruturais isolam filtros comerciais; exclusão de grupo é coberta à parte.
+    excludeEconomicGroupCustomers: false,
+  };
 
   const allRows = [
     { id: "1", totalNetValue: 1000, totalItems: 3, customerId: "c1", status: "SENT_TO_NOMUS" },
@@ -197,6 +201,12 @@ describe("salesOrdersListSummary", () => {
   it("buildSalesOrderListWhere exclui CANCELLED por padrão na população operacional", () => {
     const where = buildSalesOrderListWhere({}, noPresence);
     assert.match(JSON.stringify(where), /"not":"CANCELLED"/);
+  });
+
+  it("buildSalesOrderListWhere exclui clientes do grupo econômico por padrão", () => {
+    const where = buildSalesOrderListWhere({}, { env: {} });
+    const json = JSON.stringify(where);
+    assert.match(json, /72569510000195|Lazarios|Koppetel/);
   });
 
   it("buildSalesOrderListWhere filtra Com NF via nfeLinks válidos", () => {

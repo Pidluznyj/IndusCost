@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import {
   computePublishedMarkup,
+  deriveFreightPercentAmount,
   deriveOtherVariablesAmount,
   PUBLISHED_TRACE_NEWER_COST_WARNING,
   PUBLISHED_TRACE_UNAVAILABLE_LABEL,
@@ -182,9 +183,16 @@ export async function buildPublishedPriceSourceTrace(
           : null;
 
   const freightAmount = formulaFields.freight;
+  const freightPercent = formulaFields.freightPercent;
+  const freightPercentAmount = deriveFreightPercentAmount({
+    salePrice,
+    freightPercent,
+    totalFreightPercentFromOutputs: formulaFields.totalFreightPercentFromOutputs,
+  });
   const otherVariablesAmount = deriveOtherVariablesAmount({
     frozenOtherCost,
     freight: freightAmount,
+    freightPercentAmount,
     commissionValue: publishedCommissionAmount,
     salePrice,
     otherRate: formulaFields.otherRate,
@@ -281,10 +289,15 @@ export async function buildPublishedPriceSourceTrace(
     },
     deductions: {
       freightAmount,
+      freightPercent,
+      freightPercentAmount,
       otherVariablesAmount,
       roundingAmount: null,
       frozenOtherCostTotal: frozenOtherCost,
-      status: traceStatus(frozenOtherCost != null || freightAmount != null, frozenOtherCost != null),
+      status: traceStatus(
+        frozenOtherCost != null || freightAmount != null || freightPercentAmount != null,
+        frozenOtherCost != null
+      ),
     },
     availability: {
       hasFullSnapshot: missingFields.length === 0,

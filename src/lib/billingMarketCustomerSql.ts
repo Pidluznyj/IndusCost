@@ -1,15 +1,15 @@
 import { Prisma } from "@prisma/client";
-import { GROUP_COMPANY_CNPJ_DIGITS } from "@/src/lib/groupCompanyCustomer.js";
+import { ECONOMIC_GROUP_CNPJ_DIGITS } from "@/src/lib/financeInternalGroupExclusions.js";
 
 /**
  * Filtro SQL: cliente de mercado (exclui Lazarios, Koppetel, SM).
- * Mesma regra de `isGroupCompanyCustomer` — manter constantes sincronizadas.
+ * Fonte canônica: `ECONOMIC_GROUP_CNPJ_DIGITS` / `isGroupCompanyCustomer`.
  */
 export function billingMarketCustomerFilterSql(customerAlias = "c") {
   const taxId = Prisma.raw(`${customerAlias}."taxId"`);
   const company = Prisma.raw(`${customerAlias}."companyName"`);
   const trade = Prisma.raw(`${customerAlias}."tradeName"`);
-  const cnpjList = Prisma.join(GROUP_COMPANY_CNPJ_DIGITS.map((d) => Prisma.sql`${d}`));
+  const cnpjList = Prisma.join(ECONOMIC_GROUP_CNPJ_DIGITS.map((d) => Prisma.sql`${d}`));
 
   return Prisma.sql`
     NOT (

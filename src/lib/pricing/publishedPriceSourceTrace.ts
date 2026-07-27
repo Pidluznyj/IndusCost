@@ -81,7 +81,11 @@ export type PublishedPriceSourceTrace = {
     status: PublishedTraceStatus;
   };
   deductions: {
+    /** Frete absoluto (R$) no numerador — legado. */
     freightAmount: number | null;
+    /** Frete estimado (%) no denominador — geração comercial moderna. */
+    freightPercent: number | null;
+    freightPercentAmount: number | null;
     otherVariablesAmount: number | null;
     roundingAmount: number | null;
     frozenOtherCostTotal: number | null;
@@ -155,6 +159,19 @@ export function readFormulaSnapshotFields(snapshot: Record<string, unknown> | nu
   const otherRate = decTrace(rates.otherRate);
   const marginPct = decTrace(snapshot?.marginPct);
   const freight = decTrace(snapshot?.freight);
+  const freightRate = decTrace(rates.freightRate);
+  const freightPercentFromSnapshot = decTrace(snapshot?.freightPercent);
+  const freightPercent =
+    freightPercentFromSnapshot != null
+      ? freightPercentFromSnapshot
+      : freightRate != null
+        ? freightRate * 100
+        : null;
+  const outputs =
+    snapshot?.outputs != null && typeof snapshot.outputs === "object"
+      ? (snapshot.outputs as Record<string, unknown>)
+      : null;
+  const totalFreightPercentFromOutputs = decTrace(outputs?.totalFreightPercent);
   return {
     taxRuleId: typeof snapshot?.taxRuleId === "string" ? snapshot.taxRuleId : null,
     productionCostTableVersionId:
@@ -171,6 +188,9 @@ export function readFormulaSnapshotFields(snapshot: Record<string, unknown> | nu
     otherRate,
     marginPct,
     freight,
+    freightRate,
+    freightPercent,
+    totalFreightPercentFromOutputs,
     taxPercent: taxRate != null ? taxRate * 100 : null,
     commissionPercent: commissionRate != null ? commissionRate * 100 : null,
     otherPercent: otherRate != null ? otherRate * 100 : null,
@@ -182,21 +202,43 @@ export function computePublishedMarkup(salePrice: number | null, industrialCost:
   return Math.round((salePrice / industrialCost) * 1_000_000) / 1_000_000;
 }
 
+export function deriveFreightPercentAmount(input: {
+  salePrice: number | null;
+  freightPercent: number | null;
+  totalFreightPercentFromOutputs?: number | null;
+}): number | null {
+  if (
+    input.totalFreightPercentFromOutputs != null &&
+    Number.isFinite(input.totalFreightPercentFromOutputs)
+  ) {
+    return Math.round(input.totalFreightPercentFromOutputs * 1_000_000) / 1_000_000;
+  }
+  if (input.salePrice == null || input.freightPercent == null) return null;
+  if (!Number.isFinite(input.freightPercent) || input.freightPercent <= 0) return 0;
+  return Math.round(((input.salePrice * input.freightPercent) / 100) * 1_000_000) / 1_000_000;
+}
+
+/**
+ * Outras variáveis exclusivas (sem comissão, frete absoluto e frete %).
+ * `frozenOtherCost` no item inclui comissão + frete + outros — não usar cru na UI.
+ */
 export function deriveOtherVariablesAmount(input: {
   frozenOtherCost: number | null;
   freight: number | null;
+  freightPercentAmount?: number | null;
   commissionValue: number | null;
   salePrice: number | null;
   otherRate: number | null;
 }): number | null {
-  if (input.salePrice != null && input.otherRate != null && input.otherRate > 0) {
+  if (input.salePrice != null && input.otherRate != null && Number.isFinite(input.otherRate)) {
     return Math.round(input.salePrice * input.otherRate * 1_000_000) / 1_000_000;
   }
   if (input.frozenOtherCost == null) return null;
   const freight = input.freight ?? 0;
+  const freightPctAmt = input.freightPercentAmount ?? 0;
   const commission = input.commissionValue ?? 0;
-  const derived = input.frozenOtherCost - freight - commission;
-  return derived > 0 ? derived : 0;
+  const derived = input.frozenOtherCost - freight - freightPctAmt - commission;
+  return derived > 0 ? Math.round(derived * 1_000_000) / 1_000_000 : 0;
 }
 
 function escapePublishedTraceCsv(value: unknown): string {
@@ -239,6 +281,17 @@ export function buildPublishedPriceTraceCsv(trace: PublishedPriceSourceTrace): s
   lines.push(
     publishedTraceCsvLine(["commissionSource", "commissionAmount", trace.commissionSource.commissionAmount])
   );
+  lines.push(publishedTraceCsvLine(["deductions", "freightPercent", trace.deductions.freightPercent]));
+  lines.push(
+    publishedTraceCsvLine(["deductions", "freightPercentAmount", trace.deductions.freightPercentAmount])
+  );
+  lines.push(publishedTraceCsvLine(["deductions", "freightAmount", trace.deductions.freightAmount]));
+  lines.push(
+    publishedTraceCsvLine(["deductions", "otherVariablesAmount", trace.deductions.otherVariablesAmount])
+  );
+  lines.push(
+    publishedTraceCsvLine(["deductions", "frozenOtherCostTotal", trace.deductions.frozenOtherCostTotal])
+  );
   if (trace.costSource.newerPublishedVersionWarning) {
     lines.push(
       publishedTraceCsvLine(["warning", "NEWER_COST_VERSION", trace.costSource.newerPublishedVersionWarning])
@@ -270,6 +323,12 @@ export function formatPublishedPriceTraceText(trace: PublishedPriceSourceTrace):
   out.push(`Comissão R$: ${trace.commissionSource.commissionAmount ?? "—"}`);
   out.push(`Imposto %: ${trace.taxSource.taxPercent ?? "—"}`);
   out.push(`Imposto R$: ${trace.taxSource.taxAmount ?? "—"}`);
+  out.push("\n--- Frete / outras deduções ---");
+  out.push(`Frete estimado %: ${trace.deductions.freightPercent ?? "—"}`);
+  out.push(`Frete estimado R$: ${trace.deductions.freightPercentAmount ?? "—"}`);
+  out.push(`Frete absoluto R$: ${trace.deductions.freightAmount ?? "—"}`);
+  out.push(`Outras exclusivas R$: ${trace.deductions.otherVariablesAmount ?? "—"}`);
+  out.push(`Total congelado (comissão+fretes+outras) R$: ${trace.deductions.frozenOtherCostTotal ?? "—"}`);
   if (trace.costSource.newerPublishedVersionWarning) {
     out.push(`\nAviso: ${trace.costSource.newerPublishedVersionWarning}`);
   }

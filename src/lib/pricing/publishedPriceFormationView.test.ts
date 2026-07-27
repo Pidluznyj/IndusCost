@@ -251,6 +251,61 @@ describe("publishedPriceFormationView", () => {
     assert.equal(mapped.premissas.marginRate, 20);
   });
 
+  it("discrimina frete % na formação publicada sem misturar com outras deduções", () => {
+    const salePrice = 3.423215;
+    const commissionValue = 0.0684643;
+    const freightPercentAmount = 0.10269645;
+    const frozenOtherCost = commissionValue + freightPercentAmount;
+    const mapped = mapPublishedPriceApiToFormationResult(
+      {
+        item: {
+          priceTableItemId: "item-freight",
+          frozenTotalCost: 1.172451,
+          frozenMaterialCost: 0.8,
+          frozenHhCost: 0.2,
+          frozenHmCost: 0.172451,
+          frozenTaxCost: 0.984174,
+          frozenOtherCost,
+          marginPct: 32,
+          salePrice,
+          commissionPerc: 2,
+          commissionValue,
+          formulaSnapshotJson: {
+            freight: 0,
+            freightPercent: 3,
+            rates: {
+              taxRate: 0.2875,
+              commissionRate: 0.02,
+              otherRate: 0,
+              freightRate: 0.03,
+            },
+            outputs: { totalFreightPercent: freightPercentAmount },
+          },
+          costSnapshotJson: { costSource: "VERSIONED_PRODUCTION_COST_TABLE" },
+        },
+      },
+      {
+        table: tables[0]!,
+        priceItemId: "item-freight",
+        clickedSalePrice: salePrice,
+        sku: "610.35AA",
+        productName: "Torneira Extra Longa",
+        productId: "prod-freight",
+      }
+    );
+
+    assert.equal(mapped.premissas.freightPercent, 3);
+    assert.equal(mapped.premissas.freight, 0);
+    assert.equal(mapped.publishedMeta.publishedSummary.freightPercent, 3);
+    assert.equal(mapped.resultados.freightPercentAmount, 0.102696);
+    assert.equal(mapped.resultados.exclusiveOtherDeductions, 0);
+    assert.equal(mapped.publishedMeta.publishedSummary.exclusiveOtherDeductions, 0);
+    assert.ok(
+      Math.abs((mapped.resultados.contributionMargin ?? 0) - (salePrice - 0.984174 - frozenOtherCost - 1.172451)) <
+        1e-9
+    );
+  });
+
   it("valor do modal publicado coincide com a célula do grid", () => {
     const cellPrice = 28.97;
     const mapped = mapPublishedPriceApiToFormationResult(

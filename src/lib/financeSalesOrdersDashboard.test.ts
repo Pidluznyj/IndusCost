@@ -29,7 +29,7 @@ describe("financeSalesOrdersDashboard", () => {
     assert.match(src, /resolveSalesOrderOperationalPopulationWhere/);
     assert.match(src, /buildSalesOrderListTotalsFromPrismaOrders/);
     assert.match(src, /resolveSalesOrderListSellerWhere/);
-    assert.match(src, /FINANCE_SO_EXCLUDE_GROUP_COMPANIES\s*=\s*false/);
+    assert.match(src, /FINANCE_SO_EXCLUDE_GROUP_COMPANIES\s*=\s*true/);
     assert.match(src, /buildFinancePeriodPortfolioLiteRows/);
     assert.match(src, /buildSalesOrdersDashboardTab/);
     assert.match(src, /buildSummaryFromOperational/);

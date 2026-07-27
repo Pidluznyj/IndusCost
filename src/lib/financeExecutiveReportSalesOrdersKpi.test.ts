@@ -49,10 +49,10 @@ describe("financeExecutiveReportSalesOrdersKpi", () => {
       "utf8"
     );
     assert.match(metrics, /buildSalesOrderListWhere\(\{\s*year\s*\}\)/);
-    assert.match(metrics, /excludeGroupCompanyCustomers\s*=\s*options\.excludeGroupCompanyCustomers\s*\?\?\s*false/);
+    assert.match(metrics, /excludeGroupCompanyCustomers\s*=\s*options\.excludeGroupCompanyCustomers\s*\?\?\s*true/);
     assert.match(
       report,
-      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*false,/
+      /buildSalesOrdersDashboardTab\(\s*yearCtx,\s*\{\s*companyIssuer,\s*month:\s*highlightMonth,\s*excludeGroupCompanyCustomers:\s*true,/
     );
     assert.match(metrics, /MISSING_CONFIRMED/);
   });

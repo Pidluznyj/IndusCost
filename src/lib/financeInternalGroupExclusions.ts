@@ -1,6 +1,11 @@
+import type { Prisma } from "@prisma/client";
 import { isAccountsPayablePurchaseOrderSchedule } from "./financeAccountsPayableOperational.js";
 import { safeFinanceNumber } from "./financeAccountsReceivableFormat.js";
 
+/**
+ * Fonte oficial única das empresas do grupo econômico (Lazarios, Koppetel, SM).
+ * CNPJs sempre normalizados para 14 dígitos. Não duplicar esta lista em outros módulos.
+ */
 export const FINANCE_INTERNAL_GROUP_COMPANIES = [
   {
     cnpj: "72569510000195",
@@ -36,8 +41,19 @@ export const FINANCE_INTERNAL_GROUP_COMPANIES = [
   },
 ] as const;
 
+/** CNPJs (somente dígitos) — alias canônico para SQL/Prisma. */
+export const ECONOMIC_GROUP_CNPJ_DIGITS = FINANCE_INTERNAL_GROUP_COMPANIES.map(
+  (c) => c.cnpj
+) as readonly string[];
+
+/** Motivo oficial de exclusão da população comercial/financeira. */
+export const ECONOMIC_GROUP_INTERCOMPANY = "ECONOMIC_GROUP_INTERCOMPANY" as const;
+
 /** Classificação de exclusão gerencial AP — pagador e credor do grupo econômico. */
 export const FINANCE_AP_INTERCOMPANY_GROUP = "INTERCOMPANY_GROUP" as const;
+
+/** Versão da regra de exclusão intercompany (auditoria / diagnósticos). */
+export const ECONOMIC_GROUP_EXCLUSION_RULE_VERSION = "2026-07-27.1" as const;
 
 const INTERNAL_GROUP_CNPJ_SET: Set<string> = new Set(
   FINANCE_INTERNAL_GROUP_COMPANIES.map((c) => c.cnpj)
@@ -124,7 +140,7 @@ function matchesSmInternalGroupName(normalizedName: string): boolean {
     if (normalizedName === alias || normalizedName.includes(alias)) return true;
   }
   if (
-    normalizedName.includes("SM COMERCIO") &&
+    (normalizedName.includes("SM COMERCIO") || normalizedName.includes("SM COM ")) &&
     normalizedName.includes("PLASTIC")
   ) {
     return true;
@@ -192,6 +208,185 @@ export function isIntercompanyPayable(row: {
       personCnpj: row.personCnpj,
     })
   );
+}
+
+/** Alias explícito — empresa do grupo econômico (CNPJ ou nome). */
+export function isEconomicGroupCompany(input: {
+  cnpj?: string | null;
+  name?: string | null;
+}): boolean {
+  if (isEconomicGroupCnpj(input.cnpj)) return true;
+  return isEconomicGroupName(input.name);
+}
+
+export type EconomicGroupExclusionClassification = {
+  excluded: boolean;
+  reason: typeof ECONOMIC_GROUP_INTERCOMPANY | null;
+  normalizedCnpj: string | null;
+  matchedCompany: string | null;
+  source: string | null;
+  ruleVersion: typeof ECONOMIC_GROUP_EXCLUSION_RULE_VERSION;
+};
+
+function resolveMatchedGroupCompany(cnpj: string | null | undefined, name?: string | null) {
+  const digits = normalizeFinanceCnpj(cnpj);
+  if (digits) {
+    const byCnpj = FINANCE_INTERNAL_GROUP_COMPANIES.find((c) => c.cnpj === digits);
+    if (byCnpj) return { company: byCnpj.name, normalizedCnpj: digits, source: "cnpj" as const };
+  }
+  if (isEconomicGroupName(name)) {
+    const normalized = normalizeFinancePersonText(name);
+    const byName = FINANCE_INTERNAL_GROUP_COMPANIES.find((c) =>
+      c.aliases.some((alias) => {
+        const a = normalizeFinancePersonText(alias);
+        return normalized === a || (a.length >= 8 && normalized.includes(a));
+      })
+    );
+    return {
+      company: byName?.name ?? null,
+      normalizedCnpj: digits || null,
+      source: "name" as const,
+    };
+  }
+  return { company: null, normalizedCnpj: digits || null, source: null };
+}
+
+/** AR — título intercompany quando o devedor/cliente é empresa do grupo. */
+export function isIntercompanyReceivable(row: {
+  personName?: string | null;
+  personCnpj?: string | null;
+}): boolean {
+  return isInternalGroupCounterparty({
+    personName: row.personName,
+    personCnpj: row.personCnpj,
+  });
+}
+
+export function classifyIntercompanyReceivable(row: {
+  personName?: string | null;
+  personCnpj?: string | null;
+}): EconomicGroupExclusionClassification {
+  const match = resolveMatchedGroupCompany(row.personCnpj, row.personName);
+  const excluded = isIntercompanyReceivable(row);
+  return {
+    excluded,
+    reason: excluded ? ECONOMIC_GROUP_INTERCOMPANY : null,
+    normalizedCnpj: match.normalizedCnpj,
+    matchedCompany: match.company,
+    source: excluded ? match.source : null,
+    ruleVersion: ECONOMIC_GROUP_EXCLUSION_RULE_VERSION,
+  };
+}
+
+export function classifyIntercompanyPayable(row: {
+  companyName?: string | null;
+  personName?: string | null;
+  personCnpj?: string | null;
+}): EconomicGroupExclusionClassification {
+  const match = resolveMatchedGroupCompany(row.personCnpj, row.personName);
+  const excluded = isIntercompanyPayable(row);
+  return {
+    excluded,
+    reason: excluded ? ECONOMIC_GROUP_INTERCOMPANY : null,
+    normalizedCnpj: match.normalizedCnpj,
+    matchedCompany: match.company,
+    source: excluded
+      ? `payer:${isInternalGroupCompany(row.companyName) ? "group" : "external"}+creditor:${match.source ?? "none"}`
+      : null,
+    ruleVersion: ECONOMIC_GROUP_EXCLUSION_RULE_VERSION,
+  };
+}
+
+/**
+ * SO — pedido intercompany quando o cliente (não o emitente) é empresa do grupo.
+ * `companyIssuer` NÃO entra na decisão de exclusão.
+ */
+export function isIntercompanySalesOrder(order: {
+  Customer?: {
+    taxId?: string | null;
+    companyName?: string | null;
+    tradeName?: string | null;
+  } | null;
+  customerTaxId?: string | null;
+  customerName?: string | null;
+}): boolean {
+  const taxId = order.Customer?.taxId ?? order.customerTaxId ?? null;
+  const name =
+    order.Customer?.companyName ??
+    order.Customer?.tradeName ??
+    order.customerName ??
+    null;
+  if (isInternalGroupCounterparty({ personCnpj: taxId, personName: name })) {
+    return true;
+  }
+  if (order.Customer?.tradeName && order.Customer.tradeName !== name) {
+    return isInternalGroupCounterparty({
+      personCnpj: taxId,
+      personName: order.Customer.tradeName,
+    });
+  }
+  return false;
+}
+
+export function classifyIntercompanySalesOrder(order: {
+  Customer?: {
+    taxId?: string | null;
+    companyName?: string | null;
+    tradeName?: string | null;
+  } | null;
+  customerTaxId?: string | null;
+  customerName?: string | null;
+}): EconomicGroupExclusionClassification {
+  const taxId = order.Customer?.taxId ?? order.customerTaxId ?? null;
+  const name =
+    order.Customer?.companyName ??
+    order.Customer?.tradeName ??
+    order.customerName ??
+    null;
+  const match = resolveMatchedGroupCompany(taxId, name);
+  const excluded = isIntercompanySalesOrder(order);
+  return {
+    excluded,
+    reason: excluded ? ECONOMIC_GROUP_INTERCOMPANY : null,
+    normalizedCnpj: match.normalizedCnpj,
+    matchedCompany: match.company,
+    source: excluded ? (match.source === "cnpj" ? "Customer.taxId" : "Customer.name") : null,
+    ruleVersion: ECONOMIC_GROUP_EXCLUSION_RULE_VERSION,
+  };
+}
+
+/**
+ * Cláusula Prisma: exclui pedidos cujo Customer é empresa do grupo (CNPJ formatado/dígitos ou nome).
+ * Usada na população operacional oficial (listagem Comercial / Financeiro Pedidos).
+ */
+export function buildEconomicGroupCustomerPrismaExclusion(): Prisma.SalesOrderWhereInput {
+  const customerOr: Prisma.CustomerWhereInput[] = [];
+  for (const company of FINANCE_INTERNAL_GROUP_COMPANIES) {
+    customerOr.push({ taxId: { equals: company.cnpj } });
+    customerOr.push({ taxId: { equals: company.displayCnpj } });
+    customerOr.push({ taxId: { contains: company.cnpj } });
+    // Trecho estável do CNPJ formatado (evita depender só dos 14 dígitos colados).
+    const formattedCore = company.displayCnpj.slice(0, 10); // "72.569.510"
+    customerOr.push({ taxId: { contains: formattedCore } });
+  }
+  customerOr.push({ companyName: { contains: "Lazarios", mode: "insensitive" } });
+  customerOr.push({ tradeName: { contains: "Lazarios", mode: "insensitive" } });
+  customerOr.push({ companyName: { contains: "Koppetel", mode: "insensitive" } });
+  customerOr.push({ tradeName: { contains: "Koppetel", mode: "insensitive" } });
+  customerOr.push({ companyName: { contains: "SM Comercio", mode: "insensitive" } });
+  customerOr.push({ tradeName: { contains: "SM Comercio", mode: "insensitive" } });
+  customerOr.push({ companyName: { contains: "SM Comércio", mode: "insensitive" } });
+  customerOr.push({ tradeName: { contains: "SM Comércio", mode: "insensitive" } });
+
+  return {
+    NOT: {
+      Customer: {
+        is: {
+          OR: customerOr,
+        },
+      },
+    },
+  };
 }
 
 /**
