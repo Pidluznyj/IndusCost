@@ -456,6 +456,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["finance.view", "finance.portfolioReconciliation.view"],
   }),
 
+  // —— Comercial (shell do grupo) ——
+  perm({
+    key: "commercial.view",
+    label: "Comercial",
+    group: CRM,
+    module: "crm-commercial",
+    description:
+      "Shell do grupo Comercial (chave 1:1 do parent; não substitui Pedidos/CRM).",
+    type: "menu",
+  }),
+
   // —— CRM ——
   perm({ key: "crm.view", label: "CRM Comercial", group: CRM, module: "crm-commercial", description: "Acessar o módulo CRM Comercial.", type: "menu" }),
   perm({

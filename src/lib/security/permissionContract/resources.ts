@@ -379,8 +379,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "commercial",
     route: null,
     sortOrder: 30,
-    // Sem crm.view / commissions.view: aliases 1:1 ficam nos módulos (CRM / Comissões).
-    actions: [V(["sales_orders.view", "proposals.view", "customers.view", "pricing.view"])],
+    // Parent 1:1 (como finance.view): não roubar alias dos filhos.
+    // Antes sales_orders.view era primário aqui e a projeção do perfil
+    // "Gestor comercial" pulava a chave → 403 em commercial.sales_orders:view.
+    actions: [V(["commercial.view"])],
     relatedEndpoints: [],
     sensitivity: "low",
     appearsInSidebar: false,
@@ -388,6 +390,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: ["comercial"],
+    notes:
+      "P17: commercial.view canônico só neste parent; Pedidos/CRM/Propostas usam aliases 1:1 próprios.",
   },
   {
     resourceKey: "commercial.crm",

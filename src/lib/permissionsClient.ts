@@ -279,7 +279,8 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     label: "Comercial",
     type: "MENU",
     parentKey: null,
-    legacyAliasKeys: ["sales_orders.view"],
+    // Shell do grupo (1:1 com commercial.view) — não compartilhe sales_orders.view.
+    legacyAliasKeys: ["commercial.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_PEDIDOS_VENDA,
