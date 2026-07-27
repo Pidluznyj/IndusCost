@@ -35,8 +35,9 @@
 | **08** | UI contas financeiras | `DONE` | `6a81b79` — `feat(treasury): adicionar tela de contas financeiras` | `/finance/treasury/accounts`; listar/criar/editar/desativar/reativar; saldo mín./liquidez/consolidado/acessos; máscara; estados vazio/loading/erro/sem permissão; responsivo; `test:treasury` 80/80 |
 | **09** | Backend/APIs snapshots de saldo | `DONE` | `30cfdb5` — `feat(treasury): adicionar APIs de snapshots de saldo` | `GET …/balances`, `GET …/balances/latest`, `POST …/balance-snapshots` + Idempotency-Key; observado/operacional/bloqueado/aplicações/limite; previousSnapshot; audit; Decimal+auth+idempotência; `test:treasury` 90/90 |
 | **10** | UI atualização de saldo | `DONE` | `eed8642` — `feat(treasury): adicionar UX de atualização de saldo` | `/finance/treasury/accounts/:id/balances`; form pt-BR→decimal API; histórico; stale; confirmação; conflito; `test:treasury` 100/100 |
+| **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | *(este commit)* | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
 
-> **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**; UI saldo = **10**.
+> **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**; UI saldo = **10**; adapter AR/AP oficial = **11** (plano canônico Prompt **10**).
 
 ---
 
@@ -47,8 +48,8 @@
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
-| Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; APIs `/api/finance/accounts-receivable/*` |
-| Contas a pagar (títulos) | `REUSE` | Model `NomusAccountsPayable`; APIs `/api/finance/accounts-payable/*` |
+| Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; adapter Tesouraria `OfficialReceivableView` (P11); APIs `/api/finance/accounts-receivable/*` |
+| Contas a pagar (títulos) | `REUSE` | Model `NomusAccountsPayable`; adapter Tesouraria `OfficialPayableView` (P11); APIs `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
 | Datas esperadas | `NOT_STARTED` | Existe `scheduleDate` Nomus; não substituir `dueDate` |
 | Promessas de pagamento | `NOT_STARTED` | — |
@@ -69,7 +70,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 100 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 106 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -157,7 +158,7 @@
 | Fluxo de Caixa não vira extrato bancário | Documentado — fronteira explícita |
 | Portfolio reconciliation ≠ conciliação bancária | Documentado |
 | Pedido/NF não entram como caixa | Documentado (ref. `order-nfe-cr-financial-separation.md`) |
-| Scaffold Tesouraria não grava/copia títulos Nomus | Confirmado (P01 — só availability) |
+| Scaffold Tesouraria não grava/copia títulos Nomus | Confirmado (P01 + P11 adapter read-only; sem upsert) |
 
 ---
 
@@ -267,3 +268,4 @@
 | 2026-07-27 | Prompt 08: UI contas financeiras; test:treasury 80/80 |
 | 2026-07-27 | Prompt 09: APIs snapshots de saldo; test:treasury 90/90 |
 | 2026-07-27 | Prompt 10: UI atualização de saldo; test:treasury 100/100 |
+| 2026-07-27 | Prompt 11: adapter/repo read-only AR/AP oficiais Nomus; DTOs canônicos; test:treasury 106/106 |

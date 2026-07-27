@@ -20,9 +20,18 @@ describe("treasuryModuleStructure", () => {
       "mappers",
       "jobs",
       "contracts",
+      "adapters",
     ]) {
       assert.ok(existsSync(join(here, dir)), dir);
     }
+    assert.ok(
+      existsSync(join(here, "adapters/treasuryOfficialTitlesAdapter.server.ts"))
+    );
+    assert.ok(
+      existsSync(
+        join(here, "repositories/treasuryOfficialTitlesRepository.server.ts")
+      )
+    );
     assert.ok(
       existsSync(join(repoRoot, "src/components/finance/treasury/TreasuryScaffoldPage.tsx"))
     );

@@ -182,3 +182,14 @@ export type {
   TreasuryAuditEventInput,
   TreasuryAuditLogDto,
 } from "./treasuryAuditContracts.js";
+
+export type {
+  OfficialCancellationView,
+  OfficialCounterpartyView,
+  OfficialInvoiceRefView,
+  OfficialPayableView,
+  OfficialReceivableView,
+  OfficialSettlementView,
+  OfficialStatusView,
+  OfficialTitleSourcePresenceStatus,
+} from "./treasuryOfficialTitleContracts.js";
