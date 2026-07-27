@@ -186,6 +186,8 @@ describe("TreasuryReceivablesPage — componentes e fluxo", () => {
     assert.match(drawer, /Título oficial/);
     assert.match(drawer, /Pedido e nota fiscal/);
     assert.match(drawer, /Histórico operacional/);
+    assert.match(drawer, /Cobrança e contestações/);
+    assert.match(drawer, /TreasuryReceivableOpsTimeline/);
     assert.match(drawer, /buildTreasuryReceivableOperationalHistory/);
     assert.match(drawer, /salesOrderCode/);
     assert.match(drawer, /invoice\.number/);

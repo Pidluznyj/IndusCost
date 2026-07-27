@@ -126,6 +126,7 @@ export type TreasuryReceivablesFilterState = {
   openAmountMax: string;
   plannedAccountId: string;
   priority: string;
+  nextAction: string;
   includeCancelled: boolean;
   sortBy: TreasuryReceivableSortField;
   sortDirection: "asc" | "desc";
@@ -153,11 +154,28 @@ export function createEmptyTreasuryReceivablesFilters(): TreasuryReceivablesFilt
     openAmountMax: "",
     plannedAccountId: "",
     priority: "",
+    nextAction: "",
     includeCancelled: false,
     sortBy: "dueDate",
     sortDirection: "asc",
   };
 }
+
+export const TREASURY_COLLECTION_ACTION_TYPE_LABELS: Record<string, string> = {
+  PHONE: "Telefone",
+  WHATSAPP: "WhatsApp",
+  EMAIL: "E-mail",
+  MEETING: "Reunião",
+  COMMERCIAL_CONTACT: "Contato comercial",
+  INTERNAL_ANALYSIS: "Análise interna",
+  OTHER: "Outro",
+};
+
+export const TREASURY_DISPUTE_STATUS_LABELS: Record<string, string> = {
+  OPEN: "Aberta",
+  RESOLVED: "Resolvida",
+  CANCELLED: "Cancelada",
+};
 
 export function formatTreasuryReceivableMoney(
   value: string | null | undefined
@@ -263,6 +281,7 @@ export function buildTreasuryReceivablesListQuery(input: {
     openAmountMax: f.openAmountMax.trim() || null,
     plannedAccountId: f.plannedAccountId.trim() || null,
     priority: f.priority.trim() || null,
+    nextAction: f.nextAction.trim() || null,
     includeCancelled: f.includeCancelled,
     hasFilters: treasuryReceivablesFiltersActive(f),
   };

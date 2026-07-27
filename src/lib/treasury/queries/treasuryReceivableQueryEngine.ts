@@ -113,6 +113,11 @@ export function receivableMatchesQuery(
       return false;
     }
   }
+  if (query.nextAction) {
+    const needle = query.nextAction.trim().toLowerCase();
+    const hay = (row.nextAction ?? "").toLowerCase();
+    if (!needle || !hay.includes(needle)) return false;
+  }
   if (
     query.operationalStatus &&
     row.operationalStatus !== query.operationalStatus

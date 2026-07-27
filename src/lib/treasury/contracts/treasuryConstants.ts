@@ -21,6 +21,12 @@ export const TREASURY_RECEIVABLES_PATH =
 export const TREASURY_PROMISES_PATH =
   `${TREASURY_API_PREFIX}/promises` as const;
 
+export const TREASURY_COLLECTION_ACTIONS_PATH =
+  `${TREASURY_API_PREFIX}/collection-actions` as const;
+
+export const TREASURY_DISPUTES_PATH =
+  `${TREASURY_API_PREFIX}/disputes` as const;
+
 export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
 
 export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;
@@ -56,6 +62,9 @@ export const TREASURY_FIELD_LIMITS = {
   reason: 500,
   notes: 2000,
   contactNote: 500,
+  contactPerson: 200,
+  result: 500,
+  involvedArea: 120,
   channel: 64,
   actionType: 64,
   counterpartRef: 128,

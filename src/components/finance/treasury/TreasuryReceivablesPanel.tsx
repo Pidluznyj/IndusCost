@@ -236,6 +236,15 @@ export function TreasuryReceivablesPanel({
               ))}
             </select>
           </FilterField>
+          <FilterField label="Próxima ação">
+            <input
+              className={field}
+              value={filters.nextAction}
+              onChange={(e) => patch({ nextAction: e.target.value })}
+              placeholder="Contém…"
+              data-testid="treasury-receivables-filter-next-action"
+            />
+          </FilterField>
           <FilterField label="Conta prevista">
             <input
               className={field}

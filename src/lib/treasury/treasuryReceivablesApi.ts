@@ -4,8 +4,16 @@
 
 import { fetchJsonOk } from "@/src/lib/http.js";
 import {
+  TREASURY_COLLECTION_ACTIONS_PATH,
+  TREASURY_DISPUTES_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  type TreasuryCollectionActionCancelInput,
+  type TreasuryCollectionActionCreateInput,
+  type TreasuryCollectionActionDto,
+  type TreasuryDisputeCreateInput,
+  type TreasuryDisputeDto,
+  type TreasuryDisputeUpdateStatusInput,
   type TreasuryPaymentPromiseDto,
   type TreasuryPromiseCancelInput,
   type TreasuryPromiseMarkFulfilledInput,
@@ -43,6 +51,7 @@ export type TreasuryReceivablesListParams = {
   openAmountMax?: string | null;
   plannedAccountId?: string | null;
   priority?: string | null;
+  nextAction?: string | null;
   includeCancelled?: boolean;
   signal?: AbortSignal;
 };
@@ -88,6 +97,7 @@ function buildListUrl(params: TreasuryReceivablesListParams): string {
   setIf(qs, "openAmountMax", params.openAmountMax?.trim());
   setIf(qs, "plannedAccountId", params.plannedAccountId?.trim());
   setIf(qs, "priority", params.priority);
+  setIf(qs, "nextAction", params.nextAction?.trim());
   if (params.includeCancelled) qs.set("includeCancelled", "true");
   const query = qs.toString();
   return query
@@ -192,4 +202,90 @@ export async function markTreasuryPaymentPromiseFulfilled(
     }
   );
   return res.promise;
+}
+
+export async function fetchTreasuryCollectionActions(
+  titleId: string,
+  signal?: AbortSignal
+): Promise<TreasuryCollectionActionDto[]> {
+  const res = await fetchJsonOk<{ actions: TreasuryCollectionActionDto[] }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/collection-actions`,
+    { credentials: "include", signal }
+  );
+  return res.actions;
+}
+
+export async function createTreasuryCollectionAction(
+  titleId: string,
+  body: TreasuryCollectionActionCreateInput
+): Promise<TreasuryCollectionActionDto> {
+  const res = await fetchJsonOk<{ action: TreasuryCollectionActionDto }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/collection-actions`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.action;
+}
+
+export async function cancelTreasuryCollectionAction(
+  actionId: string,
+  body: TreasuryCollectionActionCancelInput
+): Promise<TreasuryCollectionActionDto> {
+  const res = await fetchJsonOk<{ action: TreasuryCollectionActionDto }>(
+    `${TREASURY_COLLECTION_ACTIONS_PATH}/${encodeURIComponent(actionId)}/cancel`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.action;
+}
+
+export async function fetchTreasuryDisputes(
+  titleId: string,
+  signal?: AbortSignal
+): Promise<TreasuryDisputeDto[]> {
+  const res = await fetchJsonOk<{ disputes: TreasuryDisputeDto[] }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/disputes`,
+    { credentials: "include", signal }
+  );
+  return res.disputes;
+}
+
+export async function createTreasuryDispute(
+  titleId: string,
+  body: TreasuryDisputeCreateInput
+): Promise<TreasuryDisputeDto> {
+  const res = await fetchJsonOk<{ dispute: TreasuryDisputeDto }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/disputes`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.dispute;
+}
+
+export async function updateTreasuryDisputeStatus(
+  disputeId: string,
+  body: TreasuryDisputeUpdateStatusInput
+): Promise<TreasuryDisputeDto> {
+  const res = await fetchJsonOk<{ dispute: TreasuryDisputeDto }>(
+    `${TREASURY_DISPUTES_PATH}/${encodeURIComponent(disputeId)}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.dispute;
 }

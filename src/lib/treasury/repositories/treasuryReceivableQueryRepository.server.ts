@@ -83,7 +83,8 @@ function hasComplementFilter(query: TreasuryReceivablesListQuery): boolean {
       query.collectionOwnerUserId ||
       query.plannedAccountId ||
       query.priority ||
-      query.complementStatus
+      query.complementStatus ||
+      query.nextAction
   );
 }
 
@@ -153,6 +154,12 @@ export function createTreasuryReceivableQueryRepository(
     if (query.hasPromise === false) {
       where.AND = [{ confirmedDate: null }, { confirmedAmount: null }];
     }
+    if (query.nextAction) {
+      where.nextAction = {
+        contains: query.nextAction.trim(),
+        mode: "insensitive",
+      };
+    }
     const rows = await prisma.treasuryTitleOperationalComplement.findMany({
       where,
       select: { officialTitleId: true },
@@ -168,6 +175,21 @@ export function createTreasuryReceivableQueryRepository(
         distinct: ["officialTitleId"],
       });
       ids = [...new Set([...ids, ...promiseIds.map((p) => p.officialTitleId)])];
+    }
+    if (query.nextAction) {
+      const actionIds = await prisma.treasuryCollectionAction.findMany({
+        where: {
+          titleType: "RECEIVABLE",
+          cancelledAt: null,
+          nextAction: {
+            contains: query.nextAction.trim(),
+            mode: "insensitive",
+          },
+        },
+        select: { officialTitleId: true },
+        distinct: ["officialTitleId"],
+      });
+      ids = [...new Set([...ids, ...actionIds.map((a) => a.officialTitleId)])];
     }
     return ids;
   }

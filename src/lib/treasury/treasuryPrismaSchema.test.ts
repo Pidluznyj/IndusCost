@@ -106,4 +106,26 @@ describe("treasuryPrismaSchema", () => {
     assert.match(sql, /CREATE TABLE "TreasuryTitleOperationalComplement"/);
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
+
+  it("schema e migration de ações de cobrança e contestações existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryCollectionAction \{/);
+    assert.match(schema, /enum TreasuryCollectionActionType/);
+    assert.match(schema, /COMMERCIAL_CONTACT/);
+    assert.match(schema, /INTERNAL_ANALYSIS/);
+    assert.match(schema, /model TreasuryDispute \{/);
+    assert.match(schema, /enum TreasuryDisputeStatus/);
+    assert.match(schema, /amountDisputed\s+Decimal/);
+    assert.match(schema, /involvedArea\s+String\?/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260809120000_treasury_collection_action_and_dispute/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryCollectionAction"/);
+    assert.match(sql, /CREATE TABLE "TreasuryDispute"/);
+    assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
 });

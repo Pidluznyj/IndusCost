@@ -15,6 +15,7 @@ import type {
   TreasuryBalanceOrigin,
   TreasuryClosingStatus,
   TreasuryCurrency,
+  TreasuryCollectionActionType,
   TreasuryDisputeStatus,
   TreasuryExceptionSeverity,
   TreasuryExceptionStatus,
@@ -170,15 +171,52 @@ export type TreasuryPaymentPromiseDto = {
   fulfilledAt: TreasuryTimestampIso | null;
 };
 
+export type TreasuryCollectionActionDto = {
+  id: string;
+  side: TreasurySide;
+  titleType: "RECEIVABLE" | "PAYABLE";
+  officialTitleId: string;
+  nomusExternalId: string;
+  actionType: TreasuryCollectionActionType;
+  performedAt: TreasuryTimestampIso;
+  contactPerson: string | null;
+  result: string | null;
+  notes: string | null;
+  nextAction: string | null;
+  responsibleUserId: string | null;
+  version: number;
+  createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
+  updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
+  cancellationReason: string | null;
+};
+
 export type TreasuryDisputeDto = {
   id: string;
   side: TreasurySide;
+  titleType: "RECEIVABLE" | "PAYABLE";
+  officialTitleId: string;
   nomusExternalId: string;
   openedAt: TreasuryTimestampIso;
   reason: string;
   amountDisputed: TreasuryMoneyString | null;
+  responsibleUserId: string | null;
+  involvedArea: string | null;
+  dueDate: TreasuryCivilDate | null;
+  notes: string | null;
   status: TreasuryDisputeStatus;
   resolutionNote: string | null;
+  version: number;
+  createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
+  updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
+  resolvedAt: TreasuryTimestampIso | null;
 };
 
 export type TreasuryPaymentScheduleItemDto = {

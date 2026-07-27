@@ -95,6 +95,18 @@ export const TREASURY_DISPUTE_STATUSES = [
 ] as const;
 export type TreasuryDisputeStatus = (typeof TREASURY_DISPUTE_STATUSES)[number];
 
+export const TREASURY_COLLECTION_ACTION_TYPES = [
+  "PHONE",
+  "WHATSAPP",
+  "EMAIL",
+  "MEETING",
+  "COMMERCIAL_CONTACT",
+  "INTERNAL_ANALYSIS",
+  "OTHER",
+] as const;
+export type TreasuryCollectionActionType =
+  (typeof TREASURY_COLLECTION_ACTION_TYPES)[number];
+
 export const TREASURY_SCHEDULE_STATUSES = [
   "PLANNED",
   "APPROVED",

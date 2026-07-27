@@ -20,7 +20,9 @@ import {
   TREASURY_ACCOUNT_SORT_FIELDS,
   TREASURY_ACCOUNT_TYPES,
   TREASURY_BALANCE_ORIGINS,
+  TREASURY_COLLECTION_ACTION_TYPES,
   TREASURY_CURRENCIES,
+  TREASURY_DISPUTE_STATUSES,
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
   TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
@@ -33,7 +35,9 @@ import {
   type TreasuryAccountSortField,
   type TreasuryAccountType,
   type TreasuryBalanceOrigin,
+  type TreasuryCollectionActionType,
   type TreasuryCurrency,
+  type TreasuryDisputeStatus,
   type TreasuryLedgerDirection,
   type TreasuryLedgerNature,
   type TreasuryReceivableOperationalStatus,
@@ -42,6 +46,7 @@ import {
   type TreasuryTitleOperationalPriority,
   type TreasuryTitleOperationalStatusCode,
 } from "./treasuryEnums.js";
+import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
 import { TreasuryContractError } from "./treasuryErrorCodes.js";
 import {
   parseOptionalTreasuryMoneyString,
@@ -950,6 +955,7 @@ export type TreasuryReceivablesListQuery = TreasuryPaginationInput &
     openAmountMax: string | null;
     plannedAccountId: string | null;
     priority: TreasuryTitleOperationalPriority | null;
+    nextAction: string | null;
     includeCancelled: boolean;
   };
 
@@ -1045,6 +1051,11 @@ export function parseTreasuryReceivablesListQuery(
       TREASURY_TITLE_OPERATIONAL_PRIORITIES,
       "priority",
       false
+    ),
+    nextAction: parseTreasuryBoundedString(
+      query.nextAction ?? query.proximaAcao,
+      "nextAction",
+      { required: false }
     ),
     includeCancelled: parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
   };
@@ -1318,6 +1329,179 @@ export function parseTreasuryPromiseMarkFulfilledInput(
       "notes",
       { required: false }
     ),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+}
+
+export type TreasuryCollectionActionCreateInput = {
+  actionType: TreasuryCollectionActionType;
+  performedAt: string;
+  contactPerson: string | null;
+  result: string | null;
+  notes: string | null;
+  nextAction: string | null;
+  responsibleUserId: string | null;
+};
+
+export type TreasuryCollectionActionCancelInput = {
+  reason: string | null;
+  expectedVersion: number;
+};
+
+export type TreasuryDisputeCreateInput = {
+  reason: string;
+  amountDisputed: string | null;
+  responsibleUserId: string | null;
+  involvedArea: string | null;
+  dueDate: string | null;
+  notes: string | null;
+};
+
+export type TreasuryDisputeUpdateStatusInput = {
+  status: Exclude<TreasuryDisputeStatus, "OPEN">;
+  resolutionNote: string | null;
+  notes: string | null;
+  expectedVersion: number;
+};
+
+export function parseTreasuryCollectionActionCreateInput(
+  body: Record<string, unknown>
+): TreasuryCollectionActionCreateInput {
+  const actionType = parseTreasuryEnum(
+    body.actionType ?? body.tipo,
+    TREASURY_COLLECTION_ACTION_TYPES,
+    "actionType",
+    true
+  );
+  if (!actionType) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "actionType é obrigatório.",
+      "actionType"
+    );
+  }
+  return {
+    actionType,
+    performedAt: parseTreasuryTimestampIso(
+      body.performedAt ?? body.dataHora ?? body.at,
+      "performedAt"
+    ),
+    contactPerson: parseTreasuryBoundedString(
+      body.contactPerson ?? body.pessoaContato ?? body.contato,
+      "contactPerson",
+      { required: false }
+    ),
+    result: parseTreasuryBoundedString(
+      body.result ?? body.resultado,
+      "result",
+      { required: false }
+    ),
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao,
+      "notes",
+      { required: false }
+    ),
+    nextAction: parseTreasuryBoundedString(
+      body.nextAction ?? body.proximaAcao,
+      "nextAction",
+      { required: false }
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      body.responsibleUserId ?? body.responsavel,
+      "userId",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryCollectionActionCancelInput(
+  body: Record<string, unknown>
+): TreasuryCollectionActionCancelInput {
+  return {
+    reason: parseTreasuryBoundedString(
+      body.reason ?? body.motivo ?? body.cancellationReason,
+      "reason",
+      { required: false }
+    ),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+}
+
+export function parseTreasuryDisputeCreateInput(
+  body: Record<string, unknown>
+): TreasuryDisputeCreateInput {
+  const reason = parseTreasuryBoundedString(
+    body.reason ?? body.motivo,
+    "reason",
+    { required: true }
+  );
+  if (!reason) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "reason é obrigatório.",
+      "reason"
+    );
+  }
+  return {
+    reason,
+    amountDisputed: parseOptionalTreasuryMoneyString(
+      body.amountDisputed ?? body.valorContestado,
+      "amountDisputed"
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      body.responsibleUserId ?? body.responsavelInterno ?? body.responsavel,
+      "userId",
+      { required: false }
+    ),
+    involvedArea: parseTreasuryBoundedString(
+      body.involvedArea ?? body.areaEnvolvida,
+      "involvedArea",
+      { required: false }
+    ),
+    dueDate: parseOptionalTreasuryCivilDate(
+      body.dueDate ?? body.prazo,
+      "dueDate"
+    ),
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao,
+      "notes",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryDisputeUpdateStatusInput(
+  body: Record<string, unknown>
+): TreasuryDisputeUpdateStatusInput {
+  const status = parseTreasuryEnum(
+    body.status,
+    ["RESOLVED", "CANCELLED"] as const,
+    "status",
+    true
+  );
+  if (!status) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "status é obrigatório (RESOLVED ou CANCELLED).",
+      "status"
+    );
+  }
+  return {
+    status,
+    resolutionNote: parseTreasuryBoundedString(
+      body.resolutionNote ?? body.notaResolucao,
+      "notes",
+      { required: false }
+    ),
+    notes: parseTreasuryBoundedString(body.notes ?? body.observacao, "notes", {
+      required: false,
+    }),
     expectedVersion: parseNonNegativeInt(
       body.expectedVersion ?? body.version,
       "expectedVersion"

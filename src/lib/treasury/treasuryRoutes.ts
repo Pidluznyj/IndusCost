@@ -11,9 +11,13 @@ import { createTreasuryAccountControllers } from "./controllers/treasuryAccountC
 import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
 import { createTreasuryReceivableControllers } from "./controllers/treasuryReceivableController.js";
 import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryPaymentPromiseController.js";
+import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
+import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AVAILABILITY_PATH,
+  TREASURY_COLLECTION_ACTIONS_PATH,
+  TREASURY_DISPUTES_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
 } from "./contracts/treasuryContracts.js";
@@ -45,6 +49,10 @@ export function registerTreasuryRoutes(
   const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
   const receivables = createTreasuryReceivableControllers({ getCurrentAppUser });
   const promises = createTreasuryPaymentPromiseControllers({ getCurrentAppUser });
+  const collectionActions = createTreasuryCollectionActionControllers({
+    getCurrentAppUser,
+  });
+  const disputes = createTreasuryDisputeControllers({ getCurrentAppUser });
 
   const viewAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
@@ -68,6 +76,10 @@ export function registerTreasuryRoutes(
   );
   const promiseReceivables = requireResource(
     TREASURY_RESOURCE_KEYS.receivablesPromise,
+    TREASURY_ACTIONS.execute
+  );
+  const collectReceivables = requireResource(
+    TREASURY_RESOURCE_KEYS.receivablesCollection,
     TREASURY_ACTIONS.execute
   );
   const viewOfficialReceivables = requireResource(
@@ -231,5 +243,57 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     promiseReceivables,
     promises.markFulfilled
+  );
+
+  app.get(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/collection-actions`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    collectionActions.listByReceivable
+  );
+
+  app.post(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/collection-actions`,
+    requireAppAuth,
+    moduleEnabled,
+    collectReceivables,
+    viewOfficialReceivables,
+    collectionActions.createForReceivable
+  );
+
+  app.post(
+    `${TREASURY_COLLECTION_ACTIONS_PATH}/:actionId/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    collectReceivables,
+    collectionActions.cancel
+  );
+
+  app.get(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/disputes`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    disputes.listByReceivable
+  );
+
+  app.post(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/disputes`,
+    requireAppAuth,
+    moduleEnabled,
+    manageReceivables,
+    viewOfficialReceivables,
+    disputes.createForReceivable
+  );
+
+  app.patch(
+    `${TREASURY_DISPUTES_PATH}/:disputeId`,
+    requireAppAuth,
+    moduleEnabled,
+    manageReceivables,
+    disputes.updateStatus
   );
 }

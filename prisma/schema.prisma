@@ -2068,6 +2068,14 @@ model AppUser {
   treasuryPaymentPromisesUpdated      TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
   treasuryPaymentPromisesCancelled    TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
   treasuryPaymentPromisesResponsible  TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
+  treasuryCollectionActionsCreated    TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCreatedBy")
+  treasuryCollectionActionsUpdated    TreasuryCollectionAction[]           @relation("TreasuryCollectionActionUpdatedBy")
+  treasuryCollectionActionsCancelled  TreasuryCollectionAction[]           @relation("TreasuryCollectionActionCancelledBy")
+  treasuryCollectionActionsResponsible TreasuryCollectionAction[]          @relation("TreasuryCollectionActionResponsible")
+  treasuryDisputesCreated             TreasuryDispute[]                    @relation("TreasuryDisputeCreatedBy")
+  treasuryDisputesUpdated             TreasuryDispute[]                    @relation("TreasuryDisputeUpdatedBy")
+  treasuryDisputesCancelled           TreasuryDispute[]                    @relation("TreasuryDisputeCancelledBy")
+  treasuryDisputesResponsible         TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
 
   @@index([role])
   @@index([isActive])
@@ -7035,6 +7043,105 @@ model TreasuryPaymentPromise {
   @@index([titleType, officialTitleId])
   @@index([titleType, officialExternalId])
   @@index([status, promisedDate])
+  @@index([responsibleUserId])
+  @@index([createdByUserId])
+  @@index([cancelledAt])
+}
+
+/// Tipo de ação de cobrança (append-only; cancelamento lógico).
+enum TreasuryCollectionActionType {
+  PHONE
+  WHATSAPP
+  EMAIL
+  MEETING
+  COMMERCIAL_CONTACT
+  INTERNAL_ANALYSIS
+  OTHER
+}
+
+/// Ação de cobrança sobre título oficial — histórico imutável (sem exclusão física).
+model TreasuryCollectionAction {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  titleType          TreasuryOfficialTitleKind
+  officialTitleId    String                    @db.Uuid
+  officialExternalId Int
+
+  actionType        TreasuryCollectionActionType
+  performedAt       DateTime                     @db.Timestamptz(6)
+  contactPerson     String?
+  result            String?
+  notes             String?
+  nextAction        String?
+  responsibleUserId String?                      @db.Uuid
+
+  version Int @default(1)
+
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId    String    @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId    String?   @db.Uuid
+  cancelledAt        DateTime? @db.Timestamptz(6)
+  cancelledByUserId  String?   @db.Uuid
+  cancellationReason String?
+
+  responsibleUser AppUser? @relation("TreasuryCollectionActionResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser   AppUser  @relation("TreasuryCollectionActionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser? @relation("TreasuryCollectionActionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser? @relation("TreasuryCollectionActionCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([titleType, officialTitleId])
+  @@index([titleType, officialExternalId])
+  @@index([actionType, performedAt])
+  @@index([nextAction])
+  @@index([responsibleUserId])
+  @@index([createdByUserId])
+  @@index([cancelledAt])
+}
+
+/// Status de contestação (histórico preservado).
+enum TreasuryDisputeStatus {
+  OPEN
+  RESOLVED
+  CANCELLED
+}
+
+/// Contestação local sobre título oficial — não zera saldo/vencimento Nomus.
+model TreasuryDispute {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  titleType          TreasuryOfficialTitleKind
+  officialTitleId    String                    @db.Uuid
+  officialExternalId Int
+
+  reason             String
+  amountDisputed     Decimal? @db.Decimal(20, 2)
+  responsibleUserId  String?  @db.Uuid
+  involvedArea       String?
+  dueDate            DateTime? @db.Date
+  notes              String?
+  status             TreasuryDisputeStatus @default(OPEN)
+  resolutionNote     String?
+
+  version Int @default(1)
+
+  openedAt           DateTime  @default(now()) @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId    String    @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId    String?   @db.Uuid
+  cancelledAt        DateTime? @db.Timestamptz(6)
+  cancelledByUserId  String?   @db.Uuid
+  resolvedAt         DateTime? @db.Timestamptz(6)
+
+  responsibleUser AppUser? @relation("TreasuryDisputeResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser   AppUser  @relation("TreasuryDisputeCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser? @relation("TreasuryDisputeUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser? @relation("TreasuryDisputeCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([titleType, officialTitleId])
+  @@index([titleType, officialExternalId])
+  @@index([status, dueDate])
   @@index([responsibleUserId])
   @@index([createdByUserId])
   @@index([cancelledAt])

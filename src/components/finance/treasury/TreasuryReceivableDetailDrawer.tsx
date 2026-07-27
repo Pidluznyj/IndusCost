@@ -27,6 +27,7 @@ import {
   OverlaySection,
 } from "@/src/components/ui/overlay";
 import { HttpError } from "@/src/lib/http.js";
+import { TreasuryReceivableOpsTimeline } from "./TreasuryReceivableOpsTimeline.js";
 import { TreasuryReceivablePromisesSection } from "./TreasuryReceivablePromisesSection.js";
 
 export type TreasuryReceivableDetailDrawerProps = {
@@ -34,6 +35,7 @@ export type TreasuryReceivableDetailDrawerProps = {
   row: TreasuryReceivableListItemDto | null;
   canManage?: boolean;
   canPromise?: boolean;
+  canCollect?: boolean;
   onClose: () => void;
   onSaved?: (row: TreasuryReceivableListItemDto) => void;
 };
@@ -67,6 +69,7 @@ export function TreasuryReceivableDetailDrawer({
   row,
   canManage = false,
   canPromise = false,
+  canCollect = false,
   onClose,
   onSaved,
 }: TreasuryReceivableDetailDrawerProps) {
@@ -438,6 +441,15 @@ export function TreasuryReceivableDetailDrawer({
               titleId={row.titleId}
               openAmount={row.openAmount}
               canPromise={canPromise}
+              onChanged={() => onSaved?.(row)}
+            />
+          </OverlaySection>
+
+          <OverlaySection title="Cobrança e contestações">
+            <TreasuryReceivableOpsTimeline
+              titleId={row.titleId}
+              canCollect={canCollect}
+              canManage={canManage}
               onChanged={() => onSaved?.(row)}
             />
           </OverlaySection>

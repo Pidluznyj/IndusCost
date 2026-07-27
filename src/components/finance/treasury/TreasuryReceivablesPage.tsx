@@ -13,6 +13,7 @@ import {
   fetchTreasuryReceivables,
 } from "@/src/lib/treasury/treasuryReceivablesApi.js";
 import {
+  canCollectTreasuryReceivables,
   canManageTreasuryReceivables,
   canPromiseTreasuryReceivables,
   canViewTreasuryReceivables,
@@ -72,6 +73,7 @@ function readFilters(params: URLSearchParams): TreasuryReceivablesFilterState {
     openAmountMax: params.get("openAmountMax") ?? "",
     plannedAccountId: params.get("plannedAccountId") ?? "",
     priority: params.get("priority") ?? "",
+    nextAction: params.get("nextAction") ?? "",
     includeCancelled: params.get("includeCancelled") === "1",
     sortBy,
     sortDirection: dir === "desc" ? "desc" : "asc",
@@ -107,6 +109,7 @@ function filtersToParams(
     ["openAmountMax", filters.openAmountMax],
     ["plannedAccountId", filters.plannedAccountId],
     ["priority", filters.priority],
+    ["nextAction", filters.nextAction],
     ["sortBy", filters.sortBy],
     ["sortDirection", filters.sortDirection],
   ];
@@ -127,6 +130,7 @@ export function TreasuryReceivablesPage() {
   const canView = canViewTreasuryReceivables(permCheck);
   const canManage = canManageTreasuryReceivables(permCheck);
   const canPromise = canPromiseTreasuryReceivables(permCheck);
+  const canCollect = canCollectTreasuryReceivables(permCheck);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
@@ -297,6 +301,7 @@ export function TreasuryReceivablesPage() {
           row={detailRow}
           canManage={canManage}
           canPromise={canPromise}
+          canCollect={canCollect}
           onClose={() => patchParams({ titleId: null })}
           onSaved={(saved) => {
             setDetailRow(saved);
