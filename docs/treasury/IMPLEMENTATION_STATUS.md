@@ -71,7 +71,7 @@
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 | **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
-| **47** | Base segura importação OFX | `DONE` | _(pending commit)_ | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; fixtures+testes |
+| **47** | Base segura importação OFX | `DONE` | _(pending commit)_ | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; `test:treasury` 468/468 |
 
     > **Nota de ordem:** …; pós-fechamento = **46**; OFX base = **47**.
 
@@ -519,7 +519,7 @@
 - [x] Temp storage exclusivo (`mkdtemp` + mode 0o700/0o600) + SHA-256 + descarte obrigatório
 - [x] Parser isolado normaliza dinheiro Decimal-string; `persisted: false` (não grava TX)
 - [x] Erros de parsing/malformado → `TreasuryDomainError` (VALIDATION_ERROR / PAYLOAD_TOO_LARGE)
-- [x] Fixtures OFX1/OFX2/malformed + testes; sem API/UI/schema neste passo
+- [x] Fixtures OFX1/OFX2/malformed + testes; sem API/UI/schema neste passo; `test:treasury` 468/468
 - [x] Sem avanço automático
 ---
 
