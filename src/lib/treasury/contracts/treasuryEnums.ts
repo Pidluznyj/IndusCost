@@ -215,6 +215,35 @@ export const TREASURY_RECEIVABLE_SORT_FIELDS = [
 export type TreasuryReceivableSortField =
   (typeof TREASURY_RECEIVABLE_SORT_FIELDS)[number];
 
+/** Status operacional derivado (oficial + complemento) na listagem de CP. */
+export const TREASURY_PAYABLE_OPERATIONAL_STATUSES = [
+  "OPEN",
+  "OVERDUE",
+  "SETTLED",
+  "PROGRAMMED",
+  "EXPECTED",
+  "ON_HOLD",
+  "CANCELLED_SOURCE",
+  "CANCELLED_LOCAL",
+] as const;
+export type TreasuryPayableOperationalStatus =
+  (typeof TREASURY_PAYABLE_OPERATIONAL_STATUSES)[number];
+
+export const TREASURY_PAYABLE_SORT_FIELDS = [
+  "dueDate",
+  "personName",
+  "openAmount",
+  "originalAmount",
+  "daysOverdue",
+  "scheduledDate",
+  "priority",
+  "lastSyncedAt",
+  "externalId",
+  "documentNumber",
+] as const;
+export type TreasuryPayableSortField =
+  (typeof TREASURY_PAYABLE_SORT_FIELDS)[number];
+
 export const TREASURY_TITLE_OPERATIONAL_PRIORITIES = [
   "LOW",
   "NORMAL",

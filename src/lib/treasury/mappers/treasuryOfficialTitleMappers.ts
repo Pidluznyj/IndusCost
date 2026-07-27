@@ -49,11 +49,15 @@ export type OfficialNomusPayableRow = {
   personCnpj: string | null;
   description: string | null;
   documentNumber: string | null;
+  classification?: string | null;
+  comments?: string | null;
   competenceDate: Date | null;
   dueDate: Date | null;
+  scheduleDate?: Date | null;
   amountPayable: OfficialTitleMoneyLike;
   balancePayable: OfficialTitleMoneyLike;
   amountPaid: OfficialTitleMoneyLike;
+  amountScheduled?: OfficialTitleMoneyLike;
   settlementDate: Date | null;
   paymentDate: Date | null;
   sourceInvoiceId: number | null;
@@ -302,6 +306,10 @@ export function toOfficialPayableView(
     },
     description: row.description,
     documentNumber: row.documentNumber,
+    classification: row.classification ?? null,
+    comments: row.comments ?? null,
+    nomusScheduleDate: toCivilDateKey(row.scheduleDate ?? null),
+    nomusScheduledAmount: moneyOrNull(row.amountScheduled ?? null),
     salesOrderExternalId: order.salesOrderExternalId,
     salesOrderCode: order.salesOrderCode,
     invoice: {

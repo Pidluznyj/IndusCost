@@ -19,6 +19,7 @@ export {
   TREASURY_MODULE_LABEL,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DISPUTES_PATH,
+  TREASURY_PAYABLES_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
   TREASURY_SCAFFOLD_VERSION,
@@ -48,6 +49,8 @@ export {
   TREASURY_PROJECTION_LAYERS,
   TREASURY_ACTIVE_PROMISE_STATUSES,
   TREASURY_PROMISE_STATUSES,
+  TREASURY_PAYABLE_OPERATIONAL_STATUSES,
+  TREASURY_PAYABLE_SORT_FIELDS,
   TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
   TREASURY_RECEIVABLE_SORT_FIELDS,
   TREASURY_RECONCILIATION_MATCH_STATUSES,
@@ -78,6 +81,8 @@ export type {
   TreasuryLedgerSortField,
   TreasuryLedgerStatus,
   TreasuryProjectionLayer,
+  TreasuryPayableOperationalStatus,
+  TreasuryPayableSortField,
   TreasuryPromiseStatus,
   TreasuryReceivableOperationalStatus,
   TreasuryReceivableSortField,
@@ -174,6 +179,7 @@ export {
   parseTreasuryPromiseMarkFulfilledInput,
   parseTreasuryPutAccountAccessInput,
   parseTreasuryReactivateAccountInput,
+  parseTreasuryPayablesListQuery,
   parseTreasuryReceivableExpectationInput,
   parseTreasuryReceivablePromiseCreateInput,
   parseTreasuryReceivablesListQuery,
@@ -191,6 +197,7 @@ export type {
   TreasuryDisputeCreateInput,
   TreasuryDisputeUpdateStatusInput,
   TreasuryManualLedgerEntryInput,
+  TreasuryPayablesListQuery,
   TreasuryPromiseCancelInput,
   TreasuryPromiseCreateInput,
   TreasuryPromiseMarkFulfilledInput,
@@ -215,6 +222,15 @@ export type {
   TreasuryReceivablesListResponse,
   TreasuryReceivablesListSummary,
 } from "./treasuryReceivableContracts.js";
+
+export type {
+  TreasuryPayableActionView,
+  TreasuryPayableComplementView,
+  TreasuryPayableDetailResponse,
+  TreasuryPayableListItemDto,
+  TreasuryPayablesListResponse,
+  TreasuryPayablesListSummary,
+} from "./treasuryPayableContracts.js";
 
 export {
   TREASURY_AUDIT_ACTIONS,

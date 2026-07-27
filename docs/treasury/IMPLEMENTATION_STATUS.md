@@ -43,8 +43,9 @@
 | **16** | Promessas de pagamento CR | `DONE` | `0b7907f` | Model/migration `TreasuryPaymentPromise`; repo/service/APIs; parcial + acima do saldo c/ confirmação; expiração; cumprimento parcial; cancelamento; audit; projeção PROBABLE; UI no drawer; `test:treasury` 143/143 |
 | **17** | Ações de cobrança + contestações CR | `DONE` | `8109a2f` | Models/migration `TreasuryCollectionAction` + `TreasuryDispute`; APIs append-only (cancel/status lógico); timeline no drawer; filtro `nextAction`; audit; sem DELETE; `test:treasury` 154/154 |
 | **18** | Visão financeira resumida do cliente (CR) | `DONE` | `5eaba13` | `GET …/receivables/:titleId/customer-summary`; totais aberto/vencido/a vencer; atrasos; promessas; índice cumprimento; recebimentos; histórico cobrança; vendedor≠comercial≠cobrança; batch queries; UI drawer; `test:treasury` 159/159 |
+| **19** | API consulta Contas a Pagar (oficial + complemento) | `DONE` | _(pending)_ | `GET /api/finance/treasury/payables` + `/:titleId`; filtros fornecedor/CNPJ/doc/categoria/CC/venc./programada/status/valor/conta/prioridade/responsável; batch complemento+CC; `test:treasury` 165/165 |
 
-> **Nota de ordem:** …; expectativa CR = **15**; promessas CR = **16**; cobrança/contestação CR = **17**; resumo cliente CR = **18**.
+> **Nota de ordem:** …; resumo cliente CR = **18**; consulta CP = **19**.
 
 ---
 
@@ -56,7 +57,7 @@
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
-| Contas a pagar (títulos) | `REUSE` | Model `NomusAccountsPayable`; adapter Tesouraria `OfficialPayableView` (P11); APIs `/api/finance/accounts-payable/*` |
+| Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 (`/api/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
 | Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; não altera `dueDate`; histórico preservado; expiração automática |

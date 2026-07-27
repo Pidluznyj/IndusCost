@@ -10,6 +10,7 @@ import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityC
 import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
 import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
 import { createTreasuryReceivableControllers } from "./controllers/treasuryReceivableController.js";
+import { createTreasuryPayableControllers } from "./controllers/treasuryPayableController.js";
 import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryPaymentPromiseController.js";
 import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
@@ -18,15 +19,19 @@ import {
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DISPUTES_PATH,
+  TREASURY_PAYABLES_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
 } from "./contracts/treasuryContracts.js";
+import {
+  FINANCE_AP_RESOURCE_KEY_REF,
+  FINANCE_MODULE_RESOURCE_KEYS,
+} from "@/src/lib/financeModulesAccess.js";
 import {
   TREASURY_ACTIONS,
   TREASURY_RESOURCE_KEY,
   TREASURY_RESOURCE_KEYS,
 } from "./treasuryAccess.js";
-import { FINANCE_MODULE_RESOURCE_KEYS } from "@/src/lib/financeModulesAccess.js";
 import { requireTreasuryModuleEnabled } from "./treasuryFeatureFlags.js";
 
 export type TreasuryAuthGuards = {
@@ -48,6 +53,7 @@ export function registerTreasuryRoutes(
   const accounts = createTreasuryAccountControllers({ getCurrentAppUser });
   const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
   const receivables = createTreasuryReceivableControllers({ getCurrentAppUser });
+  const payables = createTreasuryPayableControllers({ getCurrentAppUser });
   const promises = createTreasuryPaymentPromiseControllers({ getCurrentAppUser });
   const collectionActions = createTreasuryCollectionActionControllers({
     getCurrentAppUser,
@@ -84,6 +90,14 @@ export function registerTreasuryRoutes(
   );
   const viewOfficialReceivables = requireResource(
     FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+    TREASURY_ACTIONS.view
+  );
+  const viewPayables = requireResource(
+    TREASURY_RESOURCE_KEYS.payables,
+    TREASURY_ACTIONS.view
+  );
+  const viewOfficialPayables = requireResource(
+    FINANCE_AP_RESOURCE_KEY_REF,
     TREASURY_ACTIONS.view
   );
   const moduleEnabled = requireTreasuryModuleEnabled();
@@ -209,6 +223,24 @@ export function registerTreasuryRoutes(
     viewReceivables,
     viewOfficialReceivables,
     receivables.getCustomerSummary
+  );
+
+  app.get(
+    TREASURY_PAYABLES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewPayables,
+    viewOfficialPayables,
+    payables.listPayables
+  );
+
+  app.get(
+    `${TREASURY_PAYABLES_PATH}/:titleId`,
+    requireAppAuth,
+    moduleEnabled,
+    viewPayables,
+    viewOfficialPayables,
+    payables.getPayable
   );
 
   app.put(

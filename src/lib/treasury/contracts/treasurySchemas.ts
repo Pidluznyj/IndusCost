@@ -25,6 +25,8 @@ import {
   TREASURY_DISPUTE_STATUSES,
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
+  TREASURY_PAYABLE_OPERATIONAL_STATUSES,
+  TREASURY_PAYABLE_SORT_FIELDS,
   TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
   TREASURY_RECEIVABLE_SORT_FIELDS,
   TREASURY_SIDES,
@@ -40,6 +42,8 @@ import {
   type TreasuryDisputeStatus,
   type TreasuryLedgerDirection,
   type TreasuryLedgerNature,
+  type TreasuryPayableOperationalStatus,
+  type TreasuryPayableSortField,
   type TreasuryReceivableOperationalStatus,
   type TreasuryReceivableSortField,
   type TreasurySide,
@@ -1058,6 +1062,128 @@ export function parseTreasuryReceivablesListQuery(
       { required: false }
     ),
     includeCancelled: parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
+  };
+}
+
+export type TreasuryPayablesListQuery = TreasuryPaginationInput &
+  TreasurySortInput<TreasuryPayableSortField> & {
+    supplierName: string | null;
+    supplierTaxId: string | null;
+    document: string | null;
+    classification: string | null;
+    costCenter: string | null;
+    costCenterId: string | null;
+    dueFrom: string | null;
+    dueTo: string | null;
+    scheduledFrom: string | null;
+    scheduledTo: string | null;
+    operationalStatus: TreasuryPayableOperationalStatus | null;
+    complementStatus: TreasuryTitleOperationalStatusCode | null;
+    openAmountMin: string | null;
+    openAmountMax: string | null;
+    plannedAccountId: string | null;
+    priority: TreasuryTitleOperationalPriority | null;
+    responsibleUserId: string | null;
+    includeCancelled: boolean;
+  };
+
+export function parseTreasuryPayablesListQuery(
+  query: Record<string, unknown>
+): TreasuryPayablesListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const sort = parseTreasuryAuthorizedSort({
+    sortBy: query.sortBy,
+    sortDirection: query.sortDirection,
+    allowed: TREASURY_PAYABLE_SORT_FIELDS,
+    defaultSortBy: "dueDate",
+    defaultSortDirection: "asc",
+  });
+  const dueRange = parseTreasuryDateRangeFilter({
+    from: query.dueFrom ?? query.from,
+    to: query.dueTo ?? query.to,
+  });
+
+  return {
+    ...pagination,
+    ...sort,
+    supplierName: parseTreasuryBoundedString(
+      query.supplierName ?? query.fornecedor ?? query.customerName,
+      "supplierName",
+      { required: false }
+    ),
+    supplierTaxId: parseTreasuryBoundedString(
+      query.supplierTaxId ?? query.taxId ?? query.cnpj ?? query.cpf,
+      "supplierTaxId",
+      { required: false }
+    ),
+    document: parseTreasuryBoundedString(
+      query.document ?? query.documento,
+      "document",
+      { required: false }
+    ),
+    classification: parseTreasuryBoundedString(
+      query.classification ?? query.categoria ?? query.category,
+      "classification",
+      { required: false }
+    ),
+    costCenter: parseTreasuryBoundedString(
+      query.costCenter ?? query.centroCusto,
+      "costCenter",
+      { required: false }
+    ),
+    costCenterId: parseTreasuryBoundedString(
+      query.costCenterId,
+      "costCenterId",
+      { required: false }
+    ),
+    dueFrom: dueRange.from,
+    dueTo: dueRange.to,
+    scheduledFrom: parseOptionalTreasuryCivilDate(
+      query.scheduledFrom ?? query.dataProgramadaFrom,
+      "scheduledFrom"
+    ),
+    scheduledTo: parseOptionalTreasuryCivilDate(
+      query.scheduledTo ?? query.dataProgramadaTo,
+      "scheduledTo"
+    ),
+    operationalStatus: parseTreasuryEnum(
+      query.operationalStatus ?? query.status,
+      TREASURY_PAYABLE_OPERATIONAL_STATUSES,
+      "operationalStatus",
+      false
+    ),
+    complementStatus: parseTreasuryEnum(
+      query.complementStatus,
+      TREASURY_TITLE_OPERATIONAL_STATUSES,
+      "complementStatus",
+      false
+    ),
+    openAmountMin: parseOptionalTreasuryMoneyString(
+      query.openAmountMin ?? query.valorMin,
+      "openAmountMin"
+    ),
+    openAmountMax: parseOptionalTreasuryMoneyString(
+      query.openAmountMax ?? query.valorMax,
+      "openAmountMax"
+    ),
+    plannedAccountId: parseTreasuryBoundedString(
+      query.plannedAccountId ?? query.accountId ?? query.conta,
+      "plannedAccountId",
+      { required: false }
+    ),
+    priority: parseTreasuryEnum(
+      query.priority ?? query.prioridade,
+      TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+      "priority",
+      false
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      query.responsibleUserId ?? query.responsavel,
+      "responsibleUserId",
+      { required: false }
+    ),
+    includeCancelled:
+      parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
   };
 }
 

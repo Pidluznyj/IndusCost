@@ -95,6 +95,14 @@ export type OfficialPayableView = {
   counterparty: OfficialCounterpartyView;
   description: string | null;
   documentNumber: string | null;
+  /** Classificação/categoria tipada Nomus (`classification`). */
+  classification: string | null;
+  /** Observações oficiais Nomus (`comments`). */
+  comments: string | null;
+  /** Data de agendamento Nomus (`scheduleDate`) — distinta da programação local. */
+  nomusScheduleDate: TreasuryCivilDate | null;
+  /** Valor agendado Nomus (`amountScheduled`). */
+  nomusScheduledAmount: TreasuryMoneyString | null;
   salesOrderExternalId: number | null;
   salesOrderCode: string | null;
   invoice: OfficialInvoiceRefView;

@@ -18,6 +18,9 @@ export const TREASURY_ACCOUNTS_PATH =
 export const TREASURY_RECEIVABLES_PATH =
   `${TREASURY_API_PREFIX}/receivables` as const;
 
+export const TREASURY_PAYABLES_PATH =
+  `${TREASURY_API_PREFIX}/payables` as const;
+
 export const TREASURY_PROMISES_PATH =
   `${TREASURY_API_PREFIX}/promises` as const;
 
