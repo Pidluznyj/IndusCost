@@ -10,8 +10,8 @@ import { AccessDenied } from "@/src/components/AccessDenied";
 
 /**
  * Consulta de preços comerciais publicados (Formação de Preço),
- * com filtros no estilo da listagem de Pedidos de Venda.
- * Somente leitura — sem geração/publicação.
+ * com filtros e grid no estilo da listagem de Pedidos de Venda.
+ * Somente leitura — sem geração/publicação, sem info tributária.
  */
 export function CommercialPriceTableModule() {
   const auth = useAuth();
@@ -19,7 +19,6 @@ export function CommercialPriceTableModule() {
 
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
-  const [taxRuleId, setTaxRuleId] = useState("");
   const [sortBy, setSortBy] = useState<PricingSortKey>("NAME_ASC");
   const [page, setPage] = useState(1);
 
@@ -40,24 +39,13 @@ export function CommercialPriceTableModule() {
     message: publishedMessage,
   } = useCommercialPublishedPrices({
     search,
-    taxRuleId,
+    taxRuleId: "",
     marginBand: "ALL",
     commissionBand: "ALL",
     sortBy,
     page,
     pageSize: 50,
   });
-
-  const taxRuleOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const table of tables) {
-      if (!table.taxRuleId) continue;
-      map.set(table.taxRuleId, table.taxRuleName || "Regra fiscal");
-    }
-    return [...map.entries()]
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [tables]);
 
   const emptyMessage = useMemo(
     () =>
@@ -85,12 +73,12 @@ export function CommercialPriceTableModule() {
               message: publishedMessage,
             },
         rows.length,
-        Boolean(search || taxRuleId)
+        Boolean(search)
       ),
-    [pagination, publishedMessage, rows, search, tables, taxRuleId]
+    [pagination, publishedMessage, rows, search, tables]
   );
 
-  const hasActiveFilters = Boolean(searchDraft.trim() || taxRuleId || sortBy !== "NAME_ASC");
+  const hasActiveFilters = Boolean(searchDraft.trim() || sortBy !== "NAME_ASC");
 
   if (!canView) {
     return <AccessDenied moduleId="commercial-price-table" />;
@@ -103,9 +91,9 @@ export function CommercialPriceTableModule() {
         data-testid="commercial-price-table-filter-bar"
       >
         <div className="grid grid-cols-12 gap-3 items-end">
-          <div className="col-span-12 lg:col-span-5 relative">
+          <div className="col-span-12 lg:col-span-7 relative">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Produto / descrição
+              Produto / SKU
             </label>
             <div className="relative mt-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -113,7 +101,7 @@ export function CommercialPriceTableModule() {
                 type="search"
                 value={searchDraft}
                 onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="Buscar por produto, SKU ou descrição..."
+                placeholder="Buscar por produto ou SKU..."
                 className="w-full pl-9 pr-3 py-2.5 rounded-xl bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
                 data-testid="commercial-price-table-search"
               />
@@ -121,28 +109,6 @@ export function CommercialPriceTableModule() {
           </div>
 
           <div className="col-span-12 sm:col-span-6 lg:col-span-3">
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Regra fiscal
-            </label>
-            <select
-              className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none"
-              value={taxRuleId}
-              onChange={(e) => {
-                setTaxRuleId(e.target.value);
-                setPage(1);
-              }}
-              data-testid="commercial-price-table-tax-rule"
-            >
-              <option value="">Todas as regras fiscais</option>
-              {taxRuleOptions.map((rule) => (
-                <option key={rule.id} value={rule.id}>
-                  {rule.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="col-span-12 sm:col-span-6 lg:col-span-2">
             <label className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Ordenação
             </label>
@@ -153,22 +119,20 @@ export function CommercialPriceTableModule() {
                 setSortBy(e.target.value as PricingSortKey);
                 setPage(1);
               }}
+              data-testid="commercial-price-table-sort"
             >
               <option value="NAME_ASC">Nome</option>
               <option value="SKU_ASC">SKU</option>
-              <option value="MARGIN_DESC">Maior margem</option>
-              <option value="MARGIN_ASC">Menor margem</option>
             </select>
           </div>
 
-          <div className="col-span-12 lg:col-span-2 flex lg:justify-end">
+          <div className="col-span-12 sm:col-span-6 lg:col-span-2 flex lg:justify-end">
             <button
               type="button"
               disabled={!hasActiveFilters}
               onClick={() => {
                 setSearchDraft("");
                 setSearch("");
-                setTaxRuleId("");
                 setSortBy("NAME_ASC");
                 setPage(1);
               }}
@@ -181,12 +145,11 @@ export function CommercialPriceTableModule() {
 
         <p className="mt-3 text-xs text-muted-foreground">
           Exibindo <span className="font-bold text-foreground">{rows.length}</span> de{" "}
-          <span className="font-bold text-foreground">{pagination.total}</span> produto(s) com preço
-          publicado
+          <span className="font-bold text-foreground">{pagination.total}</span> produto(s)
           {tables.length > 0 ? (
             <>
               {" "}
-              · <span className="font-bold text-foreground">{tables.length}</span> tabela(s) vigente(s)
+              · <span className="font-bold text-foreground">{tables.length}</span> tabela(s) de preço
             </>
           ) : null}
           .
@@ -200,6 +163,7 @@ export function CommercialPriceTableModule() {
       ) : null}
 
       <CommercialPublishedPricesGrid
+        variant="consult"
         tables={tables}
         rows={rows}
         loading={loading}

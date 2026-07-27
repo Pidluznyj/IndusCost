@@ -10,6 +10,10 @@ import {
   formatPublishedRowStatus,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 import { isPublishedPriceCellClickable } from "@/src/lib/pricing/publishedPriceFormationView";
+import "@/src/components/sales/sales-order-list-table.css";
+import "@/src/components/commercial/commercial-price-table-grid.css";
+
+export type CommercialPublishedPricesGridVariant = "formation" | "consult";
 
 type CommercialPublishedPricesGridProps = {
   tables: CommercialPublishedPriceGridTable[];
@@ -17,6 +21,8 @@ type CommercialPublishedPricesGridProps = {
   loading: boolean;
   emptyMessage: string | null;
   openingRowId?: string | null;
+  /** formation = Formação de Preço; consult = Tabela comercial (vendedor). */
+  variant?: CommercialPublishedPricesGridVariant;
   onRowClick: (row: CommercialPublishedPriceGridRow) => void;
   onPriceCellClick: (row: CommercialPublishedPriceGridRow, tableId: string) => void;
 };
@@ -31,21 +37,94 @@ export function CommercialPublishedPricesGrid({
   loading,
   emptyMessage,
   openingRowId,
+  variant = "formation",
   onRowClick,
   onPriceCellClick,
 }: CommercialPublishedPricesGridProps) {
-  const columnCount = 3 + tables.length + 2;
+  const isConsult = variant === "consult";
+  const columnCount = isConsult ? 2 + tables.length : 3 + tables.length + 2;
 
   if (loading) {
     return (
-      <div className="bg-card rounded-2xl border border-border p-12 text-center">
+      <div
+        className={cn(
+          isConsult
+            ? "sales-order-list-section commercial-price-table-grid p-12 text-center"
+            : "bg-card rounded-2xl border border-border p-12 text-center"
+        )}
+      >
         <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
       </div>
     );
   }
 
+  if (isConsult) {
+    return (
+      <div
+        className="sales-order-list-section commercial-price-table-grid overflow-hidden"
+        data-testid="commercial-price-table-grid"
+        data-variant="consult"
+      >
+        <div className="sales-order-list-grid-title">Tabela comercial</div>
+        <div className="sales-order-list-table-wrap">
+          <table className="sales-order-list-table" style={{ minWidth: tables.length > 2 ? 960 : 640 }}>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Produto</th>
+                {tables.map((table) => (
+                  <th key={table.tableId} className="cpt-price-cell" title={table.tableCode}>
+                    {table.tableName}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {emptyMessage ? (
+                <tr>
+                  <td colSpan={columnCount} className="p-12 text-center text-muted-foreground">
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.productId}>
+                    <td className="cpt-sku">{row.sku}</td>
+                    <td>
+                      <p className="cpt-product-name so-cell-ellipsis">{row.productName}</p>
+                    </td>
+                    {tables.map((table) => {
+                      const price = resolvePriceForTable(row, table.tableId);
+                      const hasPrice =
+                        price != null &&
+                        typeof price.salePrice === "number" &&
+                        Number.isFinite(price.salePrice);
+                      return (
+                        <td key={`${row.productId}-${table.tableId}`} className="cpt-price-cell">
+                          {hasPrice ? (
+                            <span className="cpt-price-value">{formatCurrency(price.salePrice, 2)}</span>
+                          ) : (
+                            <span className="cpt-price-empty">Sem preço</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+    <div
+      className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"
+      data-testid="commercial-price-table-grid"
+      data-variant="formation"
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-muted">

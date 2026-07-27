@@ -123,4 +123,28 @@ describe("commercial price table page", () => {
     assert.doesNotMatch(mod, /generate-draft|Simular preço|Nova Premissa/);
     assert.doesNotMatch(mod, /publish_tables|generate_tables/);
   });
+
+  it("consulta do vendedor remove tributos/status e usa layout de Pedidos", () => {
+    const mod = read("src/components/commercial/CommercialPriceTableModule.tsx");
+    const grid = read("src/components/pricing/CommercialPublishedPricesGrid.tsx");
+    assert.match(mod, /variant="consult"/);
+    assert.doesNotMatch(mod, /commercial-price-table-tax-rule/);
+    assert.doesNotMatch(mod, /Regra fiscal/);
+    assert.doesNotMatch(mod, /MARGIN_DESC/);
+    assert.match(grid, /variant === "consult"|isConsult/);
+    assert.match(grid, /sales-order-list-table/);
+    assert.match(grid, /data-variant="consult"/);
+    assert.match(grid, /Info Tributária/);
+    // Colunas fiscais/status só na variante formation (Formação de Preço).
+    const consultStart = grid.indexOf('data-variant="consult"');
+    const formationStart = grid.indexOf('data-variant="formation"');
+    assert.ok(consultStart > 0 && formationStart > consultStart);
+    const consultBlock = grid.slice(consultStart, formationStart);
+    assert.doesNotMatch(consultBlock, /Info Tributária/);
+    assert.doesNotMatch(consultBlock, />Status</);
+    assert.doesNotMatch(consultBlock, /Última publicação/);
+    assert.match(consultBlock, />SKU</);
+    assert.match(consultBlock, />Produto</);
+    assert.match(consultBlock, /table\.tableName/);
+  });
 });

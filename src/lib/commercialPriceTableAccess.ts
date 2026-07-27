@@ -13,7 +13,7 @@ export const COMMERCIAL_PRICE_TABLE_VIEW_PERMISSIONS = [
 export const COMMERCIAL_PRICE_TABLE_ROUTE_PATH = "/commercial/price-table";
 export const COMMERCIAL_PRICE_TABLE_PAGE_TITLE = "Tabela comercial";
 export const COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE =
-  "Consulta os preços comerciais publicados vigentes por produto.";
+  "Preços de venda publicados por produto e tabela comercial.";
 
 export function canViewCommercialPriceTable(check: {
   hasPermission: (permission: string) => boolean;

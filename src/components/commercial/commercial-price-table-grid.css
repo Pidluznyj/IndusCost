@@ -1,0 +1,33 @@
+/* Visual alinhado ao grid de Pedidos de venda (consulta do vendedor). */
+.commercial-price-table-grid .cpt-price-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.commercial-price-table-grid .cpt-price-value {
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.commercial-price-table-grid .cpt-price-empty {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.commercial-price-table-grid .cpt-product-name {
+  font-weight: 600;
+  color: #111827;
+  max-width: 22rem;
+}
+
+.commercial-price-table-grid .cpt-sku {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.commercial-price-table-grid tbody tr {
+  cursor: default;
+}
