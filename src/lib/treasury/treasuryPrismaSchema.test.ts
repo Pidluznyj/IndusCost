@@ -166,4 +166,37 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
     assert.doesNotMatch(sql, /ALTER TABLE "AppUser"/);
   });
+
+  it("schema e migration da fila de recálculo de projeção existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryProjectionRecalcJob \{/);
+    assert.match(schema, /enum TreasuryProjectionRecalcJobStatus/);
+    assert.match(schema, /enum TreasuryProjectionRecalcEventType/);
+    assert.match(schema, /deduplicationKey\s+String/);
+    assert.match(schema, /availableAt\s+DateTime/);
+    assert.match(schema, /lockedAt\s+DateTime\?/);
+    assert.match(schema, /lockedBy\s+String\?/);
+    assert.match(schema, /lockToken\s+String\?/);
+    assert.match(schema, /attempts\s+Int/);
+    assert.match(schema, /maxAttempts\s+Int/);
+    assert.match(schema, /lastErrorCode\s+String\?/);
+    assert.match(schema, /lastErrorMessage\s+String\?/);
+    assert.match(schema, /completedAt\s+DateTime\?/);
+    assert.match(schema, /\bAR_SYNC\b/);
+    assert.match(schema, /\bREOPENING\b/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260811120000_treasury_projection_recalc_queue/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryProjectionRecalcJob"/);
+    assert.match(sql, /TreasuryProjectionRecalcJob_active_dedupe_uidx/);
+    assert.match(sql, /FOR UPDATE SKIP LOCKED|availableAt/);
+    assert.match(sql, /'SETTLEMENT'/);
+    assert.match(sql, /'PROGRAMMING'/);
+    assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+    assert.match(sql, /Sem broker externo no MVP/);
+  });
 });

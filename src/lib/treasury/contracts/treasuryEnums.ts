@@ -150,6 +150,36 @@ export const TREASURY_PROJECTION_RUN_STATUSES = [
 export type TreasuryProjectionRunStatus =
   (typeof TREASURY_PROJECTION_RUN_STATUSES)[number];
 
+export const TREASURY_PROJECTION_RECALC_JOB_STATUSES = [
+  "PENDING",
+  "LOCKED",
+  "PROCESSING",
+  "SUCCEEDED",
+  "FAILED",
+  "DEAD",
+] as const;
+export type TreasuryProjectionRecalcJobStatus =
+  (typeof TREASURY_PROJECTION_RECALC_JOB_STATUSES)[number];
+
+export const TREASURY_PROJECTION_RECALC_EVENT_TYPES = [
+  "AR_SYNC",
+  "AP_SYNC",
+  "SETTLEMENT",
+  "CANCELLATION",
+  "EXPECTATION",
+  "PROMISE",
+  "PROGRAMMING",
+  "LEDGER_ENTRY",
+  "TRANSFER",
+  "BALANCE",
+  "RECONCILIATION",
+  "REVERSAL",
+  "CLOSING",
+  "REOPENING",
+] as const;
+export type TreasuryProjectionRecalcEventType =
+  (typeof TREASURY_PROJECTION_RECALC_EVENT_TYPES)[number];
+
 export const TREASURY_PROJECTION_RISK_CODES = [
   "NONE",
   "LOW",
