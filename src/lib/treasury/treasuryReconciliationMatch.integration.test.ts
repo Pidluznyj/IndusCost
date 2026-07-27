@@ -52,13 +52,18 @@ const actor: TreasuryReconciliationMatchActor = {
   isSuperAdmin: false,
   canViewReconciliation: true,
   canManageReconciliation: true,
+  canReverseReconciliation: true,
   canViewAccounts: true,
   canManageAccounts: true,
   sessionId: "sess-r",
   requestId: "req-r-1",
 };
 
-async function createHarness() {
+async function createHarness(options?: {
+  notifyPostClosing?: Parameters<
+    typeof createTreasuryReconciliationMatchService
+  >[0]["notifyPostClosing"];
+}) {
   const accountStore = createEmptyTreasuryAccountMemoryStore();
   const accountRepo = createMemoryTreasuryAccountRepository(accountStore);
   await accountRepo.create(accountRow("tmp", "CXA"));
@@ -113,6 +118,9 @@ async function createHarness() {
     accountRepository: accountRepo,
     matchRepository: createMemoryTreasuryReconciliationMatchRepository(matchStore),
     runTransaction: async (fn) => fn(fakeTx),
+    notifyPostClosing:
+      options?.notifyPostClosing ??
+      (async () => ({ raised: false, reason: "DAY_NOT_CLOSED" })),
   });
 
   return { service, audits, matchStore };
@@ -553,6 +561,102 @@ describe("treasuryReconciliationMatch — integração", () => {
         }),
       (err: unknown) =>
         err instanceof TreasuryDomainError && err.code === "FORBIDDEN"
+    );
+  });
+
+  it("reverse: permissão específica, soft-delete, REVERSE audit, recalc e pós-fechamento", async () => {
+    const postClosingCalls: unknown[] = [];
+    const { service, audits, matchStore } = await createHarness({
+      notifyPostClosing: async (event) => {
+        postClosingCalls.push(event);
+        return {
+          raised: true,
+          created: true,
+          recurrenceIncremented: false,
+          exception: { id: "exc-1" } as never,
+          differenceAmount: "1000.00",
+          changeId: "chg-1",
+          closingId: "close-1",
+        };
+      },
+    });
+
+    const accepted = await service.accept(actor, {
+      companyCode: "EMP1",
+      accountId: "acc-1",
+      matchedCivilDate: "2026-07-20",
+      justification: null,
+      movements: [{ bankMovementId: "mov-1", amount: "1000.00" }],
+      allocations: [
+        {
+          kind: "TITLE",
+          amount: "1000.00",
+          memo: null,
+          nomusSide: "AR",
+          officialTitleId: "t1",
+          nomusExternalId: 1,
+          openBalance: "1000.00",
+          transferId: null,
+          transferGroupId: null,
+          ledgerEntryId: null,
+          differenceCode: null,
+        },
+      ],
+      suggestionKey: null,
+      algorithmVersion: null,
+      suggestionScore: null,
+      suggestionConfidence: null,
+      suggestionReasons: null,
+    });
+
+    const denied: TreasuryReconciliationMatchActor = {
+      ...actor,
+      canReverseReconciliation: false,
+      canManageReconciliation: false,
+      isSuperAdmin: false,
+    };
+    await assert.rejects(
+      () =>
+        service.reverse(denied, accepted.match.id, {
+          expectedVersion: 1,
+          reason: "erro",
+          confirmPhrase: "REVERTER",
+        }),
+      (err: unknown) =>
+        err instanceof TreasuryDomainError && err.code === "FORBIDDEN"
+    );
+
+    await assert.rejects(
+      () =>
+        service.reverse(actor, accepted.match.id, {
+          expectedVersion: 1,
+          reason: "erro",
+          confirmPhrase: "reverter",
+        }),
+      TreasuryDomainError
+    );
+
+    const reversed = await service.reverse(actor, accepted.match.id, {
+      expectedVersion: 1,
+      reason: "Conciliação incorreta após fechamento",
+      confirmPhrase: "REVERTER",
+    });
+
+    assert.equal(reversed.match.status, "UNMATCHED");
+    assert.equal(reversed.match.isReversed, true);
+    assert.equal(matchStore.matches[0]!.allocations.length, 1);
+    assert.equal(matchStore.movements[0]!.reconciliationStatus, "PENDING");
+    assert.equal(matchStore.movements[0]!.reconciledAmount, "0.00");
+    assert.equal(audits[1]?.action, "REVERSE");
+    assert.equal(reversed.postClosing?.raised, true);
+    assert.equal(
+      (postClosingCalls[0] as { changeKind: string }).changeKind,
+      "RECONCILIATION_CHANGE"
+    );
+    assert.ok(
+      listTreasuryProjectionRecalcRequests().some(
+        (r) => r.reason === "reconciliation_reversed"
+      )
     );
   });
 });

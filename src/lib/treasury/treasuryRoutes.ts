@@ -26,6 +26,7 @@ import { createTreasuryDailyClosingControllers } from "./controllers/treasuryDai
 import { createTreasuryBankImportOfxPreviewControllers } from "./controllers/treasuryBankImportOfxPreviewController.js";
 import { createTreasuryBankImportOfxApplyControllers } from "./controllers/treasuryBankImportOfxApplyController.js";
 import { createTreasuryBankMovementQueryControllers } from "./controllers/treasuryBankMovementQueryController.js";
+import { createTreasuryReconciliationMatchControllers } from "./controllers/treasuryReconciliationMatchController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -45,6 +46,7 @@ import {
   TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  TREASURY_RECONCILIATIONS_PATH,
   TREASURY_TRANSFERS_PATH,
 } from "./contracts/treasuryContracts.js";
 import { TREASURY_OFX_MAX_FILE_BYTES } from "./ofx/treasuryOfxConstants.js";
@@ -110,6 +112,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const bankMovements = createTreasuryBankMovementQueryControllers({
+    getCurrentAppUser,
+  });
+  const reconciliations = createTreasuryReconciliationMatchControllers({
     getCurrentAppUser,
   });
   const ofxUpload = multer({
@@ -224,6 +229,10 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEYS.reconciliation,
     TREASURY_ACTIONS.manage
   );
+  const reverseReconciliation = requireResource(
+    TREASURY_RESOURCE_KEYS.reconciliationReverse,
+    TREASURY_ACTIONS.execute
+  );
   const reconciliationEnabled = requireTreasuryFeatureFlag(
     "treasury.reconciliation.enabled"
   );
@@ -297,6 +306,33 @@ export function registerTreasuryRoutes(
     reconciliationEnabled,
     viewReconciliation,
     bankMovements.getMovement
+  );
+
+  app.get(
+    TREASURY_RECONCILIATIONS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    reconciliations.listByBankMovement
+  );
+
+  app.get(
+    `${TREASURY_RECONCILIATIONS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    reconciliations.getById
+  );
+
+  app.post(
+    `${TREASURY_RECONCILIATIONS_PATH}/:id/reverse`,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    reverseReconciliation,
+    reconciliations.reverse
   );
 
   app.get(

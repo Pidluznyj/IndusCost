@@ -12,6 +12,7 @@ import type {
   TreasuryBankImportBatchDto,
   TreasuryBankMovementDto,
   TreasuryFinancialAccountDto,
+  TreasuryReconciliationMatchDto,
 } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js";
 import {
@@ -20,7 +21,12 @@ import {
   type TreasuryOfxApplyResponse,
 } from "@/src/lib/treasury/treasuryBankImportOfxApi.js";
 import {
+  fetchTreasuryActiveReconciliationsByMovement,
+  reverseTreasuryReconciliation,
+} from "@/src/lib/treasury/treasuryReconciliationApi.js";
+import {
   canManageTreasuryReconciliation,
+  canReverseTreasuryReconciliation,
   canViewTreasuryReconciliation,
 } from "@/src/lib/treasury/treasuryReconciliationPermissions.js";
 import {
@@ -35,6 +41,7 @@ import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDa
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { TreasuryBankMovementsPanel } from "./TreasuryBankMovementsPanel.js";
 import { TreasuryOfxImportDialog } from "./TreasuryOfxImportDialog.js";
+import { TreasuryReconciliationReverseConfirmDialog } from "./TreasuryReconciliationReverseConfirmDialog.js";
 
 function readFilters(params: URLSearchParams): TreasuryBankMovementsFilterState {
   const base = createEmptyTreasuryBankMovementsFilters();
@@ -76,6 +83,7 @@ export function TreasuryBankMovementsPage() {
   };
   const canView = canViewTreasuryReconciliation(permCheck);
   const canManage = canManageTreasuryReconciliation(permCheck);
+  const canReverse = canReverseTreasuryReconciliation(permCheck);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
@@ -86,6 +94,13 @@ export function TreasuryBankMovementsPage() {
   const [selected, setSelected] = useState<TreasuryBankMovementDto | null>(
     null
   );
+  const [activeMatches, setActiveMatches] = useState<
+    TreasuryReconciliationMatchDto[]
+  >([]);
+  const [reverseTarget, setReverseTarget] =
+    useState<TreasuryReconciliationMatchDto | null>(null);
+  const [reverseBusy, setReverseBusy] = useState(false);
+  const [reverseError, setReverseError] = useState<string | null>(null);
   const [duplicatesMessage, setDuplicatesMessage] = useState<string | null>(
     null
   );
@@ -147,6 +162,24 @@ export function TreasuryBankMovementsPage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!selected) {
+      setActiveMatches([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchTreasuryActiveReconciliationsByMovement(selected.id)
+      .then((items) => {
+        if (!cancelled) setActiveMatches(items);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveMatches([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selected]);
+
   const viewKind = resolveTreasuryBankMovementsViewKind({
     canView,
     loading,
@@ -166,6 +199,39 @@ export function TreasuryBankMovementsPage() {
         : `Importação OK — criados ${result.created.count}, ignorados ${result.ignored.count}, inválidos ${result.invalid.count}.`
     );
     void load();
+  }
+
+  async function handleReverseConfirm(input: {
+    reason: string;
+    confirmPhrase: string;
+  }) {
+    if (!reverseTarget) return;
+    setReverseBusy(true);
+    setReverseError(null);
+    try {
+      const result = await reverseTreasuryReconciliation({
+        matchId: reverseTarget.id,
+        expectedVersion: reverseTarget.version,
+        reason: input.reason,
+        confirmPhrase: input.confirmPhrase,
+      });
+      const closed =
+        result.postClosing &&
+        typeof result.postClosing === "object" &&
+        (result.postClosing as { raised?: boolean }).raised
+          ? " Exceção pós-fechamento registrada."
+          : "";
+      setFlash(`Conciliação revertida.${closed}`);
+      setReverseTarget(null);
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setReverseError(
+        err instanceof Error ? err.message : "Falha ao reverter conciliação."
+      );
+    } finally {
+      setReverseBusy(false);
+    }
   }
 
   return (
@@ -212,7 +278,9 @@ export function TreasuryBankMovementsPage() {
             batches={batches}
             movements={movements}
             selected={selected}
+            activeMatches={activeMatches}
             canManage={canManage}
+            canReverse={canReverse}
             duplicatesMessage={duplicatesMessage}
             onFiltersChange={updateFilters}
             onImport={() => setImportOpen(true)}
@@ -221,6 +289,10 @@ export function TreasuryBankMovementsPage() {
             onSelectBatch={(batchId) =>
               updateFilters({ ...filters, batchId })
             }
+            onReverseMatch={(match) => {
+              setReverseError(null);
+              setReverseTarget(match);
+            }}
           />
         ) : null}
 
@@ -232,6 +304,19 @@ export function TreasuryBankMovementsPage() {
             onApplied={handleApplied}
           />
         ) : null}
+
+        <TreasuryReconciliationReverseConfirmDialog
+          open={Boolean(reverseTarget)}
+          match={reverseTarget}
+          busy={reverseBusy}
+          error={reverseError}
+          onCancel={() => {
+            if (reverseBusy) return;
+            setReverseTarget(null);
+            setReverseError(null);
+          }}
+          onConfirm={(input) => void handleReverseConfirm(input)}
+        />
       </div>
     </FinanceBiDashboardShell>
   );

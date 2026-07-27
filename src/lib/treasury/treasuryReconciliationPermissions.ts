@@ -50,3 +50,15 @@ export function canManageTreasuryReconciliation(
     has(auth, "finance.treasury.reconciliation.manage")
   );
 }
+
+const RECONCILIATION_REVERSE =
+  FINANCE_MODULE_RESOURCE_KEYS.treasuryReconciliationReverse;
+
+export function canReverseTreasuryReconciliation(
+  auth: TreasuryReconciliationPermissionCheck
+): boolean {
+  return dtoOrLegacy(auth, RECONCILIATION_REVERSE, "execute", () =>
+    has(auth, "finance.treasury.reconciliation.reverse") ||
+    has(auth, "finance.treasury.reconciliation.manage")
+  );
+}

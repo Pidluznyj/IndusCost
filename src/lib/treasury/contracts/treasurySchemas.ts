@@ -3327,4 +3327,34 @@ export function parseTreasuryReconciliationUnmatchInput(
   return { expectedVersion, reason };
 }
 
+export type TreasuryReconciliationReverseInput = {
+  expectedVersion: number;
+  reason: string;
+  /** Deve ser exatamente REVERTER (confirmação forte). */
+  confirmPhrase: string;
+};
+
+export function parseTreasuryReconciliationReverseInput(
+  body: Record<string, unknown>
+): TreasuryReconciliationReverseInput {
+  const base = parseTreasuryReconciliationUnmatchInput(body);
+  const confirmPhrase = parseTreasuryBoundedString(
+    body.confirmPhrase ?? body.confirmation,
+    "confirmPhrase",
+    { required: true }
+  );
+  if (!confirmPhrase) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "confirmPhrase é obrigatório.",
+      "confirmPhrase"
+    );
+  }
+  return {
+    expectedVersion: base.expectedVersion,
+    reason: base.reason,
+    confirmPhrase,
+  };
+}
+
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

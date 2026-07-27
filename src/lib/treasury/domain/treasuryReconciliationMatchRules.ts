@@ -3,6 +3,7 @@
  * Sem Prisma / sem I/O. Não realiza baixa oficial Nomus.
  */
 
+import { TREASURY_RECONCILIATION_REVERSE_CONFIRM_PHRASE } from "../contracts/treasuryConstants.js";
 import type {
   TreasuryBankMovementReconciliationStatus,
   TreasuryReconciliationAllocationKind,
@@ -24,6 +25,18 @@ import {
 import { TreasuryDomainError } from "./treasuryErrors.js";
 
 export const TREASURY_RECONCILIATION_DOES_NOT_REALIZE_OFFICIAL = true as const;
+
+export function assertTreasuryReconciliationReverseConfirmPhrase(
+  phrase: string
+): void {
+  if (phrase.trim() !== TREASURY_RECONCILIATION_REVERSE_CONFIRM_PHRASE) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `Confirmação forte inválida. Digite exatamente ${TREASURY_RECONCILIATION_REVERSE_CONFIRM_PHRASE}.`,
+      "confirmPhrase"
+    );
+  }
+}
 
 export type TreasuryReconciliationAllocationDraft = {
   kind: TreasuryReconciliationAllocationKind;

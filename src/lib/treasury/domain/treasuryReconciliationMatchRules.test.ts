@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   assertTreasuryReconciliationMatchBalanced,
+  assertTreasuryReconciliationReverseConfirmPhrase,
   computeTreasuryReconciliationCoveringNet,
   deriveTreasuryBankMovementReconciliationStatus,
   TREASURY_RECONCILIATION_DOES_NOT_REALIZE_OFFICIAL,
@@ -156,6 +157,16 @@ describe("treasuryReconciliationMatchRules", () => {
       (err: unknown) =>
         err instanceof TreasuryDomainError &&
         err.message.includes("saldo aberto")
+    );
+  });
+
+  it("exige frase forte REVERTER", () => {
+    assert.throws(
+      () => assertTreasuryReconciliationReverseConfirmPhrase("reverter"),
+      TreasuryDomainError
+    );
+    assert.doesNotThrow(() =>
+      assertTreasuryReconciliationReverseConfirmPhrase("REVERTER")
     );
   });
 

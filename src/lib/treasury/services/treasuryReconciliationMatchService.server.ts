@@ -1,13 +1,16 @@
 /**
- * Caso de uso — conciliação bancária (accept / unmatch).
+ * Caso de uso — conciliação bancária (accept / unmatch / reverse).
  * Transacional; audita; solicita recálculo; NÃO muta Nomus / NÃO duplica baixa.
+ * Reverse: soft (não exclui), restaura movimentos, exceção se dia fechado.
  */
 
 import type { PrismaClient } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
+import { formatTreasuryTimestampIso } from "../contracts/treasuryTimestamp.js";
 import type { TreasuryReconciliationMatchDto } from "../contracts/treasuryDto.js";
 import type {
   TreasuryReconciliationAcceptInput,
+  TreasuryReconciliationReverseInput,
   TreasuryReconciliationUnmatchInput,
 } from "../contracts/treasurySchemas.js";
 import {
@@ -21,11 +24,13 @@ import {
   assertTreasuryReconciliationMatchBalanced,
   assertTreasuryReconciliationMatchVersion,
   assertTreasuryReconciliationMovementCapacity,
+  assertTreasuryReconciliationReverseConfirmPhrase,
   assertTreasuryReconciliationTitleOpenBalances,
   deriveTreasuryBankMovementReconciliationStatus,
   TREASURY_RECONCILIATION_DOES_NOT_REALIZE_OFFICIAL,
 } from "../domain/treasuryReconciliationMatchRules.js";
 import { toTreasuryReconciliationMatchDto } from "../mappers/treasuryReconciliationMatchMappers.js";
+import type { TreasuryReconciliationMatchRow } from "../mappers/treasuryReconciliationMatchMappers.js";
 import {
   createTreasuryAccountRepository,
   type TreasuryAccountRepository,
@@ -36,6 +41,7 @@ import {
 } from "../repositories/treasuryReconciliationMatchRepository.server.js";
 import {
   buildTreasuryCreatedAudit,
+  buildTreasuryReversedAudit,
   buildTreasuryUpdatedAudit,
 } from "../treasuryAuditHelpers.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
@@ -47,6 +53,10 @@ import {
   writeTreasuryAuditLog,
   type TreasuryAuditDb,
 } from "./treasuryAuditService.server.js";
+import {
+  notifyTreasuryPostClosingFinancialChange,
+  type TreasuryPostClosingRecordResult,
+} from "./treasuryPostClosingChangeService.server.js";
 import {
   requestTreasuryProjectionRecalc,
   type TreasuryProjectionRecalcResult,
@@ -61,6 +71,7 @@ export type TreasuryReconciliationMatchActor = {
   isSuperAdmin: boolean;
   canViewReconciliation: boolean;
   canManageReconciliation: boolean;
+  canReverseReconciliation: boolean;
   canViewAccounts: boolean;
   canManageAccounts: boolean;
 };
@@ -81,6 +92,10 @@ export function buildTreasuryReconciliationMatchActor(
       user,
       "manageReconciliation"
     ),
+    canReverseReconciliation: canTreasuryCapability(
+      user,
+      "reverseReconciliation"
+    ),
     canViewAccounts: canTreasuryCapability(user, "viewAccounts"),
     canManageAccounts: canTreasuryCapability(user, "manageAccounts"),
   };
@@ -99,7 +114,9 @@ function asAccountActor(
     canViewAccounts:
       actor.canViewAccounts || actor.canViewReconciliation,
     canManageAccounts:
-      actor.canManageAccounts || actor.canManageReconciliation,
+      actor.canManageAccounts ||
+      actor.canManageReconciliation ||
+      actor.canReverseReconciliation,
   };
 }
 
@@ -135,6 +152,19 @@ function assertCanManage(actor: TreasuryReconciliationMatchActor) {
   }
 }
 
+function assertCanReverse(actor: TreasuryReconciliationMatchActor) {
+  if (
+    !actor.canReverseReconciliation &&
+    !actor.canManageReconciliation &&
+    !actor.isSuperAdmin
+  ) {
+    throw new TreasuryDomainError(
+      "FORBIDDEN",
+      "Sem permissão específica para reverter conciliação bancária."
+    );
+  }
+}
+
 function actorCtx(actor: TreasuryReconciliationMatchActor) {
   return {
     userId: actor.userId,
@@ -149,6 +179,10 @@ export type TreasuryReconciliationMatchService = {
     actor: TreasuryReconciliationMatchActor,
     id: string
   ): Promise<TreasuryReconciliationMatchDto>;
+  listActiveByBankMovement(
+    actor: TreasuryReconciliationMatchActor,
+    bankMovementId: string
+  ): Promise<TreasuryReconciliationMatchDto[]>;
   accept(
     actor: TreasuryReconciliationMatchActor,
     input: TreasuryReconciliationAcceptInput
@@ -164,6 +198,15 @@ export type TreasuryReconciliationMatchService = {
     match: TreasuryReconciliationMatchDto;
     projectionRecalc: TreasuryProjectionRecalcResult;
   }>;
+  reverse(
+    actor: TreasuryReconciliationMatchActor,
+    id: string,
+    input: TreasuryReconciliationReverseInput
+  ): Promise<{
+    match: TreasuryReconciliationMatchDto;
+    projectionRecalc: TreasuryProjectionRecalcResult;
+    postClosing: TreasuryPostClosingRecordResult | null;
+  }>;
 };
 
 export function createTreasuryReconciliationMatchService(deps: {
@@ -172,6 +215,7 @@ export function createTreasuryReconciliationMatchService(deps: {
   accountRepository?: TreasuryAccountRepository;
   runTransaction?: <T>(fn: (tx: TreasuryAuditDb) => Promise<T>) => Promise<T>;
   requestProjectionRecalc?: typeof requestTreasuryProjectionRecalc;
+  notifyPostClosing?: typeof notifyTreasuryPostClosingFinancialChange;
 }): TreasuryReconciliationMatchService {
   const prisma = deps.prisma;
   const matchRepo =
@@ -181,6 +225,8 @@ export function createTreasuryReconciliationMatchService(deps: {
     deps.accountRepository ?? createTreasuryAccountRepository(prisma!);
   const requestProjection =
     deps.requestProjectionRecalc ?? requestTreasuryProjectionRecalc;
+  const notifyPostClosing =
+    deps.notifyPostClosing ?? notifyTreasuryPostClosingFinancialChange;
 
   async function runInTransaction<T>(
     fn: (tx: TreasuryAuditDb) => Promise<T>
@@ -231,6 +277,38 @@ export function createTreasuryReconciliationMatchService(deps: {
     });
   }
 
+  async function restoreMovementsAfterDeactivate(
+    current: TreasuryReconciliationMatchRow,
+    tx: TreasuryAuditDb
+  ): Promise<void> {
+    for (const mov of current.movements) {
+      const snap = await matchRepo.findMovementSnapshot(
+        mov.bankMovementId,
+        tx as never
+      );
+      if (!snap) continue;
+      const activeMap = await matchRepo.sumActiveAllocatedByMovementIds(
+        [mov.bankMovementId],
+        tx as never
+      );
+      const nextReconciled = activeMap.get(mov.bankMovementId) ?? "0.00";
+      const status = deriveTreasuryBankMovementReconciliationStatus({
+        amount: snap.amount,
+        reconciledAmount: nextReconciled,
+        currentStatus:
+          snap.reconciliationStatus === "IGNORED" ? "IGNORED" : null,
+      });
+      await matchRepo.updateMovementReconciliation(
+        mov.bankMovementId,
+        {
+          reconciledAmount: normalizeTreasuryMoneyString(nextReconciled),
+          reconciliationStatus: status,
+        },
+        tx as never
+      );
+    }
+  }
+
   return {
     async getById(actor, id) {
       assertCanView(actor);
@@ -244,6 +322,23 @@ export function createTreasuryReconciliationMatchService(deps: {
       }
       await requireOperateAccount(actor, row.accountId);
       return toTreasuryReconciliationMatchDto(row);
+    },
+
+    async listActiveByBankMovement(actor, bankMovementId) {
+      assertCanView(actor);
+      const snap = await matchRepo.findMovementSnapshot(bankMovementId.trim());
+      if (!snap) {
+        throw new TreasuryDomainError(
+          "NOT_FOUND",
+          "Movimento bancário não encontrado.",
+          "bankMovementId"
+        );
+      }
+      await requireOperateAccount(actor, snap.accountId);
+      const rows = await matchRepo.listActiveByBankMovementId(
+        bankMovementId.trim()
+      );
+      return rows.map(toTreasuryReconciliationMatchDto);
     },
 
     async accept(actor, input) {
@@ -441,33 +536,7 @@ export function createTreasuryReconciliationMatchService(deps: {
           tx as never
         );
 
-        for (const mov of current.movements) {
-          const snap = await matchRepo.findMovementSnapshot(
-            mov.bankMovementId,
-            tx as never
-          );
-          if (!snap) continue;
-          const activeMap = await matchRepo.sumActiveAllocatedByMovementIds(
-            [mov.bankMovementId],
-            tx as never
-          );
-          // After unmatch, sumActive excludes this match (status UNMATCHED).
-          const nextReconciled = activeMap.get(mov.bankMovementId) ?? "0.00";
-          const status = deriveTreasuryBankMovementReconciliationStatus({
-            amount: snap.amount,
-            reconciledAmount: nextReconciled,
-            currentStatus:
-              snap.reconciliationStatus === "IGNORED" ? "IGNORED" : null,
-          });
-          await matchRepo.updateMovementReconciliation(
-            mov.bankMovementId,
-            {
-              reconciledAmount: normalizeTreasuryMoneyString(nextReconciled),
-              reconciliationStatus: status,
-            },
-            tx as never
-          );
-        }
+        await restoreMovementsAfterDeactivate(current, tx);
 
         const dto = toTreasuryReconciliationMatchDto(row);
         await writeTreasuryAuditLog(
@@ -496,6 +565,92 @@ export function createTreasuryReconciliationMatchService(deps: {
           "reconciliation_unmatched"
         ),
       };
+    },
+
+    async reverse(actor, id, input) {
+      assertCanReverse(actor);
+      assertTreasuryReconciliationReverseConfirmPhrase(input.confirmPhrase);
+      if (!input.reason.trim()) {
+        throw new TreasuryDomainError(
+          "VALIDATION_ERROR",
+          "Justificativa obrigatória para reversão.",
+          "reason"
+        );
+      }
+
+      const current = await matchRepo.findById(id.trim());
+      if (!current) {
+        throw new TreasuryDomainError(
+          "NOT_FOUND",
+          "Match de conciliação não encontrado.",
+          "id"
+        );
+      }
+      await requireOperateAccount(actor, current.accountId);
+      assertTreasuryReconciliationMatchActive(current.status);
+      assertTreasuryReconciliationMatchVersion(
+        current.version,
+        input.expectedVersion
+      );
+
+      const before = toTreasuryReconciliationMatchDto(current);
+
+      const updated = await runInTransaction(async (tx) => {
+        const row = await matchRepo.unmatch(
+          id.trim(),
+          {
+            unmatchedByUserId: actor.userId,
+            unmatchReason: input.reason.trim(),
+            expectedVersion: input.expectedVersion,
+          },
+          tx as never
+        );
+
+        // Alocações permanecem no registro (soft) — só o match fica UNMATCHED.
+        await restoreMovementsAfterDeactivate(current, tx);
+
+        const dto = toTreasuryReconciliationMatchDto(row);
+        await writeTreasuryAuditLog(
+          tx,
+          buildTreasuryReversedAudit({
+            entityType: "RECONCILIATION_MATCH",
+            entityId: row.id,
+            before,
+            after: dto,
+            justification: input.reason.trim(),
+            metadata: {
+              action: "REVERSE",
+              doesNotRealizeOfficial: true,
+              allocationsPreserved: true,
+              movementIds: current.movements.map((m) => m.bankMovementId),
+            },
+            actor: actorCtx(actor),
+          })
+        );
+        return dto;
+      });
+
+      const projectionRecalc = enqueueRecalc(
+        actor,
+        updated,
+        "reconciliation_reversed"
+      );
+
+      const postClosing = await notifyPostClosing(
+        {
+          companyCode: updated.companyCode,
+          civilDate: updated.matchedCivilDate,
+          changeKind: "RECONCILIATION_CHANGE",
+          entityKind: "RECONCILIATION",
+          entityId: updated.id,
+          accountId: updated.accountId,
+          amount: updated.matchedAmount,
+          changedAtIso: formatTreasuryTimestampIso(new Date()),
+        },
+        { prisma, requestId: actor.requestId ?? null }
+      );
+
+      return { match: updated, projectionRecalc, postClosing };
     },
   };
 }

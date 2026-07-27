@@ -136,6 +136,10 @@ export type TreasuryReconciliationMatchRepository = {
     id: string,
     db?: TreasuryReconciliationMatchDb
   ): Promise<TreasuryReconciliationMatchRow | null>;
+  listActiveByBankMovementId(
+    bankMovementId: string,
+    db?: TreasuryReconciliationMatchDb
+  ): Promise<TreasuryReconciliationMatchRow[]>;
   create(
     data: TreasuryReconciliationMatchCreateData,
     db?: TreasuryReconciliationMatchDb
@@ -174,6 +178,18 @@ export function createTreasuryReconciliationMatchRepository(
         include: includeAll,
       });
       return row ? mapRow(row as never) : null;
+    },
+
+    async listActiveByBankMovementId(bankMovementId, db = prisma) {
+      const rows = await db.treasuryReconciliationMatch.findMany({
+        where: {
+          status: { in: ["MATCHED", "PENDING"] },
+          movements: { some: { bankMovementId: bankMovementId.trim() } },
+        },
+        include: includeAll,
+        orderBy: { createdAt: "desc" },
+      });
+      return rows.map((row) => mapRow(row as never));
     },
 
     async create(data, db = prisma) {

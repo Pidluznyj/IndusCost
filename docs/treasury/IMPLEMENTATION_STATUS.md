@@ -78,8 +78,9 @@
 | **51** | UI movimentos bancários + OFX | `DONE` | `0fd8a77` | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
 | **52** | Motor de sugestões de conciliação | `DONE` | `aa80d13` | Motor puro: valor/doc/CNPJ-CPF/data/nome/histórico/direção; faixas HIGH/MEDIUM/LOW; score+motivos; sem auto-match; exclui cancelados/realizados; `test:treasury` 505/505 |
 | **53** | Conciliação bancária (match+allocations) | `DONE` | `e158344` | Models/migration; 1:1/1:N/N:1; parcial; fee/juros/desconto/abatimento/diferença/unidentified/transfer/manual; service TX; status; audit; recalc; sem baixa Nomus; `test:treasury` 523/523 |
+| **54** | Reverse conciliação (`POST …/reconciliations/:id/reverse`) | `DONE` | _(pendente commit)_ | permissão reverse; justificativa+REVERTER; soft reverse; restaura movimentos; audit REVERSE; recalc; exceção dia fechado; UI confirmação forte; `test:treasury` 529/529 |
 
-    > **Nota de ordem:** …; motor sugestões = **52**; conciliação match = **53**.
+    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**.
 
 ---
 
@@ -107,13 +108,13 @@
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
-| Conciliação bancária | `PARTIAL` | P52 sugestões + P53 match/allocations/unmatch (TX/audit/recalc); UI workspace ainda pendente |
+| Conciliação bancária | `PARTIAL` | P52–P54: sugestões + match/allocations + reverse API/UI; workspace completo ainda pendente |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 523/523 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 529/529 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -593,6 +594,18 @@
 - [x] Sem API/UI workspace neste passo; sem avanço automático
 ---
 
+### 54 — Reverse de conciliação bancária
+- [x] `POST /api/finance/treasury/reconciliations/:id/reverse` + GET list by `bankMovementId`
+- [x] Permissão `finance.treasury.reconciliation.reverse` (execute); flag `treasury.reconciliation.enabled`
+- [x] Justificativa obrigatória + confirmação forte `REVERTER`; não exclui registro (status UNMATCHED)
+- [x] Desfaz alocações logicamente; restaura `reconciledAmount`/status do movimento
+- [x] Audit action `REVERSE`; recálculo `reconciliation_reversed`
+- [x] `notifyTreasuryPostClosingFinancialChange` (`RECONCILIATION_CHANGE`) se dia CLOSED
+- [x] UI confirmação forte no detalhe de movimentos bancários
+- [x] Testes permissão/consistência/fechamento + dialog; `test:treasury` 529/529
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -665,3 +678,4 @@
 | 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — `0fd8a77` |
 | 2026-07-27 | Prompt 52: motor de sugestões de conciliação — `aa80d13` |
 | 2026-07-27 | Prompt 53: conciliação bancária match+allocations — `e158344` |
+| 2026-07-27 | Prompt 54: reverse conciliação bancária — _(hash no commit)_ |

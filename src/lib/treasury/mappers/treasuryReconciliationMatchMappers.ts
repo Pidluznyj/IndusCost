@@ -146,6 +146,7 @@ export function toTreasuryReconciliationMatchDto(
       : null,
     unmatchedByUserId: row.unmatchedByUserId,
     unmatchReason: row.unmatchReason,
+    isReversed: row.status === "UNMATCHED",
     doesNotRealizeOfficial: true,
   };
 }

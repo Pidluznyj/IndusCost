@@ -7,6 +7,7 @@ import type {
   TreasuryBankImportBatchDto,
   TreasuryBankMovementDto,
   TreasuryFinancialAccountDto,
+  TreasuryReconciliationMatchDto,
 } from "@/src/lib/treasury/contracts/index.js";
 import {
   TREASURY_BANK_MOVEMENT_BUCKET_LABELS,
@@ -36,13 +37,16 @@ export function TreasuryBankMovementsPanel(props: {
   batches: TreasuryBankImportBatchDto[];
   movements: TreasuryBankMovementDto[];
   selected: TreasuryBankMovementDto | null;
+  activeMatches?: TreasuryReconciliationMatchDto[];
   canManage: boolean;
+  canReverse?: boolean;
   duplicatesMessage: string | null;
   onFiltersChange: (next: TreasuryBankMovementsFilterState) => void;
   onImport: () => void;
   onSelectMovement: (row: TreasuryBankMovementDto) => void;
   onClearSelection: () => void;
   onSelectBatch: (batchId: string) => void;
+  onReverseMatch?: (match: TreasuryReconciliationMatchDto) => void;
 }) {
   const {
     filters,
@@ -50,13 +54,16 @@ export function TreasuryBankMovementsPanel(props: {
     batches,
     movements,
     selected,
+    activeMatches = [],
     canManage,
+    canReverse = false,
     duplicatesMessage,
     onFiltersChange,
     onImport,
     onSelectMovement,
     onClearSelection,
     onSelectBatch,
+    onReverseMatch,
   } = props;
 
   return (
@@ -336,6 +343,48 @@ export function TreasuryBankMovementsPanel(props: {
               </dd>
             </div>
           </dl>
+          {activeMatches.length > 0 ? (
+            <div
+              className="mt-4 space-y-2 border-t border-border pt-3"
+              data-testid="treasury-bank-movement-active-matches"
+            >
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Conciliações ativas
+              </h4>
+              <ul className="space-y-2">
+                {activeMatches.map((match) => (
+                  <li
+                    key={match.id}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border px-3 py-2 text-sm"
+                    data-testid={`treasury-active-match-${match.id}`}
+                  >
+                    <div>
+                      <div className="font-medium">
+                        {formatTreasuryBankMoney(
+                          match.matchedAmount,
+                          match.currency
+                        )}{" "}
+                        · {match.matchedCivilDate}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {match.allocations.map((a) => a.kind).join(", ")}
+                      </div>
+                    </div>
+                    {canReverse && onReverseMatch ? (
+                      <button
+                        type="button"
+                        className="rounded-lg border border-destructive/40 px-2 py-1 text-xs text-destructive"
+                        data-testid={`treasury-reverse-match-${match.id}`}
+                        onClick={() => onReverseMatch(match)}
+                      >
+                        Reverter
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </div>

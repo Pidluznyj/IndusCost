@@ -63,6 +63,17 @@ export function createMemoryTreasuryReconciliationMatchRepository(
       return row ? cloneMatch(row) : null;
     },
 
+    async listActiveByBankMovementId(bankMovementId) {
+      const id = bankMovementId.trim();
+      return store.matches
+        .filter(
+          (m) =>
+            (m.status === "MATCHED" || m.status === "PENDING") &&
+            m.movements.some((mov) => mov.bankMovementId === id)
+        )
+        .map(cloneMatch);
+    },
+
     async create(data: TreasuryReconciliationMatchCreateData) {
       const id = randomUUID();
       const now = new Date();

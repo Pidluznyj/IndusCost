@@ -66,6 +66,30 @@ export function buildTreasuryUpdatedAudit(input: {
   );
 }
 
+/** Reversão explícita (ex.: conciliação bancária) — não apaga histórico. */
+export function buildTreasuryReversedAudit(input: {
+  entityType: TreasuryAuditEventInput["entityType"];
+  entityId: string;
+  before: unknown;
+  after: unknown;
+  justification: string;
+  metadata?: Record<string, unknown> | null;
+  actor?: TreasuryAuditActorContext;
+}): TreasuryAuditEventInput {
+  return withActor(
+    {
+      entityType: input.entityType,
+      entityId: input.entityId,
+      action: "REVERSE",
+      before: input.before,
+      after: input.after,
+      metadata: input.metadata ?? null,
+      justification: input.justification,
+    },
+    input.actor
+  );
+}
+
 export function buildTreasuryDeactivatedAudit(input: {
   entityType: TreasuryAuditEventInput["entityType"];
   entityId: string;

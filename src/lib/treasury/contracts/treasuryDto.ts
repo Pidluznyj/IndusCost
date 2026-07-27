@@ -882,6 +882,8 @@ export type TreasuryReconciliationMatchDto = {
   unmatchedAt: TreasuryTimestampIso | null;
   unmatchedByUserId: string | null;
   unmatchReason: string | null;
+  /** true quando status=UNMATCHED (reversão/unmatch soft — registro preservado). */
+  isReversed: boolean;
   /** true: match é evidência local; nunca duplica realização oficial. */
   doesNotRealizeOfficial: true;
 };
