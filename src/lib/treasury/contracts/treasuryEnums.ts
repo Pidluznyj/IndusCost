@@ -74,11 +74,19 @@ export type TreasuryLedgerStatus = (typeof TREASURY_LEDGER_STATUSES)[number];
 
 export const TREASURY_PROMISE_STATUSES = [
   "ACTIVE",
+  "PARTIALLY_FULFILLED",
   "FULFILLED",
+  "EXPIRED",
   "BROKEN",
   "CANCELLED",
 ] as const;
 export type TreasuryPromiseStatus = (typeof TREASURY_PROMISE_STATUSES)[number];
+
+/** Statuses que ainda afetam projeção / filtro "com promessa". */
+export const TREASURY_ACTIVE_PROMISE_STATUSES = [
+  "ACTIVE",
+  "PARTIALLY_FULFILLED",
+] as const;
 
 export const TREASURY_DISPUTE_STATUSES = [
   "OPEN",

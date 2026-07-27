@@ -8,6 +8,9 @@ export type TreasuryProjectionRecalcRequest = {
   titleId: string;
   titleType: "RECEIVABLE" | "PAYABLE";
   expectedDate: string | null;
+  /** Data da promessa — alimenta camada provável quando o motor estiver ativo. */
+  promisedDate?: string | null;
+  projectionLayer?: "CONTRACTUAL" | "PROBABLE" | "CONFIRMED" | null;
   requestedAt: Date;
   requestId?: string | null;
 };
@@ -42,6 +45,8 @@ export function requestTreasuryProjectionRecalc(
     titleId: input.titleId,
     titleType: input.titleType,
     expectedDate: input.expectedDate,
+    promisedDate: input.promisedDate ?? null,
+    projectionLayer: input.projectionLayer ?? null,
     requestId: input.requestId ?? null,
     requestedAt: input.requestedAt ?? new Date(),
   };

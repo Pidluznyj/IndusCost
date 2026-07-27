@@ -81,6 +81,15 @@ export const TREASURY_PRIORITY_LABELS: Record<
   URGENT: "Urgente",
 };
 
+export const TREASURY_PROMISE_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "Ativa",
+  PARTIALLY_FULFILLED: "Cumprida parcialmente",
+  FULFILLED: "Cumprida",
+  EXPIRED: "Expirada",
+  BROKEN: "Quebrada",
+  CANCELLED: "Cancelada",
+};
+
 export const TREASURY_RECEIVABLE_SORT_LABELS: Record<
   TreasuryReceivableSortField,
   string

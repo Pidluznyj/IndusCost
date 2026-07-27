@@ -4,9 +4,14 @@
 
 import { fetchJsonOk } from "@/src/lib/http.js";
 import {
+  TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  type TreasuryPaymentPromiseDto,
+  type TreasuryPromiseCancelInput,
+  type TreasuryPromiseMarkFulfilledInput,
   type TreasuryReceivableExpectationInput,
   type TreasuryReceivableListItemDto,
+  type TreasuryReceivablePromiseCreateInput,
   type TreasuryReceivableSortField,
   type TreasuryReceivablesListResponse,
   type TreasurySortDirection,
@@ -128,4 +133,63 @@ export async function putTreasuryReceivableExpectation(
     }
   );
   return res.receivable;
+}
+
+export async function fetchTreasuryReceivablePromises(
+  titleId: string,
+  signal?: AbortSignal
+): Promise<TreasuryPaymentPromiseDto[]> {
+  const res = await fetchJsonOk<{ promises: TreasuryPaymentPromiseDto[] }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/promises`,
+    { credentials: "include", signal }
+  );
+  return res.promises;
+}
+
+export async function createTreasuryReceivablePromise(
+  titleId: string,
+  body: TreasuryReceivablePromiseCreateInput
+): Promise<TreasuryPaymentPromiseDto> {
+  const res = await fetchJsonOk<{ promise: TreasuryPaymentPromiseDto }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/promises`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.promise;
+}
+
+export async function cancelTreasuryPaymentPromise(
+  promiseId: string,
+  body: TreasuryPromiseCancelInput
+): Promise<TreasuryPaymentPromiseDto> {
+  const res = await fetchJsonOk<{ promise: TreasuryPaymentPromiseDto }>(
+    `${TREASURY_PROMISES_PATH}/${encodeURIComponent(promiseId)}/cancel`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.promise;
+}
+
+export async function markTreasuryPaymentPromiseFulfilled(
+  promiseId: string,
+  body: TreasuryPromiseMarkFulfilledInput
+): Promise<TreasuryPaymentPromiseDto> {
+  const res = await fetchJsonOk<{ promise: TreasuryPaymentPromiseDto }>(
+    `${TREASURY_PROMISES_PATH}/${encodeURIComponent(promiseId)}/mark-fulfilled`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  return res.promise;
 }

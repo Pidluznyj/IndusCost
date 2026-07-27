@@ -43,6 +43,14 @@ export function negateTreasuryMoney(value: TreasuryMoneyString): TreasuryMoneySt
   return n.startsWith("-") ? n.slice(1) : `-${n}`;
 }
 
+/** Compara duas strings decimais: <0 se a<b, 0 se iguais, >0 se a>b. */
+export function compareTreasuryMoney(
+  a: TreasuryMoneyString,
+  b: TreasuryMoneyString
+): number {
+  return toCents(a) - toCents(b);
+}
+
 function toCents(value: TreasuryMoneyString): number {
   const n = normalizeTreasuryMoneyString(value);
   const negative = n.startsWith("-");

@@ -57,6 +57,7 @@ export function toTreasuryReceivableListItemDto(input: {
   complement: TreasuryReceivableComplementView | null;
   rawPayload?: unknown;
   referenceDate?: Date;
+  hasActivePromise?: boolean;
 }): TreasuryReceivableListItemDto {
   const sellers = extractSellerFieldsFromNomusRaw(input.rawPayload);
   const openAmount = input.official.openBalance;
@@ -70,6 +71,7 @@ export function toTreasuryReceivableListItemDto(input: {
     official: input.official,
     complement: input.complement,
     daysOverdue,
+    hasActivePromise: input.hasActivePromise,
   });
 
   return {

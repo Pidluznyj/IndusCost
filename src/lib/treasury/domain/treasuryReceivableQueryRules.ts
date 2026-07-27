@@ -28,6 +28,8 @@ export function deriveTreasuryReceivableOperationalStatus(input: {
   official: OfficialReceivableView;
   complement: TreasuryReceivableComplementView | null;
   daysOverdue: number;
+  /** Promessa ACTIVE/PARTIALLY_FULFILLED (ou proxy legado confirmed*). */
+  hasActivePromise?: boolean;
 }): TreasuryReceivableOperationalStatus {
   if (input.official.cancellation.isCancelledOrRemovedFromSource) {
     return "CANCELLED_SOURCE";
@@ -41,7 +43,11 @@ export function deriveTreasuryReceivableOperationalStatus(input: {
   if (!input.official.officialStatus.isOpen) {
     return "SETTLED";
   }
-  if (input.complement?.confirmedDate || input.complement?.confirmedAmount) {
+  if (
+    input.hasActivePromise ||
+    input.complement?.confirmedDate ||
+    input.complement?.confirmedAmount
+  ) {
     return "PROMISED";
   }
   if (input.daysOverdue > 0) {

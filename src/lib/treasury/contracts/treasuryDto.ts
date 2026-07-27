@@ -148,13 +148,26 @@ export type TreasuryTransferDto = {
 export type TreasuryPaymentPromiseDto = {
   id: string;
   side: TreasurySide;
+  titleType: "RECEIVABLE" | "PAYABLE";
+  officialTitleId: string;
   nomusExternalId: string;
   promisedDate: TreasuryCivilDate;
   promisedAmount: TreasuryMoneyString;
+  fulfilledAmount: TreasuryMoneyString;
   contactNote: string | null;
+  channel: string | null;
+  notes: string | null;
+  responsibleUserId: string | null;
   status: TreasuryPromiseStatus;
+  version: number;
   createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
   updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
+  cancellationReason: string | null;
+  fulfilledAt: TreasuryTimestampIso | null;
 };
 
 export type TreasuryDisputeDto = {

@@ -10,9 +10,11 @@ import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityC
 import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
 import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
 import { createTreasuryReceivableControllers } from "./controllers/treasuryReceivableController.js";
+import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryPaymentPromiseController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AVAILABILITY_PATH,
+  TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
 } from "./contracts/treasuryContracts.js";
 import {
@@ -42,6 +44,7 @@ export function registerTreasuryRoutes(
   const accounts = createTreasuryAccountControllers({ getCurrentAppUser });
   const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
   const receivables = createTreasuryReceivableControllers({ getCurrentAppUser });
+  const promises = createTreasuryPaymentPromiseControllers({ getCurrentAppUser });
 
   const viewAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
@@ -62,6 +65,10 @@ export function registerTreasuryRoutes(
   const manageReceivables = requireResource(
     TREASURY_RESOURCE_KEYS.receivables,
     TREASURY_ACTIONS.manage
+  );
+  const promiseReceivables = requireResource(
+    TREASURY_RESOURCE_KEYS.receivablesPromise,
+    TREASURY_ACTIONS.execute
   );
   const viewOfficialReceivables = requireResource(
     FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
@@ -190,5 +197,39 @@ export function registerTreasuryRoutes(
     manageReceivables,
     viewOfficialReceivables,
     receivables.putExpectation
+  );
+
+  app.get(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/promises`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    promises.listByReceivable
+  );
+
+  app.post(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/promises`,
+    requireAppAuth,
+    moduleEnabled,
+    promiseReceivables,
+    viewOfficialReceivables,
+    promises.createForReceivable
+  );
+
+  app.post(
+    `${TREASURY_PROMISES_PATH}/:promiseId/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    promiseReceivables,
+    promises.cancel
+  );
+
+  app.post(
+    `${TREASURY_PROMISES_PATH}/:promiseId/mark-fulfilled`,
+    requireAppAuth,
+    moduleEnabled,
+    promiseReceivables,
+    promises.markFulfilled
   );
 }

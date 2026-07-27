@@ -157,7 +157,19 @@ export function createTreasuryReceivableQueryRepository(
       where,
       select: { officialTitleId: true },
     });
-    return rows.map((r) => r.officialTitleId);
+    let ids = rows.map((r) => r.officialTitleId);
+    if (query.hasPromise === true) {
+      const promiseIds = await prisma.treasuryPaymentPromise.findMany({
+        where: {
+          titleType: "RECEIVABLE",
+          status: { in: ["ACTIVE", "PARTIALLY_FULFILLED"] },
+        },
+        select: { officialTitleId: true },
+        distinct: ["officialTitleId"],
+      });
+      ids = [...new Set([...ids, ...promiseIds.map((p) => p.officialTitleId)])];
+    }
+    return ids;
   }
 
   function buildArWhere(
@@ -220,9 +232,28 @@ export function createTreasuryReceivableQueryRepository(
     return where;
   }
 
+  async function loadActivePromiseTitleIds(
+    titleIds: string[]
+  ): Promise<Set<string>> {
+    const set = new Set<string>();
+    if (!titleIds.length) return set;
+    const rows = await prisma.treasuryPaymentPromise.findMany({
+      where: {
+        titleType: "RECEIVABLE",
+        officialTitleId: { in: titleIds },
+        status: { in: ["ACTIVE", "PARTIALLY_FULFILLED"] },
+      },
+      select: { officialTitleId: true },
+      distinct: ["officialTitleId"],
+    });
+    for (const row of rows) set.add(row.officialTitleId);
+    return set;
+  }
+
   function assemble(
     arRows: OfficialNomusReceivableRow[],
     complements: Map<string, TreasuryTitleOperationalComplementRow>,
+    activePromiseTitleIds: Set<string>,
     referenceDate?: Date
   ): TreasuryReceivableListItemDto[] {
     return arRows.map((row) => {
@@ -235,6 +266,7 @@ export function createTreasuryReceivableQueryRepository(
           : null,
         rawPayload: row.rawPayload,
         referenceDate,
+        hasActivePromise: activePromiseTitleIds.has(row.id),
       });
     });
   }
@@ -252,10 +284,15 @@ export function createTreasuryReceivableQueryRepository(
         select: AR_SELECT,
         orderBy: [{ dueDate: "asc" }, { externalId: "asc" }],
       })) as OfficialNomusReceivableRow[];
-      const complements = await loadComplementsByTitleIds(
-        arRows.map((r) => r.id)
+      const titleIds = arRows.map((r) => r.id);
+      const complements = await loadComplementsByTitleIds(titleIds);
+      const activePromiseTitleIds = await loadActivePromiseTitleIds(titleIds);
+      const assembled = assemble(
+        arRows,
+        complements,
+        activePromiseTitleIds,
+        referenceDate
       );
-      const assembled = assemble(arRows, complements, referenceDate);
       return paginateTreasuryReceivables(assembled, query);
     },
 
@@ -266,7 +303,13 @@ export function createTreasuryReceivableQueryRepository(
       })) as OfficialNomusReceivableRow | null;
       if (!row) return null;
       const complements = await loadComplementsByTitleIds([row.id]);
-      const [item] = assemble([row], complements, referenceDate);
+      const activePromiseTitleIds = await loadActivePromiseTitleIds([row.id]);
+      const [item] = assemble(
+        [row],
+        complements,
+        activePromiseTitleIds,
+        referenceDate
+      );
       return item ?? null;
     },
   };

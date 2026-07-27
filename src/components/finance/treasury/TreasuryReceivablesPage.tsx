@@ -14,6 +14,7 @@ import {
 } from "@/src/lib/treasury/treasuryReceivablesApi.js";
 import {
   canManageTreasuryReceivables,
+  canPromiseTreasuryReceivables,
   canViewTreasuryReceivables,
 } from "@/src/lib/treasury/treasuryReceivablesPermissions.js";
 import {
@@ -125,6 +126,7 @@ export function TreasuryReceivablesPage() {
   };
   const canView = canViewTreasuryReceivables(permCheck);
   const canManage = canManageTreasuryReceivables(permCheck);
+  const canPromise = canPromiseTreasuryReceivables(permCheck);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
@@ -294,6 +296,7 @@ export function TreasuryReceivablesPage() {
           open={Boolean(detailId && detailRow)}
           row={detailRow}
           canManage={canManage}
+          canPromise={canPromise}
           onClose={() => patchParams({ titleId: null })}
           onSaved={(saved) => {
             setDetailRow(saved);

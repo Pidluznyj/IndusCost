@@ -27,11 +27,13 @@ import {
   OverlaySection,
 } from "@/src/components/ui/overlay";
 import { HttpError } from "@/src/lib/http.js";
+import { TreasuryReceivablePromisesSection } from "./TreasuryReceivablePromisesSection.js";
 
 export type TreasuryReceivableDetailDrawerProps = {
   open: boolean;
   row: TreasuryReceivableListItemDto | null;
   canManage?: boolean;
+  canPromise?: boolean;
   onClose: () => void;
   onSaved?: (row: TreasuryReceivableListItemDto) => void;
 };
@@ -64,6 +66,7 @@ export function TreasuryReceivableDetailDrawer({
   open,
   row,
   canManage = false,
+  canPromise = false,
   onClose,
   onSaved,
 }: TreasuryReceivableDetailDrawerProps) {
@@ -428,6 +431,15 @@ export function TreasuryReceivableDetailDrawer({
                   : "Sem complemento operacional local para este título."}
               </p>
             )}
+          </OverlaySection>
+
+          <OverlaySection title="Promessas de pagamento">
+            <TreasuryReceivablePromisesSection
+              titleId={row.titleId}
+              openAmount={row.openAmount}
+              canPromise={canPromise}
+              onChanged={() => onSaved?.(row)}
+            />
           </OverlaySection>
 
           <OverlaySection title="Histórico operacional">

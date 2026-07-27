@@ -143,6 +143,35 @@ export type TreasuryPromiseCreateInput = {
   promisedDate: string;
   promisedAmount: string;
   contactNote: string | null;
+  channel: string | null;
+  notes: string | null;
+  responsibleUserId: string | null;
+  confirmAboveBalance: boolean;
+  justification: string | null;
+};
+
+/** POST /receivables/:titleId/promises — título vem da rota. */
+export type TreasuryReceivablePromiseCreateInput = {
+  promisedDate: string;
+  promisedAmount: string;
+  contactNote: string | null;
+  channel: string | null;
+  notes: string | null;
+  responsibleUserId: string | null;
+  confirmAboveBalance: boolean;
+  justification: string | null;
+};
+
+export type TreasuryPromiseCancelInput = {
+  reason: string | null;
+  expectedVersion: number;
+};
+
+export type TreasuryPromiseMarkFulfilledInput = {
+  /** Valor cumprido acumulado; omitido = cumpre o restante (total). */
+  fulfilledAmount: string | null;
+  notes: string | null;
+  expectedVersion: number;
 };
 
 export type TreasuryCreateBalanceSnapshotInput = {
@@ -675,6 +704,22 @@ export function parseTreasuryTransferCreateInput(
   };
 }
 
+function parseConfirmAboveBalance(value: unknown): boolean {
+  if (value == null || value === "") return false;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const t = value.trim().toLowerCase();
+    if (t === "true" || t === "1" || t === "yes" || t === "sim") return true;
+    if (t === "false" || t === "0" || t === "no" || t === "nao" || t === "não")
+      return false;
+  }
+  throw new TreasuryContractError(
+    "VALIDATION_ERROR",
+    "confirmAboveBalance inválido.",
+    "confirmAboveBalance"
+  );
+}
+
 export function parseTreasuryPromiseCreateInput(
   body: Record<string, unknown>
 ): TreasuryPromiseCreateInput {
@@ -701,6 +746,27 @@ export function parseTreasuryPromiseCreateInput(
     contactNote: parseTreasuryBoundedString(body.contactNote, "contactNote", {
       required: false,
     }),
+    channel: parseTreasuryBoundedString(body.channel ?? body.meio, "channel", {
+      required: false,
+    }),
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao ?? body["observação"],
+      "notes",
+      { required: false }
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      body.responsibleUserId ?? body.responsavel ?? body.responsável,
+      "userId",
+      { required: false }
+    ),
+    confirmAboveBalance: parseConfirmAboveBalance(
+      body.confirmAboveBalance ?? body.confirmAboveOpenBalance
+    ),
+    justification: parseTreasuryBoundedString(
+      body.justification ?? body.justificativa,
+      "justification",
+      { required: false }
+    ),
   };
 }
 
@@ -1159,6 +1225,104 @@ export function parseTreasuryReceivableExpectationInput(
   if (notes !== undefined) out.notes = notes;
 
   return out;
+}
+
+/**
+ * POST /receivables/:titleId/promises
+ * Rejeita tentativas de mutar vencimento oficial.
+ */
+export function parseTreasuryReceivablePromiseCreateInput(
+  body: Record<string, unknown>
+): TreasuryReceivablePromiseCreateInput {
+  if (
+    hasOwn(body, "dueDate") ||
+    hasOwn(body, "vencimento") ||
+    hasOwn(body, "officialDueDate")
+  ) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Promessa não pode alterar o vencimento oficial.",
+      "dueDate"
+    );
+  }
+  return {
+    promisedDate: parseTreasuryCivilDate(
+      body.promisedDate ?? body.dataPrometida,
+      "promisedDate"
+    ),
+    promisedAmount: parseTreasuryMoneyString(
+      body.promisedAmount ?? body.valorPrometido,
+      "promisedAmount"
+    ),
+    contactNote: parseTreasuryBoundedString(
+      body.contactNote ?? body.contato ?? body.contact,
+      "contactNote",
+      { required: false }
+    ),
+    channel: parseTreasuryBoundedString(body.channel ?? body.meio, "channel", {
+      required: false,
+    }),
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao ?? body["observação"],
+      "notes",
+      { required: false }
+    ),
+    responsibleUserId: parseTreasuryBoundedString(
+      body.responsibleUserId ?? body.responsavel ?? body.responsável,
+      "userId",
+      { required: false }
+    ),
+    confirmAboveBalance: parseConfirmAboveBalance(
+      body.confirmAboveBalance ?? body.confirmAboveOpenBalance
+    ),
+    justification: parseTreasuryBoundedString(
+      body.justification ?? body.justificativa,
+      "justification",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryPromiseCancelInput(
+  body: Record<string, unknown>
+): TreasuryPromiseCancelInput {
+  return {
+    reason: parseTreasuryBoundedString(
+      body.reason ?? body.motivo ?? body.cancellationReason,
+      "reason",
+      { required: false }
+    ),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+}
+
+export function parseTreasuryPromiseMarkFulfilledInput(
+  body: Record<string, unknown>
+): TreasuryPromiseMarkFulfilledInput {
+  let fulfilledAmount: string | null = null;
+  if (hasOwn(body, "fulfilledAmount") || hasOwn(body, "valorCumprido")) {
+    const raw = hasOwn(body, "fulfilledAmount")
+      ? body.fulfilledAmount
+      : body.valorCumprido;
+    if (raw != null && raw !== "") {
+      fulfilledAmount = parseTreasuryMoneyString(raw, "fulfilledAmount");
+    }
+  }
+  return {
+    fulfilledAmount,
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao,
+      "notes",
+      { required: false }
+    ),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
 }
 
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

@@ -2064,6 +2064,10 @@ model AppUser {
   treasuryTitleComplementsUpdated     TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
   treasuryTitleComplementsCancelled   TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
   treasuryTitleComplementsResponsible TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
+  treasuryPaymentPromisesCreated      TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCreatedBy")
+  treasuryPaymentPromisesUpdated      TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseUpdatedBy")
+  treasuryPaymentPromisesCancelled    TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseCancelledBy")
+  treasuryPaymentPromisesResponsible  TreasuryPaymentPromise[]             @relation("TreasuryPaymentPromiseResponsible")
 
   @@index([role])
   @@index([isActive])
@@ -6976,6 +6980,61 @@ model TreasuryTitleOperationalComplement {
   @@index([confirmedDate])
   @@index([scheduledDate])
   @@index([plannedAccountId])
+  @@index([responsibleUserId])
+  @@index([createdByUserId])
+  @@index([cancelledAt])
+}
+
+/// Status da promessa de pagamento (histórico preservado — sem exclusão física).
+enum TreasuryPaymentPromiseStatus {
+  ACTIVE
+  PARTIALLY_FULFILLED
+  FULFILLED
+  EXPIRED
+  BROKEN
+  CANCELLED
+}
+
+/// Promessa de pagamento sobre título oficial Nomus.
+/// Não altera vencimento oficial (`dueDate`) nem saldo do título.
+model TreasuryPaymentPromise {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  titleType          TreasuryOfficialTitleKind
+  officialTitleId    String                    @db.Uuid
+  officialExternalId Int
+
+  promisedDate    DateTime @db.Date
+  promisedAmount  Decimal  @db.Decimal(20, 2)
+  fulfilledAmount Decimal  @default(0) @db.Decimal(20, 2)
+
+  contactNote       String?
+  channel           String?
+  notes             String?
+  responsibleUserId String? @db.Uuid
+
+  status TreasuryPaymentPromiseStatus @default(ACTIVE)
+
+  /// Optimistic lock.
+  version Int @default(1)
+
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId    String    @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId    String?   @db.Uuid
+  cancelledAt        DateTime? @db.Timestamptz(6)
+  cancelledByUserId  String?   @db.Uuid
+  cancellationReason String?
+  fulfilledAt        DateTime? @db.Timestamptz(6)
+
+  responsibleUser AppUser? @relation("TreasuryPaymentPromiseResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser   AppUser  @relation("TreasuryPaymentPromiseCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser? @relation("TreasuryPaymentPromiseUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser? @relation("TreasuryPaymentPromiseCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([titleType, officialTitleId])
+  @@index([titleType, officialExternalId])
+  @@index([status, promisedDate])
   @@index([responsibleUserId])
   @@index([createdByUserId])
   @@index([cancelledAt])

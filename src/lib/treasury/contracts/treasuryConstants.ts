@@ -18,6 +18,9 @@ export const TREASURY_ACCOUNTS_PATH =
 export const TREASURY_RECEIVABLES_PATH =
   `${TREASURY_API_PREFIX}/receivables` as const;
 
+export const TREASURY_PROMISES_PATH =
+  `${TREASURY_API_PREFIX}/promises` as const;
+
 export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
 
 export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;

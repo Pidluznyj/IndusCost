@@ -12,6 +12,8 @@ export type TreasuryReceivablesPermissionCheck = {
 };
 
 const RECEIVABLES = FINANCE_MODULE_RESOURCE_KEYS.treasuryReceivables;
+const RECEIVABLES_PROMISE =
+  FINANCE_MODULE_RESOURCE_KEYS.treasuryReceivablesPromise;
 const OFFICIAL_AR = FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable;
 const ROOT = FINANCE_MODULE_RESOURCE_KEYS.treasury;
 
@@ -57,6 +59,22 @@ export function canManageTreasuryReceivables(
     has(auth, "finance.treasury.receivables.manage") ||
     has(auth, "finance.treasury.manage") ||
     has(auth, `${ROOT}.manage`)
+  );
+  const officialOk = dtoOrLegacy(auth, OFFICIAL_AR, "view", () =>
+    has(auth, "finance.accounts_receivable.view") ||
+    has(auth, "finance.accounts_receivable")
+  );
+  return treasuryOk && officialOk;
+}
+
+/** Registrar/cancelar/cumprir promessas (execute + leitura oficial CR). */
+export function canPromiseTreasuryReceivables(
+  auth: TreasuryReceivablesPermissionCheck
+): boolean {
+  const treasuryOk = dtoOrLegacy(auth, RECEIVABLES_PROMISE, "execute", () =>
+    has(auth, "finance.treasury.receivables.promise") ||
+    has(auth, "finance.treasury.receivables.manage") ||
+    has(auth, "finance.treasury.manage")
   );
   const officialOk = dtoOrLegacy(auth, OFFICIAL_AR, "view", () =>
     has(auth, "finance.accounts_receivable.view") ||

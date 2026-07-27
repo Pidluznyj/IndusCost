@@ -74,6 +74,24 @@ describe("treasuryPrismaSchema", () => {
     assert.match(sql, /treasury_audit_log_immutable_trg/);
   });
 
+  it("schema e migration de promessas de pagamento existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryPaymentPromise \{/);
+    assert.match(schema, /enum TreasuryPaymentPromiseStatus/);
+    assert.match(schema, /promisedAmount\s+Decimal/);
+    assert.match(schema, /fulfilledAmount\s+Decimal/);
+    assert.match(schema, /TreasuryPaymentPromiseCreatedBy/);
+    const promiseMigration = join(
+      repoRoot,
+      "prisma/migrations/20260808120000_treasury_payment_promise/migration.sql"
+    );
+    assert.ok(existsSync(promiseMigration), promiseMigration);
+    const sql = readFileSync(promiseMigration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryPaymentPromise"/);
+    assert.match(sql, /PARTIALLY_FULFILLED/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
+
   it("schema e migration do complemento operacional de títulos existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /model TreasuryTitleOperationalComplement \{/);
