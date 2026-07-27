@@ -63,8 +63,9 @@
 | **36** | Auditoria do motor de projeção | `DONE` | `7628e55` | Correções: multi-baixa, promisedAmount, dedupe seeds, transfer órfã, ledger×settlement, includeInConsolidated, índice apps; algoritmo `1.2.0`; testes lacunas; sem UI nova; `test:treasury` 338/338 |
 | **37** | Transferências entre contas | `DONE` | `2cdcba4` | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
 | **38** | Model + serviço de exceções | `DONE` | `e4b823f` | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
+| **39** | Motor determinístico de exceções | `DONE` | `5dcdc74` | 16 tipos; generate/update; auto-resolve só seguro; algo `1.0.0`; testes por tipo; sem API/UI; `test:treasury` 386/386 |
 
-    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**.
+    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**; motor de exceções = **39**.
 
 ---
 
@@ -88,7 +89,7 @@
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
-| Exceções / alertas | `PARTIAL` | P23 derivadas no dashboard; P38 model+service persistido idempotente; API/UI/alert engine ainda pendentes |
+| Exceções / alertas | `PARTIAL` | P23 dashboard; P38 model+service; P39 motor determinístico (16 tipos, auto-resolve seguro); API/UI ainda pendentes |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
 | Reabertura | `NOT_STARTED` | — |
 | Importação OFX | `NOT_STARTED` | — |
@@ -430,6 +431,16 @@
 - [x] Sem avanço automático
 ---
 
+### 39 — Motor determinístico de exceções
+- [x] Tipos mínimos (16): recebimento/pagamento esperado, vencido s/ ação, promessa, crítico s/ programação, abaixo do mínimo, projeção negativa conta/consolidado, saldo desatualizado, movimento s/ identificação, diferença conciliação, transferência em trânsito, título s/ responsável, sync atrasado, duplicidade, mudança pós-fechamento
+- [x] Enums TS + Prisma + migration aditiva `20260814120000_treasury_exception_engine_types`
+- [x] Motor puro `treasuryExceptionEngine` (algo `1.0.0`): candidatos + plano upsert/auto-resolve; dinheiro string; determinístico
+- [x] Auto-resolve apenas tipos seguros; nunca `SUSPECTED_DUPLICATE` / `FINANCIAL_CHANGE_AFTER_CLOSING`
+- [x] Orquestração `treasuryExceptionEngineService` via `upsertByUniqueKey` + `resolve`
+- [x] Testes por tipo + integração apply; `test:treasury` 386/386
+- [x] Sem API/UI neste passo; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -487,3 +498,4 @@
 | 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
 | 2026-07-27 | Prompt 37: transferências entre contas — `2cdcba4` |
 | 2026-07-27 | Prompt 38: model + serviço de exceções — `e4b823f` |
+| 2026-07-27 | Prompt 39: motor determinístico de exceções — `PENDING` |
