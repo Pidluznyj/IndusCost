@@ -22,8 +22,9 @@
 
 | Prompt | Título | Status | Commit | Evidências |
 |--------|--------|--------|--------|------------|
-| **00** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` — `docs(treasury): mapear discovery da Central de Tesouraria (Prompt 00)` | `docs/treasury/01-DISCOVERY.md`; checks: frontend-server-imports OK, server-imports OK, test:server-startup 2/2 |
-| 01 | *(aguardando)* | `NOT_STARTED` | — | — |
+| **00a** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` (+ `eb411b3` hash) | `docs/treasury/01-DISCOVERY.md`; checks FE/server imports + startup OK |
+| **00b** | Requirements mapping + plano de implementação | `DONE` | *(este commit)* | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
+| **01** | Foundation (flag, money, skeleton routes) | `NOT_STARTED` | — | Ver `03-IMPLEMENTATION-PLAN.md` |
 
 ---
 
@@ -57,7 +58,7 @@
 | Permissões | `NOT_STARTED` | Estender contrato (`finance.*` resources) |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
 | Testes domínio | `NOT_STARTED` | Runner: `tsx --test` / `test:unit` |
-| Documentação | `IN_PROGRESS` | Discovery Prompt 00 feito |
+| Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `NOT_STARTED` | Padrão env fail-closed (ex. sales-order-flow) |
 | Scripts deploy/validação | `NOT_STARTED` | Produção: usuário aplica; Cursor não deploya |
 
@@ -101,6 +102,7 @@
 
 ## Prompt 00 — checklist de conclusão
 
+### 00a — Discovery
 - [x] Estrutura FE/BE mapeada
 - [x] Package manager e scripts mapeados (npm)
 - [x] `server.ts` e registro de routers mapeados
@@ -115,19 +117,36 @@
 - [x] Migrations contadas (128)
 - [x] Risco Prisma→FE avaliado + checks OK
 - [x] `docs/treasury/01-DISCOVERY.md` criado
-- [x] Este status criado
-- [x] Commit da documentação (Prompt 00) — `cbd77ef`
-- [x] Sem implementação de funcionalidades
+- [x] Commit discovery — `cbd77ef`
+
+### 00b — Mapping + plano
+- [x] `docs/treasury/02-REQUIREMENTS-MAPPING.md` criado (30 requisitos + anti-duplicação)
+- [x] `docs/treasury/03-IMPLEMENTATION-PLAN.md` criado (prompts 01–29 ordenados)
+- [x] Validação explícita: Tesouraria não duplica financeiro oficial (títulos Nomus, cash-flow, portfolio)
+- [x] Nenhum código funcional alterado neste passo
 - [x] Sem avanço automático para Prompt 01
+
+---
+
+## Validação anti-duplicação (Prompt 00b)
+
+| Gate | Resultado |
+|------|-----------|
+| Títulos CR/CP oficiais permanecem `NomusAccountsReceivable` / `NomusAccountsPayable` | Documentado — overlays laterais apenas |
+| Fluxo de Caixa não vira extrato bancário | Documentado — fronteira explícita |
+| Portfolio reconciliation ≠ conciliação bancária | Documentado |
+| Pedido/NF não entram como caixa | Documentado (ref. `order-nfe-cr-financial-separation.md`) |
+| Nenhum arquivo `src/lib/treasury/**` ou UI Tesouraria criado ainda | Confirmado (ausentes) |
 
 ---
 
 ## Riscos / pendências abertas
 
 1. Working tree local contém WIP não relacionado (Lucro×Caixa / nav) — não misturar no commit da Tesouraria.
-2. Engines financeiros atuais convertem Decimal→number — dívida técnica a endereçar no domínio Tesouraria.
-3. Ausência total de model de conta bancária / ledger — primeira migration real virá em prompt de schema.
+2. Engines financeiros atuais convertem Decimal→number — dívida técnica a endereçar no domínio Tesouraria (P01).
+3. Ausência total de model de conta bancária / ledger — primeira migration em P03.
 4. Deploy produção permanece com o usuário (backup, pull, migrate deploy, build, restart).
+5. Models `Treasury*` no mapping são **propostos** — nomes finais confirmados no prompt de schema.
 
 ---
 
@@ -135,4 +154,5 @@
 
 | Data | Evento |
 |------|--------|
-| 2026-07-27 | Prompt 00: discovery completo; docs criados; validações de leitura OK |
+| 2026-07-27 | Prompt 00a: discovery completo; docs criados; validações de leitura OK |
+| 2026-07-27 | Prompt 00b: requirements mapping + implementation plan; sem código funcional |
