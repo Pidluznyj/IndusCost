@@ -17,6 +17,7 @@ import { createTreasuryCollectionActionControllers } from "./controllers/treasur
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
 import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
+import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -28,6 +29,7 @@ import {
   TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  TREASURY_TRANSFERS_PATH,
 } from "./contracts/treasuryContracts.js";
 import {
   FINANCE_AP_RESOURCE_KEY_REF,
@@ -73,6 +75,7 @@ export function registerTreasuryRoutes(
   const disputes = createTreasuryDisputeControllers({ getCurrentAppUser });
   const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
+  const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
 
   const viewDashboard = requireResource(
     TREASURY_RESOURCE_KEYS.dashboard,
@@ -132,6 +135,17 @@ export function registerTreasuryRoutes(
   );
   const projectionEnabled = requireTreasuryFeatureFlag(
     "treasury.projection.enabled"
+  );
+  const transfersEnabled = requireTreasuryFeatureFlag(
+    "treasury.transfers.enabled"
+  );
+  const viewTransfers = requireResource(
+    TREASURY_RESOURCE_KEYS.transfers,
+    TREASURY_ACTIONS.view
+  );
+  const manageTransfers = requireResource(
+    TREASURY_RESOURCE_KEYS.transfers,
+    TREASURY_ACTIONS.manage
   );
 
   app.get(
@@ -291,6 +305,78 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     manageAccounts,
     accounts.putAccountAccess
+  );
+
+  app.get(
+    TREASURY_TRANSFERS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    viewTransfers,
+    transfers.list
+  );
+
+  app.post(
+    TREASURY_TRANSFERS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.create
+  );
+
+  app.get(
+    `${TREASURY_TRANSFERS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    viewTransfers,
+    transfers.getById
+  );
+
+  app.post(
+    `${TREASURY_TRANSFERS_PATH}/:id/schedule`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.schedule
+  );
+
+  app.post(
+    `${TREASURY_TRANSFERS_PATH}/:id/send`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.send
+  );
+
+  app.post(
+    `${TREASURY_TRANSFERS_PATH}/:id/receive`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.receive
+  );
+
+  app.post(
+    `${TREASURY_TRANSFERS_PATH}/:id/reconcile`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.reconcile
+  );
+
+  app.post(
+    `${TREASURY_TRANSFERS_PATH}/:id/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    transfersEnabled,
+    manageTransfers,
+    transfers.cancel
   );
 
   app.get(

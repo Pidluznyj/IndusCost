@@ -42,6 +42,9 @@ export const TREASURY_PROJECTIONS_COMPARE_PATH =
 export const TREASURY_AGENDA_PATH =
   `${TREASURY_API_PREFIX}/agenda` as const;
 
+export const TREASURY_TRANSFERS_PATH =
+  `${TREASURY_API_PREFIX}/transfers` as const;
+
 /** Default; override via TREASURY_PROJECTION_MAX_HORIZON_DAYS. */
 export const TREASURY_PROJECTION_DEFAULT_MAX_HORIZON_DAYS = 90;
 

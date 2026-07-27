@@ -46,4 +46,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/projections`,
     label: "Comparação de cenários",
   },
+  {
+    id: "transfers",
+    path: `${TREASURY_UI_BASE_PATH}/transfers`,
+    label: "Transferências",
+  },
 ] as const;

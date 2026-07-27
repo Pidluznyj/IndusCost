@@ -95,7 +95,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
       enumerateTreasuryProjectionCivilDates("2026-07-27", "2026-07-29"),
       ["2026-07-27", "2026-07-28", "2026-07-29"]
     );
-    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.2.0");
+    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.3.0");
   });
 
   it("remove cancelados e resolve saldo aberto sem negativo", () => {

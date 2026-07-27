@@ -29,6 +29,7 @@ import type {
   TreasuryScheduleStatus,
   TreasurySide,
   TreasurySortDirection,
+  TreasuryTransferStatus,
 } from "./treasuryEnums.js";
 import type { TreasuryPaginationMeta } from "./treasuryPagination.js";
 
@@ -301,12 +302,30 @@ export type TreasuryLedgerEntryDto = {
 export type TreasuryTransferDto = {
   id: string;
   transferGroupId: string;
+  companyCode: string;
   fromAccountId: string;
   toAccountId: string;
   civilDate: TreasuryCivilDate;
   amount: TreasuryMoneyString;
+  currency: TreasuryCurrency;
+  status: TreasuryTransferStatus;
   memo: string | null;
+  /** true enquanto enviada e ainda não recebida. */
+  fundsInTransit: boolean;
+  sentCivilDate: TreasuryCivilDate | null;
+  receivedCivilDate: TreasuryCivilDate | null;
+  reconciledCivilDate: TreasuryCivilDate | null;
+  sentAt: TreasuryTimestampIso | null;
+  receivedAt: TreasuryTimestampIso | null;
+  reconciledAt: TreasuryTimestampIso | null;
+  version: number;
   createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
+  updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
+  cancellationReason: string | null;
 };
 
 export type TreasuryPaymentPromiseDto = {

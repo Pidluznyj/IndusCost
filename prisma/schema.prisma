@@ -2078,6 +2078,9 @@ model AppUser {
   treasuryDisputesResponsible         TreasuryDispute[]                    @relation("TreasuryDisputeResponsible")
   treasuryProjectionRunsCreated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunCreatedBy")
   treasuryProjectionRunsUpdated       TreasuryProjectionRun[]              @relation("TreasuryProjectionRunUpdatedBy")
+  treasuryTransfersCreated            TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
+  treasuryTransfersUpdated            TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
+  treasuryTransfersCancelled          TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
 
   @@index([role])
   @@index([isActive])
@@ -6816,6 +6819,8 @@ model TreasuryFinancialAccount {
   balanceSnapshots            TreasuryBalanceSnapshot[]
   titleOperationalComplements TreasuryTitleOperationalComplement[]
   projectionDayLines          TreasuryProjectionDayLine[]
+  transfersFrom               TreasuryTransfer[]                   @relation("TreasuryTransferFromAccount")
+  transfersTo                 TreasuryTransfer[]                   @relation("TreasuryTransferToAccount")
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7375,5 +7380,68 @@ model TreasuryProjectionRecalcJob {
   @@index([eventType])
   @@index([requestId])
   @@index([deduplicationKey])
+}
+
+/// Status operacional da transferência interna entre contas.
+enum TreasuryTransferStatus {
+  FORECAST
+  SCHEDULED
+  SENT
+  RECEIVED
+  RECONCILED
+  CANCELLED
+}
+
+/// Transferência interna — duas pernas lógicas (saída/entrada), consolidado neutro.
+/// Histórico preservado (cancelamento lógico). Não é receita/despesa.
+model TreasuryTransfer {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Agrupa as pernas saída/entrada na projeção/composição.
+  transferGroupId String @unique @db.Uuid
+
+  companyCode   String
+  fromAccountId String @db.Uuid
+  toAccountId   String @db.Uuid
+
+  amount   Decimal              @db.Decimal(20, 2)
+  currency TreasuryCurrencyCode @default(BRL)
+
+  /// Data civil operacional principal (previsão/programação).
+  civilDate DateTime @db.Date
+
+  sentCivilDate       DateTime? @db.Date
+  receivedCivilDate   DateTime? @db.Date
+  reconciledCivilDate DateTime? @db.Date
+
+  sentAt       DateTime? @db.Timestamptz(6)
+  receivedAt   DateTime? @db.Timestamptz(6)
+  reconciledAt DateTime? @db.Timestamptz(6)
+
+  status TreasuryTransferStatus @default(FORECAST)
+  memo   String?
+
+  /// Optimistic lock.
+  version Int @default(1)
+
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId    String    @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId    String?   @db.Uuid
+  cancelledAt        DateTime? @db.Timestamptz(6)
+  cancelledByUserId  String?   @db.Uuid
+  cancellationReason String?
+
+  fromAccount     TreasuryFinancialAccount @relation("TreasuryTransferFromAccount", fields: [fromAccountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toAccount       TreasuryFinancialAccount @relation("TreasuryTransferToAccount", fields: [toAccountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser   AppUser                  @relation("TreasuryTransferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser?                 @relation("TreasuryTransferUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser?                 @relation("TreasuryTransferCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([companyCode, status, civilDate])
+  @@index([fromAccountId, civilDate])
+  @@index([toAccountId, civilDate])
+  @@index([status])
+  @@index([createdByUserId])
+  @@index([cancelledAt])
 }
 

@@ -84,6 +84,26 @@ export type TreasuryLedgerNature = (typeof TREASURY_LEDGER_NATURES)[number];
 export const TREASURY_LEDGER_STATUSES = ["ACTIVE", "REVERSED"] as const;
 export type TreasuryLedgerStatus = (typeof TREASURY_LEDGER_STATUSES)[number];
 
+/** Statuses de transferência interna (prevista→…→conciliada / cancelada). */
+export const TREASURY_TRANSFER_STATUSES = [
+  "FORECAST",
+  "SCHEDULED",
+  "SENT",
+  "RECEIVED",
+  "RECONCILED",
+  "CANCELLED",
+] as const;
+export type TreasuryTransferStatus = (typeof TREASURY_TRANSFER_STATUSES)[number];
+
+/** Statuses que ainda projetam movimento de caixa (não cancelados). */
+export const TREASURY_ACTIVE_TRANSFER_STATUSES = [
+  "FORECAST",
+  "SCHEDULED",
+  "SENT",
+  "RECEIVED",
+  "RECONCILED",
+] as const;
+
 export const TREASURY_PROMISE_STATUSES = [
   "ACTIVE",
   "PARTIALLY_FULFILLED",

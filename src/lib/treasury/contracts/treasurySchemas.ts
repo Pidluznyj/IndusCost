@@ -34,6 +34,7 @@ import {
   TREASURY_SIDES,
   TREASURY_TITLE_OPERATIONAL_PRIORITIES,
   TREASURY_TITLE_OPERATIONAL_STATUSES,
+  TREASURY_TRANSFER_STATUSES,
   type TreasuryAccountAccessLevel,
   type TreasuryAccountLiquidity,
   type TreasuryAccountSortField,
@@ -53,6 +54,7 @@ import {
   type TreasurySide,
   type TreasuryTitleOperationalPriority,
   type TreasuryTitleOperationalStatusCode,
+  type TreasuryTransferStatus,
 } from "./treasuryEnums.js";
 import type { TreasuryCivilDate } from "./treasuryCivilDate.js";
 import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
@@ -61,6 +63,7 @@ import {
   parseOptionalTreasuryMoneyString,
   parseTreasuryMoneyString,
 } from "./treasuryMoneyContract.js";
+import { treasuryMoneyToCents } from "../treasuryMoney.js";
 import {
   parseTreasuryAuthorizedSort,
   parseTreasuryPagination,
@@ -149,6 +152,21 @@ export type TreasuryTransferCreateInput = {
   civilDate: string;
   amount: string;
   memo: string | null;
+  /** FORECAST (default) ou SCHEDULED. */
+  status?: "FORECAST" | "SCHEDULED";
+  expectedUpdatedAt?: never;
+};
+
+export type TreasuryTransferTransitionInput = {
+  civilDate?: string | null;
+  memo?: string | null;
+  expectedVersion: number;
+  justification?: string | null;
+};
+
+export type TreasuryTransferCancelInput = {
+  expectedVersion: number;
+  justification: string;
 };
 
 export type TreasuryPromiseCreateInput = {
@@ -748,12 +766,107 @@ export function parseTreasuryTransferCreateInput(
       "toAccountId"
     );
   }
+  const amount = parseTreasuryMoneyString(body.amount, "amount");
+  if (treasuryMoneyToCents(amount) <= 0n) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "amount deve ser positivo.",
+      "amount"
+    );
+  }
+  const statusRaw = parseTreasuryEnum(
+    body.status,
+    ["FORECAST", "SCHEDULED"] as const,
+    "status",
+    false
+  );
   return {
     fromAccountId,
     toAccountId,
     civilDate: parseTreasuryCivilDate(body.civilDate, "civilDate"),
-    amount: parseTreasuryMoneyString(body.amount, "amount"),
+    amount,
     memo: parseTreasuryBoundedString(body.memo, "memo", { required: false }),
+    status: statusRaw ?? undefined,
+  };
+}
+
+export type TreasuryTransfersListQuery = TreasuryPaginationInput & {
+  companyCode: string | null;
+  status: TreasuryTransferStatus | null;
+  fromAccountId: string | null;
+  toAccountId: string | null;
+  from: TreasuryCivilDate | null;
+  to: TreasuryCivilDate | null;
+};
+
+export function parseTreasuryTransfersListQuery(
+  query: Record<string, unknown>
+): TreasuryTransfersListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const range = parseTreasuryDateRangeFilter(query);
+  return {
+    ...pagination,
+    companyCode: parseTreasuryBoundedString(query.companyCode, "companyCode", {
+      required: false,
+    }),
+    status: parseTreasuryEnum(
+      query.status,
+      TREASURY_TRANSFER_STATUSES,
+      "status",
+      false
+    ),
+    fromAccountId: parseTreasuryBoundedString(
+      query.fromAccountId,
+      "fromAccountId",
+      { required: false }
+    ),
+    toAccountId: parseTreasuryBoundedString(query.toAccountId, "toAccountId", {
+      required: false,
+    }),
+    from: range.from,
+    to: range.to,
+  };
+}
+
+export function parseTreasuryTransferTransitionInput(
+  body: Record<string, unknown>
+): TreasuryTransferTransitionInput {
+  return {
+    civilDate: parseOptionalTreasuryCivilDate(body.civilDate, "civilDate"),
+    memo: parseTreasuryBoundedString(body.memo, "memo", { required: false }),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
+  };
+}
+
+export function parseTreasuryTransferCancelInput(
+  body: Record<string, unknown>
+): TreasuryTransferCancelInput {
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.cancellationReason,
+    "justification",
+    { required: true }
+  );
+  if (!justification?.trim()) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória para cancelar transferência.",
+      "justification"
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    justification,
   };
 }
 

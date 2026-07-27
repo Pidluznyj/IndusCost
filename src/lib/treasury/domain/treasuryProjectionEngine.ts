@@ -48,7 +48,7 @@ import {
   type TreasuryFinancialClaim,
 } from "./treasuryFinancialIdentityRules.js";
 
-export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.2.0" as const;
+export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.3.0" as const;
 
 // ---------------------------------------------------------------------------
 // Inputs (snapshot já carregado — o motor não busca dados)
@@ -168,6 +168,21 @@ export type TreasuryProjectionTransferSeed = {
   civilDate: string;
   amount: string;
   isCancelled?: boolean;
+  /**
+   * Quando omitido, comportamento legado: ambas as pernas em `civilDate`, realizadas.
+   * Com status: SENT sem `inCivilDate` = recurso em trânsito (só saída).
+   */
+  status?:
+    | "FORECAST"
+    | "SCHEDULED"
+    | "SENT"
+    | "RECEIVED"
+    | "RECONCILED"
+    | "CANCELLED";
+  outCivilDate?: string | null;
+  inCivilDate?: string | null;
+  outRealized?: boolean;
+  inRealized?: boolean;
 };
 
 export type TreasuryProjectionEngineInput = {
@@ -871,8 +886,10 @@ export function buildTransferProjectionMovements(input: {
   const known = input.knownAccountIds;
 
   for (const t of removeCancelledProjectionItems(input.transfers)) {
-    if (!inPeriod(t.civilDate, input.periodFrom, input.periodTo)) continue;
-    if (!isTreasuryCivilDate(t.civilDate)) continue;
+    if (t.status === "CANCELLED") {
+      skipped.push({ id: t.id, reason: "Transferência cancelada." });
+      continue;
+    }
     if (
       known &&
       (!known.has(t.fromAccountId) || !known.has(t.toAccountId))
@@ -884,43 +901,86 @@ export function buildTransferProjectionMovements(input: {
       });
       continue;
     }
+
+    const outCivilDate = t.outCivilDate ?? t.civilDate;
+    const inCivilDate =
+      t.inCivilDate === undefined ? t.civilDate : t.inCivilDate;
+    // Legado (sem status): ambas realizadas. Com status: usar flags ou derivar.
+    const outRealized =
+      t.outRealized ??
+      (t.status == null ||
+        t.status === "SENT" ||
+        t.status === "RECEIVED" ||
+        t.status === "RECONCILED");
+    const inRealized =
+      t.inRealized ??
+      (t.status == null ||
+        t.status === "RECEIVED" ||
+        t.status === "RECONCILED");
     const amount = money(t.amount);
-    movements.push({
-      id: `${t.id}:out`,
-      accountId: t.fromAccountId,
-      civilDate: t.civilDate,
-      amount,
-      direction: "OUTFLOW",
-      itemKind: "TRANSFER",
-      isRealized: true,
-      isUncertain: false,
-      affectsConsolidated: false,
-      officialTitleId: null,
-      nomusExternalId: null,
-      ledgerEntryId: null,
-      transferGroupId: t.transferGroupId,
-      sourceRef: `TRANSFER|${t.transferGroupId}|OUT|inst:none`,
-      label: "Transferência saída",
-      metadata: { leg: "OUT", transferId: t.id },
-    });
-    movements.push({
-      id: `${t.id}:in`,
-      accountId: t.toAccountId,
-      civilDate: t.civilDate,
-      amount,
-      direction: "INFLOW",
-      itemKind: "TRANSFER",
-      isRealized: true,
-      isUncertain: false,
-      affectsConsolidated: false,
-      officialTitleId: null,
-      nomusExternalId: null,
-      ledgerEntryId: null,
-      transferGroupId: t.transferGroupId,
-      sourceRef: `TRANSFER|${t.transferGroupId}|IN|inst:none`,
-      label: "Transferência entrada",
-      metadata: { leg: "IN", transferId: t.id },
-    });
+    const fundsInTransit = t.status === "SENT" && inCivilDate == null;
+
+    if (outCivilDate && isTreasuryCivilDate(outCivilDate)) {
+      if (inPeriod(outCivilDate, input.periodFrom, input.periodTo)) {
+        movements.push({
+          id: `${t.id}:out`,
+          accountId: t.fromAccountId,
+          civilDate: outCivilDate,
+          amount,
+          direction: "OUTFLOW",
+          itemKind: "TRANSFER",
+          isRealized: outRealized,
+          isUncertain: false,
+          affectsConsolidated: false,
+          officialTitleId: null,
+          nomusExternalId: null,
+          ledgerEntryId: null,
+          transferGroupId: t.transferGroupId,
+          sourceRef: `TRANSFER|${t.transferGroupId}|OUT|inst:none`,
+          label: "Transferência saída",
+          metadata: {
+            leg: "OUT",
+            transferId: t.id,
+            status: t.status ?? null,
+            fundsInTransit,
+          },
+        });
+      }
+    }
+
+    if (inCivilDate && isTreasuryCivilDate(inCivilDate)) {
+      if (inPeriod(inCivilDate, input.periodFrom, input.periodTo)) {
+        movements.push({
+          id: `${t.id}:in`,
+          accountId: t.toAccountId,
+          civilDate: inCivilDate,
+          amount,
+          direction: "INFLOW",
+          itemKind: "TRANSFER",
+          isRealized: inRealized,
+          isUncertain: false,
+          affectsConsolidated: false,
+          officialTitleId: null,
+          nomusExternalId: null,
+          ledgerEntryId: null,
+          transferGroupId: t.transferGroupId,
+          sourceRef: `TRANSFER|${t.transferGroupId}|IN|inst:none`,
+          label: "Transferência entrada",
+          metadata: {
+            leg: "IN",
+            transferId: t.id,
+            status: t.status ?? null,
+            fundsInTransit: false,
+          },
+        });
+      }
+    } else if (fundsInTransit) {
+      skipped.push({
+        id: `${t.id}:in`,
+        reason:
+          "Entrada omitida: recurso em trânsito (enviada, ainda não recebida).",
+      });
+    }
   }
   return { movements, skipped };
 }
