@@ -108,6 +108,77 @@ export function planTreasuryDailyClosingReopen(input: {
   };
 }
 
+/**
+ * Valida hash do preview no momento do fechamento.
+ * Fonte mudou → CONFLICT (HTTP 409).
+ */
+export function assertTreasuryDailyClosingPreviewHashMatch(
+  previewSourceHash: string,
+  submittedSourceHash: string
+): void {
+  if (previewSourceHash.trim() !== submittedSourceHash.trim()) {
+    throw new TreasuryDomainError(
+      "CONFLICT",
+      "Hash da fonte divergente do preview. Recarregue o preview e tente novamente.",
+      "sourceHash"
+    );
+  }
+}
+
+export type TreasuryDailyClosingCaveatInput = {
+  code: string;
+  message: string;
+};
+
+/**
+ * Valida se o preview permite fechar e se as ressalvas cobrem pendências exigidas.
+ */
+export function assertTreasuryDailyClosingReadyToClose(input: {
+  canCloseWithCaveats: boolean;
+  canCloseWithoutCaveats: boolean;
+  absoluteBlockCodes: string[];
+  requiredCaveatCodes: string[];
+  caveats: TreasuryDailyClosingCaveatInput[];
+}): void {
+  if (input.absoluteBlockCodes.includes("DAY_ALREADY_CLOSED")) {
+    throw new TreasuryDomainError(
+      "DAY_CLOSED",
+      "Dia já fechado. Reabra para criar nova versão.",
+      "status"
+    );
+  }
+  if (!input.canCloseWithCaveats || input.absoluteBlockCodes.length > 0) {
+    throw new TreasuryDomainError(
+      "CONFLICT",
+      `Fechamento bloqueado: ${input.absoluteBlockCodes.join(", ") || "bloqueios absolutos"}.`,
+      "absoluteBlocks"
+    );
+  }
+  if (input.canCloseWithoutCaveats) return;
+  if (input.requiredCaveatCodes.length === 0) return;
+
+  const provided = new Set(
+    input.caveats.map((c) => c.code.trim()).filter(Boolean)
+  );
+  const missing = input.requiredCaveatCodes.filter((c) => !provided.has(c));
+  if (missing.length > 0) {
+    throw new TreasuryDomainError(
+      "VALIDATION_ERROR",
+      `Ressalvas obrigatórias ausentes: ${missing.join(", ")}.`,
+      "caveats"
+    );
+  }
+  for (const c of input.caveats) {
+    if (!c.message?.trim()) {
+      throw new TreasuryDomainError(
+        "VALIDATION_ERROR",
+        "Cada ressalva exige mensagem.",
+        "caveats"
+      );
+    }
+  }
+}
+
 /** Campos financeiros do cabeçalho que nunca mudam após CLOSE (exceto via nova versão). */
 export const TREASURY_DAILY_CLOSING_IMMUTABLE_PAYLOAD_FIELDS = [
   "companyCode",

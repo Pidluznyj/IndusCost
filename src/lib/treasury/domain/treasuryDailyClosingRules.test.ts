@@ -5,6 +5,8 @@ import {
   assertTreasuryDailyClosingCanClose,
   assertTreasuryDailyClosingCanReopen,
   assertTreasuryDailyClosingMutable,
+  assertTreasuryDailyClosingPreviewHashMatch,
+  assertTreasuryDailyClosingReadyToClose,
   isTreasuryDailyClosingMutable,
   planTreasuryDailyClosingReopen,
   TREASURY_DAILY_CLOSING_IMMUTABLE_PAYLOAD_FIELDS,
@@ -87,6 +89,53 @@ describe("treasuryDailyClosingRules", () => {
           reason: "x",
         }),
       TreasuryDomainError
+    );
+  });
+
+  it("hash do preview divergente gera CONFLICT", () => {
+    assert.throws(
+      () =>
+        assertTreasuryDailyClosingPreviewHashMatch("aaa", "bbb"),
+      (err: unknown) =>
+        err instanceof TreasuryDomainError && err.code === "CONFLICT"
+    );
+    assert.doesNotThrow(() =>
+      assertTreasuryDailyClosingPreviewHashMatch("same", "same")
+    );
+  });
+
+  it("exige ressalvas para pendências e bloqueia absolutos", () => {
+    assert.throws(
+      () =>
+        assertTreasuryDailyClosingReadyToClose({
+          canCloseWithCaveats: false,
+          canCloseWithoutCaveats: false,
+          absoluteBlockCodes: ["DAY_ALREADY_CLOSED"],
+          requiredCaveatCodes: [],
+          caveats: [],
+        }),
+      (err: unknown) =>
+        err instanceof TreasuryDomainError && err.code === "DAY_CLOSED"
+    );
+    assert.throws(
+      () =>
+        assertTreasuryDailyClosingReadyToClose({
+          canCloseWithCaveats: true,
+          canCloseWithoutCaveats: false,
+          absoluteBlockCodes: [],
+          requiredCaveatCodes: ["EXPIRED_PROMISE", "STALE_BALANCE"],
+          caveats: [{ code: "EXPIRED_PROMISE", message: "ok" }],
+        }),
+      /STALE_BALANCE/
+    );
+    assert.doesNotThrow(() =>
+      assertTreasuryDailyClosingReadyToClose({
+        canCloseWithCaveats: true,
+        canCloseWithoutCaveats: false,
+        absoluteBlockCodes: [],
+        requiredCaveatCodes: ["EXPIRED_PROMISE"],
+        caveats: [{ code: "EXPIRED_PROMISE", message: "Ack" }],
+      })
     );
   });
 

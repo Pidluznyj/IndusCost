@@ -108,6 +108,7 @@ export const TREASURY_FIELD_LIMITS = {
   idempotencyKey: 128,
   attachmentUrl: 500,
   uniqueKey: 200,
+  sourceHash: 128,
   title: 240,
   description: 4000,
   resolution: 2000,

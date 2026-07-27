@@ -21,12 +21,14 @@ import { createTreasuryTransferControllers } from "./controllers/treasuryTransfe
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
 import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
 import { createTreasuryDailyClosingPreviewControllers } from "./controllers/treasuryDailyClosingPreviewController.js";
+import { createTreasuryDailyClosingControllers } from "./controllers/treasuryDailyClosingController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
+  TREASURY_DAILY_CLOSING_PATH,
   TREASURY_DAILY_CLOSING_PREVIEW_PATH,
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
@@ -87,6 +89,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const dailyClosingPreview = createTreasuryDailyClosingPreviewControllers({
+    getCurrentAppUser,
+  });
+  const dailyClosing = createTreasuryDailyClosingControllers({
     getCurrentAppUser,
   });
 
@@ -175,6 +180,14 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEYS.closing,
     TREASURY_ACTIONS.view
   );
+  const closeDay = requireResource(
+    TREASURY_RESOURCE_KEYS.closing,
+    TREASURY_ACTIONS.close
+  );
+  const reopenDay = requireResource(
+    TREASURY_RESOURCE_KEYS.closing,
+    TREASURY_ACTIONS.reopen
+  );
   const dailyClosingEnabled = requireTreasuryFeatureFlag(
     "treasury.dailyClosing.enabled"
   );
@@ -202,6 +215,42 @@ export function registerTreasuryRoutes(
     dailyClosingEnabled,
     viewClosing,
     dailyClosingPreview.getPreview
+  );
+
+  app.get(
+    TREASURY_DAILY_CLOSING_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dailyClosingEnabled,
+    viewClosing,
+    dailyClosing.list
+  );
+
+  app.post(
+    TREASURY_DAILY_CLOSING_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dailyClosingEnabled,
+    closeDay,
+    dailyClosing.close
+  );
+
+  app.get(
+    `${TREASURY_DAILY_CLOSING_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    dailyClosingEnabled,
+    viewClosing,
+    dailyClosing.getById
+  );
+
+  app.post(
+    `${TREASURY_DAILY_CLOSING_PATH}/:id/reopen`,
+    requireAppAuth,
+    moduleEnabled,
+    dailyClosingEnabled,
+    reopenDay,
+    dailyClosing.reopen
   );
 
   app.get(

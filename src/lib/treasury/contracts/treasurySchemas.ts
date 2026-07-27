@@ -20,6 +20,7 @@ import {
   TREASURY_ACCOUNT_SORT_FIELDS,
   TREASURY_ACCOUNT_TYPES,
   TREASURY_BALANCE_ORIGINS,
+  TREASURY_CLOSING_STATUSES,
   TREASURY_COLLECTION_ACTION_TYPES,
   TREASURY_CURRENCIES,
   TREASURY_DISPUTE_STATUSES,
@@ -2534,6 +2535,153 @@ export function parseTreasuryDailyClosingPreviewQuery(
     accountIds: parseAccountIdsFilter(
       query.accountIds ?? query.accounts ?? query.contaIds
     ),
+  };
+}
+
+export type TreasuryDailyClosingCaveatInput = {
+  code: string;
+  message: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+};
+
+export type TreasuryDailyClosingCloseInput = {
+  companyCode: string;
+  date: TreasuryCivilDate;
+  sourceHash: string;
+  accountIds: string[] | null;
+  notes: string | null;
+  caveats: TreasuryDailyClosingCaveatInput[];
+};
+
+export type TreasuryDailyClosingReopenInput = {
+  reason: string;
+};
+
+export type TreasuryDailyClosingListQuery = {
+  companyCode: string | null;
+  dateFrom: TreasuryCivilDate | null;
+  dateTo: TreasuryCivilDate | null;
+  status: (typeof TREASURY_CLOSING_STATUSES)[number] | null;
+  page: number;
+  pageSize: number;
+};
+
+export function parseTreasuryDailyClosingCloseInput(
+  body: Record<string, unknown>
+): TreasuryDailyClosingCloseInput {
+  const companyCode = parseTreasuryBoundedString(
+    body.companyCode ?? body.empresa,
+    "companyCode",
+    { required: true }
+  )!;
+  const date = parseTreasuryCivilDate(
+    body.date ?? body.civilDate ?? body.asOfDate,
+    "date"
+  );
+  const sourceHash = parseTreasuryBoundedString(
+    body.sourceHash ?? body.previewSourceHash,
+    "sourceHash",
+    { required: true }
+  )!;
+  if (sourceHash.length < 16) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "sourceHash inválido.",
+      "sourceHash"
+    );
+  }
+  const notes = parseTreasuryBoundedString(body.notes, "notes", {
+    required: false,
+  });
+  const rawCaveats = body.caveats ?? body.ressalvas ?? [];
+  if (!Array.isArray(rawCaveats)) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "caveats deve ser array.",
+      "caveats"
+    );
+  }
+  const caveats: TreasuryDailyClosingCaveatInput[] = rawCaveats.map(
+    (item, index) => {
+      if (!item || typeof item !== "object") {
+        throw new TreasuryContractError(
+          "VALIDATION_ERROR",
+          `caveats[${index}] inválido.`,
+          "caveats"
+        );
+      }
+      const row = item as Record<string, unknown>;
+      const code = parseTreasuryBoundedString(row.code, "code", {
+        required: true,
+      })!;
+      const message = parseTreasuryBoundedString(row.message, "notes", {
+        required: true,
+      })!;
+      const severity =
+        parseTreasuryEnum(
+          row.severity,
+          ["INFO", "WARNING", "CRITICAL"] as const,
+          "severity",
+          false
+        ) ?? "WARNING";
+      return { code, message, severity };
+    }
+  );
+  return {
+    companyCode,
+    date,
+    sourceHash,
+    accountIds: parseAccountIdsFilter(
+      body.accountIds ?? body.accounts ?? body.contaIds
+    ),
+    notes,
+    caveats,
+  };
+}
+
+export function parseTreasuryDailyClosingReopenInput(
+  body: Record<string, unknown>
+): TreasuryDailyClosingReopenInput {
+  const reason = parseTreasuryBoundedString(
+    body.reason ?? body.justification ?? body.motivo,
+    "reason",
+    { required: true }
+  )!;
+  return { reason };
+}
+
+export function parseTreasuryDailyClosingListQuery(
+  query: Record<string, unknown>
+): TreasuryDailyClosingListQuery {
+  const companyRaw = query.companyCode ?? query.empresa ?? query.company;
+  const companyCode =
+    companyRaw == null || companyRaw === ""
+      ? null
+      : parseTreasuryBoundedString(companyRaw, "companyCode", {
+          required: true,
+        });
+  const dateFromRaw = query.dateFrom ?? query.from ?? query.inicio;
+  const dateToRaw = query.dateTo ?? query.to ?? query.fim;
+  const pagination = parseTreasuryPagination(query);
+  return {
+    companyCode,
+    dateFrom:
+      dateFromRaw == null || dateFromRaw === ""
+        ? null
+        : parseTreasuryCivilDate(dateFromRaw, "dateFrom"),
+    dateTo:
+      dateToRaw == null || dateToRaw === ""
+        ? null
+        : parseTreasuryCivilDate(dateToRaw, "dateTo"),
+    status:
+      parseTreasuryEnum(
+        query.status,
+        TREASURY_CLOSING_STATUSES,
+        "status",
+        false
+      ) ?? null,
+    page: pagination.page,
+    pageSize: pagination.pageSize,
   };
 }
 
