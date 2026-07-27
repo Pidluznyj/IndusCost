@@ -44,3 +44,14 @@ export {
   resolveTreasuryCapabilities,
 } from "./treasuryPermissions.js";
 export { startTreasuryScheduledJobs, listTreasuryJobs } from "./jobs/treasuryJobs.js";
+export {
+  buildTreasuryAccessGrantedAudit,
+  buildTreasuryBalanceSnapshotAudit,
+  buildTreasuryCreatedAudit,
+  buildTreasuryDeactivatedAudit,
+  buildTreasuryUpdatedAudit,
+} from "./treasuryAuditHelpers.js";
+export {
+  TREASURY_AUDIT_ACTIONS,
+  TREASURY_AUDIT_ENTITY_TYPES,
+} from "./contracts/treasuryAuditContracts.js";

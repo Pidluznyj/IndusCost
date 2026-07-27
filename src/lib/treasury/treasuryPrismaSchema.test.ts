@@ -54,4 +54,23 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
     assert.doesNotMatch(sql, /ALTER TABLE "AppUser"/);
   });
+
+  it("schema e migration de auditoria append-only existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryAuditLog \{/);
+    assert.match(schema, /beforeJson\s+Json\?/);
+    assert.match(schema, /afterJson\s+Json\?/);
+    assert.match(schema, /metadataJson\s+Json\?/);
+    assert.match(schema, /justification\s+String\?/);
+    assert.match(schema, /requestId\s+String\?/);
+    assert.match(schema, /sessionId\s+String\?/);
+    const auditMigration = join(
+      repoRoot,
+      "prisma/migrations/20260806120000_treasury_audit_log/migration.sql"
+    );
+    assert.ok(existsSync(auditMigration), auditMigration);
+    const sql = readFileSync(auditMigration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryAuditLog"/);
+    assert.match(sql, /treasury_audit_log_immutable_trg/);
+  });
 });

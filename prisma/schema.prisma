@@ -2059,6 +2059,7 @@ model AppUser {
   treasuryAccountAccessGrants     TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessUser")
   treasuryAccountAccessGrantedBy  TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessGrantedBy")
   treasuryBalanceSnapshotsCreated TreasuryBalanceSnapshot[]        @relation("TreasuryBalanceSnapshotCreatedBy")
+  treasuryAuditLogs               TreasuryAuditLog[]               @relation("TreasuryAuditLogUser")
 
   @@index([role])
   @@index([isActive])
@@ -6865,5 +6866,33 @@ model TreasuryBalanceSnapshot {
   @@index([origin])
   @@index([createdByUserId])
   @@index([previousSnapshotId])
+  @@index([createdAt])
+}
+
+/// Auditoria append-only da Tesouraria (imutável via trigger + API sem update/delete).
+model TreasuryAuditLog {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  entityType    String
+  entityId      String
+  action        String
+  beforeJson    Json?
+  afterJson     Json?
+  metadataJson  Json?
+  justification String?
+  requestId     String?
+  sessionId     String?
+  userId        String?  @db.Uuid
+  userName      String?
+  occurredAt    DateTime @default(now()) @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+
+  user AppUser? @relation("TreasuryAuditLogUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([requestId])
+  @@index([occurredAt])
   @@index([createdAt])
 }

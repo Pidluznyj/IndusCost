@@ -29,8 +29,9 @@
 | **02** | Feature flags + permissões Tesouraria | `DONE` | `31800a0` — `feat(treasury): adicionar feature flags e permissões da Central de Tesouraria` | Contrato `finance.treasury*`; bags; flags `treasury.*.enabled`; `requireResource` na availability; `test:treasury` 31/31 |
 | **03** | Contratos client-safe (enums/DTOs/schemas) | `DONE` | `56780b5` — `feat(treasury): adicionar contratos client-safe da Central de Tesouraria` | `src/lib/treasury/contracts/**`; money/date/timestamp/pagination/sort; parse tipado (sem Zod); FE importa contratos; `test:treasury` 45/45; `check:frontend-server-imports` OK |
 | **04** | Schema Prisma contas + acesso + snapshots | `DONE` | `365a4d8` — `feat(treasury): adicionar schema Prisma de contas, acesso e snapshots` | `TreasuryFinancialAccount`, `TreasuryFinancialAccountAccess`, `TreasuryBalanceSnapshot`; migration `20260805120000_*`; FKs `AppUser`; `companyCode` (sem model Company); prisma format/validate/generate OK; `test:treasury` 47/47; build OK; **não** aplicada em prod |
+| **05** | Auditoria central Tesouraria | `DONE` | *(este commit)* | `TreasuryAuditLog` append-only + trigger; `writeTreasuryAuditLog` aceita TX; helpers tipados; testes create/update/rollback/imutabilidade; migration `20260806120000_*`; `test:treasury` 54/54 |
 
-> **Nota de ordem:** contratos client-safe foram inseridos como **03**; schema Prisma accounts é **04** no plano (`03-IMPLEMENTATION-PLAN.md`).
+> **Nota de ordem:** contratos = **03**; schema accounts = **04**; auditoria central entregue como **05** (adiantada vs plano P06). CRUD contas permanece o próximo passo operacional.
 
 ---
 
@@ -38,7 +39,7 @@
 
 | Capabilidade | Status | Notas / reuso |
 |--------------|--------|---------------|
-| Contas financeiras | `PARTIAL` | Schema `TreasuryFinancialAccount` + access; CRUD API/UI ainda P05 |
+| Contas financeiras | `PARTIAL` | Schema `TreasuryFinancialAccount` + access; CRUD API/UI ainda próximo prompt |
 | Saldos manuais e históricos | `PARTIAL` | Schema `TreasuryBalanceSnapshot` (idempotência por origem); API ainda P06 |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; APIs `/api/finance/accounts-receivable/*` |
@@ -60,10 +61,10 @@
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
-| Auditoria domínio | `NOT_STARTED` | Padrão: `*AuditLog` por domínio |
+| Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 47 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 54 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -198,13 +199,23 @@
 - [x] Migration **não** aplicada em produção
 - [x] Sem avanço automático para CRUD contas
 
+### 05 — Auditoria central
+- [x] Model `TreasuryAuditLog` (entity, id, action, before/after, metadata, justification, requestId, session, user, occurredAt)
+- [x] Writer aceita `PrismaClient | TransactionClient` (mesma TX da ação principal)
+- [x] Helpers tipados (`buildTreasuryCreatedAudit` / `Updated` / access / snapshot)
+- [x] Imutabilidade: API nega update/delete + trigger SQL BEFORE UPDATE OR DELETE
+- [x] Testes: criação, alteração, rollback conjunto, imutabilidade
+- [x] Migration `20260806120000_treasury_audit_log` (não aplicada em prod)
+- [x] `test:treasury` 54/54; prisma validate/generate OK
+- [x] Sem avanço automático para CRUD contas
+
 ---
 
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
 2. Seed DB (`permissions:seed:contract:apply`) ainda a cargo do usuário/ops — contrato tipado já está no código.
-3. Migration Tesouraria criada mas **não deployada** — usuário aplica com `migrate deploy`.
+3. Migrations Tesouraria criadas mas **não deployadas** — usuário aplica com `migrate deploy`.
 4. Deploy produção permanece com o usuário.
 5. `TreasuryScaffoldPage` ainda sem wiring em `FinanceModule`/nav (proposital).
 6. Alias relacional PT `financeiro.tesouraria` ainda não criado no seed legado (de propósito nesta etapa).
@@ -223,3 +234,4 @@
 | 2026-07-27 | Prompt 02: flags + permissões Tesouraria; test:treasury 31/31 |
 | 2026-07-27 | Prompt 03: contratos client-safe (enums/DTOs/schemas); test:treasury 45/45; FE sem Prisma |
 | 2026-07-27 | Prompt 04: schema Prisma contas/acesso/snapshots + migration aditiva; generate/build OK; sem deploy |
+| 2026-07-27 | Prompt 05: auditoria central append-only + TX; test:treasury 54/54; migration não deployada |

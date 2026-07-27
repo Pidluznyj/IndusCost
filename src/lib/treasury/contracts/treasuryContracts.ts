@@ -155,3 +155,17 @@ export type {
   TreasuryPromiseCreateInput,
   TreasuryTransferCreateInput,
 } from "./treasurySchemas.js";
+
+export {
+  TREASURY_AUDIT_ACTIONS,
+  TREASURY_AUDIT_ENTITY_TYPES,
+  isTreasuryAuditAction,
+  isTreasuryAuditEntityType,
+} from "./treasuryAuditContracts.js";
+export type {
+  TreasuryAuditAction,
+  TreasuryAuditActorContext,
+  TreasuryAuditEntityType,
+  TreasuryAuditEventInput,
+  TreasuryAuditLogDto,
+} from "./treasuryAuditContracts.js";
