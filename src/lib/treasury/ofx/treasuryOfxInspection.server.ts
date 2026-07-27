@@ -31,7 +31,10 @@ export type TreasuryOfxInspectionResult = TreasuryOfxParseResult & {
  */
 export function inspectTreasuryOfxUpload(
   input: TreasuryOfxInspectionInput,
-  deps?: { tempStorage?: TreasuryOfxTempStorage }
+  deps?: {
+    tempStorage?: TreasuryOfxTempStorage;
+    quarantineInvalid?: boolean;
+  }
 ): TreasuryOfxInspectionResult {
   const intake = assertTreasuryOfxIntake(input.buffer, {
     originalName: input.originalName,
@@ -57,6 +60,7 @@ export function inspectTreasuryOfxUpload(
     }
     const parsed = parseTreasuryOfxBuffer(fromDisk, {
       fileSha256: staged.sha256,
+      quarantineInvalid: deps?.quarantineInvalid === true,
     });
     return {
       ...parsed,

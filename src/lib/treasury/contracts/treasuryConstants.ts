@@ -57,6 +57,15 @@ export const TREASURY_DAILY_CLOSING_PATH =
 export const TREASURY_DAILY_CLOSING_PREVIEW_PATH =
   `${TREASURY_DAILY_CLOSING_PATH}/preview` as const;
 
+export const TREASURY_BANK_IMPORTS_PATH =
+  `${TREASURY_API_PREFIX}/bank-imports` as const;
+
+export const TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH =
+  `${TREASURY_BANK_IMPORTS_PATH}/ofx/preview` as const;
+
+/** TTL do token de preview OFX (segundos). */
+export const TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS = 15 * 60;
+
 /** Default; override via TREASURY_PROJECTION_MAX_HORIZON_DAYS. */
 export const TREASURY_PROJECTION_DEFAULT_MAX_HORIZON_DAYS = 90;
 

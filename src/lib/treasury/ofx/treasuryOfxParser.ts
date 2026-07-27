@@ -60,6 +60,14 @@ export type TreasuryOfxParsedTransaction = {
   source: "BANK" | "CREDIT_CARD";
 };
 
+export type TreasuryOfxInvalidTransaction = {
+  sortOrder: number;
+  reason: string;
+  field: string | null;
+  fitId: string | null;
+  description: string | null;
+};
+
 export type TreasuryOfxParseResult = {
   ok: true;
   library: typeof TREASURY_OFX_PARSER_LIBRARY;
@@ -74,6 +82,8 @@ export type TreasuryOfxParseResult = {
     currency: string | null;
   };
   transactions: TreasuryOfxParsedTransaction[];
+  /** Presente quando `quarantineInvalid: true` no parse. */
+  invalidTransactions: TreasuryOfxInvalidTransaction[];
   warnings: string[];
   ledgerBalance: {
     amount: TreasuryMoneyString;
@@ -185,7 +195,7 @@ function wrapParseError(err: unknown): never {
  */
 export function parseTreasuryOfxBuffer(
   buffer: Buffer,
-  options?: { fileSha256?: string }
+  options?: { fileSha256?: string; quarantineInvalid?: boolean }
 ): TreasuryOfxParseResult {
   const text = buffer.toString("utf8");
   const format = detectTreasuryOfxFormat(text);
@@ -261,8 +271,11 @@ export function parseTreasuryOfxBuffer(
     );
   }
 
+  const quarantine = options?.quarantineInvalid === true;
   const transactions: TreasuryOfxParsedTransaction[] = [];
-  for (const row of rawList) {
+  const invalidTransactions: TreasuryOfxInvalidTransaction[] = [];
+  for (let index = 0; index < rawList.length; index += 1) {
+    const row = rawList[index]!;
     const source =
       String(row.source ?? "bank").toLowerCase() === "creditCard" ||
       String(row.source ?? "").toLowerCase() === "credit_card"
@@ -271,9 +284,31 @@ export function parseTreasuryOfxBuffer(
     try {
       transactions.push(mapNormalizedTx(row, source));
     } catch (err) {
-      // Quarantine: falha em uma linha → rejeita o arquivo inteiro nesta base
-      // (strict). Persistência seletiva virá em prompt futuro.
-      wrapParseError(err);
+      if (!quarantine) {
+        // Strict: falha em uma linha → rejeita o arquivo inteiro.
+        wrapParseError(err);
+      }
+      const raw = (row.raw as Record<string, unknown> | undefined) ?? row;
+      const domain =
+        err instanceof TreasuryDomainError
+          ? err
+          : new TreasuryDomainError(
+              "VALIDATION_ERROR",
+              err instanceof Error ? err.message : "Linha OFX inválida.",
+              "file"
+            );
+      invalidTransactions.push({
+        sortOrder: index,
+        reason: domain.message,
+        field: domain.field ?? null,
+        fitId: String(row.fitId ?? raw.FITID ?? "").trim() || null,
+        description:
+          row.description != null
+            ? String(row.description)
+            : raw.MEMO != null
+              ? String(raw.MEMO)
+              : null,
+      });
     }
   }
 
@@ -316,6 +351,7 @@ export function parseTreasuryOfxBuffer(
       currency: first?.currency ?? null,
     },
     transactions,
+    invalidTransactions,
     warnings,
     ledgerBalance,
     persisted: false,

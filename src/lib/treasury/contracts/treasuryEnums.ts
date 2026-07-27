@@ -397,6 +397,23 @@ export const TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES = [
 export type TreasuryBankMovementReconciliationStatus =
   (typeof TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES)[number];
 
+/** Classificação de linha no preview de importação OFX (não persiste). */
+export const TREASURY_OFX_PREVIEW_ROW_STATUSES = [
+  "NEW",
+  "DUPLICATE",
+  "INVALID",
+] as const;
+export type TreasuryOfxPreviewRowStatus =
+  (typeof TREASURY_OFX_PREVIEW_ROW_STATUSES)[number];
+
+export const TREASURY_OFX_PREVIEW_DUPLICATE_REASONS = [
+  "EXISTING_MOVEMENT",
+  "INTRA_FILE",
+  "EXISTING_FILE",
+] as const;
+export type TreasuryOfxPreviewDuplicateReason =
+  (typeof TREASURY_OFX_PREVIEW_DUPLICATE_REASONS)[number];
+
 export const TREASURY_AVAILABILITY_STATUSES = [
   "available",
   "disabled",

@@ -5,6 +5,7 @@
 
 import type express from "express";
 import type { RequestHandler } from "express";
+import multer from "multer";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityController.js";
 import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
@@ -22,11 +23,13 @@ import { createTreasuryExceptionControllers } from "./controllers/treasuryExcept
 import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
 import { createTreasuryDailyClosingPreviewControllers } from "./controllers/treasuryDailyClosingPreviewController.js";
 import { createTreasuryDailyClosingControllers } from "./controllers/treasuryDailyClosingController.js";
+import { createTreasuryBankImportOfxPreviewControllers } from "./controllers/treasuryBankImportOfxPreviewController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_AVAILABILITY_PATH,
+  TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DAILY_CLOSING_PATH,
   TREASURY_DAILY_CLOSING_PREVIEW_PATH,
@@ -39,6 +42,7 @@ import {
   TREASURY_RECEIVABLES_PATH,
   TREASURY_TRANSFERS_PATH,
 } from "./contracts/treasuryContracts.js";
+import { TREASURY_OFX_MAX_FILE_BYTES } from "./ofx/treasuryOfxConstants.js";
 import {
   FINANCE_AP_RESOURCE_KEY_REF,
   FINANCE_MODULE_RESOURCE_KEYS,
@@ -93,6 +97,13 @@ export function registerTreasuryRoutes(
   });
   const dailyClosing = createTreasuryDailyClosingControllers({
     getCurrentAppUser,
+  });
+  const ofxPreview = createTreasuryBankImportOfxPreviewControllers({
+    getCurrentAppUser,
+  });
+  const ofxUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
   });
 
   const viewDashboard = requireResource(
@@ -191,6 +202,13 @@ export function registerTreasuryRoutes(
   const dailyClosingEnabled = requireTreasuryFeatureFlag(
     "treasury.dailyClosing.enabled"
   );
+  const ofxImportEnabled = requireTreasuryFeatureFlag(
+    "treasury.ofxImport.enabled"
+  );
+  const manageReconciliation = requireResource(
+    TREASURY_RESOURCE_KEYS.reconciliation,
+    TREASURY_ACTIONS.manage
+  );
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
@@ -215,6 +233,16 @@ export function registerTreasuryRoutes(
     dailyClosingEnabled,
     viewClosing,
     dailyClosingPreview.getPreview
+  );
+
+  app.post(
+    TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    ofxImportEnabled,
+    manageReconciliation,
+    ofxUpload.single("file"),
+    ofxPreview.preview
   );
 
   app.get(
