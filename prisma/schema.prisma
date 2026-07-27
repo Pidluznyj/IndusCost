@@ -152,15 +152,15 @@ model Employee {
 /// Diretoria organizacional (RH) — agrupa departamentos e exige líder responsável.
 /// Pode opcionalmente reportar a outra diretoria (`parentDirectorateId`), formando hierarquia.
 model HrDirectorate {
-  id                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code                String?        @unique
-  name                String         @unique
-  status              String         @default("ACTIVE")
-  leaderEmployeeId    String         @db.Uuid
-  parentDirectorateId String?        @db.Uuid
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code                String?  @unique
+  name                String   @unique
+  status              String   @default("ACTIVE")
+  leaderEmployeeId    String   @db.Uuid
+  parentDirectorateId String?  @db.Uuid
   notes               String?
-  createdAt           DateTime       @default(now()) @db.Timestamptz(6)
-  updatedAt           DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
   leader            Employee        @relation("HrDirectorateLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   parentDirectorate HrDirectorate?  @relation("HrDirectorateHierarchy", fields: [parentDirectorateId], references: [id], onDelete: SetNull, onUpdate: NoAction)
@@ -187,11 +187,11 @@ model HrDepartment {
   createdAt          DateTime @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
 
-  directorate       HrDirectorate  @relation(fields: [directorateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  leader            Employee       @relation("HrDepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  parentDepartment  HrDepartment?  @relation("HrDepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  childDepartments  HrDepartment[] @relation("HrDepartmentHierarchy")
-  employees         Employee[]     @relation("EmployeeOrgDepartment")
+  directorate      HrDirectorate  @relation(fields: [directorateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  leader           Employee       @relation("HrDepartmentLeader", fields: [leaderEmployeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  parentDepartment HrDepartment?  @relation("HrDepartmentHierarchy", fields: [parentDepartmentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  childDepartments HrDepartment[] @relation("HrDepartmentHierarchy")
+  employees        Employee[]     @relation("EmployeeOrgDepartment")
 
   @@unique([directorateId, name])
   @@index([status])
@@ -2026,34 +2026,39 @@ model AccessProfile {
 }
 
 model AppUser {
-  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                     String
-  email                    String                   @unique
-  passwordHash             String
-  role                     AppUserRole              @default(VIEWER)
-  permissions              String[]                 @default([])
+  id                              String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                            String
+  email                           String                           @unique
+  passwordHash                    String
+  role                            AppUserRole                      @default(VIEWER)
+  permissions                     String[]                         @default([])
   /// Incrementado a cada mutação de ACL (P21). Sessões com epoch desatualizado são invalidadas.
-  permissionsVersion       Int                      @default(0)
-  accessProfileId          String?                  @db.Uuid
+  permissionsVersion              Int                              @default(0)
+  accessProfileId                 String?                          @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
-  employeeId               String?                  @unique @db.Uuid
+  employeeId                      String?                          @unique @db.Uuid
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
-  personId                 String?                  @unique @db.Uuid
-  isActive                 Boolean                  @default(true)
-  externalSellerId         Int?
+  personId                        String?                          @unique @db.Uuid
+  isActive                        Boolean                          @default(true)
+  externalSellerId                Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
-  externalSellerIds        Int[]                    @default([])
-  sellerResponsibleName    String?
-  lastLoginAt              DateTime?                @db.Timestamptz(6)
-  createdAt                DateTime                 @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime                 @updatedAt @db.Timestamptz(6)
-  accessProfile            AccessProfile?           @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  employee                 Employee?                @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  person                   Person?                  @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  sessions                 AppSession[]
-  permissionOverrides      UserPermissionOverride[]
-  permissionAuditsAsActor  PermissionAuditLog[]     @relation("PermissionAuditActor")
-  permissionAuditsAsTarget PermissionAuditLog[]     @relation("PermissionAuditTarget")
+  externalSellerIds               Int[]                            @default([])
+  sellerResponsibleName           String?
+  lastLoginAt                     DateTime?                        @db.Timestamptz(6)
+  createdAt                       DateTime                         @default(now()) @db.Timestamptz(6)
+  updatedAt                       DateTime                         @updatedAt @db.Timestamptz(6)
+  accessProfile                   AccessProfile?                   @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee                        Employee?                        @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                          Person?                          @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                        AppSession[]
+  permissionOverrides             UserPermissionOverride[]
+  permissionAuditsAsActor         PermissionAuditLog[]             @relation("PermissionAuditActor")
+  permissionAuditsAsTarget        PermissionAuditLog[]             @relation("PermissionAuditTarget")
+  treasuryAccountsCreated         TreasuryFinancialAccount[]       @relation("TreasuryAccountCreatedBy")
+  treasuryAccountsDeactivated     TreasuryFinancialAccount[]       @relation("TreasuryAccountDeactivatedBy")
+  treasuryAccountAccessGrants     TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessUser")
+  treasuryAccountAccessGrantedBy  TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessGrantedBy")
+  treasuryBalanceSnapshotsCreated TreasuryBalanceSnapshot[]        @relation("TreasuryBalanceSnapshotCreatedBy")
 
   @@index([role])
   @@index([isActive])
@@ -6709,4 +6714,156 @@ model OrderToCashAuditFact {
   @@index([paymentSettlementDate])
   @@index([lineType])
   @@index([auditKey])
+}
+
+// ---------------------------------------------------------------------------
+// Central de Tesouraria — contas financeiras, acesso por usuário e snapshots
+// IndusCost não possui model Company: companyCode é o discriminador operacional
+// (mesmo padrão textual de company em regras financeiras). Usuário = AppUser.
+// ---------------------------------------------------------------------------
+
+enum TreasuryFinancialAccountType {
+  CHECKING
+  SAVINGS
+  CASH
+  INVESTMENT
+  OTHER
+}
+
+enum TreasuryCurrencyCode {
+  BRL
+}
+
+/// Liquidez operacional da conta para projeção/agenda.
+enum TreasuryAccountLiquidity {
+  IMMEDIATE
+  D_PLUS_1
+  D_PLUS_N
+  TERM
+  ILLIQUID
+}
+
+/// Origem de saldo / snapshot (também origem padrão da conta).
+enum TreasuryBalanceOrigin {
+  MANUAL
+  OFX
+  CLOSING
+  SYSTEM
+  IMPORT
+}
+
+enum TreasuryAccountAccessLevel {
+  VIEW
+  OPERATE
+  MANAGE
+}
+
+/// Conta financeira local da Tesouraria (não é título Nomus; não duplica CR/CP).
+model TreasuryFinancialAccount {
+  id                    String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Discriminador de empresa (não há model Company no schema atual).
+  companyCode           String
+  companyName           String?
+  /// Código operacional único por empresa (API/UI).
+  code                  String
+  name                  String
+  institutionName       String
+  institutionCode       String?
+  accountType           TreasuryFinancialAccountType
+  currency              TreasuryCurrencyCode         @default(BRL)
+  /// Agência mascarada (nunca persistir dígitos completos aqui).
+  agencyMasked          String
+  /// Conta mascarada (nunca persistir dígitos completos aqui).
+  accountNumberMasked   String
+  includeInConsolidated Boolean                      @default(true)
+  minimumBalance        Decimal                      @default(0) @db.Decimal(20, 2)
+  allowNegativeBalance  Boolean                      @default(false)
+  liquidity             TreasuryAccountLiquidity     @default(IMMEDIATE)
+  defaultBalanceOrigin  TreasuryBalanceOrigin        @default(MANUAL)
+  sortOrder             Int                          @default(0)
+  isActive              Boolean                      @default(true)
+  /// Sugestão de mapeamento ao bankAccountId denormalizado Nomus (não é FK).
+  nomusBankAccountId    String?
+  createdByUserId       String                       @db.Uuid
+  createdAt             DateTime                     @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime                     @default(now()) @updatedAt @db.Timestamptz(6)
+  deactivatedAt         DateTime?                    @db.Timestamptz(6)
+  deactivatedByUserId   String?                      @db.Uuid
+  deactivationReason    String?
+
+  createdByUser     AppUser                          @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deactivatedByUser AppUser?                         @relation("TreasuryAccountDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  accessGrants      TreasuryFinancialAccountAccess[]
+  balanceSnapshots  TreasuryBalanceSnapshot[]
+
+  @@unique([companyCode, code])
+  @@index([companyCode])
+  @@index([isActive])
+  @@index([sortOrder])
+  @@index([accountType])
+  @@index([includeInConsolidated])
+  @@index([createdByUserId])
+  @@index([deactivatedByUserId])
+  @@index([nomusBankAccountId])
+}
+
+/// ACL operacional por conta (complementa resource bags finance.treasury*).
+model TreasuryFinancialAccountAccess {
+  id               String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId        String                     @db.Uuid
+  userId           String                     @db.Uuid
+  accessLevel      TreasuryAccountAccessLevel @default(VIEW)
+  canViewBalance   Boolean                    @default(true)
+  canMutateBalance Boolean                    @default(false)
+  isActive         Boolean                    @default(true)
+  grantedByUserId  String?                    @db.Uuid
+  grantedAt        DateTime                   @default(now()) @db.Timestamptz(6)
+  revokedAt        DateTime?                  @db.Timestamptz(6)
+  notes            String?
+  createdAt        DateTime                   @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime                   @default(now()) @updatedAt @db.Timestamptz(6)
+
+  account   TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user      AppUser                  @relation("TreasuryAccountAccessUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  grantedBy AppUser?                 @relation("TreasuryAccountAccessGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([accountId, userId])
+  @@index([userId])
+  @@index([accountId])
+  @@index([isActive])
+  @@index([accessLevel])
+  @@index([grantedByUserId])
+}
+
+/// Snapshot versionado de saldo — imutável na prática (novo registro; previousSnapshotId).
+model TreasuryBalanceSnapshot {
+  id                 String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId          String                @db.Uuid
+  /// Data/hora de referência do saldo observado.
+  referenceAt        DateTime              @db.Timestamptz(6)
+  availableBalance   Decimal               @db.Decimal(20, 2)
+  blockedBalance     Decimal               @default(0) @db.Decimal(20, 2)
+  /// Aplicações / investimentos vinculados à conta na referência.
+  investmentsBalance Decimal               @default(0) @db.Decimal(20, 2)
+  usedLimit          Decimal               @default(0) @db.Decimal(20, 2)
+  origin             TreasuryBalanceOrigin
+  /// Idempotência por conta + origem + chave (reimport/OFX/manual replay-safe).
+  idempotencyKey     String
+  notes              String?
+  attachmentUrl      String?
+  createdByUserId    String                @db.Uuid
+  previousSnapshotId String?               @db.Uuid
+  createdAt          DateTime              @default(now()) @db.Timestamptz(6)
+
+  account          TreasuryFinancialAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser    AppUser                   @relation("TreasuryBalanceSnapshotCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  previousSnapshot TreasuryBalanceSnapshot?  @relation("TreasuryBalanceSnapshotChain", fields: [previousSnapshotId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  nextSnapshots    TreasuryBalanceSnapshot[] @relation("TreasuryBalanceSnapshotChain")
+
+  @@unique([accountId, origin, idempotencyKey])
+  @@index([accountId, referenceAt])
+  @@index([origin])
+  @@index([createdByUserId])
+  @@index([previousSnapshotId])
+  @@index([createdAt])
 }

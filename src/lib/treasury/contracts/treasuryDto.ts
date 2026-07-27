@@ -7,10 +7,12 @@ import type { TreasuryMoneyString } from "./treasuryMoneyContract.js";
 import type { TreasuryCivilDate } from "./treasuryCivilDate.js";
 import type { TreasuryTimestampIso } from "./treasuryTimestamp.js";
 import type {
+  TreasuryAccountAccessLevel,
+  TreasuryAccountLiquidity,
   TreasuryAccountType,
   TreasuryAvailabilityStatus,
   TreasuryBalanceLayer,
-  TreasuryBalanceSource,
+  TreasuryBalanceOrigin,
   TreasuryClosingStatus,
   TreasuryCurrency,
   TreasuryDisputeStatus,
@@ -42,28 +44,61 @@ export type TreasuryAvailabilityResponse = {
 
 export type TreasuryFinancialAccountDto = {
   id: string;
+  companyCode: string;
+  companyName: string | null;
   code: string;
   name: string;
+  institutionName: string;
+  institutionCode: string | null;
   accountType: TreasuryAccountType;
   currency: TreasuryCurrency;
-  bankCode: string | null;
-  agency: string | null;
-  accountNumber: string | null;
+  agencyMasked: string;
+  accountNumberMasked: string;
+  includeInConsolidated: boolean;
+  minimumBalance: TreasuryMoneyString;
+  allowNegativeBalance: boolean;
+  liquidity: TreasuryAccountLiquidity;
+  defaultBalanceOrigin: TreasuryBalanceOrigin;
+  sortOrder: number;
   nomusBankAccountId: string | null;
   isActive: boolean;
+  createdByUserId: string;
   createdAt: TreasuryTimestampIso;
   updatedAt: TreasuryTimestampIso;
+  deactivatedAt: TreasuryTimestampIso | null;
+  deactivatedByUserId: string | null;
+  deactivationReason: string | null;
+};
+
+export type TreasuryFinancialAccountAccessDto = {
+  id: string;
+  accountId: string;
+  userId: string;
+  accessLevel: TreasuryAccountAccessLevel;
+  canViewBalance: boolean;
+  canMutateBalance: boolean;
+  isActive: boolean;
+  grantedByUserId: string | null;
+  grantedAt: TreasuryTimestampIso;
+  revokedAt: TreasuryTimestampIso | null;
 };
 
 export type TreasuryBalanceSnapshotDto = {
   id: string;
   accountId: string;
+  referenceAt: TreasuryTimestampIso;
+  /** Dia civil derivado de `referenceAt` (YYYY-MM-DD) para filtros de agenda. */
   civilDate: TreasuryCivilDate;
-  observedBalance: TreasuryMoneyString;
-  source: TreasuryBalanceSource;
-  version: number;
-  supersedesId: string | null;
-  createdBy: string | null;
+  availableBalance: TreasuryMoneyString;
+  blockedBalance: TreasuryMoneyString;
+  investmentsBalance: TreasuryMoneyString;
+  usedLimit: TreasuryMoneyString;
+  origin: TreasuryBalanceOrigin;
+  idempotencyKey: string;
+  notes: string | null;
+  attachmentUrl: string | null;
+  createdByUserId: string;
+  previousSnapshotId: string | null;
   createdAt: TreasuryTimestampIso;
 };
 

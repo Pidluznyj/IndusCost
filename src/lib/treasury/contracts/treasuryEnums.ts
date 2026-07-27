@@ -25,8 +25,37 @@ export const TREASURY_BALANCE_LAYERS = [
 ] as const;
 export type TreasuryBalanceLayer = (typeof TREASURY_BALANCE_LAYERS)[number];
 
-export const TREASURY_BALANCE_SOURCES = ["MANUAL", "OFX", "CLOSING"] as const;
-export type TreasuryBalanceSource = (typeof TREASURY_BALANCE_SOURCES)[number];
+/** Origens de saldo/snapshot (alinhado a `TreasuryBalanceOrigin` no Prisma). */
+export const TREASURY_BALANCE_ORIGINS = [
+  "MANUAL",
+  "OFX",
+  "CLOSING",
+  "SYSTEM",
+  "IMPORT",
+] as const;
+export type TreasuryBalanceOrigin = (typeof TREASURY_BALANCE_ORIGINS)[number];
+
+/** @deprecated Preferir `TREASURY_BALANCE_ORIGINS` / `TreasuryBalanceOrigin`. */
+export const TREASURY_BALANCE_SOURCES = TREASURY_BALANCE_ORIGINS;
+export type TreasuryBalanceSource = TreasuryBalanceOrigin;
+
+export const TREASURY_ACCOUNT_LIQUIDITIES = [
+  "IMMEDIATE",
+  "D_PLUS_1",
+  "D_PLUS_N",
+  "TERM",
+  "ILLIQUID",
+] as const;
+export type TreasuryAccountLiquidity =
+  (typeof TREASURY_ACCOUNT_LIQUIDITIES)[number];
+
+export const TREASURY_ACCOUNT_ACCESS_LEVELS = [
+  "VIEW",
+  "OPERATE",
+  "MANAGE",
+] as const;
+export type TreasuryAccountAccessLevel =
+  (typeof TREASURY_ACCOUNT_ACCESS_LEVELS)[number];
 
 export const TREASURY_LEDGER_DIRECTIONS = ["DEBIT", "CREDIT"] as const;
 export type TreasuryLedgerDirection = (typeof TREASURY_LEDGER_DIRECTIONS)[number];
