@@ -282,4 +282,4 @@
 | 2026-07-27 | Prompt 15: PUT expectativa operacional CR + form drawer + audit/409/permissão — `a0e8255` |
 | 2026-07-27 | Prompt 16: promessas de pagamento CR (model/API/UI/audit/expiração) — `0b7907f` |
 | 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — `8109a2f` |
-| 2026-07-27 | Prompt 18: visão financeira resumida do cliente no detalhe CR — _(pending)_ |
+| 2026-07-27 | Prompt 18: visão financeira resumida do cliente no detalhe CR — `5eaba13` |
