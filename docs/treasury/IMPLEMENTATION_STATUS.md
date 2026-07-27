@@ -72,7 +72,7 @@
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 | **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
 | **47** | Base segura importação OFX | `DONE` | `c4d09c1` | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; `test:treasury` 468/468 |
-| **48** | Schema importação bancária + movimentos | `DONE` | _(pending commit)_ | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
+| **48** | Schema importação bancária + movimentos | `DONE` | `3d5d1ab` | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
 
     > **Nota de ordem:** …; pós-fechamento = **46**; OFX base = **47**; schema import OFX = **48**.
 
@@ -600,4 +600,4 @@
 | 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
 | 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — `9760540` |
 | 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — `c4d09c1` |
-| 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — _(pending commit)_ |
+| 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — `3d5d1ab` |
