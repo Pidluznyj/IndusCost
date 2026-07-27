@@ -8,6 +8,10 @@ import type {
   TreasuryProjectionScenario,
 } from "../contracts/treasuryEnums.js";
 import {
+  mergeTreasuryProjectionRecalcAfterNomusSyncPayload,
+  type TreasuryProjectionRecalcAfterNomusSyncPayload,
+} from "../domain/treasuryProjectionRecalcAfterNomusSync.js";
+import {
   buildTreasuryProjectionRecalcDeduplicationKey,
   computeTreasuryProjectionRecalcAvailableAt,
   normalizeTreasuryProjectionRecalcSubjectId,
@@ -52,6 +56,15 @@ export type TreasuryProjectionRecalcQueueDeps = {
   now?: () => Date;
 };
 
+function isAfterNomusSyncPeriodPayload(
+  payload: Record<string, unknown>
+): boolean {
+  return (
+    typeof payload.affectedPeriodFrom === "string" &&
+    typeof payload.affectedPeriodTo === "string"
+  );
+}
+
 export async function enqueueTreasuryProjectionRecalc(
   input: EnqueueTreasuryProjectionRecalcInput,
   deps: TreasuryProjectionRecalcQueueDeps
@@ -84,15 +97,24 @@ export async function enqueueTreasuryProjectionRecalc(
     const payload =
       input.payload === undefined || input.payload === null
         ? active.payloadJson
-        : {
-            ...(typeof active.payloadJson === "object" &&
-            active.payloadJson !== null
-              ? (active.payloadJson as Record<string, unknown>)
-              : {}),
-            ...input.payload,
-            lastEventType: input.eventType,
-            lastEnqueuedAt: now.toISOString(),
-          };
+        : isAfterNomusSyncPeriodPayload(input.payload)
+          ? {
+              ...mergeTreasuryProjectionRecalcAfterNomusSyncPayload(
+                active.payloadJson,
+                input.payload as TreasuryProjectionRecalcAfterNomusSyncPayload
+              ),
+              lastEventType: input.eventType,
+              lastEnqueuedAt: now.toISOString(),
+            }
+          : {
+              ...(typeof active.payloadJson === "object" &&
+              active.payloadJson !== null
+                ? (active.payloadJson as Record<string, unknown>)
+                : {}),
+              ...input.payload,
+              lastEventType: input.eventType,
+              lastEnqueuedAt: now.toISOString(),
+            };
     const job = await deps.repository.touchPending(active.id, {
       availableAt: nextAvailable,
       payloadJson: payload,

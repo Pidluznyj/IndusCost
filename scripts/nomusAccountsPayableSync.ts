@@ -50,6 +50,11 @@ import {
   runNomusAccountsPayableSync,
   type NomusCanonicalSyncDelegateResult,
 } from "@/src/lib/nomus/nomusCanonicalSync.server.js";
+import {
+  createTreasuryProjectionRecalcAfterNomusSyncDeps,
+  formatTreasuryProjectionRecalcAfterNomusSyncLog,
+  runTreasuryProjectionRecalcAfterNomusSync,
+} from "@/src/lib/treasury/services/treasuryProjectionRecalcAfterNomusSync.server.js";
 
 const prisma = new PrismaClient();
 const LOG_PREFIX = "[nomus-accounts-payable]";
@@ -542,6 +547,47 @@ export async function executeNomusAccountsPayableSync(
 
     console.log(JSON.stringify(payload, null, 2));
 
+    const hooksAlreadyRan: string[] = [];
+
+    // Recálculo Tesouraria: somente após run oficial SUCCESS (payload completo).
+    // Falha do enqueue não altera checkpoint nem exitCode do sync.
+    if (options.mode === "apply" && exitCode === 0) {
+      try {
+        const coveredFrom = parseBrDateBound(fromRaw, false);
+        const coveredTo = parseBrDateBound(toRaw, true);
+        const recalcResult = await runTreasuryProjectionRecalcAfterNomusSync(
+          {
+            source: "accounts-payable",
+            eventType: "AP_SYNC",
+            mode: "apply",
+            exitCode,
+            payloadComplete: completeness.payloadComplete,
+            officialRunSucceeded:
+              Boolean(sourceSyncRunId) && completeness.payloadComplete,
+            sourceSyncRunId,
+            coveredFrom,
+            coveredTo,
+            created: applied?.created ?? 0,
+            updated: applied?.updated ?? 0,
+            lifecycleApplied,
+            requestId: execution?.correlationId ?? sourceSyncRunId,
+          },
+          createTreasuryProjectionRecalcAfterNomusSyncDeps(prisma)
+        );
+        console.warn(
+          `${LOG_PREFIX} ${formatTreasuryProjectionRecalcAfterNomusSyncLog(recalcResult)}`
+        );
+        if (recalcResult.decision.enqueue) {
+          hooksAlreadyRan.push("treasuryProjectionRecalc");
+        }
+      } catch (error) {
+        console.error(
+          `${LOG_PREFIX} treasury-projection-recalc-after-sync falhou (sync oficial preservado)`,
+          error instanceof Error ? error.message : error
+        );
+      }
+    }
+
     if (options.mode === "apply") {
       await persistAccountsPayableIntegrationRun({
         mode: "apply",
@@ -571,7 +617,7 @@ export async function executeNomusAccountsPayableSync(
       runId: sourceSyncRunId,
       payloadComplete: completeness.payloadComplete,
       hasRelevantChanges: Boolean(
-        (applied?.created ?? 0) + (applied?.updated ?? 0)
+        (applied?.created ?? 0) + (applied?.updated ?? 0) + lifecycleApplied
       ),
       counters: {
         pagesRead: summary.pagesRead,
@@ -585,7 +631,7 @@ export async function executeNomusAccountsPayableSync(
         errors: (applied?.errors ?? 0) + summary.mapErrors,
         http429: fetched.http429Count,
       },
-      hooksAlreadyRan: [],
+      hooksAlreadyRan,
     };
   } finally {
     lock.release();

@@ -182,6 +182,7 @@ export const CANONICAL_SYNC_SERVICE_NAMES = {
 
 export const POST_SYNC_HOOK_NAMES = [
   "commissionMaterialization",
+  "treasuryProjectionRecalc",
   "crmCommercialOwnerAutoAssign",
   "productionOrdersAfterSalesOrders",
   "stockDocumentsAfterSalesOrders",
@@ -385,7 +386,11 @@ export function planPostSyncHooks(input: {
     if (!input.hasRelevantChanges) {
       return { name, shouldRun: false, reason: "no_relevant_changes" };
     }
-    if (input.entity !== "SALES_ORDER" && name !== "commissionMaterialization") {
+    if (
+      input.entity !== "SALES_ORDER" &&
+      name !== "commissionMaterialization" &&
+      name !== "treasuryProjectionRecalc"
+    ) {
       return { name, shouldRun: false, reason: "entity_not_applicable" };
     }
     if (
@@ -393,6 +398,13 @@ export function planPostSyncHooks(input: {
       name === "commissionMaterialization"
     ) {
       return { name, shouldRun: true, reason: "ar_commission_hook" };
+    }
+    if (
+      (input.entity === "ACCOUNTS_RECEIVABLE" ||
+        input.entity === "ACCOUNTS_PAYABLE") &&
+      name === "treasuryProjectionRecalc"
+    ) {
+      return { name, shouldRun: true, reason: "ar_ap_treasury_recalc_hook" };
     }
     if (input.entity === "SALES_ORDER") {
       return { name, shouldRun: true, reason: "apply_success" };
