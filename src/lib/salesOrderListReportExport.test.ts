@@ -195,5 +195,6 @@ describe("salesOrderListReportExport", () => {
     assert.match(routes, /\/api\/sales-orders\/export-report\.xlsx/);
     assert.match(routes, /\/api\/sales-orders\/export-report\.pdf/);
     assert.match(routes, /\/api\/sales-orders\/seller-filter-options/);
+    assert.match(routes, /SALES_ORDERS_LAST_UPDATE_PATH/);
   });
 });

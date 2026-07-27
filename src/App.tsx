@@ -24,6 +24,7 @@ import { CrmModule } from "./components/CrmModule";
 import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligencePage";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
+import { SalesOrdersPageLastUpdateSubtitle } from "./components/sales-orders/SalesOrdersPageLastUpdateSubtitle";
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
@@ -96,7 +97,7 @@ function ModulePageShell({
   headerActions,
 }: {
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   children: React.ReactNode;
   headerActions?: React.ReactNode;
 }) {
@@ -105,7 +106,13 @@ function ModulePageShell({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-          {description ? <p className="text-muted-foreground">{description}</p> : null}
+          {description ? (
+            typeof description === "string" ? (
+              <p className="text-muted-foreground">{description}</p>
+            ) : (
+              description
+            )
+          ) : null}
         </div>
         {headerActions ? <div className="shrink-0 flex flex-wrap gap-2">{headerActions}</div> : null}
       </div>
@@ -884,6 +891,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Pedidos de venda"
+              description={<SalesOrdersPageLastUpdateSubtitle />}
               headerActions={
                 <>
                   <Link
