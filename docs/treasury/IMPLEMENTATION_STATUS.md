@@ -61,9 +61,10 @@
 | **34** | UI agenda financeira | `DONE` | `12037b0` | `/finance/treasury/agenda`; colunas dia (saldo inicial/final, entradas previstas/confirmadas/realizadas, saídas previstas/programadas/realizadas, transferências, risco textual); períodos hoje/7/15/30/60/90/custom; visão consolidada/conta/grupo; gráfico evolução + tabela detalhável; DTO/API enriquecidos multi-cenário; `test:treasury` 319/319 |
 | **35** | Comparação contratual×provável×confirmado | `DONE` | `613f3ac` | `GET …/projections/compare` (só leitura, `recalculated:false`); UI `/finance/treasury/projections`; saldo/diff/incerteza/risco por dia; 1ª negativa + menor saldo; toggle local sem refetch; testes consistência; `test:treasury` 329/329 |
 | **36** | Auditoria do motor de projeção | `DONE` | `7628e55` | Correções: multi-baixa, promisedAmount, dedupe seeds, transfer órfã, ledger×settlement, includeInConsolidated, índice apps; algoritmo `1.2.0`; testes lacunas; sem UI nova; `test:treasury` 338/338 |
-| **37** | Transferências entre contas | `DONE` | _(hash no commit docs)_ | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
+| **37** | Transferências entre contas | `DONE` | `2cdcba4` | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
+| **38** | Model + serviço de exceções | `DONE` | _(hash no commit docs)_ | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
 
-    > **Nota de ordem:** …; comparação = **35**; auditoria motor = **36**; transferências = **37**.
+    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**.
 
 ---
 
@@ -87,7 +88,7 @@
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
-| Exceções / alertas | `PARTIAL` | P23: exceções prioritárias derivadas (divergência/negativo/prioridade dia); CRUD `TreasuryException` ainda pendente |
+| Exceções / alertas | `PARTIAL` | P23 derivadas no dashboard; P38 model+service persistido idempotente; API/UI/alert engine ainda pendentes |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
 | Reabertura | `NOT_STARTED` | — |
 | Importação OFX | `NOT_STARTED` | — |
@@ -419,6 +420,16 @@
 - [x] Sem avanço automático
 ---
 
+### 38 — Model e serviço de exceções
+- [x] Model `TreasuryException` + enums type/severity/status/entityKind + migration `20260813120000_*`
+- [x] Campos: tipo, severidade, status, entidade, título, descrição, valor, detecção, prazo, responsável, resolução, justificativa ignorar, uniqueKey, recorrência, metadata
+- [x] Idempotência `upsertByUniqueKey`: causa aberta não duplica; atualiza valor/dados; preserva/incrementa recorrência; reabre fechada
+- [x] acknowledge / resolve (nota) / ignore (justificativa) auditados; sem exclusão física
+- [x] Repository Prisma + memory; service; testes regras/integração/schema
+- [x] Sem API/UI neste passo; `test:treasury` 361/361
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -474,4 +485,5 @@
 | 2026-07-27 | Prompt 34: UI agenda financeira — `12037b0` |
 | 2026-07-27 | Prompt 35: comparação contratual×provável×confirmado — `613f3ac` |
 | 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
-| 2026-07-27 | Prompt 37: transferências entre contas — _(hash no commit docs)_ |
+| 2026-07-27 | Prompt 37: transferências entre contas — `2cdcba4` |
+| 2026-07-27 | Prompt 38: model + serviço de exceções — _(hash no commit docs)_ |
