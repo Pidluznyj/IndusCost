@@ -22,7 +22,7 @@
 
 | Prompt | Título | Status | Commit | Evidências |
 |--------|--------|--------|--------|------------|
-| **00** | Discovery técnico / auditoria do repositório | `DONE` | *(preencher após commit)* | `docs/treasury/01-DISCOVERY.md`; checks: frontend-server-imports OK, server-imports OK, test:server-startup 2/2 |
+| **00** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` — `docs(treasury): mapear discovery da Central de Tesouraria (Prompt 00)` | `docs/treasury/01-DISCOVERY.md`; checks: frontend-server-imports OK, server-imports OK, test:server-startup 2/2 |
 | 01 | *(aguardando)* | `NOT_STARTED` | — | — |
 
 ---
@@ -116,7 +116,7 @@
 - [x] Risco Prisma→FE avaliado + checks OK
 - [x] `docs/treasury/01-DISCOVERY.md` criado
 - [x] Este status criado
-- [ ] Commit da documentação (Prompt 00)
+- [x] Commit da documentação (Prompt 00) — `cbd77ef`
 - [x] Sem implementação de funcionalidades
 - [x] Sem avanço automático para Prompt 01
 
