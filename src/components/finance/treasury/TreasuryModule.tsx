@@ -17,6 +17,7 @@ import { TreasuryTransfersPage } from "./TreasuryTransfersPage.js";
 import { TreasuryBankMovementsPage } from "./TreasuryBankMovementsPage.js";
 import { TreasuryExceptionsPage } from "./TreasuryExceptionsPage.js";
 import { TreasuryDailyClosingPage } from "./TreasuryDailyClosingPage.js";
+import { TreasuryReportsPage } from "./TreasuryReportsPage.js";
 
 /**
  * Shell da Central de Tesouraria — rotas aninhadas sob /finance/treasury/*.
@@ -74,6 +75,7 @@ export function TreasuryModule() {
         <Route path="bank-movements" element={<TreasuryBankMovementsPage />} />
         <Route path="exceptions" element={<TreasuryExceptionsPage />} />
         <Route path="closing" element={<TreasuryDailyClosingPage />} />
+        <Route path="reports" element={<TreasuryReportsPage />} />
         <Route
           path="*"
           element={<Navigate to={TREASURY_UI_BASE_PATH} replace />}

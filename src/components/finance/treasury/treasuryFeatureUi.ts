@@ -66,4 +66,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/closing`,
     label: "Fechamento diário",
   },
+  {
+    id: "reports",
+    path: `${TREASURY_UI_BASE_PATH}/reports`,
+    label: "Relatórios",
+  },
 ] as const;

@@ -80,8 +80,9 @@
 | **53** | Conciliação bancária (match+allocations) | `DONE` | `e158344` | Models/migration; 1:1/1:N/N:1; parcial; fee/juros/desconto/abatimento/diferença/unidentified/transfer/manual; service TX; status; audit; recalc; sem baixa Nomus; `test:treasury` 523/523 |
 | **54** | Reverse conciliação (`POST …/reconciliations/:id/reverse`) | `DONE` | `15f4102` | permissão reverse; justificativa+REVERTER; soft reverse; restaura movimentos; audit REVERSE; recalc; exceção dia fechado; UI confirmação forte; `test:treasury` 529/529 |
 | **55** | Queries/APIs relatórios Tesouraria | `DONE` | `e7d6139` | `GET …/reports/:reportKey` (10 keys); período+contas autorizadas+filtros+totais+composição+paginação; agregações SQL; consistência totais; `test:treasury` 543/543 |
+| **56** | Central de Relatórios (UI + exportações) | `DONE` | _(hash no commit)_ | `/reports` UI; seleção/período/filtros/visualização/impressão; CSV (anti formula-injection) + XLSX + PDF local; permissões view/export; `test:treasury` 553/553 |
 
-    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**; relatórios = **55**.
+    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**; APIs relatórios = **55**; Central Relatórios UI = **56**.
 
 ---
 
@@ -110,12 +111,12 @@
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
 | Conciliação bancária | `PARTIAL` | P52–P54: sugestões + match/allocations + reverse API/UI; workspace completo ainda pendente |
-| Relatórios tesouraria | `PARTIAL` | P55: 10 reportKeys via `GET /reports/:reportKey` (queries/APIs); UI/export ainda pendentes |
-| Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
+| Relatórios tesouraria | `DONE` | P55 APIs + P56 UI `/finance/treasury/reports` com impressão/export |
+| Exportações | `PARTIAL` | P56: CSV/XLSX/PDF dos relatórios Tesouraria; AR/AP/cash-flow já existiam |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` (inclui relatórios P55) |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 553/553 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -617,6 +618,16 @@
 - [x] Sem avanço automático
 ---
 
+### 56 — Central de Relatórios (UI + exportações)
+- [x] Tela `/finance/treasury/reports` + aba no shell
+- [x] Seleção do relatório, período, filtros, visualização (totais/composição/detalhe)
+- [x] Impressão (`window.print`) com data/hora de geração e identificação dos filtros
+- [x] Export CSV / Excel / PDF via `GET …/reports/:reportKey/export.{csv|xlsx|pdf}`
+- [x] CSV protegido contra formula injection; PDF via `minimalPdfWriter` (sem serviço externo)
+- [x] Permissões: `reports.view` para consulta; `finance.treasury` `export` para exportar (não degrada)
+- [x] Testes básicos de exportações + UI; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -691,3 +702,4 @@
 | 2026-07-27 | Prompt 53: conciliação bancária match+allocations — `e158344` |
 | 2026-07-27 | Prompt 54: reverse conciliação bancária — `15f4102` |
 | 2026-07-27 | Prompt 55: queries/APIs relatórios Tesouraria — `e7d6139` |
+| 2026-07-27 | Prompt 56: Central de Relatórios UI + exportações — _(hash no commit)_ |

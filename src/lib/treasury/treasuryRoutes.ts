@@ -28,6 +28,7 @@ import { createTreasuryBankImportOfxApplyControllers } from "./controllers/treas
 import { createTreasuryBankMovementQueryControllers } from "./controllers/treasuryBankMovementQueryController.js";
 import { createTreasuryReconciliationMatchControllers } from "./controllers/treasuryReconciliationMatchController.js";
 import { createTreasuryReportControllers } from "./controllers/treasuryReportController.js";
+import { createTreasuryReportExportControllers } from "./controllers/treasuryReportExportController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
@@ -120,6 +121,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const reports = createTreasuryReportControllers({ getCurrentAppUser });
+  const reportExports = createTreasuryReportExportControllers({
+    getCurrentAppUser,
+  });
   const ofxUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
@@ -132,6 +136,10 @@ export function registerTreasuryRoutes(
   const viewReports = requireResource(
     TREASURY_RESOURCE_KEYS.reports,
     TREASURY_ACTIONS.view
+  );
+  const exportTreasury = requireResource(
+    TREASURY_RESOURCE_KEY,
+    TREASURY_ACTIONS.export
   );
   const viewAgenda = requireResource(
     TREASURY_RESOURCE_KEYS.agenda,
@@ -266,6 +274,31 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewReports,
     reports.getReport
+  );
+
+  app.get(
+    `${TREASURY_REPORTS_PATH}/:reportKey/export.csv`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReports,
+    exportTreasury,
+    reportExports.exportCsv
+  );
+  app.get(
+    `${TREASURY_REPORTS_PATH}/:reportKey/export.xlsx`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReports,
+    exportTreasury,
+    reportExports.exportXlsx
+  );
+  app.get(
+    `${TREASURY_REPORTS_PATH}/:reportKey/export.pdf`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReports,
+    exportTreasury,
+    reportExports.exportPdf
   );
 
   app.get(
