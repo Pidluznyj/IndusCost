@@ -68,7 +68,7 @@
 | **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
 | **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
 | **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
-| **44** | Close/reopen/list/get fechamento | `DONE` | `PENDING` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 440/440 |
+| **44** | Close/reopen/list/get fechamento | `DONE` | `PENDING` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 
     > **Nota de ordem:** …; preview = **43**; close/reopen = **44**.
 
@@ -486,7 +486,7 @@
 - [x] `POST /daily-closing`, `GET /daily-closing`, `GET /daily-closing/:id`, `POST /daily-closing/:id/reopen`
 - [x] Close: advisory lock empresa+data; valida `sourceHash` (409 se mudou); congela posição/pendências/ressalvas; exige caveats; audit CLOSE; recalc CLOSING
 - [x] Reopen: permissão reopen; justificativa; versão anterior REOPENED + nova OPEN; audit REOPEN; recalc REOPENING
-- [x] Testes concorrência/conflito/permissão; `test:treasury` 440/440
+- [x] Testes concorrência/conflito/permissão; `test:treasury` 441/441
 - [x] Sem avanço automático
 ---
 
