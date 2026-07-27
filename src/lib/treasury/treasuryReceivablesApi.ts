@@ -11,6 +11,7 @@ import {
   type TreasuryCollectionActionCancelInput,
   type TreasuryCollectionActionCreateInput,
   type TreasuryCollectionActionDto,
+  type TreasuryCustomerFinancialSummaryDto,
   type TreasuryDisputeCreateInput,
   type TreasuryDisputeDto,
   type TreasuryDisputeUpdateStatusInput,
@@ -125,6 +126,19 @@ export async function fetchTreasuryReceivable(
     signal,
   });
   return res.receivable;
+}
+
+export async function fetchTreasuryCustomerFinancialSummary(
+  titleId: string,
+  signal?: AbortSignal
+): Promise<TreasuryCustomerFinancialSummaryDto> {
+  const res = await fetchJsonOk<{
+    summary: TreasuryCustomerFinancialSummaryDto;
+  }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/customer-summary`,
+    { credentials: "include", signal }
+  );
+  return res.summary;
 }
 
 export async function putTreasuryReceivableExpectation(

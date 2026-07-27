@@ -80,3 +80,57 @@ export type TreasuryReceivableDetailResponse = {
   ok: true;
   receivable: TreasuryReceivableListItemDto;
 };
+
+/** Recebimento recente do cliente (baixa oficial). */
+export type TreasuryCustomerRecentReceiptItem = {
+  titleId: string;
+  externalId: number;
+  settledAt: TreasuryCivilDate | null;
+  settledAmount: TreasuryMoneyString | null;
+  documentLabel: string | null;
+};
+
+/** Item do histórico de cobrança do cliente (append-only local). */
+export type TreasuryCustomerCollectionHistoryItem = {
+  actionId: string;
+  titleId: string;
+  actionType: string;
+  performedAt: TreasuryTimestampIso;
+  result: string | null;
+  nextAction: string | null;
+  contactPerson: string | null;
+};
+
+/**
+ * Visão financeira resumida do cliente no detalhe de CR.
+ * Totais agregam títulos oficiais do personId; atribuições do título âncora.
+ * `sellerName` (vendedor do pedido) ≠ `commercialOwnerName` ≠ `collectionOwnerUserId`.
+ */
+export type TreasuryCustomerFinancialSummaryDto = {
+  titleId: string;
+  personId: number | null;
+  personName: string | null;
+  personTaxId: string | null;
+  openAmountTotal: TreasuryMoneyString;
+  overdueAmountTotal: TreasuryMoneyString;
+  upcomingAmountTotal: TreasuryMoneyString;
+  openTitleCount: number;
+  overdueTitleCount: number;
+  upcomingTitleCount: number;
+  averageDaysOverdue: number | null;
+  maxDaysOverdue: number;
+  activePromiseCount: number;
+  expiredPromiseCount: number;
+  /** Taxa 0–1 (4 casas) ou null se não houver base (cumpridas+expiradas). */
+  promiseFulfillmentRate: string | null;
+  recentReceipts: TreasuryCustomerRecentReceiptItem[];
+  collectionHistory: TreasuryCustomerCollectionHistoryItem[];
+  sellerName: string | null;
+  commercialOwnerName: string | null;
+  collectionOwnerUserId: string | null;
+};
+
+export type TreasuryCustomerFinancialSummaryResponse = {
+  ok: true;
+  summary: TreasuryCustomerFinancialSummaryDto;
+};

@@ -177,6 +177,19 @@ export const TREASURY_DISPUTE_STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Cancelada",
 };
 
+/** Taxa 0–1 (string decimal) → percentual pt-BR. */
+export function formatTreasuryPromiseFulfillmentRate(
+  rate: string | null | undefined
+): string {
+  if (rate == null || rate === "") return "—";
+  const n = Number(rate);
+  if (!Number.isFinite(n)) return "—";
+  return `${(n * 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  })}%`;
+}
+
 export function formatTreasuryReceivableMoney(
   value: string | null | undefined
 ): string {

@@ -27,6 +27,7 @@ import {
   OverlaySection,
 } from "@/src/components/ui/overlay";
 import { HttpError } from "@/src/lib/http.js";
+import { TreasuryReceivableCustomerSummary } from "./TreasuryReceivableCustomerSummary.js";
 import { TreasuryReceivableOpsTimeline } from "./TreasuryReceivableOpsTimeline.js";
 import { TreasuryReceivablePromisesSection } from "./TreasuryReceivablePromisesSection.js";
 
@@ -198,6 +199,10 @@ export function TreasuryReceivableDetailDrawer({
             </dl>
           </OverlaySection>
 
+          <OverlaySection title="Visão financeira do cliente">
+            <TreasuryReceivableCustomerSummary titleId={row.titleId} />
+          </OverlaySection>
+
           <OverlaySection title="Pedido e nota fiscal">
             <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
               <Field
@@ -218,9 +223,9 @@ export function TreasuryReceivableDetailDrawer({
                     : null)
                 }
               />
-              <Field label="Vendedor" value={row.sellerName} />
+              <Field label="Vendedor do pedido" value={row.sellerName} />
               <Field
-                label="Resp. comercial"
+                label="Responsável comercial"
                 value={row.commercialOwnerName}
               />
             </dl>

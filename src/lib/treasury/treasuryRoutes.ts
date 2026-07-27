@@ -202,6 +202,15 @@ export function registerTreasuryRoutes(
     receivables.getReceivable
   );
 
+  app.get(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/customer-summary`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    receivables.getCustomerSummary
+  );
+
   app.put(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/expectation`,
     requireAppAuth,

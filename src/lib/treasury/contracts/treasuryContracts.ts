@@ -204,6 +204,10 @@ export type {
 } from "./treasurySchemas.js";
 
 export type {
+  TreasuryCustomerCollectionHistoryItem,
+  TreasuryCustomerFinancialSummaryDto,
+  TreasuryCustomerFinancialSummaryResponse,
+  TreasuryCustomerRecentReceiptItem,
   TreasuryReceivableActionView,
   TreasuryReceivableComplementView,
   TreasuryReceivableDetailResponse,

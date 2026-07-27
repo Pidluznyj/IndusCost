@@ -43,6 +43,11 @@ export type TreasuryCollectionActionRepository = {
     officialTitleId: string,
     db?: TreasuryCollectionActionDb
   ): Promise<TreasuryCollectionActionRow[]>;
+  listByOfficialTitleIds(
+    titleType: TreasuryOfficialTitleKind,
+    officialTitleIds: string[],
+    db?: TreasuryCollectionActionDb
+  ): Promise<TreasuryCollectionActionRow[]>;
   listTitleIdsByNextAction(
     titleType: TreasuryOfficialTitleKind,
     nextAction: string,
@@ -97,6 +102,18 @@ export function createTreasuryCollectionActionRepository(
     async listByOfficialTitle(titleType, officialTitleId, db) {
       return (await client(db).treasuryCollectionAction.findMany({
         where: { titleType, officialTitleId },
+        orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
+        select: SELECT,
+      })) as TreasuryCollectionActionRow[];
+    },
+
+    async listByOfficialTitleIds(titleType, officialTitleIds, db) {
+      if (!officialTitleIds.length) return [];
+      return (await client(db).treasuryCollectionAction.findMany({
+        where: {
+          titleType,
+          officialTitleId: { in: officialTitleIds },
+        },
         orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }],
         select: SELECT,
       })) as TreasuryCollectionActionRow[];

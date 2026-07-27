@@ -20,6 +20,11 @@ import {
   type TreasuryReceivableExpectationService,
 } from "../services/treasuryReceivableExpectationService.server.js";
 import {
+  buildTreasuryCustomerSummaryActor,
+  createTreasuryCustomerFinancialSummaryService,
+  type TreasuryCustomerFinancialSummaryService,
+} from "../services/treasuryCustomerFinancialSummaryService.server.js";
+import {
   handleTreasuryRouteError,
   resolveTreasuryRequestId,
   sendTreasuryError,
@@ -29,6 +34,7 @@ export type TreasuryReceivableControllerDeps = {
   getCurrentAppUser: (req: Request) => Promise<AppAuthContext | null>;
   service?: TreasuryReceivableQueryService;
   expectationService?: TreasuryReceivableExpectationService;
+  customerSummaryService?: TreasuryCustomerFinancialSummaryService;
 };
 
 function asBody(req: Request): Record<string, unknown> {
@@ -45,6 +51,9 @@ export function createTreasuryReceivableControllers(
   const expectationService =
     deps.expectationService ??
     createTreasuryReceivableExpectationService({ prisma });
+  const customerSummaryService =
+    deps.customerSummaryService ??
+    createTreasuryCustomerFinancialSummaryService({ prisma });
 
   async function withAuth(
     req: Request,
@@ -107,6 +116,16 @@ export function createTreasuryReceivableControllers(
           projectionRecalc: result.projectionRecalc,
           requestId,
         });
+      }),
+
+    getCustomerSummary: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const titleId = String(req.params.titleId ?? "").trim();
+        const summary = await customerSummaryService.getByReceivableTitleId(
+          buildTreasuryCustomerSummaryActor(user),
+          titleId
+        );
+        res.status(200).json({ ok: true, summary, requestId });
       }),
   };
 }

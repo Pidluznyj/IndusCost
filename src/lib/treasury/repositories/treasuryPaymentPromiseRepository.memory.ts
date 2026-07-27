@@ -62,6 +62,17 @@ export function createMemoryTreasuryPaymentPromiseRepository(
         .map(clone);
     },
 
+    async listByOfficialTitleIds(titleType, officialTitleIds) {
+      const set = new Set(officialTitleIds);
+      if (!set.size) return [];
+      return store.rows
+        .filter(
+          (r) => r.titleType === titleType && set.has(r.officialTitleId)
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .map(clone);
+    },
+
     async listActiveTitleIds(titleType, officialTitleIds) {
       const set = new Set(officialTitleIds);
       const out = new Set<string>();

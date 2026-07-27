@@ -42,8 +42,9 @@
 | **15** | Alterar expectativa operacional CR | `DONE` | `a0e8255` | `PUT …/receivables/:titleId/expectation`; data/conta/responsável/prioridade/ação/motivo/obs; sem mutar vencimento oficial; justificativa ao mudar data; saldo aberto; bloqueio cancelado; optimistic lock; audit before/after; stub recálculo projeção; form no drawer; `test:treasury` 134/134 |
 | **16** | Promessas de pagamento CR | `DONE` | `0b7907f` | Model/migration `TreasuryPaymentPromise`; repo/service/APIs; parcial + acima do saldo c/ confirmação; expiração; cumprimento parcial; cancelamento; audit; projeção PROBABLE; UI no drawer; `test:treasury` 143/143 |
 | **17** | Ações de cobrança + contestações CR | `DONE` | `8109a2f` | Models/migration `TreasuryCollectionAction` + `TreasuryDispute`; APIs append-only (cancel/status lógico); timeline no drawer; filtro `nextAction`; audit; sem DELETE; `test:treasury` 154/154 |
+| **18** | Visão financeira resumida do cliente (CR) | `DONE` | _(pending)_ | `GET …/receivables/:titleId/customer-summary`; totais aberto/vencido/a vencer; atrasos; promessas; índice cumprimento; recebimentos; histórico cobrança; vendedor≠comercial≠cobrança; batch queries; UI drawer; `test:treasury` 159/159 |
 
-> **Nota de ordem:** …; expectativa CR = **15**; promessas CR = **16**; cobrança/contestação CR = **17**.
+> **Nota de ordem:** …; expectativa CR = **15**; promessas CR = **16**; cobrança/contestação CR = **17**; resumo cliente CR = **18**.
 
 ---
 
@@ -54,7 +55,7 @@
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
-| Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17; APIs oficiais `/api/finance/accounts-receivable/*` |
+| Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `REUSE` | Model `NomusAccountsPayable`; adapter Tesouraria `OfficialPayableView` (P11); APIs `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
 | Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
@@ -76,7 +77,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 154/154; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 159/159; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -281,3 +282,4 @@
 | 2026-07-27 | Prompt 15: PUT expectativa operacional CR + form drawer + audit/409/permissão — `a0e8255` |
 | 2026-07-27 | Prompt 16: promessas de pagamento CR (model/API/UI/audit/expiração) — `0b7907f` |
 | 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — `8109a2f` |
+| 2026-07-27 | Prompt 18: visão financeira resumida do cliente no detalhe CR — _(pending)_ |

@@ -42,6 +42,16 @@ export function createMemoryTreasuryCollectionActionRepository(
         .sort((a, b) => b.performedAt.getTime() - a.performedAt.getTime())
         .map(clone);
     },
+    async listByOfficialTitleIds(titleType, officialTitleIds) {
+      const set = new Set(officialTitleIds);
+      if (!set.size) return [];
+      return store.rows
+        .filter(
+          (r) => r.titleType === titleType && set.has(r.officialTitleId)
+        )
+        .sort((a, b) => b.performedAt.getTime() - a.performedAt.getTime())
+        .map(clone);
+    },
     async listTitleIdsByNextAction(titleType, nextAction) {
       const needle = nextAction.trim().toLowerCase();
       if (!needle) return [];

@@ -77,6 +77,11 @@ export type TreasuryPaymentPromiseRepository = {
     officialTitleId: string,
     db?: TreasuryPaymentPromiseDb
   ): Promise<TreasuryPaymentPromiseRow[]>;
+  listByOfficialTitleIds(
+    titleType: TreasuryOfficialTitleKind,
+    officialTitleIds: string[],
+    db?: TreasuryPaymentPromiseDb
+  ): Promise<TreasuryPaymentPromiseRow[]>;
   listActiveTitleIds(
     titleType: TreasuryOfficialTitleKind,
     officialTitleIds: string[],
@@ -143,6 +148,18 @@ export function createTreasuryPaymentPromiseRepository(
     async listByOfficialTitle(titleType, officialTitleId, db) {
       return (await client(db).treasuryPaymentPromise.findMany({
         where: { titleType, officialTitleId },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        select: SELECT,
+      })) as TreasuryPaymentPromiseRow[];
+    },
+
+    async listByOfficialTitleIds(titleType, officialTitleIds, db) {
+      if (!officialTitleIds.length) return [];
+      return (await client(db).treasuryPaymentPromise.findMany({
+        where: {
+          titleType,
+          officialTitleId: { in: officialTitleIds },
+        },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: SELECT,
       })) as TreasuryPaymentPromiseRow[];

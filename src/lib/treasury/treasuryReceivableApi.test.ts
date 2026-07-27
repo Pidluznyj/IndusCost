@@ -10,7 +10,11 @@ import { TREASURY_RECEIVABLES_PATH } from "./contracts/treasuryContracts.js";
 import { TreasuryDomainError } from "./domain/treasuryErrors.js";
 import type { TreasuryReceivableQueryService } from "./services/treasuryReceivableQueryService.server.js";
 import type { TreasuryReceivableExpectationService } from "./services/treasuryReceivableExpectationService.server.js";
-import type { TreasuryReceivableListItemDto } from "./contracts/treasuryReceivableContracts.js";
+import type { TreasuryCustomerFinancialSummaryService } from "./services/treasuryCustomerFinancialSummaryService.server.js";
+import type {
+  TreasuryCustomerFinancialSummaryDto,
+  TreasuryReceivableListItemDto,
+} from "./contracts/treasuryReceivableContracts.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
@@ -130,12 +134,14 @@ const sampleRow: TreasuryReceivableListItemDto = {
 };
 
 describe("treasuryReceivableApi — wiring", () => {
-  it("registra GET /receivables, /:titleId e PUT expectation com auth/flag/permissões", () => {
+  it("registra GET /receivables, /:titleId, customer-summary e PUT expectation", () => {
     const routes = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     assert.equal(TREASURY_RECEIVABLES_PATH, "/api/finance/treasury/receivables");
     assert.match(routes, /TREASURY_RECEIVABLES_PATH/);
     assert.match(routes, /listReceivables/);
     assert.match(routes, /getReceivable/);
+    assert.match(routes, /getCustomerSummary/);
+    assert.match(routes, /customer-summary/);
     assert.match(routes, /putExpectation/);
     assert.match(routes, /\/expectation/);
     assert.match(routes, /manageReceivables/);
@@ -365,5 +371,105 @@ describe("treasuryReceivableApi — handlers", () => {
     );
     assert.equal(res403.statusCode, 403);
     assert.equal((res403.body as { code: string }).code, "FORBIDDEN");
+  });
+
+  it("GET customer-summary retorna DTO e propaga 403", async () => {
+    const sampleSummary: TreasuryCustomerFinancialSummaryDto = {
+      titleId: "t1",
+      personId: 10,
+      personName: "Cliente",
+      personTaxId: "123",
+      openAmountTotal: "100.00",
+      overdueAmountTotal: "40.00",
+      upcomingAmountTotal: "60.00",
+      openTitleCount: 2,
+      overdueTitleCount: 1,
+      upcomingTitleCount: 1,
+      averageDaysOverdue: 7,
+      maxDaysOverdue: 7,
+      activePromiseCount: 1,
+      expiredPromiseCount: 0,
+      promiseFulfillmentRate: "1.0000",
+      recentReceipts: [],
+      collectionHistory: [],
+      sellerName: "Vendedor",
+      commercialOwnerName: "Comercial",
+      collectionOwnerUserId: "c1",
+    };
+
+    const customerSummaryService: TreasuryCustomerFinancialSummaryService = {
+      async getByReceivableTitleId(actor) {
+        if (!actor.canViewReceivables && !actor.isSuperAdmin) {
+          throw new TreasuryDomainError(
+            "FORBIDDEN",
+            "Sem permissão para consultar o resumo financeiro do cliente."
+          );
+        }
+        return sampleSummary;
+      },
+    };
+
+    const ok = createTreasuryReceivableControllers({
+      getCurrentAppUser: async () =>
+        baseUser({
+          role: "SUPER_ADMIN",
+          permissions: [
+            "finance.treasury.receivables.view",
+            "finance.accounts_receivable.view",
+          ],
+          effectivePermissions: [
+            "finance.treasury.receivables.view",
+            "finance.accounts_receivable.view",
+          ],
+        }),
+      service: {
+        async listReceivables() {
+          throw new Error("unused");
+        },
+        async getReceivable() {
+          throw new Error("unused");
+        },
+      },
+      customerSummaryService,
+    });
+
+    const resOk = createMockRes();
+    await ok.getCustomerSummary(
+      {
+        params: { titleId: "t1" },
+        headers: {},
+        header: () => "req-summary",
+      } as unknown as Request,
+      resOk as unknown as Response
+    );
+    assert.equal(resOk.statusCode, 200);
+    const body = resOk.body as {
+      ok: true;
+      summary: TreasuryCustomerFinancialSummaryDto;
+    };
+    assert.equal(body.summary.openAmountTotal, "100.00");
+    assert.equal(body.summary.sellerName, "Vendedor");
+    assert.equal(body.summary.commercialOwnerName, "Comercial");
+    assert.notEqual(body.summary.sellerName, body.summary.commercialOwnerName);
+
+    const forbidden = createTreasuryReceivableControllers({
+      getCurrentAppUser: async () =>
+        baseUser({
+          role: "VIEWER",
+          permissions: [],
+          effectivePermissions: [],
+        }),
+      customerSummaryService,
+    });
+    const res403 = createMockRes();
+    await forbidden.getCustomerSummary(
+      {
+        params: { titleId: "t1" },
+        headers: {},
+        header: () => "req-summary-403",
+      } as unknown as Request,
+      res403 as unknown as Response
+    );
+    assert.equal(res403.statusCode, 403);
   });
 });

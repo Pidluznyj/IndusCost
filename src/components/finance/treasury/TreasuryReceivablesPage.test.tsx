@@ -188,6 +188,10 @@ describe("TreasuryReceivablesPage — componentes e fluxo", () => {
     assert.match(drawer, /Histórico operacional/);
     assert.match(drawer, /Cobrança e contestações/);
     assert.match(drawer, /TreasuryReceivableOpsTimeline/);
+    assert.match(drawer, /Visão financeira do cliente/);
+    assert.match(drawer, /TreasuryReceivableCustomerSummary/);
+    assert.match(drawer, /Vendedor do pedido/);
+    assert.match(drawer, /Responsável comercial/);
     assert.match(drawer, /buildTreasuryReceivableOperationalHistory/);
     assert.match(drawer, /salesOrderCode/);
     assert.match(drawer, /invoice\.number/);
