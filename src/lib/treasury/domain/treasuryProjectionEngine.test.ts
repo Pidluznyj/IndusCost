@@ -95,7 +95,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
       enumerateTreasuryProjectionCivilDates("2026-07-27", "2026-07-29"),
       ["2026-07-27", "2026-07-28", "2026-07-29"]
     );
-    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.1.0");
+    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.2.0");
   });
 
   it("remove cancelados e resolve saldo aberto sem negativo", () => {
@@ -859,5 +859,280 @@ describe("treasuryProjectionEngine — precisão e liquidez", () => {
     const day = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
     assert.equal(day.realized, "50.00");
     assert.equal(day.availableBalance, "50.00");
+  });
+});
+
+describe("treasuryProjectionEngine — auditoria Prompt 36 (lacunas)", () => {
+  it("múltiplas baixas parciais somam todas + saldo aberto", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({
+            id: "r1",
+            openBalance: "400.00",
+            settledAmount: "600.00",
+            originalAmount: "1000.00",
+          }),
+        ],
+        settlements: [
+          {
+            id: "set1",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "300.00",
+          },
+          {
+            id: "set2",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-28",
+            amount: "300.00",
+          },
+        ],
+      })
+    );
+    const d27 = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    const d28 = result.dayLines.find((l) => l.civilDate === "2026-07-28")!;
+    assert.equal(d27.realized, "300.00");
+    assert.equal(d28.realized, "300.00");
+    assert.equal(d28.inflows, addTreasuryMoney("300.00", "400.00"));
+    // 1000 opening + 300 + 300 + 400 forecast = 2000
+    assert.equal(d28.closingBalance, "2000.00");
+  });
+
+  it("promessa ACTIVE com promisedAmount < openBalance limita inflow", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        scenario: "PROBABLE",
+        periodTo: "2026-07-30",
+        receivables: [
+          ar({
+            id: "r1",
+            dueDate: "2026-07-20",
+            openBalance: "200.00",
+          }),
+        ],
+        promises: [
+          {
+            officialTitleId: TITLE_AR,
+            promisedDate: "2026-07-30",
+            status: "ACTIVE",
+            promisedAmount: "50.00",
+          },
+        ],
+      })
+    );
+    const day30 = result.dayLines.find((l) => l.civilDate === "2026-07-30");
+    assert.equal(day30?.inflows, "50.00");
+    assert.equal(day30?.uncertainReceivables, "50.00");
+  });
+
+  it("duas seeds AR mesmo officialTitleId não duplicam", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({ id: "r-dup-a", openBalance: "100.00", originalAmount: "100.00" }),
+          ar({ id: "r-dup-b", openBalance: "100.00", originalAmount: "100.00" }),
+        ],
+        settlements: [
+          {
+            id: "set1",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "40.00",
+          },
+        ],
+      })
+    );
+    const totalIn = result.dayLines.reduce(
+      (acc, l) => addTreasuryMoney(acc, l.inflows),
+      "0.00"
+    );
+    // 40 realized + 100 forecast (open), não 2×
+    assert.equal(totalIn, "140.00");
+  });
+
+  it("transferência com destino ausente não altera caixa da origem", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "1000.00",
+            includeInConsolidated: true,
+          }),
+        ],
+        transfers: [
+          {
+            id: "t-orphan",
+            transferGroupId: "g-orphan",
+            fromAccountId: ACC_A,
+            toAccountId: ACC_B,
+            civilDate: "2026-07-27",
+            amount: "100.00",
+          },
+        ],
+      })
+    );
+    const a27 = result.dayLines.find(
+      (l) => l.accountId === ACC_A && l.civilDate === "2026-07-27"
+    )!;
+    assert.equal(a27.transfers, "0.00");
+    assert.equal(a27.closingBalance, "1000.00");
+    assert.ok(result.skipped.some((s) => s.id === "t-orphan"));
+  });
+
+  it("ledger linkado a settlement não duplica caixa", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({
+            id: "r1",
+            openBalance: "0.00",
+            settledAmount: "80.00",
+            originalAmount: "80.00",
+          }),
+        ],
+        settlements: [
+          {
+            id: "set-link",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "80.00",
+          },
+        ],
+        ledgerEntries: [
+          {
+            id: "led-dup",
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "80.00",
+            direction: "CREDIT",
+            status: "ACTIVE",
+            nature: "MANUAL",
+            linkedSettlementId: "set-link",
+          },
+        ],
+      })
+    );
+    const day = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    assert.equal(day.inflows, "80.00");
+    assert.ok(result.skipped.some((s) => s.id === "led-dup"));
+  });
+
+  it("CONTRACTUAL ignora expectedDate (dueDate intacto)", () => {
+    const seed = ar({
+      id: "r1",
+      dueDate: "2026-07-28",
+      expectedDate: "2026-07-29",
+      openBalance: "70.00",
+      originalAmount: "70.00",
+    });
+    const overlaid = applyExpectationOverlays(
+      [seed],
+      [
+        {
+          officialTitleId: TITLE_AR,
+          expectedDate: "2026-07-29",
+        },
+      ]
+    );
+    assert.equal(overlaid[0]!.dueDate, "2026-07-28");
+    assert.equal(overlaid[0]!.expectedDate, "2026-07-29");
+
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        scenario: "CONTRACTUAL",
+        receivables: overlaid,
+      })
+    );
+    const d28 = result.dayLines.find((l) => l.civilDate === "2026-07-28")!;
+    const d29 = result.dayLines.find((l) => l.civilDate === "2026-07-29")!;
+    assert.equal(d28.inflows, "70.00");
+    assert.equal(d29.inflows, "0.00");
+  });
+
+  it("conta fora do consolidado gera dayLine mas marca affectsConsolidated=false", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "1000.00",
+            includeInConsolidated: true,
+          }),
+          account({
+            accountId: ACC_B,
+            code: "B",
+            openingBalance: "100.00",
+            includeInConsolidated: false,
+          }),
+        ],
+        receivables: [
+          ar({
+            id: "r-b",
+            accountId: ACC_B,
+            openBalance: "25.00",
+            originalAmount: "25.00",
+          }),
+        ],
+      })
+    );
+    const b28 = result.dayLines.find(
+      (l) => l.accountId === ACC_B && l.civilDate === "2026-07-28"
+    )!;
+    assert.equal(b28.inflows, "25.00");
+    assert.ok(
+      b28.composition.every(
+        (c) => c.metadata?.affectsConsolidated === false
+      )
+    );
+    const consolidatedClosing = result.dayLines
+      .filter(
+        (l) =>
+          l.civilDate === "2026-07-28" &&
+          l.accountId === ACC_A
+      )
+      .reduce((acc, l) => addTreasuryMoney(acc, l.closingBalance), "0.00");
+    assert.equal(consolidatedClosing, "1000.00");
+  });
+
+  it("composição mantém rastreabilidade (title/settlement/sourceRef)", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({
+            id: "r1",
+            openBalance: "0.00",
+            settledAmount: "15.00",
+            originalAmount: "15.00",
+          }),
+        ],
+        settlements: [
+          {
+            id: "set-trace",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "15.00",
+          },
+        ],
+      })
+    );
+    const item = result.dayLines
+      .flatMap((l) => l.composition)
+      .find((c) => c.officialTitleId === TITLE_AR);
+    assert.ok(item);
+    assert.equal(item!.officialTitleId, TITLE_AR);
+    assert.match(item!.sourceRef, /OFFICIAL_SETTLEMENT|RECONCILED/);
+    assert.ok(item!.nomusExternalId === 1001);
   });
 });

@@ -324,22 +324,30 @@ export function resolveTreasuryFinancialIdentityGroup(
   );
   const forecastCandidates = cash.filter((c) => c.source === "FORECAST");
 
-  const bestRealized = pickBestByPrecedence(realizedCandidates);
-  if (bestRealized) {
+  /**
+   * Baixas distintas (claim.id / reconciliationMatchId) somam todas.
+   * REALIZED_UNRECONCILED compete com OFFICIAL/RECONCILED do mesmo valor
+   * no título (mesma evidência econômica, não segunda parcial).
+   */
+  const realizedClusters = clusterRealizedClaims(realizedCandidates);
+  const realizedWinners: TreasuryFinancialClaim[] = [];
+  for (const cluster of realizedClusters) {
+    const best = pickBestByPrecedence(cluster);
+    if (!best) continue;
+    realizedWinners.push(best);
     slices.push({
-      logicalKey: buildTreasuryFinancialLogicalKey(bestRealized),
-      groupKey: buildTreasuryFinancialGroupKey(bestRealized),
-      claimId: bestRealized.id,
-      source: bestRealized.source,
-      amount: realizedAmount(bestRealized),
+      logicalKey: buildTreasuryFinancialLogicalKey(best),
+      groupKey: buildTreasuryFinancialGroupKey(best),
+      claimId: best.id,
+      source: best.source,
+      amount: realizedAmount(best),
       includeInCashProjection: true,
       affectsConsolidated: true,
       role: "REALIZED",
-      detail: `Camada realizada vencedora por precedência (${bestRealized.source}).`,
+      detail: `Camada realizada vencedora por precedência (${best.source}).`,
     });
-
-    for (const claim of realizedCandidates) {
-      if (claim.id === bestRealized.id) continue;
+    for (const claim of cluster) {
+      if (claim.id === best.id) continue;
       slices.push(
         suppressedSlice(
           claim,
@@ -350,12 +358,13 @@ export function resolveTreasuryFinancialIdentityGroup(
     }
   }
 
+  const hasAnyRealized = realizedWinners.length > 0;
   const bestForecast = pickBestByPrecedence(forecastCandidates);
   if (bestForecast) {
     const open = forecastAmount(bestForecast);
     const hasOpen = compareTreasuryMoney(open, "0.00") > 0;
 
-    if (bestRealized && !hasOpen) {
+    if (hasAnyRealized && !hasOpen) {
       // Título liquidado: previsão não entra.
       slices.push(
         suppressedSlice(
@@ -364,7 +373,7 @@ export function resolveTreasuryFinancialIdentityGroup(
           "Previsão não é somada ao realizado — saldo aberto zerado."
         )
       );
-    } else if (bestRealized && hasOpen) {
+    } else if (hasAnyRealized && hasOpen) {
       // Parcial: só saldo aberto na previsão.
       slices.push({
         logicalKey: buildTreasuryFinancialLogicalKey(bestForecast),
@@ -405,6 +414,75 @@ export function resolveTreasuryFinancialIdentityGroup(
   }
 
   return slices;
+}
+
+/**
+ * Agrupa evidências realizadas que competem pelo mesmo evento de caixa.
+ * - `reconciliationMatchId` une conciliação + baixa do mesmo match.
+ * - OFFICIAL junta-se a RECONCILED do mesmo valor (não a outra OFFICIAL).
+ * - Cada OFFICIAL distinta = baixa parcial distinta.
+ * - REALIZED_UNRECONCILED junta-se à baixa/conciliação de mesmo valor.
+ */
+export function clusterRealizedClaims(
+  claims: readonly TreasuryFinancialClaim[]
+): TreasuryFinancialClaim[][] {
+  if (claims.length === 0) return [];
+
+  const clusters = new Map<string, TreasuryFinancialClaim[]>();
+  const amountToCluster = new Map<string, string>();
+
+  const amtKeyOf = (c: TreasuryFinancialClaim) =>
+    [
+      c.side,
+      subjectAnchor(c),
+      installmentKey(c.installmentNumber),
+      realizedAmount(c),
+    ].join("|");
+
+  const put = (key: string, c: TreasuryFinancialClaim) => {
+    const list = clusters.get(key) ?? [];
+    list.push(c);
+    clusters.set(key, list);
+  };
+
+  const reconciled = claims.filter((c) => c.source === "RECONCILED_MOVEMENT");
+  const official = claims.filter((c) => c.source === "OFFICIAL_SETTLEMENT");
+  const unreconciled = claims.filter(
+    (c) => c.source === "REALIZED_UNRECONCILED"
+  );
+
+  for (const c of reconciled) {
+    const key = c.reconciliationMatchId
+      ? `match:${c.reconciliationMatchId}`
+      : `settlement:${c.id}`;
+    put(key, c);
+    amountToCluster.set(amtKeyOf(c), key);
+  }
+
+  for (const c of official) {
+    const amtKey = amtKeyOf(c);
+    let key: string;
+    if (c.reconciliationMatchId) {
+      key = `match:${c.reconciliationMatchId}`;
+    } else {
+      const candidate = amountToCluster.get(amtKey);
+      const joinsReconciled =
+        candidate != null &&
+        (clusters.get(candidate) ?? []).some(
+          (x) => x.source === "RECONCILED_MOVEMENT"
+        );
+      key = joinsReconciled ? candidate! : `settlement:${c.id}`;
+    }
+    put(key, c);
+    if (!amountToCluster.has(amtKey)) amountToCluster.set(amtKey, key);
+  }
+
+  for (const c of unreconciled) {
+    const key = amountToCluster.get(amtKeyOf(c)) ?? `unrec:${c.id}`;
+    put(key, c);
+  }
+
+  return [...clusters.values()];
 }
 
 /**

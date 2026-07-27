@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildTreasuryFinancialGroupKey,
   buildTreasuryFinancialLogicalKey,
+  clusterRealizedClaims,
   resolveTreasuryFinancialIdentities,
   TREASURY_FINANCIAL_PRECEDENCE,
   treasuryTransferConsolidatedImpact,
@@ -398,5 +399,49 @@ describe("treasuryFinancialIdentityRules — casos de dupla contagem IndusCost",
     ]);
     assert.equal(resolution.consolidatedCashTotal, "0.00");
     assert.equal(resolution.slices[0]?.includeInCashProjection, false);
+  });
+
+  it("duas OFFICIAL_SETTLEMENT distintas não se suprimem", () => {
+    const resolution = resolveTreasuryFinancialIdentities([
+      claim({
+        id: "baixa-1",
+        source: "OFFICIAL_SETTLEMENT",
+        amount: "300.00",
+        settledAmount: "300.00",
+        openBalance: "400.00",
+      }),
+      claim({
+        id: "baixa-2",
+        source: "OFFICIAL_SETTLEMENT",
+        amount: "300.00",
+        settledAmount: "300.00",
+        openBalance: "400.00",
+      }),
+      claim({
+        id: "forecast",
+        source: "FORECAST",
+        amount: "1000.00",
+        openBalance: "400.00",
+      }),
+    ]);
+    const realized = resolution.slices.filter(
+      (s) => s.role === "REALIZED" && s.includeInCashProjection
+    );
+    assert.equal(realized.length, 2);
+    assert.equal(resolution.consolidatedCashTotal, "1000.00");
+    assert.equal(clusterRealizedClaims([
+      claim({
+        id: "baixa-1",
+        source: "OFFICIAL_SETTLEMENT",
+        amount: "300.00",
+        settledAmount: "300.00",
+      }),
+      claim({
+        id: "baixa-2",
+        source: "OFFICIAL_SETTLEMENT",
+        amount: "300.00",
+        settledAmount: "300.00",
+      }),
+    ]).length, 2);
   });
 });

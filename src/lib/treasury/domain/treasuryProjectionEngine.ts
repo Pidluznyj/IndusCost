@@ -48,7 +48,7 @@ import {
   type TreasuryFinancialClaim,
 } from "./treasuryFinancialIdentityRules.js";
 
-export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.1.0" as const;
+export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.2.0" as const;
 
 // ---------------------------------------------------------------------------
 // Inputs (snapshot já carregado — o motor não busca dados)
@@ -154,6 +154,9 @@ export type TreasuryProjectionLedgerSeed = {
   nature?: string;
   status: "ACTIVE" | "REVERSED" | string;
   transferGroupId?: string | null;
+  /** Quando preenchido, evita duplicar baixa oficial do mesmo título. */
+  officialTitleId?: string | null;
+  linkedSettlementId?: string | null;
   isCancelled?: boolean;
 };
 
@@ -350,12 +353,41 @@ export function applyPromiseOverlays(
   return receivables.map((r) => {
     const p = best.get(r.officialTitleId);
     if (!p) return { ...r };
+    // Promessa parcial: limita saldo projetável (espelha programação de CP).
+    const cappedOpen =
+      p.promisedAmount != null && p.promisedAmount !== ""
+        ? compareTreasuryMoney(money(p.promisedAmount), money(r.openBalance)) < 0
+          ? money(p.promisedAmount)
+          : money(r.openBalance)
+        : r.openBalance;
     return {
       ...r,
       activePromiseDate: p.promisedDate,
       activePromiseStatus: p.status,
+      openBalance: cappedOpen,
     };
   });
+}
+
+/** Dedup determinístico por título+parcela (evita double-count de seeds repetidas). */
+export function dedupeProjectionTitleSeeds<
+  T extends {
+    id: string;
+    officialTitleId: string;
+    installmentNumber?: number | null;
+  },
+>(seeds: readonly T[]): T[] {
+  const seen = new Map<string, T>();
+  const ordered = [...seeds].sort((a, b) => a.id.localeCompare(b.id));
+  for (const s of ordered) {
+    const inst =
+      s.installmentNumber == null || !Number.isFinite(s.installmentNumber)
+        ? "none"
+        : String(Math.trunc(s.installmentNumber));
+    const key = `${s.officialTitleId}|inst:${inst}`;
+    if (!seen.has(key)) seen.set(key, s);
+  }
+  return [...seen.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function applyProgrammingOverlays(
@@ -438,6 +470,7 @@ export function buildReceivableProjectionMovements(input: {
   receivables: readonly TreasuryProjectionReceivableSeed[];
   settlements: readonly TreasuryProjectionSettlementSeed[];
   fallbackAccountId?: string | null;
+  accountConsolidatedById?: Map<string, boolean>;
 }): { movements: TreasuryProjectionMovement[]; skipped: { id: string; reason: string }[] } {
   const movements: TreasuryProjectionMovement[] = [];
   const skipped: { id: string; reason: string }[] = [];
@@ -448,7 +481,9 @@ export function buildReceivableProjectionMovements(input: {
     settlementsByTitle.set(s.officialTitleId, list);
   }
 
-  for (const r of input.receivables) {
+  const receivables = dedupeProjectionTitleSeeds(input.receivables);
+
+  for (const r of receivables) {
     const accountId = resolveProjectionAccountId({
       accountId: r.accountId,
       fallbackAccountId: input.fallbackAccountId,
@@ -460,6 +495,8 @@ export function buildReceivableProjectionMovements(input: {
 
     const open = resolveProjectionOpenBalance(r);
     const titleSettlements = settlementsByTitle.get(r.officialTitleId) ?? [];
+    const affectsConsolidated =
+      input.accountConsolidatedById?.get(accountId) ?? true;
 
     const claims: TreasuryFinancialClaim[] = [
       {
@@ -509,16 +546,21 @@ export function buildReceivableProjectionMovements(input: {
           continue;
         }
         if (!inPeriod(civilDate, input.periodFrom, input.periodTo)) continue;
+        const settleAccountId = settlement?.accountId ?? accountId;
+        const settleConsolidated =
+          input.accountConsolidatedById?.get(settleAccountId) ??
+          affectsConsolidated;
         movements.push({
           id: slice.claimId,
-          accountId: settlement?.accountId ?? accountId,
+          accountId: settleAccountId,
           civilDate,
           amount: slice.amount,
           direction: "INFLOW",
           itemKind: "REALIZED",
           isRealized: true,
           isUncertain: false,
-          affectsConsolidated: slice.affectsConsolidated,
+          affectsConsolidated:
+            slice.affectsConsolidated && settleConsolidated,
           officialTitleId: r.officialTitleId,
           nomusExternalId: r.nomusExternalId,
           ledgerEntryId: null,
@@ -568,7 +610,7 @@ export function buildReceivableProjectionMovements(input: {
           itemKind: uncertain ? "UNCERTAIN_RECEIVABLE" : "RECEIVABLE",
           isRealized: false,
           isUncertain: uncertain,
-          affectsConsolidated: true,
+          affectsConsolidated,
           officialTitleId: r.officialTitleId,
           nomusExternalId: r.nomusExternalId,
           ledgerEntryId: null,
@@ -595,6 +637,7 @@ export function buildPayableProjectionMovements(input: {
   payables: readonly TreasuryProjectionPayableSeed[];
   settlements: readonly TreasuryProjectionSettlementSeed[];
   fallbackAccountId?: string | null;
+  accountConsolidatedById?: Map<string, boolean>;
 }): { movements: TreasuryProjectionMovement[]; skipped: { id: string; reason: string }[] } {
   const movements: TreasuryProjectionMovement[] = [];
   const skipped: { id: string; reason: string }[] = [];
@@ -605,7 +648,9 @@ export function buildPayableProjectionMovements(input: {
     settlementsByTitle.set(s.officialTitleId, list);
   }
 
-  for (const p of input.payables) {
+  const payables = dedupeProjectionTitleSeeds(input.payables);
+
+  for (const p of payables) {
     const accountId = resolveProjectionAccountId({
       accountId: p.accountId,
       fallbackAccountId: input.fallbackAccountId,
@@ -617,6 +662,8 @@ export function buildPayableProjectionMovements(input: {
 
     const open = resolveProjectionOpenBalance(p);
     const titleSettlements = settlementsByTitle.get(p.officialTitleId) ?? [];
+    const affectsConsolidated =
+      input.accountConsolidatedById?.get(accountId) ?? true;
 
     const claims: TreasuryFinancialClaim[] = [
       {
@@ -664,16 +711,21 @@ export function buildPayableProjectionMovements(input: {
           continue;
         }
         if (!inPeriod(civilDate, input.periodFrom, input.periodTo)) continue;
+        const settleAccountId = settlement?.accountId ?? accountId;
+        const settleConsolidated =
+          input.accountConsolidatedById?.get(settleAccountId) ??
+          affectsConsolidated;
         movements.push({
           id: slice.claimId,
-          accountId: settlement?.accountId ?? accountId,
+          accountId: settleAccountId,
           civilDate,
           amount: slice.amount,
           direction: "OUTFLOW",
           itemKind: "REALIZED",
           isRealized: true,
           isUncertain: false,
-          affectsConsolidated: slice.affectsConsolidated,
+          affectsConsolidated:
+            slice.affectsConsolidated && settleConsolidated,
           officialTitleId: p.officialTitleId,
           nomusExternalId: p.nomusExternalId,
           ledgerEntryId: null,
@@ -717,7 +769,7 @@ export function buildPayableProjectionMovements(input: {
           itemKind: "PAYABLE",
           isRealized: false,
           isUncertain: false,
-          affectsConsolidated: true,
+          affectsConsolidated,
           officialTitleId: p.officialTitleId,
           nomusExternalId: p.nomusExternalId,
           ledgerEntryId: null,
@@ -740,15 +792,51 @@ export function buildLedgerProjectionMovements(input: {
   periodFrom: TreasuryCivilDate;
   periodTo: TreasuryCivilDate;
   ledgerEntries: readonly TreasuryProjectionLedgerSeed[];
-}): TreasuryProjectionMovement[] {
+  /** Ids de baixas oficiais — ledger linkado não duplica caixa. */
+  settlementIds?: ReadonlySet<string>;
+  settledTitleIds?: ReadonlySet<string>;
+  accountConsolidatedById?: Map<string, boolean>;
+}): { movements: TreasuryProjectionMovement[]; skipped: { id: string; reason: string }[] } {
   const movements: TreasuryProjectionMovement[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  const settlementIds = input.settlementIds ?? new Set<string>();
+  const settledTitleIds = input.settledTitleIds ?? new Set<string>();
+
   for (const e of removeCancelledLedgerEntries(input.ledgerEntries)) {
     if (!inPeriod(e.civilDate, input.periodFrom, input.periodTo)) continue;
     if (!isTreasuryCivilDate(e.civilDate)) continue;
+    if (e.linkedSettlementId && settlementIds.has(e.linkedSettlementId)) {
+      skipped.push({
+        id: e.id,
+        reason: "Lançamento linkado a baixa oficial — evita dupla contagem.",
+      });
+      continue;
+    }
+    if (e.officialTitleId && settledTitleIds.has(e.officialTitleId)) {
+      skipped.push({
+        id: e.id,
+        reason:
+          "Lançamento do mesmo título de baixa oficial — evita dupla contagem.",
+      });
+      continue;
+    }
+    const nature = (e.nature ?? "").toUpperCase();
+    if (
+      nature.includes("SETTLEMENT") ||
+      nature.includes("BAIXA") ||
+      nature === "OFFICIAL_SETTLEMENT"
+    ) {
+      skipped.push({
+        id: e.id,
+        reason: "Lançamento com nature de baixa — use settlements.",
+      });
+      continue;
+    }
     const amount = money(e.amount);
-    // CREDIT = entrada na conta; DEBIT = saída
     const direction: "INFLOW" | "OUTFLOW" =
       e.direction === "CREDIT" ? "INFLOW" : "OUTFLOW";
+    const affectsConsolidated =
+      input.accountConsolidatedById?.get(e.accountId) ?? true;
     movements.push({
       id: e.id,
       accountId: e.accountId,
@@ -758,8 +846,8 @@ export function buildLedgerProjectionMovements(input: {
       itemKind: "MANUAL_ENTRY",
       isRealized: true,
       isUncertain: false,
-      affectsConsolidated: true,
-      officialTitleId: null,
+      affectsConsolidated,
+      officialTitleId: e.officialTitleId ?? null,
       nomusExternalId: null,
       ledgerEntryId: e.id,
       transferGroupId: null,
@@ -768,18 +856,34 @@ export function buildLedgerProjectionMovements(input: {
       metadata: { direction: e.direction, nature: e.nature ?? null },
     });
   }
-  return movements;
+  return { movements, skipped };
 }
 
 export function buildTransferProjectionMovements(input: {
   periodFrom: TreasuryCivilDate;
   periodTo: TreasuryCivilDate;
   transfers: readonly TreasuryProjectionTransferSeed[];
-}): TreasuryProjectionMovement[] {
+  /** Contas presentes no saldo-base — ambas as pernas exigidas. */
+  knownAccountIds?: ReadonlySet<string>;
+}): { movements: TreasuryProjectionMovement[]; skipped: { id: string; reason: string }[] } {
   const movements: TreasuryProjectionMovement[] = [];
+  const skipped: { id: string; reason: string }[] = [];
+  const known = input.knownAccountIds;
+
   for (const t of removeCancelledProjectionItems(input.transfers)) {
     if (!inPeriod(t.civilDate, input.periodFrom, input.periodTo)) continue;
     if (!isTreasuryCivilDate(t.civilDate)) continue;
+    if (
+      known &&
+      (!known.has(t.fromAccountId) || !known.has(t.toAccountId))
+    ) {
+      skipped.push({
+        id: t.id,
+        reason:
+          "Transferência ignorada: origem ou destino ausente do saldo-base (preserva invariante consolidado).",
+      });
+      continue;
+    }
     const amount = money(t.amount);
     movements.push({
       id: `${t.id}:out`,
@@ -818,7 +922,7 @@ export function buildTransferProjectionMovements(input: {
       metadata: { leg: "IN", transferId: t.id },
     });
   }
-  return movements;
+  return { movements, skipped };
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,6 +1138,10 @@ export function runTreasuryProjectionEngine(
     a.accountId.localeCompare(b.accountId)
   );
   const accountById = new Map(accounts.map((a) => [a.accountId, a]));
+  const knownAccountIds = new Set(accounts.map((a) => a.accountId));
+  const accountConsolidatedById = new Map(
+    accounts.map((a) => [a.accountId, a.includeInConsolidated] as const)
+  );
 
   // 10 — remover cancelados
   const receivablesActive = removeCancelledProjectionItems(input.receivables);
@@ -1042,6 +1150,16 @@ export function runTreasuryProjectionEngine(
   const applicationsActive = removeCancelledProjectionItems(
     input.applications ?? []
   );
+  // Índice por conta — evita O(contas×dias×apps) no roll-forward.
+  const applicationsByAccount = new Map<
+    string,
+    typeof applicationsActive
+  >();
+  for (const app of applicationsActive) {
+    const list = applicationsByAccount.get(app.accountId) ?? [];
+    list.push(app);
+    applicationsByAccount.set(app.accountId, list);
+  }
 
   // 5–7 — overlays
   const withExpectations = applyExpectationOverlays(
@@ -1063,6 +1181,7 @@ export function runTreasuryProjectionEngine(
     receivables: withPromises,
     settlements: settlementsActive,
     fallbackAccountId: input.fallbackAccountId,
+    accountConsolidatedById,
   });
   const ap = buildPayableProjectionMovements({
     scenario: input.scenario,
@@ -1072,27 +1191,42 @@ export function runTreasuryProjectionEngine(
     payables: withProgramming,
     settlements: settlementsActive,
     fallbackAccountId: input.fallbackAccountId,
+    accountConsolidatedById,
   });
 
+  const settlementIds = new Set(settlementsActive.map((s) => s.id));
+  const settledTitleIds = new Set(
+    settlementsActive.map((s) => s.officialTitleId)
+  );
+
   // 8–9 — lançamentos e transferências
-  const ledgerMovements = buildLedgerProjectionMovements({
+  const ledger = buildLedgerProjectionMovements({
     periodFrom: input.periodFrom,
     periodTo: input.periodTo,
     ledgerEntries: input.ledgerEntries,
+    settlementIds,
+    settledTitleIds,
+    accountConsolidatedById,
   });
-  const transferMovements = buildTransferProjectionMovements({
+  const transfers = buildTransferProjectionMovements({
     periodFrom: input.periodFrom,
     periodTo: input.periodTo,
     transfers: input.transfers,
+    knownAccountIds,
   });
 
   const allMovements = [
     ...ar.movements,
     ...ap.movements,
-    ...ledgerMovements,
-    ...transferMovements,
+    ...ledger.movements,
+    ...transfers.movements,
   ];
-  const skipped = [...ar.skipped, ...ap.skipped];
+  const skipped = [
+    ...ar.skipped,
+    ...ap.skipped,
+    ...ledger.skipped,
+    ...transfers.skipped,
+  ];
 
   // 13 — agrupar
   const grouped = groupProjectionMovementsByDayAndAccount(allMovements);
@@ -1106,6 +1240,7 @@ export function runTreasuryProjectionEngine(
   for (const account of accounts) {
     let opening = money(account.openingBalance);
     let openingInvestments = money(account.investmentsBalance);
+    const accountApps = applicationsByAccount.get(account.accountId) ?? [];
     for (const civilDate of dates) {
       const key = `${account.accountId}|${civilDate}`;
       const dayMovements = grouped.get(key) ?? [];
@@ -1115,21 +1250,11 @@ export function runTreasuryProjectionEngine(
         openingBalance: opening,
         openingInvestments,
         movements: dayMovements,
-        applications: applicationsActive,
+        applications: accountApps,
       });
       dayLines.push(line);
       opening = line.availableBalance;
       openingInvestments = line.investmentsBalance;
-    }
-  }
-
-  // Contas referenciadas em movimentos mas ausentes do saldo-base
-  for (const m of allMovements) {
-    if (!accountById.has(m.accountId)) {
-      skipped.push({
-        id: m.id,
-        reason: `Movimento referencia conta ausente no saldo-base: ${m.accountId}`,
-      });
     }
   }
 
