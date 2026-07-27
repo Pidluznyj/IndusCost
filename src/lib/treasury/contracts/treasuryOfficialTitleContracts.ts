@@ -64,6 +64,8 @@ export type OfficialReceivableView = {
   installmentNumber: number | null;
   installmentLabel: string | null;
   counterparty: OfficialCounterpartyView;
+  /** Descrição Nomus (útil para filtro de documento quando não há documentNumber). */
+  description: string | null;
   /** AR não tem `documentNumber` tipado — ver docs. */
   documentNumber: string | null;
   /** Pedido: só se vier no rawPayload; join SalesOrder fica fora deste adapter. */
@@ -91,6 +93,7 @@ export type OfficialPayableView = {
   installmentNumber: number | null;
   installmentLabel: string | null;
   counterparty: OfficialCounterpartyView;
+  description: string | null;
   documentNumber: string | null;
   salesOrderExternalId: number | null;
   salesOrderCode: string | null;

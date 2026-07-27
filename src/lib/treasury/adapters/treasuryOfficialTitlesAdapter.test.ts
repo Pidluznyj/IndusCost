@@ -189,6 +189,7 @@ describe("treasuryOfficialTitleMappers", () => {
       taxId: "12345678000199",
       role: "CUSTOMER",
     });
+    assert.equal(view.description, "NF 45210 - Parcela 2/3");
     assert.equal(view.documentNumber, null);
     assert.equal(view.salesOrderExternalId, 55012);
     assert.equal(view.salesOrderCode, "PV-55012");

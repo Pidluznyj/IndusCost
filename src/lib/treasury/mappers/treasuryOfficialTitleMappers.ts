@@ -163,6 +163,31 @@ export function extractSalesOrderFromNomusRaw(raw: unknown): {
   };
 }
 
+/** Vendedor / responsável comercial — sem coluna tipada no stage AR. */
+export function extractSellerFieldsFromNomusRaw(raw: unknown): {
+  sellerName: string | null;
+  commercialOwnerName: string | null;
+} {
+  const obj = asRecord(raw);
+  if (!obj) {
+    return { sellerName: null, commercialOwnerName: null };
+  }
+  return {
+    sellerName: toString(
+      obj.nomeVendedor ??
+        obj.vendedor ??
+        obj.sellerName ??
+        obj.nomeVendedorResponsavel
+    ),
+    commercialOwnerName: toString(
+      obj.responsavelComercial ??
+        obj.nomeResponsavelComercial ??
+        obj.commercialOwnerName ??
+        obj.responsavel
+    ),
+  };
+}
+
 function deriveCancellation(
   sourcePresenceStatus: string,
   sourceRemovedAt: Date | null
@@ -223,6 +248,7 @@ export function toOfficialReceivableView(
       taxId: row.personCnpj,
       role: "CUSTOMER",
     },
+    description: row.description,
     documentNumber: null,
     salesOrderExternalId: order.salesOrderExternalId,
     salesOrderCode: order.salesOrderCode,
@@ -274,6 +300,7 @@ export function toOfficialPayableView(
       taxId: row.personCnpj,
       role: "SUPPLIER",
     },
+    description: row.description,
     documentNumber: row.documentNumber,
     salesOrderExternalId: order.salesOrderExternalId,
     salesOrderCode: order.salesOrderCode,

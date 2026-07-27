@@ -23,7 +23,11 @@ import {
   TREASURY_CURRENCIES,
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
+  TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
+  TREASURY_RECEIVABLE_SORT_FIELDS,
   TREASURY_SIDES,
+  TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+  TREASURY_TITLE_OPERATIONAL_STATUSES,
   type TreasuryAccountAccessLevel,
   type TreasuryAccountLiquidity,
   type TreasuryAccountSortField,
@@ -32,7 +36,11 @@ import {
   type TreasuryCurrency,
   type TreasuryLedgerDirection,
   type TreasuryLedgerNature,
+  type TreasuryReceivableOperationalStatus,
+  type TreasuryReceivableSortField,
   type TreasurySide,
+  type TreasuryTitleOperationalPriority,
+  type TreasuryTitleOperationalStatusCode,
 } from "./treasuryEnums.js";
 import { TreasuryContractError } from "./treasuryErrorCodes.js";
 import {
@@ -824,6 +832,156 @@ export function assertTreasuryKnownString(
     );
   }
   return t;
+}
+
+function parseOptionalBool(
+  value: unknown,
+  field: string
+): boolean | null {
+  if (value == null || value === "") return null;
+  if (value === true || value === "true" || value === "1") return true;
+  if (value === false || value === "false" || value === "0") return false;
+  throw new TreasuryContractError(
+    "VALIDATION_ERROR",
+    `${field} inválido.`,
+    field
+  );
+}
+
+function parseOptionalInt(value: unknown, field: string): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value));
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      `${field} deve ser inteiro.`,
+      field
+    );
+  }
+  return n;
+}
+
+export type TreasuryReceivablesListQuery = TreasuryPaginationInput &
+  TreasurySortInput<TreasuryReceivableSortField> & {
+    customerName: string | null;
+    customerTaxId: string | null;
+    document: string | null;
+    salesOrder: string | null;
+    invoice: string | null;
+    sellerName: string | null;
+    commercialOwnerName: string | null;
+    collectionOwnerUserId: string | null;
+    dueFrom: string | null;
+    dueTo: string | null;
+    expectedFrom: string | null;
+    expectedTo: string | null;
+    hasPromise: boolean | null;
+    operationalStatus: TreasuryReceivableOperationalStatus | null;
+    complementStatus: TreasuryTitleOperationalStatusCode | null;
+    daysOverdueMin: number | null;
+    daysOverdueMax: number | null;
+    openAmountMin: string | null;
+    openAmountMax: string | null;
+    plannedAccountId: string | null;
+    priority: TreasuryTitleOperationalPriority | null;
+    includeCancelled: boolean;
+  };
+
+export function parseTreasuryReceivablesListQuery(
+  query: Record<string, unknown>
+): TreasuryReceivablesListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const sort = parseTreasuryAuthorizedSort({
+    sortBy: query.sortBy,
+    sortDirection: query.sortDirection,
+    allowed: TREASURY_RECEIVABLE_SORT_FIELDS,
+    defaultSortBy: "dueDate",
+    defaultSortDirection: "asc",
+  });
+  const range = parseTreasuryDateRangeFilter({
+    from: query.dueFrom ?? query.from,
+    to: query.dueTo ?? query.to,
+  });
+
+  return {
+    ...pagination,
+    ...sort,
+    customerName: parseTreasuryBoundedString(query.customerName ?? query.cliente, "customerName", {
+      required: false,
+    }),
+    customerTaxId: parseTreasuryBoundedString(
+      query.customerTaxId ?? query.taxId ?? query.cnpj ?? query.cpf,
+      "customerTaxId",
+      { required: false }
+    ),
+    document: parseTreasuryBoundedString(query.document ?? query.documento, "document", {
+      required: false,
+    }),
+    salesOrder: parseTreasuryBoundedString(query.salesOrder ?? query.pedido, "salesOrder", {
+      required: false,
+    }),
+    invoice: parseTreasuryBoundedString(query.invoice ?? query.nota, "invoice", {
+      required: false,
+    }),
+    sellerName: parseTreasuryBoundedString(query.sellerName ?? query.vendedor, "sellerName", {
+      required: false,
+    }),
+    commercialOwnerName: parseTreasuryBoundedString(
+      query.commercialOwnerName ?? query.responsavelComercial,
+      "commercialOwnerName",
+      { required: false }
+    ),
+    collectionOwnerUserId: parseTreasuryBoundedString(
+      query.collectionOwnerUserId ?? query.responsavelCobranca,
+      "collectionOwnerUserId",
+      { required: false }
+    ),
+    dueFrom: range.from,
+    dueTo: range.to,
+    expectedFrom: parseOptionalTreasuryCivilDate(
+      query.expectedFrom ?? query.dataEsperadaFrom,
+      "expectedFrom"
+    ),
+    expectedTo: parseOptionalTreasuryCivilDate(
+      query.expectedTo ?? query.dataEsperadaTo,
+      "expectedTo"
+    ),
+    hasPromise: parseOptionalBool(query.hasPromise ?? query.promessa, "hasPromise"),
+    operationalStatus: parseTreasuryEnum(
+      query.operationalStatus ?? query.status,
+      TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
+      "operationalStatus",
+      false
+    ),
+    complementStatus: parseTreasuryEnum(
+      query.complementStatus,
+      TREASURY_TITLE_OPERATIONAL_STATUSES,
+      "complementStatus",
+      false
+    ),
+    daysOverdueMin: parseOptionalInt(query.daysOverdueMin, "daysOverdueMin"),
+    daysOverdueMax: parseOptionalInt(query.daysOverdueMax, "daysOverdueMax"),
+    openAmountMin: parseOptionalTreasuryMoneyString(
+      query.openAmountMin ?? query.valorMin,
+      "openAmountMin"
+    ),
+    openAmountMax: parseOptionalTreasuryMoneyString(
+      query.openAmountMax ?? query.valorMax,
+      "openAmountMax"
+    ),
+    plannedAccountId: parseTreasuryBoundedString(
+      query.plannedAccountId ?? query.accountId ?? query.conta,
+      "plannedAccountId",
+      { required: false }
+    ),
+    priority: parseTreasuryEnum(
+      query.priority ?? query.prioridade,
+      TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+      "priority",
+      false
+    ),
+    includeCancelled: parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
+  };
 }
 
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

@@ -166,3 +166,49 @@ export const TREASURY_AGENDA_SORT_FIELDS = [
 ] as const;
 export type TreasuryAgendaSortField =
   (typeof TREASURY_AGENDA_SORT_FIELDS)[number];
+
+/** Status operacional derivado (oficial + complemento) na listagem de CR. */
+export const TREASURY_RECEIVABLE_OPERATIONAL_STATUSES = [
+  "OPEN",
+  "OVERDUE",
+  "SETTLED",
+  "PROMISED",
+  "EXPECTED",
+  "ON_HOLD",
+  "CANCELLED_SOURCE",
+  "CANCELLED_LOCAL",
+] as const;
+export type TreasuryReceivableOperationalStatus =
+  (typeof TREASURY_RECEIVABLE_OPERATIONAL_STATUSES)[number];
+
+export const TREASURY_RECEIVABLE_SORT_FIELDS = [
+  "dueDate",
+  "personName",
+  "openAmount",
+  "originalAmount",
+  "daysOverdue",
+  "expectedDate",
+  "priority",
+  "lastSyncedAt",
+  "externalId",
+] as const;
+export type TreasuryReceivableSortField =
+  (typeof TREASURY_RECEIVABLE_SORT_FIELDS)[number];
+
+export const TREASURY_TITLE_OPERATIONAL_PRIORITIES = [
+  "LOW",
+  "NORMAL",
+  "HIGH",
+  "URGENT",
+] as const;
+export type TreasuryTitleOperationalPriority =
+  (typeof TREASURY_TITLE_OPERATIONAL_PRIORITIES)[number];
+
+export const TREASURY_TITLE_OPERATIONAL_STATUSES = [
+  "ACTIVE",
+  "ON_HOLD",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+export type TreasuryTitleOperationalStatusCode =
+  (typeof TREASURY_TITLE_OPERATIONAL_STATUSES)[number];

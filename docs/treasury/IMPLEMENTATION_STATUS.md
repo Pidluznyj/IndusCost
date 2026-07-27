@@ -37,8 +37,9 @@
 | **10** | UI atualização de saldo | `DONE` | `eed8642` — `feat(treasury): adicionar UX de atualização de saldo` | `/finance/treasury/accounts/:id/balances`; form pt-BR→decimal API; histórico; stale; confirmação; conflito; `test:treasury` 100/100 |
 | **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | `29ce7e4` | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
 | **12** | Schema complemento operacional de títulos | `DONE` | `1ffd2ab` | `TreasuryTitleOperationalComplement` (RECEIVABLE/PAYABLE); unicidade tipo+título; datas/valores esperados/confirmados/programados; status/prioridade/conta/responsável; versionamento + cancelamento; migration `20260807120000_*` (não deployada); repo base + testes integridade; `test:treasury` 113/113 |
+| **13** | API consulta Contas a Receber (oficial + complemento) | `DONE` | *(este commit)* | `GET /api/finance/treasury/receivables` + `/:titleId`; filtros (cliente/CNPJ/doc/pedido/NF/vendedor/resp./venc./esperada/promessa/status/atraso/valor/conta/prioridade); paginação/sort; batch join sem N+1; cálculos aberto/recebido/atraso/status/ações; `test:treasury` 119/119 |
 
-> **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**; UI saldo = **10**; adapter AR/AP oficial = **11**; complemento operacional títulos = **12** (plano canônico Prompt **11** overlays).
+> **Nota de ordem:** …; complemento operacional = **12**; query API CR = **13**.
 
 ---
 
@@ -49,7 +50,7 @@
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
-| Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; adapter Tesouraria `OfficialReceivableView` (P11); APIs `/api/finance/accounts-receivable/*` |
+| Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API Tesouraria `GET …/receivables` (P13); APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `REUSE` | Model `NomusAccountsPayable`; adapter Tesouraria `OfficialPayableView` (P11); APIs `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
 | Datas esperadas | `PARTIAL` | Schema `TreasuryTitleOperationalComplement.expectedDate` (P12); service/API/UI ainda pendentes; `dueDate` oficial intacto |
@@ -71,7 +72,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 113 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 119 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -271,3 +272,4 @@
 | 2026-07-27 | Prompt 10: UI atualização de saldo; test:treasury 100/100 |
 | 2026-07-27 | Prompt 11: adapter/repo read-only AR/AP oficiais Nomus; DTOs canônicos; test:treasury 106/106 |
 | 2026-07-27 | Prompt 12: schema/repo complemento operacional de títulos; migration aditiva; test:treasury 113/113 |
+| 2026-07-27 | Prompt 13: query service/API receivables (oficial+complemento); filtros/paginação; test:treasury 119/119 |

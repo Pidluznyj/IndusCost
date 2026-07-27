@@ -9,15 +9,18 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityController.js";
 import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
 import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
+import { createTreasuryReceivableControllers } from "./controllers/treasuryReceivableController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AVAILABILITY_PATH,
+  TREASURY_RECEIVABLES_PATH,
 } from "./contracts/treasuryContracts.js";
 import {
   TREASURY_ACTIONS,
   TREASURY_RESOURCE_KEY,
   TREASURY_RESOURCE_KEYS,
 } from "./treasuryAccess.js";
+import { FINANCE_MODULE_RESOURCE_KEYS } from "@/src/lib/financeModulesAccess.js";
 import { requireTreasuryModuleEnabled } from "./treasuryFeatureFlags.js";
 
 export type TreasuryAuthGuards = {
@@ -38,6 +41,7 @@ export function registerTreasuryRoutes(
   const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const accounts = createTreasuryAccountControllers({ getCurrentAppUser });
   const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
+  const receivables = createTreasuryReceivableControllers({ getCurrentAppUser });
 
   const viewAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
@@ -50,6 +54,14 @@ export function registerTreasuryRoutes(
   const manageBalances = requireResource(
     TREASURY_RESOURCE_KEYS.balances,
     TREASURY_ACTIONS.manage
+  );
+  const viewReceivables = requireResource(
+    TREASURY_RESOURCE_KEYS.receivables,
+    TREASURY_ACTIONS.view
+  );
+  const viewOfficialReceivables = requireResource(
+    FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
+    TREASURY_ACTIONS.view
   );
   const moduleEnabled = requireTreasuryModuleEnabled();
 
@@ -147,5 +159,23 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     manageAccounts,
     accounts.putAccountAccess
+  );
+
+  app.get(
+    TREASURY_RECEIVABLES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    receivables.listReceivables
+  );
+
+  app.get(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId`,
+    requireAppAuth,
+    moduleEnabled,
+    viewReceivables,
+    viewOfficialReceivables,
+    receivables.getReceivable
   );
 }
