@@ -79,7 +79,7 @@
 | **52** | Motor de sugestões de conciliação | `DONE` | `aa80d13` | Motor puro: valor/doc/CNPJ-CPF/data/nome/histórico/direção; faixas HIGH/MEDIUM/LOW; score+motivos; sem auto-match; exclui cancelados/realizados; `test:treasury` 505/505 |
 | **53** | Conciliação bancária (match+allocations) | `DONE` | `e158344` | Models/migration; 1:1/1:N/N:1; parcial; fee/juros/desconto/abatimento/diferença/unidentified/transfer/manual; service TX; status; audit; recalc; sem baixa Nomus; `test:treasury` 523/523 |
 | **54** | Reverse conciliação (`POST …/reconciliations/:id/reverse`) | `DONE` | `15f4102` | permissão reverse; justificativa+REVERTER; soft reverse; restaura movimentos; audit REVERSE; recalc; exceção dia fechado; UI confirmação forte; `test:treasury` 529/529 |
-| **55** | Queries/APIs relatórios Tesouraria | `DONE` | _(hash no commit)_ | `GET …/reports/:reportKey` (10 keys); período+contas autorizadas+filtros+totais+composição+paginação; agregações SQL; consistência totais; `test:treasury` 543/543 |
+| **55** | Queries/APIs relatórios Tesouraria | `DONE` | `e7d6139` | `GET …/reports/:reportKey` (10 keys); período+contas autorizadas+filtros+totais+composição+paginação; agregações SQL; consistência totais; `test:treasury` 543/543 |
 
     > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**; relatórios = **55**.
 
