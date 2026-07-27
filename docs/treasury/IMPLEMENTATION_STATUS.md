@@ -25,7 +25,7 @@
 | **00a** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` (+ `eb411b3` hash) | `docs/treasury/01-DISCOVERY.md`; checks FE/server imports + startup OK |
 | **00b** | Requirements mapping + plano de implementação | `DONE` | `7dbf0b4` — `docs(treasury): mapear requisitos e plano da Central de Tesouraria` | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
 | **00c** | Baseline real + branch `feature/treasury-center` | `DONE` | `2cdc68e` — `chore(treasury): registrar baseline e branch feature/treasury-center` | `04-BASELINE.md`; `validate:treasury-baseline`; WIP Lucro×Caixa stashed; build OK; lint 1236 preexistente; cash-flow 441/441 |
-| **01** | Foundation (flag, money, skeleton routes) | `NOT_STARTED` | — | Ver `03-IMPLEMENTATION-PLAN.md` |
+| **01** | Foundation modular (flag, money, routes, scaffold FE) | `DONE` | *(este commit)* | `src/lib/treasury/**`, `src/components/finance/treasury/**`, `GET /api/finance/treasury/availability`; `test:treasury` 16/16; build OK; sem regras financeiras |
 
 ---
 
@@ -58,9 +58,9 @@
 | Auditoria domínio | `NOT_STARTED` | Padrão: `*AuditLog` por domínio |
 | Permissões | `NOT_STARTED` | Estender contrato (`finance.*` resources) |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `NOT_STARTED` | Runner: `tsx --test` / `test:unit` |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` (scaffold 16 testes); suíte plena em P27 |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
-| Feature flags | `NOT_STARTED` | Padrão env fail-closed (ex. sales-order-flow) |
+| Feature flags | `PARTIAL` | `TREASURY_MODULE_ENABLED` fail-closed (`treasuryFeatureFlags.ts`); ACL resource seed ainda P02 |
 | Scripts deploy/validação | `NOT_STARTED` | Produção: usuário aplica; Cursor não deploya |
 
 ---
@@ -145,17 +145,31 @@
 | Fluxo de Caixa não vira extrato bancário | Documentado — fronteira explícita |
 | Portfolio reconciliation ≠ conciliação bancária | Documentado |
 | Pedido/NF não entram como caixa | Documentado (ref. `order-nfe-cr-financial-separation.md`) |
-| Nenhum arquivo `src/lib/treasury/**` ou UI Tesouraria criado ainda | Confirmado (ausentes) |
+| Scaffold Tesouraria não grava/copia títulos Nomus | Confirmado (P01 — só availability) |
+
+---
+
+### 01 — Foundation modular
+- [x] `src/lib/treasury/` com routers/controllers/services/repositories/domain/queries/mappers/jobs/contracts
+- [x] FE `src/components/finance/treasury/` (placeholder, sem Prisma)
+- [x] `registerTreasuryRoutes` no `server.ts` (registro mínimo)
+- [x] `GET /api/finance/treasury/availability` (auth + flag fail-closed)
+- [x] Money kit string decimal + feature flag
+- [x] `npm run test:treasury` 16/16
+- [x] `check:frontend-server-imports` OK; `build` OK
+- [x] Sem regras financeiras / sem schema Prisma novo
+- [x] Sem avanço automático para Prompt 02
 
 ---
 
 ## Riscos / pendências abertas
 
-1. Working tree local contém WIP não relacionado (Lucro×Caixa / nav) — não misturar no commit da Tesouraria.
-2. Engines financeiros atuais convertem Decimal→number — dívida técnica a endereçar no domínio Tesouraria (P01).
-3. Ausência total de model de conta bancária / ledger — primeira migration em P03.
-4. Deploy produção permanece com o usuário (backup, pull, migrate deploy, build, restart).
-5. Models `Treasury*` no mapping são **propostos** — nomes finais confirmados no prompt de schema.
+1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits; stashes de preservação existem.
+2. Money kit Tesouraria criado (P01); engines financeiros oficiais ainda usam Decimal→number (fora de escopo).
+3. Ausência total de model de conta bancária / ledger — migration em P03.
+4. Resource `finance.treasury` ainda sem seed no contrato — ACL no Prompt 02.
+5. Deploy produção permanece com o usuário.
+6. `TreasuryScaffoldPage` ainda sem wiring em `FinanceModule`/nav (proposital).
 
 ---
 
@@ -166,3 +180,4 @@
 | 2026-07-27 | Prompt 00a: discovery completo; docs criados; validações de leitura OK |
 | 2026-07-27 | Prompt 00b: requirements mapping + implementation plan; sem código funcional |
 | 2026-07-27 | Prompt 00c: baseline em `feature/treasury-center`; WIP Lucro×Caixa protegido; build/tests adjacentes OK |
+| 2026-07-27 | Prompt 01: scaffold modular + availability endpoint; test:treasury 16/16; build OK |

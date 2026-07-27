@@ -382,6 +382,7 @@ import { registerFinancePortfolioReconciliationRoutes } from "./src/lib/financeP
 import { registerFiscalSettlementRoutes } from "./src/lib/finance/fiscalSettlementRoutes.js";
 import { registerFinanceExecutiveReportRoutes } from "./src/lib/financeExecutiveReportRoutes.js";
 import { registerFinanceDreRoutes } from "./src/lib/financeDreRoutes.js";
+import { registerTreasuryRoutes } from "./src/lib/treasury/treasuryRoutes.js";
 import {
   FINANCE_MODULE_ACTIONS,
   FINANCE_MODULE_RESOURCE_KEYS,
@@ -15499,6 +15500,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     requireAppAuth,
     requireResource,
     getCurrentAppUser,
+  });
+
+  registerTreasuryRoutes(app, {
+    requireAppAuth,
+    requireResource,
   });
 
   registerFinancePortfolioReconciliationRoutes(app, {
