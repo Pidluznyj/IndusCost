@@ -73,7 +73,7 @@
 | **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
 | **47** | Base segura importação OFX | `DONE` | `c4d09c1` | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; `test:treasury` 468/468 |
 | **48** | Schema importação bancária + movimentos | `DONE` | `3d5d1ab` | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
-| **49** | Preview OFX (`POST …/bank-imports/ofx/preview`) | `DONE` | _(pending commit)_ | permissão+conta; parse/normalize/fingerprint; NEW/DUPLICATE/INVALID; período/totais; token temporário; sem gravar TX; `test:treasury` 483/483 |
+| **49** | Preview OFX (`POST …/bank-imports/ofx/preview`) | `DONE` | `99b527f` | permissão+conta; parse/normalize/fingerprint; NEW/DUPLICATE/INVALID; período/totais; token temporário; sem gravar TX; `test:treasury` 483/483 |
 
     > **Nota de ordem:** …; OFX base = **47**; schema import OFX = **48**; preview OFX = **49**.
 
@@ -613,4 +613,4 @@
 | 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — `9760540` |
 | 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — `c4d09c1` |
 | 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — `3d5d1ab` |
-| 2026-07-27 | Prompt 49: preview OFX (token temporário) — _(pending commit)_ |
+| 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
