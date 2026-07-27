@@ -289,15 +289,29 @@ describe("treasuryProjectionApi — serviço (auth/filtros/consistência)", () =
     assert.equal(agenda.runId, calculated.id);
     assert.equal(agenda.algorithmVersion, calculated.algorithmVersion);
     assert.ok(agenda.days.length >= 1);
+    for (const day of agenda.days) {
+      assert.match(day.openingBalance, /^-?\d+\.\d{2}$/);
+      assert.match(day.plannedInflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.confirmedInflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.realizedInflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.plannedOutflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.programmedOutflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.realizedOutflows, /^-?\d+\.\d{2}$/);
+      assert.match(day.transfers, /^-?\d+\.\d{2}$/);
+      assert.ok(day.riskLabel.length > 0);
+      assert.ok(day.riskCode.length > 0);
+      assert.equal(day.accountId, null);
+    }
+    const { addTreasuryMoney } = await import("./treasuryMoney.js");
     const inflowSum = agenda.days.reduce(
-      (acc, d) => acc + Number(d.inflows),
-      0
+      (acc, d) => addTreasuryMoney(acc, d.inflows),
+      "0.00"
     );
     const consolidatedInflow = (calculated.consolidatedDays ?? []).reduce(
-      (acc, d) => acc + Number(d.inflows),
-      0
+      (acc, d) => addTreasuryMoney(acc, d.inflows),
+      "0.00"
     );
-    assert.ok(Math.abs(inflowSum - consolidatedInflow) < 0.001);
+    assert.equal(inflowSum, consolidatedInflow);
   });
 
   it("nega calculate sem permissão; rejeita horizonte excessivo", async () => {

@@ -36,4 +36,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/payables`,
     label: "Contas a pagar",
   },
+  {
+    id: "agenda",
+    path: `${TREASURY_UI_BASE_PATH}/agenda`,
+    label: "Agenda financeira",
+  },
 ] as const;

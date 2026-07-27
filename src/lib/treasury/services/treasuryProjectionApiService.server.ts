@@ -23,6 +23,12 @@ import type {
   TreasuryProjectionGetQuery,
   TreasuryProjectionLatestQuery,
 } from "../contracts/treasurySchemas.js";
+import {
+  buildTreasuryAgendaDay,
+  mergeAgendaScenarioSeeds,
+  pickHigherRiskCode,
+  type TreasuryAgendaScenarioDaySeed,
+} from "../domain/treasuryAgendaDayRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import type { TreasuryProjectionEngineInput } from "../domain/treasuryProjectionEngine.js";
 import {
@@ -32,8 +38,6 @@ import {
 import {
   addTreasuryMoney,
   normalizeTreasuryMoneyString,
-  subtractTreasuryMoney,
-  type TreasuryMoneyString,
 } from "../treasuryMoney.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
 import type {
@@ -212,7 +216,10 @@ function mapCompositionItem(
 function consolidateDays(
   lines: TreasuryProjectionDayLineDto[]
 ): TreasuryProjectionConsolidatedDayDto[] {
-  const byDate = new Map<string, TreasuryProjectionConsolidatedDayDto>();
+  const byDate = new Map<
+    string,
+    TreasuryProjectionConsolidatedDayDto & { riskCode: string }
+  >();
   for (const line of lines) {
     const cur = byDate.get(line.civilDate);
     if (!cur) {
@@ -226,6 +233,7 @@ function consolidateDays(
         closingBalance: line.closingBalance,
         uncertainReceivables: line.uncertainReceivables,
         riskAmount: line.riskAmount,
+        riskCode: line.riskCode,
         itemCount: line.itemCount,
       });
       continue;
@@ -241,11 +249,75 @@ function consolidateDays(
       line.uncertainReceivables
     );
     cur.riskAmount = addTreasuryMoney(cur.riskAmount, line.riskAmount);
+    cur.riskCode = pickHigherRiskCode(cur.riskCode, line.riskCode);
     cur.itemCount += line.itemCount;
   }
-  return [...byDate.values()].sort((a, b) =>
-    a.civilDate.localeCompare(b.civilDate)
-  );
+  return [...byDate.values()]
+    .map(({ riskCode: _r, ...rest }) => rest)
+    .sort((a, b) => a.civilDate.localeCompare(b.civilDate));
+}
+
+function lineToAgendaSeed(
+  line: TreasuryProjectionDayLineDto,
+  accountId: string | null
+): TreasuryAgendaScenarioDaySeed {
+  return {
+    civilDate: line.civilDate,
+    accountId,
+    openingBalance: line.openingBalance,
+    inflows: line.inflows,
+    outflows: line.outflows,
+    transfers: line.transfers,
+    realized: line.realized,
+    closingBalance: line.closingBalance,
+    riskAmount: line.riskAmount,
+    riskCode: line.riskCode,
+    itemCount: line.itemCount,
+  };
+}
+
+async function loadScenarioDayLines(
+  repository: TreasuryProjectionRunRepository,
+  companyCode: string,
+  scenario: TreasuryProjectionLayer,
+  filter: {
+    accountIds: string[] | null;
+    from: string;
+    to: string;
+  }
+): Promise<{
+  runId: string | null;
+  sourceVersion: string | null;
+  algorithmVersion: string | null;
+  run: TreasuryProjectionRunRow | null;
+  lines: TreasuryProjectionDayLineDto[];
+}> {
+  const run = await getLatestValidTreasuryProjection(companyCode, scenario, {
+    repository,
+  });
+  if (!run) {
+    return {
+      runId: null,
+      sourceVersion: null,
+      algorithmVersion: null,
+      run: null,
+      lines: [],
+    };
+  }
+  const lines = (
+    await repository.listDayLinesDetailed(run.id, {
+      accountIds: filter.accountIds,
+      from: filter.from,
+      to: filter.to,
+    })
+  ).map(mapDayLine);
+  return {
+    runId: run.id,
+    sourceVersion: run.sourceVersion,
+    algorithmVersion: run.algorithmVersion,
+    run,
+    lines,
+  };
 }
 
 function filterAccountsInEngineInput(
@@ -457,13 +529,34 @@ export function createTreasuryProjectionApiService(
         endDate: query.endDate,
         maxHorizonDays,
       });
-      const run = await getLatestValidTreasuryProjection(
-        query.companyCode,
-        query.scenario,
-        { repository: deps.repository }
-      );
       const now = deps.now?.() ?? new Date();
-      if (!run) {
+      const bucketScenarios: TreasuryProjectionLayer[] = [
+        "CONTRACTUAL",
+        "PROBABLE",
+        "CONFIRMED",
+      ];
+      const scenariosToLoad: TreasuryProjectionLayer[] = bucketScenarios.includes(
+        query.scenario
+      )
+        ? bucketScenarios
+        : [...bucketScenarios, query.scenario];
+      const loaded = await Promise.all(
+        scenariosToLoad.map((scenario) =>
+          loadScenarioDayLines(deps.repository, query.companyCode, scenario, {
+            accountIds: query.accountIds,
+            from: query.baseDate,
+            to: query.endDate,
+          })
+        )
+      );
+      const byScenario = Object.fromEntries(
+        scenariosToLoad.map((scenario, i) => [scenario, loaded[i]!])
+      ) as Record<
+        TreasuryProjectionLayer,
+        Awaited<ReturnType<typeof loadScenarioDayLines>>
+      >;
+      const primary = byScenario[query.scenario];
+      if (!primary?.run) {
         return {
           ok: true,
           runId: null,
@@ -481,17 +574,9 @@ export function createTreasuryProjectionApiService(
         };
       }
 
-      const lines = (
-        await deps.repository.listDayLinesDetailed(run.id, {
-          accountIds: query.accountIds,
-          from: query.baseDate,
-          to: query.endDate,
-        })
-      ).map(mapDayLine);
-
       const composition = query.includeDayDetail
         ? (
-            await deps.repository.listCompositionItems(run.id, {
+            await deps.repository.listCompositionItems(primary.run.id, {
               accountIds: query.accountIds,
               from: query.baseDate,
               to: query.endDate,
@@ -499,40 +584,187 @@ export function createTreasuryProjectionApiService(
           ).map(mapCompositionItem)
         : [];
 
-      // Agenda agrega por dia (consolidado ou soma das contas filtradas).
-      const byDate = consolidateDays(lines);
+      const days: TreasuryAgendaDayDto[] = [];
 
-      const days: TreasuryAgendaDayDto[] = byDate.map((d) => {
-        const net = subtractTreasuryMoney(
-          d.inflows as TreasuryMoneyString,
-          d.outflows as TreasuryMoneyString
-        );
-        return {
-          civilDate: d.civilDate,
-          inflows: d.inflows,
-          outflows: d.outflows,
-          net,
-          realized: d.realized,
-          closingBalance: d.closingBalance,
-          itemCount: d.itemCount,
-          items: query.includeDayDetail
-            ? composition.filter((c) => c.civilDate === d.civilDate)
-            : null,
-        };
-      });
+      if (query.consolidated) {
+        const seedsByScenario: Partial<
+          Record<TreasuryProjectionLayer, Map<string, TreasuryAgendaScenarioDaySeed>>
+        > = {};
+        for (const scenario of bucketScenarios) {
+          const scenarioBundle = byScenario[scenario];
+          if (!scenarioBundle) continue;
+          const consolidated = consolidateDays(scenarioBundle.lines);
+          const map = new Map<string, TreasuryAgendaScenarioDaySeed>();
+          for (const d of consolidated) {
+            map.set(
+              d.civilDate,
+              lineToAgendaSeed(
+                {
+                  id: d.civilDate,
+                  accountId: "",
+                  civilDate: d.civilDate,
+                  openingBalance: d.openingBalance,
+                  inflows: d.inflows,
+                  outflows: d.outflows,
+                  transfers: d.transfers,
+                  realized: d.realized,
+                  closingBalance: d.closingBalance,
+                  uncertainReceivables: d.uncertainReceivables,
+                  minimumBalance: "0.00",
+                  riskAmount: d.riskAmount,
+                  riskCode: "NONE",
+                  itemCount: d.itemCount,
+                },
+                null
+              )
+            );
+          }
+          for (const line of scenarioBundle.lines) {
+            const cur = map.get(line.civilDate);
+            if (!cur) continue;
+            cur.riskCode = pickHigherRiskCode(cur.riskCode, line.riskCode);
+          }
+          seedsByScenario[scenario] = map;
+        }
+        if (!bucketScenarios.includes(query.scenario) && primary.lines.length) {
+          const consolidated = consolidateDays(primary.lines);
+          const map = new Map<string, TreasuryAgendaScenarioDaySeed>();
+          for (const d of consolidated) {
+            map.set(
+              d.civilDate,
+              lineToAgendaSeed(
+                {
+                  id: d.civilDate,
+                  accountId: "",
+                  civilDate: d.civilDate,
+                  openingBalance: d.openingBalance,
+                  inflows: d.inflows,
+                  outflows: d.outflows,
+                  transfers: d.transfers,
+                  realized: d.realized,
+                  closingBalance: d.closingBalance,
+                  uncertainReceivables: d.uncertainReceivables,
+                  minimumBalance: "0.00",
+                  riskAmount: d.riskAmount,
+                  riskCode: "NONE",
+                  itemCount: d.itemCount,
+                },
+                null
+              )
+            );
+          }
+          for (const line of primary.lines) {
+            const cur = map.get(line.civilDate);
+            if (!cur) continue;
+            cur.riskCode = pickHigherRiskCode(cur.riskCode, line.riskCode);
+          }
+          seedsByScenario[query.scenario] = map;
+        }
+        const dates = new Set<string>();
+        for (const map of Object.values(seedsByScenario)) {
+          for (const key of map?.keys() ?? []) dates.add(key);
+        }
+        for (const civilDate of [...dates].sort()) {
+          days.push(
+            buildTreasuryAgendaDay({
+              civilDate,
+              accountId: null,
+              primaryScenario: query.scenario,
+              byScenario: {
+                CONTRACTUAL: seedsByScenario.CONTRACTUAL?.get(civilDate),
+                PROBABLE: seedsByScenario.PROBABLE?.get(civilDate),
+                CONFIRMED: seedsByScenario.CONFIRMED?.get(civilDate),
+                MANUAL: seedsByScenario.MANUAL?.get(civilDate),
+              },
+              items: query.includeDayDetail
+                ? composition.filter((c) => c.civilDate === civilDate)
+                : null,
+            })
+          );
+        }
+      } else {
+        type Key = string;
+        const keyOf = (civilDate: string, accountId: string) =>
+          `${civilDate}|${accountId}`;
+        const seedsByScenario: Partial<
+          Record<TreasuryProjectionLayer, Map<Key, TreasuryAgendaScenarioDaySeed>>
+        > = {};
+        for (const scenario of bucketScenarios) {
+          const scenarioBundle = byScenario[scenario];
+          if (!scenarioBundle) continue;
+          const map = new Map<Key, TreasuryAgendaScenarioDaySeed>();
+          for (const line of scenarioBundle.lines) {
+            const k = keyOf(line.civilDate, line.accountId);
+            const existing = map.get(k);
+            if (!existing) {
+              map.set(k, lineToAgendaSeed(line, line.accountId));
+            } else {
+              const merged = mergeAgendaScenarioSeeds([
+                existing,
+                lineToAgendaSeed(line, line.accountId),
+              ]);
+              if (merged) map.set(k, merged);
+            }
+          }
+          seedsByScenario[scenario] = map;
+        }
+        if (!bucketScenarios.includes(query.scenario) && primary.lines.length) {
+          const map = new Map<Key, TreasuryAgendaScenarioDaySeed>();
+          for (const line of primary.lines) {
+            const k = keyOf(line.civilDate, line.accountId);
+            const existing = map.get(k);
+            if (!existing) {
+              map.set(k, lineToAgendaSeed(line, line.accountId));
+            } else {
+              const merged = mergeAgendaScenarioSeeds([
+                existing,
+                lineToAgendaSeed(line, line.accountId),
+              ]);
+              if (merged) map.set(k, merged);
+            }
+          }
+          seedsByScenario[query.scenario] = map;
+        }
+        const keys = new Set<Key>();
+        for (const map of Object.values(seedsByScenario)) {
+          for (const key of map?.keys() ?? []) keys.add(key);
+        }
+        for (const key of [...keys].sort()) {
+          const [civilDate, accountId] = key.split("|") as [string, string];
+          days.push(
+            buildTreasuryAgendaDay({
+              civilDate,
+              accountId,
+              primaryScenario: query.scenario,
+              byScenario: {
+                CONTRACTUAL: seedsByScenario.CONTRACTUAL?.get(key),
+                PROBABLE: seedsByScenario.PROBABLE?.get(key),
+                CONFIRMED: seedsByScenario.CONFIRMED?.get(key),
+                MANUAL: seedsByScenario.MANUAL?.get(key),
+              },
+              items: query.includeDayDetail
+                ? composition.filter(
+                    (c) =>
+                      c.civilDate === civilDate && c.accountId === accountId
+                  )
+                : null,
+            })
+          );
+        }
+      }
 
       return {
         ok: true,
-        runId: run.id,
-        companyCode: run.companyCode,
+        runId: primary.run.id,
+        companyCode: primary.run.companyCode,
         scenario: query.scenario,
         baseDate: query.baseDate,
         endDate: query.endDate,
         consolidated: query.consolidated,
         accountIds: query.accountIds,
-        sourceVersion: run.sourceVersion,
-        algorithmVersion: run.algorithmVersion,
-        freshness: buildFreshness(run, now),
+        sourceVersion: primary.sourceVersion,
+        algorithmVersion: primary.algorithmVersion,
+        freshness: buildFreshness(primary.run, now),
         days,
         maxHorizonDays,
       };

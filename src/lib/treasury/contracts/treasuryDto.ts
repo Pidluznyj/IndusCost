@@ -504,11 +504,27 @@ export type TreasuryProjectionCompositionResponseDto = {
 
 export type TreasuryAgendaDayDto = {
   civilDate: TreasuryCivilDate;
+  /** Null quando visão consolidada. */
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  openingBalance: TreasuryMoneyString;
+  plannedInflows: TreasuryMoneyString;
+  confirmedInflows: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  plannedOutflows: TreasuryMoneyString;
+  programmedOutflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  transfers: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString | null;
+  riskAmount: TreasuryMoneyString;
+  riskCode: string;
+  /** Rótulo textual — não usar só cor. */
+  riskLabel: string;
   inflows: TreasuryMoneyString;
   outflows: TreasuryMoneyString;
   net: TreasuryMoneyString;
   realized: TreasuryMoneyString;
-  closingBalance: TreasuryMoneyString | null;
   itemCount: number;
   items: TreasuryProjectionCompositionItemDto[] | null;
 };
