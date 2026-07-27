@@ -216,12 +216,22 @@ function compareReceivables(
   return cmp * dir;
 }
 
+function sumOpenAmount(rows: TreasuryReceivableListItemDto[]): string {
+  let cents = 0;
+  for (const row of rows) {
+    const n = Number(row.openAmount ?? 0);
+    if (Number.isFinite(n)) cents += Math.round(n * 100);
+  }
+  return (cents / 100).toFixed(2);
+}
+
 export function paginateTreasuryReceivables(
   rows: TreasuryReceivableListItemDto[],
   query: TreasuryReceivablesListQuery
 ): {
   rows: TreasuryReceivableListItemDto[];
   pagination: ReturnType<typeof buildTreasuryPaginationMeta>;
+  summary: { titleCount: number; openAmountTotal: string };
   sortBy: TreasuryReceivablesListQuery["sortBy"];
   sortDirection: TreasuryReceivablesListQuery["sortDirection"];
 } {
@@ -236,6 +246,10 @@ export function paginateTreasuryReceivables(
       pageSize: query.pageSize,
       totalRows,
     }),
+    summary: {
+      titleCount: totalRows,
+      openAmountTotal: sumOpenAmount(filtered),
+    },
     sortBy: query.sortBy,
     sortDirection: query.sortDirection,
   };

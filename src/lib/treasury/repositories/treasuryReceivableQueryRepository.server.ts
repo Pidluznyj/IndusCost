@@ -91,14 +91,7 @@ export type TreasuryReceivableQueryRepository = {
   list(
     query: TreasuryReceivablesListQuery,
     referenceDate?: Date
-  ): Promise<{
-    rows: TreasuryReceivableListItemDto[];
-    pagination: ReturnType<
-      typeof paginateTreasuryReceivables
-    >["pagination"];
-    sortBy: TreasuryReceivablesListQuery["sortBy"];
-    sortDirection: TreasuryReceivablesListQuery["sortDirection"];
-  }>;
+  ): Promise<ReturnType<typeof paginateTreasuryReceivables>>;
   getByTitleId(
     titleId: string,
     referenceDate?: Date

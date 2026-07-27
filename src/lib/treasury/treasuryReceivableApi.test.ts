@@ -154,6 +154,7 @@ describe("treasuryReceivableApi — handlers", () => {
             totalRows: 1,
             totalPages: 1,
           },
+          summary: { titleCount: 1, openAmountTotal: "40.00" },
           sortBy: "dueDate",
           sortDirection: "asc",
         };

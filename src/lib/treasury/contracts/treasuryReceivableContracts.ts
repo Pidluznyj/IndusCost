@@ -62,10 +62,16 @@ export type TreasuryReceivableListItemDto = {
   nextAction: string | null;
 };
 
+export type TreasuryReceivablesListSummary = {
+  titleCount: number;
+  openAmountTotal: TreasuryMoneyString;
+};
+
 export type TreasuryReceivablesListResponse = {
   ok: true;
   rows: TreasuryReceivableListItemDto[];
   pagination: TreasuryPaginationMeta;
+  summary: TreasuryReceivablesListSummary;
   sortBy: TreasuryReceivableSortField;
   sortDirection: TreasurySortDirection;
 };

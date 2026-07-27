@@ -186,6 +186,7 @@ export type {
   TreasuryReceivableDetailResponse,
   TreasuryReceivableListItemDto,
   TreasuryReceivablesListResponse,
+  TreasuryReceivablesListSummary,
 } from "./treasuryReceivableContracts.js";
 
 export {

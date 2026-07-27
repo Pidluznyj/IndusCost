@@ -73,6 +73,7 @@ export function createTreasuryReceivableQueryService(deps: {
         ok: true,
         rows: result.rows,
         pagination: result.pagination,
+        summary: result.summary,
         sortBy: result.sortBy,
         sortDirection: result.sortDirection,
       };

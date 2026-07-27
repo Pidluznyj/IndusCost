@@ -26,4 +26,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/accounts`,
     label: "Contas financeiras",
   },
+  {
+    id: "receivables",
+    path: `${TREASURY_UI_BASE_PATH}/receivables`,
+    label: "Contas a receber",
+  },
 ] as const;
