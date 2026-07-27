@@ -206,6 +206,32 @@ describe("treasuryPrismaSchema", () => {
     assert.match(sql, /INSERT INTO "TreasuryAlertSettings"/);
   });
 
+  it("schema e migration de fechamento diário versionado existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryDailyClosing \{/);
+    assert.match(schema, /model TreasuryDailyClosingAccountPosition \{/);
+    assert.match(schema, /model TreasuryDailyClosingFrozenPendency \{/);
+    assert.match(schema, /model TreasuryDailyClosingFrozenException \{/);
+    assert.match(schema, /model TreasuryDailyClosingCaveat \{/);
+    assert.match(schema, /model TreasuryDailyClosingReopening \{/);
+    assert.match(schema, /enum TreasuryDailyClosingStatus/);
+    assert.match(schema, /sourceHash\s+String/);
+    assert.match(schema, /@@unique\(\[companyCode, civilDate, version\]\)/);
+    assert.match(schema, /TreasuryDailyClosingCreatedBy/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260817120000_treasury_daily_closing/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryDailyClosing"/);
+    assert.match(sql, /treasury_daily_closing_immutable_trg/);
+    assert.match(sql, /TreasuryDailyClosing_companyCode_civilDate_current_uidx/);
+    assert.match(sql, /CREATE TABLE "TreasuryDailyClosingReopening"/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+    assert.doesNotMatch(sql, /ALTER TABLE "AppUser"/);
+  });
+
   it("schema e migration de status da Central de Exceções existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /IN_ANALYSIS/);

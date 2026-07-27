@@ -201,6 +201,8 @@ export type {
   TreasuryFinancialPositionDto,
   TreasuryPositionValueOriginMeta,
   TreasuryDailyClosingDto,
+  TreasuryDailyClosingAccountPositionDto,
+  TreasuryDailyClosingReopeningDto,
   TreasuryCollectionActionDto,
   TreasuryDisputeDto,
   TreasuryExceptionDto,

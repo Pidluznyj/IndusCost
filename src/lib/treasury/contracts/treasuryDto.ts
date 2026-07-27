@@ -654,13 +654,55 @@ export type TreasuryAgendaDto = {
 
 export type TreasuryDailyClosingDto = {
   id: string;
+  companyCode: string;
   civilDate: TreasuryCivilDate;
   status: TreasuryClosingStatus;
   version: number;
+  /** Hash da fonte de dados no momento do fechamento. */
+  sourceHash: string;
   contentHash: string | null;
-  closedBy: string | null;
+  openingBalance: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  pendenciesAmount: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  observedBalance: TreasuryMoneyString;
+  reconciledBalance: TreasuryMoneyString;
+  differenceAmount: TreasuryMoneyString;
+  exceptionsCount: number;
+  exceptionsAmount: TreasuryMoneyString;
+  caveatsCount: number;
+  previousClosingId: string | null;
+  supersededByClosingId: string | null;
+  closedByUserId: string | null;
   closedAt: TreasuryTimestampIso | null;
+  createdByUserId: string;
   createdAt: TreasuryTimestampIso;
+};
+
+export type TreasuryDailyClosingAccountPositionDto = {
+  id: string;
+  closingId: string;
+  accountId: string;
+  openingBalance: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  pendenciesAmount: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  observedBalance: TreasuryMoneyString;
+  reconciledBalance: TreasuryMoneyString;
+  differenceAmount: TreasuryMoneyString;
+  sortOrder: number;
+};
+
+export type TreasuryDailyClosingReopeningDto = {
+  id: string;
+  fromClosingId: string;
+  toClosingId: string;
+  reason: string;
+  reopenedByUserId: string;
+  reopenedAt: TreasuryTimestampIso;
+  requestId: string | null;
 };
 
 export type TreasuryExceptionDto = {

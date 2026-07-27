@@ -2086,6 +2086,9 @@ model AppUser {
   treasuryExceptionsCancelled         TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
   treasuryExceptionsResponsible       TreasuryException[]                  @relation("TreasuryExceptionResponsible")
   treasuryAlertSettingsUpdated        TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
+  treasuryDailyClosingsCreated        TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
+  treasuryDailyClosingsClosed         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
+  treasuryDailyClosingReopenings      TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
 
   @@index([role])
   @@index([isActive])
@@ -6827,6 +6830,9 @@ model TreasuryFinancialAccount {
   transfersFrom               TreasuryTransfer[]                   @relation("TreasuryTransferFromAccount")
   transfersTo                 TreasuryTransfer[]                   @relation("TreasuryTransferToAccount")
   exceptions                  TreasuryException[]
+  closingAccountPositions     TreasuryDailyClosingAccountPosition[]
+  closingFrozenPendencies     TreasuryDailyClosingFrozenPendency[]
+  closingFrozenExceptions     TreasuryDailyClosingFrozenException[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7562,6 +7568,7 @@ model TreasuryException {
   createdByUser   AppUser                   @relation("TreasuryExceptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   updatedByUser   AppUser?                  @relation("TreasuryExceptionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
   cancelledByUser AppUser?                  @relation("TreasuryExceptionCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  closingFrozenSnapshots TreasuryDailyClosingFrozenException[]
 
   @@index([companyCode, status, severity])
   @@index([type, status])
@@ -7595,5 +7602,207 @@ model TreasuryAlertSettings {
   updatedByUserId String?  @db.Uuid
 
   updatedByUser AppUser? @relation("TreasuryAlertSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+}
+
+/// Status do fechamento diário da Tesouraria.
+/// OPEN = rascunho editável; CLOSED = imutável; REOPENED = versão anterior preservada (substituída).
+enum TreasuryDailyClosingStatus {
+  OPEN
+  CLOSED
+  REOPENED
+}
+
+/// Fechamento diário versionado — payload financeiro congelado após CLOSED.
+/// Reabertura cria nova versão e preserva a anterior (status REOPENED).
+model TreasuryDailyClosing {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyCode String
+  /// Data civil do fechamento (America/Sao_Paulo).
+  civilDate   DateTime @db.Date
+  /// Versão monotônica por empresa+data (1, 2, …). Reabertura incrementa.
+  version     Int
+  status      TreasuryDailyClosingStatus @default(OPEN)
+
+  /// Hash da fonte de dados usada no fechamento (snapshots, títulos, sync…).
+  sourceHash  String
+  /// Hash de integridade do payload congelado (opcional até CLOSE).
+  contentHash String?
+
+  openingBalance     Decimal @db.Decimal(20, 2)
+  realizedInflows    Decimal @default(0) @db.Decimal(20, 2)
+  realizedOutflows   Decimal @default(0) @db.Decimal(20, 2)
+  pendenciesAmount   Decimal @default(0) @db.Decimal(20, 2)
+  closingBalance     Decimal @db.Decimal(20, 2)
+  observedBalance    Decimal @db.Decimal(20, 2)
+  reconciledBalance  Decimal @db.Decimal(20, 2)
+  differenceAmount   Decimal @default(0) @db.Decimal(20, 2)
+
+  exceptionsCount  Int     @default(0)
+  exceptionsAmount Decimal @default(0) @db.Decimal(20, 2)
+  caveatsCount     Int     @default(0)
+
+  notes String?
+
+  previousClosingId       String? @db.Uuid
+  supersededByClosingId   String? @db.Uuid
+
+  createdByUserId String    @db.Uuid
+  createdAt       DateTime  @default(now()) @db.Timestamptz(6)
+  closedByUserId  String?   @db.Uuid
+  closedAt        DateTime? @db.Timestamptz(6)
+
+  createdByUser AppUser  @relation("TreasuryDailyClosingCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  closedByUser  AppUser? @relation("TreasuryDailyClosingClosedBy", fields: [closedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  previousClosing TreasuryDailyClosing?  @relation("TreasuryDailyClosingVersionChain", fields: [previousClosingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  nextVersions    TreasuryDailyClosing[] @relation("TreasuryDailyClosingVersionChain")
+
+  supersededBy TreasuryDailyClosing?  @relation("TreasuryDailyClosingSupersession", fields: [supersededByClosingId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  supersedes   TreasuryDailyClosing[] @relation("TreasuryDailyClosingSupersession")
+
+  accountPositions  TreasuryDailyClosingAccountPosition[]
+  frozenPendencies  TreasuryDailyClosingFrozenPendency[]
+  frozenExceptions  TreasuryDailyClosingFrozenException[]
+  caveats           TreasuryDailyClosingCaveat[]
+  reopenFrom        TreasuryDailyClosingReopening?  @relation("TreasuryDailyClosingReopenFrom")
+  reopenTo          TreasuryDailyClosingReopening?  @relation("TreasuryDailyClosingReopenTo")
+
+  @@unique([companyCode, civilDate, version])
+  @@index([companyCode, civilDate, status])
+  @@index([status, civilDate])
+  @@index([sourceHash])
+  @@index([contentHash])
+  @@index([previousClosingId])
+  @@index([supersededByClosingId])
+  @@index([createdByUserId])
+  @@index([closedByUserId])
+  @@index([closedAt])
+}
+
+/// Posição financeira congelada por conta no fechamento.
+model TreasuryDailyClosingAccountPosition {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId String @db.Uuid
+  accountId String @db.Uuid
+
+  openingBalance    Decimal @db.Decimal(20, 2)
+  realizedInflows   Decimal @default(0) @db.Decimal(20, 2)
+  realizedOutflows  Decimal @default(0) @db.Decimal(20, 2)
+  pendenciesAmount  Decimal @default(0) @db.Decimal(20, 2)
+  closingBalance    Decimal @db.Decimal(20, 2)
+  observedBalance   Decimal @db.Decimal(20, 2)
+  reconciledBalance Decimal @db.Decimal(20, 2)
+  differenceAmount  Decimal @default(0) @db.Decimal(20, 2)
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  closing TreasuryDailyClosing      @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account TreasuryFinancialAccount  @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([closingId, accountId])
+  @@index([closingId, sortOrder])
+  @@index([accountId])
+}
+
+/// Pendência (CR/CP) congelada no momento do fechamento.
+model TreasuryDailyClosingFrozenPendency {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId String @db.Uuid
+  accountId String? @db.Uuid
+
+  titleKind         TreasuryOfficialTitleKind
+  officialTitleId   String? @db.Uuid
+  nomusExternalId   Int?
+  dueDate           DateTime? @db.Date
+  expectedDate      DateTime? @db.Date
+  openAmount        Decimal @db.Decimal(20, 2)
+  statusSnapshot    String?
+  counterpartyName  String?
+  label             String?
+  metadataJson      Json?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  closing TreasuryDailyClosing     @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  account TreasuryFinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([closingId, sortOrder])
+  @@index([closingId, titleKind])
+  @@index([accountId])
+  @@index([officialTitleId])
+  @@index([nomusExternalId])
+}
+
+/// Exceção operacional congelada no fechamento (snapshot; não muta a exceção viva).
+model TreasuryDailyClosingFrozenException {
+  id                String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId         String @db.Uuid
+  sourceExceptionId String? @db.Uuid
+  accountId         String? @db.Uuid
+
+  type        TreasuryExceptionType
+  severity    TreasuryExceptionSeverity
+  title       String
+  description String?
+  amount      Decimal? @db.Decimal(20, 2)
+  entityKind  TreasuryExceptionEntityKind?
+  entityId    String?
+  snapshotJson Json?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  closing         TreasuryDailyClosing      @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  sourceException TreasuryException?        @relation(fields: [sourceExceptionId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  account         TreasuryFinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([closingId, sortOrder])
+  @@index([closingId, severity])
+  @@index([sourceExceptionId])
+  @@index([accountId])
+  @@index([type])
+}
+
+/// Ressalva registrada no fechamento (ack de divergência/risco conhecido).
+model TreasuryDailyClosingCaveat {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  closingId String @db.Uuid
+
+  code        String?
+  severity    TreasuryExceptionSeverity @default(WARNING)
+  message     String
+  acknowledged Boolean @default(false)
+  metadataJson Json?
+
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  closing TreasuryDailyClosing @relation(fields: [closingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([closingId, sortOrder])
+  @@index([closingId, severity])
+  @@index([code])
+}
+
+/// Evento de reabertura — preserva vínculo versão anterior → nova versão.
+model TreasuryDailyClosingReopening {
+  id            String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  fromClosingId String @unique @db.Uuid
+  toClosingId   String @unique @db.Uuid
+  reason        String
+  requestId     String?
+
+  reopenedByUserId String   @db.Uuid
+  reopenedAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  fromClosing    TreasuryDailyClosing @relation("TreasuryDailyClosingReopenFrom", fields: [fromClosingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  toClosing      TreasuryDailyClosing @relation("TreasuryDailyClosingReopenTo", fields: [toClosingId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reopenedByUser AppUser              @relation("TreasuryDailyClosingReopeningBy", fields: [reopenedByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([reopenedAt])
+  @@index([reopenedByUserId])
+  @@index([requestId])
 }
 
