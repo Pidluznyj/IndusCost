@@ -1,31 +1,24 @@
 import type { GuidedTourStep } from "@/src/components/tour/GuidedTour";
 
-/** Precificação — modo unitário vs lote têm DOM diferente; passos específicos são opcionais. */
+/** Precificação — consulta de preços publicados e ferramentas administrativas (sanfona Super Admin). */
 export const PRICING_TOUR_STEPS: GuidedTourStep[] = [
   {
     target: "pricing-root",
     title: "Formação de preço",
     description:
-      "Configure premissas de margem, comissão e frete por produto ou processe simulações em lote. O motor de custo existente não é alterado por este tour.",
+      "Consulte os preços comerciais publicados vigentes. As ferramentas de geração e custo oficial ficam na sanfona superior (somente Super administrador).",
   },
   {
-    target: "pricing-mode-toggle",
-    title: "Unitário ou lote",
+    target: "pricing-admin-tools-accordion",
+    title: "Ferramentas administrativas",
     description:
-      "**Gestão unitária** lista premissas salvas por produto. **Processamento em lote** seleciona vários produtos e aplica parâmetros comuns.",
+      "Somente Super administrador pode abrir esta sanfona para gerar tabelas, gerir custos oficiais e auditar margem.",
+    optional: true,
   },
   {
     target: "pricing-unit-panel",
-    title: "Lista unitária",
+    title: "Preços publicados",
     description:
-      "Veja premissas por produto, regra fiscal, margem e comissão; use calcular, editar ou excluir conforme necessário.",
-    optional: true,
-  },
-  {
-    target: "pricing-batch-panel",
-    title: "Fluxo em lote",
-    description:
-      "Selecione produtos, defina parâmetros fiscais e de margem, rode a simulação e revise resultados antes de gravar oficialmente.",
-    optional: true,
+      "Busque por produto ou SKU, filtre por regra fiscal/margem/comissão e consulte os valores publicados das tabelas vigentes.",
   },
 ];

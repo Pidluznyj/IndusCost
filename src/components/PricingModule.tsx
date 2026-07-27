@@ -211,7 +211,8 @@ export const PricingModule = () => {
     auth.hasPermission("materials.view") ||
     allowGenerateTables;
   const [tourOpen, setTourOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
+  const isSuperAdminUser = auth.isSuperAdmin();
+  const [adminFormationToolsOpen, setAdminFormationToolsOpen] = useState(false);
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
 
   const [pricings, setPricings] = useState<any[]>([]);
@@ -1409,6 +1410,53 @@ export const PricingModule = () => {
           <TourHelpButton onClick={() => setTourOpen(true)} />
         </div>
 
+        {/* Sanfona de ferramentas — somente Super Admin pode abrir */}
+        <div
+          className={cn(
+            "rounded-2xl border border-border bg-card p-4 sm:p-5",
+            !isSuperAdminUser && "opacity-70"
+          )}
+          data-tour="pricing-admin-tools-accordion"
+          data-testid="pricing-admin-tools-accordion"
+        >
+          <button
+            type="button"
+            disabled={!isSuperAdminUser}
+            onClick={() => {
+              if (!isSuperAdminUser) return;
+              setAdminFormationToolsOpen((v) => !v);
+            }}
+            aria-expanded={Boolean(adminFormationToolsOpen && isSuperAdminUser)}
+            aria-controls="pricing-admin-tools-body"
+            title={
+              isSuperAdminUser
+                ? undefined
+                : "Disponível apenas para Super administrador"
+            }
+            className="w-full flex items-start justify-between gap-3 text-left disabled:cursor-not-allowed"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" /> Formação de Preço
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Geração de tabelas, custos oficiais versionados e auditoria de margem.
+                {!isSuperAdminUser
+                  ? " Disponível apenas para Super administrador."
+                  : " Abra quando precisar das ferramentas administrativas."}
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                adminFormationToolsOpen && isSuperAdminUser && "rotate-90",
+                !isSuperAdminUser && "opacity-40"
+              )}
+            />
+          </button>
+
+          {adminFormationToolsOpen && isSuperAdminUser ? (
+            <div id="pricing-admin-tools-body" className="mt-5 space-y-4">
         {/* Gerar Tabelas Comerciais — somente Super Admin */}
         {allowGenerateCommercialTables ? (
         <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -2194,34 +2242,11 @@ export const PricingModule = () => {
         </div>
         ) : null}
 
-        {/* Toggle View Mode */}
-        <div
-          className="flex bg-accent/30 p-1 rounded-xl w-fit border border-border"
-          data-tour="pricing-mode-toggle"
-        >
-          <button 
-            onClick={() => setViewMode("UNIT")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              viewMode === "UNIT" ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutGrid className="h-4 w-4" /> Gestão Unitária
-          </button>
-          <button 
-            onClick={() => setViewMode("BATCH")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              viewMode === "BATCH" ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Layers className="h-4 w-4" /> Processamento em Lote
-          </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {viewMode === "UNIT" ? (
-        // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
           {loading ? (
             <div className="p-8 text-center">
@@ -2508,276 +2533,7 @@ export const PricingModule = () => {
       </div>
      </div>
         </div>
-      ) : (
-        // --- VIEW: BATCH ---
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-tour="pricing-batch-panel">
-          <div className="lg:col-span-2 space-y-4">
-            {/* Esquerda: Seleção de Produtos ou Resultados em tabela */}
 
-            {!batchResults ? (
-              // BATCH TABELA SELEÇÃO
-              <div className="bg-card rounded-2xl border border-border overflow-hidden flex flex-col h-[600px] shadow-sm">
-                <div className="p-4 border-b border-border bg-accent/20 flex gap-4 items-center">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      type="text" placeholder="Filtrar por SKU, código ou nome..."
-                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                      value={searchTermBatch} onChange={(e) => setSearchTermBatch(e.target.value)}
-                    />
-                  </div>
-                  <div className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                    Selecionados: <span className="font-bold text-primary">{selectedProductIds.length}</span>{" "}
-                    {selectedProductIds.length === 1 ? "item" : "itens"}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted sticky top-0 z-10 hidden sm:table-header-group">
-                      <tr>
-                        <th className="p-3 w-10 text-center">
-                          <input 
-                            type="checkbox" className="rounded accent-primary w-4 h-4"
-                            checked={
-                              batchFilteredProducts.length > 0 &&
-                              batchFilteredProducts.every((product) =>
-                                selectedProductIds.includes(product.id)
-                              )
-                            }
-                            onChange={handleToggleSelectAll}
-                          />
-                        </th>
-                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">SKU</th>
-                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">Item</th>
-                        {batchItemScope === "all" ? (
-                          <th className="p-3 font-bold text-xs uppercase text-muted-foreground w-28">Tipo</th>
-                        ) : null}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {batchFilteredProducts.map((product) => (
-                        <tr key={product.id} className="hover:bg-accent/20 cursor-pointer" onClick={() => {
-                          setSelectedProductIds(prev => prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id] )
-                        }}>
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox" className="rounded accent-primary w-4 h-4 pointer-events-none"
-                              checked={selectedProductIds.includes(product.id)} readOnly
-                            />
-                          </td>
-                          <td className="p-3 font-mono text-[10px] sm:text-xs text-muted-foreground">{product.sku}</td>
-                          <td className="p-3 font-bold text-xs sm:text-sm">{product.name}</td>
-                          {batchItemScope === "all" ? (
-                            <td className="p-3">
-                              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                {pricingBatchItemTypeLabel(resolvePricingBatchItemType(product.type))}
-                              </span>
-                            </td>
-                          ) : null}
-                        </tr>
-                      ))}
-                      {batchFilteredProducts.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={batchItemScope === "all" ? 4 : 3}
-                            className="p-8 text-center text-sm text-muted-foreground"
-                          >
-                            Nenhum item encontrado para o escopo e filtro atuais.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              // BATCH TABELA RESULTADOS DA SIMULAÇÃO
-              <div className="bg-card rounded-2xl border border-border overflow-hidden flex flex-col h-[600px] shadow-sm">
-                <div className="p-4 border-b border-border bg-primary text-primary-foreground flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <h3 className="font-bold">Resultados da Simulação</h3>
-                  </div>
-                  <button 
-                    onClick={() => setBatchResults(null)}
-                    className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg font-medium transition-colors"
-                  >
-                    Voltar / Refazer
-                  </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted sticky top-0 z-10 hidden sm:table-header-group">
-                      <tr>
-                        <th className="p-3 font-bold text-[10px] uppercase text-muted-foreground">Status / SKU</th>
-                        <th className="p-3 font-bold text-[10px] uppercase text-muted-foreground">Custo Ind.</th>
-                        <th className="p-3 font-bold text-[10px] uppercase text-right text-muted-foreground">Preço Sugerido</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {batchResults.map((r, idx) => (
-                        <tr key={idx} className={r.status === "ERROR" ? "bg-red-50/50" : "bg-green-50/30"}>
-                          <td className="p-3">
-                            {r.status === "SUCCESS" ? (
-                              <div className="flex items-center gap-2 text-green-600">
-                                <CheckCircle2 className="h-4 w-4" />
-                                <div>
-                                  <p className="font-bold text-xs text-foreground">{r.name}</p>
-                                  <p className="text-[10px] opacity-80">
-                                    {r.sku}
-                                    {r.itemType ? ` · ${pricingBatchItemTypeLabel(r.itemType)}` : ""}
-                                  </p>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 text-red-600">
-                                <AlertCircle className="h-4 w-4" />
-                                <div>
-                                  <p className="font-bold text-xs text-red-800">{r.name || r.productId}</p>
-                                  <p className="text-[10px] leading-tight">
-                                    {r.itemType ? `${pricingBatchItemTypeLabel(r.itemType)} · ` : ""}
-                                    Erro: {r.message}
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-3 font-medium text-xs">
-                            {r.status === "SUCCESS" ? formatCurrency(r.ciu, 5) : "-"}
-                          </td>
-                          <td className="p-3 font-black text-primary text-right text-base">
-                            {r.status === "SUCCESS" ? formatCurrency(r.suggestedPrice, 5) : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="p-4 border-t border-border bg-accent/10 flex justify-end">
-                   <button 
-                    onClick={handleApplyBatch}
-                    className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:opacity-90"
-                   >
-                     Gravar Lote Oficialmente
-                   </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Direita: Painel de Definições em Lote */}
-          <div className="col-span-1 space-y-4">
-             <div className="bg-card rounded-2xl border border-border p-6 shadow-sm flex flex-col gap-5 sticky top-6">
-                <div className="border-b border-border pb-4">
-                  <h3 className="font-bold text-lg flex items-center gap-2">
-                    <Calculator className="h-5 w-5 text-primary" /> Parâmetros em Lote
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Esses parâmetros serão injetados simultaneamente.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Simular</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {PRICING_BATCH_ITEM_SCOPE_OPTIONS.map((option) => {
-                        const active = batchItemScope === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            data-testid={`pricing-batch-scope-${option.value}`}
-                            onClick={() => handleBatchItemScopeChange(option.value)}
-                            className={cn(
-                              "rounded-xl border px-3 py-2.5 text-left transition-colors",
-                              active
-                                ? "border-primary bg-primary/10 ring-1 ring-primary/30"
-                                : "border-border bg-background hover:bg-accent/40"
-                            )}
-                          >
-                            <p className="text-sm font-semibold">{option.label}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{option.description}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">Canal Fiscal</label>
-                    <SearchableSelect
-                      placeholder="Selecione a Regra..."
-                      options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
-                        value: r.id,
-                        label: r.name,
-                        sublabel: r.description?.trim() || undefined,
-                        searchTerms: [r.name, r.description].filter(Boolean).join(" "),
-                      }))}
-                      value={batchFormData.taxRuleId}
-                      onChange={(val) => setBatchFormData({...batchFormData, taxRuleId: val})}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Margem Líquida %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.desiredMargin} onChange={(e) => setBatchFormData({...batchFormData, desiredMargin: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Comissão %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.commission} onChange={(e) => setBatchFormData({...batchFormData, commission: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Frete Fixo (R$)</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.freightOut} onChange={(e) => setBatchFormData({...batchFormData, freightOut: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Outros Var %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.otherVariables} onChange={(e) => setBatchFormData({...batchFormData, otherVariables: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {!batchResults && (
-                  <button 
-                    onClick={handleSimulateBatch}
-                    disabled={simulatingBatch}
-                    className="w-full mt-2 py-3 rounded-xl font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {simulatingBatch ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />} 
-                    Simular {selectedProductIds.length > 0 ? selectedProductIds.length : ""} {selectedProductIds.length === 1 ? "Item" : "Itens"}
-                  </button>
-                )}
-             </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal Simulador de Preço (portal + np-report-printing para PDF limpo) */}
       {isSimulatorModalOpen &&
