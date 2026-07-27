@@ -70,7 +70,7 @@
 | **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
-| **46** | Detecção pós-fechamento | `DONE` | _(pending commit)_ | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
+| **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
 
     > **Nota de ordem:** …; UI = **45**; pós-fechamento = **46**.
 
