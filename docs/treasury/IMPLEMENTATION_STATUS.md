@@ -58,8 +58,9 @@
 | **31** | Fila persistente de recálculo (PostgreSQL) | `DONE` | `9e3d51a` | Model/migration `TreasuryProjectionRecalcJob`; status/attempts/availableAt/lock/deduplicationKey/erro/conclusão; eventos AR/AP sync, baixa, cancelamento, expectativa, promessa, programação, lançamento, transferência, saldo, conciliação, reversão, fechamento, reabertura; dedupe ativos; worker+retry; sem broker; `test:treasury` 289/289 |
 | **32** | Recálculo após sync AR/AP oficial | `DONE` | `4092a9b` | Hook `treasuryProjectionRecalc` nos syncs canônicos CR/CP; emite só após `finish*SourceSyncRun` SUCCESS + payloadComplete + mudanças; não emite em INCONCLUSIVE/preview/falha; período mínimo em payload (união no dedupe); checkpoint/exitCode intactos; sem cron novo; `test:treasury` 298/298 |
 | **33** | APIs REST projeção + agenda | `DONE` | `faba85d` | `POST …/projections/calculate`, `GET …/latest`, `GET …/:id`, `GET …/:id/composition`, `GET …/agenda`; baseDate/endDate/cenário/contas/consolidação/detalhe dia; horizonte configurável (`TREASURY_PROJECTION_MAX_HORIZON_DAYS`); money string; freshness+sourceVersion+algorithmVersion; flag `treasury.projection.enabled`; `test:treasury` 304/304 |
+| **34** | UI agenda financeira | `DONE` | `12037b0` | `/finance/treasury/agenda`; colunas dia (saldo inicial/final, entradas previstas/confirmadas/realizadas, saídas previstas/programadas/realizadas, transferências, risco textual); períodos hoje/7/15/30/60/90/custom; visão consolidada/conta/grupo; gráfico evolução + tabela detalhável; DTO/API enriquecidos multi-cenário; `test:treasury` 319/319 |
 
-    > **Nota de ordem:** …; sync AR/AP → fila = **32**; APIs projeção/agenda = **33**.
+    > **Nota de ordem:** …; sync AR/AP → fila = **32**; APIs projeção/agenda = **33**; UI agenda = **34**.
 
 ---
 
@@ -79,8 +80,8 @@
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P33: motor+fila+APIs calculate/latest/id/composition; UI ainda pendente |
-| Agenda financeira | `PARTIAL` | P33: `GET /api/finance/treasury/agenda` sobre projeção válida; UI ainda pendente |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P33: motor+fila+APIs; P34 agenda consome multi-cenário; UI de projeção ainda pendente |
+| Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
 | Exceções / alertas | `PARTIAL` | P23: exceções prioritárias derivadas (divergência/negativo/prioridade dia); CRUD `TreasuryException` ainda pendente |
@@ -93,7 +94,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 304/304 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 319/319 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -373,6 +374,18 @@
 - [x] Sem avanço automático
 ---
 
+### 34 — UI agenda financeira
+- [x] Tela `/finance/treasury/agenda` (nav + rota no `TreasuryModule`)
+- [x] Colunas por dia: saldo inicial; entradas previstas/confirmadas/realizadas; saídas previstas/programadas/realizadas; transferências; saldo final; risco (código + rótulo textual)
+- [x] Períodos: hoje, 7/15/30/60/90 dias, personalizado
+- [x] Visões: consolidada, por conta, por grupo de contas (instituição)
+- [x] Gráfico de evolução do saldo final + tabela detalhável (composição)
+- [x] API/DTO enriquecidos (multi-cenário CONTRACTUAL/PROBABLE/CONFIRMED)
+- [x] Sem cor como única indicação (rótulos de risco/status)
+- [x] Testes domain/UI/API; `test:treasury` 319/319
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -425,3 +438,4 @@
 | 2026-07-27 | Prompt 31: fila persistente de recálculo — `9e3d51a` |
 | 2026-07-27 | Prompt 32: recálculo após sync AR/AP oficial — `4092a9b` |
 | 2026-07-27 | Prompt 33: APIs REST projeção + agenda — `faba85d` |
+| 2026-07-27 | Prompt 34: UI agenda financeira — `12037b0` |
