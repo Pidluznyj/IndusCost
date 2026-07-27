@@ -60,6 +60,7 @@ import {
   buildPublishedPriceSourceTraceUrl,
 } from "@/src/lib/pricing/publishedPriceSourceTraceApi";
 import type { PublishedPriceSourceTrace } from "@/src/lib/pricing/publishedPriceSourceTrace";
+import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
 import {
   buildPublishedPriceRequestUrl,
   formatPublishedFormationPercent,
@@ -194,6 +195,9 @@ export const PricingModule = () => {
   const allowSimulate = auth.hasPermission("pricing.simulate");
   const allowGenerateTables = auth.hasPermission("pricing.generate_tables");
   const allowPublishTables = auth.hasPermission("pricing.publish_tables");
+  /** Tabelas comerciais: só Super Admin gera/publica (demais apenas usam vigentes). */
+  const allowGenerateCommercialTables = canGenerateCommercialPriceTables(auth);
+  const allowPublishCommercialTables = allowGenerateCommercialTables;
   const allowDeletePremises = canDeletePricingPremises(auth);
   const canViewProductionCostTables =
     auth.hasPermission("pricing.view") ||
@@ -1405,8 +1409,8 @@ export const PricingModule = () => {
           <TourHelpButton onClick={() => setTourOpen(true)} />
         </div>
 
-        {/* Gerar Tabelas Comerciais (card colapsável) */}
-        {allowGenerateTables ? (
+        {/* Gerar Tabelas Comerciais — somente Super Admin */}
+        {allowGenerateCommercialTables ? (
         <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
           <button
             type="button"
@@ -1795,7 +1799,7 @@ export const PricingModule = () => {
                                       : "Informe a vigência desejada acima para publicar."}
                                   </div>
                                 )}
-                                {allowPublishTables && r.versionStatus !== "PUBLISHED" && r.versionId && (
+                                {allowPublishCommercialTables && r.versionStatus !== "PUBLISHED" && r.versionId && (
                                   <button
                                     type="button"
                                     onClick={() => void handlePublishDraftVersion(r)}

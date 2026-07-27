@@ -36,6 +36,7 @@ import { SalesMarginNomusConfigPanel } from "@/src/components/settings/SalesMarg
 import { SettingsApplyHhHmSimulationSection } from "@/src/components/settings/SettingsApplyHhHmSimulationSection";
 import { DiagnosticReportButton } from "@/src/components/diagnostics/DiagnosticReportButton";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import {
@@ -354,6 +355,7 @@ export const SettingsModule = () => {
   const auth = useAuth();
   const canManageUsersPerm = canManageUsers(auth);
   const canViewAccessProfilesPerm = canViewAccessProfiles(auth);
+  const allowGenerateCommercialTables = canGenerateCommercialPriceTables(auth);
   const canViewSettings = auth.hasPermission("settings.view");
   const canEditGlobalParams = auth.hasAnyPermission([
     "settings.global_params.edit",
@@ -2018,6 +2020,7 @@ export const SettingsModule = () => {
                     <Info className="h-3.5 w-3.5" />
                     Modo leitura
                   </span>
+                  {allowGenerateCommercialTables ? (
                   <button
                     type="button"
                     disabled={!selectedPriceTable || priceTablesLoading}
@@ -2027,6 +2030,7 @@ export const SettingsModule = () => {
                     <Plus className="h-3.5 w-3.5" />
                     Gerar nova DRAFT
                   </button>
+                  ) : null}
                   <button
                     type="button"
                     disabled={priceTablesLoading}
@@ -2332,7 +2336,7 @@ export const SettingsModule = () => {
                                 Página {priceTableItemsPagination.page} de {priceTableItemsPagination.totalPages}
                               </span>
                             ) : null}
-                            {selectedPriceTableVersion ? (
+                            {selectedPriceTableVersion && allowGenerateCommercialTables ? (
                               <button
                                 type="button"
                                 onClick={openPublishModal}

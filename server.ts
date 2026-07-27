@@ -9024,8 +9024,31 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  // --- API: Tabelas de preço comerciais (somente leitura; Fase 1) ---
-  app.get("/api/price-tables", requireAppAuth, requireResource("admin.settings.price_tables", "view"), async (_req, res) => {
+  /** Geração/publicação de tabelas comerciais — somente SUPER_ADMIN. */
+  const requireSuperAdmin: express.RequestHandler = async (req, res, next) => {
+    const auth = await getCurrentAppUser(req);
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    if (auth.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Apenas Super Admin pode gerar ou publicar tabelas comerciais.",
+      });
+    }
+    return next();
+  };
+
+  // --- API: Tabelas de preço comerciais ---
+  // Listagem: consumo por propostas/precificação (não exige admin.settings.price_tables).
+  app.get(
+    "/api/price-tables",
+    requireAppAuth,
+    requireAnyPermission(["pricing.view", "proposals.view", "settings.price_tables.view"]),
+    async (_req, res) => {
     try {
       const tables = await prisma.priceTable.findMany({
         orderBy: { code: "asc" },
@@ -9077,9 +9100,14 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       console.error("GET /api/price-tables", e);
       res.status(500).json({ error: "Erro ao listar tabelas de preço." });
     }
-  });
+  }
+  );
 
-  app.post("/api/price-tables/:priceTableId/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
+  app.post(
+    "/api/price-tables/:priceTableId/versions/generate-draft",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
     const { priceTableId } = req.params;
     const body = (req.body ?? {}) as {
       effectiveDate?: unknown;
@@ -9456,7 +9484,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/price-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
+  app.post(
+    "/api/price-table-versions/:id/publish",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
     const { id } = req.params;
     const body = (req.body ?? {}) as {
       effectiveFrom?: unknown;
