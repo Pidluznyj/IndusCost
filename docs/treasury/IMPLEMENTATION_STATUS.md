@@ -52,8 +52,9 @@
 | **25** | Schema Prisma execução de projeção | `DONE` | `7bfbc43` | Models `TreasuryProjectionRun` / `DayLine` / `CompositionItem`; cenários CONTRACTUAL\|PROBABLE\|CONFIRMED\|MANUAL; source/algorithm version; período; status; falhas; linhas com saldos/fluxos/risco/itens; migration `20260810120000_*`; índices; testes integridade; `test:treasury` 211/211 |
 | **26** | Regras puras data de movimento (projeção) | `DONE` | `b390439` | `treasuryMovementDateRules`: AR/AP × CONTRACTUAL/PROBABLE/CONFIRMED/MANUAL; fuso `America/Sao_Paulo`; vencido sem previsão ≠ hoje; testes virada de data; `test:treasury` 225/225 |
 | **27** | Identidade e precedência financeira | `DONE` | `4f6cd19` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
+| **28** | Motor determinístico de projeção | `DONE` | `_pending_` | `treasuryProjectionEngine`: fluxo 16 passos; Decimal string; datas+identidade; day lines + risco + composição; sem Express/Prisma; `test:treasury` 260/260 |
 
-    > **Nota de ordem:** …; regras data movimento = **26**; identidade/precedência = **27**.
+    > **Nota de ordem:** …; identidade/precedência = **27**; motor projeção = **28**.
 
 ---
 
@@ -68,12 +69,12 @@
 | Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | P23 dashboard dia (previsto/realizado/pendente CR/CP por cenário); cash-flow permanece separado |
 | Dashboard diário Tesouraria | `DONE` | P23 API + P24 UI `/finance/treasury`; freshness; posição; previsto×realizado; exceções/alertas; detalhe ao clicar |
-| Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15; resolução pura P26 (prioridade por cenário); `dueDate` oficial intacto; motor de projeção ainda stub |
+| Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15; resolução pura P26; motor P28 consome overlays por cenário; `dueDate` oficial intacto |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; P26 usa promessa ativa na data PROBABLE; não altera `dueDate`; histórico preservado |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25 schema; P26 datas; P27 identidade/precedência anti-dupla; motor de cálculo ainda stub |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25 schema; P26 datas; P27 identidade; P28 motor determinístico (day lines/risco/composição); API/UI ainda pendentes |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
@@ -317,6 +318,14 @@
 - [x] Testes dos casos de dupla contagem conhecidos; `test:treasury` 240/240
 - [x] Sem motor/API/UI neste passo; sem avanço automático
 
+### 28 — Motor determinístico de projeção
+- [x] `runTreasuryProjectionEngine` puro (sem Express/Prisma)
+- [x] Fluxo: saldo-base → AR/AP/baixas/expectativas/promessas/programações/lançamentos/transferências → cancelados → saldo aberto → data cenário → agrupar → saldos → risco → composição
+- [x] Reusa P26 (datas) + P27 (identidade); money string Decimal
+- [x] Day lines com inflows/outflows/transfers/realized/uncertain/risk + composição `sourceRef`
+- [x] Testes extensivos (cenários, parcial, transfer invariante, determinismo); `test:treasury` 260/260
+- [x] Sem API/UI/persistência de run neste passo; sem avanço automático
+
 ---
 
 ## Riscos / pendências abertas
@@ -365,3 +374,4 @@
 | 2026-07-27 | Prompt 25: schema Prisma execução de projeção (run/linhas/composição) — `7bfbc43` |
 | 2026-07-27 | Prompt 26: regras puras data de movimento (AR/AP × cenários + virada SP) — `b390439` |
 | 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
+| 2026-07-27 | Prompt 28: motor determinístico de projeção (day lines/risco/composição) — `_pending_` |
