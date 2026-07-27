@@ -24,6 +24,7 @@ export type PublishedUnavailableField =
   | "commissionRatePercent"
   | "otherRatePercent"
   | "freight"
+  | "freightPercent"
   | "markup"
   | "contributionMargin"
   | "operationalMargin"
@@ -55,6 +56,7 @@ export type PublishedFormationMeta = {
     marginPercent: number | null;
     commissionPercent: number | null;
     commissionValue: number | null;
+    freightPercent: number | null;
     taxAmount: number | null;
     frozenTotalCost: number | null;
     frozenOtherCost: number | null;
@@ -115,6 +117,7 @@ export type PublishedFormationCalculationResult = {
     commRate: number | null;
     marginRate: number | null;
     freight: number | null;
+    freightPercent: number | null;
     otherRate: number | null;
   };
   resultados: {
@@ -140,11 +143,20 @@ function readRatesFromFormula(formulaSnapshotJson: Record<string, unknown> | nul
   const commissionRate = Number(rates.commissionRate);
   const otherRate = Number(rates.otherRate);
   const freight = Number(formulaSnapshotJson?.freight);
+  const freightRateFromRates = Number(rates.freightRate);
+  const freightPercentFromSnapshot = Number(formulaSnapshotJson?.freightPercent);
+  let freightPercent: number | null = null;
+  if (Number.isFinite(freightPercentFromSnapshot)) {
+    freightPercent = freightPercentFromSnapshot;
+  } else if (Number.isFinite(freightRateFromRates)) {
+    freightPercent = freightRateFromRates * 100;
+  }
   return {
     taxRate: Number.isFinite(taxRate) ? taxRate : null,
     commissionRate: Number.isFinite(commissionRate) ? commissionRate : null,
     otherRate: Number.isFinite(otherRate) ? otherRate : null,
     freight: Number.isFinite(freight) ? freight : 0,
+    freightPercent,
   };
 }
 
@@ -321,8 +333,18 @@ export function mapPublishedPriceApiToFormationResult(
   const freight = hasFormulaSnapshot ? formulaRates.freight : null;
   if (!hasFormulaSnapshot || freight == null) unavailableFields.push("freight");
 
+  const freightPercent = hasFormulaSnapshot ? formulaRates.freightPercent : null;
+  if (hasFormulaSnapshot && freightPercent == null) {
+    // Legado sem frete % — não marca indisponível; UI trata null como "não informado".
+  }
+
   const markup = custoFabril != null && custoFabril > 0 ? salePrice / custoFabril : null;
   if (markup == null) unavailableFields.push("markup");
+
+  const freightPercentValue =
+    freightPercent != null && Number.isFinite(freightPercent)
+      ? (salePrice * freightPercent) / 100
+      : 0;
 
   let contributionMargin: number | null = null;
   if (
@@ -331,7 +353,8 @@ export function mapPublishedPriceApiToFormationResult(
     custoFabril != null &&
     freight != null
   ) {
-    contributionMargin = salePrice - frozenTaxCost - commissionValue - freight - custoFabril;
+    contributionMargin =
+      salePrice - frozenTaxCost - commissionValue - freight - freightPercentValue - custoFabril;
   } else {
     unavailableFields.push("contributionMargin");
   }
@@ -364,6 +387,7 @@ export function mapPublishedPriceApiToFormationResult(
       marginPercent: marginPct,
       commissionPercent: commissionPerc,
       commissionValue,
+      freightPercent,
       taxAmount: frozenTaxCost,
       frozenTotalCost: custoFabril,
       frozenOtherCost,
@@ -382,6 +406,7 @@ export function mapPublishedPriceApiToFormationResult(
       commRate: commRate != null ? commRate * 100 : null,
       marginRate: marginPct,
       freight,
+      freightPercent,
       otherRate: otherRate != null ? otherRate * 100 : null,
     },
     resultados: {

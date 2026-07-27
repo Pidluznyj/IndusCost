@@ -8,6 +8,8 @@ export type PricingOpenBookExecutive = {
   pctMp: number;
   pctHh: number;
   pctHm: number;
+  /** Base usada no cálculo dos percentuais MP/HH/HM (quando disponível). */
+  denominatorIndustrial?: number;
 };
 
 export type PricingOpenBookPayload = {

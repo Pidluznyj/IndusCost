@@ -39,6 +39,7 @@ import {
   previewProductionCostTableSourceForPriceDraft,
   resolvePublishedPriceTableVersionForDate,
 } from "./src/lib/priceTablePublication.server.js";
+import { parsePriceTableDraftGenerationBody } from "./src/lib/priceTableDraftGenerationApi.js";
 import { buildCommercialPublishedPriceGridSnapshot } from "./src/lib/pricing/commercialPublishedPrices.server.js";
 import {
   buildCommercialPublishedPricesApiResponse,
@@ -9104,77 +9105,122 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   );
 
   app.post(
+    "/api/price-tables/:priceTableId/versions/preview-draft",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
+      const { priceTableId } = req.params;
+      const parsedBody = parsePriceTableDraftGenerationBody(
+        (req.body ?? {}) as Record<string, unknown>
+      );
+      if (parsedBody.ok === false) {
+        return res.status(400).json({ error: parsedBody.error });
+      }
+      const body = parsedBody.value;
+      const effectiveDate = civilDateToLocalDate(body.effectiveDateRaw);
+      if (Number.isNaN(effectiveDate.getTime())) {
+        return res.status(400).json({ error: "effectiveDate inválida." });
+      }
+
+      try {
+        const result = await generatePriceTableVersionDraftFromProductionCosts(prisma, {
+          priceTableId,
+          effectiveDate,
+          taxRuleId: body.taxRuleId,
+          includeAllActiveProducts: body.includeAllActiveProducts,
+          productIds: body.productIds,
+          itemScope: body.itemScope,
+          notes: body.notes,
+          commissionPerc: body.generationCommissionPerc,
+          hasCommissionOverride: body.hasCommissionOverride,
+          marginPct: body.marginPct,
+          hasMarginOverride: body.hasMarginOverride,
+          freightPercent: body.freightPercent,
+          hasFreightOverride: body.hasFreightOverride,
+          dryRun: true,
+        });
+
+        return res.json({
+          dryRun: true,
+          summary: result.summary,
+          items: result.computedItems,
+          productionCostTable: {
+            productionCostTableVersionId: result.summary.productionCostTableVersionId,
+            productionCostTableVersionCode: result.summary.productionCostTableVersionCode,
+            revision: result.summary.productionCostTableRevision,
+            effectiveDate: result.summary.productionCostTableEffectiveDate,
+          },
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (
+          message === NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE ||
+          message.includes("tabela oficial de custo de produção")
+        ) {
+          return res.status(422).json({ error: message });
+        }
+        if (
+          message.includes("não encontrada") ||
+          message.includes("Nenhum produto") ||
+          message.includes("Nenhum item") ||
+          message.includes("inválida") ||
+          message.includes("não pode ser negativo") ||
+          message.includes("inválido")
+        ) {
+          return res.status(400).json({ error: message });
+        }
+        console.error("POST /api/price-tables/:priceTableId/versions/preview-draft", e);
+        return res.status(500).json({ error: "Erro ao pré-visualizar versão DRAFT da tabela de preço." });
+      }
+    }
+  );
+
+  app.post(
     "/api/price-tables/:priceTableId/versions/generate-draft",
     requireAppAuth,
     requireSuperAdmin,
     async (req, res) => {
     const { priceTableId } = req.params;
-    const body = (req.body ?? {}) as {
-      effectiveDate?: unknown;
-      taxRuleId?: unknown;
-      includeAllActiveProducts?: unknown;
-      productIds?: unknown;
-      itemScope?: unknown;
-      notes?: unknown;
-      commissionPerc?: unknown;
-    };
-
-    const effectiveDateRaw =
-      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
-        ? body.effectiveDate.trim()
-        : null;
-    if (!effectiveDateRaw) {
-      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+    const parsedBody = parsePriceTableDraftGenerationBody(
+      (req.body ?? {}) as Record<string, unknown>
+    );
+    if (parsedBody.ok === false) {
+      return res.status(400).json({ error: parsedBody.error });
     }
-    const effectiveDate = civilDateToLocalDate(effectiveDateRaw);
+    const body = parsedBody.value;
+    const effectiveDate = civilDateToLocalDate(body.effectiveDateRaw);
     if (Number.isNaN(effectiveDate.getTime())) {
       return res.status(400).json({ error: "effectiveDate inválida." });
-    }
-
-    const taxRuleId = typeof body.taxRuleId === "string" && body.taxRuleId.trim() ? body.taxRuleId.trim() : null;
-    const includeAllActiveProducts = body.includeAllActiveProducts === true;
-    const productIds = Array.isArray(body.productIds)
-      ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
-      : [];
-    const itemScope =
-      typeof body.itemScope === "string" && body.itemScope.trim() ? body.itemScope.trim() : undefined;
-    const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
-
-    let hasCommissionOverride = false;
-    let generationCommissionPerc: number | null = null;
-    const rawCommission = body.commissionPerc;
-    if (rawCommission !== undefined && rawCommission !== null && rawCommission !== "") {
-      const parsed = typeof rawCommission === "number" ? rawCommission : Number(rawCommission);
-      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
-        return res.status(400).json({ error: "Comissão do vendedor deve estar entre 0% e 50%." });
-      }
-      hasCommissionOverride = true;
-      generationCommissionPerc = parsed;
-    }
-
-    if (productIds.length === 0 && !includeAllActiveProducts) {
-      return res.status(400).json({
-        error: "Informe productIds ou includeAllActiveProducts=true.",
-      });
     }
 
     try {
       const result = await generatePriceTableVersionDraftFromProductionCosts(prisma, {
         priceTableId,
         effectiveDate,
-        taxRuleId,
-        includeAllActiveProducts,
-        productIds,
-        itemScope,
-        notes,
-        commissionPerc: generationCommissionPerc,
-        hasCommissionOverride,
+        taxRuleId: body.taxRuleId,
+        includeAllActiveProducts: body.includeAllActiveProducts,
+        productIds: body.productIds,
+        itemScope: body.itemScope,
+        notes: body.notes,
+        commissionPerc: body.generationCommissionPerc,
+        hasCommissionOverride: body.hasCommissionOverride,
+        marginPct: body.marginPct,
+        hasMarginOverride: body.hasMarginOverride,
+        freightPercent: body.freightPercent,
+        hasFreightOverride: body.hasFreightOverride,
+        dryRun: false,
+        createdBy:
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null,
       });
 
       if (result.summary.itemsCreated === 0) {
         return res.status(422).json({
           error: "Nenhum item de preço foi criado. Revise os erros de custo de produção.",
           summary: result.summary,
+          items: result.computedItems,
         });
       }
 
@@ -9182,6 +9228,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return res.status(201).json({
         version: result.version,
         summary: persistedSummary,
+        items: result.computedItems,
         productionCostTable: {
           productionCostTableVersionId: result.summary.productionCostTableVersionId,
           productionCostTableVersionCode: result.summary.productionCostTableVersionCode,
@@ -9201,7 +9248,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         message.includes("não encontrada") ||
         message.includes("Nenhum produto") ||
         message.includes("Nenhum item") ||
-        message.includes("inválida")
+        message.includes("inválida") ||
+        message.includes("não pode ser negativo") ||
+        message.includes("inválido")
       ) {
         return res.status(400).json({ error: message });
       }

@@ -61,6 +61,7 @@ import {
 } from "@/src/lib/pricing/publishedPriceSourceTraceApi";
 import type { PublishedPriceSourceTrace } from "@/src/lib/pricing/publishedPriceSourceTrace";
 import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
+import { DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT } from "@/src/lib/priceTablePublication";
 import {
   buildPublishedPriceRequestUrl,
   formatPublishedFormationPercent,
@@ -292,12 +293,35 @@ export const PricingModule = () => {
       return initial;
     }
   );
+  /** Margem-alvo (%) por código — default = defaultMarginPct da tabela. */
+  const [commercialGenMarginByCode, setCommercialGenMarginByCode] = useState<Record<string, string>>({});
+  const [commercialGenFreightPercent, setCommercialGenFreightPercent] = useState(
+    String(DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT)
+  );
   const [commercialGenSelectedCodes, setCommercialGenSelectedCodes] = useState<Set<string>>(
     () => new Set(COMMERCIAL_TABLE_CODES)
   );
   const [commercialGenRunning, setCommercialGenRunning] = useState(false);
+  const [commercialGenPreviewLoading, setCommercialGenPreviewLoading] = useState(false);
   const [commercialGenCurrentCode, setCommercialGenCurrentCode] = useState<string | null>(null);
   const [commercialGenResults, setCommercialGenResults] = useState<CommercialGenResult[] | null>(null);
+  const [commercialGenPreview, setCommercialGenPreview] = useState<Array<{
+    priceTableCode: string;
+    priceTableName: string;
+    marginPct: number;
+    commissionPerc: number;
+    freightPercent: number;
+    items: Array<{
+      sku: string;
+      productName: string;
+      salePrice: number;
+      currentSalePrice: number | null;
+      deltaAmount: number | null;
+      deltaPercent: number | null;
+      commissionPerc: number;
+    }>;
+    errors: Array<{ sku?: string; productName?: string; message?: string }>;
+  }> | null>(null);
   /** "Aprovado por" usado na publicação das DRAFTs comerciais. Opcional. */
   const [commercialPublishApprovedBy, setCommercialPublishApprovedBy] = useState("");
   /** versionId atualmente em publicação (loading discreto por card). */
@@ -382,6 +406,19 @@ export const PricingModule = () => {
         if (!t?.code) continue;
         if (next[t.code] === undefined) {
           next[t.code] = String(getDefaultCommissionForCode(t.code));
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setCommercialGenMarginByCode((prev) => {
+      let changed = false;
+      const next: Record<string, string> = { ...prev };
+      for (const t of priceTables) {
+        if (!t?.code) continue;
+        if (next[t.code] === undefined) {
+          const m = Number(t.defaultMarginPct);
+          next[t.code] = Number.isFinite(m) ? String(m) : "0";
           changed = true;
         }
       }
@@ -826,39 +863,135 @@ export const PricingModule = () => {
     });
   };
 
-  const handleGenerateCommercialDrafts = async () => {
+  const resolveCommercialGenInputs = () => {
     if (!commercialGenTaxRuleId) {
       alert("Selecione uma regra fiscal.");
-      return;
+      return null;
     }
     if (!commercialGenEffectiveFrom.trim()) {
       alert("Informe a vigência desejada (referência para custo de produção publicado).");
-      return;
+      return null;
     }
     const selectedTables = COMMERCIAL_TABLE_CODES
       .map((code) => priceTables.find((t) => t.code === code))
       .filter((t): t is PriceTableLite => !!t && commercialGenSelectedCodes.has(t.code));
     if (selectedTables.length === 0) {
       alert("Selecione pelo menos uma tabela disponível.");
-      return;
+      return null;
     }
 
-    // Comissão por tabela: cada tabela selecionada precisa ter um número válido entre 0 e 50.
-    // Valida todas antes de gerar qualquer DRAFT. Aceita vírgula ou ponto como separador.
     const commissionParsedByCode: Record<string, number> = {};
+    const marginParsedByCode: Record<string, number> = {};
     for (const table of selectedTables) {
-      const raw = (commercialGenCommissionByCode[table.code] ?? "").trim().replace(",", ".");
-      const parsed = Number(raw);
-      if (raw === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
+      const rawComm = (commercialGenCommissionByCode[table.code] ?? "").trim().replace(",", ".");
+      const parsedComm = Number(rawComm);
+      if (rawComm === "" || !Number.isFinite(parsedComm) || parsedComm < 0 || parsedComm > 50) {
         alert(`Comissão do vendedor da tabela ${table.code} deve estar entre 0% e 50%.`);
-        return;
+        return null;
       }
-      commissionParsedByCode[table.code] = parsed;
+      commissionParsedByCode[table.code] = parsedComm;
+
+      const defaultMargin = Number(table.defaultMarginPct);
+      const rawMargin = (
+        commercialGenMarginByCode[table.code] ??
+        (Number.isFinite(defaultMargin) ? String(defaultMargin) : "")
+      )
+        .trim()
+        .replace(",", ".");
+      const parsedMargin = Number(rawMargin);
+      if (rawMargin === "" || !Number.isFinite(parsedMargin) || parsedMargin < 0 || parsedMargin >= 100) {
+        alert(`Margem da tabela ${table.code} deve estar entre 0% e 100% (exclusive).`);
+        return null;
+      }
+      marginParsedByCode[table.code] = parsedMargin;
     }
+
+    const rawFreight = commercialGenFreightPercent.trim().replace(",", ".");
+    const freightParsed = Number(rawFreight);
+    if (rawFreight === "" || !Number.isFinite(freightParsed) || freightParsed < 0 || freightParsed >= 100) {
+      alert("Frete estimado deve estar entre 0% e 100% (exclusive).");
+      return null;
+    }
+
+    for (const table of selectedTables) {
+      const sum =
+        marginParsedByCode[table.code]! +
+        commissionParsedByCode[table.code]! +
+        freightParsed;
+      if (sum >= 100) {
+        alert(
+          `Tabela ${table.code}: margem + comissão + frete (${formatNumber(sum, 2)}%) deve ser menor que 100%.`
+        );
+        return null;
+      }
+    }
+
+    return { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed };
+  };
+
+  const handlePreviewCommercialDrafts = async () => {
+    const inputs = resolveCommercialGenInputs();
+    if (!inputs) return;
+    const { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed } = inputs;
+
+    setCommercialGenPreviewLoading(true);
+    setCommercialGenPreview(null);
+    try {
+      const previews: NonNullable<typeof commercialGenPreview> = [];
+      for (const table of selectedTables) {
+        setCommercialGenCurrentCode(table.code);
+        const payload = await fetchJsonOk<{
+          items?: Array<{
+            sku: string;
+            productName: string;
+            salePrice: number;
+            currentSalePrice: number | null;
+            deltaAmount: number | null;
+            deltaPercent: number | null;
+            commissionPerc: number;
+          }>;
+          summary?: { errors?: Array<Record<string, unknown>> };
+        }>(`/api/price-tables/${table.id}/versions/preview-draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            effectiveDate: commercialGenEffectiveFrom.trim(),
+            taxRuleId: commercialGenTaxRuleId,
+            includeAllActiveProducts: true,
+            commissionPerc: commissionParsedByCode[table.code],
+            marginPct: marginParsedByCode[table.code],
+            freightPercent: freightParsed,
+          }),
+        });
+        previews.push({
+          priceTableCode: table.code,
+          priceTableName: table.name,
+          marginPct: marginParsedByCode[table.code]!,
+          commissionPerc: commissionParsedByCode[table.code]!,
+          freightPercent: freightParsed,
+          items: Array.isArray(payload.items) ? payload.items.slice(0, 40) : [],
+          errors: Array.isArray(payload.summary?.errors)
+            ? payload.summary!.errors!.slice(0, 5).map(extractIssuePreview)
+            : [],
+        });
+      }
+      setCommercialGenPreview(previews);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Falha ao pré-visualizar preços.");
+    } finally {
+      setCommercialGenPreviewLoading(false);
+      setCommercialGenCurrentCode(null);
+    }
+  };
+
+  const handleGenerateCommercialDrafts = async () => {
+    const inputs = resolveCommercialGenInputs();
+    if (!inputs) return;
+    const { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed } = inputs;
 
     if (
       !window.confirm(
-        `Gerar DRAFTs para ${selectedTables.length} tabela(s)? Nenhuma versão será publicada automaticamente.`
+        `Gerar DRAFTs para ${selectedTables.length} tabela(s) com frete ${formatNumber(freightParsed, 2)}%? Nenhuma versão será publicada automaticamente.`
       )
     ) {
       return;
@@ -875,12 +1008,15 @@ export const PricingModule = () => {
       const accumulated: CommercialGenResult[] = [];
       for (const table of selectedTables) {
         setCommercialGenCurrentCode(table.code);
-        const tableCommissionParsed = commissionParsedByCode[table.code];
+        const tableCommissionParsed = commissionParsedByCode[table.code]!;
+        const tableMarginParsed = marginParsedByCode[table.code]!;
         const noteParts: string[] = [
           "Gerado pela Formação de Preço Comercial.",
           `Tabela: ${table.code}.`,
           `Regra fiscal: ${taxRuleName}.`,
+          `Margem-alvo: ${formatNumber(tableMarginParsed, 2)}%.`,
           `Comissão vendedor da tabela ${table.code}: ${formatNumber(tableCommissionParsed, 2)}%.`,
+          `Frete estimado: ${formatNumber(freightParsed, 2)}%.`,
         ];
         if (vig) noteParts.push(`Vigência desejada: ${vig}.`);
         if (userNotes) noteParts.push(`Observações: ${userNotes}`);
@@ -911,6 +1047,8 @@ export const PricingModule = () => {
               taxRuleId: commercialGenTaxRuleId,
               includeAllActiveProducts: true,
               commissionPerc: tableCommissionParsed,
+              marginPct: tableMarginParsed,
+              freightPercent: freightParsed,
               notes: consolidatedNotes,
             }),
           });
@@ -1582,18 +1720,50 @@ export const PricingModule = () => {
               <div className="space-y-2">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Tabelas a gerar</p>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Cada tabela pode ter uma comissão diferente. A comissão entra no cálculo do preço sugerido e
-                  será levada para a proposta.
+                  Ajuste a margem-alvo de cada tabela nesta versão. A comissão permanece vinculada à faixa
+                  comercial. O frete estimado vale para todas as tabelas desta geração.
                 </p>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
+                  Os percentuais informados serão utilizados apenas na nova versão da tabela. Versões
+                  publicadas e pedidos anteriores não serão alterados.
+                </div>
+                <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                      Frete estimado (%)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={99.99}
+                      step="0.01"
+                      className="w-28 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right"
+                      value={commercialGenFreightPercent}
+                      onChange={(e) => setCommercialGenFreightPercent(e.target.value)}
+                      disabled={commercialGenRunning || commercialGenPreviewLoading}
+                      data-testid="commercial-gen-freight-percent"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground max-w-md leading-snug">
+                    Default {DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT}%. Entra no denominador com
+                    impostos, comissão e margem. Aceita 0%.
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {COMMERCIAL_TABLE_CODES.map((code) => {
                     const table = priceTables.find((t) => t.code === code);
                     const available = !!table;
                     const checked = available && commercialGenSelectedCodes.has(code);
-                    const margin = table ? Number(table.defaultMarginPct) : null;
+                    const defaultMargin = table ? Number(table.defaultMarginPct) : null;
                     const commissionValue =
                       commercialGenCommissionByCode[code] ??
                       String(getDefaultCommissionForCode(code));
+                    const marginValue =
+                      commercialGenMarginByCode[code] ??
+                      (defaultMargin != null && Number.isFinite(defaultMargin)
+                        ? String(defaultMargin)
+                        : "");
                     return (
                       <div
                         key={code}
@@ -1603,6 +1773,7 @@ export const PricingModule = () => {
                             ? "border-border"
                             : "border-dashed border-muted-foreground/30 opacity-60"
                         )}
+                        data-testid={`commercial-gen-table-${code}`}
                       >
                         <label
                           className={cn(
@@ -1612,7 +1783,7 @@ export const PricingModule = () => {
                         >
                           <input
                             type="checkbox"
-                            disabled={!available || commercialGenRunning}
+                            disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
                             checked={checked}
                             onChange={() => available && toggleCommercialTable(code)}
                             className="rounded accent-primary w-4 h-4"
@@ -1623,39 +1794,123 @@ export const PricingModule = () => {
                               <span className="ml-2 text-[10px] font-mono text-muted-foreground">({code})</span>
                             </p>
                             <p className="text-[11px] text-muted-foreground">
-                              {available && margin != null && Number.isFinite(margin)
-                                ? `Margem padrão: ${formatNumber(margin, 2)}%`
+                              {available && defaultMargin != null && Number.isFinite(defaultMargin)
+                                ? `Margem padrão: ${formatNumber(defaultMargin, 2)}%`
                                 : "Tabela não encontrada ou inativa"}
                             </p>
                           </div>
                         </label>
-                        <div className="flex items-center gap-2 pl-7">
-                          <label className="text-[11px] font-bold uppercase text-muted-foreground shrink-0">
-                            Comissão %
-                          </label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min={0}
-                            max={50}
-                            step="0.01"
-                            className="w-24 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
-                            value={commissionValue}
-                            onChange={(e) =>
-                              setCommercialGenCommissionByCode((prev) => ({
-                                ...prev,
-                                [code]: e.target.value,
-                              }))
-                            }
-                            disabled={!available || commercialGenRunning}
-                            placeholder="0,00"
-                          />
+                        <div className="grid grid-cols-2 gap-2 pl-7">
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Margem nova %
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={99.99}
+                              step="0.01"
+                              className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
+                              value={marginValue}
+                              onChange={(e) =>
+                                setCommercialGenMarginByCode((prev) => ({
+                                  ...prev,
+                                  [code]: e.target.value,
+                                }))
+                              }
+                              disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Comissão %
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={50}
+                              step="0.01"
+                              className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
+                              value={commissionValue}
+                              onChange={(e) =>
+                                setCommercialGenCommissionByCode((prev) => ({
+                                  ...prev,
+                                  [code]: e.target.value,
+                                }))
+                              }
+                              disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
+                              placeholder="0,00"
+                            />
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {commercialGenPreview && commercialGenPreview.length > 0 ? (
+                <div
+                  className="space-y-3 rounded-xl border border-border bg-card p-3"
+                  data-testid="commercial-gen-preview"
+                >
+                  <p className="text-xs font-bold uppercase text-muted-foreground">
+                    Preview da formação (mesmos valores que serão gerados)
+                  </p>
+                  {commercialGenPreview.map((block) => (
+                    <div key={block.priceTableCode} className="space-y-2">
+                      <p className="text-sm font-semibold">
+                        {block.priceTableName}{" "}
+                        <span className="text-xs text-muted-foreground font-mono">
+                          ({block.priceTableCode}) · margem {formatNumber(block.marginPct, 2)}% · comissão{" "}
+                          {formatNumber(block.commissionPerc, 2)}% · frete{" "}
+                          {formatNumber(block.freightPercent, 2)}%
+                        </span>
+                      </p>
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-muted">
+                            <tr>
+                              <th className="p-2">SKU</th>
+                              <th className="p-2">Produto</th>
+                              <th className="p-2 text-right">Preço atual</th>
+                              <th className="p-2 text-right">Novo preço</th>
+                              <th className="p-2 text-right">Δ R$</th>
+                              <th className="p-2 text-right">Δ %</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {block.items.map((row) => (
+                              <tr key={`${block.priceTableCode}-${row.sku}`}>
+                                <td className="p-2 font-mono">{row.sku}</td>
+                                <td className="p-2">{row.productName}</td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.currentSalePrice != null
+                                    ? formatCurrency(row.currentSalePrice, 2)
+                                    : "—"}
+                                </td>
+                                <td className="p-2 text-right tabular-nums font-semibold">
+                                  {formatCurrency(row.salePrice, 2)}
+                                </td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.deltaAmount != null ? formatCurrency(row.deltaAmount, 2) : "—"}
+                                </td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.deltaPercent != null
+                                    ? `${formatNumber(row.deltaPercent, 2)}%`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                 Tabela personalizada será adicionada em uma próxima etapa.
@@ -1665,36 +1920,64 @@ export const PricingModule = () => {
                 const availableSelectedCount = COMMERCIAL_TABLE_CODES.filter((code) =>
                   priceTables.some((t) => t.code === code) && commercialGenSelectedCodes.has(code)
                 ).length;
+                const busy = commercialGenRunning || commercialGenPreviewLoading;
                 return (
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <p className="text-xs text-muted-foreground">
-                      Selecionadas: <span className="font-bold text-foreground">{availableSelectedCount}</span> · serão geradas DRAFTs sequencialmente.
+                      Selecionadas: <span className="font-bold text-foreground">{availableSelectedCount}</span> · preview e geração usam o mesmo motor.
                     </p>
-                    <button
-                      type="button"
-                      onClick={handleGenerateCommercialDrafts}
-                      disabled={
-                        !commercialGenTaxRuleId ||
-                        !commercialGenEffectiveFrom.trim() ||
-                        availableSelectedCount === 0 ||
-                        commercialGenRunning
-                      }
-                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                    >
-                      {commercialGenRunning ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          {commercialGenCurrentCode
-                            ? `Gerando ${COMMERCIAL_TABLE_LABELS[commercialGenCurrentCode] ?? commercialGenCurrentCode}...`
-                            : "Gerando..."}
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-4 w-4" />
-                          Gerar DRAFTs comerciais
-                        </>
-                      )}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handlePreviewCommercialDrafts()}
+                        disabled={
+                          !commercialGenTaxRuleId ||
+                          !commercialGenEffectiveFrom.trim() ||
+                          availableSelectedCount === 0 ||
+                          busy
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-bold hover:bg-accent disabled:opacity-50"
+                        data-testid="commercial-gen-preview-btn"
+                      >
+                        {commercialGenPreviewLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Preview...
+                          </>
+                        ) : (
+                          <>
+                            <Calculator className="h-4 w-4" />
+                            Preview
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerateCommercialDrafts()}
+                        disabled={
+                          !commercialGenTaxRuleId ||
+                          !commercialGenEffectiveFrom.trim() ||
+                          availableSelectedCount === 0 ||
+                          busy
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        data-testid="commercial-gen-generate-btn"
+                      >
+                        {commercialGenRunning ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {commercialGenCurrentCode
+                              ? `Gerando ${COMMERCIAL_TABLE_LABELS[commercialGenCurrentCode] ?? commercialGenCurrentCode}...`
+                              : "Gerando..."}
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-4 w-4" />
+                            Gerar DRAFTs comerciais
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -2862,6 +3145,13 @@ export const PricingModule = () => {
                              publishedFormationMeta.publishedSummary.commissionPercent != null
                                ? `${formatNumber(publishedFormationMeta.publishedSummary.commissionPercent, 2)}%`
                                : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
+                         },
+                         {
+                           label: "Frete estimado",
+                           value:
+                             publishedFormationMeta.publishedSummary.freightPercent != null
+                               ? `${formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%`
+                               : "—",
                          },
                          {
                            label: "Impostos publicados",
