@@ -39,7 +39,8 @@ const RECOMMENDED_BY_TYPE: Partial<Record<TreasuryExceptionType, string>> = {
   TITLE_WITHOUT_RESPONSIBLE: "Atribuir responsável ao título.",
   SYNC_DELAYED: "Verificar sincronização Nomus.",
   SUSPECTED_DUPLICATE: "Analisar e confirmar/descartar duplicidade.",
-  FINANCIAL_CHANGE_AFTER_CLOSING: "Auditar alteração pós-fechamento.",
+  FINANCIAL_CHANGE_AFTER_CLOSING:
+    "Reabrir o dia ou registrar tratamento formal da alteração pós-fechamento.",
   BALANCE_DIVERGENCE: "Investigar divergência de saldo.",
   NEGATIVE_BALANCE: "Corrigir saldo negativo.",
   POSITION_ALERT: "Revisar alerta de posição.",
@@ -89,6 +90,8 @@ export function buildTreasuryExceptionEntityHref(input: {
   entityId: string | null;
   accountId: string | null;
   nomusExternalId: string | null;
+  companyCode?: string | null;
+  closedCivilDate?: string | null;
 }): string | null {
   const kind = input.entityKind;
   if (!kind) {
@@ -129,8 +132,15 @@ export function buildTreasuryExceptionEntityHref(input: {
       return "/finance/treasury/projections";
     case "RECONCILIATION":
       return "/finance/treasury";
-    case "CLOSING":
-      return "/finance/treasury";
+    case "CLOSING": {
+      const qs = new URLSearchParams();
+      if (input.closedCivilDate) qs.set("date", input.closedCivilDate);
+      if (input.companyCode) qs.set("companyCode", input.companyCode);
+      const q = qs.toString();
+      return q
+        ? `/finance/treasury/closing?${q}`
+        : "/finance/treasury/closing";
+    }
     case "LEDGER_ENTRY":
       return input.accountId
         ? `/finance/treasury/accounts/${encodeURIComponent(input.accountId)}/balances`

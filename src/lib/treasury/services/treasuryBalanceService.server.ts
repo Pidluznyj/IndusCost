@@ -34,6 +34,10 @@ import {
   writeTreasuryAuditLog,
   type TreasuryAuditDb,
 } from "./treasuryAuditService.server.js";
+import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import { formatTreasuryTimestampIso } from "../contracts/treasuryTimestamp.js";
+import { subtractTreasuryMoney } from "../treasuryMoney.js";
+import { notifyTreasuryPostClosingFinancialChange } from "./treasuryPostClosingChangeService.server.js";
 
 type TreasuryBalanceTx = TreasuryAuditDb & TreasuryBalanceDb;
 
@@ -203,7 +207,7 @@ export function createTreasuryBalanceService(deps: {
       accountId: string,
       command: TreasuryCreateBalanceSnapshotCommand
     ): Promise<TreasuryCreateBalanceSnapshotResult> {
-      await requireBalanceWritableAccount(actor, accountId);
+      const { account } = await requireBalanceWritableAccount(actor, accountId);
       const idempotencyKey = assertTreasuryIdempotencyKey(
         command.idempotencyKey
       );
@@ -260,6 +264,31 @@ export function createTreasuryBalanceService(deps: {
           );
           return dto;
         });
+        const civilDate = toCivilDateKey(referenceAt);
+        if (civilDate && account.companyCode) {
+          const frozen = previous
+            ? toTreasuryBalanceSnapshotDto(previous).availableBalance
+            : null;
+          const current = created.availableBalance;
+          void notifyTreasuryPostClosingFinancialChange(
+            {
+              companyCode: account.companyCode,
+              civilDate,
+              changeKind: "BALANCE_CHANGE",
+              entityKind: "ACCOUNT",
+              entityId: accountId,
+              accountId,
+              frozenAmount: frozen,
+              currentAmount: current,
+              amount:
+                frozen != null
+                  ? subtractTreasuryMoney(current, frozen)
+                  : current,
+              changedAtIso: formatTreasuryTimestampIso(new Date()),
+            },
+            { prisma, requestId: actor.requestId ?? null }
+          );
+        }
         return { snapshot: created, created: true };
       } catch (err) {
         const code =

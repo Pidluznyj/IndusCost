@@ -77,6 +77,11 @@ export function toTreasuryExceptionDto(
   const entityKind =
     (row.entityKind as TreasuryExceptionEntityKind) ?? null;
   const nowEpochMs = options?.nowEpochMs ?? Date.now();
+  const metadata = metadataOf(row.metadataJson);
+  const closedCivilDate =
+    typeof metadata?.closedCivilDate === "string"
+      ? metadata.closedCivilDate
+      : null;
   return {
     id: row.id,
     companyCode: row.companyCode,
@@ -97,7 +102,7 @@ export function toTreasuryExceptionDto(
     resolution: row.resolution,
     ignoreJustification: row.ignoreJustification,
     recurrenceCount: row.recurrenceCount,
-    metadata: metadataOf(row.metadataJson),
+    metadata,
     version: row.version,
     createdAt: formatTreasuryTimestampIso(row.createdAt),
     createdByUserId: row.createdByUserId,
@@ -125,6 +130,8 @@ export function toTreasuryExceptionDto(
       entityId: row.entityId,
       accountId: row.accountId,
       nomusExternalId: row.nomusExternalId,
+      companyCode: row.companyCode,
+      closedCivilDate,
     }),
   };
 }

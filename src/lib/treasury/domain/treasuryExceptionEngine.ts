@@ -160,6 +160,16 @@ export type TreasuryExceptionEnginePostClosingChangeSeed = {
   closedCivilDate: string;
   changedAtIso: string;
   amount?: string | null;
+  /** Kind do evento (LATE_SETTLEMENT, BALANCE_CHANGE, …). */
+  changeKind?: string | null;
+  differenceAmount?: string | null;
+  frozenAmount?: string | null;
+  currentAmount?: string | null;
+  accountId?: string | null;
+  closingId?: string | null;
+  closingVersion?: number | null;
+  closingSourceHash?: string | null;
+  currentSourceHash?: string | null;
 };
 
 export type TreasuryExceptionEngineOpenRow = {
@@ -857,6 +867,8 @@ function detectFinancialChangeAfterClosing(
 ): TreasuryExceptionCandidate[] {
   const out: TreasuryExceptionCandidate[] = [];
   for (const c of input.postClosingChanges ?? []) {
+    const diff = moneyOrNull(c.differenceAmount ?? c.amount ?? null);
+    const diffSuffix = diff != null ? ` Diferença: ${diff}.` : "";
     out.push(
       candidate({
         uniqueKey: buildUniqueKey([
@@ -868,19 +880,28 @@ function detectFinancialChangeAfterClosing(
         severity: "CRITICAL",
         entityKind: c.entityKind,
         entityId: c.entityId,
-        accountId: null,
+        accountId: c.accountId ?? null,
         nomusExternalId: null,
         title: "Mudança financeira após fechamento",
-        description: `Alteração após fechamento de ${c.closedCivilDate}.`,
-        amount: moneyOrNull(c.amount ?? null),
+        description: `Alteração após fechamento de ${c.closedCivilDate}.${diffSuffix} Reabra o dia ou registre tratamento formal.`,
+        amount: moneyOrNull(diff),
         dueAt: c.closedCivilDate,
         responsibleUserId: null,
         allowsSafeAutoResolve: false,
         metadata: {
           engineType: "FINANCIAL_CHANGE_AFTER_CLOSING",
+          postClosingAlias: "POST_CLOSING_FINANCIAL_CHANGE",
           changeId: c.id,
+          changeKind: c.changeKind ?? null,
           closedCivilDate: c.closedCivilDate,
           changedAtIso: c.changedAtIso,
+          differenceAmount: diff,
+          frozenAmount: c.frozenAmount ?? null,
+          currentAmount: c.currentAmount ?? null,
+          closingId: c.closingId ?? null,
+          closingVersion: c.closingVersion ?? null,
+          closingSourceHash: c.closingSourceHash ?? null,
+          currentSourceHash: c.currentSourceHash ?? null,
         },
       })
     );

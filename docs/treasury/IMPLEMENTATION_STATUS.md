@@ -70,8 +70,9 @@
 | **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
+| **46** | Detecção pós-fechamento | `DONE` | _(pending commit)_ | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
 
-    > **Nota de ordem:** …; preview = **43**; close/reopen = **44**; UI = **45**.
+    > **Nota de ordem:** …; UI = **45**; pós-fechamento = **46**.
 
 ---
 
@@ -96,8 +97,8 @@
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
-| Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing` (checklist, ressalvas, histórico, comparação, 409) |
-| Reabertura | `DONE` | P44 API + P45 UI autorizada com justificativa; versão preservada |
+| Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
+| Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `NOT_STARTED` | — |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
@@ -501,6 +502,16 @@
 - [x] Sem avanço automático
 ---
 
+### 46 — Detecção de mudanças financeiras pós-fechamento
+- [x] Tipo `FINANCIAL_CHANGE_AFTER_CLOSING` (alias requisito `POST_CLOSING_FINANCIAL_CHANGE`); nunca auto-resolve; não reescreve CLOSED
+- [x] Regras puras: baixa/cancelamento/movimento bancário/saldo/sync; diferença frozen×atual; changeId estável
+- [x] Serviço registra exceção com entidade/valor/diferença + link de reabertura/tratamento
+- [x] Hooks: snapshot de saldo; sync Nomus AR/AP (scan CLOSED no período coberto)
+- [x] UI exceções: mostra diferença + “Reabrir / tratar fechamento”
+- [x] Testes: baixa tardia, cancelamento tardio, movimento bancário, alteração de saldo, reprocessamento idempotente; `test:treasury` 459/459
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -565,3 +576,4 @@
 | 2026-07-27 | Prompt 43: preview fechamento diário — `7313c86` |
 | 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
 | 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
+| 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — _(pending commit)_ |

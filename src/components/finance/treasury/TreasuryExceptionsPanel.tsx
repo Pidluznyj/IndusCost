@@ -179,6 +179,27 @@ export function TreasuryExceptionsPanel(props: {
                   <td className="px-3 py-2">
                     <div className="font-medium text-foreground">{row.title}</div>
                     <div className="text-xs text-muted-foreground">{row.type}</div>
+                    {row.type === "FINANCIAL_CHANGE_AFTER_CLOSING" &&
+                    row.metadata &&
+                    typeof row.metadata.differenceAmount === "string" ? (
+                      <div
+                        className="mt-1 text-xs font-medium text-amber-800 dark:text-amber-200"
+                        data-testid={`treasury-exception-post-closing-diff-${row.id}`}
+                      >
+                        Diferença: {formatMoney(row.metadata.differenceAmount)}
+                      </div>
+                    ) : null}
+                    {row.type === "FINANCIAL_CHANGE_AFTER_CLOSING" &&
+                    row.metadata &&
+                    typeof row.metadata.closedCivilDate === "string" ? (
+                      <Link
+                        to={`/finance/treasury/closing?date=${encodeURIComponent(String(row.metadata.closedCivilDate))}&companyCode=${encodeURIComponent(row.companyCode)}`}
+                        className="mt-1 inline-block text-xs font-semibold text-primary underline-offset-2 hover:underline"
+                        data-testid={`treasury-exception-post-closing-treat-${row.id}`}
+                      >
+                        Reabrir / tratar fechamento
+                      </Link>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">
                     {TREASURY_EXCEPTION_STATUS_LABELS[row.status]}

@@ -16,6 +16,11 @@ import {
   enqueueTreasuryProjectionRecalcForDefaultScenarios,
   type EnqueueTreasuryProjectionRecalcResult,
 } from "./treasuryProjectionRecalcQueueService.server.js";
+import {
+  createTreasuryPostClosingChangeService,
+  type TreasuryPostClosingRecordResult,
+} from "./treasuryPostClosingChangeService.server.js";
+import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 
 export type RunTreasuryProjectionRecalcAfterNomusSyncInput = {
   source: "accounts-receivable" | "accounts-payable";
@@ -38,19 +43,32 @@ export type RunTreasuryProjectionRecalcAfterNomusSyncResult = {
   decision: TreasuryProjectionRecalcAfterNomusSyncDecision;
   companyCode: string | null;
   jobs: EnqueueTreasuryProjectionRecalcResult[];
+  postClosing: TreasuryPostClosingRecordResult[];
 };
 
 export type TreasuryProjectionRecalcAfterNomusSyncDeps = {
   repository: TreasuryProjectionRecalcJobRepository;
   now?: () => Date;
   companyCode?: string;
+  prisma?: PrismaClient;
+  scanPostClosing?: (input: {
+    companyCode: string;
+    dateFrom: string;
+    dateTo: string;
+    forceWithoutHash?: boolean;
+    requestId?: string | null;
+    now?: Date;
+  }) => Promise<TreasuryPostClosingRecordResult[]>;
 };
 
 export function createTreasuryProjectionRecalcAfterNomusSyncDeps(
   db: PrismaClient
 ): TreasuryProjectionRecalcAfterNomusSyncDeps {
+  const postClosing = createTreasuryPostClosingChangeService({ prisma: db });
   return {
     repository: createTreasuryProjectionRecalcJobRepository(db),
+    prisma: db,
+    scanPostClosing: (input) => postClosing.scanClosedDaysAfterSync(input),
   };
 }
 
@@ -69,7 +87,7 @@ export async function runTreasuryProjectionRecalcAfterNomusSync(
   });
 
   if (!decision.enqueue) {
-    return { decision, companyCode: null, jobs: [] };
+    return { decision, companyCode: null, jobs: [], postClosing: [] };
   }
 
   const companyCode =
@@ -100,7 +118,25 @@ export async function runTreasuryProjectionRecalcAfterNomusSync(
     { repository: deps.repository, now: () => now }
   );
 
-  return { decision, companyCode, jobs };
+  let postClosing: TreasuryPostClosingRecordResult[] = [];
+  const dateFrom = toCivilDateKey(input.coveredFrom);
+  const dateTo = toCivilDateKey(input.coveredTo);
+  if (deps.scanPostClosing && dateFrom && dateTo) {
+    try {
+      postClosing = await deps.scanPostClosing({
+        companyCode,
+        dateFrom,
+        dateTo,
+        forceWithoutHash: true,
+        requestId: input.requestId ?? input.sourceSyncRunId,
+        now,
+      });
+    } catch {
+      postClosing = [];
+    }
+  }
+
+  return { decision, companyCode, jobs, postClosing };
 }
 
 export function formatTreasuryProjectionRecalcAfterNomusSyncLog(
