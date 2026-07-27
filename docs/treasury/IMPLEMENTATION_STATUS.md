@@ -38,7 +38,7 @@
 | **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | `29ce7e4` | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
 | **12** | Schema complemento operacional de títulos | `DONE` | `1ffd2ab` | `TreasuryTitleOperationalComplement` (RECEIVABLE/PAYABLE); unicidade tipo+título; datas/valores esperados/confirmados/programados; status/prioridade/conta/responsável; versionamento + cancelamento; migration `20260807120000_*` (não deployada); repo base + testes integridade; `test:treasury` 113/113 |
 | **13** | API consulta Contas a Receber (oficial + complemento) | `DONE` | `03fec64` | `GET /api/finance/treasury/receivables` + `/:titleId`; filtros (cliente/CNPJ/doc/pedido/NF/vendedor/resp./venc./esperada/promessa/status/atraso/valor/conta/prioridade); paginação/sort; batch join sem N+1; cálculos aberto/recebido/atraso/status/ações; `test:treasury` 119/119 |
-| **14** | UI Contas a Receber | `DONE` | *(este commit)* | `/finance/treasury/receivables`; tabela server-paginated; filtros; summary qtd/valor; badges; atraso/prioridade/ações; drawer Overlay; mobile columns; estados vazio/erro/loading/stale; `test:treasury` 127/127 |
+| **14** | UI Contas a Receber | `DONE` | `1becae6` | `/finance/treasury/receivables`; tabela server-paginated; filtros; summary qtd/valor; badges; atraso/prioridade/ações; drawer Overlay; mobile columns; estados vazio/erro/loading/stale; `test:treasury` 127/127 |
 
 > **Nota de ordem:** …; query API CR = **13**; UI CR = **14**.
 
@@ -73,7 +73,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 119 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 127 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -274,4 +274,4 @@
 | 2026-07-27 | Prompt 11: adapter/repo read-only AR/AP oficiais Nomus; DTOs canônicos; test:treasury 106/106 |
 | 2026-07-27 | Prompt 12: schema/repo complemento operacional de títulos; migration aditiva; test:treasury 113/113 |
 | 2026-07-27 | Prompt 13: query service/API receivables (oficial+complemento); filtros/paginação; test:treasury 119/119 |
-| 2026-07-27 | Prompt 14: UI Contas a Receber Tesouraria; drawer; responsivo |
+| 2026-07-27 | Prompt 14: UI Contas a Receber Tesouraria; drawer; responsivo; test:treasury 127/127 |
