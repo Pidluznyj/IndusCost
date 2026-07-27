@@ -77,46 +77,49 @@ export function SalesOrderListMonthlyMarginPercentChart({
       subtitle="Margem gerencial oficial (receita líquida − custo versionado), ponderada por receita. Mesma população da listagem."
       empty={empty}
       emptyDescription="Sem margem calculável para o período (sem pedidos ou custo indisponível)."
+      testId="sales-orders-monthly-margin-percent-chart"
     >
-      <ResponsiveContainer width="100%" height={FINANCE_BILLING_CHART_HEIGHT}>
-        <ComposedChart data={data} margin={{ top: 28, right: 12, left: 0, bottom: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-          <XAxis
-            dataKey="name"
-            tick={{ fontSize: 11, fill: "#6B7280" }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <YAxis
-            tick={{ fontSize: 11, fill: "#6B7280" }}
-            tickFormatter={(v: number) => `${v.toFixed(0)}%`}
-            width={48}
-            axisLine={false}
-            tickLine={false}
-            domain={[0, "auto"]}
-          />
-          <Tooltip
-            formatter={(value: number) => [
-              formatSalesOrderMarginPercent(value),
-              "Margem %",
-            ]}
-          />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar
-            dataKey="marginPercent"
-            name={
-              yearCtx.isSelectedYearCurrent
-                ? `Margem % ${selectedYear} YTD`
-                : `Margem % ${selectedYear}`
-            }
-            fill={colors.currentYearBar}
-            radius={[4, 4, 0, 0]}
-            maxBarSize={36}
-          >
-            <LabelList dataKey="marginPercent" content={<MarginPercentBarLabel />} />
-          </Bar>
-        </ComposedChart>
-      </ResponsiveContainer>
+      {({ height }) => (
+        <ResponsiveContainer width="100%" height={height || FINANCE_BILLING_CHART_HEIGHT}>
+          <ComposedChart data={data} margin={{ top: 28, right: 12, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11, fill: "#6B7280" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 11, fill: "#6B7280" }}
+              tickFormatter={(v: number) => `${v.toFixed(0)}%`}
+              width={48}
+              axisLine={false}
+              tickLine={false}
+              domain={[0, "auto"]}
+            />
+            <Tooltip
+              formatter={(value: number) => [
+                formatSalesOrderMarginPercent(value),
+                "Margem %",
+              ]}
+            />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar
+              dataKey="marginPercent"
+              name={
+                yearCtx.isSelectedYearCurrent
+                  ? `Margem % ${selectedYear} YTD`
+                  : `Margem % ${selectedYear}`
+              }
+              fill={colors.currentYearBar}
+              radius={[4, 4, 0, 0]}
+              maxBarSize={36}
+            >
+              <LabelList dataKey="marginPercent" content={<MarginPercentBarLabel />} />
+            </Bar>
+          </ComposedChart>
+        </ResponsiveContainer>
+      )}
     </FinanceBillingChartShell>
   );
 }
