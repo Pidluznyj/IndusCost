@@ -31,8 +31,9 @@
 | **04** | Schema Prisma contas + acesso + snapshots | `DONE` | `365a4d8` — `feat(treasury): adicionar schema Prisma de contas, acesso e snapshots` | `TreasuryFinancialAccount`, `TreasuryFinancialAccountAccess`, `TreasuryBalanceSnapshot`; migration `20260805120000_*`; FKs `AppUser`; `companyCode` (sem model Company); prisma format/validate/generate OK; `test:treasury` 47/47; build OK; **não** aplicada em prod |
 | **05** | Auditoria central Tesouraria | `DONE` | `07c4036` — `feat(treasury): adicionar auditoria central append-only com suporte a transaction` | `TreasuryAuditLog` append-only + trigger; `writeTreasuryAuditLog` aceita TX; helpers tipados; testes create/update/rollback/imutabilidade; migration `20260806120000_*`; `test:treasury` 54/54 |
 | **06** | Repository + service contas financeiras | `DONE` | `e7bc851` — `feat(treasury): adicionar repository e service de contas financeiras` | CRUD lógica (list/get/create/update/deactivate/reactivate/sort/min balance/liquidity/consolidado/access); ACL+máscara+optimistic lock+audit; sem exclusão com histórico; `test:treasury` 64/64; rotas/UI ainda pendentes |
+| **07** | APIs REST contas financeiras | `DONE` | *(este commit)* | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
 
-> **Nota de ordem:** auditoria = **05**; service/repo contas = **06**. Rotas/UI de contas ficam para o próximo passo.
+> **Nota de ordem:** service/repo = **06**; APIs REST contas = **07**. UI de contas fica para o próximo passo.
 
 ---
 
@@ -40,7 +41,7 @@
 
 | Capabilidade | Status | Notas / reuso |
 |--------------|--------|---------------|
-| Contas financeiras | `PARTIAL` | Schema + service/repo; rotas/UI ainda pendentes |
+| Contas financeiras | `PARTIAL` | Schema + service/repo + APIs REST; UI ainda pendente |
 | Saldos manuais e históricos | `PARTIAL` | Schema `TreasuryBalanceSnapshot` (idempotência por origem); API ainda P06 |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; APIs `/api/finance/accounts-receivable/*` |
@@ -65,7 +66,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 64 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 70 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -221,6 +222,17 @@
 - [x] Testes unitários (rules) + integração (memory repo); `test:treasury` 64/64
 - [x] Sem rotas/UI neste passo
 
+### 07 — APIs REST contas
+- [x] `GET/POST /api/finance/treasury/accounts`
+- [x] `GET/PATCH /api/finance/treasury/accounts/:id`
+- [x] `POST …/deactivate` e `…/reactivate`
+- [x] `GET/PUT …/access`
+- [x] Auth + flag + `requireResource` (view/manage) + acesso por conta no service
+- [x] Validação tipada; erros padronizados (`code` + `requestId`); DTOs (sem Prisma)
+- [x] Auditoria via service; paginação na listagem
+- [x] Testes de API (wiring + handlers + 401/403); `test:treasury` 70/70
+- [x] Sem UI neste passo
+
 ---
 
 ## Riscos / pendências abertas
@@ -248,3 +260,4 @@
 | 2026-07-27 | Prompt 04: schema Prisma contas/acesso/snapshots + migration aditiva; generate/build OK; sem deploy |
 | 2026-07-27 | Prompt 05: auditoria central append-only + TX; test:treasury 54/54; migration não deployada |
 | 2026-07-27 | Prompt 06: repository/service contas financeiras; test:treasury 64/64 |
+| 2026-07-27 | Prompt 07: APIs REST contas financeiras; test:treasury 70/70 |

@@ -85,6 +85,10 @@ export type TreasuryUpdateAccountCommand = {
   nomusBankAccountId?: string | null;
   allowNegativeBalance?: boolean;
   defaultBalanceOrigin?: TreasuryBalanceOrigin;
+  includeInConsolidated?: boolean;
+  minimumBalance?: string;
+  liquidity?: TreasuryAccountLiquidity;
+  sortOrder?: number;
   justification?: string | null;
 };
 
@@ -331,6 +335,27 @@ export function createTreasuryAccountService(deps: {
       }
       if (command.defaultBalanceOrigin != null) {
         patch.defaultBalanceOrigin = command.defaultBalanceOrigin;
+      }
+      if (command.includeInConsolidated != null) {
+        patch.includeInConsolidated = command.includeInConsolidated;
+      }
+      if (command.minimumBalance != null) {
+        patch.minimumBalance = normalizeTreasuryMoneyString(
+          command.minimumBalance
+        );
+      }
+      if (command.liquidity != null) {
+        patch.liquidity = command.liquidity;
+      }
+      if (command.sortOrder != null) {
+        if (!Number.isInteger(command.sortOrder)) {
+          throw new TreasuryDomainError(
+            "VALIDATION_ERROR",
+            "sortOrder deve ser inteiro.",
+            "sortOrder"
+          );
+        }
+        patch.sortOrder = command.sortOrder;
       }
 
       const updated = await runInTransaction(async (tx) => {

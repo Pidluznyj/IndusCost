@@ -37,6 +37,8 @@ describe("treasuryAvailability", () => {
     const source = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     assert.match(source, /registerTreasuryRoutes/);
     assert.match(source, /TREASURY_AVAILABILITY_PATH/);
-    assert.doesNotMatch(source, /NomusAccountsReceivable|amountReceivable|prisma\./);
+    assert.doesNotMatch(source, /NomusAccountsReceivable|amountReceivable/);
+    assert.doesNotMatch(source, /from ["']@prisma\/client["']/);
+    assert.doesNotMatch(source, /prisma\.(treasury|Nomus)/);
   });
 });

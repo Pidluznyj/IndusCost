@@ -15505,6 +15505,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerTreasuryRoutes(app, {
     requireAppAuth,
     requireResource,
+    getCurrentAppUser,
   });
 
   registerFinancePortfolioReconciliationRoutes(app, {

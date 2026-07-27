@@ -15,14 +15,20 @@ import type {
   TreasuryFinancialAccountDto,
 } from "./treasuryDto.js";
 import {
+  TREASURY_ACCOUNT_ACCESS_LEVELS,
+  TREASURY_ACCOUNT_LIQUIDITIES,
   TREASURY_ACCOUNT_SORT_FIELDS,
   TREASURY_ACCOUNT_TYPES,
+  TREASURY_BALANCE_ORIGINS,
   TREASURY_CURRENCIES,
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
   TREASURY_SIDES,
+  type TreasuryAccountAccessLevel,
+  type TreasuryAccountLiquidity,
   type TreasuryAccountSortField,
   type TreasuryAccountType,
+  type TreasuryBalanceOrigin,
   type TreasuryCurrency,
   type TreasuryLedgerDirection,
   type TreasuryLedgerNature,
@@ -41,19 +47,64 @@ import {
 } from "./treasuryPagination.js";
 
 export type TreasuryCreateAccountInput = {
+  companyCode: string;
+  companyName: string | null;
   code: string;
   name: string;
+  institutionName: string;
+  institutionCode: string | null;
   accountType: TreasuryAccountType;
   currency: TreasuryCurrency;
-  bankCode: string | null;
-  agency: string | null;
-  accountNumber: string | null;
+  agencyMasked: string;
+  accountNumberMasked: string;
+  includeInConsolidated: boolean;
+  minimumBalance: string;
+  allowNegativeBalance: boolean;
+  liquidity: TreasuryAccountLiquidity;
+  defaultBalanceOrigin: TreasuryBalanceOrigin;
+  sortOrder: number;
   nomusBankAccountId: string | null;
-  isActive: boolean;
+};
+
+export type TreasuryUpdateAccountInput = {
+  expectedUpdatedAt: string;
+  name?: string;
+  institutionName?: string;
+  institutionCode?: string | null;
+  accountType?: TreasuryAccountType;
+  agencyMasked?: string;
+  accountNumberMasked?: string;
+  companyName?: string | null;
+  nomusBankAccountId?: string | null;
+  allowNegativeBalance?: boolean;
+  defaultBalanceOrigin?: TreasuryBalanceOrigin;
+  includeInConsolidated?: boolean;
+  minimumBalance?: string;
+  liquidity?: TreasuryAccountLiquidity;
+  sortOrder?: number;
+  justification?: string | null;
+};
+
+export type TreasuryDeactivateAccountInput = {
+  reason: string;
+  expectedUpdatedAt: string;
+};
+
+export type TreasuryReactivateAccountInput = {
+  expectedUpdatedAt: string;
+};
+
+export type TreasuryPutAccountAccessInput = {
+  userId: string;
+  accessLevel: TreasuryAccountAccessLevel;
+  canViewBalance: boolean;
+  canMutateBalance: boolean;
+  notes: string | null;
 };
 
 export type TreasuryAccountsListQuery = TreasuryPaginationInput &
   TreasurySortInput<TreasuryAccountSortField> & {
+    companyCode: string | null;
     search: string | null;
     isActive: boolean | null;
     accountType: TreasuryAccountType | null;
@@ -174,8 +225,26 @@ export function parseTreasuryBoundedString(
 export function parseTreasuryCreateAccountInput(
   body: Record<string, unknown>
 ): TreasuryCreateAccountInput {
+  const companyCode = parseTreasuryBoundedString(body.companyCode, "companyCode", {
+    required: true,
+  });
   const code = parseTreasuryBoundedString(body.code, "code", { required: true });
   const name = parseTreasuryBoundedString(body.name, "name", { required: true });
+  const institutionName = parseTreasuryBoundedString(
+    body.institutionName,
+    "institutionName",
+    { required: true }
+  );
+  const agencyMasked = parseTreasuryBoundedString(
+    body.agencyMasked,
+    "agencyMasked",
+    { required: true }
+  );
+  const accountNumberMasked = parseTreasuryBoundedString(
+    body.accountNumberMasked,
+    "accountNumberMasked",
+    { required: true }
+  );
   const accountType = parseTreasuryEnum(
     body.accountType,
     TREASURY_ACCOUNT_TYPES,
@@ -185,36 +254,265 @@ export function parseTreasuryCreateAccountInput(
   const currency =
     parseTreasuryEnum(body.currency, TREASURY_CURRENCIES, "currency", false) ??
     TREASURY_DEFAULT_CURRENCY;
+  const liquidity =
+    parseTreasuryEnum(
+      body.liquidity,
+      TREASURY_ACCOUNT_LIQUIDITIES,
+      "liquidity",
+      false
+    ) ?? "IMMEDIATE";
+  const defaultBalanceOrigin =
+    parseTreasuryEnum(
+      body.defaultBalanceOrigin,
+      TREASURY_BALANCE_ORIGINS,
+      "defaultBalanceOrigin",
+      false
+    ) ?? "MANUAL";
 
-  if (!code || !name || !accountType) {
+  if (
+    !companyCode ||
+    !code ||
+    !name ||
+    !institutionName ||
+    !agencyMasked ||
+    !accountNumberMasked ||
+    !accountType
+  ) {
     throw new TreasuryContractError(
       "VALIDATION_ERROR",
       "Payload de conta incompleto."
     );
   }
 
+  let sortOrder = 0;
+  if (body.sortOrder != null && body.sortOrder !== "") {
+    const n = Number(body.sortOrder);
+    if (!Number.isInteger(n)) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        "sortOrder deve ser inteiro.",
+        "sortOrder"
+      );
+    }
+    sortOrder = n;
+  }
+
   return {
+    companyCode,
+    companyName: parseTreasuryBoundedString(body.companyName, "companyName", {
+      required: false,
+    }),
     code,
     name,
-    accountType,
-    currency,
-    bankCode: parseTreasuryBoundedString(body.bankCode, "bankCode", {
-      required: false,
-    }),
-    agency: parseTreasuryBoundedString(body.agency, "agency", {
-      required: false,
-    }),
-    accountNumber: parseTreasuryBoundedString(
-      body.accountNumber,
-      "accountNumber",
+    institutionName,
+    institutionCode: parseTreasuryBoundedString(
+      body.institutionCode,
+      "institutionCode",
       { required: false }
     ),
+    accountType,
+    currency,
+    agencyMasked,
+    accountNumberMasked,
+    includeInConsolidated: body.includeInConsolidated === false ? false : true,
+    minimumBalance: parseTreasuryMoneyString(
+      body.minimumBalance ?? "0",
+      "minimumBalance"
+    ),
+    allowNegativeBalance: body.allowNegativeBalance === true,
+    liquidity,
+    defaultBalanceOrigin,
+    sortOrder,
     nomusBankAccountId: parseTreasuryBoundedString(
       body.nomusBankAccountId,
       "nomusBankAccountId",
       { required: false }
     ),
-    isActive: body.isActive === false ? false : true,
+  };
+}
+
+export function parseTreasuryUpdateAccountInput(
+  body: Record<string, unknown>
+): TreasuryUpdateAccountInput {
+  const expectedUpdatedAt = parseTreasuryBoundedString(
+    body.expectedUpdatedAt,
+    "expectedUpdatedAt",
+    { required: true }
+  );
+  if (!expectedUpdatedAt) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "expectedUpdatedAt é obrigatório.",
+      "expectedUpdatedAt"
+    );
+  }
+  const out: TreasuryUpdateAccountInput = { expectedUpdatedAt };
+  if (body.name !== undefined) {
+    out.name =
+      parseTreasuryBoundedString(body.name, "name", { required: true }) ??
+      undefined;
+  }
+  if (body.institutionName !== undefined) {
+    out.institutionName =
+      parseTreasuryBoundedString(body.institutionName, "institutionName", {
+        required: true,
+      }) ?? undefined;
+  }
+  if (body.institutionCode !== undefined) {
+    out.institutionCode = parseTreasuryBoundedString(
+      body.institutionCode,
+      "institutionCode",
+      { required: false }
+    );
+  }
+  if (body.accountType !== undefined) {
+    out.accountType =
+      parseTreasuryEnum(
+        body.accountType,
+        TREASURY_ACCOUNT_TYPES,
+        "accountType",
+        true
+      ) ?? undefined;
+  }
+  if (body.agencyMasked !== undefined) {
+    out.agencyMasked =
+      parseTreasuryBoundedString(body.agencyMasked, "agencyMasked", {
+        required: true,
+      }) ?? undefined;
+  }
+  if (body.accountNumberMasked !== undefined) {
+    out.accountNumberMasked =
+      parseTreasuryBoundedString(
+        body.accountNumberMasked,
+        "accountNumberMasked",
+        { required: true }
+      ) ?? undefined;
+  }
+  if (body.companyName !== undefined) {
+    out.companyName = parseTreasuryBoundedString(body.companyName, "companyName", {
+      required: false,
+    });
+  }
+  if (body.nomusBankAccountId !== undefined) {
+    out.nomusBankAccountId = parseTreasuryBoundedString(
+      body.nomusBankAccountId,
+      "nomusBankAccountId",
+      { required: false }
+    );
+  }
+  if (body.allowNegativeBalance !== undefined) {
+    out.allowNegativeBalance = body.allowNegativeBalance === true;
+  }
+  if (body.defaultBalanceOrigin !== undefined) {
+    out.defaultBalanceOrigin =
+      parseTreasuryEnum(
+        body.defaultBalanceOrigin,
+        TREASURY_BALANCE_ORIGINS,
+        "defaultBalanceOrigin",
+        true
+      ) ?? undefined;
+  }
+  if (body.includeInConsolidated !== undefined) {
+    out.includeInConsolidated = body.includeInConsolidated !== false;
+  }
+  if (body.minimumBalance !== undefined) {
+    out.minimumBalance = parseTreasuryMoneyString(
+      body.minimumBalance,
+      "minimumBalance"
+    );
+  }
+  if (body.liquidity !== undefined) {
+    out.liquidity =
+      parseTreasuryEnum(
+        body.liquidity,
+        TREASURY_ACCOUNT_LIQUIDITIES,
+        "liquidity",
+        true
+      ) ?? undefined;
+  }
+  if (body.sortOrder !== undefined) {
+    const n = Number(body.sortOrder);
+    if (!Number.isInteger(n)) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        "sortOrder deve ser inteiro.",
+        "sortOrder"
+      );
+    }
+    out.sortOrder = n;
+  }
+  if (body.justification !== undefined) {
+    out.justification = parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    );
+  }
+  return out;
+}
+
+export function parseTreasuryDeactivateAccountInput(
+  body: Record<string, unknown>
+): TreasuryDeactivateAccountInput {
+  const reason = parseTreasuryBoundedString(body.reason, "reason", {
+    required: true,
+  });
+  const expectedUpdatedAt = parseTreasuryBoundedString(
+    body.expectedUpdatedAt,
+    "expectedUpdatedAt",
+    { required: true }
+  );
+  if (!reason || !expectedUpdatedAt) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Payload de desativação incompleto."
+    );
+  }
+  return { reason, expectedUpdatedAt };
+}
+
+export function parseTreasuryReactivateAccountInput(
+  body: Record<string, unknown>
+): TreasuryReactivateAccountInput {
+  const expectedUpdatedAt = parseTreasuryBoundedString(
+    body.expectedUpdatedAt,
+    "expectedUpdatedAt",
+    { required: true }
+  );
+  if (!expectedUpdatedAt) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "expectedUpdatedAt é obrigatório.",
+      "expectedUpdatedAt"
+    );
+  }
+  return { expectedUpdatedAt };
+}
+
+export function parseTreasuryPutAccountAccessInput(
+  body: Record<string, unknown>
+): TreasuryPutAccountAccessInput {
+  const userId = parseTreasuryBoundedString(body.userId, "userId", {
+    required: true,
+  });
+  const accessLevel = parseTreasuryEnum(
+    body.accessLevel,
+    TREASURY_ACCOUNT_ACCESS_LEVELS,
+    "accessLevel",
+    true
+  );
+  if (!userId || !accessLevel) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Payload de acesso incompleto."
+    );
+  }
+  return {
+    userId,
+    accessLevel,
+    canViewBalance: body.canViewBalance === false ? false : true,
+    canMutateBalance: body.canMutateBalance === true,
+    notes: parseTreasuryBoundedString(body.notes, "notes", { required: false }),
   };
 }
 
@@ -226,7 +524,7 @@ export function parseTreasuryAccountsListQuery(
     sortBy: query.sortBy,
     sortDirection: query.sortDirection,
     allowed: TREASURY_ACCOUNT_SORT_FIELDS,
-    defaultSortBy: "code",
+    defaultSortBy: "sortOrder",
     defaultSortDirection: "asc",
   });
   const isActiveRaw = query.isActive;
@@ -252,6 +550,9 @@ export function parseTreasuryAccountsListQuery(
   return {
     ...pagination,
     ...sort,
+    companyCode: parseTreasuryBoundedString(query.companyCode, "companyCode", {
+      required: false,
+    }),
     search: parseTreasuryBoundedString(query.search, "search", {
       required: false,
     }),

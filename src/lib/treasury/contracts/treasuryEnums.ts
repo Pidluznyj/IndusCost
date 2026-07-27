@@ -146,6 +146,7 @@ export const TREASURY_ACCOUNT_SORT_FIELDS = [
   "name",
   "createdAt",
   "updatedAt",
+  "sortOrder",
 ] as const;
 export type TreasuryAccountSortField =
   (typeof TREASURY_ACCOUNT_SORT_FIELDS)[number];

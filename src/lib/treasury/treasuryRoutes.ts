@@ -1,18 +1,30 @@
 /**
  * Router principal da Central de Tesouraria.
- * Scaffold: availability técnica protegida por sessão + flag + requireResource.
+ * Auth + flag + requireResource; handlers em controllers.
  */
 
 import type express from "express";
 import type { RequestHandler } from "express";
+import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityController.js";
-import { TREASURY_AVAILABILITY_PATH } from "./contracts/treasuryContracts.js";
-import { TREASURY_ACTIONS, TREASURY_RESOURCE_KEY } from "./treasuryAccess.js";
+import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
+import {
+  TREASURY_ACCOUNTS_PATH,
+  TREASURY_AVAILABILITY_PATH,
+} from "./contracts/treasuryContracts.js";
+import {
+  TREASURY_ACTIONS,
+  TREASURY_RESOURCE_KEY,
+  TREASURY_RESOURCE_KEYS,
+} from "./treasuryAccess.js";
 import { requireTreasuryModuleEnabled } from "./treasuryFeatureFlags.js";
 
 export type TreasuryAuthGuards = {
   requireAppAuth: RequestHandler;
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
+  getCurrentAppUser: (
+    req: express.Request
+  ) => Promise<AppAuthContext | null>;
 };
 
 /**
@@ -22,13 +34,88 @@ export function registerTreasuryRoutes(
   app: express.Express,
   auth: TreasuryAuthGuards
 ): void {
-  const { requireAppAuth, requireResource } = auth;
+  const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
+  const accounts = createTreasuryAccountControllers({ getCurrentAppUser });
+
+  const viewAccounts = requireResource(
+    TREASURY_RESOURCE_KEYS.accounts,
+    TREASURY_ACTIONS.view
+  );
+  const manageAccounts = requireResource(
+    TREASURY_RESOURCE_KEYS.accounts,
+    TREASURY_ACTIONS.manage
+  );
+  const moduleEnabled = requireTreasuryModuleEnabled();
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
     requireAppAuth,
-    requireTreasuryModuleEnabled(),
+    moduleEnabled,
     requireResource(TREASURY_RESOURCE_KEY, TREASURY_ACTIONS.view),
     treasuryAvailabilityHandler
+  );
+
+  app.get(
+    TREASURY_ACCOUNTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewAccounts,
+    accounts.listAccounts
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    viewAccounts,
+    accounts.getAccount
+  );
+
+  app.post(
+    TREASURY_ACCOUNTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.createAccount
+  );
+
+  app.patch(
+    `${TREASURY_ACCOUNTS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.updateAccount
+  );
+
+  app.post(
+    `${TREASURY_ACCOUNTS_PATH}/:id/deactivate`,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.deactivateAccount
+  );
+
+  app.post(
+    `${TREASURY_ACCOUNTS_PATH}/:id/reactivate`,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.reactivateAccount
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/access`,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.listAccountAccess
+  );
+
+  app.put(
+    `${TREASURY_ACCOUNTS_PATH}/:id/access`,
+    requireAppAuth,
+    moduleEnabled,
+    manageAccounts,
+    accounts.putAccountAccess
   );
 }

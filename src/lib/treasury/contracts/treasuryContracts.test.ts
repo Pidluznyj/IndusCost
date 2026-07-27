@@ -162,12 +162,17 @@ describe("treasuryContracts — required fields & size limits", () => {
         err instanceof TreasuryContractError && err.code === "REQUIRED_FIELD"
     );
     const parsed = parseTreasuryCreateAccountInput({
+      companyCode: "LAZARIOS",
       code: "CX01",
       name: "Caixa principal",
+      institutionName: "Banco X",
       accountType: "CASH",
+      agencyMasked: "****1",
+      accountNumberMasked: "****9999",
     });
     assert.equal(parsed.currency, "BRL");
-    assert.equal(parsed.isActive, true);
+    assert.equal(parsed.includeInConsolidated, true);
+    assert.equal(parsed.minimumBalance, "0.00");
   });
 
   it("rejeita strings acima do limite", () => {
@@ -206,12 +211,14 @@ describe("treasuryContracts — required fields & size limits", () => {
       sortDirection: "desc",
       search: "caixa",
       isActive: "true",
+      companyCode: "LAZARIOS",
     });
     assert.equal(q.page, 2);
     assert.equal(q.pageSize, 10);
     assert.equal(q.sortBy, "createdAt");
     assert.equal(q.search, "caixa");
     assert.equal(q.isActive, true);
+    assert.equal(q.companyCode, "LAZARIOS");
   });
 });
 

@@ -12,6 +12,9 @@ export const TREASURY_API_PREFIX = "/api/finance/treasury" as const;
 export const TREASURY_AVAILABILITY_PATH =
   `${TREASURY_API_PREFIX}/availability` as const;
 
+export const TREASURY_ACCOUNTS_PATH =
+  `${TREASURY_API_PREFIX}/accounts` as const;
+
 export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
 
 export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;
@@ -24,15 +27,22 @@ export const TREASURY_MIN_PAGE_SIZE = 1;
 /** Limites de tamanho de string em DTOs/inputs. */
 export const TREASURY_FIELD_LIMITS = {
   id: 64,
+  userId: 64,
   accountId: 64,
   fromAccountId: 64,
   toAccountId: 64,
   nomusExternalId: 64,
   code: 32,
   name: 120,
+  companyCode: 64,
+  companyName: 120,
+  institutionName: 120,
+  institutionCode: 16,
   bankCode: 8,
   agency: 16,
+  agencyMasked: 32,
   accountNumber: 32,
+  accountNumberMasked: 32,
   nomusBankAccountId: 64,
   memo: 500,
   reason: 500,
@@ -43,6 +53,8 @@ export const TREASURY_FIELD_LIMITS = {
   counterpartRef: 128,
   search: 120,
   currency: 3,
+  justification: 500,
+  expectedUpdatedAt: 64,
 } as const;
 
 export type TreasuryFieldLimitKey = keyof typeof TREASURY_FIELD_LIMITS;

@@ -6,6 +6,7 @@
  */
 
 export {
+  TREASURY_ACCOUNTS_PATH,
   TREASURY_API_PREFIX,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_DEFAULT_CURRENCY,
@@ -142,18 +143,26 @@ export {
   parseTreasuryAccountsListQuery,
   parseTreasuryCreateAccountInput,
   parseTreasuryDateRangeFilter,
+  parseTreasuryDeactivateAccountInput,
   parseTreasuryEnum,
   parseTreasuryBoundedString,
   parseTreasuryManualLedgerEntryInput,
   parseTreasuryPromiseCreateInput,
+  parseTreasuryPutAccountAccessInput,
+  parseTreasuryReactivateAccountInput,
   parseTreasuryTransferCreateInput,
+  parseTreasuryUpdateAccountInput,
 } from "./treasurySchemas.js";
 export type {
   TreasuryAccountsListQuery,
   TreasuryCreateAccountInput,
+  TreasuryDeactivateAccountInput,
   TreasuryManualLedgerEntryInput,
   TreasuryPromiseCreateInput,
+  TreasuryPutAccountAccessInput,
+  TreasuryReactivateAccountInput,
   TreasuryTransferCreateInput,
+  TreasuryUpdateAccountInput,
 } from "./treasurySchemas.js";
 
 export {
