@@ -35,7 +35,7 @@
 | **08** | UI contas financeiras | `DONE` | `6a81b79` — `feat(treasury): adicionar tela de contas financeiras` | `/finance/treasury/accounts`; listar/criar/editar/desativar/reativar; saldo mín./liquidez/consolidado/acessos; máscara; estados vazio/loading/erro/sem permissão; responsivo; `test:treasury` 80/80 |
 | **09** | Backend/APIs snapshots de saldo | `DONE` | `30cfdb5` — `feat(treasury): adicionar APIs de snapshots de saldo` | `GET …/balances`, `GET …/balances/latest`, `POST …/balance-snapshots` + Idempotency-Key; observado/operacional/bloqueado/aplicações/limite; previousSnapshot; audit; Decimal+auth+idempotência; `test:treasury` 90/90 |
 | **10** | UI atualização de saldo | `DONE` | `eed8642` — `feat(treasury): adicionar UX de atualização de saldo` | `/finance/treasury/accounts/:id/balances`; form pt-BR→decimal API; histórico; stale; confirmação; conflito; `test:treasury` 100/100 |
-| **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | *(este commit)* | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
+| **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | `29ce7e4` | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
 
 > **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**; UI saldo = **10**; adapter AR/AP oficial = **11** (plano canônico Prompt **10**).
 
