@@ -1,25 +1,18 @@
 /**
- * Repository scaffold da Tesouraria.
- * Sem Prisma / sem persistência real nesta etapa.
- * Sufixo .server: não importar no frontend.
+ * Facade de repositórios da Tesouraria — server-only.
+ * Contas: `createTreasuryAccountRepository`.
  */
 
-import {
-  createTreasuryQueryScaffold,
-  queryTreasuryFinancialAccounts,
-  type TreasuryQueryClient,
-} from "../queries/treasuryQueries.server.js";
+export {
+  createTreasuryAccountRepository,
+  type TreasuryAccountRepository,
+} from "./treasuryAccountRepository.server.js";
 
-export type TreasuryRepository = {
-  listFinancialAccounts(): Promise<never[]>;
-};
-
-export function createTreasuryRepository(
-  client: TreasuryQueryClient = createTreasuryQueryScaffold()
-): TreasuryRepository {
+/** @deprecated Preferir `createTreasuryAccountRepository`. */
+export function createTreasuryRepository() {
   return {
     async listFinancialAccounts() {
-      return queryTreasuryFinancialAccounts(client);
+      return [] as never[];
     },
   };
 }

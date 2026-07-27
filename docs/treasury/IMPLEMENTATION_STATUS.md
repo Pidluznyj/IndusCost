@@ -30,8 +30,9 @@
 | **03** | Contratos client-safe (enums/DTOs/schemas) | `DONE` | `56780b5` — `feat(treasury): adicionar contratos client-safe da Central de Tesouraria` | `src/lib/treasury/contracts/**`; money/date/timestamp/pagination/sort; parse tipado (sem Zod); FE importa contratos; `test:treasury` 45/45; `check:frontend-server-imports` OK |
 | **04** | Schema Prisma contas + acesso + snapshots | `DONE` | `365a4d8` — `feat(treasury): adicionar schema Prisma de contas, acesso e snapshots` | `TreasuryFinancialAccount`, `TreasuryFinancialAccountAccess`, `TreasuryBalanceSnapshot`; migration `20260805120000_*`; FKs `AppUser`; `companyCode` (sem model Company); prisma format/validate/generate OK; `test:treasury` 47/47; build OK; **não** aplicada em prod |
 | **05** | Auditoria central Tesouraria | `DONE` | `07c4036` — `feat(treasury): adicionar auditoria central append-only com suporte a transaction` | `TreasuryAuditLog` append-only + trigger; `writeTreasuryAuditLog` aceita TX; helpers tipados; testes create/update/rollback/imutabilidade; migration `20260806120000_*`; `test:treasury` 54/54 |
+| **06** | Repository + service contas financeiras | `DONE` | *(este commit)* | CRUD lógica (list/get/create/update/deactivate/reactivate/sort/min balance/liquidity/consolidado/access); ACL+máscara+optimistic lock+audit; sem exclusão com histórico; `test:treasury` 64/64; rotas/UI ainda pendentes |
 
-> **Nota de ordem:** contratos = **03**; schema accounts = **04**; auditoria central entregue como **05** (adiantada vs plano P06). CRUD contas permanece o próximo passo operacional.
+> **Nota de ordem:** auditoria = **05**; service/repo contas = **06**. Rotas/UI de contas ficam para o próximo passo.
 
 ---
 
@@ -39,7 +40,7 @@
 
 | Capabilidade | Status | Notas / reuso |
 |--------------|--------|---------------|
-| Contas financeiras | `PARTIAL` | Schema `TreasuryFinancialAccount` + access; CRUD API/UI ainda próximo prompt |
+| Contas financeiras | `PARTIAL` | Schema + service/repo; rotas/UI ainda pendentes |
 | Saldos manuais e históricos | `PARTIAL` | Schema `TreasuryBalanceSnapshot` (idempotência por origem); API ainda P06 |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `REUSE` | Model `NomusAccountsReceivable`; APIs `/api/finance/accounts-receivable/*` |
@@ -64,7 +65,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 54 testes; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 64 testes; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -209,6 +210,17 @@
 - [x] `test:treasury` 54/54; prisma validate/generate OK
 - [x] Sem avanço automático para CRUD contas
 
+### 06 — Repository + service contas
+- [x] Listar contas acessíveis (ACL + SUPER_ADMIN total)
+- [x] Consultar / criar / atualizar / desativar / reativar
+- [x] Ordenar; saldo mínimo; liquidez; inclusão no consolidado
+- [x] Gerenciar acesso por usuário (grant/revoke)
+- [x] Sem exclusão física com histórico; máscara por permissão
+- [x] Optimistic lock via `expectedUpdatedAt`; auditoria na mesma TX
+- [x] Helper origem≠destino para transferências futuras
+- [x] Testes unitários (rules) + integração (memory repo); `test:treasury` 64/64
+- [x] Sem rotas/UI neste passo
+
 ---
 
 ## Riscos / pendências abertas
@@ -235,3 +247,4 @@
 | 2026-07-27 | Prompt 03: contratos client-safe (enums/DTOs/schemas); test:treasury 45/45; FE sem Prisma |
 | 2026-07-27 | Prompt 04: schema Prisma contas/acesso/snapshots + migration aditiva; generate/build OK; sem deploy |
 | 2026-07-27 | Prompt 05: auditoria central append-only + TX; test:treasury 54/54; migration não deployada |
+| 2026-07-27 | Prompt 06: repository/service contas financeiras; test:treasury 64/64 |
