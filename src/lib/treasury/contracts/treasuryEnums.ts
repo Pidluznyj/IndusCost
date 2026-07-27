@@ -225,6 +225,46 @@ export type TreasuryProjectionItemKind =
 export const TREASURY_CLOSING_STATUSES = ["OPEN", "CLOSED", "REOPENED"] as const;
 export type TreasuryClosingStatus = (typeof TREASURY_CLOSING_STATUSES)[number];
 
+/** Bloqueios absolutos do preview de fechamento — impedem fechar mesmo com ressalva. */
+export const TREASURY_DAILY_CLOSING_ABSOLUTE_BLOCK_CODES = [
+  "DAY_ALREADY_CLOSED",
+  "MISSING_OBSERVED_BALANCE",
+  "NEGATIVE_BALANCE_FORBIDDEN",
+  "SOURCE_DATA_UNAVAILABLE",
+  "OPEN_SUSPECTED_DUPLICATE",
+] as const;
+export type TreasuryDailyClosingAbsoluteBlockCode =
+  (typeof TREASURY_DAILY_CLOSING_ABSOLUTE_BLOCK_CODES)[number];
+
+/** Pendências que exigem ressalva explícita para permitir o fechamento. */
+export const TREASURY_DAILY_CLOSING_CAVEAT_REQUIRED_CODES = [
+  "RECONCILIATION_DIFFERENCE",
+  "STALE_BALANCE",
+  "EXPIRED_PROMISE",
+  "TRANSFER_IN_TRANSIT",
+  "PENDING_RECEIVABLE",
+  "PENDING_PAYABLE",
+  "UNRECONCILED_MOVEMENT",
+  "ACCOUNT_BELOW_MINIMUM",
+  "SYNC_DELAYED",
+] as const;
+export type TreasuryDailyClosingCaveatRequiredCode =
+  (typeof TREASURY_DAILY_CLOSING_CAVEAT_REQUIRED_CODES)[number];
+
+/** Avisos informativos — não bloqueiam nem exigem ressalva. */
+export const TREASURY_DAILY_CLOSING_WARNING_CODES = [
+  "PENDING_RECEIVABLE_FUTURE",
+  "PENDING_PAYABLE_FUTURE",
+  "BALANCE_NEAR_MINIMUM",
+] as const;
+export type TreasuryDailyClosingWarningCode =
+  (typeof TREASURY_DAILY_CLOSING_WARNING_CODES)[number];
+
+export type TreasuryDailyClosingGateCode =
+  | TreasuryDailyClosingAbsoluteBlockCode
+  | TreasuryDailyClosingCaveatRequiredCode
+  | TreasuryDailyClosingWarningCode;
+
 export const TREASURY_EXCEPTION_STATUSES = [
   "OPEN",
   /** Legado P38 — tratado como causa aberta; UI canônica usa IN_ANALYSIS. */

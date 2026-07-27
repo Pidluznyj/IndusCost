@@ -67,8 +67,9 @@
 | **40** | APIs + UI Central de Exceções | `DONE` | `a9a95ac` | Status 6 canônicos; list/sort/assign/due/status/resolve/ignore; deep-link; flag; `/exceptions`; `test:treasury` 395/395 |
 | **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
 | **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
+| **43** | Preview fechamento diário (GET) | `DONE` | `PENDING` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
 
-    > **Nota de ordem:** …; Central de Exceções = **40**; alertas = **41**; fechamento schema = **42**.
+    > **Nota de ordem:** …; alertas = **41**; fechamento schema = **42**; preview = **43**.
 
 ---
 
@@ -93,7 +94,7 @@
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
-| Fechamento diário | `PARTIAL` | P42: schema versionado + snapshots imutáveis; API/UI/serviço ainda pendentes |
+| Fechamento diário | `PARTIAL` | P42 schema; P43 preview GET (gates/ressalvas/hash); close/reopen API/UI pendentes |
 | Reabertura | `PARTIAL` | P42: model `TreasuryDailyClosingReopening` + versão anterior preservada; fluxo API ainda pendente |
 | Importação OFX | `NOT_STARTED` | — |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
@@ -471,6 +472,15 @@
 - [x] Sem API/UI/serviço neste passo; sem avanço automático
 ---
 
+### 43 — Preview do fechamento diário
+- [x] `GET /api/finance/treasury/daily-closing/preview` (flag `treasury.dailyClosing.enabled` + `closing.view`)
+- [x] Retorno: saldos por conta, resumo, bloqueios absolutos, avisos, CR/CP pendentes, não conciliados, saldos desatualizados, promessas vencidas, transferências em trânsito, sourceHash, `canCloseWithoutCaveats` / `canCloseWithCaveats`
+- [x] Bloqueios absolutos: dia fechado, saldo observado ausente, negativo proibido, fonte indisponível, duplicidade suspeita aberta
+- [x] Com ressalva: diferença conciliação, saldo stale, sync atrasada, pendências do dia, movimento não conciliado, promessa vencida, transferência SENT, abaixo do mínimo
+- [x] Motor puro + facts repo + service; testes regras/API; `test:treasury` 430/430
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -531,4 +541,5 @@
 | 2026-07-27 | Prompt 39: motor determinístico de exceções — `5dcdc74` |
 | 2026-07-27 | Prompt 40: APIs + UI Central de Exceções — `a9a95ac` |
 | 2026-07-27 | Prompt 41: alertas dashboard/agenda + config — `0e6e655` |
-| 2026-07-27 | Prompt 42: schema fechamento diário + reabertura — `PENDING` |
+| 2026-07-27 | Prompt 42: schema fechamento diário + reabertura — `f39279f` |
+| 2026-07-27 | Prompt 43: preview fechamento diário — `PENDING` |

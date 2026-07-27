@@ -705,6 +705,89 @@ export type TreasuryDailyClosingReopeningDto = {
   requestId: string | null;
 };
 
+export type TreasuryDailyClosingGateItemDto = {
+  code: string;
+  severity: "INFO" | "WARNING" | "CRITICAL";
+  title: string;
+  description: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  entityId: string | null;
+  requiresCaveat: boolean;
+  blocksClose: boolean;
+};
+
+export type TreasuryDailyClosingPendencyItemDto = {
+  side: "RECEIVABLE" | "PAYABLE";
+  officialTitleId: string;
+  nomusExternalId: number | null;
+  counterpartyName: string | null;
+  openAmount: TreasuryMoneyString;
+  dueDate: TreasuryCivilDate | null;
+  expectedDate: TreasuryCivilDate | null;
+  accountId: string | null;
+  /** Vence/esperado até a data do fechamento (exige ressalva). */
+  dueOrExpectedOnOrBeforeCivilDate: boolean;
+};
+
+export type TreasuryDailyClosingPreviewAccountDto = {
+  accountId: string;
+  code: string;
+  name: string;
+  openingBalance: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  pendenciesAmount: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  observedBalance: TreasuryMoneyString | null;
+  reconciledBalance: TreasuryMoneyString | null;
+  differenceAmount: TreasuryMoneyString | null;
+  minimumBalance: TreasuryMoneyString;
+  allowNegativeBalance: boolean;
+  balanceStale: boolean;
+  lastBalanceAt: TreasuryTimestampIso | null;
+};
+
+export type TreasuryDailyClosingPreviewSummaryDto = {
+  openingBalance: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  pendenciesAmount: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  observedBalance: TreasuryMoneyString;
+  reconciledBalance: TreasuryMoneyString | null;
+  differenceAmount: TreasuryMoneyString | null;
+  accountCount: number;
+  pendingReceivablesCount: number;
+  pendingPayablesCount: number;
+  absoluteBlockCount: number;
+  warningCount: number;
+  caveatRequiredCount: number;
+};
+
+export type TreasuryDailyClosingPreviewDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  companyCode: string | null;
+  sourceHash: string;
+  generatedAt: TreasuryTimestampIso;
+  summary: TreasuryDailyClosingPreviewSummaryDto;
+  accounts: TreasuryDailyClosingPreviewAccountDto[];
+  absoluteBlocks: TreasuryDailyClosingGateItemDto[];
+  warnings: TreasuryDailyClosingGateItemDto[];
+  pendingReceivables: TreasuryDailyClosingPendencyItemDto[];
+  pendingPayables: TreasuryDailyClosingPendencyItemDto[];
+  unreconciledMovements: TreasuryDailyClosingGateItemDto[];
+  staleBalances: TreasuryDailyClosingGateItemDto[];
+  expiredPromises: TreasuryDailyClosingGateItemDto[];
+  transfersInTransit: TreasuryDailyClosingGateItemDto[];
+  /** Pode fechar sem nenhuma ressalva (zero bloqueios e zero pendências com ressalva). */
+  canCloseWithoutCaveats: boolean;
+  /** Pode fechar se o usuário registrar ressalvas para todas as pendências exigidas. */
+  canCloseWithCaveats: boolean;
+  requiredCaveatCodes: string[];
+};
+
 export type TreasuryExceptionDto = {
   id: string;
   companyCode: string;

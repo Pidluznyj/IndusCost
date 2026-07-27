@@ -20,12 +20,14 @@ import { createTreasuryProjectionControllers } from "./controllers/treasuryProje
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
 import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAlertSettingsController.js";
+import { createTreasuryDailyClosingPreviewControllers } from "./controllers/treasuryDailyClosingPreviewController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
+  TREASURY_DAILY_CLOSING_PREVIEW_PATH,
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_EXCEPTIONS_PATH,
@@ -82,6 +84,9 @@ export function registerTreasuryRoutes(
   const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
   const exceptions = createTreasuryExceptionControllers({ getCurrentAppUser });
   const alertSettings = createTreasuryAlertSettingsControllers({
+    getCurrentAppUser,
+  });
+  const dailyClosingPreview = createTreasuryDailyClosingPreviewControllers({
     getCurrentAppUser,
   });
 
@@ -166,6 +171,13 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEYS.exceptions,
     TREASURY_ACTIONS.manage
   );
+  const viewClosing = requireResource(
+    TREASURY_RESOURCE_KEYS.closing,
+    TREASURY_ACTIONS.view
+  );
+  const dailyClosingEnabled = requireTreasuryFeatureFlag(
+    "treasury.dailyClosing.enabled"
+  );
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
@@ -181,6 +193,15 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewDashboard,
     dashboard.getDashboard
+  );
+
+  app.get(
+    TREASURY_DAILY_CLOSING_PREVIEW_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dailyClosingEnabled,
+    viewClosing,
+    dailyClosingPreview.getPreview
   );
 
   app.get(

@@ -2507,6 +2507,36 @@ export function parseTreasuryDashboardQuery(
   };
 }
 
+export type TreasuryDailyClosingPreviewQuery = {
+  date: TreasuryCivilDate;
+  companyCode: string | null;
+  accountIds: string[] | null;
+};
+
+export function parseTreasuryDailyClosingPreviewQuery(
+  query: Record<string, unknown>
+): TreasuryDailyClosingPreviewQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateUtc()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  const companyRaw = query.companyCode ?? query.empresa ?? query.company;
+  const companyCode =
+    companyRaw == null || companyRaw === ""
+      ? null
+      : parseTreasuryBoundedString(companyRaw, "companyCode", {
+          required: true,
+        });
+  return {
+    date,
+    companyCode,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+  };
+}
+
 export type TreasuryProjectionCalculateInput = {
   companyCode: string;
   baseDate: TreasuryCivilDate;

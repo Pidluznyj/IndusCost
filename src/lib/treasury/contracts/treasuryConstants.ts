@@ -51,6 +51,12 @@ export const TREASURY_EXCEPTIONS_PATH =
 export const TREASURY_ALERT_SETTINGS_PATH =
   `${TREASURY_API_PREFIX}/alert-settings` as const;
 
+export const TREASURY_DAILY_CLOSING_PATH =
+  `${TREASURY_API_PREFIX}/daily-closing` as const;
+
+export const TREASURY_DAILY_CLOSING_PREVIEW_PATH =
+  `${TREASURY_DAILY_CLOSING_PATH}/preview` as const;
+
 /** Default; override via TREASURY_PROJECTION_MAX_HORIZON_DAYS. */
 export const TREASURY_PROJECTION_DEFAULT_MAX_HORIZON_DAYS = 90;
 
