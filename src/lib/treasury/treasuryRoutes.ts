@@ -16,13 +16,16 @@ import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryP
 import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
 import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
+import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
+  TREASURY_AGENDA_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_PAYABLES_PATH,
+  TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
 } from "./contracts/treasuryContracts.js";
@@ -69,9 +72,14 @@ export function registerTreasuryRoutes(
   });
   const disputes = createTreasuryDisputeControllers({ getCurrentAppUser });
   const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
+  const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
 
   const viewDashboard = requireResource(
     TREASURY_RESOURCE_KEYS.dashboard,
+    TREASURY_ACTIONS.view
+  );
+  const viewAgenda = requireResource(
+    TREASURY_RESOURCE_KEYS.agenda,
     TREASURY_ACTIONS.view
   );
   const viewAccounts = requireResource(
@@ -122,6 +130,9 @@ export function registerTreasuryRoutes(
   const payablesProgrammingEnabled = requireTreasuryFeatureFlag(
     "treasury.payablesProgramming.enabled"
   );
+  const projectionEnabled = requireTreasuryFeatureFlag(
+    "treasury.projection.enabled"
+  );
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
@@ -137,6 +148,51 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewDashboard,
     dashboard.getDashboard
+  );
+
+  app.post(
+    `${TREASURY_PROJECTIONS_PATH}/calculate`,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewDashboard,
+    projections.calculate
+  );
+
+  app.get(
+    `${TREASURY_PROJECTIONS_PATH}/latest`,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewDashboard,
+    projections.getLatest
+  );
+
+  app.get(
+    `${TREASURY_PROJECTIONS_PATH}/:id/composition`,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewDashboard,
+    projections.getComposition
+  );
+
+  app.get(
+    `${TREASURY_PROJECTIONS_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewDashboard,
+    projections.getById
+  );
+
+  app.get(
+    TREASURY_AGENDA_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewAgenda,
+    projections.getAgenda
   );
 
   app.get(

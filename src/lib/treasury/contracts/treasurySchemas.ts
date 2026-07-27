@@ -2005,4 +2005,233 @@ export function parseTreasuryDashboardQuery(
   };
 }
 
+export type TreasuryProjectionCalculateInput = {
+  companyCode: string;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  scenario: TreasuryProjectionLayer;
+  accountIds: string[] | null;
+  consolidated: boolean;
+  includeDayDetail: boolean;
+  notes: string | null;
+  idempotencyKey: string | null;
+};
+
+export type TreasuryProjectionLatestQuery = {
+  companyCode: string;
+  scenario: TreasuryProjectionLayer;
+  accountIds: string[] | null;
+  consolidated: boolean;
+  includeDayDetail: boolean;
+};
+
+export type TreasuryProjectionGetQuery = {
+  accountIds: string[] | null;
+  consolidated: boolean;
+  includeDayDetail: boolean;
+};
+
+export type TreasuryProjectionCompositionQuery = {
+  from: TreasuryCivilDate | null;
+  to: TreasuryCivilDate | null;
+  accountIds: string[] | null;
+};
+
+export type TreasuryAgendaQuery = {
+  companyCode: string;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  scenario: TreasuryProjectionLayer;
+  accountIds: string[] | null;
+  consolidated: boolean;
+  includeDayDetail: boolean;
+};
+
+function parseBooleanFlag(
+  raw: unknown,
+  field: string,
+  defaultValue: boolean
+): boolean {
+  if (raw == null || raw === "") return defaultValue;
+  if (typeof raw === "boolean") return raw;
+  const s = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "sim"].includes(s)) return true;
+  if (["0", "false", "no", "nao", "não"].includes(s)) return false;
+  throw new TreasuryContractError(
+    "VALIDATION_ERROR",
+    `${field} deve ser booleano.`,
+    field
+  );
+}
+
+export function parseTreasuryProjectionCalculateInput(
+  body: Record<string, unknown>,
+  headerIdempotencyKey?: string | null
+): TreasuryProjectionCalculateInput {
+  const companyCode = parseTreasuryBoundedString(
+    body.companyCode ?? body.empresa,
+    "companyCode",
+    { required: true }
+  )!;
+  const baseDate = parseTreasuryCivilDate(
+    body.baseDate ?? body.from ?? body.periodFrom ?? body.startDate,
+    "baseDate"
+  );
+  const endDate = parseTreasuryCivilDate(
+    body.endDate ?? body.to ?? body.periodTo,
+    "endDate"
+  );
+  const scenario =
+    parseTreasuryEnum(
+      body.scenario ?? body.cenario ?? body.layer,
+      TREASURY_PROJECTION_LAYERS,
+      "scenario",
+      false
+    ) ?? "PROBABLE";
+  const idempotencyKey =
+    parseTreasuryBoundedString(
+      headerIdempotencyKey ?? body.idempotencyKey,
+      "idempotencyKey",
+      { required: false }
+    ) ?? null;
+  return {
+    companyCode,
+    baseDate,
+    endDate,
+    scenario,
+    accountIds: parseAccountIdsFilter(
+      body.accountIds ?? body.accounts ?? body.contaIds
+    ),
+    consolidated: parseBooleanFlag(
+      body.consolidated ?? body.consolidacao,
+      "consolidated",
+      true
+    ),
+    includeDayDetail: parseBooleanFlag(
+      body.includeDayDetail ?? body.dayDetail ?? body.detalhamentoPorDia,
+      "includeDayDetail",
+      true
+    ),
+    notes:
+      parseTreasuryBoundedString(body.notes ?? body.observacoes, "notes", {
+        required: false,
+      }) ?? null,
+    idempotencyKey,
+  };
+}
+
+export function parseTreasuryProjectionLatestQuery(
+  query: Record<string, unknown>
+): TreasuryProjectionLatestQuery {
+  const companyCode = parseTreasuryBoundedString(
+    query.companyCode ?? query.empresa,
+    "companyCode",
+    { required: true }
+  )!;
+  const scenario =
+    parseTreasuryEnum(
+      query.scenario ?? query.cenario ?? query.layer,
+      TREASURY_PROJECTION_LAYERS,
+      "scenario",
+      false
+    ) ?? "PROBABLE";
+  return {
+    companyCode,
+    scenario,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    consolidated: parseBooleanFlag(
+      query.consolidated ?? query.consolidacao,
+      "consolidated",
+      true
+    ),
+    includeDayDetail: parseBooleanFlag(
+      query.includeDayDetail ?? query.dayDetail ?? query.detalhamentoPorDia,
+      "includeDayDetail",
+      true
+    ),
+  };
+}
+
+export function parseTreasuryProjectionGetQuery(
+  query: Record<string, unknown>
+): TreasuryProjectionGetQuery {
+  return {
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    consolidated: parseBooleanFlag(
+      query.consolidated ?? query.consolidacao,
+      "consolidated",
+      true
+    ),
+    includeDayDetail: parseBooleanFlag(
+      query.includeDayDetail ?? query.dayDetail ?? query.detalhamentoPorDia,
+      "includeDayDetail",
+      true
+    ),
+  };
+}
+
+export function parseTreasuryProjectionCompositionQuery(
+  query: Record<string, unknown>
+): TreasuryProjectionCompositionQuery {
+  const range = parseTreasuryDateRangeFilter({
+    from: query.from ?? query.baseDate,
+    to: query.to ?? query.endDate,
+  });
+  return {
+    from: range.from,
+    to: range.to,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds ?? query.accountId
+    ),
+  };
+}
+
+export function parseTreasuryAgendaQuery(
+  query: Record<string, unknown>
+): TreasuryAgendaQuery {
+  const companyCode = parseTreasuryBoundedString(
+    query.companyCode ?? query.empresa,
+    "companyCode",
+    { required: true }
+  )!;
+  const baseDate = parseTreasuryCivilDate(
+    query.baseDate ?? query.from ?? query.startDate,
+    "baseDate"
+  );
+  const endDate = parseTreasuryCivilDate(
+    query.endDate ?? query.to,
+    "endDate"
+  );
+  const scenario =
+    parseTreasuryEnum(
+      query.scenario ?? query.cenario ?? query.layer,
+      TREASURY_PROJECTION_LAYERS,
+      "scenario",
+      false
+    ) ?? "PROBABLE";
+  return {
+    companyCode,
+    baseDate,
+    endDate,
+    scenario,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    consolidated: parseBooleanFlag(
+      query.consolidated ?? query.consolidacao,
+      "consolidated",
+      true
+    ),
+    includeDayDetail: parseBooleanFlag(
+      query.includeDayDetail ?? query.dayDetail ?? query.detalhamentoPorDia,
+      "includeDayDetail",
+      false
+    ),
+  };
+}
+
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

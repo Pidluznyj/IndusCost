@@ -5,6 +5,9 @@
 import { randomUUID } from "node:crypto";
 import { buildTreasuryProjectionAdvisoryLockKeys } from "../domain/treasuryProjectionLock.js";
 import type {
+  TreasuryProjectionCompositionItemRow,
+  TreasuryProjectionDayLineDetailed,
+  TreasuryProjectionDayLineFilter,
   TreasuryProjectionDayLinePersistInput,
   TreasuryProjectionDayLineSummary,
   TreasuryProjectionRunCreateData,
@@ -171,18 +174,22 @@ export function createMemoryTreasuryProjectionRunRepository(
 
     async findLatestSucceeded(companyCode, scenario) {
       const rows = store.runs
+        .map((r, index) => ({ r, index }))
         .filter(
-          (r) =>
+          ({ r }) =>
             r.companyCode === companyCode &&
             r.scenario === scenario &&
             r.status === "SUCCEEDED"
         )
         .sort((a, b) => {
-          const fa = (a.finishedAt ?? a.createdAt).getTime();
-          const fb = (b.finishedAt ?? b.createdAt).getTime();
-          return fb - fa;
+          const fa = (a.r.finishedAt ?? a.r.createdAt).getTime();
+          const fb = (b.r.finishedAt ?? b.r.createdAt).getTime();
+          if (fb !== fa) return fb - fa;
+          const ca = b.r.createdAt.getTime() - a.r.createdAt.getTime();
+          if (ca !== 0) return ca;
+          return b.index - a.index;
         });
-      return rows[0] ? cloneRun(rows[0]) : null;
+      return rows[0] ? cloneRun(rows[0].r) : null;
     },
 
     async listDayLines(runId): Promise<TreasuryProjectionDayLineSummary[]> {
@@ -203,5 +210,83 @@ export function createMemoryTreasuryProjectionRunRepository(
           itemCount: l.itemCount,
         }));
     },
+
+    async listDayLinesDetailed(
+      runId,
+      filter?: TreasuryProjectionDayLineFilter
+    ): Promise<TreasuryProjectionDayLineDetailed[]> {
+      return filterDayLines(store.dayLines, runId, filter).map((l) => ({
+        id: l.id,
+        accountId: l.accountId,
+        civilDate: l.civilDateObj,
+        openingBalance: l.openingBalance,
+        inflows: l.inflows,
+        outflows: l.outflows,
+        transfers: l.transfers,
+        realized: l.realized,
+        closingBalance: l.closingBalance,
+        uncertainReceivables: l.uncertainReceivables,
+        minimumBalance: l.minimumBalance,
+        riskAmount: l.riskAmount,
+        riskCode: l.riskCode,
+        itemCount: l.itemCount,
+      }));
+    },
+
+    async listCompositionItems(
+      runId,
+      filter?: TreasuryProjectionDayLineFilter
+    ): Promise<TreasuryProjectionCompositionItemRow[]> {
+      const lines = filterDayLines(store.dayLines, runId, filter);
+      const items: TreasuryProjectionCompositionItemRow[] = [];
+      for (const line of lines) {
+        for (const [idx, c] of line.composition.entries()) {
+          items.push({
+            id: `${line.id}:${idx}`,
+            dayLineId: line.id,
+            accountId: line.accountId,
+            civilDate: line.civilDateObj,
+            itemKind: c.itemKind,
+            amount: c.amount,
+            label: c.label,
+            officialTitleId: c.officialTitleId,
+            nomusExternalId: c.nomusExternalId,
+            ledgerEntryId: c.ledgerEntryId,
+            transferGroupId: c.transferGroupId,
+            sourceRef: c.sourceRef,
+            sortOrder: c.sortOrder,
+          });
+        }
+      }
+      return items.sort(
+        (a, b) =>
+          a.civilDate.getTime() - b.civilDate.getTime() ||
+          a.sortOrder - b.sortOrder
+      );
+    },
   };
+}
+
+function filterDayLines(
+  dayLines: TreasuryProjectionMemoryDayLine[],
+  runId: string,
+  filter?: TreasuryProjectionDayLineFilter
+): TreasuryProjectionMemoryDayLine[] {
+  const accountSet = filter?.accountIds?.length
+    ? new Set(filter.accountIds)
+    : null;
+  const fromMs = filter?.from ? civilToDate(filter.from).getTime() : null;
+  const toMs = filter?.to ? civilToDate(filter.to).getTime() : null;
+  return dayLines
+    .filter((l) => l.runId === runId)
+    .filter((l) => (accountSet ? accountSet.has(l.accountId) : true))
+    .filter((l) =>
+      fromMs == null ? true : l.civilDateObj.getTime() >= fromMs
+    )
+    .filter((l) => (toMs == null ? true : l.civilDateObj.getTime() <= toMs))
+    .sort((a, b) => {
+      const byDate = a.civilDateObj.getTime() - b.civilDateObj.getTime();
+      if (byDate !== 0) return byDate;
+      return a.accountId.localeCompare(b.accountId);
+    });
 }

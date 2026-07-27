@@ -33,6 +33,15 @@ export const TREASURY_DISPUTES_PATH =
 export const TREASURY_DASHBOARD_PATH =
   `${TREASURY_API_PREFIX}/dashboard` as const;
 
+export const TREASURY_PROJECTIONS_PATH =
+  `${TREASURY_API_PREFIX}/projections` as const;
+
+export const TREASURY_AGENDA_PATH =
+  `${TREASURY_API_PREFIX}/agenda` as const;
+
+/** Default; override via TREASURY_PROJECTION_MAX_HORIZON_DAYS. */
+export const TREASURY_PROJECTION_DEFAULT_MAX_HORIZON_DAYS = 90;
+
 export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
 
 export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;

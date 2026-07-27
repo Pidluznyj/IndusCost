@@ -84,6 +84,45 @@ export type TreasuryProjectionDayLineSummary = {
   itemCount: number;
 };
 
+export type TreasuryProjectionDayLineDetailed = {
+  id: string;
+  accountId: string;
+  civilDate: Date;
+  openingBalance: string;
+  inflows: string;
+  outflows: string;
+  transfers: string;
+  realized: string;
+  closingBalance: string;
+  uncertainReceivables: string;
+  minimumBalance: string;
+  riskAmount: string;
+  riskCode: string;
+  itemCount: number;
+};
+
+export type TreasuryProjectionCompositionItemRow = {
+  id: string;
+  dayLineId: string;
+  accountId: string;
+  civilDate: Date;
+  itemKind: string;
+  amount: string;
+  label: string | null;
+  officialTitleId: string | null;
+  nomusExternalId: number | null;
+  ledgerEntryId: string | null;
+  transferGroupId: string | null;
+  sourceRef: string | null;
+  sortOrder: number;
+};
+
+export type TreasuryProjectionDayLineFilter = {
+  accountIds?: string[] | null;
+  from?: string | null;
+  to?: string | null;
+};
+
 export type TreasuryProjectionRunRepository = {
   tryAcquireExecutionLock(
     companyCode: string,
@@ -122,6 +161,14 @@ export type TreasuryProjectionRunRepository = {
     scenario: string
   ): Promise<TreasuryProjectionRunRow | null>;
   listDayLines(runId: string): Promise<TreasuryProjectionDayLineSummary[]>;
+  listDayLinesDetailed(
+    runId: string,
+    filter?: TreasuryProjectionDayLineFilter
+  ): Promise<TreasuryProjectionDayLineDetailed[]>;
+  listCompositionItems(
+    runId: string,
+    filter?: TreasuryProjectionDayLineFilter
+  ): Promise<TreasuryProjectionCompositionItemRow[]>;
 };
 
 function civilToDate(value: string): Date {
@@ -190,7 +237,11 @@ function mapRun(row: {
 
 type PrismaLike = Pick<
   PrismaClient,
-  "treasuryProjectionRun" | "treasuryProjectionDayLine" | "$queryRaw" | "$transaction"
+  | "treasuryProjectionRun"
+  | "treasuryProjectionDayLine"
+  | "treasuryProjectionCompositionItem"
+  | "$queryRaw"
+  | "$transaction"
 >;
 
 export function createTreasuryProjectionRunRepository(
@@ -362,6 +413,88 @@ export function createTreasuryProjectionRunRepository(
         openingBalance: moneyStr(r.openingBalance),
         closingBalance: moneyStr(r.closingBalance),
         itemCount: r.itemCount,
+      }));
+    },
+
+    async listDayLinesDetailed(runId, filter) {
+      const rows = await db.treasuryProjectionDayLine.findMany({
+        where: {
+          runId,
+          ...(filter?.accountIds?.length
+            ? { accountId: { in: filter.accountIds } }
+            : {}),
+          ...(filter?.from || filter?.to
+            ? {
+                civilDate: {
+                  ...(filter.from
+                    ? { gte: civilToDate(filter.from) }
+                    : {}),
+                  ...(filter.to ? { lte: civilToDate(filter.to) } : {}),
+                },
+              }
+            : {}),
+        },
+        orderBy: [{ civilDate: "asc" }, { accountId: "asc" }],
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        accountId: r.accountId,
+        civilDate: r.civilDate,
+        openingBalance: moneyStr(r.openingBalance),
+        inflows: moneyStr(r.inflows),
+        outflows: moneyStr(r.outflows),
+        transfers: moneyStr(r.transfers),
+        realized: moneyStr(r.realized),
+        closingBalance: moneyStr(r.closingBalance),
+        uncertainReceivables: moneyStr(r.uncertainReceivables),
+        minimumBalance: moneyStr(r.minimumBalance),
+        riskAmount: moneyStr(r.riskAmount),
+        riskCode: r.riskCode,
+        itemCount: r.itemCount,
+      }));
+    },
+
+    async listCompositionItems(runId, filter) {
+      const rows = await db.treasuryProjectionCompositionItem.findMany({
+        where: {
+          dayLine: {
+            runId,
+            ...(filter?.accountIds?.length
+              ? { accountId: { in: filter.accountIds } }
+              : {}),
+            ...(filter?.from || filter?.to
+              ? {
+                  civilDate: {
+                    ...(filter.from
+                      ? { gte: civilToDate(filter.from) }
+                      : {}),
+                    ...(filter.to ? { lte: civilToDate(filter.to) } : {}),
+                  },
+                }
+              : {}),
+          },
+        },
+        include: { dayLine: { select: { accountId: true, civilDate: true } } },
+        orderBy: [
+          { dayLine: { civilDate: "asc" } },
+          { sortOrder: "asc" },
+          { createdAt: "asc" },
+        ],
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        dayLineId: r.dayLineId,
+        accountId: r.dayLine.accountId,
+        civilDate: r.dayLine.civilDate,
+        itemKind: r.itemKind,
+        amount: moneyStr(r.amount),
+        label: r.label,
+        officialTitleId: r.officialTitleId,
+        nomusExternalId: r.nomusExternalId,
+        ledgerEntryId: r.ledgerEntryId,
+        transferGroupId: r.transferGroupId,
+        sourceRef: r.sourceRef,
+        sortOrder: r.sortOrder,
       }));
     },
   };

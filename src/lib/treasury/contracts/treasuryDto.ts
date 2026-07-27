@@ -400,6 +400,135 @@ export type TreasuryProjectionPointDto = {
   side: TreasurySide | null;
 };
 
+export type TreasuryProjectionSourceFreshnessDto = {
+  source:
+    | "PROJECTION_RUN"
+    | "BALANCE_SNAPSHOTS"
+    | "OFFICIAL_RECEIVABLES"
+    | "OFFICIAL_PAYABLES";
+  label: string;
+  lastSuccessAt: TreasuryTimestampIso | null;
+  isStale: boolean;
+  detail: string;
+};
+
+export type TreasuryProjectionFreshnessDto = {
+  asOf: TreasuryTimestampIso;
+  sources: TreasuryProjectionSourceFreshnessDto[];
+  hasStaleSource: boolean;
+  staleSourceCount: number;
+};
+
+export type TreasuryProjectionDayLineDto = {
+  id: string;
+  accountId: string;
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString;
+  inflows: TreasuryMoneyString;
+  outflows: TreasuryMoneyString;
+  transfers: TreasuryMoneyString;
+  realized: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  uncertainReceivables: TreasuryMoneyString;
+  minimumBalance: TreasuryMoneyString;
+  riskAmount: TreasuryMoneyString;
+  riskCode: string;
+  itemCount: number;
+};
+
+export type TreasuryProjectionCompositionItemDto = {
+  id: string;
+  dayLineId: string;
+  accountId: string;
+  civilDate: TreasuryCivilDate;
+  itemKind: string;
+  amount: TreasuryMoneyString;
+  label: string | null;
+  officialTitleId: string | null;
+  nomusExternalId: number | null;
+  ledgerEntryId: string | null;
+  transferGroupId: string | null;
+  sourceRef: string | null;
+  sortOrder: number;
+};
+
+export type TreasuryProjectionConsolidatedDayDto = {
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString;
+  inflows: TreasuryMoneyString;
+  outflows: TreasuryMoneyString;
+  transfers: TreasuryMoneyString;
+  realized: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString;
+  uncertainReceivables: TreasuryMoneyString;
+  riskAmount: TreasuryMoneyString;
+  itemCount: number;
+};
+
+export type TreasuryProjectionRunDto = {
+  ok: true;
+  id: string;
+  companyCode: string | null;
+  scenario: TreasuryProjectionLayer;
+  status: string;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  sourceVersion: string;
+  algorithmVersion: string;
+  freshness: TreasuryProjectionFreshnessDto;
+  lineCount: number;
+  itemCount: number;
+  requestedAt: TreasuryTimestampIso;
+  startedAt: TreasuryTimestampIso | null;
+  finishedAt: TreasuryTimestampIso | null;
+  failureCode: string | null;
+  failureMessage: string | null;
+  dayLines: TreasuryProjectionDayLineDto[] | null;
+  consolidatedDays: TreasuryProjectionConsolidatedDayDto[] | null;
+  previousValidRunId?: string | null;
+};
+
+export type TreasuryProjectionCompositionResponseDto = {
+  ok: true;
+  runId: string;
+  companyCode: string | null;
+  scenario: TreasuryProjectionLayer;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  sourceVersion: string;
+  algorithmVersion: string;
+  freshness: TreasuryProjectionFreshnessDto;
+  items: TreasuryProjectionCompositionItemDto[];
+  accountIds: string[] | null;
+};
+
+export type TreasuryAgendaDayDto = {
+  civilDate: TreasuryCivilDate;
+  inflows: TreasuryMoneyString;
+  outflows: TreasuryMoneyString;
+  net: TreasuryMoneyString;
+  realized: TreasuryMoneyString;
+  closingBalance: TreasuryMoneyString | null;
+  itemCount: number;
+  items: TreasuryProjectionCompositionItemDto[] | null;
+};
+
+export type TreasuryAgendaDto = {
+  ok: true;
+  runId: string | null;
+  companyCode: string | null;
+  scenario: TreasuryProjectionLayer;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  consolidated: boolean;
+  accountIds: string[] | null;
+  sourceVersion: string | null;
+  algorithmVersion: string | null;
+  freshness: TreasuryProjectionFreshnessDto;
+  days: TreasuryAgendaDayDto[];
+  maxHorizonDays: number;
+};
+
 export type TreasuryDailyClosingDto = {
   id: string;
   civilDate: TreasuryCivilDate;
