@@ -33,7 +33,7 @@
 | **06** | Repository + service contas financeiras | `DONE` | `e7bc851` — `feat(treasury): adicionar repository e service de contas financeiras` | CRUD lógica (list/get/create/update/deactivate/reactivate/sort/min balance/liquidity/consolidado/access); ACL+máscara+optimistic lock+audit; sem exclusão com histórico; `test:treasury` 64/64; rotas/UI ainda pendentes |
 | **07** | APIs REST contas financeiras | `DONE` | `80fc494` — `feat(treasury): adicionar APIs REST de contas financeiras` | `GET/POST /accounts`, `GET/PATCH /accounts/:id`, deactivate/reactivate, access GET/PUT; auth+flag+requireResource; DTOs; erros+requestId; `test:treasury` 70/70 |
 | **08** | UI contas financeiras | `DONE` | `6a81b79` — `feat(treasury): adicionar tela de contas financeiras` | `/finance/treasury/accounts`; listar/criar/editar/desativar/reativar; saldo mín./liquidez/consolidado/acessos; máscara; estados vazio/loading/erro/sem permissão; responsivo; `test:treasury` 80/80 |
-| **09** | Backend/APIs snapshots de saldo | `DONE` | *(este commit)* | `GET …/balances`, `GET …/balances/latest`, `POST …/balance-snapshots` + Idempotency-Key; observado/operacional/bloqueado/aplicações/limite; previousSnapshot; audit; Decimal+auth+idempotência; `test:treasury` 90/90 |
+| **09** | Backend/APIs snapshots de saldo | `DONE` | `30cfdb5` — `feat(treasury): adicionar APIs de snapshots de saldo` | `GET …/balances`, `GET …/balances/latest`, `POST …/balance-snapshots` + Idempotency-Key; observado/operacional/bloqueado/aplicações/limite; previousSnapshot; audit; Decimal+auth+idempotência; `test:treasury` 90/90 |
 
 > **Nota de ordem:** service/repo contas = **06**; APIs contas = **07**; UI contas = **08**; snapshots saldo = **09**.
 
