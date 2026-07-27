@@ -68,9 +68,10 @@
 | **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
 | **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
 | **43** | Preview fechamento diário (GET) | `DONE` | `7313c86` | `GET /daily-closing/preview`; gates absolutos vs ressalva; sourceHash; canClose*; `test:treasury` 430/430 |
-| **44** | Close/reopen/list/get fechamento | `DONE` | `PENDING` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
+| **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
+| **45** | UI fechamento diário | `DONE` | _(pending commit)_ | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 
-    > **Nota de ordem:** …; preview = **43**; close/reopen = **44**.
+    > **Nota de ordem:** …; preview = **43**; close/reopen = **44**; UI = **45**.
 
 ---
 
@@ -95,8 +96,8 @@
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
-| Fechamento diário | `PARTIAL` | P42–P44: schema+preview+API close/list/get; UI pendente |
-| Reabertura | `PARTIAL` | P44: `POST …/reopen` com justificativa, versão preservada, audit+recalc; UI pendente |
+| Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing` (checklist, ressalvas, histórico, comparação, 409) |
+| Reabertura | `DONE` | P44 API + P45 UI autorizada com justificativa; versão preservada |
 | Importação OFX | `NOT_STARTED` | — |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
@@ -490,6 +491,16 @@
 - [x] Sem avanço automático
 ---
 
+### 45 — UI do fechamento diário
+- [x] Rota `/finance/treasury/closing` + nav "Fechamento diário"
+- [x] Preview: resumo, posição por conta, checklist, bloqueios, avisos, pendências, diferenças
+- [x] Ressalvas obrigatórias + observações; confirmação com refresh do preview antes do POST
+- [x] Conflito 409 → mensagem orientando revisar/atualizar preview
+- [x] Histórico versionado; reabertura autorizada; comparação entre versões
+- [x] Client API + permissions + UI helpers; testes UI (`TreasuryDailyClosingPage.test` + `treasuryDailyClosingUi.test`); `test:treasury` 450/450
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -552,4 +563,5 @@
 | 2026-07-27 | Prompt 41: alertas dashboard/agenda + config — `0e6e655` |
 | 2026-07-27 | Prompt 42: schema fechamento diário + reabertura — `f39279f` |
 | 2026-07-27 | Prompt 43: preview fechamento diário — `7313c86` |
-| 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `PENDING` |
+| 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
+| 2026-07-27 | Prompt 45: UI fechamento diário — _(pending commit)_ |

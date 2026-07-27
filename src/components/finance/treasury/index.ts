@@ -6,6 +6,7 @@ export { TreasuryReceivablesPage } from "./TreasuryReceivablesPage.js";
 export { TreasuryPayablesPage } from "./TreasuryPayablesPage.js";
 export { TreasuryAgendaPage } from "./TreasuryAgendaPage.js";
 export { TreasuryProjectionComparisonPage } from "./TreasuryProjectionComparisonPage.js";
+export { TreasuryDailyClosingPage } from "./TreasuryDailyClosingPage.js";
 export { TreasuryModule } from "./TreasuryModule.js";
 export {
   TREASURY_UI_BASE_PATH,
