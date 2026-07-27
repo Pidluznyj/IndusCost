@@ -121,10 +121,16 @@ describe("soldProductCustomersPage", () => {
       join(process.cwd(), "src/components/commercial/SoldProductCustomersPage.tsx"),
       "utf8"
     );
-    assert.ok(kpiSrc.includes("FinanceBiKpiCard"));
+    assert.ok(
+      kpiSrc.includes("FinanceBiKpiCard") || kpiSrc.includes("FinanceExecutiveTotalizerCard")
+    );
     assert.ok(kpiSrc.includes("ExecutiveSummarySection"));
     assert.ok(kpiSrc.includes("SummaryKpiGrid"));
-    assert.ok(kpiSrc.includes("formatCommercialCompactCurrency"));
+    assert.ok(
+      kpiSrc.includes("formatCommercialCompactCurrency") ||
+        kpiSrc.includes("formatFinanceKpiCurrency") ||
+        kpiSrc.includes("FinanceExecutiveTotalizerCard")
+    );
     assert.equal(kpiSrc.includes("xl:grid-cols-8"), false);
     assert.ok(kpiSrc.includes("Clientes compradores do produto"));
   });

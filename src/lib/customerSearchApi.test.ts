@@ -54,7 +54,7 @@ test("endpoint protegido por autenticação no server", () => {
   const server = readFileSync(join(process.cwd(), "server.ts"), "utf8");
   assert.ok(server.includes('app.get("/api/customers/search"'));
   assert.ok(server.includes("requireAppAuth"));
-  assert.ok(server.includes('requirePermission("customers.view")'));
+  assert.ok(server.includes('requireResource("commercial.customers", "view")'));
 });
 
 test("payload serializado sem dados sensíveis extras", () => {
