@@ -64,8 +64,9 @@
 | **37** | Transferências entre contas | `DONE` | `2cdcba4` | Model/migration `TreasuryTransfer`; status prevista→…→conciliada/cancelada; ACL nas 2 contas; em trânsito (SENT); audit+recalc; APIs + UI `/transfers`; motor `1.3.0`; `test:treasury` 351/351 |
 | **38** | Model + serviço de exceções | `DONE` | `e4b823f` | `TreasuryException` + migration; upsert idempotente por `uniqueKey`; recorrência; resolve/ignore/ack; repo+service+testes; sem API/UI; `test:treasury` 361/361 |
 | **39** | Motor determinístico de exceções | `DONE` | `5dcdc74` | 16 tipos; generate/update; auto-resolve só seguro; algo `1.0.0`; testes por tipo; sem API/UI; `test:treasury` 386/386 |
+| **40** | APIs + UI Central de Exceções | `DONE` | `a9a95ac` | Status 6 canônicos; list/sort/assign/due/status/resolve/ignore; deep-link; flag; `/exceptions`; `test:treasury` 395/395 |
 
-    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**; motor de exceções = **39**.
+    > **Nota de ordem:** …; transferências = **37**; exceções (model/service) = **38**; motor = **39**; Central de Exceções API/UI = **40**.
 
 ---
 
@@ -89,7 +90,7 @@
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
 | Lançamentos manuais | `NOT_STARTED` | — |
-| Exceções / alertas | `PARTIAL` | P23 dashboard; P38 model+service; P39 motor determinístico (16 tipos, auto-resolve seguro); API/UI ainda pendentes |
+| Exceções / alertas | `DONE` | P23 dashboard; P38 model+service; P39 motor; P40 API+UI `/finance/treasury/exceptions` (filtro/ordem/atribuir/prazo/status/resolver/ignorar + entidade) |
 | Fechamento diário | `NOT_STARTED` | Imutável + versionado (requisito) |
 | Reabertura | `NOT_STARTED` | — |
 | Importação OFX | `NOT_STARTED` | — |
@@ -441,6 +442,15 @@
 - [x] Sem API/UI neste passo; sem avanço automático
 ---
 
+### 40 — APIs e tela da Central de Exceções
+- [x] Status: OPEN / IN_ANALYSIS / WAITING_THIRD_PARTY / RESOLVED / IGNORED / CANCELLED (+ ACK legado); migration `20260815120000_*`
+- [x] APIs: list (filtro/ordem), get, acknowledge, assign, due-at, status, resolve, ignore, cancel; flag `treasury.exceptions.enabled`
+- [x] DTO: severidade, valor, idade, responsável, ação recomendada, `entityHref`
+- [x] UI `/finance/treasury/exceptions` — filtros, ordenação, ações, abrir entidade
+- [x] Testes permissão + fluxo API/UI; `test:treasury` 395/395 |
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -498,4 +508,5 @@
 | 2026-07-27 | Prompt 36: auditoria motor de projeção — `7628e55` |
 | 2026-07-27 | Prompt 37: transferências entre contas — `2cdcba4` |
 | 2026-07-27 | Prompt 38: model + serviço de exceções — `e4b823f` |
-| 2026-07-27 | Prompt 39: motor determinístico de exceções — `PENDING` |
+| 2026-07-27 | Prompt 39: motor determinístico de exceções — `5dcdc74` |
+| 2026-07-27 | Prompt 40: APIs + UI Central de Exceções — `PENDING` |
