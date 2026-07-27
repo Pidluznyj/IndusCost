@@ -104,6 +104,9 @@ function hasAppModuleRoute(appTsx: string, moduleId: AppModuleId): boolean {
   if (moduleId === "sales-order-flow") {
     return /path=["']commercial\/sales-order-flow["']/.test(appTsx);
   }
+  if (moduleId === "commercial-price-table") {
+    return /path=["']commercial\/price-table["']/.test(appTsx);
+  }
   const escaped = moduleId.replace(/-/g, "\\-");
   return new RegExp(`path=["']${escaped}(?:\\/\\*)?["']`).test(appTsx);
 }

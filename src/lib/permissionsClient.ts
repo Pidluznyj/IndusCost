@@ -88,6 +88,7 @@ export const ResourceKeys = {
   COMERCIAL_CLIENTES: "commercial.customers",
   COMERCIAL_PROPOSTAS: "commercial.proposals",
   COMERCIAL_PROPOSTAS_INDICADORES: "commercial.proposals.indicators",
+  COMERCIAL_TABELA_COMERCIAL: "commercial.price_table",
   COMERCIAL_FORMACAO_PRECO: "commercial.pricing",
   ENGENHARIA: "engineering",
   ENGENHARIA_PRODUTOS: "engineering.products",
@@ -610,6 +611,13 @@ export const FRONTEND_PERMISSION_RESOURCES: readonly FrontendPermissionResource[
     type: "TAB",
     parentKey: ResourceKeys.COMERCIAL_PROPOSTAS,
     legacyAliasKeys: ["proposals.indicators.view"],
+  },
+  {
+    key: ResourceKeys.COMERCIAL_TABELA_COMERCIAL,
+    label: "Tabela comercial",
+    type: "SUBMENU",
+    parentKey: ResourceKeys.COMERCIAL,
+    legacyAliasKeys: ["price_table.view"],
   },
   {
     key: ResourceKeys.COMERCIAL_FORMACAO_PRECO,

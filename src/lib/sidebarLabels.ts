@@ -47,6 +47,7 @@ export const MODULE_SHORT_LABELS: Record<AppModuleId, string> = {
   opex: "Opex",
   taxes: "Trib.",
   pricing: "Preço",
+  "commercial-price-table": "Tabela",
   proposals: "Prop.",
   "sales-orders": "Pedidos",
   "sales-order-flow": "Fluxo",

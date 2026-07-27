@@ -10314,7 +10314,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/pricing/commercial-published-prices",
     requireAppAuth,
-    requireResource("commercial.pricing", "view"),
+    requireAnyPermission([
+      "price_table.view",
+      "pricing.view",
+      "proposals.view",
+      "sales_orders.view",
+      "settings.price_tables.view",
+    ]),
     async (req, res) => {
       try {
         const query = parseCommercialPublishedPricesQuery(req.query as Record<string, unknown>);

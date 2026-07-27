@@ -21,6 +21,7 @@ export const SIDEBAR_MODULE_RESOURCE_KEYS: Partial<Record<AppModuleId, string>> 
   settings: ResourceKeys.CONFIGURACOES,
   customers: ResourceKeys.COMERCIAL_CLIENTES,
   proposals: ResourceKeys.COMERCIAL_PROPOSTAS,
+  "commercial-price-table": ResourceKeys.COMERCIAL_TABELA_COMERCIAL,
   pricing: ResourceKeys.COMERCIAL_FORMACAO_PRECO,
   products: ResourceKeys.ENGENHARIA_PRODUTOS,
   "transformation-simulator": ResourceKeys.ENGENHARIA_SIMULADOR_INJECAO,

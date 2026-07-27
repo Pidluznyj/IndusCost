@@ -36,6 +36,7 @@ import {
   Cog,
   HelpCircle,
   Network,
+  Table2,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -107,6 +108,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   opex: PieChart,
   taxes: Scale,
   pricing: Calculator,
+  "commercial-price-table": Table2,
   proposals: FileText,
   "sales-orders": ClipboardList,
   "sales-order-flow": FolderKanban,

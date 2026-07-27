@@ -145,13 +145,14 @@ describe("sidebarNavigation — grupos oficiais", () => {
     assert.equal(none.groups.some((g) => g.id === "cadeia_suprimentos"), false);
   });
 
-  it("Comercial contém CRM, Clientes, Propostas, Pedidos, Fluxo, Documentos de Saída, Formação de Preço e Comissões", () => {
+  it("Comercial contém CRM, Clientes, Propostas, Tabela comercial, Pedidos, Fluxo, Documentos de Saída, Formação de Preço e Comissões", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     const group = nav.groups.find((g) => g.id === "comercial");
     assert.deepEqual(group?.items.map((i) => i.itemId), [
       "crm-commercial",
       "customers",
       "proposals",
+      "commercial-price-table",
       "sales-orders",
       "sales-order-flow",
       "output-documents",
@@ -218,6 +219,14 @@ describe("sidebarNavigation — expansão do grupo ativo", () => {
     const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
     assert.deepEqual(
       resolveExpandedGroupsForPath("/commercial/sales-order-flow", nav),
+      ["comercial"]
+    );
+  });
+
+  it("rota /commercial/price-table abre grupo Comercial", () => {
+    const nav = buildAccessibleSidebarNavigation(fullAccessChecker());
+    assert.deepEqual(
+      resolveExpandedGroupsForPath("/commercial/price-table", nav),
       ["comercial"]
     );
   });

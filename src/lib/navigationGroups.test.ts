@@ -40,6 +40,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   "crm-commercial": "comercial",
   customers: "comercial",
   proposals: "comercial",
+  "commercial-price-table": "comercial",
   "sales-orders": "comercial",
   "sales-order-flow": "comercial",
   "output-documents": "comercial",
@@ -89,6 +90,9 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       }
       if (moduleId === "sales-order-flow") {
         expected = "/commercial/sales-order-flow";
+      }
+      if (moduleId === "commercial-price-table") {
+        expected = "/commercial/price-table";
       }
       assert.equal(getModulePath(moduleId), expected);
     }
@@ -143,7 +147,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     assert.deepEqual(counts, {
       engenharia: 4,
       cadeia_suprimentos: 3,
-      comercial: 8,
+      comercial: 9,
       financeiro: 6,
       operacoes: 5,
       gestao_pessoas: 3,

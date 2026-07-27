@@ -39,6 +39,7 @@ export const COMMERCIAL_RESOURCE_KEYS = {
   outputDocumentsAudit: "commercial.output_documents.audit",
   outputDocumentsRaw: "commercial.output_documents.raw",
   pricing: "commercial.pricing",
+  priceTable: "commercial.price_table",
   commissions: "commercial.commissions",
   commissionsMonthlyClosing: "commercial.commissions.monthly_closing",
   commissionsClosings: "commercial.commissions.closings",
@@ -107,6 +108,12 @@ export const COMMERCIAL_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/commercial/output-documents/:id", resourceKey: "commercial.output_documents.detail", action: "view" },
 
   { method: "GET", path: "/api/pricing", resourceKey: "commercial.pricing", action: "view" },
+  {
+    method: "GET",
+    path: "/api/pricing/commercial-published-prices",
+    resourceKey: "commercial.price_table",
+    action: "view",
+  },
   { method: "POST", path: "/api/pricing/simulate*", resourceKey: "commercial.pricing", action: "execute" },
   { method: "POST", path: "/api/pricing/*", resourceKey: "commercial.pricing", action: "manage" },
 

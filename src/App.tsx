@@ -58,10 +58,15 @@ import { SoldProductsReportPage } from "@/src/components/commercial/SoldProducts
 import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
 import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
 import { SalesOrderFlowModule } from "@/src/components/commercial/SalesOrderFlowModule";
+import { CommercialPriceTableModule } from "@/src/components/commercial/CommercialPriceTableModule";
 import {
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
 } from "@/src/lib/salesOrderFlowUi";
+import {
+  COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE,
+  COMMERCIAL_PRICE_TABLE_PAGE_TITLE,
+} from "@/src/lib/commercialPriceTableAccess";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
@@ -931,6 +936,17 @@ export default function App() {
               description={SALES_ORDER_FLOW_PAGE_SUBTITLE}
             >
               <SalesOrderFlowModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/price-table"
+          element={
+            <ModulePageShell
+              title={COMMERCIAL_PRICE_TABLE_PAGE_TITLE}
+              description={COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE}
+            >
+              <CommercialPriceTableModule />
             </ModulePageShell>
           }
         />

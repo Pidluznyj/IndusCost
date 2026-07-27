@@ -92,14 +92,19 @@ describe("commercialPublishedPricesRoutes", () => {
     );
   });
 
-  it("permissão e autenticação seguem padrão de pricing.view", () => {
+  it("permissão e autenticação liberam consumidores comerciais (sem exigir Formação de Preço)", () => {
     const src = server();
     const routeBlock = src.slice(
       src.indexOf('"/api/pricing/commercial-published-prices"'),
       src.indexOf('app.post("/api/pricing"', src.indexOf('"/api/pricing/commercial-published-prices"'))
     );
     assert.match(routeBlock, /requireAppAuth/);
-    assert.match(routeBlock, /requirePermission\("pricing\.view"\)/);
+    assert.match(routeBlock, /requireAnyPermission\(\[/);
+    assert.match(routeBlock, /price_table\.view/);
+    assert.match(routeBlock, /proposals\.view/);
+    assert.match(routeBlock, /sales_orders\.view/);
+    assert.match(routeBlock, /pricing\.view/);
+    assert.doesNotMatch(routeBlock, /requireResource\("commercial\.pricing"/);
   });
 
   it("rota específica registrada antes de parâmetros /api/pricing/:productId", () => {

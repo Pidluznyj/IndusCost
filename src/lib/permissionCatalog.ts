@@ -1016,6 +1016,14 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
 
   // —— Precificação / Impostos ——
+  perm({
+    key: "price_table.view",
+    label: "Tabela comercial",
+    group: PRC,
+    module: "commercial-price-table",
+    description: "Consultar preços comerciais publicados vigentes.",
+    type: "menu",
+  }),
   perm({ key: "pricing.view", label: "Formação de Preço", group: PRC, module: "pricing", description: "Acessar formação de preço.", type: "menu" }),
   perm({
     key: "pricing.simulate",
