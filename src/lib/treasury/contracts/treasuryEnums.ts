@@ -25,6 +25,18 @@ export const TREASURY_BALANCE_LAYERS = [
 ] as const;
 export type TreasuryBalanceLayer = (typeof TREASURY_BALANCE_LAYERS)[number];
 
+/** Origem explícita de cada valor na posição financeira (não esconder MISSING). */
+export const TREASURY_POSITION_VALUE_ORIGINS = [
+  "BALANCE_SNAPSHOT",
+  "SNAPSHOT_PLUS_OFFICIAL_MOVEMENTS",
+  "OFFICIAL_MOVEMENTS_ONLY",
+  "ZERO_BASELINE",
+  "RECONCILIATION",
+  "MISSING",
+] as const;
+export type TreasuryPositionValueOrigin =
+  (typeof TREASURY_POSITION_VALUE_ORIGINS)[number];
+
 /** Origens de saldo/snapshot (alinhado a `TreasuryBalanceOrigin` no Prisma). */
 export const TREASURY_BALANCE_ORIGINS = [
   "MANUAL",

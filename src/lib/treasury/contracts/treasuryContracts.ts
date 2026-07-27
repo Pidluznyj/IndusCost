@@ -35,6 +35,7 @@ export {
   TREASURY_AVAILABILITY_STATUSES,
   TREASURY_BALANCE_LAYERS,
   TREASURY_BALANCE_ORIGINS,
+  TREASURY_POSITION_VALUE_ORIGINS,
   TREASURY_BALANCE_SOURCES,
   TREASURY_CLOSING_STATUSES,
   TREASURY_CURRENCIES,
@@ -71,6 +72,7 @@ export type {
   TreasuryBalanceLayer,
   TreasuryBalanceOrigin,
   TreasuryBalanceSource,
+  TreasuryPositionValueOrigin,
   TreasuryClosingStatus,
   TreasuryCurrency,
   TreasuryCollectionActionType,
@@ -142,8 +144,12 @@ export type {
 
 export type {
   TreasuryAvailabilityResponse,
+  TreasuryAccountFinancialPositionDto,
   TreasuryBalancePositionDto,
   TreasuryBalanceSnapshotDto,
+  TreasuryConsolidatedFinancialPositionDto,
+  TreasuryFinancialPositionDto,
+  TreasuryPositionValueOriginMeta,
   TreasuryDailyClosingDto,
   TreasuryCollectionActionDto,
   TreasuryDisputeDto,

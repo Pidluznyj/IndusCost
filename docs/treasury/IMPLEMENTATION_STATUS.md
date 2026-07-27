@@ -46,8 +46,9 @@
 | **19** | API consulta Contas a Pagar (oficial + complemento) | `DONE` | `b678929` | `GET /api/finance/treasury/payables` + `/:titleId`; filtros fornecedor/CNPJ/doc/categoria/CC/venc./programada/status/valor/conta/prioridade/responsável; batch complemento+CC; `test:treasury` 165/165 |
 | **20** | Programação de pagamentos (CP) | `DONE` | `5d06c5a` | `POST/PUT …/payables/:titleId/program-payment` + `/cancel`; parcial; acima do saldo c/ justificativa; impacto conta/consolidado + alerta negativo; optimistic lock; audit; recálculo; flag `payablesProgramming`; `test:treasury` 176/176 |
 | **21** | UI Contas a Pagar | `DONE` | `3240f2f` | `/finance/treasury/payables`; tabela paginada; filtros; totais; status/prioridade/programada/conta; impacto caixa; drawer; form programação com confirmação (saldo conta/consolidado/risco); bloqueio/adiamento/obs/histórico; responsivo; `test:treasury` 183/183 |
+| **22** | Serviço de posição financeira atual | `DONE` | _(pendente hash)_ | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
 
-> **Nota de ordem:** …; consulta CP = **19**; programação CP = **20**; UI CP = **21**.
+    > **Nota de ordem:** …; consulta CP = **19**; programação CP = **20**; UI CP = **21**; posição financeira = **22** (plano original P09 balance engine).
 
 ---
 
@@ -57,7 +58,7 @@
 |--------------|--------|---------------|
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
-| Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
+| Saldo observado / calculado / conciliado | `DONE` | P22: serviço posição atual; observado≠calculado≠conciliado; divergência explícita; consolidado exclui `includeInConsolidated=false`; API/UI ainda pendentes |
 | Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
@@ -80,7 +81,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 183/183; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 191/191; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -247,6 +248,17 @@
 - [x] Testes de API (wiring + handlers + 401/403); `test:treasury` 70/70
 - [x] Sem UI neste passo
 
+### 22 — Posição financeira atual
+- [x] Contratos: origens `TREASURY_POSITION_VALUE_ORIGINS` + DTOs por conta/consolidado
+- [x] Rules: observado, operacional disponível, calculado, conciliado, diferença, bloqueado, aplicações, limite utilizado
+- [x] Calculado = último snapshot válido + movimentos realizados oficiais ACTIVE após `referenceAt`
+- [x] Origem explícita por valor; `MISSING` e divergências nunca omitidas/zeradas
+- [x] Consolidado exclui contas `includeInConsolidated=false`; conta negativa e ausência de saldo cobertas
+- [x] Service `getCurrentPosition` (ACL view) + repos stub movimentos oficiais / saldo conciliado
+- [x] Testes rules + integração (multi-conta, fora consolidado, liquidez, bloqueado, negativo, ausência)
+- [x] `npm run test:treasury` 191/191
+- [x] Sem API/UI neste passo; sem avanço automático
+
 ---
 
 ## Riscos / pendências abertas
@@ -289,3 +301,4 @@
 | 2026-07-27 | Prompt 19: API consulta Contas a Pagar Tesouraria (repo/query/APIs/batch) — `b678929` |
 | 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — `5d06c5a` |
 | 2026-07-27 | Prompt 21: UI Contas a Pagar Tesouraria (tabela/filtros/drawer/programação/impacto) — `3240f2f` |
+| 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — _(pendente hash)_ |

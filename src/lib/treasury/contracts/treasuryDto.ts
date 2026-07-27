@@ -22,6 +22,7 @@ import type {
   TreasuryLedgerDirection,
   TreasuryLedgerNature,
   TreasuryLedgerStatus,
+  TreasuryPositionValueOrigin,
   TreasuryProjectionLayer,
   TreasuryPromiseStatus,
   TreasuryReconciliationMatchStatus,
@@ -119,6 +120,80 @@ export type TreasuryBalancePositionDto = {
   reconciled: TreasuryMoneyString | null;
   divergence: TreasuryMoneyString | null;
   layers: TreasuryBalanceLayer[];
+};
+
+/** Metadado de origem — divergências e ausência nunca são omitidas. */
+export type TreasuryPositionValueOriginMeta = {
+  origin: TreasuryPositionValueOrigin;
+  detail: string;
+};
+
+export type TreasuryAccountFinancialPositionDto = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  includeInConsolidated: boolean;
+  liquidity: TreasuryAccountLiquidity | string;
+  allowNegativeBalance: boolean;
+  /** true quando saldo observado/calculado disponível é < 0. */
+  isNegative: boolean;
+  hasSnapshot: boolean;
+  snapshotId: string | null;
+  snapshotReferenceAt: TreasuryTimestampIso | null;
+  snapshotOrigin: TreasuryBalanceOrigin | string | null;
+  /** Saldo observado total (available+blocked+investments) — null se sem snapshot. */
+  observedBalance: TreasuryMoneyString | null;
+  /** Saldo operacional disponível (availableBalance do snapshot). */
+  operationalAvailableBalance: TreasuryMoneyString | null;
+  /** Saldo calculado (snapshot observado + movimentos oficiais posteriores, ou só movimentos). */
+  calculatedBalance: TreasuryMoneyString | null;
+  /** Saldo conciliado — null enquanto não houver conciliação bancária. */
+  reconciledBalance: TreasuryMoneyString | null;
+  /** diferença = observado − calculado (null se algum lado ausente). Nunca ocultada. */
+  divergence: TreasuryMoneyString | null;
+  hasDivergence: boolean;
+  blockedBalance: TreasuryMoneyString | null;
+  investmentsBalance: TreasuryMoneyString | null;
+  usedLimit: TreasuryMoneyString | null;
+  officialMovementCount: number;
+  officialMovementNet: TreasuryMoneyString;
+  origins: {
+    observed: TreasuryPositionValueOriginMeta;
+    operationalAvailable: TreasuryPositionValueOriginMeta;
+    calculated: TreasuryPositionValueOriginMeta;
+    reconciled: TreasuryPositionValueOriginMeta;
+    blocked: TreasuryPositionValueOriginMeta;
+    investments: TreasuryPositionValueOriginMeta;
+    usedLimit: TreasuryPositionValueOriginMeta;
+  };
+  alerts: string[];
+  layers: TreasuryBalanceLayer[];
+};
+
+export type TreasuryConsolidatedFinancialPositionDto = {
+  accountCount: number;
+  includedAccountCount: number;
+  excludedAccountCount: number;
+  accountsMissingSnapshot: number;
+  observedBalance: TreasuryMoneyString | null;
+  operationalAvailableBalance: TreasuryMoneyString | null;
+  calculatedBalance: TreasuryMoneyString | null;
+  reconciledBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  hasDivergence: boolean;
+  blockedBalance: TreasuryMoneyString | null;
+  investmentsBalance: TreasuryMoneyString | null;
+  usedLimit: TreasuryMoneyString | null;
+  alerts: string[];
+};
+
+export type TreasuryFinancialPositionDto = {
+  asOf: TreasuryTimestampIso;
+  companyCode: string | null;
+  accounts: TreasuryAccountFinancialPositionDto[];
+  consolidated: TreasuryConsolidatedFinancialPositionDto;
+  alerts: string[];
 };
 
 export type TreasuryLedgerEntryDto = {
