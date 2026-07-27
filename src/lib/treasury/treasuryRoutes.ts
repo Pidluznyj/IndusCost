@@ -66,6 +66,7 @@ import {
   requireTreasuryFeatureFlag,
   requireTreasuryModuleEnabled,
 } from "./treasuryFeatureFlags.js";
+import { requireTreasuryCriticalRateLimit } from "./treasuryRateLimit.js";
 
 export type TreasuryAuthGuards = {
   requireAppAuth: RequestHandler;
@@ -127,6 +128,35 @@ export function registerTreasuryRoutes(
   const ofxUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
+  });
+
+  const rateLimitUserId = async (req: express.Request) => {
+    const user = await getCurrentAppUser(req);
+    return user?.id ?? null;
+  };
+  const rateOfxPreview = requireTreasuryCriticalRateLimit({
+    action: "ofxPreview",
+    getUserId: rateLimitUserId,
+  });
+  const rateOfxApply = requireTreasuryCriticalRateLimit({
+    action: "ofxApply",
+    getUserId: rateLimitUserId,
+  });
+  const rateReverse = requireTreasuryCriticalRateLimit({
+    action: "reconciliationReverse",
+    getUserId: rateLimitUserId,
+  });
+  const rateClose = requireTreasuryCriticalRateLimit({
+    action: "dailyClose",
+    getUserId: rateLimitUserId,
+  });
+  const rateReopen = requireTreasuryCriticalRateLimit({
+    action: "dailyReopen",
+    getUserId: rateLimitUserId,
+  });
+  const rateReportExport = requireTreasuryCriticalRateLimit({
+    action: "reportExport",
+    getUserId: rateLimitUserId,
   });
 
   const viewDashboard = requireResource(
@@ -282,6 +312,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewReports,
     exportTreasury,
+    rateReportExport,
     reportExports.exportCsv
   );
   app.get(
@@ -290,6 +321,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewReports,
     exportTreasury,
+    rateReportExport,
     reportExports.exportXlsx
   );
   app.get(
@@ -298,6 +330,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewReports,
     exportTreasury,
+    rateReportExport,
     reportExports.exportPdf
   );
 
@@ -316,6 +349,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     ofxImportEnabled,
     manageReconciliation,
+    rateOfxPreview,
     ofxUpload.single("file"),
     ofxPreview.preview
   );
@@ -326,6 +360,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     ofxImportEnabled,
     manageReconciliation,
+    rateOfxApply,
     ofxApply.apply
   );
 
@@ -380,6 +415,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     reconciliationEnabled,
     reverseReconciliation,
+    rateReverse,
     reconciliations.reverse
   );
 
@@ -398,6 +434,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     dailyClosingEnabled,
     closeDay,
+    rateClose,
     dailyClosing.close
   );
 
@@ -416,6 +453,7 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     dailyClosingEnabled,
     reopenDay,
+    rateReopen,
     dailyClosing.reopen
   );
 

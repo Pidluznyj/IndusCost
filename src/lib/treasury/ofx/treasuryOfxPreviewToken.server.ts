@@ -8,6 +8,7 @@ import { TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS } from "../contracts/treasuryCon
 import { formatTreasuryTimestampIso } from "../contracts/treasuryTimestamp.js";
 import type { TreasuryOfxPreviewMovementRow } from "../domain/treasuryOfxPreviewRules.js";
 import type { TreasuryBankOfxFormat } from "../contracts/treasuryEnums.js";
+import { resolveTreasuryOfxPreviewSecret } from "../domain/treasurySecurityRules.js";
 
 export type TreasuryOfxPreviewTokenPayload = {
   userId: string;
@@ -29,11 +30,7 @@ type StoredPreview = TreasuryOfxPreviewTokenPayload & {
 const store = new Map<string, StoredPreview>();
 
 function previewSecret(): string {
-  return (
-    process.env.TREASURY_OFX_PREVIEW_TOKEN_SECRET?.trim() ||
-    process.env.SESSION_SECRET?.trim() ||
-    "induscost-treasury-ofx-preview-dev-secret"
-  );
+  return resolveTreasuryOfxPreviewSecret(process.env);
 }
 
 function signTokenId(tokenId: string, expiresAtMs: number, contentHash: string): string {

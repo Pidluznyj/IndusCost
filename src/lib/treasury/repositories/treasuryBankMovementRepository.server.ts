@@ -69,6 +69,8 @@ export type TreasuryBankImportBatchCreateData = {
 export type TreasuryBankImportBatchListFilter = {
   companyCode?: string | null;
   accountId?: string | null;
+  /** Restringe a um conjunto autorizado (ACL) — nunca omitir no service. */
+  accountIds?: string[] | null;
   status?: string | null;
   from?: Date | null;
   to?: Date | null;
@@ -79,6 +81,8 @@ export type TreasuryBankImportBatchListFilter = {
 export type TreasuryBankMovementListFilter = {
   companyCode?: string | null;
   accountId?: string | null;
+  /** Restringe a um conjunto autorizado (ACL) — nunca omitir no service. */
+  accountIds?: string[] | null;
   batchId?: string | null;
   reconciliationStatuses?: string[] | null;
   search?: string | null;
@@ -270,7 +274,11 @@ export function createTreasuryBankMovementRepository(
     async listBatches(filter, db = prisma) {
       const where: Prisma.TreasuryBankImportBatchWhereInput = {};
       if (filter.companyCode?.trim()) where.companyCode = filter.companyCode.trim();
-      if (filter.accountId?.trim()) where.accountId = filter.accountId.trim();
+      if (filter.accountId?.trim()) {
+        where.accountId = filter.accountId.trim();
+      } else if (filter.accountIds?.length) {
+        where.accountId = { in: filter.accountIds };
+      }
       if (filter.status?.trim()) {
         where.status = filter.status.trim() as TreasuryBankImportBatchStatus;
       }
@@ -296,7 +304,11 @@ export function createTreasuryBankMovementRepository(
     async listMovements(filter, db = prisma) {
       const where: Prisma.TreasuryBankMovementWhereInput = {};
       if (filter.companyCode?.trim()) where.companyCode = filter.companyCode.trim();
-      if (filter.accountId?.trim()) where.accountId = filter.accountId.trim();
+      if (filter.accountId?.trim()) {
+        where.accountId = filter.accountId.trim();
+      } else if (filter.accountIds?.length) {
+        where.accountId = { in: filter.accountIds };
+      }
       if (filter.batchId?.trim()) where.batchId = filter.batchId.trim();
       if (filter.reconciliationStatuses?.length) {
         where.reconciliationStatus = {

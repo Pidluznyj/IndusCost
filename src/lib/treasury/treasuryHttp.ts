@@ -10,6 +10,10 @@ import {
   type TreasuryErrorCode,
 } from "./contracts/treasuryErrorCodes.js";
 import { TreasuryDomainError } from "./domain/treasuryErrors.js";
+import {
+  sanitizeTreasuryLogMessage,
+  sanitizeTreasuryLogValue,
+} from "./domain/treasurySecurityRules.js";
 
 export type TreasuryApiErrorBody = {
   error: string;
@@ -39,6 +43,8 @@ export function treasuryErrorStatus(code: string): number {
     case "CONFLICT":
     case "DAY_CLOSED":
       return 409;
+    case "RATE_LIMITED":
+      return 429;
     case "MODULE_DISABLED":
     case "FEATURE_DISABLED":
       return 403;
@@ -80,7 +86,15 @@ export function handleTreasuryRouteError(
       field: err.field,
     });
   }
-  console.error("[treasury]", requestId, err);
+  console.error(
+    "[treasury]",
+    requestId,
+    sanitizeTreasuryLogValue(
+      err instanceof Error
+        ? { name: err.name, message: sanitizeTreasuryLogMessage(err.message) }
+        : err
+    )
+  );
   return sendTreasuryError(res, {
     requestId,
     error: "Erro interno na Central de Tesouraria.",

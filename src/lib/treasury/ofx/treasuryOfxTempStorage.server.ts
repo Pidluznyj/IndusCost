@@ -14,8 +14,9 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
+import { assertTreasuryPathInsideRoot } from "../domain/treasurySecurityRules.js";
 import { TREASURY_OFX_TEMP_DIR_PREFIX } from "./treasuryOfxConstants.js";
 import { hashTreasuryOfxBuffer } from "./treasuryOfxIntakeRules.js";
 
@@ -35,7 +36,8 @@ export type TreasuryOfxTempStorage = {
     originalName: string;
     sha256?: string;
   }): TreasuryOfxStagedFile;
-  read(filePath: string): Buffer;
+  /** Lê apenas paths dentro do rootDir do stage (anti path traversal). */
+  read(staged: Pick<TreasuryOfxStagedFile, "rootDir" | "filePath">): Buffer;
   /** Remove arquivo e diretório pai temporário. Idempotente. */
   discard(staged: Pick<TreasuryOfxStagedFile, "rootDir" | "filePath">): void;
 };
@@ -76,7 +78,10 @@ export function createTreasuryOfxTempStorage(options?: {
       };
     },
 
-    read(filePath) {
+    read(staged) {
+      const rootDir = resolve(staged.rootDir);
+      const filePath = resolve(staged.filePath);
+      assertTreasuryPathInsideRoot(rootDir, filePath);
       if (!existsSync(filePath)) {
         throw new TreasuryDomainError(
           "NOT_FOUND",

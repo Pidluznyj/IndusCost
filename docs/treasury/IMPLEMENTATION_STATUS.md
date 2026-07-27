@@ -81,8 +81,9 @@
 | **54** | Reverse conciliação (`POST …/reconciliations/:id/reverse`) | `DONE` | `15f4102` | permissão reverse; justificativa+REVERTER; soft reverse; restaura movimentos; audit REVERSE; recalc; exceção dia fechado; UI confirmação forte; `test:treasury` 529/529 |
 | **55** | Queries/APIs relatórios Tesouraria | `DONE` | `e7d6139` | `GET …/reports/:reportKey` (10 keys); período+contas autorizadas+filtros+totais+composição+paginação; agregações SQL; consistência totais; `test:treasury` 543/543 |
 | **56** | Central de Relatórios (UI + exportações) | `DONE` | `6d08bb8` | `/reports` UI; seleção/período/filtros/visualização/impressão; CSV (anti formula-injection) + XLSX + PDF local; permissões view/export; `test:treasury` 553/553 |
+| **57** | Auditoria de segurança do módulo | `DONE` | _(hash no commit)_ | anti-IDOR contas em movimentos; rate limit ações críticas; path OFX; segredo preview prod; logs sanitizados; summaryJson redacted; CSV injection; testes segurança; `test:treasury` 566/566 |
 
-    > **Nota de ordem:** …; conciliação match = **53**; reverse = **54**; APIs relatórios = **55**; Central Relatórios UI = **56**.
+    > **Nota de ordem:** …; APIs relatórios = **55**; Central Relatórios UI = **56**; segurança = **57**.
 
 ---
 
@@ -116,7 +117,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 553/553 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` (inclui segurança P57) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -628,6 +629,18 @@
 - [x] Testes básicos de exportações + UI; sem avanço automático
 ---
 
+### 57 — Auditoria de segurança
+- [x] Auth/autorização por ação revisadas nas rotas (requireAppAuth + requireResource + flags)
+- [x] Anti-IDOR: movimentos/lotes bancários filtrados por contas autorizadas (ACL)
+- [x] Máscaras de agência/conta mantidas; summaryJson redigido (sem payload OFX)
+- [x] Upload OFX: MIME/tamanho/NUL; path containment no temp; segredo preview fail-closed em prod
+- [x] CSV injection protegido; logs HTTP sanitizados; erros sem stack para o cliente
+- [x] Rate limit em OFX preview/apply, reverse, close/reopen e export de relatórios (`RATE_LIMITED` 429)
+- [x] CSRF conforme arquitetura: cookie sessão `SameSite=Lax` + requireAppAuth
+- [x] Idempotência existente preservada (OFX fileSha256, balance Idempotency-Key, locks closing)
+- [x] Testes de segurança (`treasurySecurity*`); sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -703,3 +716,4 @@
 | 2026-07-27 | Prompt 54: reverse conciliação bancária — `15f4102` |
 | 2026-07-27 | Prompt 55: queries/APIs relatórios Tesouraria — `e7d6139` |
 | 2026-07-27 | Prompt 56: Central de Relatórios UI + exportações — `6d08bb8` |
+| 2026-07-27 | Prompt 57: auditoria de segurança do módulo — _(hash no commit)_ |

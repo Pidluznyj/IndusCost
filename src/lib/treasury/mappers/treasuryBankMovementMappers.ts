@@ -8,6 +8,7 @@ import type {
   TreasuryBankImportBatchDto,
   TreasuryBankMovementDto,
 } from "../contracts/treasuryDto.js";
+import { redactTreasuryBankSummaryJson } from "../domain/treasurySecurityRules.js";
 import { normalizeTreasuryMoneyString } from "../treasuryMoney.js";
 
 function moneyFromDecimal(
@@ -18,15 +19,6 @@ function moneyFromDecimal(
     return normalizeTreasuryMoneyString(value.toFixed(2));
   }
   return normalizeTreasuryMoneyString(value.toFixed(2));
-}
-
-function asRecord(
-  value: unknown
-): Record<string, unknown> | null {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return null;
 }
 
 export type TreasuryBankImportBatchMappedRow = {
@@ -86,7 +78,7 @@ export function toTreasuryBankImportBatchDto(
     format: row.format,
     status: row.status,
     transactionCount: row.transactionCount,
-    summaryJson: asRecord(row.summaryJson),
+    summaryJson: redactTreasuryBankSummaryJson(row.summaryJson),
     requestId: row.requestId,
     notes: row.notes,
     createdByUserId: row.createdByUserId,

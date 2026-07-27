@@ -1,5 +1,6 @@
 /**
  * Consulta de lotes e movimentos bancários (leitura).
+ * ACL por conta: usuário só vê contas autorizadas (anti-IDOR).
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -13,6 +14,11 @@ import type {
   TreasuryBankImportBatchDto,
   TreasuryBankMovementDto,
 } from "../contracts/treasuryDto.js";
+import {
+  canTreasuryActorViewAccountBalance,
+  canTreasuryActorViewAllAccounts,
+  type TreasuryAccountActor,
+} from "../domain/treasuryAccountRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import {
   toTreasuryBankImportBatchDto,
@@ -21,18 +27,18 @@ import {
   type TreasuryBankMovementMappedRow,
 } from "../mappers/treasuryBankMovementMappers.js";
 import {
+  createTreasuryAccountRepository,
+  type TreasuryAccountRepository,
+} from "../repositories/treasuryAccountRepository.server.js";
+import {
   createTreasuryBankMovementRepository,
   type TreasuryBankMovementRepository,
 } from "../repositories/treasuryBankMovementRepository.server.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
 
-export type TreasuryBankMovementQueryActor = {
-  userId: string;
-  role: string;
-  isSuperAdmin: boolean;
+export type TreasuryBankMovementQueryActor = TreasuryAccountActor & {
   canViewReconciliation: boolean;
   canManageReconciliation: boolean;
-  requestId?: string | null;
 };
 
 export function buildTreasuryBankMovementQueryActor(
@@ -41,13 +47,22 @@ export function buildTreasuryBankMovementQueryActor(
 ): TreasuryBankMovementQueryActor {
   return {
     userId: user.id,
+    userName: user.name,
     role: user.role,
+    sessionId: user.sessionId,
+    requestId: requestId ?? null,
     isSuperAdmin: user.role === "SUPER_ADMIN",
+    // Conciliação implica leitura das contas com ACL explícita (anti-IDOR).
+    canViewAccounts:
+      canTreasuryCapability(user, "viewAccounts") ||
+      canTreasuryCapability(user, "viewReconciliation") ||
+      canTreasuryCapability(user, "manageReconciliation"),
+    canManageAccounts: canTreasuryCapability(user, "manageAccounts"),
+    canManageBalances: canTreasuryCapability(user, "manageBalances"),
     canViewReconciliation:
       canTreasuryCapability(user, "viewReconciliation") ||
       canTreasuryCapability(user, "manageReconciliation"),
     canManageReconciliation: canTreasuryCapability(user, "manageReconciliation"),
-    requestId: requestId ?? null,
   };
 }
 
@@ -82,7 +97,7 @@ function statusesForBucket(
   if (bucket === "UNRECONCILED") return ["PENDING", "UNMATCHED"];
   if (bucket === "PARTIAL") return ["PARTIAL"];
   if (bucket === "RECONCILED") return ["MATCHED"];
-  if (bucket === "DUPLICATES") return []; // empty set → no persisted rows
+  if (bucket === "DUPLICATES") return [];
   return null;
 }
 
@@ -109,19 +124,88 @@ export type TreasuryBankMovementQueryService = {
   ): Promise<TreasuryBankMovementDto>;
 };
 
+async function resolveAuthorizedAccountIds(
+  actor: TreasuryBankMovementQueryActor,
+  accountRepo: TreasuryAccountRepository,
+  requestedAccountId: string | null | undefined
+): Promise<string[]> {
+  const listed = await accountRepo.list({
+    companyCode: null,
+    isActive: true,
+    sortBy: "sortOrder",
+    sortDirection: "asc",
+    page: 1,
+    pageSize: 200,
+    accessibleByUserId: canTreasuryActorViewAllAccounts(actor)
+      ? null
+      : actor.userId,
+  });
+
+  const authorized: string[] = [];
+  for (const acc of listed.rows) {
+    const accessRow = await accountRepo.findAccess(acc.id, actor.userId);
+    const access = accessRow
+      ? {
+          userId: accessRow.userId,
+          accessLevel: accessRow.accessLevel as "VIEW" | "OPERATE" | "MANAGE",
+          isActive: accessRow.isActive,
+          revokedAt: accessRow.revokedAt,
+          canViewBalance: accessRow.canViewBalance,
+          canMutateBalance: accessRow.canMutateBalance,
+        }
+      : null;
+    if (canTreasuryActorViewAccountBalance(actor, access)) {
+      authorized.push(acc.id);
+    }
+  }
+
+  if (requestedAccountId?.trim()) {
+    const id = requestedAccountId.trim();
+    if (!authorized.includes(id)) {
+      throw new TreasuryDomainError(
+        "FORBIDDEN",
+        "Sem acesso à conta financeira solicitada.",
+        "accountId"
+      );
+    }
+    return [id];
+  }
+
+  return authorized;
+}
+
 export function createTreasuryBankMovementQueryService(deps: {
   prisma: PrismaClient;
   movementRepo?: TreasuryBankMovementRepository;
+  accountRepository?: TreasuryAccountRepository;
 }): TreasuryBankMovementQueryService {
   const movementRepo =
     deps.movementRepo ?? createTreasuryBankMovementRepository(deps.prisma);
+  const accountRepo =
+    deps.accountRepository ?? createTreasuryAccountRepository(deps.prisma);
 
   return {
     async listBatches(actor, query) {
       requireView(actor);
+      const accountIds = await resolveAuthorizedAccountIds(
+        actor,
+        accountRepo,
+        query.accountId
+      );
+      if (!accountIds.length) {
+        return {
+          items: [],
+          pagination: buildTreasuryPaginationMeta({
+            page: query.page,
+            pageSize: query.pageSize,
+            totalRows: 0,
+          }),
+        };
+      }
       const result = await movementRepo.listBatches({
         companyCode: query.companyCode,
         accountId: query.accountId,
+        accountIds,
         status: query.status,
         from: civilToUtcStart(query.from),
         to: civilToUtcEnd(query.to),
@@ -155,6 +239,23 @@ export function createTreasuryBankMovementQueryService(deps: {
             "Duplicados não são gravados. Eles aparecem no preview OFX e no resumo do lote após a confirmação.",
         };
       }
+      const accountIds = await resolveAuthorizedAccountIds(
+        actor,
+        accountRepo,
+        query.accountId
+      );
+      if (!accountIds.length) {
+        return {
+          items: [],
+          pagination: buildTreasuryPaginationMeta({
+            page: query.page,
+            pageSize: query.pageSize,
+            totalRows: 0,
+          }),
+          duplicatesNotPersisted: false,
+          message: null,
+        };
+      }
       const statuses = statusesForBucket(
         query.bucket,
         query.reconciliationStatus
@@ -162,6 +263,7 @@ export function createTreasuryBankMovementQueryService(deps: {
       const result = await movementRepo.listMovements({
         companyCode: query.companyCode,
         accountId: query.accountId,
+        accountIds,
         batchId: query.batchId,
         reconciliationStatuses: statuses,
         search: query.search,
@@ -191,6 +293,18 @@ export function createTreasuryBankMovementQueryService(deps: {
         throw new TreasuryDomainError(
           "NOT_FOUND",
           "Movimento bancário não encontrado.",
+          "id"
+        );
+      }
+      const authorized = await resolveAuthorizedAccountIds(
+        actor,
+        accountRepo,
+        null
+      );
+      if (!authorized.includes(row.accountId)) {
+        throw new TreasuryDomainError(
+          "FORBIDDEN",
+          "Sem acesso ao movimento bancário solicitado.",
           "id"
         );
       }

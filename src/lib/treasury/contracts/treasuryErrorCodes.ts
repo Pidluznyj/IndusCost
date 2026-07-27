@@ -19,6 +19,7 @@ export const TREASURY_ERROR_CODES = [
   "NOT_FOUND",
   "CONFLICT",
   "DAY_CLOSED",
+  "RATE_LIMITED",
 ] as const;
 
 export type TreasuryErrorCode = (typeof TREASURY_ERROR_CODES)[number];

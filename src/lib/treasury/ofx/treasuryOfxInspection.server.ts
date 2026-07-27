@@ -50,7 +50,7 @@ export function inspectTreasuryOfxUpload(
   });
 
   try {
-    const fromDisk = temp.read(staged.filePath);
+    const fromDisk = temp.read(staged);
     if (fromDisk.byteLength !== input.buffer.byteLength) {
       throw new TreasuryDomainError(
         "VALIDATION_ERROR",
