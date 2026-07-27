@@ -7377,4 +7377,71 @@ model TreasuryProjectionRecalcJob {
   @@index([requestId])
   @@index([deduplicationKey])
 }
+/// Status da fila persistente de recálculo de projeção.
+enum TreasuryProjectionRecalcJobStatus {
+  PENDING
+  LOCKED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
 
+/// Eventos de domínio que solicitam recálculo.
+enum TreasuryProjectionRecalcEventType {
+  AR_SYNC
+  AP_SYNC
+  SETTLEMENT
+  CANCELLATION
+  EXPECTATION
+  PROMISE
+  PROGRAMMING
+  LEDGER_ENTRY
+  TRANSFER
+  BALANCE
+  RECONCILIATION
+  REVERSAL
+  CLOSING
+  REOPENING
+}
+
+/// Job de recálculo — fila PostgreSQL (sem broker externo no MVP).
+model TreasuryProjectionRecalcJob {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  companyCode String
+  scenario    TreasuryProjectionScenario
+  eventType   TreasuryProjectionRecalcEventType
+  status      TreasuryProjectionRecalcJobStatus @default(PENDING)
+
+  /// Chave estável para deduplicar eventos equivalentes enquanto ativos.
+  deduplicationKey String
+  /// Título/conta/grupo opcional do evento.
+  subjectId String?
+
+  payloadJson Json?
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(5)
+
+  availableAt DateTime  @default(now()) @db.Timestamptz(6)
+  lockedAt    DateTime? @db.Timestamptz(6)
+  lockedBy    String?
+  lockToken   String?
+
+  lastErrorCode    String?
+  lastErrorMessage String?
+  lastErrorDetail  Json?
+
+  completedAt DateTime? @db.Timestamptz(6)
+  requestId   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([status, availableAt])
+  @@index([companyCode, scenario, status])
+  @@index([eventType])
+  @@index([requestId])
+  @@index([deduplicationKey])
+}
