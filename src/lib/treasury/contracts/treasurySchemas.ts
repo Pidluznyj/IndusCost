@@ -2047,6 +2047,14 @@ export type TreasuryAgendaQuery = {
   includeDayDetail: boolean;
 };
 
+export type TreasuryProjectionCompareQuery = {
+  companyCode: string;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  accountIds: string[] | null;
+  consolidated: boolean;
+};
+
 function parseBooleanFlag(
   raw: unknown,
   field: string,
@@ -2230,6 +2238,37 @@ export function parseTreasuryAgendaQuery(
       query.includeDayDetail ?? query.dayDetail ?? query.detalhamentoPorDia,
       "includeDayDetail",
       false
+    ),
+  };
+}
+
+export function parseTreasuryProjectionCompareQuery(
+  query: Record<string, unknown>
+): TreasuryProjectionCompareQuery {
+  const companyCode = parseTreasuryBoundedString(
+    query.companyCode ?? query.empresa,
+    "companyCode",
+    { required: true }
+  )!;
+  const baseDate = parseTreasuryCivilDate(
+    query.baseDate ?? query.from ?? query.startDate,
+    "baseDate"
+  );
+  const endDate = parseTreasuryCivilDate(
+    query.endDate ?? query.to,
+    "endDate"
+  );
+  return {
+    companyCode,
+    baseDate,
+    endDate,
+    accountIds: parseAccountIdsFilter(
+      query.accountIds ?? query.accounts ?? query.contaIds
+    ),
+    consolidated: parseBooleanFlag(
+      query.consolidated ?? query.consolidacao,
+      "consolidated",
+      true
     ),
   };
 }

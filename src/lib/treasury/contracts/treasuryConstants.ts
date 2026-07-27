@@ -36,6 +36,9 @@ export const TREASURY_DASHBOARD_PATH =
 export const TREASURY_PROJECTIONS_PATH =
   `${TREASURY_API_PREFIX}/projections` as const;
 
+export const TREASURY_PROJECTIONS_COMPARE_PATH =
+  `${TREASURY_PROJECTIONS_PATH}/compare` as const;
+
 export const TREASURY_AGENDA_PATH =
   `${TREASURY_API_PREFIX}/agenda` as const;
 

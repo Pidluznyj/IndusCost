@@ -168,6 +168,16 @@ export function registerTreasuryRoutes(
     projections.getLatest
   );
 
+  // Antes de /:id — evita capturar "compare" como id.
+  app.get(
+    `${TREASURY_PROJECTIONS_PATH}/compare`,
+    requireAppAuth,
+    moduleEnabled,
+    projectionEnabled,
+    viewDashboard,
+    projections.compareScenarios
+  );
+
   app.get(
     `${TREASURY_PROJECTIONS_PATH}/:id/composition`,
     requireAppAuth,

@@ -12,14 +12,18 @@ import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import {
   TREASURY_AGENDA_PATH,
+  TREASURY_PROJECTIONS_COMPARE_PATH,
   TREASURY_PROJECTIONS_PATH,
 } from "./contracts/treasuryContracts.js";
 import {
   parseTreasuryAgendaQuery,
   parseTreasuryProjectionCalculateInput,
+  parseTreasuryProjectionCompareQuery,
   parseTreasuryProjectionLatestQuery,
 } from "./contracts/treasurySchemas.js";
+import { assertScenarioDifferenceConsistency } from "./domain/treasuryProjectionComparisonRules.js";
 import { TreasuryDomainError } from "./domain/treasuryErrors.js";
+import { subtractTreasuryMoney } from "./treasuryMoney.js";
 import { TREASURY_PROJECTION_ALGORITHM_VERSION } from "./domain/treasuryProjectionEngine.js";
 import {
   assertTreasuryProjectionHorizon,
@@ -132,21 +136,27 @@ const seedLoader: TreasuryProjectionEngineInputLoader = async () => ({
 });
 
 describe("treasuryProjectionApi — wiring + schema", () => {
-  it("registra rotas calculate/latest/:id/composition/agenda com flag e auth", () => {
+  it("registra rotas calculate/latest/compare/:id/composition/agenda com flag e auth", () => {
     const routes = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     assert.equal(TREASURY_PROJECTIONS_PATH, "/api/finance/treasury/projections");
+    assert.equal(
+      TREASURY_PROJECTIONS_COMPARE_PATH,
+      "/api/finance/treasury/projections/compare"
+    );
     assert.equal(TREASURY_AGENDA_PATH, "/api/finance/treasury/agenda");
     assert.match(routes, /TREASURY_PROJECTIONS_PATH/);
     assert.match(routes, /TREASURY_AGENDA_PATH/);
     assert.match(routes, /calculate/);
     assert.match(routes, /getLatest/);
+    assert.match(routes, /compareScenarios/);
+    assert.match(routes, /PROJECTIONS_PATH\}\/compare/);
     assert.match(routes, /getComposition/);
     assert.match(routes, /getAgenda/);
     assert.match(routes, /treasury\.projection\.enabled/);
     assert.match(routes, /viewAgenda/);
   });
 
-  it("parseia calculate/latest/agenda com baseDate/endDate/cenário/contas", () => {
+  it("parseia calculate/latest/agenda/compare com baseDate/endDate/cenário/contas", () => {
     const calc = parseTreasuryProjectionCalculateInput({
       companyCode: "LAZARIOS",
       baseDate: "2026-07-27",
@@ -176,6 +186,15 @@ describe("treasuryProjectionApi — wiring + schema", () => {
       scenario: "CONFIRMED",
     });
     assert.equal(agenda.endDate, "2026-07-28");
+
+    const compare = parseTreasuryProjectionCompareQuery({
+      companyCode: "LAZARIOS",
+      baseDate: "2026-07-27",
+      endDate: "2026-08-10",
+      consolidated: "true",
+    });
+    assert.equal(compare.endDate, "2026-08-10");
+    assert.equal(compare.consolidated, true);
   });
 
   it("limita horizonte de forma configurável", () => {
@@ -312,6 +331,84 @@ describe("treasuryProjectionApi — serviço (auth/filtros/consistência)", () =
       "0.00"
     );
     assert.equal(inflowSum, consolidatedInflow);
+  });
+
+  it("compareScenarios lê 3 runs sem recalcular e mantém diferenças consistentes", async () => {
+    const store = createEmptyTreasuryProjectionRunMemoryStore();
+    const repository = createMemoryTreasuryProjectionRunRepository(store);
+    let calculateCalls = 0;
+    const trackingLoader: TreasuryProjectionEngineInputLoader = async (input) => {
+      calculateCalls += 1;
+      return seedLoader(input);
+    };
+    const service = createTreasuryProjectionApiService({
+      repository,
+      loadEngineInput: trackingLoader,
+      maxHorizonDays: 90,
+      now: () => new Date("2026-07-27T15:00:00.000Z"),
+    });
+    const actor = {
+      userId: USER,
+      isSuperAdmin: true,
+      canViewDashboard: true,
+      canViewAgenda: true,
+      requestId: "req-cmp",
+    };
+
+    for (const scenario of ["CONTRACTUAL", "PROBABLE", "CONFIRMED"] as const) {
+      await service.calculate(actor, {
+        companyCode: "LAZARIOS",
+        baseDate: "2026-07-27",
+        endDate: "2026-07-29",
+        scenario,
+        accountIds: null,
+        consolidated: true,
+        includeDayDetail: true,
+        notes: null,
+        idempotencyKey: null,
+      });
+    }
+    const callsAfterCalculate = calculateCalls;
+
+    const comparison = await service.compareScenarios(actor, {
+      companyCode: "LAZARIOS",
+      baseDate: "2026-07-27",
+      endDate: "2026-07-29",
+      accountIds: null,
+      consolidated: true,
+    });
+
+    assert.equal(comparison.recalculated, false);
+    assert.equal(calculateCalls, callsAfterCalculate);
+    assert.equal(comparison.scenarios.length, 3);
+    assert.ok(comparison.scenarios.every((s) => s.available && s.runId));
+    assert.ok(comparison.days.length >= 1);
+
+    for (const day of comparison.days) {
+      assertScenarioDifferenceConsistency(day);
+      if (
+        day.balances.PROBABLE != null &&
+        day.balances.CONTRACTUAL != null
+      ) {
+        assert.equal(
+          day.differences.probableMinusContractual,
+          subtractTreasuryMoney(
+            day.balances.PROBABLE,
+            day.balances.CONTRACTUAL
+          )
+        );
+      }
+      assert.ok(day.highestRisk.riskLabel.length > 0);
+      assert.ok(
+        day.uncertainReceivables.primary != null ||
+          day.uncertainReceivables.max == null
+      );
+    }
+
+    assert.ok(
+      comparison.summary.minimumBalanceOverall == null ||
+        /^-?\d+\.\d{2}$/.test(comparison.summary.minimumBalanceOverall)
+    );
   });
 
   it("nega calculate sem permissão; rejeita horizonte excessivo", async () => {

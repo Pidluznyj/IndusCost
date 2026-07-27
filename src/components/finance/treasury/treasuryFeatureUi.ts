@@ -41,4 +41,9 @@ export const TREASURY_UI_SECTIONS = [
     path: `${TREASURY_UI_BASE_PATH}/agenda`,
     label: "Agenda financeira",
   },
+  {
+    id: "projections",
+    path: `${TREASURY_UI_BASE_PATH}/projections`,
+    label: "Comparação de cenários",
+  },
 ] as const;

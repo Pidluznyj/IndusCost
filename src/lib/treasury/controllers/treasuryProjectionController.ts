@@ -8,6 +8,7 @@ import { prisma } from "@/src/lib/prisma.js";
 import {
   parseTreasuryAgendaQuery,
   parseTreasuryProjectionCalculateInput,
+  parseTreasuryProjectionCompareQuery,
   parseTreasuryProjectionCompositionQuery,
   parseTreasuryProjectionGetQuery,
   parseTreasuryProjectionLatestQuery,
@@ -127,6 +128,16 @@ export function createTreasuryProjectionControllers(
       withAuth(req, res, async (user, requestId) => {
         const query = parseTreasuryAgendaQuery(asQuery(req));
         const payload = await service.getAgenda(
+          buildTreasuryProjectionApiActor(user, requestId),
+          query
+        );
+        res.status(200).json({ ...payload, requestId });
+      }),
+
+    compareScenarios: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const query = parseTreasuryProjectionCompareQuery(asQuery(req));
+        const payload = await service.compareScenarios(
           buildTreasuryProjectionApiActor(user, requestId),
           query
         );

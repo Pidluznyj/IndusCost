@@ -502,6 +502,72 @@ export type TreasuryProjectionCompositionResponseDto = {
   accountIds: string[] | null;
 };
 
+export type TreasuryProjectionComparisonScenarioMetaDto = {
+  scenario: "CONTRACTUAL" | "PROBABLE" | "CONFIRMED";
+  runId: string | null;
+  sourceVersion: string | null;
+  algorithmVersion: string | null;
+  available: boolean;
+  freshness: TreasuryProjectionFreshnessDto | null;
+  firstNegativeDate: TreasuryCivilDate | null;
+  minimumBalance: TreasuryMoneyString | null;
+  minimumBalanceDate: TreasuryCivilDate | null;
+  dayCount: number;
+};
+
+export type TreasuryProjectionComparisonDayDto = {
+  civilDate: TreasuryCivilDate;
+  balances: {
+    CONTRACTUAL: TreasuryMoneyString | null;
+    PROBABLE: TreasuryMoneyString | null;
+    CONFIRMED: TreasuryMoneyString | null;
+  };
+  differences: {
+    probableMinusContractual: TreasuryMoneyString | null;
+    confirmedMinusProbable: TreasuryMoneyString | null;
+    confirmedMinusContractual: TreasuryMoneyString | null;
+  };
+  /** Recebíveis sem previsão confiável (uncertainReceivables do motor). */
+  uncertainReceivables: {
+    CONTRACTUAL: TreasuryMoneyString | null;
+    PROBABLE: TreasuryMoneyString | null;
+    CONFIRMED: TreasuryMoneyString | null;
+    max: TreasuryMoneyString | null;
+    primary: TreasuryMoneyString | null;
+  };
+  highestRisk: {
+    riskCode: string;
+    riskAmount: TreasuryMoneyString;
+    riskLabel: string;
+    scenario: "CONTRACTUAL" | "PROBABLE" | "CONFIRMED" | null;
+  };
+};
+
+export type TreasuryProjectionComparisonDto = {
+  ok: true;
+  companyCode: string;
+  baseDate: TreasuryCivilDate;
+  endDate: TreasuryCivilDate;
+  consolidated: boolean;
+  accountIds: string[] | null;
+  /** Sempre false — comparação lê runs persistidos, não recalcula. */
+  recalculated: false;
+  scenarios: TreasuryProjectionComparisonScenarioMetaDto[];
+  days: TreasuryProjectionComparisonDayDto[];
+  summary: {
+    firstNegativeDateOverall: TreasuryCivilDate | null;
+    minimumBalanceOverall: TreasuryMoneyString | null;
+    minimumBalanceOverallDate: TreasuryCivilDate | null;
+    minimumBalanceOverallScenario:
+      | "CONTRACTUAL"
+      | "PROBABLE"
+      | "CONFIRMED"
+      | null;
+  };
+  freshness: TreasuryProjectionFreshnessDto;
+  maxHorizonDays: number;
+};
+
 export type TreasuryAgendaDayDto = {
   civilDate: TreasuryCivilDate;
   /** Null quando visão consolidada. */

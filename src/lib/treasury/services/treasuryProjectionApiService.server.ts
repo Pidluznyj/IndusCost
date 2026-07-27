@@ -8,6 +8,7 @@ import type { PrismaClient } from "@prisma/client";
 import type {
   TreasuryAgendaDto,
   TreasuryAgendaDayDto,
+  TreasuryProjectionComparisonDto,
   TreasuryProjectionCompositionItemDto,
   TreasuryProjectionCompositionResponseDto,
   TreasuryProjectionConsolidatedDayDto,
@@ -19,6 +20,7 @@ import type { TreasuryProjectionLayer } from "../contracts/treasuryEnums.js";
 import type {
   TreasuryAgendaQuery,
   TreasuryProjectionCalculateInput,
+  TreasuryProjectionCompareQuery,
   TreasuryProjectionCompositionQuery,
   TreasuryProjectionGetQuery,
   TreasuryProjectionLatestQuery,
@@ -29,6 +31,11 @@ import {
   pickHigherRiskCode,
   type TreasuryAgendaScenarioDaySeed,
 } from "../domain/treasuryAgendaDayRules.js";
+import {
+  TREASURY_COMPARISON_SCENARIOS,
+  buildTreasuryProjectionComparison,
+  type TreasuryComparisonScenario,
+} from "../domain/treasuryProjectionComparisonRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import type { TreasuryProjectionEngineInput } from "../domain/treasuryProjectionEngine.js";
 import {
@@ -111,6 +118,10 @@ export type TreasuryProjectionApiService = {
     actor: TreasuryProjectionApiActor,
     query: TreasuryAgendaQuery
   ): Promise<TreasuryAgendaDto>;
+  compareScenarios(
+    actor: TreasuryProjectionApiActor,
+    query: TreasuryProjectionCompareQuery
+  ): Promise<TreasuryProjectionComparisonDto>;
 };
 
 export type TreasuryProjectionApiDeps = {
@@ -766,6 +777,134 @@ export function createTreasuryProjectionApiService(
         algorithmVersion: primary.algorithmVersion,
         freshness: buildFreshness(primary.run, now),
         days,
+        maxHorizonDays,
+      };
+    },
+
+    async compareScenarios(actor, query) {
+      assertCanViewProjection(actor);
+      assertTreasuryProjectionHorizon({
+        baseDate: query.baseDate,
+        endDate: query.endDate,
+        maxHorizonDays,
+      });
+      const now = deps.now?.() ?? new Date();
+      // Somente leitura das latest SUCCEEDED — não dispara calculate/recalc.
+      const loaded = await Promise.all(
+        TREASURY_COMPARISON_SCENARIOS.map((scenario) =>
+          loadScenarioDayLines(deps.repository, query.companyCode, scenario, {
+            accountIds: query.accountIds,
+            from: query.baseDate,
+            to: query.endDate,
+          })
+        )
+      );
+
+      const byScenarioSeeds: Partial<
+        Record<
+          TreasuryComparisonScenario,
+          Array<{
+            civilDate: string;
+            closingBalance: string;
+            uncertainReceivables: string;
+            riskAmount: string;
+            riskCode: string;
+          }>
+        >
+      > = {};
+      const scenarioMetas = TREASURY_COMPARISON_SCENARIOS.map((scenario, i) => {
+        const bundle = loaded[i]!;
+        const lines = bundle.lines;
+        // Agrega por dia (contas filtradas). consolidated=false ainda soma o filtro
+        // para permitir comparar cenários sem N×contas no payload.
+        const consolidated = consolidateDays(lines);
+        byScenarioSeeds[scenario] = consolidated.map((d) => {
+          let riskCode = "NONE";
+          for (const line of lines.filter((l) => l.civilDate === d.civilDate)) {
+            riskCode = pickHigherRiskCode(riskCode, line.riskCode);
+          }
+          return {
+            civilDate: d.civilDate,
+            closingBalance: d.closingBalance,
+            uncertainReceivables: d.uncertainReceivables,
+            riskAmount: d.riskAmount,
+            riskCode,
+          };
+        });
+        return {
+          scenario,
+          runId: bundle.runId,
+          sourceVersion: bundle.sourceVersion,
+          algorithmVersion: bundle.algorithmVersion,
+          available: Boolean(bundle.run),
+          freshness: bundle.run ? buildFreshness(bundle.run, now) : null,
+        };
+      });
+
+      const comparison = buildTreasuryProjectionComparison({
+        byScenario: byScenarioSeeds,
+      });
+
+      const freshnessSources = scenarioMetas.flatMap(
+        (m) => m.freshness?.sources ?? []
+      );
+      const staleCount = freshnessSources.filter((s) => s.isStale).length;
+      const freshness: TreasuryProjectionFreshnessDto = {
+        asOf: now.toISOString(),
+        sources:
+          freshnessSources.length > 0
+            ? freshnessSources
+            : [
+                {
+                  source: "PROJECTION_RUN",
+                  label: "Projeção persistida",
+                  lastSuccessAt: null,
+                  isStale: true,
+                  detail: "Nenhuma projeção válida nos cenários",
+                },
+              ],
+        hasStaleSource: staleCount > 0 || freshnessSources.length === 0,
+        staleSourceCount:
+          freshnessSources.length === 0 ? 1 : staleCount,
+      };
+
+      return {
+        ok: true as const,
+        companyCode: query.companyCode,
+        baseDate: query.baseDate,
+        endDate: query.endDate,
+        consolidated: query.consolidated,
+        accountIds: query.accountIds,
+        recalculated: false as const,
+        scenarios: scenarioMetas.map((meta) => {
+          const summary = comparison.byScenario[meta.scenario];
+          return {
+            ...meta,
+            firstNegativeDate: summary.firstNegativeDate as
+              | TreasuryProjectionComparisonDto["scenarios"][number]["firstNegativeDate"],
+            minimumBalance: summary.minimumBalance,
+            minimumBalanceDate: summary.minimumBalanceDate as
+              | TreasuryProjectionComparisonDto["scenarios"][number]["minimumBalanceDate"],
+            dayCount: summary.dayCount,
+          };
+        }),
+        days: comparison.days.map((d) => ({
+          civilDate: d.civilDate as TreasuryProjectionComparisonDto["days"][number]["civilDate"],
+          balances: d.balances,
+          differences: d.differences,
+          uncertainReceivables: d.uncertainReceivables,
+          highestRisk: d.highestRisk,
+        })),
+        summary: {
+          firstNegativeDateOverall:
+            comparison.firstNegativeDateOverall as TreasuryProjectionComparisonDto["summary"]["firstNegativeDateOverall"],
+          minimumBalanceOverall: comparison.minimumBalanceOverall,
+          minimumBalanceOverallDate:
+            comparison.minimumBalanceOverallDate as TreasuryProjectionComparisonDto["summary"]["minimumBalanceOverallDate"],
+          minimumBalanceOverallScenario:
+            comparison.minimumBalanceOverallScenario,
+        },
+        freshness,
         maxHorizonDays,
       };
     },
