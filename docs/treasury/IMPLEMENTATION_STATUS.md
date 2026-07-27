@@ -55,8 +55,9 @@
 | **28** | Motor determinístico de projeção | `DONE` | `0ac7098` | `treasuryProjectionEngine`: fluxo 16 passos; Decimal string; datas+identidade; day lines + risco + composição; sem Express/Prisma; `test:treasury` 260/260 |
 | **29** | Precisão Decimal + liquidez no motor | `DONE` | `3c6103a` | Money BigInt HALF_UP; aplicações IMMEDIATE/D+1/D+2/D+3; bloqueado; crédito separado; mínimo operacional; allowNegative; `test:treasury` 274/274 |
 | **30** | Execução e persistência de projeção | `DONE` | `501056e` | ProjectionRun RUNNING/SUCCEEDED/FAILED; advisory lock empresa+cenário; source/algorithm version; não substitui anterior; latest válida; `test:treasury` 279/279 |
+| **31** | Fila persistente de recálculo (PostgreSQL) | `DONE` | `9e3d51a` | Model/migration `TreasuryProjectionRecalcJob`; status/attempts/availableAt/lock/deduplicationKey/erro/conclusão; eventos AR/AP sync, baixa, cancelamento, expectativa, promessa, programação, lançamento, transferência, saldo, conciliação, reversão, fechamento, reabertura; dedupe ativos; worker+retry; sem broker; `test:treasury` 289/289 |
 
-    > **Nota de ordem:** …; precisão/liquidez = **29**; execução/persistência = **30**.
+    > **Nota de ordem:** …; precisão/liquidez = **29**; execução/persistência = **30**; fila de recálculo = **31**.
 
 ---
 
@@ -76,7 +77,7 @@
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P30: schema, datas, identidade, motor, precisão/liquidez, execução/persistência; API/UI ainda pendentes |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P31: schema, datas, identidade, motor, precisão/liquidez, execução/persistência, fila PostgreSQL de recálculo; API/UI ainda pendentes |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
@@ -90,7 +91,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 211/211; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 289/289 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
