@@ -37,7 +37,7 @@
 | **10** | UI atualização de saldo | `DONE` | `eed8642` — `feat(treasury): adicionar UX de atualização de saldo` | `/finance/treasury/accounts/:id/balances`; form pt-BR→decimal API; histórico; stale; confirmação; conflito; `test:treasury` 100/100 |
 | **11** | Adapter read-only títulos oficiais Nomus (CR/CP) | `DONE` | `29ce7e4` | DTOs `OfficialReceivableView`/`OfficialPayableView`; mappers; adapter Prisma + memory; repo; docs `05-OFFICIAL-AR-AP-ADAPTER.md`; sem cópia de títulos; `test:treasury` 106/106 |
 | **12** | Schema complemento operacional de títulos | `DONE` | `1ffd2ab` | `TreasuryTitleOperationalComplement` (RECEIVABLE/PAYABLE); unicidade tipo+título; datas/valores esperados/confirmados/programados; status/prioridade/conta/responsável; versionamento + cancelamento; migration `20260807120000_*` (não deployada); repo base + testes integridade; `test:treasury` 113/113 |
-| **13** | API consulta Contas a Receber (oficial + complemento) | `DONE` | *(este commit)* | `GET /api/finance/treasury/receivables` + `/:titleId`; filtros (cliente/CNPJ/doc/pedido/NF/vendedor/resp./venc./esperada/promessa/status/atraso/valor/conta/prioridade); paginação/sort; batch join sem N+1; cálculos aberto/recebido/atraso/status/ações; `test:treasury` 119/119 |
+| **13** | API consulta Contas a Receber (oficial + complemento) | `DONE` | `03fec64` | `GET /api/finance/treasury/receivables` + `/:titleId`; filtros (cliente/CNPJ/doc/pedido/NF/vendedor/resp./venc./esperada/promessa/status/atraso/valor/conta/prioridade); paginação/sort; batch join sem N+1; cálculos aberto/recebido/atraso/status/ações; `test:treasury` 119/119 |
 
 > **Nota de ordem:** …; complemento operacional = **12**; query API CR = **13**.
 
