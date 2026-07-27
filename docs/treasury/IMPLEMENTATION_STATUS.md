@@ -23,7 +23,7 @@
 | Prompt | Título | Status | Commit | Evidências |
 |--------|--------|--------|--------|------------|
 | **00a** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` (+ `eb411b3` hash) | `docs/treasury/01-DISCOVERY.md`; checks FE/server imports + startup OK |
-| **00b** | Requirements mapping + plano de implementação | `DONE` | *(este commit)* | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
+| **00b** | Requirements mapping + plano de implementação | `DONE` | `7dbf0b4` — `docs(treasury): mapear requisitos e plano da Central de Tesouraria` | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
 | **01** | Foundation (flag, money, skeleton routes) | `NOT_STARTED` | — | Ver `03-IMPLEMENTATION-PLAN.md` |
 
 ---
