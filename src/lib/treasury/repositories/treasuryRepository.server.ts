@@ -14,6 +14,11 @@ export {
   type TreasuryOfficialTitlesRepository,
 } from "./treasuryOfficialTitlesRepository.server.js";
 
+export {
+  createTreasuryTitleOperationalComplementRepository,
+  type TreasuryTitleOperationalComplementRepository,
+} from "./treasuryTitleOperationalComplementRepository.server.js";
+
 /** @deprecated Preferir `createTreasuryAccountRepository`. */
 export function createTreasuryRepository() {
   return {

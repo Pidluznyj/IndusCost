@@ -2026,40 +2026,44 @@ model AccessProfile {
 }
 
 model AppUser {
-  id                              String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                            String
-  email                           String                           @unique
-  passwordHash                    String
-  role                            AppUserRole                      @default(VIEWER)
-  permissions                     String[]                         @default([])
+  id                                  String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                                String
+  email                               String                               @unique
+  passwordHash                        String
+  role                                AppUserRole                          @default(VIEWER)
+  permissions                         String[]                             @default([])
   /// Incrementado a cada mutação de ACL (P21). Sessões com epoch desatualizado são invalidadas.
-  permissionsVersion              Int                              @default(0)
-  accessProfileId                 String?                          @db.Uuid
+  permissionsVersion                  Int                                  @default(0)
+  accessProfileId                     String?                              @db.Uuid
   /// Vínculo obrigatório em novos cadastros → Pessoas / RH (`Employee`).
-  employeeId                      String?                          @unique @db.Uuid
+  employeeId                          String?                              @unique @db.Uuid
   /// Identidade canônica (Person). Opcional — legado sem vínculo continua válido.
-  personId                        String?                          @unique @db.Uuid
-  isActive                        Boolean                          @default(true)
-  externalSellerId                Int?
+  personId                            String?                              @unique @db.Uuid
+  isActive                            Boolean                              @default(true)
+  externalSellerId                    Int?
   /// IDs Nomus vinculáveis ao login (um usuário pode ter vários).
-  externalSellerIds               Int[]                            @default([])
-  sellerResponsibleName           String?
-  lastLoginAt                     DateTime?                        @db.Timestamptz(6)
-  createdAt                       DateTime                         @default(now()) @db.Timestamptz(6)
-  updatedAt                       DateTime                         @updatedAt @db.Timestamptz(6)
-  accessProfile                   AccessProfile?                   @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
-  employee                        Employee?                        @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  person                          Person?                          @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  sessions                        AppSession[]
-  permissionOverrides             UserPermissionOverride[]
-  permissionAuditsAsActor         PermissionAuditLog[]             @relation("PermissionAuditActor")
-  permissionAuditsAsTarget        PermissionAuditLog[]             @relation("PermissionAuditTarget")
-  treasuryAccountsCreated         TreasuryFinancialAccount[]       @relation("TreasuryAccountCreatedBy")
-  treasuryAccountsDeactivated     TreasuryFinancialAccount[]       @relation("TreasuryAccountDeactivatedBy")
-  treasuryAccountAccessGrants     TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessUser")
-  treasuryAccountAccessGrantedBy  TreasuryFinancialAccountAccess[] @relation("TreasuryAccountAccessGrantedBy")
-  treasuryBalanceSnapshotsCreated TreasuryBalanceSnapshot[]        @relation("TreasuryBalanceSnapshotCreatedBy")
-  treasuryAuditLogs               TreasuryAuditLog[]               @relation("TreasuryAuditLogUser")
+  externalSellerIds                   Int[]                                @default([])
+  sellerResponsibleName               String?
+  lastLoginAt                         DateTime?                            @db.Timestamptz(6)
+  createdAt                           DateTime                             @default(now()) @db.Timestamptz(6)
+  updatedAt                           DateTime                             @updatedAt @db.Timestamptz(6)
+  accessProfile                       AccessProfile?                       @relation(fields: [accessProfileId], references: [id], onDelete: SetNull)
+  employee                            Employee?                            @relation(fields: [employeeId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  person                              Person?                              @relation(fields: [personId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                            AppSession[]
+  permissionOverrides                 UserPermissionOverride[]
+  permissionAuditsAsActor             PermissionAuditLog[]                 @relation("PermissionAuditActor")
+  permissionAuditsAsTarget            PermissionAuditLog[]                 @relation("PermissionAuditTarget")
+  treasuryAccountsCreated             TreasuryFinancialAccount[]           @relation("TreasuryAccountCreatedBy")
+  treasuryAccountsDeactivated         TreasuryFinancialAccount[]           @relation("TreasuryAccountDeactivatedBy")
+  treasuryAccountAccessGrants         TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessUser")
+  treasuryAccountAccessGrantedBy      TreasuryFinancialAccountAccess[]     @relation("TreasuryAccountAccessGrantedBy")
+  treasuryBalanceSnapshotsCreated     TreasuryBalanceSnapshot[]            @relation("TreasuryBalanceSnapshotCreatedBy")
+  treasuryAuditLogs                   TreasuryAuditLog[]                   @relation("TreasuryAuditLogUser")
+  treasuryTitleComplementsCreated     TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCreatedBy")
+  treasuryTitleComplementsUpdated     TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementUpdatedBy")
+  treasuryTitleComplementsCancelled   TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementCancelledBy")
+  treasuryTitleComplementsResponsible TreasuryTitleOperationalComplement[] @relation("TreasuryTitleComplementResponsible")
 
   @@index([role])
   @@index([isActive])
@@ -6792,10 +6796,11 @@ model TreasuryFinancialAccount {
   deactivatedByUserId   String?                      @db.Uuid
   deactivationReason    String?
 
-  createdByUser     AppUser                          @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  deactivatedByUser AppUser?                         @relation("TreasuryAccountDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  accessGrants      TreasuryFinancialAccountAccess[]
-  balanceSnapshots  TreasuryBalanceSnapshot[]
+  createdByUser               AppUser                              @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  deactivatedByUser           AppUser?                             @relation("TreasuryAccountDeactivatedBy", fields: [deactivatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  accessGrants                TreasuryFinancialAccountAccess[]
+  balanceSnapshots            TreasuryBalanceSnapshot[]
+  titleOperationalComplements TreasuryTitleOperationalComplement[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -6895,4 +6900,83 @@ model TreasuryAuditLog {
   @@index([requestId])
   @@index([occurredAt])
   @@index([createdAt])
+}
+
+/// Tipo do título oficial Nomus referenciado pelo complemento operacional.
+enum TreasuryOfficialTitleKind {
+  RECEIVABLE
+  PAYABLE
+}
+
+/// Status operacional do complemento (não é o boolean `status` de baixa Nomus).
+enum TreasuryTitleOperationalStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum TreasuryTitleOperationalPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+/// Complemento operacional local de título oficial Nomus.
+/// Não copia cliente/fornecedor, valor original nem vencimento oficial (`dueDate`).
+model TreasuryTitleOperationalComplement {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  titleType          TreasuryOfficialTitleKind
+  /// UUID interno do título em NomusAccountsReceivable / NomusAccountsPayable (sem FK polimórfica).
+  officialTitleId    String                    @db.Uuid
+  /// externalId Nomus do título.
+  officialExternalId Int
+
+  expectedDate  DateTime? @db.Date
+  confirmedDate DateTime? @db.Date
+  scheduledDate DateTime? @db.Date
+
+  expectedAmount  Decimal? @db.Decimal(20, 2)
+  confirmedAmount Decimal? @db.Decimal(20, 2)
+  scheduledAmount Decimal? @db.Decimal(20, 2)
+
+  status   TreasuryTitleOperationalStatus   @default(ACTIVE)
+  priority TreasuryTitleOperationalPriority @default(NORMAL)
+
+  /// Conta financeira prevista para recebimento/pagamento (Tesouraria local).
+  plannedAccountId  String? @db.Uuid
+  responsibleUserId String? @db.Uuid
+  nextAction        String?
+  reason            String?
+  notes             String?
+
+  /// Optimistic lock / versionamento do complemento.
+  version Int @default(1)
+
+  createdAt          DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId    String    @db.Uuid
+  updatedAt          DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId    String?   @db.Uuid
+  cancelledAt        DateTime? @db.Timestamptz(6)
+  cancelledByUserId  String?   @db.Uuid
+  cancellationReason String?
+
+  plannedAccount  TreasuryFinancialAccount? @relation(fields: [plannedAccountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  responsibleUser AppUser?                  @relation("TreasuryTitleComplementResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser   AppUser                   @relation("TreasuryTitleComplementCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser?                  @relation("TreasuryTitleComplementUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser?                  @relation("TreasuryTitleComplementCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@unique([titleType, officialTitleId])
+  @@unique([titleType, officialExternalId])
+  @@index([titleType, status])
+  @@index([expectedDate])
+  @@index([confirmedDate])
+  @@index([scheduledDate])
+  @@index([plannedAccountId])
+  @@index([responsibleUserId])
+  @@index([createdByUserId])
+  @@index([cancelledAt])
 }

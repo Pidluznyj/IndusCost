@@ -73,4 +73,19 @@ describe("treasuryPrismaSchema", () => {
     assert.match(sql, /CREATE TABLE "TreasuryAuditLog"/);
     assert.match(sql, /treasury_audit_log_immutable_trg/);
   });
+
+  it("schema e migration do complemento operacional de títulos existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryTitleOperationalComplement \{/);
+    assert.match(schema, /enum TreasuryOfficialTitleKind/);
+    assert.match(schema, /@@unique\(\[titleType, officialTitleId\]\)/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260807120000_treasury_title_operational_complement/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryTitleOperationalComplement"/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
 });
