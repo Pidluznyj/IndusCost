@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Info, Loader2, Package, Percent, Scale, ShoppingBag, Wallet } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { useAuth } from "@/src/contexts/AuthContext";
-import { canViewSalesOrderMarginEconomics } from "@/src/lib/salesOrderListUi";
+import { canViewSalesOrderModule } from "@/src/lib/salesOrderListUi";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
 import {
@@ -38,7 +38,7 @@ const FILTER_CONTROL =
 
 export function SalesOrderResultPage() {
   const auth = useAuth();
-  const canView = useMemo(() => canViewSalesOrderMarginEconomics(auth), [auth]);
+  const canView = useMemo(() => canViewSalesOrderModule(auth), [auth]);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
 
@@ -149,7 +149,7 @@ export function SalesOrderResultPage() {
       <div className={`${financeBiCardClass} p-8 text-center`} data-testid="sales-order-result-denied">
         <p className="text-sm font-semibold text-[#111827]">Acesso restrito</p>
         <p className="text-sm text-[#6B7280] mt-1">
-          A aba Resultado exige permissão para visualizar custo e margem de produtos.
+          A aba Resultado exige permissão para visualizar Pedidos de Venda.
         </p>
       </div>
     );

@@ -12,12 +12,18 @@ type AuthGuards = {
   requireResource: (resourceKey: string, action?: string) => RequestHandler;
 };
 
+/**
+ * GET /api/sales-orders/results
+ *
+ * Guard: o mesmo da listagem de Pedidos (`commercial.sales_orders:view`).
+ * Não exige engineering.products.tab.cost — gráficos da listagem e Resultado
+ * devem funcionar para quem já acessa Pedidos de Venda.
+ */
 export function registerSalesOrderResultRoutes(app: express.Express, auth: AuthGuards) {
   app.get(
     "/api/sales-orders/results",
     auth.requireAppAuth,
     auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
-    auth.requireResource("engineering.products.tab.cost", "view"),
     async (req, res) => {
       try {
         const payload = await buildSalesOrderResultDashboard(
