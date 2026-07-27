@@ -40,7 +40,7 @@
 | **13** | API consulta Contas a Receber (oficial + complemento) | `DONE` | `03fec64` | `GET /api/finance/treasury/receivables` + `/:titleId`; filtros (cliente/CNPJ/doc/pedido/NF/vendedor/resp./venc./esperada/promessa/status/atraso/valor/conta/prioridade); paginação/sort; batch join sem N+1; cálculos aberto/recebido/atraso/status/ações; `test:treasury` 119/119 |
 | **14** | UI Contas a Receber | `DONE` | `1becae6` | `/finance/treasury/receivables`; tabela server-paginated; filtros; summary qtd/valor; badges; atraso/prioridade/ações; drawer Overlay; mobile columns; estados vazio/erro/loading/stale; `test:treasury` 127/127 |
 | **15** | Alterar expectativa operacional CR | `DONE` | `a0e8255` | `PUT …/receivables/:titleId/expectation`; data/conta/responsável/prioridade/ação/motivo/obs; sem mutar vencimento oficial; justificativa ao mudar data; saldo aberto; bloqueio cancelado; optimistic lock; audit before/after; stub recálculo projeção; form no drawer; `test:treasury` 134/134 |
-| **16** | Promessas de pagamento CR | `DONE` | _(hash no commit)_ | Model/migration `TreasuryPaymentPromise`; repo/service/APIs; parcial + acima do saldo c/ confirmação; expiração; cumprimento parcial; cancelamento; audit; projeção PROBABLE; UI no drawer; `test:treasury` 143/143 |
+| **16** | Promessas de pagamento CR | `DONE` | `0b7907f` | Model/migration `TreasuryPaymentPromise`; repo/service/APIs; parcial + acima do saldo c/ confirmação; expiração; cumprimento parcial; cancelamento; audit; projeção PROBABLE; UI no drawer; `test:treasury` 143/143 |
 
 > **Nota de ordem:** …; expectativa CR = **15**; promessas CR = **16**.
 
