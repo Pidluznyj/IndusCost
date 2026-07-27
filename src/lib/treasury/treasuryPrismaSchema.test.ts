@@ -167,6 +167,30 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "AppUser"/);
   });
 
+  it("schema e migration de exceções operacionais existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryException \{/);
+    assert.match(schema, /enum TreasuryExceptionType/);
+    assert.match(schema, /enum TreasuryExceptionEntityKind/);
+    assert.match(schema, /uniqueKey\s+String\s+@unique/);
+    assert.match(schema, /recurrenceCount\s+Int/);
+    assert.match(schema, /ignoreJustification\s+String\?/);
+    assert.match(schema, /metadataJson\s+Json\?/);
+    assert.match(schema, /TreasuryExceptionCreatedBy/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260813120000_treasury_exception/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryException"/);
+    assert.match(sql, /CREATE TYPE "TreasuryExceptionType"/);
+    assert.match(sql, /"uniqueKey" TEXT NOT NULL/);
+    assert.match(sql, /"recurrenceCount"/);
+    assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
+
   it("schema e migration de transferências internas existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /model TreasuryTransfer \{/);

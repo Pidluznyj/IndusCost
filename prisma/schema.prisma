@@ -2081,6 +2081,10 @@ model AppUser {
   treasuryTransfersCreated            TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
   treasuryTransfersUpdated            TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
   treasuryTransfersCancelled          TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
+  treasuryExceptionsCreated           TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
+  treasuryExceptionsUpdated           TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
+  treasuryExceptionsCancelled         TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
+  treasuryExceptionsResponsible       TreasuryException[]                  @relation("TreasuryExceptionResponsible")
 
   @@index([role])
   @@index([isActive])
@@ -6821,6 +6825,7 @@ model TreasuryFinancialAccount {
   projectionDayLines          TreasuryProjectionDayLine[]
   transfersFrom               TreasuryTransfer[]                   @relation("TreasuryTransferFromAccount")
   transfersTo                 TreasuryTransfer[]                   @relation("TreasuryTransferToAccount")
+  exceptions                  TreasuryException[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7443,5 +7448,109 @@ model TreasuryTransfer {
   @@index([status])
   @@index([createdByUserId])
   @@index([cancelledAt])
+}
+
+/// Severidade persistida de exceção operacional.
+enum TreasuryExceptionSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Status persistido de exceção (histórico preservado).
+enum TreasuryExceptionStatus {
+  OPEN
+  ACK
+  RESOLVED
+  CANCELLED
+}
+
+/// Tipo canônico de exceção (extensível via OTHER).
+enum TreasuryExceptionType {
+  POSITION_ALERT
+  BALANCE_DIVERGENCE
+  NEGATIVE_BALANCE
+  HIGH_PRIORITY_RECEIVABLES
+  HIGH_PRIORITY_PAYABLES
+  OVERDUE_WITHOUT_FORECAST
+  TRANSFER_IN_TRANSIT
+  OFX_UNMATCHED
+  MANUAL
+  OTHER
+}
+
+/// Entidade referenciada pela exceção.
+enum TreasuryExceptionEntityKind {
+  ACCOUNT
+  RECEIVABLE
+  PAYABLE
+  TRANSFER
+  LEDGER_ENTRY
+  POSITION
+  PROJECTION
+  CLOSING
+  RECONCILIATION
+  OTHER
+}
+
+/// Exceção operacional persistida — idempotente por `uniqueKey`.
+/// Mesma causa aberta atualiza dados/valor e preserva/incrementa recorrência.
+model TreasuryException {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+
+  companyCode String
+  /// Chave estável da causa (dedupe enquanto aberta; histórico via recorrência).
+  uniqueKey String @unique
+
+  type     TreasuryExceptionType
+  severity TreasuryExceptionSeverity
+  status   TreasuryExceptionStatus   @default(OPEN)
+
+  entityKind      TreasuryExceptionEntityKind?
+  entityId        String?
+  accountId       String? @db.Uuid
+  nomusExternalId String?
+
+  title       String
+  description String?
+  amount      Decimal? @db.Decimal(20, 2)
+
+  detectedAt DateTime  @db.Timestamptz(6)
+  dueAt      DateTime? @db.Date
+
+  responsibleUserId   String? @db.Uuid
+  resolution          String?
+  ignoreJustification String?
+
+  /// Contagem de reaparecimentos da mesma causa (nunca zera no upsert aberto).
+  recurrenceCount Int @default(1)
+
+  metadataJson Json?
+
+  version Int @default(1)
+
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId   String    @db.Uuid
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?   @db.Uuid
+  acknowledgedAt    DateTime? @db.Timestamptz(6)
+  resolvedAt        DateTime? @db.Timestamptz(6)
+  cancelledAt       DateTime? @db.Timestamptz(6)
+  cancelledByUserId String?   @db.Uuid
+
+  account         TreasuryFinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  responsibleUser AppUser?                  @relation("TreasuryExceptionResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  createdByUser   AppUser                   @relation("TreasuryExceptionCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser?                  @relation("TreasuryExceptionUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  cancelledByUser AppUser?                  @relation("TreasuryExceptionCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([companyCode, status, severity])
+  @@index([type, status])
+  @@index([entityKind, entityId])
+  @@index([accountId])
+  @@index([responsibleUserId])
+  @@index([detectedAt])
+  @@index([dueAt])
+  @@index([createdByUserId])
 }
 

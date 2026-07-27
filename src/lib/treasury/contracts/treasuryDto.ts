@@ -17,8 +17,10 @@ import type {
   TreasuryCurrency,
   TreasuryCollectionActionType,
   TreasuryDisputeStatus,
+  TreasuryExceptionEntityKind,
   TreasuryExceptionSeverity,
   TreasuryExceptionStatus,
+  TreasuryExceptionType,
   TreasuryLedgerDirection,
   TreasuryLedgerNature,
   TreasuryLedgerStatus,
@@ -643,13 +645,34 @@ export type TreasuryDailyClosingDto = {
 
 export type TreasuryExceptionDto = {
   id: string;
-  type: string;
+  companyCode: string;
+  uniqueKey: string;
+  type: TreasuryExceptionType;
   severity: TreasuryExceptionSeverity;
   status: TreasuryExceptionStatus;
+  entityKind: TreasuryExceptionEntityKind | null;
+  entityId: string | null;
   accountId: string | null;
   nomusExternalId: string | null;
+  title: string;
+  description: string | null;
+  amount: TreasuryMoneyString | null;
+  detectedAt: TreasuryTimestampIso;
+  dueAt: TreasuryCivilDate | null;
+  responsibleUserId: string | null;
+  resolution: string | null;
+  ignoreJustification: string | null;
+  recurrenceCount: number;
+  metadata: Record<string, unknown> | null;
+  version: number;
   createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
   updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  acknowledgedAt: TreasuryTimestampIso | null;
+  resolvedAt: TreasuryTimestampIso | null;
+  cancelledAt: TreasuryTimestampIso | null;
+  cancelledByUserId: string | null;
 };
 
 export type TreasuryReconciliationMatchDto = {

@@ -95,6 +95,12 @@ export const TREASURY_FIELD_LIMITS = {
   expectedUpdatedAt: 64,
   idempotencyKey: 128,
   attachmentUrl: 500,
+  uniqueKey: 200,
+  title: 240,
+  description: 4000,
+  resolution: 2000,
+  ignoreJustification: 2000,
+  entityId: 128,
 } as const;
 
 export type TreasuryFieldLimitKey = keyof typeof TREASURY_FIELD_LIMITS;

@@ -241,6 +241,38 @@ export const TREASURY_EXCEPTION_SEVERITIES = [
 export type TreasuryExceptionSeverity =
   (typeof TREASURY_EXCEPTION_SEVERITIES)[number];
 
+export const TREASURY_EXCEPTION_TYPES = [
+  "POSITION_ALERT",
+  "BALANCE_DIVERGENCE",
+  "NEGATIVE_BALANCE",
+  "HIGH_PRIORITY_RECEIVABLES",
+  "HIGH_PRIORITY_PAYABLES",
+  "OVERDUE_WITHOUT_FORECAST",
+  "TRANSFER_IN_TRANSIT",
+  "OFX_UNMATCHED",
+  "MANUAL",
+  "OTHER",
+] as const;
+export type TreasuryExceptionType = (typeof TREASURY_EXCEPTION_TYPES)[number];
+
+export const TREASURY_EXCEPTION_ENTITY_KINDS = [
+  "ACCOUNT",
+  "RECEIVABLE",
+  "PAYABLE",
+  "TRANSFER",
+  "LEDGER_ENTRY",
+  "POSITION",
+  "PROJECTION",
+  "CLOSING",
+  "RECONCILIATION",
+  "OTHER",
+] as const;
+export type TreasuryExceptionEntityKind =
+  (typeof TREASURY_EXCEPTION_ENTITY_KINDS)[number];
+
+/** Statuses que ainda representam causa aberta (dedupe por uniqueKey). */
+export const TREASURY_OPEN_EXCEPTION_STATUSES = ["OPEN", "ACK"] as const;
+
 export const TREASURY_RECONCILIATION_MATCH_STATUSES = [
   "PENDING",
   "MATCHED",

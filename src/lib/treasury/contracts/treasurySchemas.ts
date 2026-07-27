@@ -34,6 +34,9 @@ import {
   TREASURY_SIDES,
   TREASURY_TITLE_OPERATIONAL_PRIORITIES,
   TREASURY_TITLE_OPERATIONAL_STATUSES,
+  TREASURY_EXCEPTION_ENTITY_KINDS,
+  TREASURY_EXCEPTION_SEVERITIES,
+  TREASURY_EXCEPTION_TYPES,
   TREASURY_TRANSFER_STATUSES,
   type TreasuryAccountAccessLevel,
   type TreasuryAccountLiquidity,
@@ -54,10 +57,16 @@ import {
   type TreasurySide,
   type TreasuryTitleOperationalPriority,
   type TreasuryTitleOperationalStatusCode,
+  type TreasuryExceptionEntityKind,
+  type TreasuryExceptionSeverity,
+  type TreasuryExceptionType,
   type TreasuryTransferStatus,
 } from "./treasuryEnums.js";
 import type { TreasuryCivilDate } from "./treasuryCivilDate.js";
-import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
+import {
+  parseOptionalTreasuryTimestampIso,
+  parseTreasuryTimestampIso,
+} from "./treasuryTimestamp.js";
 import { TreasuryContractError } from "./treasuryErrorCodes.js";
 import {
   parseOptionalTreasuryMoneyString,
@@ -70,7 +79,6 @@ import {
   type TreasuryPaginationInput,
   type TreasurySortInput,
 } from "./treasuryPagination.js";
-import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
 
 export type TreasuryCreateAccountInput = {
   companyCode: string;
@@ -167,6 +175,39 @@ export type TreasuryTransferTransitionInput = {
 export type TreasuryTransferCancelInput = {
   expectedVersion: number;
   justification: string;
+};
+
+export type TreasuryExceptionUpsertInput = {
+  companyCode: string;
+  uniqueKey: string;
+  type: TreasuryExceptionType;
+  severity: TreasuryExceptionSeverity;
+  entityKind: TreasuryExceptionEntityKind | null;
+  entityId: string | null;
+  accountId: string | null;
+  nomusExternalId: string | null;
+  title: string;
+  description: string | null;
+  amount: string | null;
+  detectedAt?: string | null;
+  dueAt: string | null;
+  responsibleUserId: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+export type TreasuryExceptionResolveInput = {
+  expectedVersion: number;
+  resolution: string;
+};
+
+export type TreasuryExceptionIgnoreInput = {
+  expectedVersion: number;
+  ignoreJustification: string;
+};
+
+export type TreasuryExceptionAcknowledgeInput = {
+  expectedVersion: number;
+  justification?: string | null;
 };
 
 export type TreasuryPromiseCreateInput = {
@@ -867,6 +908,161 @@ export function parseTreasuryTransferCancelInput(
       "expectedVersion"
     ),
     justification,
+  };
+}
+
+function parseExceptionMetadata(
+  value: unknown
+): Record<string, unknown> | null {
+  if (value == null || value === "") return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "metadata deve ser objeto JSON.",
+      "metadata"
+    );
+  }
+  return value as Record<string, unknown>;
+}
+
+export function parseTreasuryExceptionUpsertInput(
+  body: Record<string, unknown>
+): TreasuryExceptionUpsertInput {
+  const companyCode = parseTreasuryBoundedString(
+    body.companyCode,
+    "companyCode",
+    { required: true }
+  );
+  const uniqueKey = parseTreasuryBoundedString(body.uniqueKey, "uniqueKey", {
+    required: true,
+  });
+  const title = parseTreasuryBoundedString(body.title, "title", {
+    required: true,
+  });
+  if (!companyCode || !uniqueKey || !title) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "companyCode, uniqueKey e title são obrigatórios."
+    );
+  }
+  const type = parseTreasuryEnum(
+    body.type,
+    TREASURY_EXCEPTION_TYPES,
+    "type",
+    true
+  );
+  const severity = parseTreasuryEnum(
+    body.severity,
+    TREASURY_EXCEPTION_SEVERITIES,
+    "severity",
+    true
+  );
+  if (!type || !severity) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "type e severity são obrigatórios."
+    );
+  }
+  return {
+    companyCode,
+    uniqueKey,
+    type,
+    severity,
+    entityKind: parseTreasuryEnum(
+      body.entityKind,
+      TREASURY_EXCEPTION_ENTITY_KINDS,
+      "entityKind",
+      false
+    ),
+    entityId: parseTreasuryBoundedString(body.entityId, "entityId", {
+      required: false,
+    }),
+    accountId: parseTreasuryBoundedString(body.accountId, "accountId", {
+      required: false,
+    }),
+    nomusExternalId: parseTreasuryBoundedString(
+      body.nomusExternalId,
+      "nomusExternalId",
+      { required: false }
+    ),
+    title,
+    description: parseTreasuryBoundedString(body.description, "description", {
+      required: false,
+    }),
+    amount: parseOptionalTreasuryMoneyString(body.amount, "amount"),
+    detectedAt: parseOptionalTreasuryTimestampIso(
+      body.detectedAt,
+      "detectedAt"
+    ),
+    dueAt: parseOptionalTreasuryCivilDate(body.dueAt, "dueAt"),
+    responsibleUserId: parseTreasuryBoundedString(
+      body.responsibleUserId,
+      "responsibleUserId",
+      { required: false }
+    ),
+    metadata: parseExceptionMetadata(body.metadata ?? body.metadataJson),
+  };
+}
+
+export function parseTreasuryExceptionResolveInput(
+  body: Record<string, unknown>
+): TreasuryExceptionResolveInput {
+  const resolution = parseTreasuryBoundedString(body.resolution, "resolution", {
+    required: true,
+  });
+  if (!resolution?.trim()) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "resolution é obrigatória.",
+      "resolution"
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    resolution,
+  };
+}
+
+export function parseTreasuryExceptionIgnoreInput(
+  body: Record<string, unknown>
+): TreasuryExceptionIgnoreInput {
+  const ignoreJustification = parseTreasuryBoundedString(
+    body.ignoreJustification ?? body.justification,
+    "ignoreJustification",
+    { required: true }
+  );
+  if (!ignoreJustification?.trim()) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "ignoreJustification é obrigatória para ignorar.",
+      "ignoreJustification"
+    );
+  }
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    ignoreJustification,
+  };
+}
+
+export function parseTreasuryExceptionAcknowledgeInput(
+  body: Record<string, unknown>
+): TreasuryExceptionAcknowledgeInput {
+  return {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
   };
 }
 
