@@ -71,8 +71,9 @@
 | **44** | Close/reopen/list/get fechamento | `DONE` | `c219f45` | POST/GET closing + reopen; lock; hash 409; ressalvas; audit; recalc; testes concorrência; `test:treasury` 441/441 |
 | **45** | UI fechamento diário | `DONE` | `b955d68` | `/finance/treasury/closing`; preview+checklist+ressalvas+histórico+reabertura+comparação; refresh antes de confirmar; 409 orienta revisão; `test:treasury` 450/450 |
 | **46** | Detecção pós-fechamento | `DONE` | `9760540` | `FINANCIAL_CHANGE_AFTER_CLOSING` (alias POST_CLOSING…); não reescreve CLOSED; diferença+tratamento; hooks sync/saldo; `test:treasury` 459/459 |
+| **47** | Base segura importação OFX | `DONE` | _(pending commit)_ | dep `ofx-data-extractor`; limite 5MiB; MIME; temp seguro+hash+descarte; parser OFX1/OFX2; sem persistir TX; fixtures+testes |
 
-    > **Nota de ordem:** …; UI = **45**; pós-fechamento = **46**.
+    > **Nota de ordem:** …; pós-fechamento = **46**; OFX base = **47**.
 
 ---
 
@@ -99,7 +100,7 @@
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
-| Importação OFX | `NOT_STARTED` | — |
+| Importação OFX | `PARTIAL` | P47: parser/intake/temp seguros (`ofx-data-extractor`); sem persistência de transações ainda |
 | Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
@@ -512,6 +513,16 @@
 - [x] Sem avanço automático
 ---
 
+### 47 — Base segura de importação OFX (parser isolado)
+- [x] Dependência estável `ofx-data-extractor` (OFX 1 SGML + OFX 2 XML); multer já existia no projeto
+- [x] Política: limite 5 MiB; MIME/extensões; rejeição de NUL; max 20k lançamentos
+- [x] Temp storage exclusivo (`mkdtemp` + mode 0o700/0o600) + SHA-256 + descarte obrigatório
+- [x] Parser isolado normaliza dinheiro Decimal-string; `persisted: false` (não grava TX)
+- [x] Erros de parsing/malformado → `TreasuryDomainError` (VALIDATION_ERROR / PAYLOAD_TOO_LARGE)
+- [x] Fixtures OFX1/OFX2/malformed + testes; sem API/UI/schema neste passo
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -577,3 +588,4 @@
 | 2026-07-27 | Prompt 44: close/reopen/list/get fechamento — `c219f45` |
 | 2026-07-27 | Prompt 45: UI fechamento diário — `b955d68` |
 | 2026-07-27 | Prompt 46: detecção mudanças pós-fechamento — `9760540` |
+| 2026-07-27 | Prompt 47: base segura OFX (parser/intake/temp) — _(pending commit)_ |
