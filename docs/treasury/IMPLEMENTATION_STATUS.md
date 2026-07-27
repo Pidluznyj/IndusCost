@@ -76,8 +76,9 @@
 | **49** | Preview OFX (`POST …/bank-imports/ofx/preview`) | `DONE` | `99b527f` | permissão+conta; parse/normalize/fingerprint; NEW/DUPLICATE/INVALID; período/totais; token temporário; sem gravar TX; `test:treasury` 483/483 |
 | **50** | Apply OFX (`POST …/bank-imports/ofx/apply`) | `DONE` | `0465f29` | consome preview; TX; lote+movimentos; anti-dup; audit IMPORT; sugestões+recalc; idempotente por fileSha256; `test:treasury` 488/488 |
 | **51** | UI movimentos bancários + OFX | `DONE` | `0fd8a77` | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
+| **52** | Motor de sugestões de conciliação | `DONE` | _(pendente commit)_ | Motor puro: valor/doc/CNPJ-CPF/data/nome/histórico/direção; faixas HIGH/MEDIUM/LOW; score+motivos; sem auto-match; exclui cancelados/realizados; `test:treasury` 505/505 |
 
-    > **Nota de ordem:** …; preview OFX = **49**; apply OFX = **50**; UI movimentos = **51**.
+    > **Nota de ordem:** …; preview OFX = **49**; apply OFX = **50**; UI movimentos = **51**; motor sugestões = **52**.
 
 ---
 
@@ -104,14 +105,14 @@
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
-| Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; matching/sugestões reais ainda pendentes |
-| Conciliação bancária | `NOT_STARTED` | Distinto de `finance.portfolio_reconciliation` |
+| Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
+| Conciliação bancária | `PARTIAL` | P52: motor de sugestões (score/motivos/confiança); persistência/UI/accept match ainda pendentes |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 338/338 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 505/505 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -568,6 +569,17 @@
 - [x] Sem matching real neste passo; sem avanço automático
 ---
 
+### 52 — Motor de sugestões de conciliação
+- [x] Motor puro `treasuryReconciliationSuggestionEngine` (sem Express/Prisma/I/O)
+- [x] Critérios: valor exato, documento, CNPJ/CPF, proximidade de data, nome semelhante, histórico, direção compatível
+- [x] Classificação HIGH / MEDIUM / LOW + pontuação 0..100 + motivos tipados
+- [x] Exclui títulos cancelados e integralmente realizados; `autoMatched: false` no MVP
+- [x] Service: `generateTreasuryReconciliationSuggestions` (seeds) + fila deferred intacta no apply OFX
+- [x] Enums de confiança/motivos nos contratos client-safe
+- [x] Testes de ranking + falsos positivos (direção, cancelado/settled, centavos, nome); `test:treasury` 505/505
+- [x] Sem persistência de match / sem UI / sem auto-conciliação; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -638,3 +650,4 @@
 | 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
 | 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — `0465f29` |
 | 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — `0fd8a77` |
+| 2026-07-27 | Prompt 52: motor de sugestões de conciliação — _(hash no commit)_ |

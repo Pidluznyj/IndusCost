@@ -368,6 +368,31 @@ export const TREASURY_RECONCILIATION_MATCH_STATUSES = [
 export type TreasuryReconciliationMatchStatus =
   (typeof TREASURY_RECONCILIATION_MATCH_STATUSES)[number];
 
+/**
+ * Faixa de confiança da sugestão de conciliação bancária.
+ * MVP: só sugere — nunca aplica match automático.
+ */
+export const TREASURY_RECONCILIATION_SUGGESTION_CONFIDENCE_BANDS = [
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+] as const;
+export type TreasuryReconciliationSuggestionConfidenceBand =
+  (typeof TREASURY_RECONCILIATION_SUGGESTION_CONFIDENCE_BANDS)[number];
+
+/** Motivos estáveis retornados pelo motor de sugestões. */
+export const TREASURY_RECONCILIATION_SUGGESTION_REASON_CODES = [
+  "AMOUNT_EXACT",
+  "DOCUMENT_MATCH",
+  "TAX_ID_MATCH",
+  "DATE_PROXIMITY",
+  "NAME_SIMILAR",
+  "HISTORY_MATCH",
+  "DIRECTION_COMPATIBLE",
+] as const;
+export type TreasuryReconciliationSuggestionReasonCode =
+  (typeof TREASURY_RECONCILIATION_SUGGESTION_REASON_CODES)[number];
+
 /** Status do lote de importação bancária (OFX). */
 export const TREASURY_BANK_IMPORT_BATCH_STATUSES = [
   "RECEIVED",

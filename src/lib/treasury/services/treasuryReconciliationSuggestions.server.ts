@@ -1,7 +1,13 @@
 /**
- * Solicitação de geração de sugestões de conciliação.
- * Stub enfileirável — motor de match virá em prompt futuro.
+ * Solicitação / geração de sugestões de conciliação.
+ * MVP: motor puro ranqueia candidatos; nunca aplica match automático.
  */
+
+import {
+  runTreasuryReconciliationSuggestionEngine,
+  type TreasuryReconciliationSuggestionEngineInput,
+  type TreasuryReconciliationSuggestionEngineResult,
+} from "../domain/treasuryReconciliationSuggestionEngine.js";
 
 export type TreasuryReconciliationSuggestionsRequest = {
   reason: string;
@@ -30,8 +36,8 @@ export function clearTreasuryReconciliationSuggestionsRequests(): void {
 }
 
 /**
- * Aceita o pedido de geração de sugestões (deferred).
- * Não executa matching neste passo.
+ * Aceita o pedido de geração de sugestões (fila deferred para I/O futuro).
+ * Não aplica conciliação automática.
  */
 export function requestTreasuryReconciliationSuggestions(
   input: Omit<TreasuryReconciliationSuggestionsRequest, "requestedAt"> & {
@@ -53,6 +59,16 @@ export function requestTreasuryReconciliationSuggestions(
     accepted: true,
     deferred: true,
     reason:
-      "Geração de sugestões de conciliação aceita; execução deferred (motor futuro).",
+      "Geração de sugestões de conciliação aceita; execução deferred (carga de títulos/movimentos + motor).",
   };
+}
+
+/**
+ * Executa o motor puro sobre seeds já carregados.
+ * Retorna pontuação/motivos/confiança — `autoMatched` sempre false.
+ */
+export function generateTreasuryReconciliationSuggestions(
+  input: TreasuryReconciliationSuggestionEngineInput
+): TreasuryReconciliationSuggestionEngineResult {
+  return runTreasuryReconciliationSuggestionEngine(input);
 }
