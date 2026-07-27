@@ -66,7 +66,7 @@
 | **39** | Motor determinístico de exceções | `DONE` | `5dcdc74` | 16 tipos; generate/update; auto-resolve só seguro; algo `1.0.0`; testes por tipo; sem API/UI; `test:treasury` 386/386 |
 | **40** | APIs + UI Central de Exceções | `DONE` | `a9a95ac` | Status 6 canônicos; list/sort/assign/due/status/resolve/ignore; deep-link; flag; `/exceptions`; `test:treasury` 395/395 |
 | **41** | Alertas no dashboard/agenda + config | `DONE` | `0e6e655` | 8 alertas; `TreasuryAlertSettings` singleton; GET/PUT settings; sem notificação externa; `test:treasury` 410/410 |
-| **42** | Schema fechamento diário + reabertura | `DONE` | `PENDING` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
+| **42** | Schema fechamento diário + reabertura | `DONE` | `f39279f` | Models closing/posição/pendências/exceções/ressalvas/reabertura; version+status+sourceHash; imutável; migration+índices; `test:treasury` 420/420 |
 
     > **Nota de ordem:** …; Central de Exceções = **40**; alertas = **41**; fechamento schema = **42**.
 
