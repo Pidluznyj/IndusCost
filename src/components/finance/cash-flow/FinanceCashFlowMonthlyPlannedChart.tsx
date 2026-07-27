@@ -35,7 +35,7 @@ export function FinanceCashFlowMonthlyPlannedChart({
         data={data}
         height={FINANCE_CASH_FLOW_PLANNED_CHART_HEIGHT}
         showValueLabels
-        showLineValueLabels
+        showLineValueLabels={false}
       />
     </FinanceCashFlowChartShell>
   );
