@@ -286,4 +286,4 @@
 | 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — `8109a2f` |
 | 2026-07-27 | Prompt 18: visão financeira resumida do cliente no detalhe CR — `5eaba13` |
 | 2026-07-27 | Prompt 19: API consulta Contas a Pagar Tesouraria (repo/query/APIs/batch) — `b678929` |
-| 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — _(pending)_ |
+| 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — `5d06c5a` |
