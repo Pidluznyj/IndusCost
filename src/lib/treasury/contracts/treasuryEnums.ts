@@ -369,6 +369,41 @@ export type TreasuryReconciliationMatchStatus =
   (typeof TREASURY_RECONCILIATION_MATCH_STATUSES)[number];
 
 /**
+ * Tipos de alocação de um match bancário.
+ * DISCOUNT/ABATEMENT reduzem o covering net; demais somam.
+ */
+export const TREASURY_RECONCILIATION_ALLOCATION_KINDS = [
+  "TITLE",
+  "FEE",
+  "INTEREST",
+  "DISCOUNT",
+  "ABATEMENT",
+  "DIFFERENCE",
+  "TRANSFER",
+  "MANUAL_LEDGER",
+  "UNIDENTIFIED",
+] as const;
+export type TreasuryReconciliationAllocationKind =
+  (typeof TREASURY_RECONCILIATION_ALLOCATION_KINDS)[number];
+
+/** Kinds que somam ao covering net (lado que explica o extrato). */
+export const TREASURY_RECONCILIATION_ALLOCATION_POSITIVE_KINDS = [
+  "TITLE",
+  "FEE",
+  "INTEREST",
+  "DIFFERENCE",
+  "TRANSFER",
+  "MANUAL_LEDGER",
+  "UNIDENTIFIED",
+] as const satisfies readonly TreasuryReconciliationAllocationKind[];
+
+/** Kinds que reduzem o covering net (desconto/abatimento sobre título). */
+export const TREASURY_RECONCILIATION_ALLOCATION_NEGATIVE_KINDS = [
+  "DISCOUNT",
+  "ABATEMENT",
+] as const satisfies readonly TreasuryReconciliationAllocationKind[];
+
+/**
  * Faixa de confiança da sugestão de conciliação bancária.
  * MVP: só sugere — nunca aplica match automático.
  */

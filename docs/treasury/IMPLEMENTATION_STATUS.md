@@ -77,8 +77,9 @@
 | **50** | Apply OFX (`POST …/bank-imports/ofx/apply`) | `DONE` | `0465f29` | consome preview; TX; lote+movimentos; anti-dup; audit IMPORT; sugestões+recalc; idempotente por fileSha256; `test:treasury` 488/488 |
 | **51** | UI movimentos bancários + OFX | `DONE` | `0fd8a77` | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
 | **52** | Motor de sugestões de conciliação | `DONE` | `aa80d13` | Motor puro: valor/doc/CNPJ-CPF/data/nome/histórico/direção; faixas HIGH/MEDIUM/LOW; score+motivos; sem auto-match; exclui cancelados/realizados; `test:treasury` 505/505 |
+| **53** | Conciliação bancária (match+allocations) | `DONE` | _(pendente commit)_ | Models/migration; 1:1/1:N/N:1; parcial; fee/juros/desconto/abatimento/diferença/unidentified/transfer/manual; service TX; status; audit; recalc; sem baixa Nomus; `test:treasury` 523/523 |
 
-    > **Nota de ordem:** …; preview OFX = **49**; apply OFX = **50**; UI movimentos = **51**; motor sugestões = **52**.
+    > **Nota de ordem:** …; motor sugestões = **52**; conciliação match = **53**.
 
 ---
 
@@ -106,13 +107,13 @@
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
-| Conciliação bancária | `PARTIAL` | P52: motor de sugestões (score/motivos/confiança); persistência/UI/accept match ainda pendentes |
+| Conciliação bancária | `PARTIAL` | P52 sugestões + P53 match/allocations/unmatch (TX/audit/recalc); UI workspace ainda pendente |
 | Relatórios tesouraria | `NOT_STARTED` | Reusar padrão export XLSX/CSV |
 | Exportações | `PARTIAL` | Exports AR/AP/cash-flow existem |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 505/505 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 523/523 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -580,6 +581,18 @@
 - [x] Sem persistência de match / sem UI / sem auto-conciliação; sem avanço automático
 ---
 
+### 53 — Conciliação bancária (match + allocations)
+- [x] Models `TreasuryReconciliationMatch` + `MatchMovement` + `Allocation` + enums
+- [x] Migration aditiva `20260819120000_treasury_reconciliation_match_and_allocations` (não deployada)
+- [x] Allocations: TITLE, FEE, INTEREST, DISCOUNT, ABATEMENT, DIFFERENCE, TRANSFER, MANUAL_LEDGER, UNIDENTIFIED
+- [x] Suporta 1:1, 1:N títulos, N:1 movimentos, parcial; covering net = soma movimentos
+- [x] Service TX accept/unmatch; validação de valores; status PENDING/PARTIAL/MATCHED no movimento
+- [x] Auditoria `RECONCILIATION_MATCH` CREATE/UPDATE; recálculo `reconciliation_matched|unmatched`
+- [x] Não muta Nomus; `doesNotRealizeOfficial: true` (não duplica baixa oficial)
+- [x] Testes regras + integridade schema + integração; `test:treasury` 523/523
+- [x] Sem API/UI workspace neste passo; sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -650,4 +663,5 @@
 | 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
 | 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — `0465f29` |
 | 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — `0fd8a77` |
-| 2026-07-27 | Prompt 52: motor de sugestões de conciliação — _(hash no commit)_ |
+| 2026-07-27 | Prompt 52: motor de sugestões de conciliação — `aa80d13` |
+| 2026-07-27 | Prompt 53: conciliação bancária match+allocations — _(hash no commit)_ |

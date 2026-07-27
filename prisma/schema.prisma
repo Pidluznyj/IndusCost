@@ -2090,6 +2090,9 @@ model AppUser {
   treasuryDailyClosingsClosed          TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
   treasuryDailyClosingReopenings       TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
   treasuryBankImportBatchesCreated     TreasuryBankImportBatch[]            @relation("TreasuryBankImportBatchCreatedBy")
+  treasuryReconciliationMatchesCreated TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchCreatedBy")
+  treasuryReconciliationMatchesUpdated TreasuryReconciliationMatch[]        @relation("TreasuryReconciliationMatchUpdatedBy")
+  treasuryReconciliationMatchesUnmatched TreasuryReconciliationMatch[]      @relation("TreasuryReconciliationMatchUnmatchedBy")
 
   @@index([role])
   @@index([isActive])
@@ -6836,6 +6839,7 @@ model TreasuryFinancialAccount {
   closingFrozenExceptions     TreasuryDailyClosingFrozenException[]
   bankImportBatches           TreasuryBankImportBatch[]
   bankMovements               TreasuryBankMovement[]
+  reconciliationMatches       TreasuryReconciliationMatch[]
 
   @@unique([companyCode, code])
   @@index([companyCode])
@@ -7916,6 +7920,7 @@ model TreasuryBankMovement {
 
   batch   TreasuryBankImportBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   account TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reconciliationMatchMovements TreasuryReconciliationMatchMovement[]
 
   @@unique([accountId, fingerprint])
   @@unique([accountId, fitId])
@@ -7927,4 +7932,123 @@ model TreasuryBankMovement {
   @@index([direction])
   @@index([fitId])
   @@index([documentNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Conciliação bancária — match + allocations (não muta Nomus / não duplica baixa)
+// ---------------------------------------------------------------------------
+
+enum TreasuryReconciliationMatchStatus {
+  PENDING
+  MATCHED
+  UNMATCHED
+  IGNORED
+}
+
+enum TreasuryReconciliationAllocationKind {
+  TITLE
+  FEE
+  INTEREST
+  DISCOUNT
+  ABATEMENT
+  DIFFERENCE
+  TRANSFER
+  MANUAL_LEDGER
+  UNIDENTIFIED
+}
+
+/// Cabeçalho de conciliação bancária (aceite humano). Soft-unmatch preserva histórico.
+model TreasuryReconciliationMatch {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyCode String
+  accountId   String @db.Uuid
+
+  status TreasuryReconciliationMatchStatus @default(MATCHED)
+
+  /// Soma dos valores alocados aos movimentos (= covering net das allocations).
+  matchedAmount    Decimal             @db.Decimal(20, 2)
+  currency         TreasuryCurrencyCode @default(BRL)
+  matchedCivilDate DateTime            @db.Date
+  justification    String?
+
+  suggestionKey          String?
+  algorithmVersion       String?
+  suggestionScore        Int?
+  suggestionConfidence   String?
+  suggestionReasonsJson  Json?
+
+  version Int @default(1)
+
+  createdAt         DateTime  @default(now()) @db.Timestamptz(6)
+  createdByUserId   String    @db.Uuid
+  updatedAt         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId   String?   @db.Uuid
+  unmatchedAt       DateTime? @db.Timestamptz(6)
+  unmatchedByUserId String?   @db.Uuid
+  unmatchReason     String?
+
+  account           TreasuryFinancialAccount             @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser     AppUser                              @relation("TreasuryReconciliationMatchCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser     AppUser?                             @relation("TreasuryReconciliationMatchUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  unmatchedByUser   AppUser?                             @relation("TreasuryReconciliationMatchUnmatchedBy", fields: [unmatchedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  movements         TreasuryReconciliationMatchMovement[]
+  allocations       TreasuryReconciliationAllocation[]
+
+  @@index([companyCode, status])
+  @@index([accountId, matchedCivilDate])
+  @@index([status])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@index([unmatchedByUserId])
+}
+
+/// Ligação N:N lógica movimento↔match (permite vários movimentos → um título).
+model TreasuryReconciliationMatchMovement {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId        String  @db.Uuid
+  bankMovementId String  @db.Uuid
+  /// Parcela do movimento coberta por este match (absoluta, >= 0).
+  amount         Decimal @db.Decimal(20, 2)
+  sortOrder      Int     @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  match        TreasuryReconciliationMatch @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  bankMovement TreasuryBankMovement        @relation(fields: [bankMovementId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([matchId, bankMovementId])
+  @@index([bankMovementId])
+  @@index([matchId, sortOrder])
+}
+
+/// Pernas de alocação do match (título, tarifa, juros, desconto, etc.).
+/// TITLE referencia título oficial Nomus somente por id/externalId — sem mutar Nomus.
+model TreasuryReconciliationAllocation {
+  id      String                              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  matchId String                              @db.Uuid
+  kind    TreasuryReconciliationAllocationKind
+  /// Valor absoluto (> 0). DISCOUNT/ABATEMENT reduzem o covering net.
+  amount  Decimal                             @db.Decimal(20, 2)
+  memo    String?
+
+  /// AR | AP — só para TITLE.
+  nomusSide       String?
+  officialTitleId String?
+  nomusExternalId Int?
+
+  transferId      String? @db.Uuid
+  transferGroupId String? @db.Uuid
+  /// Stub até existir TreasuryLedgerEntry (sem FK).
+  ledgerEntryId   String? @db.Uuid
+
+  differenceCode String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  match TreasuryReconciliationMatch @relation(fields: [matchId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([matchId, kind])
+  @@index([officialTitleId])
+  @@index([nomusExternalId])
+  @@index([transferId])
+  @@index([ledgerEntryId])
 }

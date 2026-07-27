@@ -294,6 +294,28 @@ describe("treasuryPrismaSchema", () => {
     assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
   });
 
+  it("schema e migration de conciliação bancária (match+allocations) existem", () => {
+    const schema = readFileSync(schemaPath, "utf8");
+    assert.match(schema, /model TreasuryReconciliationMatch \{/);
+    assert.match(schema, /model TreasuryReconciliationMatchMovement \{/);
+    assert.match(schema, /model TreasuryReconciliationAllocation \{/);
+    assert.match(schema, /enum TreasuryReconciliationAllocationKind/);
+    assert.match(schema, /\bUNIDENTIFIED\b/);
+    assert.match(schema, /\bABATEMENT\b/);
+    const migration = join(
+      repoRoot,
+      "prisma/migrations/20260819120000_treasury_reconciliation_match_and_allocations/migration.sql"
+    );
+    assert.ok(existsSync(migration), migration);
+    const sql = readFileSync(migration, "utf8");
+    assert.match(sql, /CREATE TABLE "TreasuryReconciliationMatch"/);
+    assert.match(sql, /CREATE TABLE "TreasuryReconciliationAllocation"/);
+    assert.match(sql, /'FEE'/);
+    assert.match(sql, /'TRANSFER'/);
+    assert.doesNotMatch(sql, /DROP TABLE "(?!Treasury)/);
+    assert.doesNotMatch(sql, /ALTER TABLE "NomusAccounts/);
+  });
+
   it("schema e migration da fila de recálculo de projeção existem", () => {
     const schema = readFileSync(schemaPath, "utf8");
     assert.match(schema, /model TreasuryProjectionRecalcJob \{/);

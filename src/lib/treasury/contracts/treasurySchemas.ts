@@ -45,6 +45,8 @@ import {
   TREASURY_BANK_IMPORT_BATCH_STATUSES,
   TREASURY_BANK_MOVEMENT_FILTER_BUCKETS,
   TREASURY_BANK_MOVEMENT_RECONCILIATION_STATUSES,
+  TREASURY_RECONCILIATION_ALLOCATION_KINDS,
+  type TreasuryReconciliationAllocationKind,
   type TreasuryAccountAccessLevel,
   type TreasuryBankImportBatchStatus,
   type TreasuryBankMovementFilterBucket,
@@ -3072,6 +3074,257 @@ export function parseTreasuryBankMovementsListQuery(
     from: range.from,
     to: range.to,
   };
+}
+
+export type TreasuryReconciliationAcceptMovementInput = {
+  bankMovementId: string;
+  amount: string;
+};
+
+export type TreasuryReconciliationAcceptAllocationInput = {
+  kind: TreasuryReconciliationAllocationKind;
+  amount: string;
+  memo: string | null;
+  nomusSide: TreasurySide | null;
+  officialTitleId: string | null;
+  nomusExternalId: number | null;
+  /** Saldo aberto do título (validação local; não muta Nomus). */
+  openBalance: string | null;
+  transferId: string | null;
+  transferGroupId: string | null;
+  ledgerEntryId: string | null;
+  differenceCode: string | null;
+};
+
+export type TreasuryReconciliationAcceptInput = {
+  companyCode: string;
+  accountId: string;
+  matchedCivilDate: string;
+  justification: string | null;
+  movements: TreasuryReconciliationAcceptMovementInput[];
+  allocations: TreasuryReconciliationAcceptAllocationInput[];
+  suggestionKey: string | null;
+  algorithmVersion: string | null;
+  suggestionScore: number | null;
+  suggestionConfidence: string | null;
+  suggestionReasons: string[] | null;
+};
+
+export type TreasuryReconciliationUnmatchInput = {
+  expectedVersion: number;
+  reason: string;
+};
+
+function parsePositiveInt(
+  value: unknown,
+  field: string,
+  required: boolean
+): number | null {
+  if (value == null || value === "") {
+    if (required) {
+      throw new TreasuryContractError(
+        "VALIDATION_ERROR",
+        `${field} é obrigatório.`,
+        field
+      );
+    }
+    return null;
+  }
+  const n = typeof value === "number" ? value : Number(String(value).trim());
+  if (!Number.isInteger(n) || n < 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      `${field} deve ser inteiro >= 0.`,
+      field
+    );
+  }
+  return n;
+}
+
+export function parseTreasuryReconciliationAcceptInput(
+  body: Record<string, unknown>
+): TreasuryReconciliationAcceptInput {
+  const companyCode = parseTreasuryBoundedString(
+    body.companyCode,
+    "companyCode",
+    { required: true }
+  )!;
+  const accountId = parseTreasuryBoundedString(body.accountId, "accountId", {
+    required: true,
+  })!;
+  const matchedCivilDate = parseTreasuryCivilDate(
+    body.matchedCivilDate,
+    "matchedCivilDate"
+  );
+  const justification = parseTreasuryBoundedString(
+    body.justification,
+    "justification",
+    { required: false }
+  );
+
+  const rawMovements = body.movements;
+  if (!Array.isArray(rawMovements) || rawMovements.length === 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Informe ao menos um movimento bancário.",
+      "movements"
+    );
+  }
+  const movements: TreasuryReconciliationAcceptMovementInput[] = rawMovements.map(
+    (raw, index) => {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      return {
+        bankMovementId: parseTreasuryBoundedString(
+          row.bankMovementId ?? row.movementId,
+          `movements[${index}].bankMovementId`,
+          { required: true }
+        )!,
+        amount: parseTreasuryMoneyString(
+          row.amount,
+          `movements[${index}].amount`
+        ),
+      };
+    }
+  );
+
+  const rawAllocations = body.allocations;
+  if (!Array.isArray(rawAllocations) || rawAllocations.length === 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Informe ao menos uma allocation.",
+      "allocations"
+    );
+  }
+  const allocations: TreasuryReconciliationAcceptAllocationInput[] =
+    rawAllocations.map((raw, index) => {
+      const row = (raw ?? {}) as Record<string, unknown>;
+      const kind = parseTreasuryEnum(
+        row.kind,
+        TREASURY_RECONCILIATION_ALLOCATION_KINDS,
+        `allocations[${index}].kind`,
+        true
+      )!;
+      const nomusSide = parseTreasuryEnum(
+        row.nomusSide,
+        TREASURY_SIDES,
+        `allocations[${index}].nomusSide`,
+        false
+      );
+      const nomusExternalId = parsePositiveInt(
+        row.nomusExternalId,
+        `allocations[${index}].nomusExternalId`,
+        false
+      );
+      return {
+        kind,
+        amount: parseTreasuryMoneyString(
+          row.amount,
+          `allocations[${index}].amount`
+        ),
+        memo: parseTreasuryBoundedString(
+          row.memo,
+          `allocations[${index}].memo`,
+          { required: false }
+        ),
+        nomusSide,
+        officialTitleId: parseTreasuryBoundedString(
+          row.officialTitleId,
+          `allocations[${index}].officialTitleId`,
+          { required: false }
+        ),
+        nomusExternalId,
+        openBalance: parseOptionalTreasuryMoneyString(
+          row.openBalance,
+          `allocations[${index}].openBalance`
+        ),
+        transferId: parseTreasuryBoundedString(
+          row.transferId,
+          `allocations[${index}].transferId`,
+          { required: false }
+        ),
+        transferGroupId: parseTreasuryBoundedString(
+          row.transferGroupId,
+          `allocations[${index}].transferGroupId`,
+          { required: false }
+        ),
+        ledgerEntryId: parseTreasuryBoundedString(
+          row.ledgerEntryId,
+          `allocations[${index}].ledgerEntryId`,
+          { required: false }
+        ),
+        differenceCode: parseTreasuryBoundedString(
+          row.differenceCode,
+          `allocations[${index}].differenceCode`,
+          { required: false }
+        ),
+      };
+    });
+
+  const suggestionReasonsRaw = body.suggestionReasons;
+  let suggestionReasons: string[] | null = null;
+  if (Array.isArray(suggestionReasonsRaw)) {
+    suggestionReasons = suggestionReasonsRaw
+      .map((r) => String(r).trim())
+      .filter(Boolean);
+  }
+
+  return {
+    companyCode,
+    accountId,
+    matchedCivilDate,
+    justification,
+    movements,
+    allocations,
+    suggestionKey: parseTreasuryBoundedString(
+      body.suggestionKey,
+      "suggestionKey",
+      { required: false }
+    ),
+    algorithmVersion: parseTreasuryBoundedString(
+      body.algorithmVersion,
+      "algorithmVersion",
+      { required: false }
+    ),
+    suggestionScore: parsePositiveInt(
+      body.suggestionScore,
+      "suggestionScore",
+      false
+    ),
+    suggestionConfidence: parseTreasuryBoundedString(
+      body.suggestionConfidence,
+      "suggestionConfidence",
+      { required: false }
+    ),
+    suggestionReasons,
+  };
+}
+
+export function parseTreasuryReconciliationUnmatchInput(
+  body: Record<string, unknown>
+): TreasuryReconciliationUnmatchInput {
+  const expectedVersion = parsePositiveInt(
+    body.expectedVersion,
+    "expectedVersion",
+    true
+  );
+  if (expectedVersion == null) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "expectedVersion é obrigatório.",
+      "expectedVersion"
+    );
+  }
+  const reason = parseTreasuryBoundedString(body.reason, "reason", {
+    required: true,
+  });
+  if (!reason) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Motivo do unmatch é obrigatório.",
+      "reason"
+    );
+  }
+  return { expectedVersion, reason };
 }
 
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

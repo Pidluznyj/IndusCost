@@ -31,6 +31,7 @@ import type {
   TreasuryBankMovementReconciliationStatus,
   TreasuryBankOfxFormat,
   TreasuryPromiseStatus,
+  TreasuryReconciliationAllocationKind,
   TreasuryReconciliationMatchStatus,
   TreasuryScheduleStatus,
   TreasurySide,
@@ -829,15 +830,60 @@ export type TreasuryExceptionDto = {
   entityHref: string | null;
 };
 
+export type TreasuryReconciliationMatchMovementDto = {
+  id: string;
+  matchId: string;
+  bankMovementId: string;
+  amount: TreasuryMoneyString;
+  sortOrder: number;
+};
+
+export type TreasuryReconciliationAllocationDto = {
+  id: string;
+  matchId: string;
+  kind: TreasuryReconciliationAllocationKind | string;
+  amount: TreasuryMoneyString;
+  memo: string | null;
+  nomusSide: TreasurySide | null;
+  officialTitleId: string | null;
+  nomusExternalId: number | null;
+  transferId: string | null;
+  transferGroupId: string | null;
+  ledgerEntryId: string | null;
+  differenceCode: string | null;
+  sortOrder: number;
+};
+
+/**
+ * Match bancário com allocations.
+ * Evidência local — não realiza baixa oficial Nomus.
+ */
 export type TreasuryReconciliationMatchDto = {
   id: string;
-  ofxTxId: string;
-  ledgerEntryId: string | null;
-  nomusSide: TreasurySide | null;
-  nomusExternalId: string | null;
-  status: TreasuryReconciliationMatchStatus;
-  confidence: number | null;
+  companyCode: string;
+  accountId: string;
+  status: TreasuryReconciliationMatchStatus | string;
+  matchedAmount: TreasuryMoneyString;
+  currency: TreasuryCurrency;
+  matchedCivilDate: TreasuryCivilDate;
+  justification: string | null;
+  suggestionKey: string | null;
+  algorithmVersion: string | null;
+  suggestionScore: number | null;
+  suggestionConfidence: string | null;
+  suggestionReasons: string[] | null;
+  version: number;
+  movements: TreasuryReconciliationMatchMovementDto[];
+  allocations: TreasuryReconciliationAllocationDto[];
   createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
+  updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
+  unmatchedAt: TreasuryTimestampIso | null;
+  unmatchedByUserId: string | null;
+  unmatchReason: string | null;
+  /** true: match é evidência local; nunca duplica realização oficial. */
+  doesNotRealizeOfficial: true;
 };
 
 export type TreasuryBankImportBatchDto = {
