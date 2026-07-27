@@ -75,7 +75,7 @@
 | **48** | Schema importação bancária + movimentos | `DONE` | `3d5d1ab` | `TreasuryBankImportBatch` + `TreasuryBankMovement`; fingerprint/payload/conciliação; unicidade anti-duplicidade; migration `20260818120000_*`; sem raw OFX; `test:treasury` 475/475 |
 | **49** | Preview OFX (`POST …/bank-imports/ofx/preview`) | `DONE` | `99b527f` | permissão+conta; parse/normalize/fingerprint; NEW/DUPLICATE/INVALID; período/totais; token temporário; sem gravar TX; `test:treasury` 483/483 |
 | **50** | Apply OFX (`POST …/bank-imports/ofx/apply`) | `DONE` | `0465f29` | consome preview; TX; lote+movimentos; anti-dup; audit IMPORT; sugestões+recalc; idempotente por fileSha256; `test:treasury` 488/488 |
-| **51** | UI movimentos bancários + OFX | `DONE` | _(pending commit)_ | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
+| **51** | UI movimentos bancários + OFX | `DONE` | `0fd8a77` | `/bank-movements`; upload/preview/confirm; lotes; filtros; detalhe; GET list; `test:treasury` 494/494 |
 
     > **Nota de ordem:** …; preview OFX = **49**; apply OFX = **50**; UI movimentos = **51**.
 
