@@ -637,4 +637,4 @@
 | 2026-07-27 | Prompt 48: schema lote/movimento bancário OFX — `3d5d1ab` |
 | 2026-07-27 | Prompt 49: preview OFX (token temporário) — `99b527f` |
 | 2026-07-27 | Prompt 50: apply OFX (persistência idempotente) — `0465f29` |
-| 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — _(pending commit)_ |
+| 2026-07-27 | Prompt 51: UI movimentos bancários + OFX — `0fd8a77` |
