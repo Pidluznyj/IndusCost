@@ -41,7 +41,7 @@
 | **14** | UI Contas a Receber | `DONE` | `1becae6` | `/finance/treasury/receivables`; tabela server-paginated; filtros; summary qtd/valor; badges; atraso/prioridade/ações; drawer Overlay; mobile columns; estados vazio/erro/loading/stale; `test:treasury` 127/127 |
 | **15** | Alterar expectativa operacional CR | `DONE` | `a0e8255` | `PUT …/receivables/:titleId/expectation`; data/conta/responsável/prioridade/ação/motivo/obs; sem mutar vencimento oficial; justificativa ao mudar data; saldo aberto; bloqueio cancelado; optimistic lock; audit before/after; stub recálculo projeção; form no drawer; `test:treasury` 134/134 |
 | **16** | Promessas de pagamento CR | `DONE` | `0b7907f` | Model/migration `TreasuryPaymentPromise`; repo/service/APIs; parcial + acima do saldo c/ confirmação; expiração; cumprimento parcial; cancelamento; audit; projeção PROBABLE; UI no drawer; `test:treasury` 143/143 |
-| **17** | Ações de cobrança + contestações CR | `DONE` | _(pending)_ | Models/migration `TreasuryCollectionAction` + `TreasuryDispute`; APIs append-only (cancel/status lógico); timeline no drawer; filtro `nextAction`; audit; sem DELETE; `test:treasury` 154/154 |
+| **17** | Ações de cobrança + contestações CR | `DONE` | `8109a2f` | Models/migration `TreasuryCollectionAction` + `TreasuryDispute`; APIs append-only (cancel/status lógico); timeline no drawer; filtro `nextAction`; audit; sem DELETE; `test:treasury` 154/154 |
 
 > **Nota de ordem:** …; expectativa CR = **15**; promessas CR = **16**; cobrança/contestação CR = **17**.
 
@@ -280,4 +280,4 @@
 | 2026-07-27 | Prompt 14: UI Contas a Receber Tesouraria; drawer; responsivo; test:treasury 127/127 |
 | 2026-07-27 | Prompt 15: PUT expectativa operacional CR + form drawer + audit/409/permissão — `a0e8255` |
 | 2026-07-27 | Prompt 16: promessas de pagamento CR (model/API/UI/audit/expiração) — `0b7907f` |
-| 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — _(pending)_ |
+| 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — `8109a2f` |
