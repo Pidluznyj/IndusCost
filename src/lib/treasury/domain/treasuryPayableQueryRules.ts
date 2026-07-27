@@ -39,6 +39,9 @@ export function deriveTreasuryPayableOperationalStatus(input: {
     Boolean(input.official.nomusScheduleDate) ||
     Boolean(input.official.nomusScheduledAmount);
   if (programmed) {
+    if (input.complement?.nextAction === "AUTHORIZED") {
+      return "AUTHORIZED";
+    }
     return "PROGRAMMED";
   }
   if (input.daysOverdue > 0) {

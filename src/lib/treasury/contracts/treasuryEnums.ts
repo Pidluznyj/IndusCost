@@ -221,6 +221,7 @@ export const TREASURY_PAYABLE_OPERATIONAL_STATUSES = [
   "OVERDUE",
   "SETTLED",
   "PROGRAMMED",
+  "AUTHORIZED",
   "EXPECTED",
   "ON_HOLD",
   "CANCELLED_SOURCE",
@@ -228,6 +229,14 @@ export const TREASURY_PAYABLE_OPERATIONAL_STATUSES = [
 ] as const;
 export type TreasuryPayableOperationalStatus =
   (typeof TREASURY_PAYABLE_OPERATIONAL_STATUSES)[number];
+
+/** Status da programação local de pagamento (CP). */
+export const TREASURY_PAYABLE_PROGRAMMING_STATUSES = [
+  "PROGRAMMED",
+  "AUTHORIZED",
+] as const;
+export type TreasuryPayableProgrammingStatus =
+  (typeof TREASURY_PAYABLE_PROGRAMMING_STATUSES)[number];
 
 export const TREASURY_PAYABLE_SORT_FIELDS = [
   "dueDate",

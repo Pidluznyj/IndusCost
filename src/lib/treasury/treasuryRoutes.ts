@@ -11,6 +11,7 @@ import { createTreasuryAccountControllers } from "./controllers/treasuryAccountC
 import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
 import { createTreasuryReceivableControllers } from "./controllers/treasuryReceivableController.js";
 import { createTreasuryPayableControllers } from "./controllers/treasuryPayableController.js";
+import { createTreasuryPayableProgrammingControllers } from "./controllers/treasuryPayableProgrammingController.js";
 import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryPaymentPromiseController.js";
 import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
@@ -32,7 +33,10 @@ import {
   TREASURY_RESOURCE_KEY,
   TREASURY_RESOURCE_KEYS,
 } from "./treasuryAccess.js";
-import { requireTreasuryModuleEnabled } from "./treasuryFeatureFlags.js";
+import {
+  requireTreasuryFeatureFlag,
+  requireTreasuryModuleEnabled,
+} from "./treasuryFeatureFlags.js";
 
 export type TreasuryAuthGuards = {
   requireAppAuth: RequestHandler;
@@ -54,6 +58,9 @@ export function registerTreasuryRoutes(
   const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
   const receivables = createTreasuryReceivableControllers({ getCurrentAppUser });
   const payables = createTreasuryPayableControllers({ getCurrentAppUser });
+  const payableProgramming = createTreasuryPayableProgrammingControllers({
+    getCurrentAppUser,
+  });
   const promises = createTreasuryPaymentPromiseControllers({ getCurrentAppUser });
   const collectionActions = createTreasuryCollectionActionControllers({
     getCurrentAppUser,
@@ -96,11 +103,18 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEYS.payables,
     TREASURY_ACTIONS.view
   );
+  const programPayables = requireResource(
+    TREASURY_RESOURCE_KEYS.payablesProgram,
+    TREASURY_ACTIONS.execute
+  );
   const viewOfficialPayables = requireResource(
     FINANCE_AP_RESOURCE_KEY_REF,
     TREASURY_ACTIONS.view
   );
   const moduleEnabled = requireTreasuryModuleEnabled();
+  const payablesProgrammingEnabled = requireTreasuryFeatureFlag(
+    "treasury.payablesProgramming.enabled"
+  );
 
   app.get(
     TREASURY_AVAILABILITY_PATH,
@@ -241,6 +255,36 @@ export function registerTreasuryRoutes(
     viewPayables,
     viewOfficialPayables,
     payables.getPayable
+  );
+
+  app.post(
+    `${TREASURY_PAYABLES_PATH}/:titleId/program-payment`,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    programPayables,
+    viewOfficialPayables,
+    payableProgramming.programPayment
+  );
+
+  app.put(
+    `${TREASURY_PAYABLES_PATH}/:titleId/program-payment`,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    programPayables,
+    viewOfficialPayables,
+    payableProgramming.updateProgramPayment
+  );
+
+  app.post(
+    `${TREASURY_PAYABLES_PATH}/:titleId/program-payment/cancel`,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    programPayables,
+    viewOfficialPayables,
+    payableProgramming.cancelProgramPayment
   );
 
   app.put(

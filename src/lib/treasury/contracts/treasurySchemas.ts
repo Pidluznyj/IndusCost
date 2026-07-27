@@ -26,6 +26,7 @@ import {
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
   TREASURY_PAYABLE_OPERATIONAL_STATUSES,
+  TREASURY_PAYABLE_PROGRAMMING_STATUSES,
   TREASURY_PAYABLE_SORT_FIELDS,
   TREASURY_RECEIVABLE_OPERATIONAL_STATUSES,
   TREASURY_RECEIVABLE_SORT_FIELDS,
@@ -43,6 +44,7 @@ import {
   type TreasuryLedgerDirection,
   type TreasuryLedgerNature,
   type TreasuryPayableOperationalStatus,
+  type TreasuryPayableProgrammingStatus,
   type TreasuryPayableSortField,
   type TreasuryReceivableOperationalStatus,
   type TreasuryReceivableSortField,
@@ -180,6 +182,36 @@ export type TreasuryPromiseMarkFulfilledInput = {
   /** Valor cumprido acumulado; omitido = cumpre o restante (total). */
   fulfilledAmount: string | null;
   notes: string | null;
+  expectedVersion: number;
+};
+
+/** POST /payables/:titleId/program-payment */
+export type TreasuryPayableProgramPaymentInput = {
+  scheduledDate: string;
+  plannedAccountId: string;
+  scheduledAmount: string;
+  priority: TreasuryTitleOperationalPriority;
+  responsibleUserId: string | null;
+  justification: string;
+  status: TreasuryPayableProgrammingStatus;
+  expectedVersion: number;
+};
+
+/** PUT /payables/:titleId/program-payment */
+export type TreasuryPayableProgramPaymentUpdateInput = {
+  scheduledDate?: string;
+  plannedAccountId?: string;
+  scheduledAmount?: string;
+  priority?: TreasuryTitleOperationalPriority;
+  responsibleUserId?: string | null;
+  justification: string;
+  status?: TreasuryPayableProgrammingStatus;
+  expectedVersion: number;
+};
+
+/** POST /payables/:titleId/program-payment/cancel */
+export type TreasuryPayableProgramPaymentCancelInput = {
+  reason: string;
   expectedVersion: number;
 };
 
@@ -1628,6 +1660,227 @@ export function parseTreasuryDisputeUpdateStatusInput(
     notes: parseTreasuryBoundedString(body.notes ?? body.observacao, "notes", {
       required: false,
     }),
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+}
+
+function assertNoOfficialDueDateInBody(body: Record<string, unknown>): void {
+  if (
+    hasOwn(body, "dueDate") ||
+    hasOwn(body, "vencimento") ||
+    hasOwn(body, "officialDueDate")
+  ) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Vencimento oficial não pode ser alterado pela Tesouraria.",
+      "dueDate"
+    );
+  }
+}
+
+/**
+ * POST /payables/:titleId/program-payment
+ * Rejeita tentativas de mutar vencimento oficial.
+ */
+export function parseTreasuryPayableProgramPaymentInput(
+  body: Record<string, unknown>
+): TreasuryPayableProgramPaymentInput {
+  assertNoOfficialDueDateInBody(body);
+  const priorityRaw = body.priority ?? body.prioridade;
+  const priority =
+    priorityRaw == null || priorityRaw === ""
+      ? ("NORMAL" as TreasuryTitleOperationalPriority)
+      : parseTreasuryEnum(
+          priorityRaw,
+          TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+          "priority",
+          true
+        )!;
+  const status = parseTreasuryEnum(
+    body.status ?? body.situacao ?? "PROGRAMMED",
+    TREASURY_PAYABLE_PROGRAMMING_STATUSES,
+    "status",
+    true
+  );
+  if (!status) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "status é obrigatório (PROGRAMMED ou AUTHORIZED).",
+      "status"
+    );
+  }
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.justificativa ?? body.reason ?? body.motivo,
+    "justification",
+    { required: true }
+  );
+  if (!justification) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória.",
+      "justification"
+    );
+  }
+  const plannedAccountId = parseTreasuryBoundedString(
+    body.plannedAccountId ?? body.contaPagadora ?? body.accountId,
+    "plannedAccountId",
+    { required: true }
+  );
+  if (!plannedAccountId) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "plannedAccountId é obrigatório.",
+      "plannedAccountId"
+    );
+  }
+  let responsibleUserId: string | null = null;
+  if (
+    hasOwn(body, "responsibleUserId") ||
+    hasOwn(body, "responsavel") ||
+    hasOwn(body, "responsável")
+  ) {
+    const raw =
+      body.responsibleUserId ?? body.responsavel ?? body["responsável"];
+    if (raw === null || raw === "") {
+      responsibleUserId = null;
+    } else {
+      responsibleUserId = parseTreasuryBoundedString(raw, "userId", {
+        required: true,
+      });
+    }
+  }
+  return {
+    scheduledDate: parseTreasuryCivilDate(
+      body.scheduledDate ?? body.dataProgramada,
+      "scheduledDate"
+    ),
+    plannedAccountId,
+    scheduledAmount: parseTreasuryMoneyString(
+      body.scheduledAmount ?? body.valorProgramado,
+      "scheduledAmount"
+    ),
+    priority,
+    responsibleUserId,
+    justification,
+    status,
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+}
+
+/**
+ * PUT /payables/:titleId/program-payment
+ */
+export function parseTreasuryPayableProgramPaymentUpdateInput(
+  body: Record<string, unknown>
+): TreasuryPayableProgramPaymentUpdateInput {
+  assertNoOfficialDueDateInBody(body);
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.justificativa ?? body.reason ?? body.motivo,
+    "justification",
+    { required: true }
+  );
+  if (!justification) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória.",
+      "justification"
+    );
+  }
+  const out: TreasuryPayableProgramPaymentUpdateInput = {
+    justification,
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+  if (hasOwn(body, "scheduledDate") || hasOwn(body, "dataProgramada")) {
+    out.scheduledDate = parseTreasuryCivilDate(
+      body.scheduledDate ?? body.dataProgramada,
+      "scheduledDate"
+    );
+  }
+  if (
+    hasOwn(body, "plannedAccountId") ||
+    hasOwn(body, "contaPagadora") ||
+    hasOwn(body, "accountId")
+  ) {
+    const planned = parseTreasuryBoundedString(
+      body.plannedAccountId ?? body.contaPagadora ?? body.accountId,
+      "plannedAccountId",
+      { required: true }
+    );
+    if (!planned) {
+      throw new TreasuryContractError(
+        "REQUIRED_FIELD",
+        "plannedAccountId é obrigatório quando informado.",
+        "plannedAccountId"
+      );
+    }
+    out.plannedAccountId = planned;
+  }
+  if (hasOwn(body, "scheduledAmount") || hasOwn(body, "valorProgramado")) {
+    out.scheduledAmount = parseTreasuryMoneyString(
+      body.scheduledAmount ?? body.valorProgramado,
+      "scheduledAmount"
+    );
+  }
+  if (hasOwn(body, "priority") || hasOwn(body, "prioridade")) {
+    out.priority = parseTreasuryEnum(
+      body.priority ?? body.prioridade,
+      TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+      "priority",
+      true
+    )!;
+  }
+  if (
+    hasOwn(body, "responsibleUserId") ||
+    hasOwn(body, "responsavel") ||
+    hasOwn(body, "responsável")
+  ) {
+    const raw =
+      body.responsibleUserId ?? body.responsavel ?? body["responsável"];
+    if (raw === null || raw === "") {
+      out.responsibleUserId = null;
+    } else {
+      out.responsibleUserId = parseTreasuryBoundedString(raw, "userId", {
+        required: true,
+      });
+    }
+  }
+  if (hasOwn(body, "status") || hasOwn(body, "situacao")) {
+    out.status = parseTreasuryEnum(
+      body.status ?? body.situacao,
+      TREASURY_PAYABLE_PROGRAMMING_STATUSES,
+      "status",
+      true
+    )!;
+  }
+  return out;
+}
+
+export function parseTreasuryPayableProgramPaymentCancelInput(
+  body: Record<string, unknown>
+): TreasuryPayableProgramPaymentCancelInput {
+  const reason = parseTreasuryBoundedString(
+    body.reason ?? body.motivo ?? body.cancellationReason ?? body.justification,
+    "reason",
+    { required: true }
+  );
+  if (!reason) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "reason é obrigatório para cancelar a programação.",
+      "reason"
+    );
+  }
+  return {
+    reason,
     expectedVersion: parseNonNegativeInt(
       body.expectedVersion ?? body.version,
       "expectedVersion"

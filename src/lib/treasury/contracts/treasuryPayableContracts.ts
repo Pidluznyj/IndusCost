@@ -9,6 +9,7 @@ import type { TreasuryMoneyString } from "./treasuryMoneyContract.js";
 import type { TreasuryTimestampIso } from "./treasuryTimestamp.js";
 import type {
   TreasuryPayableOperationalStatus,
+  TreasuryPayableProgrammingStatus,
   TreasuryPayableSortField,
   TreasurySortDirection,
   TreasuryTitleOperationalPriority,
@@ -87,4 +88,36 @@ export type TreasuryPayablesListResponse = {
 export type TreasuryPayableDetailResponse = {
   ok: true;
   payable: TreasuryPayableListItemDto;
+};
+
+/** Impacto projetado da programação sobre saldo da conta e consolidado. */
+export type TreasuryPayableProgrammingImpactDto = {
+  accountId: string;
+  accountBalanceBefore: TreasuryMoneyString;
+  accountBalanceAfter: TreasuryMoneyString;
+  consolidatedBalanceBefore: TreasuryMoneyString;
+  consolidatedBalanceAfter: TreasuryMoneyString;
+  scheduledAmount: TreasuryMoneyString;
+  accountIncludedInConsolidated: boolean;
+  createsNegativeAccountBalance: boolean;
+  createsNegativeConsolidatedBalance: boolean;
+  alerts: string[];
+};
+
+export type TreasuryPayableProgrammingView = {
+  scheduledDate: TreasuryCivilDate;
+  scheduledAmount: TreasuryMoneyString;
+  plannedAccountId: string;
+  priority: TreasuryTitleOperationalPriority;
+  responsibleUserId: string | null;
+  status: TreasuryPayableProgrammingStatus;
+  justification: string | null;
+  version: number;
+};
+
+export type TreasuryPayableProgramPaymentResponse = {
+  ok: true;
+  payable: TreasuryPayableListItemDto;
+  programming: TreasuryPayableProgrammingView;
+  impact: TreasuryPayableProgrammingImpactDto;
 };

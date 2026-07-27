@@ -44,8 +44,9 @@
 | **17** | Ações de cobrança + contestações CR | `DONE` | `8109a2f` | Models/migration `TreasuryCollectionAction` + `TreasuryDispute`; APIs append-only (cancel/status lógico); timeline no drawer; filtro `nextAction`; audit; sem DELETE; `test:treasury` 154/154 |
 | **18** | Visão financeira resumida do cliente (CR) | `DONE` | `5eaba13` | `GET …/receivables/:titleId/customer-summary`; totais aberto/vencido/a vencer; atrasos; promessas; índice cumprimento; recebimentos; histórico cobrança; vendedor≠comercial≠cobrança; batch queries; UI drawer; `test:treasury` 159/159 |
 | **19** | API consulta Contas a Pagar (oficial + complemento) | `DONE` | `b678929` | `GET /api/finance/treasury/payables` + `/:titleId`; filtros fornecedor/CNPJ/doc/categoria/CC/venc./programada/status/valor/conta/prioridade/responsável; batch complemento+CC; `test:treasury` 165/165 |
+| **20** | Programação de pagamentos (CP) | `DONE` | _(pending)_ | `POST/PUT …/payables/:titleId/program-payment` + `/cancel`; parcial; acima do saldo c/ justificativa; impacto conta/consolidado + alerta negativo; optimistic lock; audit; recálculo; flag `payablesProgramming`; `test:treasury` 176/176 |
 
-> **Nota de ordem:** …; resumo cliente CR = **18**; consulta CP = **19**.
+> **Nota de ordem:** …; resumo cliente CR = **18**; consulta CP = **19**; programação CP = **20**.
 
 ---
 
@@ -57,13 +58,13 @@
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
 | Saldo observado / calculado / conciliado | `NOT_STARTED` | — |
 | Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
-| Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 (`/api/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
+| Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 (`program-payment`); APIs oficiais `/api/finance/accounts-payable/*` |
 | Previsto vs realizado | `PARTIAL` | Fluxo de Caixa `projected`/`realized`/`combined` — não é caixa bancário |
 | Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15 (service/API/UI); `dueDate` oficial intacto; motor de projeção ainda stub |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; não altera `dueDate`; histórico preservado; expiração automática |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
-| Programação de pagamentos | `PARTIAL` | Due Radar / Daily Radar / classificação CC |
+| Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
 | Projeção contratual / provável / confirmada | `PARTIAL` | Cenários cash-flow + portfolio forecast |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
@@ -78,7 +79,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` 165/165; suíte plena em P28 |
+| Testes domínio | `PARTIAL` | `npm run test:treasury` 176/176; suíte plena em P28 |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -285,3 +286,4 @@
 | 2026-07-27 | Prompt 17: ações de cobrança + contestações CR (model/API/timeline/filtro nextAction/audit) — `8109a2f` |
 | 2026-07-27 | Prompt 18: visão financeira resumida do cliente no detalhe CR — `5eaba13` |
 | 2026-07-27 | Prompt 19: API consulta Contas a Pagar Tesouraria (repo/query/APIs/batch) — `b678929` |
+| 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — _(pending)_ |
