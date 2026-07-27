@@ -54,8 +54,9 @@
 | **27** | Identidade e precedência financeira | `DONE` | `4f6cd19` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
 | **28** | Motor determinístico de projeção | `DONE` | `0ac7098` | `treasuryProjectionEngine`: fluxo 16 passos; Decimal string; datas+identidade; day lines + risco + composição; sem Express/Prisma; `test:treasury` 260/260 |
 | **29** | Precisão Decimal + liquidez no motor | `DONE` | `3c6103a` | Money BigInt HALF_UP; aplicações IMMEDIATE/D+1/D+2/D+3; bloqueado; crédito separado; mínimo operacional; allowNegative; `test:treasury` 274/274 |
+| **30** | Execução e persistência de projeção | `DONE` | `_pending_` | ProjectionRun RUNNING/SUCCEEDED/FAILED; advisory lock empresa+cenário; source/algorithm version; não substitui anterior; latest válida; `test:treasury` 279/279 |
 
-    > **Nota de ordem:** …; motor projeção = **28**; precisão/liquidez = **29**.
+    > **Nota de ordem:** …; precisão/liquidez = **29**; execução/persistência = **30**.
 
 ---
 
@@ -75,7 +76,7 @@
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P29: schema, datas, identidade, motor + precisão/liquidez; API/UI ainda pendentes |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P30: schema, datas, identidade, motor, precisão/liquidez, execução/persistência; API/UI ainda pendentes |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
@@ -336,6 +337,16 @@
 - [x] Sem avanço automático
 ---
 
+### 30 — Execução e persistência de projeção
+- [x] Cria `TreasuryProjectionRun` (PENDING → RUNNING → SUCCEEDED/FAILED)
+- [x] Executa motor e persiste day lines/composição em lotes
+- [x] Mantém `algorithmVersion` + `sourceVersion` (hash)
+- [x] Não substitui projeção anterior; `getLatestValid` = último SUCCEEDED
+- [x] Advisory lock (`pg_try_advisory_lock`) por empresa+cenário
+- [x] Testes sucesso/falha/concorrência; `test:treasury` 279/279
+- [x] Sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -384,3 +395,4 @@
 | 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
 | 2026-07-27 | Prompt 28: motor determinístico de projeção (day lines/risco/composição) — `0ac7098` |
 | 2026-07-27 | Prompt 29: precisão Decimal + liquidez no motor — `3c6103a` |
+| 2026-07-27 | Prompt 30: execução e persistência de projeção — `_pending_` |
