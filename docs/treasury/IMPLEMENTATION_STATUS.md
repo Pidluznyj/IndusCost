@@ -51,7 +51,7 @@
 | **24** | UI tela principal Central de Tesouraria | `DONE` | `9876f03` | `/finance/treasury` dashboard; filtros data/período/conta/cenário; última atualização; cards saldo; previsto×realizado; posição por conta; CR/CP do dia; exceções/alertas/atalhos; detalhe Overlay; money pt-BR; estados loading/vazio/erro/denied/stale/recalculando; `test:treasury` 206/206 |
 | **25** | Schema Prisma execução de projeção | `DONE` | `7bfbc43` | Models `TreasuryProjectionRun` / `DayLine` / `CompositionItem`; cenários CONTRACTUAL\|PROBABLE\|CONFIRMED\|MANUAL; source/algorithm version; período; status; falhas; linhas com saldos/fluxos/risco/itens; migration `20260810120000_*`; índices; testes integridade; `test:treasury` 211/211 |
 | **26** | Regras puras data de movimento (projeção) | `DONE` | `b390439` | `treasuryMovementDateRules`: AR/AP × CONTRACTUAL/PROBABLE/CONFIRMED/MANUAL; fuso `America/Sao_Paulo`; vencido sem previsão ≠ hoje; testes virada de data; `test:treasury` 225/225 |
-| **27** | Identidade e precedência financeira | `DONE` | `_pending_` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
+| **27** | Identidade e precedência financeira | `DONE` | `4f6cd19` | `treasuryFinancialIdentityRules`: precedência conciliado>baixa>realizado>previsão; chave lógica fonte+parcela; anti-dupla (pedido/NF/DS/previsão/baixa/transfer/parcial/cancelado); `test:treasury` 240/240 |
 
     > **Nota de ordem:** …; regras data movimento = **26**; identidade/precedência = **27**.
 
@@ -364,4 +364,4 @@
 | 2026-07-27 | Prompt 24: UI tela principal Central de Tesouraria (visão geral dashboard) — `9876f03` |
 | 2026-07-27 | Prompt 25: schema Prisma execução de projeção (run/linhas/composição) — `7bfbc43` |
 | 2026-07-27 | Prompt 26: regras puras data de movimento (AR/AP × cenários + virada SP) — `b390439` |
-| 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `_pending_` |
+| 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
