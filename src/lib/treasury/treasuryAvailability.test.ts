@@ -20,7 +20,7 @@ describe("treasuryAvailability", () => {
     assert.equal(payload.enabled, true);
     assert.equal(payload.status, "scaffold");
     assert.equal(payload.scaffoldVersion, TREASURY_SCAFFOLD_VERSION);
-    assert.equal(payload.serverTimeIso, "2026-07-27T12:00:00.000Z");
+    assert.equal(payload.serverTimeIso, "2026-07-27T12:00:00.000+00:00");
   });
 
   it("marca disabled quando flag off (handler só roda se flag passar)", () => {

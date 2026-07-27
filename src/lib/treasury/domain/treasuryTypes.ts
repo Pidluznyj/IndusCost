@@ -3,15 +3,20 @@
  * Models Prisma reais virão em prompts de schema — aqui só contratos de domínio.
  */
 
-import type { TreasuryMoneyString } from "../contracts/treasuryContracts.js";
+import type { TreasuryMoneyString } from "../contracts/treasuryMoneyContract.js";
+import type {
+  TreasuryBalanceLayer,
+  TreasurySide,
+} from "../contracts/treasuryEnums.js";
+import { TREASURY_MODULE_LABEL } from "../contracts/treasuryConstants.js";
+
+export type { TreasuryBalanceLayer, TreasurySide };
+export type { TreasuryMoneyString };
+export { TREASURY_MODULE_LABEL };
 
 export type TreasuryAccountId = string;
 
-export type TreasurySide = "AR" | "AP";
-
 /** Placeholder de posição de saldo — engine real em prompt futuro. */
-export type TreasuryBalanceLayer = "observed" | "calculated" | "reconciled";
-
 export type TreasuryBalancePositionDraft = {
   accountId: TreasuryAccountId;
   civilDate: string;
@@ -20,5 +25,3 @@ export type TreasuryBalancePositionDraft = {
   reconciled: TreasuryMoneyString | null;
   divergence: TreasuryMoneyString | null;
 };
-
-export const TREASURY_MODULE_LABEL = "Central de Tesouraria" as const;

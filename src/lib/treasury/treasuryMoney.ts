@@ -3,7 +3,7 @@
  * Seguro para frontend e backend.
  */
 
-import type { TreasuryMoneyString } from "./contracts/treasuryContracts.js";
+export type TreasuryMoneyString = string;
 
 const MONEY_RE = /^-?\d+(\.\d{1,2})?$/;
 

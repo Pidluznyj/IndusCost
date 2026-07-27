@@ -1,0 +1,48 @@
+/**
+ * Constantes e limites da Central de Tesouraria (client-safe).
+ */
+
+export const TREASURY_MODULE_ID = "treasury" as const;
+
+export const TREASURY_MODULE_LABEL = "Central de Tesouraria" as const;
+
+/** Prefixo HTTP canônico do módulo. */
+export const TREASURY_API_PREFIX = "/api/finance/treasury" as const;
+
+export const TREASURY_AVAILABILITY_PATH =
+  `${TREASURY_API_PREFIX}/availability` as const;
+
+export const TREASURY_SCAFFOLD_VERSION = "0.1.0-scaffold" as const;
+
+export const TREASURY_DEFAULT_CURRENCY = "BRL" as const;
+
+export const TREASURY_DEFAULT_PAGE = 1;
+export const TREASURY_DEFAULT_PAGE_SIZE = 50;
+export const TREASURY_MAX_PAGE_SIZE = 200;
+export const TREASURY_MIN_PAGE_SIZE = 1;
+
+/** Limites de tamanho de string em DTOs/inputs. */
+export const TREASURY_FIELD_LIMITS = {
+  id: 64,
+  accountId: 64,
+  fromAccountId: 64,
+  toAccountId: 64,
+  nomusExternalId: 64,
+  code: 32,
+  name: 120,
+  bankCode: 8,
+  agency: 16,
+  accountNumber: 32,
+  nomusBankAccountId: 64,
+  memo: 500,
+  reason: 500,
+  notes: 2000,
+  contactNote: 500,
+  channel: 64,
+  actionType: 64,
+  counterpartRef: 128,
+  search: 120,
+  currency: 3,
+} as const;
+
+export type TreasuryFieldLimitKey = keyof typeof TREASURY_FIELD_LIMITS;

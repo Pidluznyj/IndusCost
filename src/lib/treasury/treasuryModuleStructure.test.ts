@@ -39,15 +39,19 @@ describe("treasuryModuleStructure", () => {
     assert.equal(start.started, false);
   });
 
-  it("frontend treasury não importa Prisma", () => {
+  it("frontend treasury não importa Prisma e usa contratos client-safe", () => {
     const feDir = join(repoRoot, "src/components/finance/treasury");
     const files = readdirSync(feDir).filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"));
     assert.ok(files.length > 0);
+    let importsContracts = false;
     for (const file of files) {
       const source = readFileSync(join(feDir, file), "utf8");
       assert.doesNotMatch(source, /@prisma\/client|from ["'].*prisma/);
       assert.doesNotMatch(source, /\.server\.js|\.server["']/);
+      assert.doesNotMatch(source, /from ["'].*\/treasury\/index/);
+      if (/treasury\/contracts\//.test(source)) importsContracts = true;
     }
+    assert.equal(importsContracts, true);
   });
 
   it("server.ts registra registerTreasuryRoutes sem lógica de domínio", () => {

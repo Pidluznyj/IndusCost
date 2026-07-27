@@ -10,10 +10,14 @@ export {
   TREASURY_API_PREFIX,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_SCAFFOLD_VERSION,
+  TREASURY_ERROR_CODES,
+  TREASURY_FIELD_LIMITS,
 } from "./contracts/treasuryContracts.js";
 export type {
   TreasuryAvailabilityResponse,
   TreasuryMoneyString,
+  TreasuryErrorCode,
+  TreasuryCreateAccountInput,
 } from "./contracts/treasuryContracts.js";
 export {
   TREASURY_ENABLED_ENV,

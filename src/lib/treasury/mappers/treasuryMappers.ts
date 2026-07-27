@@ -4,6 +4,7 @@
 
 import {
   TREASURY_SCAFFOLD_VERSION,
+  formatTreasuryTimestampIso,
   type TreasuryAvailabilityResponse,
 } from "../contracts/treasuryContracts.js";
 
@@ -17,6 +18,6 @@ export function toTreasuryAvailabilityResponse(input: {
     status: input.enabled ? "scaffold" : "disabled",
     enabled: input.enabled,
     scaffoldVersion: TREASURY_SCAFFOLD_VERSION,
-    serverTimeIso: (input.serverTime ?? new Date()).toISOString(),
+    serverTimeIso: formatTreasuryTimestampIso(input.serverTime ?? new Date()),
   };
 }

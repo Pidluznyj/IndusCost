@@ -30,35 +30,36 @@ A sequência abaixo **é a ordem oficial**. Entregas são pequenas, mas a ordem 
 | **00** | Discovery + mapping + plano | Docs | `01`/`02`/`03` + status |
 | **01** | Foundation: pasta `src/lib/treasury`, money Decimal/string, civil date adapters, feature flag fail-closed, skeleton `registerTreasuryRoutes`, health stub | BE foundation | Flag off → rotas 404/403; tests money/flag; checks FE imports OK |
 | **02** | Permissões contrato `finance.treasury*` + seed + nav stub + isolation tests | ACL | Resource no contrato; `requireResource` wired; nav oculta sem grant |
-| **03** | Schema Prisma: `TreasuryFinancialAccount` + migration versionada | DB | Migration criada (não `db push`); generate OK |
-| **04** | CRUD contas financeiras (service/repo/routes/UI mínima) | Feature | `/finance/treasury/accounts` + API |
-| **05** | Schema + API saldos manuais/históricos versionados | Feature | Snapshots imutáveis + audit |
-| **06** | Ledger mínimo + lançamentos manuais + reversão | Feature | Extrato; sem delete físico |
-| **07** | Transferências internas (2 pernas, invariante consolidado) | Feature | Teste soma consolidada |
-| **08** | Balance engine: observado / calculado / conciliado + divergência explícita | Feature | Endpoint position; UI cards |
-| **09** | Facade read-only CR/CP (reuso `NomusAccounts*`) + DTO string — **sem cópia** | Integration | Join overlays vazios; não grava título |
-| **10** | Overlays: data esperada (não toca `dueDate`) | Feature | Test dueDate imutável |
-| **11** | Promessas de pagamento | Feature | Status machine + audit |
-| **12** | Ações de cobrança | Feature | Timeline append-only |
-| **13** | Contestações | Feature | Não zera balance oficial |
-| **14** | Programação de pagamentos (AP) | Feature | Parcial ≤ saldo aberto |
-| **15** | Previsto vs realizado (Tesouraria) | Feature | Não soma camadas do mesmo título |
-| **16** | Projeções CONTRACTUAL / PROBABLE / CONFIRMED | Feature | Matriz de classificação testada |
-| **17** | Agenda financeira | Feature | Agenda por conta/dia civil |
-| **18** | Exceções + alertas | Feature | Sem auto-hide de divergência |
-| **19** | Schema OFX + import idempotente | Feature | Reimport safe |
-| **20** | Workspace conciliação bancária (match/unmatch) | Feature | Não muta Nomus |
-| **21** | Fechamento diário imutável | Feature | Hash/payload frozen |
-| **22** | Reabertura versionada | Feature | Supersession + manage-only |
-| **23** | Relatórios Tesouraria | Feature | Totais = engine |
-| **24** | Exportações CSV/XLSX (`export` action) | Feature | Decimal string nas colunas |
-| **25** | Auditoria completa + correlação | Hardening | Toda ação crítica auditada |
-| **26** | Observabilidade (health detalhado, logs mascarados) | Hardening | `/api/finance/treasury/health` |
-| **27** | Suíte `test:treasury` + regressão anti-duplicação financeiro oficial | QA | Scripts npm; gates CI locais |
-| **28** | Docs finais + runbook deploy/validação (usuário aplica em prod) | Docs/Ops | Runbook sem credenciais |
-| **29** | Soft-launch: flag, checklist homolog, smoke scripts | Release | Flag documentada; Cursor não deploya |
+| **03** | Contratos client-safe: enums, DTOs, schemas/parse, paginação, sort, money/date/timestamp | Shared | Pacote `src/lib/treasury/contracts/**` sem Prisma; testes de validação |
+| **04** | Schema Prisma: `TreasuryFinancialAccount` + migration versionada | DB | Migration criada (não `db push`); generate OK |
+| **05** | CRUD contas financeiras (service/repo/routes/UI mínima) | Feature | `/finance/treasury/accounts` + API |
+| **06** | Schema + API saldos manuais/históricos versionados | Feature | Snapshots imutáveis + audit |
+| **07** | Ledger mínimo + lançamentos manuais + reversão | Feature | Extrato; sem delete físico |
+| **08** | Transferências internas (2 pernas, invariante consolidado) | Feature | Teste soma consolidada |
+| **09** | Balance engine: observado / calculado / conciliado + divergência explícita | Feature | Endpoint position; UI cards |
+| **10** | Facade read-only CR/CP (reuso `NomusAccounts*`) + DTO string — **sem cópia** | Integration | Join overlays vazios; não grava título |
+| **11** | Overlays: data esperada (não toca `dueDate`) | Feature | Test dueDate imutável |
+| **12** | Promessas de pagamento | Feature | Status machine + audit |
+| **13** | Ações de cobrança | Feature | Timeline append-only |
+| **14** | Contestações | Feature | Não zera balance oficial |
+| **15** | Programação de pagamentos (AP) | Feature | Parcial ≤ saldo aberto |
+| **16** | Previsto vs realizado (Tesouraria) | Feature | Não soma camadas do mesmo título |
+| **17** | Projeções CONTRACTUAL / PROBABLE / CONFIRMED | Feature | Matriz de classificação testada |
+| **18** | Agenda financeira | Feature | Agenda por conta/dia civil |
+| **19** | Exceções + alertas | Feature | Sem auto-hide de divergência |
+| **20** | Schema OFX + import idempotente | Feature | Reimport safe |
+| **21** | Workspace conciliação bancária (match/unmatch) | Feature | Não muta Nomus |
+| **22** | Fechamento diário imutável | Feature | Hash/payload frozen |
+| **23** | Reabertura versionada | Feature | Supersession + manage-only |
+| **24** | Relatórios Tesouraria | Feature | Totais = engine |
+| **25** | Exportações CSV/XLSX (`export` action) | Feature | Decimal string nas colunas |
+| **26** | Auditoria completa + correlação | Hardening | Toda ação crítica auditada |
+| **27** | Observabilidade (health detalhado, logs mascarados) | Hardening | `/api/finance/treasury/health` |
+| **28** | Suíte `test:treasury` + regressão anti-duplicação financeiro oficial | QA | Scripts npm; gates CI locais |
+| **29** | Docs finais + runbook deploy/validação (usuário aplica em prod) | Docs/Ops | Runbook sem credenciais |
+| **30** | Soft-launch: flag, checklist homolog, smoke scripts | Release | Flag documentada; Cursor não deploya |
 
-> Prompts 01–29 correspondem à sequência operacional. Requisitos do programa (contas, saldos, CR/CP, overlays, OFX, etc.) estão cobertos sem pular dependências (schema/ACL/flag antes de UI pesada).
+> Prompts 01–30 correspondem à sequência operacional. Requisitos do programa (contas, saldos, CR/CP, overlays, OFX, etc.) estão cobertos sem pular dependências (contratos/ACL/flag/schema antes de UI pesada).
 
 ---
 
@@ -68,33 +69,34 @@ A sequência abaixo **é a ordem oficial**. Entregas são pequenas, mas a ordem 
 flowchart TD
   P00[00 Docs] --> P01[01 Foundation flag money]
   P01 --> P02[02 Permissions]
-  P02 --> P03[03 Schema accounts]
-  P03 --> P04[04 CRUD accounts]
-  P04 --> P05[05 Balances]
-  P05 --> P06[06 Ledger manual]
-  P06 --> P07[07 Transfers]
-  P07 --> P08[08 Balance engine]
-  P08 --> P09[09 AR AP read facade]
-  P09 --> P10[10 Expected dates]
-  P10 --> P11[11 Promises]
-  P11 --> P12[12 Collection]
-  P12 --> P13[13 Disputes]
-  P13 --> P14[14 Payment schedule]
-  P14 --> P15[15 Forecast vs actual]
-  P15 --> P16[16 Projections]
-  P16 --> P17[17 Agenda]
-  P17 --> P18[18 Exceptions alerts]
-  P18 --> P19[19 OFX]
-  P19 --> P20[20 Bank reconcile]
-  P20 --> P21[21 Daily close]
-  P21 --> P22[22 Reopen]
-  P22 --> P23[23 Reports]
-  P23 --> P24[24 Exports]
-  P24 --> P25[25 Audit sweep]
-  P25 --> P26[26 Observability]
-  P26 --> P27[27 Test suite]
-  P27 --> P28[28 Runbook docs]
-  P28 --> P29[29 Soft launch]
+  P02 --> P03[03 Contracts DTO schema]
+  P03 --> P04[04 Schema accounts]
+  P04 --> P05[05 CRUD accounts]
+  P05 --> P06[06 Balances]
+  P06 --> P07[07 Ledger manual]
+  P07 --> P08[08 Transfers]
+  P08 --> P09[09 Balance engine]
+  P09 --> P10[10 AR AP read facade]
+  P10 --> P11[11 Expected dates]
+  P11 --> P12[12 Promises]
+  P12 --> P13[13 Collection]
+  P13 --> P14[14 Disputes]
+  P14 --> P15[15 Payment schedule]
+  P15 --> P16[16 Forecast vs actual]
+  P16 --> P17[17 Projections]
+  P17 --> P18[18 Agenda]
+  P18 --> P19[19 Exceptions alerts]
+  P19 --> P20[20 OFX]
+  P20 --> P21[21 Bank reconcile]
+  P21 --> P22[22 Daily close]
+  P22 --> P23[23 Reopen]
+  P23 --> P24[24 Reports]
+  P24 --> P25[25 Exports]
+  P25 --> P26[26 Audit sweep]
+  P26 --> P27[27 Observability]
+  P27 --> P28[28 Test suite]
+  P28 --> P29[29 Runbook docs]
+  P29 --> P30[30 Soft launch]
 ```
 
 ---
@@ -149,14 +151,14 @@ Checklist de regressão oficial (Prompt 27):
 
 Ordem física das migrations (alinhada aos prompts):
 
-1. **P03:** `TreasuryFinancialAccount`
-2. **P05:** `TreasuryBalanceSnapshot` + `TreasuryAuditLog` (audit cedo)
-3. **P06:** `TreasuryLedgerEntry`
-4. **P07:** `TreasuryTransfer` (ou só groupId no ledger)
-5. **P10–P14:** overlays (`TreasuryTitleOverlay` / promises / collection / dispute / payment schedule) — preferir migration coesa por prompt
-6. **P19:** OFX import + transactions
-7. **P20:** reconciliation matches
-8. **P21:** daily closing (+ reopen fields/version)
+1. **P04:** `TreasuryFinancialAccount`
+2. **P06:** `TreasuryBalanceSnapshot` + `TreasuryAuditLog` (audit cedo)
+3. **P07:** `TreasuryLedgerEntry`
+4. **P08:** `TreasuryTransfer` (ou só groupId no ledger)
+5. **P11–P15:** overlays (`TreasuryTitleOverlay` / promises / collection / dispute / payment schedule) — preferir migration coesa por prompt
+6. **P20:** OFX import + transactions
+7. **P21:** reconciliation matches
+8. **P22:** daily closing (+ reopen fields/version)
 
 Tipos money: `@db.Decimal(20, 2)`.  
 Datas de negócio: civil date (`Date` / `@db.Date` ou DateTime UTC midnight + `financeCivilDate`).  

@@ -18,7 +18,7 @@
     "check:frontend-imports": "tsx scripts/checkFrontendServerImports.ts",
     "build:safe": "npm run check:frontend-server-imports && npm run check:server-imports && npm run test:market-intelligence && npm run build && npm run check:browser-bundle",
     "validate:treasury-baseline": "node scripts/runTreasuryBaseline.mjs",
-    "test:treasury": "tsx --test src/lib/treasury/treasuryFeatureFlags.test.ts src/lib/treasury/treasuryMoney.test.ts src/lib/treasury/treasuryAvailability.test.ts src/lib/treasury/treasuryModuleStructure.test.ts src/lib/treasury/treasuryPermissions.test.ts",
+    "test:treasury": "tsx --test src/lib/treasury/treasuryFeatureFlags.test.ts src/lib/treasury/treasuryMoney.test.ts src/lib/treasury/treasuryAvailability.test.ts src/lib/treasury/treasuryModuleStructure.test.ts src/lib/treasury/treasuryPermissions.test.ts src/lib/treasury/contracts/treasuryContracts.test.ts",
     "sync:nomus:proposals:dry": "tsx scripts/nomusProposalsSyncV1.ts",
     "sync:nomus:proposals:apply": "tsx scripts/nomusProposalsSyncV1.ts --apply",
     "sync:nomus:customers:dry": "tsx scripts/nomusCustomersSyncV1.ts",

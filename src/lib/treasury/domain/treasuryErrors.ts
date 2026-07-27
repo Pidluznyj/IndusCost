@@ -1,17 +1,22 @@
-/** Erros de domínio da Tesouraria (sem I/O). */
+/** Erros de domínio da Tesouraria (sem I/O) — códigos no contrato client-safe. */
 
-export type TreasuryErrorCode =
-  | "MODULE_DISABLED"
-  | "NOT_IMPLEMENTED"
-  | "VALIDATION_ERROR"
-  | "UNAUTHORIZED";
+export {
+  TREASURY_ERROR_CODES,
+  TreasuryContractError,
+  isTreasuryErrorCode,
+  type TreasuryErrorBody,
+  type TreasuryErrorCode,
+} from "../contracts/treasuryErrorCodes.js";
 
-export class TreasuryDomainError extends Error {
-  readonly code: TreasuryErrorCode;
+import {
+  TreasuryContractError,
+  type TreasuryErrorCode,
+} from "../contracts/treasuryErrorCodes.js";
 
-  constructor(code: TreasuryErrorCode, message: string) {
-    super(message);
+/** Alias estável para serviços de domínio. */
+export class TreasuryDomainError extends TreasuryContractError {
+  constructor(code: TreasuryErrorCode, message: string, field?: string) {
+    super(code, message, field);
     this.name = "TreasuryDomainError";
-    this.code = code;
   }
 }

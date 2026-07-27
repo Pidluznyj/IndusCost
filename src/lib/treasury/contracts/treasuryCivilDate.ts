@@ -1,0 +1,64 @@
+/**
+ * Datas de calendário da Tesouraria: estritamente YYYY-MM-DD (client-safe).
+ * Não aceita datetime completo em campos civis.
+ */
+
+import { TreasuryContractError } from "./treasuryErrorCodes.js";
+
+const CIVIL_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export type TreasuryCivilDate = string;
+
+export function isTreasuryCivilDate(value: unknown): value is TreasuryCivilDate {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  const match = CIVIL_DATE_RE.exec(trimmed);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const dt = new Date(Date.UTC(year, month - 1, day));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
+export function parseTreasuryCivilDate(
+  value: unknown,
+  field = "civilDate"
+): TreasuryCivilDate {
+  if (value == null || value === "") {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      `${field} é obrigatório.`,
+      field
+    );
+  }
+  if (typeof value !== "string") {
+    throw new TreasuryContractError(
+      "INVALID_CIVIL_DATE",
+      `${field} deve ser string YYYY-MM-DD.`,
+      field
+    );
+  }
+  const trimmed = value.trim();
+  if (!isTreasuryCivilDate(trimmed)) {
+    throw new TreasuryContractError(
+      "INVALID_CIVIL_DATE",
+      `${field} inválido (esperado YYYY-MM-DD).`,
+      field
+    );
+  }
+  return trimmed;
+}
+
+export function parseOptionalTreasuryCivilDate(
+  value: unknown,
+  field = "civilDate"
+): TreasuryCivilDate | null {
+  if (value == null || value === "") return null;
+  return parseTreasuryCivilDate(value, field);
+}
