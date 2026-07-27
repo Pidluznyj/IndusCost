@@ -89,10 +89,18 @@ export type TreasuryBalanceSnapshotDto = {
   referenceAt: TreasuryTimestampIso;
   /** Dia civil derivado de `referenceAt` (YYYY-MM-DD) para filtros de agenda. */
   civilDate: TreasuryCivilDate;
+  /** Disponível livre persistido (base do operacional). */
   availableBalance: TreasuryMoneyString;
   blockedBalance: TreasuryMoneyString;
   investmentsBalance: TreasuryMoneyString;
   usedLimit: TreasuryMoneyString;
+  /**
+   * Calculado: available + blocked + investments (posição observada total).
+   * Exposto separadamente do operacional.
+   */
+  observedBalance: TreasuryMoneyString;
+  /** Calculado/alias: igual a availableBalance (saldo operacional disponível). */
+  operationalAvailableBalance: TreasuryMoneyString;
   origin: TreasuryBalanceOrigin;
   idempotencyKey: string;
   notes: string | null;

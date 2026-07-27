@@ -55,6 +55,8 @@ export const TREASURY_FIELD_LIMITS = {
   currency: 3,
   justification: 500,
   expectedUpdatedAt: 64,
+  idempotencyKey: 128,
+  attachmentUrl: 500,
 } as const;
 
 export type TreasuryFieldLimitKey = keyof typeof TREASURY_FIELD_LIMITS;

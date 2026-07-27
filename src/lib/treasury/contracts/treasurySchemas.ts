@@ -45,6 +45,7 @@ import {
   type TreasuryPaginationInput,
   type TreasurySortInput,
 } from "./treasuryPagination.js";
+import { parseTreasuryTimestampIso } from "./treasuryTimestamp.js";
 
 export type TreasuryCreateAccountInput = {
   companyCode: string;
@@ -134,6 +135,25 @@ export type TreasuryPromiseCreateInput = {
   promisedDate: string;
   promisedAmount: string;
   contactNote: string | null;
+};
+
+export type TreasuryCreateBalanceSnapshotInput = {
+  referenceAt: string;
+  availableBalance: string;
+  blockedBalance: string;
+  investmentsBalance: string;
+  usedLimit: string;
+  origin: TreasuryBalanceOrigin;
+  notes: string | null;
+  attachmentUrl: string | null;
+  justification: string | null;
+  idempotencyKey: string;
+};
+
+export type TreasuryBalancesListQuery = TreasuryPaginationInput & {
+  origin: TreasuryBalanceOrigin | null;
+  from: string | null;
+  to: string | null;
 };
 
 function asTrimmedString(value: unknown): string | null {
@@ -690,6 +710,87 @@ export function parseTreasuryDateRangeFilter(query: Record<string, unknown>): {
     );
   }
   return { from, to };
+}
+
+export function parseTreasuryBalancesListQuery(
+  query: Record<string, unknown>
+): TreasuryBalancesListQuery {
+  const pagination = parseTreasuryPagination(query);
+  const origin = parseTreasuryEnum(
+    query.origin,
+    TREASURY_BALANCE_ORIGINS,
+    "origin",
+    false
+  );
+  const range = parseTreasuryDateRangeFilter(query);
+  return {
+    ...pagination,
+    origin,
+    from: range.from,
+    to: range.to,
+  };
+}
+
+export function parseTreasuryCreateBalanceSnapshotInput(
+  body: Record<string, unknown>,
+  headerIdempotencyKey?: string | null
+): TreasuryCreateBalanceSnapshotInput {
+  const referenceAt = parseTreasuryTimestampIso(body.referenceAt, "referenceAt");
+  const availableBalance = parseTreasuryMoneyString(
+    body.availableBalance,
+    "availableBalance"
+  );
+  const blockedBalance = parseOptionalTreasuryMoneyString(
+    body.blockedBalance,
+    "blockedBalance"
+  );
+  const investmentsBalance = parseOptionalTreasuryMoneyString(
+    body.investmentsBalance,
+    "investmentsBalance"
+  );
+  const usedLimit = parseOptionalTreasuryMoneyString(
+    body.usedLimit,
+    "usedLimit"
+  );
+  const origin =
+    parseTreasuryEnum(
+      body.origin,
+      TREASURY_BALANCE_ORIGINS,
+      "origin",
+      false
+    ) ?? "MANUAL";
+  const idempotencyKey = parseTreasuryBoundedString(
+    headerIdempotencyKey ?? body.idempotencyKey,
+    "idempotencyKey",
+    { required: true }
+  );
+  if (!idempotencyKey) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "Idempotency-Key é obrigatório.",
+      "idempotencyKey"
+    );
+  }
+  return {
+    referenceAt,
+    availableBalance,
+    blockedBalance: blockedBalance ?? "0.00",
+    investmentsBalance: investmentsBalance ?? "0.00",
+    usedLimit: usedLimit ?? "0.00",
+    origin,
+    notes: parseTreasuryBoundedString(body.notes, "notes", { required: false }),
+    attachmentUrl: parseTreasuryBoundedString(
+      body.attachmentUrl,
+      "attachmentUrl",
+      { required: false }
+    ),
+    justification: parseTreasuryBoundedString(
+      body.justification,
+      "justification",
+      { required: false }
+    ),
+    idempotencyKey,
+  };
 }
 
 /** Type guard leve para DTO de conta (campos obrigatórios). */

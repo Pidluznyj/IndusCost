@@ -8,6 +8,7 @@ import type { RequestHandler } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { treasuryAvailabilityHandler } from "./controllers/treasuryAvailabilityController.js";
 import { createTreasuryAccountControllers } from "./controllers/treasuryAccountController.js";
+import { createTreasuryBalanceControllers } from "./controllers/treasuryBalanceController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AVAILABILITY_PATH,
@@ -36,6 +37,7 @@ export function registerTreasuryRoutes(
 ): void {
   const { requireAppAuth, requireResource, getCurrentAppUser } = auth;
   const accounts = createTreasuryAccountControllers({ getCurrentAppUser });
+  const balances = createTreasuryBalanceControllers({ getCurrentAppUser });
 
   const viewAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
@@ -43,6 +45,10 @@ export function registerTreasuryRoutes(
   );
   const manageAccounts = requireResource(
     TREASURY_RESOURCE_KEYS.accounts,
+    TREASURY_ACTIONS.manage
+  );
+  const manageBalances = requireResource(
+    TREASURY_RESOURCE_KEYS.balances,
     TREASURY_ACTIONS.manage
   );
   const moduleEnabled = requireTreasuryModuleEnabled();
@@ -61,6 +67,30 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewAccounts,
     accounts.listAccounts
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balances/latest`,
+    requireAppAuth,
+    moduleEnabled,
+    viewAccounts,
+    balances.getLatestBalance
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balances`,
+    requireAppAuth,
+    moduleEnabled,
+    viewAccounts,
+    balances.listBalances
+  );
+
+  app.post(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balance-snapshots`,
+    requireAppAuth,
+    moduleEnabled,
+    manageBalances,
+    balances.createBalanceSnapshot
   );
 
   app.get(

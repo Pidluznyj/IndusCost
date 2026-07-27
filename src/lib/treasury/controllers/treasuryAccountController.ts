@@ -44,6 +44,7 @@ function buildActor(
     isSuperAdmin: user.role === "SUPER_ADMIN",
     canViewAccounts: canTreasuryCapability(user, "viewAccounts"),
     canManageAccounts: canTreasuryCapability(user, "manageAccounts"),
+    canManageBalances: canTreasuryCapability(user, "manageBalances"),
   };
 }
 

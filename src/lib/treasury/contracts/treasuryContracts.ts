@@ -141,7 +141,9 @@ export {
   assertTreasuryKnownString,
   isTreasuryFinancialAccountDto,
   parseTreasuryAccountsListQuery,
+  parseTreasuryBalancesListQuery,
   parseTreasuryCreateAccountInput,
+  parseTreasuryCreateBalanceSnapshotInput,
   parseTreasuryDateRangeFilter,
   parseTreasuryDeactivateAccountInput,
   parseTreasuryEnum,
@@ -155,7 +157,9 @@ export {
 } from "./treasurySchemas.js";
 export type {
   TreasuryAccountsListQuery,
+  TreasuryBalancesListQuery,
   TreasuryCreateAccountInput,
+  TreasuryCreateBalanceSnapshotInput,
   TreasuryDeactivateAccountInput,
   TreasuryManualLedgerEntryInput,
   TreasuryPromiseCreateInput,

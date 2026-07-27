@@ -13,6 +13,8 @@ export type TreasuryAccountActor = {
   isSuperAdmin: boolean;
   canViewAccounts: boolean;
   canManageAccounts: boolean;
+  /** Capacidade `finance.treasury.balances` manage. */
+  canManageBalances?: boolean;
 };
 
 export type TreasuryAccountAccessSnapshot = {
@@ -20,6 +22,8 @@ export type TreasuryAccountAccessSnapshot = {
   accessLevel: "VIEW" | "OPERATE" | "MANAGE";
   isActive: boolean;
   revokedAt?: Date | string | null;
+  canViewBalance?: boolean;
+  canMutateBalance?: boolean;
 };
 
 /** Impede conta origem = destino (transferências futuras e validações atuais). */
@@ -89,6 +93,34 @@ export function canRevealTreasuryBankIdentifiers(
   return (
     access.userId === actor.userId &&
     (access.accessLevel === "OPERATE" || access.accessLevel === "MANAGE")
+  );
+}
+
+/** Visualizar saldos/snapshots da conta. */
+export function canTreasuryActorViewAccountBalance(
+  actor: TreasuryAccountActor,
+  access: TreasuryAccountAccessSnapshot | null
+): boolean {
+  if (isTreasuryAccountSuperAdmin(actor) || actor.canManageAccounts) return true;
+  if (!canTreasuryActorAccessAccount(actor, access)) return false;
+  if (!access) return false;
+  return access.canViewBalance !== false;
+}
+
+/** Informar novo snapshot de saldo. */
+export function canTreasuryActorMutateAccountBalance(
+  actor: TreasuryAccountActor,
+  access: TreasuryAccountAccessSnapshot | null
+): boolean {
+  if (isTreasuryAccountSuperAdmin(actor) || actor.canManageAccounts) return true;
+  if (!actor.canManageBalances) return false;
+  if (canTreasuryActorViewAllAccounts(actor)) return true;
+  if (!access || !access.isActive || access.revokedAt) return false;
+  if (access.userId !== actor.userId) return false;
+  return (
+    access.canMutateBalance === true ||
+    access.accessLevel === "OPERATE" ||
+    access.accessLevel === "MANAGE"
   );
 }
 
