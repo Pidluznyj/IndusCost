@@ -2501,8 +2501,12 @@ export const ProductModule = () => {
                               </div>
                             ) : (
                               formData.bom.map((item, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
-                                  <div className="col-span-4 space-y-1.5">
+                                <div
+                                  key={idx}
+                                  className="grid grid-cols-12 gap-3 p-4 bg-accent/20 rounded-xl border border-border items-end group relative"
+                                  data-testid="bom-line-row"
+                                >
+                                  <div className="col-span-6 min-w-0 space-y-1.5" data-testid="bom-line-item">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">
                                       Item (matéria-prima, produto ou componente)
                                     </label>
@@ -2530,7 +2534,7 @@ export const ProductModule = () => {
                                       onChange={(e) => updateBOMItem(idx, "quantity", parseFloat(e.target.value))}
                                     />
                                   </div>
-                                  <div className="col-span-2 space-y-1.5">
+                                  <div className="col-span-1 space-y-1.5" data-testid="bom-line-loss">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Perda (%)</label>
                                     <input
                                       type="number"
@@ -2540,7 +2544,7 @@ export const ProductModule = () => {
                                       onChange={(e) => updateBOMItem(idx, "lossPercentage", parseFloat(e.target.value))}
                                     />
                                   </div>
-                                  <div className="col-span-3 space-y-1.5">
+                                  <div className="col-span-2 min-w-0 space-y-1.5" data-testid="bom-line-notes">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Observações</label>
                                     <input
                                       type="text"
