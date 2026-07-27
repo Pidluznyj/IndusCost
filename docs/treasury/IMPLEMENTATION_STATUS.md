@@ -46,7 +46,7 @@
 | **19** | API consulta Contas a Pagar (oficial + complemento) | `DONE` | `b678929` | `GET /api/finance/treasury/payables` + `/:titleId`; filtros fornecedor/CNPJ/doc/categoria/CC/venc./programada/status/valor/conta/prioridade/responsável; batch complemento+CC; `test:treasury` 165/165 |
 | **20** | Programação de pagamentos (CP) | `DONE` | `5d06c5a` | `POST/PUT …/payables/:titleId/program-payment` + `/cancel`; parcial; acima do saldo c/ justificativa; impacto conta/consolidado + alerta negativo; optimistic lock; audit; recálculo; flag `payablesProgramming`; `test:treasury` 176/176 |
 | **21** | UI Contas a Pagar | `DONE` | `3240f2f` | `/finance/treasury/payables`; tabela paginada; filtros; totais; status/prioridade/programada/conta; impacto caixa; drawer; form programação com confirmação (saldo conta/consolidado/risco); bloqueio/adiamento/obs/histórico; responsivo; `test:treasury` 183/183 |
-| **22** | Serviço de posição financeira atual | `DONE` | _(pendente hash)_ | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
+| **22** | Serviço de posição financeira atual | `DONE` | `bedc17c` | Rules + service `getCurrentPosition`; observado/operacional/calculado/conciliado/diferença/bloqueado/aplicações/limite/por conta/consolidado; origem por valor; último snapshot válido + movimentos oficiais; divergências explícitas; repos stub movimentos/conciliado; `test:treasury` 191/191 |
 
     > **Nota de ordem:** …; consulta CP = **19**; programação CP = **20**; UI CP = **21**; posição financeira = **22** (plano original P09 balance engine).
 
@@ -301,4 +301,4 @@
 | 2026-07-27 | Prompt 19: API consulta Contas a Pagar Tesouraria (repo/query/APIs/batch) — `b678929` |
 | 2026-07-27 | Prompt 20: programação de pagamentos CP (program/alterar/cancelar + impacto + audit) — `5d06c5a` |
 | 2026-07-27 | Prompt 21: UI Contas a Pagar Tesouraria (tabela/filtros/drawer/programação/impacto) — `3240f2f` |
-| 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — _(pendente hash)_ |
+| 2026-07-27 | Prompt 22: serviço posição financeira atual (observado/calculado/conciliado/consolidado + origens) — `bedc17c` |
