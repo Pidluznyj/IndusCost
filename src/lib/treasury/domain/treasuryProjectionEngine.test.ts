@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { addTreasuryMoney } from "../treasuryMoney.js";
 import {
   applyExpectationOverlays,
   applyProgrammingOverlays,
@@ -94,7 +95,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
       enumerateTreasuryProjectionCivilDates("2026-07-27", "2026-07-29"),
       ["2026-07-27", "2026-07-28", "2026-07-29"]
     );
-    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.0.0");
+    assert.equal(TREASURY_PROJECTION_ALGORITHM_VERSION, "1.1.0");
   });
 
   it("remove cancelados e resolve saldo aberto sem negativo", () => {
@@ -146,10 +147,10 @@ describe("treasuryProjectionEngine — utilitários", () => {
     assert.equal(withProg[0]?.openBalance, "80.00");
   });
 
-  it("classifica risco CRITICAL / HIGH / LOW / NONE", () => {
+  it("classifica risco CRITICAL / HIGH / LOW / NONE no disponível operacional", () => {
     assert.equal(
       identifyProjectionRisk({
-        closingBalance: "-10.00",
+        availableBalance: "-10.00",
         minimumBalance: "0.00",
         uncertainReceivables: "0.00",
       }).riskCode,
@@ -157,7 +158,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
     );
     assert.equal(
       identifyProjectionRisk({
-        closingBalance: "50.00",
+        availableBalance: "50.00",
         minimumBalance: "100.00",
         uncertainReceivables: "20.00",
       }).riskCode,
@@ -165,7 +166,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
     );
     assert.equal(
       identifyProjectionRisk({
-        closingBalance: "200.00",
+        availableBalance: "200.00",
         minimumBalance: "0.00",
         uncertainReceivables: "15.00",
       }).riskCode,
@@ -173,7 +174,7 @@ describe("treasuryProjectionEngine — utilitários", () => {
     );
     assert.equal(
       identifyProjectionRisk({
-        closingBalance: "200.00",
+        availableBalance: "200.00",
         minimumBalance: "0.00",
         uncertainReceivables: "0.00",
       }).riskCode,
@@ -597,5 +598,266 @@ describe("treasuryProjectionEngine — fluxo determinístico", () => {
     assert.doesNotMatch(src, /from ["']express["']/);
     assert.doesNotMatch(src, /@prisma\/client/);
     assert.doesNotMatch(src, /\.server/);
+  });
+});
+
+describe("treasuryProjectionEngine — precisão e liquidez", () => {
+  it("centavos em recebimento parcial", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({
+            id: "r1",
+            originalAmount: "100.03",
+            openBalance: "33.34",
+            settledAmount: "66.69",
+          }),
+        ],
+        settlements: [
+          {
+            id: "set-cents",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "66.69",
+          },
+        ],
+      })
+    );
+    const day27 = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    const day28 = result.dayLines.find((l) => l.civilDate === "2026-07-28")!;
+    assert.equal(day27.realized, "66.69");
+    assert.equal(day28.inflows, "33.34");
+    assert.equal(day28.closingBalance, "1100.03");
+  });
+
+  it("transferência com centavos mantém consolidado", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "100.01",
+            includeInConsolidated: true,
+          }),
+          account({
+            accountId: ACC_B,
+            openingBalance: "50.02",
+            includeInConsolidated: true,
+          }),
+        ],
+        transfers: [
+          {
+            id: "t-cents",
+            transferGroupId: "gc",
+            fromAccountId: ACC_A,
+            toAccountId: ACC_B,
+            civilDate: "2026-07-27",
+            amount: "0.03",
+          },
+        ],
+      })
+    );
+    const a = result.dayLines.find(
+      (l) => l.accountId === ACC_A && l.civilDate === "2026-07-27"
+    )!;
+    const b = result.dayLines.find(
+      (l) => l.accountId === ACC_B && l.civilDate === "2026-07-27"
+    )!;
+    assert.equal(a.availableBalance, "99.98");
+    assert.equal(b.availableBalance, "50.05");
+    assert.equal(
+      addTreasuryMoney(a.availableBalance, b.availableBalance),
+      "150.03"
+    );
+  });
+
+  it("aplicação indisponível até a data de liquidez (D+2)", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        periodFrom: "2026-07-27",
+        periodTo: "2026-07-30",
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "500.00",
+            blockedBalance: "0.00",
+          }),
+        ],
+        applications: [
+          {
+            id: "app1",
+            accountId: ACC_A,
+            amount: "200.00",
+            investedOn: "2026-07-27",
+            liquidity: "D_PLUS_2",
+          },
+        ],
+      })
+    );
+    const d27 = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    const d28 = result.dayLines.find((l) => l.civilDate === "2026-07-28")!;
+    const d29 = result.dayLines.find((l) => l.civilDate === "2026-07-29")!;
+    // D+2 a partir de 27 → disponível em 29
+    assert.equal(d27.investmentsBalance, "200.00");
+    assert.equal(d27.investmentsMaturedToday, "0.00");
+    assert.equal(d27.availableBalance, "500.00");
+    assert.equal(d28.investmentsBalance, "200.00");
+    assert.equal(d29.investmentsMaturedToday, "200.00");
+    assert.equal(d29.investmentsBalance, "0.00");
+    assert.equal(d29.availableBalance, "700.00");
+  });
+
+  it("IMMEDIATE / D+1 / D+3 respeitam offsets", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        periodFrom: "2026-07-27",
+        periodTo: "2026-07-30",
+        accounts: [account({ accountId: ACC_A, openingBalance: "0.00" })],
+        applications: [
+          {
+            id: "imm",
+            accountId: ACC_A,
+            amount: "10.00",
+            investedOn: "2026-07-27",
+            liquidity: "IMMEDIATE",
+          },
+          {
+            id: "d1",
+            accountId: ACC_A,
+            amount: "20.00",
+            investedOn: "2026-07-27",
+            liquidity: "D_PLUS_1",
+          },
+          {
+            id: "d3",
+            accountId: ACC_A,
+            amount: "30.00",
+            investedOn: "2026-07-27",
+            liquidity: "D_PLUS_3",
+          },
+        ],
+      })
+    );
+    const byDate = Object.fromEntries(
+      result.dayLines.map((l) => [l.civilDate, l])
+    );
+    assert.equal(byDate["2026-07-27"]?.investmentsMaturedToday, "10.00");
+    assert.equal(byDate["2026-07-27"]?.availableBalance, "10.00");
+    assert.equal(byDate["2026-07-28"]?.investmentsMaturedToday, "20.00");
+    assert.equal(byDate["2026-07-28"]?.availableBalance, "30.00");
+    assert.equal(byDate["2026-07-29"]?.investmentsMaturedToday, "0.00");
+    assert.equal(byDate["2026-07-30"]?.investmentsMaturedToday, "30.00");
+    assert.equal(byDate["2026-07-30"]?.availableBalance, "60.00");
+  });
+
+  it("saldo bloqueado e limite de crédito ficam separados do disponível", () => {
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "100.00",
+            blockedBalance: "40.00",
+            creditLimit: "500.00",
+            usedLimit: "125.50",
+            minimumBalance: "80.00",
+          }),
+        ],
+      })
+    );
+    const day = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    assert.equal(day.availableBalance, "100.00");
+    assert.equal(day.blockedBalance, "40.00");
+    assert.equal(day.creditLimit, "500.00");
+    assert.equal(day.usedLimit, "125.50");
+    assert.equal(day.creditAvailable, "374.50");
+    assert.equal(day.totalPosition, "140.00");
+    // crédito não entra no totalPosition nem no disponível
+    assert.notEqual(day.availableBalance, "474.50");
+  });
+
+  it("conta que não permite negativo marca CRITICAL; que permite, não", () => {
+    const denied = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "10.00",
+            allowNegativeBalance: false,
+            minimumBalance: "0.00",
+          }),
+        ],
+        payables: [
+          ap({
+            id: "p1",
+            dueDate: "2026-07-27",
+            openBalance: "25.00",
+            originalAmount: "25.00",
+          }),
+        ],
+      })
+    );
+    assert.equal(
+      denied.dayLines.find((l) => l.civilDate === "2026-07-27")?.riskCode,
+      "CRITICAL"
+    );
+
+    const allowed = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [
+          account({
+            accountId: ACC_A,
+            openingBalance: "10.00",
+            allowNegativeBalance: true,
+            minimumBalance: "0.00",
+          }),
+        ],
+        payables: [
+          ap({
+            id: "p1",
+            dueDate: "2026-07-27",
+            openBalance: "25.00",
+            originalAmount: "25.00",
+          }),
+        ],
+      })
+    );
+    const line = allowed.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    assert.equal(line.availableBalance, "-15.00");
+    assert.notEqual(line.riskCode, "CRITICAL");
+  });
+
+  it("milhares de movimentos mantêm precisão Decimal", () => {
+    const settlements = Array.from({ length: 5000 }, (_, i) => ({
+      id: `s-${i}`,
+      side: "AR" as const,
+      officialTitleId: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      accountId: ACC_A,
+      civilDate: "2026-07-27",
+      amount: "0.01",
+    }));
+    const receivables = settlements.map((s, i) =>
+      ar({
+        id: `r-${i}`,
+        officialTitleId: s.officialTitleId,
+        nomusExternalId: 10_000 + i,
+        openBalance: "0.00",
+        settledAmount: "0.01",
+        originalAmount: "0.01",
+        dueDate: "2026-07-27",
+      })
+    );
+    const result = runTreasuryProjectionEngine(
+      baseInput({
+        accounts: [account({ accountId: ACC_A, openingBalance: "0.00" })],
+        receivables,
+        settlements,
+      })
+    );
+    const day = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    assert.equal(day.realized, "50.00");
+    assert.equal(day.availableBalance, "50.00");
   });
 });

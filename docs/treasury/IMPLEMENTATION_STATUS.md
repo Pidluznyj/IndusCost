@@ -74,7 +74,7 @@
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
 | Programação de pagamentos | `DONE` | P20: complemento local (data/conta/valor/prioridade/responsável/status PROGRAMMED\|AUTHORIZED); parcial; impacto conta/consolidado; audit; sem mutar `dueDate` oficial |
-| Projeção contratual / provável / confirmada | `PARTIAL` | P25 schema; P26 datas; P27 identidade; P28 motor determinístico (day lines/risco/composição); API/UI ainda pendentes |
+| Projeção contratual / provável / confirmada | `PARTIAL` | P25–P29: schema, datas, identidade, motor + precisão/liquidez; API/UI ainda pendentes |
 | Agenda financeira | `PARTIAL` | Calendário cash-flow |
 | Transferências | `NOT_STARTED` | Regra: transferência interna não altera caixa consolidado |
 | Lançamentos manuais | `NOT_STARTED` | — |
@@ -375,3 +375,4 @@
 | 2026-07-27 | Prompt 26: regras puras data de movimento (AR/AP × cenários + virada SP) — `b390439` |
 | 2026-07-27 | Prompt 27: identidade e precedência financeira (anti-dupla contagem) — `4f6cd19` |
 | 2026-07-27 | Prompt 28: motor determinístico de projeção (day lines/risco/composição) — `0ac7098` |
+| 2026-07-27 | Prompt 29: precisão Decimal + liquidez no motor — `_pending_` |

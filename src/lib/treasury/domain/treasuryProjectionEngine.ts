@@ -29,8 +29,16 @@ import {
   compareTreasuryMoney,
   negateTreasuryMoney,
   normalizeTreasuryMoneyString,
+  subtractTreasuryMoney,
   type TreasuryMoneyString,
 } from "../treasuryMoney.js";
+import {
+  resolveTreasuryApplicationLiquidityForDay,
+  resolveTreasuryCreditAvailable,
+  type TreasuryProjectionApplicationSeed,
+} from "./treasuryProjectionLiquidity.js";
+
+export type { TreasuryProjectionApplicationSeed };
 import {
   resolvePayableMovementDate,
   resolveReceivableMovementDate,
@@ -40,7 +48,7 @@ import {
   type TreasuryFinancialClaim,
 } from "./treasuryFinancialIdentityRules.js";
 
-export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.0.0" as const;
+export const TREASURY_PROJECTION_ALGORITHM_VERSION = "1.1.0" as const;
 
 // ---------------------------------------------------------------------------
 // Inputs (snapshot já carregado — o motor não busca dados)
@@ -53,8 +61,12 @@ export type TreasuryProjectionAccountBase = {
   includeInConsolidated: boolean;
   allowNegativeBalance?: boolean;
   minimumBalance: string;
-  /** Saldo-base no início do período (civil periodFrom). */
+  /** Saldo-base disponível no início do período (civil periodFrom). */
   openingBalance: string;
+  blockedBalance?: string;
+  investmentsBalance?: string;
+  creditLimit?: string;
+  usedLimit?: string;
 };
 
 export type TreasuryProjectionReceivableSeed = {
@@ -169,6 +181,7 @@ export type TreasuryProjectionEngineInput = {
   programming: TreasuryProjectionProgrammingOverlay[];
   ledgerEntries: TreasuryProjectionLedgerSeed[];
   transfers: TreasuryProjectionTransferSeed[];
+  applications?: TreasuryProjectionApplicationSeed[];
   /** Conta padrão quando o título não tem conta operacional. */
   fallbackAccountId?: string | null;
 };
@@ -199,6 +212,14 @@ export type TreasuryProjectionDayLineResult = {
   transfers: TreasuryMoneyString;
   realized: TreasuryMoneyString;
   closingBalance: TreasuryMoneyString;
+  availableBalance: TreasuryMoneyString;
+  blockedBalance: TreasuryMoneyString;
+  investmentsBalance: TreasuryMoneyString;
+  investmentsMaturedToday: TreasuryMoneyString;
+  totalPosition: TreasuryMoneyString;
+  creditLimit: TreasuryMoneyString;
+  usedLimit: TreasuryMoneyString;
+  creditAvailable: TreasuryMoneyString;
   uncertainReceivables: TreasuryMoneyString;
   minimumBalance: TreasuryMoneyString;
   riskAmount: TreasuryMoneyString;
@@ -829,7 +850,7 @@ export function groupProjectionMovementsByDayAndAccount(
 // ---------------------------------------------------------------------------
 
 export function identifyProjectionRisk(input: {
-  closingBalance: string;
+  availableBalance: string;
   minimumBalance: string;
   uncertainReceivables: string;
   allowNegativeBalance?: boolean;
@@ -837,22 +858,22 @@ export function identifyProjectionRisk(input: {
   riskCode: TreasuryProjectionRiskCode;
   riskAmount: TreasuryMoneyString;
 } {
-  const closing = money(input.closingBalance);
+  const available = money(input.availableBalance);
   const minimum = money(input.minimumBalance);
   const uncertain = money(input.uncertainReceivables);
 
   if (
-    compareTreasuryMoney(closing, "0.00") < 0 &&
+    compareTreasuryMoney(available, "0.00") < 0 &&
     !input.allowNegativeBalance
   ) {
     return {
       riskCode: "CRITICAL",
-      riskAmount: negateTreasuryMoney(closing),
+      riskAmount: negateTreasuryMoney(available),
     };
   }
 
-  if (compareTreasuryMoney(closing, minimum) < 0) {
-    const shortfall = addTreasuryMoney(minimum, negateTreasuryMoney(closing));
+  if (compareTreasuryMoney(available, minimum) < 0) {
+    const shortfall = subtractTreasuryMoney(minimum, available);
     return {
       riskCode:
         compareTreasuryMoney(uncertain, "0.00") > 0 ? "HIGH" : "MEDIUM",
@@ -895,7 +916,9 @@ export function calculateProjectionDayLine(input: {
   account: TreasuryProjectionAccountBase;
   civilDate: TreasuryCivilDate;
   openingBalance: string;
+  openingInvestments?: string;
   movements: readonly TreasuryProjectionMovement[];
+  applications?: readonly TreasuryProjectionApplicationSeed[];
 }): TreasuryProjectionDayLineResult {
   let inflows = "0.00";
   let outflows = "0.00";
@@ -908,7 +931,7 @@ export function calculateProjectionDayLine(input: {
       transfers =
         m.direction === "INFLOW"
           ? addTreasuryMoney(transfers, m.amount)
-          : addTreasuryMoney(transfers, negateTreasuryMoney(m.amount));
+          : subtractTreasuryMoney(transfers, m.amount);
       continue;
     }
     if (m.direction === "INFLOW") {
@@ -924,19 +947,49 @@ export function calculateProjectionDayLine(input: {
     }
   }
 
+  const applications = input.applications ?? [];
+  const liquidity = resolveTreasuryApplicationLiquidityForDay({
+    applications,
+    accountId: input.account.accountId,
+    civilDate: input.civilDate,
+  });
+
   const opening = money(input.openingBalance);
-  const closing = addTreasuryMoney(
-    addTreasuryMoney(opening, inflows),
-    addTreasuryMoney(negateTreasuryMoney(outflows), transfers)
+  const openingInvestments = money(input.openingInvestments);
+  const maturingToday = liquidity.maturingToday;
+
+  let availableBalance = addTreasuryMoney(opening, inflows);
+  availableBalance = subtractTreasuryMoney(availableBalance, outflows);
+  availableBalance = addTreasuryMoney(availableBalance, transfers);
+  availableBalance = addTreasuryMoney(availableBalance, maturingToday);
+
+  const blockedBalance = money(input.account.blockedBalance);
+  const investmentsBalance =
+    applications.length > 0
+      ? liquidity.stillLocked
+      : subtractTreasuryMoney(openingInvestments, maturingToday);
+
+  const totalPosition = addTreasuryMoney(
+    addTreasuryMoney(availableBalance, blockedBalance),
+    investmentsBalance
   );
+
+  const creditLimit = money(input.account.creditLimit);
+  const usedLimit = money(input.account.usedLimit);
+  const creditAvailable = resolveTreasuryCreditAvailable({
+    creditLimit,
+    usedLimit,
+  });
+
   const minimum = money(input.account.minimumBalance);
   const risk = identifyProjectionRisk({
-    closingBalance: closing,
+    availableBalance,
     minimumBalance: minimum,
     uncertainReceivables,
     allowNegativeBalance: input.account.allowNegativeBalance,
   });
   const composition = buildDayLineComposition(input.movements);
+  const closingBalance = availableBalance;
 
   return {
     accountId: input.account.accountId,
@@ -946,7 +999,15 @@ export function calculateProjectionDayLine(input: {
     outflows,
     transfers,
     realized,
-    closingBalance: closing,
+    closingBalance,
+    availableBalance,
+    blockedBalance,
+    investmentsBalance,
+    investmentsMaturedToday: maturingToday,
+    totalPosition,
+    creditLimit,
+    usedLimit,
+    creditAvailable,
     uncertainReceivables,
     minimumBalance: minimum,
     riskAmount: risk.riskAmount,
@@ -978,6 +1039,9 @@ export function runTreasuryProjectionEngine(
   const receivablesActive = removeCancelledProjectionItems(input.receivables);
   const payablesActive = removeCancelledProjectionItems(input.payables);
   const settlementsActive = removeCancelledProjectionItems(input.settlements);
+  const applicationsActive = removeCancelledProjectionItems(
+    input.applications ?? []
+  );
 
   // 5–7 — overlays
   const withExpectations = applyExpectationOverlays(
@@ -1041,6 +1105,7 @@ export function runTreasuryProjectionEngine(
   const dayLines: TreasuryProjectionDayLineResult[] = [];
   for (const account of accounts) {
     let opening = money(account.openingBalance);
+    let openingInvestments = money(account.investmentsBalance);
     for (const civilDate of dates) {
       const key = `${account.accountId}|${civilDate}`;
       const dayMovements = grouped.get(key) ?? [];
@@ -1048,10 +1113,13 @@ export function runTreasuryProjectionEngine(
         account,
         civilDate,
         openingBalance: opening,
+        openingInvestments,
         movements: dayMovements,
+        applications: applicationsActive,
       });
       dayLines.push(line);
-      opening = line.closingBalance;
+      opening = line.availableBalance;
+      openingInvestments = line.investmentsBalance;
     }
   }
 
