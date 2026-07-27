@@ -260,7 +260,8 @@ export function mapTreasuryProjectionRecalcReasonToEventType(
     return "LEDGER_ENTRY";
   if (r.includes("transfer")) return "TRANSFER";
   if (r.includes("balance") || r.includes("saldo")) return "BALANCE";
-  if (r.includes("reconcil")) return "RECONCILIATION";
+  if (r.includes("reconcil") || r.includes("ofx") || r.includes("bank_import"))
+    return "RECONCILIATION";
   if (r.includes("revers")) return "REVERSAL";
   if (r.includes("reopen") || r.includes("reabertura")) return "REOPENING";
   if (r.includes("closing") || r.includes("fechamento")) return "CLOSING";

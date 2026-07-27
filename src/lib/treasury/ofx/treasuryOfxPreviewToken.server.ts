@@ -140,3 +140,15 @@ export function peekTreasuryOfxPreviewToken(
   }
   return row;
 }
+
+/** Consome (lê + remove) o token — uso no apply após validação. */
+export function consumeTreasuryOfxPreviewToken(
+  previewToken: string,
+  options?: { nowMs?: number; expectedUserId?: string }
+): StoredPreview | null {
+  const row = peekTreasuryOfxPreviewToken(previewToken, options);
+  if (!row) return null;
+  const parts = splitToken(previewToken.trim());
+  if (parts) store.delete(parts.tokenId);
+  return row;
+}

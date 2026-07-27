@@ -2953,4 +2953,36 @@ export function parseTreasuryProjectionCompareQuery(
   };
 }
 
+export type TreasuryBankImportOfxApplyInput = {
+  previewToken: string;
+  contentHash: string | null;
+  notes: string | null;
+};
+
+export function parseTreasuryBankImportOfxApplyInput(
+  body: Record<string, unknown>
+): TreasuryBankImportOfxApplyInput {
+  const previewToken = parseTreasuryBoundedString(
+    body.previewToken ?? body.token,
+    "previewToken",
+    { required: true }
+  )!;
+  if (!previewToken.includes(".")) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "previewToken inválido.",
+      "previewToken"
+    );
+  }
+  const contentHash = parseTreasuryBoundedString(
+    body.contentHash,
+    "contentHash",
+    { required: false }
+  );
+  const notes = parseTreasuryBoundedString(body.notes, "notes", {
+    required: false,
+  });
+  return { previewToken, contentHash, notes };
+}
+
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

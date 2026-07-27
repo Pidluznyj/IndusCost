@@ -63,6 +63,9 @@ export const TREASURY_BANK_IMPORTS_PATH =
 export const TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH =
   `${TREASURY_BANK_IMPORTS_PATH}/ofx/preview` as const;
 
+export const TREASURY_BANK_IMPORTS_OFX_APPLY_PATH =
+  `${TREASURY_BANK_IMPORTS_PATH}/ofx/apply` as const;
+
 /** TTL do token de preview OFX (segundos). */
 export const TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS = 15 * 60;
 
@@ -118,6 +121,8 @@ export const TREASURY_FIELD_LIMITS = {
   attachmentUrl: 500,
   uniqueKey: 200,
   sourceHash: 128,
+  previewToken: 256,
+  contentHash: 128,
   title: 240,
   description: 4000,
   resolution: 2000,

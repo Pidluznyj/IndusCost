@@ -1,10 +1,70 @@
 /**
- * Repository mínimo de movimentos bancários — lookups de dedupe (server-only).
+ * Repository de lote/movimentos bancários — dedupe + persistência (server-only).
  */
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type {
+  Prisma,
+  PrismaClient,
+  TreasuryBankImportBatchStatus,
+  TreasuryBankMovementDirection,
+  TreasuryBankOfxFormat,
+  TreasuryCurrencyCode,
+} from "@prisma/client";
 
 export type TreasuryBankMovementDb = PrismaClient | Prisma.TransactionClient;
+
+export type TreasuryBankImportBatchRow = {
+  id: string;
+  companyCode: string;
+  accountId: string;
+  fileSha256: string;
+  originalFileName: string;
+  byteLength: number;
+  format: TreasuryBankOfxFormat | string;
+  status: TreasuryBankImportBatchStatus | string;
+  transactionCount: number;
+  summaryJson: unknown | null;
+  requestId: string | null;
+  notes: string | null;
+  createdByUserId: string;
+  createdAt: Date;
+  processedAt: Date | null;
+};
+
+export type TreasuryBankMovementCreateData = {
+  batchId: string;
+  companyCode: string;
+  accountId: string;
+  fingerprint: string;
+  fitId: string | null;
+  direction: TreasuryBankMovementDirection | string;
+  amount: string;
+  currency: TreasuryCurrencyCode | string;
+  postedCivilDate: Date;
+  userCivilDate: Date | null;
+  description: string | null;
+  documentNumber: string | null;
+  counterpartyName: string | null;
+  trnType: string | null;
+  normalizedPayloadJson: Prisma.InputJsonValue | null;
+  sortOrder: number;
+};
+
+export type TreasuryBankImportBatchCreateData = {
+  companyCode: string;
+  accountId: string;
+  fileSha256: string;
+  originalFileName: string;
+  byteLength: number;
+  format: TreasuryBankOfxFormat | string;
+  status: TreasuryBankImportBatchStatus | string;
+  transactionCount: number;
+  summaryJson: Prisma.InputJsonValue | null;
+  requestId: string | null;
+  notes: string | null;
+  createdByUserId: string;
+  processedAt: Date | null;
+};
 
 export type TreasuryBankMovementRepository = {
   findExistingFingerprints(
@@ -17,14 +77,71 @@ export type TreasuryBankMovementRepository = {
     fileSha256: string,
     db?: TreasuryBankMovementDb
   ): Promise<string | null>;
+  findBatchByFileSha256(
+    accountId: string,
+    fileSha256: string,
+    db?: TreasuryBankMovementDb
+  ): Promise<TreasuryBankImportBatchRow | null>;
+  findBatchById(
+    id: string,
+    db?: TreasuryBankMovementDb
+  ): Promise<TreasuryBankImportBatchRow | null>;
+  createBatch(
+    data: TreasuryBankImportBatchCreateData,
+    db?: TreasuryBankMovementDb
+  ): Promise<TreasuryBankImportBatchRow>;
+  createMovements(
+    rows: readonly TreasuryBankMovementCreateData[],
+    db?: TreasuryBankMovementDb
+  ): Promise<{ id: string; fingerprint: string }[]>;
 };
+
+function mapBatch(
+  row: {
+    id: string;
+    companyCode: string;
+    accountId: string;
+    fileSha256: string;
+    originalFileName: string;
+    byteLength: number;
+    format: TreasuryBankOfxFormat;
+    status: TreasuryBankImportBatchStatus;
+    transactionCount: number;
+    summaryJson: Prisma.JsonValue | null;
+    requestId: string | null;
+    notes: string | null;
+    createdByUserId: string;
+    createdAt: Date;
+    processedAt: Date | null;
+  }
+): TreasuryBankImportBatchRow {
+  return {
+    id: row.id,
+    companyCode: row.companyCode,
+    accountId: row.accountId,
+    fileSha256: row.fileSha256,
+    originalFileName: row.originalFileName,
+    byteLength: row.byteLength,
+    format: row.format,
+    status: row.status,
+    transactionCount: row.transactionCount,
+    summaryJson: row.summaryJson,
+    requestId: row.requestId,
+    notes: row.notes,
+    createdByUserId: row.createdByUserId,
+    createdAt: row.createdAt,
+    processedAt: row.processedAt,
+  };
+}
 
 export function createTreasuryBankMovementRepository(
   prisma: PrismaClient
 ): TreasuryBankMovementRepository {
   return {
     async findExistingFingerprints(accountId, fingerprints, db = prisma) {
-      const unique = [...new Set(fingerprints.map((f) => f.trim()).filter(Boolean))];
+      const unique = [
+        ...new Set(fingerprints.map((f) => f.trim()).filter(Boolean)),
+      ];
       if (unique.length === 0) return new Set();
       const rows = await db.treasuryBankMovement.findMany({
         where: { accountId, fingerprint: { in: unique } },
@@ -44,6 +161,76 @@ export function createTreasuryBankMovementRepository(
         select: { id: true },
       });
       return row?.id ?? null;
+    },
+
+    async findBatchByFileSha256(accountId, fileSha256, db = prisma) {
+      const row = await db.treasuryBankImportBatch.findUnique({
+        where: {
+          accountId_fileSha256: {
+            accountId,
+            fileSha256: fileSha256.trim(),
+          },
+        },
+      });
+      return row ? mapBatch(row) : null;
+    },
+
+    async findBatchById(id, db = prisma) {
+      const row = await db.treasuryBankImportBatch.findUnique({ where: { id } });
+      return row ? mapBatch(row) : null;
+    },
+
+    async createBatch(data, db = prisma) {
+      const row = await db.treasuryBankImportBatch.create({
+        data: {
+          companyCode: data.companyCode,
+          accountId: data.accountId,
+          fileSha256: data.fileSha256,
+          originalFileName: data.originalFileName,
+          byteLength: data.byteLength,
+          format: data.format as TreasuryBankOfxFormat,
+          status: data.status as TreasuryBankImportBatchStatus,
+          transactionCount: data.transactionCount,
+          summaryJson: data.summaryJson ?? undefined,
+          requestId: data.requestId,
+          notes: data.notes,
+          createdByUserId: data.createdByUserId,
+          processedAt: data.processedAt,
+        },
+      });
+      return mapBatch(row);
+    },
+
+    async createMovements(rows, db = prisma) {
+      if (rows.length === 0) return [];
+      const created: { id: string; fingerprint: string }[] = [];
+      for (const row of rows) {
+        const inserted = await db.treasuryBankMovement.create({
+          data: {
+            batchId: row.batchId,
+            companyCode: row.companyCode,
+            accountId: row.accountId,
+            fingerprint: row.fingerprint,
+            fitId: row.fitId,
+            direction: row.direction as TreasuryBankMovementDirection,
+            amount: row.amount,
+            currency: row.currency as TreasuryCurrencyCode,
+            postedCivilDate: row.postedCivilDate,
+            userCivilDate: row.userCivilDate,
+            description: row.description,
+            documentNumber: row.documentNumber,
+            counterpartyName: row.counterpartyName,
+            trnType: row.trnType,
+            normalizedPayloadJson: row.normalizedPayloadJson ?? undefined,
+            sortOrder: row.sortOrder,
+            reconciliationStatus: "PENDING",
+            reconciledAmount: "0.00",
+          },
+          select: { id: true, fingerprint: true },
+        });
+        created.push(inserted);
+      }
+      return created;
     },
   };
 }

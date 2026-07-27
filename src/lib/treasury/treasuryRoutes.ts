@@ -24,11 +24,13 @@ import { createTreasuryAlertSettingsControllers } from "./controllers/treasuryAl
 import { createTreasuryDailyClosingPreviewControllers } from "./controllers/treasuryDailyClosingPreviewController.js";
 import { createTreasuryDailyClosingControllers } from "./controllers/treasuryDailyClosingController.js";
 import { createTreasuryBankImportOfxPreviewControllers } from "./controllers/treasuryBankImportOfxPreviewController.js";
+import { createTreasuryBankImportOfxApplyControllers } from "./controllers/treasuryBankImportOfxApplyController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
   TREASURY_AVAILABILITY_PATH,
+  TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
   TREASURY_COLLECTION_ACTIONS_PATH,
   TREASURY_DAILY_CLOSING_PATH,
@@ -99,6 +101,9 @@ export function registerTreasuryRoutes(
     getCurrentAppUser,
   });
   const ofxPreview = createTreasuryBankImportOfxPreviewControllers({
+    getCurrentAppUser,
+  });
+  const ofxApply = createTreasuryBankImportOfxApplyControllers({
     getCurrentAppUser,
   });
   const ofxUpload = multer({
@@ -243,6 +248,15 @@ export function registerTreasuryRoutes(
     manageReconciliation,
     ofxUpload.single("file"),
     ofxPreview.preview
+  );
+
+  app.post(
+    TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    ofxImportEnabled,
+    manageReconciliation,
+    ofxApply.apply
   );
 
   app.get(

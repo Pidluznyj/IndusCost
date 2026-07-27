@@ -35,6 +35,7 @@ export {
   TREASURY_DAILY_CLOSING_PREVIEW_PATH,
   TREASURY_BANK_IMPORTS_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
+  TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
   TREASURY_OFX_PREVIEW_TOKEN_TTL_SECONDS,
 } from "./treasuryConstants.js";
 export type { TreasuryFieldLimitKey } from "./treasuryConstants.js";
@@ -272,6 +273,7 @@ export {
   parseTreasuryDailyClosingCloseInput,
   parseTreasuryDailyClosingListQuery,
   parseTreasuryDailyClosingReopenInput,
+  parseTreasuryBankImportOfxApplyInput,
   parseTreasuryDateRangeFilter,
   parseTreasuryProjectionCalculateInput,
   parseTreasuryProjectionCompareQuery,
@@ -327,6 +329,7 @@ export type {
   TreasuryDailyClosingCloseInput,
   TreasuryDailyClosingListQuery,
   TreasuryDailyClosingReopenInput,
+  TreasuryBankImportOfxApplyInput,
   TreasuryDailyClosingCaveatInput,
   TreasuryDeactivateAccountInput,
   TreasuryProjectionCalculateInput,
