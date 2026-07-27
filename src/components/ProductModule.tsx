@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   filterProductEngineeringListItems,
   hasProductEngineeringListFilters,
+  type ProductEngineeringListCiuFilter,
   type ProductEngineeringListStatusFilter,
 } from "@/src/lib/productEngineeringListFilters";
 import { 
@@ -277,6 +278,9 @@ export const ProductModule = () => {
   const [draftStatusFilter, setDraftStatusFilter] = useState<ProductEngineeringListStatusFilter>("");
   const [appliedStatusFilter, setAppliedStatusFilter] =
     useState<ProductEngineeringListStatusFilter>("");
+  const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
+  const [appliedCiuFilter, setAppliedCiuFilter] =
+    useState<ProductEngineeringListCiuFilter>("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -1008,8 +1012,9 @@ export const ProductModule = () => {
       filterProductEngineeringListItems(items, {
         search: appliedSearch,
         status: appliedStatusFilter,
+        ciu: appliedCiuFilter,
       }),
-    [items, appliedSearch, appliedStatusFilter]
+    [items, appliedSearch, appliedStatusFilter, appliedCiuFilter]
   );
 
   const selectPendingPublicationItems = useCallback(() => {
@@ -1028,6 +1033,7 @@ export const ProductModule = () => {
     event?.preventDefault();
     setAppliedSearch(draftSearch.trim());
     setAppliedStatusFilter(draftStatusFilter);
+    setAppliedCiuFilter(draftCiuFilter);
     setSelectedIds([]);
   };
 
@@ -1036,6 +1042,8 @@ export const ProductModule = () => {
     setAppliedSearch("");
     setDraftStatusFilter("");
     setAppliedStatusFilter("");
+    setDraftCiuFilter("");
+    setAppliedCiuFilter("");
     setSelectedIds([]);
   };
 
@@ -1044,6 +1052,8 @@ export const ProductModule = () => {
     appliedSearch,
     draftStatus: draftStatusFilter,
     appliedStatus: appliedStatusFilter,
+    draftCiu: draftCiuFilter,
+    appliedCiu: appliedCiuFilter,
   });
 
   const handleExportEngineering = () => {
@@ -1472,6 +1482,21 @@ export const ProductModule = () => {
               <option value="">Todos os status</option>
               <option value="ACTIVE">Ativo</option>
               <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <select
+              className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={draftCiuFilter}
+              onChange={(e) =>
+                setDraftCiuFilter(e.target.value as ProductEngineeringListCiuFilter)
+              }
+              data-testid="products-ciu-filter"
+              aria-label="Filtrar por status do CIU atual"
+              title="Filtrar pela coluna CIU atual (badge Parcial)"
+            >
+              <option value="">Todos os CIU</option>
+              <option value="PARTIAL">CIU parcial</option>
+              <option value="COMPLETE">CIU completo</option>
             </select>
 
             <button
