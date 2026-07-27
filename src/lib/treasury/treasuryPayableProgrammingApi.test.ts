@@ -183,6 +183,26 @@ describe("treasuryPayableProgrammingApi — handlers", () => {
           },
         };
       },
+      async holdPayable() {
+        return {
+          payable: payableStub,
+          projectionRecalc: {
+            accepted: true,
+            deferred: true,
+            reason: "queued",
+          },
+        };
+      },
+      async releaseHoldPayable() {
+        return {
+          payable: payableStub,
+          projectionRecalc: {
+            accepted: true,
+            deferred: true,
+            reason: "queued",
+          },
+        };
+      },
     };
 
     const controllers = createTreasuryPayableProgrammingControllers({

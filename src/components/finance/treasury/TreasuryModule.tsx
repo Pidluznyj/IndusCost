@@ -10,6 +10,7 @@ import { TreasuryScaffoldPage } from "./TreasuryScaffoldPage.js";
 import { TreasuryAccountsPage } from "./TreasuryAccountsPage.js";
 import { TreasuryAccountBalancePage } from "./TreasuryAccountBalancePage.js";
 import { TreasuryReceivablesPage } from "./TreasuryReceivablesPage.js";
+import { TreasuryPayablesPage } from "./TreasuryPayablesPage.js";
 
 /**
  * Shell da Central de Tesouraria — rotas aninhadas sob /finance/treasury/*.
@@ -57,6 +58,7 @@ export function TreasuryModule() {
           element={<TreasuryAccountBalancePage />}
         />
         <Route path="receivables" element={<TreasuryReceivablesPage />} />
+        <Route path="payables" element={<TreasuryPayablesPage />} />
         <Route
           path="*"
           element={<Navigate to={TREASURY_UI_BASE_PATH} replace />}

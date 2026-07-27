@@ -193,6 +193,7 @@ export type TreasuryPayableProgramPaymentInput = {
   priority: TreasuryTitleOperationalPriority;
   responsibleUserId: string | null;
   justification: string;
+  notes: string | null;
   status: TreasuryPayableProgrammingStatus;
   expectedVersion: number;
 };
@@ -205,6 +206,7 @@ export type TreasuryPayableProgramPaymentUpdateInput = {
   priority?: TreasuryTitleOperationalPriority;
   responsibleUserId?: string | null;
   justification: string;
+  notes?: string | null;
   status?: TreasuryPayableProgrammingStatus;
   expectedVersion: number;
 };
@@ -213,6 +215,13 @@ export type TreasuryPayableProgramPaymentUpdateInput = {
 export type TreasuryPayableProgramPaymentCancelInput = {
   reason: string;
   expectedVersion: number;
+};
+
+/** POST /payables/:titleId/hold | /release-hold */
+export type TreasuryPayableHoldInput = {
+  reason: string;
+  expectedVersion: number;
+  notes?: string | null;
 };
 
 export type TreasuryCreateBalanceSnapshotInput = {
@@ -1765,6 +1774,11 @@ export function parseTreasuryPayableProgramPaymentInput(
     priority,
     responsibleUserId,
     justification,
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao ?? body["observação"],
+      "notes",
+      { required: false }
+    ),
     status,
     expectedVersion: parseNonNegativeInt(
       body.expectedVersion ?? body.version,
@@ -1861,6 +1875,21 @@ export function parseTreasuryPayableProgramPaymentUpdateInput(
       true
     )!;
   }
+  if (
+    hasOwn(body, "notes") ||
+    hasOwn(body, "observacao") ||
+    hasOwn(body, "observação")
+  ) {
+    out.notes = parseOptionalNullableBoundedString(
+      hasOwn(body, "notes")
+        ? body
+        : {
+            notes: body.observacao ?? body["observação"],
+          },
+      "notes",
+      "notes"
+    );
+  }
   return out;
 }
 
@@ -1884,6 +1913,35 @@ export function parseTreasuryPayableProgramPaymentCancelInput(
     expectedVersion: parseNonNegativeInt(
       body.expectedVersion ?? body.version,
       "expectedVersion"
+    ),
+  };
+}
+
+export function parseTreasuryPayableHoldInput(
+  body: Record<string, unknown>
+): TreasuryPayableHoldInput {
+  const reason = parseTreasuryBoundedString(
+    body.reason ?? body.motivo ?? body.justification ?? body.justificativa,
+    "reason",
+    { required: true }
+  );
+  if (!reason) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "reason é obrigatório.",
+      "reason"
+    );
+  }
+  return {
+    reason,
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+    notes: parseTreasuryBoundedString(
+      body.notes ?? body.observacao,
+      "notes",
+      { required: false }
     ),
   };
 }

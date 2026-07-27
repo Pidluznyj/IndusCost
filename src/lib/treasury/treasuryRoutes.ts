@@ -287,6 +287,26 @@ export function registerTreasuryRoutes(
     payableProgramming.cancelProgramPayment
   );
 
+  app.post(
+    `${TREASURY_PAYABLES_PATH}/:titleId/hold`,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    programPayables,
+    viewOfficialPayables,
+    payableProgramming.holdPayable
+  );
+
+  app.post(
+    `${TREASURY_PAYABLES_PATH}/:titleId/release-hold`,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    programPayables,
+    viewOfficialPayables,
+    payableProgramming.releaseHoldPayable
+  );
+
   app.put(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/expectation`,
     requireAppAuth,

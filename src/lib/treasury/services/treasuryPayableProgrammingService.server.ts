@@ -7,6 +7,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
 import type {
+  TreasuryPayableHoldInput,
   TreasuryPayableProgramPaymentCancelInput,
   TreasuryPayableProgramPaymentInput,
   TreasuryPayableProgramPaymentUpdateInput,
@@ -177,6 +178,22 @@ export type TreasuryPayableProgrammingService = {
     impact: TreasuryPayableProgrammingImpactDto | null;
     projectionRecalc: TreasuryProjectionRecalcResult;
   }>;
+  holdPayable(
+    actor: TreasuryPayableProgrammingActor,
+    titleId: string,
+    input: TreasuryPayableHoldInput
+  ): Promise<{
+    payable: TreasuryPayableListItemDto;
+    projectionRecalc: TreasuryProjectionRecalcResult;
+  }>;
+  releaseHoldPayable(
+    actor: TreasuryPayableProgrammingActor,
+    titleId: string,
+    input: TreasuryPayableHoldInput
+  ): Promise<{
+    payable: TreasuryPayableListItemDto;
+    projectionRecalc: TreasuryProjectionRecalcResult;
+  }>;
 };
 
 export function createTreasuryPayableProgrammingService(deps: {
@@ -331,6 +348,7 @@ export function createTreasuryPayableProgrammingService(deps: {
               priority: input.priority,
               nextAction: input.status,
               reason: input.justification,
+              notes: input.notes,
               createdByUserId: actor.userId,
             },
             tx
@@ -367,6 +385,7 @@ export function createTreasuryPayableProgrammingService(deps: {
               priority: input.priority,
               nextAction: input.status,
               reason: input.justification,
+              notes: input.notes,
               updatedByUserId: actor.userId,
               expectedVersion: input.expectedVersion,
             },
@@ -483,6 +502,7 @@ export function createTreasuryPayableProgrammingService(deps: {
             priority: nextPriority,
             nextAction: nextStatus,
             reason: input.justification,
+            notes: input.notes,
             updatedByUserId: actor.userId,
             expectedVersion: input.expectedVersion,
           },
@@ -619,6 +639,192 @@ export function createTreasuryPayableProgrammingService(deps: {
       });
 
       return { payable, impact, projectionRecalc };
+    },
+
+    async holdPayable(actor, titleId, input) {
+      assertCanProgram(actor);
+      const id = titleId.trim();
+      if (!id) {
+        throw new TreasuryDomainError(
+          "REQUIRED_FIELD",
+          "titleId é obrigatório.",
+          "titleId"
+        );
+      }
+      const official = await officialAdapter.findPayableById(id);
+      if (!official) {
+        throw new TreasuryDomainError(
+          "NOT_FOUND",
+          "Título a pagar não encontrado.",
+          "titleId"
+        );
+      }
+      const existing = await complementRepo.findByOfficialTitle(
+        "PAYABLE",
+        official.id
+      );
+      assertPayableAllowsProgramming(official, existing);
+      assertPayableProgrammingVersionMatch({
+        expectedVersion: input.expectedVersion,
+        actualVersion: existing?.version ?? null,
+      });
+      if (existing?.status === "ON_HOLD") {
+        throw new TreasuryDomainError(
+          "CONFLICT",
+          "Título já está bloqueado (ON_HOLD).",
+          "titleId"
+        );
+      }
+
+      const saved = await runInTransaction(async (tx) => {
+        let row: TreasuryTitleOperationalComplementRow;
+        if (!existing) {
+          row = await complementRepo.create(
+            {
+              titleType: "PAYABLE",
+              officialTitleId: official.id,
+              officialExternalId: official.externalId,
+              status: "ON_HOLD",
+              reason: input.reason,
+              notes: input.notes ?? null,
+              createdByUserId: actor.userId,
+            },
+            tx
+          );
+          await writeTreasuryAuditLog(
+            tx,
+            buildTreasuryCreatedAudit({
+              entityType: "PAYMENT_SCHEDULE",
+              entityId: row.id,
+              after: toTreasuryTitleOperationalComplementDto(row),
+              justification: input.reason,
+              metadata: {
+                titleId: official.id,
+                titleType: "PAYABLE",
+                action: "hold_payable",
+              },
+              actor: actorCtx(actor),
+            })
+          );
+        } else {
+          const beforeDto = toTreasuryTitleOperationalComplementDto(existing);
+          row = await complementRepo.update(
+            existing.id,
+            {
+              status: "ON_HOLD",
+              reason: input.reason,
+              notes: input.notes,
+              updatedByUserId: actor.userId,
+              expectedVersion: input.expectedVersion,
+            },
+            tx
+          );
+          await writeTreasuryAuditLog(
+            tx,
+            buildTreasuryUpdatedAudit({
+              entityType: "PAYMENT_SCHEDULE",
+              entityId: row.id,
+              before: beforeDto,
+              after: toTreasuryTitleOperationalComplementDto(row),
+              justification: input.reason,
+              metadata: {
+                titleId: official.id,
+                titleType: "PAYABLE",
+                action: "hold_payable",
+              },
+              actor: actorCtx(actor),
+            })
+          );
+        }
+        return row;
+      });
+
+      return {
+        payable: buildPayable(official, saved),
+        projectionRecalc: requestProjection({
+          reason: "payable_held",
+          titleId: official.id,
+          titleType: "PAYABLE",
+          expectedDate: toCivilDateKey(saved.expectedDate),
+          requestId: actor.requestId ?? null,
+        }),
+      };
+    },
+
+    async releaseHoldPayable(actor, titleId, input) {
+      assertCanProgram(actor);
+      const id = titleId.trim();
+      if (!id) {
+        throw new TreasuryDomainError(
+          "REQUIRED_FIELD",
+          "titleId é obrigatório.",
+          "titleId"
+        );
+      }
+      const official = await officialAdapter.findPayableById(id);
+      if (!official) {
+        throw new TreasuryDomainError(
+          "NOT_FOUND",
+          "Título a pagar não encontrado.",
+          "titleId"
+        );
+      }
+      const existing = await complementRepo.findByOfficialTitle(
+        "PAYABLE",
+        official.id
+      );
+      if (!existing || existing.status !== "ON_HOLD") {
+        throw new TreasuryDomainError(
+          "CONFLICT",
+          "Título não está bloqueado.",
+          "titleId"
+        );
+      }
+      assertPayableProgrammingVersionMatch({
+        expectedVersion: input.expectedVersion,
+        actualVersion: existing.version,
+      });
+      const beforeDto = toTreasuryTitleOperationalComplementDto(existing);
+      const saved = await runInTransaction(async (tx) => {
+        const row = await complementRepo.update(
+          existing.id,
+          {
+            status: "ACTIVE",
+            reason: input.reason,
+            notes: input.notes,
+            updatedByUserId: actor.userId,
+            expectedVersion: input.expectedVersion,
+          },
+          tx
+        );
+        await writeTreasuryAuditLog(
+          tx,
+          buildTreasuryUpdatedAudit({
+            entityType: "PAYMENT_SCHEDULE",
+            entityId: row.id,
+            before: beforeDto,
+            after: toTreasuryTitleOperationalComplementDto(row),
+            justification: input.reason,
+            metadata: {
+              titleId: official.id,
+              titleType: "PAYABLE",
+              action: "release_hold_payable",
+            },
+            actor: actorCtx(actor),
+          })
+        );
+        return row;
+      });
+      return {
+        payable: buildPayable(official, saved),
+        projectionRecalc: requestProjection({
+          reason: "payable_hold_released",
+          titleId: official.id,
+          titleType: "PAYABLE",
+          expectedDate: toCivilDateKey(saved.expectedDate),
+          requestId: actor.requestId ?? null,
+        }),
+      };
     },
   };
 }

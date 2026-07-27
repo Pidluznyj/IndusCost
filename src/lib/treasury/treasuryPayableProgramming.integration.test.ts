@@ -207,6 +207,7 @@ describe("treasuryPayableProgramming — integração", () => {
       priority: "HIGH",
       responsibleUserId: "user-resp",
       justification: "Programação parcial de caixa",
+      notes: "Obs programação",
       status: "PROGRAMMED",
       expectedVersion: 0,
     });
@@ -239,6 +240,7 @@ describe("treasuryPayableProgramming — integração", () => {
       priority: "URGENT",
       responsibleUserId: null,
       justification: "Acordo excepcional com fornecedor",
+      notes: null,
       status: "AUTHORIZED",
       expectedVersion: 0,
     });
@@ -259,6 +261,7 @@ describe("treasuryPayableProgramming — integração", () => {
           priority: "NORMAL",
           responsibleUserId: null,
           justification: "   ",
+          notes: null,
           status: "PROGRAMMED",
           expectedVersion: 0,
         }),
@@ -275,6 +278,7 @@ describe("treasuryPayableProgramming — integração", () => {
           priority: "NORMAL",
           responsibleUserId: null,
           justification: "ok",
+          notes: null,
           status: "PROGRAMMED",
           expectedVersion: 0,
         }),
@@ -289,6 +293,7 @@ describe("treasuryPayableProgramming — integração", () => {
       priority: "NORMAL",
       responsibleUserId: null,
       justification: "ok",
+      notes: null,
       status: "PROGRAMMED",
       expectedVersion: 0,
     });
@@ -314,6 +319,7 @@ describe("treasuryPayableProgramming — integração", () => {
       priority: "NORMAL",
       responsibleUserId: "r1",
       justification: "programar",
+      notes: null,
       status: "PROGRAMMED",
       expectedVersion: 0,
     });

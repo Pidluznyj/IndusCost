@@ -6,6 +6,7 @@ import type { Request, Response } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
 import {
+  parseTreasuryPayableHoldInput,
   parseTreasuryPayableProgramPaymentCancelInput,
   parseTreasuryPayableProgramPaymentInput,
   parseTreasuryPayableProgramPaymentUpdateInput,
@@ -113,6 +114,40 @@ export function createTreasuryPayableProgrammingControllers(
           ok: true,
           payable: result.payable,
           impact: result.impact,
+          projectionRecalc: result.projectionRecalc,
+          requestId,
+        });
+      }),
+
+    holdPayable: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const titleId = String(req.params.titleId ?? "").trim();
+        const input = parseTreasuryPayableHoldInput(asBody(req));
+        const result = await service.holdPayable(
+          buildTreasuryPayableProgrammingActor(user, requestId),
+          titleId,
+          input
+        );
+        res.status(200).json({
+          ok: true,
+          payable: result.payable,
+          projectionRecalc: result.projectionRecalc,
+          requestId,
+        });
+      }),
+
+    releaseHoldPayable: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const titleId = String(req.params.titleId ?? "").trim();
+        const input = parseTreasuryPayableHoldInput(asBody(req));
+        const result = await service.releaseHoldPayable(
+          buildTreasuryPayableProgrammingActor(user, requestId),
+          titleId,
+          input
+        );
+        res.status(200).json({
+          ok: true,
+          payable: result.payable,
           projectionRecalc: result.projectionRecalc,
           requestId,
         });
