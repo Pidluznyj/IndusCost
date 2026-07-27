@@ -984,4 +984,181 @@ export function parseTreasuryReceivablesListQuery(
   };
 }
 
+export type TreasuryReceivableExpectationInput = {
+  expectedDate?: string | null;
+  plannedAccountId?: string | null;
+  responsibleUserId?: string | null;
+  priority?: TreasuryTitleOperationalPriority | null;
+  nextAction?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  expectedVersion: number;
+};
+
+function hasOwn(body: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, key);
+}
+
+function parseOptionalNullableBoundedString(
+  body: Record<string, unknown>,
+  key: string,
+  field: keyof typeof TREASURY_FIELD_LIMITS
+): string | null | undefined {
+  if (!hasOwn(body, key)) return undefined;
+  const value = body[key];
+  if (value === null || value === "") return null;
+  return parseTreasuryBoundedString(value, field, { required: true });
+}
+
+function parseOptionalNullableCivilDate(
+  body: Record<string, unknown>,
+  key: string,
+  field: string
+): string | null | undefined {
+  if (!hasOwn(body, key)) return undefined;
+  const value = body[key];
+  if (value === null || value === "") return null;
+  return parseTreasuryCivilDate(value, field);
+}
+
+function parseNonNegativeInt(
+  value: unknown,
+  field: string
+): number {
+  if (value == null || value === "") {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      `${field} é obrigatório.`,
+      field
+    );
+  }
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      `${field} deve ser inteiro >= 0.`,
+      field
+    );
+  }
+  return n;
+}
+
+/**
+ * PUT expectativa operacional de CR.
+ * Rejeita tentativas de mutar vencimento oficial no payload.
+ */
+export function parseTreasuryReceivableExpectationInput(
+  body: Record<string, unknown>
+): TreasuryReceivableExpectationInput {
+  if (
+    hasOwn(body, "dueDate") ||
+    hasOwn(body, "vencimento") ||
+    hasOwn(body, "officialDueDate")
+  ) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "Vencimento oficial não pode ser alterado pela Tesouraria.",
+      "dueDate"
+    );
+  }
+
+  const out: TreasuryReceivableExpectationInput = {
+    expectedVersion: parseNonNegativeInt(
+      body.expectedVersion ?? body.version,
+      "expectedVersion"
+    ),
+  };
+
+  if (hasOwn(body, "expectedDate") || hasOwn(body, "dataEsperada")) {
+    out.expectedDate = parseOptionalNullableCivilDate(
+      hasOwn(body, "expectedDate")
+        ? body
+        : { expectedDate: body.dataEsperada },
+      "expectedDate",
+      "expectedDate"
+    );
+  }
+
+  const planned = parseOptionalNullableBoundedString(
+    hasOwn(body, "plannedAccountId")
+      ? body
+      : hasOwn(body, "contaPrevista")
+        ? { plannedAccountId: body.contaPrevista }
+        : body,
+    "plannedAccountId",
+    "plannedAccountId"
+  );
+  if (planned !== undefined) out.plannedAccountId = planned;
+
+  const responsibleKey = hasOwn(body, "responsibleUserId")
+    ? "responsibleUserId"
+    : hasOwn(body, "responsible")
+      ? "responsible"
+      : hasOwn(body, "responsavel")
+        ? "responsavel"
+        : null;
+  if (responsibleKey) {
+    const raw = body[responsibleKey];
+    if (raw === null || raw === "") {
+      out.responsibleUserId = null;
+    } else {
+      out.responsibleUserId = parseTreasuryBoundedString(raw, "userId", {
+        required: true,
+      });
+    }
+  }
+
+  if (
+    hasOwn(body, "priority") ||
+    hasOwn(body, "prioridade")
+  ) {
+    const raw = hasOwn(body, "priority") ? body.priority : body.prioridade;
+    if (raw === null || raw === "") {
+      out.priority = null;
+    } else {
+      out.priority = parseTreasuryEnum(
+        raw,
+        TREASURY_TITLE_OPERATIONAL_PRIORITIES,
+        "priority",
+        true
+      );
+    }
+  }
+
+  const nextAction = parseOptionalNullableBoundedString(
+    hasOwn(body, "nextAction")
+      ? body
+      : hasOwn(body, "proximaAcao")
+        ? { nextAction: body.proximaAcao }
+        : body,
+    "nextAction",
+    "nextAction"
+  );
+  if (nextAction !== undefined) out.nextAction = nextAction;
+
+  const reason = parseOptionalNullableBoundedString(
+    hasOwn(body, "reason")
+      ? body
+      : hasOwn(body, "motivo")
+        ? { reason: body.motivo }
+        : body,
+    "reason",
+    "reason"
+  );
+  if (reason !== undefined) out.reason = reason;
+
+  const notes = parseOptionalNullableBoundedString(
+    hasOwn(body, "notes")
+      ? body
+      : hasOwn(body, "observacao") || hasOwn(body, "observação")
+        ? { notes: body.observacao ?? body["observação"] }
+        : body,
+    "notes",
+    "notes"
+  );
+  if (notes !== undefined) out.notes = notes;
+
+  return out;
+}
+
 export { parseOptionalTreasuryMoneyString, parseTreasuryMoneyString };

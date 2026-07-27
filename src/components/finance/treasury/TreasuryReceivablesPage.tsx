@@ -12,7 +12,10 @@ import {
   fetchTreasuryReceivable,
   fetchTreasuryReceivables,
 } from "@/src/lib/treasury/treasuryReceivablesApi.js";
-import { canViewTreasuryReceivables } from "@/src/lib/treasury/treasuryReceivablesPermissions.js";
+import {
+  canManageTreasuryReceivables,
+  canViewTreasuryReceivables,
+} from "@/src/lib/treasury/treasuryReceivablesPermissions.js";
 import {
   TREASURY_RECEIVABLES_PAGE_SUBTITLE,
   TREASURY_RECEIVABLES_PAGE_TITLE,
@@ -121,6 +124,7 @@ export function TreasuryReceivablesPage() {
     canPerformAction: permissions.canPerformAction,
   };
   const canView = canViewTreasuryReceivables(permCheck);
+  const canManage = canManageTreasuryReceivables(permCheck);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const filters = useMemo(() => readFilters(searchParams), [searchParams]);
@@ -289,7 +293,15 @@ export function TreasuryReceivablesPage() {
         <TreasuryReceivableDetailDrawer
           open={Boolean(detailId && detailRow)}
           row={detailRow}
+          canManage={canManage}
           onClose={() => patchParams({ titleId: null })}
+          onSaved={(saved) => {
+            setDetailRow(saved);
+            setRows((prev) =>
+              prev.map((r) => (r.titleId === saved.titleId ? saved : r))
+            );
+            void loadList();
+          }}
         />
       </div>
     </FinanceBiDashboardShell>

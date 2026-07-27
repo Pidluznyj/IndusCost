@@ -5,6 +5,7 @@
 import { fetchJsonOk } from "@/src/lib/http.js";
 import {
   TREASURY_RECEIVABLES_PATH,
+  type TreasuryReceivableExpectationInput,
   type TreasuryReceivableListItemDto,
   type TreasuryReceivableSortField,
   type TreasuryReceivablesListResponse,
@@ -108,5 +109,23 @@ export async function fetchTreasuryReceivable(
     credentials: "include",
     signal,
   });
+  return res.receivable;
+}
+
+export async function putTreasuryReceivableExpectation(
+  titleId: string,
+  body: TreasuryReceivableExpectationInput
+): Promise<TreasuryReceivableListItemDto> {
+  const res = await fetchJsonOk<{
+    receivable: TreasuryReceivableListItemDto;
+  }>(
+    `${TREASURY_RECEIVABLES_PATH}/${encodeURIComponent(titleId)}/expectation`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
   return res.receivable;
 }

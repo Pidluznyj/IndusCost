@@ -59,6 +59,10 @@ export function registerTreasuryRoutes(
     TREASURY_RESOURCE_KEYS.receivables,
     TREASURY_ACTIONS.view
   );
+  const manageReceivables = requireResource(
+    TREASURY_RESOURCE_KEYS.receivables,
+    TREASURY_ACTIONS.manage
+  );
   const viewOfficialReceivables = requireResource(
     FINANCE_MODULE_RESOURCE_KEYS.accountsReceivable,
     TREASURY_ACTIONS.view
@@ -177,5 +181,14 @@ export function registerTreasuryRoutes(
     viewReceivables,
     viewOfficialReceivables,
     receivables.getReceivable
+  );
+
+  app.put(
+    `${TREASURY_RECEIVABLES_PATH}/:titleId/expectation`,
+    requireAppAuth,
+    moduleEnabled,
+    manageReceivables,
+    viewOfficialReceivables,
+    receivables.putExpectation
   );
 }

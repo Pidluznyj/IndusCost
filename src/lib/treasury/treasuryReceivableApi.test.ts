@@ -9,6 +9,7 @@ import { createTreasuryReceivableControllers } from "./controllers/treasuryRecei
 import { TREASURY_RECEIVABLES_PATH } from "./contracts/treasuryContracts.js";
 import { TreasuryDomainError } from "./domain/treasuryErrors.js";
 import type { TreasuryReceivableQueryService } from "./services/treasuryReceivableQueryService.server.js";
+import type { TreasuryReceivableExpectationService } from "./services/treasuryReceivableExpectationService.server.js";
 import type { TreasuryReceivableListItemDto } from "./contracts/treasuryReceivableContracts.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -129,12 +130,15 @@ const sampleRow: TreasuryReceivableListItemDto = {
 };
 
 describe("treasuryReceivableApi — wiring", () => {
-  it("registra GET /receivables e /:titleId com auth/flag/permissões", () => {
+  it("registra GET /receivables, /:titleId e PUT expectation com auth/flag/permissões", () => {
     const routes = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     assert.equal(TREASURY_RECEIVABLES_PATH, "/api/finance/treasury/receivables");
     assert.match(routes, /TREASURY_RECEIVABLES_PATH/);
     assert.match(routes, /listReceivables/);
     assert.match(routes, /getReceivable/);
+    assert.match(routes, /putExpectation/);
+    assert.match(routes, /\/expectation/);
+    assert.match(routes, /manageReceivables/);
     assert.match(routes, /TREASURY_RESOURCE_KEYS\.receivables/);
     assert.match(routes, /FINANCE_MODULE_RESOURCE_KEYS\.accountsReceivable/);
     assert.match(routes, /createTreasuryReceivableControllers/);
@@ -220,5 +224,146 @@ describe("treasuryReceivableApi — handlers", () => {
       missingRes as unknown as Response
     );
     assert.equal(missingRes.statusCode, 404);
+  });
+
+  it("PUT expectation — 200, 409 conflito e 403 permissão", async () => {
+    const expectationService: TreasuryReceivableExpectationService = {
+      async putExpectation(actor, titleId, input) {
+        if (!actor.canManageReceivables && !actor.isSuperAdmin) {
+          throw new TreasuryDomainError(
+            "FORBIDDEN",
+            "Sem permissão para alterar expectativa operacional de contas a receber."
+          );
+        }
+        if (input.expectedVersion !== 1) {
+          throw new TreasuryDomainError(
+            "CONFLICT",
+            "Versão do complemento desatualizada.",
+            "expectedVersion"
+          );
+        }
+        return {
+          receivable: {
+            ...sampleRow,
+            titleId,
+            complement: {
+              id: "c1",
+              expectedDate: input.expectedDate ?? null,
+              confirmedDate: null,
+              scheduledDate: null,
+              expectedAmount: null,
+              confirmedAmount: null,
+              scheduledAmount: null,
+              status: "ACTIVE",
+              priority: input.priority ?? "NORMAL",
+              plannedAccountId: input.plannedAccountId ?? null,
+              responsibleUserId: input.responsibleUserId ?? null,
+              nextAction: input.nextAction ?? null,
+              reason: input.reason ?? null,
+              notes: input.notes ?? null,
+              version: 2,
+              updatedAt: "2026-07-27T12:00:00.000+00:00",
+              cancelledAt: null,
+            },
+            nextAction: input.nextAction ?? null,
+          },
+          projectionRecalc: {
+            accepted: true,
+            deferred: true,
+            reason: "queued",
+          },
+        };
+      },
+    };
+
+    const ok = createTreasuryReceivableControllers({
+      getCurrentAppUser: async () =>
+        baseUser({
+          role: "SUPER_ADMIN",
+          permissions: [
+            "finance.treasury.receivables.manage",
+            "finance.accounts_receivable.view",
+          ],
+          effectivePermissions: [
+            "finance.treasury.receivables.manage",
+            "finance.accounts_receivable.view",
+          ],
+        }),
+      service: {
+        async listReceivables() {
+          throw new Error("unused");
+        },
+        async getReceivable() {
+          throw new Error("unused");
+        },
+      },
+      expectationService,
+    });
+
+    const resOk = createMockRes();
+    await ok.putExpectation(
+      {
+        params: { titleId: "t1" },
+        body: {
+          expectedDate: "2026-08-01",
+          reason: "acordo",
+          expectedVersion: 1,
+        },
+        headers: {},
+        header: () => "req-exp-ok",
+      } as unknown as Request,
+      resOk as unknown as Response
+    );
+    assert.equal(resOk.statusCode, 200);
+    const okBody = resOk.body as {
+      ok: true;
+      receivable: TreasuryReceivableListItemDto;
+      requestId: string;
+    };
+    assert.equal(okBody.receivable.complement?.expectedDate, "2026-08-01");
+    assert.equal(okBody.receivable.official.dueDate, "2026-07-20");
+
+    const res409 = createMockRes();
+    await ok.putExpectation(
+      {
+        params: { titleId: "t1" },
+        body: {
+          expectedDate: "2026-08-02",
+          reason: "stale",
+          expectedVersion: 0,
+        },
+        headers: {},
+        header: () => "req-exp-409",
+      } as unknown as Request,
+      res409 as unknown as Response
+    );
+    assert.equal(res409.statusCode, 409);
+    assert.equal((res409.body as { code: string }).code, "CONFLICT");
+
+    const forbidden = createTreasuryReceivableControllers({
+      getCurrentAppUser: async () =>
+        baseUser({
+          role: "VIEWER",
+          permissions: ["finance.treasury.receivables.view"],
+          effectivePermissions: ["finance.treasury.receivables.view"],
+        }),
+      expectationService,
+    });
+    const res403 = createMockRes();
+    await forbidden.putExpectation(
+      {
+        params: { titleId: "t1" },
+        body: {
+          expectedDate: "2026-08-01",
+          reason: "x",
+          expectedVersion: 1,
+        },
+        headers: {},
+        header: () => "req-exp-403",
+      } as unknown as Request,
+      res403 as unknown as Response
+    );
+    assert.equal(res403.statusCode, 403);
+    assert.equal((res403.body as { code: string }).code, "FORBIDDEN");
   });
 });

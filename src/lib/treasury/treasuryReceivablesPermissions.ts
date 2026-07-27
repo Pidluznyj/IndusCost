@@ -48,3 +48,19 @@ export function canViewTreasuryReceivables(
   );
   return treasuryOk && officialOk;
 }
+
+/** Alterar expectativa operacional (manage + leitura oficial CR). */
+export function canManageTreasuryReceivables(
+  auth: TreasuryReceivablesPermissionCheck
+): boolean {
+  const treasuryOk = dtoOrLegacy(auth, RECEIVABLES, "manage", () =>
+    has(auth, "finance.treasury.receivables.manage") ||
+    has(auth, "finance.treasury.manage") ||
+    has(auth, `${ROOT}.manage`)
+  );
+  const officialOk = dtoOrLegacy(auth, OFFICIAL_AR, "view", () =>
+    has(auth, "finance.accounts_receivable.view") ||
+    has(auth, "finance.accounts_receivable")
+  );
+  return treasuryOk && officialOk;
+}
