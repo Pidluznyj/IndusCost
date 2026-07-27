@@ -17,6 +17,7 @@
     "check:browser-bundle": "tsx scripts/checkBrowserBundle.ts",
     "check:frontend-imports": "tsx scripts/checkFrontendServerImports.ts",
     "build:safe": "npm run check:frontend-server-imports && npm run check:server-imports && npm run test:market-intelligence && npm run build && npm run check:browser-bundle",
+    "validate:treasury-baseline": "node scripts/runTreasuryBaseline.mjs",
     "sync:nomus:proposals:dry": "tsx scripts/nomusProposalsSyncV1.ts",
     "sync:nomus:proposals:apply": "tsx scripts/nomusProposalsSyncV1.ts --apply",
     "sync:nomus:customers:dry": "tsx scripts/nomusCustomersSyncV1.ts",

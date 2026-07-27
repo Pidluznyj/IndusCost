@@ -24,6 +24,7 @@
 |--------|--------|--------|--------|------------|
 | **00a** | Discovery técnico / auditoria do repositório | `DONE` | `cbd77ef` (+ `eb411b3` hash) | `docs/treasury/01-DISCOVERY.md`; checks FE/server imports + startup OK |
 | **00b** | Requirements mapping + plano de implementação | `DONE` | `7dbf0b4` — `docs(treasury): mapear requisitos e plano da Central de Tesouraria` | `02-REQUIREMENTS-MAPPING.md`, `03-IMPLEMENTATION-PLAN.md`; anti-duplicação documentada; sem código funcional |
+| **00c** | Baseline real + branch `feature/treasury-center` | `DONE` | *(este commit)* | `04-BASELINE.md`; `validate:treasury-baseline`; WIP Lucro×Caixa stashed; build OK; lint 1236 preexistente; cash-flow 441/441 |
 | **01** | Foundation (flag, money, skeleton routes) | `NOT_STARTED` | — | Ver `03-IMPLEMENTATION-PLAN.md` |
 
 ---
@@ -126,6 +127,14 @@
 - [x] Nenhum código funcional alterado neste passo
 - [x] Sem avanço automático para Prompt 01
 
+### 00c — Baseline
+- [x] Branch `feature/treasury-center` criada
+- [x] WIP não relacionado preservado (stashes + backup `%TEMP%`)
+- [x] `docs/treasury/04-BASELINE.md` com resultados classificados
+- [x] Script `npm run validate:treasury-baseline` + `scripts/runTreasuryBaseline.mjs`
+- [x] Falhas preexistentes de `tsc` **não** corrigidas
+- [x] Sem avanço automático para Prompt 01
+
 ---
 
 ## Validação anti-duplicação (Prompt 00b)
@@ -156,3 +165,4 @@
 |------|--------|
 | 2026-07-27 | Prompt 00a: discovery completo; docs criados; validações de leitura OK |
 | 2026-07-27 | Prompt 00b: requirements mapping + implementation plan; sem código funcional |
+| 2026-07-27 | Prompt 00c: baseline em `feature/treasury-center`; WIP Lucro×Caixa protegido; build/tests adjacentes OK |
