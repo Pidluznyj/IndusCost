@@ -51,7 +51,6 @@ import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/Purchas
 import { ProposalIndicatorsDashboard } from "@/src/components/contextual/ProposalIndicatorsDashboard";
 import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
 import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
-import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { ProductBomWhereUsedDashboard } from "@/src/components/contextual/ProductBomWhereUsedDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
@@ -742,23 +741,11 @@ export default function App() {
           }
         />
         <Route
-          path="pricing/indicators"
-          element={
-            <ModulePageShell
-              title="Formação de Preço — Indicadores"
-              description="Cobertura de premissas produto × regra fiscal."
-            >
-              <PricingFormationIndicatorsDashboard />
-            </ModulePageShell>
-          }
-        />
-        <Route
           path="pricing"
           element={
             <ModulePageShell
               title="Formação de Preço"
-              description="Simulador comercial de markup, impostos e margens líquidas."
-              headerActions={<ModuleIndicatorsButton to="/pricing/indicators" />}
+              description="Gestão de preços publicados, custos oficiais e auditoria de margem."
             >
               <PricingModule />
             </ModulePageShell>

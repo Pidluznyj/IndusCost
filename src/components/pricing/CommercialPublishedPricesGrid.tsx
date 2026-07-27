@@ -1,5 +1,5 @@
 import React from "react";
-import { Calculator, Edit2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import type {
   CommercialPublishedPriceGridRow,
@@ -11,25 +11,14 @@ import {
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 import { isPublishedPriceCellClickable } from "@/src/lib/pricing/publishedPriceFormationView";
 
-type PremissaRow = {
-  id: string;
-  productId: string;
-  taxRuleId?: string | null;
-};
-
 type CommercialPublishedPricesGridProps = {
   tables: CommercialPublishedPriceGridTable[];
   rows: CommercialPublishedPriceGridRow[];
   loading: boolean;
   emptyMessage: string | null;
-  allowSimulate: boolean;
-  pricings: PremissaRow[];
   openingRowId?: string | null;
   onRowClick: (row: CommercialPublishedPriceGridRow) => void;
   onPriceCellClick: (row: CommercialPublishedPriceGridRow, tableId: string) => void;
-  onCalculate: (productId: string, taxRuleId: string) => void;
-  onEditPremissa: (premissa: PremissaRow) => void;
-  onCreatePremissa: (productId: string, taxRuleId: string | null) => void;
 };
 
 function resolvePriceForTable(row: CommercialPublishedPriceGridRow, tableId: string) {
@@ -41,16 +30,11 @@ export function CommercialPublishedPricesGrid({
   rows,
   loading,
   emptyMessage,
-  allowSimulate,
-  pricings,
   openingRowId,
   onRowClick,
   onPriceCellClick,
-  onCalculate,
-  onEditPremissa,
-  onCreatePremissa,
 }: CommercialPublishedPricesGridProps) {
-  const columnCount = 3 + tables.length + 3;
+  const columnCount = 3 + tables.length + 2;
 
   if (loading) {
     return (
@@ -82,9 +66,6 @@ export function CommercialPublishedPricesGrid({
                 Última publicação
               </th>
               <th className="p-4 font-bold text-xs uppercase text-muted-foreground whitespace-nowrap">Status</th>
-              <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center whitespace-nowrap">
-                Ações
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -96,13 +77,6 @@ export function CommercialPublishedPricesGrid({
               </tr>
             ) : (
               rows.map((row) => {
-                const fiscalRuleId = row.taxInfo?.fiscalRuleId ?? null;
-                const premissa = pricings.find(
-                  (pricing) =>
-                    pricing.productId === row.productId &&
-                    (!fiscalRuleId || pricing.taxRuleId === fiscalRuleId)
-                );
-
                 return (
                   <tr
                     key={row.productId}
@@ -189,39 +163,6 @@ export function CommercialPublishedPricesGrid({
                       >
                         {formatPublishedRowStatus(row.status)}
                       </span>
-                    </td>
-                    <td className="p-4 btn-acoes" onClick={(event) => event.stopPropagation()}>
-                      <div className="flex gap-2 justify-center">
-                        {allowSimulate && fiscalRuleId ? (
-                          <button
-                            type="button"
-                            title="Simulação ao vivo (premissa)"
-                            onClick={() => onCalculate(row.productId, fiscalRuleId)}
-                            className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"
-                          >
-                            <Calculator className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                        {premissa ? (
-                          <button
-                            type="button"
-                            title="Editar premissa"
-                            onClick={() => onEditPremissa(premissa)}
-                            className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            title="Nova premissa para este produto"
-                            onClick={() => onCreatePremissa(row.productId, fiscalRuleId)}
-                            className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 );

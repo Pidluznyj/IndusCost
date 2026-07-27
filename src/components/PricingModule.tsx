@@ -2224,25 +2224,6 @@ export const PricingModule = () => {
               <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
             </div>
           ) : null}
-          <div className="flex justify-end gap-2">
-             {allowSimulate ? (
-              <button
-                onClick={() => setIsSimulatorModalOpen(true)}
-                className="flex items-center gap-2 border border-border bg-card px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-              >
-                <Calculator className="h-4 w-4" /> Simular preço
-              </button>
-             ) : null}
-             <button 
-              onClick={() => {
-                setFormData({ productId: "", taxRuleId: "", desiredMargin: 15, commission: 5, freightOut: 0, otherVariables: 0 });
-                setIsModalOpen(true);
-              }}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-            >
-              <Plus className="h-4 w-4" /> Nova Premissa
-            </button>
-          </div>
 
      <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -2337,14 +2318,9 @@ export const PricingModule = () => {
         rows={publishedRows}
         loading={publishedPricesLoading}
         emptyMessage={publishedEmptyMessage}
-        allowSimulate={allowSimulate}
-        pricings={pricings}
         openingRowId={openingPublishedRowId}
         onRowClick={(row) => void handleOpenPublishedFormation(row)}
         onPriceCellClick={(row, tableId) => void handleOpenPublishedFormation(row, tableId)}
-        onCalculate={handleCalculateUnit}
-        onEditPremissa={handleEditPremissaFromGrid}
-        onCreatePremissa={handleCreatePremissaFromGrid}
       />
 
       {publishedPagination.totalPages > 1 ? (
