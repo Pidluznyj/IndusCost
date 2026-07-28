@@ -1,17 +1,18 @@
 /**
- * Edição dos parâmetros de nível — somente com permissão update.
- * Não altera saldo oficial nem custos.
+ * Edição dos parâmetros de nível + saldo atual (obrigatório).
+ * Não altera custos.
  */
 import React, { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   buildParametersRequestBody,
+  parseCurrentQuantityParameterInput,
   parseStockLevelParameterInput,
+  toCurrentQuantityInputValue,
   updateMaterialStockParameters,
   validateStockParametersForm,
   type MaterialStockParametersApiResult,
 } from "@/src/lib/materialStockParametersClient";
-import { formatStockConferenceQuantity } from "@/src/lib/materialStockConferenceUi";
 import type { MaterialStockTabletListItem } from "@/src/lib/materialStockTabletTypes";
 
 export type MaterialStockParametersDialogProps = {
@@ -32,14 +33,24 @@ export function MaterialStockParametersDialog({
   onClose,
   onSuccess,
 }: MaterialStockParametersDialogProps) {
-  const [contingencyRaw, setContingencyRaw] = useState("");
-  const [minimumRaw, setMinimumRaw] = useState("");
-  const [recommendedRaw, setRecommendedRaw] = useState("");
+  const [currentQuantityRaw, setCurrentQuantityRaw] = useState(() =>
+    toCurrentQuantityInputValue(item.currentQuantity)
+  );
+  const [contingencyRaw, setContingencyRaw] = useState(() =>
+    toInputValue(item.contingencyQuantity)
+  );
+  const [minimumRaw, setMinimumRaw] = useState(() =>
+    toInputValue(item.minimumQuantity)
+  );
+  const [recommendedRaw, setRecommendedRaw] = useState(() =>
+    toInputValue(item.recommendedQuantity)
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setCurrentQuantityRaw(toCurrentQuantityInputValue(item.currentQuantity));
     setContingencyRaw(toInputValue(item.contingencyQuantity));
     setMinimumRaw(toInputValue(item.minimumQuantity));
     setRecommendedRaw(toInputValue(item.recommendedQuantity));
@@ -48,6 +59,7 @@ export function MaterialStockParametersDialog({
   }, [
     open,
     item.id,
+    item.currentQuantity,
     item.contingencyQuantity,
     item.minimumQuantity,
     item.recommendedQuantity,
@@ -57,9 +69,18 @@ export function MaterialStockParametersDialog({
 
   const handleSave = async () => {
     if (saving) return;
+    const q = parseCurrentQuantityParameterInput(currentQuantityRaw);
     const c = parseStockLevelParameterInput(contingencyRaw);
     const m = parseStockLevelParameterInput(minimumRaw);
     const r = parseStockLevelParameterInput(recommendedRaw);
+    if (!q.ok) {
+      setError(
+        q.reason === "EMPTY"
+          ? "Saldo atual é obrigatório. Informe 0 se estiver zerado."
+          : "Saldo atual inválido. Use número decimal ≥ 0."
+      );
+      return;
+    }
     if (!c.ok || !m.ok || !r.ok) {
       setError("Parâmetro inválido. Use número decimal ou deixe vazio (não configurado).");
       return;
@@ -77,12 +98,12 @@ export function MaterialStockParametersDialog({
     setSaving(true);
     setError(null);
     const body = buildParametersRequestBody({
+      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
     });
-    // garantia: nunca envia quantity/custos
-    if ("quantity" in body || "currentCost" in body) {
+    if ("currentCost" in body || "freight" in body || "standardLoss" in body) {
       setSaving(false);
       setError("Payload inválido.");
       return;
@@ -90,6 +111,7 @@ export function MaterialStockParametersDialog({
 
     const result = await updateMaterialStockParameters({
       materialId: item.id,
+      currentQuantity: q.value,
       contingencyQuantity: c.value,
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
@@ -97,10 +119,6 @@ export function MaterialStockParametersDialog({
     setSaving(false);
     if (result.ok === false) {
       setError(result.message);
-      return;
-    }
-    if (result.data.material.quantity !== item.currentQuantity) {
-      setError("O servidor alterou o estoque inesperadamente. Recarregue a tela.");
       return;
     }
     onSuccess(result.data);
@@ -137,11 +155,35 @@ export function MaterialStockParametersDialog({
           data-testid="stock-parameters-hint"
         >
           Contingência, mínimo e recomendado <strong>não são somados</strong> ao estoque
-          atual. Deixe o campo vazio para “não configurado”. Esta edição não altera o
-          saldo nem os custos.
+          atual. Deixe o campo de nível vazio para “não configurado”. O saldo atual é
+          obrigatório (informe 0 se estiver zerado). Esta edição não altera os custos.
         </p>
 
         <div className="mt-4 space-y-3">
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium">
+              Saldo atual<span className="text-red-600">*</span>
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={currentQuantityRaw}
+                disabled={saving}
+                required
+                onChange={(e) => {
+                  setCurrentQuantityRaw(e.target.value);
+                  setError(null);
+                }}
+                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                data-testid="stock-parameters-current-quantity"
+              />
+              <span className="inline-flex min-h-12 items-center rounded-lg border border-border bg-muted px-3 text-sm font-semibold">
+                {item.unit}
+              </span>
+            </div>
+          </label>
+
           {(
             [
               ["Contingência", contingencyRaw, setContingencyRaw, "stock-parameters-contingency"],
@@ -172,13 +214,6 @@ export function MaterialStockParametersDialog({
             </label>
           ))}
         </div>
-
-        <p className="mt-3 text-xs text-muted-foreground">
-          Saldo atual (somente leitura):{" "}
-          <span className="font-semibold tabular-nums text-foreground">
-            {formatStockConferenceQuantity(item.currentQuantity)} {item.unit}
-          </span>
-        </p>
 
         {error ? (
           <div

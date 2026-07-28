@@ -62,6 +62,10 @@ function createDb(material: MaterialRow) {
         updatePayloads.push(data);
         row = {
           ...row,
+          quantity:
+            data.quantity === undefined
+              ? row.quantity
+              : (data.quantity as number),
           contingencyQuantity:
             data.contingencyQuantity === undefined
               ? row.contingencyQuantity
@@ -130,10 +134,12 @@ function baseMaterial(overrides: Partial<MaterialRow> = {}): MaterialRow {
 describe("materialStockParametersRules", () => {
   it("aceita parâmetros válidos e zero configurado", () => {
     const cmd = parseMaterialStockParametersCommand({
+      currentQuantity: 0,
       contingencyQuantity: 0,
       minimumQuantity: 10,
       recommendedQuantity: "20.5",
     });
+    assert.equal(cmd.currentQuantity, 0);
     assert.equal(cmd.contingencyQuantity, 0);
     assert.equal(cmd.minimumQuantity, 10);
     assert.equal(cmd.recommendedQuantity, 20.5);
@@ -141,19 +147,37 @@ describe("materialStockParametersRules", () => {
 
   it("aceita parâmetros nulos (não configurado)", () => {
     const cmd = parseMaterialStockParametersCommand({
+      currentQuantity: 500,
       contingencyQuantity: null,
       minimumQuantity: null,
       recommendedQuantity: null,
     });
+    assert.equal(cmd.currentQuantity, 500);
     assert.equal(cmd.contingencyQuantity, null);
     assert.equal(cmd.minimumQuantity, null);
     assert.equal(cmd.recommendedQuantity, null);
+  });
+
+  it("exige saldo atual", () => {
+    assert.throws(
+      () =>
+        parseMaterialStockParametersCommand({
+          contingencyQuantity: 1,
+          minimumQuantity: 2,
+          recommendedQuantity: 3,
+        }),
+      (err: unknown) =>
+        err instanceof MaterialStockConferenceError &&
+        err.code === "REQUIRED_FIELD" &&
+        err.field === "currentQuantity"
+    );
   });
 
   it("rejeita hierarquia inválida", () => {
     assert.throws(
       () =>
         parseMaterialStockParametersCommand({
+          currentQuantity: 100,
           contingencyQuantity: 100,
           minimumQuantity: 50,
           recommendedQuantity: 10,
@@ -167,7 +191,7 @@ describe("materialStockParametersRules", () => {
 describe("updateMaterialStockParameters", () => {
   const actor = { id: USER_ID, name: "Gestor", email: "g@test.local" };
 
-  it("atualiza parâmetros válidos sem mexer em estoque/custos e grava auditoria", async () => {
+  it("atualiza saldo e parâmetros sem mexer em custos e grava auditoria", async () => {
     const db = createDb(baseMaterial({ quantity: 500 }));
     const costBefore = resolveMaterialLineCostForEngine({
       id: MATERIAL_ID,
@@ -189,6 +213,7 @@ describe("updateMaterialStockParameters", () => {
     const result = await updateMaterialStockParameters(db as any, {
       materialId: MATERIAL_ID,
       body: {
+        currentQuantity: 480,
         contingencyQuantity: 10,
         minimumQuantity: 20,
         recommendedQuantity: 50,
@@ -197,23 +222,24 @@ describe("updateMaterialStockParameters", () => {
       actor,
     });
 
-    assert.equal(result.material.quantity, 500);
+    assert.equal(result.material.quantity, 480);
     assert.equal(result.material.contingencyQuantity, 10);
     assert.equal(result.material.minimumQuantity, 20);
     assert.equal(result.material.recommendedQuantity, 50);
-    assert.equal(db.getMaterial().quantity, 500);
+    assert.equal(db.getMaterial().quantity, 480);
     assert.equal(db.getMaterial().currentCost, 5.17);
     assert.equal(db.getAudits().length, 1);
     assert.equal(db.getAudits()[0]?.action, "UPDATE_LEVELS");
     assert.equal(db.getAudits()[0]?.userId, USER_ID);
     assert.deepEqual(db.getAudits()[0]?.afterJson, {
+      currentQuantity: 480,
       contingencyQuantity: 10,
       minimumQuantity: 20,
       recommendedQuantity: 50,
     });
     for (const payload of db.getUpdatePayloads()) {
       const keys = Object.keys(payload as object);
-      assert.ok(!keys.includes("quantity"));
+      assert.ok(keys.includes("quantity"));
       assert.ok(!keys.includes("currentCost"));
       assert.ok(!keys.includes("freight"));
       assert.ok(!keys.includes("standardLoss"));
@@ -239,7 +265,7 @@ describe("updateMaterialStockParameters", () => {
     assert.deepEqual(lineAfter, lineBefore);
   });
 
-  it("permite zerar/nular parâmetros", async () => {
+  it("permite zerar saldo e parâmetros", async () => {
     const db = createDb(
       baseMaterial({
         contingencyQuantity: 5,
@@ -250,6 +276,7 @@ describe("updateMaterialStockParameters", () => {
     const result = await updateMaterialStockParameters(db as any, {
       materialId: MATERIAL_ID,
       body: {
+        currentQuantity: 0,
         contingencyQuantity: null,
         minimumQuantity: null,
         recommendedQuantity: null,
@@ -259,7 +286,7 @@ describe("updateMaterialStockParameters", () => {
     assert.equal(result.material.contingencyQuantity, null);
     assert.equal(result.material.minimumQuantity, null);
     assert.equal(result.material.recommendedQuantity, null);
-    assert.equal(result.material.quantity, 500);
+    assert.equal(result.material.quantity, 0);
     assert.equal(db.getAudits().length, 1);
   });
 
@@ -270,6 +297,7 @@ describe("updateMaterialStockParameters", () => {
         updateMaterialStockParameters(db as any, {
           materialId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
           body: {
+            currentQuantity: 1,
             contingencyQuantity: 1,
             minimumQuantity: 2,
             recommendedQuantity: 3,
@@ -292,6 +320,7 @@ describe("updateMaterialStockParameters", () => {
       updateMaterialStockParameters(db as any, {
         materialId: MATERIAL_ID,
         body: {
+          currentQuantity: 500,
           contingencyQuantity: 30,
           minimumQuantity: 10,
           recommendedQuantity: 5,

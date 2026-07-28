@@ -1,5 +1,5 @@
 /**
- * Cliente browser-safe — PATCH parâmetros de nível + validação de formulário.
+ * Cliente browser-safe — PATCH parâmetros de nível + saldo atual + validação de formulário.
  */
 import { validateStockLevelHierarchy } from "./materialStockLevelRules.js";
 import {
@@ -28,6 +28,33 @@ export type MaterialStockParametersApiResult = {
 export type ParseLevelInputResult =
   | { ok: true; value: number | null }
   | { ok: false; reason: "INVALID" | "NEGATIVE" };
+
+export type ParseCurrentQuantityInputResult =
+  | { ok: true; value: number }
+  | { ok: false; reason: "EMPTY" | "INVALID" | "NEGATIVE" };
+
+/** Prefill do saldo: sempre string numérica; zero → "0". */
+export function toCurrentQuantityInputValue(value: number | null | undefined): string {
+  const n = roundMaterialStockQuantity(value);
+  const safe = Number.isFinite(n) ? Math.max(0, n) : 0;
+  return String(safe).replace(".", ",");
+}
+
+/** Saldo atual obrigatório; "0" é válido. */
+export function parseCurrentQuantityParameterInput(
+  raw: string
+): ParseCurrentQuantityInputResult {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: false, reason: "EMPTY" };
+  const normalized = trimmed.replace(/\s/g, "").replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(normalized)) {
+    return { ok: false, reason: "INVALID" };
+  }
+  const value = roundMaterialStockQuantity(normalized);
+  if (!Number.isFinite(value)) return { ok: false, reason: "INVALID" };
+  if (value < 0) return { ok: false, reason: "NEGATIVE" };
+  return { ok: true, value };
+}
 
 /** Vazio / "null" → null (não configurado). "0" é valor configurado. */
 export function parseStockLevelParameterInput(raw: string): ParseLevelInputResult {
@@ -98,18 +125,20 @@ export type UpdateMaterialStockParametersResult =
 
 export async function updateMaterialStockParameters(input: {
   materialId: string;
+  currentQuantity: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
   reason?: string | null;
   signal?: AbortSignal;
 }): Promise<UpdateMaterialStockParametersResult> {
-  const body = {
+  const body = buildParametersRequestBody({
+    currentQuantity: input.currentQuantity,
     contingencyQuantity: input.contingencyQuantity,
     minimumQuantity: input.minimumQuantity,
     recommendedQuantity: input.recommendedQuantity,
-    reason: input.reason?.trim() || null,
-  };
+    reason: input.reason,
+  });
   try {
     const res = await fetch(materialStockParametersApiPath(input.materialId), {
       method: "PATCH",
@@ -160,7 +189,6 @@ export function applyParametersSuccessToListItem(
 
   return {
     ...item,
-    // quantity oficial permanece a do servidor (não deve mudar na edição de parâmetros)
     currentQuantity: result.material.quantity,
     contingencyQuantity: result.material.contingencyQuantity,
     minimumQuantity: result.material.minimumQuantity,
@@ -171,7 +199,8 @@ export function applyParametersSuccessToListItem(
   };
 }
 
-export function assertParametersPayloadHasNoCostOrQuantityFields(
+/** Body de parâmetros não pode incluir campos de custo. */
+export function assertParametersPayloadHasNoCostFields(
   body: Record<string, unknown>
 ): string[] {
   const forbidden = [
@@ -181,21 +210,29 @@ export function assertParametersPayloadHasNoCostOrQuantityFields(
     "freight",
     "standardLoss",
     "conversionFactor",
-    "quantity",
     "landedCost",
     "effectiveCost",
   ];
   return forbidden.filter((key) => Object.prototype.hasOwnProperty.call(body, key));
 }
 
-/** Body de edição nunca inclui quantity/custos. */
+/** @deprecated use assertParametersPayloadHasNoCostFields */
+export function assertParametersPayloadHasNoCostOrQuantityFields(
+  body: Record<string, unknown>
+): string[] {
+  return assertParametersPayloadHasNoCostFields(body);
+}
+
+/** Body de edição inclui saldo atual; nunca inclui custos. */
 export function buildParametersRequestBody(input: {
+  currentQuantity: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
   reason?: string | null;
 }): Record<string, unknown> {
   return {
+    currentQuantity: input.currentQuantity,
     contingencyQuantity: input.contingencyQuantity,
     minimumQuantity: input.minimumQuantity,
     recommendedQuantity: input.recommendedQuantity,

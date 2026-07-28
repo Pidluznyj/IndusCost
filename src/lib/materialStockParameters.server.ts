@@ -1,6 +1,6 @@
 /**
- * Edição dos parâmetros de nível — não altera quantity nem custos.
- * Grava auditoria append-only na mesma transação.
+ * Edição dos parâmetros de nível + saldo atual.
+ * Não altera custos. Grava auditoria append-only na mesma transação.
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { MaterialStockConferenceError } from "./materialStockConferenceRules.js";
@@ -90,7 +90,6 @@ export async function updateMaterialStockParameters(
     }
 
     const before = snapshotStockLevels(material);
-    const quantityBefore = toNumber(material.quantity);
     const costsBefore = {
       currentCost: toNumber(material.currentCost),
       averageCost: toNumber(material.averageCost),
@@ -102,6 +101,7 @@ export async function updateMaterialStockParameters(
     const updated = await tx.material.update({
       where: { id: materialId },
       data: {
+        quantity: command.currentQuantity,
         contingencyQuantity: command.contingencyQuantity,
         minimumQuantity: command.minimumQuantity,
         recommendedQuantity: command.recommendedQuantity,
@@ -123,14 +123,7 @@ export async function updateMaterialStockParameters(
       },
     });
 
-    // Invariantes de isolamento — falha a transação se quantity/custos mudarem.
-    if (toNumber(updated.quantity) !== quantityBefore) {
-      throw new MaterialStockConferenceError(
-        "INVALID_FIELD",
-        "Atualização de parâmetros não pode alterar o estoque atual.",
-        "quantity"
-      );
-    }
+    // Invariante: parâmetros não podem alterar custos.
     if (
       toNumber(updated.currentCost) !== costsBefore.currentCost ||
       toNumber(updated.averageCost) !== costsBefore.averageCost ||

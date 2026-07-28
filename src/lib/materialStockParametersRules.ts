@@ -11,6 +11,8 @@ import { MaterialStockConferenceError } from "./materialStockConferenceRules.js"
 import { validateStockLevelHierarchy } from "./materialStockLevelRules.js";
 
 export type ParsedMaterialStockParameters = {
+  /** Saldo oficial (`Material.quantity`) — obrigatório; 0 é válido. */
+  currentQuantity: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
@@ -50,15 +52,44 @@ function parseNullableLevel(
   return n;
 }
 
+function parseRequiredCurrentQuantity(value: unknown): number {
+  if (value === undefined || value === null || value === "") {
+    throw new MaterialStockConferenceError(
+      "REQUIRED_FIELD",
+      "Saldo atual é obrigatório.",
+      "currentQuantity"
+    );
+  }
+  const n = roundMaterialStockQuantity(value);
+  if (!Number.isFinite(n)) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Saldo atual inválido.",
+      "currentQuantity"
+    );
+  }
+  if (n < 0) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Saldo atual não pode ser negativo.",
+      "currentQuantity"
+    );
+  }
+  return n;
+}
+
 /**
  * Valida payload de edição.
- * - null permitido (não configurado)
- * - 0 permitido (configurado)
- * - com os três configurados: contingência <= mínimo <= recomendado
+ * - saldo atual obrigatório (0 permitido)
+ * - níveis: null permitido (não configurado); 0 permitido (configurado)
+ * - com os três níveis configurados: contingência <= mínimo <= recomendado
  */
 export function parseMaterialStockParametersCommand(
   body: Record<string, unknown>
 ): ParsedMaterialStockParameters {
+  const currentQuantity = parseRequiredCurrentQuantity(
+    body.currentQuantity ?? body.quantity ?? body.reportedQuantity
+  );
   const contingencyQuantity = parseNullableLevel(
     body.contingencyQuantity,
     "contingencyQuantity"
@@ -131,6 +162,7 @@ export function parseMaterialStockParametersCommand(
   const reason = reasonRaw ? reasonRaw.slice(0, 2000) : null;
 
   return {
+    currentQuantity,
     contingencyQuantity,
     minimumQuantity,
     recommendedQuantity,
@@ -151,10 +183,12 @@ export function assertMaterialStockMaterialId(value: unknown): string {
 }
 
 export function snapshotStockLevels(row: {
+  quantity?: unknown;
   contingencyQuantity: unknown;
   minimumQuantity: unknown;
   recommendedQuantity: unknown;
 }): {
+  currentQuantity: number;
   contingencyQuantity: number | null;
   minimumQuantity: number | null;
   recommendedQuantity: number | null;
@@ -164,7 +198,9 @@ export function snapshotStockLevels(row: {
     const n = roundMaterialStockQuantity(v);
     return Number.isFinite(n) ? n : null;
   };
+  const current = roundMaterialStockQuantity(row.quantity);
   return {
+    currentQuantity: Number.isFinite(current) ? Math.max(0, current) : 0,
     contingencyQuantity: toNullable(row.contingencyQuantity),
     minimumQuantity: toNullable(row.minimumQuantity),
     recommendedQuantity: toNullable(row.recommendedQuantity),
