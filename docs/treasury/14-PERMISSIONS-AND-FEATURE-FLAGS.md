@@ -72,7 +72,8 @@ Detalhe operacional: [19-ROLLOUT.md](./19-ROLLOUT.md).
 | `treasury.reports.enabled` | `TREASURY_REPORTS_ENABLED` | Relatórios + export |
 
 Valores truthy: `1`, `true`, `yes`, `on`. Valores falsy: `0`, `false`, `no`, `off`.  
-**Catálogo conhecido:** env **ausente** = **ON** (ativação operacional; ver [ACTIVATION.md](./ACTIVATION.md)).  
+**Mestra:** env **ausente** = **OFF** (opt-in; ver [ACTIVATION.md](./ACTIVATION.md)).  
+**Subflags (mestra ON):** env ausente = ON; opt-out explícito = OFF.  
 **Fail-closed:** flag ID desconhecida → OFF; valor env desconhecido → OFF. Subflags exigem mestra ON (AND).
 
 `GET /availability` devolve `flags` (mapa completo) para a UI ocultar abas.
@@ -80,9 +81,11 @@ Valores truthy: `1`, `true`, `yes`, `on`. Valores falsy: `0`, `false`, `no`, `of
 ## 7. Operação de liberação
 
 1. Migrar schema (já aplicado se o módulo foi implantado).
-2. Deploy do código com default-on (ou manter envs `=1` explícitas).
-3. Sincronizar defaults de role: `npm run permissions:seed -- --sync-role-defaults` (ADMIN).
-4. Validar `GET /availability` (campo `flags`) e smoke UI.
-5. Opt-out emergencial: `TREASURY_MODULE_ENABLED=0`.
+2. Deploy do código (**não** ativa sozinho — mestra permanece OFF sem env).
+3. Seed aditivo: `npm run treasury:permissions:seed` (dry-run) → revisar → `--apply`.
+4. **Não** usar `permissions:seed -- --sync-role-defaults` para esta ativação.
+5. Configurar `TREASURY_MODULE_ENABLED=1` e reiniciar o serviço.
+6. Validar `GET /availability` (campo `flags`) e smoke UI.
+7. Opt-out emergencial: `TREASURY_MODULE_ENABLED=0` + restart.
 
 Detalhe: [ACTIVATION.md](./ACTIVATION.md) e [19-ROLLOUT.md](./19-ROLLOUT.md). Flag OFF **não** apaga dados.

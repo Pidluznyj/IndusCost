@@ -12,8 +12,9 @@
 2. Backup de PostgreSQL concluído e verificado.
 3. Migrations Prisma versionadas presentes em `prisma/migrations/` (inclui Tesouraria).
 4. Variáveis de ambiente já existentes no servidor (não alterar `.env` via Cursor).
-5. Flags Tesouraria: catálogo conhecido default-on se ausente; opt-out `TREASURY_MODULE_ENABLED=0` (ver [ACTIVATION.md](./ACTIVATION.md)).
-6. Subflags: default-on com AND na mestra; fail-closed para flag/valor desconhecidos ([19-ROLLOUT.md](./19-ROLLOUT.md)). OFF não apaga dados.
+5. Flags Tesouraria: **opt-in** — mestra ausente = OFF; ativar com `TREASURY_MODULE_ENABLED=1` (ver [ACTIVATION.md](./ACTIVATION.md)).
+6. Subflags: com mestra ON e ausentes = ON; fail-closed para flag/valor desconhecidos ([19-ROLLOUT.md](./19-ROLLOUT.md)). OFF não apaga dados.
+7. Permissões ADMIN: `npm run treasury:permissions:seed` (dry-run) depois `--apply`. **Não** usar `--sync-role-defaults`.
 
 ## Sequência obrigatória (usuário)
 

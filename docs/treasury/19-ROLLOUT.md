@@ -5,14 +5,15 @@
 
 ## Princípios
 
-1. **Default-on (catálogo conhecido):** env ausente = ON (ativação operacional). Opt-out: `0`/`false`/`off`/`no`.
-2. **Fail-closed residual:** flag ID desconhecida = OFF; valor env desconhecido = OFF.
-3. **AND com a mestra:** toda subflag exige mestra ON (`TREASURY_MODULE_ENABLED` ausente ou truthy).
-4. **Flag OFF não apaga dados:** apenas bloqueia API (HTTP 404 `API route not found`) e oculta UI; registros Prisma permanecem.
-5. **Rotas FE não quebram:** deep-link para submódulo OFF redireciona para o primeiro habilitado (ou mensagem de “nenhum submódulo liberado”).
-6. **Permissão ≠ flag:** `requireResource` continua obrigatório; flag não concede acesso.
+1. **Opt-in da mestra:** `TREASURY_MODULE_ENABLED` ausente = **OFF**. Ativar: `=1` / `true`.
+2. **Subflags com mestra ON:** env ausente = ON; opt-out `0`/`false`/`off`/`no`.
+3. **Fail-closed:** flag ID desconhecida = OFF; valor env desconhecido = OFF; mestra inválida = OFF.
+4. **AND com a mestra:** toda subflag exige mestra ON.
+5. **Flag OFF não apaga dados:** apenas bloqueia API (HTTP 404 `API route not found`) e oculta UI; registros Prisma permanecem.
+6. **Rotas FE não quebram:** deep-link para submódulo OFF redireciona para o primeiro habilitado (ou mensagem de “nenhum submódulo liberado”).
+7. **Permissão ≠ flag:** `requireResource` continua obrigatório; flag não concede acesso.
 
-Ativação ADMIN/SUPER_ADMIN: [ACTIVATION.md](./ACTIVATION.md).
+Ativação ADMIN/SUPER_ADMIN: [ACTIVATION.md](./ACTIVATION.md). Deploy sozinho **não** liga o módulo.
 
 ## Ordem recomendada de ativação
 

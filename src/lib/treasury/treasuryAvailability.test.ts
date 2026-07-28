@@ -10,7 +10,7 @@ import { TREASURY_ENABLED_ENV } from "./treasuryFeatureFlags.js";
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe("treasuryAvailability", () => {
-  it("retorna scaffold quando flag on (default-on: subflags ausentes = ligadas)", () => {
+  it("retorna scaffold quando mestra ON (subflags ausentes = ligadas)", () => {
     const payload = getTreasuryAvailability({
       env: { [TREASURY_ENABLED_ENV]: "1" },
       serverTime: new Date("2026-07-27T12:00:00.000Z"),
@@ -26,12 +26,12 @@ describe("treasuryAvailability", () => {
     assert.equal(payload.flags["treasury.dashboard.enabled"], true);
   });
 
-  it("ativação: env ausente liga mestra e subflags (default-on)", () => {
+  it("opt-in: env ausente mantém mestra e subflags OFF", () => {
     const payload = getTreasuryAvailability({ env: {} });
-    assert.equal(payload.enabled, true);
-    assert.equal(payload.status, "scaffold");
-    assert.equal(payload.flags["treasury.enabled"], true);
-    assert.equal(payload.flags["treasury.reports.enabled"], true);
+    assert.equal(payload.enabled, false);
+    assert.equal(payload.status, "disabled");
+    assert.equal(payload.flags["treasury.enabled"], false);
+    assert.equal(payload.flags["treasury.reports.enabled"], false);
   });
 
   it("marca disabled quando mestra opt-out explícito", () => {

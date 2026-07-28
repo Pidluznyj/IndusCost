@@ -6,51 +6,77 @@
 
 **Código de referência:** `treasuryFeatureFlags.ts`, `treasuryRollout.ts`,
 `permissionResourceSeedData.ts` (`ROLE_MATRIX.ADMIN`), `treasuryNavigation.ts`,
-menu em `navigationGroups.ts` / `Sidebar.tsx`.
+`treasuryAdminPermissionSeed.ts`, menu em `navigationGroups.ts` / `Sidebar.tsx`.
 
-## O que o deploy deste commit ativa
+## O que o deploy do código faz (e o que não faz)
 
 | Camada | Comportamento |
 |--------|----------------|
-| Feature flags | Catálogo conhecido **default ON** se a env estiver ausente. Opt-out: `TREASURY_MODULE_ENABLED=0` (mestra) ou subflag `=0`. |
-| Fail-closed | Flag ID desconhecida → sempre OFF. Valor env desconhecido → OFF. |
+| Feature flags | **Opt-in.** Mestra ausente = **OFF**. Ativar: `TREASURY_MODULE_ENABLED=1`. |
+| Subflags | Com mestra ON e env ausente = ON. Opt-out seletivo: `=0`. Valor inválido = OFF. |
+| Fail-closed | Flag ID desconhecida → OFF. Valor env desconhecido → OFF. Mestra inválida → OFF. |
 | Menu | Item **Tesouraria** em Financeiro quando mestra ON **e** `finance.treasury` view. |
 | Rota FE | `/finance/treasury` (módulo `treasury`, não herda de `finance.view`). |
-| APIs | Continuam com `requireAppAuth` → flag → `requireResource`. |
-| Roles | `ADMIN` recebe bags `finance.treasury*` no seed oficial. `SUPER_ADMIN` permanece bypass global. Demais roles: default deny. |
+| APIs | `requireAppAuth` → flag → `requireResource`. Mestra OFF → 404. |
+| Roles | `ROLE_MATRIX.ADMIN` declara defaults oficiais. Produção usa seed **aditivo** restrito. |
+| Processos externos | Permanecem desligados. Deploy **não** movimenta dinheiro nem altera Nomus. |
 
-## Pós-deploy (servidor) — obrigatório para ADMIN existentes
+**Deploy sozinho não ativa a Tesouraria.** É necessário seed restrito (ADMIN) + env explícita + restart.
 
-O seed de permissões é **create-only** por padrão. Para atualizar defaults de
-roles já existentes (incluir Tesouraria no `ADMIN`):
+## Pós-deploy (servidor) — sequência obrigatória
+
+### 1) Dry-run do seed restrito (padrão)
 
 ```bash
 cd /opt/induscost
+npm run treasury:permissions:seed
+```
+
+Equivale a dry-run: **não grava**. Revisar o relatório (recursos/permissões a criar).
+
+### 2) Apply somente após aprovação
+
+```bash
+cd /opt/induscost
+npm run treasury:permissions:seed -- --apply
+```
+
+O script:
+
+- afeta **somente** o papel `ADMIN`;
+- afeta **somente** `finance.treasury` e `finance.treasury.*`;
+- **cria** registros ausentes;
+- **não atualiza** `RolePermission` existente (preserva personalizações);
+- **não remove** nada;
+- **não toca** CM / SELLER / VIEWER, overrides, AccessProfile, `AppUser.permissions`;
+- usa **transação**;
+- é **idempotente**.
+
+### 3) NÃO executar
+
+```bash
+# PROIBIDO para esta ativação — reescreve RolePermission de toda a matriz
 npm run permissions:seed -- --sync-role-defaults
 ```
 
-Não imprime segredos. Não altera SSH/Webmin/firewall. Não reinicia o serviço.
-Não roda migration. Não muta Nomus.
+### 4) Ativar a mestra (opt-in) e reiniciar
 
-Opcional (catálogo canônico, se ainda não sincronizado):
+No `.env` do serviço (não commitado):
 
 ```bash
-cd /opt/induscost
-npm run permissions:seed:contract:apply
+TREASURY_MODULE_ENABLED=1
 ```
 
-## Variáveis de ambiente
-
-Nenhuma variável é **obrigatória** para ativar (default-on).
+Reiniciar o processo (`systemctl restart induscost` ou fluxo oficial de deploy).  
+Mudança de variável **exige restart**.
 
 Desligamento emergencial:
 
 ```bash
-# no .env do serviço (não commitado)
 TREASURY_MODULE_ENABLED=0
 ```
 
-Opt-out seletivo de submódulo (exemplo: relatórios):
+Opt-out seletivo (exemplo):
 
 ```bash
 TREASURY_REPORTS_ENABLED=0
@@ -79,12 +105,12 @@ A UI deve abrir com estados vazios. Operação real tipicamente exige:
 5. Backfill de complementos **somente se** houver gap — script oficial em
    `treasuryTitleComplementBackfill` (não executar daqui; ver runbook)
 
-## Validação rápida (após deploy + seed)
+## Validação rápida (após seed + env + restart)
 
 1. Login `ADMIN` → menu Financeiro → **Tesouraria**
 2. Abrir `/finance/treasury`
 3. `GET /api/finance/treasury/availability` → `enabled: true`
 4. Login `SELLER` → item Tesouraria **ausente**; API → 403
-5. Com `TREASURY_MODULE_ENABLED=0` → menu oculto; API → 404
+5. Sem `TREASURY_MODULE_ENABLED` (ou `=0`) → menu oculto; API → 404
 
 Checklist completo: [POST-DEPLOY-CHECKLIST.md](./POST-DEPLOY-CHECKLIST.md).

@@ -389,9 +389,6 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";
       if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
       if (moduleId === "treasury") return "/finance/treasury";
-      if (moduleId === "portfolio-reconciliation") {
-        return "/finance/portfolio-reconciliation";
-      }
       return `/${moduleId}`;
     }
   }
