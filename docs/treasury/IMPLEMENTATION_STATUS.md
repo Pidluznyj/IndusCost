@@ -86,8 +86,9 @@
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
 | **60** | Testes de integração completos (DB seguro) | `DONE` | `462c74c` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
 | **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `3e24528` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
+| **62** | Backfill complementos operacionais (preview/apply) | `DONE` | `PENDING` | CLI `scripts/treasuryTitleComplementBackfill.ts`; preview (período/encontrados/elegíveis/existentes/would-create/inconsistências/duplicidades/cancelados + estimativa); apply create-only idempotente em lotes + checkpoint/retomada/logs; não muta Nomus nem apaga; npm `backfill:treasury:title-complements:*`; testes unitários+wiring |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill complementos = **62**.
 
 ---
 
@@ -125,7 +126,7 @@
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
-| Scripts deploy/validação | `NOT_STARTED` | Produção: usuário aplica; Cursor não deploya |
+| Scripts deploy/validação | `PARTIAL` | P62: backfill preview/apply de `TreasuryTitleOperationalComplement`; runbook deploy prod ainda pendente |
 
 ---
 
@@ -760,3 +761,4 @@
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
 | 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `462c74c` |
 | 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `3e24528` |
+| 2026-07-28 | Prompt 62: backfill complementos operacionais (preview/apply) — `PENDING` |
