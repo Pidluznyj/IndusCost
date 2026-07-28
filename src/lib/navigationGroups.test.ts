@@ -152,13 +152,8 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     const counts = Object.fromEntries(structure.groups.map((g) => [g.id, g.items.length]));
     assert.deepEqual(counts, {
       engenharia: 4,
-<<<<<<< HEAD
-      cadeia_suprimentos: 3,
-      comercial: 9,
-=======
       cadeia_suprimentos: 6,
-      comercial: 8,
->>>>>>> origin/chore/supply-chain-guardrails
+      comercial: 9,
       financeiro: 6,
       operacoes: 5,
       gestao_pessoas: 3,
