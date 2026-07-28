@@ -116,9 +116,13 @@ describe("financeDreCostCenterRoles", () => {
     assert.equal(classifyDreCostCenterRole("IMP", "Impostos"), "tax");
     assert.equal(classifyDreCostCenterRole("MP", "Matéria prima"), "raw_material");
     assert.equal(classifyDreCostCenterRole("ADM", "Administrativo"), "admin");
+    assert.equal(
+      classifyDreCostCenterRole("INV", "Investimento socios"),
+      "partner_investment"
+    );
   });
 
-  it("separa fretes, embalagens, pessoal, imposto/MP e admin mensais", () => {
+  it("separa fretes, embalagens, pessoal, imposto/MP, investimento sócios e admin mensais", () => {
     const { buckets } = bucketCostCenterSpendByDreRole(
       [
         { year: 2026, month: 3, code: "LOG", name: "Logística", amount: 100 },
@@ -127,6 +131,14 @@ describe("financeDreCostCenterRoles", () => {
         { year: 2026, month: 3, code: "ADM", name: "Aluguel", amount: 300 },
         { year: 2026, month: 3, code: "MP", name: "Matéria prima", amount: 999 },
         { year: 2026, month: 3, code: "IMP", name: "Impostos", amount: 80 },
+        {
+          year: 2026,
+          month: 3,
+          costCenterId: "cc-inv",
+          code: "INV",
+          name: "Investimento socios",
+          amount: 70,
+        },
       ],
       2026,
       [{ year: 2026, month: 3, unclassifiedAmount: 50 }],
@@ -135,10 +147,33 @@ describe("financeDreCostCenterRoles", () => {
     assert.equal(buckets.logistics[2], 100);
     assert.equal(buckets.packaging[2], 40);
     assert.equal(buckets.personnel[2], 200);
-    assert.equal(buckets.admin[2], 300);
+    assert.equal(buckets.admin[2], 370); // aluguel + investimento sócios (permanece no RO)
+    assert.equal(buckets.partnerInvestment[2], 70);
     assert.equal(buckets.rawMaterial[2], 999);
     assert.equal(buckets.tax[2], 80);
     assert.equal(buckets.unclassified[2], 50);
+  });
+
+  it("mapa persistido tem precedência sobre o classificador", () => {
+    const map = new Map([["cc-1", "logistics" as const]]);
+    const { buckets } = bucketCostCenterSpendByDreRole(
+      [
+        {
+          year: 2026,
+          month: 1,
+          costCenterId: "cc-1",
+          code: "ADM",
+          name: "Aluguel",
+          amount: 50,
+        },
+      ],
+      2026,
+      [],
+      1,
+      map
+    );
+    assert.equal(buckets.logistics[0], 50);
+    assert.equal(buckets.admin[0], 0);
   });
 });
 
@@ -189,6 +224,8 @@ describe("financeDreMath", () => {
     assert.equal(kpis.margemBrutaPct, roundDreMoney((500 / 980) * 100));
     assert.equal(kpis.resultadoOperacional, 400);
     assert.equal(kpis.margemOperacionalPct, roundDreMoney((400 / 980) * 100));
+    assert.equal(kpis.investimentoSocios, 0);
+    assert.equal(kpis.ebitda, 400);
     assert.ok(kpis.lucroLiquidoAproximado < 400);
     assert.ok(kpis.margemLiquidaAproximadaPct != null);
     assert.ok(kpis.ytd);
@@ -232,6 +269,42 @@ describe("financeDreMath", () => {
     assert.equal(extracted.length, 1);
     assert.equal(extracted[0]?.externalProductId, 99);
     assert.equal(extracted[0]?.quantity, 2);
+  });
+
+  it("EBITDA = resultado operacional + investimento sócios (add-back) antes de IRPJ/CSLL", () => {
+    const receita = emptyDreSeries();
+    receita[0] = 1000;
+    const admin = emptyDreSeries();
+    admin[0] = 170; // inclui 70 de investimento sócios
+    const inv = emptyDreSeries();
+    inv[0] = 70;
+    const { kpis, lines } = buildFinanceDreLines({
+      highlightMonth: 1,
+      receitaBruta: receita,
+      cofins: emptyDreSeries(),
+      icms: emptyDreSeries(),
+      icmsSt: emptyDreSeries(),
+      ipi: emptyDreSeries(),
+      pis: emptyDreSeries(),
+      devolucoes: emptyDreSeries(),
+      cmv: emptyDreSeries(),
+      fretes: emptyDreSeries(),
+      embalagens: emptyDreSeries(),
+      despesasAdmin: admin,
+      investimentoSocios: inv,
+      despesasPessoal: emptyDreSeries(),
+      impostosCc: emptyDreSeries(),
+      materiaPrimaCc: emptyDreSeries(),
+      unclassifiedCcAmount: emptyDreSeries(),
+      quality: { unlinkedNfeCount: 0, unlinkedNfeRevenue: 0, taxSummaryGapCount: 0 },
+    });
+    assert.equal(kpis.resultadoOperacional, 830);
+    assert.equal(kpis.investimentoSocios, 70);
+    assert.equal(kpis.ebitda, 900);
+    assert.equal(kpis.ytd.ebitda, 900);
+    assert.ok(kpis.lucroLiquidoAproximado < kpis.resultadoOperacional);
+    assert.ok(lines.some((l) => l.id === "resultado_operacional"));
+    assert.ok(lines.some((l) => l.id === "provisoes_estimadas_irpj_csll"));
   });
 
   it("aloca CMV por peso das NF-e e só da parcela faturada", () => {
@@ -324,6 +397,9 @@ describe("financeDreViewModel & export", () => {
         margemBrutaPct: 100,
         resultadoOperacional: 10,
         margemOperacionalPct: 100,
+        ebitda: 15,
+        ebitdaPct: 150,
+        investimentoSocios: 5,
         lucroLiquidoAproximado: 10,
         margemLiquidaAproximadaPct: 100,
         ytd: {
@@ -335,6 +411,9 @@ describe("financeDreViewModel & export", () => {
           margemBrutaPct: 100,
           resultadoOperacional: 10,
           margemOperacionalPct: 100,
+          ebitda: 15,
+          ebitdaPct: 150,
+          investimentoSocios: 5,
           lucroLiquidoAproximado: 10,
           margemLiquidaAproximadaPct: 100,
         },
@@ -500,6 +579,9 @@ describe("finance dre line drill-down", () => {
     const routes = readSrc("src/lib/financeDreRoutes.ts");
     assert.match(routes, /\/api\/finance\/dre\/lines\/:lineId\/drilldown/);
     assert.match(routes, /buildFinanceDreLineDrilldown/);
+    assert.match(routes, /\/api\/finance\/dre\/cost-center-mappings/);
+    assert.match(routes, /listDreCostCenterMappings/);
+    assert.match(routes, /replaceDreCostCenterMappings/);
 
     const server = readSrc("src/lib/financeDreDrilldown.server.ts");
     assert.match(server, /fiscalNfeWhereSql/);
@@ -523,7 +605,19 @@ describe("finance dre line drill-down", () => {
     assert.match(pageUi, /Lucro líquido após IRPJ e CSLL/);
     assert.match(pageUi, /Estimativa gerencial/);
     assert.match(pageUi, /Acumulado \(YTD\)/);
+    assert.match(pageUi, /finance-dre-ebitda-cards/);
+    assert.match(pageUi, /EBITDA/);
+    assert.match(pageUi, /Parametrizar centros/);
+    assert.match(pageUi, /\/finance\/dre\/parametrizacao/);
     assert.doesNotMatch(pageUi, /0\.09|0\.15|20000|numberOfMonthsInPeriod/);
+
+    const mappingPage = readSrc("src/components/finance/FinanceDreCostCenterMappingPage.tsx");
+    assert.match(mappingPage, /finance-dre-cc-mapping-page/);
+    assert.match(mappingPage, /Investimento sócios|partner_investment/);
+
+    const moduleSrc = readSrc("src/components/FinanceModule.tsx");
+    assert.match(moduleSrc, /dre\/parametrizacao/);
+    assert.match(moduleSrc, /FinanceDreCostCenterMappingPage/);
 
     const path = getFinanceDreLineDrilldownPath("icms", "year=2026&month=7", "highlight");
     assert.match(path, /\/api\/finance\/dre\/lines\/icms\/drilldown/);

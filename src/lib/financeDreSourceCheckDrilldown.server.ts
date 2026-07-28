@@ -20,9 +20,11 @@ import {
   type DreCmvGapRow,
 } from "@/src/lib/financeDreCmvFromNfe.server.js";
 import {
-  classifyDreCostCenterRole,
   DRE_PERSONNEL_ROLES,
+  resolveDreCostCenterRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
+import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
+import { prisma } from "@/src/lib/prisma.js";
 import {
   amountInMonthRange,
   scopeMonthRange,
@@ -589,11 +591,12 @@ export async function buildFinanceDreSourceCheckDrilldown(
       }),
       referenceNow
     );
+    const roleMap = await loadDreCostCenterRoleMap(prisma);
     const byKey = new Map<string, FinanceDreDrilldownRow>();
     for (const row of dashboard.monthlySeries.byCostCenter) {
       if (row.year !== filters.year) continue;
       if (row.month < fromMonth || row.month > toMonth) continue;
-      const role = classifyDreCostCenterRole(row.code, row.name);
+      const role = resolveDreCostCenterRole(row.code, row.name, row.costCenterId, roleMap);
       if (!DRE_PERSONNEL_ROLES.has(role)) continue;
       const key = row.costCenterId || `${row.code}::${row.name}`;
       const current = byKey.get(key);

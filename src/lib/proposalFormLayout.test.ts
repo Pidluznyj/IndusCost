@@ -20,6 +20,7 @@ describe("proposal form layout", () => {
     assert.doesNotMatch(formSlice, /lg:col-span-2/);
     assert.match(formSlice, /data-tour="proposals-form-actions"/);
     assert.match(formSlice, /data-tour="proposals-form-items"/);
+    assert.match(formSlice, /data-tour="proposals-form-header"/);
     assert.match(formSlice, /data-tour="proposals-root"/);
     assert.match(formSlice, /min-h-\[70vh\]/);
 
@@ -32,10 +33,38 @@ describe("proposal form layout", () => {
     assert.match(formSlice, /grid grid-cols-1 md:grid-cols-2 gap-6/);
   });
 
+  it("cabeçalho compacto em grade e pesquisa de produto mais larga", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+
+    assert.match(formSlice, /grid grid-cols-1 md:grid-cols-12 gap-3/);
+    assert.match(formSlice, /data-testid="proposal-add-product-search"/);
+    assert.match(formSlice, /min-w-\[20rem\] max-w-2xl/);
+    assert.doesNotMatch(formSlice, /className="w-64"/);
+  });
+
   it("tour preserva âncoras do formulário", () => {
     const tour = read("src/tours/proposalTourSteps.ts");
     assert.match(tour, /proposals-root/);
     assert.match(tour, /proposals-form-actions/);
     assert.match(tour, /proposals-form-items/);
+  });
+
+  it("formulário de edição não exibe aba Indicadores nem colunas de custo/margem", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    assert.ok(formStart > 0);
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+
+    assert.doesNotMatch(formSlice, /ProposalIndicatorsTab/);
+    assert.doesNotMatch(formSlice, /ProposalIndicatorsDetailModal/);
+    assert.doesNotMatch(formSlice, /setFormTab\("indicators"\)/);
+    assert.doesNotMatch(formSlice, />\s*Indicadores\s*</);
+    assert.doesNotMatch(formSlice, /Custo Unit\./);
+    assert.doesNotMatch(formSlice, /Margem líq\. %/);
+    assert.match(formSlice, />Sugerido</);
+    assert.match(formSlice, />Negociado</);
+    assert.match(formSlice, /Total Líq\./);
   });
 });

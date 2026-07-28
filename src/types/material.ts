@@ -18,6 +18,8 @@ export interface Material {
   currentCost: number;
   averageCost: number;
   standardCost: number;
+  /** Quantidade na unidade de medida adotada. */
+  quantity: number;
   freight: number;
   standardLoss: number;
   conversionFactor: number;
@@ -30,6 +32,8 @@ export interface Material {
   calculations?: {
     landedCost: number;
     effectiveCost: number;
+    /** quantity × currentCost */
+    totalMaterialValue: number;
   };
   marketSituation?: MaterialMarketSituationResult | null;
   createdAt: string;
@@ -52,6 +56,7 @@ export interface CreateMaterialInput {
   currentCost: number;
   averageCost: number;
   standardCost: number;
+  quantity: number;
   freight: number;
   standardLoss: number;
   conversionFactor: number;

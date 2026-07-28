@@ -1305,11 +1305,13 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
         "reports.view",
         "finance.view",
       ]),
+      M(["finance.dre.manage"]),
     ],
     relatedEndpoints: [
       "/api/finance/dre",
       "/api/finance/dre/export",
       "/api/finance/dre/cash-bridge",
+      "/api/finance/dre/cost-center-mappings",
     ],
     sensitivity: "high",
     appearsInSidebar: false,
@@ -1317,7 +1319,7 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: [],
-    notes: "DRE gerencial mensal (NF-e + CC + CMV oficial) e ponte lucro × caixa (parcial).",
+    notes: "DRE gerencial mensal (NF-e + CC + CMV oficial), EBITDA e parametrização de CCs.",
   },
   {
     resourceKey: "finance.treasury",

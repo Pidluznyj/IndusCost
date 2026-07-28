@@ -34,13 +34,19 @@ describe("salesOrderListMarginSummary", () => {
     assert.doesNotMatch(server, /buildOfficialSalesOrderListMarginSummary/);
     assert.match(routes, /SALES_ORDER_LIST_MARGIN_SUMMARY_PATH/);
     assert.match(routes, /loadSalesOrderListMarginSummary/);
+    assert.match(routes, /SALES_ORDER_LIST_PAGE_MARGINS_PATH/);
     assert.match(
       read("src/lib/salesOrderListMarginSummaryApi.ts"),
       /\/api\/sales-orders\/margin-summary/
     );
+    assert.match(
+      read("src/lib/salesOrderListMarginSummaryApi.ts"),
+      /\/api\/sales-orders\/page-margins/
+    );
     assert.match(loader, /buildOfficialSalesOrderListMarginSummary/);
     assert.match(loader, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
     assert.match(module, /getSalesOrderListMarginSummaryUrl/);
+    assert.match(module, /getSalesOrderListPageMarginsUrl/);
     assert.match(adapter, /export async function buildOfficialSalesOrderListMarginSummary/);
     assert.match(adapter, /aggregateSalesOrderMarginSummaries/);
   });

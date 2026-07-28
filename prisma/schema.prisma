@@ -230,6 +230,8 @@ model Material {
   currentCost                   Decimal                      @db.Decimal(20, 6)
   averageCost                   Decimal                      @db.Decimal(20, 6)
   standardCost                  Decimal                      @db.Decimal(20, 6)
+  /// Quantidade de referência no cadastro (Suprimentos). Total = quantity × currentCost.
+  quantity                      Decimal                      @default(0) @db.Decimal(20, 6)
   freight                       Decimal?                     @default(0) @db.Decimal(20, 6)
   standardLoss                  Decimal?                     @default(0) @db.Decimal(10, 6)
   conversionFactor              Decimal?                     @default(1) @db.Decimal(20, 6)
@@ -2092,6 +2094,7 @@ model AppUser {
   treasuryExceptionsCancelled          TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
   treasuryExceptionsResponsible        TreasuryException[]                  @relation("TreasuryExceptionResponsible")
   treasuryAlertSettingsUpdated         TreasuryAlertSettings[]              @relation("TreasuryAlertSettingsUpdatedBy")
+  dreCostCenterMappingsUpdated         FinancialDreCostCenterMapping[]      @relation("FinancialDreCostCenterMappingUpdatedBy")
   treasuryDailyClosingsCreated         TreasuryDailyClosing[]               @relation("TreasuryDailyClosingCreatedBy")
   treasuryDailyClosingsClosed          TreasuryDailyClosing[]               @relation("TreasuryDailyClosingClosedBy")
   treasuryDailyClosingReopenings       TreasuryDailyClosingReopening[]      @relation("TreasuryDailyClosingReopeningBy")
@@ -5016,9 +5019,29 @@ model FinancialCostCenter {
   reclassificationRulesTarget FinancialCostCenterReclassificationRule[]
   classificationRules         FinancialCostCenterClassificationRule[]
   employees                   Employee[]
+  dreRoleMapping              FinancialDreCostCenterMapping?
 
   @@index([status])
   @@index([parentId])
+}
+
+/// Papel do centro de custo nas categorias da DRE Gerencial (Fretes, Embalagens, Investimento sócios, etc.).
+model FinancialDreCostCenterMapping {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  costCenterId    String   @unique @db.Uuid
+  /// logistics|packaging|payroll|benefits|assembly|labor|tax|raw_material|admin|partner_investment
+  role            String
+  /// SEED (classificador) | MANUAL (usuário)
+  source          String   @default("SEED")
+  updatedByUserId String?  @db.Uuid
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  costCenter    FinancialCostCenter @relation(fields: [costCenterId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  updatedByUser AppUser?            @relation("FinancialDreCostCenterMappingUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([role])
+  @@index([source])
 }
 
 /// Regra gerencial de reclassificação de centro de custo (ex.: descrição AP → subcentro).

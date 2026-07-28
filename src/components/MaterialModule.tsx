@@ -21,7 +21,17 @@ import {
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
+import {
+  computeMaterialTotalValue,
+  countMaterialsWithStockQuantity,
+  sumMaterialCatalogStockValue,
+} from "@/src/lib/materialQuantityTotal";
 import { Material, CreateMaterialInput } from "@/src/types/material";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import {
   DEFAULT_MATERIAL_MARKET_CRITICALITY,
   DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
@@ -88,6 +98,7 @@ export const MaterialModule = () => {
     currentCost: 0,
     averageCost: 0,
     standardCost: 0,
+    quantity: 0,
     freight: 0,
     standardLoss: 0,
     conversionFactor: 1,
@@ -96,6 +107,20 @@ export const MaterialModule = () => {
     marketMonitoringFrequencyDays: DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
     marketNotes: "",
   });
+
+  const totalMaterialValue = useMemo(
+    () => computeMaterialTotalValue(formData.quantity, formData.currentCost),
+    [formData.quantity, formData.currentCost]
+  );
+
+  const catalogStockValue = useMemo(
+    () => sumMaterialCatalogStockValue(materials),
+    [materials]
+  );
+  const materialsWithStockCount = useMemo(
+    () => countMaterialsWithStockQuantity(materials),
+    [materials]
+  );
 
   const fetchData = async () => {
     setLoading(true);
@@ -127,6 +152,7 @@ export const MaterialModule = () => {
         currentCost: Number(material.currentCost),
         averageCost: Number(material.averageCost),
         standardCost: Number(material.standardCost),
+        quantity: Number(material.quantity ?? 0),
         freight: Number(material.freight),
         standardLoss: Number(material.standardLoss),
         conversionFactor: Number(material.conversionFactor),
@@ -149,6 +175,7 @@ export const MaterialModule = () => {
         currentCost: 0,
         averageCost: 0,
         standardCost: 0,
+        quantity: 0,
         freight: 0,
         standardLoss: 0,
         conversionFactor: 1,
@@ -303,6 +330,28 @@ export const MaterialModule = () => {
 
   return (
     <div className="space-y-6" data-tour="materials-root">
+      <SummaryKpiGrid
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+        testId="materials-catalog-stock-kpis"
+      >
+        <SystemTotalizerCard
+          testId="materials-catalog-stock-value-card"
+          label="Valor em estoque (MP)"
+          amount={catalogStockValue}
+          amountFormat="currency"
+          tone="money"
+          icon={Package}
+          loading={loading}
+          helperText={
+            loading
+              ? undefined
+              : materialsWithStockCount === 0
+                ? "Nenhuma quantidade lançada no cadastro"
+                : `${materialsWithStockCount} material(is) com quantidade · Σ quantidade × custo atual`
+          }
+        />
+      </SummaryKpiGrid>
+
       {/* Header Actions */}
       <div
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
@@ -716,12 +765,53 @@ export const MaterialModule = () => {
                         />
                       </div>
                     </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Quantidade ({formData.unit || "UN"})
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.00001"
+                          data-testid="material-quantity-input"
+                          className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                          value={formData.quantity}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              quantity: Number.isFinite(parseFloat(e.target.value))
+                                ? parseFloat(e.target.value)
+                                : 0,
+                            })
+                          }
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Na unidade de medida adotada do material.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-muted-foreground uppercase">
+                          Valor MP total (R$)
+                        </label>
+                        <div
+                          data-testid="material-total-value"
+                          className="w-full p-2 rounded-lg border border-border bg-muted/40 font-bold text-sm tabular-nums"
+                          title="Quantidade × Custo atual (por unidade)"
+                        >
+                          {formatCurrency(totalMaterialValue)}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Calculado: quantidade × custo atual.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Live Preview of Calculations */}
-              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-xl bg-primary/5 border border-primary/20 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <Truck className="h-5 w-5 text-primary" />
@@ -741,6 +831,17 @@ export const MaterialModule = () => {
                     <p className="text-[10px] font-bold text-muted-foreground uppercase">Custo Efetivo (c/ Perda)</p>
                     <p className="text-lg font-black text-orange-600">
                       {formatCurrency((Number(formData.currentCost) + Number(formData.freight)) / (1 - (Number(formData.standardLoss) / 100)))}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                    <Package className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase">Valor MP total</p>
+                    <p className="text-lg font-black text-emerald-700">
+                      {formatCurrency(totalMaterialValue)}
                     </p>
                   </div>
                 </div>

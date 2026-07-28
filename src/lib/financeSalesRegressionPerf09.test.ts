@@ -34,7 +34,17 @@ describe("PERFORMANCE 09 — regressão paridade Pedidos + Financeiro", () => {
 
   it("3) margens e billing status oficiais preservados na lista", () => {
     const server = read("server.ts");
-    assert.match(server, /attachMarginsToSalesOrders/);
+    const routes = read("src/lib/salesOrderListReportExportRoutes.ts");
+    const pageMargins = read("src/lib/salesOrderListPageMargins.server.ts");
+    assert.doesNotMatch(
+      server.slice(
+        server.indexOf('app.get("/api/sales-orders"'),
+        server.indexOf('app.get("/api/sales-orders"') + 4500
+      ),
+      /attachMarginsToSalesOrders/
+    );
+    assert.match(routes, /SALES_ORDER_LIST_PAGE_MARGINS_PATH/);
+    assert.match(pageMargins, /attachMarginsToSalesOrders/);
     assert.match(server, /resolveSalesOrderBillingStatus/);
     assert.match(server, /canViewMarginEconomics|products\.tab\.cost|costs\.view/);
   });

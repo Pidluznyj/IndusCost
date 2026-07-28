@@ -11,3 +11,7 @@ export function canViewFinanceDre(auth: FinanceDrePermissionCheck): boolean {
     auth.hasPermission("finance.view")
   );
 }
+
+export function canManageFinanceDreMappings(auth: FinanceDrePermissionCheck): boolean {
+  return auth.hasPermission("finance.dre.manage") || auth.hasPermission("finance.cost_centers.manage");
+}

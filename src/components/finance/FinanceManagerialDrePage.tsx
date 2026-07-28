@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Download, Maximize2, Printer, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Download, Maximize2, Printer, RefreshCw, Settings2 } from "lucide-react";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
@@ -323,6 +324,14 @@ export function FinanceManagerialDrePage() {
             <Maximize2 className="h-4 w-4" />
             Abrir apresentação
           </button>
+          <Link
+            to="/finance/dre/parametrizacao"
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:bg-accent"
+            data-testid="finance-dre-parametrize-link"
+          >
+            <Settings2 className="h-4 w-4" />
+            Parametrizar centros
+          </Link>
         </div>
       </div>
 
@@ -401,6 +410,36 @@ export function FinanceManagerialDrePage() {
 
           {!loading && report ? (
             <>
+              <div
+                className="grid gap-3 sm:grid-cols-2"
+                data-testid="finance-dre-ebitda-cards"
+              >
+                <KpiCard
+                  label="EBITDA (mês)"
+                  value={formatFinanceKpiCurrency(report.kpis.ebitda)}
+                  hint={[
+                    formatDreMarginPct(report.kpis.ebitdaPct),
+                    `RO + Investimento sócios (${formatFinanceKpiCurrency(report.kpis.investimentoSocios)})`,
+                    "Antes de IRPJ/CSLL",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  tone={report.kpis.ebitda >= 0 ? "positive" : "negative"}
+                />
+                <KpiCard
+                  label="EBITDA (YTD)"
+                  value={formatFinanceKpiCurrency(report.kpis.ytd.ebitda)}
+                  hint={[
+                    formatDreMarginPct(report.kpis.ytd.ebitdaPct),
+                    `RO + Investimento sócios (${formatFinanceKpiCurrency(report.kpis.ytd.investimentoSocios)})`,
+                    "Antes de IRPJ/CSLL",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  tone={report.kpis.ytd.ebitda >= 0 ? "positive" : "negative"}
+                />
+              </div>
+
               <div className="space-y-3" data-testid="finance-dre-kpi-blocks">
                 <div>
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">

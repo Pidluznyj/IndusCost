@@ -101,6 +101,8 @@ export const FINANCE_MODULE_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/finance/dre", resourceKey: "finance.dre", action: "view" },
   { method: "GET", path: "/api/finance/dre/export", resourceKey: "finance.dre", action: "view" },
   { method: "GET", path: "/api/finance/dre/cash-bridge", resourceKey: "finance.dre", action: "view" },
+  { method: "GET", path: "/api/finance/dre/cost-center-mappings", resourceKey: "finance.dre", action: "view" },
+  { method: "PUT", path: "/api/finance/dre/cost-center-mappings", resourceKey: "finance.dre", action: "manage" },
 
   // Central de Tesouraria
   { method: "GET", path: "/api/finance/treasury/availability", resourceKey: "finance.treasury", action: "view" },
