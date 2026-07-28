@@ -137,6 +137,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
     "settings.nomus.view",
     "settings.view",
   ],
+  treasury: ["finance.treasury.view"],
   suppliers: [
     "finance.suppliers.view",
     "finance.cost_centers.view",
@@ -205,7 +206,15 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
     label: "Financeiro",
     iconKey: "Banknote",
     order: 5,
-    itemIds: ["finance", "suppliers", "portfolio-reconciliation", "opex", "taxes", "reports"],
+    itemIds: [
+      "finance",
+      "treasury",
+      "suppliers",
+      "portfolio-reconciliation",
+      "opex",
+      "taxes",
+      "reports",
+    ],
   },
   {
     id: "operacoes",
@@ -253,6 +262,7 @@ const EXPLICIT_MODULE_TO_GROUP = new Map<AppModuleId, NavigationGroupId>(
 export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
+  if (moduleId === "treasury") return "/finance/treasury";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
   if (moduleId === "commercial-price-table") return "/commercial/price-table";
   if (moduleId === "sc-purchases") return "/supply-chain/purchases";
