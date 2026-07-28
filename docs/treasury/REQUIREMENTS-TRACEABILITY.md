@@ -85,4 +85,4 @@ Itens implementados nesta auditoria (com testes de wiring/regras):
 - R20 alias UI `/ofx`
 - R28/R30 runbook + `validate:treasury:deploy`
 
-**Commit:** ver `IMPLEMENTATION_STATUS.md` Prompt **63**.
+**Commit:** `0b687bb` — ver também `IMPLEMENTATION_STATUS.md` Prompt **63**.
