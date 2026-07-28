@@ -139,7 +139,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             value={`${formatFinanceInteger(summary.activeItemsCount)} / ${formatFinanceInteger(summary.canceledItemsCount)}`}
           />
           <Kpi
-            label="Margem R$"
+            label="Margem comercial R$"
             value={
               summary.marginValue != null
                 ? formatFinanceCurrency(summary.marginValue)
@@ -148,13 +148,15 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={(summary.marginValue ?? 0) < 0 ? "risk" : "positive"}
           />
           <Kpi
-            label="Margem %"
+            label="Margem comercial %"
             value={
               summary.marginPercent != null
                 ? `${summary.marginPercent.toLocaleString("pt-BR", {
                     maximumFractionDigits: 2,
                   })}%`
-                : "—"
+                : summary.commercialMarginComplete === false
+                  ? "Parcial"
+                  : "—"
             }
           />
           <Kpi
@@ -203,8 +205,8 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                   <th className="so-detail-num">Valor total</th>
                   <th className="so-detail-num">Valor ativo</th>
                   <th className="so-detail-num">Custo unit.</th>
-                  <th className="so-detail-num">Margem R$</th>
-                  <th className="so-detail-num">Margem %</th>
+                  <th className="so-detail-num">Margem comercial R$</th>
+                  <th className="so-detail-num">Margem comercial %</th>
                   <th>Entrega</th>
                   <th>NF/documento</th>
                 </tr>
@@ -677,9 +679,12 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
 
       {/* 6 — Margem, preço e custo */}
       <section className="so-detail-section" data-testid="sales-order-detail-pricing-margin">
-        <h3 className="so-detail-section-title">Margem, preço e custo</h3>
+        <h3 className="so-detail-section-title">Margem comercial da venda</h3>
         <p className="so-detail-section-subtitle">
           Fonte: {pricingMargin.source}
+          {pricingMargin.commercialMarginComplete === false
+            ? " · Margem comercial parcial"
+            : ""}
         </p>
         <div className="so-detail-kpi-grid">
           <Kpi label="Valor vendido" value={formatFinanceCurrency(pricingMargin.valueSold)} />
@@ -697,7 +702,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             }
           />
           <Kpi
-            label="Margem R$"
+            label="Margem comercial R$"
             value={
               pricingMargin.marginValue != null
                 ? formatFinanceCurrency(pricingMargin.marginValue)
@@ -706,7 +711,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             tone={(pricingMargin.marginValue ?? 0) < 0 ? "risk" : "positive"}
           />
           <Kpi
-            label="Margem %"
+            label="Margem comercial %"
             value={
               pricingMargin.marginPercent != null
                 ? `${pricingMargin.marginPercent.toLocaleString("pt-BR", {
@@ -715,6 +720,15 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                 : "—"
             }
           />
+          {pricingMargin.managerialMarginPercent != null ? (
+            <Kpi
+              label="Margem gerencial após impostos e custo %"
+              value={`${pricingMargin.managerialMarginPercent.toLocaleString("pt-BR", {
+                maximumFractionDigits: 2,
+              })}%`}
+              tone="muted"
+            />
+          ) : null}
           <Kpi
             label="Itens sem margem"
             value={formatFinanceInteger(pricingMargin.itemsWithoutMargin)}

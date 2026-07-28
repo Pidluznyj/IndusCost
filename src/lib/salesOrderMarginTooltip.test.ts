@@ -56,7 +56,7 @@ function summary(
 describe("salesOrderMarginTooltip", () => {
   it("tooltip gerencial com imposto (pedido R$ 394)", () => {
     const text = buildOfficialSalesOrderMarginTooltipText({ summary: summary() });
-    assert.match(text, /Margem gerencial do pedido/);
+    assert.match(text, /Margem gerencial após impostos e custo/);
     assert.match(text, /Valor vendido: R\$\s*394,00/);
     assert.match(text, /Imposto estimado \(dedução de imposto\): R\$\s*107,37/);
     assert.match(text, /TaxRule Imposto médio sobre venda \(27,25%\)/);
@@ -65,7 +65,7 @@ describe("salesOrderMarginTooltip", () => {
     assert.match(text, /Fonte do custo: Tabela de custo vigente/);
     assert.match(text, /Custo total de produção: R\$\s*193,49/);
     assert.doesNotMatch(text, /getProductCostAnalysis/);
-    assert.match(text, /Margem R\$: R\$\s*93,14/);
+    assert.match(text, /Margem gerencial após impostos e custo \(R\$\): R\$\s*93,14/);
     assert.match(text, /32,50%/);
     assert.match(text, /Cobertura: FULL/);
   });
@@ -84,7 +84,7 @@ describe("salesOrderMarginTooltip", () => {
     });
     assert.match(text, /Margem vendida sem imposto/);
     assert.match(text, /Imposto: não deduzido neste modo/);
-    assert.doesNotMatch(text, /Margem gerencial do pedido/);
+    assert.match(text, /Margem gerencial após impostos e custo \(R\$\)/);
   });
 
   it("tooltip parcial mostra receita coberta/descoberta", () => {
@@ -98,7 +98,7 @@ describe("salesOrderMarginTooltip", () => {
         itemsTotal: 2,
       }),
     });
-    assert.match(text, /Margem parcial do pedido/);
+    assert.match(text, /Margem comercial parcial/);
     assert.match(text, /Receita coberta:/);
     assert.match(text, /Receita descoberta:/);
     assert.match(text, /falta de custo resolvido/);
@@ -112,7 +112,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem indisponível/);
+    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /TaxRule não configurada/);
     assert.equal(pickSalesOrderListMarginPercent(summary({ fiscalConfigComplete: false })), "—");
   });
@@ -127,7 +127,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem indisponível/);
+    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /Imposto estimado \(dedução de imposto\)/);
     assert.match(text, /Receita líquida gerencial após impostos/);
     assert.match(text, /TaxRule/);
@@ -143,7 +143,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem indisponível/);
+    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /Custo não resolvido/);
   });
 
@@ -175,7 +175,7 @@ describe("salesOrderMarginTooltip", () => {
 
   it("alias buildSalesOrderMarginTooltipText", () => {
     const text = buildSalesOrderMarginTooltipText(summary());
-    assert.match(text, /Margem gerencial do pedido/);
+    assert.match(text, /Margem gerencial após impostos e custo/);
   });
 
   it("Pedidos lista usa tooltip gerencial", () => {
@@ -217,8 +217,8 @@ describe("salesOrderMarginTooltip", () => {
       ],
     });
     assert.match(text, /Custo de produção não resolvido/);
-    assert.match(text, /Margem R\$: —/);
-    assert.match(text, /Margem %: —/);
+    assert.match(text, /Margem gerencial após impostos e custo \(R\$\): —/);
+    assert.match(text, /Margem gerencial após impostos e custo \(%\): —/);
     assert.match(text, /Itens sem custo/);
   });
 
@@ -229,7 +229,7 @@ describe("salesOrderMarginTooltip", () => {
     );
     assert.match(analysis, /Preço vendido/);
     assert.match(analysis, /Preço tabela/);
-    assert.match(analysis, /Margem realizada/);
+    assert.match(analysis, /Margem comercial/);
     assert.match(analysis, /PRODUCTION_COST_DISPLAY_LABELS\.productionUnitCost/);
     assert.match(analysis, /costUnresolved/);
   });

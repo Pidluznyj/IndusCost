@@ -85,9 +85,28 @@ describe("salesOrderMarginDisplay", () => {
     assert.equal(pickSalesOrderListMarginValue(undefined), "—");
   });
 
-  it("1. lista renderiza margem do pedido a partir de marginSummary", () => {
-    assert.equal(pickSalesOrderListMarginPercent(summary()), "60,00%");
-    assert.match(pickSalesOrderListMarginValue(summary()), /600,00/);
+  it("1. lista renderiza margem comercial a partir de commercialMargin", () => {
+    const withCommercial = summary({
+      commercialMargin: {
+        commercialMarginTotalValue: 340,
+        commercialMarginTotalPercent: 34,
+        commercialSoldTotalValue: 1000,
+        totalActiveSoldValue: 1000,
+        commercialMarginCoveragePercent: 100,
+        itemsCalculated: 1,
+        itemsUnavailable: 0,
+        itemsActive: 1,
+        isComplete: true,
+        warnings: [],
+      },
+    });
+    assert.equal(pickSalesOrderListMarginPercent(withCommercial), "34,00%");
+    assert.match(pickSalesOrderListMarginValue(withCommercial), /340,00/);
+  });
+
+  it("lista não usa margem gerencial como principal sem commercialMargin", () => {
+    assert.equal(pickSalesOrderListMarginPercent(summary()), "—");
+    assert.equal(pickSalesOrderListMarginValue(summary()), "—");
   });
 });
 
@@ -134,16 +153,16 @@ describe("salesOrderMargin UI", () => {
       join(process.cwd(), "src", "components", "sales", "SalesOrderMarginMetricGrid.tsx"),
       "utf8"
     );
-    assert.match(analysisSrc, /Análise de Margem/);
+    assert.match(analysisSrc, /Margem comercial da venda/);
     assert.match(analysisSrc, /SalesOrderMarginMetricGrid/);
     assert.match(analysisSrc, /resolveSalesOrderMarginRevenueLabel\(summary\)/);
     assert.match(metricGridSrc, /Custo estimado/);
-    assert.match(metricGridSrc, /resolveSalesOrderMarginMoneyLabel\(summary\)/);
-    assert.match(metricGridSrc, /resolveSalesOrderMarginPercentLabel\(summary\)/);
+    assert.match(metricGridSrc, /resolveSalesOrderMarginMoneyLabel/);
+    assert.match(metricGridSrc, /resolveSalesOrderMarginPercentLabel/);
     assert.match(metricGridSrc, /buildSalesOrderMarginCoverageHint/);
     assert.match(metricGridSrc, /Markup/);
     assert.match(analysisSrc, /resolveSalesOrderMarginSupportText/);
-    assert.match(metricGridSrc, /toFiniteMetricNumber\(summary\?\.netRevenue\)/);
+    assert.match(metricGridSrc, /commercialMargin|soldValue/);
   });
 
   it("7. detalhe mostra margem por item", () => {

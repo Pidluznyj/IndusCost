@@ -273,24 +273,24 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
           <div data-testid="sales-order-list-general-margin-card" className="min-w-0">
             <SystemTotalizerCard
               className={SYSTEM_TOTALIZER_METRIC_CARD_CLASS}
-              label="Margem geral"
+              label="Margem comercial"
               value={loading ? undefined : marginPercentLabel}
               subtitle={loading ? undefined : marginMoneyLabel}
               tone={marginUnavailable ? "neutral" : marginPartial ? "warning" : "margin"}
               icon={Percent}
               helperText={
                 marginUnavailable
-                  ? "Sem custo suficiente para calcular."
+                  ? "Sem formação de preço identificada para calcular a margem comercial."
                   : marginPartial
-                    ? "Há itens sem custo resolvido."
-                    : "Margem ponderada dos pedidos filtrados."
+                    ? "Há itens sem formação identificada — cobertura parcial do valor vendido."
+                    : "Margem comercial da venda ponderada pelo valor efetivamente vendido."
               }
               valueSize={marginUnavailable ? "text" : "default"}
               labelAccessory={
                 marginSummary?.tooltipSummary && !loading ? (
                   <SalesOrderMarginInfoTooltip
                     summary={marginSummary.tooltipSummary}
-                    titleOverride="Margem geral ponderada"
+                    titleOverride="Margem comercial da venda"
                     testId="sales-order-list-general-margin-tooltip"
                   />
                 ) : undefined
@@ -301,7 +301,7 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
                     className="sales-order-list-summary-margin-badge"
                     data-testid="sales-order-list-general-margin-partial-badge"
                   >
-                    Margem parcial
+                    Margem comercial parcial
                   </span>
                 ) : undefined
               }

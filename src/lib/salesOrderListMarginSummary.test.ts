@@ -10,13 +10,13 @@ function read(rel: string): string {
 }
 
 describe("salesOrderListMarginSummary", () => {
-  it("card Margem geral na Visão Geral da listagem", () => {
+  it("card Margem comercial na Visão Geral da listagem", () => {
     const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const module = read("src/components/SalesOrdersModule.tsx");
-    assert.match(cards, /Margem geral/);
+    assert.match(cards, /Margem comercial/);
     assert.match(cards, /sales-order-list-general-margin-card/);
     assert.match(cards, /SalesOrderMarginInfoTooltip/);
-    assert.match(cards, /Margem geral ponderada/);
+    assert.match(cards, /Margem comercial da venda/);
     assert.match(cards, /Imposto a pagar/);
     assert.match(cards, /sales-order-list-tax-payable-card/);
     assert.match(cards, /marginSummary\?\.taxAmount/);
@@ -79,14 +79,14 @@ describe("salesOrderListMarginSummary", () => {
 
   it("cobertura PARTIAL exibe badge", () => {
     const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
-    assert.match(cards, /Margem parcial/);
+    assert.match(cards, /Margem comercial parcial/);
     assert.match(cards, /marginCoverage === "PARTIAL"/);
   });
 
   it("cobertura NONE exibe indisponível", () => {
     const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     assert.match(cards, /Indisponível/);
-    assert.match(cards, /Sem custo suficiente para calcular/);
+    assert.match(cards, /Sem formação de preço identificada/);
     assert.match(cards, /!marginSummary\?\.available/);
   });
 

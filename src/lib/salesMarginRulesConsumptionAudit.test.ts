@@ -140,7 +140,7 @@ describe("salesMarginRulesConsumptionAudit", () => {
   it("listagem Pedidos exibe margem geral ponderada do motor oficial", () => {
     const cards = read("src/components/sales/SalesOrderListSummaryCards.tsx");
     const server = read("server.ts");
-    assert.match(cards, /Margem geral/);
+    assert.match(cards, /Margem comercial/);
     assert.match(cards, /SalesOrderMarginInfoTooltip/);
     assert.match(
       read("src/lib/salesOrderListMarginSummary.server.ts"),

@@ -167,6 +167,11 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
   const ticket =
     itemCounts.active > 0 ? round2(activeValue / itemCounts.active) : 0;
   const marginTotals = audit.marginPricing.totals;
+  const commercial = audit.marginPricing.commercialMargin ?? null;
+  const commercialReady =
+    commercial != null &&
+    commercial.itemsCalculated > 0 &&
+    commercial.commercialMarginTotalPercent != null;
   return {
     originalValue: round2(s.originalOrderValue),
     activeValue,
@@ -182,8 +187,16 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
     hasInvoice: audit.nfes.length > 0,
     nfeCount: audit.nfes.length,
     lastNfeDate,
-    marginValue: marginTotals.marginValue,
-    marginPercent: marginTotals.marginPerc,
+    marginValue: commercialReady
+      ? commercial.commercialMarginTotalValue
+      : marginTotals.marginValue,
+    marginPercent: commercialReady
+      ? commercial.commercialMarginTotalPercent
+      : marginTotals.marginPerc,
+    managerialMarginValue: marginTotals.managerialMarginValue ?? marginTotals.marginValue,
+    managerialMarginPercent: marginTotals.managerialMarginPerc ?? marginTotals.marginPerc,
+    commercialMarginComplete: commercial?.isComplete ?? null,
+    commercialMarginCoveragePercent: commercial?.commercialMarginCoveragePercent ?? null,
     invoiceCoveragePercent:
       s.activeOrderValue > 0 ? round2((invoicedValue / s.activeOrderValue) * 100) : null,
   };
@@ -194,7 +207,16 @@ function mapItem(
   invoices: SalesOrderDetailInvoice[],
   marginByItemId: Map<
     string,
-    { marginValue: number | null; marginPerc: number | null; status: string | null; totalCost: number | null; costSource: string | null }
+    {
+      marginValue: number | null;
+      marginPerc: number | null;
+      managerialMarginValue?: number | null;
+      managerialMarginPerc?: number | null;
+      commercialMarginSource?: string | null;
+      status: string | null;
+      totalCost: number | null;
+      costSource: string | null;
+    }
   >,
   itemsByLinkedNfe: Map<string, number[]>
 ): SalesOrderDetailItem {
@@ -249,6 +271,15 @@ function mapItem(
     unitCost,
     marginValue: margin?.marginValue != null ? round2(margin.marginValue) : null,
     marginPercent: margin?.marginPerc != null ? round2(margin.marginPerc) : null,
+    managerialMarginValue:
+      margin?.managerialMarginValue != null
+        ? round2(margin.managerialMarginValue)
+        : null,
+    managerialMarginPercent:
+      margin?.managerialMarginPerc != null
+        ? round2(margin.managerialMarginPerc)
+        : null,
+    commercialMarginSource: margin?.commercialMarginSource ?? null,
     marginStatus: margin?.status ?? null,
     expectedDeliveryDate: item.expectedDeliveryDate ?? null,
     linkedNfes,
@@ -297,12 +328,26 @@ function mapPricingMargin(
 ): SalesOrderDetailPricingMargin {
   const totals = audit.marginPricing.totals;
   const counts = audit.marginPricing.counts;
+  const commercial = audit.marginPricing.commercialMargin ?? null;
   return {
     valueSold: round2(audit.summary.originalOrderValue),
     valueActive: round2(totals.totalNetRevenue ?? audit.summary.activeOrderValue),
     totalCost: totals.totalCost != null ? round2(totals.totalCost) : null,
     marginValue: totals.marginValue != null ? round2(totals.marginValue) : null,
     marginPercent: totals.marginPerc != null ? round2(totals.marginPerc) : null,
+    managerialMarginValue:
+      totals.managerialMarginValue != null
+        ? round2(totals.managerialMarginValue)
+        : totals.marginValue != null
+          ? round2(totals.marginValue)
+          : null,
+    managerialMarginPercent:
+      totals.managerialMarginPerc != null
+        ? round2(totals.managerialMarginPerc)
+        : totals.marginPerc != null
+          ? round2(totals.marginPerc)
+          : null,
+    commercialMarginComplete: commercial?.isComplete ?? null,
     itemsWithoutMargin: counts.noMarginItems ?? 0,
     itemsIgnored:
       (counts.canceledItems ?? 0) +
@@ -403,19 +448,48 @@ export async function getSalesOrderDetail(
     {
       marginValue: number | null;
       marginPerc: number | null;
+      managerialMarginValue?: number | null;
+      managerialMarginPerc?: number | null;
+      commercialMarginSource?: string | null;
       status: string | null;
       totalCost: number | null;
       costSource: string | null;
     }
   >();
-  for (const m of audit.marginPricing.itemMargins ?? []) {
+  for (const m of audit.marginPricing.items ?? []) {
     marginByItemId.set(m.salesOrderItemId, {
       marginValue: m.marginValue,
-      marginPerc: m.marginPerc,
-      status: m.status ?? null,
+      marginPerc: m.marginPercent,
+      managerialMarginValue: null,
+      managerialMarginPerc: null,
+      commercialMarginSource: null,
+      status: m.marginStatus ?? null,
       totalCost: m.totalCost ?? null,
-      costSource: m.costSource ?? null,
+      costSource: null,
     });
+  }
+  for (const m of audit.marginPricing.itemMargins ?? []) {
+    const existing = marginByItemId.get(m.salesOrderItemId);
+    if (existing) {
+      existing.totalCost = m.totalCost ?? existing.totalCost;
+      existing.costSource = m.costSource ?? null;
+      if (existing.marginValue == null) {
+        existing.marginValue = m.marginValue;
+        existing.marginPerc = m.marginPerc;
+      }
+      existing.managerialMarginValue = m.marginValue;
+      existing.managerialMarginPerc = m.marginPerc;
+    } else {
+      marginByItemId.set(m.salesOrderItemId, {
+        marginValue: m.marginValue,
+        marginPerc: m.marginPerc,
+        managerialMarginValue: m.marginValue,
+        managerialMarginPerc: m.marginPerc,
+        status: m.status ?? null,
+        totalCost: m.totalCost ?? null,
+        costSource: m.costSource ?? null,
+      });
+    }
   }
   const itemsByLinkedNfe = new Map<string, number[]>();
   const items = audit.items.map((item) =>

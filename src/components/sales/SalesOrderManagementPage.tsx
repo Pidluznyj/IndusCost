@@ -1022,8 +1022,10 @@ export function SalesOrderManagementPage() {
                     Status logístico{sortIndicator("logisticStatusLabel")}
                   </button>
                 </th>
-                <th className="p-3 font-semibold text-right">Margem %</th>
-                <th className="p-3 font-semibold text-right hidden lg:table-cell">Margem R$</th>
+                <th className="p-3 font-semibold text-right">Margem comercial %</th>
+                <th className="p-3 font-semibold text-right hidden lg:table-cell">
+                  Margem comercial R$
+                </th>
                 <th className="p-3 font-semibold">Status margem</th>
                 <th className="p-3 font-semibold">Prazo</th>
                 <th className="p-3 font-semibold text-right">

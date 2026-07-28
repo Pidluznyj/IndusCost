@@ -79,8 +79,14 @@ export type SalesOrderDetailSummary = {
   hasInvoice: boolean;
   nfeCount: number;
   lastNfeDate: string | null;
+  /** Margem comercial da venda (métrica principal). */
   marginValue: number | null;
   marginPercent: number | null;
+  /** Margem gerencial após impostos e custo (secundária). */
+  managerialMarginValue?: number | null;
+  managerialMarginPercent?: number | null;
+  commercialMarginComplete?: boolean | null;
+  commercialMarginCoveragePercent?: number | null;
   invoiceCoveragePercent: number | null;
 };
 
@@ -116,8 +122,12 @@ export type SalesOrderDetailItem = {
   activeValue: number;
   canceledValue: number;
   unitCost: number | null;
+  /** Margem comercial da venda (métrica principal). */
   marginValue: number | null;
   marginPercent: number | null;
+  managerialMarginValue?: number | null;
+  managerialMarginPercent?: number | null;
+  commercialMarginSource?: string | null;
   marginStatus: string | null;
   expectedDeliveryDate: string | null;
   linkedNfes: SalesOrderDetailItemNfeLink[];
@@ -307,8 +317,12 @@ export type SalesOrderDetailPricingMargin = {
   valueSold: number;
   valueActive: number;
   totalCost: number | null;
+  /** Margem comercial da venda (métrica principal). */
   marginValue: number | null;
   marginPercent: number | null;
+  managerialMarginValue?: number | null;
+  managerialMarginPercent?: number | null;
+  commercialMarginComplete?: boolean | null;
   itemsWithoutMargin: number;
   itemsIgnored: number;
   priceTableDiff: number | null;

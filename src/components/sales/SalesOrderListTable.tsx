@@ -244,7 +244,9 @@ export const SalesOrderListTable = memo(function SalesOrderListTable({
               <th title={SALES_ORDER_BILLING_STATUS_TOOLTIP}>Faturamento</th>
               <th>NF</th>
               <th className="so-value-cell">Valor líquido</th>
-              {showMarginEconomics ? <th className="so-value-cell">Margem</th> : null}
+              {showMarginEconomics ? (
+                <th className="so-value-cell">Margem comercial</th>
+              ) : null}
               <th className="so-value-cell">Itens</th>
               <th>Ações</th>
             </tr>

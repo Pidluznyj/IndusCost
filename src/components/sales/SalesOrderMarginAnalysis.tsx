@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import { SalesOrderMarginMetricGrid } from "@/src/components/sales/SalesOrderMarginMetricGrid";
 import {
+  buildSalesOrderItemCommercialMarginTooltipText,
   buildSalesOrderMarginAlerts,
   formatOfficialPriceTableReferenceLabel,
   formatProductTypeLabel,
@@ -56,7 +57,7 @@ export function SalesOrderMarginAnalysisSection({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                Análise de Margem
+                Margem comercial da venda
               </h3>
               <SalesOrderMarginInfoTooltip
                 summary={summary}
@@ -67,7 +68,24 @@ export function SalesOrderMarginAnalysisSection({
             </div>
             <p className="mt-1 text-xs text-muted-foreground max-w-3xl">{supportText}</p>
           </div>
-          {summary ? (
+          {summary?.commercialMargin ? (
+            <SalesOrderMarginStatusBadge
+              label={
+                summary.commercialMargin.isComplete
+                  ? "Margem comercial calculada"
+                  : summary.commercialMargin.itemsCalculated > 0
+                    ? `Margem comercial parcial (${summary.commercialMargin.itemsCalculated}/${summary.commercialMargin.itemsActive})`
+                    : "Margem comercial indisponível"
+              }
+              status={
+                summary.commercialMargin.isComplete
+                  ? "OK"
+                  : summary.commercialMargin.itemsCalculated > 0
+                    ? "PARTIAL"
+                    : "SEM_CUSTO"
+              }
+            />
+          ) : summary ? (
             <SalesOrderMarginStatusBadge
               label={summary.statusLabel}
               status={summary.status}
@@ -127,8 +145,8 @@ export function SalesOrderMarginAnalysisSection({
                 <th className="p-3 font-semibold text-right">
                   {PRODUCTION_COST_DISPLAY_LABELS.productionTotalCost}
                 </th>
-                <th className="p-3 font-semibold text-right">Margem realizada R$</th>
-                <th className="p-3 font-semibold text-right">Margem realizada %</th>
+                <th className="p-3 font-semibold text-right">Margem comercial R$</th>
+                <th className="p-3 font-semibold text-right">Margem comercial %</th>
                 <th className="p-3 font-semibold text-right">Margem tabela R$</th>
                 <th className="p-3 font-semibold text-right">Vazamento margem</th>
                 <th className="p-3 font-semibold">Referência</th>
@@ -193,19 +211,43 @@ export function SalesOrderMarginAnalysisSection({
                           ? PRODUCTION_COST_DISPLAY_LABELS.costUnresolved
                           : formatSalesOrderMarginMoney(margin?.totalCost)}
                       </td>
-                      <td className="p-3 text-right font-mono">
-                        {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
-                          ? "—"
-                          : formatSalesOrderMarginMoney(
-                              ref?.realizedMarginAmount ?? margin?.marginValue
-                            )}
+                      <td
+                        className="p-3 text-right font-mono"
+                        title={buildSalesOrderItemCommercialMarginTooltipText(
+                          margin?.commercialMargin
+                        )}
+                      >
+                        {margin?.commercialMargin?.isComplete
+                          ? formatSalesOrderMarginMoney(
+                              margin.commercialMargin.commercialMarginValue
+                            )
+                          : margin?.commercialMargin
+                            ? "Margem indisponível"
+                            : margin?.status === "SEM_CUSTO" ||
+                                margin?.costSource === "MISSING_COST"
+                              ? "—"
+                              : formatSalesOrderMarginMoney(
+                                  ref?.realizedMarginAmount ?? margin?.marginValue
+                                )}
                       </td>
-                      <td className="p-3 text-right font-mono">
-                        {margin?.status === "SEM_CUSTO" || margin?.costSource === "MISSING_COST"
-                          ? "—"
-                          : formatSalesOrderMarginPercent(
-                              ref?.realizedMarginPercent ?? margin?.marginPercent
-                            )}
+                      <td
+                        className="p-3 text-right font-mono"
+                        title={buildSalesOrderItemCommercialMarginTooltipText(
+                          margin?.commercialMargin
+                        )}
+                      >
+                        {margin?.commercialMargin?.isComplete
+                          ? formatSalesOrderMarginPercent(
+                              margin.commercialMargin.commercialMarginPercent
+                            )
+                          : margin?.commercialMargin
+                            ? "—"
+                            : margin?.status === "SEM_CUSTO" ||
+                                margin?.costSource === "MISSING_COST"
+                              ? "—"
+                              : formatSalesOrderMarginPercent(
+                                  ref?.realizedMarginPercent ?? margin?.marginPercent
+                                )}
                       </td>
                       <td className="p-3 text-right font-mono">
                         {ref?.tableMarginAmount != null

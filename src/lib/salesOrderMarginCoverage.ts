@@ -152,12 +152,12 @@ export function resolveSalesOrderMarginMoneyLabel(
 ): string {
   switch (coverage?.costCoverageStatus) {
     case "PARTIAL":
-      return "Margem parcial (R$)";
+      return "Margem comercial parcial (R$)";
     case "NONE":
-      return "Margem indisponível";
+      return "Margem comercial indisponível";
     case "FULL":
     default:
-      return "Margem gerencial (R$)";
+      return "Margem comercial da venda (R$)";
   }
 }
 
@@ -166,12 +166,12 @@ export function resolveSalesOrderMarginPercentLabel(
 ): string {
   switch (coverage?.costCoverageStatus) {
     case "PARTIAL":
-      return "Margem parcial (%)";
+      return "Margem comercial parcial (%)";
     case "NONE":
-      return "Margem % indisponível";
+      return "Margem comercial % indisponível";
     case "FULL":
     default:
-      return "Margem gerencial (%)";
+      return "Margem comercial da venda (%)";
   }
 }
 

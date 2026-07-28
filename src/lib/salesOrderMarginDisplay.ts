@@ -212,9 +212,12 @@ export function buildSalesOrderMarginAlerts(
 export function pickSalesOrderListMarginPercent(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  if (!isSalesOrderMarginCalculable(summary)) return "—";
-  if (summary?.marginPercent != null && Number.isFinite(summary.marginPercent)) {
-    return formatSalesOrderMarginPercent(summary.marginPercent);
+  const commercial = summary?.commercialMargin;
+  if (commercial?.commercialMarginTotalPercent != null) {
+    return formatSalesOrderMarginPercent(commercial.commercialMarginTotalPercent);
+  }
+  if (commercial && commercial.itemsActive > 0 && commercial.itemsCalculated === 0) {
+    return "Indisponível";
   }
   return "—";
 }
@@ -222,9 +225,9 @@ export function pickSalesOrderListMarginPercent(
 export function pickSalesOrderListMarginValue(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  if (!isSalesOrderMarginCalculable(summary)) return "—";
-  if (summary && summary.marginValue != null && Number.isFinite(summary.marginValue)) {
-    return formatSalesOrderMarginMoney(summary.marginValue);
+  const commercial = summary?.commercialMargin;
+  if (commercial?.commercialMarginTotalValue != null) {
+    return formatSalesOrderMarginMoney(commercial.commercialMarginTotalValue);
   }
   return "—";
 }
@@ -237,18 +240,21 @@ export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
   productionUnitCost: "Custo unitário de produção",
   productionTotalCost: "Custo total de produção",
   costSource: "Fonte do custo",
-  marginValue: "Margem R$",
-  marginPercent: "Margem %",
+  marginValue: "Margem comercial R$",
+  marginPercent: "Margem comercial %",
+  managerialMarginValue: "Margem gerencial após impostos e custo (R$)",
+  managerialMarginPercent: "Margem gerencial após impostos e custo (%)",
   coverage: "Cobertura",
   itemsWithCost: "Itens com custo",
   itemsWithoutCost: "Itens sem custo",
   costFrozen: "Custo histórico congelado",
   costEstimated: "Custo estimado atual",
   costMixed: "Custo misto",
-  managerialTitle: "Margem gerencial do pedido",
+  commercialTitle: "Margem comercial da venda",
+  managerialTitle: "Margem gerencial após impostos e custo",
   soldTitle: "Margem vendida sem imposto",
-  partialTitle: "Margem parcial do pedido",
-  unavailableTitle: "Margem indisponível",
+  partialTitle: "Margem comercial parcial",
+  unavailableTitle: "Margem comercial indisponível",
 } as const;
 
 export type SalesOrderMarginTooltipInput = {
@@ -464,11 +470,92 @@ function buildSalesOrderMarginUnavailableTooltip(
   return lines.join("\n");
 }
 
-/** Tooltip oficial — exibe o cálculo gerencial (imposto + custo + cobertura). */
+const COMMERCIAL_MARGIN_SOURCE_LABEL: Record<
+  import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSource,
+  string
+> = {
+  EXACT_PROPOSAL_SNAPSHOT: "Snapshot da proposta vinculada",
+  EXACT_PRICE_TABLE_VERSION: "Versão da tabela comercial vinculada",
+  RECONSTRUCTED_AT_ORDER_DATE: "Reconstruída na data do pedido",
+  UNAVAILABLE: "Formação não identificada",
+};
+
+/** Tooltip por item — detalha a margem comercial da formação. */
+export function buildSalesOrderItemCommercialMarginTooltipText(
+  commercial?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginItemPayload | null
+): string {
+  if (!commercial || !commercial.isComplete) {
+    return [
+      SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle,
+      "",
+      "Não foi possível identificar a formação de preço utilizada nesta venda.",
+      ...(commercial?.warnings ?? []).map((w) => `Aviso: ${w}`),
+    ].join("\n");
+  }
+
+  return [
+    SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle,
+    "",
+    `Preço praticado: ${formatSalesOrderMarginMoney(commercial.negotiatedUnitPrice)}`,
+    `Valor vendido: ${formatSalesOrderMarginMoney(commercial.soldValue)}`,
+    `Custo utilizado: ${formatSalesOrderMarginMoney(commercial.costValue)}`,
+    `Imposto: ${formatSalesOrderMarginPercent((commercial.taxRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.taxValue)})`,
+    `Frete percentual: ${formatSalesOrderMarginPercent((commercial.freightRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.freightRateValue)})`,
+    `Frete absoluto: ${formatSalesOrderMarginMoney(commercial.freightAbsoluteValue)}`,
+    `Comissão: ${formatSalesOrderMarginPercent((commercial.commissionRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.commissionValue)})`,
+    `Outras variáveis: ${formatSalesOrderMarginPercent((commercial.otherVariablesRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.otherVariablesValue)})`,
+    `Margem comercial R$: ${formatSalesOrderMarginMoney(commercial.commercialMarginValue)}`,
+    `Margem comercial %: ${formatSalesOrderMarginPercent(commercial.commercialMarginPercent)}`,
+    `Faixa inferior: ${commercial.lowerMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.lowerBandPrice)})`,
+    `Faixa superior: ${commercial.upperMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.upperBandPrice)})`,
+    `Versão da tabela: ${commercial.priceTableVersionId ?? "—"}`,
+    `Origem do cálculo: ${COMMERCIAL_MARGIN_SOURCE_LABEL[commercial.calculationSource]}`,
+    ...(commercial.warnings.length
+      ? commercial.warnings.map((w) => `Aviso: ${w}`)
+      : []),
+  ].join("\n");
+}
+
+/** Tooltip oficial — prioriza margem comercial da venda; gerencial fica secundária. */
 export function buildOfficialSalesOrderMarginTooltipText(
   input: SalesOrderMarginTooltipInput
 ): string {
   const { summary, itemMargins, orderIssueDate, titleOverride } = input;
+  const commercial = summary?.commercialMargin;
+  if (commercial) {
+    const lines: string[] = [
+      titleOverride?.trim() || SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle,
+      "",
+      "Margem calculada sobre o preço efetivamente vendido, usando custo, impostos, frete, comissão e demais variáveis da formação de preço.",
+      "",
+      `Valor vendido (itens calculados): ${formatSalesOrderMarginMoney(commercial.commercialSoldTotalValue)}`,
+      `Margem comercial R$: ${formatSalesOrderMarginMoney(commercial.commercialMarginTotalValue)}`,
+      `Margem comercial %: ${formatSalesOrderMarginPercent(commercial.commercialMarginTotalPercent)}`,
+      `Cobertura: ${formatSalesOrderMarginPercent(commercial.commercialMarginCoveragePercent)} do valor ativo`,
+      `Itens calculados: ${commercial.itemsCalculated} de ${commercial.itemsActive}`,
+    ];
+    if (!commercial.isComplete) {
+      lines.push("Status: parcial — nem todos os itens possuem formação identificada.");
+    }
+    for (const warning of commercial.warnings.slice(0, 4)) {
+      lines.push(`Aviso: ${warning}`);
+    }
+    if (summary && summary.marginPercent != null) {
+      lines.push("");
+      lines.push(SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle);
+      lines.push(
+        `${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginPercent}: ${formatSalesOrderMarginPercent(summary.marginPercent)}`
+      );
+      lines.push(
+        `${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`
+      );
+    }
+    if (orderIssueDate) {
+      lines.push(`Data do pedido: ${formatCivilDatePtBr(orderIssueDate)}`);
+    }
+    return lines.join("\n");
+  }
+
   if (!summary || isSalesOrderMarginDisplayUnavailable(summary)) {
     return buildSalesOrderMarginUnavailableTooltip(summary);
   }
@@ -547,19 +634,21 @@ export function buildOfficialSalesOrderMarginTooltipText(
   }
 
   if (!hasUnresolvedCost) {
-    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`);
+    lines.push(
+      `${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginValue}: ${formatSalesOrderMarginMoney(summary.marginValue)}`
+    );
 
     const percentDenominator = taxMode === "none" ? grossSales : netManagerial;
     if (percentDenominator > 0 && summary.marginPercent != null) {
       lines.push(
-        `${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: ${formatSalesOrderMarginMoney(summary.marginValue)} ÷ ${formatSalesOrderMarginMoney(percentDenominator)} = ${formatSalesOrderMarginPercent(summary.marginPercent)}`
+        `${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginPercent}: ${formatSalesOrderMarginMoney(summary.marginValue)} ÷ ${formatSalesOrderMarginMoney(percentDenominator)} = ${formatSalesOrderMarginPercent(summary.marginPercent)}`
       );
     } else {
-      lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: —`);
+      lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginPercent}: —`);
     }
   } else {
-    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginValue}: —`);
-    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.marginPercent}: —`);
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginValue}: —`);
+    lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialMarginPercent}: —`);
   }
 
   lines.push(`${SALES_ORDER_MARGIN_DISPLAY_LABELS.coverage}: ${summary.costCoverageStatus ?? "—"}`);

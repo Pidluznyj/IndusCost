@@ -12,6 +12,7 @@ import {
   buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginMoneyLabel,
   resolveSalesOrderMarginPercentLabel,
+  SALES_ORDER_MARGIN_DISPLAY_LABELS,
 } from "@/src/lib/salesOrderMarginDisplay";
 
 type SalesOrderMarginMetricGridProps = {
@@ -24,27 +25,60 @@ type SalesOrderMarginMetricGridProps = {
 
 /**
  * Grid de margem econômica — Design System MetricCard (sem cálculo no frontend).
+ * Métrica principal: margem comercial da venda; gerencial fica secundária.
  */
 export function SalesOrderMarginMetricGrid({
   summary,
   loading = false,
   showMarkup = true,
-  revenueLabel = "Receita com custo",
+  revenueLabel = "Valor vendido",
   testId,
 }: SalesOrderMarginMetricGridProps) {
+  const commercial = summary?.commercialMargin;
+  const commercialAvailable =
+    commercial != null &&
+    commercial.commercialMarginTotalPercent != null &&
+    commercial.itemsCalculated > 0;
+  const commercialPartial = commercialAvailable && !commercial.isComplete;
+
   const coverageHint =
-    summary != null
-      ? buildSalesOrderMarginCoverageHint(summary, (value) =>
-          value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
-        )
-      : undefined;
+    commercialAvailable && commercial
+      ? commercialPartial
+        ? `Margem comercial parcial: ${commercial.itemsCalculated} de ${commercial.itemsActive} itens. Cobertura de ${commercial.commercialMarginCoveragePercent ?? "—"}% do valor vendido.`
+        : "Margem calculada sobre o preço efetivamente vendido, com formação de preço histórica."
+      : summary != null
+        ? buildSalesOrderMarginCoverageHint(summary, (value) =>
+            value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+          )
+        : undefined;
+
+  const moneyLabel = commercialAvailable
+    ? commercialPartial
+      ? "Margem comercial parcial (R$)"
+      : SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle + " (R$)"
+    : resolveSalesOrderMarginMoneyLabel(summary);
+  const percentLabel = commercialAvailable
+    ? commercialPartial
+      ? "Margem comercial parcial (%)"
+      : SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle + " (%)"
+    : resolveSalesOrderMarginPercentLabel(summary);
+
+  const marginValue = commercialAvailable
+    ? commercial.commercialMarginTotalValue
+    : summary?.marginValue;
+  const marginPercent = commercialAvailable
+    ? commercial.commercialMarginTotalPercent
+    : summary?.marginPercent;
+  const soldValue = commercialAvailable
+    ? commercial.commercialSoldTotalValue
+    : summary?.netRevenue;
 
   return (
     <div data-testid={testId}>
       <SummaryKpiGrid>
       <MetricCard
         label={revenueLabel}
-        amount={toFiniteMetricNumber(summary?.netRevenue)}
+        amount={toFiniteMetricNumber(soldValue)}
         amountFormat="currency"
         variant="info"
         icon={<Wallet className="h-4 w-4" />}
@@ -59,21 +93,26 @@ export function SalesOrderMarginMetricGrid({
         loading={loading}
       />
       <MetricCard
-        label={resolveSalesOrderMarginMoneyLabel(summary)}
-        amount={toFiniteMetricNumber(summary?.marginValue)}
+        label={moneyLabel}
+        amount={toFiniteMetricNumber(marginValue)}
         amountFormat="currency"
-        variant={resolveMarginMoneyVariant(summary?.marginValue)}
+        variant={resolveMarginMoneyVariant(marginValue)}
         icon={<DollarSign className="h-4 w-4" />}
         helperText={coverageHint}
         loading={loading}
       />
       <MetricCard
-        label={resolveSalesOrderMarginPercentLabel(summary)}
-        amount={toFiniteMetricNumber(summary?.marginPercent)}
+        label={percentLabel}
+        amount={toFiniteMetricNumber(marginPercent)}
         amountFormat="percent"
-        variant={resolveMarginPercentVariant(summary?.marginPercent)}
+        variant={resolveMarginPercentVariant(marginPercent)}
         icon={<Percent className="h-4 w-4" />}
-        helperText={coverageHint ?? "Ponderada por receita com custo"}
+        helperText={
+          coverageHint ??
+          (commercialAvailable
+            ? "Ponderada pelo valor efetivamente vendido"
+            : "Ponderada por receita com custo")
+        }
         loading={loading}
       />
       {showMarkup ? (
@@ -86,6 +125,11 @@ export function SalesOrderMarginMetricGrid({
           }
           variant="neutral"
           icon={<TrendingUp className="h-4 w-4" />}
+          helperText={
+            summary?.marginPercent != null
+              ? `${SALES_ORDER_MARGIN_DISPLAY_LABELS.managerialTitle}: ${Number(summary.marginPercent).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
+              : undefined
+          }
           loading={loading}
         />
       ) : null}

@@ -220,6 +220,8 @@ export type SalesOrderItemMarginPayload = {
   productionCost?: SalesOrderMarginProductionCostMeta | null;
   /** Comparação com preço/custo oficial de tabela — não altera margem realizada. */
   commercialReference?: SalesOrderMarginCommercialReference | null;
+  /** Margem comercial da venda (formação de preço) — métrica principal na UI. */
+  commercialMargin?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginItemPayload | null;
   notes: string[];
 };
 
@@ -247,6 +249,8 @@ export type SalesOrderMarginSummaryPayload = SalesOrderMarginCoveragePayload &
   marginValue: number | null;
   marginPercent: number | null;
   markup: number | null;
+  /** Margem comercial da venda (formação) — consolidado ponderado. */
+  commercialMargin?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSummaryPayload | null;
   itemsCount: number;
   validItemsCount: number;
   ignoredItemsCount: number;

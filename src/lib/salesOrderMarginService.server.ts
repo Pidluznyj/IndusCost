@@ -49,6 +49,7 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   skuSnapshot: true,
   productNameSnapshot: true,
   quantity: true,
+  canceledQuantity: true,
   negotiatedPrice: true,
   totalNetValue: true,
   unitCost: true,
@@ -89,6 +90,7 @@ export type SalesOrderItemForMargin = {
   skuSnapshot?: string | null;
   productNameSnapshot?: string | null;
   quantity: unknown;
+  canceledQuantity?: unknown | null;
   negotiatedPrice?: unknown;
   totalNetValue?: unknown;
   unitCost?: unknown | null;
@@ -447,7 +449,63 @@ export async function calculateSalesOrderMarginsForOrders(
   const { calculateOfficialSalesOrderMarginsForOrders } = await import(
     "./salesMarginRulesAdapter.js"
   );
-  return calculateOfficialSalesOrderMarginsForOrders(prisma, orders, options);
+  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(
+    prisma,
+    orders,
+    options
+  );
+  await mergeCommercialMarginsIntoOrderResults(prisma, orders, marginByOrder);
+  return marginByOrder;
+}
+
+async function mergeCommercialMarginsIntoOrderResults(
+  prisma: PrismaClient,
+  orders: SalesOrderForMargin[],
+  marginByOrder: Map<
+    string,
+    {
+      marginSummary?: SalesOrderMarginSummaryPayload;
+      itemMargins: Map<string, SalesOrderItemMarginPayload>;
+    }
+  >
+): Promise<void> {
+  try {
+    const { calculateCommercialMarginsForSalesOrders } = await import(
+      "./salesOrderCommercialMargin.server.js"
+    );
+    const commercialByOrder = await calculateCommercialMarginsForSalesOrders(
+      prisma,
+      orders.map((order) => ({
+        id: order.id,
+        proposalId: order.proposalId,
+        issueDate: order.issueDate,
+        items: order.items,
+      }))
+    );
+
+    for (const order of orders) {
+      const result = marginByOrder.get(order.id);
+      const commercial = commercialByOrder.get(order.id);
+      if (!result || !commercial) continue;
+      result.marginSummary = {
+        ...(result.marginSummary as SalesOrderMarginSummaryPayload),
+        commercialMargin: commercial.summary,
+      };
+      for (const [itemId, payload] of result.itemMargins) {
+        result.itemMargins.set(itemId, {
+          ...payload,
+          commercialMargin: commercial.byItemId.get(itemId) ?? null,
+        });
+      }
+    }
+  } catch (err) {
+    // Não derruba a margem gerencial se a formação comercial não puder ser resolvida
+    // (ex.: mocks de teste sem priceTable / ambiente sem tabelas comerciais).
+    console.warn(
+      "[salesOrderMarginService] falha ao calcular margem comercial; gerencial preservada.",
+      err
+    );
+  }
 }
 
 export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
@@ -463,10 +521,7 @@ export async function attachMarginsToSalesOrders<T extends SalesOrderForMargin>(
 > {
   if (orders.length === 0) return [];
 
-  const { calculateOfficialSalesOrderMarginsForOrders } = await import(
-    "./salesMarginRulesAdapter.js"
-  );
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, orders);
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(prisma, orders);
   return orders.map((order) => {
     const result = marginByOrder.get(order.id);
     return {
@@ -485,10 +540,7 @@ export async function attachMarginToSalesOrderDetail<
     items: Array<T["items"][number] & { margin?: SalesOrderItemMarginPayload }>;
   }
 > {
-  const { calculateOfficialSalesOrderMarginsForOrders } = await import(
-    "./salesMarginRulesAdapter.js"
-  );
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(prisma, [order], {
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(prisma, [order], {
     itemsByOrderId: new Map([[order.id, order.items]]),
   });
   const result = marginByOrder.get(order.id);

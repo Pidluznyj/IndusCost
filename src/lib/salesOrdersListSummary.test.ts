@@ -397,7 +397,7 @@ describe("salesOrdersListSummary", () => {
     assert.ok(cards.includes("createPortal"));
     assert.ok(cards.includes("sales-order-list-cost-tooltip-panel"));
     assert.ok(cards.includes("Ticket médio"));
-    assert.ok(cards.includes("Margem geral"));
+    assert.ok(cards.includes("Margem comercial"));
     assert.doesNotMatch(cards, /label="Itens"/);
     assert.ok(page.includes("marginSummary"));
   });

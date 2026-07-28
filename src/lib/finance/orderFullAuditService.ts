@@ -965,8 +965,12 @@ export type OrderFullAuditMarginPricingBlock = {
     /** Receita ativa (Σ activeValue). */
     totalNetRevenue: number | null;
     totalCost: number | null;
+    /** Margem comercial da venda quando disponível; senão gerencial. */
     marginValue: number | null;
     marginPerc: number | null;
+    /** Margem gerencial após impostos e custo (secundária). */
+    managerialMarginValue?: number | null;
+    managerialMarginPerc?: number | null;
     coverage: number | null;
     /** Valor cancelado / cortado / stale (para os cards). */
     canceledValue: number;
@@ -979,6 +983,8 @@ export type OrderFullAuditMarginPricingBlock = {
     /** Σ Δ preço pedido × documento (somente ativos). */
     priceOrderVsDocumentDelta: number;
   };
+  /** Resumo da margem comercial da formação (quando calculada). */
+  commercialMargin?: import("../salesOrderCommercialMargin.js").SalesOrderCommercialMarginSummaryPayload | null;
   counts: {
     activeItems: number;
     canceledItems: number;
@@ -4996,8 +5002,18 @@ async function buildMarginPricingBlock(input: {
       unitCost: marginItem?.unitCost ?? null,
       totalCost: marginItem?.totalCost ?? null,
       netRevenue: marginItem?.netRevenue ?? (isActive ? it.activeValue : 0),
-      marginValue: marginItem?.marginValue ?? null,
-      marginPercent: marginItem?.marginPercent ?? null,
+      marginValue:
+        marginItem?.commercialMargin?.isComplete
+          ? marginItem.commercialMargin.commercialMarginValue
+          : marginItem?.commercialMargin
+            ? null
+            : (marginItem?.marginValue ?? null),
+      marginPercent:
+        marginItem?.commercialMargin?.isComplete
+          ? marginItem.commercialMargin.commercialMarginPercent
+          : marginItem?.commercialMargin
+            ? null
+            : (marginItem?.marginPercent ?? null),
       fiscalRule:
         marginItem?.commercialReference?.productType ?? null,
       priceTableCode:
@@ -5030,18 +5046,36 @@ async function buildMarginPricingBlock(input: {
     };
   });
 
-  // Agregados dos itens ativos.
+  // Agregados dos itens ativos — prioriza margem comercial da formação.
   const active = items.filter((i) => i.isActive);
-  const totalNetRevenue = active.reduce(
+  const commercialSummary = orderResult?.marginSummary?.commercialMargin ?? null;
+  const fallbackNetRevenue = active.reduce(
     (s, i) => s + (i.netRevenue ?? 0),
     0
   );
   const totalCost = active.reduce((s, i) => s + (i.totalCost ?? 0), 0);
-  const marginValue = totalNetRevenue - totalCost;
-  const marginPerc =
-    totalNetRevenue > 0
-      ? Math.round((marginValue / totalNetRevenue) * 10000) / 100
+  const fallbackMarginValue = fallbackNetRevenue - totalCost;
+  const fallbackMarginPerc =
+    fallbackNetRevenue > 0
+      ? Math.round((fallbackMarginValue / fallbackNetRevenue) * 10000) / 100
       : null;
+  const managerialMarginValue =
+    orderResult?.marginSummary?.marginValue ?? fallbackMarginValue;
+  const managerialMarginPerc =
+    orderResult?.marginSummary?.marginPercent ?? fallbackMarginPerc;
+  const commercialReady =
+    commercialSummary != null &&
+    commercialSummary.itemsCalculated > 0 &&
+    commercialSummary.commercialMarginTotalPercent != null;
+  const totalNetRevenue = commercialReady
+    ? (commercialSummary.commercialSoldTotalValue ?? fallbackNetRevenue)
+    : fallbackNetRevenue;
+  const marginValue = commercialReady
+    ? (commercialSummary.commercialMarginTotalValue ?? managerialMarginValue)
+    : managerialMarginValue;
+  const marginPerc = commercialReady
+    ? commercialSummary.commercialMarginTotalPercent
+    : managerialMarginPerc;
   const canceledValue = items
     .filter((i) => i.isCanceled)
     .reduce((s, i) => s + Math.abs(i.netRevenue ?? 0), 0);
@@ -5071,8 +5105,11 @@ async function buildMarginPricingBlock(input: {
       totalCost: round2(totalCost),
       marginValue: round2(marginValue),
       marginPerc,
-      coverage:
-        orderResult?.marginSummary?.marginCoveragePercent ?? null,
+      managerialMarginValue: round2(managerialMarginValue),
+      managerialMarginPerc,
+      coverage: commercialReady
+        ? (commercialSummary.commercialMarginCoveragePercent ?? null)
+        : (orderResult?.marginSummary?.marginCoveragePercent ?? null),
       canceledValue: round2(canceledValue),
       cutValue: round2(cutValue),
       staleValue: round2(staleValue),
@@ -5080,6 +5117,7 @@ async function buildMarginPricingBlock(input: {
       priceOrderVsTableDelta: round2(priceOrderVsTableDelta),
       priceOrderVsDocumentDelta: round2(priceOrderVsDocumentDelta),
     },
+    commercialMargin: commercialSummary,
     counts: {
       activeItems: active.length,
       canceledItems: items.filter((i) => i.isCanceled).length,

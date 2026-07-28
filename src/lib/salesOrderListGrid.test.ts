@@ -92,12 +92,12 @@ describe("salesOrderListUi formatters", () => {
 
   it("7–11. tooltip de margem usa valores reais e alertas", () => {
     const ok = buildSalesOrderMarginTooltipText(summary());
-    assert.match(ok, /Margem gerencial do pedido/);
+    assert.match(ok, /Margem gerencial após impostos e custo/);
     assert.match(ok, /Valor vendido:.*5\.301/);
     assert.match(ok, /Receita líquida gerencial após impostos:.*5\.301/);
     assert.match(ok, /Custo de produção IndusCost:.*1\.321/);
     assert.match(ok, /Tabela de custo vigente/i);
-    assert.match(ok, /Margem R\$:.*3\.980/);
+    assert.match(ok, /Margem gerencial após impostos e custo \(R\$\):.*3\.980/);
     assert.match(ok, /75,08%/);
     assert.match(ok, /Cobertura: FULL/);
 
@@ -111,19 +111,19 @@ describe("salesOrderListUi formatters", () => {
         fiscalConfigComplete: true,
       })
     );
-    assert.match(noCost, /Margem indisponível/);
+    assert.match(noCost, /Margem comercial indisponível|Margem indisponível/);
     assert.match(noCost, /Custo não resolvido/i);
 
     const noProduct = buildSalesOrderMarginTooltipText(
       summary({ hasMissingProduct: true, status: "SEM_PRODUTO_VINCULADO" })
     );
-    assert.match(noProduct, /Margem gerencial do pedido/);
+    assert.match(noProduct, /Margem gerencial após impostos e custo/);
 
     const negative = buildSalesOrderMarginTooltipText(
       summary({ hasNegativeMargin: true, status: "MARGEM_NEGATIVA" })
     );
-    assert.match(negative, /Margem gerencial do pedido/);
-    assert.match(negative, /Margem R\$:/);
+    assert.match(negative, /Margem gerencial após impostos e custo/);
+    assert.match(negative, /Margem gerencial após impostos e custo \(R\$\):/);
   });
 
   it("15. permissão de margem usa products.tab.cost ou costs.view", () => {
@@ -156,7 +156,7 @@ describe("salesOrderListGrid components", () => {
     assert.match(tableSrc, />Faturamento</);
     assert.match(tableSrc, />NF</);
     assert.match(tableSrc, />Valor líquido</);
-    assert.match(tableSrc, />Margem</);
+    assert.match(tableSrc, /Margem comercial/);
     assert.match(tableSrc, />Itens</);
     assert.match(tableSrc, />Ações</);
     assert.doesNotMatch(tableSrc, />Margem %</);

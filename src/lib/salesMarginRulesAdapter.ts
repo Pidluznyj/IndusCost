@@ -846,11 +846,44 @@ export async function buildOfficialSalesOrderListMarginSummary(
   }
 
   const { rules, marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, orders);
+  const { summarizeSalesOrderCommercialMargins } = await import(
+    "./salesOrderCommercialMargin.js"
+  );
+  let commercialAggregate = summarizeSalesOrderCommercialMargins([]);
+  try {
+    const { calculateCommercialMarginsForSalesOrders } = await import(
+      "./salesOrderCommercialMargin.server.js"
+    );
+    const commercialByOrder = await calculateCommercialMarginsForSalesOrders(db, orders);
+    for (const order of orders) {
+      const result = marginByOrder.get(order.id);
+      const commercial = commercialByOrder.get(order.id);
+      if (!result?.marginSummary || !commercial) continue;
+      result.marginSummary = {
+        ...result.marginSummary,
+        commercialMargin: commercial.summary,
+      };
+    }
+    const commercialItems = [...commercialByOrder.values()].flatMap((row) =>
+      [...row.byItemId.values()]
+    );
+    commercialAggregate = summarizeSalesOrderCommercialMargins(commercialItems);
+  } catch (err) {
+    console.warn(
+      "[buildOfficialSalesOrderListMarginSummary] falha na margem comercial; usando gerencial.",
+      err
+    );
+  }
+
   const scoped = resolveOfficialScopedMarginMetrics(rules);
   const perOrderSummaries = [...marginByOrder.values()].map((row) => row.marginSummary);
   const consolidated =
     aggregateSalesOrderMarginSummaries(perOrderSummaries) ??
     EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY.tooltipSummary;
+
+  const commercialAvailable =
+    commercialAggregate.itemsCalculated > 0 &&
+    commercialAggregate.commercialMarginTotalPercent != null;
 
   const tooltipSummary: SalesOrderMarginSummaryPayload = {
     ...consolidated,
@@ -871,13 +904,24 @@ export async function buildOfficialSalesOrderListMarginSummary(
     itemsWithCost: scoped.itemsWithCost,
     itemsWithoutCost: scoped.itemsWithoutCost,
     costCoverageStatus: scoped.costCoverageStatus,
+    commercialMargin: commercialAggregate,
   };
 
-  const ordersWithoutFullMargin = perOrderSummaries.filter(
-    (row) => row.status !== "OK" || row.hasMissingCost || row.hasMissingProduct
-  ).length;
+  const ordersWithoutFullMargin = perOrderSummaries.filter((row) => {
+    const commercial = row.commercialMargin;
+    if (commercial) return !commercial.isComplete;
+    return row.status !== "OK" || row.hasMissingCost || row.hasMissingProduct;
+  }).length;
 
-  const available = scoped.costCoverageStatus !== "NONE";
+  const available = commercialAvailable || scoped.costCoverageStatus !== "NONE";
+  const marginCoverage =
+    commercialAggregate.itemsActive === 0
+      ? scoped.costCoverageStatus
+      : commercialAggregate.isComplete
+        ? ("FULL" as const)
+        : commercialAggregate.itemsCalculated > 0
+          ? ("PARTIAL" as const)
+          : ("NONE" as const);
   const costBreakdown = aggregateSalesOrderListCostBreakdown({
     marginByOrder: marginByOrder.values(),
     totalIndustrialCost: scoped.totalCost,
@@ -886,15 +930,21 @@ export async function buildOfficialSalesOrderListMarginSummary(
 
   return {
     totalOrdersCount: orders.length,
-    totalMarginValue: scoped.marginAmount,
-    totalMarginPercentage: available ? scoped.marginPercent : null,
+    totalMarginValue: commercialAvailable
+      ? (commercialAggregate.commercialMarginTotalValue ?? 0)
+      : scoped.marginAmount,
+    totalMarginPercentage: commercialAvailable
+      ? commercialAggregate.commercialMarginTotalPercent
+      : available
+        ? scoped.marginPercent
+        : null,
     totalManagerialNetRevenue: scoped.netSalesAmount,
     grossSalesAmount: scoped.grossSalesAmount,
     taxAmount: scoped.taxAmount,
     totalCost: scoped.totalCost,
     costBreakdown,
-    marginCoverage: scoped.costCoverageStatus,
-    itemsWithoutCost: scoped.itemsWithoutCost,
+    marginCoverage,
+    itemsWithoutCost: commercialAggregate.itemsUnavailable || scoped.itemsWithoutCost,
     ordersWithoutFullMargin,
     taxMode: rules.context.taxMode,
     taxRuleName: tooltipSummary.taxRuleName ?? scoped.taxSourceLabel,
