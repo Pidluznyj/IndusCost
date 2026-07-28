@@ -83,7 +83,7 @@
 | **56** | Central de Relatórios (UI + exportações) | `DONE` | `6d08bb8` | `/reports` UI; seleção/período/filtros/visualização/impressão; CSV (anti formula-injection) + XLSX + PDF local; permissões view/export; `test:treasury` 553/553 |
 | **57** | Auditoria de segurança do módulo | `DONE` | `adcbc63` | anti-IDOR contas em movimentos; rate limit ações críticas; path OFX; segredo preview prod; logs sanitizados; summaryJson redacted; CSV injection; testes segurança; `test:treasury` 566/566 |
 | **58** | Auditoria de performance | `DONE` | `6ed1fb6` | batch ACL/saldos; OFX createMany; exception statuses IN; defer rawPayload CR/CP; índices; benchmarks antes/depois; `docs/treasury/PERFORMANCE_BENCHMARKS.md`; `test:treasury` 574/574 |
-| **59** | Completar testes unitários (regras) | `DONE` | _(hash no commit)_ | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
+| **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
 
     > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**.
 
@@ -737,4 +737,4 @@
 | 2026-07-27 | Prompt 56: Central de Relatórios UI + exportações — `6d08bb8` |
 | 2026-07-27 | Prompt 57: auditoria de segurança do módulo — `adcbc63` |
 | 2026-07-28 | Prompt 58: auditoria de performance do módulo — `6ed1fb6` |
-| 2026-07-28 | Prompt 59: completar testes unitários de regras — _(hash no commit)_ |
+| 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
