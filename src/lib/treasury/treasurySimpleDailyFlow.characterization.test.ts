@@ -464,5 +464,6 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
     assert.ok(
       existsSync(join(here, "domain/treasuryDailyAccountRoutineRules.ts"))
     );
+    assert.ok(existsSync(join(here, "domain/treasuryDailyCashEngine.ts")));
   });
 });

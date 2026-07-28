@@ -14,6 +14,7 @@ import type {
   TreasuryBalanceLayer,
   TreasuryBalanceOrigin,
   TreasuryClosingStatus,
+  TreasuryDailyAccountRoutineStatus,
   TreasuryCurrency,
   TreasuryCollectionActionType,
   TreasuryDisputeStatus,
@@ -208,6 +209,85 @@ export type TreasuryFinancialPositionDto = {
   accounts: TreasuryAccountFinancialPositionDto[];
   consolidated: TreasuryConsolidatedFinancialPositionDto;
   alerts: string[];
+};
+
+/** Transferências na posição diária (por conta ou consolidado). */
+export type TreasuryDailyCashTransfersDto = {
+  received: TreasuryMoneyString;
+  sent: TreasuryMoneyString;
+  /** received − sent; no consolidado interno deve ser 0.00. */
+  net: TreasuryMoneyString;
+};
+
+/** Pendência explicativa da posição diária (ex.: OFX sem match). */
+export type TreasuryDailyCashPendencyDto = {
+  code:
+    | "UNRECONCILED_OFX"
+    | "MISSING_OPENING_BALANCE"
+    | "MISSING_CLOSING_BALANCE"
+    | "BALANCE_DIVERGENCE"
+    | "PARTIAL_SETTLEMENT"
+    | "OTHER";
+  message: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  sourceId: string | null;
+};
+
+/**
+ * DTO enxuto da posição diária canônica por conta.
+ * Sem Prisma — money em string decimal.
+ */
+export type TreasuryDailyCashAccountPositionDto = {
+  accountId: string;
+  code: string;
+  name: string;
+  includeInConsolidated: boolean;
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString | null;
+  plannedReceivables: TreasuryMoneyString;
+  realizedReceivables: TreasuryMoneyString;
+  plannedPayables: TreasuryMoneyString;
+  realizedPayables: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  transfers: TreasuryDailyCashTransfersDto;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  pendencies: TreasuryDailyCashPendencyDto[];
+  lastUpdatedAt: TreasuryTimestampIso | null;
+};
+
+/** Consolidado do dia — transferências internas com efeito líquido zero. */
+export type TreasuryDailyCashConsolidatedPositionDto = {
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString | null;
+  plannedReceivables: TreasuryMoneyString;
+  realizedReceivables: TreasuryMoneyString;
+  plannedPayables: TreasuryMoneyString;
+  realizedPayables: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  transfers: TreasuryDailyCashTransfersDto;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  pendencies: TreasuryDailyCashPendencyDto[];
+  accountCount: number;
+  lastUpdatedAt: TreasuryTimestampIso | null;
+};
+
+export type TreasuryDailyCashPositionDto = {
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  algorithmVersion: string;
+  accounts: TreasuryDailyCashAccountPositionDto[];
+  consolidated: TreasuryDailyCashConsolidatedPositionDto;
 };
 
 /** Freshness de uma fonte do dashboard diário. */
