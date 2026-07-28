@@ -51,20 +51,20 @@ describe("PERFORMANCE 05 — consultas SO + Finance", () => {
     }
   });
 
-  it("SO list: aggregate + NF‖margem em paralelo; sem findMany de summary", () => {
+  it("SO list: aggregate + NF; margem da página fora do GET", () => {
     const server = read("server.ts");
     const start = server.indexOf('app.get("/api/sales-orders"');
     const chunk = server.slice(start, start + 4500);
     assert.match(chunk, /salesOrder\.aggregate/);
     assert.match(chunk, /_count:\s*\{\s*_all:\s*true/);
-    assert.match(chunk, /attachMarginsToSalesOrders/);
+    assert.doesNotMatch(chunk, /attachMarginsToSalesOrders/);
     assert.match(chunk, /loadSalesOrderLinkedNfeContextMap/);
-    assert.match(
-      chunk,
-      /Promise\.all\(\[\s*\n?\s*loadSalesOrderLinkedNfeContextMap/
-    );
     assert.doesNotMatch(chunk, /SALES_ORDER_LIST_SUMMARY_PRISMA_SELECT/);
     assert.doesNotMatch(chunk, /prisma\.salesOrder\.count\(\{\s*where\s*\}\)/);
+    assert.match(
+      read("src/lib/salesOrderListPageMargins.server.ts"),
+      /attachMarginsToSalesOrders/
+    );
   });
 
   it("AR dashboard: load portfolio ‖ horizon", () => {

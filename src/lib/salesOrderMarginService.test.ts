@@ -535,7 +535,7 @@ describe("salesOrderMarginService — rotas e segurança", () => {
       join(process.cwd(), "src", "lib", "salesOrderListQuery.server.ts"),
       "utf8"
     );
-    assert.match(server, /attachMarginsToSalesOrders\(prisma, rows\)/);
+    assert.doesNotMatch(server, /attachMarginsToSalesOrders\(prisma, rows\)/);
     assert.match(server, /parseSalesOrderListQuery/);
     assert.match(server, /listQuery\.pageSize/);
     assert.match(server, /resolveSalesOrderListWhere/);
@@ -543,6 +543,11 @@ describe("salesOrderMarginService — rotas e segurança", () => {
       listQuery,
       /pageSize: Math\.min\(parsePositiveIntQuery\(query\.pageSize, 20\), 100\)/
     );
+    const pageMargins = readFileSync(
+      join(process.cwd(), "src", "lib", "salesOrderListPageMargins.server.ts"),
+      "utf8"
+    );
+    assert.match(pageMargins, /attachMarginsToSalesOrders/);
   });
 
   it("9. busca inteligente permanece no endpoint", () => {
@@ -592,9 +597,13 @@ describe("salesOrderMarginService — rotas e segurança", () => {
       join(process.cwd(), "src", "lib", "financeSalesOrdersDashboard.ts"),
       "utf8"
     );
+    assert.match(server, /attachMarginToSalesOrderDetail/);
     assert.match(
-      server,
-      /attachMarginsToSalesOrders|attachMarginToSalesOrderDetail/
+      readFileSync(
+        join(process.cwd(), "src", "lib", "salesOrderListReportExportRoutes.ts"),
+        "utf8"
+      ),
+      /SALES_ORDER_LIST_PAGE_MARGINS_PATH/
     );
     assert.match(
       metrics,

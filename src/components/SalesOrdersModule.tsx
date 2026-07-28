@@ -44,7 +44,10 @@ import {
 import {
   getSalesOrderSellerFilterOptionsUrl,
 } from "@/src/lib/salesOrderListReportExportUi";
-import { getSalesOrderListMarginSummaryUrl } from "@/src/lib/salesOrderListMarginSummaryApi";
+import {
+  getSalesOrderListMarginSummaryUrl,
+  getSalesOrderListPageMarginsUrl,
+} from "@/src/lib/salesOrderListMarginSummaryApi";
 import {
   downloadSalesOrderReportXlsx,
   getSalesOrderReportPayloadUrl,
@@ -564,6 +567,38 @@ function SalesOrderList() {
           setSummary(EMPTY_SALES_ORDER_LIST_SUMMARY);
           setMarginSummary(null);
         }
+
+        // Coluna Margem: depois da grade (não bloqueia loading).
+        if (showMarginEconomics && !signal?.aborted) {
+          void fetchJsonOk<{
+            margins: Array<{
+              orderId: string;
+              marginSummary?: SalesOrderRow["marginSummary"];
+              marginItems?: SalesOrderItemMarginPayload[];
+            }>;
+          }>(getSalesOrderListPageMarginsUrl(q), { signal })
+            .then((marginData) => {
+              if (signal?.aborted) return;
+              const byId = new Map(
+                (marginData.margins ?? []).map((row) => [row.orderId, row] as const)
+              );
+              setRows((prev) =>
+                prev.map((row) => {
+                  const margin = byId.get(row.id);
+                  if (!margin) return row;
+                  return {
+                    ...row,
+                    marginSummary: margin.marginSummary,
+                    marginItems: margin.marginItems,
+                  };
+                })
+              );
+            })
+            .catch((e) => {
+              if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+              console.error(e);
+            });
+        }
       } catch (e) {
         if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
         console.error(e);
@@ -577,7 +612,7 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [buildListQueryString]
+    [buildListQueryString, showMarginEconomics]
   );
 
   useEffect(() => {

@@ -415,10 +415,7 @@ import {
   resolveSalesOrderListSellerWhere,
   resolveSalesOrderListWhere,
 } from "./src/lib/salesOrderListQuery.server.js";
-import {
-  attachMarginToSalesOrderDetail,
-  attachMarginsToSalesOrders,
-} from "./src/lib/salesOrderMarginService.server.js";
+import { attachMarginToSalesOrderDetail } from "./src/lib/salesOrderMarginService.server.js";
 import { registerOfficialServerResolvers } from "./src/lib/registerServerResolvers.js";
 import { loadCommissionSellerIdentityContext } from "./src/lib/commissions/commissionSellerIdentity.server.js";
 import { buildSalesOrderNomusSellerDto } from "./src/lib/salesOrderNomusSellerDisplay.js";
@@ -14878,9 +14875,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const pageSize = listQuery.pageSize;
       const skip = (page - 1) * pageSize;
 
-      // Página + agregados (count/sum no banco). A margem geral filtrada (todos os
-      // pedidos do filtro) vai em GET /api/sales-orders/margin-summary para não
-      // travar a listagem quando o motor de margem é pesado.
+      // Página + agregados (count/sum no banco). Margens (coluna + geral) vão em
+      // endpoints dedicados para não travar a listagem no motor oficial.
       const [rows, aggregates] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
@@ -14903,20 +14899,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         sumItems: aggregates._sum.totalItems,
       });
 
-      const [linkedNfeContextMap, dataWithMargins] = await Promise.all([
-        loadSalesOrderLinkedNfeContextMap(
-          rows.map((order) => ({
-            id: order.id,
-            totalNetValue: order.totalNetValue,
-            issueDate: order.issueDate,
-            expectedDeliveryDate: order.expectedDeliveryDate,
-            nomusRawResponse: order.nomusRawResponse,
-          }))
-        ),
-        attachMarginsToSalesOrders(prisma, rows),
-      ]);
+      const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+        rows.map((order) => ({
+          id: order.id,
+          totalNetValue: order.totalNetValue,
+          issueDate: order.issueDate,
+          expectedDeliveryDate: order.expectedDeliveryDate,
+          nomusRawResponse: order.nomusRawResponse,
+        }))
+      );
 
-      const data = dataWithMargins.map((order) => {
+      const data = rows.map((order) => {
         const seller = buildSalesOrderNomusSellerDto(
           {
             externalSellerId: order.externalSellerId ?? null,
@@ -14965,7 +14958,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
         summary,
         // Mantido por compatibilidade: clientes antigos esperam a chave.
-        // O valor completo vem de GET /api/sales-orders/margin-summary.
+        // Margem geral: GET /api/sales-orders/margin-summary
+        // Margens da página: GET /api/sales-orders/page-margins
         marginSummary: undefined,
         metricsSource: OFFICIAL_SO_RULES_SOURCE,
         rulesEngineVersion: SALES_ORDER_RULES_ENGINE_VERSION,
