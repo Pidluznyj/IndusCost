@@ -44,6 +44,7 @@ import {
 import {
   getSalesOrderSellerFilterOptionsUrl,
 } from "@/src/lib/salesOrderListReportExportUi";
+import { getSalesOrderListMarginSummaryUrl } from "@/src/lib/salesOrderListMarginSummaryApi";
 import {
   downloadSalesOrderReportXlsx,
   getSalesOrderReportPayloadUrl,
@@ -511,24 +512,31 @@ function SalesOrderList() {
     }
   }, [internalExportQuery]);
 
+  const buildListQueryString = useCallback(
+    (page: number) => {
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
+      if (status) params.set("status", status);
+      if (hasInvoice) params.set("hasInvoice", hasInvoice);
+      if (receivableStatus) params.set("receivableStatus", receivableStatus);
+      if (customerId) params.set("customerId", customerId);
+      if (sellerKey) params.set("sellerKey", sellerKey);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+      if (year) params.set("year", year);
+      if (month) params.set("month", month);
+      if (search) params.set("q", search);
+      return params.toString();
+    },
+    [status, hasInvoice, receivableStatus, customerId, sellerKey, startDate, endDate, year, month, search]
+  );
+
   const load = useCallback(
     async (page: number, signal?: AbortSignal) => {
       setLoading(true);
       try {
-        const params = new URLSearchParams();
-        params.set("page", String(page));
-        params.set("pageSize", String(SALES_ORDERS_PAGE_SIZE));
-        if (status) params.set("status", status);
-        if (hasInvoice) params.set("hasInvoice", hasInvoice);
-        if (receivableStatus) params.set("receivableStatus", receivableStatus);
-        if (customerId) params.set("customerId", customerId);
-        if (sellerKey) params.set("sellerKey", sellerKey);
-        if (startDate) params.set("startDate", startDate);
-        if (endDate) params.set("endDate", endDate);
-        if (year) params.set("year", year);
-        if (month) params.set("month", month);
-        if (search) params.set("q", search);
-        const q = params.toString();
+        const q = buildListQueryString(page);
         const data = await fetchJsonOk<SalesOrderListResponse | SalesOrderRow[]>(
           `/api/sales-orders?${q}`,
           { signal }
@@ -547,6 +555,7 @@ function SalesOrderList() {
           setTotalPages(Number.isFinite(Number(data.totalPages)) ? Math.max(1, Number(data.totalPages)) : 1);
           setCurrentPage(Number.isFinite(Number(data.page)) ? Number(data.page) : page);
           setSummary(data.summary ?? EMPTY_SALES_ORDER_LIST_SUMMARY);
+          // Margem geral vem de endpoint dedicado (não bloqueia a grade).
           setMarginSummary(data.marginSummary ?? null);
         } else {
           setRows([]);
@@ -568,8 +577,30 @@ function SalesOrderList() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [status, hasInvoice, receivableStatus, customerId, sellerKey, startDate, endDate, year, month, search]
+    [buildListQueryString]
   );
+
+  useEffect(() => {
+    if (!showMarginEconomics) {
+      setMarginSummary(null);
+      return;
+    }
+    const ac = new AbortController();
+    const q = buildListQueryString(currentPage);
+    void fetchJsonOk<{ marginSummary: SalesOrderListMarginSummary }>(
+      getSalesOrderListMarginSummaryUrl(q),
+      { signal: ac.signal }
+    )
+      .then((data) => {
+        if (!ac.signal.aborted) setMarginSummary(data.marginSummary ?? null);
+      })
+      .catch((e) => {
+        if (ac.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        console.error(e);
+        setMarginSummary(null);
+      });
+    return () => ac.abort();
+  }, [showMarginEconomics, buildListQueryString, listFiltersKey, currentPage]);
 
   useEffect(() => {
     const ac = new AbortController();

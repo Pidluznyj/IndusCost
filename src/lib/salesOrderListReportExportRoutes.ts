@@ -13,6 +13,8 @@ import {
 } from "./salesOrderListReportExport.js";
 import { loadSalesOrderListReportExportPayload } from "./salesOrderListReportExport.server.js";
 import { loadSalesOrderSellerFilterOptions } from "./salesOrderListQuery.server.js";
+import { loadSalesOrderListMarginSummary } from "./salesOrderListMarginSummary.server.js";
+import { SALES_ORDER_LIST_MARGIN_SUMMARY_PATH } from "./salesOrderListMarginSummaryApi.js";
 import { SALES_ORDERS_LAST_UPDATE_PATH } from "./salesOrdersLastUpdate.js";
 import { loadSalesOrdersLastUpdatedAt } from "./salesOrdersLastUpdate.server.js";
 
@@ -51,6 +53,26 @@ export function registerSalesOrderListReportExportRoutes(
     } catch (error) {
       console.error("GET /api/sales-orders/seller-filter-options", error);
       res.status(500).json({ error: "Erro ao carregar vendedores do filtro." });
+    }
+  });
+
+  app.get(SALES_ORDER_LIST_MARGIN_SUMMARY_PATH, ...guard, async (req, res) => {
+    try {
+      const canViewMargin = await auth.canViewMarginEconomics(req);
+      if (!canViewMargin) {
+        return res.status(403).json({
+          error: "Sem permissão para margem econômica dos pedidos.",
+          code: "MARGIN_ECONOMICS_FORBIDDEN",
+        });
+      }
+      const marginSummary = await loadSalesOrderListMarginSummary(
+        prisma,
+        req.query as Record<string, unknown>
+      );
+      return res.json({ marginSummary });
+    } catch (error) {
+      console.error(`GET ${SALES_ORDER_LIST_MARGIN_SUMMARY_PATH}`, error);
+      return res.status(500).json({ error: "Erro ao carregar margem geral dos pedidos." });
     }
   });
 
