@@ -22,6 +22,7 @@ import {
   type InventoryWarehouseSummary,
 } from "@/src/components/inventory/inventoryWarehousePresentation";
 import { warehouseMovementBlockReason } from "@/src/components/inventory/inventoryWarehouseMovementPolicy";
+import { InventoryWarehouseLocationsPanel } from "@/src/components/inventory/InventoryWarehouseLocationsPanel";
 import {
   formatInventoryApiError,
   formatInventoryDateTime,
@@ -310,6 +311,13 @@ export function InventoryWarehouseDetailSheet({
           ) : (
             <div className="space-y-4">
               {!isCreate ? <WarehouseSummaryPanel summary={summary} /> : null}
+
+              {!isCreate && warehouseId ? (
+                <InventoryWarehouseLocationsPanel
+                  warehouseId={warehouseId}
+                  canManage={canManage}
+                />
+              ) : null}
 
               <div className="grid gap-3 sm:grid-cols-2" data-testid="inventory-warehouse-form">
                 <label className="block text-sm">

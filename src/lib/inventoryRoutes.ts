@@ -11,7 +11,7 @@ import {
   OPERATIONS_ACTIONS,
   OPERATIONS_RESOURCE_KEYS,
 } from "@/src/lib/operationsAccess.js";
-import { writeInventoryAuditLog } from "@/src/lib/inventory/inventoryAudit.server.js";
+import { writeInventoryAuditLog, listInventoryAuditLogs } from "@/src/lib/inventory/inventoryAudit.server.js";
 import {
   parseCreateCountSessionBody,
   parseUpdateCountLineBody,
@@ -38,28 +38,61 @@ import {
   inventoryDecOrNull,
   serializeInventoryBalance,
   serializeInventoryBalanceWithRelations,
+  serializeInventoryBlock,
   serializeInventoryCountLine,
   serializeInventoryCountSession,
   serializeInventoryCountSessionListRow,
   serializeInventoryItem,
+  serializeInventoryLocation,
   serializeInventoryMovement,
   serializeInventoryMovementEnriched,
+  serializeInventoryReservation,
   serializeInventoryWarehouse,
 } from "@/src/lib/inventory/inventorySerialization.server.js";
 import {
+  linkOfficialMaterialToStockControl,
+  searchOfficialMaterialsForInventory,
+  updateOfficialMaterialStockLink,
+} from "@/src/lib/inventory/inventoryMaterialLinkService.server.js";
+import {
+  assertWarehouseCanBeDeactivated,
+  createInventoryLocation,
+  setInventoryLocationStatus,
+  updateInventoryLocation,
+} from "@/src/lib/inventory/inventoryLocationService.server.js";
+import {
   cancelInventoryReservation,
+  createInitialInventoryBalance,
   createInventoryMovement,
+  releaseInventoryBlock,
+  reverseInventoryMovement,
+  transferBetweenPhysicalAndQuarantine,
+  type CreateInventoryMovementInput,
 } from "@/src/lib/inventory/inventoryService.server.js";
+import { rebuildInventoryBalancesFromLedger } from "@/src/lib/inventory/inventoryBalanceRebuild.server.js";
+import {
+  buildBalancesReportCsv,
+  buildInitialBalanceReportCsv,
+} from "@/src/lib/inventory/inventoryInitialBalance.js";
 import { InventoryValidationError } from "@/src/lib/inventory/inventoryTypes.js";
 import {
   parseCancelReservationBody,
+  parseCreateInitialBalanceBody,
+  parseCreateInventoryBlockBody,
   parseCreateInventoryItemBody,
+  parseCreateInventoryLocationBody,
   parseCreateInventoryMovementBody,
   parseCreateInventoryReservationBody,
   parseCreateInventoryWarehouseBody,
+  parseLinkOfficialMaterialBody,
+  parseQuarantineTransferBody,
+  parseReleaseBlockBody,
+  parseReverseMovementBody,
   parseStatusPatchBody,
   parseUpdateInventoryItemBody,
+  parseUpdateInventoryLocationBody,
   parseUpdateInventoryWarehouseBody,
+  parseUpdateMaterialStockLinkBody,
 } from "@/src/lib/inventory/inventoryValidation.js";
 
 type AuthGuards = {
@@ -83,13 +116,27 @@ function handleInventoryValidation(res: express.Response, error: InventoryValida
   const status =
     error.code === "ITEM_NOT_FOUND" ||
     error.code === "WAREHOUSE_NOT_FOUND" ||
+    error.code === "LOCATION_NOT_FOUND" ||
+    error.code === "LOCATION_PARENT_NOT_FOUND" ||
+    error.code === "OFFICIAL_MATERIAL_NOT_FOUND" ||
+    error.code === "MOVEMENT_NOT_FOUND" ||
     error.code === "RESERVATION_NOT_FOUND" ||
+    error.code === "BLOCK_NOT_FOUND" ||
     error.code === "SESSION_NOT_FOUND" ||
     error.code === "LINE_NOT_FOUND"
       ? 404
       : error.code === "NOT_AUTHORIZED"
         ? 403
-        : 400;
+        : error.code === "LOCATION_CODE_DUPLICATE" ||
+            error.code === "MATERIAL_ALREADY_LINKED_ACTIVE" ||
+            error.code === "INVENTORY_CODE_CONFLICT" ||
+            error.code === "ALREADY_REVERSED" ||
+            error.code === "INITIAL_BALANCE_DUPLICATE" ||
+            error.code === "INITIAL_BALANCE_SCOPE_NOT_EMPTY" ||
+            error.code === "RESERVATION_NOT_ACTIVE" ||
+            error.code === "BLOCK_NOT_ACTIVE"
+          ? 409
+          : 400;
   return res.status(status).json({ error: error.message, code: error.code });
 }
 
@@ -269,17 +316,23 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
   app.get("/api/inventory/items", ...view, async (req, res) => {
     try {
       const q = parseInventoryItemsListQuery(req.query as Record<string, unknown>);
+      const linkedOnly = String(req.query.linkedMaterials ?? "").trim() === "true";
+      const materialIdQ = String(req.query.materialId ?? "").trim();
       const where: Prisma.InventoryItemWhereInput = {
         ...(q.itemType ? { itemType: q.itemType } : {}),
         ...(q.status ? { status: q.status } : {}),
         ...(q.activeOnly ? { status: "ACTIVE" } : {}),
         ...(q.family ? { family: { equals: q.family, mode: "insensitive" } } : {}),
         ...(q.group ? { group: { equals: q.group, mode: "insensitive" } } : {}),
+        ...(linkedOnly ? { materialId: { not: null } } : {}),
+        ...(materialIdQ ? { materialId: materialIdQ } : {}),
         ...(q.search
           ? {
               OR: [
                 { code: { contains: q.search, mode: "insensitive" } },
                 { description: { contains: q.search, mode: "insensitive" } },
+                { materialCodeSnapshot: { contains: q.search, mode: "insensitive" } },
+                { materialDescriptionSnapshot: { contains: q.search, mode: "insensitive" } },
               ],
             }
           : {}),
@@ -387,6 +440,70 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     }
   });
 
+  app.get("/api/inventory/official-materials", ...view, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? req.query.search ?? "").trim();
+      const limit = Math.min(
+        100,
+        Math.max(1, Number.parseInt(String(req.query.limit ?? "30"), 10) || 30)
+      );
+      const rows = await searchOfficialMaterialsForInventory(prisma, { q, limit });
+      res.json({ rows, total: rows.length });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/official-materials", e);
+      res.status(500).json(inventoryApiError("Erro ao pesquisar matérias-primas oficiais."));
+    }
+  });
+
+  app.post("/api/inventory/items/link-material", ...itemManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const input = parseLinkOfficialMaterialBody(req.body);
+      const item = await linkOfficialMaterialToStockControl(prisma, input, {
+        id: user.id,
+        name: user.name,
+      });
+      res.status(201).json({ item: serializeInventoryItem(item) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res
+          .status(409)
+          .json(inventoryApiError("Matéria-prima já vinculada ativamente ao estoque."));
+      }
+      console.error("POST /api/inventory/items/link-material", e);
+      res.status(500).json(inventoryApiError("Erro ao vincular matéria-prima ao estoque."));
+    }
+  });
+
+  app.put("/api/inventory/items/:id/material-link", ...itemManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const patch = parseUpdateMaterialStockLinkBody(req.body);
+      const item = await updateOfficialMaterialStockLink(prisma, id, patch, {
+        id: user.id,
+        name: user.name,
+      });
+      res.json({ item: serializeInventoryItem(item) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res
+          .status(409)
+          .json(inventoryApiError("Matéria-prima já vinculada ativamente ao estoque."));
+      }
+      console.error("PUT /api/inventory/items/:id/material-link", e);
+      res.status(500).json(inventoryApiError("Erro ao atualizar vínculo logístico."));
+    }
+  });
+
   app.get("/api/inventory/items/:id", ...view, async (req, res) => {
     try {
       const { id } = req.params;
@@ -414,6 +531,19 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Item não encontrado."));
 
       const patch = parseUpdateInventoryItemBody(req.body);
+      if (existing.materialId) {
+        if (
+          patch.code !== undefined ||
+          patch.description !== undefined ||
+          patch.unit !== undefined ||
+          patch.itemType !== undefined
+        ) {
+          throw new InventoryValidationError(
+            "Item vinculado à MP oficial: use o endpoint de vínculo logístico. Cadastro oficial é somente leitura.",
+            "OFFICIAL_MATERIAL_FIELDS_READONLY"
+          );
+        }
+      }
       const updated = await prisma.inventoryItem.update({
         where: { id },
         data: {
@@ -565,6 +695,8 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           description: input.description,
           status: input.status,
           allowsMovements: input.allowsMovements,
+          createdByUserId: user.id,
+          updatedByUserId: user.id,
         },
       });
 
@@ -615,6 +747,9 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
 
       const patch = parseUpdateInventoryWarehouseBody(req.body);
+      if (patch.status === "INACTIVE" && existing.status === "ACTIVE") {
+        await assertWarehouseCanBeDeactivated(prisma, id);
+      }
       const updated = await prisma.inventoryWarehouse.update({
         where: { id },
         data: {
@@ -625,6 +760,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           ...(patch.allowsMovements !== undefined
             ? { allowsMovements: patch.allowsMovements }
             : {}),
+          updatedByUserId: user.id,
         },
       });
 
@@ -658,9 +794,16 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (!existing) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
 
       const status = parseStatusPatchBody(req.body);
+      if (status === "INACTIVE" && existing.status === "ACTIVE") {
+        await assertWarehouseCanBeDeactivated(prisma, id);
+      }
+
       const updated = await prisma.inventoryWarehouse.update({
         where: { id },
-        data: { status },
+        data: {
+          status,
+          updatedByUserId: user.id,
+        },
       });
 
       await writeInventoryAuditLog(prisma, {
@@ -680,6 +823,166 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       res.status(500).json(inventoryApiError("Erro ao alterar status do almoxarifado."));
     }
   });
+
+  app.get("/api/inventory/warehouses/:warehouseId/locations", ...view, async (req, res) => {
+    try {
+      const { warehouseId } = req.params;
+      if (!isUuid(warehouseId)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const warehouse = await prisma.inventoryWarehouse.findUnique({ where: { id: warehouseId } });
+      if (!warehouse) return res.status(404).json(inventoryApiError("Almoxarifado não encontrado."));
+
+      const statusQ = String(req.query.status ?? "").trim();
+      const typeQ = String(req.query.locationType ?? "").trim();
+      const search = String(req.query.search ?? "").trim();
+
+      const rows = await prisma.inventoryLocation.findMany({
+        where: {
+          warehouseId,
+          ...(statusQ === "ACTIVE" || statusQ === "INACTIVE" ? { status: statusQ } : {}),
+          ...(typeQ === "PHYSICAL" || typeQ === "QUARANTINE" || typeQ === "PRODUCTION"
+            ? { locationType: typeQ }
+            : {}),
+          ...(search
+            ? {
+                OR: [
+                  { code: { contains: search, mode: "insensitive" } },
+                  { name: { contains: search, mode: "insensitive" } },
+                  { aisle: { contains: search, mode: "insensitive" } },
+                  { shelf: { contains: search, mode: "insensitive" } },
+                  { position: { contains: search, mode: "insensitive" } },
+                ],
+              }
+            : {}),
+        },
+        orderBy: [{ isDefault: "desc" }, { code: "asc" }],
+      });
+
+      res.json({
+        warehouseId,
+        rows: rows.map(serializeInventoryLocation),
+        total: rows.length,
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/warehouses/:warehouseId/locations", e);
+      res.status(500).json(inventoryApiError("Erro ao listar locais."));
+    }
+  });
+
+  app.post("/api/inventory/warehouses/:warehouseId/locations", ...warehouseManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { warehouseId } = req.params;
+      if (!isUuid(warehouseId)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const input = parseCreateInventoryLocationBody(req.body);
+      const created = await createInventoryLocation(prisma, warehouseId, input, {
+        id: user.id,
+        name: user.name,
+      });
+
+      res.status(201).json({ location: serializeInventoryLocation(created) });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+        return res.status(409).json(inventoryApiError("Código de local já cadastrado neste almoxarifado."));
+      }
+      console.error("POST /api/inventory/warehouses/:warehouseId/locations", e);
+      res.status(500).json(inventoryApiError("Erro ao criar local."));
+    }
+  });
+
+  app.get(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId",
+    ...view,
+    async (req, res) => {
+      try {
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const location = await prisma.inventoryLocation.findFirst({
+          where: { id: locationId, warehouseId },
+        });
+        if (!location) return res.status(404).json(inventoryApiError("Local não encontrado."));
+
+        res.json({ location: serializeInventoryLocation(location) });
+      } catch (e: unknown) {
+        console.error("GET /api/inventory/warehouses/:warehouseId/locations/:locationId", e);
+        res.status(500).json(inventoryApiError("Erro ao carregar local."));
+      }
+    }
+  );
+
+  app.put(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId",
+    ...warehouseManage,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const patch = parseUpdateInventoryLocationBody(req.body);
+        const updated = await updateInventoryLocation(prisma, warehouseId, locationId, patch, {
+          id: user.id,
+          name: user.name,
+        });
+
+        res.json({ location: serializeInventoryLocation(updated) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          return res
+            .status(409)
+            .json(inventoryApiError("Código de local já cadastrado neste almoxarifado."));
+        }
+        console.error("PUT /api/inventory/warehouses/:warehouseId/locations/:locationId", e);
+        res.status(500).json(inventoryApiError("Erro ao atualizar local."));
+      }
+    }
+  );
+
+  app.patch(
+    "/api/inventory/warehouses/:warehouseId/locations/:locationId/status",
+    ...warehouseManage,
+    async (req, res) => {
+      try {
+        const user = await auth.getCurrentAppUser(req);
+        if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+        const { warehouseId, locationId } = req.params;
+        if (!isUuid(warehouseId) || !isUuid(locationId)) {
+          return res.status(400).json(inventoryApiError("ID inválido."));
+        }
+
+        const status = parseStatusPatchBody(req.body);
+        const updated = await setInventoryLocationStatus(
+          prisma,
+          warehouseId,
+          locationId,
+          status,
+          { id: user.id, name: user.name }
+        );
+
+        res.json({ location: serializeInventoryLocation(updated) });
+      } catch (e: unknown) {
+        if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+        console.error(
+          "PATCH /api/inventory/warehouses/:warehouseId/locations/:locationId/status",
+          e
+        );
+        res.status(500).json(inventoryApiError("Erro ao alterar status do local."));
+      }
+    }
+  );
 
   app.get("/api/inventory/balances", ...view, async (req, res) => {
     try {
@@ -703,6 +1006,7 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       const where: Prisma.InventoryBalanceWhereInput = {
         ...(q.itemId ? { itemId: q.itemId } : {}),
         ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
+        ...(q.locationId ? { locationId: q.locationId } : {}),
         ...(q.hasReservation ? { reservedQuantity: { gt: 0 } } : {}),
         ...(q.hasBlocked ? { blockedQuantity: { gt: 0 } } : {}),
         ...(q.hasQuarantine ? { quarantineQuantity: { gt: 0 } } : {}),
@@ -725,12 +1029,14 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
               status: true,
               minimumStock: true,
               reorderPoint: true,
+              safetyStock: true,
               unit: true,
               family: true,
               group: true,
             },
           },
           warehouse: { select: { code: true, name: true, status: true } },
+          location: { select: { code: true, name: true, status: true } },
         },
         orderBy: [{ item: { code: "asc" } }, { warehouse: { code: "asc" } }],
       });
@@ -766,6 +1072,206 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
     } catch (e: unknown) {
       console.error("GET /api/inventory/balances", e);
       res.status(500).json(inventoryApiError("Erro ao consultar saldos."));
+    }
+  });
+
+  app.get("/api/inventory/balances/export", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryBalancesListQuery(req.query as Record<string, unknown>);
+      const where: Prisma.InventoryBalanceWhereInput = {
+        ...(q.itemId ? { itemId: q.itemId } : {}),
+        ...(q.warehouseId ? { warehouseId: q.warehouseId } : {}),
+        ...(q.locationId ? { locationId: q.locationId } : {}),
+      };
+      const rows = await prisma.inventoryBalance.findMany({
+        where,
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+          location: { select: { code: true } },
+        },
+        orderBy: [{ item: { code: "asc" } }, { warehouse: { code: "asc" } }],
+        take: 10_000,
+      });
+      const csv = buildBalancesReportCsv(
+        rows.map((row) => ({
+          itemCode: row.item.code,
+          itemDescription: row.item.description,
+          warehouseCode: row.warehouse.code,
+          warehouseName: row.warehouse.name,
+          locationCode: row.location?.code ?? null,
+          physicalQuantity: inventoryDec(row.physicalQuantity),
+          reservedQuantity: inventoryDec(row.reservedQuantity),
+          blockedQuantity: inventoryDec(row.blockedQuantity),
+          quarantineQuantity: inventoryDec(row.quarantineQuantity),
+          availableQuantity: inventoryDec(row.availableQuantity),
+          unit: row.item.unit,
+        }))
+      );
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="inventory-balances.csv"');
+      res.send(csv);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/balances/export", e);
+      res.status(500).json(inventoryApiError("Erro ao exportar saldos."));
+    }
+  });
+
+  app.post("/api/inventory/balances/rebuild", ...manage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const result = await rebuildInventoryBalancesFromLedger(
+        prisma,
+        {
+          itemId: typeof body.itemId === "string" ? body.itemId : null,
+          warehouseId: typeof body.warehouseId === "string" ? body.warehouseId : null,
+          dryRun: body.dryRun === true || body.dryRun === "true",
+          reason: typeof body.reason === "string" ? body.reason : null,
+        },
+        { userId: user.id, userName: user.name ?? null }
+      );
+      res.json(result);
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/balances/rebuild", e);
+      res.status(500).json(inventoryApiError("Erro ao reconstruir saldos."));
+    }
+  });
+
+  app.get("/api/inventory/initial-balances", ...view, async (req, res) => {
+    try {
+      const q = parseInventoryMovementsListQuery(req.query as Record<string, unknown>);
+      const where: Prisma.InventoryMovementWhereInput = {
+        movementType: "INITIAL_BALANCE",
+        ...(q.itemId ? { itemId: q.itemId } : {}),
+        ...(q.warehouseId
+          ? {
+              OR: [
+                { sourceWarehouseId: q.warehouseId },
+                { destinationWarehouseId: q.warehouseId },
+              ],
+            }
+          : {}),
+        ...(q.startDate || q.endDate
+          ? {
+              movementDate: {
+                ...(q.startDate ? { gte: q.startDate } : {}),
+                ...(q.endDate ? { lte: q.endDate } : {}),
+              },
+            }
+          : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryMovement.findMany({
+          where,
+          include: {
+            ...MOVEMENT_LIST_INCLUDES,
+            destinationLocation: { select: { code: true, name: true } },
+          },
+          orderBy: { movementDate: "desc" },
+          skip: q.skip,
+          take: q.pageSize,
+        }),
+        prisma.inventoryMovement.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map((row) => ({
+          ...serializeInventoryMovementEnriched(row),
+          destinationLocationCode: row.destinationLocation?.code ?? null,
+          evidenceRef: row.evidenceRef,
+        })),
+        total,
+        page: q.page,
+        pageSize: q.pageSize,
+        totalPages: Math.max(1, Math.ceil(total / q.pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/initial-balances", e);
+      res.status(500).json(inventoryApiError("Erro ao listar implantações."));
+    }
+  });
+
+  app.get("/api/inventory/initial-balances/report", ...view, async (req, res) => {
+    try {
+      const rows = await prisma.inventoryMovement.findMany({
+        where: { movementType: "INITIAL_BALANCE" },
+        include: {
+          item: { select: { code: true, description: true } },
+          destinationWarehouse: { select: { code: true, name: true } },
+          destinationLocation: { select: { code: true } },
+        },
+        orderBy: { movementDate: "desc" },
+        take: 10_000,
+      });
+      const csv = buildInitialBalanceReportCsv(
+        rows.map((row) => ({
+          movementId: row.id,
+          movementDate: row.movementDate.toISOString(),
+          itemCode: row.item?.code ?? "",
+          itemDescription: row.item?.description ?? "",
+          warehouseCode: row.destinationWarehouse?.code ?? "",
+          warehouseName: row.destinationWarehouse?.name ?? "",
+          locationCode: row.destinationLocation?.code ?? null,
+          quantity: inventoryDec(row.quantity),
+          unit: row.unit,
+          responsibleUserId: row.responsibleUserId,
+          reason: row.reason,
+          evidenceRef: row.evidenceRef,
+          documentNumber: row.documentNumber,
+        }))
+      );
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="inventory-initial-balance-report.csv"'
+      );
+      res.send(csv);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/initial-balances/report", e);
+      res.status(500).json(inventoryApiError("Erro ao gerar relatório de implantação."));
+    }
+  });
+
+  app.post("/api/inventory/initial-balances", ...moveCreate, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseCreateInitialBalanceBody(req.body);
+      const result = await createInitialInventoryBalance(
+        prisma,
+        {
+          itemId: body.itemId,
+          warehouseId: body.warehouseId,
+          locationId: body.locationId,
+          quantity: body.quantity,
+          countDate: body.countDate,
+          responsibleUserId: body.responsibleUserId || user.id,
+          justification: body.justification,
+          evidenceRef: body.evidenceRef,
+          documentNumber: body.documentNumber,
+          notes: body.notes,
+          unitCost: body.unitCost,
+          requireEvidence: body.requireEvidence,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(result.idempotent ? 200 : 201).json({
+        movement: serializeInventoryMovement(result.movement),
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+        idempotent: result.idempotent === true,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/initial-balances", e);
+      res.status(500).json(inventoryApiError("Erro ao registrar saldo inicial."));
     }
   });
 
@@ -903,6 +1409,11 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           financialCostCenterId: body.financialCostCenterId,
           documentNumber: body.documentNumber,
           movementDate: body.movementDate ?? undefined,
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? undefined,
+          originId: body.originId,
+          idempotencyKey: body.idempotencyKey,
+          unitCost: body.unitCost,
+          lotNumber: body.lotNumber,
         },
         {
           userId: user.id,
@@ -910,15 +1421,135 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
         }
       );
 
-      res.status(201).json({
+      res.status(result.idempotent ? 200 : 201).json({
         movement: serializeInventoryMovement(result.movement),
         balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
         reservationId: "reservationId" in result ? result.reservationId : undefined,
+        idempotent: result.idempotent === true,
       });
     } catch (e: unknown) {
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/movements", e);
       res.status(500).json(inventoryApiError("Erro ao registrar movimentação."));
+    }
+  });
+
+  app.post("/api/inventory/movements/:id/reverse", ...moveCreate, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const reason = parseReverseMovementBody(req.body);
+      const result = await reverseInventoryMovement(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      }, reason);
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+        sourceBalance: result.sourceBalance
+          ? serializeInventoryBalanceFromSnapshot(result.sourceBalance)
+          : undefined,
+        destinationBalance: result.destinationBalance
+          ? serializeInventoryBalanceFromSnapshot(result.destinationBalance)
+          : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/movements/:id/reverse", e);
+      res.status(500).json(inventoryApiError("Erro ao estornar movimentação."));
+    }
+  });
+
+  app.get("/api/inventory/audit", ...view, async (req, res) => {
+    try {
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const entityType = String(req.query.entityType ?? "").trim();
+      const entityId = String(req.query.entityId ?? "").trim();
+      const action = String(req.query.action ?? "").trim();
+      const userId = String(req.query.userId ?? "").trim();
+
+      const result = await listInventoryAuditLogs(prisma, {
+        page,
+        pageSize,
+        ...(entityType ? { entityType } : {}),
+        ...(entityId ? { entityId } : {}),
+        ...(action ? { action } : {}),
+        ...(userId ? { userId } : {}),
+      });
+      res.json(result);
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/audit", e);
+      res.status(500).json(inventoryApiError("Erro ao listar auditoria."));
+    }
+  });
+
+  app.get("/api/inventory/reservations", ...view, async (req, res) => {
+    try {
+      const statusQ = String(req.query.status ?? "").trim();
+      const itemId = String(req.query.itemId ?? "").trim();
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const skip = (page - 1) * pageSize;
+      const where: Prisma.InventoryReservationWhereInput = {
+        ...(statusQ ? { status: statusQ as Prisma.EnumInventoryReservationStatusFilter } : {}),
+        ...(itemId && isUuid(itemId) ? { itemId } : {}),
+        ...(warehouseId && isUuid(warehouseId) ? { warehouseId } : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryReservation.findMany({
+          where,
+          include: {
+            item: { select: { code: true, description: true, unit: true } },
+            warehouse: { select: { code: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.inventoryReservation.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map(serializeInventoryReservation),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/reservations", e);
+      res.status(500).json(inventoryApiError("Erro ao listar reservas."));
+    }
+  });
+
+  app.get("/api/inventory/reservations/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+      const row = await prisma.inventoryReservation.findUnique({
+        where: { id },
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+        },
+      });
+      if (!row) return res.status(404).json(inventoryApiError("Reserva não encontrada."));
+      res.json({ reservation: serializeInventoryReservation(row) });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/reservations/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar reserva."));
     }
   });
 
@@ -945,11 +1576,16 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
           unit: item.unit,
           reason: body.reason,
           notes: body.notes,
-          originType: "MANUAL",
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? "MANUAL",
+          originId: body.originId,
+          reservationType: body.reservationType as CreateInventoryMovementInput["reservationType"],
+          responsibleUserId: body.responsibleUserId || user.id,
+          expiresAt: body.expiresAt,
         },
         {
           userId: user.id,
           permissions: user.effectivePermissions,
+          allowOverReservation: body.allowOverReservation,
         }
       );
 
@@ -987,6 +1623,181 @@ export function registerInventoryRoutes(app: express.Express, auth: AuthGuards) 
       if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
       console.error("POST /api/inventory/reservations/:id/cancel", e);
       res.status(500).json(inventoryApiError("Erro ao cancelar reserva."));
+    }
+  });
+
+  app.get("/api/inventory/blocks", ...view, async (req, res) => {
+    try {
+      const statusQ = String(req.query.status ?? "").trim();
+      const itemId = String(req.query.itemId ?? "").trim();
+      const warehouseId = String(req.query.warehouseId ?? "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        200,
+        Math.max(1, Number.parseInt(String(req.query.pageSize ?? "50"), 10) || 50)
+      );
+      const skip = (page - 1) * pageSize;
+      const where: Prisma.InventoryBlockWhereInput = {
+        ...(statusQ ? { status: statusQ as Prisma.EnumInventoryBlockStatusFilter } : {}),
+        ...(itemId && isUuid(itemId) ? { itemId } : {}),
+        ...(warehouseId && isUuid(warehouseId) ? { warehouseId } : {}),
+      };
+      const [rows, total] = await Promise.all([
+        prisma.inventoryBlock.findMany({
+          where,
+          include: {
+            item: { select: { code: true, description: true, unit: true } },
+            warehouse: { select: { code: true, name: true } },
+          },
+          orderBy: { createdAt: "desc" },
+          skip,
+          take: pageSize,
+        }),
+        prisma.inventoryBlock.count({ where }),
+      ]);
+      res.json({
+        rows: rows.map(serializeInventoryBlock),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/blocks", e);
+      res.status(500).json(inventoryApiError("Erro ao listar bloqueios."));
+    }
+  });
+
+  app.get("/api/inventory/blocks/:id", ...view, async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+      const row = await prisma.inventoryBlock.findUnique({
+        where: { id },
+        include: {
+          item: { select: { code: true, description: true, unit: true } },
+          warehouse: { select: { code: true, name: true } },
+        },
+      });
+      if (!row) return res.status(404).json(inventoryApiError("Bloqueio não encontrado."));
+      res.json({ block: serializeInventoryBlock(row) });
+    } catch (e: unknown) {
+      console.error("GET /api/inventory/blocks/:id", e);
+      res.status(500).json(inventoryApiError("Erro ao carregar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/blocks", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseCreateInventoryBlockBody(req.body);
+      const item = await prisma.inventoryItem.findUnique({
+        where: { id: body.itemId },
+        select: { unit: true },
+      });
+      if (!item) return res.status(404).json(inventoryApiError("Item não encontrado."));
+
+      const result = await createInventoryMovement(
+        prisma,
+        {
+          itemId: body.itemId,
+          sourceWarehouseId: body.warehouseId,
+          sourceLocationId: body.locationId,
+          movementType: "BLOCK",
+          quantity: body.quantity,
+          unit: item.unit,
+          reason: body.reason,
+          notes: body.notes,
+          originType: (body.originType as CreateInventoryMovementInput["originType"]) ?? "MANUAL",
+          originId: body.originId,
+          blockReasonType: body.reasonType as CreateInventoryMovementInput["blockReasonType"],
+          responsibleUserId: body.responsibleUserId || user.id,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        blockId: result.blockId,
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/blocks", e);
+      res.status(500).json(inventoryApiError("Erro ao criar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/blocks/:id/release", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const { id } = req.params;
+      if (!isUuid(id)) return res.status(400).json(inventoryApiError("ID inválido."));
+
+      const reason = parseReleaseBlockBody(req.body);
+      const result = await releaseInventoryBlock(prisma, id, {
+        userId: user.id,
+        permissions: user.effectivePermissions,
+      }, reason);
+
+      res.json({
+        movement: serializeInventoryMovement(result.movement),
+        blockId: result.blockId,
+        balance: result.balance ? serializeInventoryBalanceFromSnapshot(result.balance) : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/blocks/:id/release", e);
+      res.status(500).json(inventoryApiError("Erro ao liberar bloqueio."));
+    }
+  });
+
+  app.post("/api/inventory/quarantine/transfer", ...reserveManage, async (req, res) => {
+    try {
+      const user = await auth.getCurrentAppUser(req);
+      if (!user) return res.status(401).json(inventoryApiError("Autenticação necessária."));
+
+      const body = parseQuarantineTransferBody(req.body);
+      const result = await transferBetweenPhysicalAndQuarantine(
+        prisma,
+        {
+          itemId: body.itemId,
+          quantity: body.quantity,
+          reason: body.reason,
+          sourceWarehouseId: body.sourceWarehouseId,
+          sourceLocationId: body.sourceLocationId,
+          destinationWarehouseId: body.destinationWarehouseId,
+          destinationLocationId: body.destinationLocationId,
+          toQuarantine: body.toQuarantine,
+          notes: body.notes,
+          responsibleUserId: body.responsibleUserId || user.id,
+        },
+        {
+          userId: user.id,
+          permissions: user.effectivePermissions,
+        }
+      );
+
+      res.status(201).json({
+        movement: serializeInventoryMovement(result.movement),
+        sourceBalance: result.sourceBalance
+          ? serializeInventoryBalanceFromSnapshot(result.sourceBalance)
+          : undefined,
+        destinationBalance: result.destinationBalance
+          ? serializeInventoryBalanceFromSnapshot(result.destinationBalance)
+          : undefined,
+      });
+    } catch (e: unknown) {
+      if (e instanceof InventoryValidationError) return handleInventoryValidation(res, e);
+      console.error("POST /api/inventory/quarantine/transfer", e);
+      res.status(500).json(inventoryApiError("Erro na transferência de quarentena."));
     }
   });
 

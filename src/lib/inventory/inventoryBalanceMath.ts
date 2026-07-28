@@ -20,9 +20,11 @@ export type InventoryMovementImpact = {
 const PHYSICAL_IN_TYPES = new Set<InventoryMovementType>([
   "MANUAL_ENTRY",
   "PURCHASE_ENTRY",
+  "PURCHASE_RECEIPT",
   "PRODUCTION_ENTRY",
   "RETURN",
   "POSITIVE_ADJUSTMENT",
+  "INITIAL_BALANCE",
 ]);
 
 const PHYSICAL_OUT_TYPES = new Set<InventoryMovementType>([
@@ -63,6 +65,12 @@ export function resolveMovementImpact(
   }
   if (movementType === "CANCEL_RESERVATION") {
     return { physicalDelta: 0, reservedDelta: -qty, blockedDelta: 0, quarantineDelta: 0 };
+  }
+  if (movementType === "QUARANTINE_IN") {
+    return { physicalDelta: 0, reservedDelta: 0, blockedDelta: 0, quarantineDelta: qty };
+  }
+  if (movementType === "QUARANTINE_OUT") {
+    return { physicalDelta: 0, reservedDelta: 0, blockedDelta: 0, quarantineDelta: -qty };
   }
   if (movementType === "REVERSAL") {
     throw new InventoryValidationError(

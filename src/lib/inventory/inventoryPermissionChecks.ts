@@ -131,10 +131,15 @@ export function canCreateInventoryMovementType(
   perms: readonly string[],
   movementType: InventoryMovementType
 ): boolean {
-  if (ADJUSTMENT_TYPES.has(movementType)) return canCreateInventoryAdjustment(perms);
-  if (BLOCK_TYPES.has(movementType)) return canManageInventoryBlock(perms);
+  if (ADJUSTMENT_TYPES.has(movementType) || movementType === "INITIAL_BALANCE") {
+    return canCreateInventoryAdjustment(perms);
+  }
+  if (BLOCK_TYPES.has(movementType) || movementType === "QUARANTINE_IN" || movementType === "QUARANTINE_OUT") {
+    return canManageInventoryBlock(perms);
+  }
   if (movementType === "TRANSFER") return canCreateInventoryTransfer(perms);
   if (RESERVATION_TYPES.has(movementType)) return canManageInventoryReservations(perms);
+  // REVERSAL e demais tipos básicos (entrada/saída/perda/devolução)
   return canCreateBasicInventoryMovement(perms);
 }
 

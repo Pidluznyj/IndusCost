@@ -14,8 +14,11 @@ export type AppModuleId =
   | "machines"
   | "materials"
   | "purchases"
+  | "sc-purchases"
   | "maintenance"
   | "inventory"
+  | "sc-inventory"
+  | "sc-receiving"
   | "operations-performance"
   | "production-orders"
   | "projects"
@@ -59,8 +62,11 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "machines",
   "materials",
   "purchases",
+  "sc-purchases",
   "maintenance",
   "inventory",
+  "sc-inventory",
+  "sc-receiving",
   "operations-performance",
   "production-orders",
   "projects",
@@ -119,6 +125,12 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       );
     case "purchases":
       return check.hasPermission("purchases.view");
+    case "sc-purchases":
+      return check.hasPermission("operations.supply_chain.purchases.view");
+    case "sc-inventory":
+      return check.hasPermission("operations.supply_chain.inventory.view");
+    case "sc-receiving":
+      return check.hasPermission("operations.supply_chain.receiving.view");
     case "pricing":
       return check.hasPermission("pricing.view");
     case "commercial-price-table":
@@ -341,6 +353,15 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   ) {
     return "commercial-price-table";
   }
+  if (normalized === "/supply-chain/purchases" || normalized.startsWith("/supply-chain/purchases/")) {
+    return "sc-purchases";
+  }
+  if (normalized === "/supply-chain/inventory" || normalized.startsWith("/supply-chain/inventory/")) {
+    return "sc-inventory";
+  }
+  if (normalized === "/supply-chain/receiving" || normalized.startsWith("/supply-chain/receiving/")) {
+    return "sc-receiving";
+  }
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
@@ -352,6 +373,10 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
 export function getFirstAllowedModulePath(check: PermissionChecker): string | null {
   for (const moduleId of SIDEBAR_MODULE_ORDER) {
     if (canAccessModule(moduleId, check)) {
+      if (moduleId === "sc-purchases") return "/supply-chain/purchases";
+      if (moduleId === "sc-inventory") return "/supply-chain/inventory";
+      if (moduleId === "sc-receiving") return "/supply-chain/receiving";
+      if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
       return `/${moduleId}`;
     }
   }
@@ -366,8 +391,11 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   machines: "Máquinas",
   materials: "Suprimentos",
   purchases: "Compras",
+  "sc-purchases": "Compras SC",
   maintenance: "Manutenção Predial",
   inventory: "Estoque / Almoxarifado",
+  "sc-inventory": "Estoque SC",
+  "sc-receiving": "Recebimentos",
   "operations-performance": "Performance",
   "production-orders": "Ordens de Produção",
   projects: "Projetos",

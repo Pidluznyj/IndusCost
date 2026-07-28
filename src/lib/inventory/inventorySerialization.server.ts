@@ -6,10 +6,12 @@ import type {
   InventoryCountLine,
   InventoryCountSession,
   InventoryItem,
+  InventoryLocation,
   InventoryMovement,
   InventoryWarehouse,
 } from "@prisma/client";
 import { hasCountDivergence } from "./inventoryCountMath.js";
+import { formatLocationAddress } from "./inventoryLocationRules.js";
 
 export function inventoryDec(value: unknown): number {
   if (value == null) return 0;
@@ -37,13 +39,24 @@ export function serializeInventoryItem(row: InventoryItem) {
     controlsExpiration: row.controlsExpiration,
     controlsLocation: row.controlsLocation,
     controlsQuality: row.controlsQuality,
+    controlsStock: row.controlsStock,
+    allowsReservation: row.allowsReservation,
+    allowsBlock: row.allowsBlock,
     minimumStock: inventoryDecOrNull(row.minimumStock),
+    safetyStock: inventoryDecOrNull(row.safetyStock),
     maximumStock: inventoryDecOrNull(row.maximumStock),
     reorderPoint: inventoryDecOrNull(row.reorderPoint),
     preferredSupplierName: row.preferredSupplierName,
     averageCost: inventoryDecOrNull(row.averageCost),
     lastKnownCost: inventoryDecOrNull(row.lastKnownCost),
     productId: row.productId,
+    materialId: row.materialId,
+    materialCodeSnapshot: row.materialCodeSnapshot,
+    materialDescriptionSnapshot: row.materialDescriptionSnapshot,
+    materialUnitSnapshot: row.materialUnitSnapshot,
+    materialCategorySnapshot: row.materialCategorySnapshot,
+    defaultWarehouseId: row.defaultWarehouseId,
+    defaultLocationId: row.defaultLocationId,
     nomusProductCode: row.nomusProductCode,
     nomusProductId: row.nomusProductId,
     notes: row.notes,
@@ -64,6 +77,34 @@ export function serializeInventoryWarehouse(row: InventoryWarehouse) {
     allowsMovements: row.allowsMovements,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    createdByUserId: row.createdByUserId ?? null,
+    updatedByUserId: row.updatedByUserId ?? null,
+  };
+}
+
+export function serializeInventoryLocation(row: InventoryLocation) {
+  return {
+    id: row.id,
+    warehouseId: row.warehouseId,
+    code: row.code,
+    name: row.name,
+    status: row.status,
+    locationType: row.locationType,
+    isDefault: row.isDefault,
+    parentLocationId: row.parentLocationId,
+    aisle: row.aisle,
+    shelf: row.shelf,
+    position: row.position,
+    addressLabel: formatLocationAddress({
+      aisle: row.aisle,
+      shelf: row.shelf,
+      position: row.position,
+    }),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    createdByUserId: row.createdByUserId,
+    updatedByUserId: row.updatedByUserId,
   };
 }
 
@@ -104,6 +145,7 @@ export function serializeInventoryMovement(row: InventoryMovement) {
     originType: row.originType,
     originId: row.originId,
     documentNumber: row.documentNumber,
+    evidenceRef: row.evidenceRef,
     costCenterId: row.costCenterId,
     financialCostCenterId: row.financialCostCenterId,
     reservationId: row.reservationId,
@@ -112,6 +154,8 @@ export function serializeInventoryMovement(row: InventoryMovement) {
     nextPhysicalBalance: inventoryDec(row.nextPhysicalBalance),
     previousAvailableBalance: inventoryDec(row.previousAvailableBalance),
     nextAvailableBalance: inventoryDec(row.nextAvailableBalance),
+    unitCost: inventoryDecOrNull(row.unitCost),
+    idempotencyKey: row.idempotencyKey,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -170,11 +214,13 @@ export type InventoryBalanceWithItem = InventoryBalance & {
     | "status"
     | "minimumStock"
     | "reorderPoint"
+    | "safetyStock"
     | "unit"
     | "family"
     | "group"
   >;
   warehouse: Pick<InventoryWarehouse, "code" | "name" | "status">;
+  location?: Pick<InventoryLocation, "code" | "name" | "status"> | null;
 };
 
 export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWithItem) {
@@ -187,6 +233,7 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       status: row.item.status,
       minimumStock: inventoryDecOrNull(row.item.minimumStock),
       reorderPoint: inventoryDecOrNull(row.item.reorderPoint),
+      safetyStock: inventoryDecOrNull(row.item.safetyStock),
       unit: row.item.unit,
       family: row.item.family,
       group: row.item.group,
@@ -196,6 +243,13 @@ export function serializeInventoryBalanceWithRelations(row: InventoryBalanceWith
       name: row.warehouse.name,
       status: row.warehouse.status,
     },
+    location: row.location
+      ? {
+          code: row.location.code,
+          name: row.location.name,
+          status: row.location.status,
+        }
+      : null,
   };
 }
 
@@ -266,5 +320,101 @@ export function serializeInventoryCountSessionListRow(
     warehouseName: row.warehouse?.name ?? null,
     divergenceCount,
     impactedQuantity,
+  };
+}
+
+type ReservationRow = {
+  id: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: unknown;
+  reservationType: string;
+  status: string;
+  reason: string;
+  originType: string;
+  originId: string | null;
+  responsibleUserId: string | null;
+  expiresAt: Date | null;
+  createdByUserId: string | null;
+  canceledByUserId: string | null;
+  createdAt: Date;
+  canceledAt: Date | null;
+  notes: string | null;
+  item?: { code: string; description: string; unit: string } | null;
+  warehouse?: { code: string; name: string } | null;
+};
+
+export function serializeInventoryReservation(row: ReservationRow) {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    warehouseId: row.warehouseId,
+    locationId: row.locationId,
+    quantity: inventoryDec(row.quantity),
+    reservationType: row.reservationType,
+    status: row.status,
+    reason: row.reason,
+    originType: row.originType,
+    originId: row.originId,
+    responsibleUserId: row.responsibleUserId,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    createdByUserId: row.createdByUserId,
+    canceledByUserId: row.canceledByUserId,
+    createdAt: row.createdAt.toISOString(),
+    canceledAt: row.canceledAt?.toISOString() ?? null,
+    notes: row.notes,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    itemUnit: row.item?.unit ?? null,
+    warehouseCode: row.warehouse?.code ?? null,
+    warehouseName: row.warehouse?.name ?? null,
+  };
+}
+
+type BlockRow = {
+  id: string;
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: unknown;
+  reasonType: string;
+  status: string;
+  reason: string;
+  originType: string;
+  originId: string | null;
+  responsibleUserId: string | null;
+  createdByUserId: string | null;
+  releasedByUserId: string | null;
+  createdAt: Date;
+  releasedAt: Date | null;
+  notes: string | null;
+  item?: { code: string; description: string; unit: string } | null;
+  warehouse?: { code: string; name: string } | null;
+};
+
+export function serializeInventoryBlock(row: BlockRow) {
+  return {
+    id: row.id,
+    itemId: row.itemId,
+    warehouseId: row.warehouseId,
+    locationId: row.locationId,
+    quantity: inventoryDec(row.quantity),
+    reasonType: row.reasonType,
+    status: row.status,
+    reason: row.reason,
+    originType: row.originType,
+    originId: row.originId,
+    responsibleUserId: row.responsibleUserId,
+    createdByUserId: row.createdByUserId,
+    releasedByUserId: row.releasedByUserId,
+    createdAt: row.createdAt.toISOString(),
+    releasedAt: row.releasedAt?.toISOString() ?? null,
+    notes: row.notes,
+    itemCode: row.item?.code ?? null,
+    itemDescription: row.item?.description ?? null,
+    itemUnit: row.item?.unit ?? null,
+    warehouseCode: row.warehouse?.code ?? null,
+    warehouseName: row.warehouse?.name ?? null,
   };
 }

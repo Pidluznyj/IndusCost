@@ -461,6 +461,15 @@ function createCountMockPrisma(options?: {
     status: "ACTIVE" as const,
     itemType: "RAW_MATERIAL" as const,
     unit: "UN",
+    controlsStock: true,
+    allowsReservation: true,
+    allowsBlock: true,
+    materialId: null as string | null,
+    materialCodeSnapshot: null as string | null,
+    materialDescriptionSnapshot: null as string | null,
+    lastKnownCost: null as unknown,
+    averageCost: null as unknown,
+    controlsLocation: false,
   };
 
   const warehouse = (id: string) => ({
@@ -478,13 +487,20 @@ function createCountMockPrisma(options?: {
       findUnique: async ({
         where,
       }: {
-        where: { itemId_balanceKey: { itemId: string; balanceKey: string } };
-      }) =>
-        state.balances.find(
-          (b) =>
-            b.itemId === where.itemId_balanceKey.itemId &&
-            b.balanceKey === where.itemId_balanceKey.balanceKey
-        ) ?? null,
+        where: { itemId_balanceKey?: { itemId: string; balanceKey: string }; id?: string };
+      }) => {
+        if (where.id) return state.balances.find((b) => b.id === where.id) ?? null;
+        if (where.itemId_balanceKey) {
+          return (
+            state.balances.find(
+              (b) =>
+                b.itemId === where.itemId_balanceKey!.itemId &&
+                b.balanceKey === where.itemId_balanceKey!.balanceKey
+            ) ?? null
+          );
+        }
+        return null;
+      },
       findMany: async ({ where }: { where: { warehouseId?: string } }) =>
         state.balances.filter((b) => !where.warehouseId || b.warehouseId === where.warehouseId),
       create: async ({ data }: { data: MockBalance }) => {
@@ -499,6 +515,13 @@ function createCountMockPrisma(options?: {
       },
     },
     inventoryMovement: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+        state.movements.find((m) => {
+          if (where.originId && m.originId === where.originId) return true;
+          if (where.idempotencyKey && m.idempotencyKey === where.idempotencyKey) return true;
+          return false;
+        }) ?? null,
+      findMany: async () => [...state.movements],
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);

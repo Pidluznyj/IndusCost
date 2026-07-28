@@ -37,6 +37,7 @@ import {
   HelpCircle,
   Network,
   Table2,
+  PackageCheck,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -54,6 +55,13 @@ import type { NavigationGroupId, NavigationGroupedItem } from "@/src/lib/navigat
 import { buildResourceAwareSidebarNavigation } from "@/src/lib/resourceNavigationAccess";
 import { fetchSalesOrderFlowFeatureStatus } from "@/src/lib/salesOrderFlowClient";
 import { filterSalesOrderFlowMenuNavigation } from "@/src/lib/salesOrderFlowNavigation";
+import { filterSupplyChainMenuNavigation } from "@/src/lib/supply-chain/supplyChainNavigation";
+import { fetchSupplyChainFeatureStatus } from "@/src/lib/supply-chain/supplyChainClient";
+import {
+  canViewSupplyChainInventoryModule,
+  canViewSupplyChainPurchasesModule,
+  canViewSupplyChainReceivingModule,
+} from "@/src/lib/supply-chain/supplyChainAccess";
 import { canViewSalesOrderFlow } from "@/src/lib/salesOrderFlowUi";
 import {
   getSidebarGroupButtonId,
@@ -97,8 +105,11 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   machines: Cpu,
   materials: Truck,
   purchases: ShoppingCart,
+  "sc-purchases": ShoppingCart,
   maintenance: Wrench,
   inventory: Warehouse,
+  "sc-inventory": Warehouse,
+  "sc-receiving": PackageCheck,
   "operations-performance": Activity,
   "production-orders": Cog,
   projects: FolderKanban,
@@ -464,6 +475,11 @@ export const Sidebar = () => {
 
   const [salesOrderFlowFeatureEnabled, setSalesOrderFlowFeatureEnabled] =
     React.useState<boolean | null>(null);
+  const [supplyChainFeatures, setSupplyChainFeatures] = React.useState<{
+    purchases: boolean | null;
+    inventory: boolean | null;
+    receiving: boolean | null;
+  }>({ purchases: null, inventory: null, receiving: null });
 
   React.useEffect(() => {
     if (permissions.authLoading || !permissions.authUser) {
@@ -498,22 +514,64 @@ export const Sidebar = () => {
     auth.hasPermission,
   ]);
 
-  const navigation = React.useMemo(
-    () =>
-      filterSalesOrderFlowMenuNavigation(baseNavigation, {
-        featureEnabled: salesOrderFlowFeatureEnabled,
-        hasFlowViewAccess: canViewSalesOrderFlow({
-          canPerformAction: permissions.canPerformAction,
+  React.useEffect(() => {
+    if (permissions.authLoading || !permissions.authUser) {
+      setSupplyChainFeatures({ purchases: null, inventory: null, receiving: null });
+      return;
+    }
+    const controller = new AbortController();
+    void fetchSupplyChainFeatureStatus(controller.signal)
+      .then((status) => {
+        if (!controller.signal.aborted) {
+          setSupplyChainFeatures({
+            purchases: status.enabled.purchases,
+            inventory: status.enabled.inventory,
+            receiving: status.enabled.receiving,
+          });
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setSupplyChainFeatures({
+            purchases: false,
+            inventory: false,
+            receiving: false,
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [permissions.authLoading, permissions.authUser]);
+
+  const navigation = React.useMemo(() => {
+    const withSalesOrderFlow = filterSalesOrderFlowMenuNavigation(baseNavigation, {
+      featureEnabled: salesOrderFlowFeatureEnabled,
+      hasFlowViewAccess: canViewSalesOrderFlow({
+        canPerformAction: permissions.canPerformAction,
+        hasPermission: auth.hasPermission,
+      }),
+    });
+    return filterSupplyChainMenuNavigation(
+      withSalesOrderFlow,
+      supplyChainFeatures,
+      {
+        purchases: canViewSupplyChainPurchasesModule({
           hasPermission: auth.hasPermission,
         }),
-      }),
-    [
-      baseNavigation,
-      salesOrderFlowFeatureEnabled,
-      permissions.canPerformAction,
-      auth.hasPermission,
-    ]
-  );
+        inventory: canViewSupplyChainInventoryModule({
+          hasPermission: auth.hasPermission,
+        }),
+        receiving: canViewSupplyChainReceivingModule({
+          hasPermission: auth.hasPermission,
+        }),
+      }
+    );
+  }, [
+    baseNavigation,
+    salesOrderFlowFeatureEnabled,
+    supplyChainFeatures,
+    permissions.canPerformAction,
+    auth.hasPermission,
+  ]);
 
   const [expandedGroups, setExpandedGroups] = React.useState<Set<NavigationGroupId>>(() =>
     resolveInitialExpandedGroups(location.pathname, navigation, readStoredExpandedGroups())

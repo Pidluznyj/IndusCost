@@ -30,6 +30,13 @@ import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagemen
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
 import { PurchaseModule } from "./components/PurchaseModule";
+import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
+import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
+import { PurchaseOrderModule } from "./components/PurchaseOrderModule";
+import { PurchaseSavingsComparisonModule } from "./components/PurchaseSavingsComparisonModule";
+import { PurchaseWorkstationModule } from "./components/PurchaseWorkstationModule";
+import { PurchaseReceivingStationModule } from "./components/PurchaseReceivingStationModule";
+import { ShadowPurchasePlanningModule } from "./components/ShadowPurchasePlanningModule";
 import { MaintenanceModule } from "./components/MaintenanceModule";
 import { ProjectsModule } from "./components/ProjectsModule";
 import { ProjectExecutiveReportPage } from "./components/projects/ProjectExecutiveReportPage";
@@ -37,6 +44,7 @@ import { ProjectClientReportPage } from "./components/projects/ProjectClientRepo
 import { ProjectIntakeFormPage } from "./components/projects/ProjectIntakeFormPage";
 import { FleetModule } from "./components/FleetModule";
 import { InventoryModule } from "./components/InventoryModule";
+import { SupplyChainModuleShell } from "./components/supply-chain/SupplyChainModuleShell";
 import { OperationsPerformanceModule } from "./components/operations/OperationsPerformanceModule";
 import { ProductionOrdersModule } from "./components/operations/ProductionOrdersModule";
 import { FleetMobileUsageFlow } from "./components/fleet/FleetMobileUsageFlow";
@@ -470,7 +478,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Compras — Indicadores"
-              description="Panorama das solicitações já registradas no módulo de compras."
+              description="Indicadores executivos SC (valores, ganhos, estoque, atrasos) com bases declaradas — sem alterar relatórios oficiais. Panorama legado de solicitações permanece abaixo."
             >
               <PurchaseIndicatorsDashboard />
             </ModulePageShell>
@@ -485,6 +493,116 @@ export default function App() {
               headerActions={<ModuleIndicatorsButton to="/purchases/indicators" />}
             >
               <PurchaseModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations"
+          element={
+            <ModulePageShell
+              title="Cotações"
+              description="Coleta de propostas por fornecedor oficial. Sem adjudicação nem pedido nesta fase."
+            >
+              <PurchaseQuotationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations/:quotationId"
+          element={
+            <ModulePageShell
+              title="Cotação"
+              description="Entrada de propostas iniciais por fornecedor. A primeira oferta fica congelada após o registro."
+            >
+              <PurchaseQuotationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/quotations/:quotationId/compare"
+          element={
+            <ModulePageShell
+              title="Comparação de cotações"
+              description="Compare fornecedores na mesma base. A escolha do vencedor é humana e justificada — não automática pelo menor preço."
+            >
+              <PurchaseQuotationComparisonModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/workstation"
+          element={
+            <ModulePageShell
+              title="Estação de Compras"
+              description="Visão operacional integrada: solicitações, cotações, negociações, evidências, aprovações e pedidos."
+            >
+              <PurchaseWorkstationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/receiving"
+          element={
+            <ModulePageShell
+              title="Estação de Recebimento"
+              description="Conferência e recebimento físico. Pedido confirmado não é estoque — só o recebimento confirmado altera o saldo."
+            >
+              <PurchaseReceivingStationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/receiving/:orderId"
+          element={
+            <ModulePageShell
+              title="Recebimento do pedido"
+              description="Itens, lotes, documentos, evidências e movimentos PURCHASE_RECEIPT do ledger SC."
+            >
+              <PurchaseReceivingStationModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/shadow-planning"
+          element={
+            <ModulePageShell
+              title="Planejamento de compra (sombra)"
+              description="Sugestão read-only: demanda + segurança − disponível − compras confirmadas no prazo. Não altera BOM/OP/custo; rascunho de SC só com ação humana."
+            >
+              <ShadowPurchasePlanningModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders"
+          element={
+            <ModulePageShell
+              title="Pedidos de compra"
+              description="Pedidos formais a partir da cotação adjudicada. Aprovação cria compromisso operacional sem estoque nem Contas a Pagar."
+            >
+              <PurchaseOrderModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders/:orderId/savings"
+          element={
+            <ModulePageShell
+              title="Ganho negociado × realizado"
+              description="Compara preço inicial, negociado, pedido e custo efetivo recebido — sem alterar o mérito histórico da negociação."
+            >
+              <PurchaseSavingsComparisonModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="purchases/orders/:orderId"
+          element={
+            <ModulePageShell
+              title="Pedido de compra"
+              description="Snapshots congelados da negociação. Sem recebimento de estoque nesta etapa."
+            >
+              <PurchaseOrderModule />
             </ModulePageShell>
           }
         />
@@ -577,6 +695,17 @@ export default function App() {
           }
         />
         <Route
+          path="inventory/implantation"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Implantação inicial de estoque auditável."
+            >
+              <InventoryModule initialTab="implantation" />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="inventory/counts"
           element={
             <ModulePageShell
@@ -584,6 +713,61 @@ export default function App() {
               description="Controle de itens, saldos, movimentações e conferências."
             >
               <InventoryModule initialTab="counts" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="inventory/reservations"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Reservas, bloqueios e cancelamentos autorizados."
+            >
+              <InventoryModule initialTab="reservations" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="inventory/audit"
+          element={
+            <ModulePageShell
+              title="Estoque / Almoxarifado"
+              description="Trilha de auditoria do módulo de estoque."
+            >
+              <InventoryModule initialTab="audit" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/purchases"
+          element={
+            <ModulePageShell
+              title="Compras SC"
+              description="Estação operacional da Cadeia de Suprimentos — compras (feature flag)."
+            >
+              <SupplyChainModuleShell moduleId="sc-purchases" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/inventory"
+          element={
+            <ModulePageShell
+              title="Estoque SC"
+              description="Casca controlada da Cadeia de Suprimentos — estoque."
+            >
+              <SupplyChainModuleShell moduleId="sc-inventory" />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="supply-chain/receiving"
+          element={
+            <ModulePageShell
+              title="Recebimentos SC"
+              description="Estação operacional de recebimento — feature flag SUPPLY_CHAIN_RECEIVING_MODULE_ENABLED."
+            >
+              <SupplyChainModuleShell moduleId="sc-receiving" />
             </ModulePageShell>
           }
         />

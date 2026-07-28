@@ -272,6 +272,13 @@ describe("inventoryRoutes — imutabilidade de movimentação", () => {
     assert.doesNotMatch(src, /inventoryMovement\.update/);
     assert.doesNotMatch(src, /inventoryMovement\.delete/);
     assert.doesNotMatch(src, /PUT\s*\/api\/inventory\/movements/);
+    assert.match(src, /movements\/:id\/reverse/);
+  });
+
+  it("GET /api/inventory/audit paginado", () => {
+    const src = read("src/lib/inventoryRoutes.ts");
+    assert.match(src, /\/api\/inventory\/audit/);
+    assert.match(src, /listInventoryAuditLogs/);
   });
 });
 

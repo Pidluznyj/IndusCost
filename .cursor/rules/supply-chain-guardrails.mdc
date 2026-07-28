@@ -1,0 +1,130 @@
+---
+description: Cadeado permanente da Cadeia de Suprimentos (Compras, Estoque, Almoxarifado, Recebimento). Fase 1 só leitura dos motores oficiais; proíbe mutação de módulos protegidos.
+alwaysApply: true
+---
+
+# Supply Chain Guardrails (OP-00)
+
+Regra permanente do projeto. Aplicar em **todo** trabalho de Compras, Estoque, Almoxarifado, Recebimento e Cadeia de Suprimentos. Em outros escopos, se arquivos/dados de módulos protegidos forem tocados, as proibições abaixo continuam válidas.
+
+Não duplica o protocolo genérico de git/segurança do usuário: reforça apenas o que é específico desta cadeia.
+
+## 1. Módulos protegidos (não mutar)
+
+Somente **leitura** dos motores oficiais nestes domínios:
+
+- matérias-primas
+- produtos e componentes
+- BOM
+- custos publicados
+- precificação
+- Inteligência de Mercado
+- pedidos de venda
+- comissões
+- financeiro oficial
+- Contas a Pagar
+- sincronizações Nomus
+- ordens de produção oficiais
+
+É **proibido** criar, atualizar ou excluir dados nesses módulos a partir da Cadeia de Suprimentos (fase 1 e enquanto esta regra vigorar sem autorização explícita posterior).
+
+## 2. Fase 1 — consumo somente por leitura
+
+A primeira fase da Cadeia de Suprimentos **só consome** os motores oficiais por leitura (APIs/libs/queries read-only). Sem writes, patches, deletes, syncs colaterais ou “correções” em tabelas/protegidos.
+
+## 3. Escopo dono da nova estrutura
+
+A Cadeia de Suprimentos é dona **somente** de:
+
+- almoxarifados e locais
+- itens logísticos vinculados aos cadastros oficiais
+- movimentações
+- saldos
+- reservas
+- solicitações de compra
+- cotações
+- rodadas de negociação
+- evidências
+- pedidos de compra
+- recebimentos
+- indicadores próprios
+
+## 4. Sem cadastros paralelos
+
+Não criar cadastro paralelo de matéria-prima, produto, fornecedor, centro de custo, BOM ou OP. Reutilizar **IDs oficiais**. Snapshots históricos só quando necessários para auditoria/imutabilidade do fato logístico — nunca como segunda fonte de verdade do cadastro.
+
+## 5. Sem atualização automática de oficiais
+
+Não atualizar automaticamente:
+
+- custo publicado
+- BOM
+- custo de produto
+- preço de venda
+- estoque oficial do Nomus
+- Contas a Pagar
+
+Qualquer ponte futura para esses motores exige escopo, auditoria e autorização explícitos.
+
+## 6. Migrações aditivas
+
+Todas as migrations Prisma/SQL devem ser **aditivas**. Não remover, renomear ou alterar semanticamente estruturas atuais sem auditoria e autorização posterior.
+
+## 7. Feature flags
+
+Novos módulos/rotas/UI da cadeia nascem atrás de feature flags **desligadas por padrão**, no padrão já usado no IndusCost (ex.: fluxo de pedidos / settings). Permissão ≠ feature flag.
+
+## 8. Checklist pré-implementação (obrigatório)
+
+Antes de codar qualquer escopo:
+
+1. Já existe algo reutilizável?
+2. Qual é a fonte oficial?
+3. Precisamos realmente de uma nova entidade?
+4. A mudança é aditiva?
+5. Existe risco sobre módulos protegidos?
+6. Quais testes comprovam a proteção?
+
+Se algum item for duvidoso, parar e diagnosticar antes de implementar.
+
+## 9. Fluxo obrigatório de cada prompt
+
+1. Analisar o estado atual
+2. Apresentar diagnóstico e arquivos previstos
+3. Escolher a implementação mais simples e reutilizável
+4. Implementar o escopo
+5. Executar testes específicos
+6. Executar typecheck e build pertinentes
+7. Corrigir todas as falhas causadas pelo escopo
+8. Validar que módulos protegidos não foram alterados (diff focado)
+9. Integrar a funcionalidade ao código atual
+10. Preservar alterações concorrentes não relacionadas
+11. **Não** usar `git add .` nem `git add -A`
+12. Adicionar somente arquivos do escopo
+13. Commit e push
+14. Apresentar hash, arquivos, testes, resultados e riscos residuais
+
+## 10. Sem produção
+
+O Cursor **não** tem acesso confiável a banco/servidor de produção. Pode criar migrations, scripts e testes locais. **Não** executar deploy, backfill ou alteração real em produção.
+
+## 11. Git destrutivo — proibido
+
+Não usar force push, reset destrutivo, checkout destrutivo ou remoção de alterações de terceiros.
+
+## 12. “Merge da funcionalidade”
+
+Significa **integração completa ao código atual** (imports, rotas, flags, testes). Só faça merge Git se o trabalho já estiver em branch separada. **Não** criar merge commit artificial em `main`.
+
+## Exemplos rápidos
+
+```text
+❌ BAD: PATCH em Material / Product / BOM / SalesOrder / AP a partir de Recebimento
+✅ GOOD: Recebimento grava movimento/saldo próprios e referencia productId oficial (FK/read)
+
+❌ BAD: Migration que renomeia coluna de SalesOrderItem ou dropa tabela Nomus
+✅ GOOD: Migration que só ADD tabelas/colunas da cadeia (almoxarifado, saldo, SC, PC…)
+
+❌ BAD: UI de Compras ligada sem flag
+✅ GOOD: Rota/menu atrás de flag default false + permissão canônica
+```

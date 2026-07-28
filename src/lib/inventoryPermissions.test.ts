@@ -237,14 +237,31 @@ function createMinimalMockPrisma() {
     reservations: [] as Array<Record<string, unknown>>,
   };
 
-  const item = { id: "item-1", status: "ACTIVE" as const, itemType: "RAW_MATERIAL" as const, unit: "UN" };
+  const item = {
+    id: "item-1",
+    status: "ACTIVE" as const,
+    itemType: "RAW_MATERIAL" as const,
+    unit: "UN",
+    controlsStock: true,
+    controlsLocation: false,
+    allowsReservation: true,
+    allowsBlock: true,
+    materialId: null as string | null,
+    materialCodeSnapshot: null as string | null,
+    materialDescriptionSnapshot: null as string | null,
+    lastKnownCost: null as unknown,
+    averageCost: null as unknown,
+  };
   const warehouse = { id: "wh-1", status: "ACTIVE" as const, allowsMovements: true };
 
   const tx = {
     inventoryItem: { findUnique: async () => item },
     inventoryWarehouse: { findUnique: async () => warehouse },
     inventoryBalance: {
-      findUnique: async () => null,
+      findUnique: async ({ where }: { where: { id?: string } }) => {
+        if (where.id) return state.balances.find((b) => b.id === where.id) ?? null;
+        return null;
+      },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: "bal-1", ...data };
         state.balances.push(row);
@@ -257,6 +274,7 @@ function createMinimalMockPrisma() {
       },
     },
     inventoryMovement: {
+      findFirst: async () => null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         const row = { id: `mov-${state.movements.length + 1}`, ...data };
         state.movements.push(row);

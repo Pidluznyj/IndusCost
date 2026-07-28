@@ -72,7 +72,7 @@ export function useInventoryPermissions() {
     const canCreateMovementType = (type: InventoryMovementType) => {
       if (!hasDto) return canCreateInventoryMovementType(perms, type);
       if (type === "TRANSFER") return canCreateTransfer;
-      if (type === "POSITIVE_ADJUSTMENT" || type === "NEGATIVE_ADJUSTMENT") {
+      if (type === "POSITIVE_ADJUSTMENT" || type === "NEGATIVE_ADJUSTMENT" || type === "INITIAL_BALANCE") {
         return canCreateAdjustment;
       }
       if (type === "BLOCK" || type === "UNBLOCK") return canBlock;

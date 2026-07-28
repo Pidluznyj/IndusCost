@@ -22,6 +22,7 @@ export type InventoryItemType = (typeof INVENTORY_ITEM_TYPES)[number];
 export const INVENTORY_MOVEMENT_TYPES = [
   "MANUAL_ENTRY",
   "PURCHASE_ENTRY",
+  "PURCHASE_RECEIPT",
   "PRODUCTION_ENTRY",
   "MANUAL_EXIT",
   "REQUISITION_EXIT",
@@ -37,6 +38,9 @@ export const INVENTORY_MOVEMENT_TYPES = [
   "SCRAP",
   "RETURN",
   "REVERSAL",
+  "INITIAL_BALANCE",
+  "QUARANTINE_IN",
+  "QUARANTINE_OUT",
 ] as const;
 
 export type InventoryMovementType = (typeof INVENTORY_MOVEMENT_TYPES)[number];
@@ -150,7 +154,6 @@ export function snapshotFromBalance(input: Partial<InventoryBalanceSnapshot>): I
       reservedQuantity,
       blockedQuantity,
       quarantineQuantity,
-      availableQuantity: 0,
     }),
   });
 }

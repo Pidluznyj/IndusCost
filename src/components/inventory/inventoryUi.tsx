@@ -22,6 +22,8 @@ export const INVENTORY_MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, strin
 
   PURCHASE_ENTRY: "Entrada compra",
 
+  PURCHASE_RECEIPT: "Recebimento compra",
+
   PRODUCTION_ENTRY: "Entrada produção",
 
   MANUAL_EXIT: "Saída manual",
@@ -51,6 +53,12 @@ export const INVENTORY_MOVEMENT_TYPE_LABELS: Record<InventoryMovementType, strin
   RETURN: "Devolução",
 
   REVERSAL: "Estorno",
+
+  INITIAL_BALANCE: "Saldo inicial",
+
+  QUARANTINE_IN: "Entrada quarentena",
+
+  QUARANTINE_OUT: "Saída quarentena",
 
 };
 
@@ -392,6 +400,8 @@ export function InventoryCollapsibleFilters({
 
   onClear,
 
+  testId = "inventory-collapsible-filters",
+
 }: {
 
   title?: string;
@@ -404,6 +414,8 @@ export function InventoryCollapsibleFilters({
 
   onClear?: () => void;
 
+  testId?: string;
+
 }) {
 
   const [open, setOpen] = useState(defaultOpen);
@@ -414,7 +426,7 @@ export function InventoryCollapsibleFilters({
 
       className="rounded-xl border border-slate-200 bg-white shadow-sm"
 
-      data-testid="inventory-collapsible-filters"
+      data-testid={testId}
 
     >
 

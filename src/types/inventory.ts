@@ -22,9 +22,12 @@ export type InventoryWarehouseStatus = "ACTIVE" | "INACTIVE";
 
 export type InventoryLocationStatus = "ACTIVE" | "INACTIVE";
 
+export type InventoryLocationType = "PHYSICAL" | "QUARANTINE" | "PRODUCTION";
+
 export type InventoryMovementType =
   | "MANUAL_ENTRY"
   | "PURCHASE_ENTRY"
+  | "PURCHASE_RECEIPT"
   | "PRODUCTION_ENTRY"
   | "MANUAL_EXIT"
   | "REQUISITION_EXIT"
@@ -39,7 +42,10 @@ export type InventoryMovementType =
   | "LOSS"
   | "SCRAP"
   | "RETURN"
-  | "REVERSAL";
+  | "REVERSAL"
+  | "INITIAL_BALANCE"
+  | "QUARANTINE_IN"
+  | "QUARANTINE_OUT";
 
 export type InventoryMovementOriginType =
   | "MANUAL"
@@ -60,6 +66,22 @@ export type InventoryReservationType =
   | "MANUAL";
 
 export type InventoryReservationStatus = "ACTIVE" | "CANCELED" | "CONSUMED";
+
+export type InventoryBlockStatus = "ACTIVE" | "RELEASED";
+
+export type InventoryBlockReasonType =
+  | "QUALITY"
+  | "QUARANTINE"
+  | "DAMAGE"
+  | "AUDIT"
+  | "MANUAL"
+  | "OTHER";
+
+export type InventoryStockSnapshotSource =
+  | "MANUAL"
+  | "RECALCULATION"
+  | "SYSTEM"
+  | "COUNT_SESSION";
 
 export type InventoryCountSessionStatus =
   | "OPEN"
@@ -82,13 +104,24 @@ export type InventoryItemRow = {
   controlsExpiration: boolean;
   controlsLocation: boolean;
   controlsQuality: boolean;
+  controlsStock?: boolean;
+  allowsReservation?: boolean;
+  allowsBlock?: boolean;
   minimumStock: number | null;
+  safetyStock?: number | null;
   maximumStock: number | null;
   reorderPoint: number | null;
   preferredSupplierName: string | null;
   averageCost: number | null;
   lastKnownCost: number | null;
   productId: string | null;
+  materialId?: string | null;
+  materialCodeSnapshot?: string | null;
+  materialDescriptionSnapshot?: string | null;
+  materialUnitSnapshot?: string | null;
+  materialCategorySnapshot?: string | null;
+  defaultWarehouseId?: string | null;
+  defaultLocationId?: string | null;
   nomusProductCode: string | null;
   nomusProductId: string | null;
   notes: string | null;
@@ -107,6 +140,28 @@ export type InventoryWarehouseRow = {
   allowsMovements: boolean;
   createdAt: string;
   updatedAt: string;
+  createdByUserId?: string | null;
+  updatedByUserId?: string | null;
+};
+
+export type InventoryLocationRow = {
+  id: string;
+  warehouseId: string;
+  code: string;
+  name: string;
+  status: InventoryLocationStatus;
+  locationType: InventoryLocationType;
+  isDefault: boolean;
+  parentLocationId: string | null;
+  aisle: string | null;
+  shelf: string | null;
+  position: string | null;
+  addressLabel: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByUserId: string | null;
+  updatedByUserId: string | null;
 };
 
 export type InventoryBalanceRow = {

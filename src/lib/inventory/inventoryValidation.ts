@@ -28,6 +28,9 @@ const REASON_REQUIRED_MOVEMENT_TYPES = new Set<InventoryMovementType>([
   "SCRAP",
   "RETURN",
   "TRANSFER",
+  "INITIAL_BALANCE",
+  "QUARANTINE_IN",
+  "QUARANTINE_OUT",
 ]);
 
 function requireNonEmpty(value: unknown, field: string): string {
@@ -227,6 +230,13 @@ export type CreateInventoryMovementBody = {
   financialCostCenterId: string | null;
   documentNumber: string | null;
   movementDate: Date | null;
+  originType: string | null;
+  originId: string | null;
+  idempotencyKey: string | null;
+  unitCost: number | null;
+  lotNumber: string | null;
+  evidenceRef: string | null;
+  responsibleUserId: string | null;
 };
 
 export function parseCreateInventoryMovementBody(body: unknown): CreateInventoryMovementBody {
@@ -239,6 +249,18 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     throw new InventoryValidationError(
       "Motivo é obrigatório para esta movimentação.",
       "REASON_REQUIRED"
+    );
+  }
+  if (movementType === "REVERSAL") {
+    throw new InventoryValidationError(
+      "Estorno deve usar POST /api/inventory/movements/:id/reverse.",
+      "REVERSAL_USE_DEDICATED_API"
+    );
+  }
+  if (movementType === "INITIAL_BALANCE") {
+    throw new InventoryValidationError(
+      "Implantação inicial deve usar POST /api/inventory/initial-balances.",
+      "INITIAL_BALANCE_USE_DEDICATED_API"
     );
   }
 
@@ -266,7 +288,73 @@ export function parseCreateInventoryMovementBody(body: unknown): CreateInventory
     financialCostCenterId: safeTrim(data.financialCostCenterId) || null,
     documentNumber: safeTrim(data.documentNumber) || null,
     movementDate,
+    originType: safeTrim(data.originType) || null,
+    originId: safeTrim(data.originId) || null,
+    idempotencyKey: safeTrim(data.idempotencyKey) || null,
+    unitCost: parseNonNegative(data.unitCost, "unitCost"),
+    lotNumber: safeTrim(data.lotNumber) || null,
+    evidenceRef: safeTrim(data.evidenceRef) || null,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
   };
+}
+
+export type CreateInitialBalanceBody = {
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: number;
+  countDate: Date;
+  responsibleUserId: string | null;
+  justification: string;
+  evidenceRef: string | null;
+  documentNumber: string | null;
+  notes: string | null;
+  unitCost: number | null;
+  requireEvidence: boolean;
+};
+
+export function parseCreateInitialBalanceBody(body: unknown): CreateInitialBalanceBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const justification = requireNonEmpty(
+    data.justification ?? data.reason ?? data.motivo,
+    "justification"
+  );
+
+  let countDate: Date;
+  const rawDate = data.countDate ?? data.movementDate ?? data.dataContagem;
+  if (rawDate == null || !safeTrim(rawDate)) {
+    throw new InventoryValidationError("Data da contagem é obrigatória.", "INVALID_DATE");
+  }
+  countDate = new Date(String(rawDate));
+  if (Number.isNaN(countDate.getTime())) {
+    throw new InventoryValidationError("Data da contagem inválida.", "INVALID_DATE");
+  }
+
+  return {
+    itemId: requireNonEmpty(data.itemId, "itemId"),
+    warehouseId: requireNonEmpty(
+      data.warehouseId ?? data.destinationWarehouseId,
+      "warehouseId"
+    ),
+    locationId: safeTrim(data.locationId ?? data.destinationLocationId) || null,
+    quantity: parseQuantity(data.quantity ?? data.countedQuantity),
+    countDate,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+    justification,
+    evidenceRef: safeTrim(data.evidenceRef) || null,
+    documentNumber: safeTrim(data.documentNumber) || null,
+    notes: safeTrim(data.notes) || null,
+    unitCost: parseNonNegative(data.unitCost, "unitCost"),
+    requireEvidence:
+      data.requireEvidence === true ||
+      data.requireEvidence === "true" ||
+      data.requireEvidence === 1,
+  };
+}
+
+export function parseReverseMovementBody(body: unknown): string {
+  const data = (body ?? {}) as Record<string, unknown>;
+  return requireNonEmpty(data.reason ?? data.motivo, "reason");
 }
 
 export type CreateInventoryReservationBody = {
@@ -277,11 +365,38 @@ export type CreateInventoryReservationBody = {
   reason: string;
   notes: string | null;
   reservationType: string;
+  originType: string | null;
+  originId: string | null;
+  responsibleUserId: string | null;
+  expiresAt: Date | null;
+  allowOverReservation: boolean;
 };
+
+const RESERVATION_TYPES = new Set([
+  "SALES_ORDER",
+  "PRODUCTION_ORDER",
+  "INTERNAL_REQUISITION",
+  "MAINTENANCE",
+  "QUALITY",
+  "MANUAL",
+]);
 
 export function parseCreateInventoryReservationBody(body: unknown): CreateInventoryReservationBody {
   const data = (body ?? {}) as Record<string, unknown>;
   const reason = requireNonEmpty(data.reason, "reason");
+  const reservationType = safeTrim(data.reservationType) || "MANUAL";
+  if (!RESERVATION_TYPES.has(reservationType)) {
+    throw new InventoryValidationError("Tipo de reserva inválido.", "INVALID_RESERVATION_TYPE");
+  }
+
+  let expiresAt: Date | null = null;
+  if (data.expiresAt != null && safeTrim(data.expiresAt)) {
+    expiresAt = new Date(String(data.expiresAt));
+    if (Number.isNaN(expiresAt.getTime())) {
+      throw new InventoryValidationError("Data de validade inválida.", "INVALID_DATE");
+    }
+  }
+
   return {
     itemId: requireNonEmpty(data.itemId, "itemId"),
     warehouseId: requireNonEmpty(data.warehouseId, "warehouseId"),
@@ -289,11 +404,274 @@ export function parseCreateInventoryReservationBody(body: unknown): CreateInvent
     quantity: parseQuantity(data.quantity),
     reason,
     notes: safeTrim(data.notes) || null,
-    reservationType: safeTrim(data.reservationType) || "MANUAL",
+    reservationType,
+    originType: safeTrim(data.originType) || null,
+    originId: safeTrim(data.originId) || null,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+    expiresAt,
+    allowOverReservation:
+      data.allowOverReservation === true ||
+      data.allowOverReservation === "true" ||
+      data.allowOverReservation === 1,
   };
 }
 
 export function parseCancelReservationBody(body: unknown): string {
   const data = (body ?? {}) as Record<string, unknown>;
   return requireNonEmpty(data.reason ?? data.motivo, "reason");
+}
+
+const BLOCK_REASON_TYPES = new Set([
+  "QUALITY",
+  "QUARANTINE",
+  "DAMAGE",
+  "AUDIT",
+  "MANUAL",
+  "OTHER",
+]);
+
+export type CreateInventoryBlockBody = {
+  itemId: string;
+  warehouseId: string;
+  locationId: string | null;
+  quantity: number;
+  reason: string;
+  reasonType: string;
+  notes: string | null;
+  originType: string | null;
+  originId: string | null;
+  responsibleUserId: string | null;
+};
+
+export function parseCreateInventoryBlockBody(body: unknown): CreateInventoryBlockBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const reason = requireNonEmpty(data.reason ?? data.motivo, "reason");
+  const reasonType = safeTrim(data.reasonType) || "MANUAL";
+  if (!BLOCK_REASON_TYPES.has(reasonType)) {
+    throw new InventoryValidationError("Tipo de motivo de bloqueio inválido.", "INVALID_BLOCK_REASON");
+  }
+  return {
+    itemId: requireNonEmpty(data.itemId, "itemId"),
+    warehouseId: requireNonEmpty(data.warehouseId, "warehouseId"),
+    locationId: safeTrim(data.locationId) || null,
+    quantity: parseQuantity(data.quantity),
+    reason,
+    reasonType,
+    notes: safeTrim(data.notes) || null,
+    originType: safeTrim(data.originType) || null,
+    originId: safeTrim(data.originId) || null,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+  };
+}
+
+export function parseReleaseBlockBody(body: unknown): string {
+  const data = (body ?? {}) as Record<string, unknown>;
+  return requireNonEmpty(data.reason ?? data.motivo, "reason");
+}
+
+export type QuarantineTransferBody = {
+  itemId: string;
+  quantity: number;
+  reason: string;
+  sourceWarehouseId: string;
+  sourceLocationId: string | null;
+  destinationWarehouseId: string;
+  destinationLocationId: string;
+  toQuarantine: boolean;
+  notes: string | null;
+  responsibleUserId: string | null;
+};
+
+export function parseQuarantineTransferBody(body: unknown): QuarantineTransferBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const toQuarantine =
+    data.toQuarantine === undefined
+      ? true
+      : data.toQuarantine === true || data.toQuarantine === "true" || data.toQuarantine === 1;
+  return {
+    itemId: requireNonEmpty(data.itemId, "itemId"),
+    quantity: parseQuantity(data.quantity),
+    reason: requireNonEmpty(data.reason, "reason"),
+    sourceWarehouseId: requireNonEmpty(data.sourceWarehouseId, "sourceWarehouseId"),
+    sourceLocationId: safeTrim(data.sourceLocationId) || null,
+    destinationWarehouseId: requireNonEmpty(
+      data.destinationWarehouseId,
+      "destinationWarehouseId"
+    ),
+    destinationLocationId: requireNonEmpty(
+      data.destinationLocationId,
+      "destinationLocationId"
+    ),
+    toQuarantine,
+    notes: safeTrim(data.notes) || null,
+    responsibleUserId: safeTrim(data.responsibleUserId) || null,
+  };
+}
+
+function parseOptionalBoolean(value: unknown, defaultValue: boolean): boolean {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  return value === true || value === "true" || value === 1;
+}
+
+export type LinkOfficialMaterialBody = {
+  materialId: string;
+  defaultWarehouseId: string | null;
+  defaultLocationId: string | null;
+  controlsStock: boolean;
+  minimumStock: number | null;
+  safetyStock: number | null;
+  controlsLot: boolean;
+  allowsReservation: boolean;
+  allowsBlock: boolean;
+  status: "ACTIVE" | "INACTIVE";
+  notes: string | null;
+};
+
+export function parseLinkOfficialMaterialBody(body: unknown): LinkOfficialMaterialBody {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const statusRaw = safeTrim(data.status);
+  const status =
+    statusRaw && ITEM_STATUSES.has(statusRaw)
+      ? (statusRaw as "ACTIVE" | "INACTIVE")
+      : "ACTIVE";
+
+  return {
+    materialId: requireNonEmpty(data.materialId, "materialId"),
+    defaultWarehouseId: safeTrim(data.defaultWarehouseId) || null,
+    defaultLocationId: safeTrim(data.defaultLocationId) || null,
+    controlsStock: parseOptionalBoolean(data.controlsStock, true),
+    minimumStock: parseNonNegative(data.minimumStock, "minimumStock"),
+    safetyStock: parseNonNegative(data.safetyStock, "safetyStock"),
+    controlsLot: parseOptionalBoolean(data.controlsLot, false),
+    allowsReservation: parseOptionalBoolean(data.allowsReservation, true),
+    allowsBlock: parseOptionalBoolean(data.allowsBlock, true),
+    status,
+    notes: safeTrim(data.notes) || null,
+  };
+}
+
+export function parseUpdateMaterialStockLinkBody(
+  body: unknown
+): Partial<Omit<LinkOfficialMaterialBody, "materialId">> {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const out: Partial<Omit<LinkOfficialMaterialBody, "materialId">> = {};
+
+  if (data.defaultWarehouseId !== undefined) {
+    out.defaultWarehouseId = safeTrim(data.defaultWarehouseId) || null;
+  }
+  if (data.defaultLocationId !== undefined) {
+    out.defaultLocationId = safeTrim(data.defaultLocationId) || null;
+  }
+  if (data.controlsStock !== undefined) {
+    out.controlsStock = parseOptionalBoolean(data.controlsStock, true);
+  }
+  if (data.minimumStock !== undefined) {
+    out.minimumStock = parseNonNegative(data.minimumStock, "minimumStock");
+  }
+  if (data.safetyStock !== undefined) {
+    out.safetyStock = parseNonNegative(data.safetyStock, "safetyStock");
+  }
+  if (data.controlsLot !== undefined) {
+    out.controlsLot = parseOptionalBoolean(data.controlsLot, false);
+  }
+  if (data.allowsReservation !== undefined) {
+    out.allowsReservation = parseOptionalBoolean(data.allowsReservation, true);
+  }
+  if (data.allowsBlock !== undefined) {
+    out.allowsBlock = parseOptionalBoolean(data.allowsBlock, true);
+  }
+  if (data.status !== undefined) {
+    const s = requireNonEmpty(data.status, "status");
+    if (!ITEM_STATUSES.has(s)) throw new InventoryValidationError("Status inválido.", "INVALID_STATUS");
+    out.status = s as "ACTIVE" | "INACTIVE";
+  }
+  if (data.notes !== undefined) out.notes = safeTrim(data.notes) || null;
+
+  // Bloqueia tentativa de editar cadastro oficial via payload.
+  if (data.code !== undefined || data.description !== undefined || data.unit !== undefined) {
+    throw new InventoryValidationError(
+      "Código, descrição e unidade oficiais não podem ser editados no estoque.",
+      "OFFICIAL_MATERIAL_FIELDS_READONLY"
+    );
+  }
+
+  return out;
+}
+
+export type CreateInventoryLocationInput = {
+  code: string;
+  name: string;
+  status: "ACTIVE" | "INACTIVE";
+  locationType: "PHYSICAL" | "QUARANTINE" | "PRODUCTION";
+  isDefault: boolean;
+  parentLocationId: string | null;
+  aisle: string | null;
+  shelf: string | null;
+  position: string | null;
+  notes: string | null;
+};
+
+const LOCATION_STATUSES = new Set(["ACTIVE", "INACTIVE"]);
+const LOCATION_TYPES = new Set(["PHYSICAL", "QUARANTINE", "PRODUCTION"]);
+
+export function parseCreateInventoryLocationBody(body: unknown): CreateInventoryLocationInput {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const statusRaw = safeTrim(data.status);
+  const status =
+    statusRaw && LOCATION_STATUSES.has(statusRaw)
+      ? (statusRaw as "ACTIVE" | "INACTIVE")
+      : "ACTIVE";
+  const typeRaw = safeTrim(data.locationType) || "PHYSICAL";
+  if (!LOCATION_TYPES.has(typeRaw)) {
+    throw new InventoryValidationError("Tipo de local inválido.", "LOCATION_TYPE_INVALID");
+  }
+
+  return {
+    code: requireNonEmpty(data.code, "code"),
+    name: requireNonEmpty(data.name, "name"),
+    status,
+    locationType: typeRaw as CreateInventoryLocationInput["locationType"],
+    isDefault: data.isDefault === true || data.isDefault === "true",
+    parentLocationId: safeTrim(data.parentLocationId) || null,
+    aisle: safeTrim(data.aisle) || null,
+    shelf: safeTrim(data.shelf) || null,
+    position: safeTrim(data.position) || null,
+    notes: safeTrim(data.notes) || null,
+  };
+}
+
+export function parseUpdateInventoryLocationBody(
+  body: unknown
+): Partial<CreateInventoryLocationInput> {
+  const data = (body ?? {}) as Record<string, unknown>;
+  const out: Partial<CreateInventoryLocationInput> = {};
+
+  if (data.code !== undefined) out.code = requireNonEmpty(data.code, "code");
+  if (data.name !== undefined) out.name = requireNonEmpty(data.name, "name");
+  if (data.status !== undefined) {
+    const s = requireNonEmpty(data.status, "status");
+    if (!LOCATION_STATUSES.has(s)) {
+      throw new InventoryValidationError("Status inválido.", "INVALID_STATUS");
+    }
+    out.status = s as "ACTIVE" | "INACTIVE";
+  }
+  if (data.locationType !== undefined) {
+    const t = requireNonEmpty(data.locationType, "locationType");
+    if (!LOCATION_TYPES.has(t)) {
+      throw new InventoryValidationError("Tipo de local inválido.", "LOCATION_TYPE_INVALID");
+    }
+    out.locationType = t as CreateInventoryLocationInput["locationType"];
+  }
+  if (data.isDefault !== undefined) {
+    out.isDefault = data.isDefault === true || data.isDefault === "true";
+  }
+  if (data.parentLocationId !== undefined) {
+    out.parentLocationId = safeTrim(data.parentLocationId) || null;
+  }
+  if (data.aisle !== undefined) out.aisle = safeTrim(data.aisle) || null;
+  if (data.shelf !== undefined) out.shelf = safeTrim(data.shelf) || null;
+  if (data.position !== undefined) out.position = safeTrim(data.position) || null;
+  if (data.notes !== undefined) out.notes = safeTrim(data.notes) || null;
+
+  return out;
 }

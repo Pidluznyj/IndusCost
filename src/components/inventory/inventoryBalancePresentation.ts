@@ -15,10 +15,15 @@ export type InventoryBalanceListRow = InventoryBalanceRow & {
   group: string | null;
   minimumStock: number | null;
   reorderPoint: number | null;
+  safetyStock: number | null;
   warehouseCode: string;
   warehouseName: string;
   warehouseStatus: string;
+  locationCode: string | null;
+  locationName: string | null;
   operationalStatus: string;
+  belowMinimum: boolean;
+  belowSafety: boolean;
 };
 
 export type InventoryBalanceListSummary = {
@@ -74,7 +79,10 @@ export function normalizeInventoryBalanceListRow(raw: unknown): InventoryBalance
 
   const minimumStock = finiteOrNull(item.minimumStock);
   const reorderPoint = finiteOrNull(item.reorderPoint);
+  const safetyStock = finiteOrNull(item.safetyStock);
   const itemStatus = (safeString(item.status) || "ACTIVE") as "ACTIVE" | "INACTIVE";
+  const location =
+    row.location && typeof row.location === "object" ? (row.location as Record<string, unknown>) : {};
 
   const operationalStatus = calculateInventoryStatus(
     {
@@ -98,10 +106,15 @@ export function normalizeInventoryBalanceListRow(raw: unknown): InventoryBalance
     group: safeString(item.group) || null,
     minimumStock,
     reorderPoint,
+    safetyStock,
     warehouseCode: safeString(warehouse.code),
     warehouseName: safeString(warehouse.name),
     warehouseStatus: safeString(warehouse.status) || "ACTIVE",
+    locationCode: safeString(location.code) || null,
+    locationName: safeString(location.name) || null,
     operationalStatus,
+    belowMinimum: minimumStock != null && base.availableQuantity < minimumStock,
+    belowSafety: safetyStock != null && base.availableQuantity < safetyStock,
   };
 }
 

@@ -50,14 +50,25 @@ export const INVENTORY_EMPTY = {
   },
   noReservationsActive: {
     title: "Nenhuma reserva ativa",
-    description: "Reservas comprometem saldo para pedidos, produção ou uso interno. Em breve você poderá gerenciá-las aqui.",
+    description:
+      "Reservas comprometem saldo para pedidos, produção ou uso interno. Crie pela aba Movimentações ou cancele aqui quando autorizado.",
+  },
+  noBlocksActive: {
+    title: "Nenhum bloqueio ativo",
+    description: "Bloqueios retêm saldo físico indisponível. Liberação exige motivo e permissão.",
   },
   noAuditEntries: {
-    title: "Auditoria em desenvolvimento",
-    description: "Em breve você poderá consultar o histórico completo de alterações do módulo de estoque.",
+    title: "Sem eventos de auditoria",
+    description: "Alterações do módulo de estoque aparecerão aqui assim que forem registradas.",
   },
   noRecentMovements: {
     title: "Sem movimentações recentes",
     description: "As últimas entradas e saídas aparecerão aqui quando forem registradas.",
+  },
+  noImplantation: {
+    title: "Nenhuma implantação registrada",
+    description:
+      "Registre o saldo inicial auditável por item e almoxarifado. Correções usam estorno — nunca edição direta do saldo.",
+    actionLabel: "Nova implantação",
   },
 } as const;
