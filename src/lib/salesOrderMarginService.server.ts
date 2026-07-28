@@ -59,12 +59,24 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   nomusItemStatusRaw: true,
 } as const;
 
-/** Select mínimo para margem agregada da listagem (todos os pedidos filtrados). */
+/** Select para margem da página (poucas linhas) — pode incluir raw Nomus. */
 export const SALES_ORDER_LIST_MARGIN_PRISMA_SELECT = {
   id: true,
   proposalId: true,
   issueDate: true,
   nomusRawResponse: true,
+  items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
+} as const;
+
+/**
+ * Select da margem geral (toda a população filtrada).
+ * Sem `nomusRawResponse`: o card agregado usa flags persistidas nos itens.
+ * Carregar o JSON Nomus de milhares de pedidos saturava o pool e travava a grade.
+ */
+export const SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT = {
+  id: true,
+  proposalId: true,
+  issueDate: true,
   items: { select: SALES_ORDER_ITEM_MARGIN_SELECT },
 } as const;
 

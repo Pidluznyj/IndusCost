@@ -44,9 +44,15 @@ describe("salesOrderListMarginSummary", () => {
       /\/api\/sales-orders\/page-margins/
     );
     assert.match(loader, /buildOfficialSalesOrderListMarginSummary/);
-    assert.match(loader, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
+    assert.match(loader, /SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT/);
     assert.match(module, /getSalesOrderListMarginSummaryUrl/);
     assert.match(module, /getSalesOrderListPageMarginsUrl/);
+    // Summary não compete com a grade: só após o GET lista.
+    assert.match(module, /getSalesOrderListMarginSummaryUrl\(q\)/);
+    assert.doesNotMatch(
+      module,
+      /useEffect\(\(\) => \{\s*if \(!showMarginEconomics\)[\s\S]*getSalesOrderListMarginSummaryUrl/
+    );
     assert.match(adapter, /export async function buildOfficialSalesOrderListMarginSummary/);
     assert.match(adapter, /aggregateSalesOrderMarginSummaries/);
   });
@@ -86,11 +92,21 @@ describe("salesOrderListMarginSummary", () => {
 
   it("considera todos os pedidos filtrados — query no endpoint de margem, fora da listagem", () => {
     const loader = read("src/lib/salesOrderListMarginSummary.server.ts");
-    assert.match(loader, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
+    assert.match(loader, /SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT/);
     assert.match(loader, /resolveSalesOrderListWhere/);
     assert.doesNotMatch(
       read("src/components/SalesOrdersModule.tsx"),
       /rows\.map[\s\S]*marginSummary/
     );
+  });
+
+  it("select da margem geral não carrega nomusRawResponse em massa", () => {
+    const marginService = read("src/lib/salesOrderMarginService.server.ts");
+    assert.match(marginService, /SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT/);
+    const summarySelect = marginService.match(
+      /SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT\s*=\s*\{[\s\S]*?\}\s*as const/
+    )?.[0];
+    assert.ok(summarySelect);
+    assert.doesNotMatch(summarySelect!, /nomusRawResponse/);
   });
 });

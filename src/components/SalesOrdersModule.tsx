@@ -568,7 +568,8 @@ function SalesOrderList() {
           setMarginSummary(null);
         }
 
-        // Coluna Margem: depois da grade (não bloqueia loading).
+        // Margens só DEPOIS da grade — nunca em paralelo (summary puxava
+        // milhares de nomusRawResponse e saturava o pool da lista).
         if (showMarginEconomics && !signal?.aborted) {
           void fetchJsonOk<{
             margins: Array<{
@@ -598,6 +599,21 @@ function SalesOrderList() {
               if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
               console.error(e);
             });
+
+          void fetchJsonOk<{ marginSummary: SalesOrderListMarginSummary }>(
+            getSalesOrderListMarginSummaryUrl(q),
+            { signal }
+          )
+            .then((data) => {
+              if (!signal?.aborted) setMarginSummary(data.marginSummary ?? null);
+            })
+            .catch((e) => {
+              if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+              console.error(e);
+              setMarginSummary(null);
+            });
+        } else if (!showMarginEconomics) {
+          setMarginSummary(null);
         }
       } catch (e) {
         if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
@@ -614,28 +630,6 @@ function SalesOrderList() {
     },
     [buildListQueryString, showMarginEconomics]
   );
-
-  useEffect(() => {
-    if (!showMarginEconomics) {
-      setMarginSummary(null);
-      return;
-    }
-    const ac = new AbortController();
-    const q = buildListQueryString(currentPage);
-    void fetchJsonOk<{ marginSummary: SalesOrderListMarginSummary }>(
-      getSalesOrderListMarginSummaryUrl(q),
-      { signal: ac.signal }
-    )
-      .then((data) => {
-        if (!ac.signal.aborted) setMarginSummary(data.marginSummary ?? null);
-      })
-      .catch((e) => {
-        if (ac.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
-        console.error(e);
-        setMarginSummary(null);
-      });
-    return () => ac.abort();
-  }, [showMarginEconomics, buildListQueryString, listFiltersKey, currentPage]);
 
   useEffect(() => {
     const ac = new AbortController();

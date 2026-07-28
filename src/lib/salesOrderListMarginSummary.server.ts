@@ -9,7 +9,7 @@ import {
   resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
 import { buildOfficialSalesOrderListMarginSummary } from "./salesMarginRulesAdapter.js";
-import { SALES_ORDER_LIST_MARGIN_PRISMA_SELECT } from "./salesOrderMarginService.server.js";
+import { SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT } from "./salesOrderMarginService.server.js";
 import type { SalesOrderListMarginSummary } from "./salesOrderListMarginSummary.js";
 
 export async function loadSalesOrderListMarginSummary(
@@ -22,9 +22,10 @@ export async function loadSalesOrderListMarginSummary(
     sellerText: listQuery.sellerText,
   });
   const where = await resolveSalesOrderListWhere(db, listQuery, sellerWhere);
+  // População completa filtrada — select SUMMARY (sem JSON Nomus em massa).
   const marginOrders = await db.salesOrder.findMany({
     where,
-    select: SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
+    select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
   });
   return buildOfficialSalesOrderListMarginSummary(db, marginOrders);
 }
