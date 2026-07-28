@@ -19,7 +19,7 @@ export type TreasuryAccountActor = {
 
 export type TreasuryAccountAccessSnapshot = {
   userId: string;
-  accessLevel: "VIEW" | "OPERATE" | "MANAGE";
+  accessLevel: "VIEW" | "OPERATE" | "MANAGE" | (string & {});
   isActive: boolean;
   revokedAt?: Date | string | null;
   canViewBalance?: boolean;

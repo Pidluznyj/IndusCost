@@ -9,10 +9,14 @@ import type { RequestHandler } from "express";
 /** Flag mestra (documental + runtime). */
 export const TREASURY_MASTER_FLAG = "treasury.enabled" as const;
 
-/** Catálogo mínimo de flags (Prompt ACL). */
+/** Catálogo de flags de rollout por submódulo (+ auxiliares). */
 export const TREASURY_FEATURE_FLAG_IDS = [
   "treasury.enabled",
   "treasury.accounts.enabled",
+  "treasury.balances.enabled",
+  "treasury.dashboard.enabled",
+  "treasury.receivables.enabled",
+  "treasury.payables.enabled",
   "treasury.projection.enabled",
   "treasury.promises.enabled",
   "treasury.payablesProgramming.enabled",
@@ -21,6 +25,7 @@ export const TREASURY_FEATURE_FLAG_IDS = [
   "treasury.dailyClosing.enabled",
   "treasury.reconciliation.enabled",
   "treasury.ofxImport.enabled",
+  "treasury.reports.enabled",
 ] as const;
 
 export type TreasuryFeatureFlagId = (typeof TREASURY_FEATURE_FLAG_IDS)[number];
@@ -29,6 +34,10 @@ export type TreasuryFeatureFlagId = (typeof TREASURY_FEATURE_FLAG_IDS)[number];
 export const TREASURY_FEATURE_FLAG_ENV: Record<TreasuryFeatureFlagId, string> = {
   "treasury.enabled": "TREASURY_MODULE_ENABLED",
   "treasury.accounts.enabled": "TREASURY_ACCOUNTS_ENABLED",
+  "treasury.balances.enabled": "TREASURY_BALANCES_ENABLED",
+  "treasury.dashboard.enabled": "TREASURY_DASHBOARD_ENABLED",
+  "treasury.receivables.enabled": "TREASURY_RECEIVABLES_ENABLED",
+  "treasury.payables.enabled": "TREASURY_PAYABLES_ENABLED",
   "treasury.projection.enabled": "TREASURY_PROJECTION_ENABLED",
   "treasury.promises.enabled": "TREASURY_PROMISES_ENABLED",
   "treasury.payablesProgramming.enabled": "TREASURY_PAYABLES_PROGRAMMING_ENABLED",
@@ -37,6 +46,7 @@ export const TREASURY_FEATURE_FLAG_ENV: Record<TreasuryFeatureFlagId, string> = 
   "treasury.dailyClosing.enabled": "TREASURY_DAILY_CLOSING_ENABLED",
   "treasury.reconciliation.enabled": "TREASURY_RECONCILIATION_ENABLED",
   "treasury.ofxImport.enabled": "TREASURY_OFX_IMPORT_ENABLED",
+  "treasury.reports.enabled": "TREASURY_REPORTS_ENABLED",
 };
 
 /** @deprecated use TREASURY_MASTER_FLAG / TREASURY_FEATURE_FLAG_ENV */
@@ -80,11 +90,25 @@ export function isTreasuryModuleEnabled(
 export function listEnabledTreasuryFeatureFlags(
   env: Record<string, string | undefined> = process.env
 ): TreasuryFeatureFlagId[] {
-  return TREASURY_FEATURE_FLAG_IDS.filter((id) => isTreasuryFeatureFlagEnabled(id, env));
+  return TREASURY_FEATURE_FLAG_IDS.filter((id) =>
+    isTreasuryFeatureFlagEnabled(id, env)
+  );
+}
+
+/** Snapshot completo (todas as flags conhecidas → boolean). Fail-closed. */
+export function getTreasuryFeatureFlagsMap(
+  env: Record<string, string | undefined> = process.env
+): Record<TreasuryFeatureFlagId, boolean> {
+  const out = {} as Record<TreasuryFeatureFlagId, boolean>;
+  for (const id of TREASURY_FEATURE_FLAG_IDS) {
+    out[id] = isTreasuryFeatureFlagEnabled(id, env);
+  }
+  return out;
 }
 
 /**
  * Guard HTTP: 404 quando a mestra (ou flag específica) está off.
+ * Não apaga dados — apenas bloqueia acesso ao endpoint.
  */
 export function requireTreasuryModuleEnabled(
   env: Record<string, string | undefined> = process.env

@@ -34,12 +34,8 @@ type Store = {
 };
 
 function createTransactionalFakeDb(store: Store): {
-  db: TreasuryAuditDb & {
-    $transaction: <T>(fn: (tx: TreasuryAuditDb) => Promise<T>) => Promise<T>;
-    treasuryFinancialAccount: {
-      create: (args: { data: { name: string } }) => Promise<{ id: string; name: string }>;
-    };
-  };
+  // Fake Prisma — tipagem frouxa só para o harness do teste.
+  db: any;
 } {
   const makeClient = (buffer: Store, immutable = true): TreasuryAuditDb & {
     treasuryFinancialAccount: {

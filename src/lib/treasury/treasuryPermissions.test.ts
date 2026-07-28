@@ -29,6 +29,7 @@ function auth(partial: {
     role: partial.role,
     permissions: partial.permissions ?? [],
     effectivePermissions: partial.permissions ?? [],
+    permissionsVersion: 1,
     accessProfileId: null,
     accessProfileName: null,
     employeeId: null,
@@ -42,6 +43,7 @@ function auth(partial: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sessionId: "sess-treasury",
+    sessionPermissionsVersionAtIssue: 1,
   };
 }
 

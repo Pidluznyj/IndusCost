@@ -86,8 +86,12 @@
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
 | **60** | Testes de integração completos (DB seguro) | `DONE` | `462c74c` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
 | **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `3e24528` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
+| **62** | Backfill complementos operacionais (preview/apply) | `DONE` | `59f5783` | CLI `scripts/treasuryTitleComplementBackfill.ts`; preview (período/encontrados/elegíveis/existentes/would-create/inconsistências/duplicidades/cancelados + estimativa); apply create-only idempotente em lotes + checkpoint/retomada/logs; não muta Nomus nem apaga; npm `backfill:treasury:title-complements:*`; testes unitários+wiring |
+| **63** | Auditoria formal + fechamento de lacunas (rastreabilidade) | `DONE` | `0b687bb` | `REQUIREMENTS-TRACEABILITY.md` (R01–R30); fecha R15 ledger + endpoints balance-position/forecast-vs-actual/alerts/audit/health/payment-schedule/reconcile workspace; accept/unmatch HTTP; UIs manual-entries/payment-schedule/reconcile/audit/ofx; runbook + `validate:treasury:deploy`; testes gaps |
+| **64** | Documentação completa + manuais operacionais | `DONE` | `889a05b` | `docs/treasury/README.md` + 10–18 técnicos; manuals (usuário, abertura, fechamento, cobrança, conciliação); sem alteração de código funcional |
+| **65** | Controle de rollout por submódulo | `DONE` | `10fc53a` | Flags `balances/dashboard/receivables/payables/reports` + guards BE; `availability.flags`; FE filtra abas; `19-ROLLOUT.md` ordem de ativação; testes flags/rollout; dados preservados com flag OFF |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**.
 
 ---
 
@@ -97,12 +101,12 @@
 |--------------|--------|---------------|
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
-| Saldo observado / calculado / conciliado | `DONE` | P22: serviço posição atual; observado≠calculado≠conciliado; divergência explícita; consolidado exclui `includeInConsolidated=false`; API/UI ainda pendentes |
-| Contas a receber (títulos) | `PARTIAL` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
-| Contas a pagar (títulos) | `PARTIAL` | Adapter P11 + query API P19 + programação P20 + UI P21 (`/finance/treasury/payables`); APIs oficiais `/api/finance/accounts-payable/*` |
-| Previsto vs realizado | `PARTIAL` | P23 dashboard dia (previsto/realizado/pendente CR/CP por cenário); cash-flow permanece separado |
+| Saldo observado / calculado / conciliado | `DONE` | P22 engine + P63 `GET …/accounts/:id/balance-position`; dashboard consome posição |
+| Contas a receber (títulos) | `DONE` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
+| Contas a pagar (títulos) | `DONE` | Adapter P11 + query API P19 + programação P20 + UI P21 + agenda `payment-schedule` P63 |
+| Previsto vs realizado | `DONE` | P23 dashboard + P63 `GET …/forecast-vs-actual` + report `planned-vs-actual` |
 | Dashboard diário Tesouraria | `DONE` | P23 API + P24 UI `/finance/treasury`; freshness; posição; previsto×realizado; exceções/alertas; detalhe ao clicar |
-| Datas esperadas | `PARTIAL` | Schema P12 + mutação expectativa P15; resolução pura P26; motor P28 consome overlays por cenário; `dueDate` oficial intacto |
+| Datas esperadas | `DONE` | Schema P12 + mutação expectativa P15; resolução pura P26; motor P28 consome overlays; `dueDate` oficial intacto |
 | Promessas de pagamento | `DONE` | Model + APIs + UI P16; P26 usa promessa ativa na data PROBABLE; não altera `dueDate`; histórico preservado |
 | Ações de cobrança | `DONE` | Model + APIs + timeline P17; tipos telefone/WhatsApp/e-mail/reunião/comercial/análise/outro; cancelamento lógico; histórico preservado |
 | Contestações | `DONE` | Model + APIs + timeline P17; motivo/valor/responsável/área/prazo/status; não muta saldo/vencimento oficiais |
@@ -110,22 +114,22 @@
 | Projeção contratual / provável / confirmada | `DONE` | P25–P35: motor+fila+APIs+agenda+comparação UI/API (`/projections` + `/projections/compare`) |
 | Agenda financeira | `DONE` | P33 API + P34 UI `/finance/treasury/agenda`; buckets multi-cenário; períodos/visões; gráfico+tabela; risco textual |
 | Transferências | `DONE` | P37: model+API+UI; consolidado neutro; em trânsito enquanto SENT; cancelamento auditado |
-| Lançamentos manuais | `NOT_STARTED` | — |
+| Lançamentos manuais | `DONE` | P63: `TreasuryLedgerEntry` + API `ledger-entries` create/reverse + UI `/manual-entries`; migration `20260821120000_*` |
 | Exceções / alertas | `DONE` | P23–P40 exceções; P41 alertas no dashboard/agenda + `TreasuryAlertSettings` (limites/severidade); sem push/e-mail |
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
-| Importação OFX | `PARTIAL` | P47–P51: parser+schema+preview+apply+UI; P52 motor de sugestões (sem auto-match) |
-| Conciliação bancária | `PARTIAL` | P52–P54: sugestões + match/allocations + reverse API/UI; workspace completo ainda pendente |
+| Importação OFX | `DONE` | P47–P51 + alias UI `/ofx` (mesma página bank-movements) |
+| Conciliação bancária | `DONE` | P52–P54 + P63 accept/unmatch HTTP + workspace `/reconcile` |
 | Relatórios tesouraria | `DONE` | P55 APIs + P56 UI `/finance/treasury/reports` com impressão/export |
-| Exportações | `PARTIAL` | P56: CSV/XLSX/PDF dos relatórios Tesouraria; AR/AP/cash-flow já existiam |
-| Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
+| Exportações | `DONE` | P56: CSV/XLSX/PDF dos relatórios Tesouraria (ação `export`) |
+| Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer + `GET …/audit` + UI `/audit` (P63) |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
-| Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
+| Observabilidade | `DONE` | `/availability` + `/health` Tesouraria (fail-closed) + freshness dashboard |
 | Testes domínio | `DONE` | Unitários P59 + integração P60 (DB seguro) + E2E UI P61 (`tsx --test` + `renderToStaticMarkup`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
-| Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
+| Documentação | `DONE` | P00 docs + P63 traceability/runbook + P64 arquitetura/APIs/regras/manuais (`docs/treasury/README.md`) |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
-| Scripts deploy/validação | `NOT_STARTED` | Produção: usuário aplica; Cursor não deploya |
+| Scripts deploy/validação | `DONE` | P62 backfill + P63 `validate:treasury:deploy` + runbook (Cursor não deploya) |
 
 ---
 
@@ -760,3 +764,6 @@
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
 | 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `462c74c` |
 | 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `3e24528` |
+| 2026-07-28 | Prompt 62: backfill complementos operacionais (preview/apply) — `59f5783` |
+| 2026-07-28 | Prompt 63: auditoria formal + fechamento de lacunas (rastreabilidade) — `0b687bb` |
+| 2026-07-28 | Prompt 64: documentação completa + manuais operacionais — `889a05b` |

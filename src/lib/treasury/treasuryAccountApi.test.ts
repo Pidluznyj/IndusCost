@@ -303,9 +303,6 @@ describe("treasuryAccountApi — handlers", () => {
     const controllers = createTreasuryAccountControllers({
       getCurrentAppUser: async () => baseUser(),
       service: mockService({
-        async putAccountAccess() {
-          throw new Error("should not");
-        },
         async grantAccountAccess() {
           throw new TreasuryDomainError("NOT_FOUND", "Conta financeira não encontrada.");
         },

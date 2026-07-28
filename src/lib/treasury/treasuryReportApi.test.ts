@@ -215,7 +215,7 @@ describe("treasuryReportApi — handlers", () => {
     const denied = createTreasuryReportControllers({
       getCurrentAppUser: async () =>
         baseUser({
-          role: "USER",
+          role: "VIEWER",
           permissions: [],
           effectivePermissions: [],
         }),

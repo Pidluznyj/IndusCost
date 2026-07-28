@@ -47,14 +47,34 @@ export const TREASURY_UI_SECTIONS = [
     label: "Comparação de cenários",
   },
   {
+    id: "payment-schedule",
+    path: `${TREASURY_UI_BASE_PATH}/payment-schedule`,
+    label: "Programação de pagamentos",
+  },
+  {
     id: "transfers",
     path: `${TREASURY_UI_BASE_PATH}/transfers`,
     label: "Transferências",
   },
   {
+    id: "manual-entries",
+    path: `${TREASURY_UI_BASE_PATH}/manual-entries`,
+    label: "Lançamentos manuais",
+  },
+  {
     id: "bank-movements",
     path: `${TREASURY_UI_BASE_PATH}/bank-movements`,
     label: "Movimentos bancários",
+  },
+  {
+    id: "ofx",
+    path: `${TREASURY_UI_BASE_PATH}/ofx`,
+    label: "Importação OFX",
+  },
+  {
+    id: "reconcile",
+    path: `${TREASURY_UI_BASE_PATH}/reconcile`,
+    label: "Conciliação bancária",
   },
   {
     id: "exceptions",
@@ -70,5 +90,10 @@ export const TREASURY_UI_SECTIONS = [
     id: "reports",
     path: `${TREASURY_UI_BASE_PATH}/reports`,
     label: "Relatórios",
+  },
+  {
+    id: "audit",
+    path: `${TREASURY_UI_BASE_PATH}/audit`,
+    label: "Auditoria",
   },
 ] as const;

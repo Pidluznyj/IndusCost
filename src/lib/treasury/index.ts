@@ -26,12 +26,20 @@ export {
   TREASURY_FEATURE_RESOURCE,
   TREASURY_MASTER_FLAG,
   canShowTreasuryNavigation,
+  getTreasuryFeatureFlagsMap,
   isTreasuryFeatureFlagEnabled,
   isTreasuryModuleEnabled,
   listEnabledTreasuryFeatureFlags,
   requireTreasuryFeatureFlag,
   requireTreasuryModuleEnabled,
 } from "./treasuryFeatureFlags.js";
+export {
+  TREASURY_ROLLOUT_ACTIVATION_ORDER,
+  TREASURY_UI_SECTION_FEATURE_FLAG,
+  filterTreasuryUiSections,
+  isTreasuryUiSectionEnabled,
+  resolveTreasuryUiLandingPath,
+} from "./treasuryRollout.js";
 export {
   TREASURY_ACTIONS,
   TREASURY_LEGACY_BAG_KEYS,

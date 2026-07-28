@@ -522,7 +522,7 @@ describe("treasuryProjectionApi — handlers HTTP", () => {
     const controllersDenied = createTreasuryProjectionControllers({
       getCurrentAppUser: async () =>
         baseUser({
-          role: "USER",
+          role: "VIEWER",
           permissions: [],
           effectivePermissions: [],
         }),

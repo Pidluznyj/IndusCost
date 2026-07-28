@@ -45,6 +45,27 @@ export const TREASURY_AGENDA_PATH =
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 
+export const TREASURY_LEDGER_ENTRIES_PATH =
+  `${TREASURY_API_PREFIX}/ledger-entries` as const;
+
+export const TREASURY_PAYMENT_SCHEDULE_PATH =
+  `${TREASURY_API_PREFIX}/payment-schedule` as const;
+
+export const TREASURY_FORECAST_VS_ACTUAL_PATH =
+  `${TREASURY_API_PREFIX}/forecast-vs-actual` as const;
+
+export const TREASURY_ALERTS_PATH =
+  `${TREASURY_API_PREFIX}/alerts` as const;
+
+export const TREASURY_AUDIT_PATH =
+  `${TREASURY_API_PREFIX}/audit` as const;
+
+export const TREASURY_HEALTH_PATH =
+  `${TREASURY_API_PREFIX}/health` as const;
+
+export const TREASURY_RECONCILE_WORKSPACE_PATH =
+  `${TREASURY_API_PREFIX}/reconcile/workspace` as const;
+
 export const TREASURY_EXCEPTIONS_PATH =
   `${TREASURY_API_PREFIX}/exceptions` as const;
 
@@ -140,6 +161,30 @@ export const TREASURY_FIELD_LIMITS = {
   resolution: 2000,
   ignoreJustification: 2000,
   entityId: 128,
+  responsibleUserId: 64,
+  customerName: 200,
+  customerTaxId: 32,
+  document: 120,
+  salesOrder: 64,
+  invoice: 64,
+  sellerName: 200,
+  commercialOwnerName: 200,
+  collectionOwnerUserId: 64,
+  supplierName: 200,
+  supplierTaxId: 32,
+  classification: 120,
+  costCenter: 120,
+  costCenterId: 64,
+  suggestionKey: 200,
+  algorithmVersion: 64,
+  suggestionConfidence: 32,
+  confirmPhrase: 64,
+  bankMovementId: 64,
+  officialTitleId: 64,
+  transferId: 64,
+  transferGroupId: 64,
+  ledgerEntryId: 64,
+  differenceCode: 64,
 } as const;
 
 export type TreasuryFieldLimitKey = keyof typeof TREASURY_FIELD_LIMITS;

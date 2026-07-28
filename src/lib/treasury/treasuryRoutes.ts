@@ -29,10 +29,14 @@ import { createTreasuryBankMovementQueryControllers } from "./controllers/treasu
 import { createTreasuryReconciliationMatchControllers } from "./controllers/treasuryReconciliationMatchController.js";
 import { createTreasuryReportControllers } from "./controllers/treasuryReportController.js";
 import { createTreasuryReportExportControllers } from "./controllers/treasuryReportExportController.js";
+import { createTreasuryManualLedgerControllers } from "./controllers/treasuryManualLedgerController.js";
+import { createTreasuryTraceabilityGapControllers } from "./controllers/treasuryTraceabilityGapController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
+  TREASURY_ALERTS_PATH,
+  TREASURY_AUDIT_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
@@ -44,10 +48,15 @@ import {
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_EXCEPTIONS_PATH,
+  TREASURY_FORECAST_VS_ACTUAL_PATH,
+  TREASURY_HEALTH_PATH,
+  TREASURY_LEDGER_ENTRIES_PATH,
   TREASURY_PAYABLES_PATH,
+  TREASURY_PAYMENT_SCHEDULE_PATH,
   TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  TREASURY_RECONCILE_WORKSPACE_PATH,
   TREASURY_RECONCILIATIONS_PATH,
   TREASURY_REPORTS_PATH,
   TREASURY_TRANSFERS_PATH,
@@ -125,6 +134,10 @@ export function registerTreasuryRoutes(
   const reportExports = createTreasuryReportExportControllers({
     getCurrentAppUser,
   });
+  const manualLedger = createTreasuryManualLedgerControllers({
+    getCurrentAppUser,
+  });
+  const gaps = createTreasuryTraceabilityGapControllers({ getCurrentAppUser });
   const ofxUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
@@ -220,6 +233,27 @@ export function registerTreasuryRoutes(
     TREASURY_ACTIONS.view
   );
   const moduleEnabled = requireTreasuryModuleEnabled();
+  const accountsEnabled = requireTreasuryFeatureFlag(
+    "treasury.accounts.enabled"
+  );
+  const balancesEnabled = requireTreasuryFeatureFlag(
+    "treasury.balances.enabled"
+  );
+  const dashboardEnabled = requireTreasuryFeatureFlag(
+    "treasury.dashboard.enabled"
+  );
+  const receivablesEnabled = requireTreasuryFeatureFlag(
+    "treasury.receivables.enabled"
+  );
+  const payablesEnabled = requireTreasuryFeatureFlag(
+    "treasury.payables.enabled"
+  );
+  const promisesEnabled = requireTreasuryFeatureFlag(
+    "treasury.promises.enabled"
+  );
+  const reportsEnabled = requireTreasuryFeatureFlag(
+    "treasury.reports.enabled"
+  );
   const payablesProgrammingEnabled = requireTreasuryFeatureFlag(
     "treasury.payablesProgramming.enabled"
   );
@@ -282,6 +316,19 @@ export function registerTreasuryRoutes(
     "treasury.reconciliation.enabled"
   );
 
+  const viewManualEntries = requireResource(
+    TREASURY_RESOURCE_KEYS.manualEntries,
+    TREASURY_ACTIONS.view
+  );
+  const manageManualEntries = requireResource(
+    TREASURY_RESOURCE_KEYS.manualEntries,
+    TREASURY_ACTIONS.manage
+  );
+  const viewAudit = requireResource(
+    TREASURY_RESOURCE_KEYS.audit,
+    TREASURY_ACTIONS.view
+  );
+
   app.get(
     TREASURY_AVAILABILITY_PATH,
     requireAppAuth,
@@ -291,9 +338,16 @@ export function registerTreasuryRoutes(
   );
 
   app.get(
+    TREASURY_HEALTH_PATH,
+    requireAppAuth,
+    gaps.health
+  );
+
+  app.get(
     TREASURY_DASHBOARD_PATH,
     requireAppAuth,
     moduleEnabled,
+    dashboardEnabled,
     viewDashboard,
     dashboard.getDashboard
   );
@@ -302,6 +356,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_REPORTS_PATH}/:reportKey`,
     requireAppAuth,
     moduleEnabled,
+    reportsEnabled,
     viewReports,
     reports.getReport
   );
@@ -310,6 +365,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_REPORTS_PATH}/:reportKey/export.csv`,
     requireAppAuth,
     moduleEnabled,
+    reportsEnabled,
     viewReports,
     exportTreasury,
     rateReportExport,
@@ -319,6 +375,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_REPORTS_PATH}/:reportKey/export.xlsx`,
     requireAppAuth,
     moduleEnabled,
+    reportsEnabled,
     viewReports,
     exportTreasury,
     rateReportExport,
@@ -328,6 +385,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_REPORTS_PATH}/:reportKey/export.pdf`,
     requireAppAuth,
     moduleEnabled,
+    reportsEnabled,
     viewReports,
     exportTreasury,
     rateReportExport,
@@ -419,6 +477,104 @@ export function registerTreasuryRoutes(
     reconciliations.reverse
   );
 
+  app.post(
+    TREASURY_RECONCILIATIONS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    manageReconciliation,
+    reconciliations.accept
+  );
+
+  app.post(
+    `${TREASURY_RECONCILIATIONS_PATH}/:id/unmatch`,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    manageReconciliation,
+    reconciliations.unmatch
+  );
+
+  app.get(
+    TREASURY_RECONCILE_WORKSPACE_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    gaps.reconcileWorkspace
+  );
+
+  app.get(
+    TREASURY_FORECAST_VS_ACTUAL_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    viewDashboard,
+    gaps.forecastVsActual
+  );
+
+  app.get(
+    TREASURY_ALERTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    viewDashboard,
+    gaps.alerts
+  );
+
+  app.get(
+    TREASURY_AUDIT_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewAudit,
+    gaps.auditList
+  );
+
+  app.get(
+    TREASURY_PAYMENT_SCHEDULE_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    payablesProgrammingEnabled,
+    viewPayables,
+    gaps.paymentSchedule
+  );
+
+  app.get(
+    TREASURY_LEDGER_ENTRIES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    accountsEnabled,
+    viewManualEntries,
+    manualLedger.list
+  );
+
+  app.post(
+    TREASURY_LEDGER_ENTRIES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    accountsEnabled,
+    manageManualEntries,
+    manualLedger.create
+  );
+
+  app.get(
+    `${TREASURY_LEDGER_ENTRIES_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    accountsEnabled,
+    viewManualEntries,
+    manualLedger.getById
+  );
+
+  app.post(
+    `${TREASURY_LEDGER_ENTRIES_PATH}/:id/reverse`,
+    requireAppAuth,
+    moduleEnabled,
+    accountsEnabled,
+    manageManualEntries,
+    manualLedger.reverse
+  );
+
   app.get(
     TREASURY_DAILY_CLOSING_PATH,
     requireAppAuth,
@@ -461,6 +617,7 @@ export function registerTreasuryRoutes(
     TREASURY_ALERT_SETTINGS_PATH,
     requireAppAuth,
     moduleEnabled,
+    dashboardEnabled,
     viewDashboard,
     alertSettings.get
   );
@@ -469,6 +626,7 @@ export function registerTreasuryRoutes(
     TREASURY_ALERT_SETTINGS_PATH,
     requireAppAuth,
     moduleEnabled,
+    exceptionsEnabled,
     manageExceptions,
     alertSettings.put
   );
@@ -532,6 +690,7 @@ export function registerTreasuryRoutes(
     TREASURY_ACCOUNTS_PATH,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     viewAccounts,
     accounts.listAccounts
   );
@@ -540,6 +699,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/balances/latest`,
     requireAppAuth,
     moduleEnabled,
+    balancesEnabled,
     viewAccounts,
     balances.getLatestBalance
   );
@@ -548,14 +708,25 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/balances`,
     requireAppAuth,
     moduleEnabled,
+    balancesEnabled,
     viewAccounts,
     balances.listBalances
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balance-position`,
+    requireAppAuth,
+    moduleEnabled,
+    balancesEnabled,
+    viewAccounts,
+    gaps.balancePosition
   );
 
   app.post(
     `${TREASURY_ACCOUNTS_PATH}/:id/balance-snapshots`,
     requireAppAuth,
     moduleEnabled,
+    balancesEnabled,
     manageBalances,
     balances.createBalanceSnapshot
   );
@@ -564,6 +735,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     viewAccounts,
     accounts.getAccount
   );
@@ -572,6 +744,7 @@ export function registerTreasuryRoutes(
     TREASURY_ACCOUNTS_PATH,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.createAccount
   );
@@ -580,6 +753,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.updateAccount
   );
@@ -588,6 +762,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/deactivate`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.deactivateAccount
   );
@@ -596,6 +771,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/reactivate`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.reactivateAccount
   );
@@ -604,6 +780,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/access`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.listAccountAccess
   );
@@ -612,6 +789,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_ACCOUNTS_PATH}/:id/access`,
     requireAppAuth,
     moduleEnabled,
+    accountsEnabled,
     manageAccounts,
     accounts.putAccountAccess
   );
@@ -773,6 +951,7 @@ export function registerTreasuryRoutes(
     TREASURY_RECEIVABLES_PATH,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     receivables.listReceivables
@@ -782,6 +961,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     receivables.getReceivable
@@ -791,6 +971,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/customer-summary`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     receivables.getCustomerSummary
@@ -800,6 +981,7 @@ export function registerTreasuryRoutes(
     TREASURY_PAYABLES_PATH,
     requireAppAuth,
     moduleEnabled,
+    payablesEnabled,
     viewPayables,
     viewOfficialPayables,
     payables.listPayables
@@ -809,6 +991,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_PAYABLES_PATH}/:titleId`,
     requireAppAuth,
     moduleEnabled,
+    payablesEnabled,
     viewPayables,
     viewOfficialPayables,
     payables.getPayable
@@ -868,6 +1051,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/expectation`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     manageReceivables,
     viewOfficialReceivables,
     receivables.putExpectation
@@ -877,6 +1061,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/promises`,
     requireAppAuth,
     moduleEnabled,
+    promisesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     promises.listByReceivable
@@ -886,6 +1071,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/promises`,
     requireAppAuth,
     moduleEnabled,
+    promisesEnabled,
     promiseReceivables,
     viewOfficialReceivables,
     promises.createForReceivable
@@ -895,6 +1081,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_PROMISES_PATH}/:promiseId/cancel`,
     requireAppAuth,
     moduleEnabled,
+    promisesEnabled,
     promiseReceivables,
     promises.cancel
   );
@@ -903,6 +1090,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_PROMISES_PATH}/:promiseId/mark-fulfilled`,
     requireAppAuth,
     moduleEnabled,
+    promisesEnabled,
     promiseReceivables,
     promises.markFulfilled
   );
@@ -911,6 +1099,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/collection-actions`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     collectionActions.listByReceivable
@@ -920,6 +1109,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/collection-actions`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     collectReceivables,
     viewOfficialReceivables,
     collectionActions.createForReceivable
@@ -929,6 +1119,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_COLLECTION_ACTIONS_PATH}/:actionId/cancel`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     collectReceivables,
     collectionActions.cancel
   );
@@ -937,6 +1128,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/disputes`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     viewReceivables,
     viewOfficialReceivables,
     disputes.listByReceivable
@@ -946,6 +1138,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_RECEIVABLES_PATH}/:titleId/disputes`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     manageReceivables,
     viewOfficialReceivables,
     disputes.createForReceivable
@@ -955,6 +1148,7 @@ export function registerTreasuryRoutes(
     `${TREASURY_DISPUTES_PATH}/:disputeId`,
     requireAppAuth,
     moduleEnabled,
+    receivablesEnabled,
     manageReceivables,
     disputes.updateStatus
   );

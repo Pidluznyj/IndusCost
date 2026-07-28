@@ -48,6 +48,11 @@ export type TreasuryAvailabilityResponse = {
   module: TreasuryModuleId;
   status: TreasuryAvailabilityStatus;
   enabled: boolean;
+  /**
+   * Mapa fail-closed de subflags (UI/nav).
+   * Flag ausente ou false → submódulo oculto; dados permanecem no banco.
+   */
+  flags: Record<string, boolean>;
   /** Scaffold version — sem regras financeiras ainda. */
   scaffoldVersion: string;
   serverTimeIso: TreasuryTimestampIso;
@@ -311,16 +316,23 @@ export type TreasuryDashboardDto = {
 
 export type TreasuryLedgerEntryDto = {
   id: string;
+  companyCode: string;
   accountId: string;
   civilDate: TreasuryCivilDate;
   amount: TreasuryMoneyString;
+  currency: TreasuryCurrency;
   direction: TreasuryLedgerDirection;
   nature: TreasuryLedgerNature;
   status: TreasuryLedgerStatus;
   memo: string | null;
   counterpartRef: string | null;
   transferGroupId: string | null;
+  reversesEntryId: string | null;
+  version: number;
   createdAt: TreasuryTimestampIso;
+  createdByUserId: string;
+  updatedAt: TreasuryTimestampIso;
+  updatedByUserId: string | null;
 };
 
 export type TreasuryTransferDto = {

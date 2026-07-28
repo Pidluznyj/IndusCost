@@ -403,11 +403,13 @@ export function parseTreasuryEnum<T extends string>(
 
 export function parseTreasuryBoundedString(
   value: unknown,
-  field: keyof typeof TREASURY_FIELD_LIMITS,
+  field: keyof typeof TREASURY_FIELD_LIMITS | (string & {}),
   options?: { required?: boolean }
 ): string | null {
   const required = options?.required ?? true;
-  const max = TREASURY_FIELD_LIMITS[field];
+  const max =
+    (TREASURY_FIELD_LIMITS as Record<string, number>)[field] ??
+    TREASURY_FIELD_LIMITS.description;
   if (value == null || value === "") {
     if (required) {
       throw new TreasuryContractError(
@@ -788,6 +790,41 @@ export function parseTreasuryAccountsListQuery(
       false
     ),
   };
+}
+
+export type TreasuryManualLedgerReverseInput = {
+  expectedVersion: number;
+  justification: string;
+};
+
+export function parseTreasuryManualLedgerReverseInput(
+  body: Record<string, unknown>
+): TreasuryManualLedgerReverseInput {
+  const expectedVersion = parsePositiveInt(
+    body.expectedVersion,
+    "expectedVersion",
+    true
+  );
+  if (expectedVersion == null) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "expectedVersion é obrigatório.",
+      "expectedVersion"
+    );
+  }
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.reason,
+    "justification",
+    { required: true }
+  );
+  if (!justification) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória.",
+      "justification"
+    );
+  }
+  return { expectedVersion, justification };
 }
 
 export function parseTreasuryManualLedgerEntryInput(

@@ -150,7 +150,7 @@ describe("treasuryReconciliationReverseApi — handlers", () => {
 
     const user = {
       id: "u1",
-      role: "USER",
+      role: "VIEWER",
       name: "Ops",
       sessionId: "s1",
     } as AppAuthContext;

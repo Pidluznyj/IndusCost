@@ -245,7 +245,8 @@ export function TreasuryBankMovementsPage() {
           subtitle={TREASURY_BANK_MOVEMENTS_PAGE_SUBTITLE}
           actions={[
             {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+              id: "refresh",
+              label: FINANCE_HEADER_ACTION_REFRESH,
               onClick: () => void load(),
             },
           ]}

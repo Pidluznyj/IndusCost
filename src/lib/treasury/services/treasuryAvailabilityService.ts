@@ -4,15 +4,20 @@
 
 import type { TreasuryAvailabilityResponse } from "../contracts/treasuryContracts.js";
 import { toTreasuryAvailabilityResponse } from "../mappers/treasuryMappers.js";
-import { isTreasuryModuleEnabled } from "../treasuryFeatureFlags.js";
+import {
+  getTreasuryFeatureFlagsMap,
+  isTreasuryModuleEnabled,
+} from "../treasuryFeatureFlags.js";
 
 export function getTreasuryAvailability(input?: {
   env?: Record<string, string | undefined>;
   serverTime?: Date;
 }): TreasuryAvailabilityResponse {
-  const enabled = isTreasuryModuleEnabled(input?.env ?? process.env);
+  const env = input?.env ?? process.env;
+  const enabled = isTreasuryModuleEnabled(env);
   return toTreasuryAvailabilityResponse({
     enabled,
+    flags: getTreasuryFeatureFlagsMap(env),
     serverTime: input?.serverTime,
   });
 }

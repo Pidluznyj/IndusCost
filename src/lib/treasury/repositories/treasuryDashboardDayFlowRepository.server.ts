@@ -362,7 +362,7 @@ export function createTreasuryDashboardFreshnessRepository(
 
       return [
         {
-          source: "BALANCE_SNAPSHOTS",
+          source: "BALANCE_SNAPSHOTS" as const,
           label: "Snapshots de saldo",
           lastSuccessAt: snap?.referenceAt ?? null,
           detail: snap
@@ -370,7 +370,7 @@ export function createTreasuryDashboardFreshnessRepository(
             : "Nenhum snapshot de saldo encontrado.",
         },
         {
-          source: "OFFICIAL_RECEIVABLES",
+          source: "OFFICIAL_RECEIVABLES" as const,
           label: "Contas a receber oficiais (Nomus)",
           lastSuccessAt: arSync?.finishedAt ?? null,
           detail: arSync
@@ -378,7 +378,7 @@ export function createTreasuryDashboardFreshnessRepository(
             : "Sem sync SUCCESS de CR.",
         },
         {
-          source: "OFFICIAL_PAYABLES",
+          source: "OFFICIAL_PAYABLES" as const,
           label: "Contas a pagar oficiais (Nomus)",
           lastSuccessAt: apSync?.finishedAt ?? null,
           detail: apSync
@@ -386,17 +386,14 @@ export function createTreasuryDashboardFreshnessRepository(
             : "Sem sync SUCCESS de CP.",
         },
         {
-          source: "TITLE_COMPLEMENTS",
+          source: "TITLE_COMPLEMENTS" as const,
           label: "Complementos operacionais",
           lastSuccessAt: complement?.updatedAt ?? null,
           detail: complement
             ? "Última atualização de complemento."
             : "Sem complementos operacionais.",
         },
-      ].map((s) => ({
-        ...s,
-        // isStale calculado no service com asOf
-      }));
+      ];
     },
   };
 }
