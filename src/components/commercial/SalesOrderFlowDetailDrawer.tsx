@@ -6,6 +6,8 @@ import {
   OverlayBadge,
   OverlayBody,
   OverlayHeader,
+  OverlayKpiCard,
+  OverlayKpiCardGrid,
   OverlaySection,
   OverlayTable,
   OverlayTabs,
@@ -43,6 +45,7 @@ import {
   resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
   SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
+  SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS,
   type SalesOrderFlowDetailTab,
   type SalesOrderFlowManagementUiCapabilities,
 } from "@/src/lib/salesOrderFlowDetailUi";
@@ -254,101 +257,108 @@ export function SalesOrderFlowDetailDrawer({
           </span>
         }
         actions={
-          detail ? (
-            <div className="hidden flex-wrap items-center gap-2 sm:flex">
-              <OverlayBadge tone="sky" emphasized>
-                {formatSalesOrderFlowStageLabel(detail.columnExplanation.stage)}
-              </OverlayBadge>
-              {detail.management?.isBlocked ? (
-                <OverlayBadge tone="rose">Bloqueado</OverlayBadge>
+          <div
+            className="flex max-w-[min(100%,42rem)] flex-col items-end gap-1.5"
+            data-testid="sales-order-flow-detail-nav"
+          >
+            {detail ? (
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                <OverlayBadge tone="sky" emphasized>
+                  {formatSalesOrderFlowStageLabel(detail.columnExplanation.stage)}
+                </OverlayBadge>
+                {detail.management?.isBlocked ? (
+                  <OverlayBadge tone="rose">Bloqueado</OverlayBadge>
+                ) : null}
+                {detail.shipmentDates?.isOverdue ? (
+                  <OverlayBadge tone="amber">Atrasado</OverlayBadge>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <button
+                type="button"
+                className={HEADER_ACTION_BTN}
+                onClick={onClose}
+                data-testid="sales-order-flow-detail-back-kanban"
+              >
+                Voltar ao Kanban
+              </button>
+              <button
+                type="button"
+                className={HEADER_ACTION_BTN}
+                onClick={() => void handleCopyOrderCode()}
+                disabled={!displayCode || displayCode === "Pedido"}
+                data-testid="sales-order-flow-detail-copy-code"
+                title="Copiar código do pedido"
+              >
+                <Copy className="h-3 w-3" aria-hidden="true" />
+                Copiar
+              </button>
+              {navigationCapabilities.canExecuteRecompute ? (
+                <button
+                  type="button"
+                  className={HEADER_ACTION_BTN}
+                  onClick={() => void handleRecompute()}
+                  disabled={recomputing || !salesOrderId || loading}
+                  data-testid="sales-order-flow-detail-recompute"
+                  title="Recomputar snapshot do pedido"
+                >
+                  <RefreshCw
+                    className={cn("h-3 w-3", recomputing && "animate-spin")}
+                    aria-hidden="true"
+                  />
+                  {recomputing ? "Atualizando…" : "Atualizar"}
+                </button>
               ) : null}
-              {detail.shipmentDates?.isOverdue ? (
-                <OverlayBadge tone="amber">Atrasado</OverlayBadge>
-              ) : null}
+              {headerLinks.map((link) => (
+                <Link
+                  key={link.id}
+                  to={link.href}
+                  className={HEADER_ACTION_BTN}
+                  data-testid={link.testId}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
-          ) : null
+            {copyFeedback || recomputeMessage || recomputeError ? (
+              <div className="flex flex-wrap justify-end gap-2 text-[11px]">
+                {copyFeedback ? (
+                  <span
+                    className="text-muted-foreground"
+                    aria-live="polite"
+                    data-testid="sales-order-flow-detail-copy-feedback"
+                  >
+                    {copyFeedback}
+                  </span>
+                ) : null}
+                {recomputeMessage ? (
+                  <span
+                    className="text-emerald-700"
+                    aria-live="polite"
+                    data-testid="sales-order-flow-detail-recompute-ok"
+                  >
+                    {recomputeMessage}
+                  </span>
+                ) : null}
+                {recomputeError ? (
+                  <span
+                    className="text-destructive"
+                    role="alert"
+                    data-testid="sales-order-flow-detail-recompute-error"
+                  >
+                    {recomputeError}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         }
         onClose={onClose}
-        closeLabel="Fechar detalhe do fluxo"
+        closeLabel="Fechar"
         density="default"
+        className="!items-start !py-3"
       />
-      <div
-        className="flex flex-wrap items-center gap-2 border-b border-border bg-background px-4 py-2"
-        data-testid="sales-order-flow-detail-nav"
-      >
-        <button
-          type="button"
-          className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
-          onClick={onClose}
-          data-testid="sales-order-flow-detail-back-kanban"
-        >
-          Voltar ao Kanban
-        </button>
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
-          onClick={() => void handleCopyOrderCode()}
-          disabled={!displayCode || displayCode === "Pedido"}
-          data-testid="sales-order-flow-detail-copy-code"
-          title="Copiar código do pedido"
-        >
-          <Copy className="h-3 w-3" aria-hidden="true" />
-          Copiar código
-        </button>
-        {navigationCapabilities.canExecuteRecompute ? (
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent disabled:opacity-50"
-            onClick={() => void handleRecompute()}
-            disabled={recomputing || !salesOrderId || loading}
-            data-testid="sales-order-flow-detail-recompute"
-            title="Recomputar snapshot do pedido"
-          >
-            <RefreshCw
-              className={cn("h-3 w-3", recomputing && "animate-spin")}
-              aria-hidden="true"
-            />
-            {recomputing ? "Atualizando…" : "Atualizar pedido"}
-          </button>
-        ) : null}
-        {headerLinks.map((link) => (
-          <Link
-            key={link.id}
-            to={link.href}
-            className="inline-flex items-center rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-accent"
-            data-testid={link.testId}
-          >
-            {link.label}
-          </Link>
-        ))}
-        {copyFeedback ? (
-          <span
-            className="text-xs text-muted-foreground"
-            aria-live="polite"
-            data-testid="sales-order-flow-detail-copy-feedback"
-          >
-            {copyFeedback}
-          </span>
-        ) : null}
-        {recomputeMessage ? (
-          <span
-            className="text-xs text-emerald-700"
-            aria-live="polite"
-            data-testid="sales-order-flow-detail-recompute-ok"
-          >
-            {recomputeMessage}
-          </span>
-        ) : null}
-        {recomputeError ? (
-          <span
-            className="text-xs text-destructive"
-            role="alert"
-            data-testid="sales-order-flow-detail-recompute-error"
-          >
-            {recomputeError}
-          </span>
-        ) : null}
-      </div>
       <OverlayTabs
         tabs={tabs}
         active={activeTab}
@@ -357,7 +367,7 @@ export function SalesOrderFlowDetailDrawer({
         testId="sales-order-flow-detail-tabs"
         ariaLabel="Seções do detalhe do Fluxo de Pedidos"
       />
-      <OverlayBody className="bg-[color:var(--color-overlay-surface-muted)] px-4 py-4">
+      <OverlayBody className="bg-[#f8fafc] px-3 py-3 sm:px-4">
         {loading ? (
           <DrawerState testId="sales-order-flow-detail-loading">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -513,41 +523,142 @@ function SummaryTab({
   const daysInStage = resolveSalesOrderFlowDetailDaysInStage(detail);
   const valuesVisible = detail.valuesVisible;
   const financial = detail.financialSituation;
+  const responsibleAreaLabel = formatResponsibleAreaLabel(
+    detail.responsibleArea ?? detail.columnExplanation.responsibleArea
+  );
 
   return (
     <div
-      className="space-y-4"
+      className="space-y-3"
       id="overlay-panel-resumo"
       role="tabpanel"
       data-testid="sales-order-flow-detail-summary"
     >
-      <OverlaySection title="Situação operacional">
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <InfoField
-            label="Pedido de Venda"
+      <OverlaySection title="Identificação" className="!rounded-xl">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-6">
+          <FlatField label="Cliente" value={detail.order.customerName} />
+          <FlatField label="Vendedor" value={detail.order.sellerName} />
+          <FlatField label="Empresa" value={detail.order.companyIssuer} />
+          <FlatField
+            label="Emissão"
+            value={formatSalesOrderFlowDetailDate(detail.order.issueDate)}
+          />
+          <FlatField
+            label="Entrega prometida"
+            value={formatSalesOrderFlowDetailDate(
+              detail.shipmentDates?.promisedDeliveryAt ??
+                detail.order.expectedDeliveryDate
+            )}
+          />
+          <FlatField
+            label="Dias na etapa"
+            value={formatSalesOrderFlowDetailDays(daysInStage)}
+          />
+        </dl>
+      </OverlaySection>
+
+      <OverlaySection title="Indicadores" className="!rounded-xl">
+        <OverlayKpiCardGrid columns={5} className="!gap-2">
+          <OverlayKpiCard
+            size="sm"
+            className="!border-l-[3px] !border-l-slate-400 !p-2"
+            label="Valor do pedido"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.orderValue,
+              valuesVisible
+            )}
+          />
+          <OverlayKpiCard
+            size="sm"
+            className="!border-l-[3px] !border-l-sky-500 !p-2"
+            label="Saldo ativo"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.activeResidualValue,
+              valuesVisible
+            )}
+          />
+          <OverlayKpiCard
+            size="sm"
+            className="!border-l-[3px] !border-l-violet-500 !p-2"
+            label="OP"
+            value={formatSalesOrderFlowDetailPercent(
+              detail.progress?.productionOrder
+            )}
+          />
+          <OverlayKpiCard
+            size="sm"
+            className="!border-l-[3px] !border-l-amber-500 !p-2"
+            label="Documentado"
+            value={formatSalesOrderFlowDetailPercent(
+              detail.progress?.documented
+            )}
+          />
+          <OverlayKpiCard
+            size="sm"
+            className="!border-l-[3px] !border-l-emerald-500 !p-2"
+            label="Faturado / Enviado"
+            value={`${formatSalesOrderFlowDetailPercent(detail.progress?.invoiced)} · ${formatSalesOrderFlowDetailPercent(detail.progress?.shipped)}`}
+          />
+        </OverlayKpiCardGrid>
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 lg:grid-cols-5">
+          <FlatField
+            label="Valor cortado"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.cutValue,
+              valuesVisible
+            )}
+          />
+          <FlatField
+            label="Valor cancelado"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.canceledValue,
+              valuesVisible
+            )}
+          />
+          <FlatField
+            label="Valor atendido"
+            value={formatSalesOrderFlowDetailMoney(
+              financial?.fulfilledValue,
+              valuesVisible
+            )}
+          />
+          <FlatField
+            label="Produzido"
+            value={formatSalesOrderFlowDetailPercent(detail.progress?.produced)}
+          />
+          <FlatField
+            label="Inconsistências"
+            value={
+              detail.inconsistenciesVisible
+                ? String(detail.inconsistencies.length)
+                : "—"
+            }
+          />
+        </dl>
+      </OverlaySection>
+
+      <OverlaySection title="Situação operacional" className="!rounded-xl">
+        <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+          <FlatField
+            label="Pedido"
             value={detail.order.orderCode}
           />
-          <InfoField label="Cliente" value={detail.order.customerName} />
-          <InfoField
+          <FlatField
             label="Etapa"
             value={formatSalesOrderFlowStageLabel(detail.columnExplanation.stage)}
           />
-          <InfoField
-            label="Explicação"
+          <FlatField label="Área responsável" value={responsibleAreaLabel} />
+          <FlatField
+            label="Por que está nesta coluna"
             value={detail.columnExplanation.reason}
             className="sm:col-span-2 xl:col-span-3"
           />
-          <InfoField
+          <FlatField
             label="Próxima ação"
             value={detail.nextAction ?? detail.columnExplanation.nextAction}
+            className="sm:col-span-2"
           />
-          <InfoField
-            label="Área responsável"
-            value={
-              detail.responsibleArea ?? detail.columnExplanation.responsibleArea
-            }
-          />
-          <InfoField
+          <FlatField
             label="Gargalo"
             value={
               detail.bottleneck
@@ -561,43 +672,43 @@ function SummaryTab({
             }
             className="sm:col-span-2 xl:col-span-3"
           />
-          <InfoField
+          <FlatField
             label="Obrigação ativa"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.activeObligation
             )}
           />
-          <InfoField
+          <FlatField
             label="Quantidade atendida"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.fulfilledQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="Saldo"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.remainingFulfillment
             )}
           />
-          <InfoField
+          <FlatField
             label="Corte"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.cutQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="Cancelamento"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.canceledQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="Envio"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.shippedQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="OPs vinculadas"
             value={
               detail.operationalDiagnostics
@@ -606,14 +717,15 @@ function SummaryTab({
                   : "Nenhuma"
                 : "—"
             }
+            className="sm:col-span-2"
           />
-          <InfoField
+          <FlatField
             label="Cobertura das OPs"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.productionOrderQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="Documentos de Saída"
             value={
               detail.operationalDiagnostics
@@ -622,14 +734,15 @@ function SummaryTab({
                   : "Nenhum"
                 : "—"
             }
+            className="sm:col-span-2"
           />
-          <InfoField
+          <FlatField
             label="Quantidade documentada"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.documentedQuantity
             )}
           />
-          <InfoField
+          <FlatField
             label="NF-e"
             value={
               detail.operationalDiagnostics
@@ -638,20 +751,13 @@ function SummaryTab({
                   : "Nenhuma"
                 : "—"
             }
+            className="sm:col-span-2"
           />
-          <InfoField
+          <FlatField
             label="Quantidade faturada"
             value={formatSalesOrderFlowDetailQuantity(
               detail.operationalDiagnostics?.totals.invoicedQuantity
             )}
-          />
-          <InfoField
-            label="Inconsistências"
-            value={
-              detail.inconsistenciesVisible
-                ? String(detail.inconsistencies.length)
-                : "—"
-            }
           />
         </dl>
         {detail.badges.length > 0 ? (
@@ -672,98 +778,6 @@ function SummaryTab({
       </OverlaySection>
 
       <OperationalDiagnosticsPanel detail={detail} />
-
-      <OverlaySection title="Identificação">
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <InfoField label="Cliente" value={detail.order.customerName} />
-          <InfoField label="Vendedor" value={detail.order.sellerName} />
-          <InfoField label="Empresa" value={detail.order.companyIssuer} />
-          <InfoField
-            label="Emissão"
-            value={formatSalesOrderFlowDetailDate(detail.order.issueDate)}
-          />
-          <InfoField
-            label="Entrega prometida"
-            value={formatSalesOrderFlowDetailDate(
-              detail.shipmentDates?.promisedDeliveryAt ??
-                detail.order.expectedDeliveryDate
-            )}
-          />
-          <InfoField
-            label="Dias na etapa"
-            value={formatSalesOrderFlowDetailDays(daysInStage)}
-          />
-        </dl>
-      </OverlaySection>
-
-      <OverlaySection title="Valores">
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <InfoField
-            label="Valor do pedido"
-            value={formatSalesOrderFlowDetailMoney(
-              financial?.orderValue,
-              valuesVisible
-            )}
-          />
-          <InfoField
-            label="Saldo ativo"
-            value={formatSalesOrderFlowDetailMoney(
-              financial?.activeResidualValue,
-              valuesVisible
-            )}
-          />
-          <InfoField
-            label="Valor cortado"
-            value={formatSalesOrderFlowDetailMoney(
-              financial?.cutValue,
-              valuesVisible
-            )}
-          />
-          <InfoField
-            label="Valor cancelado"
-            value={formatSalesOrderFlowDetailMoney(
-              financial?.canceledValue,
-              valuesVisible
-            )}
-          />
-          <InfoField
-            label="Valor atendido"
-            value={formatSalesOrderFlowDetailMoney(
-              financial?.fulfilledValue,
-              valuesVisible
-            )}
-          />
-        </dl>
-      </OverlaySection>
-
-      <OverlaySection title="Progressos">
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <InfoField
-            label="OP"
-            value={formatSalesOrderFlowDetailPercent(
-              detail.progress?.productionOrder
-            )}
-          />
-          <InfoField
-            label="Produzido"
-            value={formatSalesOrderFlowDetailPercent(detail.progress?.produced)}
-          />
-          <InfoField
-            label="Documentado"
-            value={formatSalesOrderFlowDetailPercent(
-              detail.progress?.documented
-            )}
-          />
-          <InfoField
-            label="Faturado"
-            value={formatSalesOrderFlowDetailPercent(detail.progress?.invoiced)}
-          />
-          <InfoField
-            label="Enviado"
-            value={formatSalesOrderFlowDetailPercent(detail.progress?.shipped)}
-          />
-        </dl>
-      </OverlaySection>
 
       <SalesOrderFlowManagementPanel
         detail={detail}
@@ -795,14 +809,17 @@ function ItemsTab({
       <OverlaySection
         title="Itens do pedido"
         description="Itens inconsistentes permanecem visíveis na lista."
+        className="!rounded-xl"
       >
         {items.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border bg-background/70 p-6 text-center text-sm text-muted-foreground">
             Nenhum item materializado no snapshot do fluxo.
           </p>
         ) : (
-          <OverlayTable>
-            <thead>
+          <OverlayTable
+            className="text-[11px] [&_td]:px-2 [&_td]:py-1.5 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-[10px] [&_th]:font-bold [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-[#1e3a8a]"
+          >
+            <thead className="bg-slate-50">
               <tr>
                 <th>Produto</th>
                 <th>Qtd. pedida</th>
@@ -832,7 +849,7 @@ function ItemsTab({
                       {item.productLabel}
                     </div>
                     {item.isInconsistent ? (
-                      <div className="mt-1 text-[11px] text-amber-800">
+                      <div className="mt-0.5 text-[10px] text-amber-800">
                         Inconsistente
                         {detail.inconsistenciesVisible
                           ? `: ${item.inconsistencies
@@ -1610,23 +1627,26 @@ function OperationalDiagnosticsPanel({
         className="space-y-4"
         data-testid="sales-order-flow-operational-diagnostics"
       >
-        <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          <InfoField
+        <dl className="grid gap-x-4 gap-y-2 sm:grid-cols-2 xl:grid-cols-3">
+          <FlatField
             label="Obrigação ainda pendente"
             value={diag.pendingObligation ? "Sim" : "Não"}
           />
-          <InfoField
+          <FlatField
             label="Item gargalo"
             value={diag.bottleneckItemLabel}
           />
-          <InfoField label="Motivo do gargalo" value={diag.bottleneckReason} />
-          <InfoField label="Próxima ação" value={diag.nextAction} />
-          <InfoField label="Área responsável" value={diag.responsibleArea} />
-          <InfoField
+          <FlatField label="Motivo do gargalo" value={diag.bottleneckReason} />
+          <FlatField label="Próxima ação" value={diag.nextAction} />
+          <FlatField
+            label="Área responsável"
+            value={formatResponsibleAreaLabel(diag.responsibleArea)}
+          />
+          <FlatField
             label="Último cálculo"
             value={formatSalesOrderFlowDetailDate(diag.computedAt)}
           />
-          <InfoField
+          <FlatField
             label="Versão do cálculo"
             value={
               diag.computationVersion
@@ -1637,7 +1657,7 @@ function OperationalDiagnosticsPanel({
             }
             className="sm:col-span-2"
           />
-          <InfoField
+          <FlatField
             label="Por que esta coluna"
             value={diag.stageReason}
             className="sm:col-span-2 xl:col-span-3"
@@ -1791,6 +1811,9 @@ function OperationalDiagnosticsPanel({
   );
 }
 
+const HEADER_ACTION_BTN =
+  "inline-flex items-center gap-1 rounded-md border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] font-semibold text-[#374151] hover:bg-[#F9FAFB] disabled:opacity-50";
+
 const SALES_ORDER_FLOW_BASE_BADGE_LABELS: Record<string, string> = {
   OVERDUE: "Atrasado",
   INCONSISTENT: "Inconsistente",
@@ -1812,6 +1835,17 @@ function formatSalesOrderFlowBadgeLabel(badge: string): string {
   );
 }
 
+function formatResponsibleAreaLabel(
+  area: string | null | undefined
+): string {
+  const raw = area?.trim();
+  if (!raw) return "—";
+  const match = SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS.find(
+    (opt) => opt.value === raw
+  );
+  return match?.label ?? raw;
+}
+
 function EmptyPanel({ text }: { text: string }) {
   return (
     <p className="rounded-xl border border-dashed border-border bg-background/70 p-6 text-center text-sm text-muted-foreground">
@@ -1820,6 +1854,29 @@ function EmptyPanel({ text }: { text: string }) {
   );
 }
 
+/** Campo flat no estilo Pedidos de Venda (sem card por valor). */
+function FlatField({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string | null | undefined;
+  className?: string;
+}) {
+  return (
+    <div className={cn("min-w-0", className)}>
+      <dt className="text-[10px] font-bold uppercase tracking-wide text-[#64748b]">
+        {label}
+      </dt>
+      <dd className="mt-0.5 text-[12px] font-medium leading-snug text-[#0f172a]">
+        {value?.trim() || "—"}
+      </dd>
+    </div>
+  );
+}
+
+/** Cards densos — ainda usados nas abas operacionais (NF-e / envio). */
 function InfoField({
   label,
   value,

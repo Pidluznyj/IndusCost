@@ -215,5 +215,60 @@ describe("salesOrderFlowList (OP-60)", () => {
     assert.equal(card.inconsistentItems, null);
     assert.deepEqual(card.inconsistencies, []);
     assert.deepEqual(card.badges, ["OVERDUE"]);
+    assert.equal(
+      card.stayReason,
+      "Ainda há itens aguardando liberação comercial no Nomus."
+    );
+    assert.equal(card.missingToLeave, "Liberar");
+  });
+
+  it("expõe motivo do gargalo humanizado no card", () => {
+    const card = mapSalesOrderFlowListCard(
+      {
+        salesOrderId: "o2",
+        currentStage: "WAITING_PRODUCTION_ORDER",
+        nextAction: "Abrir ou vincular Ordem de Produção aos itens liberados.",
+        responsibleArea: "PCP_PRODUCAO",
+        bottleneckReason:
+          "PRODUCTION_ORDER_MISSING — Saldo residual exige produção e não há OP válida vinculada para cobri-lo.",
+        totalItems: 1,
+        activeItems: 1,
+        completedItems: 0,
+        pendingItems: 1,
+        inconsistentItems: 0,
+        canceledItems: 0,
+        progressProductionOrder: 0,
+        progressProduced: null,
+        progressDocumented: 100,
+        progressInvoiced: 0,
+        progressShipped: 100,
+        orderValue: 2850,
+        fulfilledValue: 0,
+        activeResidualValue: 2847,
+        cutValue: 0,
+        canceledValue: 0,
+        promisedDeliveryAt: null,
+        isOverdue: true,
+        inconsistenciesJson: [],
+        badgesJson: ["DS_LINKED"],
+        stageEnteredAt: null,
+        salesOrder: {
+          orderCode: "PD 02586",
+          issueDate: new Date("2023-05-29T00:00:00Z"),
+          nomusSellerName: null,
+          responsible: null,
+          companyIssuer: "2",
+          Customer: { companyName: "KNOX", tradeName: null },
+          flowManagement: null,
+        },
+      },
+      { canViewValues: true }
+    );
+    assert.equal(
+      card.stayReason,
+      "Saldo residual exige produção e não há OP válida vinculada para cobri-lo."
+    );
+    assert.match(card.missingToLeave, /Ordem de Produção/i);
+    assert.ok(card.bottleneckReason?.includes("PRODUCTION_ORDER_MISSING"));
   });
 });

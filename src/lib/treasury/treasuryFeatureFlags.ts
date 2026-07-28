@@ -1,6 +1,9 @@
 /**
- * Feature flags da Central de Tesouraria — fail-closed.
- * Padrão alinhado a `salesOrderFlowFeatureFlags.ts` (env), com subflags nomeadas.
+ * Feature flags da Central de Tesouraria.
+ * - Mestra (`TREASURY_MODULE_ENABLED`): ausente = OFF (opt-in explícito).
+ * - Subflags conhecidas: ausente = ON somente com mestra ON; opt-out `0`/`false`.
+ * - Flag ID desconhecida: sempre OFF (fail-closed).
+ * - Valor env inválido em flag conhecida: OFF (fail-closed).
  * Sem Prisma.
  */
 
@@ -8,6 +11,24 @@ import type { RequestHandler } from "express";
 
 /** Flag mestra (documental + runtime). */
 export const TREASURY_MASTER_FLAG = "treasury.enabled" as const;
+
+/**
+ * Default da mestra quando a env está ausente/vazia.
+ * Ativação exige `TREASURY_MODULE_ENABLED=1` (ou truthy conhecido).
+ */
+export const TREASURY_MASTER_DEFAULT_WHEN_ABSENT = false;
+
+/**
+ * Default das subflags do catálogo quando a env está ausente/vazia
+ * e a mestra já está explicitamente ON.
+ */
+export const TREASURY_SUBFLAG_DEFAULT_WHEN_ABSENT = true;
+
+/**
+ * @deprecated Preferir `TREASURY_MASTER_DEFAULT_WHEN_ABSENT` /
+ * `TREASURY_SUBFLAG_DEFAULT_WHEN_ABSENT`. Mantido como alias da mestra (OFF).
+ */
+export const TREASURY_FEATURE_FLAG_DEFAULT_ENABLED = TREASURY_MASTER_DEFAULT_WHEN_ABSENT;
 
 /** Catálogo de flags de rollout por submódulo (+ auxiliares). */
 export const TREASURY_FEATURE_FLAG_IDS = [
@@ -55,16 +76,30 @@ export const TREASURY_FEATURE_RESOURCE = "finance.treasury.enabled";
 export const TREASURY_ENABLED_ENV = TREASURY_FEATURE_FLAG_ENV["treasury.enabled"];
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on", "enabled"]);
+const DISABLED_VALUES = new Set(["0", "false", "no", "off", "disabled"]);
 
-function parseEnabled(raw: string | undefined): boolean {
-  if (raw == null) return false;
-  return ENABLED_VALUES.has(raw.trim().toLowerCase());
+/**
+ * Parse de env configurada.
+ * Ausente/vazio → `defaultWhenAbsent`.
+ * Truthy/falsy conhecidos → respeitados.
+ * Qualquer outro valor → OFF (fail-closed).
+ */
+export function parseTreasuryFlagEnvValue(
+  raw: string | undefined,
+  defaultWhenAbsent: boolean
+): boolean {
+  if (raw == null) return defaultWhenAbsent;
+  const v = raw.trim().toLowerCase();
+  if (v === "") return defaultWhenAbsent;
+  if (DISABLED_VALUES.has(v)) return false;
+  if (ENABLED_VALUES.has(v)) return true;
+  return false;
 }
 
 /**
- * Fail-closed para uma flag.
+ * Resolve uma flag do catálogo.
  * Subflags exigem `treasury.enabled` ligada (AND).
- * Flag desconhecida → sempre false.
+ * Flag desconhecida → sempre false (fail-closed).
  */
 export function isTreasuryFeatureFlagEnabled(
   flagId: string,
@@ -74,10 +109,16 @@ export function isTreasuryFeatureFlagEnabled(
     return false;
   }
   const id = flagId as TreasuryFeatureFlagId;
-  const masterOn = parseEnabled(env[TREASURY_FEATURE_FLAG_ENV["treasury.enabled"]]);
+  const masterOn = parseTreasuryFlagEnvValue(
+    env[TREASURY_FEATURE_FLAG_ENV["treasury.enabled"]],
+    TREASURY_MASTER_DEFAULT_WHEN_ABSENT
+  );
   if (id === "treasury.enabled") return masterOn;
   if (!masterOn) return false;
-  return parseEnabled(env[TREASURY_FEATURE_FLAG_ENV[id]]);
+  return parseTreasuryFlagEnvValue(
+    env[TREASURY_FEATURE_FLAG_ENV[id]],
+    TREASURY_SUBFLAG_DEFAULT_WHEN_ABSENT
+  );
 }
 
 /** Alias da mestra. */
@@ -95,7 +136,7 @@ export function listEnabledTreasuryFeatureFlags(
   );
 }
 
-/** Snapshot completo (todas as flags conhecidas → boolean). Fail-closed. */
+/** Snapshot completo (todas as flags conhecidas → boolean). */
 export function getTreasuryFeatureFlagsMap(
   env: Record<string, string | undefined> = process.env
 ): Record<TreasuryFeatureFlagId, boolean> {
