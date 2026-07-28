@@ -20,6 +20,7 @@ describe("proposal form layout", () => {
     assert.doesNotMatch(formSlice, /lg:col-span-2/);
     assert.match(formSlice, /data-tour="proposals-form-actions"/);
     assert.match(formSlice, /data-tour="proposals-form-items"/);
+    assert.match(formSlice, /data-tour="proposals-form-header"/);
     assert.match(formSlice, /data-tour="proposals-root"/);
     assert.match(formSlice, /min-h-\[70vh\]/);
 
@@ -30,6 +31,17 @@ describe("proposal form layout", () => {
     assert.ok(notesIdx > itemsIdx, "observações devem ficar após itens");
     assert.ok(internalIdx > itemsIdx, "notas internas devem ficar após itens");
     assert.match(formSlice, /grid grid-cols-1 md:grid-cols-2 gap-6/);
+  });
+
+  it("cabeçalho compacto em grade e pesquisa de produto mais larga", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+
+    assert.match(formSlice, /grid grid-cols-1 md:grid-cols-12 gap-3/);
+    assert.match(formSlice, /data-testid="proposal-add-product-search"/);
+    assert.match(formSlice, /min-w-\[20rem\] max-w-2xl/);
+    assert.doesNotMatch(formSlice, /className="w-64"/);
   });
 
   it("tour preserva âncoras do formulário", () => {

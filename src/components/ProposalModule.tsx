@@ -23,7 +23,6 @@ import {
   Calculator,
   DollarSign,
   Percent,
-  Truck,
   Info,
   ExternalLink,
   Printer,
@@ -1610,27 +1609,30 @@ export const ProposalModule = () => {
           </div>
         ) : null}
 
-        <div className="space-y-6">
-          {/* Top: Client & Conditions (full width) */}
-            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-6">
-              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <User className="h-4 w-4" /> Cliente e Cabeçalho
+        <div className="space-y-4">
+          {/* Top: Client, header & commercial conditions (compact) */}
+            <div
+              className="bg-card rounded-xl border border-border p-4 shadow-sm space-y-3"
+              data-tour="proposals-form-header"
+            >
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                <User className="h-3.5 w-3.5" /> Cliente, cabeçalho e condições
               </h4>
-              
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Título da Proposta</label>
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                <div className="space-y-1 md:col-span-5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Título da Proposta</label>
                   <input
                     type="text"
                     placeholder="Ex: Fornecimento de Peças - Projeto X"
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                     value={formData.title}
                     onChange={(e) => setFormData({...formData, title: e.target.value})}
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Cliente</label>
+                <div className="space-y-1 md:col-span-4">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Cliente</label>
                   <SearchableSelect
                     required
                     placeholder="Selecione um cliente..."
@@ -1652,9 +1654,35 @@ export const ProposalModule = () => {
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">
-                    Tabela padrão para novos itens
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Responsável</label>
+                  <input
+                    type="text"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.responsible}
+                    onChange={(e) => setFormData({...formData, responsible: e.target.value})}
+                  />
+                </div>
+
+                <div className="space-y-1 md:col-span-1">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Validade</label>
+                  <input
+                    type="number"
+                    title="Validade em dias"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.validityDays}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        validityDays: safeInt(e.target.value, 15),
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1 md:col-span-4">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                    Tabela padrão (novos itens)
                   </label>
                   <SearchableSelect
                     placeholder="Sem tabela / preço manual"
@@ -1663,94 +1691,60 @@ export const ProposalModule = () => {
                     unknownSelectionLabel="Tabela não listada (verifique cadastro ou publicação)"
                     onChange={(val) => handlePriceTableSelectionChange(val ?? "")}
                   />
-                  <p className="text-[10px] text-muted-foreground leading-snug">
-                    Esta tabela será usada apenas para novos itens. Itens já adicionados mantêm a origem de preço em
-                    que foram criados. Tabelas sem versão publicada aparecem listadas, mas indisponíveis até serem
-                    publicadas na Formação de Preço.
-                  </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Responsável</label>
-                    <input
-                      type="text"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.responsible}
-                      onChange={(e) => setFormData({...formData, responsible: e.target.value})}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Validade (Dias)</label>
-                    <input
-                      type="number"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.validityDays}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          validityDays: safeInt(e.target.value, 15),
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <hr className="border-border" />
-
-              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                <Truck className="h-4 w-4" /> Condições Comerciais
-              </h4>
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Condição de Pagamento</label>
+                <div className="space-y-1 md:col-span-3">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Condição de Pagamento</label>
                   <input
                     type="text"
                     placeholder="Ex: 30/60/90 dias"
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                     value={formData.paymentTerms}
                     onChange={(e) => setFormData({...formData, paymentTerms: e.target.value})}
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Frete</label>
-                    <SearchableSelect
-                      placeholder="Condição de frete..."
-                      options={FREIGHT_CONDITION_OPTIONS}
-                      value={formData.freightCondition || "CIF"}
-                      onChange={(v) => setFormData({ ...formData, freightCondition: v })}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Prazo Entrega (Dias)</label>
-                    <input
-                      type="number"
-                      className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
-                      value={formData.deliveryTimeDays}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          deliveryTimeDays: safeOptionalInt(e.target.value),
-                        })
-                      }
-                    />
-                  </div>
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Frete</label>
+                  <SearchableSelect
+                    placeholder="Condição de frete..."
+                    options={FREIGHT_CONDITION_OPTIONS}
+                    value={formData.freightCondition || "CIF"}
+                    onChange={(v) => setFormData({ ...formData, freightCondition: v })}
+                  />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-muted-foreground uppercase">Local de Entrega</label>
+                <div className="space-y-1 md:col-span-1">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Prazo</label>
+                  <input
+                    type="number"
+                    title="Prazo de entrega em dias"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    value={formData.deliveryTimeDays}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        deliveryTimeDays: safeOptionalInt(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1 md:col-span-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Local de Entrega</label>
                   <input
                     type="text"
-                    className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
                     value={formData.deliveryLocation}
                     onChange={(e) => setFormData({...formData, deliveryLocation: e.target.value})}
                   />
                 </div>
               </div>
+
+              <p className="text-[10px] text-muted-foreground leading-snug">
+                Tabela padrão vale só para novos itens; itens existentes mantêm a origem de preço. Tabelas sem versão
+                publicada ficam listadas, mas indisponíveis até publicação na Formação de Preço.
+              </p>
             </div>
 
           {/* Middle: Items editor (full width) */}
@@ -1758,8 +1752,8 @@ export const ProposalModule = () => {
               className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[70vh]"
               data-tour="proposals-form-items"
             >
-              <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="p-4 border-b border-border bg-accent/30 flex flex-wrap items-center gap-3 justify-between">
+                <div className="flex items-center gap-3 shrink-0">
                   <h4 className="font-bold flex items-center gap-2">
                     <Package className="h-4 w-4" /> Proposta — Edição
                   </h4>
@@ -1793,10 +1787,10 @@ export const ProposalModule = () => {
                   </div>
                 </div>
                 {formTab === "items" ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-64">
+                  <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                    <div className="w-full min-w-[20rem] max-w-2xl" data-testid="proposal-add-product-search">
                       <SearchableSelect
-                        placeholder="+ Adicionar Produto..."
+                        placeholder="+ Adicionar Produto (SKU ou nome)..."
                         options={products.map((p) => ({
                           value: p.id,
                           label: `${p.sku} — ${p.name}`,
