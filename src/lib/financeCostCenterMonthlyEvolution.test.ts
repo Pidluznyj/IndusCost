@@ -17,10 +17,11 @@ function row(dueDate: string | null, allocatedAmount: number): CostCenterMonthly
 
 describe("financeCostCenterMonthlyEvolution", () => {
   it("agrupa por data de vencimento em 12 meses, meses sem título ficam em zero", () => {
+    // Meio-dia local evita deslocamento de fuso (UTC meia-noite vira mês anterior em BR).
     const rows = [
-      row("2026-02-10T00:00:00.000Z", 100),
-      row("2026-02-25T00:00:00.000Z", 50),
-      row("2026-07-01T00:00:00.000Z", 300),
+      row("2026-02-10T12:00:00", 100),
+      row("2026-02-25T12:00:00", 50),
+      row("2026-07-01T12:00:00", 300),
     ];
     const buckets = groupCostCenterAllocationByDueMonth(rows, 2026);
     assert.equal(buckets.length, 12);
@@ -32,8 +33,8 @@ describe("financeCostCenterMonthlyEvolution", () => {
 
   it("respeita o ano filtrado (ignora vencimentos de outro ano)", () => {
     const rows = [
-      row("2025-03-10T00:00:00.000Z", 999),
-      row("2026-03-10T00:00:00.000Z", 120),
+      row("2025-03-10T12:00:00", 999),
+      row("2026-03-10T12:00:00", 120),
     ];
     const buckets = groupCostCenterAllocationByDueMonth(rows, 2026);
     assert.equal(buckets[2], 120);
