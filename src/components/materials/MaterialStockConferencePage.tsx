@@ -14,6 +14,10 @@ import {
   type MaterialStockConferenceLayoutMode,
 } from "@/src/lib/materialStockConferenceUi";
 import {
+  applyConferenceSuccessToListItem,
+  type MaterialStockConferenceApiResult,
+} from "@/src/lib/materialStockConferenceClient";
+import {
   appendStockTabletSearchPages,
   fetchMaterialStockTabletSearch,
   hasMoreStockTabletPages,
@@ -27,6 +31,7 @@ import {
 import type { MaterialStockTabletListItem } from "@/src/lib/materialStockTabletTypes";
 import { TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { usePermissions } from "@/src/hooks/usePermissions";
+import { MaterialStockConferenceDialog } from "@/src/components/materials/MaterialStockConferenceDialog";
 import {
   MaterialStockConferenceWorkspace,
   type MaterialStockConferenceViewKind,
@@ -75,6 +80,7 @@ export function MaterialStockConferencePage() {
   const [selectedId, setSelectedId] = useState<string | null>(
     routeMaterialId ?? null
   );
+  const [conferenceOpen, setConferenceOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const requestGenRef = useRef(0);
@@ -178,7 +184,6 @@ export function MaterialStockConferencePage() {
     if (!selectedId || loading) return;
     const preserved = resolvePreservedStockSelection(selectedId, rows);
     if (preserved) return;
-    // Seleção saiu do conjunto carregado (filtro/busca) — limpa sem confundir stacked.
     if (!routeMaterialId) {
       setSelectedId(null);
     }
@@ -190,6 +195,9 @@ export function MaterialStockConferencePage() {
     loadedCount: rows.length,
     total,
   });
+
+  const selectedItem =
+    rows.find((r) => r.id === selectedId) ?? null;
 
   const viewKind: MaterialStockConferenceViewKind = useMemo(() => {
     if (loading && rows.length === 0) return "loading";
@@ -207,12 +215,23 @@ export function MaterialStockConferencePage() {
   const onClearSelection = () => {
     didAutoSelectRef.current = true;
     setSelectedId(null);
+    setConferenceOpen(false);
     navigate(MATERIALS_SECTION_PATHS.stockConference, { replace: false });
   };
 
   const onFilterChange = (next: MaterialStockListFilterId) => {
     setFilter(next);
     setPage(1);
+  };
+
+  const onConferenceSuccess = (result: MaterialStockConferenceApiResult) => {
+    setRows((prev) =>
+      prev.map((row) =>
+        row.id === result.material.id
+          ? applyConferenceSuccessToListItem(row, result)
+          : row
+      )
+    );
   };
 
   return (
@@ -251,12 +270,25 @@ export function MaterialStockConferencePage() {
         canViewHistory={canViewHistory}
         canConference={canConference}
         onConference={() => {
-          /* fluxo de gravação em entrega seguinte */
+          if (!selectedItem) return;
+          setConferenceOpen(true);
         }}
         onHistory={() => {
           /* histórico em entrega seguinte */
         }}
       />
+
+      {selectedItem ? (
+        <MaterialStockConferenceDialog
+          item={selectedItem}
+          open={conferenceOpen}
+          onClose={() => setConferenceOpen(false)}
+          onSuccess={onConferenceSuccess}
+          onReloadRequired={() => {
+            void runSearch(1, "replace");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
