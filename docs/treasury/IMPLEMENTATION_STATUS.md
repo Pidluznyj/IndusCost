@@ -85,7 +85,7 @@
 | **58** | Auditoria de performance | `DONE` | `6ed1fb6` | batch ACL/saldos; OFX createMany; exception statuses IN; defer rawPayload CR/CP; índices; benchmarks antes/depois; `docs/treasury/PERFORMANCE_BENCHMARKS.md`; `test:treasury` 574/574 |
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
 | **60** | Testes de integração completos (DB seguro) | `DONE` | `462c74c` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
-| **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `PENDING` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
+| **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `3e24528` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
 
     > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**.
 
