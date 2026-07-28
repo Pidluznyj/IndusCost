@@ -133,8 +133,9 @@ export type BuildSalesOrderListWhereOptions = {
   /** Auditoria/histórico: não exclui MISSING_CONFIRMED. */
   includeConfirmedMissing?: boolean;
   /**
-   * População comercial oficial: exclui clientes do grupo econômico.
-   * Default true. Use false apenas em auditoria/histórico.
+   * Opt-in: exclui clientes do grupo econômico (Lazarios/Koppetel/SM).
+   * Default false — paridade com a listagem Comercial (Pedidos de Venda) pré-d8daf91.
+   * Domínios oficiais (DRE/executivo/AR/AP) passam true explicitamente quando aplicável.
    */
   excludeEconomicGroupCustomers?: boolean;
 };
@@ -208,7 +209,7 @@ export function buildSalesOrderListWhere(
     and.push({ nfeLinks: { none: buildSalesOrderValidNfeLinkWhere() } });
   }
 
-  if (options?.excludeEconomicGroupCustomers !== false) {
+  if (options?.excludeEconomicGroupCustomers === true) {
     and.push(buildEconomicGroupCustomerPrismaExclusion());
   }
 
@@ -247,8 +248,8 @@ export function buildSalesOrderListSummary(input: {
 /**
  * Totais oficiais da listagem operacional — Σ `SalesOrder.totalNetValue` / contagem
  * dos pedidos já filtrados pelo mesmo `where` do GET /api/sales-orders.
- * Totais da população já filtrada pelo `where` oficial (inclui exclusão de
- * clientes do grupo econômico na listagem operacional).
+ * Totais da população já filtrada pelo mesmo `where` do GET /api/sales-orders
+ * (listagem Comercial não exclui grupo econômico por default).
  *
  * Preferir `buildSalesOrderListSummary` a partir de `prisma.salesOrder.aggregate`
  * na rota HTTP (PERF 05). Esta função permanece para dashboards/testes que já

@@ -42,8 +42,9 @@ function presenceOptions(input: ResolveOperationalPopulationInput) {
   return {
     env: input.env,
     includeConfirmedMissing: input.context === "HISTORICAL_AUDIT",
-    // Auditoria histórica preserva intercompany; população operacional exclui.
-    excludeEconomicGroupCustomers: input.context !== "HISTORICAL_AUDIT",
+    // Pedidos de Venda (listagem/cards/export): não exclui grupo econômico.
+    // Exclusão intercompany permanece opt-in em motores oficiais (DRE/executivo/AR/AP).
+    excludeEconomicGroupCustomers: false,
   };
 }
 

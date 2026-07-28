@@ -203,10 +203,15 @@ describe("salesOrdersListSummary", () => {
     assert.match(JSON.stringify(where), /"not":"CANCELLED"/);
   });
 
-  it("buildSalesOrderListWhere exclui clientes do grupo econômico por padrão", () => {
+  it("buildSalesOrderListWhere NÃO exclui grupo econômico por padrão (Pedidos Comercial)", () => {
     const where = buildSalesOrderListWhere({}, { env: {} });
     const json = JSON.stringify(where);
-    assert.match(json, /72569510000195|Lazarios|Koppetel/);
+    assert.doesNotMatch(json, /72569510000195|Lazarios|Koppetel/);
+    const optIn = buildSalesOrderListWhere(
+      {},
+      { env: {}, excludeEconomicGroupCustomers: true }
+    );
+    assert.match(JSON.stringify(optIn), /72569510000195|Lazarios|Koppetel/);
   });
 
   it("buildSalesOrderListWhere filtra Com NF via nfeLinks válidos", () => {
