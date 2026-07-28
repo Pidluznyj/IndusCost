@@ -92,7 +92,7 @@
 | **65** | Controle de rollout por submódulo | `DONE` | `10fc53a` | Flags `balances/dashboard/receivables/payables/reports` + guards BE; `availability.flags`; FE filtra abas; `19-ROLLOUT.md` ordem de ativação; testes flags/rollout; dados preservados com flag OFF |
 | **66** | Scripts + runbook de implantação produção | `DONE` | `e44b9f2` | `scripts/treasury/predeploy-check.sh` + `postdeploy-validation.sh`; `PRODUCTION-DEPLOYMENT.md` + `ROLLBACK.md`; alinhado a `/opt/induscost` + `deploy-induscost.sh`; sem execução em prod |
 | **67** | Checklist validação funcional pós-deploy | `DONE` | `965ef35` | `POST-DEPLOY-CHECKLIST.md` — classes A (leitura), B (dados teste), C (manual financeiro); health/migrations/tabelas/perms/fluxos/OFX seguro/duplicidades; sem execução em prod |
-| **68** | Auditoria final RC + fechamento de lacunas | `DONE` | _(commit deste prompt)_ | Relatório/posição sem inventar igualdade; ledger→calculado; OFX ledgerBalance→conciliado; civil date SP; FE accept/unmatch; audit alert-settings; health real; `RELEASE-CANDIDATE-VALIDATION.md`; gates reexecutados |
+| **68** | Auditoria final RC + fechamento de lacunas | `DONE` | `9b4f526` | Relatório/posição sem inventar igualdade; ledger→calculado; OFX ledgerBalance→conciliado; civil date SP; FE accept/unmatch; audit alert-settings; health real; `RELEASE-CANDIDATE-VALIDATION.md`; gates reexecutados |
 
     > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**; auditoria final RC = **68**.
 
@@ -785,4 +785,4 @@
 | 2026-07-28 | Prompt 65: rollout por submódulo — `10fc53a` |
 | 2026-07-28 | Prompt 66: scripts/runbook implantação produção — `e44b9f2` |
 | 2026-07-28 | Prompt 67: checklist pós-deploy — `965ef35` |
-| 2026-07-28 | Prompt 68: auditoria final RC + correção lacunas — ver commit HEAD |
+| 2026-07-28 | Prompt 68: auditoria final RC + correção lacunas — `9b4f526` |

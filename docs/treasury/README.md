@@ -18,6 +18,7 @@
 | [05-OFFICIAL-AR-AP-ADAPTER.md](./05-OFFICIAL-AR-AP-ADAPTER.md) | Adapter read-only Nomus CR/CP |
 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | Status por prompt |
 | [REQUIREMENTS-TRACEABILITY.md](./REQUIREMENTS-TRACEABILITY.md) | Matriz R01–R30 |
+| [RELEASE-CANDIDATE-VALIDATION.md](./RELEASE-CANDIDATE-VALIDATION.md) | Gates e critérios RC (Prompt 68) |
 | [PERFORMANCE_BENCHMARKS.md](./PERFORMANCE_BENCHMARKS.md) | Benchmarks de performance |
 | [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) | Resumo de implantação (usuário) |
 | [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md) | Runbook completo de produção + scripts |
