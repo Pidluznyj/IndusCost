@@ -88,8 +88,9 @@
 | **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `3e24528` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
 | **62** | Backfill complementos operacionais (preview/apply) | `DONE` | `59f5783` | CLI `scripts/treasuryTitleComplementBackfill.ts`; preview (período/encontrados/elegíveis/existentes/would-create/inconsistências/duplicidades/cancelados + estimativa); apply create-only idempotente em lotes + checkpoint/retomada/logs; não muta Nomus nem apaga; npm `backfill:treasury:title-complements:*`; testes unitários+wiring |
 | **63** | Auditoria formal + fechamento de lacunas (rastreabilidade) | `DONE` | `0b687bb` | `REQUIREMENTS-TRACEABILITY.md` (R01–R30); fecha R15 ledger + endpoints balance-position/forecast-vs-actual/alerts/audit/health/payment-schedule/reconcile workspace; accept/unmatch HTTP; UIs manual-entries/payment-schedule/reconcile/audit/ofx; runbook + `validate:treasury:deploy`; testes gaps |
+| **64** | Documentação completa + manuais operacionais | `DONE` | `PENDING` | `docs/treasury/README.md` + 10–18 técnicos; manuals (usuário, abertura, fechamento, cobrança, conciliação); sem alteração de código funcional |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill complementos = **62**; rastreabilidade/lacunas = **63**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**.
 
 ---
 
@@ -125,7 +126,7 @@
 | Observabilidade | `DONE` | `/availability` + `/health` Tesouraria (fail-closed) + freshness dashboard |
 | Testes domínio | `DONE` | Unitários P59 + integração P60 (DB seguro) + E2E UI P61 (`tsx --test` + `renderToStaticMarkup`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
-| Documentação | `DONE` | Discovery/mapping/plan/baseline/status/benchmarks/traceability + `DEPLOYMENT_RUNBOOK.md` |
+| Documentação | `DONE` | P00 docs + P63 traceability/runbook + P64 arquitetura/APIs/regras/manuais (`docs/treasury/README.md`) |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
 | Scripts deploy/validação | `DONE` | P62 backfill + P63 `validate:treasury:deploy` + runbook (Cursor não deploya) |
 
@@ -764,3 +765,4 @@
 | 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `3e24528` |
 | 2026-07-28 | Prompt 62: backfill complementos operacionais (preview/apply) — `59f5783` |
 | 2026-07-28 | Prompt 63: auditoria formal + fechamento de lacunas (rastreabilidade) — `0b687bb` |
+| 2026-07-28 | Prompt 64: documentação completa + manuais operacionais — `PENDING` |

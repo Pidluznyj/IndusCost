@@ -49,7 +49,7 @@
 | R25 | Permissões | Y | `finance.treasury*` contract | guards em rotas | admin + tabs | `treasuryPermissions.test.ts` | DONE | deny>allow | — |
 | R26 | Observabilidade | Y | availability+health | `GET …/availability`, `GET …/health` | indicadores freshness | availability + gaps wiring | DONE | health fail-closed (Prompt 63) | métricas OFX/closing ainda básicas |
 | R27 | Testes | Y | `npm run test:treasury` | — | — | suite unit+integ+E2E | DONE | P59–P61 + gaps | 1 skip gated Postgres |
-| R28 | Documentação | Y | `docs/treasury/*` | — | — | — | DONE | discovery/mapping/plan/status/runbook/traceability | PRD/TDD externos ausentes no repo |
+| R28 | Documentação | Y | `docs/treasury/*` + `manuals/*` | — | — | — | DONE | README + 10–18 técnicos + manuais P64; discovery/mapping/plan/status/runbook/traceability | PRD/TDD externos ausentes no repo |
 | R29 | Feature flags | Y | `treasuryFeatureFlags.ts` | fail-closed nas rotas | nav oculta | `treasuryFeatureFlags.test.ts` | DONE | mestra+subflags | — |
 | R30 | Scripts deploy/validação | Y | runbook + validate + backfill | — | — | `treasuryValidateDeploy.test.ts`, backfill tests | DONE | `validate:treasury:deploy`, `DEPLOYMENT_RUNBOOK.md`, backfill P62 | Cursor não executa prod |
 
