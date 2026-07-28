@@ -787,3 +787,4 @@
 | 2026-07-28 | Prompt 66: scripts/runbook implantação produção — `e44b9f2` |
 | 2026-07-28 | Prompt 67: checklist pós-deploy — `965ef35` |
 | 2026-07-28 | Prompt 68: auditoria final RC + correção lacunas — `9b4f526` |
+| 2026-07-28 | Prompt 68 residual: alert-settings UI + calculate FE + SP overdue — `c5b0800` |
