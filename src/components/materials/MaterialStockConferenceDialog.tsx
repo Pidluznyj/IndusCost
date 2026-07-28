@@ -88,7 +88,7 @@ export function MaterialStockConferenceDialog({
   }) => {
     if (inFlightRef.current || saving) return;
     const qty = parseStockConferenceQuantityInput(reportedRaw);
-    if (!qty.ok) {
+    if (qty.ok === false) {
       setError(
         qty.reason === "EMPTY"
           ? "Informe o novo saldo contado."
@@ -119,7 +119,7 @@ export function MaterialStockConferenceDialog({
       idempotencyKey: idempotencyKeyRef.current,
     });
 
-    if (result.ok) {
+    if (result.ok === true) {
       inFlightRef.current = false;
       setSaving(false);
       onSuccess(result.data);

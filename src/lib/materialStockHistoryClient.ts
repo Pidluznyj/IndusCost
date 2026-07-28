@@ -1,10 +1,8 @@
 /**
  * Cliente browser-safe — GET histórico de conferência (somente leitura).
  */
-import {
-  MATERIAL_STOCK_CONFERENCE_REASON_LABELS,
-  type MaterialStockConferenceReason,
-} from "./materialStockConferenceClient.js";
+import { MATERIAL_STOCK_CONFERENCE_REASON_LABELS } from "./materialStockConferenceClient.js";
+import type { MaterialStockConferenceReason } from "./materialStockConferenceRules.js";
 import type {
   MaterialStockHistoryListItem,
   MaterialStockHistoryResponse,

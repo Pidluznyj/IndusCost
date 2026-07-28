@@ -124,7 +124,7 @@ export async function enqueueMaterialStockSpreadsheetMirrorBestEffort(
 ): Promise<void> {
   try {
     const result = await enqueueMaterialStockSpreadsheetMirror(db, input);
-    if (!result.ok) {
+    if (result.ok === false) {
       console.error(
         "[material-stock-spreadsheet-mirror] enqueue skipped:",
         result.reason

@@ -129,8 +129,8 @@ function createTxDb(seed: MaterialRow) {
           data.idempotencyKey &&
           conferences.some((c) => c.idempotencyKey === data.idempotencyKey)
         ) {
-          const err = new Error("Unique constraint");
-          (err as { code: string }).code = "P2002";
+          const err = new Error("Unique constraint") as Error & { code: string };
+          err.code = "P2002";
           throw err;
         }
         const row: ConferenceRow = {

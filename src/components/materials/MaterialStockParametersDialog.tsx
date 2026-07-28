@@ -69,7 +69,7 @@ export function MaterialStockParametersDialog({
       minimumQuantity: m.value,
       recommendedQuantity: r.value,
     });
-    if (!validation.ok) {
+    if (validation.ok === false) {
       setError(validation.message);
       return;
     }
@@ -95,7 +95,7 @@ export function MaterialStockParametersDialog({
       recommendedQuantity: r.value,
     });
     setSaving(false);
-    if (!result.ok) {
+    if (result.ok === false) {
       setError(result.message);
       return;
     }

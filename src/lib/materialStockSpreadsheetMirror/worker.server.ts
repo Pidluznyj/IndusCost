@@ -87,7 +87,7 @@ export async function runMaterialStockSpreadsheetMirrorWorker(input: {
         { fetchImpl: input.fetchImpl, config: input.config }
       );
       const failNow = nowFn();
-      if (delivery.ok) {
+      if (delivery.ok === true) {
         const done = await input.repository.markSynced(
           claimed.id,
           claimed.lockToken,
@@ -99,7 +99,8 @@ export async function runMaterialStockSpreadsheetMirrorWorker(input: {
       }
 
       const exhausted =
-        !delivery.retryable || claimed.attempts >= claimed.maxAttempts;
+        delivery.retryable === false ||
+        claimed.attempts >= claimed.maxAttempts;
       if (exhausted) {
         const dead = await input.repository.markError(
           claimed.id,

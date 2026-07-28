@@ -53,7 +53,7 @@ export async function deliverMaterialStockSpreadsheetMirrorWebhook(
     config.webhookUrl,
     config.allowedHosts
   );
-  if (!destination.ok) {
+  if (destination.ok === false) {
     return {
       ok: false,
       code: destination.code,
@@ -64,7 +64,7 @@ export async function deliverMaterialStockSpreadsheetMirrorWebhook(
 
   const asRecord = payload as unknown as Record<string, unknown>;
   const costs = assertMirrorPayloadHasNoCosts(asRecord);
-  if (!costs.ok) {
+  if (costs.ok === false) {
     return {
       ok: false,
       code: "PAYLOAD_HAS_COSTS",
