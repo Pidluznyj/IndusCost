@@ -146,6 +146,7 @@ describe("treasurySimpleNavigation — shell e preservação", () => {
     for (const name of [
       "TreasuryDashboardPage.tsx",
       "TreasuryTodayPage.tsx",
+      "TreasuryTodayOpeningPage.tsx",
       "TreasuryAccountsPage.tsx",
       "TreasuryReceivablesPage.tsx",
       "TreasuryPayablesPage.tsx",

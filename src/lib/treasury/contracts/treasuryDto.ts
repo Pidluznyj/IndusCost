@@ -370,6 +370,58 @@ export type TreasuryGuidedTodayDto = {
   attention: TreasuryGuidedTodayAttentionDto[];
 };
 
+export type TreasuryGuidedDailyOpeningSituation =
+  | "CONFIRMED"
+  | "READY_TO_CONFIRM"
+  | "NEEDS_MANUAL"
+  | "EDITED_WITH_DIFF"
+  | "INACTIVE";
+
+export type TreasuryGuidedDailyOpeningAccountDto = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  bank: string | null;
+  previousClosingBalance: TreasuryMoneyString | null;
+  previousClosingCivilDate: TreasuryCivilDate | null;
+  previousClosingId: string | null;
+  suggestedOpeningBalance: TreasuryMoneyString | null;
+  currentOpeningBalance: TreasuryMoneyString | null;
+  expectedVersion: number;
+  situation: TreasuryGuidedDailyOpeningSituation;
+  situationLabel: string;
+  requiresManualInput: boolean;
+  canConfirmSuggested: boolean;
+};
+
+export type TreasuryGuidedDailyOpeningWorkspaceDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  accounts: TreasuryGuidedDailyOpeningAccountDto[];
+  confirmableCount: number;
+  pendingCount: number;
+  confirmedCount: number;
+};
+
+export type TreasuryGuidedDailyOpeningSaveItemResultDto = {
+  accountId: string;
+  openingBalance: TreasuryMoneyString;
+  version: number;
+  origin: string;
+  snapshotId: string;
+  created: boolean;
+};
+
+export type TreasuryGuidedDailyOpeningSaveResultDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  savedCount: number;
+  items: TreasuryGuidedDailyOpeningSaveItemResultDto[];
+  nextStepHref: string;
+};
+
 /** Freshness de uma fonte do dashboard diário. */
 export type TreasuryDashboardSourceFreshnessDto = {
   source:

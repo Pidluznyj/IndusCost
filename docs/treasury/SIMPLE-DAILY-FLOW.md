@@ -130,7 +130,7 @@ O fluxo simples é uma **camada de UX** sobre o módulo completo. Permanecem dis
 - OFX, movimentos bancários e conciliação  
 - Exceções, alertas, fechamento versionado  
 - Relatórios e auditoria  
-- ~90 handlers HTTP e shell `TreasuryModule` com todas as seções
+- ~92 handlers HTTP e shell `TreasuryModule` com todas as seções
 
 **Proibido** nesta iniciativa: remover models `Treasury*`, rotas avançadas, flags, permissões ou motores de domínio “porque a jornada ficou simples”.
 

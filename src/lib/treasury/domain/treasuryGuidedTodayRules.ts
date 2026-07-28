@@ -138,7 +138,7 @@ function buildAttention(
         message: `Informe o saldo inicial de ${acc.name}.`,
         amount: null,
         accountId: acc.accountId,
-        href: acc.openHref,
+        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/opening`,
       });
     } else if (acc.informedClosingBalance == null) {
       items.push({
@@ -307,7 +307,7 @@ function buildSteps(
       order: 1,
       title: "Informar saldos iniciais",
       status: stepStatus(allOpeningsDone, missingOpening),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/accounts`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/opening`,
       continueLabel: "Continuar",
     },
     {

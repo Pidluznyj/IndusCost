@@ -149,6 +149,8 @@ export function isTreasuryPrimaryPath(pathname: string): boolean {
   return TREASURY_UI_PRIMARY_SECTIONS.some(
     (s) =>
       normalized === s.path ||
+      (s.id === "today" &&
+        normalized.startsWith(`${TREASURY_SIMPLE_UI_BASE_PATH}/today/`)) ||
       (s.id === "accounts" &&
         normalized.startsWith(`${TREASURY_SIMPLE_UI_BASE_PATH}/accounts/`))
   );

@@ -26,6 +26,7 @@ import {
 } from "./treasuryFeatureUi.js";
 import { TreasuryAdvancedHubPage } from "./TreasuryAdvancedHubPage.js";
 import { TreasuryTodayPage } from "./TreasuryTodayPage.js";
+import { TreasuryTodayOpeningPage } from "./TreasuryTodayOpeningPage.js";
 import { TreasuryDashboardPage } from "./TreasuryDashboardPage.js";
 import { TreasuryAccountsPage } from "./TreasuryAccountsPage.js";
 import { TreasuryAccountBalancePage } from "./TreasuryAccountBalancePage.js";
@@ -198,6 +199,10 @@ export function TreasuryModule() {
         <Route
           index
           element={<Navigate to={landingPath} replace />}
+        />
+        <Route
+          path="today/opening"
+          element={gate("today", <TreasuryTodayOpeningPage />)}
         />
         <Route
           path="today"

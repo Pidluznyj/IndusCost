@@ -254,6 +254,17 @@ export const TREASURY_DAILY_OPENING_BALANCE_ORIGINS = [
 export type TreasuryDailyOpeningBalanceOrigin =
   (typeof TREASURY_DAILY_OPENING_BALANCE_ORIGINS)[number];
 
+/** Justificativa simples quando o saldo inicial difere do saldo final anterior. */
+export const TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES = [
+  "MOVEMENT_AFTER_CLOSING",
+  "FEE_OR_INTEREST",
+  "CREDIT_AFTER_CLOSING",
+  "AUTOMATIC_DEBIT",
+  "PREVIOUS_BALANCE_INCORRECT",
+  "OTHER",
+] as const;
+export type TreasuryDailyOpeningDiffJustificationCode =
+  (typeof TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES)[number];
 
 /** Bloqueios absolutos do preview de fechamento — impedem fechar mesmo com ressalva. */
 export const TREASURY_DAILY_CLOSING_ABSOLUTE_BLOCK_CODES = [
