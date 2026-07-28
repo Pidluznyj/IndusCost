@@ -138,6 +138,13 @@ function safeOptionalInt(value: unknown): number | undefined {
   return Math.trunc(n);
 }
 
+/** Custo unitário ausente (null) ≠ 0 — usado na margem oficial (paridade Pedido de Venda). */
+function toNullableUnitCost(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Formata valor monetário para exibição na grade (R$ 1.234,56). */
 function formatMoneyDisplay(value: unknown): string {
   const n = Number(value);
@@ -231,10 +238,9 @@ function validateProposalPayloadForSafeDecimals(payload: Record<string, unknown>
     checkAbsMax(`${prefix}: valor de comissão`, item.commissionValue);
     checkAbsMax(`${prefix}: valor de frete`, item.freightValue);
 
+    // NaN = custo de produção ausente (margem oficial indisponível) — permitido.
     if (isFiniteNumber(item.marginPerc) && Math.abs(item.marginPerc) > 10_000) {
       errors.push(`${prefix}: margem percentual fora do intervalo permitido.`);
-    } else if (!isFiniteNumber(item.marginPerc)) {
-      errors.push(`${prefix}: margem percentual inválida.`);
     }
   });
 
@@ -252,13 +258,14 @@ function normalizeProposalItem(
     proposalId: item.proposalId,
     quantity: safeNum(item.quantity, 1),
     unit: item.unit ?? "UN",
-    unitCost: safeNum(item.unitCost),
+    // null de custo vigente ausente vira 0 só para persistência; a margem usa NaN → "—".
+    unitCost: toNullableUnitCost(item.unitCost) ?? 0,
     suggestedPrice: safeNum(item.suggestedPrice),
     negotiatedPrice: safeNum(item.negotiatedPrice),
     discountPerc: safeNum(item.discountPerc),
     discountValue: safeNum(item.discountValue),
-    marginValue: safeNum(item.marginValue),
-    marginPerc: safeNum(item.marginPerc),
+    marginValue: Number.isFinite(Number(item.marginValue)) ? Number(item.marginValue) : 0,
+    marginPerc: Number.isFinite(Number(item.marginPerc)) ? Number(item.marginPerc) : Number.NaN,
     taxesPerc: safeNum(item.taxesPerc),
     taxesValue: safeNum(item.taxesValue),
     commissionPerc: safeNum(item.commissionPerc),
@@ -343,7 +350,7 @@ const ITEM_PRICE_SOURCE_MANUAL_OVERRIDE = "MANUAL_OVERRIDE";
 
 /**
  * Recalcula campos derivados de um ProposalItem após uma mudança.
- * Margem de formação da tabela: receita − imposto − comissão − frete − custo.
+ * Margem oficial = Pedido de Venda (receita − custo produção; sem impostos/comissão/frete na %).
  */
 function recomputeItemDerivedFields(
   itemIn: ProposalItem,
@@ -352,7 +359,7 @@ function recomputeItemDerivedFields(
   const item = { ...itemIn };
   const qty = safeNum(item.quantity);
   const negotiated = safeNum(item.negotiatedPrice);
-  const unitCost = safeNum(item.unitCost);
+  const unitCost = toNullableUnitCost(item.unitCost);
   const gross = qty * negotiated;
 
   if (discountPath === "perc") {
@@ -373,16 +380,18 @@ function recomputeItemDerivedFields(
     taxesPerc: safeNum(item.taxesPerc),
     commissionPerc: safeNum(item.commissionPerc),
     freightPerc,
-    // Com frete% da tabela usa só o absoluto do snapshot; senão preserva frete R$ do item.
     freightValue: freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(item.freightValue),
+    // Custo de produção vigente (GET) — não usar custo congelado da tabela comercial.
     unitCost,
   });
 
   item.taxesValue = margin.taxesValue;
   item.commissionValue = margin.commissionValue;
   item.freightValue = margin.freightValue;
-  item.marginValue = margin.marginValue;
-  item.marginPerc = margin.marginPerc;
+  item.marginValue = margin.marginValue ?? 0;
+  // NaN → exibe "—" (custo de produção ausente na data).
+  item.marginPerc = margin.marginPerc ?? Number.NaN;
+  if (unitCost != null) item.unitCost = unitCost;
 
   return normalizeProposalItem(item);
 }
@@ -1063,9 +1072,18 @@ export const ProposalModule = () => {
       const qty = 1;
 
       if (selectedTableId) {
-        const data = await fetchPublishedPriceJson(selectedTableId, productId);
+        const [data, productionSnapshot] = await Promise.all([
+          fetchPublishedPriceJson(selectedTableId, productId),
+          fetchJsonOk<{ unitCost?: unknown }>(`/api/products/${productId}/pricing-snapshot`).catch(
+            () => null
+          ),
+        ]);
         const df = data.proposalDefaults;
-        const unitCost = safeNum(df.unitCost);
+        // Tabela = preços comerciais; custo = produção vigente (não frozenTotalCost).
+        const unitCost =
+          toNullableUnitCost(productionSnapshot?.unitCost) ??
+          toNullableUnitCost((product as { totalCost?: unknown }).totalCost) ??
+          0;
         const suggestedPrice = safeNum(df.suggestedPrice);
         const negotiatedPrice = safeNum(df.negotiatedPrice);
         const taxesValueFixed = safeNum(df.taxesValue);
@@ -1194,7 +1212,9 @@ export const ProposalModule = () => {
       const qty = safeNum(current.quantity, 1);
 
       const df = data.proposalDefaults;
-      const unitCost = safeNum(df.unitCost);
+      // Preserva custo de produção já carregado (GET / pricing-snapshot).
+      // A tabela só troca preço sugerido e percentuais comerciais.
+      const unitCost = toNullableUnitCost(current.unitCost) ?? 0;
       const suggestedPrice = safeNum(df.suggestedPrice);
       const negotiatedPrice = safeNum(df.negotiatedPrice);
       const taxesValueFixed = safeNum(df.taxesValue);
@@ -1425,7 +1445,7 @@ export const ProposalModule = () => {
     });
   };
 
-  // Totais Consolidados — margem de formação da tabela (ponderada pela receita PV)
+  // Totais consolidados — margem oficial = Pedido de Venda (ponderada pela receita PV)
   const totals = useMemo(() => {
     const items = formData.items || [];
     const totalGross = items.reduce(
@@ -1434,10 +1454,6 @@ export const ProposalModule = () => {
     );
     const totalDiscount = items.reduce((acc, i) => acc + safeNum(i.discountValue), 0);
     const totalNet = totalGross - totalDiscount;
-    const totalCost = items.reduce(
-      (acc, i) => acc + safeNum(i.quantity) * safeNum(i.unitCost),
-      0
-    );
     const totalTaxes = items.reduce((acc, i) => acc + safeNum(i.taxesValue), 0);
     const totalComm = items.reduce((acc, i) => acc + safeNum(i.commissionValue), 0);
     const totalFreight = items.reduce((acc, i) => acc + safeNum(i.freightValue), 0);
@@ -1454,10 +1470,13 @@ export const ProposalModule = () => {
         freightPerc,
         freightValue:
           freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(i.freightValue),
-        unitCost: safeNum(i.unitCost),
+        unitCost: toNullableUnitCost(i.unitCost),
       });
     });
     const marginSummary = calculateProposalMarginSummary(lineMargins);
+    const totalCost = marginSummary.hasAnyCost
+      ? lineMargins.reduce((acc, row) => acc + (row.totalCost ?? 0), 0)
+      : 0;
 
     return {
       totalItems: items.length,
@@ -1468,8 +1487,8 @@ export const ProposalModule = () => {
       totalTaxes,
       totalComm,
       totalFreight,
-      totalMarginValue: marginSummary.totalMarginValue,
-      totalMarginPerc: marginSummary.totalMarginPerc,
+      totalMarginValue: marginSummary.totalMarginValue ?? 0,
+      totalMarginPerc: marginSummary.totalMarginPerc ?? Number.NaN,
     };
   }, [formData.items]);
 
@@ -1850,8 +1869,8 @@ export const ProposalModule = () => {
                   data-testid="proposal-total-margin-strip"
                 >
                   <p className="text-[11px] text-muted-foreground leading-snug max-w-xl">
-                    Margem de venda da tabela: preço negociado (após desconto) menos imposto, comissão, frete e
-                    custo — a mesma lógica da formação (ex. Atacado 30%).
+                    Margem igual ao Pedido de Venda: preço negociado (após desconto) menos custo de produção
+                    vigente na data da proposta. A tabela comercial só define o preço sugerido.
                   </p>
                   <div className="flex items-baseline gap-2 shrink-0">
                     <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -1860,11 +1879,13 @@ export const ProposalModule = () => {
                     <span
                       className={cn(
                         "text-base font-bold font-mono tabular-nums",
-                        totals.totalMarginPerc >= 20
-                          ? "text-green-600"
-                          : totals.totalMarginPerc >= 10
-                            ? "text-orange-600"
-                            : "text-red-600"
+                        !Number.isFinite(totals.totalMarginPerc)
+                          ? "text-muted-foreground"
+                          : totals.totalMarginPerc >= 20
+                            ? "text-green-600"
+                            : totals.totalMarginPerc >= 10
+                              ? "text-orange-600"
+                              : "text-red-600"
                       )}
                       data-testid="proposal-total-margin-perc"
                     >
@@ -2160,11 +2181,13 @@ export const ProposalModule = () => {
                             <span
                               className={cn(
                                 "text-xs font-bold font-mono tabular-nums",
-                                safeNum(item.marginPerc) >= 20
-                                  ? "text-green-600"
-                                  : safeNum(item.marginPerc) >= 10
-                                    ? "text-orange-600"
-                                    : "text-red-600"
+                                !Number.isFinite(item.marginPerc)
+                                  ? "text-muted-foreground"
+                                  : item.marginPerc >= 20
+                                    ? "text-green-600"
+                                    : item.marginPerc >= 10
+                                      ? "text-orange-600"
+                                      : "text-red-600"
                               )}
                             >
                               {formatPercentDisplay(item.marginPerc)}
@@ -2210,11 +2233,13 @@ export const ProposalModule = () => {
                   <p
                     className={cn(
                       "text-lg font-bold font-mono",
-                      totals.totalMarginPerc >= 20
-                        ? "text-green-600"
-                        : totals.totalMarginPerc >= 10
-                          ? "text-orange-600"
-                          : "text-red-600"
+                      !Number.isFinite(totals.totalMarginPerc)
+                        ? "text-muted-foreground"
+                        : totals.totalMarginPerc >= 20
+                          ? "text-green-600"
+                          : totals.totalMarginPerc >= 10
+                            ? "text-orange-600"
+                            : "text-red-600"
                     )}
                     data-testid="proposal-footer-margin-perc"
                   >

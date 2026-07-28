@@ -6,26 +6,46 @@ import {
 } from "./proposalListMargin.js";
 
 describe("proposalListMargin", () => {
-  it("resumo pondera % pela receita PV (não média simples)", () => {
+  it("resumo pondera % pela receita (paridade Pedido)", () => {
     const resolved = resolveProposalOfficialMarginFromItems([
       {
         quantity: 1,
         negotiatedPrice: 1000,
         discountValue: 0,
-        taxesPerc: 0,
         unitCost: 600,
       },
       {
         quantity: 1,
         negotiatedPrice: 100,
         discountValue: 0,
-        taxesPerc: 0,
         unitCost: 10,
       },
     ]);
     assert.equal(resolved.totalMarginValue, 490);
     assert.equal(resolved.totalMarginPerc, 44.55);
     assert.equal(resolved.itemCount, 2);
+  });
+
+  it("custo zero/ausente não inventa 100%", () => {
+    const missing = resolveProposalOfficialMarginFromItems([
+      {
+        quantity: 1,
+        negotiatedPrice: 407.4,
+        unitCost: null,
+      },
+    ]);
+    assert.equal(missing.totalMarginPerc, null);
+    assert.equal(missing.totalMarginValue, null);
+
+    const zeroCost = resolveProposalOfficialMarginFromItems([
+      {
+        quantity: 1,
+        negotiatedPrice: 407.4,
+        unitCost: 0,
+      },
+    ]);
+    // Custo 0 explícito → 100% (só se o resolver de produção devolver 0)
+    assert.equal(zeroCost.totalMarginPerc, 100);
   });
 
   it("enrich usa itens quando presentes e remove o array do DTO de lista", () => {
@@ -39,35 +59,13 @@ describe("proposalListMargin", () => {
           quantity: 1,
           negotiatedPrice: 1000,
           discountValue: 0,
-          taxesPerc: 10,
           unitCost: 600,
         },
       ],
     });
     assert.equal(enriched.marginSource, "ITEMS");
-    // (1000 − 100 imposto − 600 custo) / 1000 = 30%
-    assert.equal(enriched.totalMarginPerc, 30);
+    assert.equal(enriched.totalMarginPerc, 40);
     assert.equal((enriched as { items?: unknown }).items, undefined);
-  });
-
-  it("Atacado com comissão/frete da tabela → margem de formação ~32%", () => {
-    const resolved = resolveProposalOfficialMarginFromItems([
-      {
-        quantity: 1,
-        negotiatedPrice: 3.423215,
-        discountValue: 0,
-        taxesPerc: 28.75,
-        unitCost: 1.172451,
-        commissionPerc: 2,
-        pricingSnapshotJson: {
-          proposalDefaults: { freightPercent: 3, freightAbsolute: 0 },
-        },
-      },
-    ]);
-    assert.ok(
-      Math.abs(resolved.totalMarginPerc - 32) < 0.05,
-      `expected ~32%, got ${resolved.totalMarginPerc}`
-    );
   });
 
   it("enrich preserva cabeçalho quando não há itens", () => {

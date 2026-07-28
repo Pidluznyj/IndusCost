@@ -49,9 +49,13 @@ import { buildPublishedPriceSourceTrace } from "./src/lib/pricing/publishedPrice
 import { parsePublishedPriceSourceTraceQuery } from "./src/lib/pricing/publishedPriceSourceTraceApi.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import {
-  enrichProposalListRowMargin,
   resolveProposalOfficialMarginFromItems,
 } from "./src/lib/proposalListMargin.js";
+import {
+  applyProductionCostsToProposalDetail,
+  enrichProposalsWithOfficialProductionMargins,
+  stampProposalItemsWithProductionCostsForWrite,
+} from "./src/lib/proposalMargin.server.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
   getProductFrozenCostTrace,
@@ -14606,6 +14610,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   }
 
   const proposalListItemMarginSelect = {
+    productId: true,
     quantity: true,
     negotiatedPrice: true,
     discountValue: true,
@@ -14616,16 +14621,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     pricingSnapshotJson: true,
   } as const;
 
-  function withOfficialProposalListMargin<T extends Record<string, unknown>>(
-    rows: T[]
-  ): Array<
-    T & {
-      totalMarginPerc: number | null;
-      totalMarginValue: number | null;
-      marginSource: "ITEMS" | "HEADER" | "NONE";
-    }
+  async function withOfficialProposalListMargin(
+    rows: Array<Record<string, unknown>>
+  ): Promise<
+    Array<
+      Record<string, unknown> & {
+        totalMarginPerc: number | null;
+        totalMarginValue: number | null;
+        marginSource: "ITEMS" | "HEADER" | "NONE";
+      }
+    >
   > {
-    return rows.map((row) => enrichProposalListRowMargin(row));
+    return enrichProposalsWithOfficialProductionMargins(prisma, rows);
   }
 
   function applyOfficialProposalMarginScalars(
@@ -14634,11 +14641,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   ): Record<string, unknown> {
     if (!Array.isArray(items) || items.length === 0) return scalars;
     const resolved = resolveProposalOfficialMarginFromItems(items);
+    // Decimal obrigatório no Prisma — null (custo ausente) vira 0; GET lista/detalhe reenriquece.
     return {
       ...scalars,
-      totalMarginPerc: resolved.totalMarginPerc,
-      totalMarginValue: resolved.totalMarginValue,
-      totalCost: resolved.totalCost,
+      totalMarginPerc: resolved.totalMarginPerc ?? 0,
+      totalMarginValue: resolved.totalMarginValue ?? 0,
+      totalCost: resolved.totalCost ?? 0,
     };
   }
 
@@ -14707,7 +14715,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
       });
-      return res.json(withOfficialProposalListMargin(proposals as Array<Record<string, unknown>>));
+      return res.json(
+        await withOfficialProposalListMargin(
+          proposals as Array<Record<string, unknown>>
+        )
+      );
     }
 
     const page = parsePositiveIntQuery(pageRaw, 1);
@@ -14729,7 +14741,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       prisma.proposal.count({ where }),
     ]);
 
-    const rows = withOfficialProposalListMargin(
+    const rows = await withOfficialProposalListMargin(
       rowsRaw.slice(0, pageSize) as Array<Record<string, unknown>>
     );
 
@@ -14909,12 +14921,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const { id } = req.params;
     const proposal = await prisma.proposal.findUnique({
       where: { id },
-      include: { 
+      include: {
         Customer: true,
         items: { include: { Product: true } }
       },
     });
-    res.json(proposal);
+    if (!proposal) {
+      return res.status(404).json({ error: "NOT_FOUND", message: "Proposta não encontrada." });
+    }
+    // Margem oficial: custo de produção vigente na data (paridade Pedido).
+    // Tabela comercial continua só para precificação no formulário.
+    const enriched = await applyProductionCostsToProposalDetail(prisma, proposal);
+    res.json(enriched);
   });
 
   app.post("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "create"), async (req, res) => {
@@ -14928,15 +14946,28 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       });
     }
     try {
+      const now = new Date();
+      const stampedItems = await stampProposalItemsWithProductionCostsForWrite(
+        prisma,
+        items as Array<Record<string, unknown>>,
+        {
+          externalOpenedAt: (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt as
+            | Date
+            | string
+            | null
+            | undefined,
+          createdAt: now,
+        }
+      );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),
-        items as Array<Record<string, unknown>>
+        stampedItems
       );
       const proposal = await prisma.proposal.create({
         data: {
           ...(proposalScalars as any),
           items: {
-            create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+            create: stampedItems.map((item) => buildProposalItemCreateInput(item)),
           },
         },
         include: { items: true },
@@ -14967,9 +14998,26 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
 
     try {
+      const existing = await prisma.proposal.findUnique({
+        where: { id },
+        select: { externalOpenedAt: true, createdAt: true },
+      });
+      if (!existing) {
+        return res.status(404).json({ error: "NOT_FOUND", message: "Proposta não encontrada." });
+      }
+      const stampedItems = await stampProposalItemsWithProductionCostsForWrite(
+        prisma,
+        items as Array<Record<string, unknown>>,
+        {
+          externalOpenedAt:
+            (proposalData as { externalOpenedAt?: unknown }).externalOpenedAt ??
+            existing.externalOpenedAt,
+          createdAt: existing.createdAt,
+        }
+      );
       const proposalScalars = applyOfficialProposalMarginScalars(
         pickProposalWriteScalars(proposalData as Record<string, unknown>),
-        items as Array<Record<string, unknown>>
+        stampedItems
       );
       const proposal = await prisma.$transaction(async (tx) => {
         await tx.proposalItem.deleteMany({ where: { proposalId: id } });
@@ -14978,7 +15026,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           data: {
             ...(proposalScalars as any),
             items: {
-              create: items.map((item: any) => buildProposalItemCreateInput(item as Record<string, unknown>)),
+              create: stampedItems.map((item) => buildProposalItemCreateInput(item)),
             },
           },
           include: { items: true },

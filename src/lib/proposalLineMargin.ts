@@ -1,15 +1,15 @@
 /**
- * Margem de linha de Proposta — margem de venda comercial (formação de tabela):
+ * Margem oficial de Proposta — mesma regra do Pedido de Venda
+ * (`salesOrderMarginMath`):
  *
- *   receita     = qtd × negociado − desconto
- *   imposto     = receita × taxesPerc
- *   comissão    = receita × commissionPerc
- *   frete       = receita × freightPerc (+ frete R$ absoluto legado)
- *   margem R$   = receita − imposto − comissão − frete − (qtd × unitCost)
- *   margem %    = margem R$ / receita × 100
+ *   receita (PV) = qtd × negociado − desconto
+ *   custo        = qtd × unitCost  (custo de produção vigente na data)
+ *   margem R$    = receita − custo
+ *   margem %     = margem R$ / receita × 100
  *
- * Alinha com a formação da tabela (ex. Atacado 30% + comissão + frete).
- * Pedido de Venda permanece com regra própria (sem comissão/frete na margem).
+ * Comissão e frete são campos comerciais (tabela) e NÃO entram na margem,
+ * para a comparação proposta × pedido permanecer alinhada.
+ * Imposto também fica fora da margem oficial (igual listagem de Pedidos).
  */
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 
@@ -17,28 +17,31 @@ export type ProposalLineMarginInput = {
   quantity: number;
   negotiatedPrice: number;
   discountValue?: number;
+  /** Mantido por compatibilidade; não entra na margem oficial. */
   taxesPerc?: number;
-  /** Comissão comercial % sobre a receita (após desconto). */
   commissionPerc?: number;
-  /** Frete % sobre a receita (formação moderna da tabela). */
   freightPerc?: number;
-  /** Frete R$ absoluto legado (numerador da formação antiga). */
   freightValue?: number;
-  unitCost: number;
+  /**
+   * Custo unitário de produção. Se null/undefined, margem fica indisponível
+   * (não tratar como zero — evita falso 100%).
+   */
+  unitCost: number | null | undefined;
 };
 
 export type ProposalLineMarginResult = {
   gross: number;
-  /** Receita após desconto (base vendida / PV) — denominador da %. */
+  /** Receita após desconto (PV) — denominador da %. */
   net: number;
-  totalCost: number;
+  totalCost: number | null;
   taxesValue: number;
   commissionValue: number;
   freightValue: number;
-  /** Receita após imposto (referência gerencial; não é o denominador da %). */
+  /** Alias gerencial: igual a `net` na regra oficial do Pedido. */
   netSalesAmount: number;
-  marginValue: number;
-  marginPerc: number;
+  marginValue: number | null;
+  marginPerc: number | null;
+  costMissing: boolean;
 };
 
 function safeFinite(value: unknown, fallback = 0): number {
@@ -56,22 +59,36 @@ export function calculateProposalLineMargin(
   const commissionPerc = Math.max(0, safeFinite(input.commissionPerc));
   const freightPerc = Math.max(0, safeFinite(input.freightPerc));
   const freightAbs = Math.max(0, safeFinite(input.freightValue));
-  const unitCost = Math.max(0, safeFinite(input.unitCost));
 
   const gross = roundPricingMoney(quantity * negotiatedPrice);
   const net = roundPricingMoney(Math.max(0, gross - discountValue));
-  const totalCost = roundPricingMoney(quantity * unitCost);
-
   const taxesValue = roundPricingMoney(net * (taxesPerc / 100));
   const commissionValue = roundPricingMoney(net * (commissionPerc / 100));
-  const freightFromPerc = roundPricingMoney(net * (freightPerc / 100));
-  const freightValue = roundPricingMoney(freightFromPerc + freightAbs);
-  const netSalesAmount = roundPricingMoney(Math.max(0, net - taxesValue));
-  const marginValue = roundPricingMoney(
-    net - taxesValue - commissionValue - freightValue - totalCost
-  );
+  const freightValue = roundPricingMoney(net * (freightPerc / 100) + freightAbs);
+
+  const rawCost = input.unitCost;
+  const hasCost =
+    rawCost != null && rawCost !== ("" as unknown) && Number.isFinite(Number(rawCost));
+  if (!hasCost) {
+    return {
+      gross,
+      net,
+      totalCost: null,
+      taxesValue,
+      commissionValue,
+      freightValue,
+      netSalesAmount: net,
+      marginValue: null,
+      marginPerc: null,
+      costMissing: true,
+    };
+  }
+
+  const unitCost = Math.max(0, Number(rawCost));
+  const totalCost = roundPricingMoney(quantity * unitCost);
+  const marginValue = roundPricingMoney(net - totalCost);
   const marginPerc =
-    net > 0 ? roundPricingPercent((marginValue / net) * 100) : 0;
+    net > 0 ? roundPricingPercent((marginValue / net) * 100) : null;
 
   return {
     gross,
@@ -80,29 +97,60 @@ export function calculateProposalLineMargin(
     taxesValue,
     commissionValue,
     freightValue,
-    netSalesAmount,
+    netSalesAmount: net,
     marginValue,
     marginPerc,
+    costMissing: false,
   };
 }
 
 export function calculateProposalMarginSummary(
   lines: ReadonlyArray<ProposalLineMarginResult>
-): { totalMarginValue: number; totalMarginPerc: number; totalNetSalesAmount: number } {
+): {
+  totalMarginValue: number | null;
+  totalMarginPerc: number | null;
+  totalNetSalesAmount: number;
+  hasAnyCost: boolean;
+} {
   let totalMarginValue = 0;
   let totalRevenue = 0;
   let totalNetSalesAmount = 0;
+  let hasAnyCost = false;
+  let allMissing = true;
+
   for (const line of lines) {
+    totalNetSalesAmount += line.netSalesAmount;
+    if (line.costMissing || line.marginValue == null || line.marginPerc == null) {
+      continue;
+    }
+    allMissing = false;
+    hasAnyCost = true;
     totalMarginValue += line.marginValue;
     totalRevenue += line.net;
-    totalNetSalesAmount += line.netSalesAmount;
   }
+
   totalMarginValue = roundPricingMoney(totalMarginValue);
   totalRevenue = roundPricingMoney(totalRevenue);
   totalNetSalesAmount = roundPricingMoney(totalNetSalesAmount);
+
+  if (allMissing || lines.length === 0) {
+    return {
+      totalMarginValue: null,
+      totalMarginPerc: null,
+      totalNetSalesAmount,
+      hasAnyCost: false,
+    };
+  }
+
   const totalMarginPerc =
     totalRevenue > 0
       ? roundPricingPercent((totalMarginValue / totalRevenue) * 100)
-      : 0;
-  return { totalMarginValue, totalMarginPerc, totalNetSalesAmount };
+      : null;
+
+  return {
+    totalMarginValue,
+    totalMarginPerc,
+    totalNetSalesAmount,
+    hasAnyCost,
+  };
 }

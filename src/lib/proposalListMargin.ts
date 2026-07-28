@@ -1,15 +1,11 @@
 /**
- * Margem oficial da listagem de Propostas — mesma regra do formulário
- * (margem de formação da tabela: imposto + comissão + frete).
+ * Margem oficial da listagem de Propostas — paridade com Pedido de Venda
+ * (receita − custo de produção; sem comissão/frete).
  */
 import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
 } from "./proposalLineMargin.js";
-import {
-  resolveProposalFreightAbsolute,
-  resolveProposalFreightPercent,
-} from "./proposalFreightPercent.js";
 
 export type ProposalListMarginItemInput = {
   quantity?: unknown;
@@ -20,6 +16,7 @@ export type ProposalListMarginItemInput = {
   commissionPerc?: unknown;
   freightValue?: unknown;
   pricingSnapshotJson?: unknown;
+  productId?: unknown;
 };
 
 function safeNum(value: unknown, fallback = 0): number {
@@ -27,47 +24,58 @@ function safeNum(value: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function toNullableCost(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
- * Recalcula margem consolidada a partir dos itens (custo da tabela/snapshot).
- * Usar na listagem e no save para não depender de totais stale no cabeçalho.
+ * Recalcula margem consolidada a partir dos itens.
+ * `unitCost` deve já ser o custo de produção vigente (anexado no server).
  */
 export function resolveProposalOfficialMarginFromItems(
   items: ReadonlyArray<ProposalListMarginItemInput> | null | undefined
 ): {
-  totalMarginValue: number;
-  totalMarginPerc: number;
+  totalMarginValue: number | null;
+  totalMarginPerc: number | null;
   totalNetSalesAmount: number;
-  totalCost: number;
+  totalCost: number | null;
   itemCount: number;
 } {
   const rows = Array.isArray(items) ? items : [];
   const lineMargins = rows.map((item) => {
     const quantity = safeNum(item.quantity);
-    const unitCost = Math.max(0, safeNum(item.unitCost));
-    const freightPerc = resolveProposalFreightPercent(item.pricingSnapshotJson);
-    const freightAbsolute = resolveProposalFreightAbsolute(item.pricingSnapshotJson);
+    const unitCost = toNullableCost(item.unitCost);
     return {
       ...calculateProposalLineMargin({
         quantity,
         negotiatedPrice: safeNum(item.negotiatedPrice),
         discountValue: safeNum(item.discountValue),
         taxesPerc: safeNum(item.taxesPerc),
-        commissionPerc: safeNum(item.commissionPerc),
-        freightPerc,
-        // Sem % no snapshot: usa freightValue persistido como absoluto legado.
-        freightValue: freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(item.freightValue),
         unitCost,
       }),
-      lineCost: quantity * unitCost,
+      lineCost: unitCost == null ? null : quantity * unitCost,
     };
   });
   const summary = calculateProposalMarginSummary(lineMargins);
-  const totalCost = lineMargins.reduce((acc, row) => acc + row.lineCost, 0);
+  let totalCost: number | null = 0;
+  let anyCost = false;
+  for (const row of lineMargins) {
+    if (row.lineCost == null) {
+      totalCost = null;
+      break;
+    }
+    anyCost = true;
+    totalCost += row.lineCost;
+  }
+  if (!anyCost) totalCost = null;
+
   return {
     totalMarginValue: summary.totalMarginValue,
     totalMarginPerc: summary.totalMarginPerc,
     totalNetSalesAmount: summary.totalNetSalesAmount,
-    totalCost: Number.isFinite(totalCost) ? totalCost : 0,
+    totalCost,
     itemCount: rows.length,
   };
 }
