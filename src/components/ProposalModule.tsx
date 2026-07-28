@@ -1870,12 +1870,6 @@ export const ProposalModule = () => {
                     >
                       {formatPercentDisplay(totals.totalMarginPerc)}
                     </span>
-                    <span
-                      className="text-xs text-muted-foreground font-mono tabular-nums"
-                      data-testid="proposal-total-margin-value"
-                    >
-                      ({formatMoneyDisplay(totals.totalMarginValue)})
-                    </span>
                   </div>
                 </div>
               ) : null}
@@ -2162,7 +2156,6 @@ export const ProposalModule = () => {
                           <td
                             className="p-3 text-right"
                             data-testid={`proposal-item-margin-${idx}`}
-                            title={`Margem R$ ${formatMoneyDisplay(item.marginValue)}`}
                           >
                             <span
                               className={cn(
@@ -2213,16 +2206,20 @@ export const ProposalModule = () => {
                   <p className="text-lg font-bold font-mono text-primary">{formatMoneyDisplay(totals.totalNet)}</p>
                 </div>
                 <div className="space-y-1 border-l border-border pl-6">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem de Contribuição</p>
-                  <div className="flex items-baseline gap-2">
-                    <p className={cn(
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Margem</p>
+                  <p
+                    className={cn(
                       "text-lg font-bold font-mono",
-                      totals.totalMarginPerc >= 20 ? "text-green-600" : totals.totalMarginPerc >= 10 ? "text-orange-600" : "text-red-600"
-                    )}>
-                      {formatPercentDisplay(totals.totalMarginPerc)}
-                    </p>
-                    <span className="text-xs text-muted-foreground">({formatMoneyDisplay(totals.totalMarginValue)})</span>
-                  </div>
+                      totals.totalMarginPerc >= 20
+                        ? "text-green-600"
+                        : totals.totalMarginPerc >= 10
+                          ? "text-orange-600"
+                          : "text-red-600"
+                    )}
+                    data-testid="proposal-footer-margin-perc"
+                  >
+                    {formatPercentDisplay(totals.totalMarginPerc)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -2472,25 +2469,19 @@ export const ProposalModule = () => {
                         : "—"}
                     </td>
                     <td className="p-4 text-right" data-testid={`proposal-list-margin-${p.id}`}>
-                      {Number.isFinite(Number(p.totalMarginPerc)) ||
-                      Number.isFinite(Number(p.totalMarginValue)) ? (
-                        <div className="min-w-0">
-                          <p
-                            className={cn(
-                              "text-sm font-bold tabular-nums leading-tight",
-                              Number(p.totalMarginPerc) >= 20
-                                ? "text-green-600"
-                                : Number(p.totalMarginPerc) >= 10
-                                  ? "text-orange-600"
-                                  : "text-red-600"
-                            )}
-                          >
-                            {formatPercentDisplay(p.totalMarginPerc)}
-                          </p>
-                          <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
-                            {formatMoneyDisplay(p.totalMarginValue)}
-                          </p>
-                        </div>
+                      {Number.isFinite(Number(p.totalMarginPerc)) ? (
+                        <p
+                          className={cn(
+                            "text-sm font-bold tabular-nums leading-tight",
+                            Number(p.totalMarginPerc) >= 20
+                              ? "text-green-600"
+                              : Number(p.totalMarginPerc) >= 10
+                                ? "text-orange-600"
+                                : "text-red-600"
+                          )}
+                        >
+                          {formatPercentDisplay(p.totalMarginPerc)}
+                        </p>
                       ) : (
                         <div className="text-xs font-bold text-muted-foreground">—</div>
                       )}

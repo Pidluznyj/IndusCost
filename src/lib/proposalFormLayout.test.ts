@@ -83,11 +83,23 @@ describe("proposal form layout", () => {
     assert.match(formSlice, /totals\.totalMarginPerc/);
   });
 
-  it("listagem de propostas exibe margem % e valor no estilo Pedidos", () => {
+  it("listagem de propostas exibe somente margem % (sem valor R$ de contribuição)", () => {
     const mod = read("src/components/ProposalModule.tsx");
     assert.match(mod, /data-testid=\{`proposal-list-margin-\$\{p\.id\}`\}/);
     assert.match(mod, /formatPercentDisplay\(p\.totalMarginPerc\)/);
-    assert.match(mod, /formatMoneyDisplay\(p\.totalMarginValue\)/);
+    assert.doesNotMatch(mod, /formatMoneyDisplay\(p\.totalMarginValue\)/);
+    assert.doesNotMatch(mod, /proposal-total-margin-value/);
     assert.doesNotMatch(mod, /totalMarginPerc\)\.toFixed\(3\)%/);
+  });
+
+  it("formulário não exibe valor R$ de contribuição da margem", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    assert.ok(formStart > 0);
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+    assert.doesNotMatch(formSlice, /proposal-total-margin-value/);
+    assert.doesNotMatch(formSlice, /formatMoneyDisplay\(totals\.totalMarginValue\)/);
+    assert.doesNotMatch(formSlice, /Margem R\$/);
+    assert.doesNotMatch(formSlice, /Margem de Contribuição/);
   });
 });

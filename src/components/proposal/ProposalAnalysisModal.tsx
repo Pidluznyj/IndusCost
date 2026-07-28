@@ -213,8 +213,7 @@ export function ProposalAnalysisModal({ open, proposalId, onClose, onEdit }: Pro
                     <FinanceExecutiveTotalizerCard
                       icon={TrendingUp}
                       label="Margem"
-                      value={formatCurrency(safeNum(data.totalMarginValue))}
-                      subtitle={`${formatNumber(safeNum(data.totalMarginPerc), 2)}% sobre líquido`}
+                      value={`${formatNumber(safeNum(data.totalMarginPerc), 2)}%`}
                       tone={proposalKpiTone(
                         safeNum(data.totalMarginPerc) >= 20
                           ? "green"
