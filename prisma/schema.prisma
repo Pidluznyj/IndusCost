@@ -231,7 +231,16 @@ model Material {
   averageCost                   Decimal                      @db.Decimal(20, 6)
   standardCost                  Decimal                      @db.Decimal(20, 6)
   /// Quantidade de referência no cadastro (Suprimentos). Total = quantity × currentCost.
+  /// Fonte oficial do estoque atual — Conferência de Estoque atualiza este campo (não substitui).
   quantity                      Decimal                      @default(0) @db.Decimal(20, 6)
+  /// Parâmetros de nível (Conferência tablet). null = não configurado. Não entram em custos.
+  contingencyQuantity           Decimal?                     @db.Decimal(20, 6)
+  minimumQuantity               Decimal?                     @db.Decimal(20, 6)
+  recommendedQuantity           Decimal?                     @db.Decimal(20, 6)
+  lastStockConferenceAt         DateTime?                    @db.Timestamptz(6)
+  lastStockConferenceUserId     String?                      @db.Uuid
+  /// Optimistic lock da Conferência de Estoque (independente de updatedAt genérico).
+  stockConferenceVersion        Int                          @default(1)
   freight                       Decimal?                     @default(0) @db.Decimal(20, 6)
   standardLoss                  Decimal?                     @default(0) @db.Decimal(10, 6)
   conversionFactor              Decimal?                     @default(1) @db.Decimal(20, 6)
@@ -249,7 +258,10 @@ model Material {
   MaterialMarketAlert           MaterialMarketAlert[]
   MaterialMarketAlertConfig     MaterialMarketAlertConfig?
   MaterialMarketPurchaseLink    MaterialMarketPurchaseLink[]
-  ProductBOM                    ProductBOM[]
+  MaterialStockConference              MaterialStockConference[]
+  MaterialStockLevelAudit              MaterialStockLevelAudit[]
+  MaterialStockSpreadsheetOutbox       MaterialStockSpreadsheetOutbox[]
+  ProductBOM                           ProductBOM[]
   PurchaseRequestItem           PurchaseRequestItem[]
   ProjectStructureLine          ProjectStructureLine[]
   MaterialCostTableItem         MaterialCostTableItem[]
@@ -266,6 +278,118 @@ enum MaterialMarketCriticality {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+/// Origem da atualização de estoque via Conferência (cadastro Suprimentos).
+enum MaterialStockConferenceSource {
+  TABLET_CONFERENCE
+  MANUAL_API
+  SYSTEM
+}
+
+/// Histórico append-only de conferências de estoque de matéria-prima.
+/// Não substitui Material.quantity; a atualização do saldo + insert devem ser transacionais.
+model MaterialStockConference {
+  id                   String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId           String                        @db.Uuid
+  previousQuantity     Decimal                       @db.Decimal(20, 6)
+  reportedQuantity     Decimal                       @db.Decimal(20, 6)
+  difference           Decimal                       @db.Decimal(20, 6)
+  /// Unidade do Material no momento da conferência (snapshot).
+  unitSnapshot         String
+  reason               String
+  notes                String?
+  userId               String                        @db.Uuid
+  userName             String?
+  /// Data/hora registrada pelo servidor no momento da conferência.
+  recordedAt           DateTime                      @default(now()) @db.Timestamptz(6)
+  source               MaterialStockConferenceSource
+  /// Versão de concorrência do Material imediatamente antes da atualização.
+  previousVersion      Int?
+  /// updatedAt do Material imediatamente antes da atualização.
+  previousUpdatedAt    DateTime?                     @db.Timestamptz(6)
+  /// Idempotência HTTP (header Idempotency-Key) — evita duplo clique.
+  idempotencyKey       String?                       @unique
+  createdAt            DateTime                      @default(now()) @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId, recordedAt(sort: Desc)])
+  @@index([userId, recordedAt(sort: Desc)])
+  @@index([source, recordedAt(sort: Desc)])
+}
+
+/// Status da fila de espelho assíncrono IndusCost → planilha (Power Automate).
+enum MaterialStockSpreadsheetMirrorStatus {
+  PENDING
+  PROCESSING
+  SYNCED
+  ERROR
+}
+
+/// Tipo de evento que dispara espelho da planilha de matéria-prima.
+enum MaterialStockSpreadsheetMirrorEventType {
+  CONFERENCE
+  LEVELS_UPDATE
+  MATERIAL_MASTER
+}
+
+/// Outbox unidirecional — IndusCost → planilha online (nunca o inverso).
+/// Falha externa não reverte estoque/parâmetros oficiais.
+model MaterialStockSpreadsheetOutbox {
+  id               String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId       String                                 @db.Uuid
+  /// Código denormalizado para admin/ops (chave de upsert junto com materialId).
+  materialCode     String
+  eventType        MaterialStockSpreadsheetMirrorEventType
+  status           MaterialStockSpreadsheetMirrorStatus   @default(PENDING)
+  /// Colapsa eventos do mesmo material enquanto PENDING/PROCESSING.
+  deduplicationKey String
+  /// Identidade estável da mensagem para o receptor (Automate).
+  idempotencyKey   String                                 @unique
+  payloadJson      Json
+  attempts         Int                                    @default(0)
+  maxAttempts      Int                                    @default(5)
+  /// Próxima tentativa elegível (backoff).
+  availableAt      DateTime                               @default(now()) @db.Timestamptz(6)
+  lastAttemptAt    DateTime?                              @db.Timestamptz(6)
+  lockedAt         DateTime?                              @db.Timestamptz(6)
+  lockedBy         String?
+  lockToken        String?
+  lastErrorCode    String?
+  /// Erro resumido (sem secret/payload sensível).
+  lastErrorMessage String?
+  syncedAt         DateTime?                              @db.Timestamptz(6)
+  requestId        String?
+  createdAt        DateTime                               @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime                               @default(now()) @updatedAt @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, availableAt])
+  @@index([materialId, status])
+  @@index([materialCode])
+  @@index([deduplicationKey])
+  @@index([syncedAt])
+}
+
+/// Auditoria append-only de edição dos parâmetros de nível (contingência/mínimo/recomendado).
+/// Não registra movimentação de estoque nem alteração de custo.
+model MaterialStockLevelAudit {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId String   @db.Uuid
+  action     String   @default("UPDATE_LEVELS")
+  beforeJson Json?
+  afterJson  Json?
+  userId     String?  @db.Uuid
+  userName   String?
+  reason     String?
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([materialId, createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model MaterialPriceHistory {

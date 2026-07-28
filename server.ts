@@ -601,6 +601,9 @@ import { registerMaterialMarketQuoteReliabilityRoutes } from "./src/lib/material
 import { initializeMaterialMarketQuoteReliability, MaterialMarketQuoteReliabilityValidationError } from "./src/lib/materialMarketQuoteReliability.server.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
+import { registerMaterialStockTabletRoutes } from "./src/lib/materialStockTabletRoutes.js";
+import { registerMaterialStockSpreadsheetMirrorAdminRoutes } from "./src/lib/materialStockSpreadsheetMirror/adminRoutes.js";
+import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./src/lib/materialStockSpreadsheetMirror/enqueue.server.js";
 import {
   applyNomusBomBatchFromDashboard,
   applyNomusBomFromDashboard,
@@ -5642,6 +5645,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           ...marketParsed.value,
         },
       });
+      const masterChanged =
+        material.code !== oldMaterial.code ||
+        material.description !== oldMaterial.description ||
+        material.unit !== oldMaterial.unit ||
+        Number(material.quantity) !== Number(oldMaterial.quantity);
+      if (masterChanged) {
+        await enqueueMaterialStockSpreadsheetMirrorBestEffort(prisma, {
+          materialId: material.id,
+          eventType: "MATERIAL_MASTER",
+        });
+      }
       res.json(material);
     } catch (error) {
       console.error("PUT /api/materials/:id", error);
@@ -8208,6 +8222,18 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   }, {
     prisma,
   });
+
+  registerMaterialStockTabletRoutes(
+    app,
+    { requireAppAuth, requireResource, getCurrentAppUser },
+    { prisma }
+  );
+
+  registerMaterialStockSpreadsheetMirrorAdminRoutes(
+    app,
+    { requireAppAuth, requireAnyPermission },
+    { prisma }
+  );
 
   app.get(
     "/api/nomus/bom-auto-apply/products/apply-readiness",

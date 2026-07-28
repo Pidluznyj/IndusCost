@@ -50,6 +50,30 @@ export const ENGINEERING_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/materials", resourceKey: "engineering.materials", action: "view" },
   { method: "POST", path: "/api/materials", resourceKey: "engineering.materials", action: "update" },
   { method: "PUT", path: "/api/materials/:id", resourceKey: "engineering.materials", action: "update" },
+  {
+    method: "GET",
+    path: "/api/materials/stock-tablet/search",
+    resourceKey: "engineering.materials",
+    action: "view",
+  },
+  {
+    method: "POST",
+    path: "/api/materials/stock-tablet/conference",
+    resourceKey: "engineering.materials",
+    action: "update",
+  },
+  {
+    method: "PATCH",
+    path: "/api/materials/stock-tablet/:materialId/parameters",
+    resourceKey: "engineering.materials",
+    action: "update",
+  },
+  {
+    method: "GET",
+    path: "/api/materials/stock-tablet/:materialId/history",
+    resourceKey: "engineering.materials",
+    action: "view",
+  },
 
   { method: "GET", path: "/api/materials/market-intelligence*", resourceKey: "engineering.materials.market_intelligence", action: "view" },
   { method: "GET", path: "/api/materials/:id/market*", resourceKey: "engineering.materials.market_intelligence.material_360", action: "view" },

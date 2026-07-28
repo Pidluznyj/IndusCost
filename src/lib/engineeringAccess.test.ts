@@ -56,6 +56,33 @@ describe("engineeringAccess — matriz P19", () => {
     assert.equal(ENGINEERING_RESOURCE_KEYS.projects, "engineering.projects");
     assert.ok(Object.values(ENGINEERING_ACTIONS).includes("approve"));
     assert.ok(ENGINEERING_PILOT_ENDPOINTS.some((e) => e.path.includes("bom")));
+    assert.ok(
+      ENGINEERING_PILOT_ENDPOINTS.some(
+        (e) =>
+          e.method === "POST" &&
+          e.path === "/api/materials/stock-tablet/conference" &&
+          e.resourceKey === "engineering.materials" &&
+          e.action === "update"
+      )
+    );
+    assert.ok(
+      ENGINEERING_PILOT_ENDPOINTS.some(
+        (e) =>
+          e.method === "PATCH" &&
+          e.path === "/api/materials/stock-tablet/:materialId/parameters" &&
+          e.resourceKey === "engineering.materials" &&
+          e.action === "update"
+      )
+    );
+    assert.ok(
+      ENGINEERING_PILOT_ENDPOINTS.some(
+        (e) =>
+          e.method === "GET" &&
+          e.path === "/api/materials/stock-tablet/:materialId/history" &&
+          e.resourceKey === "engineering.materials" &&
+          e.action === "view"
+      )
+    );
   });
 
   it("Leticia AP-only: engenharia deny", () => {

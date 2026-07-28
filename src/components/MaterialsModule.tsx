@@ -14,6 +14,7 @@ import {
 } from "@/src/lib/moduleTabResources";
 import { useAuthorizedTabs } from "@/src/hooks/useAuthorizedTabs";
 import { MaterialModule } from "@/src/components/MaterialModule";
+import { MaterialStockConferencePage } from "@/src/components/materials/MaterialStockConferencePage";
 import { MaterialsMarketIntelligencePage } from "@/src/components/materials/MaterialsMarketIntelligencePage";
 import { MaterialsMarketIntelligenceDetailPage } from "@/src/components/materials/MaterialsMarketIntelligenceDetailPage";
 import { MaterialsMarketIntelligenceReportsPage } from "@/src/components/materials/MaterialsMarketIntelligenceReportsPage";
@@ -66,10 +67,15 @@ export function MaterialsModule() {
     location.pathname.startsWith("/materials/market-intelligence/") &&
     !location.pathname.endsWith("/reports");
   const onCatalog = location.pathname === "/materials" || location.pathname === "/materials/";
+  const onStockConference = location.pathname.startsWith("/materials/stock-conference");
   const canCatalog = visibleIds.has("catalog");
+  const canStockConference = visibleIds.has("stockConference");
   const canMi = visibleIds.has("marketIntelligence");
 
   if (onCatalog && !canCatalog) {
+    return <UnauthorizedAccessGate forceDenied />;
+  }
+  if (onStockConference && !canStockConference) {
     return <UnauthorizedAccessGate forceDenied />;
   }
   if ((onMiHome || location.pathname.includes("/market-intelligence")) && !canMi) {
@@ -98,7 +104,8 @@ export function MaterialsModule() {
               className={({ isActive }) =>
                 cn(
                   "inline-flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold transition-colors whitespace-nowrap",
-                  (section.id === "marketIntelligence"
+                  (section.id === "marketIntelligence" ||
+                  section.id === "stockConference"
                     ? location.pathname.startsWith(section.path)
                     : isActive)
                     ? "bg-primary text-primary-foreground shadow-sm"
@@ -122,6 +129,26 @@ export function MaterialsModule() {
               <MaterialModule />
             ) : (
               <MaterialsHomeRedirect path={defaultPath} />
+            )
+          }
+        />
+        <Route
+          path="stock-conference/:materialId"
+          element={
+            canStockConference ? (
+              <MaterialStockConferencePage />
+            ) : (
+              <UnauthorizedAccessGate forceDenied />
+            )
+          }
+        />
+        <Route
+          path="stock-conference"
+          element={
+            canStockConference ? (
+              <MaterialStockConferencePage />
+            ) : (
+              <UnauthorizedAccessGate forceDenied />
             )
           }
         />

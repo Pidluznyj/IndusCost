@@ -19,10 +19,28 @@ function read(relPath: string): string {
 }
 
 describe("materialsNavigation", () => {
-  it("seções incluem Matérias-primas e Inteligência de Mercado", () => {
+  it("seções incluem Matérias-primas, Conferência e Inteligência de Mercado", () => {
     assert.deepEqual(
       MATERIALS_SECTIONS.map((s) => s.label),
-      ["Matérias-primas", "Inteligência de Mercado"]
+      ["Matérias-primas", "Conferência de estoque", "Inteligência de Mercado"]
+    );
+  });
+
+  it("rota canônica de conferência de estoque", () => {
+    assert.equal(MATERIALS_SECTION_PATHS.stockConference, "/materials/stock-conference");
+    assert.equal(
+      parseMaterialsSectionFromPath("/materials/stock-conference"),
+      "stockConference"
+    );
+    assert.equal(
+      parseMaterialsSectionFromPath("/materials/stock-conference/abc"),
+      "stockConference"
+    );
+    assert.equal(isMaterialsCanonicalPath("/materials/stock-conference"), true);
+    assert.equal(isMaterialsCanonicalPath("/materials/stock-conference/abc"), true);
+    assert.equal(
+      resolveMaterialsCanonicalPath("/materials/stock-conference/abc"),
+      "/materials/stock-conference/abc"
     );
   });
 
