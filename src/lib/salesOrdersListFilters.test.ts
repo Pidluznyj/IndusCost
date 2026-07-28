@@ -3,6 +3,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
+test("Pedidos de Venda abre com ano e mês correntes", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+    "utf8"
+  );
+  assert.ok(page.includes("const currentMonth = useMemo(() => new Date().getMonth() + 1, [])"));
+  assert.ok(page.includes('useState<string>(() => String(currentYear))'));
+  assert.ok(page.includes('useState<string>(() => String(currentMonth))'));
+});
+
 test("Pedidos de Venda usa CustomerAutocompleteFilter", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),

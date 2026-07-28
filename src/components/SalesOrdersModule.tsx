@@ -185,6 +185,7 @@ function SalesOrderList() {
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const currentMonth = useMemo(() => new Date().getMonth() + 1, []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
   const [hasInvoice, setHasInvoice] = useState("");
@@ -197,7 +198,7 @@ function SalesOrderList() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
-  const [month, setMonth] = useState<string>("");
+  const [month, setMonth] = useState<string>(() => String(currentMonth));
   // Busca inteligente: searchDraft é o input imediato; search é o valor com debounce.
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
