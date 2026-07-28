@@ -57,7 +57,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
-const EXPECTED_HTTP_HANDLERS = 89;
+const EXPECTED_HTTP_HANDLERS = 90;
 /** home + 4 primárias + 15 avançadas + hub advanced */
 const EXPECTED_UI_SECTIONS = 21;
 const EXPECTED_FEATURE_FLAGS = 15;
@@ -147,7 +147,7 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
     assert.match(body, /não soma novamente/i);
   });
 
-  it("congela ~89 handlers HTTP em treasuryRoutes", () => {
+  it("congela ~90 handlers HTTP em treasuryRoutes", () => {
     const routes = readFileSync(join(here, "treasuryRoutes.ts"), "utf8");
     const handlers = [...routes.matchAll(/app\.(get|post|put|patch|delete)\(/g)];
     assert.equal(
@@ -481,5 +481,18 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
       existsSync(join(here, "domain/treasuryDailyAccountRoutineRules.ts"))
     );
     assert.ok(existsSync(join(here, "domain/treasuryDailyCashEngine.ts")));
+    assert.ok(existsSync(join(here, "domain/treasuryGuidedTodayRules.ts")));
+    assert.ok(
+      existsSync(
+        join(
+          repoRoot,
+          "src/components/finance/treasury/TreasuryTodayPage.tsx"
+        )
+      )
+    );
+    assert.match(
+      readFileSync(join(here, "contracts/treasuryConstants.ts"), "utf8"),
+      /TREASURY_TODAY_PATH/
+    );
   });
 });

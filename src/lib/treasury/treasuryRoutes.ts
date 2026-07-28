@@ -17,6 +17,7 @@ import { createTreasuryPaymentPromiseControllers } from "./controllers/treasuryP
 import { createTreasuryCollectionActionControllers } from "./controllers/treasuryCollectionActionController.js";
 import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeController.js";
 import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
+import { createTreasuryGuidedTodayControllers } from "./controllers/treasuryGuidedTodayController.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
@@ -46,6 +47,7 @@ import {
   TREASURY_DAILY_CLOSING_PATH,
   TREASURY_DAILY_CLOSING_PREVIEW_PATH,
   TREASURY_DASHBOARD_PATH,
+  TREASURY_TODAY_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_EXCEPTIONS_PATH,
   TREASURY_FORECAST_VS_ACTUAL_PATH,
@@ -106,6 +108,7 @@ export function registerTreasuryRoutes(
   });
   const disputes = createTreasuryDisputeControllers({ getCurrentAppUser });
   const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
+  const guidedToday = createTreasuryGuidedTodayControllers({ getCurrentAppUser });
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
   const transfers = createTreasuryTransferControllers({ getCurrentAppUser });
   const exceptions = createTreasuryExceptionControllers({ getCurrentAppUser });
@@ -352,6 +355,15 @@ export function registerTreasuryRoutes(
     dashboardEnabled,
     viewDashboard,
     dashboard.getDashboard
+  );
+
+  app.get(
+    TREASURY_TODAY_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    viewDashboard,
+    guidedToday.getToday
   );
 
   app.get(

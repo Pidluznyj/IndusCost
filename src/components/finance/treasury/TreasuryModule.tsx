@@ -25,6 +25,7 @@ import {
   TREASURY_UI_PRIMARY_SECTIONS,
 } from "./treasuryFeatureUi.js";
 import { TreasuryAdvancedHubPage } from "./TreasuryAdvancedHubPage.js";
+import { TreasuryTodayPage } from "./TreasuryTodayPage.js";
 import { TreasuryDashboardPage } from "./TreasuryDashboardPage.js";
 import { TreasuryAccountsPage } from "./TreasuryAccountsPage.js";
 import { TreasuryAccountBalancePage } from "./TreasuryAccountBalancePage.js";
@@ -200,6 +201,10 @@ export function TreasuryModule() {
         />
         <Route
           path="today"
+          element={gate("today", <TreasuryTodayPage />)}
+        />
+        <Route
+          path="dashboard"
           element={gate("today", <TreasuryDashboardPage />)}
         />
         <Route

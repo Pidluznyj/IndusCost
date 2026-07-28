@@ -33,6 +33,10 @@ export const TREASURY_DISPUTES_PATH =
 export const TREASURY_DASHBOARD_PATH =
   `${TREASURY_API_PREFIX}/dashboard` as const;
 
+/** Experiência guiada “Tesouraria de hoje” (agregado). */
+export const TREASURY_TODAY_PATH =
+  `${TREASURY_API_PREFIX}/today` as const;
+
 export const TREASURY_PROJECTIONS_PATH =
   `${TREASURY_API_PREFIX}/projections` as const;
 

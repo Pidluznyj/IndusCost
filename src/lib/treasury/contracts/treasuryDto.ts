@@ -290,6 +290,86 @@ export type TreasuryDailyCashPositionDto = {
   consolidated: TreasuryDailyCashConsolidatedPositionDto;
 };
 
+/** Status de etapa da rotina guiada do dia. */
+export type TreasuryGuidedTodayStepStatus =
+  | "DONE"
+  | "PENDING"
+  | "NEEDS_ATTENTION";
+
+export type TreasuryGuidedTodayStepId =
+  | "OPENING_BALANCES"
+  | "REVIEW_RECEIPTS"
+  | "REVIEW_PAYMENTS"
+  | "CLOSING_BALANCES"
+  | "RESOLVE_DIVERGENCES"
+  | "CLOSE_DAY";
+
+/** Pendências acionáveis exibidas na experiência simples. */
+export type TreasuryGuidedTodayAttentionCode =
+  | "MISSING_OPENING_BALANCE"
+  | "UNMAPPED_TITLE"
+  | "PENDING_RECEIPT"
+  | "PENDING_PAYMENT"
+  | "MISSING_CLOSING_BALANCE"
+  | "BALANCE_DIVERGENCE"
+  | "UNIDENTIFIED_BANK_MOVEMENT";
+
+export type TreasuryGuidedTodayConsolidatedDto = {
+  openingBalance: TreasuryMoneyString | null;
+  plannedInflows: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  plannedOutflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+};
+
+export type TreasuryGuidedTodayStepDto = {
+  id: TreasuryGuidedTodayStepId;
+  order: number;
+  title: string;
+  status: TreasuryGuidedTodayStepStatus;
+  continueHref: string;
+  continueLabel: string;
+};
+
+export type TreasuryGuidedTodayAccountDto = {
+  accountId: string;
+  name: string;
+  bank: string | null;
+  openingBalance: TreasuryMoneyString | null;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  openHref: string;
+};
+
+export type TreasuryGuidedTodayAttentionDto = {
+  id: string;
+  code: TreasuryGuidedTodayAttentionCode;
+  message: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  href: string;
+};
+
+/** Resposta canônica GET /api/finance/treasury/today */
+export type TreasuryGuidedTodayDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  empty: boolean;
+  consolidated: TreasuryGuidedTodayConsolidatedDto;
+  steps: TreasuryGuidedTodayStepDto[];
+  accounts: TreasuryGuidedTodayAccountDto[];
+  attention: TreasuryGuidedTodayAttentionDto[];
+};
+
 /** Freshness de uma fonte do dashboard diário. */
 export type TreasuryDashboardSourceFreshnessDto = {
   source:

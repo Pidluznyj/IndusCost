@@ -145,6 +145,7 @@ describe("treasurySimpleNavigation — shell e preservação", () => {
     const dir = join(repoRoot, "src/components/finance/treasury");
     for (const name of [
       "TreasuryDashboardPage.tsx",
+      "TreasuryTodayPage.tsx",
       "TreasuryAccountsPage.tsx",
       "TreasuryReceivablesPage.tsx",
       "TreasuryPayablesPage.tsx",

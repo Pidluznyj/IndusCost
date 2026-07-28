@@ -130,7 +130,7 @@ O fluxo simples é uma **camada de UX** sobre o módulo completo. Permanecem dis
 - OFX, movimentos bancários e conciliação  
 - Exceções, alertas, fechamento versionado  
 - Relatórios e auditoria  
-- ~89 handlers HTTP e shell `TreasuryModule` com todas as seções  
+- ~90 handlers HTTP e shell `TreasuryModule` com todas as seções
 
 **Proibido** nesta iniciativa: remover models `Treasury*`, rotas avançadas, flags, permissões ou motores de domínio “porque a jornada ficou simples”.
 
@@ -172,7 +172,6 @@ Regras puras: `src/lib/treasury/domain/treasuryDailyAccountRoutineRules.ts`.
 
 ## 10. Fora de escopo imediato
 
-- Nova tela unificada “Dia de Caixa”.  
 - Migration / model Prisma dedicado (desnecessário enquanto snapshots + closing cobrirem o estado).  
 - Deploy / merge para `main`.  
 - Qualquer escrita em Nomus.
