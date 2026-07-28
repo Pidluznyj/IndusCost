@@ -57,11 +57,11 @@ const BASE_MATERIAL = {
   quantity: 100,
 } as const;
 
-/** Campos futuros planejados — ainda inexistentes; não podem afetar custo. */
+/** Níveis aditivos de conferência — não podem afetar custo. */
 const FUTURE_STOCK_LEVELS = {
-  contingencyStock: 40,
-  minimumStock: 10,
-  recommendedStock: 80,
+  contingencyQuantity: 40,
+  minimumQuantity: 10,
+  recommendedQuantity: 80,
 } as const;
 
 describe("materialStockCostCharacterization — campos de custo oficiais", () => {
@@ -129,9 +129,10 @@ describe("materialStockCostCharacterization — campos de custo oficiais", () =>
     assert.match(materialBlock, /freight\s+Decimal\?/);
     assert.match(materialBlock, /standardLoss\s+Decimal\?/);
     assert.match(materialBlock, /conversionFactor\s+Decimal\?/);
-    assert.doesNotMatch(materialBlock, /contingencyStock/);
-    assert.doesNotMatch(materialBlock, /minimumStock/);
-    assert.doesNotMatch(materialBlock, /recommendedStock/);
+    // Níveis de conferência são aditivos e nullable; não substituem quantity.
+    assert.match(materialBlock, /contingencyQuantity\s+Decimal\?/);
+    assert.match(materialBlock, /minimumQuantity\s+Decimal\?/);
+    assert.match(materialBlock, /recommendedQuantity\s+Decimal\?/);
   });
 });
 
@@ -414,7 +415,7 @@ describe("materialStockCostCharacterization — níveis futuros não entram no c
         .lineTotal;
     };
     assert.equal(costOnce({}), costOnce({ ...FUTURE_STOCK_LEVELS }));
-    assert.equal(costOnce({ contingencyStock: 1 }), costOnce({ minimumStock: 999 }));
+    assert.equal(costOnce({ contingencyQuantity: 1 }), costOnce({ minimumQuantity: 999 }));
   });
 });
 
@@ -431,8 +432,10 @@ describe("materialStockCostCharacterization — contrato das APIs de matéria-pr
     assert.match(server, /computeMaterialTotalValue/);
     assert.doesNotMatch(server, /landedCost\s*=\s*[^\n]*quantity/);
     assert.doesNotMatch(server, /effectiveCost\s*=\s*[^\n]*quantity/);
-    assert.doesNotMatch(server, /contingencyStock/);
-    assert.doesNotMatch(server, /recommendedStock/);
+    // Níveis futuros de conferência ainda não entram nas fórmulas da API de custos.
+    assert.doesNotMatch(server, /landedCost\s*=\s*[^\n]*contingencyQuantity/);
+    assert.doesNotMatch(server, /effectiveCost\s*=\s*[^\n]*minimumQuantity/);
+    assert.doesNotMatch(server, /effectiveCost\s*=\s*[^\n]*recommendedQuantity/);
   });
 
   it("POST/PUT /api/materials aceitam campos obrigatórios atuais de custo e quantity", () => {
@@ -465,9 +468,10 @@ describe("materialStockCostCharacterization — contrato das APIs de matéria-pr
     assert.match(types, /effectiveCost:\s*number/);
     assert.match(types, /totalMaterialValue:\s*number/);
     assert.match(types, /quantity × currentCost/);
-    assert.doesNotMatch(types, /contingencyStock/);
-    assert.doesNotMatch(types, /minimumStock/);
-    assert.doesNotMatch(types, /recommendedStock/);
+    // DTO legado de custo/listagem ainda não inclui níveis (aditivo futuro na API).
+    assert.doesNotMatch(types, /contingencyQuantity/);
+    assert.doesNotMatch(types, /minimumQuantity/);
+    assert.doesNotMatch(types, /recommendedQuantity/);
   });
 
   it("helpers de valor de estoque documentam isolamento do custo posto fábrica/BOM", () => {
