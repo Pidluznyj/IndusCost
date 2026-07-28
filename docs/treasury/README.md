@@ -17,6 +17,7 @@
 | [04-BASELINE.md](./04-BASELINE.md) | Baseline técnico / branch |
 | [05-OFFICIAL-AR-AP-ADAPTER.md](./05-OFFICIAL-AR-AP-ADAPTER.md) | Adapter read-only Nomus CR/CP |
 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | Status por prompt |
+| [FINAL-DELIVERY-REPORT.md](./FINAL-DELIVERY-REPORT.md) | Relatório final de entrega (Prompt 69) |
 | [REQUIREMENTS-TRACEABILITY.md](./REQUIREMENTS-TRACEABILITY.md) | Matriz R01–R30 |
 | [RELEASE-CANDIDATE-VALIDATION.md](./RELEASE-CANDIDATE-VALIDATION.md) | Gates e critérios RC (Prompt 68) |
 | [PERFORMANCE_BENCHMARKS.md](./PERFORMANCE_BENCHMARKS.md) | Benchmarks de performance |

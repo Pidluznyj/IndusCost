@@ -93,8 +93,9 @@
 | **66** | Scripts + runbook de implantação produção | `DONE` | `e44b9f2` | `scripts/treasury/predeploy-check.sh` + `postdeploy-validation.sh`; `PRODUCTION-DEPLOYMENT.md` + `ROLLBACK.md`; alinhado a `/opt/induscost` + `deploy-induscost.sh`; sem execução em prod |
 | **67** | Checklist validação funcional pós-deploy | `DONE` | `965ef35` | `POST-DEPLOY-CHECKLIST.md` — classes A (leitura), B (dados teste), C (manual financeiro); health/migrations/tabelas/perms/fluxos/OFX seguro/duplicidades; sem execução em prod |
 | **68** | Auditoria final RC + fechamento de lacunas | `DONE` | `9b4f526` + `c5b0800` | Relatório/posição sem inventar igualdade; ledger/OFX; civil SP; FE accept/unmatch/calculate/alert-settings; audit; health; `RELEASE-CANDIDATE-VALIDATION.md`; `test:treasury` 636/637 (1 skip) |
+| **69** | Relatório final de entrega (documental) | `DONE` | _(este commit)_ | `docs/treasury/FINAL-DELIVERY-REPORT.md`; índice em `README.md`; sem código funcional; evidências cruzadas com rotas/models/flags/UI/commits |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**; auditoria final RC = **68**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**; auditoria final RC = **68**; relatório final = **69**.
 
 ---
 
@@ -130,8 +131,8 @@
 | Observabilidade | `DONE` | `/availability` + `/health` (flag+ACL+probe schema P68) + freshness dashboard |
 | Testes domínio | `DONE` | Unitários P59 + integração P60 (DB seguro) + E2E UI P61 (`tsx --test` + `renderToStaticMarkup`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
-| Documentação | `DONE` | P00–P64 + P68 `RELEASE-CANDIDATE-VALIDATION.md` + traceability/status |
-| Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
+| Documentação | `DONE` | P00–P64 + P68 `RELEASE-CANDIDATE-VALIDATION.md` + P69 `FINAL-DELIVERY-REPORT.md` + traceability/status |
+| Feature flags | `DONE` | Mestra + 14 subflags fail-closed (`TREASURY_FEATURE_FLAG_IDS` = 15) |
 | Scripts deploy/validação | `DONE` | P62 backfill + P63 `validate:treasury:deploy` + runbook (Cursor não deploya) |
 
 ---
