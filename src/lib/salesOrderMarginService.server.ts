@@ -49,7 +49,13 @@ export const SALES_ORDER_ITEM_MARGIN_SELECT = {
   skuSnapshot: true,
   productNameSnapshot: true,
   quantity: true,
-  canceledQuantity: true,
+  // canceledQuantity NÃO existe em SalesOrderItem — vive no snapshot do fluxo.
+  flowItemSnapshot: {
+    select: {
+      canceledQuantity: true,
+      cutQuantity: true,
+    },
+  },
   negotiatedPrice: true,
   totalNetValue: true,
   unitCost: true,
@@ -90,7 +96,12 @@ export type SalesOrderItemForMargin = {
   skuSnapshot?: string | null;
   productNameSnapshot?: string | null;
   quantity: unknown;
+  /** @deprecated use flowItemSnapshot.canceledQuantity — campo não existe em SalesOrderItem. */
   canceledQuantity?: unknown | null;
+  flowItemSnapshot?: {
+    canceledQuantity?: unknown | null;
+    cutQuantity?: unknown | null;
+  } | null;
   negotiatedPrice?: unknown;
   totalNetValue?: unknown;
   unitCost?: unknown | null;

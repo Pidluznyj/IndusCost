@@ -442,7 +442,10 @@ export async function calculateCommercialMarginsForSalesOrders(
 
     for (const item of order.items ?? []) {
       const orderedQty = toNum(item.quantity) ?? 0;
-      const canceledQty = toNum(item.canceledQuantity) ?? 0;
+      const canceledQty =
+        toNum(item.flowItemSnapshot?.canceledQuantity) ??
+        toNum(item.canceledQuantity) ??
+        0;
       const isFullyCanceled =
         item.nomusIsCanceled === true ||
         item.nomusIsCut === true ||

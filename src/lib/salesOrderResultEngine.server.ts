@@ -217,6 +217,7 @@ export async function buildSalesOrderResultDashboard(
   const previousYearMonthly = new Map<number, number>();
   for (let m = 1; m <= 12; m += 1) previousYearMonthly.set(m, 0);
   for (const order of previousYearOrders) {
+    if (!order.issueDate) continue;
     if (order.issueDate.getFullYear() !== previousYear) continue;
     const month = order.issueDate.getMonth() + 1;
     previousYearMonthly.set(

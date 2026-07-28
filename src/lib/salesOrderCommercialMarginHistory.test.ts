@@ -21,6 +21,20 @@ describe("salesOrderCommercialMargin — política sem Proposta", () => {
     assert.match(src, /findMany/);
   });
 
+  it("select de margem não pede canceledQuantity em SalesOrderItem", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src/lib/salesOrderMarginService.server.ts"),
+      "utf8"
+    );
+    assert.match(src, /flowItemSnapshot:\s*\{/);
+    assert.match(src, /canceledQuantity:\s*true/);
+    // O campo direto no item quebra o Prisma (campo só existe no flow snapshot).
+    assert.doesNotMatch(
+      src,
+      /quantity:\s*true,\s*\n\s*canceledQuantity:\s*true/
+    );
+  });
+
   it("formação histórica completa marca HISTORICAL_PRICE_FORMATION", () => {
     const item = calculateSalesOrderItemCommercialMargin({
       soldQuantity: 1,
