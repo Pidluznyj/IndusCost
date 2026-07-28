@@ -21,3 +21,38 @@ export function computeMaterialTotalValue(
   // Mesma escala monetária usada no cadastro (até 6 casas).
   return Math.round(qty * unit * 1_000_000) / 1_000_000;
 }
+
+export type MaterialStockValueInput = {
+  quantity?: unknown;
+  currentCost?: unknown;
+  calculations?: { totalMaterialValue?: unknown } | null;
+};
+
+/** Soma cadastro: Σ (quantidade × custo atual) de todos os materiais. */
+export function sumMaterialCatalogStockValue(
+  materials: readonly MaterialStockValueInput[]
+): number {
+  let total = 0;
+  for (const material of materials) {
+    const fromCalc = material.calculations?.totalMaterialValue;
+    if (fromCalc != null && fromCalc !== "") {
+      const n = typeof fromCalc === "number" ? fromCalc : Number(fromCalc);
+      if (Number.isFinite(n)) {
+        total += Math.max(0, n);
+        continue;
+      }
+    }
+    total += computeMaterialTotalValue(material.quantity, material.currentCost);
+  }
+  return Math.round(total * 1_000_000) / 1_000_000;
+}
+
+export function countMaterialsWithStockQuantity(
+  materials: readonly MaterialStockValueInput[]
+): number {
+  return materials.reduce(
+    (count, material) =>
+      count + (normalizeMaterialQuantity(material.quantity) > 0 ? 1 : 0),
+    0
+  );
+}

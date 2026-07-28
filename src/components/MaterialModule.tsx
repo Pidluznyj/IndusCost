@@ -21,8 +21,17 @@ import {
 } from "lucide-react";
 import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk } from "@/src/lib/http";
-import { computeMaterialTotalValue } from "@/src/lib/materialQuantityTotal";
+import {
+  computeMaterialTotalValue,
+  countMaterialsWithStockQuantity,
+  sumMaterialCatalogStockValue,
+} from "@/src/lib/materialQuantityTotal";
 import { Material, CreateMaterialInput } from "@/src/types/material";
+import { SummaryKpiGrid } from "@/src/components/ui/SummaryKpiGrid";
+import {
+  SYSTEM_TOTALIZER_GRID_CLASS,
+  SystemTotalizerCard,
+} from "@/src/components/ui/SystemTotalizerCard";
 import {
   DEFAULT_MATERIAL_MARKET_CRITICALITY,
   DEFAULT_MATERIAL_MARKET_MONITORING_FREQUENCY_DAYS,
@@ -102,6 +111,15 @@ export const MaterialModule = () => {
   const totalMaterialValue = useMemo(
     () => computeMaterialTotalValue(formData.quantity, formData.currentCost),
     [formData.quantity, formData.currentCost]
+  );
+
+  const catalogStockValue = useMemo(
+    () => sumMaterialCatalogStockValue(materials),
+    [materials]
+  );
+  const materialsWithStockCount = useMemo(
+    () => countMaterialsWithStockQuantity(materials),
+    [materials]
   );
 
   const fetchData = async () => {
@@ -312,6 +330,28 @@ export const MaterialModule = () => {
 
   return (
     <div className="space-y-6" data-tour="materials-root">
+      <SummaryKpiGrid
+        className={SYSTEM_TOTALIZER_GRID_CLASS}
+        testId="materials-catalog-stock-kpis"
+      >
+        <SystemTotalizerCard
+          testId="materials-catalog-stock-value-card"
+          label="Valor em estoque (MP)"
+          amount={catalogStockValue}
+          amountFormat="currency"
+          tone="money"
+          icon={Package}
+          loading={loading}
+          helperText={
+            loading
+              ? undefined
+              : materialsWithStockCount === 0
+                ? "Nenhuma quantidade lançada no cadastro"
+                : `${materialsWithStockCount} material(is) com quantidade · Σ quantidade × custo atual`
+          }
+        />
+      </SummaryKpiGrid>
+
       {/* Header Actions */}
       <div
         className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"

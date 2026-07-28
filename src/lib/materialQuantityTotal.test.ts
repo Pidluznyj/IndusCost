@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   computeMaterialTotalValue,
+  countMaterialsWithStockQuantity,
   normalizeMaterialQuantity,
+  sumMaterialCatalogStockValue,
 } from "./materialQuantityTotal.js";
 
 const root = process.cwd();
@@ -34,12 +36,31 @@ describe("materialQuantityTotal", () => {
     assert.equal(computeMaterialTotalValue(3, 0.333333), 0.999999);
   });
 
+  it("soma valor em estoque do catálogo (quantidade × custo atual)", () => {
+    assert.equal(
+      sumMaterialCatalogStockValue([
+        { quantity: 10, currentCost: 1.5 },
+        { quantity: 0, currentCost: 100 },
+        { calculations: { totalMaterialValue: 20 } },
+      ]),
+      35
+    );
+    assert.equal(countMaterialsWithStockQuantity([
+      { quantity: 10 },
+      { quantity: 0 },
+      { quantity: 2 },
+    ]), 2);
+  });
+
   it("UI e API expõem quantidade e valor total sem alterar custo efetivo", () => {
     const ui = read("src/components/MaterialModule.tsx");
     assert.match(ui, /material-quantity-input/);
     assert.match(ui, /material-total-value/);
     assert.match(ui, /computeMaterialTotalValue/);
     assert.match(ui, /Valor MP total/);
+    assert.match(ui, /materials-catalog-stock-value-card/);
+    assert.match(ui, /sumMaterialCatalogStockValue/);
+    assert.match(ui, /Valor em estoque \(MP\)/);
 
     const server = read("server.ts");
     assert.match(server, /totalMaterialValue/);
