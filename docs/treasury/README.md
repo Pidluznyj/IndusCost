@@ -21,6 +21,7 @@
 | [PERFORMANCE_BENCHMARKS.md](./PERFORMANCE_BENCHMARKS.md) | Benchmarks de performance |
 | [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) | Resumo de implantação (usuário) |
 | [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md) | Runbook completo de produção + scripts |
+| [POST-DEPLOY-CHECKLIST.md](./POST-DEPLOY-CHECKLIST.md) | Validação funcional pós-deploy (A/B/C) |
 | [ROLLBACK.md](./ROLLBACK.md) | Rollback seguro em produção |
 
 ### Documentação técnica (esta entrega)

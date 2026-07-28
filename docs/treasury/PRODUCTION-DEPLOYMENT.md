@@ -14,7 +14,7 @@
 | Log app | `/tmp/induscost-server.log` |
 | Logs Tesouraria | `/tmp/induscost-treasury-deploy/` |
 
-Documentos relacionados: [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) (resumo), [19-ROLLOUT.md](./19-ROLLOUT.md) (flags), [ROLLBACK.md](./ROLLBACK.md).
+Documentos relacionados: [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) (resumo), [POST-DEPLOY-CHECKLIST.md](./POST-DEPLOY-CHECKLIST.md) (validação funcional A/B/C), [19-ROLLOUT.md](./19-ROLLOUT.md) (flags), [ROLLBACK.md](./ROLLBACK.md).
 
 ---
 
@@ -115,13 +115,16 @@ Verifica:
 
 Log: `/tmp/induscost-treasury-deploy/postdeploy-validation_*.log`.
 
-### 5) Smoke funcional (sessão autenticada)
+### 5) Smoke funcional + checklist completo
 
 Com usuário que tenha `finance.treasury` `view` e flags desejadas ON:
 
 - `GET /api/finance/treasury/availability` → `enabled` + mapa `flags`
 - UI `/finance/treasury` (abas conforme flags)
 - Conferir logs: `tail -f /tmp/induscost-server.log`
+
+Validação funcional detalhada (leitura / dados de teste / financeiro):  
+**[POST-DEPLOY-CHECKLIST.md](./POST-DEPLOY-CHECKLIST.md)**
 
 ### 6) Flags / soft-launch
 
