@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  canEditMaterialStockParameters,
   formatStockConferenceQuantity,
   MATERIAL_STOCK_CONFERENCE_UI_FORBIDDEN_COST_KEYS,
+  MATERIAL_STOCK_STATUS_EXPLANATIONS,
   resolveMaterialStockConferenceLayout,
+  resolveMaterialStockStatusVisual,
   stockConferenceStatusLabel,
 } from "./materialStockConferenceUi.js";
 
@@ -50,8 +53,28 @@ describe("materialStockConferenceUi — formatação", () => {
     assert.equal(stockConferenceStatusLabel("CRITICO"), "Crítico");
   });
 
+  it("status tem texto, ícone e explicação", () => {
+    const visual = resolveMaterialStockStatusVisual("EMERGENCIA");
+    assert.equal(visual.label, "Emergência");
+    assert.equal(visual.icon, "flame");
+    assert.equal(visual.tone, "danger");
+    assert.match(visual.explanation, /contingência/i);
+    assert.ok(MATERIAL_STOCK_STATUS_EXPLANATIONS.SAUDAVEL.length > 0);
+  });
+
   it("lista chaves de custo proibidas na UI", () => {
     assert.ok(MATERIAL_STOCK_CONFERENCE_UI_FORBIDDEN_COST_KEYS.includes("currentCost"));
     assert.ok(MATERIAL_STOCK_CONFERENCE_UI_FORBIDDEN_COST_KEYS.includes("landedCost"));
+  });
+
+  it("parâmetros somente leitura sem permissão específica", () => {
+    assert.equal(
+      canEditMaterialStockParameters({
+        canPerformAction: () => false,
+        effectivePermissions: ["materials.view"],
+        role: "VIEWER",
+      }),
+      false
+    );
   });
 });

@@ -45,8 +45,10 @@ const base = {
   onRetry: () => {},
   canViewHistory: true,
   canConference: true,
+  canEditParameters: false,
   onConference: () => {},
   onHistory: () => {},
+  onEditParameters: () => {},
 };
 
 describe("MaterialStockConferenceWorkspace", () => {
@@ -96,11 +98,31 @@ describe("MaterialStockConferenceWorkspace", () => {
     assert.match(html, /stock-conference-filters/);
     assert.match(html, /stock-conference-filter-CRITICO/);
     assert.match(html, /Saudável/);
+    assert.match(html, /stock-conference-status-card/);
+    assert.match(html, /stock-conference-parameters-readonly/);
+    assert.match(html, /Somente leitura/);
+    assert.match(html, /não somam ao estoque/);
+    assert.match(html, /Disponível acima da contingência/);
     assert.match(html, /500 kg|500/);
     assert.match(html, /kg/);
     assert.match(html, /há mais resultados/);
     assert.match(html, /stock-conference-load-more/);
     assert.doesNotMatch(html, /currentCost|landedCost|custo unit/i);
+  });
+
+  it("exibe editar parâmetros quando permitido", () => {
+    const html = renderToStaticMarkup(
+      <MaterialStockConferenceWorkspace
+        {...base}
+        viewKind="ready"
+        layoutMode="split"
+        rows={[sampleRow()]}
+        selectedId="mat-1"
+        canEditParameters
+      />
+    );
+    assert.match(html, /stock-conference-edit-parameters/);
+    assert.doesNotMatch(html, /stock-conference-parameters-readonly-badge/);
   });
 
   it("layout vertical: detalhe tela cheia com voltar", () => {

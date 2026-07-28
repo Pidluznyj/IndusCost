@@ -3,7 +3,20 @@
  * Presentacional: estados injetados para testes e o page container.
  */
 import React from "react";
-import { ArrowLeft, ClipboardList, History, Loader2, Search } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Ban,
+  CheckCircle2,
+  ClipboardList,
+  Flame,
+  HelpCircle,
+  History,
+  Loader2,
+  Search,
+  Settings2,
+} from "lucide-react";
 import { ContextualDashboardEmpty } from "@/src/components/contextual/ContextualDashboardEmpty";
 import { cn } from "@/src/lib/utils";
 import {
@@ -12,6 +25,7 @@ import {
   formatStockConferenceQuantity,
   MATERIAL_STOCK_CONFERENCE_EMPTY_MESSAGE,
   MATERIAL_STOCK_CONFERENCE_SELECT_HINT,
+  resolveMaterialStockStatusVisual,
   stockConferenceStatusLabel,
   type MaterialStockConferenceLayoutMode,
 } from "@/src/lib/materialStockConferenceUi";
@@ -48,29 +62,84 @@ export type MaterialStockConferenceWorkspaceProps = {
   totalCount?: number;
   canViewHistory: boolean;
   canConference: boolean;
+  canEditParameters: boolean;
   onConference: () => void;
   onHistory: () => void;
+  onEditParameters: () => void;
 };
 
+function StatusIcon({
+  icon,
+  className,
+}: {
+  icon: ReturnType<typeof resolveMaterialStockStatusVisual>["icon"];
+  className?: string;
+}) {
+  const props = { className: cn("h-4 w-4 shrink-0", className), "aria-hidden": true as const };
+  switch (icon) {
+    case "help-circle":
+      return <HelpCircle {...props} />;
+    case "ban":
+      return <Ban {...props} />;
+    case "flame":
+      return <Flame {...props} />;
+    case "alert-triangle":
+      return <AlertTriangle {...props} />;
+    case "alert-circle":
+      return <AlertCircle {...props} />;
+    case "check-circle":
+      return <CheckCircle2 {...props} />;
+    default:
+      return <HelpCircle {...props} />;
+  }
+}
+
 function StatusPill({ status }: { status: string }) {
-  const label = stockConferenceStatusLabel(status);
+  const visual = resolveMaterialStockStatusVisual(status);
   return (
     <span
       className={cn(
-        "inline-flex min-h-8 items-center rounded-md px-2.5 py-1 text-xs font-semibold",
-        status === "SAUDAVEL" && "bg-emerald-50 text-emerald-800",
-        status === "ATENCAO" && "bg-amber-50 text-amber-900",
-        status === "CRITICO" && "bg-orange-50 text-orange-900",
-        status === "EMERGENCIA" && "bg-red-50 text-red-800",
-        status === "SEM_ESTOQUE" && "bg-slate-100 text-slate-700",
-        status === "NAO_CONFIGURADO" && "bg-muted text-muted-foreground"
+        "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold",
+        visual.tone === "success" && "bg-emerald-50 text-emerald-800",
+        visual.tone === "caution" && "bg-amber-50 text-amber-900",
+        visual.tone === "warning" && "bg-orange-50 text-orange-900",
+        visual.tone === "danger" && "bg-red-50 text-red-800",
+        visual.tone === "neutral" && "bg-slate-100 text-slate-700",
+        visual.tone === "muted" && "bg-muted text-muted-foreground"
       )}
       data-testid="stock-conference-status-pill"
-      aria-label={`Status: ${label}`}
-      title={label}
+      data-status={visual.status}
+      aria-label={`Status: ${visual.label}. ${visual.explanation}`}
+      title={visual.explanation}
     >
-      {label}
+      <StatusIcon icon={visual.icon} />
+      <span>{visual.label}</span>
     </span>
+  );
+}
+
+function StatusCard({ status }: { status: string }) {
+  const visual = resolveMaterialStockStatusVisual(status);
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-3 py-3",
+        visual.tone === "success" && "border-emerald-200 bg-emerald-50/60",
+        visual.tone === "caution" && "border-amber-200 bg-amber-50/60",
+        visual.tone === "warning" && "border-orange-200 bg-orange-50/60",
+        visual.tone === "danger" && "border-red-200 bg-red-50/60",
+        visual.tone === "neutral" && "border-slate-200 bg-slate-50",
+        visual.tone === "muted" && "border-border bg-muted/40"
+      )}
+      data-testid="stock-conference-status-card"
+      data-status={visual.status}
+    >
+      <div className="flex items-center gap-2">
+        <StatusIcon icon={visual.icon} className="h-5 w-5" />
+        <p className="text-sm font-semibold text-foreground">{visual.label}</p>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{visual.explanation}</p>
+    </div>
   );
 }
 
@@ -107,20 +176,25 @@ function DetailPanel({
   item,
   canViewHistory,
   canConference,
+  canEditParameters,
   onConference,
   onHistory,
+  onEditParameters,
   showBack,
   onBack,
 }: {
   item: MaterialStockTabletListItem;
   canViewHistory: boolean;
   canConference: boolean;
+  canEditParameters: boolean;
   onConference: () => void;
   onHistory: () => void;
+  onEditParameters: () => void;
   showBack: boolean;
   onBack: () => void;
 }) {
   const metrics = deriveStockConferenceMetrics(item);
+  const unit = item.unit;
   return (
     <div
       className="flex h-full min-h-0 flex-col gap-4"
@@ -143,40 +217,67 @@ function DetailPanel({
           {item.code}
         </p>
         <h2 className="text-xl font-semibold text-foreground">{item.description}</h2>
-        <p className="text-sm text-muted-foreground">Unidade: {item.unit}</p>
+        <p className="text-sm text-muted-foreground">Unidade: {unit}</p>
       </div>
 
       <MetricRow
         label="Estoque atual"
-        value={`${formatStockConferenceQuantity(item.currentQuantity)} ${item.unit}`}
+        value={`${formatStockConferenceQuantity(item.currentQuantity)} ${unit}`}
         emphasize
       />
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <StatusCard status={item.stockStatus} />
+
+      <div className="space-y-2" data-testid="stock-conference-parameters-readonly">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">Parâmetros de nível</p>
+          {canEditParameters ? (
+            <button
+              type="button"
+              onClick={onEditParameters}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold"
+              data-testid="stock-conference-edit-parameters"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Editar
+            </button>
+          ) : (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid="stock-conference-parameters-readonly-badge"
+            >
+              Somente leitura
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Contingência, mínimo e recomendado não somam ao estoque atual.
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <MetricRow
+            label={`Contingência (${unit})`}
+            value={formatStockConferenceQuantity(item.contingencyQuantity)}
+          />
+          <MetricRow
+            label={`Mínimo (${unit})`}
+            value={formatStockConferenceQuantity(item.minimumQuantity)}
+          />
+          <MetricRow
+            label={`Recomendado (${unit})`}
+            value={formatStockConferenceQuantity(item.recommendedQuantity)}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2" data-testid="stock-conference-indicators">
         <MetricRow
-          label="Contingência"
-          value={formatStockConferenceQuantity(item.contingencyQuantity)}
-        />
-        <MetricRow
-          label="Mínimo"
-          value={formatStockConferenceQuantity(item.minimumQuantity)}
-        />
-        <MetricRow
-          label="Recomendado"
-          value={formatStockConferenceQuantity(item.recommendedQuantity)}
-        />
-        <MetricRow
-          label="Disponível acima da contingência"
+          label={`Disponível acima da contingência (${unit})`}
           value={formatStockConferenceQuantity(metrics.availableAboveContingency)}
         />
         <MetricRow
-          label="Sugestão de reposição"
+          label={`Sugestão de reposição (${unit})`}
           value={formatStockConferenceQuantity(metrics.replenishmentSuggestion)}
         />
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-3">
-          <span className="text-sm text-muted-foreground">Status</span>
-          <StatusPill status={item.stockStatus} />
-        </div>
       </div>
 
       <div className="rounded-lg border border-border px-3 py-3 text-sm">
@@ -405,8 +506,10 @@ export function MaterialStockConferenceWorkspace(
           item={selected}
           canViewHistory={props.canViewHistory}
           canConference={props.canConference}
+          canEditParameters={props.canEditParameters}
           onConference={props.onConference}
           onHistory={props.onHistory}
+          onEditParameters={props.onEditParameters}
           showBack={props.layoutMode === "stacked"}
           onBack={props.onClearSelection}
         />

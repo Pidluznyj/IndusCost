@@ -9,6 +9,7 @@ import {
   MATERIALS_SECTION_PATHS,
 } from "@/src/lib/materialsNavigation";
 import {
+  canEditMaterialStockParameters,
   MATERIAL_STOCK_CONFERENCE_PAGE_TITLE,
   resolveMaterialStockConferenceLayout,
   type MaterialStockConferenceLayoutMode,
@@ -17,6 +18,8 @@ import {
   applyConferenceSuccessToListItem,
   type MaterialStockConferenceApiResult,
 } from "@/src/lib/materialStockConferenceClient";
+import { applyParametersSuccessToListItem } from "@/src/lib/materialStockParametersClient";
+import type { MaterialStockParametersApiResult } from "@/src/lib/materialStockParametersClient";
 import {
   appendStockTabletSearchPages,
   fetchMaterialStockTabletSearch,
@@ -32,6 +35,8 @@ import type { MaterialStockTabletListItem } from "@/src/lib/materialStockTabletT
 import { TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { MaterialStockConferenceDialog } from "@/src/components/materials/MaterialStockConferenceDialog";
+import { MaterialStockHistoryPanel } from "@/src/components/materials/MaterialStockHistoryPanel";
+import { MaterialStockParametersDialog } from "@/src/components/materials/MaterialStockParametersDialog";
 import {
   MaterialStockConferenceWorkspace,
   type MaterialStockConferenceViewKind,
@@ -81,6 +86,8 @@ export function MaterialStockConferencePage() {
     routeMaterialId ?? null
   );
   const [conferenceOpen, setConferenceOpen] = useState(false);
+  const [parametersOpen, setParametersOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const requestGenRef = useRef(0);
@@ -90,6 +97,12 @@ export function MaterialStockConferencePage() {
     TabResourceKeys.SUPRIMENTOS_CATALOGO
   );
   const canConference = canViewHistory;
+  const canEditParameters = canEditMaterialStockParameters({
+    canPerformAction: (resourceKey, action) =>
+      permissions.canPerformAction(resourceKey, action as "update"),
+    effectivePermissions: permissions.authUser?.effectivePermissions ?? [],
+    role: permissions.authUser?.role ?? null,
+  });
 
   useEffect(() => {
     const t = window.setTimeout(
@@ -196,8 +209,7 @@ export function MaterialStockConferencePage() {
     total,
   });
 
-  const selectedItem =
-    rows.find((r) => r.id === selectedId) ?? null;
+  const selectedItem = rows.find((r) => r.id === selectedId) ?? null;
 
   const viewKind: MaterialStockConferenceViewKind = useMemo(() => {
     if (loading && rows.length === 0) return "loading";
@@ -209,6 +221,8 @@ export function MaterialStockConferencePage() {
   const onSelect = (id: string) => {
     didAutoSelectRef.current = true;
     setSelectedId(id);
+    setHistoryOpen(false);
+    setParametersOpen(false);
     navigate(getMaterialStockConferenceDetailPath(id), { replace: false });
   };
 
@@ -216,6 +230,8 @@ export function MaterialStockConferencePage() {
     didAutoSelectRef.current = true;
     setSelectedId(null);
     setConferenceOpen(false);
+    setParametersOpen(false);
+    setHistoryOpen(false);
     navigate(MATERIALS_SECTION_PATHS.stockConference, { replace: false });
   };
 
@@ -229,6 +245,16 @@ export function MaterialStockConferencePage() {
       prev.map((row) =>
         row.id === result.material.id
           ? applyConferenceSuccessToListItem(row, result)
+          : row
+      )
+    );
+  };
+
+  const onParametersSuccess = (result: MaterialStockParametersApiResult) => {
+    setRows((prev) =>
+      prev.map((row) =>
+        row.id === result.material.id
+          ? applyParametersSuccessToListItem(row, result)
           : row
       )
     );
@@ -269,25 +295,44 @@ export function MaterialStockConferencePage() {
         totalCount={total}
         canViewHistory={canViewHistory}
         canConference={canConference}
+        canEditParameters={canEditParameters}
         onConference={() => {
           if (!selectedItem) return;
           setConferenceOpen(true);
         }}
         onHistory={() => {
-          /* histórico em entrega seguinte */
+          if (!selectedItem) return;
+          setHistoryOpen(true);
+        }}
+        onEditParameters={() => {
+          if (!selectedItem || !canEditParameters) return;
+          setParametersOpen(true);
         }}
       />
 
       {selectedItem ? (
-        <MaterialStockConferenceDialog
-          item={selectedItem}
-          open={conferenceOpen}
-          onClose={() => setConferenceOpen(false)}
-          onSuccess={onConferenceSuccess}
-          onReloadRequired={() => {
-            void runSearch(1, "replace");
-          }}
-        />
+        <>
+          <MaterialStockConferenceDialog
+            item={selectedItem}
+            open={conferenceOpen}
+            onClose={() => setConferenceOpen(false)}
+            onSuccess={onConferenceSuccess}
+            onReloadRequired={() => {
+              void runSearch(1, "replace");
+            }}
+          />
+          <MaterialStockParametersDialog
+            item={selectedItem}
+            open={parametersOpen && canEditParameters}
+            onClose={() => setParametersOpen(false)}
+            onSuccess={onParametersSuccess}
+          />
+          <MaterialStockHistoryPanel
+            item={selectedItem}
+            open={historyOpen && canViewHistory}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </>
       ) : null}
     </div>
   );

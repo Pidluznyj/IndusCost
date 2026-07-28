@@ -58,6 +58,58 @@ export function stockConferenceStatusLabel(status: MaterialStockStatus | string)
   return String(status);
 }
 
+/** Explicação resumida do status — texto independente da cor. */
+export const MATERIAL_STOCK_STATUS_EXPLANATIONS: Record<MaterialStockStatus, string> = {
+  NAO_CONFIGURADO:
+    "Parâmetros incompletos ou hierarquia inválida. Contingência, mínimo e recomendado não somam ao estoque.",
+  SEM_ESTOQUE: "Estoque atual zerado.",
+  EMERGENCIA: "Estoque abaixo da contingência — prioridade máxima de reposição.",
+  CRITICO: "Estoque abaixo do mínimo operacional.",
+  ATENCAO: "Estoque abaixo do recomendado — planejar reposição.",
+  SAUDAVEL: "Estoque no nível recomendado ou acima.",
+};
+
+export type MaterialStockStatusVisual = {
+  status: MaterialStockStatus;
+  label: string;
+  explanation: string;
+  /** Nome de ícone Lucide para a UI. */
+  icon: "help-circle" | "ban" | "flame" | "alert-triangle" | "alert-circle" | "check-circle";
+  tone: "muted" | "neutral" | "danger" | "warning" | "caution" | "success";
+};
+
+export function resolveMaterialStockStatusVisual(
+  status: MaterialStockStatus | string
+): MaterialStockStatusVisual {
+  const normalized =
+    status in MATERIAL_STOCK_STATUS_LABELS
+      ? (status as MaterialStockStatus)
+      : "NAO_CONFIGURADO";
+  const icons: Record<MaterialStockStatus, MaterialStockStatusVisual["icon"]> = {
+    NAO_CONFIGURADO: "help-circle",
+    SEM_ESTOQUE: "ban",
+    EMERGENCIA: "flame",
+    CRITICO: "alert-triangle",
+    ATENCAO: "alert-circle",
+    SAUDAVEL: "check-circle",
+  };
+  const tones: Record<MaterialStockStatus, MaterialStockStatusVisual["tone"]> = {
+    NAO_CONFIGURADO: "muted",
+    SEM_ESTOQUE: "neutral",
+    EMERGENCIA: "danger",
+    CRITICO: "warning",
+    ATENCAO: "caution",
+    SAUDAVEL: "success",
+  };
+  return {
+    status: normalized,
+    label: stockConferenceStatusLabel(normalized),
+    explanation: MATERIAL_STOCK_STATUS_EXPLANATIONS[normalized],
+    icon: icons[normalized],
+    tone: tones[normalized],
+  };
+}
+
 export function deriveStockConferenceMetrics(item: MaterialStockTabletListItem): {
   availableAboveContingency: number | null;
   replenishmentSuggestion: number | null;
@@ -72,6 +124,18 @@ export function deriveStockConferenceMetrics(item: MaterialStockTabletListItem):
       item.recommendedQuantity
     ),
   };
+}
+
+/** Editar parâmetros exige update em engineering.materials (API PATCH). */
+export function canEditMaterialStockParameters(input: {
+  canPerformAction?: (resourceKey: string, action: string) => boolean;
+  effectivePermissions?: readonly string[] | null;
+  role?: string | null;
+}): boolean {
+  if (input.role === "SUPER_ADMIN" || input.role === "ADMIN") return true;
+  if (input.canPerformAction?.("engineering.materials", "update")) return true;
+  const bag = input.effectivePermissions ?? [];
+  return bag.includes("materials.edit");
 }
 
 /** Garante que payloads/UI de operador não vazem custo. */
