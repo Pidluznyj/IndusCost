@@ -1,6 +1,8 @@
 /**
- * Feature flags da Central de Tesouraria — fail-closed.
- * Padrão alinhado a `salesOrderFlowFeatureFlags.ts` (env), com subflags nomeadas.
+ * Feature flags da Central de Tesouraria.
+ * - Catálogo conhecido: default **ligado** (ativação operacional); opt-out via env `0`/`false`.
+ * - Flag desconhecida: sempre **fail-closed** (false).
+ * - Subflags exigem mestra ON (AND).
  * Sem Prisma.
  */
 
@@ -8,6 +10,12 @@ import type { RequestHandler } from "express";
 
 /** Flag mestra (documental + runtime). */
 export const TREASURY_MASTER_FLAG = "treasury.enabled" as const;
+
+/**
+ * Default de ativação para flags do catálogo quando a env está ausente.
+ * Desligamento emergencial: `TREASURY_MODULE_ENABLED=0` (e/ou subflag=0).
+ */
+export const TREASURY_FEATURE_FLAG_DEFAULT_ENABLED = true;
 
 /** Catálogo de flags de rollout por submódulo (+ auxiliares). */
 export const TREASURY_FEATURE_FLAG_IDS = [
@@ -55,16 +63,30 @@ export const TREASURY_FEATURE_RESOURCE = "finance.treasury.enabled";
 export const TREASURY_ENABLED_ENV = TREASURY_FEATURE_FLAG_ENV["treasury.enabled"];
 
 const ENABLED_VALUES = new Set(["1", "true", "yes", "on", "enabled"]);
+const DISABLED_VALUES = new Set(["0", "false", "no", "off", "disabled"]);
 
-function parseEnabled(raw: string | undefined): boolean {
-  if (raw == null) return false;
-  return ENABLED_VALUES.has(raw.trim().toLowerCase());
+/**
+ * Parse de env para flags do catálogo.
+ * Ausente/vazio → `defaultWhenAbsent` (ativação).
+ * Valor explícito truthy/falsy → respeitado.
+ */
+function parseEnabled(
+  raw: string | undefined,
+  defaultWhenAbsent: boolean = TREASURY_FEATURE_FLAG_DEFAULT_ENABLED
+): boolean {
+  if (raw == null) return defaultWhenAbsent;
+  const v = raw.trim().toLowerCase();
+  if (v === "") return defaultWhenAbsent;
+  if (DISABLED_VALUES.has(v)) return false;
+  if (ENABLED_VALUES.has(v)) return true;
+  // Valor desconhecido em env conhecida → fail-closed (não ativa).
+  return false;
 }
 
 /**
- * Fail-closed para uma flag.
+ * Resolve uma flag do catálogo.
  * Subflags exigem `treasury.enabled` ligada (AND).
- * Flag desconhecida → sempre false.
+ * Flag desconhecida → sempre false (fail-closed).
  */
 export function isTreasuryFeatureFlagEnabled(
   flagId: string,

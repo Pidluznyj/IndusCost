@@ -55,7 +55,7 @@ Detalhe operacional: [19-ROLLOUT.md](./19-ROLLOUT.md).
 
 | Flag ID | Env | Escopo |
 |---------|-----|--------|
-| `treasury.enabled` | `TREASURY_MODULE_ENABLED` | Mestra (fail-closed) |
+| `treasury.enabled` | `TREASURY_MODULE_ENABLED` | Mestra |
 | `treasury.accounts.enabled` | `TREASURY_ACCOUNTS_ENABLED` | Contas / ledger manual |
 | `treasury.balances.enabled` | `TREASURY_BALANCES_ENABLED` | Saldos / snapshots / posição |
 | `treasury.dashboard.enabled` | `TREASURY_DASHBOARD_ENABLED` | Dashboard / alertas leitura |
@@ -71,16 +71,18 @@ Detalhe operacional: [19-ROLLOUT.md](./19-ROLLOUT.md).
 | `treasury.ofxImport.enabled` | `TREASURY_OFX_IMPORT_ENABLED` | Preview/apply OFX |
 | `treasury.reports.enabled` | `TREASURY_REPORTS_ENABLED` | Relatórios + export |
 
-Valores truthy típicos: `1`, `true`, `yes`, `on` (ver parser no código). Ausente/`0`/`false` = OFF.
+Valores truthy: `1`, `true`, `yes`, `on`. Valores falsy: `0`, `false`, `no`, `off`.  
+**Catálogo conhecido:** env **ausente** = **ON** (ativação operacional; ver [ACTIVATION.md](./ACTIVATION.md)).  
+**Fail-closed:** flag ID desconhecida → OFF; valor env desconhecido → OFF. Subflags exigem mestra ON (AND).
 
-`GET /availability` devolve `flags` (mapa completo fail-closed) para a UI ocultar abas.
+`GET /availability` devolve `flags` (mapa completo) para a UI ocultar abas.
 
 ## 7. Operação de liberação
 
-1. Migrar schema.
-2. Ligar `TREASURY_MODULE_ENABLED=1`.
-3. Ligar subflags na **ordem recomendada** (ver [19-ROLLOUT.md](./19-ROLLOUT.md)).
-4. Conceder bags/resources aos papéis (financeiro, tesoureiro, auditor).
-5. Validar `GET /availability` (campo `flags`) e smoke UI.
+1. Migrar schema (já aplicado se o módulo foi implantado).
+2. Deploy do código com default-on (ou manter envs `=1` explícitas).
+3. Sincronizar defaults de role: `npm run permissions:seed -- --sync-role-defaults` (ADMIN).
+4. Validar `GET /availability` (campo `flags`) e smoke UI.
+5. Opt-out emergencial: `TREASURY_MODULE_ENABLED=0`.
 
-**Homologação:** flags OFF em produção até checklist OK (soft-launch). Flag OFF **não** apaga dados.
+Detalhe: [ACTIVATION.md](./ACTIVATION.md) e [19-ROLLOUT.md](./19-ROLLOUT.md). Flag OFF **não** apaga dados.

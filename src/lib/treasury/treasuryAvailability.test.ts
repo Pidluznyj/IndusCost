@@ -10,7 +10,7 @@ import { TREASURY_ENABLED_ENV } from "./treasuryFeatureFlags.js";
 const here = dirname(fileURLToPath(import.meta.url));
 
 describe("treasuryAvailability", () => {
-  it("retorna scaffold quando flag on", () => {
+  it("retorna scaffold quando flag on (default-on: subflags ausentes = ligadas)", () => {
     const payload = getTreasuryAvailability({
       env: { [TREASURY_ENABLED_ENV]: "1" },
       serverTime: new Date("2026-07-27T12:00:00.000Z"),
@@ -22,24 +22,35 @@ describe("treasuryAvailability", () => {
     assert.equal(payload.scaffoldVersion, TREASURY_SCAFFOLD_VERSION);
     assert.equal(payload.serverTimeIso, "2026-07-27T12:00:00.000+00:00");
     assert.equal(payload.flags["treasury.enabled"], true);
-    assert.equal(payload.flags["treasury.accounts.enabled"], false);
-    assert.equal(payload.flags["treasury.dashboard.enabled"], false);
+    assert.equal(payload.flags["treasury.accounts.enabled"], true);
+    assert.equal(payload.flags["treasury.dashboard.enabled"], true);
   });
 
-  it("marca disabled quando flag off (handler só roda se flag passar)", () => {
+  it("ativação: env ausente liga mestra e subflags (default-on)", () => {
     const payload = getTreasuryAvailability({ env: {} });
+    assert.equal(payload.enabled, true);
+    assert.equal(payload.status, "scaffold");
+    assert.equal(payload.flags["treasury.enabled"], true);
+    assert.equal(payload.flags["treasury.reports.enabled"], true);
+  });
+
+  it("marca disabled quando mestra opt-out explícito", () => {
+    const payload = getTreasuryAvailability({
+      env: { [TREASURY_ENABLED_ENV]: "0" },
+    });
     assert.equal(payload.enabled, false);
     assert.equal(payload.status, "disabled");
     assert.equal(payload.flags["treasury.enabled"], false);
     assert.equal(payload.flags["treasury.reports.enabled"], false);
   });
 
-  it("expõe subflags ligadas no mapa de availability", () => {
+  it("expõe opt-out seletivo de subflag no mapa de availability", () => {
     const payload = getTreasuryAvailability({
       env: {
         [TREASURY_ENABLED_ENV]: "1",
         TREASURY_DASHBOARD_ENABLED: "1",
         TREASURY_REPORTS_ENABLED: "true",
+        TREASURY_RECEIVABLES_ENABLED: "0",
       },
     });
     assert.equal(payload.flags["treasury.dashboard.enabled"], true);

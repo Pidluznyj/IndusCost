@@ -7,6 +7,7 @@ import {
   isTreasuryModuleEnabled,
   listEnabledTreasuryFeatureFlags,
   TREASURY_ENABLED_ENV,
+  TREASURY_FEATURE_FLAG_DEFAULT_ENABLED,
   TREASURY_FEATURE_FLAG_ENV,
   TREASURY_FEATURE_FLAG_IDS,
 } from "./treasuryFeatureFlags.js";
@@ -30,15 +31,27 @@ const ALL_SUBMODULE_ENV = {
   TREASURY_REPORTS_ENABLED: "1",
 } as const;
 
+const ALL_OFF_ENV = Object.fromEntries(
+  Object.values(TREASURY_FEATURE_FLAG_ENV).map((k) => [k, "0"])
+) as Record<string, string>;
+
 describe("treasuryFeatureFlags", () => {
-  it("fail-closed quando env ausente", () => {
-    assert.equal(isTreasuryModuleEnabled({}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.accounts.enabled", {}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.balances.enabled", {}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.dashboard.enabled", {}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.receivables.enabled", {}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.payables.enabled", {}), false);
-    assert.equal(isTreasuryFeatureFlagEnabled("treasury.reports.enabled", {}), false);
+  it("ativação: catálogo default-on quando env ausente", () => {
+    assert.equal(TREASURY_FEATURE_FLAG_DEFAULT_ENABLED, true);
+    assert.equal(isTreasuryModuleEnabled({}), true);
+    assert.equal(isTreasuryFeatureFlagEnabled("treasury.accounts.enabled", {}), true);
+    assert.equal(isTreasuryFeatureFlagEnabled("treasury.reports.enabled", {}), true);
+  });
+
+  it("opt-out emergencial: mestra=0 desliga tudo", () => {
+    assert.equal(isTreasuryModuleEnabled({ TREASURY_MODULE_ENABLED: "0" }), false);
+    assert.equal(
+      isTreasuryFeatureFlagEnabled("treasury.accounts.enabled", {
+        TREASURY_MODULE_ENABLED: "0",
+        TREASURY_ACCOUNTS_ENABLED: "1",
+      }),
+      false
+    );
   });
 
   it("mestra habilita com valores conhecidos", () => {
@@ -51,13 +64,14 @@ describe("treasuryFeatureFlags", () => {
     }
   });
 
-  it("rejeita valores desconhecidos na mestra", () => {
+  it("rejeita valores desconhecidos na mestra (fail-closed)", () => {
     assert.equal(isTreasuryModuleEnabled({ [TREASURY_ENABLED_ENV]: "maybe" }), false);
   });
 
   it("subflag exige mestra (AND)", () => {
     assert.equal(
       isTreasuryFeatureFlagEnabled("treasury.accounts.enabled", {
+        TREASURY_MODULE_ENABLED: "0",
         TREASURY_ACCOUNTS_ENABLED: "1",
       }),
       false
@@ -92,7 +106,7 @@ describe("treasuryFeatureFlags", () => {
     }
   });
 
-  it("flag desconhecida é negada", () => {
+  it("flag desconhecida é negada (fail-closed)", () => {
     assert.equal(
       isTreasuryFeatureFlagEnabled("treasury.unknown.enabled", {
         TREASURY_MODULE_ENABLED: "1",
@@ -101,8 +115,9 @@ describe("treasuryFeatureFlags", () => {
     );
   });
 
-  it("lista só flags conhecidas habilitadas", () => {
+  it("lista só flags conhecidas habilitadas (opt-out das demais)", () => {
     const enabled = listEnabledTreasuryFeatureFlags({
+      ...ALL_OFF_ENV,
       TREASURY_MODULE_ENABLED: "1",
       TREASURY_OFX_IMPORT_ENABLED: "1",
       TREASURY_UNKNOWN: "1",
@@ -111,11 +126,11 @@ describe("treasuryFeatureFlags", () => {
     assert.ok(TREASURY_FEATURE_FLAG_IDS.includes("treasury.reconciliation.enabled"));
   });
 
-  it("snapshot inclui todas as flags fail-closed", () => {
+  it("snapshot: mestra ligada + subflags ausentes = ativação completa", () => {
     const map = getTreasuryFeatureFlagsMap({ TREASURY_MODULE_ENABLED: "1" });
     assert.equal(map["treasury.enabled"], true);
-    assert.equal(map["treasury.accounts.enabled"], false);
-    assert.equal(map["treasury.reports.enabled"], false);
+    assert.equal(map["treasury.accounts.enabled"], true);
+    assert.equal(map["treasury.reports.enabled"], true);
     assert.equal(Object.keys(map).length, TREASURY_FEATURE_FLAG_IDS.length);
 
     const allOn = getTreasuryFeatureFlagsMap(ALL_SUBMODULE_ENV);
@@ -125,7 +140,6 @@ describe("treasuryFeatureFlags", () => {
   });
 
   it("desligar subflag não implica apagar dados (só bloqueio)", () => {
-    // Contrato: parser é puro e fail-closed — não há side-effect de delete.
     assert.equal(
       isTreasuryFeatureFlagEnabled("treasury.receivables.enabled", {
         TREASURY_MODULE_ENABLED: "1",

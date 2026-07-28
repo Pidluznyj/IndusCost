@@ -39,6 +39,7 @@ export type AppModuleId =
   | "simulations"
   | "reports"
   | "finance"
+  | "treasury"
   | "suppliers"
   | "portfolio-reconciliation"
   | "guide"
@@ -87,6 +88,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "simulations",
   "reports",
   "finance",
+  "treasury",
   "suppliers",
   "portfolio-reconciliation",
   "guide",
@@ -189,6 +191,9 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
         check.hasPermission("settings.nomus.view") ||
         check.hasPermission("settings.view")
       );
+    case "treasury":
+      // finance.view NÃO abre Tesouraria (contrato finance.treasury).
+      return check.hasPermission("finance.treasury.view");
     case "suppliers":
       // PERM-41/42: Fornecedores isolado de Centros de Custo / finance.view
       return check.hasPermission("finance.suppliers.view");
@@ -331,6 +336,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   if (normalized.startsWith("/finance/portfolio-reconciliation")) {
     return "portfolio-reconciliation";
   }
+  if (
+    normalized === "/finance/treasury" ||
+    normalized.startsWith("/finance/treasury/")
+  ) {
+    return "treasury";
+  }
   if (normalized === "/finance" || normalized.startsWith("/finance/")) {
     return "finance";
   }
@@ -377,6 +388,10 @@ export function getFirstAllowedModulePath(check: PermissionChecker): string | nu
       if (moduleId === "sc-inventory") return "/supply-chain/inventory";
       if (moduleId === "sc-receiving") return "/supply-chain/receiving";
       if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
+      if (moduleId === "treasury") return "/finance/treasury";
+      if (moduleId === "portfolio-reconciliation") {
+        return "/finance/portfolio-reconciliation";
+      }
       return `/${moduleId}`;
     }
   }
@@ -416,6 +431,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   simulations: "Simulações",
   reports: "Relatórios",
   finance: "Financeiro",
+  treasury: "Tesouraria",
   suppliers: "Fornecedores",
   "portfolio-reconciliation": "Conciliação de Carteira",
   guide: "Guia do Sistema",

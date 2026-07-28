@@ -225,7 +225,7 @@ Backend: `requireResource` em `treasuryRoutes.ts`. Seed/apply de bags: ops (`per
 
 ## 8. Feature flags
 
-Fonte: `src/lib/treasury/treasuryFeatureFlags.ts` — **fail-closed** (ausente/false = off). Subflags exigem mestra ON. Catálogo `TREASURY_FEATURE_FLAG_IDS`: **15** ids (1 mestra + 14 subflags).
+Fonte: `src/lib/treasury/treasuryFeatureFlags.ts` — catálogo conhecido **default-on** se env ausente; opt-out `0`/`false`; flag/valor desconhecidos **fail-closed**. Subflags exigem mestra ON. Catálogo `TREASURY_FEATURE_FLAG_IDS`: **15** ids (1 mestra + 14 subflags). Ativação ADMIN: [ACTIVATION.md](./ACTIVATION.md).
 
 | Flag id | Env |
 |---------|-----|

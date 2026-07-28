@@ -38,6 +38,7 @@ import {
   Network,
   Table2,
   PackageCheck,
+  Landmark,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
@@ -56,6 +57,11 @@ import { buildResourceAwareSidebarNavigation } from "@/src/lib/resourceNavigatio
 import { fetchSalesOrderFlowFeatureStatus } from "@/src/lib/salesOrderFlowClient";
 import { filterSalesOrderFlowMenuNavigation } from "@/src/lib/salesOrderFlowNavigation";
 import { filterSupplyChainMenuNavigation } from "@/src/lib/supply-chain/supplyChainNavigation";
+import {
+  canViewTreasuryModule,
+  filterTreasuryMenuNavigation,
+} from "@/src/lib/treasury/treasuryNavigation";
+import { fetchTreasuryAvailability } from "@/src/lib/treasury/treasuryAvailabilityApi";
 import { fetchSupplyChainFeatureStatus } from "@/src/lib/supply-chain/supplyChainClient";
 import {
   canViewSupplyChainInventoryModule,
@@ -129,6 +135,7 @@ const MENU_ITEM_ICONS: Record<AppModuleId, LucideIcon> = {
   commissions: HandCoins,
   simulations: Layers,
   finance: Banknote,
+  treasury: Landmark,
   suppliers: Building2,
   "portfolio-reconciliation": GitCompare,
   reports: FileText,
@@ -475,6 +482,8 @@ export const Sidebar = () => {
 
   const [salesOrderFlowFeatureEnabled, setSalesOrderFlowFeatureEnabled] =
     React.useState<boolean | null>(null);
+  const [treasuryFeatureEnabled, setTreasuryFeatureEnabled] =
+    React.useState<boolean | null>(null);
   const [supplyChainFeatures, setSupplyChainFeatures] = React.useState<{
     purchases: boolean | null;
     inventory: boolean | null;
@@ -504,6 +513,39 @@ export const Sidebar = () => {
       .catch(() => {
         if (!controller.signal.aborted) {
           setSalesOrderFlowFeatureEnabled(false);
+        }
+      });
+    return () => controller.abort();
+  }, [
+    permissions.authLoading,
+    permissions.authUser,
+    permissions.canPerformAction,
+    auth.hasPermission,
+  ]);
+
+  React.useEffect(() => {
+    if (permissions.authLoading || !permissions.authUser) {
+      setTreasuryFeatureEnabled(null);
+      return;
+    }
+    const hasTreasuryView = canViewTreasuryModule({
+      canPerformAction: permissions.canPerformAction,
+      hasPermission: auth.hasPermission,
+    });
+    if (!hasTreasuryView) {
+      setTreasuryFeatureEnabled(false);
+      return;
+    }
+    const controller = new AbortController();
+    void fetchTreasuryAvailability({ signal: controller.signal })
+      .then((status) => {
+        if (!controller.signal.aborted) {
+          setTreasuryFeatureEnabled(status.enabled === true);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setTreasuryFeatureEnabled(false);
         }
       });
     return () => controller.abort();
@@ -550,24 +592,28 @@ export const Sidebar = () => {
         hasPermission: auth.hasPermission,
       }),
     });
-    return filterSupplyChainMenuNavigation(
-      withSalesOrderFlow,
-      supplyChainFeatures,
-      {
-        purchases: canViewSupplyChainPurchasesModule({
-          hasPermission: auth.hasPermission,
-        }),
-        inventory: canViewSupplyChainInventoryModule({
-          hasPermission: auth.hasPermission,
-        }),
-        receiving: canViewSupplyChainReceivingModule({
-          hasPermission: auth.hasPermission,
-        }),
-      }
-    );
+    const withTreasury = filterTreasuryMenuNavigation(withSalesOrderFlow, {
+      featureEnabled: treasuryFeatureEnabled,
+      hasTreasuryViewAccess: canViewTreasuryModule({
+        canPerformAction: permissions.canPerformAction,
+        hasPermission: auth.hasPermission,
+      }),
+    });
+    return filterSupplyChainMenuNavigation(withTreasury, supplyChainFeatures, {
+      purchases: canViewSupplyChainPurchasesModule({
+        hasPermission: auth.hasPermission,
+      }),
+      inventory: canViewSupplyChainInventoryModule({
+        hasPermission: auth.hasPermission,
+      }),
+      receiving: canViewSupplyChainReceivingModule({
+        hasPermission: auth.hasPermission,
+      }),
+    });
   }, [
     baseNavigation,
     salesOrderFlowFeatureEnabled,
+    treasuryFeatureEnabled,
     supplyChainFeatures,
     permissions.canPerformAction,
     auth.hasPermission,

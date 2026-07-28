@@ -47,6 +47,7 @@ const EXPECTED_GROUP_BY_MODULE: Record<AppModuleId, string> = {
   pricing: "comercial",
   commissions: "comercial",
   finance: "financeiro",
+  treasury: "financeiro",
   suppliers: "financeiro",
   "portfolio-reconciliation": "financeiro",
   opex: "financeiro",
@@ -88,6 +89,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
     for (const moduleId of SIDEBAR_MODULE_ORDER) {
       let expected = `/${moduleId}`;
       if (moduleId === "suppliers") expected = "/finance/suppliers";
+      if (moduleId === "treasury") expected = "/finance/treasury";
       if (moduleId === "portfolio-reconciliation") {
         expected = "/finance/portfolio-reconciliation";
       }
@@ -154,7 +156,7 @@ describe("navigationGroups — cobertura completa do menu atual", () => {
       engenharia: 4,
       cadeia_suprimentos: 6,
       comercial: 9,
-      financeiro: 6,
+      financeiro: 7,
       operacoes: 5,
       gestao_pessoas: 3,
       administracao: 2,
