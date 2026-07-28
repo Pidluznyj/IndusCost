@@ -845,8 +845,8 @@ async function loadProjectionByScenario(
         scenario,
         status: "SUCCEEDED",
       },
-      orderBy: [{ calculatedAt: "desc" }],
-      select: { id: true, scenario: true, endDate: true, calculatedAt: true },
+      orderBy: [{ finishedAt: "desc" }],
+      select: { id: true, scenario: true, periodTo: true, finishedAt: true },
     });
     if (!run) {
       buckets.push({
@@ -888,7 +888,8 @@ async function loadProjectionByScenario(
       civilDate: end,
       status: scenario,
       meta: {
-        calculatedAt: run.calculatedAt.toISOString(),
+        calculatedAt: (run.finishedAt ?? run.periodTo).toISOString(),
+        periodTo: run.periodTo.toISOString().slice(0, 10),
       },
     });
   }

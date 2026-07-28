@@ -62,7 +62,7 @@ function baseUser(overrides: Partial<AppAuthContext> = {}): AppAuthContext {
     id: "user-ops",
     name: "Ops",
     email: "ops@test.local",
-    role: "USER",
+    role: "VIEWER",
     permissions: ["finance.treasury.reconciliation.manage"],
     effectivePermissions: ["finance.treasury.reconciliation.manage"],
     permissionsVersion: 1,
@@ -89,7 +89,7 @@ function actor(
 ): TreasuryBankImportOfxPreviewActor {
   return {
     userId: "user-ops",
-    role: "USER",
+    role: "VIEWER",
     isSuperAdmin: false,
     canManageReconciliation: true,
     canManageAccounts: false,

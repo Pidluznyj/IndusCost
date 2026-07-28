@@ -187,7 +187,7 @@ describe("treasuryDailyClosingPreviewApi — handlers", () => {
     const denied = createTreasuryDailyClosingPreviewControllers({
       getCurrentAppUser: async () =>
         baseUser({
-          role: "USER",
+          role: "VIEWER",
           permissions: [],
           effectivePermissions: [],
         }),

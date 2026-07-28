@@ -150,7 +150,6 @@ describe("treasuryDailyClosing — integração close/reopen", () => {
       canCloseWithoutCaveats: false,
       canCloseWithCaveats: true,
       requiredCaveatCodes: ["EXPIRED_PROMISE"],
-      caveatRequiredCount: 1,
     });
     const { service } = createHarness(preview);
     await assert.rejects(

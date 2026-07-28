@@ -138,7 +138,7 @@ describe("treasuryReportExportApi — handlers", () => {
     const denied = createTreasuryReportExportControllers({
       getCurrentAppUser: async () =>
         baseUser({
-          role: "USER",
+          role: "VIEWER",
           permissions: ["finance.treasury.reports.view"],
           effectivePermissions: ["finance.treasury.reports.view"],
         }),

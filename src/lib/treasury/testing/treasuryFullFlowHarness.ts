@@ -341,6 +341,15 @@ function createMemoryOfxMovementRepo(): TreasuryBankMovementRepository & {
       }
       return out;
     },
+    async listBatches() {
+      return { rows: state.batches, totalRows: state.batches.length };
+    },
+    async listMovements() {
+      return { rows: state.movements, totalRows: state.movements.length };
+    },
+    async findMovementById(id) {
+      return state.movements.find((m) => m.id === id) ?? null;
+    },
   };
   return Object.assign(repo, state);
 }

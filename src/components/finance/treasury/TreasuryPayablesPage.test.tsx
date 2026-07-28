@@ -220,7 +220,7 @@ describe("TreasuryPayablesPage — componentes e fluxo", () => {
           includeInConsolidated: true,
           minimumBalance: "0.00",
           allowNegativeBalance: true,
-          liquidity: "HIGH",
+          liquidity: "IMMEDIATE",
           defaultBalanceOrigin: "MANUAL",
           sortOrder: 1,
           nomusBankAccountId: null,

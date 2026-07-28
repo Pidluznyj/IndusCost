@@ -208,8 +208,8 @@ export function computeTreasuryAccountFinancialPosition(input: {
   }
 
   let reconciledBalance: string | null = null;
-  let originsReconciled = {
-    origin: "MISSING" as const,
+  let originsReconciled: TreasuryPositionValueOriginMeta = {
+    origin: "MISSING",
     detail:
       "Saldo conciliado indisponível — conciliação bancária ainda não aplicada a esta conta.",
   };

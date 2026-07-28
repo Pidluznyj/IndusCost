@@ -355,7 +355,7 @@ export function createTreasuryProjectionRunRepository(
                 itemCount: line.itemCount,
                 compositionItems: {
                   create: line.composition.map((c) => ({
-                    itemKind: c.itemKind as never,
+                    itemKind: c.itemKind,
                     amount: c.amount,
                     label: c.label,
                     officialTitleId: c.officialTitleId,
@@ -365,7 +365,7 @@ export function createTreasuryProjectionRunRepository(
                     sourceRef: c.sourceRef,
                     sortOrder: c.sortOrder,
                     metadataJson: c.metadata ?? undefined,
-                  })),
+                  })) as Prisma.TreasuryProjectionCompositionItemCreateWithoutDayLineInput[],
                 },
               },
             })

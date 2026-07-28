@@ -74,6 +74,7 @@ function sampleDay(
     realized: partial.realized ?? "1.00",
     itemCount: partial.itemCount ?? 0,
     items: partial.items ?? null,
+    alerts: partial.alerts ?? [],
   };
 }
 

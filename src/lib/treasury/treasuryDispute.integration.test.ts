@@ -110,7 +110,11 @@ describe("treasuryDispute — integração", () => {
       true
     );
     assert.equal(
-      officialStore.receivables[0]?.balanceReceivable.toFixed(2),
+      (
+        officialStore.receivables[0]?.balanceReceivable as {
+          toFixed(digits: number): string;
+        }
+      ).toFixed(2),
       "400.00"
     );
     assert.equal(

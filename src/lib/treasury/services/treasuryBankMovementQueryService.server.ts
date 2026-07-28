@@ -310,14 +310,15 @@ export function createTreasuryBankMovementQueryService(deps: {
         accountRepo,
         null
       );
-      if (!authorized.includes(row.accountId)) {
+      const mapped = row as TreasuryBankMovementMappedRow;
+      if (!authorized.includes(mapped.accountId)) {
         throw new TreasuryDomainError(
           "FORBIDDEN",
           "Sem acesso ao movimento bancário solicitado.",
           "id"
         );
       }
-      return toTreasuryBankMovementDto(row as TreasuryBankMovementMappedRow);
+      return toTreasuryBankMovementDto(mapped);
     },
   };
 }

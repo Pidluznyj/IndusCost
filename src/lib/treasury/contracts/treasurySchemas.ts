@@ -403,11 +403,13 @@ export function parseTreasuryEnum<T extends string>(
 
 export function parseTreasuryBoundedString(
   value: unknown,
-  field: keyof typeof TREASURY_FIELD_LIMITS,
+  field: keyof typeof TREASURY_FIELD_LIMITS | (string & {}),
   options?: { required?: boolean }
 ): string | null {
   const required = options?.required ?? true;
-  const max = TREASURY_FIELD_LIMITS[field];
+  const max =
+    (TREASURY_FIELD_LIMITS as Record<string, number>)[field] ??
+    TREASURY_FIELD_LIMITS.description;
   if (value == null || value === "") {
     if (required) {
       throw new TreasuryContractError(
