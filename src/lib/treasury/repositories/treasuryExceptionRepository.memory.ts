@@ -69,7 +69,12 @@ export function createMemoryTreasuryExceptionRepository(
       if (filter.companyCode) {
         rows = rows.filter((r) => r.companyCode === filter.companyCode);
       }
-      if (filter.status) rows = rows.filter((r) => r.status === filter.status);
+      if (filter.statuses?.length) {
+        const wanted = new Set(filter.statuses);
+        rows = rows.filter((r) => wanted.has(r.status as never));
+      } else if (filter.status) {
+        rows = rows.filter((r) => r.status === filter.status);
+      }
       if (filter.type) rows = rows.filter((r) => r.type === filter.type);
       if (filter.severity) {
         rows = rows.filter((r) => r.severity === filter.severity);

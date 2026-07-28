@@ -2371,6 +2371,8 @@ model NomusAccountsReceivable {
   @@index([sourcePresenceStatus])
   @@index([lastSeenAt])
   @@index([lastSyncRunId])
+  @@index([settlementDate])
+  @@index([sourcePresenceStatus, dueDate])
 }
 
 /// Stage local de Contas a Pagar Nomus (read-only sync). Base para dashboards financeiros futuros.
@@ -2453,6 +2455,10 @@ model NomusAccountsPayable {
   @@index([sourcePresenceStatus])
   @@index([lastSeenAt])
   @@index([lastSyncRunId])
+  @@index([settlementDate])
+  @@index([paymentDate])
+  @@index([scheduleDate])
+  @@index([sourcePresenceStatus, dueDate])
 }
 
 /// SYNC-02 — presença do registro na origem Nomus (campos nas entidades oficiais).
@@ -7263,6 +7269,7 @@ model TreasuryProjectionRun {
 
   @@unique([idempotencyKey])
   @@index([companyCode, scenario, status])
+  @@index([companyCode, scenario, status, finishedAt])
   @@index([scenario, periodFrom, periodTo])
   @@index([sourceVersion, algorithmVersion])
   @@index([status, requestedAt])

@@ -429,22 +429,16 @@ export function createTreasuryBankImportOfxApplyService(deps: {
             });
           }
 
-          const inserted: { id: string; fingerprint: string }[] = [];
+          const inserted = await movementRepo.createMovements(movementData, tx);
+          const insertedFp = new Set(inserted.map((r) => r.fingerprint));
           for (const data of movementData) {
-            try {
-              const one = await movementRepo.createMovements([data], tx);
-              inserted.push(...one);
-            } catch (err) {
-              if (isPrismaUniqueViolation(err)) {
-                ignored.push({
-                  fingerprint: data.fingerprint,
-                  fitId: data.fitId,
-                  reason: "Duplicidade detectada na transação (P2002).",
-                  duplicateReason: "EXISTING_MOVEMENT",
-                });
-                continue;
-              }
-              throw err;
+            if (!insertedFp.has(data.fingerprint)) {
+              ignored.push({
+                fingerprint: data.fingerprint,
+                fitId: data.fitId,
+                reason: "Duplicidade detectada na transação (P2002).",
+                duplicateReason: "EXISTING_MOVEMENT",
+              });
             }
           }
 

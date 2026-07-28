@@ -212,6 +212,14 @@ export function createMemoryTreasuryAccountRepository(
       return row ? cloneAccess(row) : null;
     },
 
+    async listAccessForUser(userId, accountIds) {
+      if (!accountIds.length) return [];
+      const wanted = new Set(accountIds);
+      return store.access
+        .filter((a) => a.userId === userId && wanted.has(a.accountId))
+        .map(cloneAccess);
+    },
+
     async listAccess(accountId) {
       return store.access
         .filter((a) => a.accountId === accountId)

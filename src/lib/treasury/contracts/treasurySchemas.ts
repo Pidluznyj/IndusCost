@@ -229,6 +229,8 @@ export type TreasuryExceptionsListQuery = {
   sortDirection: "asc" | "desc";
   companyCode: string | null;
   status: TreasuryExceptionStatus | null;
+  /** Uso interno (engine): lista vários status em uma query. */
+  statuses?: TreasuryExceptionStatus[] | null;
   type: TreasuryExceptionType | null;
   severity: TreasuryExceptionSeverity | null;
   responsibleUserId: string | null;

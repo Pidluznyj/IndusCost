@@ -237,9 +237,6 @@ export function createTreasuryPayableProgrammingService(deps: {
         "plannedAccountId"
       );
     }
-    const latest = await balanceRepo.findLatest(accountId);
-    const accountBalanceBefore = moneyFromBalance(latest?.availableBalance);
-
     const consolidated = await accountRepo.list({
       isActive: true,
       sortBy: "sortOrder",
@@ -247,10 +244,20 @@ export function createTreasuryPayableProgrammingService(deps: {
       page: 1,
       pageSize: 200,
     });
+    const consolidatedIds = consolidated.rows
+      .filter((row) => row.includeInConsolidated)
+      .map((row) => row.id);
+    const idsForLatest = Array.from(
+      new Set([accountId, ...consolidatedIds])
+    );
+    const latestByAccount =
+      await balanceRepo.findLatestByAccountIds(idsForLatest);
+    const latest = latestByAccount.get(accountId) ?? null;
+    const accountBalanceBefore = moneyFromBalance(latest?.availableBalance);
+
     let consolidatedBalanceBefore = "0.00";
-    for (const row of consolidated.rows) {
-      if (!row.includeInConsolidated) continue;
-      const snap = await balanceRepo.findLatest(row.id);
+    for (const id of consolidatedIds) {
+      const snap = latestByAccount.get(id);
       consolidatedBalanceBefore = addTreasuryMoney(
         consolidatedBalanceBefore,
         moneyFromBalance(snap?.availableBalance)

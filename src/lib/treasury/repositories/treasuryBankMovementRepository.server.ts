@@ -241,32 +241,45 @@ export function createTreasuryBankMovementRepository(
 
     async createMovements(rows, db = prisma) {
       if (rows.length === 0) return [];
+      // createMany + skipDuplicates: 1 round-trip; ids via findMany dos fingerprints.
+      await db.treasuryBankMovement.createMany({
+        data: rows.map((row) => ({
+          batchId: row.batchId,
+          companyCode: row.companyCode,
+          accountId: row.accountId,
+          fingerprint: row.fingerprint,
+          fitId: row.fitId,
+          direction: row.direction as TreasuryBankMovementDirection,
+          amount: row.amount,
+          currency: row.currency as TreasuryCurrencyCode,
+          postedCivilDate: row.postedCivilDate,
+          userCivilDate: row.userCivilDate,
+          description: row.description,
+          documentNumber: row.documentNumber,
+          counterpartyName: row.counterpartyName,
+          trnType: row.trnType,
+          normalizedPayloadJson: row.normalizedPayloadJson ?? undefined,
+          sortOrder: row.sortOrder,
+          reconciliationStatus: "PENDING" as const,
+          reconciledAmount: "0.00",
+        })),
+        skipDuplicates: true,
+      });
+      const fingerprints = rows.map((r) => r.fingerprint);
+      const accountId = rows[0]!.accountId;
+      const inserted = await db.treasuryBankMovement.findMany({
+        where: {
+          accountId,
+          fingerprint: { in: fingerprints },
+        },
+        select: { id: true, fingerprint: true },
+      });
+      const byFp = new Map(inserted.map((r) => [r.fingerprint, r] as const));
+      // Preserva ordem de entrada; omite duplicados ignorados pelo skipDuplicates.
       const created: { id: string; fingerprint: string }[] = [];
       for (const row of rows) {
-        const inserted = await db.treasuryBankMovement.create({
-          data: {
-            batchId: row.batchId,
-            companyCode: row.companyCode,
-            accountId: row.accountId,
-            fingerprint: row.fingerprint,
-            fitId: row.fitId,
-            direction: row.direction as TreasuryBankMovementDirection,
-            amount: row.amount,
-            currency: row.currency as TreasuryCurrencyCode,
-            postedCivilDate: row.postedCivilDate,
-            userCivilDate: row.userCivilDate,
-            description: row.description,
-            documentNumber: row.documentNumber,
-            counterpartyName: row.counterpartyName,
-            trnType: row.trnType,
-            normalizedPayloadJson: row.normalizedPayloadJson ?? undefined,
-            sortOrder: row.sortOrder,
-            reconciliationStatus: "PENDING",
-            reconciledAmount: "0.00",
-          },
-          select: { id: true, fingerprint: true },
-        });
-        created.push(inserted);
+        const hit = byFp.get(row.fingerprint);
+        if (hit) created.push(hit);
       }
       return created;
     },

@@ -117,6 +117,12 @@ export type TreasuryAccountRepository = {
     userId: string,
     db?: TreasuryAccountDb
   ): Promise<TreasuryAccountAccessRow | null>;
+  /** Batch anti-N+1: grants do usuário para um conjunto de contas. */
+  listAccessForUser(
+    userId: string,
+    accountIds: string[],
+    db?: TreasuryAccountDb
+  ): Promise<TreasuryAccountAccessRow[]>;
   listAccess(
     accountId: string,
     db?: TreasuryAccountDb
@@ -356,6 +362,17 @@ export function createTreasuryAccountRepository(
         where: { accountId_userId: { accountId, userId } },
       });
       return row ? mapAccess(row) : null;
+    },
+
+    async listAccessForUser(userId, accountIds, db) {
+      if (!accountIds.length) return [];
+      const rows = await client(db).treasuryFinancialAccountAccess.findMany({
+        where: {
+          userId,
+          accountId: { in: accountIds },
+        },
+      });
+      return rows.map(mapAccess);
     },
 
     async listAccess(accountId, db) {

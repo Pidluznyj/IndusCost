@@ -237,6 +237,7 @@ export function createTreasuryExceptionService(deps: {
       const listed = await repo.list({
         companyCode: filter.companyCode ?? null,
         status: filter.status ?? null,
+        statuses: filter.statuses ?? null,
         type: filter.type ?? null,
         severity: filter.severity ?? null,
         responsibleUserId: filter.responsibleUserId ?? null,

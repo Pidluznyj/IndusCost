@@ -64,6 +64,11 @@ export type TreasuryBalanceRepository = {
     accountId: string,
     db?: TreasuryBalanceDb
   ): Promise<TreasuryBalanceSnapshotRow | null>;
+  /** Último snapshot por conta em uma query (DISTINCT ON). */
+  findLatestByAccountIds(
+    accountIds: string[],
+    db?: TreasuryBalanceDb
+  ): Promise<Map<string, TreasuryBalanceSnapshotRow>>;
   list(
     filter: TreasuryBalanceListFilter,
     db?: TreasuryBalanceDb
@@ -99,6 +104,56 @@ export function createTreasuryBalanceRepository(
         orderBy: [{ referenceAt: "desc" }, { createdAt: "desc" }],
       });
       return row ? mapRow(row) : null;
+    },
+
+    async findLatestByAccountIds(accountIds, db) {
+      const out = new Map<string, TreasuryBalanceSnapshotRow>();
+      if (!accountIds.length) return out;
+      const c = client(db);
+      const rows = await c.$queryRaw<
+        Array<{
+          id: string;
+          accountId: string;
+          referenceAt: Date;
+          availableBalance: { toFixed(digits: number): string } | string | number;
+          blockedBalance: { toFixed(digits: number): string } | string | number;
+          investmentsBalance:
+            | { toFixed(digits: number): string }
+            | string
+            | number;
+          usedLimit: { toFixed(digits: number): string } | string | number;
+          origin: string;
+          idempotencyKey: string;
+          notes: string | null;
+          attachmentUrl: string | null;
+          createdByUserId: string;
+          previousSnapshotId: string | null;
+          createdAt: Date;
+        }>
+      >`
+        SELECT DISTINCT ON ("accountId")
+          id,
+          "accountId",
+          "referenceAt",
+          "availableBalance",
+          "blockedBalance",
+          "investmentsBalance",
+          "usedLimit",
+          origin,
+          "idempotencyKey",
+          notes,
+          "attachmentUrl",
+          "createdByUserId",
+          "previousSnapshotId",
+          "createdAt"
+        FROM "TreasuryBalanceSnapshot"
+        WHERE "accountId" = ANY(${accountIds}::uuid[])
+        ORDER BY "accountId", "referenceAt" DESC, "createdAt" DESC
+      `;
+      for (const row of rows) {
+        out.set(row.accountId, mapRow(row));
+      }
+      return out;
     },
 
     async list(filter, db) {

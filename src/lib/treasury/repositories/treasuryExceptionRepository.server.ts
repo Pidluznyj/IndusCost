@@ -121,6 +121,8 @@ export type TreasuryExceptionUpdateData = {
 export type TreasuryExceptionListFilter = {
   companyCode?: string | null;
   status?: TreasuryExceptionStatus | null;
+  /** Preferível a N listas por status (anti-N+1 no engine). */
+  statuses?: TreasuryExceptionStatus[] | null;
   type?: TreasuryExceptionType | null;
   severity?: TreasuryExceptionSeverity | null;
   responsibleUserId?: string | null;
@@ -180,7 +182,11 @@ export function createTreasuryExceptionRepository(
     async list(filter, db) {
       const where: Prisma.TreasuryExceptionWhereInput = {};
       if (filter.companyCode) where.companyCode = filter.companyCode;
-      if (filter.status) where.status = filter.status;
+      if (filter.statuses?.length) {
+        where.status = { in: filter.statuses };
+      } else if (filter.status) {
+        where.status = filter.status;
+      }
       if (filter.type) where.type = filter.type;
       if (filter.severity) where.severity = filter.severity;
       if (filter.responsibleUserId) {

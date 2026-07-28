@@ -20,7 +20,7 @@ import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 
 export type TreasuryPayableQueryDb = PrismaClient | Prisma.TransactionClient;
 
-const AP_SELECT = {
+const AP_SELECT_BASE = {
   id: true,
   externalId: true,
   status: true,
@@ -45,6 +45,10 @@ const AP_SELECT = {
   sourcePresenceStatus: true,
   sourceRemovedAt: true,
   syncedAt: true,
+} satisfies Prisma.NomusAccountsPayableSelect;
+
+const AP_SELECT = {
+  ...AP_SELECT_BASE,
   rawPayload: true,
 } satisfies Prisma.NomusAccountsPayableSelect;
 
@@ -317,9 +321,10 @@ export function createTreasuryPayableQueryRepository(
         complementTitleIds,
         costCenterExternalIds
       );
+      // Lista sem rawPayload; hidrata só a página (menos memória em milhares de títulos).
       const apRows = (await prisma.nomusAccountsPayable.findMany({
         where,
-        select: AP_SELECT,
+        select: AP_SELECT_BASE,
         orderBy: [{ dueDate: "asc" }, { externalId: "asc" }],
       })) as OfficialNomusPayableRow[];
       const titleIds = apRows.map((r) => r.id);
@@ -329,12 +334,41 @@ export function createTreasuryPayableQueryRepository(
         loadCostCentersByExternalIds(externalIds),
       ]);
       const assembled = assemble(
-        apRows,
+        apRows.map(
+          (r) => ({ ...r, rawPayload: null }) as OfficialNomusPayableRow
+        ),
         complements,
         costCenters,
         referenceDate
       );
-      return paginateTreasuryPayables(assembled, query);
+      const page = paginateTreasuryPayables(assembled, query);
+      if (page.rows.length === 0) return page;
+
+      const pageIds = page.rows.map((r) => r.titleId);
+      const hydrated = (await prisma.nomusAccountsPayable.findMany({
+        where: { id: { in: pageIds } },
+        select: AP_SELECT,
+      })) as OfficialNomusPayableRow[];
+      const byId = new Map(hydrated.map((r) => [r.id, r] as const));
+      const pageExternalIds = hydrated.map((r) => r.externalId);
+      const [pageComplements, pageCostCenters] = await Promise.all([
+        loadComplementsByTitleIds(pageIds),
+        loadCostCentersByExternalIds(pageExternalIds),
+      ]);
+      const hydratedRows = pageIds
+        .map((id) => byId.get(id))
+        .filter((r): r is OfficialNomusPayableRow => r != null);
+      const reassembled = assemble(
+        hydratedRows,
+        pageComplements,
+        pageCostCenters,
+        referenceDate
+      );
+      const order = new Map(pageIds.map((id, i) => [id, i] as const));
+      reassembled.sort(
+        (a, b) => (order.get(a.titleId) ?? 0) - (order.get(b.titleId) ?? 0)
+      );
+      return { ...page, rows: reassembled };
     },
 
     async getByTitleId(titleId, referenceDate) {

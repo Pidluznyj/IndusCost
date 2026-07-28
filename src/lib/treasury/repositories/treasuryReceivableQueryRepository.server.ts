@@ -19,7 +19,7 @@ import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 
 export type TreasuryReceivableQueryDb = PrismaClient | Prisma.TransactionClient;
 
-const AR_SELECT = {
+const AR_SELECT_BASE = {
   id: true,
   externalId: true,
   status: true,
@@ -38,8 +38,22 @@ const AR_SELECT = {
   sourcePresenceStatus: true,
   sourceRemovedAt: true,
   syncedAt: true,
+} satisfies Prisma.NomusAccountsReceivableSelect;
+
+const AR_SELECT = {
+  ...AR_SELECT_BASE,
   rawPayload: true,
 } satisfies Prisma.NomusAccountsReceivableSelect;
+
+function needsReceivableRawPayloadEarly(
+  query: TreasuryReceivablesListQuery
+): boolean {
+  return Boolean(
+    query.salesOrder?.trim() ||
+      query.sellerName?.trim() ||
+      query.commercialOwnerName?.trim()
+  );
+}
 
 const COMPLEMENT_SELECT = {
   id: true,
@@ -300,22 +314,49 @@ export function createTreasuryReceivableQueryRepository(
         return paginateTreasuryReceivables([], query);
       }
       const where = buildArWhere(query, complementTitleIds);
-      // Uma query de títulos + uma de complementos (batch) — evita N+1.
+      const loadRawEarly = needsReceivableRawPayloadEarly(query);
+      // Lista sem rawPayload quando filtros não dependem dele (menos memória).
       const arRows = (await prisma.nomusAccountsReceivable.findMany({
         where,
-        select: AR_SELECT,
+        select: loadRawEarly ? AR_SELECT : AR_SELECT_BASE,
         orderBy: [{ dueDate: "asc" }, { externalId: "asc" }],
       })) as OfficialNomusReceivableRow[];
       const titleIds = arRows.map((r) => r.id);
       const complements = await loadComplementsByTitleIds(titleIds);
       const activePromiseTitleIds = await loadActivePromiseTitleIds(titleIds);
       const assembled = assemble(
-        arRows,
+        arRows.map((r) =>
+          loadRawEarly ? r : ({ ...r, rawPayload: null } as OfficialNomusReceivableRow)
+        ),
         complements,
         activePromiseTitleIds,
         referenceDate
       );
-      return paginateTreasuryReceivables(assembled, query);
+      const page = paginateTreasuryReceivables(assembled, query);
+      if (loadRawEarly || page.rows.length === 0) return page;
+
+      const pageIds = page.rows.map((r) => r.titleId);
+      const hydrated = (await prisma.nomusAccountsReceivable.findMany({
+        where: { id: { in: pageIds } },
+        select: AR_SELECT,
+      })) as OfficialNomusReceivableRow[];
+      const byId = new Map(hydrated.map((r) => [r.id, r] as const));
+      const pageComplements = await loadComplementsByTitleIds(pageIds);
+      const pagePromises = await loadActivePromiseTitleIds(pageIds);
+      const hydratedRows = pageIds
+        .map((id) => byId.get(id))
+        .filter((r): r is OfficialNomusReceivableRow => r != null);
+      const reassembled = assemble(
+        hydratedRows,
+        pageComplements,
+        pagePromises,
+        referenceDate
+      );
+      const order = new Map(pageIds.map((id, i) => [id, i] as const));
+      reassembled.sort(
+        (a, b) => (order.get(a.titleId) ?? 0) - (order.get(b.titleId) ?? 0)
+      );
+      return { ...page, rows: reassembled };
     },
 
     async getByTitleId(titleId, referenceDate) {

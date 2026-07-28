@@ -58,16 +58,20 @@ export function createTreasuryExceptionEngineService(deps: {
     },
 
     async runAndApply(actor, input) {
-      const openItems: TreasuryExceptionDto[] = [];
-      for (const status of TREASURY_OPEN_EXCEPTION_STATUSES) {
-        const listed = await exceptionService.list(actor, {
-          companyCode: input.companyCode,
-          status,
-          page: 1,
-          pageSize: 5000,
-        });
-        openItems.push(...listed.items);
-      }
+      const listed = await exceptionService.list(actor, {
+        companyCode: input.companyCode,
+        status: null,
+        statuses: [...TREASURY_OPEN_EXCEPTION_STATUSES],
+        type: null,
+        severity: null,
+        responsibleUserId: null,
+        search: null,
+        sortBy: "detectedAt",
+        sortDirection: "desc",
+        page: 1,
+        pageSize: 5000,
+      });
+      const openItems: TreasuryExceptionDto[] = listed.items;
 
       const engine = runTreasuryExceptionEngine({
         ...input,

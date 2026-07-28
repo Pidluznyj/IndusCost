@@ -51,6 +51,15 @@ export function createMemoryTreasuryBalanceRepository(
       return rows[0] ? clone(rows[0]) : null;
     },
 
+    async findLatestByAccountIds(accountIds) {
+      const out = new Map<string, TreasuryBalanceSnapshotRow>();
+      for (const id of accountIds) {
+        const latest = await this.findLatest(id);
+        if (latest) out.set(id, latest);
+      }
+      return out;
+    },
+
     async list(filter: TreasuryBalanceListFilter) {
       let rows = store.snapshots.filter((s) => s.accountId === filter.accountId);
       if (filter.origin) {

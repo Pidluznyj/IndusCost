@@ -90,9 +90,18 @@ export function createTreasuryReportService(deps: {
         accounts = accounts.filter((a) => wanted.has(a.id));
       }
 
+      const accessRows = canTreasuryActorViewAllAccounts(actor)
+        ? []
+        : await accountRepo.listAccessForUser(
+            actor.userId,
+            accounts.map((a) => a.id)
+          );
+      const accessByAccountId = new Map(
+        accessRows.map((row) => [row.accountId, row] as const)
+      );
       const authorized: typeof accounts = [];
       for (const acc of accounts) {
-        const accessRow = await accountRepo.findAccess(acc.id, actor.userId);
+        const accessRow = accessByAccountId.get(acc.id) ?? null;
         const access = accessRow
           ? {
               userId: accessRow.userId,

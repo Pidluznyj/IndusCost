@@ -128,9 +128,17 @@ export function createTreasuryFinancialPositionService(deps: {
         accounts = accounts.filter((a) => wanted.has(a.id));
       }
 
+      const accountIdsForAcl = accounts.map((a) => a.id);
+      const accessRows = canTreasuryActorViewAllAccounts(actor)
+        ? []
+        : await accountRepo.listAccessForUser(actor.userId, accountIdsForAcl);
+      const accessByAccountId = new Map(
+        accessRows.map((row) => [row.accountId, row] as const)
+      );
+
       const visible: typeof accounts = [];
       for (const acc of accounts) {
-        const accessRow = await accountRepo.findAccess(acc.id, actor.userId);
+        const accessRow = accessByAccountId.get(acc.id) ?? null;
         const access = accessRow
           ? {
               userId: accessRow.userId,
@@ -150,14 +158,15 @@ export function createTreasuryFinancialPositionService(deps: {
       }
 
       const accountIds = visible.map((a) => a.id);
-      const [movements, reconciledHints] = await Promise.all([
+      const [movements, reconciledHints, latestByAccount] = await Promise.all([
         movementRepo.listByAccountIds({ accountIds, asOf }),
         reconciledRepo.listByAccountIds({ accountIds, asOf }),
+        balanceRepo.findLatestByAccountIds(accountIds),
       ]);
 
       const positions = [];
       for (const acc of visible) {
-        const latest = await balanceRepo.findLatest(acc.id);
+        const latest = latestByAccount.get(acc.id) ?? null;
         const snapshot: TreasuryPositionSnapshotInput | null = latest
           ? {
               id: latest.id,
