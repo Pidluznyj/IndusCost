@@ -23,11 +23,14 @@ import {
 import { FinanceCostCenterExpenseMapExecutiveSummary } from "@/src/components/finance/cost-centers/FinanceCostCenterExpenseMapExecutiveSummary";
 import { FinanceCostCenterMonthlyDrilldownChart } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyDrilldownChart";
 import { FinanceCostCenterMonthlyTrendModal } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyTrendModal";
+import { FinanceCostCenterMonthlyEvolutionChart } from "@/src/components/finance/cost-centers/FinanceCostCenterMonthlyEvolutionChart";
 import {
   buildCostCenterMonthlyChartQuery,
   formatCostCenterMonthlyChartPeriodLabel,
   type CostCenterMonthlyChartPayload,
 } from "@/src/lib/financeCostCenterMonthlyChart.shared";
+import { buildCostCenterMonthlyEvolutionEmptyPayload } from "@/src/lib/financeCostCenterMonthlyEvolution.shared";
+import type { CostCenterMonthlyEvolutionPayload } from "@/src/lib/financeCostCenterMonthlyEvolution.shared";
 import type {
   CostCenterDetailAllocationRow,
   CostCenterDetailExportPayload,
@@ -269,6 +272,10 @@ export function FinanceCostCenterExpenseMapSection({
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState<string | null>(null);
   const [trendModalCard, setTrendModalCard] = useState<CostCenterExpenseMapCard | null>(null);
+  const [evolutionPayload, setEvolutionPayload] =
+    useState<CostCenterMonthlyEvolutionPayload | null>(null);
+  const [evolutionLoading, setEvolutionLoading] = useState(false);
+  const [evolutionError, setEvolutionError] = useState<string | null>(null);
 
   const cards = useMemo(() => {
     const built = buildCostCenterExpenseMapCards(dashboard?.byCostCenter ?? [], centers);
@@ -426,6 +433,52 @@ export function FinanceCostCenterExpenseMapSection({
   useEffect(() => {
     void loadChart();
   }, [loadChart]);
+
+  const loadEvolution = useCallback(async () => {
+    if (detailCenterIds.length === 0) {
+      setEvolutionPayload(null);
+      setEvolutionError(null);
+      return;
+    }
+    // Regra: não montar gráfico mensal sem contexto de ano (filtro "Todos").
+    if (appliedFilters.year == null) {
+      setEvolutionPayload(buildCostCenterMonthlyEvolutionEmptyPayload(detailCenterIds));
+      setEvolutionError(null);
+      setEvolutionLoading(false);
+      return;
+    }
+    setEvolutionLoading(true);
+    setEvolutionError(null);
+    try {
+      // Reutiliza EXATAMENTE a mesma query da tabela (mesmo filtro-base).
+      const qs = buildCostCenterExpenseMapAllocationsQuery(
+        appliedFilters,
+        drilldown,
+        isMultiCenterDetail ? detailCenterIds : undefined
+      );
+      const payload = await fetchJsonOk<CostCenterMonthlyEvolutionPayload>(
+        isMultiCenterDetail
+          ? `/api/finance/cost-centers/allocations/monthly?${qs}`
+          : `/api/finance/cost-centers/${detailCenterIds[0]}/allocations/monthly?${qs}`,
+        { credentials: "include" }
+      );
+      setEvolutionPayload(payload);
+    } catch (e) {
+      setEvolutionPayload(null);
+      setEvolutionError(
+        buildFinanceTabLoadError(
+          "Não foi possível carregar a evolução mensal do centro de custo.",
+          e
+        ).message
+      );
+    } finally {
+      setEvolutionLoading(false);
+    }
+  }, [appliedFilters, detailCenterIds, drilldown, isMultiCenterDetail]);
+
+  useEffect(() => {
+    void loadEvolution();
+  }, [loadEvolution]);
 
   const handleDrilldownClick = (card: CostCenterExpenseMapCard) => {
     setDetailPanelSuppressed(false);
@@ -1165,6 +1218,17 @@ export function FinanceCostCenterExpenseMapSection({
               </span>
             </p>
           ) : null}
+
+          <FinanceCostCenterMonthlyEvolutionChart
+            payload={evolutionPayload}
+            loading={evolutionLoading}
+            error={evolutionError}
+            title={
+              isMultiCenterDetail
+                ? "Evolução mensal — centros selecionados"
+                : "Evolução mensal do centro de custo"
+            }
+          />
         </div>
       ) : null}
     </section>
