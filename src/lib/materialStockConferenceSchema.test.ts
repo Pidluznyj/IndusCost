@@ -89,6 +89,7 @@ describe("materialStockConferenceSchema — histórico append-only", () => {
       "source",
       "previousVersion",
       "previousUpdatedAt",
+      "idempotencyKey",
       "createdAt",
     ]) {
       assert.match(block, new RegExp(`${field}\\s+`));
@@ -117,6 +118,17 @@ describe("materialStockConferenceSchema — migration aditiva", () => {
     assert.doesNotMatch(sql, /contingencyQuantity[^\n]*DEFAULT 0/);
     assert.doesNotMatch(sql, /minimumQuantity[^\n]*DEFAULT 0/);
     assert.doesNotMatch(sql, /recommendedQuantity[^\n]*DEFAULT 0/);
+  });
+
+  it("migration de idempotência só adiciona coluna/índice únicos", () => {
+    const sql = read(
+      "prisma/migrations/20260822130000_material_stock_conference_idempotency/migration.sql"
+    );
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS "idempotencyKey"/);
+    assert.match(sql, /MaterialStockConference_idempotencyKey_key/);
+    assert.doesNotMatch(sql, /DROP COLUMN/i);
+    assert.doesNotMatch(sql, /ALTER COLUMN "quantity"/i);
+    assert.doesNotMatch(sql, /currentCost/i);
   });
 });
 

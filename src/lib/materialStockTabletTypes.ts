@@ -8,6 +8,9 @@ import type { MaterialStockStatus } from "./materialStockLevelRules.js";
 export const MATERIAL_STOCK_TABLET_SEARCH_PATH =
   "/api/materials/stock-tablet/search" as const;
 
+export const MATERIAL_STOCK_TABLET_CONFERENCE_PATH =
+  "/api/materials/stock-tablet/conference" as const;
+
 export const MATERIAL_STOCK_TABLET_DEFAULT_PAGE_SIZE = 30;
 export const MATERIAL_STOCK_TABLET_MAX_PAGE_SIZE = 50;
 /** Janela padrão (dias) para “sem conferência recente”. */

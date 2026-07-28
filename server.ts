@@ -8212,7 +8212,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   registerMaterialStockTabletRoutes(
     app,
-    { requireAppAuth, requireResource },
+    { requireAppAuth, requireResource, getCurrentAppUser },
     { prisma }
   );
 
