@@ -14899,15 +14899,25 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         sumItems: aggregates._sum.totalItems,
       });
 
-      const linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
-        rows.map((order) => ({
-          id: order.id,
-          totalNetValue: order.totalNetValue,
-          issueDate: order.issueDate,
-          expectedDeliveryDate: order.expectedDeliveryDate,
-          nomusRawResponse: order.nomusRawResponse,
-        }))
-      );
+      // Billing da grade: só links oficiais + NomusNfe (sem nomusRawResponse/rawPayload).
+      // Fail-soft: se o enriquecimento NF falhar, a lista ainda retorna.
+      let linkedNfeContextMap: Awaited<
+        ReturnType<typeof loadSalesOrderLinkedNfeContextMap>
+      > = new Map();
+      try {
+        linkedNfeContextMap = await loadSalesOrderLinkedNfeContextMap(
+          rows.map((order) => ({
+            id: order.id,
+            totalNetValue: order.totalNetValue,
+            issueDate: order.issueDate,
+            expectedDeliveryDate: order.expectedDeliveryDate,
+          })),
+          new Date(),
+          { omitLinkRawPayload: true }
+        );
+      } catch (nfeError) {
+        console.error("GET /api/sales-orders linked-nfe enrichment failed", nfeError);
+      }
 
       const data = rows.map((order) => {
         const seller = buildSalesOrderNomusSellerDto(

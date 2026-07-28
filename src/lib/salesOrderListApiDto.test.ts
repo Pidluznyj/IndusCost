@@ -57,8 +57,11 @@ describe("PERFORMANCE 04 — sales-orders list/detail DTOs", () => {
     assert.equal(row.invoiceCount, 1);
   });
 
-  it("page select inclui nomusRawResponse só para server", () => {
-    assert.equal(SALES_ORDER_LIST_PAGE_PRISMA_SELECT.nomusRawResponse, true);
+  it("page select da lista não carrega nomusRawResponse", () => {
+    assert.equal(
+      "nomusRawResponse" in SALES_ORDER_LIST_PAGE_PRISMA_SELECT,
+      false
+    );
     assert.ok(SALES_ORDER_LIST_PAGE_PRISMA_SELECT.Customer.select.companyName);
     assert.ok(SALES_ORDER_LIST_PAGE_PRISMA_SELECT.Proposal.select.number);
   });
@@ -74,7 +77,9 @@ describe("PERFORMANCE 04 — sales-orders list/detail DTOs", () => {
     assert.match(chunk, /_sum:\s*\{\s*totalNetValue:\s*true/);
     assert.match(chunk, /buildSalesOrderListSummaryFromAggregate/);
     assert.match(chunk, /toSalesOrderListHttpRow/);
-    assert.match(chunk, /Promise\.all\(\[\s*loadSalesOrderLinkedNfeContextMap/);
+    assert.match(chunk, /loadSalesOrderLinkedNfeContextMap/);
+    assert.match(chunk, /omitLinkRawPayload:\s*true/);
+    assert.doesNotMatch(chunk, /nomusRawResponse:\s*order\.nomusRawResponse/);
     assert.doesNotMatch(chunk, /Customer:\s*true/);
     assert.doesNotMatch(chunk, /\.\.\.order\b/);
     assert.doesNotMatch(chunk, /SALES_ORDER_RULES_PRISMA_SELECT/);
