@@ -29,6 +29,7 @@ import { AdminKpiSection } from "@/src/components/admin/adminUi";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
 import { MetricCard } from "@/src/components/ui/MetricCard";
 import { NomusDailySyncCard } from "@/src/components/NomusDailySyncCard";
+import { MaterialStockSpreadsheetMirrorAdminCard } from "@/src/components/settings/MaterialStockSpreadsheetMirrorAdminCard";
 import { NomusSourceReconciliationObservabilityCard } from "@/src/components/NomusSourceReconciliationObservabilityCard";
 import { NomusAccountsReceivableSyncCard } from "@/src/components/NomusAccountsReceivableSyncCard";
 import { NomusAccountsPayableSyncCard } from "@/src/components/NomusAccountsPayableSyncCard";
@@ -332,8 +333,8 @@ const HUB_SECTIONS: Array<{
     id: "integrations",
     title: "Integrações",
     description: "Conexões externas e sincronizações com sistemas terceiros.",
-    status: "future",
-    note: "Em preparação",
+    status: "operational",
+    note: "Operacional hoje",
   },
   {
     id: "security",
@@ -365,6 +366,12 @@ export const SettingsModule = () => {
   const canRunNomusDailySync =
     auth.hasPermission("settings.nomus.sync") ||
     permissions.canPerformAction("admin.settings.nomus_sync", "synchronize");
+  const canViewMaterialStockMirror =
+    auth.hasPermission("settings.material_stock_mirror.view") ||
+    permissions.canPerformAction("admin.settings.material_stock_mirror", "view");
+  const canManageMaterialStockMirror =
+    auth.hasPermission("settings.material_stock_mirror.manage") ||
+    permissions.canPerformAction("admin.settings.material_stock_mirror", "execute");
   const [securitySubTab, setSecuritySubTab] = useState<"users" | "accessProfiles">("users");
   const [tourOpen, setTourOpen] = useState(false);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -2504,25 +2511,29 @@ export const SettingsModule = () => {
           )}
 
           {activeHubSection === "integrations" && (
-            <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-lg font-bold">Integrações</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Conexões externas e sincronizações com sistemas terceiros.
-                  </p>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-bold">Integrações</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Conexões externas e sincronizações com sistemas terceiros.
+                    </p>
+                  </div>
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  Em preparação
-                </span>
+                {!canViewMaterialStockMirror ? (
+                  <div className="rounded-xl border border-dashed border-border bg-accent/20 p-4">
+                    <p className="text-sm text-muted-foreground">
+                      Painéis de integração administrativa exigem permissão específica. Operadores de
+                      estoque não veem a fila do espelho da planilha.
+                    </p>
+                  </div>
+                ) : null}
               </div>
-              <div className="rounded-xl border border-dashed border-border bg-accent/20 p-4">
-                <p className="text-sm text-muted-foreground">
-                  Integrações como Nomus e conectores externos serão habilitadas em etapa futura, com contrato técnico
-                  e validação operacional antes de liberar edição nesta tela.
-                </p>
-              </div>
+              <MaterialStockSpreadsheetMirrorAdminCard
+                canView={canViewMaterialStockMirror}
+                canManage={canManageMaterialStockMirror}
+              />
             </div>
           )}
 

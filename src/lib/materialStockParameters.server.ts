@@ -11,6 +11,7 @@ import {
   parseMaterialStockParametersCommand,
   snapshotStockLevels,
 } from "./materialStockParametersRules.js";
+import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
 
 export type MaterialStockParametersActor = {
   id: string;
@@ -177,5 +178,11 @@ export async function updateMaterialStockParameters(
       },
       auditId: audit.id,
     };
+  }).then(async (result) => {
+    await enqueueMaterialStockSpreadsheetMirrorBestEffort(db, {
+      materialId: result.material.id,
+      eventType: "LEVELS_UPDATE",
+    });
+    return result;
   });
 }

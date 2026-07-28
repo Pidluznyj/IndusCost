@@ -2455,6 +2455,28 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: [],
   },
   {
+    resourceKey: "admin.settings.material_stock_mirror",
+    label: "Configurações — Espelho planilha estoque",
+    parentKey: "admin.settings",
+    groupId: "admin",
+    route: "/settings",
+    sortOrder: 724,
+    actions: [
+      V(["settings.material_stock_mirror.view"]),
+      E(
+        ["settings.material_stock_mirror.manage"],
+        "reenvio/drain do espelho planilha — não expor ao operador de estoque"
+      ),
+    ],
+    relatedEndpoints: ["/api/admin/material-stock-spreadsheet-mirror"],
+    sensitivity: "critical",
+    appearsInSidebar: false,
+    isTab: true,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+  },
+  {
     resourceKey: "admin.settings.branding",
     label: "Configurações — Identidade Visual",
     parentKey: "admin.settings",

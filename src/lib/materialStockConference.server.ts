@@ -12,6 +12,7 @@ import {
   type ParsedMaterialStockConferenceCommand,
 } from "./materialStockConferenceRules.js";
 import { resolveMaterialStockStatus } from "./materialStockLevelRules.js";
+import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
 import { roundMaterialStockQuantity } from "./materialStockConferenceMath.js";
 
 export type MaterialStockConferenceActor = {
@@ -320,7 +321,6 @@ export async function recordMaterialStockConference(
         },
       });
 
-      // Outbox de planilha ainda não existe no projeto — nenhuma emissão externa.
       return {
         ok: true as const,
         created: true,
@@ -328,6 +328,15 @@ export async function recordMaterialStockConference(
         conference: serializeConference(conference),
         material: serializeMaterial(materialAfter),
       };
+    }).then(async (result) => {
+      // Após commit: falha de outbox/Excel nunca reverte o estoque oficial.
+      if (result.created && !result.idempotent) {
+        await enqueueMaterialStockSpreadsheetMirrorBestEffort(db, {
+          materialId: result.material.id,
+          eventType: "CONFERENCE",
+        });
+      }
+      return result;
     });
   } catch (error) {
     if (

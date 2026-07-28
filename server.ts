@@ -602,6 +602,8 @@ import { initializeMaterialMarketQuoteReliability, MaterialMarketQuoteReliabilit
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
 import { registerMaterialStockTabletRoutes } from "./src/lib/materialStockTabletRoutes.js";
+import { registerMaterialStockSpreadsheetMirrorAdminRoutes } from "./src/lib/materialStockSpreadsheetMirror/adminRoutes.js";
+import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./src/lib/materialStockSpreadsheetMirror/enqueue.server.js";
 import {
   applyNomusBomBatchFromDashboard,
   applyNomusBomFromDashboard,
@@ -5643,6 +5645,17 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           ...marketParsed.value,
         },
       });
+      const masterChanged =
+        material.code !== oldMaterial.code ||
+        material.description !== oldMaterial.description ||
+        material.unit !== oldMaterial.unit ||
+        Number(material.quantity) !== Number(oldMaterial.quantity);
+      if (masterChanged) {
+        await enqueueMaterialStockSpreadsheetMirrorBestEffort(prisma, {
+          materialId: material.id,
+          eventType: "MATERIAL_MASTER",
+        });
+      }
       res.json(material);
     } catch (error) {
       console.error("PUT /api/materials/:id", error);
@@ -8213,6 +8226,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   registerMaterialStockTabletRoutes(
     app,
     { requireAppAuth, requireResource, getCurrentAppUser },
+    { prisma }
+  );
+
+  registerMaterialStockSpreadsheetMirrorAdminRoutes(
+    app,
+    { requireAppAuth, requireAnyPermission },
     { prisma }
   );
 

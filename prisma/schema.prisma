@@ -258,9 +258,10 @@ model Material {
   MaterialMarketAlert           MaterialMarketAlert[]
   MaterialMarketAlertConfig     MaterialMarketAlertConfig?
   MaterialMarketPurchaseLink    MaterialMarketPurchaseLink[]
-  MaterialStockConference       MaterialStockConference[]
-  MaterialStockLevelAudit       MaterialStockLevelAudit[]
-  ProductBOM                    ProductBOM[]
+  MaterialStockConference              MaterialStockConference[]
+  MaterialStockLevelAudit              MaterialStockLevelAudit[]
+  MaterialStockSpreadsheetOutbox       MaterialStockSpreadsheetOutbox[]
+  ProductBOM                           ProductBOM[]
   PurchaseRequestItem           PurchaseRequestItem[]
   ProjectStructureLine          ProjectStructureLine[]
   MaterialCostTableItem         MaterialCostTableItem[]
@@ -316,6 +317,60 @@ model MaterialStockConference {
   @@index([materialId, recordedAt(sort: Desc)])
   @@index([userId, recordedAt(sort: Desc)])
   @@index([source, recordedAt(sort: Desc)])
+}
+
+/// Status da fila de espelho assíncrono IndusCost → planilha (Power Automate).
+enum MaterialStockSpreadsheetMirrorStatus {
+  PENDING
+  PROCESSING
+  SYNCED
+  ERROR
+}
+
+/// Tipo de evento que dispara espelho da planilha de matéria-prima.
+enum MaterialStockSpreadsheetMirrorEventType {
+  CONFERENCE
+  LEVELS_UPDATE
+  MATERIAL_MASTER
+}
+
+/// Outbox unidirecional — IndusCost → planilha online (nunca o inverso).
+/// Falha externa não reverte estoque/parâmetros oficiais.
+model MaterialStockSpreadsheetOutbox {
+  id               String                                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  materialId       String                                 @db.Uuid
+  /// Código denormalizado para admin/ops (chave de upsert junto com materialId).
+  materialCode     String
+  eventType        MaterialStockSpreadsheetMirrorEventType
+  status           MaterialStockSpreadsheetMirrorStatus   @default(PENDING)
+  /// Colapsa eventos do mesmo material enquanto PENDING/PROCESSING.
+  deduplicationKey String
+  /// Identidade estável da mensagem para o receptor (Automate).
+  idempotencyKey   String                                 @unique
+  payloadJson      Json
+  attempts         Int                                    @default(0)
+  maxAttempts      Int                                    @default(5)
+  /// Próxima tentativa elegível (backoff).
+  availableAt      DateTime                               @default(now()) @db.Timestamptz(6)
+  lastAttemptAt    DateTime?                              @db.Timestamptz(6)
+  lockedAt         DateTime?                              @db.Timestamptz(6)
+  lockedBy         String?
+  lockToken        String?
+  lastErrorCode    String?
+  /// Erro resumido (sem secret/payload sensível).
+  lastErrorMessage String?
+  syncedAt         DateTime?                              @db.Timestamptz(6)
+  requestId        String?
+  createdAt        DateTime                               @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime                               @default(now()) @updatedAt @db.Timestamptz(6)
+
+  Material Material @relation(fields: [materialId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, availableAt])
+  @@index([materialId, status])
+  @@index([materialCode])
+  @@index([deduplicationKey])
+  @@index([syncedAt])
 }
 
 /// Auditoria append-only de edição dos parâmetros de nível (contingência/mínimo/recomendado).
