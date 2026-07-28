@@ -53,6 +53,12 @@ describe("financeCashFlowPageFilters", () => {
       join(process.cwd(), "src", "components", "finance", "FinanceCashFlowCharts.tsx"),
       "utf8"
     );
+    assert.ok(page.includes("FinanceCashFlowRawMaterialSpotlightPanel"));
+    assert.ok(page.includes("rawMaterialCostCenterSpotlight"));
+    assert.ok(
+      page.indexOf("payload?.rawMaterialCostCenterSpotlight") <
+        page.indexOf('data-testid="cash-flow-filters"')
+    );
     assert.ok(page.includes("FinanceBiDashboardShell"));
     assert.ok(page.includes("FinanceExecutivePageHeader"));
     assert.ok(page.includes("FinanceCashFlowYtdSummary"));
