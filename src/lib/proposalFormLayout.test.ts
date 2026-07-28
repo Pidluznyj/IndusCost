@@ -50,4 +50,21 @@ describe("proposal form layout", () => {
     assert.match(tour, /proposals-form-actions/);
     assert.match(tour, /proposals-form-items/);
   });
+
+  it("formulário de edição não exibe aba Indicadores nem colunas de custo/margem", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    assert.ok(formStart > 0);
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+
+    assert.doesNotMatch(formSlice, /ProposalIndicatorsTab/);
+    assert.doesNotMatch(formSlice, /ProposalIndicatorsDetailModal/);
+    assert.doesNotMatch(formSlice, /setFormTab\("indicators"\)/);
+    assert.doesNotMatch(formSlice, />\s*Indicadores\s*</);
+    assert.doesNotMatch(formSlice, /Custo Unit\./);
+    assert.doesNotMatch(formSlice, /Margem líq\. %/);
+    assert.match(formSlice, />Sugerido</);
+    assert.match(formSlice, />Negociado</);
+    assert.match(formSlice, /Total Líq\./);
+  });
 });

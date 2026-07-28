@@ -39,7 +39,6 @@ import { Product } from "@/src/types/product";
 import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 import { CalculatedValue } from "./shared/CalculatedValue";
-import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
 import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
@@ -48,8 +47,6 @@ import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
 import { ProposalAnalysisModal } from "@/src/components/proposal/ProposalAnalysisModal";
-import { ProposalIndicatorsTab } from "@/src/components/proposal/ProposalIndicatorsTab";
-import { ProposalIndicatorsDetailModal } from "@/src/components/proposal/ProposalIndicatorsDetailModal";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -57,7 +54,6 @@ import {
   canDeleteProposal,
   canEditProposal,
   canPrintProposal,
-  canViewProposalIndicators,
 } from "@/src/lib/modulePermissions";
 import {
   canViewCustomers,
@@ -464,7 +460,6 @@ export const ProposalModule = () => {
   const allowEdit = canEditProposal(proposalCheck);
   const allowDelete = canDeleteProposal(proposalCheck);
   const allowPrint = canPrintProposal(proposalCheck);
-  const allowIndicators = canViewProposalIndicators(auth);
 
   const navigate = useNavigate();
   const [view, setView] = useState<"list" | "form">("list");
@@ -485,8 +480,6 @@ export const ProposalModule = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
-  const [formTab, setFormTab] = useState<"items" | "indicators">("items");
-  const [proposalIndicatorsDetailOpen, setProposalIndicatorsDetailOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [salesOrderActionId, setSalesOrderActionId] = useState<string | null>(null);
   const [priceTables, setPriceTables] = useState<PriceTableListRow[]>([]);
@@ -836,8 +829,6 @@ export const ProposalModule = () => {
 
   const handleCreateNew = () => {
     setEditingProposal(null);
-    setFormTab("items");
-    setProposalIndicatorsDetailOpen(false);
     setTablePriceSessionAlerts([]);
     setDefaultTableChangedNotice(null);
     setSelectedItemIndexes(new Set());
@@ -874,8 +865,6 @@ export const ProposalModule = () => {
       setSelectedItemIndexes(new Set());
       setBulkDiscountInput("");
       setFormData({ ...data, items });
-      setFormTab("items");
-    setProposalIndicatorsDetailOpen(false);
       setView("form");
     } catch (error) {
       console.error("Erro ao buscar proposta:", error);
@@ -1757,55 +1746,25 @@ export const ProposalModule = () => {
                   <h4 className="font-bold flex items-center gap-2">
                     <Package className="h-4 w-4" /> Proposta — Edição
                   </h4>
-                  <div className="flex items-center gap-1 rounded-lg border border-border bg-card/40 p-1">
-                    <button
-                      type="button"
-                      onClick={() => setFormTab("items")}
-                      className={cn(
-                        "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
-                        formTab === "items"
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                      )}
-                    >
-                      Itens
-                    </button>
-                    {allowIndicators ? (
-                      <button
-                        type="button"
-                        onClick={() => setFormTab("indicators")}
-                        className={cn(
-                          "px-3 py-1.5 rounded-md text-xs font-bold transition-colors",
-                          formTab === "indicators"
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                        )}
-                      >
-                        Indicadores
-                      </button>
-                    ) : null}
+                </div>
+                <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
+                  <div className="w-full min-w-[20rem] max-w-2xl" data-testid="proposal-add-product-search">
+                    <SearchableSelect
+                      placeholder="+ Adicionar Produto (SKU ou nome)..."
+                      options={products.map((p) => ({
+                        value: p.id,
+                        label: `${p.sku} — ${p.name}`,
+                        sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
+                        searchTerms: `${p.sku} ${p.name}`,
+                      }))}
+                      value=""
+                      onChange={(val) => val && addItem(val)}
+                    />
                   </div>
                 </div>
-                {formTab === "items" ? (
-                  <div className="flex items-center gap-2 min-w-0 flex-1 justify-end">
-                    <div className="w-full min-w-[20rem] max-w-2xl" data-testid="proposal-add-product-search">
-                      <SearchableSelect
-                        placeholder="+ Adicionar Produto (SKU ou nome)..."
-                        options={products.map((p) => ({
-                          value: p.id,
-                          label: `${p.sku} — ${p.name}`,
-                          sublabel: p.type === "COMPONENT" ? "Componente" : "Produto",
-                          searchTerms: `${p.sku} ${p.name}`,
-                        }))}
-                        value=""
-                        onChange={(val) => val && addItem(val)}
-                      />
-                    </div>
-                  </div>
-                ) : null}
               </div>
 
-              {formTab === "items" && (formData.items?.length ?? 0) > 0 ? (
+              {(formData.items?.length ?? 0) > 0 ? (
                 <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-accent/20 px-3 py-2 text-xs">
                   <span className="font-bold">
                     Itens selecionados:{" "}
@@ -1858,9 +1817,8 @@ export const ProposalModule = () => {
                 </div>
               ) : null}
 
-              {formTab === "items" ? (
-                <div className="flex-1 overflow-x-auto">
-                  <table className="min-w-[1060px] w-full text-left border-collapse">
+              <div className="flex-1 overflow-x-auto">
+                  <table className="min-w-[860px] w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-accent/20 border-b border-border">
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-[36px] min-w-[36px]">
@@ -1883,16 +1841,9 @@ export const ProposalModule = () => {
                         </th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Produto</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[110px] w-[110px]">Qtd</th>
-                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Custo Unit.</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground">Sugerido</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Negociado</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Desc %</th>
-                        <th
-                          className="p-3 text-[10px] font-bold uppercase text-muted-foreground max-w-[120px]"
-                          title="Margem líquida sobre faturamento bruto da linha, após impostos, comissão, frete e custo industrial (CIU do motor)."
-                        >
-                          Margem líq. %
-                        </th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
                       </tr>
@@ -2116,11 +2067,6 @@ export const ProposalModule = () => {
                               onChange={(e) => updateItem(idx, { quantity: parseFloat(e.target.value) || 0 })}
                             />
                           </td>
-                          <td className="p-3 text-xs font-mono text-muted-foreground">
-                            <CalculatedValue meta={item.calculationExplainability?.unitCost ?? null} hideIcon>
-                              <span>{formatMoneyDisplay(item.unitCost)}</span>
-                            </CalculatedValue>
-                          </td>
                           <td className="p-3 text-xs font-mono text-blue-600 font-medium">
                             <CalculatedValue meta={item.calculationExplainability?.suggestedPrice ?? null} hideIcon>
                               <span>{formatMoneyDisplay(item.suggestedPrice)}</span>
@@ -2142,35 +2088,6 @@ export const ProposalModule = () => {
                               onChange={(v) => updateItem(idx, { discountPerc: v })}
                             />
                           </td>
-                          <td className="p-3">
-                            <CalculatedValue
-                              hideIcon
-                              meta={buildProposalLineMarginExplanation({
-                                quantity: safeNum(item.quantity),
-                                negotiatedPrice: safeNum(item.negotiatedPrice),
-                                discountValue: safeNum(item.discountValue),
-                                taxesValue: safeNum(item.taxesValue),
-                                commissionValue: safeNum(item.commissionValue),
-                                freightValue: safeNum(item.freightValue),
-                                unitCost: safeNum(item.unitCost),
-                                marginValue: safeNum(item.marginValue),
-                                marginPerc: safeNum(item.marginPerc),
-                              })}
-                            >
-                              <div
-                                className={cn(
-                                  "text-xs font-bold",
-                                  safeNum(item.marginPerc) >= 20
-                                    ? "text-green-600"
-                                    : safeNum(item.marginPerc) >= 10
-                                      ? "text-orange-600"
-                                      : "text-red-600"
-                                )}
-                              >
-                                {formatPercentDisplay(item.marginPerc)}
-                              </div>
-                            </CalculatedValue>
-                          </td>
                           <td className="p-3 text-right text-xs font-bold font-mono">
                             {formatMoneyDisplay(
                               safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)
@@ -2188,7 +2105,7 @@ export const ProposalModule = () => {
                       ))}
                       {(!formData.items || formData.items.length === 0) && (
                         <tr>
-                          <td colSpan={10} className="p-12 text-center text-muted-foreground italic text-sm">
+                          <td colSpan={8} className="p-12 text-center text-muted-foreground italic text-sm">
                             Nenhum produto adicionado. Use o seletor acima para começar.
                           </td>
                         </tr>
@@ -2196,27 +2113,6 @@ export const ProposalModule = () => {
                     </tbody>
                   </table>
                 </div>
-              ) : (
-                <div className="flex-1 overflow-y-auto p-4">
-                  <ProposalIndicatorsTab
-                    proposalNumber={editingProposal?.number ?? null}
-                    proposalTitle={formData.title ?? null}
-                    proposalId={editingProposal?.id ?? null}
-                    onOpenDetailed={() => setProposalIndicatorsDetailOpen(true)}
-                    items={formData.items || []}
-                    totals={{
-                      totalGrossValue: totals.totalGross,
-                      totalDiscount: totals.totalDiscount,
-                      totalNetValue: totals.totalNet,
-                      totalTaxes: totals.totalTaxes,
-                      totalCommission: totals.totalComm,
-                      totalFreight: totals.totalFreight,
-                      totalMarginValue: totals.totalMarginValue,
-                      totalMarginPerc: totals.totalMarginPerc,
-                    }}
-                  />
-                </div>
-              )}
 
               {/* Summary Footer */}
               <div className="p-6 bg-accent/30 border-t border-border grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -2246,25 +2142,6 @@ export const ProposalModule = () => {
                 </div>
               </div>
             </div>
-
-            <ProposalIndicatorsDetailModal
-              open={proposalIndicatorsDetailOpen}
-              onClose={() => setProposalIndicatorsDetailOpen(false)}
-              proposalNumber={editingProposal?.number ?? null}
-              proposalTitle={formData.title ?? null}
-              proposalId={editingProposal?.id ?? null}
-              items={formData.items || []}
-              totals={{
-                totalGrossValue: totals.totalGross,
-                totalDiscount: totals.totalDiscount,
-                totalNetValue: totals.totalNet,
-                totalTaxes: totals.totalTaxes,
-                totalCommission: totals.totalComm,
-                totalFreight: totals.totalFreight,
-                totalMarginValue: totals.totalMarginValue,
-                totalMarginPerc: totals.totalMarginPerc,
-              }}
-            />
 
           {/* Bottom: Observações (PDF) + Notas internas */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
