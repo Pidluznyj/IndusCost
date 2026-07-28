@@ -19,7 +19,19 @@ import {
 } from "@/src/lib/sales/salesOrderFlowCatalog";
 import type { SalesOrderFlowColumnPageState } from "@/src/lib/salesOrderFlowKanbanPagination";
 import type { SalesOrderFlowColumnIndicator } from "@/src/lib/salesOrderFlowUi";
+import { SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS } from "@/src/lib/salesOrderFlowDetailUi";
 import { cn, formatCurrency } from "@/src/lib/utils";
+
+function formatKanbanResponsibleAreaLabel(
+  area: string | null | undefined
+): string {
+  const raw = area?.trim();
+  if (!raw) return "Não definida";
+  const match = SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS.find(
+    (opt) => opt.value === raw
+  );
+  return match?.label ?? raw;
+}
 
 export const SALES_ORDER_FLOW_OPERATIONAL_STAGES: readonly SalesOrderFlowStage[] =
   [
@@ -485,7 +497,7 @@ export function SalesOrderFlowKanbanCard({
           <p className="mt-1 text-slate-600">
             Área:{" "}
             <span className="font-medium text-foreground">
-              {card.responsibleArea?.trim() || "Não definida"}
+              {formatKanbanResponsibleAreaLabel(card.responsibleArea)}
             </span>
           </p>
         </div>

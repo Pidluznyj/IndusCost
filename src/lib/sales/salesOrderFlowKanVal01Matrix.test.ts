@@ -114,7 +114,7 @@ describe("KAN-VAL-01 — obrigação ativa, corte, estoque, OP e gargalo", () =>
     );
     assert.equal(r.remainingFulfillmentQuantity.eq(600), true);
     assert.equal(r.currentStage, "WAITING_PRODUCTION_ORDER");
-    assert.match(r.stageReason, /não há OP válida/i);
+    assert.match(r.stageReason, /não há Ordem de Produção válida/i);
   });
 
   it("5 — parcial com OP suficiente para residual: não ausência de OP", () => {
@@ -147,9 +147,9 @@ describe("KAN-VAL-01 — obrigação ativa, corte, estoque, OP e gargalo", () =>
     assert.equal(r.remainingFulfillmentQuantity.eq(600), true);
     assert.equal(r.productionOrderQuantity.eq(300), true);
     assert.equal(r.currentStage, "WAITING_PRODUCTION_ORDER");
-    assert.match(r.stageReason, /insuficiente/i);
+    assert.match(r.stageReason, /parcial|não cobre/i);
     assert.match(r.stageReason, /não é ausência total/i);
-    assert.doesNotMatch(r.stageReason, /não há OP válida vinculada/);
+    assert.doesNotMatch(r.stageReason, /não há Ordem de Produção válida/);
   });
 
   it("7 — corte parcial oficial ainda com saldo: obrigação 800, residual 300", () => {

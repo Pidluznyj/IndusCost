@@ -89,7 +89,7 @@ describe("salesOrderFlowFulfilledWithoutProduction (OP-06)", () => {
     assert.match(
       item.inconsistencies.find((i) => i.code === "FULFILLED_WITHOUT_PRODUCTION")!
         .detail,
-      /Atendido pelo estoque \/ sem necessidade de OP/
+      /Atendido pelo estoque/i
     );
     assert.doesNotMatch(item.nextAction, /Ordem de Produção/i);
 

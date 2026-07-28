@@ -129,7 +129,7 @@ describe("salesOrderFlowCompletionPrecedence (OP-03)", () => {
     const r = resolveSalesOrderItemFlow(pd02596CompletedManufacturedItem("i2"));
     assert.notEqual(r.currentStage, "WAITING_PRODUCTION_ORDER");
     assert.doesNotMatch(r.nextAction, /Abrir ou vincular Ordem de Produção/i);
-    assert.match(r.stageReason, /ausência histórica de OP/i);
+    assert.match(r.stageReason, /não havia Ordem de Produção|atendido pelo estoque/i);
   });
 
   it("5) corte válido com obrigação encerrada → SHIPPED_COMPLETED", () => {

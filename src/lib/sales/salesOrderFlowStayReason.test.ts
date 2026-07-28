@@ -16,12 +16,24 @@ describe("salesOrderFlowStayReason", () => {
     );
   });
 
-  it("preserva motivo sem prefixo", () => {
+  it("remove jargão técnico e inglês da mensagem", () => {
     assert.equal(
       humanizeSalesOrderFlowStageReason(
         "Saldo residual exige produção, mas linkedQuantity de OP é insuficiente."
       ),
-      "Saldo residual exige produção, mas linkedQuantity de OP é insuficiente."
+      "Saldo residual exige produção, mas quantidade vinculada de OP é insuficiente."
+    );
+    assert.equal(
+      humanizeSalesOrderFlowStageReason(
+        "Item aguardando liberação comercial (status PENDING)."
+      ),
+      "Item aguardando liberação comercial."
+    );
+    assert.doesNotMatch(
+      humanizeSalesOrderFlowStageReason(
+        "Produção satisfeita (ou proxy OP); falta Documento de Saída."
+      ) ?? "",
+      /proxy|linkedQuantity|PENDING/i
     );
   });
 

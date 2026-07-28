@@ -233,7 +233,7 @@ function sumProductionOrderQty(
       pushInconsistency(
         inconsistencies,
         "OP_LINK_WITHOUT_QUANTITY",
-        "Vínculo OP atual sem linkedQuantity."
+        "Ordem de Produção vinculada sem quantidade informada."
       );
       continue;
     }
@@ -361,7 +361,7 @@ export function resolveSalesOrderItemFlow(
     pushInconsistency(
       inconsistencies,
       "PRODUCTION_QTY_NOT_NORMALIZED",
-      "Quantidade produzida ainda não normalizada no stage; OP usada como proxy."
+      "Quantidade produzida ainda não confirmada; usando a Ordem de Produção como referência."
     );
   }
 
@@ -430,7 +430,7 @@ export function resolveSalesOrderItemFlow(
     pushInconsistency(
       inconsistencies,
       "NFE_SHIP_DATE_MISSING",
-      "NF-e válida sem data de envio normalizada; envio por proxy de autorização."
+      "NF-e válida sem data de envio registrada; considerando o faturamento como envio."
     );
   }
   if (documentedQuantity.gt(0) && invoicedQuantity.lte(0)) {
@@ -478,7 +478,7 @@ export function resolveSalesOrderItemFlow(
     pushInconsistency(
       inconsistencies,
       "STALE_ITEM_PRESENT",
-      "Item stale presente no pedido."
+      "Item desatualizado presente no pedido."
     );
   }
 
@@ -488,7 +488,7 @@ export function resolveSalesOrderItemFlow(
       pushInconsistency(
         inconsistencies,
         "EXCESS_COVERAGE",
-        "linkedQuantity de OP excede a obrigação ativa do item."
+        "Quantidade da Ordem de Produção é maior que a quantidade ainda devida do item."
       );
     }
     if (documentedQuantity.gt(shipTargetQuantity)) {
@@ -529,10 +529,10 @@ export function resolveSalesOrderItemFlow(
 
   if (isCanceled) {
     currentStage = "CANCELED";
-    stageReason = "Item cancelado — sem obrigação operacional.";
+    stageReason = "Item cancelado — sem pendência operacional.";
   } else if (isStale) {
     currentStage = "CANCELED";
-    stageReason = "Item stale — fora do Kanban ativo.";
+    stageReason = "Item desatualizado no Nomus — fora do fluxo ativo.";
   } else if (
     fulfillment.classification === "UNKNOWN" &&
     fulfillment.evidence.statusNormalized !== "RELEASED" &&
@@ -542,10 +542,10 @@ export function resolveSalesOrderItemFlow(
   ) {
     currentStage = "WAITING_RELEASE";
     stageReason =
-      "Status desconhecido — não promove conclusão; mantém aguardando liberação.";
+      "Situação do item ainda não está clara — mantém aguardando liberação comercial.";
   } else if (isPendingRelease) {
     currentStage = "WAITING_RELEASE";
-    stageReason = "Item aguardando liberação comercial (status PENDING).";
+    stageReason = "Item aguardando liberação comercial.";
   } else {
     // Liberado ou além — evidência terminal de envio/conclusão prevalece
     // sobre ausência histórica de OP (regressão PD 02596 / OP-03).
@@ -573,7 +573,7 @@ export function resolveSalesOrderItemFlow(
       pushInconsistency(
         inconsistencies,
         "FULFILLED_WITHOUT_PRODUCTION",
-        "Atendido pelo estoque / sem necessidade de OP (classificação operacional; não afirma movimento de estoque)."
+        "Atendido pelo estoque (sem Ordem de Produção)."
       );
     }
 
@@ -591,15 +591,16 @@ export function resolveSalesOrderItemFlow(
     } else if (needsProduction && productionCoverageTarget.gt(0)) {
       if (productionOrderQuantity.lt(productionCoverageTarget)) {
         currentStage = "WAITING_PRODUCTION_ORDER";
-        stageReason =
-          "Saldo residual exige produção, mas linkedQuantity de OP é insuficiente.";
+        stageReason = productionOrderQuantity.lte(0)
+          ? "Ainda falta produzir e não há Ordem de Produção válida vinculada."
+          : "A Ordem de Produção parcial ainda não cobre o que falta produzir (não é ausência total de OP).";
       } else if (
         producedQuantity != null &&
         producedQuantity.lt(productionCoverageTarget)
       ) {
         currentStage = "IN_PRODUCTION";
         stageReason =
-          "OP coberta para o residual, porém quantidade produzida ainda insuficiente.";
+          "A Ordem de Produção já cobre o planejamento, mas a quantidade produzida ainda é insuficiente.";
       } else {
         currentStage = postProductionStage;
         stageReason = stageReasonFor(currentStage, {
@@ -624,7 +625,7 @@ export function resolveSalesOrderItemFlow(
     ) {
       currentStage = "WAITING_NFE";
       stageReason =
-        "Status desconhecido — bloqueia SHIPPED_COMPLETED; mantém aguardando NF-e.";
+        "Situação do item ainda não está clara — mantém aguardando NF-e.";
     }
   }
 
@@ -713,25 +714,25 @@ function stageReasonFor(
   switch (stage) {
     case "WAITING_OUTPUT_DOCUMENT":
       if (flags.fulfilledWithoutProduction) {
-        return "Atendido pelo estoque / sem necessidade de OP; falta Documento de Saída (sem afirmar movimento de estoque).";
+        return "Atendido pelo estoque (sem Ordem de Produção); falta Documento de Saída.";
       }
       return flags.skippedProduction
-        ? "Produção não exigida/indefinida; falta cobertura documental suficiente."
-        : "Produção satisfeita (ou proxy OP); falta Documento de Saída.";
+        ? "Produção não necessária ou ainda indefinida; falta Documento de Saída suficiente."
+        : "Produção coberta; falta Documento de Saída.";
     case "WAITING_NFE":
       if (flags.fulfilledWithoutProduction) {
-        return "Atendido pelo estoque / sem necessidade de OP; documento presente, falta NF-e válida.";
+        return "Atendido pelo estoque (sem Ordem de Produção); documento presente, falta NF-e válida.";
       }
-      return "Documento presente; falta NF-e válida (proxy de envio).";
+      return "Documento de Saída presente; falta NF-e válida.";
     case "SHIPPED_COMPLETED":
       if (flags.completedWithoutProductionOrder || flags.fulfilledWithoutProduction) {
-        return "Obrigação coberta por NF-e válida; ausência histórica de OP não reabre obrigação de produção (Atendido pelo estoque / sem necessidade de OP).";
+        return "Pedido já faturado/enviado com NF-e válida. Não havia Ordem de Produção — foi atendido pelo estoque (não reabre produção).";
       }
       return flags.usedProductionProxy
-        ? "NF-e válida cobre a obrigação; produção por proxy de OP."
-        : "Obrigação coberta por NF-e válida (envio/conclusão).";
+        ? "NF-e válida cobre o pedido; a Ordem de Produção foi usada como referência de produção."
+        : "Pedido coberto por NF-e válida (enviado / concluído).";
     default:
-      return `Estágio ${stage}.`;
+      return "Etapa do fluxo ainda em análise.";
   }
 }
 
