@@ -39,6 +39,7 @@ export type TreasuryRolloutUiSectionId =
   | "ofx"
   | "reconcile"
   | "exceptions"
+  | "alert-settings"
   | "closing"
   | "reports"
   | "audit";
@@ -66,6 +67,7 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   ofx: "treasury.ofxImport.enabled",
   reconcile: "treasury.reconciliation.enabled",
   exceptions: "treasury.exceptions.enabled",
+  "alert-settings": "treasury.exceptions.enabled",
   closing: "treasury.dailyClosing.enabled",
   reports: "treasury.reports.enabled",
   /** Auditoria permanece sob a mestra (operacional/controle). */

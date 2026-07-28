@@ -82,6 +82,11 @@ export const TREASURY_UI_SECTIONS = [
     label: "Exceções",
   },
   {
+    id: "alert-settings",
+    path: `${TREASURY_UI_BASE_PATH}/alert-settings`,
+    label: "Alertas",
+  },
+  {
     id: "closing",
     path: `${TREASURY_UI_BASE_PATH}/closing`,
     label: "Fechamento diário",

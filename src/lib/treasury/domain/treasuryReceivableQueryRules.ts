@@ -3,6 +3,7 @@
  */
 
 import { diffCivilDays, toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import type { OfficialReceivableView } from "../contracts/treasuryOfficialTitleContracts.js";
 import type {
   TreasuryReceivableActionView,
@@ -13,12 +14,19 @@ import type { TreasuryReceivableOperationalStatus } from "../contracts/treasuryE
 export function computeTreasuryReceivableDaysOverdue(input: {
   dueDate: string | null;
   openAmount: string | null;
+  /** Instantâneo ou DATE; omitir = "hoje" America/Sao_Paulo. */
   referenceDate?: Date;
+  /** Preferível quando a referência já é civil YYYY-MM-DD. */
+  referenceCivilDate?: string;
 }): number {
   if (!input.dueDate) return 0;
   const open = Number(input.openAmount ?? 0);
   if (!Number.isFinite(open) || open <= 0) return 0;
-  const todayKey = toCivilDateKey(input.referenceDate ?? new Date());
+  const todayKey =
+    input.referenceCivilDate?.trim() ||
+    (input.referenceDate
+      ? toCivilDateKey(input.referenceDate)
+      : todayTreasuryCivilDateInSaoPaulo());
   if (!todayKey) return 0;
   const days = diffCivilDays(input.dueDate, todayKey);
   return days > 0 ? days : 0;

@@ -16,6 +16,7 @@ import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js
 import { canViewTreasuryDashboard } from "@/src/lib/treasury/treasuryDashboardPermissions.js";
 import { todayCivilDateLocal } from "@/src/lib/treasury/treasuryAgendaUi.js";
 import { fetchTreasuryProjectionComparison } from "@/src/lib/treasury/treasuryProjectionComparisonApi.js";
+import { calculateTreasuryProjection } from "@/src/lib/treasury/treasuryProjectionCalculateApi.js";
 import {
   TREASURY_COMPARISON_PAGE_SUBTITLE,
   TREASURY_COMPARISON_PAGE_TITLE,
@@ -81,6 +82,7 @@ export function TreasuryProjectionComparisonPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [headerUpdatedAt, setHeaderUpdatedAt] = useState<string | null>(null);
+  const [calculating, setCalculating] = useState(false);
 
   /** Exclui visibleScenarios — toggle local não refetch. */
   const fetchKey = useMemo(() => {
@@ -183,6 +185,40 @@ export function TreasuryProjectionComparisonPage() {
     applyFilters(createEmptyTreasuryComparisonFilters(todayCivilDateLocal()));
   }, [applyFilters]);
 
+  const onCalculate = useCallback(async () => {
+    if (!canView || calculating) return;
+    setCalculating(true);
+    setError(null);
+    try {
+      const q = buildTreasuryComparisonQuery({
+        filters,
+        accounts,
+      });
+      const scenarios = ["CONTRACTUAL", "PROBABLE", "CONFIRMED"] as const;
+      for (const scenario of scenarios) {
+        await calculateTreasuryProjection({
+          companyCode: q.companyCode || "LAZARIOS",
+          baseDate: q.baseDate,
+          endDate: q.endDate,
+          scenario,
+          accountIds: q.accountIds,
+          consolidated: q.consolidated,
+          includeDayDetail: false,
+        });
+      }
+      await load();
+    } catch (err) {
+      setError(
+        buildFinanceTabLoadError(
+          "Não foi possível recalcular as projeções.",
+          err
+        )
+      );
+    } finally {
+      setCalculating(false);
+    }
+  }, [accounts, calculating, canView, filters, load]);
+
   return (
     <FinanceBiDashboardShell>
       <div data-testid="treasury-comparison-page" className="contents">
@@ -193,6 +229,12 @@ export function TreasuryProjectionComparisonPage() {
           updatedAt={headerUpdatedAt}
           updatedAtLabel="Última atualização em"
           actions={[
+            {
+              id: "calculate",
+              label: calculating ? "Calculando…" : "Recalcular projeções",
+              onClick: () => void onCalculate(),
+              disabled: calculating || !canView,
+            },
             {
               id: "refresh",
               label: FINANCE_HEADER_ACTION_REFRESH,

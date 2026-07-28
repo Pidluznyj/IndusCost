@@ -67,6 +67,15 @@ npm run check:browser-bundle
 - Cron catalog vazio (fila PostgreSQL cobre recálculo)
 - 1 teste full-flow skip sem Postgres seguro
 - UI `placeholder=` e mocks só em testes
+- `GET …/health`, `balance-position`, `forecast-vs-actual`, `GET …/alerts` — APIs ops/canônicas; FE consome via dashboard/reports (sem tela dedicada)
+
+### Re-auditoria residual (pós-68)
+
+| Achado | Severidade | Correção |
+|--------|------------|----------|
+| Atraso/expiração de promessa usavam `toCivilDateKey(new Date())` (UTC) | MÉDIO | Default America/Sao_Paulo em daysOverdue + expireStale |
+| `alert-settings` sem tela | MÉDIO | UI `/finance/treasury/alert-settings` + client API |
+| `POST …/projections/calculate` sem FE | MÉDIO | Botão “Recalcular projeções” na comparação |
 
 ---
 

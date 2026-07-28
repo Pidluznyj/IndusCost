@@ -34,6 +34,7 @@ import { TreasuryManualEntriesPage } from "./TreasuryManualEntriesPage.js";
 import { TreasuryPaymentSchedulePage } from "./TreasuryPaymentSchedulePage.js";
 import { TreasuryReconcileWorkspacePage } from "./TreasuryReconcileWorkspacePage.js";
 import { TreasuryAuditPage } from "./TreasuryAuditPage.js";
+import { TreasuryAlertSettingsPage } from "./TreasuryAlertSettingsPage.js";
 
 function closedTreasuryFlagsMap(): TreasuryFeatureFlagsMap {
   const out = {} as TreasuryFeatureFlagsMap;
@@ -210,6 +211,10 @@ export function TreasuryModule() {
         <Route
           path="exceptions"
           element={gate("exceptions", <TreasuryExceptionsPage />)}
+        />
+        <Route
+          path="alert-settings"
+          element={gate("alert-settings", <TreasuryAlertSettingsPage />)}
         />
         <Route
           path="closing"

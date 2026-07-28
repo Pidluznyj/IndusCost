@@ -68,7 +68,8 @@ export function buildTreasuryCustomerFinancialSummary(input: {
   recentReceiptsLimit?: number;
   collectionHistoryLimit?: number;
 }): TreasuryCustomerFinancialSummaryDto {
-  const ref = input.referenceDate ?? new Date();
+  // Sem referenceDate → atraso usa "hoje" America/Sao_Paulo (não UTC).
+  const ref = input.referenceDate;
   let openAmountTotal: TreasuryMoneyString = "0.00";
   let overdueAmountTotal: TreasuryMoneyString = "0.00";
   let upcomingAmountTotal: TreasuryMoneyString = "0.00";
@@ -87,7 +88,7 @@ export function buildTreasuryCustomerFinancialSummary(input: {
     const days = computeTreasuryReceivableDaysOverdue({
       dueDate: title.dueDate,
       openAmount: open,
-      referenceDate: ref,
+      ...(ref ? { referenceDate: ref } : {}),
     });
 
     if (isOpenAmount(open)) {

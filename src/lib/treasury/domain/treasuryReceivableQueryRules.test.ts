@@ -79,6 +79,20 @@ function complement(
 }
 
 describe("treasuryReceivableQueryRules — atraso e status operacional", () => {
+  it("sem referenceDate usa civil America/Sao_Paulo (não UTC puro)", () => {
+    const overdue = computeTreasuryReceivableDaysOverdue({
+      dueDate: "2000-01-01",
+      openAmount: "10.00",
+    });
+    assert.ok(overdue > 0);
+    const withCivil = computeTreasuryReceivableDaysOverdue({
+      dueDate: "2026-07-01",
+      openAmount: "10.00",
+      referenceCivilDate: "2026-07-20",
+    });
+    assert.equal(withCivil, 19);
+  });
+
   it("daysOverdue = 0 quando sem dueDate ou saldo ≤ 0", () => {
     assert.equal(
       computeTreasuryReceivableDaysOverdue({

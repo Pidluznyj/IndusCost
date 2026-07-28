@@ -6,6 +6,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { toCivilDateKey } from "@/src/lib/financeCivilDate.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "../contracts/treasuryCivilDate.js";
 import type { TreasuryPaymentPromiseDto } from "../contracts/treasuryDto.js";
 import type {
   TreasuryPromiseCancelInput,
@@ -170,7 +171,9 @@ export function createTreasuryPaymentPromiseService(deps: {
     actor: TreasuryPaymentPromiseActor,
     referenceDate?: Date
   ): Promise<{ rows: TreasuryPaymentPromiseRow[]; expiredCount: number }> {
-    const today = toCivilDateKey(referenceDate ?? new Date());
+    const today = referenceDate
+      ? toCivilDateKey(referenceDate)
+      : todayTreasuryCivilDateInSaoPaulo();
     if (!today) return { rows, expiredCount: 0 };
     const toExpire = rows.filter((r) => {
       const promisedDate = toCivilDateKey(r.promisedDate);
