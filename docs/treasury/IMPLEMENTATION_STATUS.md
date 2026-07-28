@@ -89,8 +89,9 @@
 | **62** | Backfill complementos operacionais (preview/apply) | `DONE` | `59f5783` | CLI `scripts/treasuryTitleComplementBackfill.ts`; preview (período/encontrados/elegíveis/existentes/would-create/inconsistências/duplicidades/cancelados + estimativa); apply create-only idempotente em lotes + checkpoint/retomada/logs; não muta Nomus nem apaga; npm `backfill:treasury:title-complements:*`; testes unitários+wiring |
 | **63** | Auditoria formal + fechamento de lacunas (rastreabilidade) | `DONE` | `0b687bb` | `REQUIREMENTS-TRACEABILITY.md` (R01–R30); fecha R15 ledger + endpoints balance-position/forecast-vs-actual/alerts/audit/health/payment-schedule/reconcile workspace; accept/unmatch HTTP; UIs manual-entries/payment-schedule/reconcile/audit/ofx; runbook + `validate:treasury:deploy`; testes gaps |
 | **64** | Documentação completa + manuais operacionais | `DONE` | `889a05b` | `docs/treasury/README.md` + 10–18 técnicos; manuals (usuário, abertura, fechamento, cobrança, conciliação); sem alteração de código funcional |
+| **65** | Controle de rollout por submódulo | `DONE` | _(este commit)_ | Flags `balances/dashboard/receivables/payables/reports` + guards BE; `availability.flags`; FE filtra abas; `19-ROLLOUT.md` ordem de ativação; testes flags/rollout; dados preservados com flag OFF |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**.
 
 ---
 

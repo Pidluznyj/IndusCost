@@ -1,6 +1,18 @@
-import React from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
+import { fetchTreasuryAvailability } from "@/src/lib/treasury/treasuryAvailabilityApi.js";
+import {
+  TREASURY_FEATURE_FLAG_IDS,
+  type TreasuryFeatureFlagId,
+} from "@/src/lib/treasury/treasuryFeatureFlags.js";
+import {
+  filterTreasuryUiSections,
+  resolveTreasuryUiLandingPath,
+  type TreasuryFeatureFlagsMap,
+  type TreasuryRolloutUiSectionId,
+  TREASURY_UI_SECTION_FEATURE_FLAG,
+} from "@/src/lib/treasury/treasuryRollout.js";
 import {
   TREASURY_UI_BASE_PATH,
   TREASURY_UI_LABEL,
@@ -23,10 +35,78 @@ import { TreasuryPaymentSchedulePage } from "./TreasuryPaymentSchedulePage.js";
 import { TreasuryReconcileWorkspacePage } from "./TreasuryReconcileWorkspacePage.js";
 import { TreasuryAuditPage } from "./TreasuryAuditPage.js";
 
+function closedTreasuryFlagsMap(): TreasuryFeatureFlagsMap {
+  const out = {} as TreasuryFeatureFlagsMap;
+  for (const id of TREASURY_FEATURE_FLAG_IDS) {
+    out[id] = false;
+  }
+  return out;
+}
+
+function TreasuryFlagGate(props: {
+  sectionId: TreasuryRolloutUiSectionId;
+  flags: TreasuryFeatureFlagsMap | null;
+  landingPath: string;
+  children: React.ReactNode;
+}) {
+  const { sectionId, flags, landingPath, children } = props;
+  if (!flags) {
+    return (
+      <div
+        className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
+        data-testid="treasury-flag-loading"
+      >
+        Carregando disponibilidade do módulo…
+      </div>
+    );
+  }
+  const required = TREASURY_UI_SECTION_FEATURE_FLAG[sectionId];
+  const enabled =
+    flags["treasury.enabled"] === true &&
+    (required == null || flags[required] === true);
+  if (!enabled) {
+    return <Navigate to={landingPath} replace />;
+  }
+  return <>{children}</>;
+}
+
 /**
  * Shell da Central de Tesouraria — rotas aninhadas sob /finance/treasury/*.
+ * Submódulos ocultos quando a flag correspondente está off (dados preservados).
  */
 export function TreasuryModule() {
+  const location = useLocation();
+  const [flags, setFlags] = useState<TreasuryFeatureFlagsMap | null>(null);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void fetchTreasuryAvailability({ signal: ac.signal })
+      .then((payload) => {
+        setFlags(payload.flags as TreasuryFeatureFlagsMap);
+      })
+      .catch(() => {
+        setFlags(closedTreasuryFlagsMap());
+      });
+    return () => ac.abort();
+  }, []);
+
+  const visibleSections = filterTreasuryUiSections(TREASURY_UI_SECTIONS, flags);
+  const landingPath = resolveTreasuryUiLandingPath(
+    TREASURY_UI_SECTIONS,
+    flags,
+    TREASURY_UI_BASE_PATH
+  );
+
+  const gate = (sectionId: TreasuryRolloutUiSectionId, node: React.ReactNode) => (
+    <TreasuryFlagGate
+      sectionId={sectionId}
+      flags={flags}
+      landingPath={landingPath}
+    >
+      {node}
+    </TreasuryFlagGate>
+  );
+
   return (
     <div className="space-y-6" data-testid="treasury-module">
       <div className="space-y-1">
@@ -42,7 +122,7 @@ export function TreasuryModule() {
         className="flex flex-wrap gap-2 border-b border-border pb-3"
         data-testid="treasury-module-tabs"
       >
-        {TREASURY_UI_SECTIONS.map((section) => (
+        {visibleSections.map((section) => (
           <NavLink
             key={section.id}
             to={section.path}
@@ -61,38 +141,99 @@ export function TreasuryModule() {
         ))}
       </nav>
 
+      {!flags ? (
+        <div
+          className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
+          data-testid="treasury-module-loading"
+        >
+          Carregando disponibilidade do módulo…
+        </div>
+      ) : null}
+
+      {flags && visibleSections.length === 0 ? (
+        <div
+          className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
+          data-testid="treasury-module-no-flags"
+        >
+          Nenhum submódulo liberado neste ambiente. Os dados permanecem
+          preservados até a ativação das flags.
+        </div>
+      ) : null}
+
       <Routes>
-        <Route index element={<TreasuryDashboardPage />} />
-        <Route path="accounts" element={<TreasuryAccountsPage />} />
+        <Route index element={gate("home", <TreasuryDashboardPage />)} />
+        <Route
+          path="accounts"
+          element={gate("accounts", <TreasuryAccountsPage />)}
+        />
         <Route
           path="accounts/:accountId/balances"
-          element={<TreasuryAccountBalancePage />}
+          element={gate("balances", <TreasuryAccountBalancePage />)}
         />
-        <Route path="receivables" element={<TreasuryReceivablesPage />} />
-        <Route path="payables" element={<TreasuryPayablesPage />} />
+        <Route
+          path="receivables"
+          element={gate("receivables", <TreasuryReceivablesPage />)}
+        />
+        <Route
+          path="payables"
+          element={gate("payables", <TreasuryPayablesPage />)}
+        />
         <Route
           path="payment-schedule"
-          element={<TreasuryPaymentSchedulePage />}
+          element={gate("payment-schedule", <TreasuryPaymentSchedulePage />)}
         />
-        <Route path="agenda" element={<TreasuryAgendaPage />} />
+        <Route path="agenda" element={gate("agenda", <TreasuryAgendaPage />)} />
         <Route
           path="projections"
-          element={<TreasuryProjectionComparisonPage />}
+          element={gate("projections", <TreasuryProjectionComparisonPage />)}
         />
-        <Route path="transfers" element={<TreasuryTransfersPage />} />
-        <Route path="manual-entries" element={<TreasuryManualEntriesPage />} />
-        <Route path="bank-movements" element={<TreasuryBankMovementsPage />} />
-        <Route path="ofx" element={<TreasuryBankMovementsPage />} />
-        <Route path="reconcile" element={<TreasuryReconcileWorkspacePage />} />
-        <Route path="exceptions" element={<TreasuryExceptionsPage />} />
-        <Route path="closing" element={<TreasuryDailyClosingPage />} />
-        <Route path="reports" element={<TreasuryReportsPage />} />
-        <Route path="audit" element={<TreasuryAuditPage />} />
+        <Route
+          path="transfers"
+          element={gate("transfers", <TreasuryTransfersPage />)}
+        />
+        <Route
+          path="manual-entries"
+          element={gate("manual-entries", <TreasuryManualEntriesPage />)}
+        />
+        <Route
+          path="bank-movements"
+          element={gate("bank-movements", <TreasuryBankMovementsPage />)}
+        />
+        <Route
+          path="ofx"
+          element={gate("ofx", <TreasuryBankMovementsPage />)}
+        />
+        <Route
+          path="reconcile"
+          element={gate("reconcile", <TreasuryReconcileWorkspacePage />)}
+        />
+        <Route
+          path="exceptions"
+          element={gate("exceptions", <TreasuryExceptionsPage />)}
+        />
+        <Route
+          path="closing"
+          element={gate("closing", <TreasuryDailyClosingPage />)}
+        />
+        <Route
+          path="reports"
+          element={gate("reports", <TreasuryReportsPage />)}
+        />
+        <Route path="audit" element={gate("audit", <TreasuryAuditPage />)} />
         <Route
           path="*"
-          element={<Navigate to={TREASURY_UI_BASE_PATH} replace />}
+          element={
+            <Navigate
+              to={landingPath}
+              replace
+              state={{ from: location.pathname }}
+            />
+          }
         />
       </Routes>
     </div>
   );
 }
+
+/** Exposto para testes de wiring. */
+export type TreasuryModuleFlagId = TreasuryFeatureFlagId;

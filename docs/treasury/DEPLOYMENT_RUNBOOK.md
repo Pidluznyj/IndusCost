@@ -10,6 +10,7 @@
 3. Migrations Prisma versionadas presentes em `prisma/migrations/` (inclui Tesouraria).
 4. Variáveis de ambiente já existentes no servidor (não alterar `.env` via Cursor).
 5. Flag `TREASURY_MODULE_ENABLED` deliberada (fail-closed se ausente/false).
+6. Subflags de rollout ligadas na ordem de [19-ROLLOUT.md](./19-ROLLOUT.md) (fail-closed; OFF não apaga dados).
 
 ## Sequência obrigatória (usuário)
 

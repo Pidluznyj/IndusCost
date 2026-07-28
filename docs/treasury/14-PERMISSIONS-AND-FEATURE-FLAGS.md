@@ -50,29 +50,37 @@ Seed/contrato: `permissions:seed:contract:*` / admin de permissões.
 
 ## 6. Feature flags
 
-Arquivo: `src/lib/treasury/treasuryFeatureFlags.ts`.
+Arquivo: `src/lib/treasury/treasuryFeatureFlags.ts` + ordem/UI em `treasuryRollout.ts`.  
+Detalhe operacional: [19-ROLLOUT.md](./19-ROLLOUT.md).
 
 | Flag ID | Env | Escopo |
 |---------|-----|--------|
 | `treasury.enabled` | `TREASURY_MODULE_ENABLED` | Mestra (fail-closed) |
-| `treasury.accounts.enabled` | `TREASURY_ACCOUNTS_ENABLED` | Contas |
-| `treasury.projection.enabled` | `TREASURY_PROJECTION_ENABLED` | Projeção/agenda calculate |
-| `treasury.promises.enabled` | `TREASURY_PROMISES_ENABLED` | Promessas |
+| `treasury.accounts.enabled` | `TREASURY_ACCOUNTS_ENABLED` | Contas / ledger manual |
+| `treasury.balances.enabled` | `TREASURY_BALANCES_ENABLED` | Saldos / snapshots / posição |
+| `treasury.dashboard.enabled` | `TREASURY_DASHBOARD_ENABLED` | Dashboard / alertas leitura |
+| `treasury.receivables.enabled` | `TREASURY_RECEIVABLES_ENABLED` | AR + cobrança/disputa |
+| `treasury.payables.enabled` | `TREASURY_PAYABLES_ENABLED` | AP (consulta) |
+| `treasury.projection.enabled` | `TREASURY_PROJECTION_ENABLED` | Projeção/agenda/compare |
+| `treasury.promises.enabled` | `TREASURY_PROMISES_ENABLED` | Promessas CR |
 | `treasury.payablesProgramming.enabled` | `TREASURY_PAYABLES_PROGRAMMING_ENABLED` | Programação CP |
 | `treasury.transfers.enabled` | `TREASURY_TRANSFERS_ENABLED` | Transferências |
 | `treasury.exceptions.enabled` | `TREASURY_EXCEPTIONS_ENABLED` | Exceções |
 | `treasury.dailyClosing.enabled` | `TREASURY_DAILY_CLOSING_ENABLED` | Fechamento |
 | `treasury.reconciliation.enabled` | `TREASURY_RECONCILIATION_ENABLED` | Conciliação/movimentos |
 | `treasury.ofxImport.enabled` | `TREASURY_OFX_IMPORT_ENABLED` | Preview/apply OFX |
+| `treasury.reports.enabled` | `TREASURY_REPORTS_ENABLED` | Relatórios + export |
 
 Valores truthy típicos: `1`, `true`, `yes`, `on` (ver parser no código). Ausente/`0`/`false` = OFF.
+
+`GET /availability` devolve `flags` (mapa completo fail-closed) para a UI ocultar abas.
 
 ## 7. Operação de liberação
 
 1. Migrar schema.
 2. Ligar `TREASURY_MODULE_ENABLED=1`.
-3. Ligar subflags do escopo homologado.
+3. Ligar subflags na **ordem recomendada** (ver [19-ROLLOUT.md](./19-ROLLOUT.md)).
 4. Conceder bags/resources aos papéis (financeiro, tesoureiro, auditor).
-5. Validar `GET /availability` e smoke UI.
+5. Validar `GET /availability` (campo `flags`) e smoke UI.
 
-**Homologação:** flags OFF em produção até checklist OK (soft-launch).
+**Homologação:** flags OFF em produção até checklist OK (soft-launch). Flag OFF **não** apaga dados.

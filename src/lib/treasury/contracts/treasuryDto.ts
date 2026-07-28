@@ -48,6 +48,11 @@ export type TreasuryAvailabilityResponse = {
   module: TreasuryModuleId;
   status: TreasuryAvailabilityStatus;
   enabled: boolean;
+  /**
+   * Mapa fail-closed de subflags (UI/nav).
+   * Flag ausente ou false → submódulo oculto; dados permanecem no banco.
+   */
+  flags: Record<string, boolean>;
   /** Scaffold version — sem regras financeiras ainda. */
   scaffoldVersion: string;
   serverTimeIso: TreasuryTimestampIso;

@@ -21,12 +21,30 @@ describe("treasuryAvailability", () => {
     assert.equal(payload.status, "scaffold");
     assert.equal(payload.scaffoldVersion, TREASURY_SCAFFOLD_VERSION);
     assert.equal(payload.serverTimeIso, "2026-07-27T12:00:00.000+00:00");
+    assert.equal(payload.flags["treasury.enabled"], true);
+    assert.equal(payload.flags["treasury.accounts.enabled"], false);
+    assert.equal(payload.flags["treasury.dashboard.enabled"], false);
   });
 
   it("marca disabled quando flag off (handler só roda se flag passar)", () => {
     const payload = getTreasuryAvailability({ env: {} });
     assert.equal(payload.enabled, false);
     assert.equal(payload.status, "disabled");
+    assert.equal(payload.flags["treasury.enabled"], false);
+    assert.equal(payload.flags["treasury.reports.enabled"], false);
+  });
+
+  it("expõe subflags ligadas no mapa de availability", () => {
+    const payload = getTreasuryAvailability({
+      env: {
+        [TREASURY_ENABLED_ENV]: "1",
+        TREASURY_DASHBOARD_ENABLED: "1",
+        TREASURY_REPORTS_ENABLED: "true",
+      },
+    });
+    assert.equal(payload.flags["treasury.dashboard.enabled"], true);
+    assert.equal(payload.flags["treasury.reports.enabled"], true);
+    assert.equal(payload.flags["treasury.receivables.enabled"], false);
   });
 
   it("path canônico está estável", () => {

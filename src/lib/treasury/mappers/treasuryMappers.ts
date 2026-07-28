@@ -10,6 +10,7 @@ import {
 
 export function toTreasuryAvailabilityResponse(input: {
   enabled: boolean;
+  flags: Record<string, boolean>;
   serverTime?: Date;
 }): TreasuryAvailabilityResponse {
   return {
@@ -17,6 +18,7 @@ export function toTreasuryAvailabilityResponse(input: {
     module: "treasury",
     status: input.enabled ? "scaffold" : "disabled",
     enabled: input.enabled,
+    flags: input.flags,
     scaffoldVersion: TREASURY_SCAFFOLD_VERSION,
     serverTimeIso: formatTreasuryTimestampIso(input.serverTime ?? new Date()),
   };
