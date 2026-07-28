@@ -26,12 +26,13 @@ describe("proposalListMargin", () => {
     assert.equal(resolved.itemCount, 2);
   });
 
-  it("custo zero/ausente não inventa 100%", () => {
+  it("custo zero/ausente não inventa 100% (paridade Pedido)", () => {
     const missing = resolveProposalOfficialMarginFromItems([
       {
         quantity: 1,
         negotiatedPrice: 407.4,
         unitCost: null,
+        productId: "p1",
       },
     ]);
     assert.equal(missing.totalMarginPerc, null);
@@ -42,10 +43,12 @@ describe("proposalListMargin", () => {
         quantity: 1,
         negotiatedPrice: 407.4,
         unitCost: 0,
+        productId: "p1",
       },
     ]);
-    // Custo 0 explícito → 100% (só se o resolver de produção devolver 0)
-    assert.equal(zeroCost.totalMarginPerc, 100);
+    // CUSTO_ZERO no motor do Pedido → margem indisponível
+    assert.equal(zeroCost.totalMarginPerc, null);
+    assert.equal(zeroCost.totalMarginValue, null);
   });
 
   it("enrich usa itens quando presentes e remove o array do DTO de lista", () => {

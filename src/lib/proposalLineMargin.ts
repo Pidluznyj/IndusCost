@@ -1,17 +1,18 @@
 /**
- * Margem oficial de Proposta — mesma regra do Pedido de Venda
- * (`salesOrderMarginMath`):
+ * Margem oficial de Proposta — reutiliza o motor do Pedido de Venda
+ * (`calculateSalesOrderItemMargin`):
  *
  *   receita (PV) = qtd × negociado − desconto
  *   custo        = qtd × unitCost  (custo de produção vigente na data)
  *   margem R$    = receita − custo
  *   margem %     = margem R$ / receita × 100
  *
- * Comissão e frete são campos comerciais (tabela) e NÃO entram na margem,
- * para a comparação proposta × pedido permanecer alinhada.
+ * SEM_CUSTO / CUSTO_ZERO → margem indisponível (nunca 100% falso).
+ * Comissão e frete são campos comerciais e NÃO entram na margem.
  * Imposto também fica fora da margem oficial (igual listagem de Pedidos).
  */
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
+import { calculateSalesOrderItemMargin } from "./salesOrderMarginMath.js";
 
 export type ProposalLineMarginInput = {
   quantity: number;
@@ -23,10 +24,13 @@ export type ProposalLineMarginInput = {
   freightPerc?: number;
   freightValue?: number;
   /**
-   * Custo unitário de produção. Se null/undefined, margem fica indisponível
-   * (não tratar como zero — evita falso 100%).
+   * Custo unitário de produção. Se null/undefined ou ≤ 0, margem fica
+   * indisponível (paridade Pedido: SEM_CUSTO / CUSTO_ZERO).
    */
   unitCost: number | null | undefined;
+  /** Quando informado, alimenta o motor do Pedido (vínculo de produto). */
+  productId?: string | null;
+  lineId?: string | null;
 };
 
 export type ProposalLineMarginResult = {
@@ -42,11 +46,19 @@ export type ProposalLineMarginResult = {
   marginValue: number | null;
   marginPerc: number | null;
   costMissing: boolean;
+  /** Status do motor do Pedido (quando calculado). */
+  salesOrderMarginStatus?: string;
 };
 
 function safeFinite(value: unknown, fallback = 0): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function toEngineUnitCost(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 export function calculateProposalLineMargin(
@@ -66,41 +78,42 @@ export function calculateProposalLineMargin(
   const commissionValue = roundPricingMoney(net * (commissionPerc / 100));
   const freightValue = roundPricingMoney(net * (freightPerc / 100) + freightAbs);
 
-  const rawCost = input.unitCost;
-  const hasCost =
-    rawCost != null && rawCost !== ("" as unknown) && Number.isFinite(Number(rawCost));
-  if (!hasCost) {
-    return {
-      gross,
-      net,
-      totalCost: null,
-      taxesValue,
-      commissionValue,
-      freightValue,
-      netSalesAmount: net,
-      marginValue: null,
-      marginPerc: null,
-      costMissing: true,
-    };
-  }
+  const unitCost = toEngineUnitCost(input.unitCost);
+  const productId =
+    typeof input.productId === "string" && input.productId.trim()
+      ? input.productId.trim()
+      : unitCost != null
+        ? "proposal-line"
+        : null;
 
-  const unitCost = Math.max(0, Number(rawCost));
-  const totalCost = roundPricingMoney(quantity * unitCost);
-  const marginValue = roundPricingMoney(net - totalCost);
-  const marginPerc =
-    net > 0 ? roundPricingPercent((marginValue / net) * 100) : null;
+  const so = calculateSalesOrderItemMargin({
+    salesOrderItemId: input.lineId?.trim() || "proposal-line",
+    productId,
+    quantity,
+    netTotalValue: net,
+    unitCost,
+    costSource: unitCost == null ? "MISSING_COST" : "VERSIONED_PRODUCTION_COST",
+    costConfidence: unitCost == null ? "MISSING" : "HIGH",
+  });
+
+  const costMissing =
+    so.status === "SEM_CUSTO" ||
+    so.status === "CUSTO_ZERO" ||
+    unitCost == null ||
+    unitCost <= 0;
 
   return {
     gross,
     net,
-    totalCost,
+    totalCost: so.totalCost,
     taxesValue,
     commissionValue,
     freightValue,
     netSalesAmount: net,
-    marginValue,
-    marginPerc,
-    costMissing: false,
+    marginValue: so.marginValue,
+    marginPerc: so.marginPercent,
+    costMissing,
+    salesOrderMarginStatus: so.status,
   };
 }
 

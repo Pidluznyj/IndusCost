@@ -40,7 +40,8 @@ export interface ProposalItem {
   Product?: Product;
   quantity: number;
   unit?: string;
-  unitCost: number;
+  /** Custo de produção vigente; null = ausente (margem indisponível, paridade Pedido). */
+  unitCost: number | null;
   suggestedPrice: number;
   negotiatedPrice: number;
   discountPerc: number;

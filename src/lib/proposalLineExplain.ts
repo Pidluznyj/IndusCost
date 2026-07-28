@@ -53,8 +53,10 @@ export function buildProposalLineMarginExplanation(params: {
     resultValue: params.marginValue ?? 0,
     notes:
       params.marginPerc == null
-        ? "Margem indisponível: sem custo de produção vigente na data da proposta."
+        ? params.unitCost == null || params.unitCost <= 0
+          ? "Margem indisponível: sem custo de produção vigente (ou custo zerado) — mesma regra do Pedido de Venda."
+          : "Margem indisponível."
         : `Margem % sobre a receita: ${params.marginPerc.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%.`,
-    source: "Formulário de proposta — paridade com Pedido de Venda (custo vigente)",
+    source: "Formulário de proposta — motor Pedido de Venda (custo vigente)",
   };
 }

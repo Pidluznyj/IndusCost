@@ -47,6 +47,8 @@ export function resolveProposalOfficialMarginFromItems(
   const lineMargins = rows.map((item) => {
     const quantity = safeNum(item.quantity);
     const unitCost = toNullableCost(item.unitCost);
+    const productId =
+      typeof item.productId === "string" ? item.productId.trim() : null;
     return {
       ...calculateProposalLineMargin({
         quantity,
@@ -54,8 +56,13 @@ export function resolveProposalOfficialMarginFromItems(
         discountValue: safeNum(item.discountValue),
         taxesPerc: safeNum(item.taxesPerc),
         unitCost,
+        productId,
       }),
-      lineCost: unitCost == null ? null : quantity * unitCost,
+      // CUSTO_ZERO / ausente: não soma custo fictício no consolidado
+      lineCost:
+        unitCost == null || unitCost <= 0
+          ? null
+          : quantity * unitCost,
     };
   });
   const summary = calculateProposalMarginSummary(lineMargins);

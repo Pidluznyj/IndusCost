@@ -228,7 +228,9 @@ function validateProposalPayloadForSafeDecimals(payload: Record<string, unknown>
       errors.push(`${prefix}: quantidade acima do limite permitido (${PROPOSAL_MAX_QTY.toLocaleString("pt-BR")}).`);
     }
 
-    checkAbsMax(`${prefix}: custo unitário`, item.unitCost);
+    if (item.unitCost != null && item.unitCost !== "") {
+      checkAbsMax(`${prefix}: custo unitário`, item.unitCost);
+    }
     checkAbsMax(`${prefix}: preço sugerido`, item.suggestedPrice);
     checkAbsMax(`${prefix}: preço negociado`, item.negotiatedPrice);
     checkPercentRange(`${prefix}: desconto`, item.discountPerc, 0, PROPOSAL_MAX_PERCENT);
@@ -258,8 +260,8 @@ function normalizeProposalItem(
     proposalId: item.proposalId,
     quantity: safeNum(item.quantity, 1),
     unit: item.unit ?? "UN",
-    // null de custo vigente ausente vira 0 só para persistência; a margem usa NaN → "—".
-    unitCost: toNullableUnitCost(item.unitCost) ?? 0,
+    // null = sem custo de produção vigente (margem "—", paridade Pedido).
+    unitCost: toNullableUnitCost(item.unitCost),
     suggestedPrice: safeNum(item.suggestedPrice),
     negotiatedPrice: safeNum(item.negotiatedPrice),
     discountPerc: safeNum(item.discountPerc),
@@ -383,15 +385,17 @@ function recomputeItemDerivedFields(
     freightValue: freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(item.freightValue),
     // Custo de produção vigente (GET) — não usar custo congelado da tabela comercial.
     unitCost,
+    productId: item.productId,
+    lineId: item.id ?? null,
   });
 
   item.taxesValue = margin.taxesValue;
   item.commissionValue = margin.commissionValue;
   item.freightValue = margin.freightValue;
   item.marginValue = margin.marginValue ?? 0;
-  // NaN → exibe "—" (custo de produção ausente na data).
+  // NaN → exibe "—" (custo de produção ausente / CUSTO_ZERO).
   item.marginPerc = margin.marginPerc ?? Number.NaN;
-  if (unitCost != null) item.unitCost = unitCost;
+  item.unitCost = unitCost;
 
   return normalizeProposalItem(item);
 }
@@ -878,7 +882,9 @@ export const ProposalModule = () => {
     try {
       const data = await fetchJsonOk<Proposal & { items?: ProposalItem[] }>(`/api/proposals/${id}`);
       const items = Array.isArray(data.items)
-        ? data.items.map((it: ProposalItem) => normalizeProposalItem(it))
+        ? data.items.map((it: ProposalItem) =>
+            recomputeItemDerivedFields(normalizeProposalItem(it), "none")
+          )
         : [];
       setEditingProposal(data);
       setTablePriceSessionAlerts([]);
@@ -925,13 +931,14 @@ export const ProposalModule = () => {
         productId: item.productId,
         quantity: safeNum(item.quantity, 1),
         unit: item.unit ?? "UN",
-        unitCost: safeNum(item.unitCost),
+        // Persistência Decimal: null → 0; server reanexa custo vigente no write.
+        unitCost: toNullableUnitCost(item.unitCost) ?? 0,
         suggestedPrice: safeNum(item.suggestedPrice),
         negotiatedPrice: safeNum(item.negotiatedPrice),
         discountPerc: safeNum(item.discountPerc),
         discountValue: safeNum(item.discountValue),
-        marginValue: safeNum(item.marginValue),
-        marginPerc: safeNum(item.marginPerc),
+        marginValue: Number.isFinite(Number(item.marginValue)) ? Number(item.marginValue) : 0,
+        marginPerc: Number.isFinite(Number(item.marginPerc)) ? Number(item.marginPerc) : 0,
         taxesPerc: safeNum(item.taxesPerc),
         taxesValue: safeNum(item.taxesValue),
         commissionPerc: safeNum(item.commissionPerc),
@@ -1080,10 +1087,10 @@ export const ProposalModule = () => {
         ]);
         const df = data.proposalDefaults;
         // Tabela = preços comerciais; custo = produção vigente (não frozenTotalCost).
+        // Ausente → null (nunca 0 falso → 100% de margem).
         const unitCost =
           toNullableUnitCost(productionSnapshot?.unitCost) ??
-          toNullableUnitCost((product as { totalCost?: unknown }).totalCost) ??
-          0;
+          toNullableUnitCost((product as { totalCost?: unknown }).totalCost);
         const suggestedPrice = safeNum(df.suggestedPrice);
         const negotiatedPrice = safeNum(df.negotiatedPrice);
         const taxesValueFixed = safeNum(df.taxesValue);
@@ -1151,7 +1158,7 @@ export const ProposalModule = () => {
         calculationExplainability?: ProposalItem["calculationExplainability"];
       }>(`/api/products/${productId}/pricing-snapshot`);
 
-      const unitCost = safeNum(snapshot.unitCost);
+      const unitCost = toNullableUnitCost(snapshot.unitCost);
       const suggestedPrice = safeNum(snapshot.suggestedPrice);
       const taxesPerc = safeNum(snapshot.taxesPerc);
       const commissionPerc = safeNum(snapshot.commissionPerc);
@@ -1214,7 +1221,7 @@ export const ProposalModule = () => {
       const df = data.proposalDefaults;
       // Preserva custo de produção já carregado (GET / pricing-snapshot).
       // A tabela só troca preço sugerido e percentuais comerciais.
-      const unitCost = toNullableUnitCost(current.unitCost) ?? 0;
+      const unitCost = toNullableUnitCost(current.unitCost);
       const suggestedPrice = safeNum(df.suggestedPrice);
       const negotiatedPrice = safeNum(df.negotiatedPrice);
       const taxesValueFixed = safeNum(df.taxesValue);
@@ -1471,11 +1478,16 @@ export const ProposalModule = () => {
         freightValue:
           freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(i.freightValue),
         unitCost: toNullableUnitCost(i.unitCost),
+        productId: i.productId,
+        lineId: i.id ?? null,
       });
     });
     const marginSummary = calculateProposalMarginSummary(lineMargins);
     const totalCost = marginSummary.hasAnyCost
-      ? lineMargins.reduce((acc, row) => acc + (row.totalCost ?? 0), 0)
+      ? lineMargins.reduce(
+          (acc, row) => acc + (row.costMissing ? 0 : (row.totalCost ?? 0)),
+          0
+        )
       : 0;
 
     return {

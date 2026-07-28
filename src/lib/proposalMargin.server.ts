@@ -179,6 +179,8 @@ export async function stampProposalItemsWithProductionCostsForWrite(
   const costRows = enriched?.items ?? [];
   return items.map((item, index) => {
     const unitCost = costRows[index]?.unitCost ?? null;
+    const productId =
+      typeof item.productId === "string" ? item.productId.trim() : null;
     const margin = calculateProposalLineMargin({
       quantity: Number(item.quantity) || 0,
       negotiatedPrice: Number(item.negotiatedPrice) || 0,
@@ -187,10 +189,13 @@ export async function stampProposalItemsWithProductionCostsForWrite(
       commissionPerc: Number(item.commissionPerc) || 0,
       freightValue: Number(item.freightValue) || 0,
       unitCost,
+      productId,
+      lineId: typeof item.id === "string" ? item.id : null,
     });
     return {
       ...item,
-      unitCost: unitCost ?? 0,
+      // Decimal obrigatório no banco; GET reanexa null quando sem custo vigente.
+      unitCost: unitCost != null && unitCost > 0 ? unitCost : 0,
       marginValue: margin.marginValue ?? 0,
       marginPerc: margin.marginPerc ?? 0,
     };
