@@ -45,6 +45,27 @@ export const TREASURY_AGENDA_PATH =
 export const TREASURY_TRANSFERS_PATH =
   `${TREASURY_API_PREFIX}/transfers` as const;
 
+export const TREASURY_LEDGER_ENTRIES_PATH =
+  `${TREASURY_API_PREFIX}/ledger-entries` as const;
+
+export const TREASURY_PAYMENT_SCHEDULE_PATH =
+  `${TREASURY_API_PREFIX}/payment-schedule` as const;
+
+export const TREASURY_FORECAST_VS_ACTUAL_PATH =
+  `${TREASURY_API_PREFIX}/forecast-vs-actual` as const;
+
+export const TREASURY_ALERTS_PATH =
+  `${TREASURY_API_PREFIX}/alerts` as const;
+
+export const TREASURY_AUDIT_PATH =
+  `${TREASURY_API_PREFIX}/audit` as const;
+
+export const TREASURY_HEALTH_PATH =
+  `${TREASURY_API_PREFIX}/health` as const;
+
+export const TREASURY_RECONCILE_WORKSPACE_PATH =
+  `${TREASURY_API_PREFIX}/reconcile/workspace` as const;
+
 export const TREASURY_EXCEPTIONS_PATH =
   `${TREASURY_API_PREFIX}/exceptions` as const;
 

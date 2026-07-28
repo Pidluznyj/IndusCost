@@ -2085,6 +2085,8 @@ model AppUser {
   treasuryTransfersCreated             TreasuryTransfer[]                   @relation("TreasuryTransferCreatedBy")
   treasuryTransfersUpdated             TreasuryTransfer[]                   @relation("TreasuryTransferUpdatedBy")
   treasuryTransfersCancelled           TreasuryTransfer[]                   @relation("TreasuryTransferCancelledBy")
+  treasuryLedgerEntriesCreated         TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryCreatedBy")
+  treasuryLedgerEntriesUpdated         TreasuryLedgerEntry[]                @relation("TreasuryLedgerEntryUpdatedBy")
   treasuryExceptionsCreated            TreasuryException[]                  @relation("TreasuryExceptionCreatedBy")
   treasuryExceptionsUpdated            TreasuryException[]                  @relation("TreasuryExceptionUpdatedBy")
   treasuryExceptionsCancelled          TreasuryException[]                  @relation("TreasuryExceptionCancelledBy")
@@ -6843,6 +6845,7 @@ model TreasuryFinancialAccount {
   projectionDayLines          TreasuryProjectionDayLine[]
   transfersFrom               TreasuryTransfer[]                    @relation("TreasuryTransferFromAccount")
   transfersTo                 TreasuryTransfer[]                    @relation("TreasuryTransferToAccount")
+  ledgerEntries               TreasuryLedgerEntry[]
   exceptions                  TreasuryException[]
   closingAccountPositions     TreasuryDailyClosingAccountPosition[]
   closingFrozenPendencies     TreasuryDailyClosingFrozenPendency[]
@@ -7425,6 +7428,73 @@ enum TreasuryTransferStatus {
 
 /// Transferência interna — duas pernas lógicas (saída/entrada), consolidado neutro.
 /// Histórico preservado (cancelamento lógico). Não é receita/despesa.
+/// Direção do lançamento no extrato local (não é baixa Nomus).
+enum TreasuryLedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+/// Natureza do lançamento no ledger local.
+enum TreasuryLedgerNature {
+  MANUAL
+  TRANSFER
+  OFX_MATCH
+  ADJUSTMENT
+  REVERSAL
+}
+
+/// Status do lançamento (sem exclusão física).
+enum TreasuryLedgerStatus {
+  ACTIVE
+  REVERSED
+}
+
+/// Lançamento manual/local no extrato da conta financeira.
+/// Não altera títulos oficiais Nomus; reversão cria lançamento REVERSAL.
+model TreasuryLedgerEntry {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyCode String
+  accountId   String @db.Uuid
+
+  civilDate DateTime              @db.Date
+  amount    Decimal               @db.Decimal(20, 2)
+  currency  TreasuryCurrencyCode  @default(BRL)
+  direction TreasuryLedgerDirection
+  nature    TreasuryLedgerNature
+  status    TreasuryLedgerStatus  @default(ACTIVE)
+
+  memo           String?
+  counterpartRef String?
+  transferGroupId String? @db.Uuid
+
+  /// Lançamento que este registro reverte (quando nature=REVERSAL).
+  reversesEntryId String? @db.Uuid
+  /// Lançamento de reversão que invalidou este (quando status=REVERSED).
+  reversedByEntryId String? @unique @db.Uuid
+
+  version Int @default(1)
+
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  createdByUserId String   @db.Uuid
+  updatedAt       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+  updatedByUserId String?  @db.Uuid
+
+  account         TreasuryFinancialAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  createdByUser   AppUser                  @relation("TreasuryLedgerEntryCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  updatedByUser   AppUser?                 @relation("TreasuryLedgerEntryUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reversesEntry     TreasuryLedgerEntry?  @relation("TreasuryLedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  reversalEntries   TreasuryLedgerEntry[] @relation("TreasuryLedgerReversal")
+  reversedByEntry   TreasuryLedgerEntry?  @relation("TreasuryLedgerReversedBy", fields: [reversedByEntryId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  reversesThisEntry TreasuryLedgerEntry?  @relation("TreasuryLedgerReversedBy")
+
+  @@index([companyCode, accountId, civilDate])
+  @@index([accountId, status, civilDate])
+  @@index([status])
+  @@index([nature])
+  @@index([createdByUserId])
+  @@index([reversesEntryId])
+}
+
 model TreasuryTransfer {
   id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Agrupa as pernas saída/entrada na projeção/composição.

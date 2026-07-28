@@ -790,6 +790,41 @@ export function parseTreasuryAccountsListQuery(
   };
 }
 
+export type TreasuryManualLedgerReverseInput = {
+  expectedVersion: number;
+  justification: string;
+};
+
+export function parseTreasuryManualLedgerReverseInput(
+  body: Record<string, unknown>
+): TreasuryManualLedgerReverseInput {
+  const expectedVersion = parsePositiveInt(
+    body.expectedVersion,
+    "expectedVersion",
+    true
+  );
+  if (expectedVersion == null) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "expectedVersion é obrigatório.",
+      "expectedVersion"
+    );
+  }
+  const justification = parseTreasuryBoundedString(
+    body.justification ?? body.reason,
+    "justification",
+    { required: true }
+  );
+  if (!justification) {
+    throw new TreasuryContractError(
+      "REQUIRED_FIELD",
+      "justification é obrigatória.",
+      "justification"
+    );
+  }
+  return { expectedVersion, justification };
+}
+
 export function parseTreasuryManualLedgerEntryInput(
   body: Record<string, unknown>
 ): TreasuryManualLedgerEntryInput {

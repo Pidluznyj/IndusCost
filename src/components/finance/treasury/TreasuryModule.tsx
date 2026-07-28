@@ -18,6 +18,10 @@ import { TreasuryBankMovementsPage } from "./TreasuryBankMovementsPage.js";
 import { TreasuryExceptionsPage } from "./TreasuryExceptionsPage.js";
 import { TreasuryDailyClosingPage } from "./TreasuryDailyClosingPage.js";
 import { TreasuryReportsPage } from "./TreasuryReportsPage.js";
+import { TreasuryManualEntriesPage } from "./TreasuryManualEntriesPage.js";
+import { TreasuryPaymentSchedulePage } from "./TreasuryPaymentSchedulePage.js";
+import { TreasuryReconcileWorkspacePage } from "./TreasuryReconcileWorkspacePage.js";
+import { TreasuryAuditPage } from "./TreasuryAuditPage.js";
 
 /**
  * Shell da Central de Tesouraria — rotas aninhadas sob /finance/treasury/*.
@@ -66,16 +70,24 @@ export function TreasuryModule() {
         />
         <Route path="receivables" element={<TreasuryReceivablesPage />} />
         <Route path="payables" element={<TreasuryPayablesPage />} />
+        <Route
+          path="payment-schedule"
+          element={<TreasuryPaymentSchedulePage />}
+        />
         <Route path="agenda" element={<TreasuryAgendaPage />} />
         <Route
           path="projections"
           element={<TreasuryProjectionComparisonPage />}
         />
         <Route path="transfers" element={<TreasuryTransfersPage />} />
+        <Route path="manual-entries" element={<TreasuryManualEntriesPage />} />
         <Route path="bank-movements" element={<TreasuryBankMovementsPage />} />
+        <Route path="ofx" element={<TreasuryBankMovementsPage />} />
+        <Route path="reconcile" element={<TreasuryReconcileWorkspacePage />} />
         <Route path="exceptions" element={<TreasuryExceptionsPage />} />
         <Route path="closing" element={<TreasuryDailyClosingPage />} />
         <Route path="reports" element={<TreasuryReportsPage />} />
+        <Route path="audit" element={<TreasuryAuditPage />} />
         <Route
           path="*"
           element={<Navigate to={TREASURY_UI_BASE_PATH} replace />}

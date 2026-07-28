@@ -29,10 +29,14 @@ import { createTreasuryBankMovementQueryControllers } from "./controllers/treasu
 import { createTreasuryReconciliationMatchControllers } from "./controllers/treasuryReconciliationMatchController.js";
 import { createTreasuryReportControllers } from "./controllers/treasuryReportController.js";
 import { createTreasuryReportExportControllers } from "./controllers/treasuryReportExportController.js";
+import { createTreasuryManualLedgerControllers } from "./controllers/treasuryManualLedgerController.js";
+import { createTreasuryTraceabilityGapControllers } from "./controllers/treasuryTraceabilityGapController.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_AGENDA_PATH,
   TREASURY_ALERT_SETTINGS_PATH,
+  TREASURY_ALERTS_PATH,
+  TREASURY_AUDIT_PATH,
   TREASURY_AVAILABILITY_PATH,
   TREASURY_BANK_IMPORTS_OFX_APPLY_PATH,
   TREASURY_BANK_IMPORTS_OFX_PREVIEW_PATH,
@@ -44,10 +48,15 @@ import {
   TREASURY_DASHBOARD_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_EXCEPTIONS_PATH,
+  TREASURY_FORECAST_VS_ACTUAL_PATH,
+  TREASURY_HEALTH_PATH,
+  TREASURY_LEDGER_ENTRIES_PATH,
   TREASURY_PAYABLES_PATH,
+  TREASURY_PAYMENT_SCHEDULE_PATH,
   TREASURY_PROJECTIONS_PATH,
   TREASURY_PROMISES_PATH,
   TREASURY_RECEIVABLES_PATH,
+  TREASURY_RECONCILE_WORKSPACE_PATH,
   TREASURY_RECONCILIATIONS_PATH,
   TREASURY_REPORTS_PATH,
   TREASURY_TRANSFERS_PATH,
@@ -125,6 +134,10 @@ export function registerTreasuryRoutes(
   const reportExports = createTreasuryReportExportControllers({
     getCurrentAppUser,
   });
+  const manualLedger = createTreasuryManualLedgerControllers({
+    getCurrentAppUser,
+  });
+  const gaps = createTreasuryTraceabilityGapControllers({ getCurrentAppUser });
   const ofxUpload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: TREASURY_OFX_MAX_FILE_BYTES, files: 1 },
@@ -282,12 +295,31 @@ export function registerTreasuryRoutes(
     "treasury.reconciliation.enabled"
   );
 
+  const viewManualEntries = requireResource(
+    TREASURY_RESOURCE_KEYS.manualEntries,
+    TREASURY_ACTIONS.view
+  );
+  const manageManualEntries = requireResource(
+    TREASURY_RESOURCE_KEYS.manualEntries,
+    TREASURY_ACTIONS.manage
+  );
+  const viewAudit = requireResource(
+    TREASURY_RESOURCE_KEYS.audit,
+    TREASURY_ACTIONS.view
+  );
+
   app.get(
     TREASURY_AVAILABILITY_PATH,
     requireAppAuth,
     moduleEnabled,
     requireResource(TREASURY_RESOURCE_KEY, TREASURY_ACTIONS.view),
     treasuryAvailabilityHandler
+  );
+
+  app.get(
+    TREASURY_HEALTH_PATH,
+    requireAppAuth,
+    gaps.health
   );
 
   app.get(
@@ -417,6 +449,97 @@ export function registerTreasuryRoutes(
     reverseReconciliation,
     rateReverse,
     reconciliations.reverse
+  );
+
+  app.post(
+    TREASURY_RECONCILIATIONS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    manageReconciliation,
+    reconciliations.accept
+  );
+
+  app.post(
+    `${TREASURY_RECONCILIATIONS_PATH}/:id/unmatch`,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    manageReconciliation,
+    reconciliations.unmatch
+  );
+
+  app.get(
+    TREASURY_RECONCILE_WORKSPACE_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    reconciliationEnabled,
+    viewReconciliation,
+    gaps.reconcileWorkspace
+  );
+
+  app.get(
+    TREASURY_FORECAST_VS_ACTUAL_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewDashboard,
+    gaps.forecastVsActual
+  );
+
+  app.get(
+    TREASURY_ALERTS_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewDashboard,
+    gaps.alerts
+  );
+
+  app.get(
+    TREASURY_AUDIT_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewAudit,
+    gaps.auditList
+  );
+
+  app.get(
+    TREASURY_PAYMENT_SCHEDULE_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewPayables,
+    gaps.paymentSchedule
+  );
+
+  app.get(
+    TREASURY_LEDGER_ENTRIES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    viewManualEntries,
+    manualLedger.list
+  );
+
+  app.post(
+    TREASURY_LEDGER_ENTRIES_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    manageManualEntries,
+    manualLedger.create
+  );
+
+  app.get(
+    `${TREASURY_LEDGER_ENTRIES_PATH}/:id`,
+    requireAppAuth,
+    moduleEnabled,
+    viewManualEntries,
+    manualLedger.getById
+  );
+
+  app.post(
+    `${TREASURY_LEDGER_ENTRIES_PATH}/:id/reverse`,
+    requireAppAuth,
+    moduleEnabled,
+    manageManualEntries,
+    manualLedger.reverse
   );
 
   app.get(
@@ -550,6 +673,14 @@ export function registerTreasuryRoutes(
     moduleEnabled,
     viewAccounts,
     balances.listBalances
+  );
+
+  app.get(
+    `${TREASURY_ACCOUNTS_PATH}/:id/balance-position`,
+    requireAppAuth,
+    moduleEnabled,
+    viewAccounts,
+    gaps.balancePosition
   );
 
   app.post(

@@ -18,6 +18,10 @@ describe("treasuryPrismaSchema", () => {
     assert.match(schema, /model TreasuryFinancialAccount \{/);
     assert.match(schema, /model TreasuryFinancialAccountAccess \{/);
     assert.match(schema, /model TreasuryBalanceSnapshot \{/);
+    assert.match(schema, /model TreasuryLedgerEntry \{/);
+    assert.match(schema, /enum TreasuryLedgerDirection/);
+    assert.match(schema, /enum TreasuryLedgerNature/);
+    assert.match(schema, /enum TreasuryLedgerStatus/);
     assert.match(schema, /companyCode\s+String/);
     assert.match(schema, /agencyMasked\s+String/);
     assert.match(schema, /accountNumberMasked\s+String/);

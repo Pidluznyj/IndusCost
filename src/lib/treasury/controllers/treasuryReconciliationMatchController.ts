@@ -5,7 +5,11 @@
 import type { Request, Response } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
-import { parseTreasuryReconciliationReverseInput } from "../contracts/treasurySchemas.js";
+import {
+  parseTreasuryReconciliationAcceptInput,
+  parseTreasuryReconciliationReverseInput,
+  parseTreasuryReconciliationUnmatchInput,
+} from "../contracts/treasurySchemas.js";
 import {
   buildTreasuryReconciliationMatchActor,
   createTreasuryReconciliationMatchService,
@@ -103,6 +107,38 @@ export function createTreasuryReconciliationMatchControllers(
           match: result.match,
           projectionRecalc: result.projectionRecalc,
           postClosing: result.postClosing,
+          requestId,
+        });
+      }),
+
+    accept: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const input = parseTreasuryReconciliationAcceptInput(asBody(req));
+        const result = await service.accept(
+          buildTreasuryReconciliationMatchActor(user, requestId),
+          input
+        );
+        res.status(201).json({
+          ok: true,
+          match: result.match,
+          projectionRecalc: result.projectionRecalc,
+          requestId,
+        });
+      }),
+
+    unmatch: (req: Request, res: Response) =>
+      withAuth(req, res, async (user, requestId) => {
+        const id = String(req.params.id ?? "").trim();
+        const input = parseTreasuryReconciliationUnmatchInput(asBody(req));
+        const result = await service.unmatch(
+          buildTreasuryReconciliationMatchActor(user, requestId),
+          id,
+          input
+        );
+        res.status(200).json({
+          ok: true,
+          match: result.match,
+          projectionRecalc: result.projectionRecalc,
           requestId,
         });
       }),
