@@ -51,7 +51,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 2,
         title: "Revisar recebimentos",
         status: "NEEDS_ATTENTION",
-        continueHref: "/finance/treasury/receivables",
+        continueHref: "/finance/treasury/today/receivables",
         continueLabel: "Continuar",
       },
       {
@@ -59,7 +59,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 3,
         title: "Revisar pagamentos",
         status: "PENDING",
-        continueHref: "/finance/treasury/payables",
+        continueHref: "/finance/treasury/today/payables",
         continueLabel: "Continuar",
       },
       {
@@ -108,7 +108,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         message: "1 recebimento(s) previsto(s) ainda não baixado(s).",
         amount: "150.00",
         accountId: null,
-        href: "/finance/treasury/receivables",
+        href: "/finance/treasury/today/receivables",
       },
     ],
   };

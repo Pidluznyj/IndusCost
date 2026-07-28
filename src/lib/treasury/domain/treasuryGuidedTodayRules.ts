@@ -168,7 +168,7 @@ function buildAttention(
       message: `${dashboard.receipts.pendingTitleCount} recebimento(s) previsto(s) ainda não baixado(s).`,
       amount: money(dashboard.receipts.pendingAmount),
       accountId: null,
-      href: `${TREASURY_GUIDED_TODAY_UI_BASE}/receivables`,
+      href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/receivables`,
     });
   }
 
@@ -179,7 +179,7 @@ function buildAttention(
       message: `${dashboard.payments.pendingTitleCount} pagamento(s) previsto(s) ainda não baixado(s).`,
       amount: money(dashboard.payments.pendingAmount),
       accountId: null,
-      href: `${TREASURY_GUIDED_TODAY_UI_BASE}/payables`,
+      href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/payables`,
     });
   }
 
@@ -315,7 +315,7 @@ function buildSteps(
       order: 2,
       title: "Revisar recebimentos",
       status: stepStatus(!pendingReceipts, pendingReceipts),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/receivables`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/receivables`,
       continueLabel: "Continuar",
     },
     {
@@ -323,7 +323,7 @@ function buildSteps(
       order: 3,
       title: "Revisar pagamentos",
       status: stepStatus(!pendingPayments, pendingPayments),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/payables`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/payables`,
       continueLabel: "Continuar",
     },
     {
