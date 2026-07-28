@@ -48,6 +48,10 @@ import {
 import { buildPublishedPriceSourceTrace } from "./src/lib/pricing/publishedPriceSourceTrace.server.js";
 import { parsePublishedPriceSourceTraceQuery } from "./src/lib/pricing/publishedPriceSourceTraceApi.js";
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
+import {
+  enrichProposalListRowMargin,
+  resolveProposalOfficialMarginFromItems,
+} from "./src/lib/proposalListMargin.js";
 import { getEffectiveProductProductionCost } from "./src/lib/productionCostTables.server.js";
 import {
   getProductFrozenCostTrace,
@@ -14583,6 +14587,40 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return new Prisma.Decimal(parsed);
   }
 
+  const proposalListItemMarginSelect = {
+    quantity: true,
+    negotiatedPrice: true,
+    discountValue: true,
+    taxesPerc: true,
+    unitCost: true,
+  } as const;
+
+  function withOfficialProposalListMargin<T extends Record<string, unknown>>(
+    rows: T[]
+  ): Array<
+    T & {
+      totalMarginPerc: number | null;
+      totalMarginValue: number | null;
+      marginSource: "ITEMS" | "HEADER" | "NONE";
+    }
+  > {
+    return rows.map((row) => enrichProposalListRowMargin(row));
+  }
+
+  function applyOfficialProposalMarginScalars(
+    scalars: Record<string, unknown>,
+    items: ReadonlyArray<Record<string, unknown>>
+  ): Record<string, unknown> {
+    if (!Array.isArray(items) || items.length === 0) return scalars;
+    const resolved = resolveProposalOfficialMarginFromItems(items);
+    return {
+      ...scalars,
+      totalMarginPerc: resolved.totalMarginPerc,
+      totalMarginValue: resolved.totalMarginValue,
+      totalCost: resolved.totalCost,
+    };
+  }
+
   app.get("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "view"), async (req, res) => {
     const pageRaw = req.query.page;
     const pageSizeRaw = req.query.pageSize;
@@ -14644,10 +14682,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         include: {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
+          items: { select: proposalListItemMarginSelect },
         },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
       });
-      return res.json(proposals);
+      return res.json(withOfficialProposalListMargin(proposals as Array<Record<string, unknown>>));
     }
 
     const page = parsePositiveIntQuery(pageRaw, 1);
@@ -14660,6 +14699,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         include: {
           Customer: true,
           salesOrder: { select: { id: true, orderCode: true, status: true } },
+          items: { select: proposalListItemMarginSelect },
         },
         orderBy: [{ createdAt: "desc" }, { number: "desc" }],
         skip,
@@ -14668,7 +14708,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       prisma.proposal.count({ where }),
     ]);
 
-    const rows = rowsRaw.slice(0, pageSize);
+    const rows = withOfficialProposalListMargin(
+      rowsRaw.slice(0, pageSize) as Array<Record<string, unknown>>
+    );
 
     res.json({
       data: rows,
@@ -14865,7 +14907,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       });
     }
     try {
-      const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
+      const proposalScalars = applyOfficialProposalMarginScalars(
+        pickProposalWriteScalars(proposalData as Record<string, unknown>),
+        items as Array<Record<string, unknown>>
+      );
       const proposal = await prisma.proposal.create({
         data: {
           ...(proposalScalars as any),
@@ -14901,7 +14946,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
 
     try {
-      const proposalScalars = pickProposalWriteScalars(proposalData as Record<string, unknown>);
+      const proposalScalars = applyOfficialProposalMarginScalars(
+        pickProposalWriteScalars(proposalData as Record<string, unknown>),
+        items as Array<Record<string, unknown>>
+      );
       const proposal = await prisma.$transaction(async (tx) => {
         await tx.proposalItem.deleteMany({ where: { proposalId: id } });
         return await tx.proposal.update({

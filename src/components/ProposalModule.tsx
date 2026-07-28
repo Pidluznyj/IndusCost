@@ -2444,14 +2444,26 @@ export const ProposalModule = () => {
                         ? Number(p.totalNetValue).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
                         : "—"}
                     </td>
-                    <td className="p-4">
-                      {Number.isFinite(Number(p.totalMarginPerc)) ? (
-                      <div className={cn(
-                        "text-xs font-bold",
-                        Number(p.totalMarginPerc) >= 20 ? "text-green-600" : Number(p.totalMarginPerc) >= 10 ? "text-orange-600" : "text-red-600"
-                      )}>
-                        {Number(p.totalMarginPerc).toFixed(3)}%
-                      </div>
+                    <td className="p-4 text-right" data-testid={`proposal-list-margin-${p.id}`}>
+                      {Number.isFinite(Number(p.totalMarginPerc)) ||
+                      Number.isFinite(Number(p.totalMarginValue)) ? (
+                        <div className="min-w-0">
+                          <p
+                            className={cn(
+                              "text-sm font-bold tabular-nums leading-tight",
+                              Number(p.totalMarginPerc) >= 20
+                                ? "text-green-600"
+                                : Number(p.totalMarginPerc) >= 10
+                                  ? "text-orange-600"
+                                  : "text-red-600"
+                            )}
+                          >
+                            {formatPercentDisplay(p.totalMarginPerc)}
+                          </p>
+                          <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                            {formatMoneyDisplay(p.totalMarginValue)}
+                          </p>
+                        </div>
                       ) : (
                         <div className="text-xs font-bold text-muted-foreground">—</div>
                       )}

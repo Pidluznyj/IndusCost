@@ -82,4 +82,12 @@ describe("proposal form layout", () => {
     assert.match(formSlice, /item\.marginPerc/);
     assert.match(formSlice, /totals\.totalMarginPerc/);
   });
+
+  it("listagem de propostas exibe margem % e valor no estilo Pedidos", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    assert.match(mod, /data-testid=\{`proposal-list-margin-\$\{p\.id\}`\}/);
+    assert.match(mod, /formatPercentDisplay\(p\.totalMarginPerc\)/);
+    assert.match(mod, /formatMoneyDisplay\(p\.totalMarginValue\)/);
+    assert.doesNotMatch(mod, /totalMarginPerc\)\.toFixed\(3\)%/);
+  });
 });
