@@ -15,6 +15,11 @@ import {
   stockConferenceStatusLabel,
   type MaterialStockConferenceLayoutMode,
 } from "@/src/lib/materialStockConferenceUi";
+import {
+  MATERIAL_STOCK_LIST_FILTERS,
+  summarizeStockListDescription,
+  type MaterialStockListFilterId,
+} from "@/src/lib/materialStockTabletSearchClient";
 import type { MaterialStockTabletListItem } from "@/src/lib/materialStockTabletTypes";
 
 export type MaterialStockConferenceViewKind =
@@ -28,12 +33,19 @@ export type MaterialStockConferenceWorkspaceProps = {
   layoutMode: MaterialStockConferenceLayoutMode;
   search: string;
   onSearchChange: (value: string) => void;
+  filter: MaterialStockListFilterId;
+  onFilterChange: (value: MaterialStockListFilterId) => void;
   rows: MaterialStockTabletListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onClearSelection: () => void;
   error: string | null;
   onRetry: () => void;
+  isRefreshing?: boolean;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+  totalCount?: number;
   canViewHistory: boolean;
   canConference: boolean;
   onConference: () => void;
@@ -41,6 +53,7 @@ export type MaterialStockConferenceWorkspaceProps = {
 };
 
 function StatusPill({ status }: { status: string }) {
+  const label = stockConferenceStatusLabel(status);
   return (
     <span
       className={cn(
@@ -53,8 +66,10 @@ function StatusPill({ status }: { status: string }) {
         status === "NAO_CONFIGURADO" && "bg-muted text-muted-foreground"
       )}
       data-testid="stock-conference-status-pill"
+      aria-label={`Status: ${label}`}
+      title={label}
     >
-      {stockConferenceStatusLabel(status)}
+      {label}
     </span>
   );
 }
@@ -247,7 +262,7 @@ export function MaterialStockConferenceWorkspace(
       data-testid="stock-conference-list-panel"
       hidden={stackedDetailOpen ? true : undefined}
     >
-      <div className="sticky top-0 z-10 bg-background pb-1">
+      <div className="sticky top-0 z-10 space-y-2 bg-background pb-1">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -260,6 +275,42 @@ export function MaterialStockConferenceWorkspace(
             data-testid="stock-conference-search"
           />
         </div>
+        <div
+          className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
+          data-testid="stock-conference-filters"
+          role="toolbar"
+          aria-label="Filtros de status"
+        >
+          {MATERIAL_STOCK_LIST_FILTERS.map((chip) => {
+            const active = props.filter === chip.id;
+            return (
+              <button
+                key={chip.id}
+                type="button"
+                onClick={() => props.onFilterChange(chip.id)}
+                className={cn(
+                  "inline-flex min-h-10 shrink-0 items-center rounded-lg px-3 py-2 text-sm font-semibold",
+                  active
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border bg-card text-muted-foreground"
+                )}
+                data-testid={`stock-conference-filter-${chip.id}`}
+                aria-pressed={active}
+              >
+                {chip.label}
+              </button>
+            );
+          })}
+        </div>
+        {props.isRefreshing ? (
+          <p
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+            data-testid="stock-conference-refreshing"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Atualizando resultados…
+          </p>
+        ) : null}
       </div>
 
       {props.viewKind === "empty" || props.rows.length === 0 ? (
@@ -267,48 +318,78 @@ export function MaterialStockConferenceWorkspace(
           <ContextualDashboardEmpty message={MATERIAL_STOCK_CONFERENCE_EMPTY_MESSAGE} />
         </div>
       ) : (
-        <ul
-          className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
-          data-testid="stock-conference-list"
-        >
-          {props.rows.map((row) => {
-            const selectedRow = row.id === props.selectedId;
-            return (
-              <li key={row.id}>
-                <button
-                  type="button"
-                  onClick={() => props.onSelect(row.id)}
-                  className={cn(
-                    "flex w-full min-h-14 flex-col gap-1 rounded-xl border px-3 py-3 text-left transition-colors",
-                    selectedRow
-                      ? "border-primary bg-primary/10 shadow-sm"
-                      : "border-border bg-card"
-                  )}
-                  data-testid={`stock-conference-row-${row.id}`}
-                  aria-pressed={selectedRow}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold uppercase text-muted-foreground">
-                        {row.code}
-                      </p>
-                      <p className="text-sm font-semibold text-foreground">
-                        {row.description}
-                      </p>
+        <>
+          <ul
+            className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1"
+            data-testid="stock-conference-list"
+          >
+            {props.rows.map((row) => {
+              const selectedRow = row.id === props.selectedId;
+              const qtyLabel = `${formatStockConferenceQuantity(row.currentQuantity)} ${row.unit}`;
+              return (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => props.onSelect(row.id)}
+                    className={cn(
+                      "flex w-full min-h-14 flex-col gap-1 rounded-xl border px-3 py-3 text-left transition-colors",
+                      selectedRow
+                        ? "border-primary bg-primary/10 shadow-sm"
+                        : "border-border bg-card"
+                    )}
+                    data-testid={`stock-conference-row-${row.id}`}
+                    aria-pressed={selectedRow}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold uppercase text-muted-foreground">
+                          {row.code}
+                        </p>
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {summarizeStockListDescription(row.description)}
+                        </p>
+                      </div>
+                      <StatusPill status={row.stockStatus} />
                     </div>
-                    <StatusPill status={row.stockStatus} />
-                  </div>
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>{row.unit}</span>
-                    <span className="font-semibold tabular-nums text-foreground">
-                      {formatStockConferenceQuantity(row.currentQuantity)}
-                    </span>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-semibold tabular-nums text-foreground">
+                        {qtyLabel}
+                      </span>
+                      <span className="sr-only">
+                        Status textual: {stockConferenceStatusLabel(row.stockStatus)}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {props.hasMore ? (
+            <div className="space-y-2" data-testid="stock-conference-more">
+              <p className="text-xs text-muted-foreground">
+                Mostrando {props.rows.length}
+                {props.totalCount != null ? ` de ${props.totalCount}` : ""} — há mais
+                resultados.
+              </p>
+              <button
+                type="button"
+                onClick={props.onLoadMore}
+                disabled={props.loadingMore}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold disabled:opacity-60"
+                data-testid="stock-conference-load-more"
+              >
+                {props.loadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Carregando…
+                  </>
+                ) : (
+                  "Carregar mais"
+                )}
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

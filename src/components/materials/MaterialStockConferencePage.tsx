@@ -2,9 +2,8 @@
  * Página operacional — Conferência de estoque.
  * Separada do cadastro/custos (MaterialModule).
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { fetchJsonOk } from "@/src/lib/http";
 import {
   getMaterialStockConferenceDetailPath,
   MATERIALS_SECTION_PATHS,
@@ -15,10 +14,17 @@ import {
   type MaterialStockConferenceLayoutMode,
 } from "@/src/lib/materialStockConferenceUi";
 import {
-  MATERIAL_STOCK_TABLET_SEARCH_PATH,
-  type MaterialStockTabletListItem,
-  type MaterialStockTabletSearchResponse,
-} from "@/src/lib/materialStockTabletTypes";
+  appendStockTabletSearchPages,
+  fetchMaterialStockTabletSearch,
+  hasMoreStockTabletPages,
+  isMaterialStockSearchAbortError,
+  MATERIAL_STOCK_LIST_PAGE_SIZE,
+  MATERIAL_STOCK_LIST_SEARCH_DEBOUNCE_MS,
+  resolvePreservedStockSelection,
+  shouldAutoSelectFirstStockItem,
+  type MaterialStockListFilterId,
+} from "@/src/lib/materialStockTabletSearchClient";
+import type { MaterialStockTabletListItem } from "@/src/lib/materialStockTabletTypes";
 import { TabResourceKeys } from "@/src/lib/moduleTabResources";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import {
@@ -32,10 +38,9 @@ function useStockConferenceLayoutMode(): MaterialStockConferenceLayoutMode {
   useEffect(() => {
     const compute = () => {
       const width = window.innerWidth;
-      const orientation =
-        window.matchMedia("(orientation: portrait)").matches
-          ? "portrait"
-          : "landscape";
+      const orientation = window.matchMedia("(orientation: portrait)").matches
+        ? "portrait"
+        : "landscape";
       setMode(resolveMaterialStockConferenceLayout({ width, orientation }));
     };
     compute();
@@ -59,71 +64,155 @@ export function MaterialStockConferencePage() {
 
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [filter, setFilter] = useState<MaterialStockListFilterId>("ALL");
   const [rows, setRows] = useState<MaterialStockTabletListItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     routeMaterialId ?? null
   );
 
+  const abortRef = useRef<AbortController | null>(null);
+  const requestGenRef = useRef(0);
+  const didAutoSelectRef = useRef(Boolean(routeMaterialId));
+
   const canViewHistory = permissions.canViewTabResource(
     TabResourceKeys.SUPRIMENTOS_CATALOGO
   );
-  /** CTA visível com view; a API de gravação exige update. */
   const canConference = canViewHistory;
 
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    const t = window.setTimeout(
+      () => setDebouncedSearch(search.trim()),
+      MATERIAL_STOCK_LIST_SEARCH_DEBOUNCE_MS
+    );
     return () => window.clearTimeout(t);
   }, [search]);
 
   useEffect(() => {
     setSelectedId(routeMaterialId ?? null);
+    if (routeMaterialId) didAutoSelectRef.current = true;
   }, [routeMaterialId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("pageSize", "50");
-      if (debouncedSearch) params.set("q", debouncedSearch);
-      const data = await fetchJsonOk<MaterialStockTabletSearchResponse>(
-        `${MATERIAL_STOCK_TABLET_SEARCH_PATH}?${params.toString()}`
-      );
-      setRows(Array.isArray(data.rows) ? data.rows : []);
-    } catch (e: unknown) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Não foi possível carregar matérias-primas para conferência."
-      );
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [debouncedSearch]);
+  const runSearch = useCallback(
+    async (nextPage: number, mode: "replace" | "append") => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const gen = ++requestGenRef.current;
+
+      if (mode === "replace") {
+        setLoading(true);
+        setError(null);
+      } else {
+        setLoadingMore(true);
+      }
+
+      try {
+        const data = await fetchMaterialStockTabletSearch({
+          page: nextPage,
+          pageSize: MATERIAL_STOCK_LIST_PAGE_SIZE,
+          q: debouncedSearch,
+          filter,
+          signal: controller.signal,
+        });
+
+        if (gen !== requestGenRef.current || controller.signal.aborted) {
+          return;
+        }
+
+        setPage(data.page);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setRows((prev) =>
+          mode === "append"
+            ? appendStockTabletSearchPages(prev, data.rows)
+            : data.rows
+        );
+        setError(null);
+      } catch (e: unknown) {
+        if (isMaterialStockSearchAbortError(e)) return;
+        if (gen !== requestGenRef.current) return;
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Não foi possível carregar matérias-primas para conferência."
+        );
+        if (mode === "replace") setRows([]);
+      } finally {
+        if (gen === requestGenRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [debouncedSearch, filter]
+  );
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void runSearch(1, "replace");
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, [runSearch]);
+
+  useEffect(() => {
+    if (loading || error || rows.length === 0) return;
+    const firstId = shouldAutoSelectFirstStockItem({
+      layoutMode,
+      routeMaterialId,
+      rows,
+      alreadyAutoSelected: didAutoSelectRef.current,
+    });
+    if (!firstId) return;
+    didAutoSelectRef.current = true;
+    setSelectedId(firstId);
+    navigate(getMaterialStockConferenceDetailPath(firstId), { replace: true });
+  }, [loading, error, rows, layoutMode, routeMaterialId, navigate]);
+
+  useEffect(() => {
+    if (!selectedId || loading) return;
+    const preserved = resolvePreservedStockSelection(selectedId, rows);
+    if (preserved) return;
+    // Seleção saiu do conjunto carregado (filtro/busca) — limpa sem confundir stacked.
+    if (!routeMaterialId) {
+      setSelectedId(null);
+    }
+  }, [rows, selectedId, loading, routeMaterialId]);
+
+  const hasMore = hasMoreStockTabletPages({
+    page,
+    totalPages,
+    loadedCount: rows.length,
+    total,
+  });
 
   const viewKind: MaterialStockConferenceViewKind = useMemo(() => {
-    if (loading) return "loading";
-    if (error) return "error";
-    if (rows.length === 0) return "empty";
+    if (loading && rows.length === 0) return "loading";
+    if (error && rows.length === 0) return "error";
+    if (!loading && !error && rows.length === 0) return "empty";
     return "ready";
   }, [loading, error, rows.length]);
 
   const onSelect = (id: string) => {
+    didAutoSelectRef.current = true;
     setSelectedId(id);
     navigate(getMaterialStockConferenceDetailPath(id), { replace: false });
   };
 
   const onClearSelection = () => {
+    didAutoSelectRef.current = true;
     setSelectedId(null);
     navigate(MATERIALS_SECTION_PATHS.stockConference, { replace: false });
+  };
+
+  const onFilterChange = (next: MaterialStockListFilterId) => {
+    setFilter(next);
+    setPage(1);
   };
 
   return (
@@ -143,12 +232,22 @@ export function MaterialStockConferencePage() {
         layoutMode={layoutMode}
         search={search}
         onSearchChange={setSearch}
+        filter={filter}
+        onFilterChange={onFilterChange}
         rows={rows}
         selectedId={selectedId}
         onSelect={onSelect}
         onClearSelection={onClearSelection}
         error={error}
-        onRetry={() => void load()}
+        onRetry={() => void runSearch(1, "replace")}
+        isRefreshing={loading && rows.length > 0}
+        hasMore={hasMore}
+        loadingMore={loadingMore}
+        onLoadMore={() => {
+          if (!hasMore || loadingMore || loading) return;
+          void runSearch(page + 1, "append");
+        }}
+        totalCount={total}
         canViewHistory={canViewHistory}
         canConference={canConference}
         onConference={() => {
