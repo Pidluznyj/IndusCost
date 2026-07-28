@@ -4,6 +4,7 @@
  */
 import type { Prisma, PrismaClient } from "@prisma/client";
 import {
+  assertConferenceLevelsAgainstMinimum,
   assertMaterialStockIdempotencyKey,
   assertStockConferenceConcurrency,
   buildConferenceDifference,
@@ -14,6 +15,7 @@ import {
 import { resolveMaterialStockStatus } from "./materialStockLevelRules.js";
 import { enqueueMaterialStockSpreadsheetMirrorBestEffort } from "./materialStockSpreadsheetMirror/enqueue.server.js";
 import { roundMaterialStockQuantity } from "./materialStockConferenceMath.js";
+import { snapshotStockLevels } from "./materialStockParametersRules.js";
 
 export type MaterialStockConferenceActor = {
   id: string;
@@ -46,6 +48,9 @@ export type MaterialStockConferenceResult = {
     id: string;
     code: string;
     quantity: number;
+    contingencyQuantity: number | null;
+    minimumQuantity: number | null;
+    recommendedQuantity: number | null;
     stockConferenceVersion: number;
     lastStockConferenceAt: string | null;
     lastStockConferenceUserId: string | null;
@@ -53,6 +58,12 @@ export type MaterialStockConferenceResult = {
     stockStatus: string;
   };
 };
+
+function toNullableNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const n = roundMaterialStockQuantity(value);
+  return Number.isFinite(n) ? n : null;
+}
 
 function toNumber(value: unknown): number {
   const n = roundMaterialStockQuantity(value);
@@ -122,6 +133,9 @@ function serializeMaterial(row: {
     id: row.id,
     code: row.code,
     quantity: toNumber(row.quantity),
+    contingencyQuantity: toNullableNumber(row.contingencyQuantity),
+    minimumQuantity: toNullableNumber(row.minimumQuantity),
+    recommendedQuantity: toNullableNumber(row.recommendedQuantity),
     stockConferenceVersion: row.stockConferenceVersion,
     lastStockConferenceAt: toIso(row.lastStockConferenceAt),
     lastStockConferenceUserId: row.lastStockConferenceUserId,
@@ -254,12 +268,19 @@ export async function recordMaterialStockConference(
         throw err;
       }
 
+      assertConferenceLevelsAgainstMinimum({
+        contingencyQuantity: command.contingencyQuantity,
+        recommendedQuantity: command.recommendedQuantity,
+        minimumQuantity: material.minimumQuantity,
+      });
+
       const { previous, reported, difference } = buildConferenceDifference(
         material.quantity,
         command.reportedQuantity
       );
       const previousVersion = material.stockConferenceVersion;
       const previousUpdatedAt = material.updatedAt;
+      const levelsBefore = snapshotStockLevels(material);
 
       const conference = await tx.materialStockConference.create({
         data: {
@@ -287,6 +308,8 @@ export async function recordMaterialStockConference(
         },
         data: {
           quantity: reported,
+          contingencyQuantity: command.contingencyQuantity,
+          recommendedQuantity: command.recommendedQuantity,
           stockConferenceVersion: previousVersion + 1,
           lastStockConferenceAt: now,
           lastStockConferenceUserId: input.actor.id,
@@ -320,6 +343,25 @@ export async function recordMaterialStockConference(
           updatedAt: true,
         },
       });
+
+      const levelsAfter = snapshotStockLevels(materialAfter);
+      if (
+        levelsBefore.contingencyQuantity !== levelsAfter.contingencyQuantity ||
+        levelsBefore.minimumQuantity !== levelsAfter.minimumQuantity ||
+        levelsBefore.recommendedQuantity !== levelsAfter.recommendedQuantity
+      ) {
+        await tx.materialStockLevelAudit.create({
+          data: {
+            materialId: material.id,
+            action: "UPDATE_LEVELS",
+            beforeJson: levelsBefore as Prisma.InputJsonValue,
+            afterJson: levelsAfter as Prisma.InputJsonValue,
+            userId: input.actor.id,
+            userName: actorName,
+            reason: "CONFERENCE",
+          },
+        });
+      }
 
       return {
         ok: true as const,

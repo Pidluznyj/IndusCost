@@ -59,6 +59,9 @@ export type MaterialStockConferenceApiResult = {
     id: string;
     code: string;
     quantity: number;
+    contingencyQuantity?: number | null;
+    minimumQuantity?: number | null;
+    recommendedQuantity?: number | null;
     stockConferenceVersion: number;
     lastStockConferenceAt: string | null;
     lastStockConferenceUserId: string | null;
@@ -138,6 +141,8 @@ export function createConferenceIdempotencyKey(): string {
 export async function submitMaterialStockConference(input: {
   materialId: string;
   reportedQuantity: number;
+  contingencyQuantity: number;
+  recommendedQuantity: number | null;
   reason: MaterialStockConferenceReason;
   notes?: string | null;
   expectedVersion: number;
@@ -157,6 +162,8 @@ export async function submitMaterialStockConference(input: {
       body: JSON.stringify({
         materialId: input.materialId,
         reportedQuantity: input.reportedQuantity,
+        contingencyQuantity: input.contingencyQuantity,
+        recommendedQuantity: input.recommendedQuantity,
         reason: input.reason,
         notes: input.notes?.trim() || null,
         expectedVersion: input.expectedVersion,
@@ -232,6 +239,18 @@ export function applyConferenceSuccessToListItem(
   result: MaterialStockConferenceApiResult
 ): MaterialStockTabletListItem {
   const quantity = result.material.quantity;
+  const contingencyQuantity =
+    result.material.contingencyQuantity !== undefined
+      ? result.material.contingencyQuantity
+      : item.contingencyQuantity;
+  const recommendedQuantity =
+    result.material.recommendedQuantity !== undefined
+      ? result.material.recommendedQuantity
+      : item.recommendedQuantity;
+  const minimumQuantity =
+    result.material.minimumQuantity !== undefined
+      ? result.material.minimumQuantity
+      : item.minimumQuantity;
   const statusRaw = result.material.stockStatus;
   const stockStatus = (
     [
@@ -246,14 +265,17 @@ export function applyConferenceSuccessToListItem(
     ? (statusRaw as MaterialStockStatus)
     : resolveMaterialStockStatus({
         currentQuantity: quantity,
-        contingencyQuantity: item.contingencyQuantity,
-        minimumQuantity: item.minimumQuantity,
-        recommendedQuantity: item.recommendedQuantity,
+        contingencyQuantity,
+        minimumQuantity,
+        recommendedQuantity,
       });
 
   return {
     ...item,
     currentQuantity: quantity,
+    contingencyQuantity,
+    minimumQuantity,
+    recommendedQuantity,
     stockStatus,
     stockConferenceVersion: result.material.stockConferenceVersion,
     lastStockConferenceAt: result.material.lastStockConferenceAt,

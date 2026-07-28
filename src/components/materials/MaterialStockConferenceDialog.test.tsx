@@ -40,6 +40,12 @@ describe("MaterialStockConferenceDialog", () => {
     );
     assert.match(html, /stock-conference-dialog/);
     assert.match(html, /inputMode="decimal"/);
+    assert.match(html, /stock-conference-contingency-input/);
+    assert.match(html, /stock-conference-recommended-input/);
+    assert.match(html, /stock-conference-reported-input/);
+    assert.match(html, /Estoque contingência\*/);
+    assert.match(html, /Estoque recomendado/);
+    assert.match(html, /Estoque atual\*/);
     assert.match(html, /stock-conference-unit/);
     assert.match(html, />kg</);
     assert.match(html, /Salvar conferência/);
