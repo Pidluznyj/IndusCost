@@ -92,11 +92,37 @@ function createMockPrisma(rows: ReturnType<typeof makeRow>[]) {
       },
       async findMany(args: {
         where: Record<string, unknown>;
+        orderBy?:
+          | { code?: "asc" | "desc"; quantity?: "asc" | "desc" }
+          | Array<{ code?: "asc" | "desc"; quantity?: "asc" | "desc" }>;
         skip?: number;
         take?: number;
       }) {
         let out = rows.filter((r) => matchesWhere(r, args.where));
-        out = [...out].sort((a, b) => a.code.localeCompare(b.code));
+        const orderList = Array.isArray(args.orderBy)
+          ? args.orderBy
+          : args.orderBy
+            ? [args.orderBy]
+            : [{ code: "asc" as const }];
+        out = [...out].sort((a, b) => {
+          for (const order of orderList) {
+            if (order.quantity === "desc") {
+              const d = Number(b.quantity) - Number(a.quantity);
+              if (d !== 0) return d;
+            } else if (order.quantity === "asc") {
+              const d = Number(a.quantity) - Number(b.quantity);
+              if (d !== 0) return d;
+            }
+            if (order.code === "asc") {
+              const d = a.code.localeCompare(b.code);
+              if (d !== 0) return d;
+            } else if (order.code === "desc") {
+              const d = b.code.localeCompare(a.code);
+              if (d !== 0) return d;
+            }
+          }
+          return 0;
+        });
         if (args.skip != null || args.take != null) {
           const skip = args.skip ?? 0;
           const take = args.take ?? out.length;
@@ -231,6 +257,19 @@ describe("searchMaterialStockTablet", () => {
     const codes = result.rows.map((r) => r.code);
     assert.ok(codes.includes("010.AA"));
     assert.ok(!codes.includes("020.BB"));
+  });
+
+  it("ordena pelo saldo em estoque do maior para o menor", async () => {
+    const db = createMockPrisma(rows);
+    const result = await searchMaterialStockTablet(
+      db,
+      parseMaterialStockTabletSearchQuery({}),
+      new Date("2026-07-28T00:00:00.000Z")
+    );
+    const quantities = result.rows.map((r) => r.currentQuantity);
+    assert.deepEqual(quantities, [...quantities].sort((a, b) => b - a));
+    assert.equal(result.rows[0]?.code, "010.AA");
+    assert.ok((result.rows[0]?.currentQuantity ?? 0) >= (result.rows.at(-1)?.currentQuantity ?? 0));
   });
 
   it("busca por código e descrição (parcial / acento)", async () => {

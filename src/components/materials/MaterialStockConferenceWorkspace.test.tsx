@@ -101,7 +101,10 @@ describe("MaterialStockConferenceWorkspace", () => {
     assert.match(html, /stock-conference-status-card/);
     assert.match(html, /stock-conference-parameters-readonly/);
     assert.match(html, /Somente leitura/);
-    assert.match(html, /não somam ao estoque/);
+    assert.match(html, /não somam ao saldo atual/);
+    assert.match(html, /Saldo atual/);
+    assert.match(html, /stock-conference-detail-current-balance/);
+    assert.match(html, /stock-conference-row-balance-mat-1/);
     assert.match(html, /Disponível acima da contingência/);
     assert.match(html, /500 kg|500/);
     assert.match(html, /kg/);

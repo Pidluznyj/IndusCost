@@ -117,7 +117,8 @@ export async function searchMaterialStockTablet(
       db.material.findMany({
         where,
         select: TABLET_SELECT,
-        orderBy: { code: "asc" },
+        // Conferência no tablet: prioriza maior saldo em estoque.
+        orderBy: [{ quantity: "desc" }, { code: "asc" }],
         skip: query.skip,
         take: query.pageSize,
       }),
@@ -140,7 +141,7 @@ export async function searchMaterialStockTablet(
   const candidates = await db.material.findMany({
     where,
     select: TABLET_SELECT,
-    orderBy: { code: "asc" },
+    orderBy: [{ quantity: "desc" }, { code: "asc" }],
     take: IN_MEMORY_CANDIDATE_CAP,
   });
 
@@ -155,6 +156,12 @@ export async function searchMaterialStockTablet(
       (row) => computeStockStatusForTabletRow(row) === query.stockStatus
     );
   }
+
+  filtered = [...filtered].sort((a, b) => {
+    const qtyDiff = Number(b.quantity) - Number(a.quantity);
+    if (qtyDiff !== 0) return qtyDiff;
+    return String(a.code).localeCompare(String(b.code), "pt-BR");
+  });
 
   const total = filtered.length;
   const pageRows = paginateRows(filtered, query.page, query.pageSize);

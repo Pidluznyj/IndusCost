@@ -147,13 +147,16 @@ function MetricRow({
   label,
   value,
   emphasize,
+  testId,
 }: {
   label: string;
   value: string;
   emphasize?: boolean;
+  testId?: string;
 }) {
   return (
     <div
+      data-testid={testId}
       className={cn(
         "flex items-baseline justify-between gap-3 rounded-lg border border-border px-3 py-3",
         emphasize && "border-primary/30 bg-primary/5"
@@ -221,9 +224,10 @@ function DetailPanel({
       </div>
 
       <MetricRow
-        label="Estoque atual"
+        label="Saldo atual"
         value={`${formatStockConferenceQuantity(item.currentQuantity)} ${unit}`}
         emphasize
+        testId="stock-conference-detail-current-balance"
       />
 
       <StatusCard status={item.stockStatus} />
@@ -251,7 +255,7 @@ function DetailPanel({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          Contingência, mínimo e recomendado não somam ao estoque atual.
+          Contingência, mínimo e recomendado não somam ao saldo atual.
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           <MetricRow
@@ -452,8 +456,12 @@ export function MaterialStockConferenceWorkspace(
                       </div>
                       <StatusPill status={row.stockStatus} />
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-semibold tabular-nums text-foreground">
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <span className="text-muted-foreground">Saldo atual</span>
+                      <span
+                        className="font-semibold tabular-nums text-foreground"
+                        data-testid={`stock-conference-row-balance-${row.id}`}
+                      >
                         {qtyLabel}
                       </span>
                       <span className="sr-only">

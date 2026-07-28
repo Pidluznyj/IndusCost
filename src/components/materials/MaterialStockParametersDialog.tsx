@@ -174,7 +174,7 @@ export function MaterialStockParametersDialog({
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Estoque atual (somente leitura):{" "}
+          Saldo atual (somente leitura):{" "}
           <span className="font-semibold tabular-nums text-foreground">
             {formatStockConferenceQuantity(item.currentQuantity)} {item.unit}
           </span>

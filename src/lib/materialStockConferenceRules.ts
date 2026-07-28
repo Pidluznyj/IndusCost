@@ -125,7 +125,7 @@ export function parseMaterialStockConferenceCommand(
   if (reportedRaw === undefined || reportedRaw === null || reportedRaw === "") {
     throw new MaterialStockConferenceError(
       "REQUIRED_FIELD",
-      "Estoque atual é obrigatório.",
+      "Saldo contado é obrigatório.",
       "reportedQuantity"
     );
   }
@@ -133,14 +133,14 @@ export function parseMaterialStockConferenceCommand(
   if (!Number.isFinite(reportedQuantity)) {
     throw new MaterialStockConferenceError(
       "INVALID_FIELD",
-      "Estoque atual inválido.",
+      "Saldo contado inválido.",
       "reportedQuantity"
     );
   }
   if (reportedQuantity < 0) {
     throw new MaterialStockConferenceError(
       "INVALID_FIELD",
-      "Estoque atual não pode ser negativo.",
+      "Saldo contado não pode ser negativo.",
       "reportedQuantity"
     );
   }

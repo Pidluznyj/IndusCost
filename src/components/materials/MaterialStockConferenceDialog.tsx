@@ -1,6 +1,6 @@
 /**
  * Diálogo de conferência manual — poucos toques, teclado numérico, sem custos.
- * Campos: estoque contingência*, estoque recomendado, estoque atual*.
+ * Campos: saldo atual (sistema), contingência*, recomendado, saldo contado*.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -139,7 +139,7 @@ export function MaterialStockConferenceDialog({
       setError(
         qty.reason === "EMPTY"
           ? "Informe o estoque atual."
-          : "Estoque atual inválido. Use apenas números decimais."
+          : "Saldo contado inválido. Use apenas números decimais."
       );
       return;
     }
@@ -233,6 +233,19 @@ export function MaterialStockConferenceDialog({
           {item.code} — {item.description}
         </p>
 
+        <div
+          className="mt-4 flex items-baseline justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3"
+          data-testid="stock-conference-system-balance"
+        >
+          <span className="text-sm font-medium text-foreground">Saldo atual</span>
+          <span className="text-base font-bold tabular-nums text-foreground">
+            {formatStockConferenceQuantity(baselineQuantity)} {item.unit}
+          </span>
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Saldo oficial no sistema. Informe abaixo o saldo contado na conferência física.
+        </p>
+
         <div className="mt-4 space-y-3">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
@@ -287,7 +300,7 @@ export function MaterialStockConferenceDialog({
 
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
-              Estoque atual* ({item.unit})
+              Saldo contado* ({item.unit})
             </span>
             <div className="flex items-stretch gap-2">
               <input
@@ -302,7 +315,7 @@ export function MaterialStockConferenceDialog({
                   setError(null);
                   setConflict(null);
                 }}
-                placeholder="Saldo contado"
+                placeholder="Informe o saldo físico contado"
                 className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                 data-testid="stock-conference-reported-input"
               />
@@ -348,13 +361,13 @@ export function MaterialStockConferenceDialog({
             data-testid="stock-conference-preview"
           >
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Saldo anterior</span>
+              <span className="text-muted-foreground">Saldo atual (sistema)</span>
               <span className="font-semibold tabular-nums">
                 {formatStockConferenceQuantity(baselineQuantity)} {item.unit}
               </span>
             </div>
             <div className="mt-2 flex justify-between gap-3">
-              <span className="text-muted-foreground">Novo saldo (atual)</span>
+              <span className="text-muted-foreground">Novo saldo (contado)</span>
               <span className="font-semibold tabular-nums">
                 {preview.reported == null
                   ? "—"
