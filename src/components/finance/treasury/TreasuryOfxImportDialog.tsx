@@ -184,6 +184,17 @@ export function TreasuryOfxImportDialog(props: {
                 </strong>
               </p>
               <p>
+                Saldo do extrato:{" "}
+                <strong>
+                  {preview.ledgerBalanceAmount
+                    ? formatTreasuryBankMoney(preview.ledgerBalanceAmount)
+                    : "—"}
+                </strong>
+                {preview.ledgerBalanceAsOfCivilDate
+                  ? ` (${preview.ledgerBalanceAsOfCivilDate})`
+                  : ""}
+              </p>
+              <p>
                 Totais: crédito{" "}
                 <strong>
                   {formatTreasuryBankMoney(preview.totals.creditAmount)}

@@ -55,7 +55,7 @@ export const TREASURY_GUIDED_DAILY_CLOSING_INVESTIGATION_ACTIONS: readonly Treas
     {
       id: "IMPORT_STATEMENT",
       label: "Importar extrato",
-      href: "/finance/treasury/ofx",
+      href: "/finance/treasury/bank?step=import",
     },
     {
       id: "VIEW_REALIZED_TITLES",
@@ -75,17 +75,17 @@ export const TREASURY_GUIDED_DAILY_CLOSING_INVESTIGATION_ACTIONS: readonly Treas
     {
       id: "REGISTER_FEE",
       label: "Registrar tarifa",
-      href: "/finance/treasury/manual-entries",
+      href: "/finance/treasury/bank?step=investigate",
     },
     {
       id: "REGISTER_INTEREST",
       label: "Registrar juros",
-      href: "/finance/treasury/manual-entries",
+      href: "/finance/treasury/bank?step=investigate",
     },
     {
       id: "REGISTER_UNIDENTIFIED",
       label: "Registrar movimento não identificado",
-      href: "/finance/treasury/bank",
+      href: "/finance/treasury/bank?step=investigate",
     },
     {
       id: "CLOSE_WITH_CAVEAT",

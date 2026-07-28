@@ -39,6 +39,7 @@ import { TreasuryAgendaPage } from "./TreasuryAgendaPage.js";
 import { TreasuryProjectionComparisonPage } from "./TreasuryProjectionComparisonPage.js";
 import { TreasuryTransfersPage } from "./TreasuryTransfersPage.js";
 import { TreasuryBankMovementsPage } from "./TreasuryBankMovementsPage.js";
+import { TreasurySimpleOfxInvestigationPage } from "./TreasurySimpleOfxInvestigationPage.js";
 import { TreasuryExceptionsPage } from "./TreasuryExceptionsPage.js";
 import { TreasuryDailyClosingPage } from "./TreasuryDailyClosingPage.js";
 import { TreasuryReportsPage } from "./TreasuryReportsPage.js";
@@ -237,7 +238,11 @@ export function TreasuryModule() {
         />
         <Route
           path="bank"
-          element={gate("bank", <TreasuryReconcileWorkspacePage />)}
+          element={gate("bank", <TreasurySimpleOfxInvestigationPage />)}
+        />
+        <Route
+          path="today/bank"
+          element={gate("bank", <TreasurySimpleOfxInvestigationPage />)}
         />
         <Route
           path="projection"

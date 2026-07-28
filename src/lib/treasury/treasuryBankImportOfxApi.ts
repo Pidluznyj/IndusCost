@@ -43,6 +43,8 @@ export type TreasuryOfxPreviewResponse = {
   byteLength: number;
   fileAlreadyImported: boolean;
   period: { startCivilDate: string | null; endCivilDate: string | null };
+  ledgerBalanceAmount: string | null;
+  ledgerBalanceAsOfCivilDate: string | null;
   totals: {
     movementCount: number;
     newCount: number;
