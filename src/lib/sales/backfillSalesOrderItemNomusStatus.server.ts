@@ -89,6 +89,11 @@ export async function backfillSalesOrderItemNomusStatusForOrder(
     const externalId = extractNomusLineExternalId(match.rawItem.raw);
     const sequence =
       match.rawItem.item != null ? String(match.rawItem.item) : null;
+    const matchReason = parsed.fulfilledQuantityCoercedDueToStatusMismatch
+      ? [match.matchReason, "FULFILLED_QTY_MISMATCH: atendida < pedida com status Atendido totalmente; qty promovida à pedida"]
+          .filter((part) => typeof part === "string" && part.trim().length > 0)
+          .join(" | ")
+      : match.matchReason;
     await prisma.salesOrderItem.update({
       where: { id: item.id },
       data: {
@@ -102,7 +107,7 @@ export async function backfillSalesOrderItemNomusStatusForOrder(
         nomusIsCut: parsed.isCut,
         nomusIsStale: false,
         nomusMatchConfidence: match.matchConfidence,
-        nomusMatchReason: match.matchReason,
+        nomusMatchReason: matchReason,
         nomusLastSeenAt: seenAt,
         nomusRawItem: match.rawItem.raw as object,
       },

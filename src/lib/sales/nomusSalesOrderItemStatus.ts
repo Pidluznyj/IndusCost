@@ -56,6 +56,11 @@ export type ParsedNomusSalesOrderItemStatus = {
   quantityCanceled: number | null;
   quantityCut: number | null;
   quantityPending: number | null;
+  /**
+   * true quando status FULFILLED veio com atendida < pedida e a qty foi
+   * promovida para a pedida (inconsistência de sync / parse).
+   */
+  fulfilledQuantityCoercedDueToStatusMismatch: boolean;
 };
 
 function asObject(value: unknown): Record<string, unknown> | null {
@@ -184,6 +189,7 @@ const EMPTY_PARSED: ParsedNomusSalesOrderItemStatus = {
   quantityCanceled: null,
   quantityCut: null,
   quantityPending: null,
+  fulfilledQuantityCoercedDueToStatusMismatch: false,
 };
 
 /**
@@ -229,6 +235,7 @@ export function parseNomusSalesOrderItemStatus(
       : rawFaturada != null && rawFaturada > 0
         ? rawFaturada
         : rawAtendida;
+  let fulfilledQuantityCoercedDueToStatusMismatch = false;
   // Status 4 sem qty positiva: obrigação atendida = pedida (não inventa corte).
   if (
     (quantityFulfilled == null || quantityFulfilled <= 0) &&
@@ -247,6 +254,7 @@ export function parseNomusSalesOrderItemStatus(
     quantityFulfilled > 0 &&
     quantityFulfilled + 1e-9 < quantityOrdered
   ) {
+    fulfilledQuantityCoercedDueToStatusMismatch = true;
     quantityFulfilled = quantityOrdered;
   }
   const quantityCanceled =
@@ -283,6 +291,7 @@ export function parseNomusSalesOrderItemStatus(
     quantityCanceled,
     quantityCut,
     quantityPending,
+    fulfilledQuantityCoercedDueToStatusMismatch,
   };
 }
 

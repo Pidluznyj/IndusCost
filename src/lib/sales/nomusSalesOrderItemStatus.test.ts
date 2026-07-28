@@ -97,6 +97,7 @@ describe("nomusSalesOrderItemStatus", () => {
     assert.equal(parsed.statusNormalized, "FULFILLED");
     assert.equal(parsed.quantityFulfilled, 1000);
     assert.equal(parsed.quantityPending, 0);
+    assert.equal(parsed.fulfilledQuantityCoercedDueToStatusMismatch, true);
   });
 
   it("toOrderItemFulfillmentStorageStatus e flags inativos", () => {

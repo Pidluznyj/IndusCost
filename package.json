@@ -347,7 +347,8 @@
     "test:unit": "node scripts/run-unit-tests.mjs",
     "rebuild:sales-order-flow": "tsx scripts/rebuildSalesOrderFlow.ts",
     "rebuild:sales-order-flow:preview": "tsx scripts/rebuildSalesOrderFlow.ts --preview",
-    "rebuild:sales-order-flow:apply": "tsx scripts/rebuildSalesOrderFlow.ts --apply"
+    "rebuild:sales-order-flow:apply": "tsx scripts/rebuildSalesOrderFlow.ts --apply",
+    "repair:sales-order-fulfilled-qty-flow": "tsx scripts/repairSalesOrderFulfilledQtyAndFlow.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
