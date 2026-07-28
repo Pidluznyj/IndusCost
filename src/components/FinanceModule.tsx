@@ -1,6 +1,6 @@
 import React from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { FileText, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { FinanceAccountsReceivablePage } from "@/src/components/finance/FinanceAccountsReceivablePage";
 import { FinanceAccountsPayablePage } from "@/src/components/finance/FinanceAccountsPayablePage";
@@ -109,26 +109,6 @@ export function FinanceModule() {
 
   return (
     <div className="space-y-6" data-testid="finance-module-with-tabs">
-      {can("executive-report") ? (
-        <div className="finance-executive-report-print-no-print flex justify-end">
-          <NavLink
-            to="/finance/executive-report"
-            className={({ isActive }) =>
-              cn(
-                "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
-                isActive
-                  ? "bg-[#1e3a5f] text-white"
-                  : "border border-[#1e3a5f]/30 bg-[#eff6ff] text-[#1e3a5f] hover:bg-[#dbeafe]"
-              )
-            }
-            data-testid="finance-executive-report-link"
-          >
-            <FileText className="h-4 w-4" />
-            Relatório Presidencial
-          </NavLink>
-        </div>
-      ) : null}
-
       <nav
         className="finance-module-tabs flex flex-wrap gap-2 border-b border-border pb-3"
         data-testid="finance-module-tabs"

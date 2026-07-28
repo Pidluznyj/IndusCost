@@ -314,6 +314,13 @@ export function SalesOrderFlowKanbanCard({
           <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
             {stageLabel}
           </p>
+          <p
+            className="mt-1 line-clamp-2 text-[11px] font-semibold leading-snug text-amber-950"
+            title={card.stayReason}
+            data-testid={`sales-order-flow-card-stay-reason-mini-${card.orderId}`}
+          >
+            {card.stayReason}
+          </p>
         </button>
         <button
           type="button"
@@ -370,6 +377,20 @@ export function SalesOrderFlowKanbanCard({
             </p>
           </div>
           <PriorityBadge priority={card.priority} />
+        </div>
+
+        <div
+          className="mt-2 rounded-md border border-sky-200 bg-sky-50/80 px-2 py-1.5 text-xs text-sky-950"
+          data-testid={`sales-order-flow-card-stay-reason-${card.orderId}`}
+        >
+          <p className="font-semibold uppercase tracking-wide text-[10px] text-sky-800">
+            Por que está nesta coluna
+          </p>
+          <p className="mt-0.5 font-medium leading-snug">{card.stayReason}</p>
+          <p className="mt-1.5 font-semibold uppercase tracking-wide text-[10px] text-sky-800">
+            O que falta para sair
+          </p>
+          <p className="mt-0.5 font-medium leading-snug">{card.missingToLeave}</p>
         </div>
 
         <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs">
@@ -457,7 +478,9 @@ export function SalesOrderFlowKanbanCard({
         <div className="mt-2 border-t border-border/70 pt-2 text-xs">
           <p className="text-slate-600">Próxima ação</p>
           <p className="font-medium text-foreground">
-            {card.nextAction?.trim() || "Sem ação definida"}
+            {card.missingToLeave?.trim() ||
+              card.nextAction?.trim() ||
+              "Sem ação definida"}
           </p>
           <p className="mt-1 text-slate-600">
             Área:{" "}

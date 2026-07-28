@@ -19,6 +19,7 @@ import {
   toArLoadFilters,
   type FinanceCashFlowArRow,
 } from "@/src/lib/financeCashFlowDashboard.js";
+import { loadRawMaterialCostCenterSpotlight } from "@/src/lib/financeCashFlowRawMaterialSpotlight.server.js";
 import {
   buildFinanceCashFlowAuditPayload,
   buildFinanceCashFlowDataset,
@@ -217,16 +218,22 @@ export function registerFinanceCashFlowRoutes(app: express.Express, auth: AuthGu
           buildFinanceCashFlowAuditPayload(dataset, arRows.length, apRows.length, arRows, apRows)
         );
       }
+      const referenceDate = new Date();
       const payload = buildFinanceCashFlowDashboard(
         arRows,
         apRows,
         filters,
-        new Date(),
+        referenceDate,
         arSyncCutoff,
         apSyncCutoff,
         arOptions
       );
-      res.json(payload);
+      const rawMaterialCostCenterSpotlight = await loadRawMaterialCostCenterSpotlight({
+        ytdYear: filters.year ?? referenceDate.getFullYear(),
+        companyName: filters.companyName,
+        referenceDate,
+      });
+      res.json({ ...payload, rawMaterialCostCenterSpotlight });
     }
   );
 

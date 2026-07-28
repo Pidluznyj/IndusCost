@@ -456,8 +456,6 @@ export const MaterialModule = () => {
                 <th className="p-4 font-semibold text-sm">Material</th>
                 <th className="p-4 font-semibold text-sm">Categoria / Unid.</th>
                 <th className="p-4 font-semibold text-sm">Custo Atual</th>
-                <th className="p-4 font-semibold text-sm">Posto Fábrica</th>
-                <th className="p-4 font-semibold text-sm">Custo c/ Perda</th>
                 <th className="p-4 font-semibold text-sm">Mercado</th>
                 <th className="p-4 font-semibold text-sm">Status</th>
                 <th className="p-4 font-semibold text-sm text-right">Ações</th>
@@ -466,14 +464,14 @@ export const MaterialModule = () => {
             <tbody className="divide-y divide-border">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center">
+                  <td colSpan={6} className="p-8 text-center">
                     <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
                     <p className="mt-2 text-sm text-muted-foreground">Carregando materiais...</p>
                   </td>
                 </tr>
               ) : filteredMaterials.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
                     Nenhum material encontrado.
                   </td>
                 </tr>
@@ -505,14 +503,6 @@ export const MaterialModule = () => {
                         )}
                         <span className="text-[10px] text-muted-foreground">Std: {formatCurrency(mat.standardCost)}</span>
                       </div>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-bold text-primary">{formatCurrency(mat.calculations?.landedCost || 0)}</p>
-                      <p className="text-[10px] text-muted-foreground">Frete: {formatCurrency(mat.freight)}</p>
-                    </td>
-                    <td className="p-4">
-                      <p className="text-sm font-bold">{formatCurrency(mat.calculations?.effectiveCost || 0)}</p>
-                      <p className="text-[10px] text-muted-foreground">Perda: {formatNumber(mat.standardLoss, 2)}%</p>
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col items-start gap-1.5">

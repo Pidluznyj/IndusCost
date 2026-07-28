@@ -29,6 +29,7 @@ import {
 import { FinanceCashFlowDailyRadar } from "@/src/components/finance/cash-flow/FinanceCashFlowDailyRadar";
 import { FinanceCashFlowYtdSummary } from "@/src/components/finance/cash-flow/FinanceCashFlowYtdSummary";
 import { FinanceCashFlowExecutiveSummaryPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowExecutiveSummaryPanel";
+import { FinanceCashFlowRawMaterialSpotlightPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowRawMaterialSpotlightPanel";
 import { FinanceCashFlowMonthlyPlannedChart } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyPlannedChart";
 import { FinanceCashFlowMonthlyTimelineTable } from "@/src/components/finance/cash-flow/FinanceCashFlowMonthlyTimelineTable";
 import { FinanceCashFlowReconciliationPanel } from "@/src/components/finance/cash-flow/FinanceCashFlowReconciliationPanel";
@@ -281,6 +282,13 @@ export function FinanceCashFlowPage() {
       </FinanceDataAuditDrawer>
 
       <main data-testid="finance-main-content">
+      {payload?.rawMaterialCostCenterSpotlight ? (
+        <div className="mb-6">
+          <FinanceCashFlowRawMaterialSpotlightPanel
+            spotlight={payload.rawMaterialCostCenterSpotlight}
+          />
+        </div>
+      ) : null}
       <div data-testid="cash-flow-filters">
       <FinanceBiFilterPanel
         title={FINANCE_FILTER_PANEL_TITLE}

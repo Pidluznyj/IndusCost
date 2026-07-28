@@ -22,7 +22,7 @@ describe("financeExecutiveReportNavigation", () => {
     assert.ok(nav.includes("Relatório Presidencial"));
     assert.ok(mod.includes("FinanceExecutiveReportPage"));
     assert.ok(mod.includes('path="executive-report"'));
-    assert.ok(mod.includes("finance-executive-report-link"));
+    assert.ok(!mod.includes("finance-executive-report-link"));
   });
 
   it("FinanceExecutiveReportPage consome endpoint consolidado", () => {

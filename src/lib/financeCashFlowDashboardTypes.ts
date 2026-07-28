@@ -14,6 +14,7 @@ import type {
 } from "./financeCashFlowCfoDiagnostics.js";
 import type { FinanceCashFlowExecutiveYtd } from "./financeCashFlowExecutiveYtd.js";
 import type { FinanceCashFlowExecutiveSummary } from "./financeCashFlowExecutiveSummary.js";
+import type { FinanceCashFlowRawMaterialSpotlight } from "./financeCashFlowRawMaterialSpotlight.js";
 import type {
   FinanceDataSanitization,
   FinanceManagementScope,
@@ -161,6 +162,11 @@ export type FinanceCashFlowDashboardPayload = {
   executiveReading: string[];
   /** Visão executiva anual — recebido/pago YTD, projeção até fim do ano e estimativa líquida. */
   executiveSummary: FinanceCashFlowExecutiveSummary;
+  /**
+   * Cards de Matéria-prima (CC): YTD + mês corrente + dois próximos previstos.
+   * Preenchido na rota do dashboard (motor oficial de centros de custo).
+   */
+  rawMaterialCostCenterSpotlight?: FinanceCashFlowRawMaterialSpotlight;
   /** Resumo executivo YTD — complemento com tendência e carteira. */
   executiveYtd: FinanceCashFlowExecutiveYtd;
   /** Leitura executiva do bloco YTD. */

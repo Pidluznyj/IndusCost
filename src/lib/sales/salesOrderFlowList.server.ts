@@ -224,6 +224,7 @@ async function loadStageColumn(
       currentStage: true,
       nextAction: true,
       responsibleArea: true,
+      bottleneckReason: true,
       totalItems: true,
       activeItems: true,
       completedItems: true,
