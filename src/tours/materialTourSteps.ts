@@ -16,6 +16,6 @@ export const MATERIAL_TOUR_STEPS: GuidedTourStep[] = [
     target: "materials-table",
     title: "Custos e status",
     description:
-      "Confira custo atual, posto fábrica, custo com perda e status. Use as ações para editar ou manter o cadastro.",
+      "Confira custo atual, monitoramento de mercado e status. Use as ações para editar ou manter o cadastro.",
   },
 ];
