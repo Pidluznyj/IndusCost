@@ -256,9 +256,14 @@ describe("economic group intercompany — consolidação e consumidores (30–37
     assert.match(financeSo, /FINANCE_SO_EXCLUDE_GROUP_COMPANIES\s*=\s*true/);
   });
 
-  it("listagem operacional aplica exclusão Prisma de grupo", () => {
+  it("listagem Comercial de Pedidos NÃO exclui grupo por default (opt-in)", () => {
     const list = readFileSync(join(process.cwd(), "src/lib/salesOrdersListSummary.ts"), "utf8");
     assert.match(list, /buildEconomicGroupCustomerPrismaExclusion/);
-    assert.match(list, /excludeEconomicGroupCustomers !== false/);
+    // Opt-in explícito — paridade pré-d8daf91 na tela Pedidos de Venda.
+    assert.match(list, /excludeEconomicGroupCustomers === true/);
+    const defaultWhere = buildSalesOrderListWhere({}, { env: {} });
+    assert.doesNotMatch(JSON.stringify(defaultWhere), /72569510000195|14055501000180|55717719000130/);
+    const optIn = buildSalesOrderListWhere({}, { env: {}, excludeEconomicGroupCustomers: true });
+    assert.match(JSON.stringify(optIn), /72569510000195|14055501000180|55717719000130/);
   });
 });
