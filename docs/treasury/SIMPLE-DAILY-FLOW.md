@@ -1,12 +1,11 @@
 # Fluxo diário simplificado — Central de Tesouraria
 
-**Status:** canônico para a jornada diária (produto)  
-**Branch de preparação:** `feat/treasury-simple-daily-flow`  
+**Status:** entregue na branch `feat/treasury-simple-daily-flow` (pré-merge)  
 **Atualizado:** 2026-07-28  
 
-Este documento define a experiência diária **simples** sem substituir o módulo avançado já entregue. A UI unificada ainda não é implementada aqui — apenas o contrato de produto e as fórmulas.
+Experiência diária **simples** sobre o módulo avançado já existente. Não substitui agenda, comparação de cenários, CR/CP avançados, OFX técnico, fechamento formal, relatórios nem auditoria — apenas simplifica a navegação padrão e compõe APIs/motores reutilizados.
 
-Documentação técnica correlata: [12-BUSINESS-RULES.md](./12-BUSINESS-RULES.md), [15-PROJECTION-AND-DOUBLE-COUNTING.md](./15-PROJECTION-AND-DOUBLE-COUNTING.md), [16-DAILY-CLOSING.md](./16-DAILY-CLOSING.md), [17-OFX-AND-RECONCILIATION.md](./17-OFX-AND-RECONCILIATION.md).
+Documentação técnica correlata: [12-BUSINESS-RULES.md](./12-BUSINESS-RULES.md), [15-PROJECTION-AND-DOUBLE-COUNTING.md](./15-PROJECTION-AND-DOUBLE-COUNTING.md), [16-DAILY-CLOSING.md](./16-DAILY-CLOSING.md), [17-OFX-AND-RECONCILIATION.md](./17-OFX-AND-RECONCILIATION.md), [14-PERMISSIONS-AND-FEATURE-FLAGS.md](./14-PERMISSIONS-AND-FEATURE-FLAGS.md), [ACTIVATION.md](./ACTIVATION.md).
 
 ---
 
@@ -15,163 +14,126 @@ Documentação técnica correlata: [12-BUSINESS-RULES.md](./12-BUSINESS-RULES.md
 | Princípio | Regra |
 |-----------|--------|
 | Fonte oficial dos títulos | **Nomus** (`NomusAccountsReceivable` / `NomusAccountsPayable`). A Tesouraria **não** altera títulos oficiais. |
-| Vínculo de conta | Conta financeira **Nomus** (`idContaBancaria` / `bankAccountId`) é a origem do vínculo com `TreasuryFinancialAccount.nomusBankAccountId`. |
-| Saldo inicial | **Manual** (informado pelo operador no começo do dia), preferencialmente sugerido pelo saldo final fechado do dia anterior. |
-| Saldo final bancário | **Manual** (valor visto no extrato/app do banco no fim do dia). |
+| Vínculo de conta | Conta financeira Nomus → `TreasuryFinancialAccount.nomusBankAccountId`. |
+| Saldo inicial | **Manual** (sugerido pelo saldo final fechado do dia anterior, quando houver). |
+| Saldo final bancário | **Manual** (valor visto no extrato/app do banco). |
 | `dueDate` oficial | **Nunca** alterado pela Tesouraria. |
 | Baixa automática Nomus | **Proibida**. |
 | Movimentação de dinheiro | A Tesouraria **não** transfere dinheiro real; registra intenção/ledger local. |
 | Dinheiro | Decimal / string; fuso `America/Sao_Paulo`. |
 | Histórico | Sem exclusão física (cancelar / reverter / versionar). |
+| Ativação | Opt-in (`TREASURY_MODULE_ENABLED`); processos externos permanecem desligados. |
 
 ---
 
-## 2. Conceitos do dia
+## 2. Navegação padrão vs avançada
 
-| Conceito | Significado |
-|----------|-------------|
-| Recebimentos previstos (CR previsto) | Títulos CR ainda em aberto com data de planejamento no dia (cenário da jornada). |
-| Recebimentos realizados (CR realizado) | Valor efetivamente liquidado no Nomus no dia (`amountReceived` + `settlementDate`). Baixa parcial = só o liquidado. |
-| Pagamentos previstos (CP previsto) | Títulos CP em aberto com data de planejamento no dia. |
-| Pagamentos realizados (CP realizado) | Valor efetivamente pago no Nomus no dia (`amountPaid` + data de liquidação). |
-| Saldo previsto | Resultado da fórmula de saldo final previsto (abaixo). |
-| Saldo realizado | Resultado da fórmula de saldo final realizado calculado (abaixo). |
-| Saldo final informado | Saldo bancário digitado pelo operador (observado). |
-| Divergência | `saldo final bancário informado − saldo final realizado calculado`. |
-| OFX | Prova bancária: confirma ou explica movimentos; **não** duplica valores já realizados por título/ledger. |
-| Fechamento | Congela a posição do dia (versão imutável; reabertura cria nova versão). |
-| Abertura do próximo dia | Saldo final **informado** (ou fechado) sugere o saldo inicial de D+1. |
-| Projeção futura | Horizonte pós-fechamento (cenários CONTRACTUAL / PROBABLE / CONFIRMED + MANUAL), risco de saldo negativo e reserva mínima. |
+**Abas principais:** Hoje · Contas · Conferir banco · Próximos dias  
+
+**Recursos avançados:** hub `/finance/treasury/advanced` (ADMIN / SUPER_ADMIN) + deep-links preservados (`/agenda`, `/projections`, `/receivables`, `/payables`, `/ofx`, `/reconcile`, `/closing`, `/reports`, `/audit`, …).
 
 ---
 
-## 3. Fórmulas canônicas
+## 3. Jornada diária entregue
 
-Valores em string decimal Tesouraria. Transferências internas afetam contas individualmente e são **neutras no consolidado**.
+| Passo | UI / API |
+|-------|----------|
+| Vincular conta Nomus | Contas (`/accounts`) |
+| Abrir o dia / saldo inicial | `/today/opening` → `GET/POST …/today/opening` |
+| CR previsto / realizado | `/today/receivables` (lista paginada simples) |
+| CP previsto / realizado | `/today/payables` |
+| Saldos previsto / realizado / divergência | `/today` (payload agregado) + `/today/closing` |
+| Informar saldo final | `/today/closing` |
+| Investigar divergência / OFX | `/bank` (assistente simples; reusa preview/apply/match/ledger) |
+| Fechar o dia | Fechamento formal existente + atalho guiado |
+| Sugestão D+1 | `suggestTreasuryDailyOpeningBalance` a partir do `observedBalance` fechado |
+| Projeção | `/projection` (Contratual / Provável; reusa `GET /agenda`) |
 
-### 3.1 Saldo final previsto
+---
+
+## 4. Fórmulas canônicas
+
+### Saldo final previsto
 
 ```text
 saldo inicial
-+ CR previsto
-− CP previsto
-+ transferências previstas recebidas
-− transferências previstas enviadas
++ CR previsto − CP previsto
+± transferências previstas
 + lançamentos manuais previstos
 = saldo final previsto
 ```
 
-### 3.2 Saldo final realizado calculado
+### Saldo final realizado calculado
 
 ```text
 saldo inicial
-+ CR baixado no Nomus
-− CP baixado no Nomus
-+ entradas locais realizadas
-− saídas locais realizadas
-+ transferências recebidas
-− transferências enviadas
++ CR baixado no Nomus − CP baixado no Nomus
+± entradas/saídas locais realizadas
+± transferências realizadas
 = saldo final realizado calculado
 ```
 
-### 3.3 Divergência
+### Divergência
 
 ```text
-saldo final bancário informado
-− saldo final realizado calculado
-= divergência
+saldo final bancário informado − saldo final realizado calculado = divergência
 ```
 
-Interpretação: divergência ≠ 0 exige investigação (OFX/conciliação/ledger), não auto-baixa Nomus.
+Implementação: `treasuryDailyAccountRoutineRules.ts`, `treasuryDailyCashEngine.ts`.
 
 ---
 
-## 4. Regras contra duplicidade
+## 5. Anti-duplicidade
 
-1. **OFX conciliado com título** não soma novamente o mesmo valor ao caixa do dia.
-2. **OFX conciliado com ledger** não soma novamente.
-3. **OFX sem correspondência** não altera saldo calculado até ação explícita do usuário (criar lançamento manual / alocar).
-4. **Transferência interna** não altera o consolidado (soma das pernas = 0).
-5. **Baixa parcial** utiliza somente o valor efetivamente liquidado (`amountReceived` / `amountPaid`); o aberto permanece no previsto futuro.
-6. **Título realizado** no período **não** permanece também no previsto do mesmo período (precedência: conciliado > baixa oficial > realizado não conciliado > previsão).
+1. OFX conciliado com título **não** soma de novo.  
+2. OFX conciliado com ledger **não** soma de novo.  
+3. OFX sem correspondência **não** altera saldo até ação explícita (manual/tarifa/juros).  
+4. Transferência interna é **neutra no consolidado**.  
+5. Baixa parcial usa só o liquidado; aberto segue no previsto futuro.  
+6. Precedência: conciliado > baixa oficial > previsão (`treasuryFinancialIdentityRules`).
 
-Motor existente: `src/lib/treasury/domain/treasuryFinancialIdentityRules.ts`.
-
----
-
-## 5. Jornada diária (produto) — 12 passos
-
-1. Cadastrar ou vincular contas oficiais vindas do Nomus.  
-2. Informar saldo inicial de cada conta no começo do dia.  
-3. Apresentar CR previsto e realizado por conta.  
-4. Apresentar CP previsto e realizado por conta.  
-5. Calcular saldo previsto e saldo realizado.  
-6. Informar manualmente o saldo final visto no banco.  
-7. Calcular a divergência.  
-8. Investigar divergência manualmente ou por OFX.  
-9. Fechar o dia.  
-10. Usar o saldo final como sugestão de abertura do próximo dia.  
-11. Projetar o primeiro dia com risco de saldo negativo.  
-12. Indicar excedente/déficit em relação à reserva mínima (`minimumBalance`).
-
-Implementação futura deve **compor** APIs já existentes (`/dashboard`, `/daily-closing/preview`, balances, OFX, reconcile, projections/agenda), sem apagar handlers avançados.
+Fingerprint OFX / apply idempotente: `fileSha256` + fingerprint por conta.
 
 ---
 
-## 6. Preservação dos recursos avançados
+## 6. Persistência (sem model Prisma novo)
 
-O fluxo simples é uma **camada de UX** sobre o módulo completo. Permanecem disponíveis (flags/ACL):
-
-- Contas financeiras + ACL por conta  
-- Snapshots e posição  
-- CR/CP oficiais + overlays (expectativa, promessa, cobrança, contestação, programação CP)  
-- Agenda e comparação de cenários  
-- Transferências e ledger manual  
-- OFX, movimentos bancários e conciliação  
-- Exceções, alertas, fechamento versionado  
-- Relatórios e auditoria  
-- ~92 handlers HTTP e shell `TreasuryModule` com todas as seções
-
-**Proibido** nesta iniciativa: remover models `Treasury*`, rotas avançadas, flags, permissões ou motores de domínio “porque a jornada ficou simples”.
-
----
-
-## 7. Mapeamento mínimo para a implementação futura
-
-| Passo | Implementação existente (reuso) |
-|-------|----------------------------------|
-| Contas / vínculo Nomus | `TreasuryFinancialAccount.nomusBankAccountId` |
-| Saldo inicial / final | Snapshot MANUAL + `TreasuryDailyClosing` / `AccountPosition` |
-| CR/CP previsto×realizado | `GET /api/finance/treasury/dashboard` (+ day-flow) |
-| Divergência | Dashboard + closing `differenceAmount` + balance-position |
-| OFX / investigação | `…/bank-imports/ofx/preview|apply` + reconcile workspace |
-| Fechamento / D+1 | `GET …/daily-closing/preview`, `POST …/daily-closing` |
-| Projeção / reserva | Projection engine + agenda + `minimumBalance` |
-
----
-
-## 9. Persistência da rotina diária (sem model novo)
-
-Decisão de domínio (2026-07-28): **não** criar `TreasuryDailyAccountRoutine` no Prisma.
-
-| Conceito | Representação existente |
-|----------|-------------------------|
-| Saldo inicial informado | `TreasuryBalanceSnapshot` MANUAL, idempotencyKey `daily-opening:{civilDate}:v{n}` |
-| Saldo final bancário informado | `TreasuryBalanceSnapshot` MANUAL, idempotencyKey `daily-closing-bank:{civilDate}:v{n}` |
-| Informado por / em | `createdByUserId` / `createdAt` do snapshot (servidor) |
-| Origem do saldo inicial | Metadado de domínio (`PREVIOUS_CLOSING` \| `MANUAL` \| `SNAPSHOT`) + notes |
-| Previsto / realizado / divergência | Calculados (`treasuryDailyAccountRoutineRules`) |
-| CLOSED / REOPENED | `TreasuryDailyClosing` + `TreasuryDailyClosingAccountPosition.observedBalance` |
-| Sugestão de abertura D+1 | `observedBalance` do último fechamento CLOSED da conta |
+| Conceito | Representação |
+|----------|----------------|
+| Saldo inicial | `TreasuryBalanceSnapshot` MANUAL (`daily-opening:…`) |
+| Saldo final bancário | `TreasuryBalanceSnapshot` MANUAL (`daily-closing-bank:…`) |
+| Fechamento / reabertura | `TreasuryDailyClosing` versionado |
+| Projeção | Runs/agenda existentes |
 | Auditoria | `TreasuryAuditLog` append-only |
-| Concorrência | `expectedVersion` / nova versão de snapshot (sem overwrite silencioso) |
-
-Regras puras: `src/lib/treasury/domain/treasuryDailyAccountRoutineRules.ts`.
 
 ---
 
-## 10. Fora de escopo imediato
+## 7. Superfície HTTP da UX simples (aditiva)
 
-- Migration / model Prisma dedicado (desnecessário enquanto snapshots + closing cobrirem o estado).  
-- Deploy / merge para `main`.  
-- Qualquer escrita em Nomus.
+| Método | Path |
+|--------|------|
+| GET | `/api/finance/treasury/today` |
+| GET/POST | `/api/finance/treasury/today/opening` |
+| GET/POST | `/api/finance/treasury/today/closing` |
+
+Handlers avançados existentes permanecem (congelados em testes de regressão ≈ 94 registros `app.*` em `treasuryRoutes.ts`).
+
+---
+
+## 8. Testes de preservação / validação
+
+| Suite | Papel |
+|-------|--------|
+| `treasurySimpleDailyFlow.characterization.test.ts` | Congela módulo avançado antes/durante simplificação |
+| `treasuryAdvancedCapabilitiesRegression.test.ts` | Rotas, APIs, models, flags, permissões, shell |
+| `treasurySimpleDailyOperation.e2e.test.ts` | Jornada 18 passos + casos de negócio + UX/perf |
+| `npm run test:treasury` | Runner em lotes (`scripts/runTreasuryTests.mjs`) |
+
+---
+
+## 9. Fora de escopo desta branch
+
+- Merge em `main` / deploy / migrate em produção.  
+- Qualquer escrita em Nomus.  
+- Model Prisma `TreasuryDailyAccountRoutine`.  
+- Segundo motor de projeção ou de fluxo de caixa.
