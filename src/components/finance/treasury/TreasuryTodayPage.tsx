@@ -60,7 +60,7 @@ export function TreasuryTodayPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível carregar a Tesouraria de hoje.")
+        buildFinanceTabLoadError("Não foi possível carregar a Tesouraria de hoje.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);

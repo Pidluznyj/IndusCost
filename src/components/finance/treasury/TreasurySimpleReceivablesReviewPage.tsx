@@ -144,7 +144,7 @@ export function TreasurySimpleReceivablesReviewPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível carregar os recebimentos.")
+        buildFinanceTabLoadError("Não foi possível carregar os recebimentos.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);

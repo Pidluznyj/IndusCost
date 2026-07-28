@@ -75,7 +75,7 @@ export function TreasuryOfxImportDialog(props: {
       setPreview(result);
       setStep("preview");
     } catch (err) {
-      setError(buildFinanceTabLoadError(err, "Falha ao pré-visualizar OFX."));
+      setError(buildFinanceTabLoadError("Falha ao pré-visualizar OFX.", err));
     } finally {
       setBusy(false);
     }
@@ -95,7 +95,7 @@ export function TreasuryOfxImportDialog(props: {
       setStep("done");
       onApplied(result);
     } catch (err) {
-      setError(buildFinanceTabLoadError(err, "Falha ao confirmar importação."));
+      setError(buildFinanceTabLoadError("Falha ao confirmar importação.", err));
       setStep("preview");
     } finally {
       setBusy(false);

@@ -267,10 +267,7 @@ export function TreasurySimpleOfxInvestigationPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(
-          err,
-          "Não foi possível carregar a conferência bancária."
-        )
+        buildFinanceTabLoadError("Não foi possível carregar a conferência bancária.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -313,7 +310,7 @@ export function TreasurySimpleOfxInvestigationPage() {
         await load();
       } catch (err) {
         setError(
-          buildFinanceTabLoadError(err, "Não foi possível confirmar a correspondência.")
+          buildFinanceTabLoadError("Não foi possível confirmar a correspondência.", err)
         );
       } finally {
         setBusyId(null);
@@ -346,7 +343,7 @@ export function TreasurySimpleOfxInvestigationPage() {
         await load();
       } catch (err) {
         setError(
-          buildFinanceTabLoadError(err, "Não foi possível confirmar o título.")
+          buildFinanceTabLoadError("Não foi possível confirmar o título.", err)
         );
       } finally {
         setBusyId(null);
@@ -376,10 +373,7 @@ export function TreasurySimpleOfxInvestigationPage() {
         await load();
       } catch (err) {
         setError(
-          buildFinanceTabLoadError(
-            err,
-            "Não foi possível criar o lançamento manual."
-          )
+          buildFinanceTabLoadError("Não foi possível criar o lançamento manual.", err)
         );
       } finally {
         setBusyId(null);
@@ -409,7 +403,7 @@ export function TreasurySimpleOfxInvestigationPage() {
         await load();
       } catch (err) {
         setError(
-          buildFinanceTabLoadError(err, "Não foi possível desfazer a correspondência.")
+          buildFinanceTabLoadError("Não foi possível desfazer a correspondência.", err)
         );
       } finally {
         setBusyId(null);

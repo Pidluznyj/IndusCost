@@ -74,10 +74,7 @@ export function TreasuryTodayOpeningPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(
-          err,
-          "Não foi possível carregar os saldos iniciais."
-        )
+        buildFinanceTabLoadError("Não foi possível carregar os saldos iniciais.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -182,7 +179,7 @@ export function TreasuryTodayOpeningPage() {
       }
     } catch (err) {
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível confirmar os saldos.")
+        buildFinanceTabLoadError("Não foi possível confirmar os saldos.", err)
       );
     } finally {
       setSaving(false);
@@ -209,7 +206,7 @@ export function TreasuryTodayOpeningPage() {
       }
     } catch (err) {
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível salvar os saldos iniciais.")
+        buildFinanceTabLoadError("Não foi possível salvar os saldos iniciais.", err)
       );
     } finally {
       setSaving(false);

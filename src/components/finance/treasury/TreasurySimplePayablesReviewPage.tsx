@@ -140,7 +140,7 @@ export function TreasurySimplePayablesReviewPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível carregar os pagamentos.")
+        buildFinanceTabLoadError("Não foi possível carregar os pagamentos.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);

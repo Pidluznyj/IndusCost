@@ -88,10 +88,7 @@ export function TreasuryTodayClosingPage() {
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
-        buildFinanceTabLoadError(
-          err,
-          "Não foi possível carregar os saldos finais."
-        )
+        buildFinanceTabLoadError("Não foi possível carregar os saldos finais.", err)
       );
     } finally {
       if (!ac.signal.aborted) setLoading(false);
@@ -160,7 +157,7 @@ export function TreasuryTodayClosingPage() {
       onStepChange("divergences");
     } catch (err) {
       setError(
-        buildFinanceTabLoadError(err, "Não foi possível salvar os saldos finais.")
+        buildFinanceTabLoadError("Não foi possível salvar os saldos finais.", err)
       );
     } finally {
       setSaving(false);
@@ -195,10 +192,7 @@ export function TreasuryTodayClosingPage() {
         navigate("/finance/treasury/today");
       } catch (err) {
         setError(
-          buildFinanceTabLoadError(
-            err,
-            "Não foi possível fechar o dia. Recarregue e tente novamente."
-          )
+          buildFinanceTabLoadError("Não foi possível fechar o dia. Recarregue e tente novamente.", err)
         );
         await load();
       } finally {
