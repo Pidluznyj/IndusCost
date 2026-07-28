@@ -441,4 +441,28 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
       assert.ok(existsSync(join(here, "controllers", name)), name);
     }
   });
+
+  it("nenhum model Treasury* avançado foi removido; rotina diária é domínio reutilizável", () => {
+    const schema = readFileSync(join(repoRoot, "prisma/schema.prisma"), "utf8");
+    for (const model of [
+      "TreasuryFinancialAccount",
+      "TreasuryBalanceSnapshot",
+      "TreasuryAuditLog",
+      "TreasuryLedgerEntry",
+      "TreasuryTransfer",
+      "TreasuryDailyClosing",
+      "TreasuryDailyClosingAccountPosition",
+      "TreasuryBankImportBatch",
+      "TreasuryBankMovement",
+      "TreasuryReconciliationMatch",
+      "TreasuryProjectionRun",
+      "TreasuryException",
+    ]) {
+      assert.match(schema, new RegExp(`model ${model}\\b`));
+    }
+    assert.doesNotMatch(schema, /model TreasuryDailyAccountRoutine\b/);
+    assert.ok(
+      existsSync(join(here, "domain/treasuryDailyAccountRoutineRules.ts"))
+    );
+  });
 });

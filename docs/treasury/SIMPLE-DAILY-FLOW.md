@@ -150,9 +150,29 @@ O fluxo simples é uma **camada de UX** sobre o módulo completo. Permanecem dis
 
 ---
 
-## 8. Fora de escopo deste documento / branch de preparação
+## 9. Persistência da rotina diária (sem model novo)
 
-- Nova tela unificada “Dia de Caixa” (próximo passo de implementação).  
-- Migration ou alteração de schema.  
+Decisão de domínio (2026-07-28): **não** criar `TreasuryDailyAccountRoutine` no Prisma.
+
+| Conceito | Representação existente |
+|----------|-------------------------|
+| Saldo inicial informado | `TreasuryBalanceSnapshot` MANUAL, idempotencyKey `daily-opening:{civilDate}:v{n}` |
+| Saldo final bancário informado | `TreasuryBalanceSnapshot` MANUAL, idempotencyKey `daily-closing-bank:{civilDate}:v{n}` |
+| Informado por / em | `createdByUserId` / `createdAt` do snapshot (servidor) |
+| Origem do saldo inicial | Metadado de domínio (`PREVIOUS_CLOSING` \| `MANUAL` \| `SNAPSHOT`) + notes |
+| Previsto / realizado / divergência | Calculados (`treasuryDailyAccountRoutineRules`) |
+| CLOSED / REOPENED | `TreasuryDailyClosing` + `TreasuryDailyClosingAccountPosition.observedBalance` |
+| Sugestão de abertura D+1 | `observedBalance` do último fechamento CLOSED da conta |
+| Auditoria | `TreasuryAuditLog` append-only |
+| Concorrência | `expectedVersion` / nova versão de snapshot (sem overwrite silencioso) |
+
+Regras puras: `src/lib/treasury/domain/treasuryDailyAccountRoutineRules.ts`.
+
+---
+
+## 10. Fora de escopo imediato
+
+- Nova tela unificada “Dia de Caixa”.  
+- Migration / model Prisma dedicado (desnecessário enquanto snapshots + closing cobrirem o estado).  
 - Deploy / merge para `main`.  
 - Qualquer escrita em Nomus.
