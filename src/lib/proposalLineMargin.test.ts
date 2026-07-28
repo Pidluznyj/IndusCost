@@ -1,24 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { computeSalesOrderResultItem } from "./salesOrderResultMath.ts";
 import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
 } from "./proposalLineMargin.ts";
 
-describe("proposalLineMargin — paridade com Pedido de Venda", () => {
-  it("líquido 1000, imposto 10%, custo 600 → mesma margem do Resultado (deductFromGross)", () => {
-    const so = computeSalesOrderResultItem({
-      salesOrderItemId: "i1",
-      orderId: "o1",
-      issueMonth: 1,
-      productId: "p1",
-      quantity: 1,
-      marginStatus: "OK",
-      salesAmount: 1000,
-      costAmount: 600,
-      taxPercent: 10,
-    });
+describe("proposalLineMargin — margem de formação da tabela", () => {
+  it("preço manual sem comissão/frete: (receita − imposto − custo) / receita", () => {
     const proposal = calculateProposalLineMargin({
       quantity: 1,
       negotiatedPrice: 1000,
@@ -26,43 +14,67 @@ describe("proposalLineMargin — paridade com Pedido de Venda", () => {
       taxesPerc: 10,
       unitCost: 600,
     });
-    assert.equal(proposal.marginValue, so.marginAmount);
-    assert.equal(proposal.marginPerc, so.marginPercent);
-    assert.equal(proposal.taxesValue, so.taxAmount);
-    assert.equal(proposal.netSalesAmount, so.netSalesAmount);
-    // 1000 − 100 imposto − 600 custo = 300 → 33,333…% sobre 900
+    assert.equal(proposal.taxesValue, 100);
+    assert.equal(proposal.netSalesAmount, 900);
+    // 1000 − 100 − 600 = 300 → 30% sobre 1000 (PV), não 33,33% sobre 900
     assert.equal(proposal.marginValue, 300);
+    assert.equal(proposal.marginPerc, 30);
   });
 
-  it("comissão e frete NÃO alteram a margem (iguais ao Pedido)", () => {
-    const base = calculateProposalLineMargin({
-      quantity: 2,
-      negotiatedPrice: 500,
-      discountValue: 0,
-      taxesPerc: 12,
-      unitCost: 200,
-    });
-    // Mesmos inputs de margem — comissão/frete ficam fora do helper
-    assert.equal(base.net, 1000);
-    assert.equal(base.totalCost, 400);
-    assert.ok(base.marginValue !== 1000 - base.taxesValue - 50 - 30 - 400);
-  });
-
-  it("desconto reduz a receita vendida antes do imposto (como PV líquido)", () => {
+  it("comissão e frete% entram na margem (formação Atacado)", () => {
+    // Fixture 610.35AA: tax 28.75%, comm 2%, freight 3%, margin formação 32%
     const r = calculateProposalLineMargin({
       quantity: 1,
-      negotiatedPrice: 1000,
-      discountValue: 100,
-      taxesPerc: 10,
-      unitCost: 500,
+      negotiatedPrice: 3.423215,
+      discountValue: 0,
+      taxesPerc: 28.75,
+      commissionPerc: 2,
+      freightPerc: 3,
+      unitCost: 1.172451,
     });
-    assert.equal(r.net, 900);
-    assert.equal(r.taxesValue, 90);
-    assert.equal(r.netSalesAmount, 810);
-    assert.equal(r.marginValue, 310);
+    assert.ok(Math.abs(r.marginPerc - 32) < 0.05, `expected ~32%, got ${r.marginPerc}`);
+    assert.ok(Math.abs(r.marginValue - 1.095429) < 0.01, `margin R$ ${r.marginValue}`);
   });
 
-  it("resumo pondera % pela receita líquida gerencial (não média simples)", () => {
+  it("desconto reduz a margem % abaixo da formação", () => {
+    const full = calculateProposalLineMargin({
+      quantity: 1,
+      negotiatedPrice: 3.423215,
+      taxesPerc: 28.75,
+      commissionPerc: 2,
+      freightPerc: 3,
+      unitCost: 1.172451,
+    });
+    const discounted = calculateProposalLineMargin({
+      quantity: 1,
+      negotiatedPrice: 3.423215,
+      discountValue: 0.5,
+      taxesPerc: 28.75,
+      commissionPerc: 2,
+      freightPerc: 3,
+      unitCost: 1.172451,
+    });
+    assert.ok(discounted.marginPerc < full.marginPerc);
+    assert.ok(discounted.net < full.net);
+  });
+
+  it("frete absoluto legado soma ao frete percentual", () => {
+    const r = calculateProposalLineMargin({
+      quantity: 1,
+      negotiatedPrice: 100,
+      taxesPerc: 0,
+      commissionPerc: 0,
+      freightPerc: 3,
+      freightValue: 2,
+      unitCost: 50,
+    });
+    // frete = 3 + 2 = 5; margem = 100 − 0 − 0 − 5 − 50 = 45 → 45%
+    assert.equal(r.freightValue, 5);
+    assert.equal(r.marginValue, 45);
+    assert.equal(r.marginPerc, 45);
+  });
+
+  it("resumo pondera % pela receita PV (não média simples)", () => {
     const a = calculateProposalLineMargin({
       quantity: 1,
       negotiatedPrice: 1000,
@@ -79,8 +91,7 @@ describe("proposalLineMargin — paridade com Pedido de Venda", () => {
     assert.equal(a.marginValue, 400);
     assert.equal(b.marginValue, 90);
     assert.equal(summary.totalMarginValue, 490);
-    // (490 / 1100) * 100 → 44.55 (roundPricingPercent 2 casas) — não média de 40% e 90%
+    // (490 / 1100) * 100 → 44.55
     assert.equal(summary.totalMarginPerc, 44.55);
   });
 });
-

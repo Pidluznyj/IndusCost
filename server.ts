@@ -9577,18 +9577,32 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       }
 
       const formulaSnapshot = item.formulaSnapshotJson as Record<string, unknown> | null;
-      const freightFromSnapshot = Number((formulaSnapshot?.freight as unknown) ?? 0);
-      const freightValue = Number.isFinite(freightFromSnapshot) ? freightFromSnapshot : 0;
+      const freightAbsoluteRaw = Number((formulaSnapshot?.freight as unknown) ?? 0);
+      const freightAbsolute = Number.isFinite(freightAbsoluteRaw) ? Math.max(0, freightAbsoluteRaw) : 0;
+      const formulaFreightPercentRaw = Number(formulaSnapshot?.freightPercent);
+      const rates = (formulaSnapshot?.rates as Record<string, unknown> | undefined) ?? undefined;
+      const freightRateRaw = Number(rates?.freightRate);
+      let freightPercent = 0;
+      if (Number.isFinite(formulaFreightPercentRaw) && formulaFreightPercentRaw >= 0) {
+        freightPercent = formulaFreightPercentRaw;
+      } else if (Number.isFinite(freightRateRaw) && freightRateRaw >= 0) {
+        freightPercent = freightRateRaw <= 1 ? freightRateRaw * 100 : freightRateRaw;
+      }
+      const salePriceNum = Number(item.salePrice);
+      const freightFromPercent =
+        Number.isFinite(salePriceNum) && salePriceNum > 0
+          ? salePriceNum * (freightPercent / 100)
+          : 0;
+      // proposalDefaults.freightValue = total frete no preço de lista ( % + absoluto legado )
+      const freightValue = freightFromPercent + freightAbsolute;
 
       // Comissão: prefere colunas dedicadas (C2). Para itens antigos com 0 na coluna,
       // tenta resgatar do formulaSnapshotJson.rates.commissionRate (taxa em fração: 0.05 = 5%).
-      const salePriceNum = Number(item.salePrice);
       const colCommissionPerc = Number(item.commissionPerc);
       const colCommissionValue = Number(item.commissionValue);
       let finalCommissionPerc = Number.isFinite(colCommissionPerc) ? colCommissionPerc : 0;
       let finalCommissionValue = Number.isFinite(colCommissionValue) ? colCommissionValue : 0;
       if (finalCommissionPerc <= 0) {
-        const rates = (formulaSnapshot?.rates as Record<string, unknown> | undefined) ?? undefined;
         const legacyCommRate = Number(rates?.commissionRate);
         if (Number.isFinite(legacyCommRate) && legacyCommRate > 0) {
           finalCommissionPerc = legacyCommRate * 100;
@@ -9649,6 +9663,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           salePrice: Number(item.salePrice),
           commissionPerc: finalCommissionPerc,
           commissionValue: finalCommissionValue,
+          freightPercent,
+          freightAbsolute,
           formulaSnapshotJson: item.formulaSnapshotJson,
           costSnapshotJson: item.costSnapshotJson,
         },
@@ -9658,6 +9674,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           negotiatedPrice: Number(item.salePrice),
           marginPerc: Number(item.marginPct),
           taxesValue: Number(item.frozenTaxCost),
+          freightPercent,
+          freightAbsolute,
           freightValue,
           commissionPerc: finalCommissionPerc,
           commissionValue: finalCommissionValue,
@@ -14593,6 +14611,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     discountValue: true,
     taxesPerc: true,
     unitCost: true,
+    commissionPerc: true,
+    freightValue: true,
+    pricingSnapshotJson: true,
   } as const;
 
   function withOfficialProposalListMargin<T extends Record<string, unknown>>(

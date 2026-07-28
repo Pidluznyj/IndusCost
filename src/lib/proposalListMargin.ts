@@ -1,11 +1,15 @@
 /**
  * Margem oficial da listagem de Propostas — mesma regra do formulário
- * (`calculateProposalLineMargin` / tabela de formação via unitCost congelado).
+ * (margem de formação da tabela: imposto + comissão + frete).
  */
 import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
 } from "./proposalLineMargin.js";
+import {
+  resolveProposalFreightAbsolute,
+  resolveProposalFreightPercent,
+} from "./proposalFreightPercent.js";
 
 export type ProposalListMarginItemInput = {
   quantity?: unknown;
@@ -13,6 +17,9 @@ export type ProposalListMarginItemInput = {
   discountValue?: unknown;
   taxesPerc?: unknown;
   unitCost?: unknown;
+  commissionPerc?: unknown;
+  freightValue?: unknown;
+  pricingSnapshotJson?: unknown;
 };
 
 function safeNum(value: unknown, fallback = 0): number {
@@ -37,12 +44,18 @@ export function resolveProposalOfficialMarginFromItems(
   const lineMargins = rows.map((item) => {
     const quantity = safeNum(item.quantity);
     const unitCost = Math.max(0, safeNum(item.unitCost));
+    const freightPerc = resolveProposalFreightPercent(item.pricingSnapshotJson);
+    const freightAbsolute = resolveProposalFreightAbsolute(item.pricingSnapshotJson);
     return {
       ...calculateProposalLineMargin({
         quantity,
         negotiatedPrice: safeNum(item.negotiatedPrice),
         discountValue: safeNum(item.discountValue),
         taxesPerc: safeNum(item.taxesPerc),
+        commissionPerc: safeNum(item.commissionPerc),
+        freightPerc,
+        // Sem % no snapshot: usa freightValue persistido como absoluto legado.
+        freightValue: freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(item.freightValue),
         unitCost,
       }),
       lineCost: quantity * unitCost,

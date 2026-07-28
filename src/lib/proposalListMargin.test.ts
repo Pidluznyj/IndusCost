@@ -6,7 +6,7 @@ import {
 } from "./proposalListMargin.js";
 
 describe("proposalListMargin", () => {
-  it("resumo pondera % pela receita líquida gerencial (não média simples)", () => {
+  it("resumo pondera % pela receita PV (não média simples)", () => {
     const resolved = resolveProposalOfficialMarginFromItems([
       {
         quantity: 1,
@@ -45,10 +45,29 @@ describe("proposalListMargin", () => {
       ],
     });
     assert.equal(enriched.marginSource, "ITEMS");
-    assert.notEqual(enriched.totalMarginPerc, 100);
+    // (1000 − 100 imposto − 600 custo) / 1000 = 30%
+    assert.equal(enriched.totalMarginPerc, 30);
     assert.equal((enriched as { items?: unknown }).items, undefined);
-    assert.ok(Number(enriched.totalMarginPerc) > 0);
-    assert.ok(Number(enriched.totalMarginPerc) < 100);
+  });
+
+  it("Atacado com comissão/frete da tabela → margem de formação ~32%", () => {
+    const resolved = resolveProposalOfficialMarginFromItems([
+      {
+        quantity: 1,
+        negotiatedPrice: 3.423215,
+        discountValue: 0,
+        taxesPerc: 28.75,
+        unitCost: 1.172451,
+        commissionPerc: 2,
+        pricingSnapshotJson: {
+          proposalDefaults: { freightPercent: 3, freightAbsolute: 0 },
+        },
+      },
+    ]);
+    assert.ok(
+      Math.abs(resolved.totalMarginPerc - 32) < 0.05,
+      `expected ~32%, got ${resolved.totalMarginPerc}`
+    );
   });
 
   it("enrich preserva cabeçalho quando não há itens", () => {

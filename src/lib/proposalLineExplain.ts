@@ -1,14 +1,19 @@
 import type { CalculationExplanation } from "../types/calculation";
 import { calculateProposalLineMargin } from "./proposalLineMargin.js";
+import { resolveProposalFreightPercent } from "./proposalFreightPercent.js";
 
 function brMoney(n: number): string {
   if (!Number.isFinite(n)) return "—";
-  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  return n.toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  });
 }
 
 /**
- * Explica a margem da linha com o mesmo racional oficial de Pedido de Venda
- * (`deductFromGross` — sem comissão/frete na margem).
+ * Explica a margem da linha — margem de venda comercial (formação de tabela).
  */
 export function buildProposalLineMarginExplanation(params: {
   quantity: number;
@@ -20,40 +25,52 @@ export function buildProposalLineMarginExplanation(params: {
   unitCost: number;
   marginValue: number;
   marginPerc: number;
+  commissionPerc?: number;
+  freightPerc?: number;
+  pricingSnapshotJson?: unknown;
 }): CalculationExplanation {
+  const receita =
+    params.quantity * params.negotiatedPrice - params.discountValue;
+  const taxesPerc = receita > 0 ? (params.taxesValue / receita) * 100 : 0;
+  const commissionPerc =
+    params.commissionPerc != null && Number.isFinite(params.commissionPerc)
+      ? params.commissionPerc
+      : receita > 0
+        ? (params.commissionValue / receita) * 100
+        : 0;
+  const freightPerc =
+    params.freightPerc != null && Number.isFinite(params.freightPerc)
+      ? params.freightPerc
+      : resolveProposalFreightPercent(params.pricingSnapshotJson);
+
   const computed = calculateProposalLineMargin({
     quantity: params.quantity,
     negotiatedPrice: params.negotiatedPrice,
     discountValue: params.discountValue,
-    taxesPerc:
-      params.quantity * params.negotiatedPrice - params.discountValue > 0
-        ? (params.taxesValue / (params.quantity * params.negotiatedPrice - params.discountValue)) * 100
-        : 0,
+    taxesPerc,
+    commissionPerc,
+    freightPerc,
     unitCost: params.unitCost,
   });
   return {
-    title: "Margem da linha (igual Pedido de Venda)",
+    title: "Margem de venda (formação da tabela)",
     description:
-      "Mesma regra oficial do Pedido: receita vendida (após desconto) menos imposto estimado, menos custo industrial. Comissão e frete são comerciais e não entram na margem.",
+      "Mesma lógica da tabela comercial: receita negociada (após desconto) menos imposto, comissão, frete e custo industrial. No preço cheio da tabela, a % aproxima a margem padrão cadastrada (ex. Atacado 30%).",
     formulaText:
-      "receita = qtd × negociado − desconto; imposto = receita × taxesPerc; líquida = receita − imposto; marginValue = líquida − (qtd × unitCost); marginPerc = marginValue / líquida × 100.",
+      "receita = qtd × negociado − desconto; imposto/comissão/frete = receita × %; marginValue = receita − imposto − comissão − frete − (qtd × unitCost); marginPerc = marginValue / receita × 100.",
     inputs: [
       { label: "Quantidade", value: String(params.quantity) },
       { label: "Bruto (qtd × negociado)", value: brMoney(computed.gross) },
       { label: "Desconto", value: brMoney(params.discountValue) },
-      { label: "Receita vendida", value: brMoney(computed.net) },
-      { label: "Impostos (sobre receita)", value: brMoney(computed.taxesValue) },
-      { label: "Receita líquida gerencial", value: brMoney(computed.netSalesAmount) },
+      { label: "Receita vendida (PV)", value: brMoney(computed.net) },
+      { label: "Impostos", value: brMoney(computed.taxesValue) },
+      { label: "Comissão", value: brMoney(computed.commissionValue) },
+      { label: "Frete", value: brMoney(computed.freightValue) },
       { label: "Custo total (qtd × CIU)", value: brMoney(computed.totalCost) },
-      {
-        label: "Comissão (fora da margem)",
-        value: brMoney(params.commissionValue),
-      },
-      { label: "Frete (fora da margem)", value: brMoney(params.freightValue) },
     ],
     resultLabel: "Margem valor",
     resultValue: params.marginValue,
-    notes: `Margem % sobre a receita líquida gerencial: ${params.marginPerc.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%.`,
-    source: "Formulário de proposta — paridade com Pedido de Venda (salesOrderResultMath)",
+    notes: `Margem % sobre a receita (PV): ${params.marginPerc.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%.`,
+    source: "Formulário de proposta — margem de formação da tabela comercial",
   };
 }

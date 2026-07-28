@@ -43,6 +43,10 @@ import {
   calculateProposalLineMargin,
   calculateProposalMarginSummary,
 } from "@/src/lib/proposalLineMargin";
+import {
+  resolveProposalFreightAbsolute,
+  resolveProposalFreightPercent,
+} from "@/src/lib/proposalFreightPercent";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
@@ -293,6 +297,8 @@ type PublishedPriceDefaults = {
   marginPerc: number;
   taxesValue: number;
   freightValue: number;
+  freightPercent?: number;
+  freightAbsolute?: number;
   commissionPerc?: number;
   commissionValue?: number;
 };
@@ -337,8 +343,7 @@ const ITEM_PRICE_SOURCE_MANUAL_OVERRIDE = "MANUAL_OVERRIDE";
 
 /**
  * Recalcula campos derivados de um ProposalItem após uma mudança.
- * Margem = mesma regra oficial do Pedido de Venda (receita − imposto − custo;
- * comissão/frete fora da margem).
+ * Margem de formação da tabela: receita − imposto − comissão − frete − custo.
  */
 function recomputeItemDerivedFields(
   itemIn: ProposalItem,
@@ -359,16 +364,23 @@ function recomputeItemDerivedFields(
   }
 
   const discountVal = safeNum(item.discountValue);
+  const freightPerc = resolveProposalFreightPercent(item.pricingSnapshotJson);
+  const freightAbsolute = resolveProposalFreightAbsolute(item.pricingSnapshotJson);
   const margin = calculateProposalLineMargin({
     quantity: qty,
     negotiatedPrice: negotiated,
     discountValue: discountVal,
     taxesPerc: safeNum(item.taxesPerc),
+    commissionPerc: safeNum(item.commissionPerc),
+    freightPerc,
+    // Com frete% da tabela usa só o absoluto do snapshot; senão preserva frete R$ do item.
+    freightValue: freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(item.freightValue),
     unitCost,
   });
 
   item.taxesValue = margin.taxesValue;
-  item.commissionValue = safeNum(margin.net * (safeNum(item.commissionPerc) / 100));
+  item.commissionValue = margin.commissionValue;
+  item.freightValue = margin.freightValue;
   item.marginValue = margin.marginValue;
   item.marginPerc = margin.marginPerc;
 
@@ -1142,6 +1154,15 @@ export const ProposalModule = () => {
           commissionPerc,
           freightValue: freightVal,
           calculationExplainability: snapshot.calculationExplainability,
+          pricingSnapshotJson: {
+            capturedAt: new Date().toISOString(),
+            source: "PRODUCT_PRICING_SNAPSHOT",
+            proposalDefaults: {
+              freightPercent: 0,
+              freightAbsolute: freightVal,
+              commissionPerc,
+            },
+          },
         }),
         "none"
       );
@@ -1404,7 +1425,7 @@ export const ProposalModule = () => {
     });
   };
 
-  // Totais Consolidados — margem ponderada igual Pedido de Venda
+  // Totais Consolidados — margem de formação da tabela (ponderada pela receita PV)
   const totals = useMemo(() => {
     const items = formData.items || [];
     const totalGross = items.reduce(
@@ -1421,15 +1442,21 @@ export const ProposalModule = () => {
     const totalComm = items.reduce((acc, i) => acc + safeNum(i.commissionValue), 0);
     const totalFreight = items.reduce((acc, i) => acc + safeNum(i.freightValue), 0);
 
-    const lineMargins = items.map((i) =>
-      calculateProposalLineMargin({
+    const lineMargins = items.map((i) => {
+      const freightPerc = resolveProposalFreightPercent(i.pricingSnapshotJson);
+      const freightAbsolute = resolveProposalFreightAbsolute(i.pricingSnapshotJson);
+      return calculateProposalLineMargin({
         quantity: safeNum(i.quantity),
         negotiatedPrice: safeNum(i.negotiatedPrice),
         discountValue: safeNum(i.discountValue),
         taxesPerc: safeNum(i.taxesPerc),
+        commissionPerc: safeNum(i.commissionPerc),
+        freightPerc,
+        freightValue:
+          freightPerc > 0 ? freightAbsolute : freightAbsolute || safeNum(i.freightValue),
         unitCost: safeNum(i.unitCost),
-      })
-    );
+      });
+    });
     const marginSummary = calculateProposalMarginSummary(lineMargins);
 
     return {
@@ -1823,8 +1850,8 @@ export const ProposalModule = () => {
                   data-testid="proposal-total-margin-strip"
                 >
                   <p className="text-[11px] text-muted-foreground leading-snug max-w-xl">
-                    Margem sobre o preço negociado (após desconto e imposto estimado), com custo da tabela
-                    selecionada ou do snapshot do produto.
+                    Margem de venda da tabela: preço negociado (após desconto) menos imposto, comissão, frete e
+                    custo — a mesma lógica da formação (ex. Atacado 30%).
                   </p>
                   <div className="flex items-baseline gap-2 shrink-0">
                     <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
