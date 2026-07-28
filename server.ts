@@ -601,6 +601,7 @@ import { registerMaterialMarketQuoteReliabilityRoutes } from "./src/lib/material
 import { initializeMaterialMarketQuoteReliability, MaterialMarketQuoteReliabilityValidationError } from "./src/lib/materialMarketQuoteReliability.server.js";
 import { registerMarketGlobalIndicatorsRoutes } from "./src/lib/marketGlobalIndicatorsRoutes.js";
 import { registerMaterialMarketIntelligenceExportRoutes } from "./src/lib/materialMarketIntelligenceExportRoutes.js";
+import { registerMaterialStockTabletRoutes } from "./src/lib/materialStockTabletRoutes.js";
 import {
   applyNomusBomBatchFromDashboard,
   applyNomusBomFromDashboard,
@@ -8208,6 +8209,12 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   }, {
     prisma,
   });
+
+  registerMaterialStockTabletRoutes(
+    app,
+    { requireAppAuth, requireResource },
+    { prisma }
+  );
 
   app.get(
     "/api/nomus/bom-auto-apply/products/apply-readiness",
