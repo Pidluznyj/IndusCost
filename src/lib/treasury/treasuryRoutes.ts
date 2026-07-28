@@ -340,6 +340,8 @@ export function registerTreasuryRoutes(
   app.get(
     TREASURY_HEALTH_PATH,
     requireAppAuth,
+    moduleEnabled,
+    requireResource(TREASURY_RESOURCE_KEY, TREASURY_ACTIONS.view),
     gaps.health
   );
 

@@ -1,10 +1,11 @@
 /**
- * Client API — conciliações bancárias (reverse + listagem ativa).
+ * Client API — conciliações bancárias (accept / unmatch / reverse / listagem).
  */
 
 import {
   TREASURY_RECONCILIATIONS_PATH,
   TREASURY_RECONCILIATION_REVERSE_CONFIRM_PHRASE,
+  todayTreasuryCivilDateInSaoPaulo,
 } from "./contracts/treasuryContracts.js";
 import type { TreasuryReconciliationMatchDto } from "./contracts/treasuryDto.js";
 
@@ -39,6 +40,77 @@ export async function fetchTreasuryActiveReconciliationsByMovement(
   });
   const body = await parseJson(res);
   return (body.items as TreasuryReconciliationMatchDto[]) ?? [];
+}
+
+export async function acceptTreasuryReconciliation(input: {
+  companyCode: string;
+  accountId: string;
+  matchedCivilDate?: string;
+  justification?: string | null;
+  movements: Array<{ bankMovementId: string; amount: string }>;
+  allocations: Array<{
+    kind: string;
+    amount: string;
+    memo?: string | null;
+    nomusSide?: string | null;
+    officialTitleId?: string | null;
+    nomusExternalId?: number | null;
+    openBalance?: string | null;
+    transferId?: string | null;
+    transferGroupId?: string | null;
+    ledgerEntryId?: string | null;
+    differenceCode?: string | null;
+  }>;
+}): Promise<{
+  match: TreasuryReconciliationMatchDto;
+  projectionRecalc: unknown;
+}> {
+  const res = await fetch(TREASURY_RECONCILIATIONS_PATH, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      companyCode: input.companyCode,
+      accountId: input.accountId,
+      matchedCivilDate:
+        input.matchedCivilDate ?? todayTreasuryCivilDateInSaoPaulo(),
+      justification: input.justification ?? null,
+      movements: input.movements,
+      allocations: input.allocations,
+    }),
+  });
+  const body = await parseJson(res);
+  return {
+    match: body.match as TreasuryReconciliationMatchDto,
+    projectionRecalc: body.projectionRecalc,
+  };
+}
+
+export async function unmatchTreasuryReconciliation(input: {
+  matchId: string;
+  expectedVersion: number;
+  reason: string;
+}): Promise<{
+  match: TreasuryReconciliationMatchDto;
+  projectionRecalc: unknown;
+}> {
+  const res = await fetch(
+    `${TREASURY_RECONCILIATIONS_PATH}/${encodeURIComponent(input.matchId)}/unmatch`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expectedVersion: input.expectedVersion,
+        reason: input.reason,
+      }),
+    }
+  );
+  const body = await parseJson(res);
+  return {
+    match: body.match as TreasuryReconciliationMatchDto,
+    projectionRecalc: body.projectionRecalc,
+  };
 }
 
 export async function reverseTreasuryReconciliation(input: {

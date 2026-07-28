@@ -1,7 +1,7 @@
 /**
- * Fonte de movimentos realizados oficiais para a posição financeira.
- * Enquanto o ledger/OFX não estiver ativo, o adapter Prisma retorna vazio
- * (ausência explícita — não inventa movimentos).
+ * Fonte de movimentos realizados para a posição financeira.
+ * Usa lançamentos manuais/ledger ACTIVE (não inventa baixas Nomus).
+ * Ausência de linhas = lista vazia (engine trata ZERO_BASELINE / só snapshot).
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -14,16 +14,67 @@ export type TreasuryOfficialRealizedMovementRepository = {
   }): Promise<TreasuryOfficialRealizedMovement[]>;
 };
 
-/**
- * Stub server: ledger Tesouraria ainda não existe no Prisma.
- * Retorna lista vazia — o engine trata origem ZERO_BASELINE / só snapshot.
- */
+function civilDateToUtcNoon(civil: Date): Date {
+  const y = civil.getUTCFullYear();
+  const m = civil.getUTCMonth();
+  const d = civil.getUTCDate();
+  return new Date(Date.UTC(y, m, d, 12, 0, 0, 0));
+}
+
 export function createTreasuryOfficialRealizedMovementRepository(
-  _prisma?: PrismaClient
+  prisma: PrismaClient
 ): TreasuryOfficialRealizedMovementRepository {
   return {
-    async listByAccountIds() {
-      return [];
+    async listByAccountIds(input) {
+      if (!input.accountIds.length) return [];
+      const asOf = input.asOf;
+      const rows = await prisma.treasuryLedgerEntry.findMany({
+        where: {
+          accountId: { in: input.accountIds },
+          status: "ACTIVE",
+          ...(asOf
+            ? {
+                civilDate: {
+                  lte: new Date(
+                    Date.UTC(
+                      asOf.getUTCFullYear(),
+                      asOf.getUTCMonth(),
+                      asOf.getUTCDate()
+                    )
+                  ),
+                },
+              }
+            : {}),
+        },
+        select: {
+          id: true,
+          accountId: true,
+          civilDate: true,
+          createdAt: true,
+          amount: true,
+          direction: true,
+          status: true,
+          nature: true,
+          memo: true,
+        },
+        orderBy: [{ civilDate: "asc" }, { createdAt: "asc" }],
+      });
+
+      return rows
+        .map((row) => {
+          const occurredAt = civilDateToUtcNoon(row.civilDate);
+          return {
+            id: row.id,
+            accountId: row.accountId,
+            occurredAt,
+            amount: row.amount.toFixed(2),
+            direction: row.direction,
+            status: row.status,
+            source: `LEDGER:${row.nature}`,
+            memo: row.memo,
+          } satisfies TreasuryOfficialRealizedMovement;
+        })
+        .filter((m) => (asOf ? m.occurredAt.getTime() <= asOf.getTime() : true));
     },
   };
 }

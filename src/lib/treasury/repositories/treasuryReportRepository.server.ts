@@ -159,17 +159,92 @@ async function loadDailyPosition(
     });
   }
 
-  // Calculado/conciliado: aproximação eficiente (snapshot + stub 0 até motor reconciliado)
-  const calculated = observed;
-  const reconciled = observed;
-  const divergence = "0.00";
+  // Calculado = observado + net ledger ACTIVE (não inventa igualdade).
+  const snapshotAccountIds = snapshots.map((s) => s.accountId);
+  let ledgerNet: TreasuryMoneyString = "0.00";
+  let ledgerCount = 0;
+  if (snapshotAccountIds.length) {
+    const ledgerRows = await prisma.treasuryLedgerEntry.findMany({
+      where: {
+        accountId: { in: snapshotAccountIds },
+        status: "ACTIVE",
+        civilDate: {
+          lte: new Date(
+            Date.UTC(
+              Number(query.to.slice(0, 4)),
+              Number(query.to.slice(5, 7)) - 1,
+              Number(query.to.slice(8, 10))
+            )
+          ),
+        },
+      },
+      select: { amount: true, direction: true },
+    });
+    ledgerCount = ledgerRows.length;
+    for (const row of ledgerRows) {
+      const amt = money(row.amount);
+      ledgerNet =
+        row.direction === "CREDIT"
+          ? addTreasuryMoney(ledgerNet, amt)
+          : subtractTreasuryMoney(ledgerNet, amt);
+    }
+  }
+  const calculated = addTreasuryMoney(observed, ledgerNet);
+
+  // Conciliado = soma de ledgerBalance OFX persistido (sem inventar = observado).
+  let reconciled: TreasuryMoneyString = "0.00";
+  let reconciledCount = 0;
+  if (snapshotAccountIds.length) {
+    const batches = await prisma.treasuryBankImportBatch.findMany({
+      where: {
+        accountId: { in: snapshotAccountIds },
+        status: "PROCESSED",
+      },
+      orderBy: [{ processedAt: "desc" }, { createdAt: "desc" }],
+      select: { accountId: true, summaryJson: true },
+    });
+    const seen = new Set<string>();
+    for (const batch of batches) {
+      if (seen.has(batch.accountId)) continue;
+      seen.add(batch.accountId);
+      const summary =
+        batch.summaryJson && typeof batch.summaryJson === "object"
+          ? (batch.summaryJson as Record<string, unknown>)
+          : null;
+      const amountRaw = summary?.ledgerBalanceAmount;
+      if (typeof amountRaw !== "string" || !amountRaw.trim()) continue;
+      try {
+        reconciled = addTreasuryMoney(reconciled, money(amountRaw));
+        reconciledCount += 1;
+      } catch {
+        // ignora lote com saldo inválido
+      }
+    }
+  }
+
+  const divergence = subtractTreasuryMoney(observed, calculated);
 
   return {
     buckets: [
       { key: "observed", label: "Saldo observado", amount: observed, count: rows.length },
-      { key: "calculated", label: "Saldo calculado", amount: calculated, count: rows.length },
-      { key: "reconciled", label: "Saldo conciliado", amount: reconciled, count: rows.length },
-      { key: "divergence", label: "Divergência", amount: divergence, count: 0 },
+      {
+        key: "calculated",
+        label: "Saldo calculado",
+        amount: calculated,
+        count: rows.length,
+      },
+      {
+        key: "reconciled",
+        label: "Saldo conciliado",
+        amount: reconciled,
+        count: reconciledCount,
+      },
+      {
+        key: "divergence",
+        label: "Divergência (observado − calculado)",
+        amount: divergence,
+        count: compareMoneyNonZero(divergence) ? 1 : 0,
+      },
       { key: "blocked", label: "Bloqueado", amount: blocked, count: rows.length },
       { key: "investments", label: "Aplicações", amount: investments, count: rows.length },
     ],
@@ -177,9 +252,18 @@ async function loadDailyPosition(
     totalRows: rows.length,
     totalsAmountOverride: observed,
     totalsCountOverride: rows.length,
-    extras: { layerReport: true },
+    extras: {
+      layerReport: true,
+      ledgerMovementCount: ledgerCount,
+      reconciledAccountsWithOfxLedger: reconciledCount,
+      inventsReconciledEquality: false,
+    },
     paginate: true,
   };
+}
+
+function compareMoneyNonZero(value: string): boolean {
+  return normalizeTreasuryMoneyString(value) !== "0.00";
 }
 
 async function loadCashBridge(

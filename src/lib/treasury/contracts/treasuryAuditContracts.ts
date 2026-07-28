@@ -20,6 +20,7 @@ export const TREASURY_AUDIT_ENTITY_TYPES = [
   "OFX_IMPORT",
   "DAILY_CLOSING",
   "EXCEPTION",
+  "ALERT_SETTINGS",
   "MODULE",
 ] as const;
 

@@ -281,6 +281,9 @@ export function createTreasuryBankImportOfxPreviewService(deps: {
         byteLength: inspected.byteLength,
         contentHash,
         movements: classified.movements,
+        ledgerBalanceAmount: inspected.ledgerBalance?.amount ?? null,
+        ledgerBalanceAsOfCivilDate:
+          inspected.ledgerBalance?.asOfCivilDate ?? null,
       });
 
       return {

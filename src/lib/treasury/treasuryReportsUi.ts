@@ -5,6 +5,7 @@
 import {
   TREASURY_PROJECTION_LAYERS,
   TREASURY_REPORT_KEYS,
+  todayTreasuryCivilDateInSaoPaulo,
   type TreasuryProjectionLayer,
   type TreasuryReportKey,
 } from "./contracts/treasuryContracts.js";
@@ -56,11 +57,7 @@ export type TreasuryReportsFilterState = {
 };
 
 export function todayCivilDateLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return todayTreasuryCivilDateInSaoPaulo();
 }
 
 export function createEmptyTreasuryReportsFilters(): TreasuryReportsFilterState {

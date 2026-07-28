@@ -6,6 +6,7 @@ import type {
   TreasuryDailyClosingDto,
   TreasuryDailyClosingPreviewDto,
 } from "./contracts/index.js";
+import { todayTreasuryCivilDateInSaoPaulo } from "./contracts/index.js";
 import { HttpError } from "@/src/lib/http.js";
 
 export const TREASURY_DAILY_CLOSING_PAGE_TITLE = "Fechamento diário" as const;
@@ -192,9 +193,5 @@ export function compareTreasuryDailyClosingVersions(
 }
 
 export function todayTreasuryCivilDateLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return todayTreasuryCivilDateInSaoPaulo();
 }

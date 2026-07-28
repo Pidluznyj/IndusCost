@@ -7,6 +7,9 @@ import { TreasuryContractError } from "./treasuryErrorCodes.js";
 
 const CIVIL_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+/** Fuso canônico da operação de caixa (civil date). */
+export const TREASURY_CIVIL_DATE_TIMEZONE = "America/Sao_Paulo" as const;
+
 export type TreasuryCivilDate = string;
 
 export function isTreasuryCivilDate(value: unknown): value is TreasuryCivilDate {
@@ -61,4 +64,27 @@ export function parseOptionalTreasuryCivilDate(
 ): TreasuryCivilDate | null {
   if (value == null || value === "") return null;
   return parseTreasuryCivilDate(value, field);
+}
+
+/**
+ * "Hoje" operacional em America/Sao_Paulo (não UTC).
+ * Usar em defaults de dashboard/fechamento/UI.
+ */
+export function todayTreasuryCivilDateInSaoPaulo(
+  instant: Date = new Date()
+): TreasuryCivilDate {
+  if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) {
+    throw new TreasuryContractError(
+      "INVALID_CIVIL_DATE",
+      "Instante inválido para data civil America/Sao_Paulo.",
+      "civilDate"
+    );
+  }
+  const formatted = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TREASURY_CIVIL_DATE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+  return parseTreasuryCivilDate(formatted, "civilDate");
 }

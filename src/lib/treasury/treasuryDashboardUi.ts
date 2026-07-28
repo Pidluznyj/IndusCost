@@ -12,7 +12,10 @@ import type {
   TreasuryExceptionSeverity,
   TreasuryProjectionLayer,
 } from "@/src/lib/treasury/contracts/index.js";
-import { TREASURY_PROJECTION_LAYERS } from "@/src/lib/treasury/contracts/index.js";
+import {
+  TREASURY_PROJECTION_LAYERS,
+  todayTreasuryCivilDateInSaoPaulo,
+} from "@/src/lib/treasury/contracts/index.js";
 import type { TreasuryDashboardFetchParams } from "./treasuryDashboardApi.js";
 
 export const TREASURY_DASHBOARD_PAGE_TITLE = "Visão geral" as const;
@@ -75,11 +78,7 @@ export type TreasuryDashboardFilterState = {
 };
 
 export function todayCivilDateLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return todayTreasuryCivilDateInSaoPaulo();
 }
 
 export function createEmptyTreasuryDashboardFilters(

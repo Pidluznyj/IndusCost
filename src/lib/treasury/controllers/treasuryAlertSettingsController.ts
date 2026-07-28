@@ -60,7 +60,7 @@ export function createTreasuryAlertSettingsControllers(
     get: (req: Request, res: Response) =>
       withAuth(req, res, async (user, requestId) => {
         const settings = await service.get(
-          buildTreasuryAlertSettingsActor(user)
+          buildTreasuryAlertSettingsActor(user, { requestId })
         );
         res.status(200).json({ ok: true, settings, requestId });
       }),
@@ -68,7 +68,7 @@ export function createTreasuryAlertSettingsControllers(
     put: (req: Request, res: Response) =>
       withAuth(req, res, async (user, requestId) => {
         const settings = await service.update(
-          buildTreasuryAlertSettingsActor(user),
+          buildTreasuryAlertSettingsActor(user, { requestId }),
           asBody(req)
         );
         res.status(200).json({ ok: true, settings, requestId });

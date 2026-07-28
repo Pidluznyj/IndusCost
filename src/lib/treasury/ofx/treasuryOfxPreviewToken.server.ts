@@ -20,6 +20,9 @@ export type TreasuryOfxPreviewTokenPayload = {
   byteLength: number;
   contentHash: string;
   movements: TreasuryOfxPreviewMovementRow[];
+  /** Saldo do extrato OFX (quando presente) — usado na camada conciliada. */
+  ledgerBalanceAmount?: string | null;
+  ledgerBalanceAsOfCivilDate?: string | null;
 };
 
 type StoredPreview = TreasuryOfxPreviewTokenPayload & {

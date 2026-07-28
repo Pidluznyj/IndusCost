@@ -92,8 +92,9 @@
 | **65** | Controle de rollout por submódulo | `DONE` | `10fc53a` | Flags `balances/dashboard/receivables/payables/reports` + guards BE; `availability.flags`; FE filtra abas; `19-ROLLOUT.md` ordem de ativação; testes flags/rollout; dados preservados com flag OFF |
 | **66** | Scripts + runbook de implantação produção | `DONE` | `e44b9f2` | `scripts/treasury/predeploy-check.sh` + `postdeploy-validation.sh`; `PRODUCTION-DEPLOYMENT.md` + `ROLLBACK.md`; alinhado a `/opt/induscost` + `deploy-induscost.sh`; sem execução em prod |
 | **67** | Checklist validação funcional pós-deploy | `DONE` | `965ef35` | `POST-DEPLOY-CHECKLIST.md` — classes A (leitura), B (dados teste), C (manual financeiro); health/migrations/tabelas/perms/fluxos/OFX seguro/duplicidades; sem execução em prod |
+| **68** | Auditoria final RC + fechamento de lacunas | `DONE` | _(commit deste prompt)_ | Relatório/posição sem inventar igualdade; ledger→calculado; OFX ledgerBalance→conciliado; civil date SP; FE accept/unmatch; audit alert-settings; health real; `RELEASE-CANDIDATE-VALIDATION.md`; gates reexecutados |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**; auditoria final RC = **68**.
 
 ---
 
@@ -103,7 +104,7 @@
 |--------------|--------|---------------|
 | Contas financeiras | `DONE` | Schema + service/repo + APIs REST + UI `/finance/treasury/accounts` |
 | Saldos manuais e históricos | `DONE` | Schema + service/repo + APIs REST (histórico/latest/create + Idempotency-Key + audit) |
-| Saldo observado / calculado / conciliado | `DONE` | P22 engine + P63 `GET …/accounts/:id/balance-position`; dashboard consome posição |
+| Saldo observado / calculado / conciliado | `DONE` | P22 engine + P63 balance-position; P68: ledger ACTIVE + OFX ledgerBalance; report sem inventar igualdade |
 | Contas a receber (títulos) | `DONE` | Adapter P11 + API P13 + UI P14 + expectativa P15 + promessas P16 + cobrança/contestação P17 + resumo cliente P18; APIs oficiais `/api/finance/accounts-receivable/*` |
 | Contas a pagar (títulos) | `DONE` | Adapter P11 + query API P19 + programação P20 + UI P21 + agenda `payment-schedule` P63 |
 | Previsto vs realizado | `DONE` | P23 dashboard + P63 `GET …/forecast-vs-actual` + report `planned-vs-actual` |
@@ -121,15 +122,15 @@
 | Fechamento diário | `DONE` | P42–P45: schema+preview+API+UI `/closing`; P46 detecta mudanças posteriores sem reescrever |
 | Reabertura | `DONE` | P44 API + P45 UI; P46 aponta tratamento formal / reabertura via exceção pós-fechamento |
 | Importação OFX | `DONE` | P47–P51 + alias UI `/ofx` (mesma página bank-movements) |
-| Conciliação bancária | `DONE` | P52–P54 + P63 accept/unmatch HTTP + workspace `/reconcile` |
+| Conciliação bancária | `DONE` | P52–P54 + P63 HTTP + P68 FE accept/unmatch no workspace `/reconcile` |
 | Relatórios tesouraria | `DONE` | P55 APIs + P56 UI `/finance/treasury/reports` com impressão/export |
 | Exportações | `DONE` | P56: CSV/XLSX/PDF dos relatórios Tesouraria (ação `export`) |
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer + `GET …/audit` + UI `/audit` (P63) |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
-| Observabilidade | `DONE` | `/availability` + `/health` Tesouraria (fail-closed) + freshness dashboard |
+| Observabilidade | `DONE` | `/availability` + `/health` (flag+ACL+probe schema P68) + freshness dashboard |
 | Testes domínio | `DONE` | Unitários P59 + integração P60 (DB seguro) + E2E UI P61 (`tsx --test` + `renderToStaticMarkup`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
-| Documentação | `DONE` | P00 docs + P63 traceability/runbook + P64 arquitetura/APIs/regras/manuais (`docs/treasury/README.md`) |
+| Documentação | `DONE` | P00–P64 + P68 `RELEASE-CANDIDATE-VALIDATION.md` + traceability/status |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
 | Scripts deploy/validação | `DONE` | P62 backfill + P63 `validate:treasury:deploy` + runbook (Cursor não deploya) |
 
@@ -686,6 +687,17 @@
 - [x] `test:treasury` 604/605 (1 skip); sem avanço automático
 ---
 
+## Prompt 68 — auditoria final RC
+
+- [x] Varredura TODO/FIXME/mocks prod/Prisma FE/number money/timezone/hard delete/migrations destrutivas
+- [x] Correção relatório/posição (sem inventar igualdade; ledger + OFX ledgerBalance)
+- [x] Defaults civil date America/Sao_Paulo
+- [x] FE accept/unmatch + audit alert-settings + health guard/probe
+- [x] `REQUIREMENTS-TRACEABILITY.md` + `RELEASE-CANDIDATE-VALIDATION.md` + este status
+- [x] Gates locais reexecutados; commit final; **parar** (sem deploy)
+
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -695,6 +707,7 @@
 5. Shell Tesouraria em `/finance/treasury/*` (standalone); aba no `FinanceModule` principal ainda não (proposital — evita ripple de `FinanceSectionId`).
 6. Alias relacional PT `financeiro.tesouraria` ainda não criado no seed legado (de propósito nesta etapa).
 7. IndusCost não tem model `Company` — Tesouraria usa `companyCode`/`companyName` até existir entidade canônica.
+8. Camada conciliada depende de `ledgerBalance` no OFX; sem esse campo no extrato permanece MISSING (explícito).
 
 ---
 
@@ -769,3 +782,7 @@
 | 2026-07-28 | Prompt 62: backfill complementos operacionais (preview/apply) — `59f5783` |
 | 2026-07-28 | Prompt 63: auditoria formal + fechamento de lacunas (rastreabilidade) — `0b687bb` |
 | 2026-07-28 | Prompt 64: documentação completa + manuais operacionais — `889a05b` |
+| 2026-07-28 | Prompt 65: rollout por submódulo — `10fc53a` |
+| 2026-07-28 | Prompt 66: scripts/runbook implantação produção — `e44b9f2` |
+| 2026-07-28 | Prompt 67: checklist pós-deploy — `965ef35` |
+| 2026-07-28 | Prompt 68: auditoria final RC + correção lacunas — ver commit HEAD |

@@ -1,6 +1,7 @@
 /**
- * Registro de jobs da Tesouraria — scaffold sem agendamento.
- * Jobs reais (alertas/OFX) virão em prompts futuros.
+ * Registro de jobs cron da Tesouraria.
+ * Recálculo de projeção usa fila PostgreSQL (`TreasuryProjectionRecalcJob`),
+ * não setInterval neste catálogo.
  */
 
 export type TreasuryJobDefinition = {
@@ -9,7 +10,7 @@ export type TreasuryJobDefinition = {
   enabled: boolean;
 };
 
-/** Catálogo vazio / desabilitado — nenhum setInterval nesta etapa. */
+/** Catálogo de cron opcional — desabilitado (fila DB cobre recálculo). */
 export const TREASURY_JOB_CATALOG: readonly TreasuryJobDefinition[] = [
   {
     id: "treasury.alerts.scan",
@@ -22,10 +23,11 @@ export function listTreasuryJobs(): readonly TreasuryJobDefinition[] {
   return TREASURY_JOB_CATALOG;
 }
 
-/** No-op: não inicia timers no scaffold. */
+/** No-op intencional: sem timers; worker de projeção é sob demanda/fila. */
 export function startTreasuryScheduledJobs(): { started: false; reason: string } {
   return {
     started: false,
-    reason: "Treasury jobs não iniciados no scaffold (sem regras financeiras).",
+    reason:
+      "Sem cron in-process; recálculo via fila PostgreSQL TreasuryProjectionRecalcJob.",
   };
 }

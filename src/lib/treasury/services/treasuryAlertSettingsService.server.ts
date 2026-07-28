@@ -13,7 +13,9 @@ import {
   type TreasuryAlertSettingsRepository,
   type TreasuryAlertSettingsRow,
 } from "../repositories/treasuryAlertSettingsRepository.server.js";
+import { buildTreasuryUpdatedAudit } from "../treasuryAuditHelpers.js";
 import { canTreasuryCapability } from "../treasuryPermissions.js";
+import { writeTreasuryAuditLog } from "./treasuryAuditService.server.js";
 
 export type TreasuryAlertSettingsDto = TreasuryAlertSettingsFields & {
   id: string;
@@ -23,16 +25,23 @@ export type TreasuryAlertSettingsDto = TreasuryAlertSettingsFields & {
 
 export type TreasuryAlertSettingsActor = {
   userId: string;
+  userName?: string | null;
+  sessionId?: string | null;
+  requestId?: string | null;
   isSuperAdmin: boolean;
   canView: boolean;
   canManage: boolean;
 };
 
 export function buildTreasuryAlertSettingsActor(
-  user: AppAuthContext
+  user: AppAuthContext,
+  extras?: { requestId?: string | null }
 ): TreasuryAlertSettingsActor {
   return {
     userId: user.id,
+    userName: user.name,
+    sessionId: user.sessionId,
+    requestId: extras?.requestId ?? null,
     isSuperAdmin: user.role === "SUPER_ADMIN",
     canView:
       canTreasuryCapability(user, "viewDashboard") ||
@@ -58,6 +67,21 @@ function toDto(row: TreasuryAlertSettingsRow): TreasuryAlertSettingsDto {
   };
 }
 
+function auditPayload(row: TreasuryAlertSettingsRow | TreasuryAlertSettingsDto) {
+  return {
+    id: row.id,
+    alertsEnabled: row.alertsEnabled,
+    relevantReceiptMinAmount: row.relevantReceiptMinAmount,
+    customerConcentrationTopN: row.customerConcentrationTopN,
+    customerConcentrationMinSharePercent:
+      row.customerConcentrationMinSharePercent,
+    staleBalanceHours: row.staleBalanceHours,
+    syncMaxAgeHours: row.syncMaxAgeHours,
+    severityByKind: row.severityByKind,
+    enabledByKind: row.enabledByKind,
+  };
+}
+
 export type TreasuryAlertSettingsService = {
   get(
     actor: TreasuryAlertSettingsActor
@@ -76,6 +100,7 @@ export function createTreasuryAlertSettingsService(deps: {
 }): TreasuryAlertSettingsService {
   const repo =
     deps.repository ?? createTreasuryAlertSettingsRepository(deps.prisma!);
+  const prisma = deps.prisma;
 
   return {
     async get(actor) {
@@ -95,8 +120,28 @@ export function createTreasuryAlertSettingsService(deps: {
           "Sem permissão para alterar configuração de alertas."
         );
       }
+      const before = await repo.getOrCreate();
       const fields = parseTreasuryAlertSettingsInput(body);
-      return toDto(await repo.save(fields, actor.userId));
+      const after = await repo.save(fields, actor.userId);
+      if (prisma) {
+        await writeTreasuryAuditLog(
+          prisma,
+          buildTreasuryUpdatedAudit({
+            entityType: "ALERT_SETTINGS",
+            entityId: after.id,
+            before: auditPayload(before),
+            after: auditPayload(after),
+            justification: "Configuração de alertas da Tesouraria atualizada.",
+            actor: {
+              userId: actor.userId,
+              userName: actor.userName ?? null,
+              sessionId: actor.sessionId ?? null,
+              requestId: actor.requestId ?? null,
+            },
+          })
+        );
+      }
+      return toDto(after);
     },
 
     async getFields() {

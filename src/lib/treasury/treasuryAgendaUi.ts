@@ -11,7 +11,10 @@ import type {
   TreasuryFinancialAccountDto,
   TreasuryProjectionLayer,
 } from "@/src/lib/treasury/contracts/index.js";
-import { TREASURY_PROJECTION_LAYERS } from "@/src/lib/treasury/contracts/index.js";
+import {
+  TREASURY_PROJECTION_LAYERS,
+  todayTreasuryCivilDateInSaoPaulo,
+} from "@/src/lib/treasury/contracts/index.js";
 import {
   addTreasuryMoney,
   compareTreasuryMoney,
@@ -126,11 +129,7 @@ export type TreasuryAgendaFilterState = {
 };
 
 export function todayCivilDateLocal(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return todayTreasuryCivilDateInSaoPaulo();
 }
 
 /** Soma dias civis em UTC civil (YYYY-MM-DD), sem depender do fuso do host. */

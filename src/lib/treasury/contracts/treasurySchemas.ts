@@ -10,6 +10,7 @@ import {
 import {
   parseOptionalTreasuryCivilDate,
   parseTreasuryCivilDate,
+  todayTreasuryCivilDateInSaoPaulo,
 } from "./treasuryCivilDate.js";
 import type {
   TreasuryFinancialAccountDto,
@@ -2512,12 +2513,9 @@ export type TreasuryDashboardQuery = {
   scenario: TreasuryProjectionLayer;
 };
 
-function todayCivilDateUtc(): TreasuryCivilDate {
-  const now = new Date();
-  const y = now.getUTCFullYear();
-  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(now.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}` as TreasuryCivilDate;
+/** Default "hoje" operacional — America/Sao_Paulo (nunca UTC civil). */
+function todayCivilDateOperational(): TreasuryCivilDate {
+  return todayTreasuryCivilDateInSaoPaulo();
 }
 
 function parseAccountIdsFilter(raw: unknown): string[] | null {
@@ -2541,7 +2539,7 @@ export function parseTreasuryDashboardQuery(
   const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
   const date =
     dateRaw == null || dateRaw === ""
-      ? todayCivilDateUtc()
+      ? todayCivilDateOperational()
       : parseTreasuryCivilDate(dateRaw, "date");
   const scenario =
     parseTreasuryEnum(
@@ -2571,7 +2569,7 @@ export function parseTreasuryDailyClosingPreviewQuery(
   const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
   const date =
     dateRaw == null || dateRaw === ""
-      ? todayCivilDateUtc()
+      ? todayCivilDateOperational()
       : parseTreasuryCivilDate(dateRaw, "date");
   const companyRaw = query.companyCode ?? query.empresa ?? query.company;
   const companyCode =
@@ -3430,7 +3428,7 @@ export function parseTreasuryReportQuery(
   const toRaw = query.to ?? query.periodTo ?? query.endDate ?? query.date ?? fromRaw;
   const from =
     fromRaw == null || fromRaw === ""
-      ? todayCivilDateUtc()
+      ? todayCivilDateOperational()
       : parseTreasuryCivilDate(fromRaw, "from");
   const to =
     toRaw == null || toRaw === ""

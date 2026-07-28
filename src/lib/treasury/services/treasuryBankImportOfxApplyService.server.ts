@@ -383,6 +383,9 @@ export function createTreasuryBankImportOfxApplyService(deps: {
             totalsFromPreview: {
               movementCount: preview.movements.length,
             },
+            ledgerBalanceAmount: preview.ledgerBalanceAmount ?? null,
+            ledgerBalanceAsOfCivilDate:
+              preview.ledgerBalanceAsOfCivilDate ?? null,
           } satisfies Record<string, unknown>;
 
           const createdBatch = await movementRepo.createBatch(

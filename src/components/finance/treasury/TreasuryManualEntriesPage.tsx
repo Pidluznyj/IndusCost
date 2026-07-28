@@ -3,6 +3,7 @@ import { fetchJsonOk } from "@/src/lib/http.js";
 import {
   TREASURY_ACCOUNTS_PATH,
   TREASURY_LEDGER_ENTRIES_PATH,
+  todayTreasuryCivilDateInSaoPaulo,
 } from "@/src/lib/treasury/contracts/treasuryContracts.js";
 import type { TreasuryLedgerEntryDto } from "@/src/lib/treasury/contracts/treasuryDto.js";
 
@@ -18,8 +19,8 @@ export function TreasuryManualEntriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState("0.00");
   const [direction, setDirection] = useState<"DEBIT" | "CREDIT">("DEBIT");
-  const [civilDate, setCivilDate] = useState(
-    () => new Date().toISOString().slice(0, 10)
+  const [civilDate, setCivilDate] = useState(() =>
+    todayTreasuryCivilDateInSaoPaulo()
   );
   const [memo, setMemo] = useState("");
 

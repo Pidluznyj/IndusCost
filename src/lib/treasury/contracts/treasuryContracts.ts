@@ -196,9 +196,11 @@ export {
 export type { TreasuryErrorBody, TreasuryErrorCode } from "./treasuryErrorCodes.js";
 
 export {
+  TREASURY_CIVIL_DATE_TIMEZONE,
   isTreasuryCivilDate,
   parseOptionalTreasuryCivilDate,
   parseTreasuryCivilDate,
+  todayTreasuryCivilDateInSaoPaulo,
 } from "./treasuryCivilDate.js";
 export type { TreasuryCivilDate } from "./treasuryCivilDate.js";
 

@@ -7,7 +7,10 @@
 import type { Request, Response } from "express";
 import type { AppAuthContext } from "@/src/lib/appAuth.js";
 import { prisma } from "@/src/lib/prisma.js";
-import { parseTreasuryCivilDate } from "../contracts/treasuryCivilDate.js";
+import {
+  parseTreasuryCivilDate,
+  todayTreasuryCivilDateInSaoPaulo,
+} from "../contracts/treasuryCivilDate.js";
 import { parseTreasuryPagination } from "../contracts/treasuryPagination.js";
 import { parseTreasuryDashboardQuery } from "../contracts/treasurySchemas.js";
 import { toTreasuryAuditLogDto } from "../services/treasuryAuditService.server.js";
@@ -59,7 +62,7 @@ async function withAuth(
 
 function civilDateOrToday(raw: unknown): string {
   if (raw == null || raw === "") {
-    return new Date().toISOString().slice(0, 10);
+    return todayTreasuryCivilDateInSaoPaulo();
   }
   return parseTreasuryCivilDate(raw, "date");
 }
@@ -197,24 +200,55 @@ export function createTreasuryTraceabilityGapControllers(
         });
       }),
 
-    health: (_req: Request, res: Response) => {
-      const requestId = resolveTreasuryRequestId(_req);
+    health: async (req: Request, res: Response) => {
+      const requestId = resolveTreasuryRequestId(req);
       res.setHeader("x-request-id", requestId);
-      const enabled = isTreasuryModuleEnabled(process.env);
-      const availability = getTreasuryAvailability({ serverTime: new Date() });
-      const payload = {
-        ok: enabled,
-        enabled,
-        module: "treasury",
-        availability,
-        checks: {
-          moduleFlag: enabled ? "PASS" : "FAIL",
-          schemaModelsPresent: "ASSUMED_OK",
-        },
-        serverTimeIso: availability.serverTimeIso,
-        requestId,
-      };
-      res.status(enabled ? 200 : 503).json(payload);
+      try {
+        const user = await deps.getCurrentAppUser(req);
+        if (!user) {
+          sendTreasuryError(res, {
+            requestId,
+            error: "Autenticação necessária.",
+            code: "UNAUTHORIZED",
+          });
+          return;
+        }
+        if (
+          !canTreasuryCapability(user, "viewDashboard") &&
+          user.role !== "SUPER_ADMIN"
+        ) {
+          throw new TreasuryDomainError(
+            "FORBIDDEN",
+            "Sem permissão para consultar health da Tesouraria."
+          );
+        }
+        const enabled = isTreasuryModuleEnabled(process.env);
+        const availability = getTreasuryAvailability({ serverTime: new Date() });
+        let schemaModelsPresent: "PASS" | "FAIL" = "FAIL";
+        try {
+          await prisma.treasuryFinancialAccount.findFirst({
+            select: { id: true },
+          });
+          schemaModelsPresent = "PASS";
+        } catch {
+          schemaModelsPresent = "FAIL";
+        }
+        const ok = enabled && schemaModelsPresent === "PASS";
+        res.status(ok ? 200 : 503).json({
+          ok,
+          enabled,
+          module: "treasury",
+          availability,
+          checks: {
+            moduleFlag: enabled ? "PASS" : "FAIL",
+            schemaModelsPresent,
+          },
+          serverTimeIso: availability.serverTimeIso,
+          requestId,
+        });
+      } catch (err) {
+        handleTreasuryRouteError(res, requestId, err);
+      }
     },
 
     paymentSchedule: (req: Request, res: Response) =>
@@ -314,6 +348,7 @@ export function createTreasuryTraceabilityGapControllers(
               select: {
                 id: true,
                 accountId: true,
+                companyCode: true,
                 postedCivilDate: true,
                 amount: true,
                 direction: true,
@@ -333,6 +368,7 @@ export function createTreasuryTraceabilityGapControllers(
           movements: sampleMovements.map((m) => ({
             id: m.id,
             accountId: m.accountId,
+            companyCode: m.companyCode,
             postedCivilDate: m.postedCivilDate.toISOString().slice(0, 10),
             amount: m.amount.toFixed(2),
             direction: m.direction,
