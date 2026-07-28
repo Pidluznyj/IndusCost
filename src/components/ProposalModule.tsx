@@ -1817,8 +1817,44 @@ export const ProposalModule = () => {
                 </div>
               ) : null}
 
+              {(formData.items?.length ?? 0) > 0 ? (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-4 py-2.5"
+                  data-testid="proposal-total-margin-strip"
+                >
+                  <p className="text-[11px] text-muted-foreground leading-snug max-w-xl">
+                    Margem sobre o preço negociado (após desconto e imposto estimado), com custo da tabela
+                    selecionada ou do snapshot do produto.
+                  </p>
+                  <div className="flex items-baseline gap-2 shrink-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                      Margem da proposta
+                    </span>
+                    <span
+                      className={cn(
+                        "text-base font-bold font-mono tabular-nums",
+                        totals.totalMarginPerc >= 20
+                          ? "text-green-600"
+                          : totals.totalMarginPerc >= 10
+                            ? "text-orange-600"
+                            : "text-red-600"
+                      )}
+                      data-testid="proposal-total-margin-perc"
+                    >
+                      {formatPercentDisplay(totals.totalMarginPerc)}
+                    </span>
+                    <span
+                      className="text-xs text-muted-foreground font-mono tabular-nums"
+                      data-testid="proposal-total-margin-value"
+                    >
+                      ({formatMoneyDisplay(totals.totalMarginValue)})
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="flex-1 overflow-x-auto">
-                  <table className="min-w-[860px] w-full text-left border-collapse">
+                  <table className="min-w-[960px] w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-accent/20 border-b border-border">
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground w-[36px] min-w-[36px]">
@@ -1845,6 +1881,9 @@ export const ProposalModule = () => {
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Negociado</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground min-w-[100px] w-[100px]">Desc %</th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right">Total Líq.</th>
+                        <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-right min-w-[88px]">
+                          Margem
+                        </th>
                         <th className="p-3 text-[10px] font-bold uppercase text-muted-foreground text-center"></th>
                       </tr>
                     </thead>
@@ -2093,6 +2132,24 @@ export const ProposalModule = () => {
                               safeNum(item.quantity) * safeNum(item.negotiatedPrice) - safeNum(item.discountValue)
                             )}
                           </td>
+                          <td
+                            className="p-3 text-right"
+                            data-testid={`proposal-item-margin-${idx}`}
+                            title={`Margem R$ ${formatMoneyDisplay(item.marginValue)}`}
+                          >
+                            <span
+                              className={cn(
+                                "text-xs font-bold font-mono tabular-nums",
+                                safeNum(item.marginPerc) >= 20
+                                  ? "text-green-600"
+                                  : safeNum(item.marginPerc) >= 10
+                                    ? "text-orange-600"
+                                    : "text-red-600"
+                              )}
+                            >
+                              {formatPercentDisplay(item.marginPerc)}
+                            </span>
+                          </td>
                           <td className="p-3 text-center">
                             <button 
                               onClick={() => removeItem(idx)}
@@ -2105,7 +2162,7 @@ export const ProposalModule = () => {
                       ))}
                       {(!formData.items || formData.items.length === 0) && (
                         <tr>
-                          <td colSpan={8} className="p-12 text-center text-muted-foreground italic text-sm">
+                          <td colSpan={9} className="p-12 text-center text-muted-foreground italic text-sm">
                             Nenhum produto adicionado. Use o seletor acima para começar.
                           </td>
                         </tr>

@@ -51,7 +51,7 @@ describe("proposal form layout", () => {
     assert.match(tour, /proposals-form-items/);
   });
 
-  it("formulário de edição não exibe aba Indicadores nem colunas de custo/margem", () => {
+  it("formulário de edição não exibe aba Indicadores nem coluna de custo unitário", () => {
     const mod = read("src/components/ProposalModule.tsx");
     const formStart = mod.indexOf('if (view === "form")');
     assert.ok(formStart > 0);
@@ -66,5 +66,20 @@ describe("proposal form layout", () => {
     assert.match(formSlice, />Sugerido</);
     assert.match(formSlice, />Negociado</);
     assert.match(formSlice, /Total Líq\./);
+  });
+
+  it("grid de itens exibe coluna Margem e faixa de margem total da proposta", () => {
+    const mod = read("src/components/ProposalModule.tsx");
+    const formStart = mod.indexOf('if (view === "form")');
+    assert.ok(formStart > 0);
+    const formSlice = mod.slice(formStart, formStart + 120_000);
+
+    assert.match(formSlice, /data-testid="proposal-total-margin-strip"/);
+    assert.match(formSlice, /Margem da proposta/);
+    assert.match(formSlice, /data-testid="proposal-total-margin-perc"/);
+    assert.match(formSlice, />\s*Margem\s*</);
+    assert.match(formSlice, /data-testid=\{`proposal-item-margin-\$\{idx\}`\}/);
+    assert.match(formSlice, /item\.marginPerc/);
+    assert.match(formSlice, /totals\.totalMarginPerc/);
   });
 });
