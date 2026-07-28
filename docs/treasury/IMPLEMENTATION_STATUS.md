@@ -84,7 +84,7 @@
 | **57** | Auditoria de segurança do módulo | `DONE` | `adcbc63` | anti-IDOR contas em movimentos; rate limit ações críticas; path OFX; segredo preview prod; logs sanitizados; summaryJson redacted; CSV injection; testes segurança; `test:treasury` 566/566 |
 | **58** | Auditoria de performance | `DONE` | `6ed1fb6` | batch ACL/saldos; OFX createMany; exception statuses IN; defer rawPayload CR/CP; índices; benchmarks antes/depois; `docs/treasury/PERFORMANCE_BENCHMARKS.md`; `test:treasury` 574/574 |
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
-| **60** | Testes de integração completos (DB seguro) | `DONE` | `PENDING` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
+| **60** | Testes de integração completos (DB seguro) | `DONE` | `462c74c` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
 
     > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração E2E = **60**.
 
@@ -748,4 +748,4 @@
 | 2026-07-27 | Prompt 57: auditoria de segurança do módulo — `adcbc63` |
 | 2026-07-28 | Prompt 58: auditoria de performance do módulo — `6ed1fb6` |
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
-| 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `PENDING` |
+| 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `462c74c` |
