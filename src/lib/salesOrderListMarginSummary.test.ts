@@ -24,13 +24,23 @@ describe("salesOrderListMarginSummary", () => {
     assert.match(module, /showMarginCard=\{showMarginEconomics\}/);
   });
 
-  it("API lista expõe marginSummary via motor oficial", () => {
+  it("API lista não bloqueia na margem geral; endpoint dedicado usa motor oficial", () => {
     const server = read("server.ts");
+    const routes = read("src/lib/salesOrderListReportExportRoutes.ts");
+    const loader = read("src/lib/salesOrderListMarginSummary.server.ts");
     const adapter = read("src/lib/salesMarginRulesAdapter.ts");
-    assert.match(server, /buildOfficialSalesOrderListMarginSummary/);
-    assert.match(server, /marginSummary/);
-    assert.match(server, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
-    assert.match(server, /products\.tab\.cost.*costs\.view|costs\.view.*products\.tab\.cost/);
+    const module = read("src/components/SalesOrdersModule.tsx");
+    assert.match(server, /marginSummary:\s*undefined/);
+    assert.doesNotMatch(server, /buildOfficialSalesOrderListMarginSummary/);
+    assert.match(routes, /SALES_ORDER_LIST_MARGIN_SUMMARY_PATH/);
+    assert.match(routes, /loadSalesOrderListMarginSummary/);
+    assert.match(
+      read("src/lib/salesOrderListMarginSummaryApi.ts"),
+      /\/api\/sales-orders\/margin-summary/
+    );
+    assert.match(loader, /buildOfficialSalesOrderListMarginSummary/);
+    assert.match(loader, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
+    assert.match(module, /getSalesOrderListMarginSummaryUrl/);
     assert.match(adapter, /export async function buildOfficialSalesOrderListMarginSummary/);
     assert.match(adapter, /aggregateSalesOrderMarginSummaries/);
   });
@@ -68,9 +78,10 @@ describe("salesOrderListMarginSummary", () => {
     assert.match(cards, /!marginSummary\?\.available/);
   });
 
-  it("considera todos os pedidos filtrados — query separada da paginação", () => {
-    const server = read("server.ts");
-    assert.match(server, /canViewMarginEconomics[\s\S]*findMany\([\s\S]*SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
+  it("considera todos os pedidos filtrados — query no endpoint de margem, fora da listagem", () => {
+    const loader = read("src/lib/salesOrderListMarginSummary.server.ts");
+    assert.match(loader, /SALES_ORDER_LIST_MARGIN_PRISMA_SELECT/);
+    assert.match(loader, /resolveSalesOrderListWhere/);
     assert.doesNotMatch(
       read("src/components/SalesOrdersModule.tsx"),
       /rows\.map[\s\S]*marginSummary/

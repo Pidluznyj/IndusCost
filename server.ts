@@ -414,7 +414,6 @@ import {
 import {
   attachMarginToSalesOrderDetail,
   attachMarginsToSalesOrders,
-  SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
 } from "./src/lib/salesOrderMarginService.server.js";
 import { registerOfficialServerResolvers } from "./src/lib/registerServerResolvers.js";
 import { loadCommissionSellerIdentityContext } from "./src/lib/commissions/commissionSellerIdentity.server.js";
@@ -426,7 +425,7 @@ import {
 } from "./src/lib/salesOrderRulesAdapter.js";
 import { SALES_ORDER_RULES_ENGINE_VERSION } from "./src/lib/salesOrderRulesEngine.js";
 import { buildSalesOrderListSummaryFromAggregate } from "./src/lib/salesOrdersListSummary.js";
-import { loadOfficialCommercial360MarginBundle, buildOfficialSalesOrderListMarginSummary } from "./src/lib/salesMarginRulesAdapter.js";
+import { loadOfficialCommercial360MarginBundle } from "./src/lib/salesMarginRulesAdapter.js";
 import { loadSalesOrderLinkedNfeContextMap } from "./src/lib/salesOrderLinkedNfe.js";
 import { resolveSalesOrderBillingStatus } from "./src/lib/sales/salesOrderListBillingStatus.js";
 import {
@@ -14849,11 +14848,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   app.get("/api/sales-orders", requireAppAuth, requireResource("commercial.sales_orders", "view"), async (req, res) => {
     try {
-      const auth = await readAppSession(req);
-      const canViewMarginEconomics =
-        auth != null &&
-        (hasPermission(auth, "products.tab.cost") || hasPermission(auth, "costs.view"));
-
       const listQuery = parseSalesOrderListQuery(req.query as Record<string, unknown>);
       const sellerIdentityCtx = await loadCommissionSellerIdentityContext(prisma);
       const sellerWhere = await resolveSalesOrderListSellerWhere(prisma, {
@@ -14867,9 +14861,10 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const pageSize = listQuery.pageSize;
       const skip = (page - 1) * pageSize;
 
-      // Página + agregados (count/sum no banco) + margem filtrada — sem carregar
-      // todas as linhas só para somar. NF vinculada ‖ margem da página em paralelo.
-      const [rows, aggregates, marginOrders] = await Promise.all([
+      // Página + agregados (count/sum no banco). A margem geral filtrada (todos os
+      // pedidos do filtro) vai em GET /api/sales-orders/margin-summary para não
+      // travar a listagem quando o motor de margem é pesado.
+      const [rows, aggregates] = await Promise.all([
         prisma.salesOrder.findMany({
           where,
           orderBy: [{ createdAt: "desc" }, { issueDate: "desc" }],
@@ -14882,12 +14877,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           _count: { _all: true },
           _sum: { totalNetValue: true, totalItems: true },
         }),
-        canViewMarginEconomics
-          ? prisma.salesOrder.findMany({
-              where,
-              select: SALES_ORDER_LIST_MARGIN_PRISMA_SELECT,
-            })
-          : Promise.resolve([]),
       ]);
 
       const total = aggregates._count._all;
@@ -14951,10 +14940,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       });
 
-      const marginSummary = canViewMarginEconomics
-        ? await buildOfficialSalesOrderListMarginSummary(prisma, marginOrders)
-        : undefined;
-
       res.json({
         data,
         page,
@@ -14962,7 +14947,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         total,
         totalPages: Math.max(1, Math.ceil(total / pageSize)),
         summary,
-        marginSummary,
+        // Mantido por compatibilidade: clientes antigos esperam a chave.
+        // O valor completo vem de GET /api/sales-orders/margin-summary.
+        marginSummary: undefined,
         metricsSource: OFFICIAL_SO_RULES_SOURCE,
         rulesEngineVersion: SALES_ORDER_RULES_ENGINE_VERSION,
       });

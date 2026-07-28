@@ -142,7 +142,10 @@ describe("salesMarginRulesConsumptionAudit", () => {
     const server = read("server.ts");
     assert.match(cards, /Margem geral/);
     assert.match(cards, /SalesOrderMarginInfoTooltip/);
-    assert.match(server, /buildOfficialSalesOrderListMarginSummary/);
+    assert.match(
+      read("src/lib/salesOrderListMarginSummary.server.ts"),
+      /buildOfficialSalesOrderListMarginSummary/
+    );
     assert.doesNotMatch(cards, /naiveAverageMarginPercent/);
   });
 });
