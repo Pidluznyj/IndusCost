@@ -40,7 +40,6 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_WIDE","subject":"projects.view","reason":"Alias amplo no FE: projects.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"purchases.view","reason":"Alias amplo no FE: purchases.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"reports.view","reason":"Alias amplo no FE: reports.view → 2 recursos"},
-  {"code":"ALIAS_WIDE","subject":"sales_orders.view","reason":"Alias amplo no FE: sales_orders.view → 2 recursos"},
   {"code":"ALIAS_WIDE","subject":"settings.view","reason":"Alias amplo no FE: settings.view → 3 recursos"},
   {"code":"ALIAS_WIDE","subject":"simulations.view","reason":"Alias amplo no FE: simulations.view → 3 recursos"},
   {"code":"ALIAS_WIDE","subject":"users.manage","reason":"Alias amplo no FE: users.manage → 5 recursos"},
@@ -52,7 +51,6 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:projects.manage","reason":"Alias legado em múltiplos recursos do contrato: projects.manage"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:sales_orders.view","reason":"Alias legado em múltiplos recursos do contrato: sales_orders.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:output_documents.view","reason":"DS-04.4: output_documents.view em lista + detalhe (mesmo padrão sales_orders.view)."},
-  {"code":"ALIAS_DUPLICATE","subject":"contract:proposals.view","reason":"Alias legado em múltiplos recursos do contrato: proposals.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:customers.view","reason":"Alias legado em múltiplos recursos do contrato: customers.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:commissions.view","reason":"Alias legado em múltiplos recursos do contrato: commissions.view"},
   {"code":"ALIAS_DUPLICATE","subject":"contract:pricing.view","reason":"Alias legado em múltiplos recursos do contrato: pricing.view"},
@@ -81,6 +79,8 @@ export const PERMISSION_CONSISTENCY_BASELINE: readonly PermissionConsistencyBase
   {"code":"ALIAS_DUPLICATE","subject":"contract:costs.view","reason":"PERM-32: costs.view também em engineering.products.tab.cost (margem/custo de produto); /api/sales-orders/results exige só commercial.sales_orders."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.view","reason":"PERM-32: finance.suppliers.view também em service_termination para preservar OR legado."},
   {"code":"ALIAS_DUPLICATE","subject":"contract:finance.suppliers.manage","reason":"PERM-32: finance.suppliers.manage também em service_termination para preservar OR legado."},
+  {"code":"SEED_RESOURCE_MISSING_FROM_CONTRACT","subject":"comissoes.tab.provisao_pedido","reason":"Seed legado de comissões sem ponte canônica ainda; gap pré-existente em main."},
+  {"code":"AUDIT_ACTIONABLE_ERROR","subject":"audit:SIDEBAR_WITHOUT_CONTRACT:org-chart","reason":"org-chart no menu sem moduleId canônico dedicado; gap pré-existente em main."},
 ];
 
 export function baselineKey(

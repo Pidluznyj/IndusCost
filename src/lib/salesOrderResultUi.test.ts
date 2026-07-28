@@ -34,14 +34,21 @@ describe("salesOrderResult UI", () => {
     assert.doesNotMatch(projection, /MetricCard/);
   });
 
-  it("permissão de margem respeitada", () => {
+  it("permissão da tela Resultado alinhada a Pedidos de Venda", () => {
     const page = read("src/components/sales/SalesOrderResultPage.tsx");
-    assert.match(page, /canViewSalesOrderMarginEconomics/);
+    assert.match(page, /canViewSalesOrderModule/);
+    assert.doesNotMatch(page, /canViewSalesOrderMarginEconomics/);
     assert.match(page, /sales-order-result-denied/);
   });
 
-  it("endpoint registrado no server", () => {
+  it("endpoint registrado no server só com commercial.sales_orders", () => {
     assert.match(read("server.ts"), /registerSalesOrderResultRoutes/);
-    assert.match(read("src/lib/salesOrderResultRoutes.ts"), /\/api\/sales-orders\/results/);
+    const routes = read("src/lib/salesOrderResultRoutes.ts");
+    assert.match(routes, /\/api\/sales-orders\/results/);
+    assert.match(routes, /COMMERCIAL_RESOURCE_KEYS\.salesOrders/);
+    assert.doesNotMatch(
+      routes,
+      /requireResource\(\s*["']engineering\.products\.tab\.cost["']/
+    );
   });
 });

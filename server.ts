@@ -39,6 +39,7 @@ import {
   previewProductionCostTableSourceForPriceDraft,
   resolvePublishedPriceTableVersionForDate,
 } from "./src/lib/priceTablePublication.server.js";
+import { parsePriceTableDraftGenerationBody } from "./src/lib/priceTableDraftGenerationApi.js";
 import { buildCommercialPublishedPriceGridSnapshot } from "./src/lib/pricing/commercialPublishedPrices.server.js";
 import {
   buildCommercialPublishedPricesApiResponse,
@@ -9025,8 +9026,31 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  // --- API: Tabelas de preço comerciais (somente leitura; Fase 1) ---
-  app.get("/api/price-tables", requireAppAuth, requireResource("admin.settings.price_tables", "view"), async (_req, res) => {
+  /** Geração/publicação de tabelas comerciais — somente SUPER_ADMIN. */
+  const requireSuperAdmin: express.RequestHandler = async (req, res, next) => {
+    const auth = await getCurrentAppUser(req);
+    if (!auth) {
+      return res.status(401).json({
+        error: "UNAUTHORIZED",
+        message: "Autenticação necessária.",
+      });
+    }
+    if (auth.role !== "SUPER_ADMIN") {
+      return res.status(403).json({
+        error: "FORBIDDEN",
+        message: "Apenas Super Admin pode gerar ou publicar tabelas comerciais.",
+      });
+    }
+    return next();
+  };
+
+  // --- API: Tabelas de preço comerciais ---
+  // Listagem: consumo por propostas/precificação (não exige admin.settings.price_tables).
+  app.get(
+    "/api/price-tables",
+    requireAppAuth,
+    requireAnyPermission(["pricing.view", "proposals.view", "settings.price_tables.view"]),
+    async (_req, res) => {
     try {
       const tables = await prisma.priceTable.findMany({
         orderBy: { code: "asc" },
@@ -9078,76 +9102,126 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       console.error("GET /api/price-tables", e);
       res.status(500).json({ error: "Erro ao listar tabelas de preço." });
     }
-  });
+  }
+  );
 
-  app.post("/api/price-tables/:priceTableId/versions/generate-draft", requireAppAuth, requireAnyPermission(["pricing.generate_tables", "settings.price_tables.manage"]), async (req, res) => {
-    const { priceTableId } = req.params;
-    const body = (req.body ?? {}) as {
-      effectiveDate?: unknown;
-      taxRuleId?: unknown;
-      includeAllActiveProducts?: unknown;
-      productIds?: unknown;
-      itemScope?: unknown;
-      notes?: unknown;
-      commissionPerc?: unknown;
-    };
+  app.post(
+    "/api/price-tables/:priceTableId/versions/preview-draft",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
+      const { priceTableId } = req.params;
+      const parsedBody = parsePriceTableDraftGenerationBody(
+        (req.body ?? {}) as Record<string, unknown>
+      );
+      if (parsedBody.ok === false) {
+        return res.status(400).json({ error: parsedBody.error });
+      }
+      const body = parsedBody.value;
+      const effectiveDate = civilDateToLocalDate(body.effectiveDateRaw);
+      if (Number.isNaN(effectiveDate.getTime())) {
+        return res.status(400).json({ error: "effectiveDate inválida." });
+      }
 
-    const effectiveDateRaw =
-      typeof body.effectiveDate === "string" && body.effectiveDate.trim()
-        ? body.effectiveDate.trim()
-        : null;
-    if (!effectiveDateRaw) {
-      return res.status(400).json({ error: "effectiveDate é obrigatória (yyyy-mm-dd)." });
+      try {
+        const result = await generatePriceTableVersionDraftFromProductionCosts(prisma, {
+          priceTableId,
+          effectiveDate,
+          taxRuleId: body.taxRuleId,
+          includeAllActiveProducts: body.includeAllActiveProducts,
+          productIds: body.productIds,
+          itemScope: body.itemScope,
+          notes: body.notes,
+          commissionPerc: body.generationCommissionPerc,
+          hasCommissionOverride: body.hasCommissionOverride,
+          marginPct: body.marginPct,
+          hasMarginOverride: body.hasMarginOverride,
+          freightPercent: body.freightPercent,
+          hasFreightOverride: body.hasFreightOverride,
+          dryRun: true,
+        });
+
+        return res.json({
+          dryRun: true,
+          summary: result.summary,
+          items: result.computedItems,
+          productionCostTable: {
+            productionCostTableVersionId: result.summary.productionCostTableVersionId,
+            productionCostTableVersionCode: result.summary.productionCostTableVersionCode,
+            revision: result.summary.productionCostTableRevision,
+            effectiveDate: result.summary.productionCostTableEffectiveDate,
+          },
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        if (
+          message === NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE ||
+          message.includes("tabela oficial de custo de produção")
+        ) {
+          return res.status(422).json({ error: message });
+        }
+        if (
+          message.includes("não encontrada") ||
+          message.includes("Nenhum produto") ||
+          message.includes("Nenhum item") ||
+          message.includes("inválida") ||
+          message.includes("não pode ser negativo") ||
+          message.includes("inválido")
+        ) {
+          return res.status(400).json({ error: message });
+        }
+        console.error("POST /api/price-tables/:priceTableId/versions/preview-draft", e);
+        return res.status(500).json({ error: "Erro ao pré-visualizar versão DRAFT da tabela de preço." });
+      }
     }
-    const effectiveDate = civilDateToLocalDate(effectiveDateRaw);
+  );
+
+  app.post(
+    "/api/price-tables/:priceTableId/versions/generate-draft",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
+    const { priceTableId } = req.params;
+    const parsedBody = parsePriceTableDraftGenerationBody(
+      (req.body ?? {}) as Record<string, unknown>
+    );
+    if (parsedBody.ok === false) {
+      return res.status(400).json({ error: parsedBody.error });
+    }
+    const body = parsedBody.value;
+    const effectiveDate = civilDateToLocalDate(body.effectiveDateRaw);
     if (Number.isNaN(effectiveDate.getTime())) {
       return res.status(400).json({ error: "effectiveDate inválida." });
-    }
-
-    const taxRuleId = typeof body.taxRuleId === "string" && body.taxRuleId.trim() ? body.taxRuleId.trim() : null;
-    const includeAllActiveProducts = body.includeAllActiveProducts === true;
-    const productIds = Array.isArray(body.productIds)
-      ? body.productIds.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
-      : [];
-    const itemScope =
-      typeof body.itemScope === "string" && body.itemScope.trim() ? body.itemScope.trim() : undefined;
-    const notes = typeof body.notes === "string" && body.notes.trim() ? body.notes.trim() : null;
-
-    let hasCommissionOverride = false;
-    let generationCommissionPerc: number | null = null;
-    const rawCommission = body.commissionPerc;
-    if (rawCommission !== undefined && rawCommission !== null && rawCommission !== "") {
-      const parsed = typeof rawCommission === "number" ? rawCommission : Number(rawCommission);
-      if (!Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
-        return res.status(400).json({ error: "Comissão do vendedor deve estar entre 0% e 50%." });
-      }
-      hasCommissionOverride = true;
-      generationCommissionPerc = parsed;
-    }
-
-    if (productIds.length === 0 && !includeAllActiveProducts) {
-      return res.status(400).json({
-        error: "Informe productIds ou includeAllActiveProducts=true.",
-      });
     }
 
     try {
       const result = await generatePriceTableVersionDraftFromProductionCosts(prisma, {
         priceTableId,
         effectiveDate,
-        taxRuleId,
-        includeAllActiveProducts,
-        productIds,
-        itemScope,
-        notes,
-        commissionPerc: generationCommissionPerc,
-        hasCommissionOverride,
+        taxRuleId: body.taxRuleId,
+        includeAllActiveProducts: body.includeAllActiveProducts,
+        productIds: body.productIds,
+        itemScope: body.itemScope,
+        notes: body.notes,
+        commissionPerc: body.generationCommissionPerc,
+        hasCommissionOverride: body.hasCommissionOverride,
+        marginPct: body.marginPct,
+        hasMarginOverride: body.hasMarginOverride,
+        freightPercent: body.freightPercent,
+        hasFreightOverride: body.hasFreightOverride,
+        dryRun: false,
+        createdBy:
+          req.appAuth?.email?.trim() ||
+          req.appAuth?.id?.trim() ||
+          req.appAuth?.name?.trim() ||
+          null,
       });
 
       if (result.summary.itemsCreated === 0) {
         return res.status(422).json({
           error: "Nenhum item de preço foi criado. Revise os erros de custo de produção.",
           summary: result.summary,
+          items: result.computedItems,
         });
       }
 
@@ -9155,6 +9229,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       return res.status(201).json({
         version: result.version,
         summary: persistedSummary,
+        items: result.computedItems,
         productionCostTable: {
           productionCostTableVersionId: result.summary.productionCostTableVersionId,
           productionCostTableVersionCode: result.summary.productionCostTableVersionCode,
@@ -9174,7 +9249,9 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         message.includes("não encontrada") ||
         message.includes("Nenhum produto") ||
         message.includes("Nenhum item") ||
-        message.includes("inválida")
+        message.includes("inválida") ||
+        message.includes("não pode ser negativo") ||
+        message.includes("inválido")
       ) {
         return res.status(400).json({ error: message });
       }
@@ -9457,7 +9534,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     }
   });
 
-  app.post("/api/price-table-versions/:id/publish", requireAppAuth, requireAnyPermission(["pricing.publish_tables", "settings.price_tables.manage"]), async (req, res) => {
+  app.post(
+    "/api/price-table-versions/:id/publish",
+    requireAppAuth,
+    requireSuperAdmin,
+    async (req, res) => {
     const { id } = req.params;
     const body = (req.body ?? {}) as {
       effectiveFrom?: unknown;
@@ -10283,7 +10364,13 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
   app.get(
     "/api/pricing/commercial-published-prices",
     requireAppAuth,
-    requireResource("commercial.pricing", "view"),
+    requireAnyPermission([
+      "price_table.view",
+      "pricing.view",
+      "proposals.view",
+      "sales_orders.view",
+      "settings.price_tables.view",
+    ]),
     async (req, res) => {
       try {
         const query = parseCommercialPublishedPricesQuery(req.query as Record<string, unknown>);

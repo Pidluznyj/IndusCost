@@ -112,7 +112,11 @@ export async function resolveSalesOrderListSellerWhere(
 export function buildSalesOrderListWhereForQuery(
   query: SalesOrderListQuery,
   sellerWhere: Prisma.SalesOrderWhereInput | null,
-  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+    excludeEconomicGroupCustomers?: boolean;
+  }
 ): Prisma.SalesOrderWhereInput {
   const useLegacySellerText = query.sellerKey.kind === "all" && query.sellerText;
   return buildSalesOrderListWhere(
@@ -141,7 +145,11 @@ export async function resolveSalesOrderListWhere(
   prisma: PrismaClient,
   query: SalesOrderListQuery,
   sellerWhere: Prisma.SalesOrderWhereInput | null,
-  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+    excludeEconomicGroupCustomers?: boolean;
+  }
 ): Promise<Prisma.SalesOrderWhereInput> {
   const base = buildSalesOrderListWhereForQuery(query, sellerWhere, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
@@ -154,7 +162,11 @@ export async function resolveSalesOrderListWhere(
 /** Where da listagem sem filtro de vendedor (opções do select). */
 export function buildSalesOrderListWhereExcludingSeller(
   query: SalesOrderListQuery,
-  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+    excludeEconomicGroupCustomers?: boolean;
+  }
 ): Prisma.SalesOrderWhereInput {
   return buildSalesOrderListWhere(
     {
@@ -175,7 +187,11 @@ export function buildSalesOrderListWhereExcludingSeller(
 export async function resolveSalesOrderListWhereExcludingSeller(
   prisma: PrismaClient,
   query: SalesOrderListQuery,
-  options?: { env?: Record<string, string | undefined>; includeConfirmedMissing?: boolean }
+  options?: {
+    env?: Record<string, string | undefined>;
+    includeConfirmedMissing?: boolean;
+    excludeEconomicGroupCustomers?: boolean;
+  }
 ): Promise<Prisma.SalesOrderWhereInput> {
   const base = buildSalesOrderListWhereExcludingSeller(query, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(

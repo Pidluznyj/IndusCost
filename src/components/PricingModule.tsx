@@ -60,6 +60,8 @@ import {
   buildPublishedPriceSourceTraceUrl,
 } from "@/src/lib/pricing/publishedPriceSourceTraceApi";
 import type { PublishedPriceSourceTrace } from "@/src/lib/pricing/publishedPriceSourceTrace";
+import { canGenerateCommercialPriceTables } from "@/src/lib/priceTablesAccess";
+import { DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT } from "@/src/lib/priceTablePublication";
 import {
   buildPublishedPriceRequestUrl,
   formatPublishedFormationPercent,
@@ -194,6 +196,9 @@ export const PricingModule = () => {
   const allowSimulate = auth.hasPermission("pricing.simulate");
   const allowGenerateTables = auth.hasPermission("pricing.generate_tables");
   const allowPublishTables = auth.hasPermission("pricing.publish_tables");
+  /** Tabelas comerciais: só Super Admin gera/publica (demais apenas usam vigentes). */
+  const allowGenerateCommercialTables = canGenerateCommercialPriceTables(auth);
+  const allowPublishCommercialTables = allowGenerateCommercialTables;
   const allowDeletePremises = canDeletePricingPremises(auth);
   const canViewProductionCostTables =
     auth.hasPermission("pricing.view") ||
@@ -207,7 +212,8 @@ export const PricingModule = () => {
     auth.hasPermission("materials.view") ||
     allowGenerateTables;
   const [tourOpen, setTourOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"UNIT" | "BATCH">("UNIT");
+  const isSuperAdminUser = auth.isSuperAdmin();
+  const [adminFormationToolsOpen, setAdminFormationToolsOpen] = useState(false);
   const [selectedPricings, setSelectedPricings] = useState<string[]>([]);
 
   const [pricings, setPricings] = useState<any[]>([]);
@@ -287,12 +293,35 @@ export const PricingModule = () => {
       return initial;
     }
   );
+  /** Margem-alvo (%) por código — default = defaultMarginPct da tabela. */
+  const [commercialGenMarginByCode, setCommercialGenMarginByCode] = useState<Record<string, string>>({});
+  const [commercialGenFreightPercent, setCommercialGenFreightPercent] = useState(
+    String(DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT)
+  );
   const [commercialGenSelectedCodes, setCommercialGenSelectedCodes] = useState<Set<string>>(
     () => new Set(COMMERCIAL_TABLE_CODES)
   );
   const [commercialGenRunning, setCommercialGenRunning] = useState(false);
+  const [commercialGenPreviewLoading, setCommercialGenPreviewLoading] = useState(false);
   const [commercialGenCurrentCode, setCommercialGenCurrentCode] = useState<string | null>(null);
   const [commercialGenResults, setCommercialGenResults] = useState<CommercialGenResult[] | null>(null);
+  const [commercialGenPreview, setCommercialGenPreview] = useState<Array<{
+    priceTableCode: string;
+    priceTableName: string;
+    marginPct: number;
+    commissionPerc: number;
+    freightPercent: number;
+    items: Array<{
+      sku: string;
+      productName: string;
+      salePrice: number;
+      currentSalePrice: number | null;
+      deltaAmount: number | null;
+      deltaPercent: number | null;
+      commissionPerc: number;
+    }>;
+    errors: Array<{ sku?: string; productName?: string; message?: string }>;
+  }> | null>(null);
   /** "Aprovado por" usado na publicação das DRAFTs comerciais. Opcional. */
   const [commercialPublishApprovedBy, setCommercialPublishApprovedBy] = useState("");
   /** versionId atualmente em publicação (loading discreto por card). */
@@ -377,6 +406,19 @@ export const PricingModule = () => {
         if (!t?.code) continue;
         if (next[t.code] === undefined) {
           next[t.code] = String(getDefaultCommissionForCode(t.code));
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setCommercialGenMarginByCode((prev) => {
+      let changed = false;
+      const next: Record<string, string> = { ...prev };
+      for (const t of priceTables) {
+        if (!t?.code) continue;
+        if (next[t.code] === undefined) {
+          const m = Number(t.defaultMarginPct);
+          next[t.code] = Number.isFinite(m) ? String(m) : "0";
           changed = true;
         }
       }
@@ -821,39 +863,135 @@ export const PricingModule = () => {
     });
   };
 
-  const handleGenerateCommercialDrafts = async () => {
+  const resolveCommercialGenInputs = () => {
     if (!commercialGenTaxRuleId) {
       alert("Selecione uma regra fiscal.");
-      return;
+      return null;
     }
     if (!commercialGenEffectiveFrom.trim()) {
       alert("Informe a vigência desejada (referência para custo de produção publicado).");
-      return;
+      return null;
     }
     const selectedTables = COMMERCIAL_TABLE_CODES
       .map((code) => priceTables.find((t) => t.code === code))
       .filter((t): t is PriceTableLite => !!t && commercialGenSelectedCodes.has(t.code));
     if (selectedTables.length === 0) {
       alert("Selecione pelo menos uma tabela disponível.");
-      return;
+      return null;
     }
 
-    // Comissão por tabela: cada tabela selecionada precisa ter um número válido entre 0 e 50.
-    // Valida todas antes de gerar qualquer DRAFT. Aceita vírgula ou ponto como separador.
     const commissionParsedByCode: Record<string, number> = {};
+    const marginParsedByCode: Record<string, number> = {};
     for (const table of selectedTables) {
-      const raw = (commercialGenCommissionByCode[table.code] ?? "").trim().replace(",", ".");
-      const parsed = Number(raw);
-      if (raw === "" || !Number.isFinite(parsed) || parsed < 0 || parsed > 50) {
+      const rawComm = (commercialGenCommissionByCode[table.code] ?? "").trim().replace(",", ".");
+      const parsedComm = Number(rawComm);
+      if (rawComm === "" || !Number.isFinite(parsedComm) || parsedComm < 0 || parsedComm > 50) {
         alert(`Comissão do vendedor da tabela ${table.code} deve estar entre 0% e 50%.`);
-        return;
+        return null;
       }
-      commissionParsedByCode[table.code] = parsed;
+      commissionParsedByCode[table.code] = parsedComm;
+
+      const defaultMargin = Number(table.defaultMarginPct);
+      const rawMargin = (
+        commercialGenMarginByCode[table.code] ??
+        (Number.isFinite(defaultMargin) ? String(defaultMargin) : "")
+      )
+        .trim()
+        .replace(",", ".");
+      const parsedMargin = Number(rawMargin);
+      if (rawMargin === "" || !Number.isFinite(parsedMargin) || parsedMargin < 0 || parsedMargin >= 100) {
+        alert(`Margem da tabela ${table.code} deve estar entre 0% e 100% (exclusive).`);
+        return null;
+      }
+      marginParsedByCode[table.code] = parsedMargin;
     }
+
+    const rawFreight = commercialGenFreightPercent.trim().replace(",", ".");
+    const freightParsed = Number(rawFreight);
+    if (rawFreight === "" || !Number.isFinite(freightParsed) || freightParsed < 0 || freightParsed >= 100) {
+      alert("Frete estimado deve estar entre 0% e 100% (exclusive).");
+      return null;
+    }
+
+    for (const table of selectedTables) {
+      const sum =
+        marginParsedByCode[table.code]! +
+        commissionParsedByCode[table.code]! +
+        freightParsed;
+      if (sum >= 100) {
+        alert(
+          `Tabela ${table.code}: margem + comissão + frete (${formatNumber(sum, 2)}%) deve ser menor que 100%.`
+        );
+        return null;
+      }
+    }
+
+    return { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed };
+  };
+
+  const handlePreviewCommercialDrafts = async () => {
+    const inputs = resolveCommercialGenInputs();
+    if (!inputs) return;
+    const { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed } = inputs;
+
+    setCommercialGenPreviewLoading(true);
+    setCommercialGenPreview(null);
+    try {
+      const previews: NonNullable<typeof commercialGenPreview> = [];
+      for (const table of selectedTables) {
+        setCommercialGenCurrentCode(table.code);
+        const payload = await fetchJsonOk<{
+          items?: Array<{
+            sku: string;
+            productName: string;
+            salePrice: number;
+            currentSalePrice: number | null;
+            deltaAmount: number | null;
+            deltaPercent: number | null;
+            commissionPerc: number;
+          }>;
+          summary?: { errors?: Array<Record<string, unknown>> };
+        }>(`/api/price-tables/${table.id}/versions/preview-draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            effectiveDate: commercialGenEffectiveFrom.trim(),
+            taxRuleId: commercialGenTaxRuleId,
+            includeAllActiveProducts: true,
+            commissionPerc: commissionParsedByCode[table.code],
+            marginPct: marginParsedByCode[table.code],
+            freightPercent: freightParsed,
+          }),
+        });
+        previews.push({
+          priceTableCode: table.code,
+          priceTableName: table.name,
+          marginPct: marginParsedByCode[table.code]!,
+          commissionPerc: commissionParsedByCode[table.code]!,
+          freightPercent: freightParsed,
+          items: Array.isArray(payload.items) ? payload.items.slice(0, 40) : [],
+          errors: Array.isArray(payload.summary?.errors)
+            ? payload.summary!.errors!.slice(0, 5).map(extractIssuePreview)
+            : [],
+        });
+      }
+      setCommercialGenPreview(previews);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Falha ao pré-visualizar preços.");
+    } finally {
+      setCommercialGenPreviewLoading(false);
+      setCommercialGenCurrentCode(null);
+    }
+  };
+
+  const handleGenerateCommercialDrafts = async () => {
+    const inputs = resolveCommercialGenInputs();
+    if (!inputs) return;
+    const { selectedTables, commissionParsedByCode, marginParsedByCode, freightParsed } = inputs;
 
     if (
       !window.confirm(
-        `Gerar DRAFTs para ${selectedTables.length} tabela(s)? Nenhuma versão será publicada automaticamente.`
+        `Gerar DRAFTs para ${selectedTables.length} tabela(s) com frete ${formatNumber(freightParsed, 2)}%? Nenhuma versão será publicada automaticamente.`
       )
     ) {
       return;
@@ -870,12 +1008,15 @@ export const PricingModule = () => {
       const accumulated: CommercialGenResult[] = [];
       for (const table of selectedTables) {
         setCommercialGenCurrentCode(table.code);
-        const tableCommissionParsed = commissionParsedByCode[table.code];
+        const tableCommissionParsed = commissionParsedByCode[table.code]!;
+        const tableMarginParsed = marginParsedByCode[table.code]!;
         const noteParts: string[] = [
           "Gerado pela Formação de Preço Comercial.",
           `Tabela: ${table.code}.`,
           `Regra fiscal: ${taxRuleName}.`,
+          `Margem-alvo: ${formatNumber(tableMarginParsed, 2)}%.`,
           `Comissão vendedor da tabela ${table.code}: ${formatNumber(tableCommissionParsed, 2)}%.`,
+          `Frete estimado: ${formatNumber(freightParsed, 2)}%.`,
         ];
         if (vig) noteParts.push(`Vigência desejada: ${vig}.`);
         if (userNotes) noteParts.push(`Observações: ${userNotes}`);
@@ -906,6 +1047,8 @@ export const PricingModule = () => {
               taxRuleId: commercialGenTaxRuleId,
               includeAllActiveProducts: true,
               commissionPerc: tableCommissionParsed,
+              marginPct: tableMarginParsed,
+              freightPercent: freightParsed,
               notes: consolidatedNotes,
             }),
           });
@@ -1405,8 +1548,55 @@ export const PricingModule = () => {
           <TourHelpButton onClick={() => setTourOpen(true)} />
         </div>
 
-        {/* Gerar Tabelas Comerciais (card colapsável) */}
-        {allowGenerateTables ? (
+        {/* Sanfona de ferramentas — somente Super Admin pode abrir */}
+        <div
+          className={cn(
+            "rounded-2xl border border-border bg-card p-4 sm:p-5",
+            !isSuperAdminUser && "opacity-70"
+          )}
+          data-tour="pricing-admin-tools-accordion"
+          data-testid="pricing-admin-tools-accordion"
+        >
+          <button
+            type="button"
+            disabled={!isSuperAdminUser}
+            onClick={() => {
+              if (!isSuperAdminUser) return;
+              setAdminFormationToolsOpen((v) => !v);
+            }}
+            aria-expanded={Boolean(adminFormationToolsOpen && isSuperAdminUser)}
+            aria-controls="pricing-admin-tools-body"
+            title={
+              isSuperAdminUser
+                ? undefined
+                : "Disponível apenas para Super administrador"
+            }
+            className="w-full flex items-start justify-between gap-3 text-left disabled:cursor-not-allowed"
+          >
+            <div className="min-w-0">
+              <h3 className="text-base font-bold flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" /> Formação de Preço
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Geração de tabelas, custos oficiais versionados e auditoria de margem.
+                {!isSuperAdminUser
+                  ? " Disponível apenas para Super administrador."
+                  : " Abra quando precisar das ferramentas administrativas."}
+              </p>
+            </div>
+            <ChevronRight
+              className={cn(
+                "h-5 w-5 text-muted-foreground transition-transform shrink-0",
+                adminFormationToolsOpen && isSuperAdminUser && "rotate-90",
+                !isSuperAdminUser && "opacity-40"
+              )}
+            />
+          </button>
+
+          {adminFormationToolsOpen && isSuperAdminUser ? (
+            <div id="pricing-admin-tools-body" className="mt-5 space-y-4">
+        {/* Gerar Tabelas Comerciais — somente Super Admin */}
+        {allowGenerateCommercialTables ? (
         <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
           <button
             type="button"
@@ -1530,18 +1720,50 @@ export const PricingModule = () => {
               <div className="space-y-2">
                 <p className="text-xs font-bold uppercase text-muted-foreground">Tabelas a gerar</p>
                 <p className="text-[11px] text-muted-foreground leading-snug">
-                  Cada tabela pode ter uma comissão diferente. A comissão entra no cálculo do preço sugerido e
-                  será levada para a proposta.
+                  Ajuste a margem-alvo de cada tabela nesta versão. A comissão permanece vinculada à faixa
+                  comercial. O frete estimado vale para todas as tabelas desta geração.
                 </p>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-950">
+                  Os percentuais informados serão utilizados apenas na nova versão da tabela. Versões
+                  publicadas e pedidos anteriores não serão alterados.
+                </div>
+                <div className="flex flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-3">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                      Frete estimado (%)
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      max={99.99}
+                      step="0.01"
+                      className="w-28 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right"
+                      value={commercialGenFreightPercent}
+                      onChange={(e) => setCommercialGenFreightPercent(e.target.value)}
+                      disabled={commercialGenRunning || commercialGenPreviewLoading}
+                      data-testid="commercial-gen-freight-percent"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground max-w-md leading-snug">
+                    Default {DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT}%. Entra no denominador com
+                    impostos, comissão e margem. Aceita 0%.
+                  </p>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {COMMERCIAL_TABLE_CODES.map((code) => {
                     const table = priceTables.find((t) => t.code === code);
                     const available = !!table;
                     const checked = available && commercialGenSelectedCodes.has(code);
-                    const margin = table ? Number(table.defaultMarginPct) : null;
+                    const defaultMargin = table ? Number(table.defaultMarginPct) : null;
                     const commissionValue =
                       commercialGenCommissionByCode[code] ??
                       String(getDefaultCommissionForCode(code));
+                    const marginValue =
+                      commercialGenMarginByCode[code] ??
+                      (defaultMargin != null && Number.isFinite(defaultMargin)
+                        ? String(defaultMargin)
+                        : "");
                     return (
                       <div
                         key={code}
@@ -1551,6 +1773,7 @@ export const PricingModule = () => {
                             ? "border-border"
                             : "border-dashed border-muted-foreground/30 opacity-60"
                         )}
+                        data-testid={`commercial-gen-table-${code}`}
                       >
                         <label
                           className={cn(
@@ -1560,7 +1783,7 @@ export const PricingModule = () => {
                         >
                           <input
                             type="checkbox"
-                            disabled={!available || commercialGenRunning}
+                            disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
                             checked={checked}
                             onChange={() => available && toggleCommercialTable(code)}
                             className="rounded accent-primary w-4 h-4"
@@ -1571,39 +1794,123 @@ export const PricingModule = () => {
                               <span className="ml-2 text-[10px] font-mono text-muted-foreground">({code})</span>
                             </p>
                             <p className="text-[11px] text-muted-foreground">
-                              {available && margin != null && Number.isFinite(margin)
-                                ? `Margem padrão: ${formatNumber(margin, 2)}%`
+                              {available && defaultMargin != null && Number.isFinite(defaultMargin)
+                                ? `Margem padrão: ${formatNumber(defaultMargin, 2)}%`
                                 : "Tabela não encontrada ou inativa"}
                             </p>
                           </div>
                         </label>
-                        <div className="flex items-center gap-2 pl-7">
-                          <label className="text-[11px] font-bold uppercase text-muted-foreground shrink-0">
-                            Comissão %
-                          </label>
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min={0}
-                            max={50}
-                            step="0.01"
-                            className="w-24 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
-                            value={commissionValue}
-                            onChange={(e) =>
-                              setCommercialGenCommissionByCode((prev) => ({
-                                ...prev,
-                                [code]: e.target.value,
-                              }))
-                            }
-                            disabled={!available || commercialGenRunning}
-                            placeholder="0,00"
-                          />
+                        <div className="grid grid-cols-2 gap-2 pl-7">
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Margem nova %
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={99.99}
+                              step="0.01"
+                              className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
+                              value={marginValue}
+                              onChange={(e) =>
+                                setCommercialGenMarginByCode((prev) => ({
+                                  ...prev,
+                                  [code]: e.target.value,
+                                }))
+                              }
+                              disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[11px] font-bold uppercase text-muted-foreground">
+                              Comissão %
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={50}
+                              step="0.01"
+                              className="w-full px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none tabular-nums text-right disabled:opacity-50"
+                              value={commissionValue}
+                              onChange={(e) =>
+                                setCommercialGenCommissionByCode((prev) => ({
+                                  ...prev,
+                                  [code]: e.target.value,
+                                }))
+                              }
+                              disabled={!available || commercialGenRunning || commercialGenPreviewLoading}
+                              placeholder="0,00"
+                            />
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+
+              {commercialGenPreview && commercialGenPreview.length > 0 ? (
+                <div
+                  className="space-y-3 rounded-xl border border-border bg-card p-3"
+                  data-testid="commercial-gen-preview"
+                >
+                  <p className="text-xs font-bold uppercase text-muted-foreground">
+                    Preview da formação (mesmos valores que serão gerados)
+                  </p>
+                  {commercialGenPreview.map((block) => (
+                    <div key={block.priceTableCode} className="space-y-2">
+                      <p className="text-sm font-semibold">
+                        {block.priceTableName}{" "}
+                        <span className="text-xs text-muted-foreground font-mono">
+                          ({block.priceTableCode}) · margem {formatNumber(block.marginPct, 2)}% · comissão{" "}
+                          {formatNumber(block.commissionPerc, 2)}% · frete{" "}
+                          {formatNumber(block.freightPercent, 2)}%
+                        </span>
+                      </p>
+                      <div className="overflow-x-auto rounded-lg border border-border">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-muted">
+                            <tr>
+                              <th className="p-2">SKU</th>
+                              <th className="p-2">Produto</th>
+                              <th className="p-2 text-right">Preço atual</th>
+                              <th className="p-2 text-right">Novo preço</th>
+                              <th className="p-2 text-right">Δ R$</th>
+                              <th className="p-2 text-right">Δ %</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {block.items.map((row) => (
+                              <tr key={`${block.priceTableCode}-${row.sku}`}>
+                                <td className="p-2 font-mono">{row.sku}</td>
+                                <td className="p-2">{row.productName}</td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.currentSalePrice != null
+                                    ? formatCurrency(row.currentSalePrice, 2)
+                                    : "—"}
+                                </td>
+                                <td className="p-2 text-right tabular-nums font-semibold">
+                                  {formatCurrency(row.salePrice, 2)}
+                                </td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.deltaAmount != null ? formatCurrency(row.deltaAmount, 2) : "—"}
+                                </td>
+                                <td className="p-2 text-right tabular-nums">
+                                  {row.deltaPercent != null
+                                    ? `${formatNumber(row.deltaPercent, 2)}%`
+                                    : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="rounded-xl border border-dashed border-border bg-muted/30 p-3 text-xs text-muted-foreground">
                 Tabela personalizada será adicionada em uma próxima etapa.
@@ -1613,36 +1920,64 @@ export const PricingModule = () => {
                 const availableSelectedCount = COMMERCIAL_TABLE_CODES.filter((code) =>
                   priceTables.some((t) => t.code === code) && commercialGenSelectedCodes.has(code)
                 ).length;
+                const busy = commercialGenRunning || commercialGenPreviewLoading;
                 return (
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
                     <p className="text-xs text-muted-foreground">
-                      Selecionadas: <span className="font-bold text-foreground">{availableSelectedCount}</span> · serão geradas DRAFTs sequencialmente.
+                      Selecionadas: <span className="font-bold text-foreground">{availableSelectedCount}</span> · preview e geração usam o mesmo motor.
                     </p>
-                    <button
-                      type="button"
-                      onClick={handleGenerateCommercialDrafts}
-                      disabled={
-                        !commercialGenTaxRuleId ||
-                        !commercialGenEffectiveFrom.trim() ||
-                        availableSelectedCount === 0 ||
-                        commercialGenRunning
-                      }
-                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                    >
-                      {commercialGenRunning ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          {commercialGenCurrentCode
-                            ? `Gerando ${COMMERCIAL_TABLE_LABELS[commercialGenCurrentCode] ?? commercialGenCurrentCode}...`
-                            : "Gerando..."}
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="h-4 w-4" />
-                          Gerar DRAFTs comerciais
-                        </>
-                      )}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handlePreviewCommercialDrafts()}
+                        disabled={
+                          !commercialGenTaxRuleId ||
+                          !commercialGenEffectiveFrom.trim() ||
+                          availableSelectedCount === 0 ||
+                          busy
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-bold hover:bg-accent disabled:opacity-50"
+                        data-testid="commercial-gen-preview-btn"
+                      >
+                        {commercialGenPreviewLoading ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Preview...
+                          </>
+                        ) : (
+                          <>
+                            <Calculator className="h-4 w-4" />
+                            Preview
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleGenerateCommercialDrafts()}
+                        disabled={
+                          !commercialGenTaxRuleId ||
+                          !commercialGenEffectiveFrom.trim() ||
+                          availableSelectedCount === 0 ||
+                          busy
+                        }
+                        className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                        data-testid="commercial-gen-generate-btn"
+                      >
+                        {commercialGenRunning ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            {commercialGenCurrentCode
+                              ? `Gerando ${COMMERCIAL_TABLE_LABELS[commercialGenCurrentCode] ?? commercialGenCurrentCode}...`
+                              : "Gerando..."}
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-4 w-4" />
+                            Gerar DRAFTs comerciais
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 );
               })()}
@@ -1795,7 +2130,7 @@ export const PricingModule = () => {
                                       : "Informe a vigência desejada acima para publicar."}
                                   </div>
                                 )}
-                                {allowPublishTables && r.versionStatus !== "PUBLISHED" && r.versionId && (
+                                {allowPublishCommercialTables && r.versionStatus !== "PUBLISHED" && r.versionId && (
                                   <button
                                     type="button"
                                     onClick={() => void handlePublishDraftVersion(r)}
@@ -2190,59 +2525,17 @@ export const PricingModule = () => {
         </div>
         ) : null}
 
-        {/* Toggle View Mode */}
-        <div
-          className="flex bg-accent/30 p-1 rounded-xl w-fit border border-border"
-          data-tour="pricing-mode-toggle"
-        >
-          <button 
-            onClick={() => setViewMode("UNIT")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              viewMode === "UNIT" ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <LayoutGrid className="h-4 w-4" /> Gestão Unitária
-          </button>
-          <button 
-            onClick={() => setViewMode("BATCH")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              viewMode === "BATCH" ? "bg-card shadow-sm text-primary" : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            <Layers className="h-4 w-4" /> Processamento em Lote
-          </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {viewMode === "UNIT" ? (
-        // --- VIEW: UNIT ---
         <div className="space-y-6" data-tour="pricing-unit-panel">
           {loading ? (
             <div className="p-8 text-center">
               <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" />
             </div>
           ) : null}
-          <div className="flex justify-end gap-2">
-             {allowSimulate ? (
-              <button
-                onClick={() => setIsSimulatorModalOpen(true)}
-                className="flex items-center gap-2 border border-border bg-card px-4 py-2 rounded-lg font-medium hover:bg-accent transition-colors text-sm"
-              >
-                <Calculator className="h-4 w-4" /> Simular preço
-              </button>
-             ) : null}
-             <button 
-              onClick={() => {
-                setFormData({ productId: "", taxRuleId: "", desiredMargin: 15, commission: 5, freightOut: 0, otherVariables: 0 });
-                setIsModalOpen(true);
-              }}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium hover:opacity-90 transition-opacity text-sm"
-            >
-              <Plus className="h-4 w-4" /> Nova Premissa
-            </button>
-          </div>
 
      <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-card p-4 sm:p-5">
@@ -2337,14 +2630,9 @@ export const PricingModule = () => {
         rows={publishedRows}
         loading={publishedPricesLoading}
         emptyMessage={publishedEmptyMessage}
-        allowSimulate={allowSimulate}
-        pricings={pricings}
         openingRowId={openingPublishedRowId}
         onRowClick={(row) => void handleOpenPublishedFormation(row)}
         onPriceCellClick={(row, tableId) => void handleOpenPublishedFormation(row, tableId)}
-        onCalculate={handleCalculateUnit}
-        onEditPremissa={handleEditPremissaFromGrid}
-        onCreatePremissa={handleCreatePremissaFromGrid}
       />
 
       {publishedPagination.totalPages > 1 ? (
@@ -2528,276 +2816,7 @@ export const PricingModule = () => {
       </div>
      </div>
         </div>
-      ) : (
-        // --- VIEW: BATCH ---
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" data-tour="pricing-batch-panel">
-          <div className="lg:col-span-2 space-y-4">
-            {/* Esquerda: Seleção de Produtos ou Resultados em tabela */}
 
-            {!batchResults ? (
-              // BATCH TABELA SELEÇÃO
-              <div className="bg-card rounded-2xl border border-border overflow-hidden flex flex-col h-[600px] shadow-sm">
-                <div className="p-4 border-b border-border bg-accent/20 flex gap-4 items-center">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <input
-                      type="text" placeholder="Filtrar por SKU, código ou nome..."
-                      className="w-full pl-9 pr-3 py-2 rounded-lg bg-background border border-border text-sm outline-none focus:ring-2 focus:ring-primary/20"
-                      value={searchTermBatch} onChange={(e) => setSearchTermBatch(e.target.value)}
-                    />
-                  </div>
-                  <div className="text-xs font-medium text-muted-foreground whitespace-nowrap">
-                    Selecionados: <span className="font-bold text-primary">{selectedProductIds.length}</span>{" "}
-                    {selectedProductIds.length === 1 ? "item" : "itens"}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted sticky top-0 z-10 hidden sm:table-header-group">
-                      <tr>
-                        <th className="p-3 w-10 text-center">
-                          <input 
-                            type="checkbox" className="rounded accent-primary w-4 h-4"
-                            checked={
-                              batchFilteredProducts.length > 0 &&
-                              batchFilteredProducts.every((product) =>
-                                selectedProductIds.includes(product.id)
-                              )
-                            }
-                            onChange={handleToggleSelectAll}
-                          />
-                        </th>
-                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">SKU</th>
-                        <th className="p-3 font-bold text-xs uppercase text-muted-foreground">Item</th>
-                        {batchItemScope === "all" ? (
-                          <th className="p-3 font-bold text-xs uppercase text-muted-foreground w-28">Tipo</th>
-                        ) : null}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {batchFilteredProducts.map((product) => (
-                        <tr key={product.id} className="hover:bg-accent/20 cursor-pointer" onClick={() => {
-                          setSelectedProductIds(prev => prev.includes(product.id) ? prev.filter(id => id !== product.id) : [...prev, product.id] )
-                        }}>
-                          <td className="p-3 text-center">
-                            <input 
-                              type="checkbox" className="rounded accent-primary w-4 h-4 pointer-events-none"
-                              checked={selectedProductIds.includes(product.id)} readOnly
-                            />
-                          </td>
-                          <td className="p-3 font-mono text-[10px] sm:text-xs text-muted-foreground">{product.sku}</td>
-                          <td className="p-3 font-bold text-xs sm:text-sm">{product.name}</td>
-                          {batchItemScope === "all" ? (
-                            <td className="p-3">
-                              <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                {pricingBatchItemTypeLabel(resolvePricingBatchItemType(product.type))}
-                              </span>
-                            </td>
-                          ) : null}
-                        </tr>
-                      ))}
-                      {batchFilteredProducts.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={batchItemScope === "all" ? 4 : 3}
-                            className="p-8 text-center text-sm text-muted-foreground"
-                          >
-                            Nenhum item encontrado para o escopo e filtro atuais.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : (
-              // BATCH TABELA RESULTADOS DA SIMULAÇÃO
-              <div className="bg-card rounded-2xl border border-border overflow-hidden flex flex-col h-[600px] shadow-sm">
-                <div className="p-4 border-b border-border bg-primary text-primary-foreground flex justify-between items-center">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5" />
-                    <h3 className="font-bold">Resultados da Simulação</h3>
-                  </div>
-                  <button 
-                    onClick={() => setBatchResults(null)}
-                    className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg font-medium transition-colors"
-                  >
-                    Voltar / Refazer
-                  </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead className="bg-muted sticky top-0 z-10 hidden sm:table-header-group">
-                      <tr>
-                        <th className="p-3 font-bold text-[10px] uppercase text-muted-foreground">Status / SKU</th>
-                        <th className="p-3 font-bold text-[10px] uppercase text-muted-foreground">Custo Ind.</th>
-                        <th className="p-3 font-bold text-[10px] uppercase text-right text-muted-foreground">Preço Sugerido</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {batchResults.map((r, idx) => (
-                        <tr key={idx} className={r.status === "ERROR" ? "bg-red-50/50" : "bg-green-50/30"}>
-                          <td className="p-3">
-                            {r.status === "SUCCESS" ? (
-                              <div className="flex items-center gap-2 text-green-600">
-                                <CheckCircle2 className="h-4 w-4" />
-                                <div>
-                                  <p className="font-bold text-xs text-foreground">{r.name}</p>
-                                  <p className="text-[10px] opacity-80">
-                                    {r.sku}
-                                    {r.itemType ? ` · ${pricingBatchItemTypeLabel(r.itemType)}` : ""}
-                                  </p>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-2 text-red-600">
-                                <AlertCircle className="h-4 w-4" />
-                                <div>
-                                  <p className="font-bold text-xs text-red-800">{r.name || r.productId}</p>
-                                  <p className="text-[10px] leading-tight">
-                                    {r.itemType ? `${pricingBatchItemTypeLabel(r.itemType)} · ` : ""}
-                                    Erro: {r.message}
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-3 font-medium text-xs">
-                            {r.status === "SUCCESS" ? formatCurrency(r.ciu, 5) : "-"}
-                          </td>
-                          <td className="p-3 font-black text-primary text-right text-base">
-                            {r.status === "SUCCESS" ? formatCurrency(r.suggestedPrice, 5) : "-"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="p-4 border-t border-border bg-accent/10 flex justify-end">
-                   <button 
-                    onClick={handleApplyBatch}
-                    className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-bold flex items-center gap-2 hover:opacity-90"
-                   >
-                     Gravar Lote Oficialmente
-                   </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Direita: Painel de Definições em Lote */}
-          <div className="col-span-1 space-y-4">
-             <div className="bg-card rounded-2xl border border-border p-6 shadow-sm flex flex-col gap-5 sticky top-6">
-                <div className="border-b border-border pb-4">
-                  <h3 className="font-bold text-lg flex items-center gap-2">
-                    <Calculator className="h-5 w-5 text-primary" /> Parâmetros em Lote
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Esses parâmetros serão injetados simultaneamente.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase">Simular</label>
-                    <div className="grid grid-cols-1 gap-2">
-                      {PRICING_BATCH_ITEM_SCOPE_OPTIONS.map((option) => {
-                        const active = batchItemScope === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            data-testid={`pricing-batch-scope-${option.value}`}
-                            onClick={() => handleBatchItemScopeChange(option.value)}
-                            className={cn(
-                              "rounded-xl border px-3 py-2.5 text-left transition-colors",
-                              active
-                                ? "border-primary bg-primary/10 ring-1 ring-primary/30"
-                                : "border-border bg-background hover:bg-accent/40"
-                            )}
-                          >
-                            <p className="text-sm font-semibold">{option.label}</p>
-                            <p className="text-[10px] text-muted-foreground mt-0.5">{option.description}</p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">Canal Fiscal</label>
-                    <SearchableSelect
-                      placeholder="Selecione a Regra..."
-                      options={taxRules.map((r: { id: string; name: string; description?: string }) => ({
-                        value: r.id,
-                        label: r.name,
-                        sublabel: r.description?.trim() || undefined,
-                        searchTerms: [r.name, r.description].filter(Boolean).join(" "),
-                      }))}
-                      value={batchFormData.taxRuleId}
-                      onChange={(val) => setBatchFormData({...batchFormData, taxRuleId: val})}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Margem Líquida %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.desiredMargin} onChange={(e) => setBatchFormData({...batchFormData, desiredMargin: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Comissão %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.commission} onChange={(e) => setBatchFormData({...batchFormData, commission: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Frete Fixo (R$)</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.freightOut} onChange={(e) => setBatchFormData({...batchFormData, freightOut: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">Outros Var %</label>
-                      <input
-                        type="number" 
-                        step="0.00001"
-                        className="w-full p-2.5 text-sm rounded-xl border border-border bg-background outline-none"
-                        value={batchFormData.otherVariables} onChange={(e) => setBatchFormData({...batchFormData, otherVariables: parseFloat(e.target.value)})}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {!batchResults && (
-                  <button 
-                    onClick={handleSimulateBatch}
-                    disabled={simulatingBatch}
-                    className="w-full mt-2 py-3 rounded-xl font-bold bg-primary text-primary-foreground hover:bg-primary/90 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                  >
-                    {simulatingBatch ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />} 
-                    Simular {selectedProductIds.length > 0 ? selectedProductIds.length : ""} {selectedProductIds.length === 1 ? "Item" : "Itens"}
-                  </button>
-                )}
-             </div>
-          </div>
-        </div>
-      )}
 
       {/* Modal Simulador de Preço (portal + np-report-printing para PDF limpo) */}
       {isSimulatorModalOpen &&
@@ -3128,6 +3147,16 @@ export const PricingModule = () => {
                                : PUBLISHED_FIELD_UNAVAILABLE_LABEL,
                          },
                          {
+                           label: "Frete estimado",
+                           value:
+                             publishedFormationMeta.publishedSummary.freightPercent != null
+                               ? `${formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%` +
+                                 (publishedFormationMeta.publishedSummary.freightPercentAmount != null
+                                   ? ` · ${formatCurrency(publishedFormationMeta.publishedSummary.freightPercentAmount, 2)}`
+                                   : "")
+                               : "—",
+                         },
+                         {
                            label: "Impostos publicados",
                            value:
                              publishedFormationMeta.publishedSummary.taxAmount != null
@@ -3232,8 +3261,26 @@ export const PricingModule = () => {
                                : formatCurrency(calculationResult.resultados.totalCommission, 5)}
                            </span>
                          </div>
+                         {publishedFormationMeta &&
+                         publishedFormationMeta.publishedSummary.freightPercent != null ? (
+                           <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
+                             <span className="text-xs font-medium">
+                               Frete estimado (
+                               {formatNumber(publishedFormationMeta.publishedSummary.freightPercent, 2)}%)
+                             </span>
+                             <span className="text-sm font-bold">
+                               -
+                               {publishedFormationMeta.publishedSummary.freightPercentAmount != null
+                                 ? formatCurrency(
+                                     publishedFormationMeta.publishedSummary.freightPercentAmount,
+                                     5
+                                   )
+                                 : PUBLISHED_FIELD_UNAVAILABLE_LABEL}
+                             </span>
+                           </div>
+                         ) : null}
                          <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
-                           <span className="text-xs font-medium">Frete Saída</span>
+                           <span className="text-xs font-medium">Frete Saída (R$ absoluto)</span>
                            <span className="text-sm font-bold">
                              -
                              {publishedFormationMeta
@@ -3249,7 +3296,7 @@ export const PricingModule = () => {
                          {publishedFormationMeta ? (
                            <div className="flex items-center justify-between p-3 rounded-xl bg-red-50 border border-red-100 text-red-700">
                              <span className="text-xs font-medium">
-                               Outras deduções congeladas (
+                               Outras deduções (
                                {formatPublishedFormationPercent(
                                  publishedFormationMeta,
                                  "otherRatePercent",
@@ -3262,7 +3309,7 @@ export const PricingModule = () => {
                                {formatPublishedFormationValue(
                                  publishedFormationMeta,
                                  "otherDeductions",
-                                 calculationResult.resultados.frozenOtherCost,
+                                 calculationResult.resultados.exclusiveOtherDeductions,
                                  (value) => formatCurrency(value, 5)
                                )}
                              </span>
@@ -3342,6 +3389,14 @@ export const PricingModule = () => {
                             commRate: Number(calculationResult.premissas?.commRate ?? 0),
                             marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
                             freight: Number(calculationResult.premissas?.freight ?? 0),
+                            freightPercent: Number(
+                              (calculationResult.premissas as { freightPercent?: number | null } | null)
+                                ?.freightPercent ?? 0
+                            ),
+                            otherRate: Number(
+                              (calculationResult.premissas as { otherRate?: number | null } | null)
+                                ?.otherRate ?? 0
+                            ),
                           }}
                         />
                       </div>
@@ -3353,6 +3408,14 @@ export const PricingModule = () => {
                           commRate: Number(calculationResult.premissas?.commRate ?? 0),
                           marginRate: Number(calculationResult.premissas?.marginRate ?? 0),
                           freight: Number(calculationResult.premissas?.freight ?? 0),
+                          freightPercent: Number(
+                            (calculationResult.premissas as { freightPercent?: number | null } | null)
+                              ?.freightPercent ?? 0
+                          ),
+                          otherRate: Number(
+                            (calculationResult.premissas as { otherRate?: number | null } | null)
+                              ?.otherRate ?? 0
+                          ),
                         }}
                       />
                     )

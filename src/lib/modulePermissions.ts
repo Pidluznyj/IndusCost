@@ -1,6 +1,7 @@
 /** Mapa módulo → permissões (Fase 1K-D / 1K-D.2). Usa ids reais do Sidebar/App.tsx. */
 
 import { canAccessCommissionsModule } from "@/src/lib/commissionsModulePermissions.js";
+import { canViewCommercialPriceTable } from "@/src/lib/commercialPriceTableAccess.js";
 import { resolveCrmCommercialPersona } from "@/src/lib/crmCommercialPersona.js";
 import { evaluateFleetRouteAccess } from "./fleetPermissionResolve.js";
 import { PRODUCT_TAB_RESOURCE_KEYS } from "@/src/lib/moduleTabResources.js";
@@ -24,6 +25,7 @@ export type AppModuleId =
   | "opex"
   | "taxes"
   | "pricing"
+  | "commercial-price-table"
   | "proposals"
   | "sales-orders"
   | "sales-order-flow"
@@ -68,6 +70,7 @@ export const SIDEBAR_MODULE_ORDER: AppModuleId[] = [
   "opex",
   "taxes",
   "pricing",
+  "commercial-price-table",
   "proposals",
   "sales-orders",
   "sales-order-flow",
@@ -118,6 +121,8 @@ export function canAccessModule(moduleId: AppModuleId, check: PermissionChecker)
       return check.hasPermission("purchases.view");
     case "pricing":
       return check.hasPermission("pricing.view");
+    case "commercial-price-table":
+      return canViewCommercialPriceTable(check);
     case "employees":
       return check.hasPermission("employees.view");
     case "employees-dashboard":
@@ -330,6 +335,12 @@ export function resolveModuleIdFromPath(pathname: string): AppModuleId | null {
   ) {
     return "sales-order-flow";
   }
+  if (
+    normalized === "/commercial/price-table" ||
+    normalized.startsWith("/commercial/price-table/")
+  ) {
+    return "commercial-price-table";
+  }
   const segment = normalized.replace(/^\//, "").split("/").filter(Boolean)[0];
   if (!segment) return null;
   if (SIDEBAR_MODULE_ORDER.includes(segment as AppModuleId)) {
@@ -366,6 +377,7 @@ export const MODULE_LABELS: Record<AppModuleId, string> = {
   opex: "Custos Indiretos",
   taxes: "Tributos",
   pricing: "Formação de Preço",
+  "commercial-price-table": "Tabela comercial",
   proposals: "Propostas",
   "sales-orders": "Pedidos de venda",
   "sales-order-flow": "Fluxo de Pedidos",

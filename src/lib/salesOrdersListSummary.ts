@@ -8,6 +8,7 @@ import {
 } from "@/src/lib/salesOrderSmartSearch.js";
 import { NOMUS_NFE_STATUS_CANCELLED } from "@/src/lib/nomusNfeClassification.js";
 import { mergeSalesOrderOperationalPresenceWhere } from "@/src/lib/nomus/nomusSourcePresencePolicy.js";
+import { buildEconomicGroupCustomerPrismaExclusion } from "@/src/lib/financeInternalGroupExclusions.js";
 
 export const SALES_ORDER_LIST_STATUS_VALUES = [
   "DRAFT",
@@ -131,6 +132,11 @@ export type BuildSalesOrderListWhereOptions = {
   env?: Record<string, string | undefined>;
   /** Auditoria/histórico: não exclui MISSING_CONFIRMED. */
   includeConfirmedMissing?: boolean;
+  /**
+   * População comercial oficial: exclui clientes do grupo econômico.
+   * Default true. Use false apenas em auditoria/histórico.
+   */
+  excludeEconomicGroupCustomers?: boolean;
 };
 
 /** Where Prisma alinhado ao GET /api/sales-orders (mesmos filtros da listagem). */
@@ -202,6 +208,10 @@ export function buildSalesOrderListWhere(
     and.push({ nfeLinks: { none: buildSalesOrderValidNfeLinkWhere() } });
   }
 
+  if (options?.excludeEconomicGroupCustomers !== false) {
+    and.push(buildEconomicGroupCustomerPrismaExclusion());
+  }
+
   const commercialWhere: Prisma.SalesOrderWhereInput =
     and.length === 0 ? {} : and.length === 1 ? and[0]! : { AND: and };
 
@@ -237,7 +247,8 @@ export function buildSalesOrderListSummary(input: {
 /**
  * Totais oficiais da listagem operacional — Σ `SalesOrder.totalNetValue` / contagem
  * dos pedidos já filtrados pelo mesmo `where` do GET /api/sales-orders.
- * Não reaplica filtros de mercado executivo (ex.: exclusão de clientes do grupo).
+ * Totais da população já filtrada pelo `where` oficial (inclui exclusão de
+ * clientes do grupo econômico na listagem operacional).
  *
  * Preferir `buildSalesOrderListSummary` a partir de `prisma.salesOrder.aggregate`
  * na rota HTTP (PERF 05). Esta função permanece para dashboards/testes que já

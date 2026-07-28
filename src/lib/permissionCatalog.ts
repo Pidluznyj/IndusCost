@@ -753,6 +753,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     requires: ["finance.view", "finance.portfolioReconciliation.view"],
   }),
 
+  // —— Comercial (shell do grupo) ——
+  perm({
+    key: "commercial.view",
+    label: "Comercial",
+    group: CRM,
+    module: "crm-commercial",
+    description:
+      "Shell do grupo Comercial (chave 1:1 do parent; não substitui Pedidos/CRM).",
+    type: "menu",
+  }),
+
   // —— CRM ——
   perm({ key: "crm.view", label: "CRM Comercial", group: CRM, module: "crm-commercial", description: "Acessar o módulo CRM Comercial.", type: "menu" }),
   perm({
@@ -1302,6 +1313,14 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   }),
 
   // —— Precificação / Impostos ——
+  perm({
+    key: "price_table.view",
+    label: "Tabela comercial",
+    group: PRC,
+    module: "commercial-price-table",
+    description: "Consultar preços comerciais publicados vigentes.",
+    type: "menu",
+  }),
   perm({ key: "pricing.view", label: "Formação de Preço", group: PRC, module: "pricing", description: "Acessar formação de preço.", type: "menu" }),
   perm({
     key: "pricing.simulate",

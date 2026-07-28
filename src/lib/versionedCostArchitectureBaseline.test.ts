@@ -205,7 +205,7 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
   it("generate-draft de preço usa custo de produção publicado, não getProductCostAnalysis vivo", () => {
     const server = read("server.ts");
     const block = server.slice(
-      server.indexOf('app.post("/api/price-tables/:priceTableId/versions/generate-draft"'),
+      server.indexOf('"/api/price-tables/:priceTableId/versions/generate-draft"'),
       server.indexOf('app.get("/api/price-table-versions/:id/items"')
     );
     assert.match(block, /generatePriceTableVersionDraftFromProductionCosts/);
@@ -226,10 +226,9 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
 
   it("publicação de preço arquiva versão PUBLISHED anterior — preço congelado por versão", () => {
     const server = read("server.ts");
-    const block = server.slice(
-      server.indexOf('app.post("/api/price-table-versions/:id/publish"'),
-      server.indexOf('app.get("/api/production-cost-tables/versions"')
-    );
+    const start = server.indexOf('"/api/price-table-versions/:id/publish"');
+    assert.ok(start >= 0);
+    const block = server.slice(start, start + 4500);
     assert.match(block, /status:\s*"ARCHIVED"/);
     assert.match(block, /effectiveTo/);
   });
@@ -244,7 +243,7 @@ describe("versionedCostArchitectureBaseline — preço comercial (as-is)", () =>
     const server = read("server.ts");
     const block = server.slice(
       server.indexOf('app.get("/api/price-tables/:priceTableId/products/:productId/published-price"'),
-      server.indexOf('app.post("/api/price-table-versions/:id/publish"')
+      server.indexOf('"/api/price-table-versions/:id/publish"')
     );
     assert.match(block, /resolvePublishedPriceTableVersionForDate/);
     assert.match(block, /referenceDate/);

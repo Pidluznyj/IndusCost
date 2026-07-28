@@ -381,8 +381,10 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     groupId: "commercial",
     route: null,
     sortOrder: 30,
-    // Sem crm.view / commissions.view: aliases 1:1 ficam nos módulos (CRM / Comissões).
-    actions: [V(["sales_orders.view", "proposals.view", "customers.view", "pricing.view"])],
+    // Parent 1:1 (como finance.view): não roubar alias dos filhos.
+    // Antes sales_orders.view era primário aqui e a projeção do perfil
+    // "Gestor comercial" pulava a chave → 403 em commercial.sales_orders:view.
+    actions: [V(["commercial.view"])],
     relatedEndpoints: [],
     sensitivity: "low",
     appearsInSidebar: false,
@@ -390,6 +392,8 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     isInternalAction: false,
     isDetailScreen: false,
     relationalResourceKeys: ["comercial"],
+    notes:
+      "P17: commercial.view canônico só neste parent; Pedidos/CRM/Propostas usam aliases 1:1 próprios.",
   },
   {
     resourceKey: "commercial.crm",
@@ -932,6 +936,25 @@ export const PERMISSION_CONTRACT_RESOURCES: readonly PermissionContractResource[
     relationalResourceKeys: [],
     notes:
       "Raw técnico do stage. Nunca liberar só com includeRaw; exige grant explícito e registro de uso.",
+  },
+  {
+    resourceKey: "commercial.price_table",
+    label: "Tabela comercial",
+    parentKey: "commercial",
+    groupId: "commercial",
+    route: "/commercial/price-table",
+    sortOrder: 328,
+    actions: [V(["price_table.view"])],
+    relatedEndpoints: ["/api/pricing/commercial-published-prices"],
+    sensitivity: "sensitive",
+    appearsInSidebar: true,
+    isTab: false,
+    isInternalAction: false,
+    isDetailScreen: false,
+    relationalResourceKeys: [],
+    moduleId: "commercial-price-table",
+    notes:
+      "Consulta read-only de preços publicados. Menu também abre com propostas/pedidos/formação via SIDEBAR_MODULE_CONTRACT_KEYS.",
   },
   {
     resourceKey: "commercial.pricing",

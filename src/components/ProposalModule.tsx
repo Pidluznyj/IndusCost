@@ -41,6 +41,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { STORAGE_OPEN_PROPOSAL_KEY } from "@/src/lib/salesFunnel";
 import { CalculatedValue } from "./shared/CalculatedValue";
 import { buildProposalLineMarginExplanation } from "@/src/lib/proposalLineExplain";
+import {
+  calculateProposalLineMargin,
+  calculateProposalMarginSummary,
+} from "@/src/lib/proposalLineMargin";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
 import { PROPOSAL_TOUR_STEPS } from "@/src/tours/proposalTourSteps";
@@ -338,8 +342,8 @@ const ITEM_PRICE_SOURCE_MANUAL_OVERRIDE = "MANUAL_OVERRIDE";
 
 /**
  * Recalcula campos derivados de um ProposalItem após uma mudança.
- * Centraliza a fórmula usada por updateItem para permitir reúso em ações em lote
- * (ex.: desconto em massa). Não altera regra de cálculo.
+ * Margem = mesma regra oficial do Pedido de Venda (receita − imposto − custo;
+ * comissão/frete fora da margem).
  */
 function recomputeItemDerivedFields(
   itemIn: ProposalItem,
@@ -360,17 +364,18 @@ function recomputeItemDerivedFields(
   }
 
   const discountVal = safeNum(item.discountValue);
-  const net = gross - discountVal;
-  const totalCost = qty * unitCost;
+  const margin = calculateProposalLineMargin({
+    quantity: qty,
+    negotiatedPrice: negotiated,
+    discountValue: discountVal,
+    taxesPerc: safeNum(item.taxesPerc),
+    unitCost,
+  });
 
-  item.taxesValue = safeNum(net * (safeNum(item.taxesPerc) / 100));
-  item.commissionValue = safeNum(net * (safeNum(item.commissionPerc) / 100));
-
-  const freight = safeNum(item.freightValue);
-  item.marginValue = safeNum(
-    net - item.taxesValue - item.commissionValue - freight - totalCost
-  );
-  item.marginPerc = net > 0 ? safeNum((item.marginValue / net) * 100) : 0;
+  item.taxesValue = margin.taxesValue;
+  item.commissionValue = safeNum(margin.net * (safeNum(item.commissionPerc) / 100));
+  item.marginValue = margin.marginValue;
+  item.marginPerc = margin.marginPerc;
 
   return normalizeProposalItem(item);
 }
@@ -1065,49 +1070,45 @@ export const ProposalModule = () => {
         const negotiatedPrice = safeNum(df.negotiatedPrice);
         const taxesValueFixed = safeNum(df.taxesValue);
         const freightVal = safeNum(df.freightValue);
-        const marginPercFromTable = safeNum(df.marginPerc);
         const gross = qty * suggestedPrice;
-        const totalCost = qty * unitCost;
         const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
         const commissionPerc = safeNum(df.commissionPerc);
         const commissionValue =
           safeNum(df.commissionValue) > 0
             ? safeNum(df.commissionValue) * qty
             : safeNum(gross * (commissionPerc / 100));
-        const marginValue = safeNum(
-          gross - taxesValueFixed - commissionValue - freightVal - totalCost
-        );
 
         const snapshotPayload: Record<string, unknown> = {
           ...(data as unknown as Record<string, unknown>),
           capturedAt: new Date().toISOString(),
         };
 
-        const newItem = normalizeProposalItem({
-          productId,
-          Product: product,
-          quantity: qty,
-          unit: "UN",
-          unitCost,
-          suggestedPrice,
-          negotiatedPrice,
-          discountPerc: 0,
-          discountValue: 0,
-          marginValue,
-          marginPerc: marginPercFromTable,
-          taxesPerc,
-          taxesValue: taxesValueFixed,
-          commissionPerc,
-          commissionValue,
-          freightValue: freightVal,
-          priceTableItemId: data.item.priceTableItemId,
-          priceSource: "PRICE_TABLE",
-          pricingSnapshotJson: snapshotPayload,
-          priceTableId: data.priceTable.id,
-          priceTableVersionId: data.version.id,
-          priceTableCode: data.priceTable.code,
-          priceTableVersionNumber: data.version.versionNumber,
-        });
+        const newItem = recomputeItemDerivedFields(
+          normalizeProposalItem({
+            productId,
+            Product: product,
+            quantity: qty,
+            unit: "UN",
+            unitCost,
+            suggestedPrice,
+            negotiatedPrice,
+            discountPerc: 0,
+            discountValue: 0,
+            taxesPerc,
+            taxesValue: taxesValueFixed,
+            commissionPerc,
+            commissionValue,
+            freightValue: freightVal,
+            priceTableItemId: data.item.priceTableItemId,
+            priceSource: "PRICE_TABLE",
+            pricingSnapshotJson: snapshotPayload,
+            priceTableId: data.priceTable.id,
+            priceTableVersionId: data.version.id,
+            priceTableCode: data.priceTable.code,
+            priceTableVersionNumber: data.version.versionNumber,
+          }),
+          "none"
+        );
 
         const warnMsgs = (data.warnings ?? [])
           .map((w) => (typeof w?.message === "string" ? w.message.trim() : ""))
@@ -1138,34 +1139,24 @@ export const ProposalModule = () => {
       const commissionPerc = safeNum(snapshot.commissionPerc);
       const freightVal = safeNum(snapshot.freightValue);
 
-      const gross = qty * suggestedPrice;
-      const totalCost = qty * unitCost;
-      const taxesValue = gross * (taxesPerc / 100);
-      const commissionValue = gross * (commissionPerc / 100);
-      const marginValue = safeNum(
-        gross - taxesValue - commissionValue - freightVal - totalCost
+      const newItem = recomputeItemDerivedFields(
+        normalizeProposalItem({
+          productId,
+          Product: product,
+          quantity: qty,
+          unit: "UN",
+          unitCost,
+          suggestedPrice,
+          negotiatedPrice: suggestedPrice,
+          discountPerc: 0,
+          discountValue: 0,
+          taxesPerc,
+          commissionPerc,
+          freightValue: freightVal,
+          calculationExplainability: snapshot.calculationExplainability,
+        }),
+        "none"
       );
-      const marginPerc = gross > 0 ? safeNum((marginValue / gross) * 100) : 0;
-
-      const newItem = normalizeProposalItem({
-        productId,
-        Product: product,
-        quantity: qty,
-        unit: "UN",
-        unitCost,
-        suggestedPrice,
-        negotiatedPrice: suggestedPrice,
-        discountPerc: 0,
-        discountValue: 0,
-        marginValue,
-        marginPerc,
-        taxesPerc,
-        taxesValue,
-        commissionPerc,
-        commissionValue,
-        freightValue: freightVal,
-        calculationExplainability: snapshot.calculationExplainability,
-      });
 
       setFormData((prev) => ({
         ...prev,
@@ -1199,49 +1190,45 @@ export const ProposalModule = () => {
       const negotiatedPrice = safeNum(df.negotiatedPrice);
       const taxesValueFixed = safeNum(df.taxesValue);
       const freightVal = safeNum(df.freightValue);
-      const marginPercFromTable = safeNum(df.marginPerc);
       const gross = qty * suggestedPrice;
-      const totalCost = qty * unitCost;
       const taxesPerc = gross > 0 ? safeNum((taxesValueFixed / gross) * 100) : 0;
       const commissionPerc = safeNum(df.commissionPerc);
       const commissionValue =
         safeNum(df.commissionValue) > 0
           ? safeNum(df.commissionValue) * qty
           : safeNum(gross * (commissionPerc / 100));
-      const marginValue = safeNum(
-        gross - taxesValueFixed - commissionValue - freightVal - totalCost
-      );
 
       const snapshotPayload: Record<string, unknown> = {
         ...(data as unknown as Record<string, unknown>),
         capturedAt: new Date().toISOString(),
       };
 
-      const updated = normalizeProposalItem({
-        ...current,
-        productId: current.productId,
-        quantity: qty,
-        unitCost,
-        suggestedPrice,
-        negotiatedPrice,
-        discountPerc: 0,
-        discountValue: 0,
-        marginValue,
-        marginPerc: marginPercFromTable,
-        taxesPerc,
-        taxesValue: taxesValueFixed,
-        commissionPerc,
-        commissionValue,
-        freightValue: freightVal,
-        priceTableItemId: data.item.priceTableItemId,
-        priceSource: ITEM_PRICE_SOURCE_PRICE_TABLE,
-        pricingSnapshotJson: snapshotPayload,
-        priceTableId: data.priceTable.id,
-        priceTableVersionId: data.version.id,
-        priceTableCode: data.priceTable.code,
-        priceTableVersionNumber: data.version.versionNumber,
-        calculationExplainability: undefined,
-      });
+      const updated = recomputeItemDerivedFields(
+        normalizeProposalItem({
+          ...current,
+          productId: current.productId,
+          quantity: qty,
+          unitCost,
+          suggestedPrice,
+          negotiatedPrice,
+          discountPerc: 0,
+          discountValue: 0,
+          taxesPerc,
+          taxesValue: taxesValueFixed,
+          commissionPerc,
+          commissionValue,
+          freightValue: freightVal,
+          priceTableItemId: data.item.priceTableItemId,
+          priceSource: ITEM_PRICE_SOURCE_PRICE_TABLE,
+          pricingSnapshotJson: snapshotPayload,
+          priceTableId: data.priceTable.id,
+          priceTableVersionId: data.version.id,
+          priceTableCode: data.priceTable.code,
+          priceTableVersionNumber: data.version.versionNumber,
+          calculationExplainability: undefined,
+        }),
+        "none"
+      );
 
       setFormData((prev) => {
         const arr = [...(prev.items ?? [])];
@@ -1429,7 +1416,7 @@ export const ProposalModule = () => {
     });
   };
 
-  // Totais Consolidados
+  // Totais Consolidados — margem ponderada igual Pedido de Venda
   const totals = useMemo(() => {
     const items = formData.items || [];
     const totalGross = items.reduce(
@@ -1445,9 +1432,17 @@ export const ProposalModule = () => {
     const totalTaxes = items.reduce((acc, i) => acc + safeNum(i.taxesValue), 0);
     const totalComm = items.reduce((acc, i) => acc + safeNum(i.commissionValue), 0);
     const totalFreight = items.reduce((acc, i) => acc + safeNum(i.freightValue), 0);
-    
-    const totalMarginValue = totalNet - totalTaxes - totalComm - totalFreight - totalCost;
-    const totalMarginPerc = totalNet > 0 ? (totalMarginValue / totalNet) * 100 : 0;
+
+    const lineMargins = items.map((i) =>
+      calculateProposalLineMargin({
+        quantity: safeNum(i.quantity),
+        negotiatedPrice: safeNum(i.negotiatedPrice),
+        discountValue: safeNum(i.discountValue),
+        taxesPerc: safeNum(i.taxesPerc),
+        unitCost: safeNum(i.unitCost),
+      })
+    );
+    const marginSummary = calculateProposalMarginSummary(lineMargins);
 
     return {
       totalItems: items.length,
@@ -1458,8 +1453,8 @@ export const ProposalModule = () => {
       totalTaxes,
       totalComm,
       totalFreight,
-      totalMarginValue,
-      totalMarginPerc
+      totalMarginValue: marginSummary.totalMarginValue,
+      totalMarginPerc: marginSummary.totalMarginPerc,
     };
   }, [formData.items]);
 
@@ -1615,9 +1610,8 @@ export const ProposalModule = () => {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Client & Conditions */}
-          <div className="lg:col-span-1 space-y-6">
+        <div className="space-y-6">
+          {/* Top: Client & Conditions (full width) */}
             <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-6">
               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <User className="h-4 w-4" /> Cliente e Cabeçalho
@@ -1759,23 +1753,9 @@ export const ProposalModule = () => {
               </div>
             </div>
 
-            {/* Internal Notes */}
-            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
-              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Notas Internas</h4>
-              <textarea
-                rows={4}
-                placeholder="Observações que não aparecem no PDF da proposta..."
-                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
-                value={formData.internalNotes}
-                onChange={(e) => setFormData({...formData, internalNotes: e.target.value})}
-              />
-            </div>
-          </div>
-
-          {/* Right Column: Items Grid */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* Middle: Items editor (full width) */}
             <div
-              className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[600px]"
+              className="bg-card rounded-xl border border-border shadow-sm overflow-hidden flex flex-col min-h-[70vh]"
               data-tour="proposals-form-items"
             >
               <div className="p-4 border-b border-border bg-accent/30 flex items-center justify-between">
@@ -2292,7 +2272,8 @@ export const ProposalModule = () => {
               }}
             />
 
-            {/* General Notes for PDF */}
+          {/* Bottom: Observações (PDF) + Notas internas */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
               <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Info className="h-4 w-4" /> Observações da Proposta (PDF)
@@ -2303,6 +2284,16 @@ export const ProposalModule = () => {
                 className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
                 value={formData.notes}
                 onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              />
+            </div>
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Notas Internas</h4>
+              <textarea
+                rows={4}
+                placeholder="Observações que não aparecem no PDF da proposta..."
+                className="w-full p-2 rounded-lg border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm resize-none"
+                value={formData.internalNotes}
+                onChange={(e) => setFormData({...formData, internalNotes: e.target.value})}
               />
             </div>
           </div>

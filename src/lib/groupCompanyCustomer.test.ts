@@ -11,8 +11,11 @@ import { computeMonthProjection, computeYtdDailyAverageByWorkday } from "./sales
 
 describe("groupCompanyCustomer", () => {
   it("normalizes CNPJ digits", () => {
-    assert.equal(normalizeCnpjDigits("14.055.501/0001-80"), GROUP_COMPANY_CNPJ_DIGITS[0]);
-    assert.equal(normalizeCnpjDigits("72.569.510/0001-95"), GROUP_COMPANY_CNPJ_DIGITS[1]);
+    assert.equal(normalizeCnpjDigits("14.055.501/0001-80"), "14055501000180");
+    assert.equal(normalizeCnpjDigits("72.569.510/0001-95"), "72569510000195");
+    assert.ok(GROUP_COMPANY_CNPJ_DIGITS.includes("14055501000180"));
+    assert.ok(GROUP_COMPANY_CNPJ_DIGITS.includes("72569510000195"));
+    assert.ok(GROUP_COMPANY_CNPJ_DIGITS.includes("55717719000130"));
   });
 
   it("excludes Koppetel by CNPJ", () => {

@@ -13,6 +13,8 @@ import {
 } from "./salesOrderListReportExport.js";
 import { loadSalesOrderListReportExportPayload } from "./salesOrderListReportExport.server.js";
 import { loadSalesOrderSellerFilterOptions } from "./salesOrderListQuery.server.js";
+import { SALES_ORDERS_LAST_UPDATE_PATH } from "./salesOrdersLastUpdate.js";
+import { loadSalesOrdersLastUpdatedAt } from "./salesOrdersLastUpdate.server.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -28,6 +30,16 @@ export function registerSalesOrderListReportExportRoutes(
     auth.requireAppAuth,
     auth.requireResource(COMMERCIAL_RESOURCE_KEYS.salesOrders, COMMERCIAL_ACTIONS.view),
   ];
+
+  app.get(SALES_ORDERS_LAST_UPDATE_PATH, ...guard, async (_req, res) => {
+    try {
+      const lastUpdatedAt = await loadSalesOrdersLastUpdatedAt(prisma);
+      res.json({ lastUpdatedAt });
+    } catch (error) {
+      console.error(`GET ${SALES_ORDERS_LAST_UPDATE_PATH}`, error);
+      res.status(500).json({ error: "Erro ao carregar última atualização dos pedidos." });
+    }
+  });
 
   app.get("/api/sales-orders/seller-filter-options", ...guard, async (req, res) => {
     try {

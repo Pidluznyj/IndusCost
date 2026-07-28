@@ -1,5 +1,5 @@
 import React from "react";
-import { Calculator, Edit2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { cn, formatCurrency } from "@/src/lib/utils";
 import type {
   CommercialPublishedPriceGridRow,
@@ -10,26 +10,21 @@ import {
   formatPublishedRowStatus,
 } from "@/src/lib/pricing/commercialPublishedPricesUi";
 import { isPublishedPriceCellClickable } from "@/src/lib/pricing/publishedPriceFormationView";
+import "@/src/components/sales/sales-order-list-table.css";
+import "@/src/components/commercial/commercial-price-table-grid.css";
 
-type PremissaRow = {
-  id: string;
-  productId: string;
-  taxRuleId?: string | null;
-};
+export type CommercialPublishedPricesGridVariant = "formation" | "consult";
 
 type CommercialPublishedPricesGridProps = {
   tables: CommercialPublishedPriceGridTable[];
   rows: CommercialPublishedPriceGridRow[];
   loading: boolean;
   emptyMessage: string | null;
-  allowSimulate: boolean;
-  pricings: PremissaRow[];
   openingRowId?: string | null;
+  /** formation = Formação de Preço; consult = Tabela comercial (vendedor). */
+  variant?: CommercialPublishedPricesGridVariant;
   onRowClick: (row: CommercialPublishedPriceGridRow) => void;
   onPriceCellClick: (row: CommercialPublishedPriceGridRow, tableId: string) => void;
-  onCalculate: (productId: string, taxRuleId: string) => void;
-  onEditPremissa: (premissa: PremissaRow) => void;
-  onCreatePremissa: (productId: string, taxRuleId: string | null) => void;
 };
 
 function resolvePriceForTable(row: CommercialPublishedPriceGridRow, tableId: string) {
@@ -41,27 +36,95 @@ export function CommercialPublishedPricesGrid({
   rows,
   loading,
   emptyMessage,
-  allowSimulate,
-  pricings,
   openingRowId,
+  variant = "formation",
   onRowClick,
   onPriceCellClick,
-  onCalculate,
-  onEditPremissa,
-  onCreatePremissa,
 }: CommercialPublishedPricesGridProps) {
-  const columnCount = 3 + tables.length + 3;
+  const isConsult = variant === "consult";
+  const columnCount = isConsult ? 2 + tables.length : 3 + tables.length + 2;
 
   if (loading) {
     return (
-      <div className="bg-card rounded-2xl border border-border p-12 text-center">
+      <div
+        className={cn(
+          isConsult
+            ? "sales-order-list-section commercial-price-table-grid p-12 text-center"
+            : "bg-card rounded-2xl border border-border p-12 text-center"
+        )}
+      >
         <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
       </div>
     );
   }
 
+  if (isConsult) {
+    return (
+      <div
+        className="sales-order-list-section commercial-price-table-grid overflow-hidden"
+        data-testid="commercial-price-table-grid"
+        data-variant="consult"
+      >
+        <div className="sales-order-list-grid-title">Tabela comercial</div>
+        <div className="sales-order-list-table-wrap">
+          <table className="sales-order-list-table" style={{ minWidth: tables.length > 2 ? 960 : 640 }}>
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Produto</th>
+                {tables.map((table) => (
+                  <th key={table.tableId} className="cpt-price-cell" title={table.tableCode}>
+                    {table.tableName}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {emptyMessage ? (
+                <tr>
+                  <td colSpan={columnCount} className="p-12 text-center text-muted-foreground">
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.productId}>
+                    <td className="cpt-sku">{row.sku}</td>
+                    <td>
+                      <p className="cpt-product-name so-cell-ellipsis">{row.productName}</p>
+                    </td>
+                    {tables.map((table) => {
+                      const price = resolvePriceForTable(row, table.tableId);
+                      const hasPrice =
+                        price != null &&
+                        typeof price.salePrice === "number" &&
+                        Number.isFinite(price.salePrice);
+                      return (
+                        <td key={`${row.productId}-${table.tableId}`} className="cpt-price-cell">
+                          {hasPrice ? (
+                            <span className="cpt-price-value">{formatCurrency(price.salePrice, 2)}</span>
+                          ) : (
+                            <span className="cpt-price-empty">Sem preço</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm">
+    <div
+      className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm"
+      data-testid="commercial-price-table-grid"
+      data-variant="formation"
+    >
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead className="bg-muted">
@@ -82,9 +145,6 @@ export function CommercialPublishedPricesGrid({
                 Última publicação
               </th>
               <th className="p-4 font-bold text-xs uppercase text-muted-foreground whitespace-nowrap">Status</th>
-              <th className="p-4 font-bold text-xs uppercase text-muted-foreground text-center whitespace-nowrap">
-                Ações
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -96,13 +156,6 @@ export function CommercialPublishedPricesGrid({
               </tr>
             ) : (
               rows.map((row) => {
-                const fiscalRuleId = row.taxInfo?.fiscalRuleId ?? null;
-                const premissa = pricings.find(
-                  (pricing) =>
-                    pricing.productId === row.productId &&
-                    (!fiscalRuleId || pricing.taxRuleId === fiscalRuleId)
-                );
-
                 return (
                   <tr
                     key={row.productId}
@@ -189,39 +242,6 @@ export function CommercialPublishedPricesGrid({
                       >
                         {formatPublishedRowStatus(row.status)}
                       </span>
-                    </td>
-                    <td className="p-4 btn-acoes" onClick={(event) => event.stopPropagation()}>
-                      <div className="flex gap-2 justify-center">
-                        {allowSimulate && fiscalRuleId ? (
-                          <button
-                            type="button"
-                            title="Simulação ao vivo (premissa)"
-                            onClick={() => onCalculate(row.productId, fiscalRuleId)}
-                            className="p-2 text-primary bg-primary/10 hover:bg-primary hover:text-white rounded-lg transition-colors"
-                          >
-                            <Calculator className="h-4 w-4" />
-                          </button>
-                        ) : null}
-                        {premissa ? (
-                          <button
-                            type="button"
-                            title="Editar premissa"
-                            onClick={() => onEditPremissa(premissa)}
-                            className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            title="Nova premissa para este produto"
-                            onClick={() => onCreatePremissa(row.productId, fiscalRuleId)}
-                            className="p-2 text-muted-foreground hover:bg-accent hover:text-primary rounded-lg transition-colors"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
                     </td>
                   </tr>
                 );

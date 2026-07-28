@@ -21,6 +21,8 @@ import {
 import {
   buildPriceTableFormulaSnapshot,
   calculatePriceTableItemFromFrozenCost,
+  DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT,
+  normalizePricingPercentInput,
 } from "./priceTablePublication.js";
 
 export { previewProductionCostTableSourceForPriceDraft } from "./priceTableProductionCostResolver.js";
@@ -32,6 +34,23 @@ export type GeneratePriceTableDraftIssue = {
   productName: string;
   productType?: string;
   message: string;
+};
+
+export type GeneratePriceTableDraftComputedItem = {
+  productId: string;
+  sku: string;
+  productName: string;
+  productType?: string;
+  frozenTotalCost: number;
+  marginPct: number;
+  commissionPerc: number;
+  freightPercent: number;
+  taxRate: number;
+  salePrice: number;
+  commissionValue: number;
+  currentSalePrice: number | null;
+  deltaAmount: number | null;
+  deltaPercent: number | null;
 };
 
 export type GeneratePriceTableDraftSummary = {
@@ -46,6 +65,8 @@ export type GeneratePriceTableDraftSummary = {
   errors: GeneratePriceTableDraftIssue[];
   warnings: GeneratePriceTableDraftIssue[];
   commissionOverridePerc: number | null;
+  targetMarginPercent: number;
+  freightPercent: number;
   productionCostTableVersionId: string | null;
   productionCostTableVersionCode: string | null;
   productionCostTableRevision: number | null;
@@ -62,12 +83,53 @@ export type GeneratePriceTableVersionDraftInput = {
   notes?: string | null;
   commissionPerc?: number | null;
   hasCommissionOverride?: boolean;
+  /** Override da margem-alvo (%) para esta versão. */
+  marginPct?: number | null;
+  hasMarginOverride?: boolean;
+  /**
+   * Frete estimado (%) no denominador.
+   * Se omitido e `hasFreightOverride` for false, usa legado (freightOut absoluto).
+   * Se `hasFreightOverride` true (mesmo 0), aplica frete % e zera frete absoluto.
+   */
+  freightPercent?: number | null;
+  hasFreightOverride?: boolean;
+  /** Quando true, calcula sem persistir versão/itens. */
+  dryRun?: boolean;
+  createdBy?: string | null;
 };
+
+function resolveEffectiveMarginPct(
+  tableDefaultMarginPct: number,
+  input: GeneratePriceTableVersionDraftInput
+): number {
+  if (input.hasMarginOverride) {
+    const parsed = normalizePricingPercentInput(input.marginPct, "Margem");
+    if (parsed.ok === false) throw new Error(parsed.message);
+    return parsed.value;
+  }
+  return tableDefaultMarginPct;
+}
+
+function resolveFreightMode(input: GeneratePriceTableVersionDraftInput): {
+  useFreightPercent: boolean;
+  freightPercent: number;
+} {
+  if (input.hasFreightOverride) {
+    const parsed = normalizePricingPercentInput(
+      input.freightPercent ?? DEFAULT_COMMERCIAL_GENERATION_FREIGHT_PERCENT,
+      "Frete estimado"
+    );
+    if (parsed.ok === false) throw new Error(parsed.message);
+    return { useFreightPercent: true, freightPercent: parsed.value };
+  }
+  return { useFreightPercent: false, freightPercent: 0 };
+}
 
 export async function generatePriceTableVersionDraftFromProductionCosts(
   db: PrismaClient,
   input: GeneratePriceTableVersionDraftInput
 ) {
+  const dryRun = Boolean(input.dryRun);
   const effectiveDate = startOfCivilDate(input.effectiveDate);
   if (Number.isNaN(effectiveDate.getTime())) {
     throw new Error("effectiveDate inválida.");
@@ -118,28 +180,70 @@ export async function generatePriceTableVersionDraftFromProductionCosts(
     validatedTaxRule = taxRule;
   }
 
-  const version = await db.$transaction(async (tx) => {
-    const maxVersion = await tx.priceTableVersion.findFirst({
-      where: { priceTableId: input.priceTableId },
-      orderBy: { versionNumber: "desc" },
-      select: { versionNumber: true },
-    });
-    return tx.priceTableVersion.create({
-      data: {
-        priceTableId: input.priceTableId,
-        taxRuleId,
-        versionNumber: Number(maxVersion?.versionNumber ?? 0) + 1,
-        status: "DRAFT",
-        generatedAt: new Date(),
-        notes: input.notes?.trim() || null,
-        commissionPerc: input.hasCommissionOverride ? input.commissionPerc : null,
-        productionCostTableVersionId: productionCostVersion.id,
-      },
-    });
-  });
-
   const defaultMarginPct = Number(table.defaultMarginPct);
-  const marginRate = defaultMarginPct / 100;
+  const effectiveMarginPct = resolveEffectiveMarginPct(defaultMarginPct, input);
+  const marginRate = effectiveMarginPct / 100;
+  const freightMode = resolveFreightMode(input);
+  const freightRate = freightMode.useFreightPercent ? freightMode.freightPercent / 100 : 0;
+
+  const publishedVersion = await resolvePublishedPriceTableVersionForDate(
+    db,
+    input.priceTableId,
+    effectiveDate
+  );
+  const publishedPricesByProductId = new Map<string, number>();
+  if (publishedVersion) {
+    const publishedItems = await db.priceTableItem.findMany({
+      where: { priceTableVersionId: publishedVersion.id },
+      select: { productId: true, salePrice: true },
+    });
+    for (const item of publishedItems) {
+      publishedPricesByProductId.set(item.productId, Number(item.salePrice));
+    }
+  }
+
+  let version: {
+    id: string;
+    priceTableId: string;
+    taxRuleId: string | null;
+    versionNumber: number;
+    status: string;
+    generatedAt: Date | null;
+    notes: string | null;
+    commissionPerc: unknown;
+    targetMarginPercent?: unknown;
+    freightPercent?: unknown;
+    productionCostTableVersionId: string | null;
+    generationSummaryJson?: unknown;
+    PriceTable?: unknown;
+    TaxRule?: unknown;
+  } | null = null;
+
+  if (!dryRun) {
+    version = await db.$transaction(async (tx) => {
+      const maxVersion = await tx.priceTableVersion.findFirst({
+        where: { priceTableId: input.priceTableId },
+        orderBy: { versionNumber: "desc" },
+        select: { versionNumber: true },
+      });
+      return tx.priceTableVersion.create({
+        data: {
+          priceTableId: input.priceTableId,
+          taxRuleId,
+          versionNumber: Number(maxVersion?.versionNumber ?? 0) + 1,
+          status: "DRAFT",
+          generatedAt: new Date(),
+          notes: input.notes?.trim() || null,
+          createdBy: input.createdBy?.trim() || null,
+          commissionPerc: input.hasCommissionOverride ? input.commissionPerc : null,
+          targetMarginPercent: effectiveMarginPct,
+          freightPercent: freightMode.useFreightPercent ? freightMode.freightPercent : null,
+          productionCostTableVersionId: productionCostVersion.id,
+        },
+      });
+    });
+  }
+
   const fixedTaxRate = validatedTaxRule
     ? validatedTaxRule.TaxComponent.reduce((acc, c) => acc + Number(c.percentage), 0) / 100
     : null;
@@ -158,37 +262,63 @@ export async function generatePriceTableVersionDraftFromProductionCosts(
     errors: [],
     warnings: [],
     commissionOverridePerc: input.hasCommissionOverride ? input.commissionPerc ?? null : null,
+    targetMarginPercent: effectiveMarginPct,
+    freightPercent: freightMode.useFreightPercent ? freightMode.freightPercent : 0,
     productionCostTableVersionId: productionCostVersion.id,
     productionCostTableVersionCode: productionCostVersion.code,
     productionCostTableRevision: productionCostVersion.revision,
     productionCostTableEffectiveDate: effectiveDateKey,
   };
 
+  const computedItems: GeneratePriceTableDraftComputedItem[] = [];
+
   for (const product of selectedProducts) {
-    await processPriceTableProductRow(db, {
+    const computed = await processPriceTableProductRow(db, {
       product,
-      versionId: version.id,
+      versionId: version?.id ?? "preview",
       priceTableId: input.priceTableId,
       taxRuleId,
-      defaultMarginPct,
+      defaultMarginPct: effectiveMarginPct,
       marginRate,
       fixedTaxRate,
       hasCommissionOverride: Boolean(input.hasCommissionOverride),
       generationCommissionPerc: input.commissionPerc ?? null,
+      useFreightPercent: freightMode.useFreightPercent,
+      freightPercent: freightMode.freightPercent,
+      freightRate,
       productionCostVersion,
       effectiveDateKey,
       costByProductId,
       summary,
+      dryRun,
+      publishedPricesByProductId,
     });
+    if (computed) computedItems.push(computed);
+  }
+
+  if (dryRun) {
+    return {
+      version: null,
+      summary,
+      productionCostVersion,
+      computedItems,
+      dryRun: true as const,
+    };
   }
 
   const updatedVersion = await db.priceTableVersion.update({
-    where: { id: version.id },
+    where: { id: version!.id },
     data: { generationSummaryJson: summary as never },
     include: { PriceTable: true, TaxRule: true },
   });
 
-  return { version: updatedVersion, summary, productionCostVersion };
+  return {
+    version: updatedVersion,
+    summary,
+    productionCostVersion,
+    computedItems,
+    dryRun: false as const,
+  };
 }
 
 async function processPriceTableProductRow(
@@ -203,6 +333,9 @@ async function processPriceTableProductRow(
     fixedTaxRate: number | null;
     hasCommissionOverride: boolean;
     generationCommissionPerc: number | null;
+    useFreightPercent: boolean;
+    freightPercent: number;
+    freightRate: number;
     productionCostVersion: {
       id: string;
       code: string;
@@ -211,8 +344,10 @@ async function processPriceTableProductRow(
     effectiveDateKey: string;
     costByProductId: ReturnType<typeof buildProductionCostItemsByProductId>;
     summary: GeneratePriceTableDraftSummary;
+    dryRun: boolean;
+    publishedPricesByProductId: Map<string, number>;
   }
-) {
+): Promise<GeneratePriceTableDraftComputedItem | null> {
   const { product, summary } = ctx;
 
   try {
@@ -228,7 +363,7 @@ async function processPriceTableProductRow(
         message:
           "Item sem custo de produção oficial publicado na tabela vigente. PriceTableItem não foi criado.",
       });
-      return;
+      return null;
     }
 
     const custoFabril = costItem.unitProductionCost;
@@ -260,7 +395,9 @@ async function processPriceTableProductRow(
       ? Number(ctx.generationCommissionPerc) / 100
       : Number(productPricingAny?.commission ?? 0) / 100;
     const otherRate = Number(productPricingAny?.otherVariables ?? 0) / 100;
-    const freight = Number(productPricingAny?.freightOut ?? 0);
+    const freightAbs = ctx.useFreightPercent
+      ? 0
+      : Number(productPricingAny?.freightOut ?? 0);
 
     if (!productPricing) {
       summary.warnings.push({
@@ -279,10 +416,11 @@ async function processPriceTableProductRow(
       commissionRate: commRate,
       otherRate,
       marginRate: ctx.marginRate,
-      freight,
+      freight: freightAbs,
+      freightRate: ctx.useFreightPercent ? ctx.freightRate : 0,
     });
 
-    if (!finalCalc.ok) {
+    if (finalCalc.ok === false) {
       summary.itemsSkipped += 1;
       summary.errors.push({
         code: finalCalc.code,
@@ -292,11 +430,49 @@ async function processPriceTableProductRow(
         productType: product.type,
         message: finalCalc.message,
       });
-      return;
+      return null;
     }
 
-    const { salePrice, frozenTaxCost, totalCommission, frozenOtherCost, divisor } =
-      finalCalc.result;
+    const {
+      salePrice,
+      frozenTaxCost,
+      totalCommission,
+      frozenOtherCost,
+      divisor,
+      totalFreightPercent,
+    } = finalCalc.result;
+
+    const currentSalePrice = ctx.publishedPricesByProductId.get(product.id) ?? null;
+    const deltaAmount =
+      currentSalePrice != null && Number.isFinite(currentSalePrice)
+        ? salePrice - currentSalePrice
+        : null;
+    const deltaPercent =
+      deltaAmount != null && currentSalePrice != null && currentSalePrice > 0
+        ? (deltaAmount / currentSalePrice) * 100
+        : null;
+
+    const computed: GeneratePriceTableDraftComputedItem = {
+      productId: product.id,
+      sku: product.sku,
+      productName: product.name,
+      productType: product.type,
+      frozenTotalCost: custoFabril,
+      marginPct: ctx.defaultMarginPct,
+      commissionPerc: commRate * 100,
+      freightPercent: ctx.useFreightPercent ? ctx.freightPercent : 0,
+      taxRate,
+      salePrice,
+      commissionValue: totalCommission,
+      currentSalePrice,
+      deltaAmount,
+      deltaPercent,
+    };
+
+    if (ctx.dryRun) {
+      summary.itemsCreated += 1;
+      return computed;
+    }
 
     const costSnapshotJson = buildPriceTableCostSnapshotJson({
       productionCostTableVersionId: ctx.productionCostVersion.id,
@@ -314,13 +490,22 @@ async function processPriceTableProductRow(
       productionCostRevision: ctx.productionCostVersion.revision,
       taxRuleId: ctx.taxRuleId ?? (productPricingAny?.taxRuleId as string | null) ?? null,
       marginPct: ctx.defaultMarginPct,
-      rates: { taxRate, commissionRate: commRate, otherRate, marginRate: ctx.marginRate, freight },
+      freightPercent: ctx.useFreightPercent ? ctx.freightPercent : null,
+      rates: {
+        taxRate,
+        commissionRate: commRate,
+        otherRate,
+        marginRate: ctx.marginRate,
+        freight: freightAbs,
+        freightRate: ctx.useFreightPercent ? ctx.freightRate : 0,
+      },
       divisor,
       outputs: {
         frozenTotalCost: custoFabril,
         frozenTaxCost,
         frozenOtherCost,
         salePrice,
+        totalFreightPercent,
       },
     });
 
@@ -349,6 +534,7 @@ async function processPriceTableProductRow(
     });
 
     summary.itemsCreated += 1;
+    return computed;
   } catch (error) {
     summary.itemsSkipped += 1;
     summary.errors.push({
@@ -359,6 +545,7 @@ async function processPriceTableProductRow(
       productType: product.type,
       message: error instanceof Error ? error.message : String(error),
     });
+    return null;
   }
 }
 

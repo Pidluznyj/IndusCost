@@ -1,4 +1,5 @@
 import type { CalculationExplanation } from "../types/calculation";
+import { calculateProposalLineMargin } from "./proposalLineMargin.js";
 
 function brMoney(n: number): string {
   if (!Number.isFinite(n)) return "—";
@@ -6,7 +7,8 @@ function brMoney(n: number): string {
 }
 
 /**
- * Explica a margem da linha com o mesmo racional de `updateItem` em ProposalModule (fonte única no cliente para esta tela).
+ * Explica a margem da linha com o mesmo racional oficial de Pedido de Venda
+ * (`deductFromGross` — sem comissão/frete na margem).
  */
 export function buildProposalLineMarginExplanation(params: {
   quantity: number;
@@ -19,28 +21,39 @@ export function buildProposalLineMarginExplanation(params: {
   marginValue: number;
   marginPerc: number;
 }): CalculationExplanation {
-  const gross = params.quantity * params.negotiatedPrice;
-  const net = gross - params.discountValue;
-  const totalCost = params.quantity * params.unitCost;
+  const computed = calculateProposalLineMargin({
+    quantity: params.quantity,
+    negotiatedPrice: params.negotiatedPrice,
+    discountValue: params.discountValue,
+    taxesPerc:
+      params.quantity * params.negotiatedPrice - params.discountValue > 0
+        ? (params.taxesValue / (params.quantity * params.negotiatedPrice - params.discountValue)) * 100
+        : 0,
+    unitCost: params.unitCost,
+  });
   return {
-    title: "Margem líquida da linha",
+    title: "Margem da linha (igual Pedido de Venda)",
     description:
-      "Após desconto sobre o bruto da linha, aplica-se tributo e comissão sobre a base líquida; abatem-se frete e custo industrial total (quantidade × custo unitário do motor).",
+      "Mesma regra oficial do Pedido: receita vendida (após desconto) menos imposto estimado, menos custo industrial. Comissão e frete são comerciais e não entram na margem.",
     formulaText:
-      "líquido = qtd × negociado − desconto; marginValue = líquido − impostos − comissão − frete − (qtd × unitCost); marginPerc = marginValue / líquido × 100 (se líquido > 0).",
+      "receita = qtd × negociado − desconto; imposto = receita × taxesPerc; líquida = receita − imposto; marginValue = líquida − (qtd × unitCost); marginPerc = marginValue / líquida × 100.",
     inputs: [
       { label: "Quantidade", value: String(params.quantity) },
-      { label: "Bruto (qtd × negociado)", value: brMoney(gross) },
+      { label: "Bruto (qtd × negociado)", value: brMoney(computed.gross) },
       { label: "Desconto", value: brMoney(params.discountValue) },
-      { label: "Líquido", value: brMoney(net) },
-      { label: "Impostos (sobre líquido)", value: brMoney(params.taxesValue) },
-      { label: "Comissão (sobre líquido)", value: brMoney(params.commissionValue) },
-      { label: "Frete", value: brMoney(params.freightValue) },
-      { label: "Custo total (qtd × CIU)", value: brMoney(totalCost) },
+      { label: "Receita vendida", value: brMoney(computed.net) },
+      { label: "Impostos (sobre receita)", value: brMoney(computed.taxesValue) },
+      { label: "Receita líquida gerencial", value: brMoney(computed.netSalesAmount) },
+      { label: "Custo total (qtd × CIU)", value: brMoney(computed.totalCost) },
+      {
+        label: "Comissão (fora da margem)",
+        value: brMoney(params.commissionValue),
+      },
+      { label: "Frete (fora da margem)", value: brMoney(params.freightValue) },
     ],
     resultLabel: "Margem valor",
     resultValue: params.marginValue,
-    notes: `Margem % sobre o líquido: ${params.marginPerc.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%.`,
-    source: "Formulário de proposta (ProposalModule — mesma sequência do cálculo em tela)",
+    notes: `Margem % sobre a receita líquida gerencial: ${params.marginPerc.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}%.`,
+    source: "Formulário de proposta — paridade com Pedido de Venda (salesOrderResultMath)",
   };
 }

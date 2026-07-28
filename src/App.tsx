@@ -25,6 +25,7 @@ import { CrmModule } from "./components/CrmModule";
 import { CustomerIntelligencePage } from "./components/crm/CustomerIntelligencePage";
 import { ProposalModule } from "./components/ProposalModule";
 import { SalesOrdersModule } from "./components/SalesOrdersModule";
+import { SalesOrdersPageLastUpdateSubtitle } from "./components/sales-orders/SalesOrdersPageLastUpdateSubtitle";
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
@@ -52,7 +53,6 @@ import { PurchaseIndicatorsDashboard } from "@/src/components/contextual/Purchas
 import { ProposalIndicatorsDashboard } from "@/src/components/contextual/ProposalIndicatorsDashboard";
 import { SimulationIndicatorsDashboard } from "@/src/components/contextual/SimulationIndicatorsDashboard";
 import { ProductEngineeringIndicatorsDashboard } from "@/src/components/contextual/ProductEngineeringIndicatorsDashboard";
-import { PricingFormationIndicatorsDashboard } from "@/src/components/contextual/PricingFormationIndicatorsDashboard";
 import { ProductMaterialDemandDashboard } from "@/src/components/contextual/ProductMaterialDemandDashboard";
 import { ProductBomWhereUsedDashboard } from "@/src/components/contextual/ProductBomWhereUsedDashboard";
 import { CustomerIndicatorsDashboard } from "@/src/components/contextual/CustomerIndicatorsDashboard";
@@ -60,10 +60,15 @@ import { SoldProductsReportPage } from "@/src/components/commercial/SoldProducts
 import { SoldProductCustomersPage } from "@/src/components/commercial/SoldProductCustomersPage";
 import { OutputDocumentsModule } from "@/src/components/commercial/OutputDocumentsModule";
 import { SalesOrderFlowModule } from "@/src/components/commercial/SalesOrderFlowModule";
+import { CommercialPriceTableModule } from "@/src/components/commercial/CommercialPriceTableModule";
 import {
   SALES_ORDER_FLOW_PAGE_SUBTITLE,
   SALES_ORDER_FLOW_PAGE_TITLE,
 } from "@/src/lib/salesOrderFlowUi";
+import {
+  COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE,
+  COMMERCIAL_PRICE_TABLE_PAGE_TITLE,
+} from "@/src/lib/commercialPriceTableAccess";
 import { ProposalPrintView } from "@/src/components/proposal/ProposalPrintView";
 import { ProposalInternalManagementPrintView } from "@/src/components/proposal/ProposalInternalManagementPrintView";
 import { SalesOrderPrintView } from "@/src/components/sales/SalesOrderPrintView";
@@ -93,7 +98,7 @@ function ModulePageShell({
   headerActions,
 }: {
   title: string;
-  description?: string;
+  description?: React.ReactNode;
   children: React.ReactNode;
   headerActions?: React.ReactNode;
 }) {
@@ -102,7 +107,13 @@ function ModulePageShell({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex flex-col gap-1 min-w-0 flex-1">
           <h2 className="text-3xl font-bold tracking-tight">{title}</h2>
-          {description ? <p className="text-muted-foreground">{description}</p> : null}
+          {description ? (
+            typeof description === "string" ? (
+              <p className="text-muted-foreground">{description}</p>
+            ) : (
+              description
+            )
+          ) : null}
         </div>
         {headerActions ? <div className="shrink-0 flex flex-wrap gap-2">{headerActions}</div> : null}
       </div>
@@ -743,23 +754,11 @@ export default function App() {
           }
         />
         <Route
-          path="pricing/indicators"
-          element={
-            <ModulePageShell
-              title="Formação de Preço — Indicadores"
-              description="Cobertura de premissas produto × regra fiscal."
-            >
-              <PricingFormationIndicatorsDashboard />
-            </ModulePageShell>
-          }
-        />
-        <Route
           path="pricing"
           element={
             <ModulePageShell
               title="Formação de Preço"
-              description="Simulador comercial de markup, impostos e margens líquidas."
-              headerActions={<ModuleIndicatorsButton to="/pricing/indicators" />}
+              description="Gestão de preços publicados, custos oficiais e auditoria de margem."
             >
               <PricingModule />
             </ModulePageShell>
@@ -893,6 +892,7 @@ export default function App() {
           element={
             <ModulePageShell
               title="Pedidos de venda"
+              description={<SalesOrdersPageLastUpdateSubtitle />}
               headerActions={
                 <>
                   <Link
@@ -945,6 +945,17 @@ export default function App() {
               description={SALES_ORDER_FLOW_PAGE_SUBTITLE}
             >
               <SalesOrderFlowModule />
+            </ModulePageShell>
+          }
+        />
+        <Route
+          path="commercial/price-table"
+          element={
+            <ModulePageShell
+              title={COMMERCIAL_PRICE_TABLE_PAGE_TITLE}
+              description={COMMERCIAL_PRICE_TABLE_PAGE_SUBTITLE}
+            >
+              <CommercialPriceTableModule />
             </ModulePageShell>
           }
         />

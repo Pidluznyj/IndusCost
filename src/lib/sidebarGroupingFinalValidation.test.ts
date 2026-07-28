@@ -78,6 +78,7 @@ const EXPECTED_MENU: Record<
     MODULE_LABELS["crm-commercial"],
     MODULE_LABELS.customers,
     MODULE_LABELS.proposals,
+    MODULE_LABELS["commercial-price-table"],
     MODULE_LABELS["sales-orders"],
     MODULE_LABELS["sales-order-flow"],
     MODULE_LABELS["output-documents"],
@@ -158,6 +159,8 @@ describe("validação final — rotas preservadas", () => {
             ? "/finance/portfolio-reconciliation"
             : moduleId === "sales-order-flow"
               ? "/commercial/sales-order-flow"
+              : moduleId === "commercial-price-table"
+                ? "/commercial/price-table"
               : `/${moduleId}`;
       assert.equal(item?.path, expectedPath);
       if (moduleId === "suppliers") {
@@ -173,6 +176,11 @@ describe("validação final — rotas preservadas", () => {
       if (moduleId === "sales-order-flow") {
         assert.match(appTsx, /path=["']commercial\/sales-order-flow["']/);
         assert.match(appTsx, /SalesOrderFlowModule/);
+        continue;
+      }
+      if (moduleId === "commercial-price-table") {
+        assert.match(appTsx, /path=["']commercial\/price-table["']/);
+        assert.match(appTsx, /CommercialPriceTableModule/);
         continue;
       }
       const escaped = moduleId.replace(/-/g, "\\-");

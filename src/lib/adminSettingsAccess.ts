@@ -35,8 +35,8 @@ export const ADMIN_SETTINGS_PILOT_ENDPOINTS = [
   { method: "GET", path: "/api/payroll-components", resourceKey: "admin.settings.operational", action: "view" },
   { method: "POST", path: "/api/payroll-components", resourceKey: "admin.settings.operational", action: "manage" },
 
-  { method: "GET", path: "/api/price-tables", resourceKey: "admin.settings.price_tables", action: "view" },
-  { method: "POST", path: "/api/price-tables*", resourceKey: "admin.settings.price_tables", action: "manage" },
+  // GET /api/price-tables: consumo compartilhado (proposals|pricing|settings) — não é piloto admin-only.
+  // POST generate-draft / publish: somente SUPER_ADMIN (ver server.ts requireSuperAdmin).
 
   { method: "GET", path: "/api/settings/nomus-sync/logs*", resourceKey: "admin.settings.nomus_sync", action: "view" },
   { method: "GET", path: "/api/settings/nomus-sync/*-status", resourceKey: "admin.settings.nomus_sync", action: "view" },

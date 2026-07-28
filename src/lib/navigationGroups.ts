@@ -5,6 +5,7 @@
  */
 
 import { COMMISSIONS_VIEW_PERMISSIONS } from "@/src/lib/commissionsPermissions.js";
+import { COMMERCIAL_PRICE_TABLE_VIEW_PERMISSIONS } from "@/src/lib/commercialPriceTableAccess.js";
 import {
   MODULE_LABELS,
   SIDEBAR_MODULE_ORDER,
@@ -104,6 +105,7 @@ export const MODULE_MENU_PERMISSION_KEYS: Record<AppModuleId, readonly string[]>
   "transformation-simulator": ["products.view", "simulations.view"],
   purchases: ["purchases.view"],
   pricing: ["pricing.view"],
+  "commercial-price-table": [...COMMERCIAL_PRICE_TABLE_VIEW_PERMISSIONS],
   employees: ["employees.view"],
   "employees-dashboard": ["employees.dashboard.view", "employees.edit"],
   "org-chart": ["employees.view"],
@@ -180,6 +182,7 @@ export const NAVIGATION_GROUP_DEFINITIONS: readonly NavigationGroup[] = [
       "crm-commercial",
       "customers",
       "proposals",
+      "commercial-price-table",
       "sales-orders",
       "sales-order-flow",
       "output-documents",
@@ -241,6 +244,7 @@ export function getModulePath(moduleId: AppModuleId): string {
   if (moduleId === "suppliers") return "/finance/suppliers";
   if (moduleId === "portfolio-reconciliation") return "/finance/portfolio-reconciliation";
   if (moduleId === "sales-order-flow") return "/commercial/sales-order-flow";
+  if (moduleId === "commercial-price-table") return "/commercial/price-table";
   return `/${moduleId}`;
 }
 

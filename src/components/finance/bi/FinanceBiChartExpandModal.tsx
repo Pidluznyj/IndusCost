@@ -27,6 +27,7 @@ export function FinanceBiChartExpandModal({
   open,
   title,
   subtitle,
+  eyebrow = "Financeiro · Fluxo de caixa",
   onClose,
   children,
   testId = "finance-bi-chart-expand-modal",
@@ -34,6 +35,8 @@ export function FinanceBiChartExpandModal({
   open: boolean;
   title: string;
   subtitle?: string;
+  /** Faixa superior do header (contexto do módulo). */
+  eyebrow?: string;
   onClose: () => void;
   children: React.ReactNode;
   testId?: string;
@@ -71,7 +74,7 @@ export function FinanceBiChartExpandModal({
           <header className="flex shrink-0 items-start justify-between gap-3 border-b border-[#E5E7EB] bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 px-5 py-4 text-white">
             <div className="min-w-0">
               <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-300/90">
-                Financeiro · Fluxo de caixa
+                {eyebrow}
               </div>
               <h2 className="mt-1 truncate text-xl font-semibold tracking-tight sm:text-2xl">
                 {title}

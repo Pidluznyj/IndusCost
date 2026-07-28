@@ -1,14 +1,14 @@
 import { NomusNfeBillingClassification } from "@/src/lib/nomusNfeBillingClassification.js";
 import { NOMUS_NFES_SYNC_CUTOFF_DATE } from "@/src/lib/nomusNfesSyncConstants.js";
+import {
+  ECONOMIC_GROUP_CNPJ_DIGITS,
+  isEconomicGroupCnpj,
+} from "@/src/lib/financeInternalGroupExclusions.js";
 
 export { NomusNfeBillingClassification } from "@/src/lib/nomusNfeBillingClassification.js";
 
-/** CNPJs do grupo econômico (Power BI validado). */
-export const NOMUS_NFE_GROUP_CNPJS = [
-  "72569510000195",
-  "14055501000180",
-  "55717719000130",
-] as const;
+/** @deprecated Preferir `ECONOMIC_GROUP_CNPJ_DIGITS` (fonte canônica). */
+export const NOMUS_NFE_GROUP_CNPJS = ECONOMIC_GROUP_CNPJ_DIGITS;
 
 const LOGISTICS_KEYWORDS = [
   "REMESSA",
@@ -50,7 +50,7 @@ export function isLogisticsNature(natOp: string | null | undefined): boolean {
 export function isGroupCompanyCnpj(cnpjCpf: string | null | undefined): boolean {
   const digits = normalizeCnpj(cnpjCpf);
   if (!digits) return false;
-  return NOMUS_NFE_GROUP_CNPJS.some((g) => digits === g);
+  return isEconomicGroupCnpj(digits);
 }
 
 export function classifyNomusNfeBilling(input: {

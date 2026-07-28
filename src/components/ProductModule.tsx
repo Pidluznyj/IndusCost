@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 import {
   filterProductEngineeringListItems,
   hasProductEngineeringListFilters,
+  type ProductEngineeringListCiuFilter,
   type ProductEngineeringListStatusFilter,
 } from "@/src/lib/productEngineeringListFilters";
 import { 
@@ -277,6 +278,9 @@ export const ProductModule = () => {
   const [draftStatusFilter, setDraftStatusFilter] = useState<ProductEngineeringListStatusFilter>("");
   const [appliedStatusFilter, setAppliedStatusFilter] =
     useState<ProductEngineeringListStatusFilter>("");
+  const [draftCiuFilter, setDraftCiuFilter] = useState<ProductEngineeringListCiuFilter>("");
+  const [appliedCiuFilter, setAppliedCiuFilter] =
+    useState<ProductEngineeringListCiuFilter>("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Product | null>(null);
@@ -1008,8 +1012,9 @@ export const ProductModule = () => {
       filterProductEngineeringListItems(items, {
         search: appliedSearch,
         status: appliedStatusFilter,
+        ciu: appliedCiuFilter,
       }),
-    [items, appliedSearch, appliedStatusFilter]
+    [items, appliedSearch, appliedStatusFilter, appliedCiuFilter]
   );
 
   const selectPendingPublicationItems = useCallback(() => {
@@ -1028,6 +1033,7 @@ export const ProductModule = () => {
     event?.preventDefault();
     setAppliedSearch(draftSearch.trim());
     setAppliedStatusFilter(draftStatusFilter);
+    setAppliedCiuFilter(draftCiuFilter);
     setSelectedIds([]);
   };
 
@@ -1036,6 +1042,8 @@ export const ProductModule = () => {
     setAppliedSearch("");
     setDraftStatusFilter("");
     setAppliedStatusFilter("");
+    setDraftCiuFilter("");
+    setAppliedCiuFilter("");
     setSelectedIds([]);
   };
 
@@ -1044,6 +1052,8 @@ export const ProductModule = () => {
     appliedSearch,
     draftStatus: draftStatusFilter,
     appliedStatus: appliedStatusFilter,
+    draftCiu: draftCiuFilter,
+    appliedCiu: appliedCiuFilter,
   });
 
   const handleExportEngineering = () => {
@@ -1367,7 +1377,7 @@ export const ProductModule = () => {
     activeProductsMainTab === "products" || !showNomusMaintenanceTab;
 
   return (
-    <div className="space-y-6" data-tour="products-root">
+    <div className="min-w-0 max-w-full space-y-6" data-tour="products-root">
       <ProductProductionCostBulkPublishDialog
         open={bulkPublishOpen}
         phase={bulkPublishPhase}
@@ -1416,12 +1426,12 @@ export const ProductModule = () => {
 
       {showTraditionalProductsView ? (
         <>
-      {/* Header: filtros (esq.) + ações (dir.) — altura h-10 alinhada */}
+      {/* Toolbar empilhada: evita overflow horizontal ao aparecerem ações em lote */}
       <div
-        className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6"
+        className="flex w-full min-w-0 flex-col gap-3"
         data-tour="products-toolbar"
       >
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex w-full min-w-0 flex-col gap-2">
           <div
             className="flex flex-wrap items-center gap-2"
             role="tablist"
@@ -1472,6 +1482,21 @@ export const ProductModule = () => {
               <option value="">Todos os status</option>
               <option value="ACTIVE">Ativo</option>
               <option value="INACTIVE">Inativo</option>
+            </select>
+
+            <select
+              className="h-10 min-w-[150px] shrink-0 rounded-lg border border-border bg-card px-3 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+              value={draftCiuFilter}
+              onChange={(e) =>
+                setDraftCiuFilter(e.target.value as ProductEngineeringListCiuFilter)
+              }
+              data-testid="products-ciu-filter"
+              aria-label="Filtrar por status do CIU atual"
+              title="Filtrar pela coluna CIU atual (badge Parcial)"
+            >
+              <option value="">Todos os CIU</option>
+              <option value="PARTIAL">CIU parcial</option>
+              <option value="COMPLETE">CIU completo</option>
             </select>
 
             <button
@@ -1535,7 +1560,7 @@ export const ProductModule = () => {
           </div>
         </div>
         <div
-          className="flex flex-wrap items-center gap-2 lg:justify-end"
+          className="flex w-full min-w-0 flex-wrap items-center gap-2"
           role="group"
           aria-label="Ações da engenharia"
         >
@@ -1546,12 +1571,12 @@ export const ProductModule = () => {
           {selectedIds.length > 0 && canRefreshFrozenCost ? (
             <motion.button
               type="button"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               onClick={() => void handleBulkRefreshFrozenCostSnapshot()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-refresh-cost-snapshot"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 max-w-full items-center justify-center gap-2 rounded-lg border border-primary/25 bg-primary/10 px-4 text-sm font-medium text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
               title="Recalcular custos e gerar versões DRAFT (não publica o custo oficial)"
             >
               {snapshotBulkProgress ? (
@@ -1559,20 +1584,22 @@ export const ProductModule = () => {
               ) : (
                 <RefreshCw className="h-4 w-4 shrink-0" />
               )}
-              {snapshotBulkProgress
-                ? `Gerando rascunhos… (${snapshotBulkProgress.current}/${snapshotBulkProgress.total})`
-                : `Gerar rascunhos de custo (${selectedIds.length})`}
+              <span className="truncate">
+                {snapshotBulkProgress
+                  ? `Gerando rascunhos… (${snapshotBulkProgress.current}/${snapshotBulkProgress.total})`
+                  : `Gerar rascunhos de custo (${selectedIds.length})`}
+              </span>
             </motion.button>
           ) : null}
           {selectedIds.length > 0 && canPublishProductionCost ? (
             <motion.button
               type="button"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               onClick={() => void openBulkPublishPreview()}
               disabled={isEngineeringBulkBusy}
               data-testid="bulk-publish-production-cost"
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#FBBF24] bg-[#FDE68A] px-4 text-sm font-medium text-[#92400E] transition-colors hover:bg-[#FCD34D] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 max-w-full items-center justify-center gap-2 rounded-lg border border-[#FBBF24] bg-[#FDE68A] px-4 text-sm font-medium text-[#92400E] transition-colors hover:bg-[#FCD34D] disabled:cursor-not-allowed disabled:opacity-60"
               title="Prévia e publicação oficial dos DRAFTs elegíveis selecionados"
             >
               {publishBulkProgress || bulkPublishLoading ? (
@@ -1580,19 +1607,21 @@ export const ProductModule = () => {
               ) : (
                 <Upload className="h-4 w-4 shrink-0" />
               )}
-              {publishBulkProgress || bulkPublishLoading
-                ? `Publicando… (${publishBulkProgress?.current ?? 0}/${publishBulkProgress?.total ?? selectedIds.length})`
-                : `Publicar custos (${selectedIds.length})`}
+              <span className="truncate">
+                {publishBulkProgress || bulkPublishLoading
+                  ? `Publicando… (${publishBulkProgress?.current ?? 0}/${publishBulkProgress?.total ?? selectedIds.length})`
+                  : `Publicar custos (${selectedIds.length})`}
+              </span>
             </motion.button>
           ) : null}
           {selectedIds.length > 0 && canDeleteProduct ? (
             <motion.button
               type="button"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               onClick={handleBulkDelete}
               disabled={isEngineeringBulkBusy}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 max-w-full items-center justify-center gap-2 rounded-lg border border-red-500/25 bg-red-500/10 px-4 text-sm font-medium text-red-600 transition-colors hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4 shrink-0" />
               Excluir ({selectedIds.length})
@@ -1632,10 +1661,10 @@ export const ProductModule = () => {
 
       {/* Table */}
       <div
-        className="bg-card rounded-xl border border-border overflow-hidden shadow-sm"
+        className="min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-card shadow-sm"
         data-tour="products-table"
       >
-        <div className="overflow-x-auto">
+        <div className="min-w-0 max-w-full overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-accent/50 border-b border-border">
@@ -1804,14 +1833,14 @@ export const ProductModule = () => {
                       })()}
                     </td>
                     {engineeringSegment === "PRODUCT" ? (
-                      <td className="p-4 align-middle min-w-[10rem]">
+                      <td className="p-4 align-middle min-w-[10rem] max-w-[16rem]">
                         {(() => {
                           const fc = item.frozenCostSummary;
                           if (!fc) {
                             return <span className="text-xs text-muted-foreground">—</span>;
                           }
                           return (
-                            <div className="flex flex-col gap-1.5">
+                            <div className="flex max-w-[15rem] flex-col gap-1.5 break-words">
                               <span
                                 className={cn(
                                   frozenCostTraceBadgeClass(fc.traceStatus),
@@ -2472,8 +2501,12 @@ export const ProductModule = () => {
                               </div>
                             ) : (
                               formData.bom.map((item, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-4 p-4 bg-accent/20 rounded-xl border border-border items-end group relative">
-                                  <div className="col-span-4 space-y-1.5">
+                                <div
+                                  key={idx}
+                                  className="grid grid-cols-12 gap-3 p-4 bg-accent/20 rounded-xl border border-border items-end group relative"
+                                  data-testid="bom-line-row"
+                                >
+                                  <div className="col-span-6 min-w-0 space-y-1.5" data-testid="bom-line-item">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">
                                       Item (matéria-prima, produto ou componente)
                                     </label>
@@ -2501,7 +2534,7 @@ export const ProductModule = () => {
                                       onChange={(e) => updateBOMItem(idx, "quantity", parseFloat(e.target.value))}
                                     />
                                   </div>
-                                  <div className="col-span-2 space-y-1.5">
+                                  <div className="col-span-1 space-y-1.5" data-testid="bom-line-loss">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Perda (%)</label>
                                     <input
                                       type="number"
@@ -2511,7 +2544,7 @@ export const ProductModule = () => {
                                       onChange={(e) => updateBOMItem(idx, "lossPercentage", parseFloat(e.target.value))}
                                     />
                                   </div>
-                                  <div className="col-span-3 space-y-1.5">
+                                  <div className="col-span-2 min-w-0 space-y-1.5" data-testid="bom-line-notes">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Observações</label>
                                     <input
                                       type="text"

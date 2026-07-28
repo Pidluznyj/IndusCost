@@ -1265,6 +1265,10 @@ model PriceTableVersion {
   approvedBy                   String?
   generationSummaryJson        Json?
   commissionPerc               Decimal?                    @db.Decimal(10, 6)
+  /// Margem-alvo (%) efetivamente usada na geração desta versão (override opcional).
+  targetMarginPercent          Decimal?                    @db.Decimal(10, 6)
+  /// Frete estimado (%) no denominador da formação; null = geração legada sem frete %.
+  freightPercent               Decimal?                    @db.Decimal(10, 6)
   productionCostTableVersionId String?                     @db.Uuid
   createdAt                    DateTime                    @default(now()) @db.Timestamptz(6)
   updatedAt                    DateTime                    @default(now()) @updatedAt @db.Timestamptz(6)

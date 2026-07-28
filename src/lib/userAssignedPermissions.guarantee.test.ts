@@ -66,6 +66,55 @@ describe("garantia — só o atribuído", () => {
     }
   });
 
+  it("perfil Gestor comercial: sales_orders.view projeta commercial.sales_orders e authorize allow", () => {
+    const profileSnapshot = projectAccessProfilePermissionsToSnapshot([
+      "dashboard.view",
+      "crm.view",
+      "crm.general.view",
+      "sales_orders.view",
+      "sales_orders.detail.view",
+      "proposals.view",
+      "customers.view",
+    ]);
+    assert.equal(profileSnapshot["commercial.sales_orders"]?.view, true);
+    assert.equal(
+      canCanonicalAccess(
+        resolveCanonicalAccessFromParts({
+          userId: "u-gestor",
+          role: "COMMERCIAL_MANAGER",
+          profileSnapshot,
+          legacyCompatMode: false,
+        }),
+        "commercial.sales_orders",
+        "view"
+      ),
+      true
+    );
+
+    const decision = authorizeRequireResource(
+      auth({
+        role: "COMMERCIAL_MANAGER",
+        permissions: ["sales_orders.view"],
+      }),
+      "commercial.sales_orders",
+      "view",
+      { profileSnapshot, legacyCompatMode: false }
+    );
+    assert.equal(decision.ok, true);
+
+    const dto = buildEffectiveAccessDto({
+      permissionsVersion: 1,
+      result: resolveCanonicalAccessFromParts({
+        userId: "u-gestor",
+        role: "COMMERCIAL_MANAGER",
+        profileSnapshot,
+        legacyCompatMode: false,
+      }),
+      legacyBagAuthoritative: false,
+    });
+    assert.equal(canViewSidebarModuleFromDto(dto, "sales-orders"), true);
+  });
+
   it("bag larga NÃO libera finance se perfil só tem dashboard", () => {
     const profileSnapshot = projectAccessProfilePermissionsToSnapshot([
       "dashboard.view",

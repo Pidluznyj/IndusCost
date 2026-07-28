@@ -13,6 +13,13 @@ export const SALES_ORDER_MARGIN_ECONOMICS_PERMISSIONS = [
   "costs.view",
 ] as const;
 
+/** Acesso à tela Comercial → Pedidos de Venda (listagem, gráficos e Resultado). */
+export const SALES_ORDER_MODULE_VIEW_PERMISSIONS = ["sales_orders.view"] as const;
+
+export function canViewSalesOrderModule(check: PermissionChecker): boolean {
+  return SALES_ORDER_MODULE_VIEW_PERMISSIONS.some((key) => check.hasPermission(key));
+}
+
 export function canViewSalesOrderMarginEconomics(check: PermissionChecker): boolean {
   return SALES_ORDER_MARGIN_ECONOMICS_PERMISSIONS.some((key) => check.hasPermission(key));
 }

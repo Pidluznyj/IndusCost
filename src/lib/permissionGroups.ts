@@ -64,6 +64,7 @@ const MODULE_TO_ACCESS_GROUP: Partial<Record<string, PermissionAccessGroupId>> =
   "sales-orders": "comercial",
   "sales-order-flow": "comercial",
   "output-documents": "comercial",
+  "commercial-price-table": "comercial",
   pricing: "comercial",
   commissions: "comercial",
   finance: "financeiro",
@@ -130,6 +131,7 @@ export const PERMISSION_ACCESS_GROUP_DEFINITIONS: readonly PermissionAccessGroup
       MODULE_LABELS["crm-commercial"],
       MODULE_LABELS.customers,
       MODULE_LABELS.proposals,
+      MODULE_LABELS["commercial-price-table"],
       MODULE_LABELS["sales-orders"],
       MODULE_LABELS.pricing,
       MODULE_LABELS.commissions,
@@ -200,6 +202,7 @@ export function resolveAccessGroupForCatalogEntry(
 
   if (entry.module === "taxes") return "financeiro";
   if (entry.module === "pricing") return "comercial";
+  if (entry.module === "commercial-price-table") return "comercial";
 
   return "outros";
 }

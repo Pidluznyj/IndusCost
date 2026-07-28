@@ -44,6 +44,9 @@ type PriceTableVersionRow = {
   generatedAt: Date;
   notes: string | null;
   commissionPerc: number | null;
+  targetMarginPercent: number | null;
+  freightPercent: number | null;
+  createdBy: string | null;
   effectiveFrom: Date | null;
   effectiveTo: Date | null;
   publishedAt: Date | null;
@@ -213,6 +216,9 @@ function createMockDb(
           generatedAt: (data.generatedAt as Date) ?? new Date(),
           notes: (data.notes as string | null) ?? null,
           commissionPerc: (data.commissionPerc as number | null) ?? null,
+          targetMarginPercent: (data.targetMarginPercent as number | null) ?? null,
+          freightPercent: (data.freightPercent as number | null) ?? null,
+          createdBy: (data.createdBy as string | null) ?? null,
           effectiveFrom: null,
           effectiveTo: null,
           publishedAt: null,
@@ -268,6 +274,24 @@ function createMockDb(
         };
         priceTableItems.set(`${row.priceTableVersionId}:${row.productId}`, row);
         return row;
+      },
+      findMany: async ({
+        where,
+        select,
+      }: {
+        where: { priceTableVersionId: string };
+        select?: { productId?: boolean; salePrice?: boolean };
+      }) => {
+        const rows = [...priceTableItems.values()].filter(
+          (i) => i.priceTableVersionId === where.priceTableVersionId
+        );
+        if (select) {
+          return rows.map((i) => ({
+            productId: i.productId,
+            salePrice: i.salePrice,
+          }));
+        }
+        return rows;
       },
       findUnique: async ({
         where,
@@ -467,6 +491,9 @@ describe("priceTablePublication.server", () => {
       generatedAt: new Date(),
       notes: null,
       commissionPerc: null,
+      targetMarginPercent: null,
+      freightPercent: null,
+      createdBy: null,
       effectiveFrom: civilDateToLocalDate("2026-01-01"),
       effectiveTo: civilDateToLocalDate("2026-06-01"),
       publishedAt: new Date("2026-01-02"),
@@ -482,6 +509,9 @@ describe("priceTablePublication.server", () => {
       generatedAt: new Date(),
       notes: null,
       commissionPerc: null,
+      targetMarginPercent: null,
+      freightPercent: null,
+      createdBy: null,
       effectiveFrom: civilDateToLocalDate("2026-06-01"),
       effectiveTo: null,
       publishedAt: new Date("2026-06-02"),
@@ -547,12 +577,201 @@ describe("priceTablePublication.server — estabilidade vs MP viva", () => {
       effectiveDate: civilDateToLocalDate("2026-06-15"),
       includeAllActiveProducts: true,
     });
-    const item = priceTableItems.get(`${draft.version.id}:prod-a`)!;
+    const item = priceTableItems.get(`${draft.version!.id}:prod-a`)!;
     const originalCost = item.frozenTotalCost;
 
     v1.items[0]!.unitProductionCost = 5000;
-    const itemAfterLiveChange = priceTableItems.get(`${draft.version.id}:prod-a`)!;
+    const itemAfterLiveChange = priceTableItems.get(`${draft.version!.id}:prod-a`)!;
     assert.equal(itemAfterLiveChange.frozenTotalCost, originalCost);
     assert.notEqual(v1.items[0]!.unitProductionCost, originalCost);
+  });
+});
+
+describe("priceTablePublication.server — margem variável e frete %", () => {
+  it("usa margens override e frete 3% no denominador; comissão permanece 2%", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, addPublishedProductionCost, priceTableItems, priceTableVersions } = createMockDb(
+      products,
+      { defaultMarginPct: 30 }
+    );
+    addPublishedProductionCost("2026-06-01", 1, [
+      { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 100 },
+    ]);
+
+    const result = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 35,
+      hasCommissionOverride: true,
+      commissionPerc: 2,
+      hasFreightOverride: true,
+      freightPercent: 3,
+    });
+
+    assert.equal(result.version!.status, "DRAFT");
+    assert.equal(Number(result.version!.targetMarginPercent), 35);
+    assert.equal(Number(result.version!.freightPercent), 3);
+    assert.equal(result.summary.targetMarginPercent, 35);
+    assert.equal(result.summary.freightPercent, 3);
+
+    const item = priceTableItems.get(`${result.version!.id}:prod-a`)!;
+    assert.equal(item.marginPct, 35);
+    assert.equal(item.commissionPerc, 2);
+    // PV = 100 / (1 - 0 - 0.02 - 0 - 0.03 - 0.35) = 100 / 0.60
+    assert.ok(Math.abs(item.salePrice - 100 / 0.6) < 1e-9);
+    const snap = item.formulaSnapshotJson as {
+      freightPercent: number;
+      rates: { freightRate: number; commissionRate: number };
+      freight: number;
+    };
+    assert.equal(snap.freightPercent, 3);
+    assert.equal(snap.rates.freightRate, 0.03);
+    assert.equal(snap.rates.commissionRate, 0.02);
+    assert.equal(snap.freight, 0);
+    assert.equal(priceTableVersions.get(result.version!.id)!.freightPercent, 3);
+  });
+
+  it("frete 4,5% e 0% alteram o preço; comissão 3% permanece com margem 42%", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, addPublishedProductionCost, priceTableItems } = createMockDb(products, {
+      defaultMarginPct: 40,
+    });
+    addPublishedProductionCost("2026-06-01", 1, [
+      { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 200 },
+    ]);
+
+    const withFreight = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 42,
+      hasCommissionOverride: true,
+      commissionPerc: 3,
+      hasFreightOverride: true,
+      freightPercent: 4.5,
+    });
+    const itemA = priceTableItems.get(`${withFreight.version!.id}:prod-a`)!;
+    assert.equal(itemA.commissionPerc, 3);
+    assert.equal(itemA.marginPct, 42);
+    assert.ok(Math.abs(itemA.salePrice - 200 / (1 - 0.03 - 0.045 - 0.42)) < 1e-9);
+
+    const zeroFreight = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 42,
+      hasCommissionOverride: true,
+      commissionPerc: 3,
+      hasFreightOverride: true,
+      freightPercent: 0,
+    });
+    const itemB = priceTableItems.get(`${zeroFreight.version!.id}:prod-a`)!;
+    assert.ok(Math.abs(itemB.salePrice - 200 / (1 - 0.03 - 0.42)) < 1e-9);
+    assert.ok(itemB.salePrice < itemA.salePrice);
+  });
+
+  it("bloqueia composição com soma percentual >= 100%", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, addPublishedProductionCost } = createMockDb(products, { defaultMarginPct: 30 });
+    addPublishedProductionCost("2026-06-01", 1, [
+      { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 100 },
+    ]);
+
+    const result = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 50,
+      hasCommissionOverride: true,
+      commissionPerc: 40,
+      hasFreightOverride: true,
+      freightPercent: 15,
+    });
+
+    assert.equal(result.summary.itemsCreated, 0);
+    assert.equal(result.summary.errors[0]?.code, "INVALID_PRICING_DIVISOR");
+  });
+
+  it("preview dryRun e generate produzem o mesmo preço", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, addPublishedProductionCost, priceTableItems } = createMockDb(products, {
+      defaultMarginPct: 30,
+    });
+    addPublishedProductionCost("2026-06-01", 1, [
+      { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 150 },
+    ]);
+
+    const common = {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true as const,
+      hasMarginOverride: true,
+      marginPct: 35,
+      hasCommissionOverride: true,
+      commissionPerc: 2,
+      hasFreightOverride: true,
+      freightPercent: 3,
+    };
+
+    const preview = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      ...common,
+      dryRun: true,
+    });
+    assert.equal(preview.version, null);
+    assert.equal(preview.computedItems[0]?.salePrice != null, true);
+
+    const generated = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      ...common,
+      dryRun: false,
+    });
+    const item = priceTableItems.get(`${generated.version!.id}:prod-a`)!;
+    assert.equal(item.salePrice, preview.computedItems[0]!.salePrice);
+    assert.equal(item.commissionPerc, preview.computedItems[0]!.commissionPerc);
+  });
+
+  it("versão publicada congela margem/frete e não muda com nova configuração", async () => {
+    const products = [{ id: "prod-a", sku: "PA", name: "Produto A" }];
+    const { db, addPublishedProductionCost, publishPriceVersion, priceTableItems, priceTableVersions } =
+      createMockDb(products, { defaultMarginPct: 30 });
+    addPublishedProductionCost("2026-06-01", 1, [
+      { productId: "prod-a", sku: "PA", name: "Produto A", unitCost: 100 },
+    ]);
+
+    const v1 = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 35,
+      hasCommissionOverride: true,
+      commissionPerc: 2,
+      hasFreightOverride: true,
+      freightPercent: 3,
+    });
+    const frozenPrice = priceTableItems.get(`${v1.version!.id}:prod-a`)!.salePrice;
+    publishPriceVersion(v1.version!.id, "2026-06-01");
+
+    const v2 = await generatePriceTableVersionDraftFromProductionCosts(db as never, {
+      priceTableId: "price-table-1",
+      effectiveDate: civilDateToLocalDate("2026-06-15"),
+      includeAllActiveProducts: true,
+      hasMarginOverride: true,
+      marginPct: 50,
+      hasCommissionOverride: true,
+      commissionPerc: 2,
+      hasFreightOverride: true,
+      freightPercent: 10,
+    });
+
+    assert.equal(priceTableVersions.get(v1.version!.id)!.status, "PUBLISHED");
+    assert.equal(priceTableItems.get(`${v1.version!.id}:prod-a`)!.salePrice, frozenPrice);
+    assert.equal(Number(priceTableVersions.get(v1.version!.id)!.targetMarginPercent), 35);
+    assert.equal(Number(priceTableVersions.get(v1.version!.id)!.freightPercent), 3);
+    assert.notEqual(priceTableItems.get(`${v2.version!.id}:prod-a`)!.salePrice, frozenPrice);
   });
 });

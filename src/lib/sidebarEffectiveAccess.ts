@@ -61,6 +61,13 @@ export const SIDEBAR_MODULE_CONTRACT_KEYS: Record<AppModuleId, readonly string[]
   opex: ["finance.opex"],
   taxes: ["finance.taxes"],
   pricing: ["commercial.pricing"],
+  /** Consulta de preços publicados: recurso próprio ou consumo comercial (propostas/pedidos/formação). */
+  "commercial-price-table": [
+    "commercial.price_table",
+    "commercial.proposals",
+    "commercial.sales_orders",
+    "commercial.pricing",
+  ],
   proposals: ["commercial.proposals"],
   "sales-orders": ["commercial.sales_orders"],
   "sales-order-flow": ["commercial.sales_orders.flow"],

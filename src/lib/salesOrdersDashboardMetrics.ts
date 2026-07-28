@@ -130,8 +130,8 @@ export type SalesOrdersDashboardTabOptions = {
   /** Mês 1–12 do KPI “Pedidos mês”; default = mês de yearCtx.referenceDate. */
   month?: number;
   /**
-   * Paridade com listagem Comercial (inclui clientes do grupo).
-   * Default false — não altera o default global do salesOrderRulesEngine.
+   * Exclui clientes do grupo econômico da população comercial oficial.
+   * Default true — alinhado ao salesOrderRulesEngine e à listagem Comercial.
    */
   excludeGroupCompanyCustomers?: boolean;
 };
@@ -226,7 +226,7 @@ export async function buildSalesOrdersDashboardTab(
   options: SalesOrdersDashboardTabOptions = {}
 ): Promise<SalesOrdersDashboardTab> {
   const companyIssuer = options.companyIssuer?.trim() || undefined;
-  const excludeGroupCompanyCustomers = options.excludeGroupCompanyCustomers ?? false;
+  const excludeGroupCompanyCustomers = options.excludeGroupCompanyCustomers ?? true;
   const ref = yearCtx.referenceDate;
   const year = yearCtx.selectedYear;
   const previousYear = yearCtx.previousYear;

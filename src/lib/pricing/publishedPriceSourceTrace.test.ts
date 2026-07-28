@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
   computePublishedMarkup,
+  deriveFreightPercentAmount,
   deriveOtherVariablesAmount,
   readCostSnapshotFields,
   readFormulaSnapshotFields,
@@ -42,20 +43,49 @@ describe("publishedPriceSourceTrace parsers", () => {
     assert.equal(fields.marginPct, 20);
   });
 
+  it("lê frete percentual do snapshot comercial moderno", () => {
+    const fields = readFormulaSnapshotFields({
+      freight: 0,
+      freightPercent: 3,
+      rates: { taxRate: 0.2875, commissionRate: 0.02, otherRate: 0, freightRate: 0.03 },
+      outputs: { totalFreightPercent: 0.102696 },
+    });
+    assert.equal(fields.freightPercent, 3);
+    assert.equal(fields.freightRate, 0.03);
+    assert.equal(fields.totalFreightPercentFromOutputs, 0.102696);
+  });
+
   it("markup derivado de preço e custo publicados sem recálculo de preço", () => {
     assert.equal(computePublishedMarkup(100, 50), 2);
     assert.equal(computePublishedMarkup(100, 0), null);
   });
 
-  it("deduções derivadas de valores congelados", () => {
+  it("deduções derivadas de valores congelados excluem comissão e fretes", () => {
+    const freightPercentAmount = deriveFreightPercentAmount({
+      salePrice: 3.423215,
+      freightPercent: 3,
+      totalFreightPercentFromOutputs: 0.10269645,
+    });
+    assert.equal(freightPercentAmount, 0.102696);
+
     const other = deriveOtherVariablesAmount({
+      frozenOtherCost: 0.171161,
+      freight: 0,
+      freightPercentAmount,
+      commissionValue: 0.068464,
+      salePrice: 3.423215,
+      otherRate: 0,
+    });
+    assert.equal(other, 0);
+
+    const residualLegacy = deriveOtherVariablesAmount({
       frozenOtherCost: 8,
       freight: 1,
       commissionValue: 2,
       salePrice: 100,
       otherRate: null,
     });
-    assert.equal(other, 5);
+    assert.equal(residualLegacy, 5);
   });
 });
 

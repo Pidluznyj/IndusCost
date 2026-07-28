@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-23T14:16:47.834Z",
+  "generatedAt": "2026-07-27T17:24:39.984Z",
   "description": "Baseline de navegação agrupada — paths, labels, grupos e permissões de menu por módulo.",
   "items": [
     {
@@ -227,6 +227,22 @@
     },
     {
       "order": 19,
+      "itemId": "commercial-price-table",
+      "label": "Tabela comercial",
+      "path": "/commercial/price-table",
+      "groupId": "comercial",
+      "groupLabel": "Comercial",
+      "isDirect": false,
+      "requiredPermissions": [
+        "price_table.view",
+        "proposals.view",
+        "sales_orders.view",
+        "pricing.view",
+        "settings.price_tables.view"
+      ]
+    },
+    {
+      "order": 20,
       "itemId": "proposals",
       "label": "Propostas",
       "path": "/proposals",
@@ -238,7 +254,7 @@
       ]
     },
     {
-      "order": 20,
+      "order": 21,
       "itemId": "sales-orders",
       "label": "Pedidos de venda",
       "path": "/sales-orders",
@@ -250,7 +266,7 @@
       ]
     },
     {
-      "order": 21,
+      "order": 22,
       "itemId": "sales-order-flow",
       "label": "Fluxo de Pedidos",
       "path": "/commercial/sales-order-flow",
@@ -262,7 +278,7 @@
       ]
     },
     {
-      "order": 22,
+      "order": 23,
       "itemId": "output-documents",
       "label": "Documentos de Saída",
       "path": "/output-documents",
@@ -274,7 +290,7 @@
       ]
     },
     {
-      "order": 23,
+      "order": 24,
       "itemId": "customers",
       "label": "Clientes",
       "path": "/customers",
@@ -286,7 +302,7 @@
       ]
     },
     {
-      "order": 24,
+      "order": 25,
       "itemId": "crm-commercial",
       "label": "CRM Comercial",
       "path": "/crm-commercial",
@@ -302,7 +318,7 @@
       ]
     },
     {
-      "order": 25,
+      "order": 26,
       "itemId": "commissions",
       "label": "Comissões",
       "path": "/commissions",
@@ -323,7 +339,7 @@
       ]
     },
     {
-      "order": 26,
+      "order": 27,
       "itemId": "simulations",
       "label": "Simulações",
       "path": "/simulations",
@@ -335,7 +351,7 @@
       ]
     },
     {
-      "order": 27,
+      "order": 28,
       "itemId": "reports",
       "label": "Relatórios",
       "path": "/reports",
@@ -348,7 +364,7 @@
       ]
     },
     {
-      "order": 28,
+      "order": 29,
       "itemId": "finance",
       "label": "Financeiro",
       "path": "/finance",
@@ -365,7 +381,7 @@
       ]
     },
     {
-      "order": 29,
+      "order": 30,
       "itemId": "suppliers",
       "label": "Fornecedores",
       "path": "/finance/suppliers",
@@ -379,7 +395,7 @@
       ]
     },
     {
-      "order": 30,
+      "order": 31,
       "itemId": "portfolio-reconciliation",
       "label": "Conciliação de Carteira",
       "path": "/finance/portfolio-reconciliation",
@@ -395,7 +411,7 @@
       ]
     },
     {
-      "order": 31,
+      "order": 32,
       "itemId": "guide",
       "label": "Guia do Sistema",
       "path": "/guide",
@@ -408,7 +424,7 @@
       ]
     },
     {
-      "order": 32,
+      "order": 33,
       "itemId": "settings",
       "label": "Configurações",
       "path": "/settings",
@@ -440,6 +456,7 @@
     "opex": true,
     "taxes": true,
     "pricing": true,
+    "commercial-price-table": true,
     "proposals": true,
     "sales-orders": true,
     "sales-order-flow": true,
@@ -505,6 +522,13 @@
     ],
     "pricing": [
       "pricing.view"
+    ],
+    "commercial-price-table": [
+      "price_table.view",
+      "proposals.view",
+      "sales_orders.view",
+      "pricing.view",
+      "settings.price_tables.view"
     ],
     "employees": [
       "employees.view"
