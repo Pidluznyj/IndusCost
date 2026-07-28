@@ -18,6 +18,7 @@ import {
   type SalesOrderFlowSummaryFilters,
   SalesOrderFlowSummaryQueryError,
 } from "./salesOrderFlowSummary.js";
+import { buildSalesOrderFlowCardStayReason } from "./salesOrderFlowStayReason.js";
 
 export class SalesOrderFlowListQueryError extends SalesOrderFlowSummaryQueryError {
   constructor(message: string) {
@@ -79,6 +80,12 @@ export type SalesOrderFlowListCard = {
   progressDocumented: number;
   progressInvoiced: number;
   progressShipped: number;
+  /** Motivo bruto do gargalo (stageReason do item bottleneck). */
+  bottleneckReason: string | null;
+  /** Por que o card permanece nesta coluna (texto humano). */
+  stayReason: string;
+  /** O que falta para sair da coluna. */
+  missingToLeave: string;
   nextAction: string | null;
   responsibleArea: string | null;
   priority: string;
@@ -425,6 +432,7 @@ export type SalesOrderFlowCardSource = {
   currentStage: string;
   nextAction: string | null;
   responsibleArea: string | null;
+  bottleneckReason?: string | null;
   totalItems: number;
   activeItems: number;
   completedItems: number;
@@ -488,6 +496,11 @@ export function mapSalesOrderFlowListCard(
   const values = options.canViewValues;
   const production = options.canViewProduction !== false;
   const inconsistencyDetails = options.canViewInconsistencies !== false;
+  const stay = buildSalesOrderFlowCardStayReason({
+    stage,
+    bottleneckReason: row.bottleneckReason,
+    nextAction: row.nextAction,
+  });
   return {
     orderId: row.salesOrderId,
     orderCode: row.salesOrder.orderCode,
@@ -529,6 +542,9 @@ export function mapSalesOrderFlowListCard(
     progressDocumented: decimalNumber(row.progressDocumented),
     progressInvoiced: decimalNumber(row.progressInvoiced),
     progressShipped: decimalNumber(row.progressShipped),
+    bottleneckReason: stay.bottleneckReason,
+    stayReason: stay.whyHere,
+    missingToLeave: stay.missingToLeave,
     nextAction: row.nextAction,
     responsibleArea: row.responsibleArea,
     priority: management?.priority ?? "NORMAL",
