@@ -113,7 +113,10 @@ export const COMMISSIONS_CATALOG_TAB_RESOURCE_BY_LEGACY: Record<string, string> 
   settings: TabResourceKeys.COMISSOES_CONFIG,
 };
 
-export type MaterialsUiSectionId = "catalog" | "marketIntelligence";
+export type MaterialsUiSectionId =
+  | "catalog"
+  | "stockConference"
+  | "marketIntelligence";
 
 export const MATERIALS_UI_SECTIONS: ReadonlyArray<{
   id: MaterialsUiSectionId;
@@ -124,6 +127,12 @@ export const MATERIALS_UI_SECTIONS: ReadonlyArray<{
     id: "catalog",
     resourceKey: TabResourceKeys.SUPRIMENTOS_CATALOGO,
     label: "Matérias-primas",
+  },
+  {
+    id: "stockConference",
+    /** Mesma permissão view do catálogo de MP — item só aparece com view. */
+    resourceKey: TabResourceKeys.SUPRIMENTOS_CATALOGO,
+    label: "Conferência de estoque",
   },
   {
     id: "marketIntelligence",

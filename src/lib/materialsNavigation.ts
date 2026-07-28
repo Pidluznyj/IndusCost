@@ -4,12 +4,17 @@
 
 export const MATERIALS_BASE_PATH = "/materials" as const;
 
-export const MATERIALS_SECTION_IDS = ["catalog", "marketIntelligence"] as const;
+export const MATERIALS_SECTION_IDS = [
+  "catalog",
+  "stockConference",
+  "marketIntelligence",
+] as const;
 
 export type MaterialsSectionId = (typeof MATERIALS_SECTION_IDS)[number];
 
 export const MATERIALS_SECTION_PATHS: Record<MaterialsSectionId, string> = {
   catalog: MATERIALS_BASE_PATH,
+  stockConference: `${MATERIALS_BASE_PATH}/stock-conference`,
   marketIntelligence: `${MATERIALS_BASE_PATH}/market-intelligence`,
 };
 
@@ -308,6 +313,13 @@ export const MATERIALS_SECTIONS: MaterialsSectionDef[] = [
     description: "Cadastro e gestão de matérias-primas, insumos e custos de aquisição.",
   },
   {
+    id: "stockConference",
+    label: "Conferência de estoque",
+    path: MATERIALS_SECTION_PATHS.stockConference,
+    description:
+      "Operação de conferência física do estoque atual de matérias-primas (sem custos).",
+  },
+  {
     id: "marketIntelligence",
     label: "Inteligência de Mercado",
     path: MATERIALS_SECTION_PATHS.marketIntelligence,
@@ -315,11 +327,25 @@ export const MATERIALS_SECTIONS: MaterialsSectionDef[] = [
   },
 ];
 
+export function getMaterialStockConferenceDetailPath(materialId: string): string {
+  return `${MATERIALS_SECTION_PATHS.stockConference}/${materialId}`;
+}
+
+export function isMaterialStockConferenceDetailPath(pathname: string): boolean {
+  return /^\/materials\/stock-conference\/[^/]+$/.test(pathname);
+}
+
+export function parseMaterialIdFromStockConferencePath(pathname: string): string | null {
+  const match = pathname.match(/^\/materials\/stock-conference\/([^/]+)$/);
+  return match?.[1] ?? null;
+}
+
 export function getMaterialsDefaultPath(): string {
   return MATERIALS_SECTION_PATHS[MATERIALS_DEFAULT_SECTION];
 }
 
 export function parseMaterialsSectionFromPath(pathname: string): MaterialsSectionId | null {
+  if (pathname.includes("/materials/stock-conference")) return "stockConference";
   if (pathname.includes("/materials/market-intelligence")) return "marketIntelligence";
   if (pathname === MATERIALS_BASE_PATH || pathname.startsWith(`${MATERIALS_BASE_PATH}/`)) {
     return "catalog";
@@ -344,6 +370,8 @@ export function parseMaterialIdFromMarketIntelligencePath(pathname: string): str
 
 export function isMaterialsCanonicalPath(pathname: string): boolean {
   if (pathname === MATERIALS_BASE_PATH) return true;
+  if (pathname === MATERIALS_SECTION_PATHS.stockConference) return true;
+  if (isMaterialStockConferenceDetailPath(pathname)) return true;
   if (pathname === MATERIALS_SECTION_PATHS.marketIntelligence) return true;
   if (isMaterialMarketIntelligenceReportsPath(pathname)) return true;
   if (isMaterialMarketIntelligenceDetailPath(pathname)) return true;
@@ -353,7 +381,9 @@ export function isMaterialsCanonicalPath(pathname: string): boolean {
 export function resolveMaterialsCanonicalPath(pathname: string): string {
   if (isMaterialMarketIntelligenceReportsPath(pathname)) return pathname;
   if (isMaterialMarketIntelligenceDetailPath(pathname)) return pathname;
+  if (isMaterialStockConferenceDetailPath(pathname)) return pathname;
   const section = parseMaterialsSectionFromPath(pathname);
+  if (section === "stockConference") return MATERIALS_SECTION_PATHS.stockConference;
   if (section === "marketIntelligence") return MATERIALS_SECTION_PATHS.marketIntelligence;
   return getMaterialsDefaultPath();
 }
