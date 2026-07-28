@@ -65,6 +65,24 @@ describe("engineeringAccess — matriz P19", () => {
           e.action === "update"
       )
     );
+    assert.ok(
+      ENGINEERING_PILOT_ENDPOINTS.some(
+        (e) =>
+          e.method === "PATCH" &&
+          e.path === "/api/materials/stock-tablet/:materialId/parameters" &&
+          e.resourceKey === "engineering.materials" &&
+          e.action === "update"
+      )
+    );
+    assert.ok(
+      ENGINEERING_PILOT_ENDPOINTS.some(
+        (e) =>
+          e.method === "GET" &&
+          e.path === "/api/materials/stock-tablet/:materialId/history" &&
+          e.resourceKey === "engineering.materials" &&
+          e.action === "view"
+      )
+    );
   });
 
   it("Leticia AP-only: engenharia deny", () => {

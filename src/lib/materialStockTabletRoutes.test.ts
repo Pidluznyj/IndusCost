@@ -9,6 +9,8 @@ import { ENGINEERING_RESOURCE_KEYS } from "./engineeringAccess.js";
 import { registerMaterialStockTabletRoutes } from "./materialStockTabletRoutes.js";
 import {
   MATERIAL_STOCK_TABLET_CONFERENCE_PATH,
+  MATERIAL_STOCK_TABLET_HISTORY_PATH,
+  MATERIAL_STOCK_TABLET_PARAMETERS_PATH,
   MATERIAL_STOCK_TABLET_SEARCH_PATH,
 } from "./materialStockTabletTypes.js";
 
@@ -54,21 +56,17 @@ describe("materialStockTabletRoutes", () => {
     }
   });
 
-  it("conferência exige permissão update e sessão (não userId do body)", async () => {
+  it("conferência/parâmetros exigem update; histórico tem permissão própria view", () => {
     const calls: Array<{ resource: string; action?: string }> = [];
     const allow: RequestHandler = (_req, _res, next) => next();
-    const forbid: RequestHandler = (_req, res) => {
-      res.status(403).json({ error: "FORBIDDEN" });
-    };
     const app = express();
-    app.use(express.json());
     registerMaterialStockTabletRoutes(
       app,
       {
         requireAppAuth: allow,
         requireResource: (resource, action) => {
           calls.push({ resource, action });
-          return action === "update" ? allow : forbid;
+          return allow;
         },
         getCurrentAppUser: async () => ({
           id: "11111111-1111-4111-8111-111111111111",
@@ -87,21 +85,41 @@ describe("materialStockTabletRoutes", () => {
       }
     );
 
-    const conferenceGuard = calls.find(
-      (c) =>
-        c.resource === ENGINEERING_RESOURCE_KEYS.materials && c.action === "update"
+    assert.ok(
+      calls.some(
+        (c) =>
+          c.resource === ENGINEERING_RESOURCE_KEYS.materials && c.action === "update"
+      ),
+      "conferência/parâmetros exigem update"
     );
-    assert.ok(conferenceGuard, "rota de conferência deve exigir engineering.materials update");
+    assert.ok(
+      calls.filter(
+        (c) =>
+          c.resource === ENGINEERING_RESOURCE_KEYS.materials && c.action === "view"
+      ).length >= 2,
+      "search + history exigem view"
+    );
 
     const source = readFileSync(
       join(root, "src/lib/materialStockTabletRoutes.ts"),
       "utf8"
     );
     assert.match(source, /MATERIAL_STOCK_TABLET_CONFERENCE_PATH/);
-    assert.match(source, /requireResource\(ENGINEERING_RESOURCE_KEYS\.materials,\s*"update"\)/);
-    assert.match(source, /getCurrentAppUser/);
+    assert.match(source, /MATERIAL_STOCK_TABLET_PARAMETERS_PATH/);
+    assert.match(source, /MATERIAL_STOCK_TABLET_HISTORY_PATH/);
+    assert.match(source, /app\.patch\(/);
+    assert.match(source, /Permissão própria desta API: somente leitura/);
     assert.match(source, /userId do body é ignorado/);
+    assert.doesNotMatch(source, /app\.(put|delete|patch)\(\s*MATERIAL_STOCK_TABLET_HISTORY_PATH/);
     assert.equal(MATERIAL_STOCK_TABLET_CONFERENCE_PATH, "/api/materials/stock-tablet/conference");
+    assert.equal(
+      MATERIAL_STOCK_TABLET_PARAMETERS_PATH,
+      "/api/materials/stock-tablet/:materialId/parameters"
+    );
+    assert.equal(
+      MATERIAL_STOCK_TABLET_HISTORY_PATH,
+      "/api/materials/stock-tablet/:materialId/history"
+    );
   });
 
   it("APIs antigas de materials permanecem no server", () => {

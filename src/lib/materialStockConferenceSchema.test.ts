@@ -98,6 +98,8 @@ describe("materialStockConferenceSchema — histórico append-only", () => {
     assert.match(block, /reportedQuantity\s+Decimal\s+@db\.Decimal\(20, 6\)/);
     assert.match(block, /difference\s+Decimal\s+@db\.Decimal\(20, 6\)/);
     assert.match(schema, /enum MaterialStockConferenceSource/);
+    assert.match(schema, /model MaterialStockLevelAudit/);
+    assert.match(schema, /MaterialStockLevelAudit\s+MaterialStockLevelAudit\[\]/);
   });
 });
 
@@ -126,6 +128,18 @@ describe("materialStockConferenceSchema — migration aditiva", () => {
     );
     assert.match(sql, /ADD COLUMN IF NOT EXISTS "idempotencyKey"/);
     assert.match(sql, /MaterialStockConference_idempotencyKey_key/);
+    assert.doesNotMatch(sql, /DROP COLUMN/i);
+    assert.doesNotMatch(sql, /ALTER COLUMN "quantity"/i);
+    assert.doesNotMatch(sql, /currentCost/i);
+  });
+
+  it("migration de auditoria de níveis é aditiva", () => {
+    const sql = read(
+      "prisma/migrations/20260822140000_material_stock_level_audit/migration.sql"
+    );
+    assert.match(sql, /CREATE TABLE IF NOT EXISTS "MaterialStockLevelAudit"/);
+    assert.match(sql, /beforeJson/);
+    assert.match(sql, /afterJson/);
     assert.doesNotMatch(sql, /DROP COLUMN/i);
     assert.doesNotMatch(sql, /ALTER COLUMN "quantity"/i);
     assert.doesNotMatch(sql, /currentCost/i);

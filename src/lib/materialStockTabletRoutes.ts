@@ -11,10 +11,14 @@ import {
   recordMaterialStockConference,
 } from "./materialStockConference.server.js";
 import { MaterialStockConferenceError } from "./materialStockConferenceRules.js";
+import { listMaterialStockConferenceHistory } from "./materialStockHistory.server.js";
+import { updateMaterialStockParameters } from "./materialStockParameters.server.js";
 import { searchMaterialStockTablet } from "./materialStockTablet.server.js";
 import { parseMaterialStockTabletSearchQuery } from "./materialStockTabletQuery.js";
 import {
   MATERIAL_STOCK_TABLET_CONFERENCE_PATH,
+  MATERIAL_STOCK_TABLET_HISTORY_PATH,
+  MATERIAL_STOCK_TABLET_PARAMETERS_PATH,
   MATERIAL_STOCK_TABLET_SEARCH_PATH,
 } from "./materialStockTabletTypes.js";
 
@@ -111,6 +115,83 @@ export function registerMaterialStockTabletRoutes(
             error instanceof Error
               ? error.message
               : "Não foi possível registrar a conferência de estoque.",
+        });
+      }
+    }
+  );
+
+  app.patch(
+    MATERIAL_STOCK_TABLET_PARAMETERS_PATH,
+    requireAppAuth,
+    requireResource(ENGINEERING_RESOURCE_KEYS.materials, "update"),
+    async (req, res) => {
+      try {
+        const actor = await getCurrentAppUser(req);
+        if (!actor?.id) {
+          return res.status(401).json({
+            error: "UNAUTHORIZED",
+            message: "Autenticação necessária.",
+          });
+        }
+        const result = await updateMaterialStockParameters(deps.prisma, {
+          materialId: String(req.params.materialId ?? ""),
+          body: (req.body ?? {}) as Record<string, unknown>,
+          actor: {
+            id: actor.id,
+            name: actor.name,
+            email: actor.email,
+          },
+        });
+        return res.status(200).json(result);
+      } catch (error) {
+        if (error instanceof MaterialStockConferenceError) {
+          const status = materialStockConferenceHttpStatus(error);
+          return res.status(status).json({
+            error: error.code,
+            message: error.message,
+            field: error.field,
+            details: error.details,
+          });
+        }
+        console.error(`PATCH ${MATERIAL_STOCK_TABLET_PARAMETERS_PATH}`, error);
+        return res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Não foi possível atualizar os parâmetros de estoque.",
+        });
+      }
+    }
+  );
+
+  app.get(
+    MATERIAL_STOCK_TABLET_HISTORY_PATH,
+    requireAppAuth,
+    // Permissão própria desta API: somente leitura (view).
+    requireResource(ENGINEERING_RESOURCE_KEYS.materials, "view"),
+    async (req, res) => {
+      try {
+        const payload = await listMaterialStockConferenceHistory(deps.prisma, {
+          materialId: String(req.params.materialId ?? ""),
+          query: req.query as Record<string, unknown>,
+        });
+        return res.status(200).json(payload);
+      } catch (error) {
+        if (error instanceof MaterialStockConferenceError) {
+          const status = materialStockConferenceHttpStatus(error);
+          return res.status(status).json({
+            error: error.code,
+            message: error.message,
+            field: error.field,
+            details: error.details,
+          });
+        }
+        console.error(`GET ${MATERIAL_STOCK_TABLET_HISTORY_PATH}`, error);
+        return res.status(500).json({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Não foi possível listar o histórico de conferência.",
         });
       }
     }

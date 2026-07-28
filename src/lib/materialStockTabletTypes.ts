@@ -11,6 +11,12 @@ export const MATERIAL_STOCK_TABLET_SEARCH_PATH =
 export const MATERIAL_STOCK_TABLET_CONFERENCE_PATH =
   "/api/materials/stock-tablet/conference" as const;
 
+export const MATERIAL_STOCK_TABLET_PARAMETERS_PATH =
+  "/api/materials/stock-tablet/:materialId/parameters" as const;
+
+export const MATERIAL_STOCK_TABLET_HISTORY_PATH =
+  "/api/materials/stock-tablet/:materialId/history" as const;
+
 export const MATERIAL_STOCK_TABLET_DEFAULT_PAGE_SIZE = 30;
 export const MATERIAL_STOCK_TABLET_MAX_PAGE_SIZE = 50;
 /** Janela padrão (dias) para “sem conferência recente”. */
@@ -45,6 +51,28 @@ export type MaterialStockTabletListItem = {
 
 export type MaterialStockTabletSearchResponse = {
   rows: MaterialStockTabletListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+export type MaterialStockHistoryListItem = {
+  id: string;
+  recordedAt: string;
+  userId: string;
+  userName: string | null;
+  previousQuantity: number;
+  reportedQuantity: number;
+  difference: number;
+  unit: string;
+  reason: string;
+  notes: string | null;
+  source: string;
+};
+
+export type MaterialStockHistoryResponse = {
+  rows: MaterialStockHistoryListItem[];
   total: number;
   page: number;
   pageSize: number;
