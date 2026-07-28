@@ -49,19 +49,28 @@ import {
   TREASURY_RESOURCE_KEYS,
 } from "./treasuryAccess.js";
 import { TREASURY_UI_SECTIONS } from "../../components/finance/treasury/treasuryFeatureUi.js";
+import {
+  TREASURY_UI_ADVANCED_SECTIONS,
+  TREASURY_UI_PRIMARY_SECTIONS,
+} from "./treasurySimpleNavigation.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, "../../..");
 
 const EXPECTED_HTTP_HANDLERS = 89;
-const EXPECTED_UI_SECTIONS = 17;
+/** home + 4 primárias + 15 avançadas + hub advanced */
+const EXPECTED_UI_SECTIONS = 21;
 const EXPECTED_FEATURE_FLAGS = 15;
 const EXPECTED_RESOURCE_KEYS = 18;
 const EXPECTED_LEGACY_BAGS = 28;
 
 const REQUIRED_ADVANCED_UI_PATHS = [
   "/finance/treasury",
+  "/finance/treasury/today",
   "/finance/treasury/accounts",
+  "/finance/treasury/bank",
+  "/finance/treasury/projection",
+  "/finance/treasury/advanced",
   "/finance/treasury/receivables",
   "/finance/treasury/payables",
   "/finance/treasury/agenda",
@@ -157,6 +166,8 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
 
   it("congela rotas avançadas da UI (TreasuryModule + seções)", () => {
     assert.equal(TREASURY_UI_SECTIONS.length, EXPECTED_UI_SECTIONS);
+    assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 4);
+    assert.ok(TREASURY_UI_ADVANCED_SECTIONS.length >= 15);
     const paths = new Set(TREASURY_UI_SECTIONS.map((s) => s.path));
     for (const path of REQUIRED_ADVANCED_UI_PATHS) {
       assert.ok(paths.has(path), `seção UI ausente: ${path}`);
@@ -166,8 +177,13 @@ describe("treasurySimpleDailyFlow — preservação do módulo avançado", () =>
       join(repoRoot, "src/components/finance/treasury/TreasuryModule.tsx"),
       "utf8"
     );
+    assert.match(moduleSource, /TREASURY_UI_PRIMARY_SECTIONS/);
     for (const fragment of [
+      "today",
       "accounts",
+      "bank",
+      "projection",
+      "advanced",
       "receivables",
       "payables",
       "agenda",
