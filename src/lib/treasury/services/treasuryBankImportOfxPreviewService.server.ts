@@ -299,6 +299,9 @@ export function createTreasuryBankImportOfxPreviewService(deps: {
         byteLength: inspected.byteLength,
         fileAlreadyImported,
         period: classified.period,
+        ledgerBalanceAmount: inspected.ledgerBalance?.amount ?? null,
+        ledgerBalanceAsOfCivilDate:
+          inspected.ledgerBalance?.asOfCivilDate ?? null,
         totals: classified.totals,
         movements: classified.movements.map(toMovementDto),
         warnings: inspected.warnings,

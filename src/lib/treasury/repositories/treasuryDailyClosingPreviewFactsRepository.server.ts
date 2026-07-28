@@ -77,21 +77,55 @@ export function createTreasuryDailyClosingPreviewFactsRepository(
           : await prisma.treasuryBalanceSnapshot.findMany({
               where: { accountId: { in: accountIds } },
               orderBy: { referenceAt: "desc" },
-              distinct: ["accountId"],
               select: {
                 accountId: true,
                 availableBalance: true,
                 referenceAt: true,
+                idempotencyKey: true,
+                origin: true,
               },
             });
-      const snapByAccount = new Map(
-        snapshots.map((s) => [s.accountId, s] as const)
-      );
+
+      const openingByAccount = new Map<string, string>();
+      const closingBankByAccount = new Map<string, string>();
+      const latestByAccount = new Map<
+        string,
+        { availableBalance: (typeof snapshots)[number]["availableBalance"]; referenceAt: Date }
+      >();
+
+      for (const s of snapshots) {
+        if (!latestByAccount.has(s.accountId)) {
+          latestByAccount.set(s.accountId, {
+            availableBalance: s.availableBalance,
+            referenceAt: s.referenceAt,
+          });
+        }
+        const key = s.idempotencyKey ?? "";
+        if (
+          s.origin === "MANUAL" &&
+          key.startsWith(`daily-opening:${query.civilDate}:`) &&
+          !openingByAccount.has(s.accountId)
+        ) {
+          openingByAccount.set(s.accountId, money(s.availableBalance));
+        }
+        if (
+          s.origin === "MANUAL" &&
+          key.startsWith(`daily-closing-bank:${query.civilDate}:`) &&
+          !closingBankByAccount.has(s.accountId)
+        ) {
+          closingBankByAccount.set(s.accountId, money(s.availableBalance));
+        }
+      }
 
       const accountFacts: TreasuryDailyClosingPreviewAccountFact[] =
         accounts.map((a) => {
-          const snap = snapByAccount.get(a.id);
-          const observed = snap ? money(snap.availableBalance) : null;
+          const snap = latestByAccount.get(a.id);
+          const opening =
+            openingByAccount.get(a.id) ??
+            (snap ? money(snap.availableBalance) : "0.00");
+          const observed =
+            closingBankByAccount.get(a.id) ??
+            (snap ? money(snap.availableBalance) : null);
           const age =
             snap != null ? hoursSince(snap.referenceAt, now) : null;
           return {
@@ -99,11 +133,11 @@ export function createTreasuryDailyClosingPreviewFactsRepository(
             code: a.code,
             name: a.name,
             includeInConsolidated: a.includeInConsolidated,
-            openingBalance: observed ?? "0.00",
+            openingBalance: opening,
             realizedInflows: "0.00",
             realizedOutflows: "0.00",
             pendenciesAmount: "0.00",
-            closingBalance: observed ?? "0.00",
+            closingBalance: observed ?? opening,
             observedBalance: observed,
             reconciledBalance: null,
             minimumBalance: money(a.minimumBalance),

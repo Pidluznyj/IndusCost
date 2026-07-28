@@ -173,7 +173,10 @@ describe("TreasuryAgendaPage / Panel", () => {
     const moduleSrc = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
     assert.match(moduleSrc, /TreasuryAgendaPage/);
     assert.match(moduleSrc, /path="agenda"/);
-    const featureUi = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const featureUi = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
     assert.match(featureUi, /Agenda financeira/);
     assert.match(featureUi, /\/agenda/);
     const pageSrc = readFileSync(join(here, "TreasuryAgendaPage.tsx"), "utf8");

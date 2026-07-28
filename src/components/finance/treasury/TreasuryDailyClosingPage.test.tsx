@@ -16,6 +16,7 @@ import {
 import { TreasuryDailyClosingPanel } from "./TreasuryDailyClosingPanel.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "../../../..");
 
 function noop() {}
 
@@ -283,8 +284,11 @@ describe("TreasuryDailyClosingPage — UI", () => {
     assert.match(moduleSrc, /path="closing"/);
     assert.match(moduleSrc, /TreasuryDailyClosingPage/);
 
-    const featureUi = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const featureUi = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
     assert.match(featureUi, /id: "closing"/);
-    assert.match(featureUi, /Fechamento diário/);
+    assert.match(featureUi, /Fechar o dia/);
   });
 });

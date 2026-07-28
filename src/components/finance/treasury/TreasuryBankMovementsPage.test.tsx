@@ -14,6 +14,7 @@ import { TreasuryBankMovementsPanel } from "./TreasuryBankMovementsPanel.js";
 import { createEmptyTreasuryBankMovementsFilters } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "../../../..");
 
 const account: TreasuryFinancialAccountDto = {
   id: "acc-1",
@@ -90,7 +91,10 @@ const movement: TreasuryBankMovementDto = {
 describe("TreasuryBankMovementsPage — fluxo UI", () => {
   it("registra rota e aba no módulo", () => {
     const mod = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
-    const ui = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const ui = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
     assert.match(mod, /TreasuryBankMovementsPage/);
     assert.match(mod, /bank-movements/);
     assert.match(ui, /bank-movements/);

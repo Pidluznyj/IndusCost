@@ -157,7 +157,10 @@ describe("TreasuryProjectionComparisonPage / Panel", () => {
     const moduleSrc = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
     assert.match(moduleSrc, /TreasuryProjectionComparisonPage/);
     assert.match(moduleSrc, /path="projections"/);
-    const featureUi = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const featureUi = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
     assert.match(featureUi, /Comparação de cenários/);
     const pageSrc = readFileSync(
       join(here, "TreasuryProjectionComparisonPage.tsx"),

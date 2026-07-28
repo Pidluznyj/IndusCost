@@ -33,6 +33,18 @@ export const TREASURY_DISPUTES_PATH =
 export const TREASURY_DASHBOARD_PATH =
   `${TREASURY_API_PREFIX}/dashboard` as const;
 
+/** Experiência guiada “Tesouraria de hoje” (agregado). */
+export const TREASURY_TODAY_PATH =
+  `${TREASURY_API_PREFIX}/today` as const;
+
+/** Workspace de saldos iniciais do dia (GET/POST). */
+export const TREASURY_TODAY_OPENING_PATH =
+  `${TREASURY_TODAY_PATH}/opening` as const;
+
+/** Workspace de saldos finais + fechamento guiado (GET/POST). */
+export const TREASURY_TODAY_CLOSING_PATH =
+  `${TREASURY_TODAY_PATH}/closing` as const;
+
 export const TREASURY_PROJECTIONS_PATH =
   `${TREASURY_API_PREFIX}/projections` as const;
 

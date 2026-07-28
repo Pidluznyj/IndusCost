@@ -225,6 +225,47 @@ export type TreasuryProjectionItemKind =
 export const TREASURY_CLOSING_STATUSES = ["OPEN", "CLOSED", "REOPENED"] as const;
 export type TreasuryClosingStatus = (typeof TREASURY_CLOSING_STATUSES)[number];
 
+/**
+ * Status conceituais da rotina diária por conta (jornada simples).
+ * CLOSED/REOPENED alinham-se ao fechamento formal (`TreasuryDailyClosingStatus`).
+ * NOT_STARTED / OPEN / NEEDS_REVIEW / READY_TO_CLOSE são estados operacionais
+ * derivados de abertura/fechamento bancário informados + divergência — sem model novo.
+ */
+export const TREASURY_DAILY_ACCOUNT_ROUTINE_STATUSES = [
+  "NOT_STARTED",
+  "OPEN",
+  "NEEDS_REVIEW",
+  "READY_TO_CLOSE",
+  "CLOSED",
+  "REOPENED",
+] as const;
+export type TreasuryDailyAccountRoutineStatus =
+  (typeof TREASURY_DAILY_ACCOUNT_ROUTINE_STATUSES)[number];
+
+/** Origem semântica do saldo inicial informado na rotina diária. */
+export const TREASURY_DAILY_OPENING_BALANCE_ORIGINS = [
+  /** Confirmado a partir do observedBalance do último fechamento CLOSED da conta. */
+  "PREVIOUS_CLOSING",
+  /** Digitado manualmente (sem fechamento anterior ou correção consciente). */
+  "MANUAL",
+  /** Espelho de snapshot MANUAL já existente no dia. */
+  "SNAPSHOT",
+] as const;
+export type TreasuryDailyOpeningBalanceOrigin =
+  (typeof TREASURY_DAILY_OPENING_BALANCE_ORIGINS)[number];
+
+/** Justificativa simples quando o saldo inicial difere do saldo final anterior. */
+export const TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES = [
+  "MOVEMENT_AFTER_CLOSING",
+  "FEE_OR_INTEREST",
+  "CREDIT_AFTER_CLOSING",
+  "AUTOMATIC_DEBIT",
+  "PREVIOUS_BALANCE_INCORRECT",
+  "OTHER",
+] as const;
+export type TreasuryDailyOpeningDiffJustificationCode =
+  (typeof TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES)[number];
+
 /** Bloqueios absolutos do preview de fechamento — impedem fechar mesmo com ressalva. */
 export const TREASURY_DAILY_CLOSING_ABSOLUTE_BLOCK_CODES = [
   "DAY_ALREADY_CLOSED",

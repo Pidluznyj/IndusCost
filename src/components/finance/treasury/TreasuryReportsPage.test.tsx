@@ -15,6 +15,7 @@ import {
 import { TreasuryReportsPanel } from "./TreasuryReportsPanel.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "../../../..");
 
 function noop() {}
 
@@ -49,12 +50,15 @@ function sampleReport(): TreasuryReportDto {
 describe("TreasuryReportsPage — wiring UI", () => {
   it("registra rota /reports no módulo e aba Relatórios", () => {
     const mod = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
-    const feature = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const feature = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
     assert.match(mod, /path="reports"/);
     assert.match(mod, /TreasuryReportsPage/);
     assert.match(feature, /Relatórios/);
     assert.match(feature, /id: "reports"/);
-    assert.match(feature, /TREASURY_UI_BASE_PATH\}\/reports/);
+    assert.match(feature, /\/reports/);
   });
 
   it("renderiza seleção, geração, filtros e ações de export/impressão", () => {

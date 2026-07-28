@@ -39,6 +39,7 @@
 | [17-OFX-AND-RECONCILIATION.md](./17-OFX-AND-RECONCILIATION.md) | OFX e conciliação bancária |
 | [18-AUDIT-JOBS-AND-OPERATIONS.md](./18-AUDIT-JOBS-AND-OPERATIONS.md) | Auditoria, jobs, backup, migration, rollback, suporte, operação |
 | [19-ROLLOUT.md](./19-ROLLOUT.md) | Rollout progressivo e ordem de ativação |
+| [SIMPLE-DAILY-FLOW.md](./SIMPLE-DAILY-FLOW.md) | Fluxo diário simplificado entregue (UX, fórmulas, anti-duplicidade, preservação avançada) |
 
 ### Manuais e guias
 | Documento | Público |

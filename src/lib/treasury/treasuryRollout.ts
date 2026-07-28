@@ -26,23 +26,27 @@ export const TREASURY_ROLLOUT_ACTIVATION_ORDER = [
 
 export type TreasuryRolloutUiSectionId =
   | "home"
+  | "today"
   | "accounts"
   | "balances"
   | "receivables"
   | "payables"
   | "agenda"
   | "projections"
+  | "projection"
   | "payment-schedule"
   | "transfers"
   | "manual-entries"
   | "bank-movements"
+  | "bank"
   | "ofx"
   | "reconcile"
   | "exceptions"
   | "alert-settings"
   | "closing"
   | "reports"
-  | "audit";
+  | "audit"
+  | "advanced";
 
 /**
  * Flag exigida para exibir cada aba/rota de UI.
@@ -54,16 +58,19 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   TreasuryFeatureFlagId | null
 > = {
   home: "treasury.dashboard.enabled",
+  today: "treasury.dashboard.enabled",
   accounts: "treasury.accounts.enabled",
   balances: "treasury.balances.enabled",
   receivables: "treasury.receivables.enabled",
   payables: "treasury.payables.enabled",
   agenda: "treasury.projection.enabled",
   projections: "treasury.projection.enabled",
+  projection: "treasury.projection.enabled",
   "payment-schedule": "treasury.payablesProgramming.enabled",
   transfers: "treasury.transfers.enabled",
   "manual-entries": "treasury.accounts.enabled",
   "bank-movements": "treasury.reconciliation.enabled",
+  bank: "treasury.reconciliation.enabled",
   ofx: "treasury.ofxImport.enabled",
   reconcile: "treasury.reconciliation.enabled",
   exceptions: "treasury.exceptions.enabled",
@@ -72,6 +79,8 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   reports: "treasury.reports.enabled",
   /** Auditoria permanece sob a mestra (operacional/controle). */
   audit: null,
+  /** Hub avançado: mestra; papel ADMIN/SUPER_ADMIN é checado na UI. */
+  advanced: null,
 };
 
 export type TreasuryFeatureFlagsMap = Record<TreasuryFeatureFlagId, boolean>;

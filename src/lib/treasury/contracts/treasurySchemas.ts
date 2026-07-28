@@ -24,6 +24,7 @@ import {
   TREASURY_CLOSING_STATUSES,
   TREASURY_COLLECTION_ACTION_TYPES,
   TREASURY_CURRENCIES,
+  TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES,
   TREASURY_DISPUTE_STATUSES,
   TREASURY_LEDGER_DIRECTIONS,
   TREASURY_LEDGER_NATURES,
@@ -2555,6 +2556,180 @@ export function parseTreasuryDashboardQuery(
     ),
     scenario,
   };
+}
+
+export type TreasuryGuidedDailyOpeningQuery = {
+  date: TreasuryCivilDate;
+};
+
+export function parseTreasuryGuidedDailyOpeningQuery(
+  query: Record<string, unknown>
+): TreasuryGuidedDailyOpeningQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  return { date };
+}
+
+export type TreasuryGuidedDailyOpeningSaveItemParsed = {
+  accountId: string;
+  expectedVersion: number;
+  confirmSuggested: boolean;
+  amount: string | null;
+  notes: string | null;
+  justificationCode:
+    | (typeof TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES)[number]
+    | null;
+  justificationDetail: string | null;
+};
+
+export type TreasuryGuidedDailyOpeningSaveInput = {
+  civilDate: TreasuryCivilDate;
+  items: TreasuryGuidedDailyOpeningSaveItemParsed[];
+};
+
+export function parseTreasuryGuidedDailyOpeningSaveInput(
+  body: Record<string, unknown>
+): TreasuryGuidedDailyOpeningSaveInput {
+  const civilDate =
+    body.civilDate == null && body.date == null
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(body.civilDate ?? body.date, "civilDate");
+
+  const rawItems = body.items ?? body.contas ?? body.accounts;
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "items deve ser um array com ao menos uma conta.",
+      "items"
+    );
+  }
+
+  const items = rawItems.map((raw, index) => {
+    const row =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)
+        : {};
+    const accountId = parseTreasuryBoundedString(
+      row.accountId ?? row.id,
+      `items[${index}].accountId`,
+      { required: true }
+    )!;
+    const confirmSuggested = Boolean(
+      row.confirmSuggested ?? row.confirm ?? row.confirmar
+    );
+    const amountRaw = row.amount ?? row.saldoInicial ?? row.openingBalance;
+    const amount =
+      amountRaw == null || amountRaw === ""
+        ? null
+        : parseTreasuryMoneyString(amountRaw, `items[${index}].amount`);
+    const justificationCode = parseTreasuryEnum(
+      row.justificationCode ?? row.motivoCodigo ?? row.reasonCode,
+      TREASURY_DAILY_OPENING_DIFF_JUSTIFICATION_CODES,
+      `items[${index}].justificationCode`,
+      false
+    );
+    return {
+      accountId,
+      expectedVersion: parseNonNegativeInt(
+        row.expectedVersion ?? row.version,
+        `items[${index}].expectedVersion`
+      ),
+      confirmSuggested,
+      amount,
+      notes: parseTreasuryBoundedString(
+        row.notes ?? row.observacao ?? row.observation,
+        `items[${index}].notes`,
+        { required: false }
+      ),
+      justificationCode: justificationCode ?? null,
+      justificationDetail: parseTreasuryBoundedString(
+        row.justificationDetail ?? row.motivoDetalhe ?? row.otherReason,
+        `items[${index}].justificationDetail`,
+        { required: false }
+      ),
+    };
+  });
+
+  return { civilDate, items };
+}
+
+export type TreasuryGuidedDailyClosingQuery = {
+  date: TreasuryCivilDate;
+};
+
+export function parseTreasuryGuidedDailyClosingQuery(
+  query: Record<string, unknown>
+): TreasuryGuidedDailyClosingQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  return { date };
+}
+
+export type TreasuryGuidedDailyClosingSaveItemParsed = {
+  accountId: string;
+  expectedVersion: number;
+  amount: string;
+  notes: string | null;
+};
+
+export type TreasuryGuidedDailyClosingSaveInput = {
+  civilDate: TreasuryCivilDate;
+  items: TreasuryGuidedDailyClosingSaveItemParsed[];
+};
+
+export function parseTreasuryGuidedDailyClosingSaveInput(
+  body: Record<string, unknown>
+): TreasuryGuidedDailyClosingSaveInput {
+  const civilDate =
+    body.civilDate == null && body.date == null
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(body.civilDate ?? body.date, "civilDate");
+
+  const rawItems = body.items ?? body.contas ?? body.accounts;
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "items deve ser um array com ao menos uma conta.",
+      "items"
+    );
+  }
+
+  const items = rawItems.map((raw, index) => {
+    const row =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)
+        : {};
+    const accountId = parseTreasuryBoundedString(
+      row.accountId ?? row.id,
+      `items[${index}].accountId`,
+      { required: true }
+    )!;
+    const amount = parseTreasuryMoneyString(
+      row.amount ?? row.saldoFinal ?? row.informedClosingBalance,
+      `items[${index}].amount`
+    );
+    return {
+      accountId,
+      expectedVersion: parseNonNegativeInt(
+        row.expectedVersion ?? row.version,
+        `items[${index}].expectedVersion`
+      ),
+      amount,
+      notes: parseTreasuryBoundedString(
+        row.notes ?? row.observacao ?? row.observation,
+        `items[${index}].notes`,
+        { required: false }
+      ),
+    };
+  });
+
+  return { civilDate, items };
 }
 
 export type TreasuryDailyClosingPreviewQuery = {

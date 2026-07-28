@@ -14,6 +14,7 @@ import type {
   TreasuryBalanceLayer,
   TreasuryBalanceOrigin,
   TreasuryClosingStatus,
+  TreasuryDailyAccountRoutineStatus,
   TreasuryCurrency,
   TreasuryCollectionActionType,
   TreasuryDisputeStatus,
@@ -208,6 +209,320 @@ export type TreasuryFinancialPositionDto = {
   accounts: TreasuryAccountFinancialPositionDto[];
   consolidated: TreasuryConsolidatedFinancialPositionDto;
   alerts: string[];
+};
+
+/** Transferências na posição diária (por conta ou consolidado). */
+export type TreasuryDailyCashTransfersDto = {
+  received: TreasuryMoneyString;
+  sent: TreasuryMoneyString;
+  /** received − sent; no consolidado interno deve ser 0.00. */
+  net: TreasuryMoneyString;
+};
+
+/** Pendência explicativa da posição diária (ex.: OFX sem match). */
+export type TreasuryDailyCashPendencyDto = {
+  code:
+    | "UNRECONCILED_OFX"
+    | "MISSING_OPENING_BALANCE"
+    | "MISSING_CLOSING_BALANCE"
+    | "BALANCE_DIVERGENCE"
+    | "PARTIAL_SETTLEMENT"
+    | "OTHER";
+  message: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  sourceId: string | null;
+};
+
+/**
+ * DTO enxuto da posição diária canônica por conta.
+ * Sem Prisma — money em string decimal.
+ */
+export type TreasuryDailyCashAccountPositionDto = {
+  accountId: string;
+  code: string;
+  name: string;
+  includeInConsolidated: boolean;
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString | null;
+  plannedReceivables: TreasuryMoneyString;
+  realizedReceivables: TreasuryMoneyString;
+  plannedPayables: TreasuryMoneyString;
+  realizedPayables: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  transfers: TreasuryDailyCashTransfersDto;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  pendencies: TreasuryDailyCashPendencyDto[];
+  lastUpdatedAt: TreasuryTimestampIso | null;
+};
+
+/** Consolidado do dia — transferências internas com efeito líquido zero. */
+export type TreasuryDailyCashConsolidatedPositionDto = {
+  civilDate: TreasuryCivilDate;
+  openingBalance: TreasuryMoneyString | null;
+  plannedReceivables: TreasuryMoneyString;
+  realizedReceivables: TreasuryMoneyString;
+  plannedPayables: TreasuryMoneyString;
+  realizedPayables: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  transfers: TreasuryDailyCashTransfersDto;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  pendencies: TreasuryDailyCashPendencyDto[];
+  accountCount: number;
+  lastUpdatedAt: TreasuryTimestampIso | null;
+};
+
+export type TreasuryDailyCashPositionDto = {
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  algorithmVersion: string;
+  accounts: TreasuryDailyCashAccountPositionDto[];
+  consolidated: TreasuryDailyCashConsolidatedPositionDto;
+};
+
+/** Status de etapa da rotina guiada do dia. */
+export type TreasuryGuidedTodayStepStatus =
+  | "DONE"
+  | "PENDING"
+  | "NEEDS_ATTENTION";
+
+export type TreasuryGuidedTodayStepId =
+  | "OPENING_BALANCES"
+  | "REVIEW_RECEIPTS"
+  | "REVIEW_PAYMENTS"
+  | "CLOSING_BALANCES"
+  | "RESOLVE_DIVERGENCES"
+  | "CLOSE_DAY";
+
+/** Pendências acionáveis exibidas na experiência simples. */
+export type TreasuryGuidedTodayAttentionCode =
+  | "MISSING_OPENING_BALANCE"
+  | "UNMAPPED_TITLE"
+  | "PENDING_RECEIPT"
+  | "PENDING_PAYMENT"
+  | "MISSING_CLOSING_BALANCE"
+  | "BALANCE_DIVERGENCE"
+  | "UNIDENTIFIED_BANK_MOVEMENT";
+
+export type TreasuryGuidedTodayConsolidatedDto = {
+  openingBalance: TreasuryMoneyString | null;
+  plannedInflows: TreasuryMoneyString;
+  realizedInflows: TreasuryMoneyString;
+  plannedOutflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+};
+
+export type TreasuryGuidedTodayStepDto = {
+  id: TreasuryGuidedTodayStepId;
+  order: number;
+  title: string;
+  status: TreasuryGuidedTodayStepStatus;
+  continueHref: string;
+  continueLabel: string;
+};
+
+export type TreasuryGuidedTodayAccountDto = {
+  accountId: string;
+  name: string;
+  bank: string | null;
+  openingBalance: TreasuryMoneyString | null;
+  predictedClosingBalance: TreasuryMoneyString | null;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  status: TreasuryDailyAccountRoutineStatus;
+  openHref: string;
+};
+
+export type TreasuryGuidedTodayAttentionDto = {
+  id: string;
+  code: TreasuryGuidedTodayAttentionCode;
+  message: string;
+  amount: TreasuryMoneyString | null;
+  accountId: string | null;
+  href: string;
+};
+
+/** Resposta canônica GET /api/finance/treasury/today */
+export type TreasuryGuidedTodayDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  empty: boolean;
+  consolidated: TreasuryGuidedTodayConsolidatedDto;
+  steps: TreasuryGuidedTodayStepDto[];
+  accounts: TreasuryGuidedTodayAccountDto[];
+  attention: TreasuryGuidedTodayAttentionDto[];
+};
+
+export type TreasuryGuidedDailyOpeningSituation =
+  | "CONFIRMED"
+  | "READY_TO_CONFIRM"
+  | "NEEDS_MANUAL"
+  | "EDITED_WITH_DIFF"
+  | "INACTIVE";
+
+export type TreasuryGuidedDailyOpeningAccountDto = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  bank: string | null;
+  previousClosingBalance: TreasuryMoneyString | null;
+  previousClosingCivilDate: TreasuryCivilDate | null;
+  previousClosingId: string | null;
+  suggestedOpeningBalance: TreasuryMoneyString | null;
+  currentOpeningBalance: TreasuryMoneyString | null;
+  expectedVersion: number;
+  situation: TreasuryGuidedDailyOpeningSituation;
+  situationLabel: string;
+  requiresManualInput: boolean;
+  canConfirmSuggested: boolean;
+};
+
+export type TreasuryGuidedDailyOpeningWorkspaceDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  accounts: TreasuryGuidedDailyOpeningAccountDto[];
+  confirmableCount: number;
+  pendingCount: number;
+  confirmedCount: number;
+};
+
+export type TreasuryGuidedDailyOpeningSaveItemResultDto = {
+  accountId: string;
+  openingBalance: TreasuryMoneyString;
+  version: number;
+  origin: string;
+  snapshotId: string;
+  created: boolean;
+};
+
+export type TreasuryGuidedDailyOpeningSaveResultDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  savedCount: number;
+  items: TreasuryGuidedDailyOpeningSaveItemResultDto[];
+  nextStepHref: string;
+};
+
+/** Situação do saldo final guiado por conta. */
+export type TreasuryGuidedDailyClosingSituation =
+  | "NEEDS_OPENING"
+  | "READY_TO_INFORM"
+  | "INFORMED_OK"
+  | "HAS_DIVERGENCE"
+  | "CLOSED"
+  | "INACTIVE";
+
+export type TreasuryGuidedDailyClosingInvestigationActionId =
+  | "IMPORT_STATEMENT"
+  | "VIEW_REALIZED_TITLES"
+  | "VIEW_MANUAL_ENTRIES"
+  | "VIEW_TRANSFERS"
+  | "REGISTER_FEE"
+  | "REGISTER_INTEREST"
+  | "REGISTER_UNIDENTIFIED"
+  | "CLOSE_WITH_CAVEAT";
+
+export type TreasuryGuidedDailyClosingInvestigationActionDto = {
+  id: TreasuryGuidedDailyClosingInvestigationActionId;
+  label: string;
+  href: string;
+};
+
+export type TreasuryGuidedDailyClosingAccountDto = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  bank: string | null;
+  openingBalance: TreasuryMoneyString | null;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  transfersReceived: TreasuryMoneyString;
+  transfersSent: TreasuryMoneyString;
+  transfersNet: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  localNet: TreasuryMoneyString;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  expectedVersion: number;
+  situation: TreasuryGuidedDailyClosingSituation;
+  situationLabel: string;
+  divergenceMessage: string | null;
+  canInformClosing: boolean;
+};
+
+export type TreasuryGuidedDailyClosingGateItemDto = {
+  code: string;
+  message: string;
+};
+
+export type TreasuryGuidedDailyClosingGateSummaryDto = {
+  openingsInformed: boolean;
+  closingsInformed: boolean;
+  hasDivergences: boolean;
+  unidentifiedMovementsCount: number;
+  unlinkedAccountsCount: number;
+  transfersInTransitCount: number;
+  requiredCaveatCodes: string[];
+  absoluteBlocks: TreasuryGuidedDailyClosingGateItemDto[];
+  warnings: TreasuryGuidedDailyClosingGateItemDto[];
+  canCloseWithoutCaveats: boolean;
+  canCloseWithCaveats: boolean;
+  sourceHash: string | null;
+  dayAlreadyClosed: boolean;
+};
+
+/** Resposta GET /api/finance/treasury/today/closing */
+export type TreasuryGuidedDailyClosingWorkspaceDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  companyCode: string | null;
+  accounts: TreasuryGuidedDailyClosingAccountDto[];
+  informedCount: number;
+  pendingCount: number;
+  divergenceCount: number;
+  investigationActions: TreasuryGuidedDailyClosingInvestigationActionDto[];
+  closeGates: TreasuryGuidedDailyClosingGateSummaryDto;
+};
+
+export type TreasuryGuidedDailyClosingSaveItemResultDto = {
+  accountId: string;
+  informedClosingBalance: TreasuryMoneyString;
+  realizedClosingBalance: TreasuryMoneyString;
+  divergence: TreasuryMoneyString;
+  version: number;
+  snapshotId: string;
+  created: boolean;
+};
+
+export type TreasuryGuidedDailyClosingSaveResultDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  savedCount: number;
+  items: TreasuryGuidedDailyClosingSaveItemResultDto[];
+  nextStepHref: string;
 };
 
 /** Freshness de uma fonte do dashboard diário. */

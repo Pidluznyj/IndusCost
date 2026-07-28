@@ -94,6 +94,7 @@ import {
 } from "./treasuryFeatureUi.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(here, "../../../..");
 const noop = () => undefined;
 
 function html(node: React.ReactElement): string {
@@ -754,14 +755,27 @@ describe("TreasuryCriticalFlows E2E — ferramenta tsx --test", () => {
     // 1) acessar Central de Tesouraria (shell monta páginas com Auth — valida fonte + contrato UI)
     const moduleSrc = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
     const featureSrc = readFileSync(join(here, "treasuryFeatureUi.ts"), "utf8");
+    const navSrc = readFileSync(
+      join(repoRoot, "src/lib/treasury/treasurySimpleNavigation.ts"),
+      "utf8"
+    );
+    const catalogSrc = `${featureSrc}\n${navSrc}`;
     assert.match(moduleSrc, /data-testid="treasury-module"/);
     assert.match(moduleSrc, /data-testid="treasury-module-tabs"/);
     assert.equal(TREASURY_UI_LABEL, "Central de Tesouraria");
     assert.equal(TREASURY_UI_BASE_PATH, "/finance/treasury");
     assert.ok(TREASURY_UI_SECTIONS.length >= 11);
     for (const section of TREASURY_UI_SECTIONS) {
-      assert.ok(featureSrc.includes(section.label), `seção ${section.id}`);
-      assert.ok(featureSrc.includes(section.path) || featureSrc.includes(`/${section.id}`));
+      assert.ok(
+        catalogSrc.includes(section.label),
+        `seção ${section.id} label`
+      );
+      assert.ok(
+        catalogSrc.includes(section.path) ||
+          catalogSrc.includes(`/${section.id}`) ||
+          moduleSrc.includes(`path="${section.id}"`),
+        `seção ${section.id} path`
+      );
     }
     assert.ok(moduleSrc.includes('path="closing"'));
     assert.ok(moduleSrc.includes('path="reports"'));
