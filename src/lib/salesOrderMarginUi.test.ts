@@ -153,7 +153,7 @@ describe("salesOrderMargin UI", () => {
       join(process.cwd(), "src", "components", "sales", "SalesOrderMarginMetricGrid.tsx"),
       "utf8"
     );
-    assert.match(analysisSrc, /Margem comercial da venda/);
+    assert.match(analysisSrc, /Margem comercial do Pedido/);
     assert.match(analysisSrc, /SalesOrderMarginMetricGrid/);
     assert.match(analysisSrc, /resolveSalesOrderMarginRevenueLabel\(summary\)/);
     assert.match(metricGridSrc, /Custo estimado/);

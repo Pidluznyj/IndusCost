@@ -679,7 +679,7 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
 
       {/* 6 — Margem, preço e custo */}
       <section className="so-detail-section" data-testid="sales-order-detail-pricing-margin">
-        <h3 className="so-detail-section-title">Margem comercial da venda</h3>
+        <h3 className="so-detail-section-title">Margem comercial do Pedido</h3>
         <p className="so-detail-section-subtitle">
           Fonte: {pricingMargin.source}
           {pricingMargin.commercialMarginComplete === false

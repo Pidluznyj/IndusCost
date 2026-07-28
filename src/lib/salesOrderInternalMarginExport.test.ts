@@ -227,7 +227,7 @@ describe("salesOrderInternalMarginExport", () => {
       topCustomers: [],
     } as never);
     assert.match(csv, /Margem consolidada \(interno\)/);
-    assert.match(csv, /Margem R\$/);
+    assert.match(csv, /Margem comercial do Pedido \(R\$\)|Margem R\$/);
     assert.ok(csv.includes(SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER));
   });
 });

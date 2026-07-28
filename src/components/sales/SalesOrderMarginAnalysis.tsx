@@ -57,7 +57,7 @@ export function SalesOrderMarginAnalysisSection({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground">
-                Margem comercial da venda
+                Margem comercial do Pedido
               </h3>
               <SalesOrderMarginInfoTooltip
                 summary={summary}
@@ -75,7 +75,7 @@ export function SalesOrderMarginAnalysisSection({
                   ? "Margem comercial calculada"
                   : summary.commercialMargin.itemsCalculated > 0
                     ? `Margem comercial parcial (${summary.commercialMargin.itemsCalculated}/${summary.commercialMargin.itemsActive})`
-                    : "Margem comercial indisponível"
+                    : "Margem não calculada"
               }
               status={
                 summary.commercialMargin.isComplete
@@ -222,7 +222,7 @@ export function SalesOrderMarginAnalysisSection({
                               margin.commercialMargin.commercialMarginValue
                             )
                           : margin?.commercialMargin
-                            ? "Margem indisponível"
+                            ? "Margem não calculada"
                             : margin?.status === "SEM_CUSTO" ||
                                 margin?.costSource === "MISSING_COST"
                               ? "—"

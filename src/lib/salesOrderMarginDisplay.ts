@@ -12,6 +12,7 @@ import type {
 } from "./salesOrderMarginTypes.js";
 import { resolveSalesOrderMarginSummaryStatusMeta } from "./salesOrderMarginStatus.js";
 import { mergeSalesOrderMarginCoveragePayloads } from "./salesOrderMarginCoverage.js";
+import { SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL } from "./salesOrderCommercialMargin.js";
 
 const marginMoneyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -217,7 +218,7 @@ export function pickSalesOrderListMarginPercent(
     return formatSalesOrderMarginPercent(commercial.commercialMarginTotalPercent);
   }
   if (commercial && commercial.itemsActive > 0 && commercial.itemsCalculated === 0) {
-    return "Indisponível";
+    return "Não calculada";
   }
   return "—";
 }
@@ -250,11 +251,12 @@ export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
   costFrozen: "Custo histórico congelado",
   costEstimated: "Custo estimado atual",
   costMixed: "Custo misto",
-  commercialTitle: "Margem comercial da venda",
+  commercialTitle: "Margem comercial do Pedido",
   managerialTitle: "Margem gerencial após impostos e custo",
   soldTitle: "Margem vendida sem imposto",
   partialTitle: "Margem comercial parcial",
-  unavailableTitle: "Margem comercial indisponível",
+  unavailableTitle: "Margem não calculada",
+  itemCommercialTitle: "Margem comercial",
 } as const;
 
 export type SalesOrderMarginTooltipInput = {
@@ -474,10 +476,8 @@ const COMMERCIAL_MARGIN_SOURCE_LABEL: Record<
   import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSource,
   string
 > = {
-  EXACT_PROPOSAL_SNAPSHOT: "Snapshot da proposta vinculada",
-  EXACT_PRICE_TABLE_VERSION: "Versão da tabela comercial vinculada",
-  RECONSTRUCTED_AT_ORDER_DATE: "Reconstruída na data do pedido",
-  UNAVAILABLE: "Formação não identificada",
+  HISTORICAL_PRICE_FORMATION: "Formação de preço histórica na data do Pedido",
+  UNAVAILABLE: "Margem não calculada",
 };
 
 /** Tooltip por item — detalha a margem comercial da formação. */
@@ -485,21 +485,29 @@ export function buildSalesOrderItemCommercialMarginTooltipText(
   commercial?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginItemPayload | null
 ): string {
   if (!commercial || !commercial.isComplete) {
+    const reasonText =
+      commercial?.reasonCode != null
+        ? SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL[commercial.reasonCode]
+        : commercial?.warnings?.[0] ??
+          "A formação de preço está incompleta ou ausente para este item.";
     return [
       SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle,
       "",
-      "Não foi possível identificar a formação de preço utilizada nesta venda.",
-      ...(commercial?.warnings ?? []).map((w) => `Aviso: ${w}`),
+      reasonText,
+      ...(commercial?.warnings ?? [])
+        .filter((w) => w !== reasonText)
+        .map((w) => `Aviso: ${w}`),
     ].join("\n");
   }
 
   return [
-    SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle,
+    SALES_ORDER_MARGIN_DISPLAY_LABELS.itemCommercialTitle,
     "",
     `Preço praticado: ${formatSalesOrderMarginMoney(commercial.negotiatedUnitPrice)}`,
+    `Quantidade ativa: ${commercial.soldQuantity}`,
     `Valor vendido: ${formatSalesOrderMarginMoney(commercial.soldValue)}`,
-    `Custo utilizado: ${formatSalesOrderMarginMoney(commercial.costValue)}`,
-    `Imposto: ${formatSalesOrderMarginPercent((commercial.taxRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.taxValue)})`,
+    `Custo histórico: ${formatSalesOrderMarginMoney(commercial.costValue)}`,
+    `Impostos: ${formatSalesOrderMarginPercent((commercial.taxRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.taxValue)})`,
     `Frete percentual: ${formatSalesOrderMarginPercent((commercial.freightRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.freightRateValue)})`,
     `Frete absoluto: ${formatSalesOrderMarginMoney(commercial.freightAbsoluteValue)}`,
     `Comissão: ${formatSalesOrderMarginPercent((commercial.commissionRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.commissionValue)})`,
@@ -508,8 +516,9 @@ export function buildSalesOrderItemCommercialMarginTooltipText(
     `Margem comercial %: ${formatSalesOrderMarginPercent(commercial.commercialMarginPercent)}`,
     `Faixa inferior: ${commercial.lowerMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.lowerBandPrice)})`,
     `Faixa superior: ${commercial.upperMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.upperBandPrice)})`,
-    `Versão da tabela: ${commercial.priceTableVersionId ?? "—"}`,
-    `Origem do cálculo: ${COMMERCIAL_MARGIN_SOURCE_LABEL[commercial.calculationSource]}`,
+    `Data da formação: ${formatCivilDatePtBr(commercial.referenceDate)}`,
+    `Conjunto histórico: ${commercial.historicalContextId ?? commercial.priceTableVersionId ?? "—"}`,
+    `Origem: ${COMMERCIAL_MARGIN_SOURCE_LABEL[commercial.calculationSource]}`,
     ...(commercial.warnings.length
       ? commercial.warnings.map((w) => `Aviso: ${w}`)
       : []),
@@ -535,7 +544,9 @@ export function buildOfficialSalesOrderMarginTooltipText(
       `Itens calculados: ${commercial.itemsCalculated} de ${commercial.itemsActive}`,
     ];
     if (!commercial.isComplete) {
-      lines.push("Status: parcial — nem todos os itens possuem formação identificada.");
+      lines.push(
+        `Status: parcial — ${commercial.itemsCalculated} de ${commercial.itemsActive} itens calculados; ${commercial.itemsUnavailable} com margem não calculada.`
+      );
     }
     for (const warning of commercial.warnings.slice(0, 4)) {
       lines.push(`Aviso: ${warning}`);

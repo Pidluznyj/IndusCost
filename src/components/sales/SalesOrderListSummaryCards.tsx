@@ -283,14 +283,14 @@ export const SalesOrderListSummaryCards = memo(function SalesOrderListSummaryCar
                   ? "Sem formação de preço identificada para calcular a margem comercial."
                   : marginPartial
                     ? "Há itens sem formação identificada — cobertura parcial do valor vendido."
-                    : "Margem comercial da venda ponderada pelo valor efetivamente vendido."
+                    : "Margem comercial do Pedido ponderada pelo valor efetivamente vendido."
               }
               valueSize={marginUnavailable ? "text" : "default"}
               labelAccessory={
                 marginSummary?.tooltipSummary && !loading ? (
                   <SalesOrderMarginInfoTooltip
                     summary={marginSummary.tooltipSummary}
-                    titleOverride="Margem comercial da venda"
+                    titleOverride="Margem comercial do Pedido"
                     testId="sales-order-list-general-margin-tooltip"
                   />
                 ) : undefined

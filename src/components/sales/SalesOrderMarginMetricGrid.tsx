@@ -25,7 +25,7 @@ type SalesOrderMarginMetricGridProps = {
 
 /**
  * Grid de margem econômica — Design System MetricCard (sem cálculo no frontend).
- * Métrica principal: margem comercial da venda; gerencial fica secundária.
+ * Métrica principal: margem comercial do Pedido; gerencial fica secundária.
  */
 export function SalesOrderMarginMetricGrid({
   summary,
@@ -44,7 +44,7 @@ export function SalesOrderMarginMetricGrid({
   const coverageHint =
     commercialAvailable && commercial
       ? commercialPartial
-        ? `Margem comercial parcial: ${commercial.itemsCalculated} de ${commercial.itemsActive} itens. Cobertura de ${commercial.commercialMarginCoveragePercent ?? "—"}% do valor vendido.`
+        ? `Margem comercial parcial: ${commercial.itemsCalculated} de ${commercial.itemsActive} itens calculados. Cobertura de ${commercial.commercialMarginCoveragePercent ?? "—"}% do valor vendido. ${commercial.itemsUnavailable} item(ns) com margem não calculada.`
         : "Margem calculada sobre o preço efetivamente vendido, com formação de preço histórica."
       : summary != null
         ? buildSalesOrderMarginCoverageHint(summary, (value) =>

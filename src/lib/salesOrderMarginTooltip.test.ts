@@ -112,7 +112,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
+    assert.match(text, /Margem não calculada|Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /TaxRule não configurada/);
     assert.equal(pickSalesOrderListMarginPercent(summary({ fiscalConfigComplete: false })), "—");
   });
@@ -127,7 +127,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
+    assert.match(text, /Margem não calculada|Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /Imposto estimado \(dedução de imposto\)/);
     assert.match(text, /Receita líquida gerencial após impostos/);
     assert.match(text, /TaxRule/);
@@ -143,7 +143,7 @@ describe("salesOrderMarginTooltip", () => {
         marginPercent: 0,
       }),
     });
-    assert.match(text, /Margem comercial indisponível|Margem indisponível/);
+    assert.match(text, /Margem não calculada|Margem comercial indisponível|Margem indisponível/);
     assert.match(text, /Custo não resolvido/);
   });
 

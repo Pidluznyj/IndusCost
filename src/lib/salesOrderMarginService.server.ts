@@ -477,7 +477,6 @@ async function mergeCommercialMarginsIntoOrderResults(
       prisma,
       orders.map((order) => ({
         id: order.id,
-        proposalId: order.proposalId,
         issueDate: order.issueDate,
         items: order.items,
       }))

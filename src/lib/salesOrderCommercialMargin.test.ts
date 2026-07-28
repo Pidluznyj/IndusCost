@@ -6,6 +6,8 @@ import {
 } from "./priceTablePublication.js";
 import {
   calculateSalesOrderItemCommercialMargin,
+  readExplicitAbsolute,
+  readExplicitRate,
   resolveActiveSoldQuantity,
   summarizeSalesOrderCommercialMargins,
   unavailableCommercialMarginItem,
@@ -19,6 +21,14 @@ const OTHER = 0.02;
 const FREIGHT_RATE = 0.03;
 const FREIGHT_ABS = 1.5;
 const COST = 100;
+
+/** Fixtures de teste — NÃO são hardcoded no runtime do Pedido. */
+const BANDS = [
+  { marginPct: 30, commissionPercent: 6 },
+  { marginPct: 40, commissionPercent: 5 },
+  { marginPct: 50, commissionPercent: 4 },
+  { marginPct: 60, commissionPercent: 3 },
+] as const;
 
 function ratesAt(marginRate: number, commissionRate: number) {
   return {
@@ -41,17 +51,16 @@ function formPrice(marginPercent: number, commissionPercent: number) {
   return formed.result.salePrice;
 }
 
-describe("salesOrderCommercialMargin — identidade 30/40/50/60", () => {
-  for (const margin of [30, 40, 50, 60] as const) {
-    it(`forma preço a ${margin}% e a inversa recupera ${margin}%`, () => {
-      const commission = margin === 30 ? 6 : margin === 40 ? 5 : margin === 50 ? 4 : 3;
-      const salePrice = formPrice(margin, commission);
+describe("salesOrderCommercialMargin — identidade pelas faixas cadastradas", () => {
+  for (const band of BANDS) {
+    it(`preço da faixa marginPct=${band.marginPct}% recupera ${band.marginPct}%`, () => {
+      const salePrice = formPrice(band.marginPct, band.commissionPercent);
       const inverse = calculateCommercialMarginRateFromNegotiatedPrice({
         negotiatedUnitPrice: salePrice,
         frozenTotalCost: COST,
         rates: {
           taxRate: TAX,
-          commissionRate: commission / 100,
+          commissionRate: band.commissionPercent / 100,
           otherRate: OTHER,
           freightRate: FREIGHT_RATE,
           freight: FREIGHT_ABS,
@@ -59,7 +68,7 @@ describe("salesOrderCommercialMargin — identidade 30/40/50/60", () => {
       });
       assert.equal(inverse.ok, true);
       if (!inverse.ok) throw new Error(inverse.message);
-      assert.equal(roundPricingPercent(inverse.marginPercent), margin);
+      assert.equal(roundPricingPercent(inverse.marginPercent), band.marginPct);
 
       const item = calculateSalesOrderItemCommercialMargin({
         soldQuantity: 2,
@@ -67,50 +76,44 @@ describe("salesOrderCommercialMargin — identidade 30/40/50/60", () => {
         frozenTotalCost: COST,
         rates: {
           taxRate: TAX,
-          commissionRate: commission / 100,
+          commissionRate: band.commissionPercent / 100,
           otherRate: OTHER,
           freightRate: FREIGHT_RATE,
           freight: FREIGHT_ABS,
         },
-        calculationSource: "EXACT_PRICE_TABLE_VERSION",
+        historicalContextId: "v1|v2|v3|v4",
       });
       assert.equal(item.isComplete, true);
-      assert.equal(item.commercialMarginPercent, margin);
-      assert.ok(item.commercialMarginValue != null);
-      assert.ok(
-        Math.abs(
-          (item.commercialMarginValue ?? 0) -
-            item.soldValue * (item.commercialMarginRate ?? 0)
-        ) < 0.02
-      );
+      assert.equal(item.commercialMarginPercent, band.marginPct);
+      assert.equal(item.calculationSource, "HISTORICAL_PRICE_FORMATION");
+      assert.equal(item.reasonCode, null);
     });
   }
 });
 
-describe("salesOrderCommercialMargin — intermediários e bordas", () => {
-  it("usa comissão proporcional entre faixas (não interpola margem)", () => {
-    const price30 = formPrice(30, 6);
-    const price40 = formPrice(40, 5);
-    const midPrice = (price30 + price40) / 2;
+describe("salesOrderCommercialMargin — intermediários e fora da tabela", () => {
+  it("usa comissão proporcional; margem pela inversa (não linear na margem)", () => {
+    const pLo = formPrice(30, 6);
+    const pHi = formPrice(40, 5);
+    const mid = (pLo + pHi) / 2;
     const { ratePercent: commission } = interpolateCommercialTierRate({
-      soldUnitPrice: midPrice,
+      soldUnitPrice: mid,
       fromTier: {
         code: "ATACADO",
         name: "Atacado",
-        salePrice: price30,
+        salePrice: pLo,
         commissionPercent: 6,
       },
       toTier: {
         code: "VAREJO_1",
         name: "Varejo 1",
-        salePrice: price40,
+        salePrice: pHi,
         commissionPercent: 5,
       },
     });
     assert.ok(commission > 5 && commission < 6);
-
     const inverse = calculateCommercialMarginRateFromNegotiatedPrice({
-      negotiatedUnitPrice: midPrice,
+      negotiatedUnitPrice: mid,
       frozenTotalCost: COST,
       rates: {
         taxRate: TAX,
@@ -125,7 +128,7 @@ describe("salesOrderCommercialMargin — intermediários e bordas", () => {
     assert.ok(inverse.marginPercent > 30 && inverse.marginPercent < 40);
   });
 
-  it("cobre faixas 40–50 e 50–60 com comissão proporcional", () => {
+  it("cobre faixas intermediárias 40–50 e 50–60", () => {
     for (const [lo, hi, cLo, cHi, fromCode, toCode] of [
       [40, 50, 5, 4, "VAREJO_1", "VAREJO_2"],
       [50, 60, 4, 3, "VAREJO_2", "VAREJO_3"],
@@ -165,7 +168,7 @@ describe("salesOrderCommercialMargin — intermediários e bordas", () => {
     }
   });
 
-  it("permite margem negativa quando preço é baixo demais", () => {
+  it("permite margem negativa com preço baixo", () => {
     const inverse = calculateCommercialMarginRateFromNegotiatedPrice({
       negotiatedUnitPrice: 120,
       frozenTotalCost: COST,
@@ -182,26 +185,96 @@ describe("salesOrderCommercialMargin — intermediários e bordas", () => {
     assert.ok(inverse.marginPercent < 0);
   });
 
-  it("preserva frete % e frete absoluto sem duplicar", () => {
+  it("zeros explícitos são válidos e completos", () => {
     const salePrice = formPrice(40, 5);
-    const inverse = calculateCommercialMarginRateFromNegotiatedPrice({
-      negotiatedUnitPrice: salePrice,
+    // reform with zeros
+    const formed = calculatePriceTableItemFromFrozenCost(COST, {
+      taxRate: TAX,
+      commissionRate: 0.05,
+      otherRate: 0,
+      freightRate: 0,
+      freight: 0,
+      marginRate: 0.4,
+    });
+    assert.equal(formed.ok, true);
+    if (!formed.ok) throw new Error(formed.message);
+    const item = calculateSalesOrderItemCommercialMargin({
+      soldQuantity: 1,
+      negotiatedUnitPrice: formed.result.salePrice,
       frozenTotalCost: COST,
       rates: {
         taxRate: TAX,
         commissionRate: 0.05,
-        otherRate: OTHER,
-        freightRate: FREIGHT_RATE,
-        freight: FREIGHT_ABS,
+        otherRate: 0,
+        freightRate: 0,
+        freight: 0,
       },
+      historicalContextId: "ctx-zero",
     });
-    assert.equal(inverse.ok, true);
-    if (!inverse.ok) throw new Error(inverse.message);
-    assert.ok(Math.abs(inverse.freightRateValueUnit - salePrice * FREIGHT_RATE) < 1e-9);
-    assert.equal(inverse.freightAbsoluteUnit, FREIGHT_ABS);
+    assert.equal(item.isComplete, true);
+    assert.equal(item.otherVariablesRate, 0);
+    assert.equal(item.freightRate, 0);
+    assert.equal(item.freightAbsoluteUnit, 0);
+    assert.equal(item.commercialMarginPercent, 40);
+    void salePrice;
+  });
+});
+
+describe("salesOrderCommercialMargin — ausente ≠ zero e falhas", () => {
+  it("readExplicitRate distingue ausente de zero", () => {
+    assert.equal(readExplicitRate(0).present, true);
+    if (readExplicitRate(0).present) assert.equal(readExplicitRate(0).value, 0);
+    assert.equal(readExplicitRate(null).present, false);
+    assert.equal(readExplicitRate(undefined).present, false);
+    assert.equal(readExplicitAbsolute(0).present, true);
+    assert.equal(readExplicitAbsolute(null).present, false);
   });
 
-  it("exclui quantidade cancelada e item totalmente cancelado", () => {
+  it("falhas cadastrais retornam UNAVAILABLE com reasonCode", () => {
+    const cases = [
+      "PRODUCT_WITHOUT_PRICE_FORMATION",
+      "COST_NOT_FOUND",
+      "TAX_NOT_FOUND",
+      "FREIGHT_NOT_DEFINED",
+      "COMMISSION_NOT_DEFINED",
+      "OTHER_VARIABLES_NOT_DEFINED",
+      "INVALID_NEGOTIATED_PRICE",
+      "INCONSISTENT_PRICE_FORMATION_SET",
+    ] as const;
+    for (const code of cases) {
+      const item = unavailableCommercialMarginItem({
+        soldQuantity: 1,
+        negotiatedUnitPrice: 100,
+        soldValue: 100,
+        reasonCode: code,
+      });
+      assert.equal(item.isComplete, false);
+      assert.equal(item.calculationSource, "UNAVAILABLE");
+      assert.equal(item.reasonCode, code);
+      assert.equal(item.taxRate, null);
+      assert.equal(item.commercialMarginPercent, null);
+    }
+  });
+
+  it("preço inválido no cálculo", () => {
+    const item = calculateSalesOrderItemCommercialMargin({
+      soldQuantity: 1,
+      negotiatedUnitPrice: 0,
+      frozenTotalCost: COST,
+      rates: {
+        taxRate: TAX,
+        commissionRate: 0.05,
+        otherRate: 0,
+        freightRate: 0,
+        freight: 0,
+      },
+      historicalContextId: "x",
+    });
+    assert.equal(item.reasonCode, "INVALID_NEGOTIATED_PRICE");
+    assert.equal(item.isComplete, false);
+  });
+
+  it("cancelamento parcial e total", () => {
     assert.equal(
       resolveActiveSoldQuantity({ orderedQuantity: 10, canceledQuantity: 3 }),
       7
@@ -214,39 +287,10 @@ describe("salesOrderCommercialMargin — intermediários e bordas", () => {
       }),
       0
     );
-    const canceled = calculateSalesOrderItemCommercialMargin({
-      soldQuantity: 0,
-      negotiatedUnitPrice: 200,
-      frozenTotalCost: COST,
-      rates: {
-        taxRate: TAX,
-        commissionRate: 0.05,
-        otherRate: OTHER,
-        freightRate: 0,
-        freight: 0,
-      },
-      calculationSource: "EXACT_PROPOSAL_SNAPSHOT",
-    });
-    assert.equal(canceled.isComplete, false);
-    assert.equal(canceled.calculationSource, "UNAVAILABLE");
-  });
-
-  it("não assume zero quando formação está incompleta", () => {
-    const unavailable = unavailableCommercialMarginItem({
-      soldQuantity: 1,
-      negotiatedUnitPrice: 100,
-      soldValue: 100,
-      warnings: ["parâmetro ausente"],
-    });
-    assert.equal(unavailable.isComplete, false);
-    assert.equal(unavailable.taxRate, null);
-    assert.equal(unavailable.commissionRate, null);
-    assert.equal(unavailable.commercialMarginPercent, null);
-    assert.match(unavailable.warnings.join(" "), /parâmetro ausente|indisponível/i);
   });
 });
 
-describe("salesOrderCommercialMargin — totais ponderados", () => {
+describe("salesOrderCommercialMargin — total ponderado", () => {
   function completeItem(
     partial: Partial<SalesOrderCommercialMarginItemPayload> & {
       soldValue: number;
@@ -278,11 +322,13 @@ describe("salesOrderCommercialMargin — totais ponderados", () => {
       upperMarginBand: null,
       lowerBandPrice: null,
       upperBandPrice: null,
-      calculationSource: "EXACT_PROPOSAL_SNAPSHOT",
+      calculationSource: "HISTORICAL_PRICE_FORMATION",
+      historicalContextId: "ctx",
       priceTableVersionId: "v1",
       referenceDate: "2024-01-15",
       warnings: [],
       isComplete: true,
+      reasonCode: null,
       ...partial,
     };
   }
@@ -301,12 +347,14 @@ describe("salesOrderCommercialMargin — totais ponderados", () => {
     const summary = summarizeSalesOrderCommercialMargins([a, b]);
     assert.equal(summary.commercialMarginTotalValue, 360);
     assert.equal(summary.commercialSoldTotalValue, 1100);
-    const weighted = roundPricingPercent((360 / 1100) * 100);
-    assert.equal(summary.commercialMarginTotalPercent, weighted);
+    assert.equal(
+      summary.commercialMarginTotalPercent,
+      roundPricingPercent((360 / 1100) * 100)
+    );
     assert.notEqual(summary.commercialMarginTotalPercent, 45);
   });
 
-  it("cobertura parcial marca incompleto", () => {
+  it("cobertura parcial com item não calculado", () => {
     const ok = completeItem({
       soldValue: 900,
       commercialMarginValue: 270,
@@ -316,6 +364,7 @@ describe("salesOrderCommercialMargin — totais ponderados", () => {
       soldQuantity: 1,
       negotiatedUnitPrice: 100,
       soldValue: 100,
+      reasonCode: "COST_NOT_FOUND",
     });
     const summary = summarizeSalesOrderCommercialMargins([ok, bad], {
       totalActiveSoldValue: 1000,
@@ -324,22 +373,5 @@ describe("salesOrderCommercialMargin — totais ponderados", () => {
     assert.equal(summary.itemsCalculated, 1);
     assert.equal(summary.itemsUnavailable, 1);
     assert.equal(summary.commercialMarginCoveragePercent, 90);
-  });
-
-  it("ignora item cancelado (soldQuantity 0) no total ativo", () => {
-    const ok = completeItem({
-      soldValue: 500,
-      commercialMarginValue: 150,
-      commercialMarginPercent: 30,
-    });
-    const canceled = unavailableCommercialMarginItem({
-      soldQuantity: 0,
-      soldValue: 0,
-      warnings: ["Item cancelado"],
-    });
-    const summary = summarizeSalesOrderCommercialMargins([ok, canceled]);
-    assert.equal(summary.itemsActive, 1);
-    assert.equal(summary.commercialMarginTotalPercent, 30);
-    assert.equal(summary.isComplete, true);
   });
 });

@@ -157,7 +157,7 @@ export function resolveSalesOrderMarginMoneyLabel(
       return "Margem comercial indisponível";
     case "FULL":
     default:
-      return "Margem comercial da venda (R$)";
+      return "Margem comercial do Pedido (R$)";
   }
 }
 
@@ -171,7 +171,7 @@ export function resolveSalesOrderMarginPercentLabel(
       return "Margem comercial % indisponível";
     case "FULL":
     default:
-      return "Margem comercial da venda (%)";
+      return "Margem comercial do Pedido (%)";
   }
 }
 

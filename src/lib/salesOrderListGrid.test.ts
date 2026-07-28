@@ -111,7 +111,7 @@ describe("salesOrderListUi formatters", () => {
         fiscalConfigComplete: true,
       })
     );
-    assert.match(noCost, /Margem comercial indisponível|Margem indisponível/);
+    assert.match(noCost, /Margem não calculada|Margem comercial indisponível|Margem indisponível/);
     assert.match(noCost, /Custo não resolvido/i);
 
     const noProduct = buildSalesOrderMarginTooltipText(

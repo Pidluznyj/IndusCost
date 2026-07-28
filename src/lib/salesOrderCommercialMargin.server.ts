@@ -1,39 +1,39 @@
 /**
- * Adapter server-only: resolve formação histórica e calcula margem comercial do Pedido.
+ * Adapter server-only: margem comercial do Pedido sem Proposta.
+ * Formação histórica em lote (sem Prisma dentro do loop de itens).
  */
 import type { PrismaClient } from "@prisma/client";
 import {
   COMMERCIAL_PRICE_TIER_CODES,
   resolveCommercialPriceTier,
   type CommercialPriceTierRow,
+  type CommercialPriceTierCode,
 } from "./commissions/commission-commercial-tier.js";
-import {
-  CommercialTierCache,
-  loadCommercialPriceTiersForProduct,
-} from "./commissions/commission-commercial-tier.server.js";
 import { toCivilDateKey } from "./financeCivilDate.js";
-import { resolvePublishedPriceTableVersionForDate } from "./priceTablePublication.server.js";
 import {
   calculateSalesOrderItemCommercialMargin,
+  readExplicitAbsolute,
+  readExplicitRate,
   resolveActiveSoldQuantity,
   summarizeSalesOrderCommercialMargins,
   unavailableCommercialMarginItem,
   type SalesOrderCommercialMarginItemPayload,
+  type SalesOrderCommercialMarginReasonCode,
   type SalesOrderCommercialMarginSummaryPayload,
 } from "./salesOrderCommercialMargin.js";
 import type { SalesOrderItemForMargin } from "./salesOrderMarginService.server.js";
 
 type Decimalish = { toNumber?: () => number } | number | string | null | undefined;
 
-function toNum(value: Decimalish, fallback = 0): number {
-  if (value == null || value === "") return fallback;
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+function toNum(value: Decimalish): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "object" && typeof value.toNumber === "function") {
     const n = value.toNumber();
-    return Number.isFinite(n) ? n : fallback;
+    return Number.isFinite(n) ? n : null;
   }
   const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return Number.isFinite(n) ? n : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -42,155 +42,362 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function rateFromPercentOrFraction(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return n > 1 ? n / 100 : n;
-}
+const COST_EPS = 1e-6;
+const RATE_EPS = 1e-9;
 
-type FormationBundle = {
-  frozenTotalCost: number;
+export type HistoricalFormationRates = {
+  frozenCostUnit: number;
   taxRate: number;
   otherRate: number;
   freightRate: number;
-  freightAbs: number;
-  priceTableVersionId: string | null;
-  source: "EXACT_PROPOSAL_SNAPSHOT" | "EXACT_PRICE_TABLE_VERSION" | "RECONSTRUCTED_AT_ORDER_DATE";
-  warnings: string[];
+  freightAbsoluteUnit: number;
 };
 
-function extractFormationFromPricingSnapshot(
-  snapshot: unknown
-): FormationBundle | null {
-  const root = asRecord(snapshot);
-  if (!root) return null;
+export type HistoricalTieret = {
+  ok: true;
+  historicalContextId: string;
+  referenceDate: string;
+  versionIdsByCode: Record<CommercialPriceTierCode, string>;
+  rates: HistoricalFormationRates;
+  tiers: CommercialPriceTierRow[];
+  /** Versão ATACADO (referência de formação). */
+  anchorPriceTableVersionId: string;
+};
 
-  const item = asRecord(root.item) ?? root;
-  const formula = asRecord(item.formulaSnapshotJson) ?? asRecord(root.formulaSnapshotJson);
-  const rates = asRecord(formula?.rates) ?? asRecord(item.rates);
-  const outputs = asRecord(formula?.outputs);
+export type HistoricalTieretFailure = {
+  ok: false;
+  reasonCode: SalesOrderCommercialMarginReasonCode;
+  message: string;
+};
 
-  const frozenTotalCost =
-    toNum(item.frozenTotalCost, NaN) ||
-    toNum(outputs?.frozenTotalCost, NaN) ||
-    toNum(asRecord(root.proposalDefaults)?.unitCost, NaN);
+export type HistoricalTieretResult = HistoricalTieret | HistoricalTieretFailure;
 
-  const taxRate =
-    rateFromPercentOrFraction(rates?.taxRate) ??
-    rateFromPercentOrFraction(item.taxRate) ??
-    null;
-  const otherRate = rateFromPercentOrFraction(rates?.otherRate) ?? 0;
-  const freightRate =
-    rateFromPercentOrFraction(rates?.freightRate) ??
-    rateFromPercentOrFraction(item.freightPercent) ??
-    rateFromPercentOrFraction(formula?.freightPercent) ??
-    rateFromPercentOrFraction(asRecord(root.proposalDefaults)?.freightPercent) ??
-    0;
-  const freightAbs =
-    toNum(formula?.freight, NaN) >= 0 && Number.isFinite(toNum(formula?.freight, NaN))
-      ? toNum(formula?.freight, 0)
-      : toNum(item.freightAbsolute, 0) ||
-        toNum(asRecord(root.proposalDefaults)?.freightAbsolute, 0);
+type LoadedItem = {
+  priceTableVersionId: string;
+  productId: string;
+  frozenTotalCost: unknown;
+  marginPct: unknown;
+  salePrice: unknown;
+  commissionPerc: unknown;
+  formulaSnapshotJson: unknown;
+};
 
-  const version =
-    asRecord(root.version) ??
-    null;
-  const priceTableVersionId =
-    (typeof formula?.priceTableVersionId === "string" && formula.priceTableVersionId) ||
-    (typeof version?.id === "string" && version.id) ||
-    (typeof item.priceTableVersionId === "string" && item.priceTableVersionId) ||
-    null;
+function extractFormationRatesFromItem(
+  item: LoadedItem
+):
+  | { ok: true; rates: HistoricalFormationRates }
+  | { ok: false; reasonCode: SalesOrderCommercialMarginReasonCode; message: string } {
+  const cost = toNum(item.frozenTotalCost);
+  if (cost == null || cost <= 0) {
+    return {
+      ok: false,
+      reasonCode: "COST_NOT_FOUND",
+      message: "Não encontramos custo válido para a data do Pedido.",
+    };
+  }
 
-  if (!Number.isFinite(frozenTotalCost) || frozenTotalCost <= 0 || taxRate == null) {
-    return null;
+  const formula = asRecord(item.formulaSnapshotJson);
+  if (!formula) {
+    return {
+      ok: false,
+      reasonCode: "PRODUCT_WITHOUT_PRICE_FORMATION",
+      message: "Produto sem formação de preço cadastrada (formulaSnapshot ausente).",
+    };
+  }
+
+  const rates = asRecord(formula.rates);
+  if (!rates) {
+    return {
+      ok: false,
+      reasonCode: "PRODUCT_WITHOUT_PRICE_FORMATION",
+      message: "A formação de preço está incompleta (rates ausentes).",
+    };
+  }
+
+  const tax = readExplicitRate(rates.taxRate);
+  if (!tax.present) {
+    return { ok: false, reasonCode: "TAX_NOT_FOUND", message: "Imposto da formação ausente." };
+  }
+
+  const other = readExplicitRate(rates.otherRate);
+  if (!other.present) {
+    return {
+      ok: false,
+      reasonCode: "OTHER_VARIABLES_NOT_DEFINED",
+      message: "Outras variáveis da formação ausentes.",
+    };
+  }
+
+  let freightRate: number | null = null;
+  const freightRateRaw = readExplicitRate(rates.freightRate);
+  if (freightRateRaw.present) {
+    freightRate = freightRateRaw.value;
+  } else {
+    // freightPercent no snapshot é percentual explícito (ex.: 3 = 3%).
+    const freightPercent = readExplicitAbsolute(formula.freightPercent);
+    if (freightPercent.present) {
+      freightRate = freightPercent.value / 100;
+    }
+  }
+  if (freightRate == null) {
+    return {
+      ok: false,
+      reasonCode: "FREIGHT_NOT_DEFINED",
+      message: "Frete percentual da formação ausente.",
+    };
+  }
+
+  const freightAbs = readExplicitAbsolute(formula.freight);
+  if (!freightAbs.present) {
+    return {
+      ok: false,
+      reasonCode: "FREIGHT_NOT_DEFINED",
+      message: "Frete absoluto da formação ausente.",
+    };
   }
 
   return {
-    frozenTotalCost,
-    taxRate,
-    otherRate,
-    freightRate,
-    freightAbs,
-    priceTableVersionId,
-    source: "EXACT_PROPOSAL_SNAPSHOT",
-    warnings: [],
+    ok: true,
+    rates: {
+      frozenCostUnit: cost,
+      taxRate: tax.value,
+      otherRate: other.value,
+      freightRate,
+      freightAbsoluteUnit: freightAbs.value,
+    },
   };
 }
 
-async function loadFormationFromPriceTableVersion(
+function ratesEqual(a: HistoricalFormationRates, b: HistoricalFormationRates): boolean {
+  return (
+    Math.abs(a.frozenCostUnit - b.frozenCostUnit) <= COST_EPS &&
+    Math.abs(a.taxRate - b.taxRate) <= RATE_EPS &&
+    Math.abs(a.otherRate - b.otherRate) <= RATE_EPS &&
+    Math.abs(a.freightRate - b.freightRate) <= RATE_EPS &&
+    Math.abs(a.freightAbsoluteUnit - b.freightAbsoluteUnit) <= COST_EPS
+  );
+}
+
+/**
+ * Carrega conjuntos históricos coerentes (4 faixas) para vários produtos em uma data.
+ * Consultas: tabelas (1) + versões (≤4) + itens (1) — sem N+1 por produto.
+ */
+export async function loadHistoricalCommercialFormationsBatch(
   db: PrismaClient,
-  priceTableVersionId: string,
-  productId: string
-): Promise<FormationBundle | null> {
-  const item = await db.priceTableItem.findUnique({
+  productIds: string[],
+  referenceDate: Date
+): Promise<Map<string, HistoricalTieretResult>> {
+  const result = new Map<string, HistoricalTieretResult>();
+  const uniqueProductIds = [...new Set(productIds.filter(Boolean))];
+  const refIso = toCivilDateKey(referenceDate);
+  if (!refIso) {
+    for (const id of uniqueProductIds) {
+      result.set(id, {
+        ok: false,
+        reasonCode: "MISSING_ORDER_DATE",
+        message: "Pedido sem data de emissão.",
+      });
+    }
+    return result;
+  }
+
+  if (uniqueProductIds.length === 0) return result;
+
+  const tables = await db.priceTable.findMany({
+    where: { code: { in: [...COMMERCIAL_PRICE_TIER_CODES] }, status: "ACTIVE" },
+    select: { id: true, code: true, name: true },
+  });
+  const tableByCode = new Map(tables.map((t) => [t.code as CommercialPriceTierCode, t]));
+  const missingCodes = COMMERCIAL_PRICE_TIER_CODES.filter((c) => !tableByCode.has(c));
+  if (missingCodes.length > 0) {
+    for (const id of uniqueProductIds) {
+      result.set(id, {
+        ok: false,
+        reasonCode: "INCOMPLETE_MARGIN_TIERS",
+        message: `Tabelas comerciais ausentes: ${missingCodes.join(", ")}.`,
+      });
+    }
+    return result;
+  }
+
+  const versionIdsByCode = {} as Record<CommercialPriceTierCode, string>;
+  const versionIdToCode = new Map<string, CommercialPriceTierCode>();
+
+  for (const code of COMMERCIAL_PRICE_TIER_CODES) {
+    const table = tableByCode.get(code)!;
+    // Até 2 versões sobrepostas: detecta ambiguidade sem inventar qual usar.
+    const overlapping = await db.priceTableVersion.findMany({
+      where: {
+        priceTableId: table.id,
+        status: { in: ["PUBLISHED", "ARCHIVED"] },
+        AND: [
+          { OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: referenceDate } }] },
+          { OR: [{ effectiveTo: null }, { effectiveTo: { gt: referenceDate } }] },
+        ],
+      },
+      orderBy: [{ effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
+      take: 2,
+      select: { id: true },
+    });
+    if (overlapping.length === 0) {
+      for (const id of uniqueProductIds) {
+        result.set(id, {
+          ok: false,
+          reasonCode: "HISTORICAL_FORMATION_NOT_FOUND",
+          message: `Sem versão publicada de ${code} na data do Pedido.`,
+        });
+      }
+      return result;
+    }
+    if (overlapping.length > 1) {
+      for (const id of uniqueProductIds) {
+        result.set(id, {
+          ok: false,
+          reasonCode: "HISTORICAL_FORMATION_AMBIGUOUS",
+          message: `Existem duas formações possíveis de ${code} para essa data.`,
+        });
+      }
+      return result;
+    }
+    const version = overlapping[0]!;
+    versionIdsByCode[code] = version.id;
+    versionIdToCode.set(version.id, code);
+  }
+
+  const versionIds = Object.values(versionIdsByCode);
+  const historicalContextId = versionIds.slice().sort().join("|");
+
+  const items = await db.priceTableItem.findMany({
     where: {
-      priceTableVersionId_productId: { priceTableVersionId, productId },
+      priceTableVersionId: { in: versionIds },
+      productId: { in: uniqueProductIds },
     },
     select: {
+      priceTableVersionId: true,
+      productId: true,
       frozenTotalCost: true,
-      formulaSnapshotJson: true,
+      marginPct: true,
       salePrice: true,
-      PriceTableVersion: { select: { freightPercent: true } },
+      commissionPerc: true,
+      formulaSnapshotJson: true,
     },
   });
-  if (!item) return null;
-  const formula = asRecord(item.formulaSnapshotJson);
-  const rates = asRecord(formula?.rates);
-  const frozenTotalCost = toNum(item.frozenTotalCost, NaN);
-  const taxRate = rateFromPercentOrFraction(rates?.taxRate);
-  if (!Number.isFinite(frozenTotalCost) || frozenTotalCost <= 0 || taxRate == null) {
-    return null;
+
+  const itemsByProduct = new Map<string, Map<CommercialPriceTierCode, LoadedItem>>();
+  for (const item of items) {
+    const code = versionIdToCode.get(item.priceTableVersionId);
+    if (!code) continue;
+    let byCode = itemsByProduct.get(item.productId);
+    if (!byCode) {
+      byCode = new Map();
+      itemsByProduct.set(item.productId, byCode);
+    }
+    byCode.set(code, item);
   }
-  return {
-    frozenTotalCost,
-    taxRate,
-    otherRate: rateFromPercentOrFraction(rates?.otherRate) ?? 0,
-    freightRate:
-      rateFromPercentOrFraction(rates?.freightRate) ??
-      rateFromPercentOrFraction(item.PriceTableVersion?.freightPercent) ??
-      rateFromPercentOrFraction(formula?.freightPercent) ??
-      0,
-    freightAbs: toNum(formula?.freight, 0),
-    priceTableVersionId,
-    source: "EXACT_PRICE_TABLE_VERSION",
-    warnings: [],
-  };
-}
 
-async function reconstructFormationAtOrderDate(
-  db: PrismaClient,
-  priceTableId: string,
-  productId: string,
-  referenceDate: Date
-): Promise<FormationBundle | null> {
-  const version = await resolvePublishedPriceTableVersionForDate(
-    db,
-    priceTableId,
-    referenceDate
-  );
-  if (!version) return null;
-  const bundle = await loadFormationFromPriceTableVersion(db, version.id, productId);
-  if (!bundle) return null;
-  return {
-    ...bundle,
-    source: "RECONSTRUCTED_AT_ORDER_DATE",
-    warnings: [
-      "Formação reconstruída pela versão da tabela comercial vigente na data do pedido.",
-    ],
-  };
-}
+  for (const productId of uniqueProductIds) {
+    const byCode = itemsByProduct.get(productId);
+    if (!byCode || byCode.size < COMMERCIAL_PRICE_TIER_CODES.length) {
+      const missing = COMMERCIAL_PRICE_TIER_CODES.filter((c) => !byCode?.has(c));
+      result.set(productId, {
+        ok: false,
+        reasonCode:
+          !byCode || byCode.size === 0
+            ? "PRODUCT_WITHOUT_PRICE_FORMATION"
+            : "INCOMPLETE_MARGIN_TIERS",
+        message:
+          !byCode || byCode.size === 0
+            ? "Produto sem formação de preço cadastrada."
+            : `Faixas incompletas na data do Pedido: ${missing.join(", ")}.`,
+      });
+      continue;
+    }
 
-function bandLabelFromCode(code: string | null | undefined): string | null {
-  if (!code) return null;
-  return code;
+    const tiers: CommercialPriceTierRow[] = [];
+    let anchorRates: HistoricalFormationRates | null = null;
+    let inconsistent = false;
+    let rateFailure: HistoricalTieretFailure | null = null;
+
+    for (const code of COMMERCIAL_PRICE_TIER_CODES) {
+      const item = byCode.get(code)!;
+      const salePrice = toNum(item.salePrice);
+      const commissionPercent = toNum(item.commissionPerc);
+      if (salePrice == null || salePrice <= 0) {
+        rateFailure = {
+          ok: false,
+          reasonCode: "PRODUCT_WITHOUT_PRICE_FORMATION",
+          message: `Faixa ${code} sem preço de venda válido.`,
+        };
+        break;
+      }
+      // Motor oficial de comissão exige percentual > 0; null/≤0 = não definido.
+      if (commissionPercent == null || commissionPercent <= 0) {
+        rateFailure = {
+          ok: false,
+          reasonCode: "COMMISSION_NOT_DEFINED",
+          message: `Faixa ${code} sem percentual de comissão.`,
+        };
+        break;
+      }
+
+      const extracted = extractFormationRatesFromItem(item);
+      if (!extracted.ok) {
+        rateFailure = {
+          ok: false,
+          reasonCode: extracted.reasonCode,
+          message: extracted.message,
+        };
+        break;
+      }
+
+      if (!anchorRates) {
+        anchorRates = extracted.rates;
+      } else if (!ratesEqual(anchorRates, extracted.rates)) {
+        inconsistent = true;
+        break;
+      }
+
+      const table = tableByCode.get(code)!;
+      tiers.push({
+        code,
+        name: table.name,
+        salePrice,
+        commissionPercent,
+      });
+    }
+
+    if (rateFailure) {
+      result.set(productId, rateFailure);
+      continue;
+    }
+    if (inconsistent || !anchorRates) {
+      result.set(productId, {
+        ok: false,
+        reasonCode: "INCONSISTENT_PRICE_FORMATION_SET",
+        message:
+          "As faixas comerciais da data do Pedido têm custo/imposto/frete/outras variáveis inconsistentes.",
+      });
+      continue;
+    }
+
+    result.set(productId, {
+      ok: true,
+      historicalContextId,
+      referenceDate: refIso,
+      versionIdsByCode,
+      rates: anchorRates,
+      tiers,
+      anchorPriceTableVersionId: versionIdsByCode.ATACADO,
+    });
+  }
+
+  return result;
 }
 
 export async function calculateCommercialMarginsForSalesOrders(
   prisma: PrismaClient,
   orders: Array<{
     id: string;
-    proposalId?: string | null;
     issueDate?: Date | string | null;
     items?: SalesOrderItemForMargin[] | null;
   }>
@@ -213,61 +420,29 @@ export async function calculateCommercialMarginsForSalesOrders(
 
   if (orders.length === 0) return result;
 
-  const proposalItemIds = [
-    ...new Set(
-      orders.flatMap((o) => (o.items ?? []).map((i) => i.proposalItemId).filter(Boolean))
-    ),
-  ] as string[];
-  const proposalIds = [
-    ...new Set(orders.map((o) => o.proposalId).filter(Boolean)),
-  ] as string[];
+  type WorkItem = {
+    orderId: string;
+    item: SalesOrderItemForMargin;
+    soldQuantity: number;
+    negotiatedUnitPrice: number;
+    soldValuePreview: number;
+    refIso: string | null;
+    referenceDate: Date | null;
+  };
 
-  const [proposalItems, proposals] = await Promise.all([
-    proposalItemIds.length
-      ? prisma.proposalItem.findMany({
-          where: { id: { in: proposalItemIds } },
-          select: {
-            id: true,
-            priceTableId: true,
-            priceTableVersionId: true,
-            pricingSnapshotJson: true,
-            unitCost: true,
-            taxesPerc: true,
-            commissionPerc: true,
-            freightValue: true,
-            negotiatedPrice: true,
-          },
-        })
-      : Promise.resolve([]),
-    proposalIds.length
-      ? prisma.proposal.findMany({
-          where: { id: { in: proposalIds } },
-          select: { id: true, priceTableId: true, priceTableCode: true },
-        })
-      : Promise.resolve([]),
-  ]);
-
-  const proposalItemById = new Map(proposalItems.map((p) => [p.id, p]));
-  const proposalById = new Map(proposals.map((p) => [p.id, p]));
-  const tiersCache = new CommercialTierCache(prisma);
+  const workItems: WorkItem[] = [];
+  const productIdsByDate = new Map<string, { date: Date; productIds: Set<string> }>();
 
   for (const order of orders) {
     const refRaw = order.issueDate;
     const referenceDate =
-      refRaw instanceof Date
-        ? refRaw
-        : refRaw
-          ? new Date(refRaw)
-          : null;
+      refRaw instanceof Date ? refRaw : refRaw ? new Date(refRaw) : null;
     const refOk = referenceDate && Number.isFinite(referenceDate.getTime());
     const refIso = refOk ? toCivilDateKey(referenceDate!) : null;
-    const byItemId = new Map<string, SalesOrderCommercialMarginItemPayload>();
-    const itemPayloads: SalesOrderCommercialMarginItemPayload[] = [];
-    let totalActiveSoldValue = 0;
 
     for (const item of order.items ?? []) {
-      const orderedQty = toNum(item.quantity, 0);
-      const canceledQty = toNum(item.canceledQuantity, 0);
+      const orderedQty = toNum(item.quantity) ?? 0;
+      const canceledQty = toNum(item.canceledQuantity) ?? 0;
       const isFullyCanceled =
         item.nomusIsCanceled === true ||
         item.nomusIsCut === true ||
@@ -279,223 +454,201 @@ export async function calculateCommercialMarginsForSalesOrders(
         canceledQuantity: canceledQty,
         isFullyCanceled,
       });
-      const negotiatedUnitPrice = toNum(item.negotiatedPrice, NaN);
+      // Preço praticado do Pedido (já líquido de desconto no espelho Nomus/IndusCost).
+      // Não reaplicar desconto sobre negotiatedPrice.
+      const negotiatedUnitPrice = toNum(item.negotiatedPrice);
+      const price = negotiatedUnitPrice != null && negotiatedUnitPrice > 0 ? negotiatedUnitPrice : NaN;
       const soldValuePreview =
-        soldQuantity > 0 && Number.isFinite(negotiatedUnitPrice)
-          ? soldQuantity * negotiatedUnitPrice
-          : 0;
-      if (soldQuantity > 0 && soldValuePreview > 0) {
-        totalActiveSoldValue += soldValuePreview;
-      }
+        soldQuantity > 0 && Number.isFinite(price) ? soldQuantity * price : 0;
 
-      if (!refOk || !item.productId) {
-        const unavailable = unavailableCommercialMarginItem({
-          soldQuantity,
-          negotiatedUnitPrice: Number.isFinite(negotiatedUnitPrice) ? negotiatedUnitPrice : 0,
-          soldValue: soldValuePreview,
-          referenceDate: refIso,
-          warnings: [
-            !refOk
-              ? "Pedido sem data de emissão para reconstrução histórica."
-              : "Item sem produto vinculado.",
-          ],
-        });
-        byItemId.set(item.id, unavailable);
-        itemPayloads.push(unavailable);
-        continue;
-      }
-
-      if (soldQuantity <= 0) {
-        const skipped = unavailableCommercialMarginItem({
-          soldQuantity: 0,
-          negotiatedUnitPrice: Number.isFinite(negotiatedUnitPrice) ? negotiatedUnitPrice : 0,
-          soldValue: 0,
-          referenceDate: refIso,
-          warnings: ["Item cancelado — excluído da margem comercial."],
-        });
-        byItemId.set(item.id, skipped);
-        continue;
-      }
-
-      const proposalItem = item.proposalItemId
-        ? proposalItemById.get(item.proposalItemId)
-        : undefined;
-      const proposal = order.proposalId ? proposalById.get(order.proposalId) : undefined;
-
-      let formation =
-        extractFormationFromPricingSnapshot(proposalItem?.pricingSnapshotJson) ?? null;
-
-      if (!formation && proposalItem) {
-        const cost = toNum(proposalItem.unitCost, NaN);
-        const taxRate = rateFromPercentOrFraction(proposalItem.taxesPerc);
-        const snap = asRecord(proposalItem.pricingSnapshotJson);
-        const defaults = asRecord(snap?.proposalDefaults);
-        if (Number.isFinite(cost) && cost > 0 && taxRate != null) {
-          formation = {
-            frozenTotalCost: cost,
-            taxRate,
-            otherRate: 0,
-            freightRate: rateFromPercentOrFraction(defaults?.freightPercent) ?? 0,
-            freightAbs:
-              toNum(defaults?.freightAbsolute, 0) ||
-              (toNum(proposalItem.freightValue, 0) > 0 && toNum(proposalItem.quantity as never, 0) > 0
-                ? 0
-                : 0),
-            priceTableVersionId: proposalItem.priceTableVersionId ?? null,
-            source: "EXACT_PROPOSAL_SNAPSHOT",
-            warnings: [
-              "Formação parcialmente recuperada dos campos da proposta (snapshot incompleto).",
-            ],
-          };
-        }
-      }
-
-      if (!formation && proposalItem?.priceTableVersionId && item.productId) {
-        formation = await loadFormationFromPriceTableVersion(
-          prisma,
-          proposalItem.priceTableVersionId,
-          item.productId
-        );
-      }
-
-      const priceTableId =
-        proposalItem?.priceTableId ?? proposal?.priceTableId ?? null;
-      if (!formation && priceTableId) {
-        formation = await reconstructFormationAtOrderDate(
-          prisma,
-          priceTableId,
-          item.productId,
-          referenceDate!
-        );
-      }
-
-      let tiersResult: Awaited<ReturnType<CommercialTierCache["get"]>>;
-      try {
-        tiersResult = await tiersCache.get(item.productId, referenceDate!);
-      } catch {
-        const unavailable = unavailableCommercialMarginItem({
-          soldQuantity,
-          negotiatedUnitPrice,
-          soldValue: soldValuePreview,
-          referenceDate: refIso,
-          warnings: [
-            "Faixas comerciais (Atacado/Varejo) indisponíveis na data do pedido — comissão proporcional indisponível.",
-          ],
-        });
-        byItemId.set(item.id, unavailable);
-        itemPayloads.push(unavailable);
-        continue;
-      }
-      if (!tiersResult.ok) {
-        const unavailable = unavailableCommercialMarginItem({
-          soldQuantity,
-          negotiatedUnitPrice,
-          soldValue: soldValuePreview,
-          referenceDate: refIso,
-          warnings: [
-            "Faixas comerciais (Atacado/Varejo) incompletas na data do pedido — comissão proporcional indisponível.",
-          ],
-        });
-        byItemId.set(item.id, unavailable);
-        itemPayloads.push(unavailable);
-        continue;
-      }
-
-      // Sem snapshot/versão: reconstrói pela tabela ATACADO publicada na data do pedido.
-      if (!formation) {
-        const atacadoTable = await prisma.priceTable.findFirst({
-          where: { code: COMMERCIAL_PRICE_TIER_CODES[0], status: "ACTIVE" },
-          select: { id: true },
-        });
-        if (atacadoTable) {
-          formation = await reconstructFormationAtOrderDate(
-            prisma,
-            atacadoTable.id,
-            item.productId,
-            referenceDate!
-          );
-        }
-      }
-
-      if (!formation) {
-        const unavailable = unavailableCommercialMarginItem({
-          soldQuantity,
-          negotiatedUnitPrice,
-          soldValue: soldValuePreview,
-          referenceDate: refIso,
-          warnings: [
-            "Margem comercial indisponível. Não foi possível identificar a formação de preço utilizada nesta venda.",
-          ],
-        });
-        byItemId.set(item.id, unavailable);
-        itemPayloads.push(unavailable);
-        continue;
-      }
-
-      const tierResolution = resolveCommercialPriceTier({
-        soldUnitPrice: negotiatedUnitPrice,
-        tiers: tiersResult.tiers,
-      });
-      if (!tierResolution.ok) {
-        const unavailable = unavailableCommercialMarginItem({
-          soldQuantity,
-          negotiatedUnitPrice,
-          soldValue: soldValuePreview,
-          referenceDate: refIso,
-          warnings: [tierResolution.message],
-        });
-        byItemId.set(item.id, unavailable);
-        itemPayloads.push(unavailable);
-        continue;
-      }
-
-      const commissionRate = tierResolution.ratePercent / 100;
-      const interpolation = tierResolution.interpolation;
-      const payload = calculateSalesOrderItemCommercialMargin({
+      workItems.push({
+        orderId: order.id,
+        item,
         soldQuantity,
-        negotiatedUnitPrice,
-        frozenTotalCost: formation.frozenTotalCost,
-        rates: {
-          taxRate: formation.taxRate,
-          commissionRate,
-          otherRate: formation.otherRate,
-          freightRate: formation.freightRate,
-          freight: formation.freightAbs,
-        },
-        calculationSource: formation.source,
-        priceTableVersionId: formation.priceTableVersionId,
-        referenceDate: refIso,
-        lowerMarginBand: bandLabelFromCode(
-          interpolation?.fromTierCode ?? tierResolution.tierCode
-        ),
-        upperMarginBand: bandLabelFromCode(
-          interpolation?.toTierCode ?? tierResolution.tierCode
-        ),
-        lowerBandPrice: interpolation?.fromSalePrice ?? null,
-        upperBandPrice: interpolation?.toSalePrice ?? null,
-        warnings: [
-          ...formation.warnings,
-          ...(tierResolution.outOfTablePrice
-            ? ["Preço abaixo da menor faixa — comissão fora de tabela."]
-            : []),
-        ],
+        negotiatedUnitPrice: Number.isFinite(price) ? price : 0,
+        soldValuePreview,
+        refIso,
+        referenceDate: refOk ? referenceDate! : null,
       });
 
-      byItemId.set(item.id, payload);
-      itemPayloads.push(payload);
+      if (refOk && item.productId && soldQuantity > 0) {
+        const key = refIso!;
+        let bucket = productIdsByDate.get(key);
+        if (!bucket) {
+          bucket = { date: referenceDate!, productIds: new Set() };
+          productIdsByDate.set(key, bucket);
+        }
+        bucket.productIds.add(item.productId);
+      }
+    }
+  }
+
+  /** productId|dateIso → formation */
+  const formationByKey = new Map<string, HistoricalTieretResult>();
+  for (const [dateIso, bucket] of productIdsByDate) {
+    const batch = await loadHistoricalCommercialFormationsBatch(
+      prisma,
+      [...bucket.productIds],
+      bucket.date
+    );
+    for (const [productId, formation] of batch) {
+      formationByKey.set(`${productId}|${dateIso}`, formation);
+    }
+  }
+
+  const byOrderPayloads = new Map<
+    string,
+    {
+      byItemId: Map<string, SalesOrderCommercialMarginItemPayload>;
+      itemPayloads: SalesOrderCommercialMarginItemPayload[];
+      totalActiveSoldValue: number;
+    }
+  >();
+
+  for (const order of orders) {
+    byOrderPayloads.set(order.id, {
+      byItemId: new Map(),
+      itemPayloads: [],
+      totalActiveSoldValue: 0,
+    });
+  }
+
+  for (const work of workItems) {
+    const orderBag = byOrderPayloads.get(work.orderId)!;
+    if (work.soldQuantity > 0 && work.soldValuePreview > 0) {
+      orderBag.totalActiveSoldValue += work.soldValuePreview;
     }
 
+    if (!work.refIso || !work.referenceDate) {
+      const unavailable = unavailableCommercialMarginItem({
+        soldQuantity: work.soldQuantity,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: work.soldValuePreview,
+        referenceDate: work.refIso,
+        reasonCode: "MISSING_ORDER_DATE",
+      });
+      orderBag.byItemId.set(work.item.id, unavailable);
+      if (work.soldQuantity > 0) orderBag.itemPayloads.push(unavailable);
+      continue;
+    }
+
+    if (!work.item.productId) {
+      const unavailable = unavailableCommercialMarginItem({
+        soldQuantity: work.soldQuantity,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: work.soldValuePreview,
+        referenceDate: work.refIso,
+        reasonCode: "MISSING_PRODUCT",
+      });
+      orderBag.byItemId.set(work.item.id, unavailable);
+      if (work.soldQuantity > 0) orderBag.itemPayloads.push(unavailable);
+      continue;
+    }
+
+    if (work.soldQuantity <= 0) {
+      const skipped = unavailableCommercialMarginItem({
+        soldQuantity: 0,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: 0,
+        referenceDate: work.refIso,
+        reasonCode: "ITEM_CANCELED",
+      });
+      orderBag.byItemId.set(work.item.id, skipped);
+      continue;
+    }
+
+    if (!(work.negotiatedUnitPrice > 0)) {
+      const unavailable = unavailableCommercialMarginItem({
+        soldQuantity: work.soldQuantity,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: 0,
+        referenceDate: work.refIso,
+        reasonCode: "INVALID_NEGOTIATED_PRICE",
+      });
+      orderBag.byItemId.set(work.item.id, unavailable);
+      orderBag.itemPayloads.push(unavailable);
+      continue;
+    }
+
+    const formation = formationByKey.get(`${work.item.productId}|${work.refIso}`);
+    if (!formation || !formation.ok) {
+      const unavailable = unavailableCommercialMarginItem({
+        soldQuantity: work.soldQuantity,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: work.soldValuePreview,
+        referenceDate: work.refIso,
+        reasonCode: formation?.ok === false ? formation.reasonCode : "HISTORICAL_FORMATION_NOT_FOUND",
+        warnings:
+          formation?.ok === false
+            ? [formation.message]
+            : undefined,
+      });
+      orderBag.byItemId.set(work.item.id, unavailable);
+      orderBag.itemPayloads.push(unavailable);
+      continue;
+    }
+
+    const tierResolution = resolveCommercialPriceTier({
+      soldUnitPrice: work.negotiatedUnitPrice,
+      tiers: formation.tiers,
+    });
+    if (!tierResolution.ok) {
+      const unavailable = unavailableCommercialMarginItem({
+        soldQuantity: work.soldQuantity,
+        negotiatedUnitPrice: work.negotiatedUnitPrice,
+        soldValue: work.soldValuePreview,
+        referenceDate: work.refIso,
+        reasonCode:
+          tierResolution.code === "NO_COMMISSION_TABLE_RATE"
+            ? "COMMISSION_NOT_DEFINED"
+            : tierResolution.code === "INVALID_COMMERCIAL_PRICE_RANGE"
+              ? "INCONSISTENT_PRICE_FORMATION_SET"
+              : "INCOMPLETE_MARGIN_TIERS",
+        warnings: [tierResolution.message],
+      });
+      orderBag.byItemId.set(work.item.id, unavailable);
+      orderBag.itemPayloads.push(unavailable);
+      continue;
+    }
+
+    const commissionRate = tierResolution.ratePercent / 100;
+    const interpolation = tierResolution.interpolation;
+    const payload = calculateSalesOrderItemCommercialMargin({
+      soldQuantity: work.soldQuantity,
+      negotiatedUnitPrice: work.negotiatedUnitPrice,
+      frozenTotalCost: formation.rates.frozenCostUnit,
+      rates: {
+        taxRate: formation.rates.taxRate,
+        commissionRate,
+        otherRate: formation.rates.otherRate,
+        freightRate: formation.rates.freightRate,
+        freight: formation.rates.freightAbsoluteUnit,
+      },
+      historicalContextId: formation.historicalContextId,
+      priceTableVersionId: formation.anchorPriceTableVersionId,
+      referenceDate: work.refIso,
+      lowerMarginBand: interpolation?.fromTierCode ?? tierResolution.tierCode,
+      upperMarginBand: interpolation?.toTierCode ?? tierResolution.tierCode,
+      lowerBandPrice: interpolation?.fromSalePrice ?? null,
+      upperBandPrice: interpolation?.toSalePrice ?? null,
+      warnings: tierResolution.outOfTablePrice
+        ? ["Preço abaixo da menor faixa — comissão fora de tabela."]
+        : [],
+    });
+
+    orderBag.byItemId.set(work.item.id, payload);
+    orderBag.itemPayloads.push(payload);
+  }
+
+  for (const order of orders) {
+    const bag = byOrderPayloads.get(order.id)!;
     result.set(order.id, {
-      summary: summarizeSalesOrderCommercialMargins(itemPayloads, {
-        totalActiveSoldValue,
+      summary: summarizeSalesOrderCommercialMargins(bag.itemPayloads, {
+        totalActiveSoldValue: bag.totalActiveSoldValue,
       }),
-      byItemId,
+      byItemId: bag.byItemId,
     });
   }
 
   return result;
 }
-
-// re-export for tests that mock tiers
-export { loadCommercialPriceTiersForProduct };
-export type { CommercialPriceTierRow };

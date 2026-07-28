@@ -1,16 +1,56 @@
 /**
- * Margem comercial da venda (Pedido de Venda) — domínio puro.
- * Reutiliza a inversa da formação (`calculateCommercialMarginRateFromNegotiatedPrice`).
+ * Margem comercial do Pedido de Venda — domínio puro.
+ * Usa apenas dados do Pedido + formação histórica (sem Proposta).
  */
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { calculateCommercialMarginRateFromNegotiatedPrice } from "./priceTablePublication.js";
 import type { CommercialPriceTierCode } from "./commissions/commission-commercial-tier.js";
 
 export type SalesOrderCommercialMarginSource =
-  | "EXACT_PROPOSAL_SNAPSHOT"
-  | "EXACT_PRICE_TABLE_VERSION"
-  | "RECONSTRUCTED_AT_ORDER_DATE"
+  | "HISTORICAL_PRICE_FORMATION"
   | "UNAVAILABLE";
+
+export type SalesOrderCommercialMarginReasonCode =
+  | "PRODUCT_WITHOUT_PRICE_FORMATION"
+  | "HISTORICAL_FORMATION_NOT_FOUND"
+  | "HISTORICAL_FORMATION_AMBIGUOUS"
+  | "INCOMPLETE_MARGIN_TIERS"
+  | "COST_NOT_FOUND"
+  | "TAX_NOT_FOUND"
+  | "FREIGHT_NOT_DEFINED"
+  | "COMMISSION_NOT_DEFINED"
+  | "OTHER_VARIABLES_NOT_DEFINED"
+  | "INVALID_NEGOTIATED_PRICE"
+  | "INCONSISTENT_PRICE_FORMATION_SET"
+  | "MISSING_PRODUCT"
+  | "MISSING_ORDER_DATE"
+  | "ITEM_CANCELED"
+  | "INVALID_ACTIVE_QUANTITY";
+
+export const SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL: Record<
+  SalesOrderCommercialMarginReasonCode,
+  string
+> = {
+  PRODUCT_WITHOUT_PRICE_FORMATION: "Produto sem formação de preço cadastrada.",
+  HISTORICAL_FORMATION_NOT_FOUND:
+    "Não encontramos formação de preço válida para a data do Pedido.",
+  HISTORICAL_FORMATION_AMBIGUOUS:
+    "Existem duas formações possíveis para essa data.",
+  INCOMPLETE_MARGIN_TIERS: "A formação de preço está incompleta (faixas).",
+  COST_NOT_FOUND: "Não encontramos custo válido para a data do Pedido.",
+  TAX_NOT_FOUND: "Não encontramos o imposto da formação de preço.",
+  FREIGHT_NOT_DEFINED: "O frete da formação de preço não está definido.",
+  COMMISSION_NOT_DEFINED: "Não encontramos a regra de comissão.",
+  OTHER_VARIABLES_NOT_DEFINED:
+    "As outras variáveis da formação de preço não estão definidas.",
+  INVALID_NEGOTIATED_PRICE: "O preço do item é inválido.",
+  INCONSISTENT_PRICE_FORMATION_SET:
+    "As faixas comerciais da data do Pedido estão inconsistentes.",
+  MISSING_PRODUCT: "Item sem produto vinculado.",
+  MISSING_ORDER_DATE: "Pedido sem data de emissão.",
+  ITEM_CANCELED: "Item cancelado — excluído da margem comercial.",
+  INVALID_ACTIVE_QUANTITY: "Quantidade ativa inválida.",
+};
 
 export type SalesOrderCommercialMarginItemPayload = {
   soldQuantity: number;
@@ -37,10 +77,12 @@ export type SalesOrderCommercialMarginItemPayload = {
   lowerBandPrice: number | null;
   upperBandPrice: number | null;
   calculationSource: SalesOrderCommercialMarginSource;
+  historicalContextId: string | null;
   priceTableVersionId: string | null;
   referenceDate: string | null;
-  warnings: string[];
   isComplete: boolean;
+  reasonCode: SalesOrderCommercialMarginReasonCode | null;
+  warnings: string[];
 };
 
 export type SalesOrderCommercialMarginSummaryPayload = {
@@ -64,6 +106,31 @@ export type CommercialMarginFormationRates = {
   freight: number;
 };
 
+/** Lê fração explícita: ausente ≠ zero. Aceita percentuais > 1 convertendo /100. */
+export function readExplicitRate(
+  value: unknown
+): { present: true; value: number } | { present: false } {
+  if (value == null || value === "") return { present: false };
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return { present: false };
+  return { present: true, value: n > 1 ? n / 100 : n };
+}
+
+/** Lê valor absoluto explícito (inclui 0). */
+export function readExplicitAbsolute(
+  value: unknown
+): { present: true; value: number } | { present: false } {
+  if (value == null || value === "") return { present: false };
+  if (typeof value === "object" && value !== null && "toNumber" in value) {
+    const n = (value as { toNumber: () => number }).toNumber();
+    if (!Number.isFinite(n) || n < 0) return { present: false };
+    return { present: true, value: n };
+  }
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n < 0) return { present: false };
+  return { present: true, value: n };
+}
+
 export function resolveActiveSoldQuantity(input: {
   orderedQuantity: number;
   canceledQuantity?: number | null;
@@ -75,12 +142,55 @@ export function resolveActiveSoldQuantity(input: {
   return Math.max(0, ordered - canceled);
 }
 
+export function unavailableCommercialMarginItem(input: {
+  soldQuantity?: number;
+  negotiatedUnitPrice?: number;
+  soldValue?: number;
+  referenceDate?: string | null;
+  reasonCode: SalesOrderCommercialMarginReasonCode;
+  warnings?: string[];
+}): SalesOrderCommercialMarginItemPayload {
+  const reasonLabel = SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL[input.reasonCode];
+  return {
+    soldQuantity: input.soldQuantity ?? 0,
+    negotiatedUnitPrice: input.negotiatedUnitPrice ?? 0,
+    soldValue: input.soldValue ?? 0,
+    costUnit: null,
+    costValue: null,
+    taxRate: null,
+    taxValue: null,
+    commissionRate: null,
+    commissionValue: null,
+    freightRate: null,
+    freightRateValue: null,
+    freightAbsoluteUnit: null,
+    freightAbsoluteValue: null,
+    otherVariablesRate: null,
+    otherVariablesValue: null,
+    commercialMarginRate: null,
+    commercialMarginPercent: null,
+    commercialMarginUnitValue: null,
+    commercialMarginValue: null,
+    lowerMarginBand: null,
+    upperMarginBand: null,
+    lowerBandPrice: null,
+    upperBandPrice: null,
+    calculationSource: "UNAVAILABLE",
+    historicalContextId: null,
+    priceTableVersionId: null,
+    referenceDate: input.referenceDate ?? null,
+    isComplete: false,
+    reasonCode: input.reasonCode,
+    warnings: input.warnings?.length ? input.warnings : [reasonLabel],
+  };
+}
+
 export function calculateSalesOrderItemCommercialMargin(input: {
   soldQuantity: number;
   negotiatedUnitPrice: number;
   frozenTotalCost: number;
   rates: CommercialMarginFormationRates;
-  calculationSource: Exclude<SalesOrderCommercialMarginSource, "UNAVAILABLE">;
+  historicalContextId: string;
   priceTableVersionId?: string | null;
   referenceDate?: string | null;
   lowerMarginBand?: string | null;
@@ -93,13 +203,23 @@ export function calculateSalesOrderItemCommercialMargin(input: {
   const negotiatedUnitPrice = Number(input.negotiatedUnitPrice);
   const soldValue = roundPricingMoney(soldQuantity * negotiatedUnitPrice);
 
-  if (soldQuantity <= 0 || !Number.isFinite(negotiatedUnitPrice) || negotiatedUnitPrice <= 0) {
+  if (soldQuantity <= 0) {
     return unavailableCommercialMarginItem({
       soldQuantity,
       negotiatedUnitPrice: Number.isFinite(negotiatedUnitPrice) ? negotiatedUnitPrice : 0,
       soldValue,
       referenceDate: input.referenceDate ?? null,
-      warnings: ["Quantidade ativa ou preço negociado inválidos."],
+      reasonCode: "INVALID_ACTIVE_QUANTITY",
+    });
+  }
+
+  if (!Number.isFinite(negotiatedUnitPrice) || negotiatedUnitPrice <= 0) {
+    return unavailableCommercialMarginItem({
+      soldQuantity,
+      negotiatedUnitPrice: Number.isFinite(negotiatedUnitPrice) ? negotiatedUnitPrice : 0,
+      soldValue: 0,
+      referenceDate: input.referenceDate ?? null,
+      reasonCode: "INVALID_NEGOTIATED_PRICE",
     });
   }
 
@@ -115,6 +235,12 @@ export function calculateSalesOrderItemCommercialMargin(input: {
       negotiatedUnitPrice,
       soldValue,
       referenceDate: input.referenceDate ?? null,
+      reasonCode:
+        calc.code === "INVALID_PRICE" || calc.code === "INVALID_COST"
+          ? calc.code === "INVALID_PRICE"
+            ? "INVALID_NEGOTIATED_PRICE"
+            : "COST_NOT_FOUND"
+          : "INCONSISTENT_PRICE_FORMATION_SET",
       warnings: [calc.message],
     });
   }
@@ -147,54 +273,13 @@ export function calculateSalesOrderItemCommercialMargin(input: {
     upperMarginBand: input.upperMarginBand ?? null,
     lowerBandPrice: input.lowerBandPrice ?? null,
     upperBandPrice: input.upperBandPrice ?? null,
-    calculationSource: input.calculationSource,
+    calculationSource: "HISTORICAL_PRICE_FORMATION",
+    historicalContextId: input.historicalContextId,
     priceTableVersionId: input.priceTableVersionId ?? null,
     referenceDate: input.referenceDate ?? null,
-    warnings: [...(input.warnings ?? [])],
     isComplete: true,
-  };
-}
-
-export function unavailableCommercialMarginItem(input: {
-  soldQuantity?: number;
-  negotiatedUnitPrice?: number;
-  soldValue?: number;
-  referenceDate?: string | null;
-  warnings?: string[];
-}): SalesOrderCommercialMarginItemPayload {
-  return {
-    soldQuantity: input.soldQuantity ?? 0,
-    negotiatedUnitPrice: input.negotiatedUnitPrice ?? 0,
-    soldValue: input.soldValue ?? 0,
-    costUnit: null,
-    costValue: null,
-    taxRate: null,
-    taxValue: null,
-    commissionRate: null,
-    commissionValue: null,
-    freightRate: null,
-    freightRateValue: null,
-    freightAbsoluteUnit: null,
-    freightAbsoluteValue: null,
-    otherVariablesRate: null,
-    otherVariablesValue: null,
-    commercialMarginRate: null,
-    commercialMarginPercent: null,
-    commercialMarginUnitValue: null,
-    commercialMarginValue: null,
-    lowerMarginBand: null,
-    upperMarginBand: null,
-    lowerBandPrice: null,
-    upperBandPrice: null,
-    calculationSource: "UNAVAILABLE",
-    priceTableVersionId: null,
-    referenceDate: input.referenceDate ?? null,
-    warnings: input.warnings?.length
-      ? input.warnings
-      : [
-          "Margem comercial indisponível. Não foi possível identificar a formação de preço utilizada nesta venda.",
-        ],
-    isComplete: false,
+    reasonCode: null,
+    warnings: [...(input.warnings ?? [])],
   };
 }
 
@@ -251,8 +336,7 @@ export function summarizeSalesOrderCommercialMargins(
   }
 
   return {
-    commercialMarginTotalValue:
-      itemsCalculated > 0 ? commercialMarginTotalValue : null,
+    commercialMarginTotalValue: itemsCalculated > 0 ? commercialMarginTotalValue : null,
     commercialMarginTotalPercent,
     commercialSoldTotalValue,
     totalActiveSoldValue,
