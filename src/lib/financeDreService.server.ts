@@ -19,8 +19,11 @@ import { queryMonthlyFiscalNfeDeductions } from "@/src/lib/financeDreNfeQueries.
 import { loadMonthlyCmvFromNfeProductCosts } from "@/src/lib/financeDreCmvFromNfe.server.js";
 import {
   bucketCostCenterSpendByDreRole,
+  DRE_COST_CENTER_ROLE_LABELS,
   type DreCostCenterRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
+import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
+import { prisma } from "@/src/lib/prisma.js";
 import {
   buildEstimatedCorporateTaxSeriesFromEntityBases,
   FINANCE_DRE_ESTIMATED_TAX_DISCLAIMER,
@@ -56,17 +59,7 @@ export class FinanceDreParseError extends Error {
   }
 }
 
-const ROLE_LABELS: Record<DreCostCenterRole, string> = {
-  logistics: "Logística / Fretes",
-  packaging: "Embalagens",
-  payroll: "Folha",
-  benefits: "Benefícios",
-  assembly: "Montagem",
-  labor: "Mão de obra",
-  tax: "Imposto",
-  raw_material: "Matéria-prima",
-  admin: "Administrativo",
-};
+const ROLE_LABELS = DRE_COST_CENTER_ROLE_LABELS;
 
 /** Pessoas jurídicas distintas do grupo (CNPJ próprio) — filtro "Todas as empresas". */
 const LEGAL_ENTITY_COMPANIES: Exclude<FinanceDreCompany, "all">[] = [
@@ -150,7 +143,7 @@ async function loadFinanceDreSeriesBundle(
   const emitterCnpj = mapExecutiveReportCompanyToEmitterCnpj(filters.company);
   const companyName = mapExecutiveReportCompanyToFilter(filters.company);
 
-  const [revenueMap, deductions, ccDashboard, cmvBundle] = await Promise.all([
+  const [revenueMap, deductions, ccDashboard, cmvBundle, roleMap] = await Promise.all([
     queryMonthlyFiscalNfe(filters.year, "emissao", emitterCnpj),
     queryMonthlyFiscalNfeDeductions(filters.year, "emissao", emitterCnpj),
     buildFinanceCostCenterDashboardDefault(
@@ -162,6 +155,7 @@ async function loadFinanceDreSeriesBundle(
       referenceNow
     ),
     loadMonthlyCmvFromNfeProductCosts(filters.year, emitterCnpj),
+    loadDreCostCenterRoleMap(prisma),
   ]);
 
   const receitaBruta = emptyDreSeries();
@@ -184,7 +178,8 @@ async function loadFinanceDreSeriesBundle(
       year: row.year,
       unclassifiedAmount: row.unclassifiedAmount,
     })),
-    filters.highlightMonth
+    filters.highlightMonth,
+    roleMap
   );
 
   const despesasAdmin = sumSeriesSafeLocal(ccBuckets.admin, ccBuckets.unclassified);
@@ -229,6 +224,7 @@ async function loadFinanceDreSeriesBundle(
     fretes: clamp(ccBuckets.logistics),
     embalagens: clamp(ccBuckets.packaging),
     despesasAdmin: clamp(despesasAdmin),
+    investimentoSocios: clamp(ccBuckets.partnerInvestment),
     despesasPessoal: clamp(ccBuckets.personnel),
     impostosCc: clamp(ccBuckets.tax),
     materiaPrimaCc: clamp(ccBuckets.rawMaterial),

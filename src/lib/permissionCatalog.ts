@@ -635,6 +635,17 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
     risk: "sensitive",
   }),
   perm({
+    key: "finance.dre.manage",
+    label: "Financeiro — Parametrizar centros de custo na DRE",
+    group: FIN,
+    module: "finance",
+    description: "Definir quais centros de custo alimentam cada categoria da DRE Gerencial.",
+    type: "action",
+    parentKey: "finance.dre.view",
+    requires: ["finance.view", "finance.dre.view"],
+    risk: "sensitive",
+  }),
+  perm({
     key: "finance.cost_center_rules.view",
     label: "Financeiro — Ver regras de classificação",
     group: FIN,

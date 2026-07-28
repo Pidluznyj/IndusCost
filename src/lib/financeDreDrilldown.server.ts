@@ -17,10 +17,13 @@ import {
 import { loadCmvDrilldownBundle } from "@/src/lib/financeDreCmvFromNfe.server.js";
 import {
   bucketCostCenterSpendByDreRole,
-  classifyDreCostCenterRole,
   DRE_ADMIN_EXCLUDED_ROLES,
+  DRE_COST_CENTER_ROLE_LABELS,
+  resolveDreCostCenterRole,
   type DreCostCenterRole,
 } from "@/src/lib/financeDreCostCenterRoles.js";
+import { loadDreCostCenterRoleMap } from "@/src/lib/financeDreCostCenterMapping.server.js";
+import { prisma } from "@/src/lib/prisma.js";
 import {
   amountInMonthRange,
   dreDrilldownTotalsMatch,
@@ -299,16 +302,7 @@ async function enrichCmvRowsWithNfeMeta(
 }
 
 function roleLabel(role: DreCostCenterRole): string {
-  switch (role) {
-    case "logistics":
-      return "Logística / Fretes";
-    case "packaging":
-      return "Embalagens";
-    case "admin":
-      return "Administrativo";
-    default:
-      return role;
-  }
+  return DRE_COST_CENTER_ROLE_LABELS[role] ?? role;
 }
 
 async function buildCcDrilldown(input: {
@@ -336,17 +330,18 @@ async function buildCcDrilldown(input: {
         ? "packaging"
         : "admin_bucket";
 
+  const roleMap = await loadDreCostCenterRoleMap(prisma);
   const byKey = new Map<string, FinanceDreDrilldownRow>();
   for (const row of dashboard.monthlySeries.byCostCenter) {
     if (row.year !== input.year) continue;
     if (row.month < input.fromMonth || row.month > input.toMonth) continue;
-    const role = classifyDreCostCenterRole(row.code, row.name);
+    const role = resolveDreCostCenterRole(row.code, row.name, row.costCenterId, roleMap);
     const include =
       targetRole === "logistics"
         ? role === "logistics"
         : targetRole === "packaging"
           ? role === "packaging"
-          : !DRE_ADMIN_EXCLUDED_ROLES.has(role);
+          : role === "partner_investment" || !DRE_ADMIN_EXCLUDED_ROLES.has(role);
     if (!include) continue;
     const key = row.costCenterId || `${row.code}::${row.name}`;
     const current = byKey.get(key);
@@ -362,7 +357,11 @@ async function buildCcDrilldown(input: {
         documentLabel: `${row.code} — ${row.name}`,
         amount: roundDreMoney(row.amount),
         competenceDate: null,
-        extra: roleLabel(role === "logistics" || role === "packaging" ? role : "admin"),
+        extra: roleLabel(
+          role === "logistics" || role === "packaging" || role === "partner_investment"
+            ? role
+            : "admin"
+        ),
       });
     }
   }
@@ -408,7 +407,8 @@ async function buildCcDrilldown(input: {
       year: row.year,
       unclassifiedAmount: row.unclassifiedAmount,
     })),
-    input.highlightMonth
+    input.highlightMonth,
+    roleMap
   );
   const adminSeries = Array.from({ length: 12 }, (_, i) =>
     roundDreMoney((buckets.admin[i] ?? 0) + (buckets.unclassified[i] ?? 0))

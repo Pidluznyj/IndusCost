@@ -16,6 +16,12 @@ import {
   FINANCE_MODULE_ACTIONS,
   FINANCE_MODULE_RESOURCE_KEYS,
 } from "@/src/lib/financeModulesAccess.js";
+import {
+  listDreCostCenterMappings,
+  replaceDreCostCenterMappings,
+} from "@/src/lib/financeDreCostCenterMapping.server.js";
+import { isDreCostCenterRole } from "@/src/lib/financeDreCostCenterRoles.js";
+import { prisma } from "@/src/lib/prisma.js";
 
 type AuthGuards = {
   requireAppAuth: RequestHandler;
@@ -128,6 +134,66 @@ export function registerFinanceDreRoutes(app: express.Express, auth: AuthGuards)
       return res.status(500).json({
         error: "Erro ao detalhar validação de fonte do DRE Gerencial.",
       });
+    }
+  });
+
+  app.get("/api/finance/dre/cost-center-mappings", ...guard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const mappings = await listDreCostCenterMappings(prisma);
+      return res.json({
+        schemaVersion: 1,
+        mappings,
+        note: "Linhas de NF-e/CMV da DRE não são afetadas por esta parametrização.",
+      });
+    } catch (error) {
+      console.error("GET /api/finance/dre/cost-center-mappings", error);
+      return res.status(500).json({ error: "Erro ao listar mapeamentos de centros de custo da DRE." });
+    }
+  });
+
+  const manageGuard = [
+    requireAppAuth,
+    requireResource(FINANCE_MODULE_RESOURCE_KEYS.dre, FINANCE_MODULE_ACTIONS.manage),
+  ] as const;
+
+  app.put("/api/finance/dre/cost-center-mappings", ...manageGuard, async (req, res) => {
+    try {
+      const user = await getCurrentAppUser(req);
+      if (!user) {
+        return res.status(401).json({ error: "Não autenticado." });
+      }
+      const raw = Array.isArray(req.body?.mappings) ? req.body.mappings : null;
+      if (!raw) {
+        return res.status(400).json({ error: "Body inválido: esperado { mappings: [...] }." });
+      }
+      const items: Array<{ costCenterId: string; role: string }> = [];
+      for (const row of raw) {
+        const costCenterId = String(row?.costCenterId ?? "").trim();
+        const role = String(row?.role ?? "").trim();
+        if (!costCenterId || !isDreCostCenterRole(role)) {
+          return res.status(400).json({
+            error: `Mapeamento inválido: costCenterId/role (${costCenterId || "?"} / ${role || "?"}).`,
+          });
+        }
+        items.push({ costCenterId, role });
+      }
+      const mappings = await replaceDreCostCenterMappings(
+        prisma,
+        items.map((i) => ({ costCenterId: i.costCenterId, role: i.role as never })),
+        user.id
+      );
+      return res.json({
+        schemaVersion: 1,
+        mappings,
+        note: "Linhas de NF-e/CMV da DRE não são afetadas por esta parametrização.",
+      });
+    } catch (error) {
+      console.error("PUT /api/finance/dre/cost-center-mappings", error);
+      return res.status(500).json({ error: "Erro ao salvar mapeamentos de centros de custo da DRE." });
     }
   });
 }

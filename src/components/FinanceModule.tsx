@@ -8,6 +8,7 @@ import { FinanceBillingPage } from "@/src/components/finance/FinanceBillingPage"
 import { FinanceCashFlowPage } from "@/src/components/finance/FinanceCashFlowPage";
 import { FinanceExecutiveReportPage } from "@/src/components/finance/FinanceExecutiveReportPage";
 import { FinanceManagerialDrePage } from "@/src/components/finance/FinanceManagerialDrePage";
+import { FinanceDreCostCenterMappingPage } from "@/src/components/finance/FinanceDreCostCenterMappingPage";
 import { FinanceCostCentersPage } from "@/src/components/finance/cost-centers/FinanceCostCentersPage";
 import { FinanceCostCenterDetailPage } from "@/src/components/finance/cost-centers/FinanceCostCenterDetailPage";
 import { FinanceSalesOrdersPage } from "@/src/components/finance/FinanceSalesOrdersPage";
@@ -170,6 +171,12 @@ export function FinanceModule() {
         />
         <Route path="cost-centers" element={sectionRoutes["cost-centers"]} />
         <Route path="executive-report" element={sectionRoutes["executive-report"]} />
+        <Route
+          path="dre/parametrizacao"
+          element={
+            can("dre") ? <FinanceDreCostCenterMappingPage /> : <UnauthorizedAccessGate forceDenied />
+          }
+        />
         <Route path="dre" element={sectionRoutes.dre} />
         <Route path="*" element={<FinanceCanonicalRedirect />} />
       </Routes>

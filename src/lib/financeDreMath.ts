@@ -142,6 +142,7 @@ function clampFinanceDreMathInputToAvailableMonths(
     fretes: z(input.fretes),
     embalagens: z(input.embalagens),
     despesasAdmin: z(input.despesasAdmin),
+    investimentoSocios: z(input.investimentoSocios ?? createEmptyMonthlySeries()),
     despesasPessoal: z(input.despesasPessoal),
     impostosCc: z(input.impostosCc),
     materiaPrimaCc: z(input.materiaPrimaCc),
@@ -200,6 +201,11 @@ export type FinanceDreMathInput = {
   fretes: number[];
   embalagens: number[];
   despesasAdmin: number[];
+  /**
+   * Gasto dos CCs Investimento sócios (também embutido em despesasAdmin no RO).
+   * Usado só para KPI EBITDA = RO + este valor.
+   */
+  investimentoSocios?: number[];
   /** Informativo — não entra no resultado */
   despesasPessoal: number[];
   /** Informativo — CC Imposto (AP), não entra no resultado */
@@ -356,6 +362,11 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
   const receitaBrutaYtd = ytdThroughMonth(clamped.receitaBruta, m);
   const netYtd = ytdThroughMonth(receitaLiquida, m);
   const lucroBrutoYtd = ytdThroughMonth(lucroBruto, m);
+  const investimentoSociosSeries = clamped.investimentoSocios ?? createEmptyMonthlySeries();
+  const investimentoSociosH = roundDreMoney(investimentoSociosSeries[m - 1] ?? 0);
+  const investimentoSociosYtd = ytdThroughMonth(investimentoSociosSeries, m);
+  const ebitdaH = roundDreMoney(resultadoH + investimentoSociosH);
+  const ebitdaYtd = roundDreMoney(resultadoYtd + investimentoSociosYtd);
 
   const provisionVals = taxLineValues(
     estimatedCorporateTaxes.provisionByMonth,
@@ -523,6 +534,9 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     margemBrutaPct: safePct(lucroBrutoH, netHighlight),
     resultadoOperacional: resultadoH,
     margemOperacionalPct: safePct(resultadoH, netHighlight),
+    ebitda: ebitdaH,
+    ebitdaPct: safePct(ebitdaH, netHighlight),
+    investimentoSocios: investimentoSociosH,
     lucroLiquidoAproximado: lucroAproxH,
     margemLiquidaAproximadaPct: safePct(lucroAproxH, netHighlight),
   };
@@ -535,6 +549,9 @@ export function buildFinanceDreLines(input: FinanceDreMathInput): {
     margemBrutaPct: safePct(lucroBrutoYtd, netYtd),
     resultadoOperacional: resultadoYtd,
     margemOperacionalPct: safePct(resultadoYtd, netYtd),
+    ebitda: ebitdaYtd,
+    ebitdaPct: safePct(ebitdaYtd, netYtd),
+    investimentoSocios: investimentoSociosYtd,
     lucroLiquidoAproximado: lucroAproxYtd,
     margemLiquidaAproximadaPct: safePct(lucroAproxYtd, netYtd),
   };

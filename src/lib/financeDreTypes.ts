@@ -182,6 +182,14 @@ export type FinanceDreKpiSet = {
   margemBrutaPct: number | null;
   resultadoOperacional: number;
   margemOperacionalPct: number | null;
+  /**
+   * EBITDA gerencial = Resultado operacional + Investimento sócios (add-back),
+   * antes das provisões de IRPJ/CSLL.
+   */
+  ebitda: number;
+  ebitdaPct: number | null;
+  /** Gasto dos CCs mapeados como Investimento sócios (add-back do EBITDA). */
+  investimentoSocios: number;
   /** Lucro líquido após provisões estimadas de IRPJ e CSLL. */
   lucroLiquidoAproximado: number;
   /** % do lucro líquido aproximado sobre a receita líquida. */
