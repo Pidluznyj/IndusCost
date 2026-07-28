@@ -92,6 +92,10 @@ import { ServerImporter } from "./src/lib/importer/serverImporter.js";
 import { MaterialImportConfig } from "./src/lib/importer/MaterialConfig.js";
 import { parseMaterialMarketMonitoringInput } from "./src/lib/materialMarketMonitoring.js";
 import {
+  computeMaterialTotalValue,
+  normalizeMaterialQuantity,
+} from "./src/lib/materialQuantityTotal.js";
+import {
   buildMonitoredMaterialListResponse,
   parseMonitoredMaterialCriticalityFilter,
 } from "./src/lib/materialMarketIntelligenceMonitored.js";
@@ -3895,15 +3899,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       const currentCost = Number(mat.currentCost);
       const freight = Number(mat.freight);
       const standardLoss = Number(mat.standardLoss) / 100;
+      const quantity = normalizeMaterialQuantity(mat.quantity);
 
       const landedCost = currentCost + freight;
       const effectiveCost = landedCost / (1 - standardLoss);
+      const totalMaterialValue = computeMaterialTotalValue(quantity, currentCost);
 
       return {
         ...mat,
+        quantity,
         calculations: {
           landedCost,
           effectiveCost,
+          totalMaterialValue,
         },
         marketSituation: mat.isMarketMonitored
           ? classifyMaterialMarketSituationFromQuotes(mat.MaterialMarketQuote)
@@ -5430,7 +5438,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           | "standardCost"
           | "averageCost"
           | "freight"
-          | "standardLoss";
+          | "standardLoss"
+          | "quantity";
         label: string;
       }> = [
         { key: "currentCost", label: "Custo atual" },
@@ -5438,6 +5447,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         { key: "averageCost", label: "Custo médio" },
         { key: "freight", label: "Frete" },
         { key: "standardLoss", label: "Perda padrão" },
+        { key: "quantity", label: "Quantidade" },
       ];
       const parsedNumeric: Record<string, number> = {};
       for (const field of numericFields) {
@@ -5497,6 +5507,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           currentCost: parsedNumeric.currentCost,
           averageCost: parsedNumeric.averageCost,
           standardCost: parsedNumeric.standardCost,
+          quantity: parsedNumeric.quantity,
           freight: parsedNumeric.freight,
           standardLoss: parsedNumeric.standardLoss,
           conversionFactor: conversion.value,
@@ -5593,6 +5604,11 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         });
       }
 
+      const quantity =
+        body.quantity === undefined || body.quantity === null
+          ? oldMaterial.quantity
+          : normalizeMaterialQuantity(body.quantity);
+
       const material = await prisma.material.update({
         where: { id },
         data: {
@@ -5612,6 +5628,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
           standardCost: body.standardCost ?? oldMaterial.standardCost,
           standardLoss: body.standardLoss ?? oldMaterial.standardLoss,
           conversionFactor: body.conversionFactor ?? oldMaterial.conversionFactor,
+          quantity,
           currentCost,
           freight,
           ...marketParsed.value,
