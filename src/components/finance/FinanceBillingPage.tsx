@@ -14,11 +14,9 @@ import {
   buildFinanceBillingYearOptions,
   createDefaultFinanceBillingYear,
   FINANCE_BILLING_ANALYSIS_TABS,
-  FINANCE_BILLING_EXECUTIVE_TABS,
   hasPendingFinanceBillingYearChange,
   type FinanceBillingAnalysisTabId,
   type FinanceBillingDashboardPayload,
-  type FinanceBillingExecutiveTabId,
 } from "@/src/lib/financeBillingDashboardTypes";
 import {
   buildFinanceBillingDashboardQuery,
@@ -26,12 +24,7 @@ import {
   type FinanceBillingDateBase,
 } from "@/src/lib/financeBillingSourceTypes";
 import {
-  parseFinanceBillingNfeLocalFilter,
-  type FinanceBillingNfeLocalFilter,
-} from "@/src/lib/financeBillingNfeLocalFilter";
-import {
   buildFinanceBillingExportQuery,
-  buildFinanceBillingNfeQuery,
   createDefaultFinanceBillingNfeFilters,
   FINANCE_BILLING_MONTH_OPTIONS,
   hasPendingFinanceBillingNfeFilterChanges,
@@ -41,7 +34,6 @@ import { financeBillingNfeExportFilename } from "@/src/lib/financeBillingNfeExpo
 import { formatExecutiveInteger } from "@/src/lib/executiveDashboardFormatters";
 import { formatFinanceKpiCurrency } from "@/src/lib/financeKpiFormat";
 import type { FinanceBillingComparisonPayload } from "@/src/lib/financeBillingNfeComparison";
-import type { FinanceBillingNfeListPayload } from "@/src/lib/financeBillingNfeList";
 import { canRunFinanceBillingNfeSync } from "@/src/lib/financeBillingPermissions";
 import {
   FinanceApErrorBanner,
@@ -56,8 +48,6 @@ import {
   FinanceBillingProjectionView,
 } from "@/src/components/finance/billing/FinanceBillingExecutiveViews";
 import { FinanceBillingAuditPanel } from "@/src/components/finance/billing/FinanceBillingAuditPanel";
-import { FinanceBillingComparisonPanel } from "@/src/components/finance/billing/FinanceBillingComparisonPanel";
-import { FinanceBillingNfeDetailsTable } from "@/src/components/finance/billing/FinanceBillingNfeDetailsTable";
 import { FinanceBillingCustomersTab } from "@/src/components/finance/billing/FinanceBillingCustomersTab";
 import { FinanceBillingActionCenter } from "@/src/components/finance/billing/FinanceBillingActionCenter";
 import { FinanceDetailTabs } from "@/src/components/finance/shared/FinanceDetailTabs";
@@ -132,8 +122,6 @@ export function FinanceBillingPage() {
 
   const [auditDrawerOpen, setAuditDrawerOpen] = useState(false);
   const [analysisTab, setAnalysisTab] = useState<FinanceBillingAnalysisTabId>("overview");
-  const [executiveTab, setExecutiveTab] = useState<FinanceBillingExecutiveTabId>("documents");
-  const [nfeLocalFilter, setNfeLocalFilter] = useState<FinanceBillingNfeLocalFilter>("all");
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -154,10 +142,8 @@ export function FinanceBillingPage() {
   );
 
   const abortRef = useRef<AbortController | null>(null);
-  const abortNfeRef = useRef<AbortController | null>(null);
   const abortComparisonRef = useRef<AbortController | null>(null);
   const abortAuditRef = useRef<AbortController | null>(null);
-  const prevNfeQueryRef = useRef<string | null>(null);
 
   const yearOptions = useMemo(() => buildFinanceBillingYearOptions(), []);
   const hasPendingFilterChanges = useMemo(
@@ -183,11 +169,6 @@ export function FinanceBillingPage() {
       }),
     [appliedYear, appliedDateBase]
   );
-  const nfeQueryString = useMemo(
-    () => buildFinanceBillingNfeQuery(appliedNfeFilters),
-    [appliedNfeFilters]
-  );
-
   const horizonDrilldownFilters = useMemo<FinanceBillingHorizonDrilldownFilters>(
     () => ({
       customerCnpj: appliedNfeFilters.customerCnpj,
@@ -197,13 +178,10 @@ export function FinanceBillingPage() {
   );
 
   const [data, setData] = useState<FinanceBillingDashboardPayload | null>(null);
-  const [nfeList, setNfeList] = useState<FinanceBillingNfeListPayload | null>(null);
   const [comparison, setComparison] = useState<FinanceBillingComparisonPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadingNfe, setLoadingNfe] = useState(false);
   const [loadingComparison, setLoadingComparison] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [nfeError, setNfeError] = useState<string | null>(null);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
@@ -235,33 +213,6 @@ export function FinanceBillingPage() {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [queryString]);
-
-  const loadNfeList = useCallback(async () => {
-    abortNfeRef.current?.abort();
-    const controller = new AbortController();
-    abortNfeRef.current = controller;
-    setLoadingNfe(true);
-    setNfeError(null);
-    try {
-      const url = nfeQueryString
-        ? `/api/finance/billing/nfes?${nfeQueryString}`
-        : "/api/finance/billing/nfes";
-      const payload = await fetchJsonOk<FinanceBillingNfeListPayload>(url, {
-        signal: controller.signal,
-        credentials: "include",
-      });
-      if (controller.signal.aborted) return;
-      setNfeList(payload);
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      console.error("FinanceBillingPage.loadNfeList", e);
-      setNfeError(
-        buildFinanceTabLoadError("Não foi possível listar NF-e sincronizadas.", e)
-      );
-    } finally {
-      if (!controller.signal.aborted) setLoadingNfe(false);
-    }
-  }, [nfeQueryString]);
 
   const loadComparison = useCallback(async () => {
     abortComparisonRef.current?.abort();
@@ -296,30 +247,10 @@ export function FinanceBillingPage() {
     void loadDashboard();
   }, [loadDashboard]);
 
-  /** NF-e list é exclusiva da aba Documentos — não buscar em comparison/audit/customers. */
-  useEffect(() => {
-    if (executiveTab !== "documents") return;
-    if (nfeList != null) return;
-    void loadNfeList();
-  }, [executiveTab, loadNfeList, nfeList]);
-
-  useEffect(() => {
-    // Query mudou (não no 1º mount): invalida lista para reload ao voltar a Documentos.
-    if (prevNfeQueryRef.current === null) {
-      prevNfeQueryRef.current = nfeQueryString;
-      return;
-    }
-    if (prevNfeQueryRef.current === nfeQueryString) return;
-    prevNfeQueryRef.current = nfeQueryString;
-    setNfeList(null);
-    setNfeError(null);
-  }, [nfeQueryString]);
-
   const handleApplyFilters = () => {
     setAppliedYear(draftYear.trim());
     setAppliedDateBase(draftDateBase);
     setAppliedNfeFilters({ ...draftNfeFilters, year: draftYear.trim() });
-    setNfeLocalFilter("all");
   };
 
   const handleClearFilters = () => {
@@ -331,7 +262,6 @@ export function FinanceBillingPage() {
     const defaults = createDefaultFinanceBillingNfeFilters(year);
     setDraftNfeFilters(defaults);
     setAppliedNfeFilters(defaults);
-    setNfeLocalFilter("all");
   };
 
   const auditQueryString = useMemo(() => {
@@ -375,7 +305,7 @@ export function FinanceBillingPage() {
     }
   }, [auditQueryString]);
 
-  /** Invalidar payloads pesados quando o recorte muda; recarregar só na aba ativa. */
+  /** Comparativo e auditoria alimentam o Centro de Ações (sem grid de detalhamento). */
   useEffect(() => {
     setComparison(null);
     setComparisonError(null);
@@ -387,22 +317,19 @@ export function FinanceBillingPage() {
   }, [auditQueryString]);
 
   useEffect(() => {
-    if (executiveTab !== "comparison") return;
     if (comparison != null) return;
     void loadComparison();
-  }, [executiveTab, loadComparison, comparison]);
+  }, [loadComparison, comparison]);
 
   useEffect(() => {
-    if (executiveTab !== "audit") return;
     if (audit != null) return;
     void loadAudit();
-  }, [executiveTab, loadAudit, audit]);
+  }, [loadAudit, audit]);
 
   const handleRefreshAll = () => {
     void loadDashboard();
-    if (executiveTab === "documents") void loadNfeList();
-    if (executiveTab === "comparison") void loadComparison();
-    if (executiveTab === "audit") void loadAudit();
+    void loadComparison();
+    void loadAudit();
   };
 
   const handleAuditExport = async () => {
@@ -469,9 +396,6 @@ export function FinanceBillingPage() {
     appliedYear !== createDefaultFinanceBillingYear();
 
   const tab = data?.tab;
-  const appliedMonthNum = appliedNfeFilters.month
-    ? Number.parseInt(appliedNfeFilters.month, 10)
-    : null;
   const selectedYear =
     data?.selectedYear ?? (Number.parseInt(appliedYear, 10) || new Date().getFullYear());
   const previousYear = data?.previousYear ?? selectedYear - 1;
@@ -636,9 +560,8 @@ export function FinanceBillingPage() {
               embedded
               onSyncFinished={() => {
                 void loadDashboard();
-                void loadNfeList();
-                if (executiveTab === "comparison") void loadComparison();
-                if (executiveTab === "audit" || auditDrawerOpen) void loadAudit();
+                void loadComparison();
+                void loadAudit();
               }}
             />
           </div>
@@ -983,59 +906,6 @@ export function FinanceBillingPage() {
           yearLabel={appliedYear}
         />
       </div>
-
-      <section className={financeBiSectionClass}>
-        <div className="px-5 py-4 border-b border-[#E5E7EB]">
-          <h2 className="text-sm font-bold text-[#111827]">Detalhamento</h2>
-          <p className="text-[11px] text-[#6B7280] mt-0.5">
-            Grid explicativo dos cards — filtros globais aplicados afetam export e listagens.
-          </p>
-        </div>
-        <div className="px-5 pt-4">
-          <FinanceDetailTabs
-            tabs={FINANCE_BILLING_EXECUTIVE_TABS}
-            activeId={executiveTab}
-            onChange={setExecutiveTab}
-          />
-        </div>
-        <div className="p-5" role="tabpanel">
-          {executiveTab === "documents" ? (
-            <FinanceBillingNfeDetailsTable
-              nfeList={nfeList}
-              loading={loadingNfe}
-              error={nfeError}
-              onRetry={() => void loadNfeList()}
-              localFilter={nfeLocalFilter}
-              onLocalFilterChange={(v) => setNfeLocalFilter(parseFinanceBillingNfeLocalFilter(v))}
-              appliedYear={Number.parseInt(appliedYear, 10) || new Date().getFullYear()}
-              appliedMonth={appliedMonthNum}
-            />
-          ) : null}
-          {executiveTab === "customers" ? (
-            <FinanceBillingCustomersTab
-              rows={tab?.topCustomers ?? []}
-              loading={loading}
-              yearLabel={appliedYear}
-            />
-          ) : null}
-          {executiveTab === "comparison" ? (
-            <FinanceBillingComparisonPanel
-              comparison={comparison}
-              loading={loadingComparison}
-              error={comparisonError}
-              onRetry={() => void loadComparison()}
-            />
-          ) : null}
-          {executiveTab === "audit" ? (
-            <FinanceBillingAuditPanel
-              audit={audit}
-              loading={loadingAudit}
-              error={auditError}
-              onRetry={() => void loadAudit()}
-            />
-          ) : null}
-        </div>
-      </section>
       </main>
     </FinanceBiDashboardShell>
   );

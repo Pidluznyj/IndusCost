@@ -54,7 +54,8 @@ describe("PERFORMANCE 09 — regressão paridade Pedidos + Financeiro", () => {
     const ar = read("src/components/finance/FinanceAccountsReceivablePage.tsx");
     const billing = read("src/components/finance/FinanceBillingPage.tsx");
     assert.match(ar, /activeTab === "overdue"/);
-    assert.match(billing, /executiveTab !== "documents"/);
+    assert.match(billing, /analysisTab === "overview"/);
+    assert.doesNotMatch(billing, /FinanceBillingNfeDetailsTable/);
   });
 
   it("6) índices P1 migration presente sem alterar dados", () => {

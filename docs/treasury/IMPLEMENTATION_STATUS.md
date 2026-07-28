@@ -759,4 +759,4 @@
 | 2026-07-28 | Prompt 58: auditoria de performance do módulo — `6ed1fb6` |
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
 | 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `462c74c` |
-| 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `PENDING` |
+| 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `3e24528` |
