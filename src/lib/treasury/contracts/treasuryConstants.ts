@@ -41,6 +41,10 @@ export const TREASURY_TODAY_PATH =
 export const TREASURY_TODAY_OPENING_PATH =
   `${TREASURY_TODAY_PATH}/opening` as const;
 
+/** Workspace de saldos finais + fechamento guiado (GET/POST). */
+export const TREASURY_TODAY_CLOSING_PATH =
+  `${TREASURY_TODAY_PATH}/closing` as const;
+
 export const TREASURY_PROJECTIONS_PATH =
   `${TREASURY_API_PREFIX}/projections` as const;
 

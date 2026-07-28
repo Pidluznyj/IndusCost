@@ -422,6 +422,109 @@ export type TreasuryGuidedDailyOpeningSaveResultDto = {
   nextStepHref: string;
 };
 
+/** Situação do saldo final guiado por conta. */
+export type TreasuryGuidedDailyClosingSituation =
+  | "NEEDS_OPENING"
+  | "READY_TO_INFORM"
+  | "INFORMED_OK"
+  | "HAS_DIVERGENCE"
+  | "CLOSED"
+  | "INACTIVE";
+
+export type TreasuryGuidedDailyClosingInvestigationActionId =
+  | "IMPORT_STATEMENT"
+  | "VIEW_REALIZED_TITLES"
+  | "VIEW_MANUAL_ENTRIES"
+  | "VIEW_TRANSFERS"
+  | "REGISTER_FEE"
+  | "REGISTER_INTEREST"
+  | "REGISTER_UNIDENTIFIED"
+  | "CLOSE_WITH_CAVEAT";
+
+export type TreasuryGuidedDailyClosingInvestigationActionDto = {
+  id: TreasuryGuidedDailyClosingInvestigationActionId;
+  label: string;
+  href: string;
+};
+
+export type TreasuryGuidedDailyClosingAccountDto = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  bank: string | null;
+  openingBalance: TreasuryMoneyString | null;
+  realizedInflows: TreasuryMoneyString;
+  realizedOutflows: TreasuryMoneyString;
+  transfersReceived: TreasuryMoneyString;
+  transfersSent: TreasuryMoneyString;
+  transfersNet: TreasuryMoneyString;
+  localInflows: TreasuryMoneyString;
+  localOutflows: TreasuryMoneyString;
+  localNet: TreasuryMoneyString;
+  realizedClosingBalance: TreasuryMoneyString | null;
+  informedClosingBalance: TreasuryMoneyString | null;
+  divergence: TreasuryMoneyString | null;
+  expectedVersion: number;
+  situation: TreasuryGuidedDailyClosingSituation;
+  situationLabel: string;
+  divergenceMessage: string | null;
+  canInformClosing: boolean;
+};
+
+export type TreasuryGuidedDailyClosingGateItemDto = {
+  code: string;
+  message: string;
+};
+
+export type TreasuryGuidedDailyClosingGateSummaryDto = {
+  openingsInformed: boolean;
+  closingsInformed: boolean;
+  hasDivergences: boolean;
+  unidentifiedMovementsCount: number;
+  unlinkedAccountsCount: number;
+  transfersInTransitCount: number;
+  requiredCaveatCodes: string[];
+  absoluteBlocks: TreasuryGuidedDailyClosingGateItemDto[];
+  warnings: TreasuryGuidedDailyClosingGateItemDto[];
+  canCloseWithoutCaveats: boolean;
+  canCloseWithCaveats: boolean;
+  sourceHash: string | null;
+  dayAlreadyClosed: boolean;
+};
+
+/** Resposta GET /api/finance/treasury/today/closing */
+export type TreasuryGuidedDailyClosingWorkspaceDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  asOf: TreasuryTimestampIso;
+  title: string;
+  companyCode: string | null;
+  accounts: TreasuryGuidedDailyClosingAccountDto[];
+  informedCount: number;
+  pendingCount: number;
+  divergenceCount: number;
+  investigationActions: TreasuryGuidedDailyClosingInvestigationActionDto[];
+  closeGates: TreasuryGuidedDailyClosingGateSummaryDto;
+};
+
+export type TreasuryGuidedDailyClosingSaveItemResultDto = {
+  accountId: string;
+  informedClosingBalance: TreasuryMoneyString;
+  realizedClosingBalance: TreasuryMoneyString;
+  divergence: TreasuryMoneyString;
+  version: number;
+  snapshotId: string;
+  created: boolean;
+};
+
+export type TreasuryGuidedDailyClosingSaveResultDto = {
+  ok: true;
+  civilDate: TreasuryCivilDate;
+  savedCount: number;
+  items: TreasuryGuidedDailyClosingSaveItemResultDto[];
+  nextStepHref: string;
+};
+
 /** Freshness de uma fonte do dashboard diário. */
 export type TreasuryDashboardSourceFreshnessDto = {
   source:

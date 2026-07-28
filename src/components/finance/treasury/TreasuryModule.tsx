@@ -27,6 +27,7 @@ import {
 import { TreasuryAdvancedHubPage } from "./TreasuryAdvancedHubPage.js";
 import { TreasuryTodayPage } from "./TreasuryTodayPage.js";
 import { TreasuryTodayOpeningPage } from "./TreasuryTodayOpeningPage.js";
+import { TreasuryTodayClosingPage } from "./TreasuryTodayClosingPage.js";
 import { TreasurySimpleReceivablesReviewPage } from "./TreasurySimpleReceivablesReviewPage.js";
 import { TreasurySimplePayablesReviewPage } from "./TreasurySimplePayablesReviewPage.js";
 import { TreasuryDashboardPage } from "./TreasuryDashboardPage.js";
@@ -205,6 +206,10 @@ export function TreasuryModule() {
         <Route
           path="today/opening"
           element={gate("today", <TreasuryTodayOpeningPage />)}
+        />
+        <Route
+          path="today/closing"
+          element={gate("today", <TreasuryTodayClosingPage />)}
         />
         <Route
           path="today/receivables"

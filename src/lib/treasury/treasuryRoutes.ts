@@ -19,6 +19,7 @@ import { createTreasuryDisputeControllers } from "./controllers/treasuryDisputeC
 import { createTreasuryDashboardControllers } from "./controllers/treasuryDashboardController.js";
 import { createTreasuryGuidedTodayControllers } from "./controllers/treasuryGuidedTodayController.js";
 import { createTreasuryGuidedDailyOpeningControllers } from "./controllers/treasuryGuidedDailyOpeningController.js";
+import { createTreasuryGuidedDailyClosingControllers } from "./controllers/treasuryGuidedDailyClosingController.js";
 import { createTreasuryProjectionControllers } from "./controllers/treasuryProjectionController.js";
 import { createTreasuryTransferControllers } from "./controllers/treasuryTransferController.js";
 import { createTreasuryExceptionControllers } from "./controllers/treasuryExceptionController.js";
@@ -50,6 +51,7 @@ import {
   TREASURY_DASHBOARD_PATH,
   TREASURY_TODAY_PATH,
   TREASURY_TODAY_OPENING_PATH,
+  TREASURY_TODAY_CLOSING_PATH,
   TREASURY_DISPUTES_PATH,
   TREASURY_EXCEPTIONS_PATH,
   TREASURY_FORECAST_VS_ACTUAL_PATH,
@@ -112,6 +114,9 @@ export function registerTreasuryRoutes(
   const dashboard = createTreasuryDashboardControllers({ getCurrentAppUser });
   const guidedToday = createTreasuryGuidedTodayControllers({ getCurrentAppUser });
   const guidedOpening = createTreasuryGuidedDailyOpeningControllers({
+    getCurrentAppUser,
+  });
+  const guidedClosing = createTreasuryGuidedDailyClosingControllers({
     getCurrentAppUser,
   });
   const projections = createTreasuryProjectionControllers({ getCurrentAppUser });
@@ -389,6 +394,26 @@ export function registerTreasuryRoutes(
     balancesEnabled,
     manageBalances,
     guidedOpening.saveOpenings
+  );
+
+  app.get(
+    TREASURY_TODAY_CLOSING_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    balancesEnabled,
+    viewAccounts,
+    guidedClosing.getWorkspace
+  );
+
+  app.post(
+    TREASURY_TODAY_CLOSING_PATH,
+    requireAppAuth,
+    moduleEnabled,
+    dashboardEnabled,
+    balancesEnabled,
+    manageBalances,
+    guidedClosing.saveFinalBalances
   );
 
   app.get(

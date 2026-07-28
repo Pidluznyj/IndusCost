@@ -147,7 +147,7 @@ function buildAttention(
         message: `Informe o saldo final do banco em ${acc.name}.`,
         amount: null,
         accountId: acc.accountId,
-        href: acc.openHref,
+        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`,
       });
     } else if (acc.divergence != null && isNonZero(acc.divergence)) {
       items.push({
@@ -156,7 +156,7 @@ function buildAttention(
         message: `Há diferença entre o saldo do banco e o calculado em ${acc.name}.`,
         amount: acc.divergence,
         accountId: acc.accountId,
-        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/bank`,
+        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing?step=divergences`,
       });
     }
   }
@@ -331,7 +331,7 @@ function buildSteps(
       order: 4,
       title: "Informar saldos finais",
       status: stepStatus(allClosingsDone && allOpeningsDone, missingClosing),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/accounts`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`,
       continueLabel: "Continuar",
     },
     {
@@ -341,7 +341,7 @@ function buildSteps(
       status: !allClosingsDone
         ? "PENDING"
         : stepStatus(!hasDivergence && !unidentifiedOfx, hasDivergence || unidentifiedOfx),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/bank`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing?step=divergences`,
       continueLabel: "Continuar",
     },
     {
@@ -349,7 +349,7 @@ function buildSteps(
       order: 6,
       title: "Fechar o dia",
       status: closeStatus,
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/closing`,
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing?step=close`,
       continueLabel: "Continuar",
     },
   ];

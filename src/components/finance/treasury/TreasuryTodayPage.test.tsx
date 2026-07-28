@@ -43,7 +43,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 1,
         title: "Informar saldos iniciais",
         status: "DONE",
-        continueHref: "/finance/treasury/accounts",
+        continueHref: "/finance/treasury/today/opening",
         continueLabel: "Continuar",
       },
       {
@@ -67,7 +67,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 4,
         title: "Informar saldos finais",
         status: "PENDING",
-        continueHref: "/finance/treasury/accounts",
+        continueHref: "/finance/treasury/today/closing",
         continueLabel: "Continuar",
       },
       {
@@ -75,7 +75,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 5,
         title: "Resolver divergências",
         status: "PENDING",
-        continueHref: "/finance/treasury/bank",
+        continueHref: "/finance/treasury/today/closing?step=divergences",
         continueLabel: "Continuar",
       },
       {
@@ -83,7 +83,7 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 6,
         title: "Fechar o dia",
         status: "PENDING",
-        continueHref: "/finance/treasury/closing",
+        continueHref: "/finance/treasury/today/closing?step=close",
         continueLabel: "Continuar",
       },
     ],

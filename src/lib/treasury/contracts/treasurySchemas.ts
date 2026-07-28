@@ -2656,6 +2656,82 @@ export function parseTreasuryGuidedDailyOpeningSaveInput(
   return { civilDate, items };
 }
 
+export type TreasuryGuidedDailyClosingQuery = {
+  date: TreasuryCivilDate;
+};
+
+export function parseTreasuryGuidedDailyClosingQuery(
+  query: Record<string, unknown>
+): TreasuryGuidedDailyClosingQuery {
+  const dateRaw = query.date ?? query.civilDate ?? query.asOfDate;
+  const date =
+    dateRaw == null || dateRaw === ""
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(dateRaw, "date");
+  return { date };
+}
+
+export type TreasuryGuidedDailyClosingSaveItemParsed = {
+  accountId: string;
+  expectedVersion: number;
+  amount: string;
+  notes: string | null;
+};
+
+export type TreasuryGuidedDailyClosingSaveInput = {
+  civilDate: TreasuryCivilDate;
+  items: TreasuryGuidedDailyClosingSaveItemParsed[];
+};
+
+export function parseTreasuryGuidedDailyClosingSaveInput(
+  body: Record<string, unknown>
+): TreasuryGuidedDailyClosingSaveInput {
+  const civilDate =
+    body.civilDate == null && body.date == null
+      ? todayCivilDateOperational()
+      : parseTreasuryCivilDate(body.civilDate ?? body.date, "civilDate");
+
+  const rawItems = body.items ?? body.contas ?? body.accounts;
+  if (!Array.isArray(rawItems) || rawItems.length === 0) {
+    throw new TreasuryContractError(
+      "VALIDATION_ERROR",
+      "items deve ser um array com ao menos uma conta.",
+      "items"
+    );
+  }
+
+  const items = rawItems.map((raw, index) => {
+    const row =
+      raw && typeof raw === "object"
+        ? (raw as Record<string, unknown>)
+        : {};
+    const accountId = parseTreasuryBoundedString(
+      row.accountId ?? row.id,
+      `items[${index}].accountId`,
+      { required: true }
+    )!;
+    const amount = parseTreasuryMoneyString(
+      row.amount ?? row.saldoFinal ?? row.informedClosingBalance,
+      `items[${index}].amount`
+    );
+    return {
+      accountId,
+      expectedVersion: parseNonNegativeInt(
+        row.expectedVersion ?? row.version,
+        `items[${index}].expectedVersion`
+      ),
+      amount,
+      notes: parseTreasuryBoundedString(
+        row.notes ?? row.observacao ?? row.observation,
+        `items[${index}].notes`,
+        { required: false }
+      ),
+    };
+  });
+
+  return { civilDate, items };
+}
+
 export type TreasuryDailyClosingPreviewQuery = {
   date: TreasuryCivilDate;
   companyCode: string | null;
