@@ -1,4 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   AlertTriangle,
   Ban,
@@ -20,7 +21,18 @@ import {
 import type { SalesOrderFlowColumnPageState } from "@/src/lib/salesOrderFlowKanbanPagination";
 import type { SalesOrderFlowColumnIndicator } from "@/src/lib/salesOrderFlowUi";
 import { SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS } from "@/src/lib/salesOrderFlowDetailUi";
+import {
+  EMIL_DURATION,
+  EMIL_EASE_OUT,
+  emilCardListStagger,
+  emilCardVariants,
+  emilColumnVariants,
+  emilStaggerContainer,
+} from "@/src/lib/motion/emilUiMotion";
 import { cn, formatCurrency } from "@/src/lib/utils";
+
+const PRESSABLE =
+  "transition-transform duration-150 [transition-timing-function:var(--ease-out-strong)] active:scale-[0.97]";
 
 function formatKanbanResponsibleAreaLabel(
   area: string | null | undefined
@@ -74,6 +86,12 @@ export function SalesOrderFlowKanbanBoard({
   onLoadMore,
   onRetryColumn,
 }: Props) {
+  const reduceMotion = useReducedMotion();
+  const columnTransition = {
+    duration: reduceMotion ? 0 : EMIL_DURATION.board,
+    ease: EMIL_EASE_OUT,
+  };
+
   if (columns.length === 0) {
     return (
       <div
@@ -96,17 +114,22 @@ export function SalesOrderFlowKanbanBoard({
       data-testid="sales-order-flow-kanban"
     >
       {/* min-w-max: scroll horizontal em 1366×768; colunas 300px × 6 ≈ 1848px */}
-      <div
+      <motion.div
         className={cn(
           "flex min-w-max items-stretch gap-3",
           fullscreen && "h-full min-h-[calc(100dvh-4.5rem)]"
         )}
+        variants={reduceMotion ? undefined : emilStaggerContainer}
+        initial={reduceMotion ? false : "hidden"}
+        animate="show"
       >
         {columns.map((column) => (
-          <section
+          <motion.section
             key={column.stage}
+            variants={reduceMotion ? undefined : emilColumnVariants}
+            transition={columnTransition}
             className={cn(
-              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/20 shadow-sm",
+              "flex w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-muted/25 shadow-sm",
               fullscreen
                 ? "h-full max-h-none"
                 : "max-h-[min(70vh,640px)]"
@@ -166,7 +189,10 @@ export function SalesOrderFlowKanbanBoard({
                   <p>{column.errorMessage ?? "Falha ao carregar a coluna."}</p>
                   <button
                     type="button"
-                    className="inline-flex rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-900 hover:bg-rose-50"
+                    className={cn(
+                      "inline-flex rounded-md border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-900 hover:bg-rose-50",
+                      PRESSABLE
+                    )}
                     data-testid={`sales-order-flow-kanban-column-retry-${column.stage}`}
                     onClick={() => onRetryColumn(column.stage)}
                   >
@@ -196,17 +222,36 @@ export function SalesOrderFlowKanbanBoard({
                 </div>
               ) : null}
 
-              {column.cards.map((card) => (
-                <div key={card.orderId}>
-                  <SalesOrderFlowKanbanCard
-                    card={card}
-                    valuesVisible={valuesVisible}
-                    inconsistenciesVisible={inconsistenciesVisible}
-                    defaultMinimized={cardsMinimized}
-                    onOpen={() => onOpenOrder(card.orderId, card.orderCode)}
-                  />
-                </div>
-              ))}
+              <motion.div
+                className="space-y-2"
+                variants={reduceMotion ? undefined : emilCardListStagger}
+                initial={reduceMotion ? false : "hidden"}
+                animate="show"
+              >
+                <AnimatePresence initial={false}>
+                  {column.cards.map((card) => (
+                    <motion.div
+                      key={card.orderId}
+                      variants={reduceMotion ? undefined : emilCardVariants}
+                      initial={reduceMotion ? false : "hidden"}
+                      animate="show"
+                      exit={reduceMotion ? undefined : "exit"}
+                      transition={{
+                        duration: reduceMotion ? 0 : EMIL_DURATION.popover,
+                        ease: EMIL_EASE_OUT,
+                      }}
+                    >
+                      <SalesOrderFlowKanbanCard
+                        card={card}
+                        valuesVisible={valuesVisible}
+                        inconsistenciesVisible={inconsistenciesVisible}
+                        defaultMinimized={cardsMinimized}
+                        onOpen={() => onOpenOrder(card.orderId, card.orderCode)}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </motion.div>
 
               {column.errorMessage && column.cards.length > 0 ? (
                 <div
@@ -216,7 +261,10 @@ export function SalesOrderFlowKanbanBoard({
                   <p>{column.errorMessage}</p>
                   <button
                     type="button"
-                    className="inline-flex rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-50"
+                    className={cn(
+                      "inline-flex rounded-md border border-amber-300 bg-white px-2 py-1 font-medium hover:bg-amber-50",
+                      PRESSABLE
+                    )}
                     onClick={() =>
                       column.hasMore
                         ? onLoadMore(column.stage)
@@ -231,7 +279,10 @@ export function SalesOrderFlowKanbanBoard({
               {column.hasMore && column.status === "ready" ? (
                 <button
                   type="button"
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50"
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-50",
+                    PRESSABLE
+                  )}
                   data-testid={`sales-order-flow-kanban-load-more-${column.stage}`}
                   disabled={column.loadingMore}
                   onClick={() => onLoadMore(column.stage)}
@@ -250,9 +301,9 @@ export function SalesOrderFlowKanbanBoard({
                 </button>
               ) : null}
             </div>
-          </section>
+          </motion.section>
         ))}
-      </div>
+      </motion.div>
     </section>
   );
 }
@@ -293,6 +344,7 @@ export function SalesOrderFlowKanbanCard({
   defaultMinimized?: boolean;
   onOpen: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const [minimized, setMinimized] = useState(defaultMinimized);
   useEffect(() => {
     setMinimized(defaultMinimized);
@@ -301,65 +353,86 @@ export function SalesOrderFlowKanbanCard({
   const badges = resolveCardBadges(card);
   const stageLabel =
     SALES_ORDER_FLOW_STAGE_LABELS[card.stage] ?? String(card.stage);
-
-  if (minimized) {
-    return (
-      <div
-        className="flex w-full items-stretch gap-1 rounded-lg border border-border bg-card shadow-sm"
-        data-testid={`sales-order-flow-card-${card.orderId}`}
-        data-minimized="true"
-      >
-        <button
-          type="button"
-          className="min-w-0 flex-1 px-2.5 py-2 text-left transition hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-          onClick={onOpen}
-          aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-bold text-foreground">
-              {card.orderCode}
-            </p>
-            {card.isBlocked ? (
-              <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-hidden="true" />
-            ) : null}
-          </div>
-          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
-            {stageLabel}
-          </p>
-          <p
-            className="mt-1 line-clamp-2 text-[11px] font-semibold leading-snug text-amber-950"
-            title={card.stayReason}
-            data-testid={`sales-order-flow-card-stay-reason-mini-${card.orderId}`}
-          >
-            {card.stayReason}
-          </p>
-        </button>
-        <button
-          type="button"
-          className="shrink-0 border-l border-border px-2 text-muted-foreground hover:bg-accent hover:text-foreground"
-          data-testid={`sales-order-flow-card-expand-${card.orderId}`}
-          aria-label={`Expandir pedido ${card.orderCode}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            setMinimized(false);
-          }}
-        >
-          <ChevronDown className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
-    );
-  }
+  const morphTransition = {
+    duration: reduceMotion ? 0 : EMIL_DURATION.popover,
+    ease: EMIL_EASE_OUT,
+  };
 
   return (
-    <div
-      className="rounded-lg border border-border bg-card shadow-sm"
-      data-testid={`sales-order-flow-card-${card.orderId}`}
-      data-minimized="false"
-    >
+    <AnimatePresence mode="wait" initial={false}>
+      {minimized ? (
+        <motion.div
+          key="mini"
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
+          transition={morphTransition}
+          className="flex w-full items-stretch gap-1 rounded-lg border border-border bg-card shadow-sm"
+          data-testid={`sales-order-flow-card-${card.orderId}`}
+          data-minimized="true"
+        >
+          <button
+            type="button"
+            className={cn(
+              "min-w-0 flex-1 px-2.5 py-2 text-left hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+              PRESSABLE
+            )}
+            onClick={onOpen}
+            aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="truncate text-sm font-bold text-foreground">
+                {card.orderCode}
+              </p>
+              {card.isBlocked ? (
+                <Ban className="h-3.5 w-3.5 shrink-0 text-rose-600" aria-hidden="true" />
+              ) : null}
+            </div>
+            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
+              {stageLabel}
+            </p>
+            <p
+              className="mt-1 line-clamp-2 text-[11px] font-semibold leading-snug text-amber-950"
+              title={card.stayReason}
+              data-testid={`sales-order-flow-card-stay-reason-mini-${card.orderId}`}
+            >
+              {card.stayReason}
+            </p>
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "shrink-0 border-l border-border px-2 text-muted-foreground hover:bg-accent hover:text-foreground",
+              PRESSABLE
+            )}
+            data-testid={`sales-order-flow-card-expand-${card.orderId}`}
+            aria-label={`Expandir pedido ${card.orderCode}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              setMinimized(false);
+            }}
+          >
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </motion.div>
+      ) : (
+        <motion.div
+          key="full"
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.97 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, scale: 0.98 }}
+          transition={morphTransition}
+          className="rounded-lg border border-border bg-card shadow-sm"
+          data-testid={`sales-order-flow-card-${card.orderId}`}
+          data-minimized="false"
+        >
       <div className="flex items-start gap-1 border-b border-border/60 px-1 pt-1">
         <button
           type="button"
-          className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className={cn(
+            "ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground",
+            PRESSABLE
+          )}
           data-testid={`sales-order-flow-card-minimize-${card.orderId}`}
           aria-label={`Minimizar pedido ${card.orderCode}`}
           onClick={(event) => {
@@ -372,7 +445,10 @@ export function SalesOrderFlowKanbanCard({
       </div>
       <button
         type="button"
-        className="w-full p-3 pt-1 text-left transition hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        className={cn(
+          "w-full p-3 pt-1 text-left hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+          PRESSABLE
+        )}
         onClick={onOpen}
         aria-label={`Abrir detalhe do pedido ${card.orderCode}`}
       >
@@ -542,7 +618,9 @@ export function SalesOrderFlowKanbanCard({
           </div>
         ) : null}
       </button>
-    </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -573,7 +651,7 @@ function CompactProgress({
         aria-valuenow={percent}
       >
         <div
-          className="h-full rounded-full bg-sky-500 transition-[width]"
+          className="h-full rounded-full bg-sky-500 transition-[width] duration-200 [transition-timing-function:var(--ease-out-strong)]"
           style={{ width: `${percent}%` }}
         />
       </div>
