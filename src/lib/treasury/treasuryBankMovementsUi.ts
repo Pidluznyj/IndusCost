@@ -6,6 +6,8 @@ import type { TreasuryBankMovementFilterBucket } from "./contracts/index.js";
 import { TREASURY_BANK_MOVEMENT_FILTER_BUCKETS } from "./contracts/index.js";
 
 export const TREASURY_BANK_MOVEMENTS_PAGE_TITLE = "Movimentos bancários" as const;
+export const TREASURY_BANK_MOVEMENTS_DENIED_MESSAGE =
+  "Você não tem permissão para visualizar movimentos bancários." as const;
 export const TREASURY_BANK_MOVEMENTS_PAGE_SUBTITLE =
   "Importação OFX, histórico de lotes e conciliação de movimentos." as const;
 

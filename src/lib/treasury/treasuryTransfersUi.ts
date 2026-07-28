@@ -8,6 +8,8 @@ import { TREASURY_TRANSFER_STATUSES } from "./contracts/index.js";
 export const TREASURY_TRANSFERS_PAGE_TITLE = "Transferências" as const;
 export const TREASURY_TRANSFERS_PAGE_SUBTITLE =
   "Movimentações internas entre contas — consolidado neutro e rastreável." as const;
+export const TREASURY_TRANSFERS_DENIED_MESSAGE =
+  "Sem permissão para visualizar transferências." as const;
 
 export const TREASURY_TRANSFER_STATUS_LABELS: Record<
   TreasuryTransferStatus,

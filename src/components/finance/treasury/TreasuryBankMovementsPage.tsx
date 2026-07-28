@@ -30,6 +30,7 @@ import {
   canViewTreasuryReconciliation,
 } from "@/src/lib/treasury/treasuryReconciliationPermissions.js";
 import {
+  TREASURY_BANK_MOVEMENTS_DENIED_MESSAGE,
   TREASURY_BANK_MOVEMENTS_PAGE_SUBTITLE,
   TREASURY_BANK_MOVEMENTS_PAGE_TITLE,
   createEmptyTreasuryBankMovementsFilters,
@@ -38,6 +39,7 @@ import {
   type TreasuryBankMovementsFilterState,
 } from "@/src/lib/treasury/treasuryBankMovementsUi.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { TreasuryBankMovementsPanel } from "./TreasuryBankMovementsPanel.js";
 import { TreasuryOfxImportDialog } from "./TreasuryOfxImportDialog.js";
@@ -250,9 +252,11 @@ export function TreasuryBankMovementsPage() {
         />
 
         {viewKind === "denied" ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Você não tem permissão para visualizar movimentos bancários.
-          </p>
+          <PermissionDenied
+            title="Sem permissão"
+            message={TREASURY_BANK_MOVEMENTS_DENIED_MESSAGE}
+            testId="treasury-bank-movements-permission-denied"
+          />
         ) : null}
         {viewKind === "loading" ? (
           <p className="text-sm text-muted-foreground">Carregando…</p>

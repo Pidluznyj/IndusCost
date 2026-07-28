@@ -27,6 +27,7 @@ import {
   canViewTreasuryTransfers,
 } from "@/src/lib/treasury/treasuryTransfersPermissions.js";
 import {
+  TREASURY_TRANSFERS_DENIED_MESSAGE,
   TREASURY_TRANSFERS_PAGE_SUBTITLE,
   TREASURY_TRANSFERS_PAGE_TITLE,
   createEmptyTreasuryTransferForm,
@@ -39,6 +40,7 @@ import {
 } from "@/src/lib/treasury/treasuryTransfersUi.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
 import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { TreasuryTransferFormDialog } from "./TreasuryTransferFormDialog.js";
 import { TreasuryTransfersPanel } from "./TreasuryTransfersPanel.js";
 
@@ -226,9 +228,11 @@ export function TreasuryTransfersPage() {
         />
 
         {viewKind === "denied" ? (
-          <p className="text-sm text-muted-foreground">
-            Sem permissão para visualizar transferências.
-          </p>
+          <PermissionDenied
+            title="Sem permissão"
+            message={TREASURY_TRANSFERS_DENIED_MESSAGE}
+            testId="treasury-transfers-permission-denied"
+          />
         ) : null}
         {viewKind === "loading" ? (
           <p className="text-sm text-muted-foreground">Carregando…</p>

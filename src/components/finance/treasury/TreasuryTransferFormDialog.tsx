@@ -57,9 +57,9 @@ export function TreasuryTransferFormDialog(props: {
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="space-y-1 sm:col-span-2">
-            <span className={financeModuleFilterLabelClass}>Origem</span>
+            <span className={financeModuleFilterLabelClass()}>Origem</span>
             <select
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.fromAccountId}
               onChange={(e) =>
                 onChange({ ...form, fromAccountId: e.target.value })
@@ -74,9 +74,9 @@ export function TreasuryTransferFormDialog(props: {
             </select>
           </label>
           <label className="space-y-1 sm:col-span-2">
-            <span className={financeModuleFilterLabelClass}>Destino</span>
+            <span className={financeModuleFilterLabelClass()}>Destino</span>
             <select
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.toAccountId}
               onChange={(e) =>
                 onChange({ ...form, toAccountId: e.target.value })
@@ -91,10 +91,10 @@ export function TreasuryTransferFormDialog(props: {
             </select>
           </label>
           <label className="space-y-1">
-            <span className={financeModuleFilterLabelClass}>Data</span>
+            <span className={financeModuleFilterLabelClass()}>Data</span>
             <input
               type="date"
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.civilDate}
               onChange={(e) =>
                 onChange({ ...form, civilDate: e.target.value })
@@ -102,18 +102,18 @@ export function TreasuryTransferFormDialog(props: {
             />
           </label>
           <label className="space-y-1">
-            <span className={financeModuleFilterLabelClass}>Valor</span>
+            <span className={financeModuleFilterLabelClass()}>Valor</span>
             <input
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.amount}
               onChange={(e) => onChange({ ...form, amount: e.target.value })}
               placeholder="0.00"
             />
           </label>
           <label className="space-y-1">
-            <span className={financeModuleFilterLabelClass}>Status inicial</span>
+            <span className={financeModuleFilterLabelClass()}>Status inicial</span>
             <select
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.status}
               onChange={(e) =>
                 onChange({
@@ -127,9 +127,9 @@ export function TreasuryTransferFormDialog(props: {
             </select>
           </label>
           <label className="space-y-1 sm:col-span-2">
-            <span className={financeModuleFilterLabelClass}>Memo</span>
+            <span className={financeModuleFilterLabelClass()}>Memo</span>
             <input
-              className={financeModuleFilterFieldClass}
+              className={financeModuleFilterFieldClass()}
               value={form.memo}
               onChange={(e) => onChange({ ...form, memo: e.target.value })}
             />

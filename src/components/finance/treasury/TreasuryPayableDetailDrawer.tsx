@@ -91,13 +91,17 @@ export function TreasuryPayableDetailDrawer({
   onClose,
   onSaved,
 }: TreasuryPayableDetailDrawerProps) {
-  const [form, setForm] = useState<ProgramFormState | null>(null);
+  const [form, setForm] = useState<ProgramFormState | null>(() =>
+    row ? formFromRow(row) : null
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConflict, setIsConflict] = useState(false);
   const [confirmImpact, setConfirmImpact] =
     useState<TreasuryPayableProgrammingImpactDto | null>(null);
-  const [holdReason, setHoldReason] = useState("");
+  const [holdReason, setHoldReason] = useState(
+    () => row?.complement?.reason ?? ""
+  );
 
   useEffect(() => {
     if (!row) {

@@ -85,8 +85,9 @@
 | **58** | Auditoria de performance | `DONE` | `6ed1fb6` | batch ACL/saldos; OFX createMany; exception statuses IN; defer rawPayload CR/CP; índices; benchmarks antes/depois; `docs/treasury/PERFORMANCE_BENCHMARKS.md`; `test:treasury` 574/574 |
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
 | **60** | Testes de integração completos (DB seguro) | `DONE` | `462c74c` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
+| **61** | Testes E2E fluxos críticos (tsx --test) | `DONE` | `PENDING` | `TreasuryCriticalFlows.e2e.test.tsx` (14 passos UI + denied + responsivo); fix drawers init síncrono; PermissionDenied transfers/OFX; className helpers `()`; `test:treasury` 604/605 (1 skip) |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração E2E = **60**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**.
 
 ---
 
@@ -120,7 +121,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `DONE` | Unitários P59 + integração E2E P60 em DB seguro in-process (Postgres externo opt-in via `TREASURY_TEST_DATABASE_URL`) |
+| Testes domínio | `DONE` | Unitários P59 + integração P60 (DB seguro) + E2E UI P61 (`tsx --test` + `renderToStaticMarkup`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -670,6 +671,15 @@
 - [x] `test:treasury` 601/602 (1 skip); sem avanço automático
 ---
 
+### 61 — Testes E2E fluxos críticos (ferramenta real)
+- [x] Ferramenta do projeto: `tsx --test` + `renderToStaticMarkup` (sem Playwright no repo)
+- [x] Fluxo 1–14: Central → saldo → dashboard → CR atrasado → promessa → projeção → programar CP → risco → transferência → fechar c/ ressalva → OFX → conciliar/reverter → relatório → reabrir
+- [x] Estados sem permissão (dashboard/saldo/CR/CP/agenda/comparação/transfers/OFX/closing/reports)
+- [x] Responsividade essencial (tabelas desktop/mobile, bottom-sheet `items-end`/`sm:items-center`)
+- [x] Correções: init síncrono dos drawers Overlay; `PermissionDenied` transfers/bank; `className={helper()}`; mensagem manage saldo
+- [x] `test:treasury` 604/605 (1 skip); sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -749,3 +759,4 @@
 | 2026-07-28 | Prompt 58: auditoria de performance do módulo — `6ed1fb6` |
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
 | 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `462c74c` |
+| 2026-07-28 | Prompt 61: testes E2E UI fluxos críticos (`tsx --test`) — `PENDING` |

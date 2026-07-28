@@ -53,9 +53,9 @@ export function TreasuryExceptionsPanel(props: {
     <div className="space-y-4" data-testid="treasury-exceptions-panel">
       <div className="flex flex-wrap items-end gap-3">
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Status</span>
+          <span className={financeModuleFilterLabelClass()}>Status</span>
           <select
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.status}
             onChange={(e) =>
               onFiltersChange({ ...filters, status: e.target.value })
@@ -72,9 +72,9 @@ export function TreasuryExceptionsPanel(props: {
           </select>
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Severidade</span>
+          <span className={financeModuleFilterLabelClass()}>Severidade</span>
           <select
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.severity}
             onChange={(e) =>
               onFiltersChange({ ...filters, severity: e.target.value })
@@ -87,9 +87,9 @@ export function TreasuryExceptionsPanel(props: {
           </select>
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Empresa</span>
+          <span className={financeModuleFilterLabelClass()}>Empresa</span>
           <input
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.companyCode}
             onChange={(e) =>
               onFiltersChange({ ...filters, companyCode: e.target.value })
@@ -98,9 +98,9 @@ export function TreasuryExceptionsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Responsável</span>
+          <span className={financeModuleFilterLabelClass()}>Responsável</span>
           <input
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.responsibleUserId}
             onChange={(e) =>
               onFiltersChange({
@@ -112,9 +112,9 @@ export function TreasuryExceptionsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Busca</span>
+          <span className={financeModuleFilterLabelClass()}>Busca</span>
           <input
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.search}
             onChange={(e) =>
               onFiltersChange({ ...filters, search: e.target.value })
@@ -123,9 +123,9 @@ export function TreasuryExceptionsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Ordenar</span>
+          <span className={financeModuleFilterLabelClass()}>Ordenar</span>
           <select
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={`${filters.sortBy}:${filters.sortDirection}`}
             onChange={(e) => {
               const [sortBy, sortDirection] = e.target.value.split(":");

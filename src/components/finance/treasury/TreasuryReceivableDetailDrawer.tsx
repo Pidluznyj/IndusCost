@@ -74,7 +74,9 @@ export function TreasuryReceivableDetailDrawer({
   onClose,
   onSaved,
 }: TreasuryReceivableDetailDrawerProps) {
-  const [form, setForm] = useState<ExpectationFormState | null>(null);
+  const [form, setForm] = useState<ExpectationFormState | null>(() =>
+    row ? formFromRow(row) : null
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isConflict, setIsConflict] = useState(false);

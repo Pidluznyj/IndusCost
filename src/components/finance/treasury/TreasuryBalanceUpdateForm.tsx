@@ -2,6 +2,7 @@ import React from "react";
 import { TREASURY_BALANCE_ORIGINS } from "@/src/lib/treasury/contracts/index.js";
 import { TREASURY_BALANCE_ORIGIN_LABELS } from "@/src/lib/treasury/treasuryAccountsUi.js";
 import {
+  TREASURY_BALANCE_MANAGE_DENIED_MESSAGE,
   maskTreasuryMoneyInputPtBr,
   type TreasuryBalanceFormState,
 } from "@/src/lib/treasury/treasuryBalancesUi.js";
@@ -50,8 +51,7 @@ export function TreasuryBalanceUpdateForm({
         className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
         data-testid="treasury-balance-form-readonly"
       >
-        Você pode consultar o histórico, mas não tem permissão para informar
-        novo saldo.
+        {TREASURY_BALANCE_MANAGE_DENIED_MESSAGE}
       </p>
     );
   }

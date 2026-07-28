@@ -70,9 +70,9 @@ export function TreasuryBankMovementsPanel(props: {
     <div className="space-y-6" data-testid="treasury-bank-movements-panel">
       <div className="flex flex-wrap items-end gap-3">
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Situação</span>
+          <span className={financeModuleFilterLabelClass()}>Situação</span>
           <select
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.bucket}
             onChange={(e) =>
               onFiltersChange({ ...filters, bucket: e.target.value })
@@ -90,9 +90,9 @@ export function TreasuryBankMovementsPanel(props: {
           </select>
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Conta</span>
+          <span className={financeModuleFilterLabelClass()}>Conta</span>
           <select
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.accountId}
             onChange={(e) =>
               onFiltersChange({ ...filters, accountId: e.target.value })
@@ -107,9 +107,9 @@ export function TreasuryBankMovementsPanel(props: {
           </select>
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Empresa</span>
+          <span className={financeModuleFilterLabelClass()}>Empresa</span>
           <input
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.companyCode}
             onChange={(e) =>
               onFiltersChange({ ...filters, companyCode: e.target.value })
@@ -118,9 +118,9 @@ export function TreasuryBankMovementsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Busca</span>
+          <span className={financeModuleFilterLabelClass()}>Busca</span>
           <input
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.search}
             onChange={(e) =>
               onFiltersChange({ ...filters, search: e.target.value })
@@ -129,10 +129,10 @@ export function TreasuryBankMovementsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>De</span>
+          <span className={financeModuleFilterLabelClass()}>De</span>
           <input
             type="date"
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.from}
             onChange={(e) =>
               onFiltersChange({ ...filters, from: e.target.value })
@@ -140,10 +140,10 @@ export function TreasuryBankMovementsPanel(props: {
           />
         </label>
         <label className="space-y-1">
-          <span className={financeModuleFilterLabelClass}>Até</span>
+          <span className={financeModuleFilterLabelClass()}>Até</span>
           <input
             type="date"
-            className={financeModuleFilterFieldClass}
+            className={financeModuleFilterFieldClass()}
             value={filters.to}
             onChange={(e) =>
               onFiltersChange({ ...filters, to: e.target.value })

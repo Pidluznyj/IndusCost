@@ -136,9 +136,9 @@ export function TreasuryOfxImportDialog(props: {
         {step === "upload" ? (
           <div className="space-y-3" data-testid="treasury-ofx-step-upload">
             <label className="block space-y-1">
-              <span className={financeModuleFilterLabelClass}>Conta</span>
+              <span className={financeModuleFilterLabelClass()}>Conta</span>
               <select
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 value={accountId}
                 onChange={(e) => setAccountId(e.target.value)}
                 data-testid="treasury-ofx-account"
@@ -152,11 +152,11 @@ export function TreasuryOfxImportDialog(props: {
               </select>
             </label>
             <label className="block space-y-1">
-              <span className={financeModuleFilterLabelClass}>Arquivo OFX</span>
+              <span className={financeModuleFilterLabelClass()}>Arquivo OFX</span>
               <input
                 type="file"
                 accept=".ofx,.qfx,application/x-ofx,application/ofx,text/xml"
-                className={financeModuleFilterFieldClass}
+                className={financeModuleFilterFieldClass()}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
                 data-testid="treasury-ofx-file"
               />
