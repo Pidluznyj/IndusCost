@@ -112,6 +112,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       assert.deepEqual(assertConferencePayloadHasNoCostFields(body), []);
       assert.equal(body.reportedQuantity, 450);
+      assert.equal(body.contingencyQuantity, 40);
+      assert.equal(body.recommendedQuantity, 180);
       assert.equal(body.reason, "CONFERENCIA_FISICA");
       const headers = init?.headers as Record<string, string>;
       assert.equal(headers["Idempotency-Key"], "idem-1");
@@ -124,6 +126,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       const result = await submitMaterialStockConference({
         materialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         reportedQuantity: 450,
+        contingencyQuantity: 40,
+        recommendedQuantity: 180,
         reason: "CONFERENCIA_FISICA",
         expectedVersion: 3,
         idempotencyKey: "idem-1",
@@ -154,6 +158,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       const result = await submitMaterialStockConference({
         materialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: null,
         reason: "CONFERENCIA_FISICA",
         expectedVersion: 3,
         idempotencyKey: "idem-err",
@@ -186,6 +192,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       const result = await submitMaterialStockConference({
         materialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 200,
         reason: "CONFERENCIA_FISICA",
         expectedVersion: 3,
         idempotencyKey: "idem-409",
@@ -217,6 +225,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       await submitMaterialStockConference({
         materialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 200,
         reason: "PERDA",
         expectedVersion: 3,
         idempotencyKey: key,
@@ -224,6 +234,8 @@ describe("materialStockConferenceClient — submit sucesso/erro/conflito", () =>
       await submitMaterialStockConference({
         materialId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 200,
         reason: "PERDA",
         expectedVersion: 3,
         idempotencyKey: key,

@@ -1,5 +1,6 @@
 /**
  * Diálogo de conferência manual — poucos toques, teclado numérico, sem custos.
+ * Campos: estoque contingência*, estoque recomendado, estoque atual*.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
@@ -31,6 +32,11 @@ type ConflictState = MaterialStockConferenceConflictDetails & {
   openedQuantity: number;
 };
 
+function quantityToInput(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "";
+  return String(value).replace(".", ",");
+}
+
 export function MaterialStockConferenceDialog({
   item,
   open,
@@ -38,6 +44,8 @@ export function MaterialStockConferenceDialog({
   onSuccess,
   onReloadRequired,
 }: MaterialStockConferenceDialogProps) {
+  const [contingencyRaw, setContingencyRaw] = useState("");
+  const [recommendedRaw, setRecommendedRaw] = useState("");
   const [reportedRaw, setReportedRaw] = useState("");
   const [reason, setReason] = useState<MaterialStockConferenceReason>(
     MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON
@@ -52,10 +60,12 @@ export function MaterialStockConferenceDialog({
 
   const idempotencyKeyRef = useRef(createConferenceIdempotencyKey());
   const inFlightRef = useRef(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const contingencyRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setContingencyRaw(quantityToInput(item.contingencyQuantity));
+    setRecommendedRaw(quantityToInput(item.recommendedQuantity));
     setReportedRaw("");
     setReason(MATERIAL_STOCK_CONFERENCE_DEFAULT_REASON);
     setNotes("");
@@ -67,16 +77,32 @@ export function MaterialStockConferenceDialog({
     setBaselineUpdatedAt(item.updatedAt);
     idempotencyKeyRef.current = createConferenceIdempotencyKey();
     inFlightRef.current = false;
-    const t = window.setTimeout(() => inputRef.current?.focus(), 50);
+    const t = window.setTimeout(() => contingencyRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
-  }, [open, item.id, item.currentQuantity, item.stockConferenceVersion, item.updatedAt]);
+  }, [
+    open,
+    item.id,
+    item.currentQuantity,
+    item.contingencyQuantity,
+    item.recommendedQuantity,
+    item.stockConferenceVersion,
+    item.updatedAt,
+  ]);
 
   const preview = useMemo(
     () => previewStockConferenceDifference(baselineQuantity, reportedRaw),
     [baselineQuantity, reportedRaw]
   );
-  const parsed = parseStockConferenceQuantityInput(reportedRaw);
-  const canSave = parsed.ok && !saving;
+  const parsedContingency = parseStockConferenceQuantityInput(contingencyRaw);
+  const parsedRecommended = recommendedRaw.trim()
+    ? parseStockConferenceQuantityInput(recommendedRaw)
+    : ({ ok: true as const, value: null });
+  const parsedReported = parseStockConferenceQuantityInput(reportedRaw);
+  const canSave =
+    parsedContingency.ok &&
+    parsedRecommended.ok &&
+    parsedReported.ok &&
+    !saving;
   const reasons = listMaterialStockConferenceReasons();
 
   if (!open) return null;
@@ -87,13 +113,39 @@ export function MaterialStockConferenceDialog({
     openedQuantity?: number;
   }) => {
     if (inFlightRef.current || saving) return;
+
+    const contingency = parseStockConferenceQuantityInput(contingencyRaw);
+    if (contingency.ok === false) {
+      setError(
+        contingency.reason === "EMPTY"
+          ? "Informe o estoque contingência."
+          : "Estoque contingência inválido. Use apenas números decimais."
+      );
+      return;
+    }
+
+    let recommended: number | null = null;
+    if (recommendedRaw.trim()) {
+      const r = parseStockConferenceQuantityInput(recommendedRaw);
+      if (r.ok === false) {
+        setError("Estoque recomendado inválido. Use apenas números decimais.");
+        return;
+      }
+      recommended = r.value;
+    }
+
     const qty = parseStockConferenceQuantityInput(reportedRaw);
     if (qty.ok === false) {
       setError(
         qty.reason === "EMPTY"
-          ? "Informe o novo saldo contado."
-          : "Saldo inválido. Use apenas números decimais."
+          ? "Informe o estoque atual."
+          : "Estoque atual inválido. Use apenas números decimais."
       );
+      return;
+    }
+
+    if (recommended != null && contingency.value > recommended) {
+      setError("Hierarquia inválida: contingência ≤ recomendado.");
       return;
     }
 
@@ -112,6 +164,8 @@ export function MaterialStockConferenceDialog({
     const result = await submitMaterialStockConference({
       materialId: item.id,
       reportedQuantity: qty.value,
+      contingencyQuantity: contingency.value,
+      recommendedQuantity: recommended,
       reason,
       notes,
       expectedVersion,
@@ -136,13 +190,21 @@ export function MaterialStockConferenceDialog({
       setError(null);
     } else {
       setError(result.message);
-      // nova chave para nova tentativa após erro (não reutiliza envio falho sem intenção)
       idempotencyKeyRef.current = createConferenceIdempotencyKey();
     }
 
     inFlightRef.current = false;
     setSaving(false);
   };
+
+  const unitSuffix = (
+    <span
+      className="inline-flex min-h-12 min-w-[3.5rem] items-center justify-center rounded-lg border border-border bg-muted px-3 text-sm font-semibold"
+      data-testid="stock-conference-unit"
+    >
+      {item.unit}
+    </span>
+  );
 
   return (
     <div
@@ -174,11 +236,61 @@ export function MaterialStockConferenceDialog({
         <div className="mt-4 space-y-3">
           <label className="block space-y-1.5">
             <span className="text-sm font-medium text-foreground">
-              Novo saldo contado ({item.unit})
+              Estoque contingência* ({item.unit})
             </span>
             <div className="flex items-stretch gap-2">
               <input
-                ref={inputRef}
+                ref={contingencyRef}
+                type="text"
+                inputMode="decimal"
+                enterKeyHint="next"
+                autoComplete="off"
+                value={contingencyRaw}
+                disabled={saving}
+                onChange={(e) => {
+                  setContingencyRaw(e.target.value);
+                  setError(null);
+                  setConflict(null);
+                }}
+                placeholder="Obrigatório"
+                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                data-testid="stock-conference-contingency-input"
+              />
+              {unitSuffix}
+            </div>
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium text-foreground">
+              Estoque recomendado ({item.unit})
+            </span>
+            <div className="flex items-stretch gap-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                enterKeyHint="next"
+                autoComplete="off"
+                value={recommendedRaw}
+                disabled={saving}
+                onChange={(e) => {
+                  setRecommendedRaw(e.target.value);
+                  setError(null);
+                  setConflict(null);
+                }}
+                placeholder="Opcional"
+                className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                data-testid="stock-conference-recommended-input"
+              />
+              {unitSuffix}
+            </div>
+          </label>
+
+          <label className="block space-y-1.5">
+            <span className="text-sm font-medium text-foreground">
+              Estoque atual* ({item.unit})
+            </span>
+            <div className="flex items-stretch gap-2">
+              <input
                 type="text"
                 inputMode="decimal"
                 enterKeyHint="done"
@@ -190,16 +302,11 @@ export function MaterialStockConferenceDialog({
                   setError(null);
                   setConflict(null);
                 }}
-                placeholder="Ex.: 450,5"
+                placeholder="Saldo contado"
                 className="min-h-12 flex-1 rounded-lg border border-border bg-background px-3 py-3 text-base tabular-nums outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
                 data-testid="stock-conference-reported-input"
               />
-              <span
-                className="inline-flex min-h-12 min-w-[3.5rem] items-center justify-center rounded-lg border border-border bg-muted px-3 text-sm font-semibold"
-                data-testid="stock-conference-unit"
-              >
-                {item.unit}
-              </span>
+              {unitSuffix}
             </div>
           </label>
 
@@ -247,7 +354,7 @@ export function MaterialStockConferenceDialog({
               </span>
             </div>
             <div className="mt-2 flex justify-between gap-3">
-              <span className="text-muted-foreground">Novo saldo</span>
+              <span className="text-muted-foreground">Novo saldo (atual)</span>
               <span className="font-semibold tabular-nums">
                 {preview.reported == null
                   ? "—"
@@ -263,7 +370,8 @@ export function MaterialStockConferenceDialog({
               </span>
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              O estoque oficial só muda após a confirmação do servidor.
+              Contingência e recomendado não somam ao estoque. O estoque oficial só muda após a
+              confirmação do servidor.
             </p>
           </div>
 
@@ -390,7 +498,7 @@ export function MaterialStockConferenceDialog({
             type="button"
             className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
             onClick={() => void handleSave()}
-            disabled={!canSave || !parsed.ok}
+            disabled={!canSave}
             data-testid="stock-conference-save"
           >
             {saving ? (

@@ -50,6 +50,10 @@ export class MaterialStockConferenceError extends Error {
 export type ParsedMaterialStockConferenceCommand = {
   materialId: string;
   reportedQuantity: number;
+  /** Obrigatório na conferência. */
+  contingencyQuantity: number;
+  /** Opcional — null = não configurado / limpar. */
+  recommendedQuantity: number | null;
   reason: MaterialStockConferenceReason;
   notes: string | null;
   expectedVersion: number | null;
@@ -118,19 +122,88 @@ export function parseMaterialStockConferenceCommand(
   }
 
   const reportedRaw = body.reportedQuantity ?? body.countedQuantity ?? body.newQuantity;
+  if (reportedRaw === undefined || reportedRaw === null || reportedRaw === "") {
+    throw new MaterialStockConferenceError(
+      "REQUIRED_FIELD",
+      "Estoque atual é obrigatório.",
+      "reportedQuantity"
+    );
+  }
   const reportedQuantity = roundMaterialStockQuantity(reportedRaw);
   if (!Number.isFinite(reportedQuantity)) {
     throw new MaterialStockConferenceError(
       "INVALID_FIELD",
-      "Saldo contado inválido.",
+      "Estoque atual inválido.",
       "reportedQuantity"
     );
   }
   if (reportedQuantity < 0) {
     throw new MaterialStockConferenceError(
       "INVALID_FIELD",
-      "Saldo contado não pode ser negativo.",
+      "Estoque atual não pode ser negativo.",
       "reportedQuantity"
+    );
+  }
+
+  const contingencyRaw =
+    body.contingencyQuantity ?? body.estoqueContingencia ?? body.contingency;
+  if (
+    contingencyRaw === undefined ||
+    contingencyRaw === null ||
+    contingencyRaw === ""
+  ) {
+    throw new MaterialStockConferenceError(
+      "REQUIRED_FIELD",
+      "Estoque contingência é obrigatório.",
+      "contingencyQuantity"
+    );
+  }
+  const contingencyQuantity = roundMaterialStockQuantity(contingencyRaw);
+  if (!Number.isFinite(contingencyQuantity)) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Estoque contingência inválido.",
+      "contingencyQuantity"
+    );
+  }
+  if (contingencyQuantity < 0) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Estoque contingência não pode ser negativo.",
+      "contingencyQuantity"
+    );
+  }
+
+  const recommendedRaw =
+    body.recommendedQuantity ?? body.estoqueRecomendado ?? body.recommended;
+  let recommendedQuantity: number | null = null;
+  if (recommendedRaw !== undefined && recommendedRaw !== null && recommendedRaw !== "") {
+    const n = roundMaterialStockQuantity(recommendedRaw);
+    if (!Number.isFinite(n)) {
+      throw new MaterialStockConferenceError(
+        "INVALID_FIELD",
+        "Estoque recomendado inválido.",
+        "recommendedQuantity"
+      );
+    }
+    if (n < 0) {
+      throw new MaterialStockConferenceError(
+        "INVALID_FIELD",
+        "Estoque recomendado não pode ser negativo.",
+        "recommendedQuantity"
+      );
+    }
+    recommendedQuantity = n;
+  }
+
+  if (
+    recommendedQuantity != null &&
+    !(contingencyQuantity <= recommendedQuantity)
+  ) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Hierarquia inválida: contingência ≤ recomendado.",
+      "recommendedQuantity"
     );
   }
 
@@ -176,11 +249,44 @@ export function parseMaterialStockConferenceCommand(
   return {
     materialId,
     reportedQuantity,
+    contingencyQuantity,
+    recommendedQuantity,
     reason,
     notes,
     expectedVersion,
     expectedUpdatedAt,
   };
+}
+
+/** Valida contingência/recomendado da conferência contra o mínimo já cadastrado. */
+export function assertConferenceLevelsAgainstMinimum(input: {
+  contingencyQuantity: number;
+  recommendedQuantity: number | null;
+  minimumQuantity: unknown;
+}): void {
+  const min = roundMaterialStockQuantity(input.minimumQuantity);
+  const hasMin =
+    input.minimumQuantity != null &&
+    input.minimumQuantity !== "" &&
+    Number.isFinite(min);
+  if (!hasMin) return;
+  if (!(input.contingencyQuantity <= min)) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Hierarquia inválida: contingência ≤ mínimo.",
+      "contingencyQuantity"
+    );
+  }
+  if (
+    input.recommendedQuantity != null &&
+    !(min <= input.recommendedQuantity)
+  ) {
+    throw new MaterialStockConferenceError(
+      "INVALID_FIELD",
+      "Hierarquia inválida: mínimo ≤ recomendado.",
+      "recommendedQuantity"
+    );
+  }
 }
 
 export function assertStockConferenceConcurrency(input: {

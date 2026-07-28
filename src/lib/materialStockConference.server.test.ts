@@ -102,11 +102,28 @@ function createTxDb(seed: MaterialRow) {
         }
         updatePayloads.push(data);
         row.quantity = Number(data.quantity);
+        if ("contingencyQuantity" in data) {
+          row.contingencyQuantity =
+            data.contingencyQuantity == null
+              ? null
+              : Number(data.contingencyQuantity);
+        }
+        if ("recommendedQuantity" in data) {
+          row.recommendedQuantity =
+            data.recommendedQuantity == null
+              ? null
+              : Number(data.recommendedQuantity);
+        }
         row.stockConferenceVersion = Number(data.stockConferenceVersion);
         row.lastStockConferenceAt = data.lastStockConferenceAt as Date;
         row.lastStockConferenceUserId = data.lastStockConferenceUserId as string;
         row.updatedAt = new Date(row.updatedAt.getTime() + 1000);
         return { count: 1 };
+      },
+    },
+    materialStockLevelAudit: {
+      async create() {
+        return { id: "audit-1" };
       },
     },
     materialStockConference: {
@@ -186,15 +203,43 @@ function baseMaterial(overrides: Partial<MaterialRow> = {}): MaterialRow {
 }
 
 describe("materialStockConferenceRules — parse", () => {
-  it("exige saldo final e motivo válido", () => {
+  it("exige estoque atual, contingência e motivo válido", () => {
     const cmd = parseMaterialStockConferenceCommand({
       materialId: MATERIAL_ID,
       reportedQuantity: 450,
+      contingencyQuantity: 40,
+      recommendedQuantity: 200,
       reason: "CONFERÊNCIA_FÍSICA",
       expectedVersion: 3,
     });
     assert.equal(cmd.reportedQuantity, 450);
+    assert.equal(cmd.contingencyQuantity, 40);
+    assert.equal(cmd.recommendedQuantity, 200);
     assert.equal(cmd.reason, "CONFERENCIA_FISICA");
+  });
+
+  it("exige estoque contingência e permite recomendado vazio", () => {
+    assert.throws(
+      () =>
+        parseMaterialStockConferenceCommand({
+          materialId: MATERIAL_ID,
+          reportedQuantity: 450,
+          reason: "CONFERENCIA_FISICA",
+          expectedVersion: 3,
+        }),
+      (err: unknown) =>
+        err instanceof MaterialStockConferenceError &&
+        err.code === "REQUIRED_FIELD" &&
+        err.field === "contingencyQuantity"
+    );
+    const cmd = parseMaterialStockConferenceCommand({
+      materialId: MATERIAL_ID,
+      reportedQuantity: 450,
+      contingencyQuantity: 40,
+      reason: "CONFERENCIA_FISICA",
+      expectedVersion: 3,
+    });
+    assert.equal(cmd.recommendedQuantity, null);
   });
 });
 
@@ -207,6 +252,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
         reason: "CONFERENCIA_FISICA",
         expectedVersion: 3,
         userId: "should-be-ignored",
@@ -220,10 +267,14 @@ describe("recordMaterialStockConference", () => {
     assert.equal(result.conference.reportedQuantity, 450);
     assert.equal(result.conference.difference, -50);
     assert.equal(result.material.quantity, 450);
+    assert.equal(result.material.contingencyQuantity, 50);
+    assert.equal(result.material.recommendedQuantity, 400);
     assert.equal(result.material.stockConferenceVersion, 4);
     assert.equal(result.conference.userId, USER_ID);
     assert.equal(db.getConferences().length, 1);
     assert.equal(db.getMaterial().currentCost, 5.17);
+    assert.equal(db.getMaterial().contingencyQuantity, 50);
+    assert.equal(db.getMaterial().recommendedQuantity, 400);
   });
 
   it("diferença positiva, saldo igual e Decimal", async () => {
@@ -232,6 +283,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: "12.750000",
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
         reason: "ENTRADA_MANUAL",
         expectedVersion: 1,
       },
@@ -245,6 +298,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: 100,
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
         reason: "AJUSTE_DE_INVENTARIO",
         expectedVersion: 1,
       },
@@ -262,6 +317,8 @@ describe("recordMaterialStockConference", () => {
           body: {
             materialId: MATERIAL_ID,
             reportedQuantity: 400,
+            contingencyQuantity: 50,
+            recommendedQuantity: 400,
             reason: "PERDA",
             expectedVersion: 3,
           },
@@ -289,6 +346,8 @@ describe("recordMaterialStockConference", () => {
         body: {
           materialId: MATERIAL_ID,
           reportedQuantity: 450,
+          contingencyQuantity: 50,
+          recommendedQuantity: 400,
           reason: "CONFERENCIA_FISICA",
           expectedVersion: 3,
         },
@@ -306,6 +365,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
         reason: "CONFERENCIA_FISICA",
         expectedVersion: 3,
       },
@@ -316,6 +377,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: 100,
+        contingencyQuantity: 10,
+        recommendedQuantity: 50,
         reason: "PERDA",
         expectedVersion: 99,
       },
@@ -353,6 +416,8 @@ describe("recordMaterialStockConference", () => {
       body: {
         materialId: MATERIAL_ID,
         reportedQuantity: 450,
+        contingencyQuantity: 50,
+        recommendedQuantity: 400,
         reason: "SAIDA_MANUAL",
         expectedVersion: 3,
       },
@@ -402,6 +467,8 @@ describe("recordMaterialStockConference", () => {
           body: {
             materialId: MATERIAL_ID,
             reportedQuantity: 450,
+            contingencyQuantity: 50,
+            recommendedQuantity: 400,
             reason: "OUTRO",
             expectedVersion: 3,
           },
