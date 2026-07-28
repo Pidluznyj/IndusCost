@@ -92,7 +92,7 @@
 | **65** | Controle de rollout por submódulo | `DONE` | `10fc53a` | Flags `balances/dashboard/receivables/payables/reports` + guards BE; `availability.flags`; FE filtra abas; `19-ROLLOUT.md` ordem de ativação; testes flags/rollout; dados preservados com flag OFF |
 | **66** | Scripts + runbook de implantação produção | `DONE` | `e44b9f2` | `scripts/treasury/predeploy-check.sh` + `postdeploy-validation.sh`; `PRODUCTION-DEPLOYMENT.md` + `ROLLBACK.md`; alinhado a `/opt/induscost` + `deploy-induscost.sh`; sem execução em prod |
 | **67** | Checklist validação funcional pós-deploy | `DONE` | `965ef35` | `POST-DEPLOY-CHECKLIST.md` — classes A (leitura), B (dados teste), C (manual financeiro); health/migrations/tabelas/perms/fluxos/OFX seguro/duplicidades; sem execução em prod |
-| **68** | Auditoria final RC + fechamento de lacunas | `DONE` | `9b4f526` (+ residual) | Relatório/posição sem inventar igualdade; ledger/OFX; civil SP; FE accept/unmatch/calculate/alert-settings; audit; health; `RELEASE-CANDIDATE-VALIDATION.md`; `test:treasury` 636/637 (1 skip) |
+| **68** | Auditoria final RC + fechamento de lacunas | `DONE` | `9b4f526` + `c5b0800` | Relatório/posição sem inventar igualdade; ledger/OFX; civil SP; FE accept/unmatch/calculate/alert-settings; audit; health; `RELEASE-CANDIDATE-VALIDATION.md`; `test:treasury` 636/637 (1 skip) |
 
     > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração = **60**; E2E UI = **61**; backfill = **62**; rastreabilidade = **63**; documentação = **64**; rollout = **65**; deploy scripts = **66**; post-deploy checklist = **67**; auditoria final RC = **68**.
 
