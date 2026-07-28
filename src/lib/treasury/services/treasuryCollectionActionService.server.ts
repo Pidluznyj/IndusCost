@@ -13,6 +13,11 @@ import {
   createTreasuryOfficialTitlesAdapter,
   type TreasuryOfficialTitlesAdapter,
 } from "../adapters/treasuryOfficialTitlesAdapter.server.js";
+import {
+  assertCollectionActionCancellable,
+  assertReceivableAllowsCollectionAction,
+  shouldMirrorCollectionNextActionOnComplement,
+} from "../domain/treasuryCollectionActionRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import { toTreasuryCollectionActionDto } from "../mappers/treasuryCollectionActionMappers.js";
 import {
@@ -144,13 +149,7 @@ export function createTreasuryCollectionActionService(deps: {
           "titleId"
         );
       }
-      if (official.cancellation.isCancelledOrRemovedFromSource) {
-        throw new TreasuryDomainError(
-          "CONFLICT",
-          "Título cancelado/ausente não permite nova ação de cobrança.",
-          "titleId"
-        );
-      }
+      assertReceivableAllowsCollectionAction(official);
 
       const created = await runInTransaction(async (tx) => {
         const row = await repo.create(
@@ -171,7 +170,7 @@ export function createTreasuryCollectionActionService(deps: {
         );
 
         // Espelha próxima ação no complemento (filtro da listagem) sem apagar histórico.
-        if (input.nextAction) {
+        if (shouldMirrorCollectionNextActionOnComplement(input.nextAction)) {
           const existing = await complementRepo.findByOfficialTitle(
             "RECEIVABLE",
             official.id,
@@ -237,6 +236,11 @@ export function createTreasuryCollectionActionService(deps: {
           "actionId"
         );
       }
+      assertCollectionActionCancellable({
+        cancelledAt: current.cancelledAt,
+        version: current.version,
+        expectedVersion: input.expectedVersion,
+      });
       const before = toTreasuryCollectionActionDto(current);
       const cancelled = await runInTransaction(async (tx) => {
         const row = await repo.cancel(

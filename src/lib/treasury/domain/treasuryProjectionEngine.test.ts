@@ -5,6 +5,7 @@ import {
   applyExpectationOverlays,
   applyProgrammingOverlays,
   applyPromiseOverlays,
+  buildLedgerProjectionMovements,
   calculateProjectionDayLine,
   enumerateTreasuryProjectionCivilDates,
   identifyProjectionRisk,
@@ -1025,6 +1026,96 @@ describe("treasuryProjectionEngine — auditoria Prompt 36 (lacunas)", () => {
     const day = result.dayLines.find((l) => l.civilDate === "2026-07-27")!;
     assert.equal(day.inflows, "80.00");
     assert.ok(result.skipped.some((s) => s.id === "led-dup"));
+  });
+
+  it("ledger nature BAIXA/SETTLEMENT e mesmo título baixado não entram no caixa", () => {
+    const byNature = buildLedgerProjectionMovements({
+      periodFrom: "2026-07-27",
+      periodTo: "2026-07-29",
+      ledgerEntries: [
+        {
+          id: "led-baixa",
+          accountId: ACC_A,
+          civilDate: "2026-07-27",
+          amount: "40.00",
+          direction: "CREDIT",
+          status: "ACTIVE",
+          nature: "BAIXA_MANUAL",
+        },
+        {
+          id: "led-settlement-nature",
+          accountId: ACC_A,
+          civilDate: "2026-07-27",
+          amount: "40.00",
+          direction: "CREDIT",
+          status: "ACTIVE",
+          nature: "OFFICIAL_SETTLEMENT",
+        },
+        {
+          id: "led-same-title",
+          accountId: ACC_A,
+          civilDate: "2026-07-27",
+          amount: "40.00",
+          direction: "CREDIT",
+          status: "ACTIVE",
+          nature: "MANUAL",
+          officialTitleId: TITLE_AR,
+        },
+        {
+          id: "led-ok",
+          accountId: ACC_A,
+          civilDate: "2026-07-27",
+          amount: "15.00",
+          direction: "CREDIT",
+          status: "ACTIVE",
+          nature: "ADJUSTMENT",
+        },
+      ],
+      settledTitleIds: new Set([TITLE_AR]),
+    });
+    assert.equal(byNature.movements.length, 1);
+    assert.equal(byNature.movements[0]!.id, "led-ok");
+    assert.ok(byNature.skipped.some((s) => s.id === "led-baixa"));
+    assert.ok(byNature.skipped.some((s) => s.id === "led-settlement-nature"));
+    assert.ok(byNature.skipped.some((s) => s.id === "led-same-title"));
+
+    const engine = runTreasuryProjectionEngine(
+      baseInput({
+        receivables: [
+          ar({
+            id: "r1",
+            openBalance: "0.00",
+            settledAmount: "100.00",
+            originalAmount: "100.00",
+          }),
+        ],
+        settlements: [
+          {
+            id: "set-1",
+            side: "AR",
+            officialTitleId: TITLE_AR,
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "100.00",
+          },
+        ],
+        ledgerEntries: [
+          {
+            id: "led-dup-title",
+            accountId: ACC_A,
+            civilDate: "2026-07-27",
+            amount: "100.00",
+            direction: "CREDIT",
+            status: "ACTIVE",
+            nature: "MANUAL",
+            officialTitleId: TITLE_AR,
+          },
+        ],
+      })
+    );
+    const day = engine.dayLines.find((l) => l.civilDate === "2026-07-27")!;
+    assert.equal(day.inflows, "100.00");
+    assert.ok(engine.skipped.some((s) => s.id === "led-dup-title"));
   });
 
   it("CONTRACTUAL ignora expectedDate (dueDate intacto)", () => {

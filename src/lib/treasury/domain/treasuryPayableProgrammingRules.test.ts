@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { OfficialPayableView } from "../contracts/treasuryOfficialTitleContracts.js";
 import {
+  assertNoOfficialDueDateInProgrammingBody,
+  assertPayableAllowsProgramming,
   assertPayableProgrammingAmountAllowed,
   assertPayableProgrammingVersionMatch,
   computeTreasuryPayableProgrammingImpact,
@@ -9,6 +12,50 @@ import {
 } from "./treasuryPayableProgrammingRules.js";
 import { TreasuryDomainError } from "./treasuryErrors.js";
 import type { TreasuryTitleOperationalComplementRow } from "../mappers/treasuryTitleOperationalComplementMappers.js";
+
+function payable(
+  open: string,
+  cancelled = false
+): OfficialPayableView {
+  return {
+    id: "ap-1",
+    externalId: 2,
+    installmentNumber: null,
+    installmentLabel: null,
+    counterparty: {
+      personId: 2,
+      name: "F",
+      taxId: null,
+      role: "SUPPLIER",
+    },
+    description: null,
+    documentNumber: null,
+    classification: null,
+    comments: null,
+    nomusScheduleDate: null,
+    nomusScheduledAmount: null,
+    salesOrderExternalId: null,
+    salesOrderCode: null,
+    invoice: { externalId: null, number: null },
+    issuedOn: null,
+    dueDate: "2026-07-20",
+    originalAmount: open,
+    openBalance: open,
+    settlements: { settledAmount: "0.00", settledAt: null, paidAt: null },
+    cancellation: {
+      isCancelledOrRemovedFromSource: cancelled,
+      sourcePresenceStatus: cancelled ? "MISSING_CONFIRMED" : "PRESENT",
+      sourceRemovedAt: null,
+    },
+    officialStatus: {
+      nomusStatus: false,
+      isOpen: !cancelled && Number(open) > 0,
+      isSettled: Number(open) <= 0,
+      sourcePresenceStatus: "PRESENT",
+    },
+    lastSyncedAt: "2026-07-01T00:00:00.000Z",
+  };
+}
 
 describe("treasuryPayableProgrammingRules", () => {
   it("permite valor parcial e exige justificativa acima do saldo", () => {
@@ -91,6 +138,36 @@ describe("treasuryPayableProgrammingRules", () => {
         cancelledAt: new Date(),
       }),
       false
+    );
+  });
+
+  it("bloqueia programação em título cancelado/saldo zero e dueDate oficial no body", () => {
+    assert.throws(
+      () => assertPayableAllowsProgramming(payable("100.00", true), null),
+      /cancelado\/ausente/i
+    );
+    assert.throws(
+      () => assertPayableAllowsProgramming(payable("0.00"), null),
+      /saldo em aberto/i
+    );
+    assert.throws(
+      () =>
+        assertPayableAllowsProgramming(payable("50.00"), {
+          ...({
+            status: "CANCELLED",
+            cancelledAt: new Date(),
+            scheduledDate: null,
+            scheduledAmount: null,
+          } as TreasuryTitleOperationalComplementRow),
+        }),
+      /Complemento operacional cancelado/i
+    );
+    assert.throws(
+      () =>
+        assertNoOfficialDueDateInProgrammingBody({
+          vencimento: "2026-08-01",
+        }),
+      /Vencimento oficial/i
     );
   });
 });

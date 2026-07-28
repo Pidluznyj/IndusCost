@@ -13,8 +13,15 @@ import {
   createTreasuryOfficialTitlesAdapter,
   type TreasuryOfficialTitlesAdapter,
 } from "../adapters/treasuryOfficialTitlesAdapter.server.js";
+import {
+  assertDisputeAmountAllowed,
+  assertDisputeDoesNotMutateOfficialTitleFields,
+  assertDisputeStatusTransition,
+  assertReceivableAllowsDispute,
+} from "../domain/treasuryDisputeRules.js";
 import { TreasuryDomainError } from "../domain/treasuryErrors.js";
 import { toTreasuryDisputeDto } from "../mappers/treasuryDisputeMappers.js";
+import type { TreasuryDisputeStatus } from "../contracts/treasuryEnums.js";
 import {
   createTreasuryDisputeRepository,
   type TreasuryDisputeRepository,
@@ -135,6 +142,14 @@ export function createTreasuryDisputeService(deps: {
           "titleId"
         );
       }
+      assertReceivableAllowsDispute(official);
+      assertDisputeDoesNotMutateOfficialTitleFields(
+        input as unknown as Record<string, unknown>
+      );
+      assertDisputeAmountAllowed({
+        amountDisputed: input.amountDisputed,
+        openBalance: official.openBalance,
+      });
       // Não altera openBalance / dueDate oficiais.
       const openBefore = official.openBalance;
       const dueBefore = official.dueDate;
@@ -192,6 +207,10 @@ export function createTreasuryDisputeService(deps: {
           "disputeId"
         );
       }
+      assertDisputeStatusTransition({
+        from: current.status as TreasuryDisputeStatus,
+        to: input.status as TreasuryDisputeStatus,
+      });
       const before = toTreasuryDisputeDto(current);
       const updated = await runInTransaction(async (tx) => {
         const row = await repo.updateStatus(
