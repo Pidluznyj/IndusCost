@@ -245,4 +245,42 @@ describe("salesOrderFlowFulfilledWithoutProduction (OP-06)", () => {
     assert.notEqual(order.currentBottleneck?.stage, "WAITING_PRODUCTION_ORDER");
     assert.doesNotMatch(order.nextAction, /Ordem de Produção/i);
   });
+
+  it("PD 02586: 1000/1000 + DS 100% + NF cancelada → WAITING_NFE (não Aguardando OP)", () => {
+    const r = resolveSalesOrderItemFlow(
+      manufacturedNeedingOp("pd02586", {
+        status: 4,
+        statusNormalized: "FULFILLED",
+        orderedQuantity: 1000,
+        fulfilledQuantity: 1000,
+        producedQuantity: 0,
+        productionOrderLinks: [],
+        documentAllocations: [{ allocationKey: "ds-1", quantity: 1000 }],
+        nfeAllocations: [
+          {
+            nfeExternalId: 2586,
+            quantity: 1000,
+            isCanceled: true,
+            isValidForBilling: false,
+            hasDocument: true,
+            hasShipDate: false,
+          },
+        ],
+      })
+    );
+    assert.equal(r.remainingFulfillmentQuantity.eq(0), true);
+    assert.equal(r.currentStage, "WAITING_NFE");
+    assert.notEqual(r.currentStage, "WAITING_PRODUCTION_ORDER");
+    assert.ok(
+      r.inconsistencies.some((i) => i.code === "NFE_CANCELED_WITH_ACTIVE_ITEMS")
+    );
+    assert.ok(r.inconsistencies.some((i) => i.code === "DOCUMENT_WITHOUT_NFE"));
+
+    const order = resolveSalesOrderFlow([r], {
+      salesOrderId: "order-pd-02586",
+      itemFinancials: [{ salesOrderItemId: "pd02586", plannedNetValue: 2850 }],
+    });
+    assert.equal(order.currentStage, "WAITING_NFE");
+    assert.equal(Number(order.activeResidualValue.toString()), 0);
+  });
 });

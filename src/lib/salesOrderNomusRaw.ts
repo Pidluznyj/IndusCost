@@ -1,3 +1,4 @@
+import { parseNomusPtBrNumber } from "@/scripts/nomusNumberParser.js";
 import type { SalesOrderItemNomusStatus } from "./salesOrderLifecycleTypes.js";
 
 export type NomusRawItem = {
@@ -212,6 +213,11 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = parseNomusPtBrNumber(value);
+    return Number.isFinite(n) ? n : null;
+  }
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }

@@ -74,6 +74,31 @@ describe("nomusSalesOrderItemStatus", () => {
     assert.equal(viaOrdered.quantityPending, 0);
   });
 
+  it("parse pt-BR: '1.000' → 1000 (não 1) — regressão PD 02586", () => {
+    const parsed = parseNomusSalesOrderItemStatus({
+      quantidade: "1.000",
+      status: 4,
+      quantidadeAtendida: "1.000",
+      valorUnitario: "2,85",
+    });
+    assert.equal(parsed.statusNormalized, "FULFILLED");
+    assert.equal(parsed.quantityOrdered, 1000);
+    assert.equal(parsed.quantityFulfilled, 1000);
+    assert.equal(parsed.quantityPending, 0);
+  });
+
+  it("FULFILLED com atendida parcial inconsistente promove para pedida", () => {
+    const parsed = parseNomusSalesOrderItemStatus({
+      quantidade: 1000,
+      status: 4,
+      quantidadeAtendida: 1,
+      quantidadeFaturada: 0,
+    });
+    assert.equal(parsed.statusNormalized, "FULFILLED");
+    assert.equal(parsed.quantityFulfilled, 1000);
+    assert.equal(parsed.quantityPending, 0);
+  });
+
   it("toOrderItemFulfillmentStorageStatus e flags inativos", () => {
     assert.equal(toOrderItemFulfillmentStorageStatus("CANCELED"), "CANCELADO");
     assert.equal(toOrderItemFulfillmentStorageStatus("FULFILLED"), "ATENDIDO");

@@ -8,6 +8,7 @@
  * Preserva status bruto e marca UNKNOWN quando o código/texto não é mapeado.
  */
 
+import { parseNomusPtBrNumber } from "@/scripts/nomusNumberParser.js";
 import {
   isSalesOrderItemCancelledByRawQuantity,
   normalizeSalesOrderItemNomusStatus,
@@ -62,10 +63,22 @@ function asObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+/** Quantidades Nomus (aceita milhar pt-BR: "1.000" → 1000). */
+function asQuantityNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const n = parseNomusPtBrNumber(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** Valores monetários / genéricos (vírgula decimal). */
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim()) {
-    const n = Number(value.replace(",", "."));
+    const n = parseNomusPtBrNumber(value);
     return Number.isFinite(n) ? n : null;
   }
   return null;
@@ -194,20 +207,22 @@ export function parseNomusSalesOrderItemStatus(
   if (canceledByQty) statusNormalized = "CANCELED";
 
   const quantityOrdered =
-    asNumber(obj.quantidade) ?? asNumber(obj.qtd) ?? asNumber(obj.quantity);
+    asQuantityNumber(obj.quantidade) ??
+    asQuantityNumber(obj.qtd) ??
+    asQuantityNumber(obj.quantity);
   // Nomus frequentemente envia quantidadeAtendida=0 mesmo com status 4
   // ("Atendido totalmente") e preenche só quantidadeFaturada / UI de produção.
   // `??` não cai no próximo campo quando o valor é 0 — tratar 0 como ausente.
   const rawAtendida =
-    asNumber(obj.quantidadeAtendida) ??
-    asNumber(obj.qtdAtendida) ??
-    asNumber(obj.quantidadeAtendimento) ??
-    asNumber(obj.quantidadeAtendidaProducao) ??
-    asNumber(obj.qtdeAtendidaProducao);
+    asQuantityNumber(obj.quantidadeAtendida) ??
+    asQuantityNumber(obj.qtdAtendida) ??
+    asQuantityNumber(obj.quantidadeAtendimento) ??
+    asQuantityNumber(obj.quantidadeAtendidaProducao) ??
+    asQuantityNumber(obj.qtdeAtendidaProducao);
   const rawFaturada =
-    asNumber(obj.quantidadeFaturada) ??
-    asNumber(obj.qtdFaturada) ??
-    asNumber(obj.quantidadeNF);
+    asQuantityNumber(obj.quantidadeFaturada) ??
+    asQuantityNumber(obj.qtdFaturada) ??
+    asQuantityNumber(obj.quantidadeNF);
   let quantityFulfilled: number | null =
     rawAtendida != null && rawAtendida > 0
       ? rawAtendida
@@ -223,8 +238,20 @@ export function parseNomusSalesOrderItemStatus(
   ) {
     quantityFulfilled = quantityOrdered;
   }
+  // Status 4 com atendida parcial inconsistente (ex.: "1.000" parseado como 1) → pedida.
+  if (
+    statusNormalized === "FULFILLED" &&
+    quantityOrdered != null &&
+    quantityOrdered > 0 &&
+    quantityFulfilled != null &&
+    quantityFulfilled > 0 &&
+    quantityFulfilled + 1e-9 < quantityOrdered
+  ) {
+    quantityFulfilled = quantityOrdered;
+  }
   const quantityCanceled =
-    asNumber(obj.quantidadeCancelada) ?? asNumber(obj.qtdCancelada);
+    asQuantityNumber(obj.quantidadeCancelada) ??
+    asQuantityNumber(obj.qtdCancelada);
 
   let quantityCut: number | null = null;
   if (statusNormalized === "FULFILLED_WITH_CUT" && quantityOrdered != null) {
