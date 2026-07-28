@@ -3,9 +3,12 @@
 **Audiência:** operador humano no servidor (`/opt/induscost`).  
 **Cursor / agentes:** **não** executam deploy, backup, migrate em produção nem restart.
 
+> **Documento completo:** [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md)  
+> **Rollback:** [ROLLBACK.md](./ROLLBACK.md)
+
 ## Pré-condições
 
-1. Branch/tag revisada e mergeada conforme processo do time.
+1. Branch `main` revisada e mergeada (`origin/main`).
 2. Backup de PostgreSQL concluído e verificado.
 3. Migrations Prisma versionadas presentes em `prisma/migrations/` (inclui Tesouraria).
 4. Variáveis de ambiente já existentes no servidor (não alterar `.env` via Cursor).
@@ -15,33 +18,29 @@
 ## Sequência obrigatória (usuário)
 
 ```bash
-# 1) Backup (procedimento local do ambiente)
-# 2) Código
 cd /opt/induscost
-git pull
 
-# 3) Dependências (se necessário)
-npm ci
+# 1) Backup
+bash scripts/backupDatabaseBeforeDeploy.sh --reason=pre_deploy_treasury
 
-# 4) Migrations — somente deploy
-npx prisma migrate deploy
+# 2) Pré-checagem (lock + git + prisma validate + validate:treasury:deploy)
+bash scripts/treasury/predeploy-check.sh --require-backup
 
-# 5) Generate client
-npx prisma generate
+# 3) Deploy oficial (pull ff-only, migrate deploy, generate, build, restart)
+bash scripts/deploy-induscost.sh
+# Se package-lock mudou e o script não rodou deps: npm ci
 
-# 6) Build
-npm run build
+# 4) Validação pós-deploy
+bash scripts/treasury/postdeploy-validation.sh
 
-# 7) Restart do processo Node (systemd/pm2/etc. do ambiente)
-
-# 8) Validação local segura (sem escrita)
-npm run validate:treasury:deploy
+# 5) Smoke autenticado (availability + UI)
 ```
 
 ## Validação pós-deploy (smoke)
 
+- Script: `bash scripts/treasury/postdeploy-validation.sh`
 - `GET /api/health` (global) OK.
-- `GET /api/finance/treasury/health` com módulo habilitado → HTTP 200 / `ok:true`.
+- `GET /api/finance/treasury/health` — 200/auth ou 404 se flag OFF.
 - `GET /api/finance/treasury/availability` com sessão autorizada.
 - Nav `/finance/treasury` acessível apenas com `finance.treasury` + flag.
 - Não usar `prisma db push` nem `prisma migrate dev` em produção.
@@ -57,6 +56,4 @@ npm run backfill:treasury:title-complements:apply -- --created-by-user-id=<UUID>
 
 ## Rollback
 
-1. Restaurar backup de banco se migration/dados forem o problema.
-2. Reverter commit/tag no código e rebuild/restart.
-3. Não apagar histórico financeiro Tesouraria para “esconder” divergência.
+Ver [ROLLBACK.md](./ROLLBACK.md). Resumo: restore de backup se migration/dados; checkout de commit bom + rebuild; flags OFF sem apagar dados.

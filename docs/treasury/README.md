@@ -19,7 +19,9 @@
 | [IMPLEMENTATION_STATUS.md](./IMPLEMENTATION_STATUS.md) | Status por prompt |
 | [REQUIREMENTS-TRACEABILITY.md](./REQUIREMENTS-TRACEABILITY.md) | Matriz R01–R30 |
 | [PERFORMANCE_BENCHMARKS.md](./PERFORMANCE_BENCHMARKS.md) | Benchmarks de performance |
-| [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) | Implantação em produção (usuário) |
+| [DEPLOYMENT_RUNBOOK.md](./DEPLOYMENT_RUNBOOK.md) | Resumo de implantação (usuário) |
+| [PRODUCTION-DEPLOYMENT.md](./PRODUCTION-DEPLOYMENT.md) | Runbook completo de produção + scripts |
+| [ROLLBACK.md](./ROLLBACK.md) | Rollback seguro em produção |
 
 ### Documentação técnica (esta entrega)
 | Documento | Conteúdo |
