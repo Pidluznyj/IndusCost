@@ -457,11 +457,19 @@ export async function loadSalesOrderLinkedNfeContextMap(
     expectedDeliveryDate?: Date | null;
     nomusRawResponse?: unknown;
   }>,
-  referenceDate = new Date()
+  referenceDate = new Date(),
+  options?: {
+    /**
+     * Listagem Comercial: não carrega `rawPayload` do link (JSON pesado).
+     * Valores fiscais vêm de NomusNfe (xmlVNF / valorLiquido).
+     */
+    omitLinkRawPayload?: boolean;
+  }
 ): Promise<Map<string, SalesOrderLinkedNfeContext>> {
   if (orders.length === 0) return new Map();
 
   const orderIds = orders.map((order) => order.id);
+  const omitLinkRawPayload = options?.omitLinkRawPayload === true;
   const links = await prisma.salesOrderNfeLink.findMany({
     where: { salesOrderId: { in: orderIds } },
     select: {
@@ -475,7 +483,7 @@ export async function loadSalesOrderLinkedNfeContextMap(
       dataProcessamento: true,
       presentInLastPayload: true,
       nomusNfeId: true,
-      rawPayload: true,
+      ...(omitLinkRawPayload ? {} : { rawPayload: true }),
     },
   });
 

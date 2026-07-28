@@ -11,7 +11,11 @@ import type {
   SalesOrderMarginSummaryPayload,
 } from "@/src/lib/salesOrderMarginTypes";
 
-/** Select da página da listagem (server ainda usa nomusRawResponse internamente). */
+/**
+ * Select da página da listagem.
+ * Sem `nomusRawResponse`: JSON Nomus é pesado e travava o GET da grade.
+ * Billing da lista usa só SalesOrderNfeLink + NomusNfe.
+ */
 export const SALES_ORDER_LIST_PAGE_PRISMA_SELECT = {
   id: true,
   customerId: true,
@@ -23,8 +27,6 @@ export const SALES_ORDER_LIST_PAGE_PRISMA_SELECT = {
   totalNetValue: true,
   externalSellerId: true,
   proposalId: true,
-  /** Usado só no server (NF vinculada / margem); removido do JSON. */
-  nomusRawResponse: true,
   Customer: {
     select: {
       companyName: true,
