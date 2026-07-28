@@ -1,6 +1,6 @@
 # Central de Tesouraria — Implementation Status
 
-**Atualizado:** 2026-07-27  
+**Atualizado:** 2026-07-28  
 **Programa:** implementação integral da Central de Tesouraria no IndusCost  
 **Regra:** cada prompt atualiza este arquivo; não avançar etapas automaticamente.
 
@@ -84,8 +84,9 @@
 | **57** | Auditoria de segurança do módulo | `DONE` | `adcbc63` | anti-IDOR contas em movimentos; rate limit ações críticas; path OFX; segredo preview prod; logs sanitizados; summaryJson redacted; CSV injection; testes segurança; `test:treasury` 566/566 |
 | **58** | Auditoria de performance | `DONE` | `6ed1fb6` | batch ACL/saldos; OFX createMany; exception statuses IN; defer rawPayload CR/CP; índices; benchmarks antes/depois; `docs/treasury/PERFORMANCE_BENCHMARKS.md`; `test:treasury` 574/574 |
 | **59** | Completar testes unitários (regras) | `DONE` | `b4cced6` | cobertura obrigatória contas/saldos/perms/expectativas/promessas/cobrança/pagamentos/projeção/dupla contagem/Decimal/datas/transferências/lançamentos/exceções/fechamento/OFX/conciliação/relatórios; `test:treasury` 592/592 |
+| **60** | Testes de integração completos (DB seguro) | `DONE` | `PENDING` | gate `TREASURY_TEST_DATABASE_URL` (anti-prod); harness in-process TX/rollback; E2E conta→saldo→AR/AP→expectativa→promessa→programação→projeção→exceção→close→OFX→conciliar→reverter→reabrir→relatório; idempotência+auditoria; `test:treasury` 601/602 (1 skip gated Postgres) |
 
-    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**.
+    > **Nota de ordem:** …; segurança = **57**; performance = **58**; testes unitários = **59**; integração E2E = **60**.
 
 ---
 
@@ -119,7 +120,7 @@
 | Auditoria domínio | `DONE` | `TreasuryAuditLog` append-only + writer TX-aware + helpers tipados |
 | Permissões | `DONE` | Contrato `finance.treasury*` + bags; deny>allow; unknown deny |
 | Observabilidade | `PARTIAL` | `/api/health`, logs console, Nomus sync logs |
-| Testes domínio | `PARTIAL` | `npm run test:treasury` (inclui segurança P57) |
+| Testes domínio | `DONE` | Unitários P59 + integração E2E P60 em DB seguro in-process (Postgres externo opt-in via `TREASURY_TEST_DATABASE_URL`) |
 | Contratos DTO/schema | `DONE` | Enums, DTOs, parse tipado, paginação, sort whitelist, money/date/timestamp |
 | Documentação | `IN_PROGRESS` | Discovery + mapping + plano (Prompt 00) feitos; runbook ainda não |
 | Feature flags | `DONE` | Mestra + 7 subflags fail-closed (`treasury.*.enabled`) |
@@ -660,6 +661,15 @@
 - [x] `treasuryUnitCoverage.audit.test.ts`; sem avanço automático
 ---
 
+### 60 — Testes de integração completos (banco seguro)
+- [x] Gate `treasurySafeTestDatabase`: só localhost/127.0.0.1/`_test`; recusa hosts de produção
+- [x] Harness in-process com snapshot/rollback (TX); sem `DATABASE_URL` de produção
+- [x] Fluxo E2E: conta → saldo → listar AR/AP → expectativa → promessa → programar pagamento → recalcular projeção → exceção → fechar dia → importar OFX → conciliar → reverter → reabrir → relatório
+- [x] Cobertura de idempotência (saldo + OFX), rollback e auditoria append-only
+- [x] Postgres externo gated por `TREASURY_TEST_DATABASE_URL` (skip sem env)
+- [x] `test:treasury` 601/602 (1 skip); sem avanço automático
+---
+
 ## Riscos / pendências abertas
 
 1. Branch `feat/finance-lucro-caixa` coexiste — não misturar commits.
@@ -738,3 +748,4 @@
 | 2026-07-27 | Prompt 57: auditoria de segurança do módulo — `adcbc63` |
 | 2026-07-28 | Prompt 58: auditoria de performance do módulo — `6ed1fb6` |
 | 2026-07-28 | Prompt 59: completar testes unitários de regras — `b4cced6` |
+| 2026-07-28 | Prompt 60: testes de integração E2E em DB seguro — `PENDING` |
