@@ -296,4 +296,22 @@ describe("proposalListMargin", () => {
     assert.equal(enriched.totalMarginPerc, 25.5);
     assert.equal(enriched.totalMarginValue, 100);
   });
+
+  it("enrich usa cabeçalho quando itens não entregam margem comercial", () => {
+    const enriched = enrichProposalListRowMargin({
+      id: "p3",
+      totalMarginPerc: 43.09,
+      totalMarginValue: 219.4,
+      items: [
+        {
+          quantity: 1,
+          negotiatedPrice: 100,
+          commercialPricingSnapshotJson: null,
+        },
+      ],
+    });
+    assert.equal(enriched.marginSource, "HEADER");
+    assert.equal(enriched.totalMarginPerc, 43.09);
+    assert.equal(enriched.totalMarginValue, 219.4);
+  });
 });

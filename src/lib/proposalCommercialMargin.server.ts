@@ -459,6 +459,7 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
 
   // Agrupa produtos por data de formação (freeze.referenceDate ou default).
   const groups = new Map<string, { date: Date; productIds: Set<string> }>();
+  const defaultKey = toCivilDateKey(defaultRefOk)!;
   for (const raw of items) {
     const productId = typeof raw.productId === "string" ? raw.productId : "";
     if (!productId) continue;
@@ -468,13 +469,27 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
       dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)
         ? new Date(`${dateStr}T12:00:00`)
         : defaultRefOk;
-    const key = toCivilDateKey(date) ?? toCivilDateKey(defaultRefOk)!;
+    const key = toCivilDateKey(date) ?? defaultKey;
     let group = groups.get(key);
     if (!group) {
       group = { date, productIds: new Set() };
       groups.set(key, group);
     }
     group.productIds.add(productId);
+  }
+
+  // Sempre carrega também a data default (hoje/proposta) — fallback quando a
+  // data congelada não tem formação (paridade com hydrate do formulário).
+  if (groups.size > 0) {
+    let defaultGroup = groups.get(defaultKey);
+    if (!defaultGroup) {
+      defaultGroup = { date: defaultRefOk, productIds: new Set() };
+      groups.set(defaultKey, defaultGroup);
+    }
+    for (const [key, group] of groups) {
+      if (key === defaultKey) continue;
+      for (const productId of group.productIds) defaultGroup.productIds.add(productId);
+    }
   }
 
   const formationsByDate = new Map<string, Map<string, ProposalCommercialFormationResult>>();
@@ -509,8 +524,11 @@ export async function stampProposalItemsWithCommercialMarginsForWrite(
     const dateKey =
       existing?.referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(existing.referenceDate)
         ? existing.referenceDate
-        : toCivilDateKey(defaultRefOk)!;
-    const formation = formationsByDate.get(dateKey)?.get(productId);
+        : defaultKey;
+    let formation = formationsByDate.get(dateKey)?.get(productId);
+    if ((!formation || !formation.ok) && dateKey !== defaultKey) {
+      formation = formationsByDate.get(defaultKey)?.get(productId);
+    }
 
     // Formação autoritativa do banco na data congelada/proposta.
     if (formation?.ok) {

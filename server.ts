@@ -50,6 +50,7 @@ import { parsePublishedPriceSourceTraceQuery } from "./src/lib/pricing/published
 import { NO_PUBLISHED_PRODUCTION_COST_TABLE_MESSAGE } from "./src/lib/priceTableProductionCostResolver.js";
 import {
   resolveProposalOfficialMarginFromItems,
+  resolveProposalCommercialMarginFromItems,
 } from "./src/lib/proposalListMargin.js";
 import {
   applyProductionCostsToProposalDetail,
@@ -14701,13 +14702,15 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     items: ReadonlyArray<Record<string, unknown>>
   ): Record<string, unknown> {
     if (!Array.isArray(items) || items.length === 0) return scalars;
-    const resolved = resolveProposalOfficialMarginFromItems(items);
-    // Decimal obrigatório no Prisma — null (custo ausente) vira 0; GET lista/detalhe reenriquece.
+    const production = resolveProposalOfficialMarginFromItems(items);
+    const commercial = resolveProposalCommercialMarginFromItems(items);
+    // Cabeçalho exibe margem comercial (paridade listagem/formulário).
+    // totalCost permanece o de produção vigente.
     return {
       ...scalars,
-      totalMarginPerc: resolved.totalMarginPerc ?? 0,
-      totalMarginValue: resolved.totalMarginValue ?? 0,
-      totalCost: resolved.totalCost ?? 0,
+      totalMarginPerc: commercial.totalMarginPerc ?? 0,
+      totalMarginValue: commercial.totalMarginValue ?? 0,
+      totalCost: production.totalCost ?? 0,
     };
   }
 

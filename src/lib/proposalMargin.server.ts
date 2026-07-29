@@ -6,6 +6,8 @@ import type { PrismaClient } from "@prisma/client";
 import { getEffectiveProductProductionCostsForPairs } from "./productionCostTables.server.js";
 import { effectiveProductionCostLookupKey } from "./productionCostVersioning.js";
 import { stampProposalItemsWithCommercialMarginsForWrite } from "./proposalCommercialMargin.server.js";
+import { snapshotLooksComplete } from "./proposalCommercialMarginRecalc.js";
+import { parseProposalCommercialPricingSnapshot } from "./proposalCommercialMarginSnapshot.js";
 import { calculateProposalLineMargin } from "./proposalLineMargin.js";
 import {
   enrichProposalListRowMargin,
@@ -134,6 +136,10 @@ export async function enrichProposalsWithOfficialProductionMargins(
 /**
  * Em memória (não grava): garante commercialPricingSnapshotJson calculável
  * como no formulário — formação do produto + preço negociado.
+ *
+ * Snapshots incompletos/ausentes são descartados antes do stamp para forçar
+ * a mesma data “hoje” do hydrate do editor (senão a listagem fica “—” até
+ * o primeiro save enviar a prévia do browser).
  */
 export async function attachProposalCommercialSnapshotsForList(
   prisma: PrismaClient,
@@ -148,11 +154,16 @@ export async function attachProposalCommercialSnapshotsForList(
       out.push(proposal);
       continue;
     }
-    // Sem freeze: mesma data do hydrate do formulário (hoje).
-    // Com freeze.referenceDate no item, o stamp preserva a data congelada.
+    const prepared = items.map((item) => {
+      const snap = parseProposalCommercialPricingSnapshot(
+        item.commercialPricingSnapshotJson
+      );
+      if (snapshotLooksComplete(snap)) return item;
+      return { ...item, commercialPricingSnapshotJson: null };
+    });
     const stamped = await stampProposalItemsWithCommercialMarginsForWrite(
       prisma,
-      items,
+      prepared,
       { referenceDate: new Date() }
     );
     out.push({ ...proposal, items: stamped });

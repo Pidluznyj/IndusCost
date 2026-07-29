@@ -145,7 +145,7 @@ export function resolveProposalCommercialMarginFromItems(
 
 /**
  * Anexa margem comercial ao DTO de listagem (mesma do formulário).
- * Sem itens: preserva totais persistidos (legado).
+ * Se os itens não entregarem %, usa o cabeçalho (gravado no save como comercial).
  */
 export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
   proposal: T & {
@@ -159,26 +159,26 @@ export function enrichProposalListRowMargin<T extends Record<string, unknown>>(
   marginSource: "ITEMS" | "HEADER" | "NONE";
 } {
   const items = proposal.items;
+  const { items: _omit, ...rest } = proposal as T & { items?: unknown };
+
   if (Array.isArray(items) && items.length > 0) {
     const resolved = resolveProposalCommercialMarginFromItems(items);
-    const { items: _omit, ...rest } = proposal as T & {
-      items?: unknown;
-    };
-    return {
-      ...(rest as T),
-      totalMarginPerc: resolved.totalMarginPerc,
-      totalMarginValue: resolved.totalMarginValue,
-      marginSource: "ITEMS",
-    };
+    if (resolved.totalMarginPerc != null || resolved.totalMarginValue != null) {
+      return {
+        ...(rest as T),
+        totalMarginPerc: resolved.totalMarginPerc,
+        totalMarginValue: resolved.totalMarginValue,
+        marginSource: "ITEMS",
+      };
+    }
   }
 
   const headerPerc = Number(proposal.totalMarginPerc);
   const headerValue = Number(proposal.totalMarginValue);
   const hasHeader =
     Number.isFinite(headerPerc) || Number.isFinite(headerValue);
-  const { items: _omit2, ...rest2 } = proposal as T & { items?: unknown };
   return {
-    ...(rest2 as T),
+    ...(rest as T),
     totalMarginPerc: Number.isFinite(headerPerc) ? headerPerc : null,
     totalMarginValue: Number.isFinite(headerValue) ? headerValue : null,
     marginSource: hasHeader ? "HEADER" : "NONE",
