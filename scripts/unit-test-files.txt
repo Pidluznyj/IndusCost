@@ -26,6 +26,8 @@ src/lib/purchaseIndicatorsStats.test.ts
 src/lib/proposalIndicatorsStats.test.ts
 src/lib/proposalInternalManagementPdf.test.ts
 src/lib/proposalItemEstimatedCommission.test.ts
+src/lib/proposalCommercialMargin.test.ts
+src/lib/commercialMarginCore.test.ts
 src/lib/settingsApplyHhHmSimulation.test.ts
 src/lib/pricingFormationIndicatorsStats.test.ts
 src/lib/productEngineeringIndicatorsStats.test.ts
