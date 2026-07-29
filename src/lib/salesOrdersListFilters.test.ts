@@ -3,14 +3,24 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-test("Pedidos de Venda abre com ano corrente (mês livre no default)", () => {
+test("Pedidos de Venda abre com ano e mês vigentes aplicados", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
     "utf8"
   );
   assert.ok(page.includes("const currentYear = useMemo(() => new Date().getFullYear(), [])"));
+  assert.ok(
+    page.includes(
+      "const currentMonth = useMemo(() => String(new Date().getMonth() + 1), [])"
+    )
+  );
   assert.ok(page.includes('useState<string>(() => String(currentYear))'));
-  assert.ok(page.includes('buildInitialSalesOrderListAppliedFilters(String(currentYear), "")'));
+  assert.ok(page.includes("useState<string>(() => currentMonth)"));
+  assert.ok(
+    page.includes(
+      "buildInitialSalesOrderListAppliedFilters(String(currentYear), currentMonth)"
+    )
+  );
 });
 
 test("Pedidos de Venda usa CustomerAutocompleteFilter", () => {

@@ -108,13 +108,13 @@ describe("salesOrderListMarginSummary", () => {
     assert.match(adapter, /ordersForMonthlySeries/);
   });
 
-  it("lista inicia sem mês forçado (ano YTD)", () => {
+  it("lista inicia com ano e mês vigentes (carga menor)", () => {
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(
       module,
-      /buildInitialSalesOrderListAppliedFilters\(String\(currentYear\),\s*""\)/
+      /buildInitialSalesOrderListAppliedFilters\(String\(currentYear\),\s*currentMonth\)/
     );
-    assert.match(module, /useState<string>\(""\)/);
+    assert.match(module, /useState<string>\(\(\)\s*=>\s*currentMonth\)/);
   });
 
   it("select da margem geral não carrega nomusRawResponse em massa", () => {

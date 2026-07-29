@@ -230,6 +230,8 @@ function SalesOrderList() {
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
+  // Mês vigente (1–12) — default aplicado na 1ª carga para reduzir o volume da lista.
+  const currentMonth = useMemo(() => String(new Date().getMonth() + 1), []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
   const [hasInvoice, setHasInvoice] = useState("");
@@ -244,10 +246,10 @@ function SalesOrderList() {
   const [minNetValue, setMinNetValue] = useState("");
   const [maxNetValue, setMaxNetValue] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
-  const [month, setMonth] = useState<string>("");
+  const [month, setMonth] = useState<string>(() => currentMonth);
   const [searchDraft, setSearchDraft] = useState("");
   const [appliedFilters, setAppliedFilters] = useState<SalesOrderListAppliedFilters>(() =>
-    buildInitialSalesOrderListAppliedFilters(String(currentYear), "")
+    buildInitialSalesOrderListAppliedFilters(String(currentYear), currentMonth)
   );
   const [exportingInternal, setExportingInternal] = useState(false);
   const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
