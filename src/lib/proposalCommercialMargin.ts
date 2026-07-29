@@ -6,6 +6,7 @@
  */
 import {
   calculateCommercialMarginFromNetUnitPrice,
+  normalizeCommercialCommissionRateFraction,
   resolveCommercialCommissionFromTiers,
   validateAndSortCommercialMarginTiers,
   type CommercialMarginTier,
@@ -13,6 +14,9 @@ import {
 } from "./commercialMarginCore.js";
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
 import { resolveProposalItemCommercialValues } from "./proposalItemCommercialValues.js";
+
+/** Comissão mínima fora da tabela (mesma política de `OUT_OF_TABLE_COMMISSION_PERCENT`). */
+const PROPOSAL_OUT_OF_TABLE_COMMISSION_PERCENT = 1;
 
 export type ProposalCommercialMarginSource =
   | "PROPOSAL_PRICE_FORMATION"
@@ -353,7 +357,7 @@ export function calculateProposalItemCommercialMargin(
 
   const providedCommission = readExplicitRate(input.commissionRate);
   if (providedCommission.present) {
-    commissionRate = providedCommission.value;
+    commissionRate = normalizeCommercialCommissionRateFraction(providedCommission.value);
   } else {
     const tiersInput = input.tiers ?? [];
     if (!tiersInput.length) {
@@ -373,11 +377,13 @@ export function calculateProposalItemCommercialMargin(
       });
     }
 
-    const lowestCommission = validated.tiers[0]!.commissionRate;
+    // Abaixo do Atacado: comissão mínima 1% (não a do Atacado).
+    // Antes, `commissionPerc=1` virava fração 1.0 (=100%) e destruía a margem em tela.
+    const outOfTableCommissionRate = PROPOSAL_OUT_OF_TABLE_COMMISSION_PERCENT / 100;
     const tierResolution = resolveCommercialCommissionFromTiers({
       netUnitPrice: finalNetUnitPrice,
       tiers: validated.tiers,
-      belowLowestCommissionRate: lowestCommission,
+      belowLowestCommissionRate: outOfTableCommissionRate,
     });
     if (!tierResolution.ok) {
       return unavailableProposalCommercialMarginItem({
@@ -404,7 +410,7 @@ export function calculateProposalItemCommercialMargin(
     tierPosition = tierResolution.position.position;
     if (tierResolution.belowLowest) {
       tierWarnings.push(
-        "Preço abaixo da menor faixa — comissão da menor faixa (fora de tabela)."
+        `Preço abaixo da menor faixa — comissão mínima de ${PROPOSAL_OUT_OF_TABLE_COMMISSION_PERCENT}% (fora de tabela).`
       );
     }
   }

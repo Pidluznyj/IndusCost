@@ -312,9 +312,10 @@ export async function loadProposalCommercialFormationsBatch(
       const tierId = code;
       tiers.push({
         id: tierId,
-        marginRate: (marginPct ?? 0) > 1 ? (marginPct ?? 0) / 100 : marginPct ?? 0,
+        // Colunas da tabela: percentuais (33 = 33%, 1 = 1%) — sempre /100.
+        marginRate: (marginPct ?? 0) / 100,
         salePrice,
-        commissionRate: commissionPercent > 1 ? commissionPercent / 100 : commissionPercent,
+        commissionRate: commissionPercent / 100,
       });
       priceTableIdByTierId[tierId] = table.id;
       priceTableVersionIdByTierId[tierId] = item.priceTableVersionId;

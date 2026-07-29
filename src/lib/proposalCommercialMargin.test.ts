@@ -197,8 +197,36 @@ describe("proposalCommercialMargin — faixas variáveis", () => {
     });
     assert.equal(item.isComplete, true);
     assert.equal(item.tierPosition, "BELOW_LOWEST");
-    assert.equal(item.commissionRate, 0.06);
-    assert.ok(item.warnings.some((w) => /abaixo/i.test(w)));
+    assert.equal(item.commissionRate, 0.01);
+    assert.ok(item.warnings.some((w) => /comissão mínima de 1%/i.test(w)));
+  });
+
+  it("5b. comissão 1% suja como fração 1.0 não vira 100%", () => {
+    const dirtyTiers: CommercialMarginTier[] = [
+      { id: "atacado", marginRate: 0.33, salePrice: p33, commissionRate: 1 },
+      { id: "varejo3", marginRate: 0.575, salePrice: p575, commissionRate: 3 },
+    ];
+    const item = calculateProposalItemCommercialMargin({
+      quantity: 30,
+      negotiatedGrossUnitPrice: 9.98,
+      finalNetUnitPrice: 9.98,
+      frozenCostUnit: 3.94,
+      taxRate: 0.2075,
+      freightRate: 0.03,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: 0,
+      tiers: dirtyTiers,
+      formationContextId: "ctx-dirty-1pct",
+    });
+    assert.equal(item.isComplete, true);
+    assert.ok(
+      (item.commissionRate ?? 0) <= 0.03 + 1e-9,
+      `comissão esperada ≤3%, obteve ${item.commissionRate}`
+    );
+    assert.ok(
+      (item.commercialMarginPercent ?? -999) > -50,
+      `margem não deve colapsar com comissão 100%; obteve ${item.commercialMarginPercent}%`
+    );
   });
 
   it("6. acima da maior faixa", () => {

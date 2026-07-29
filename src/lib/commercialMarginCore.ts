@@ -21,6 +21,17 @@ export type CommercialMarginTier = {
   order?: number;
 };
 
+/**
+ * Normaliza comissão para fração.
+ * `commissionPerc` nas tabelas é percentual (1 = 1%, 6 = 6%).
+ * Heurística antiga `> 1 ? /100 : keep` tratava 1% como 100% — margem profundamente negativa.
+ * Valores já em fração (< 1) permanecem; percentuais (>= 1) dividem por 100.
+ */
+export function normalizeCommercialCommissionRateFraction(rate: number): number {
+  if (!Number.isFinite(rate) || rate < 0) return rate;
+  return rate >= 1 ? rate / 100 : rate;
+}
+
 export type CommercialPricePositionKind =
   | "EXACT_TIER"
   | "BETWEEN_TIERS"
@@ -136,7 +147,8 @@ export function validateAndSortCommercialMarginTiers(
       id,
       marginRate,
       salePrice,
-      commissionRate,
+      // 1% legado/sujo como `1` (em vez de 0.01) virava 100% na margem.
+      commissionRate: normalizeCommercialCommissionRateFraction(commissionRate),
       ...(order != null ? { order } : {}),
     });
   }
