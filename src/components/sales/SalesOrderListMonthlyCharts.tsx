@@ -64,6 +64,8 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
 
     void fetchUiSessionCachedJson<SalesOrderResultDashboardPayload>(path, {
       signal: controller.signal,
+      // Evita servir payload antigo (sem monthlyCommercialMargin → caía na gerencial).
+      cacheKey: `${path}::commercial-margin-v2`,
     })
       .then((data) => {
         if (!controller.signal.aborted) setPayload(data);
@@ -159,7 +161,7 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
       />
       {showMarginChart ? (
         <SalesOrderListMonthlyMarginPercentChart
-          rows={payload.monthlyCommercialMargin ?? payload.monthlyMargin}
+          rows={payload.monthlyCommercialMargin ?? []}
           selectedYear={filters.year}
         />
       ) : null}

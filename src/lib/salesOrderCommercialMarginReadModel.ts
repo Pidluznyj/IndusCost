@@ -8,6 +8,7 @@
  * Sem Prisma. Sem Proposta. Sem margem gerencial.
  */
 import { roundPricingMoney, roundPricingPercent } from "./pricingCalculations.js";
+import { toCivilDateKey } from "./financeCivilDate.js";
 import {
   summarizeSalesOrderCommercialMargins,
   type SalesOrderCommercialMarginItemPayload,
@@ -407,12 +408,9 @@ export function buildMonthlyCommercialMarginRows(
   }
 
   for (const order of orders) {
-    const raw = order.issueDate;
-    const d =
-      raw instanceof Date ? raw : raw != null && raw !== "" ? new Date(String(raw)) : null;
-    if (!d || !Number.isFinite(d.getTime())) continue;
-    if (d.getFullYear() !== year) continue;
-    const month = d.getMonth() + 1;
+    const civil = toCivilDateKey(order.issueDate);
+    if (!civil || !civil.startsWith(`${year}-`)) continue;
+    const month = Number(civil.slice(5, 7));
     const bucket = buckets.get(month);
     if (!bucket) continue;
     bucket.ordersCount += 1;

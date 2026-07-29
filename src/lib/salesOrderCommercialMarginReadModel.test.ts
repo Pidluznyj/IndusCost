@@ -531,7 +531,7 @@ describe("buildMonthlyCommercialMarginRows", () => {
     const rows = buildMonthlyCommercialMarginRows(
       [
         {
-          issueDate: new Date(2026, 0, 10),
+          issueDate: "2026-01-10",
           commercialMargin: {
             commercialMarginTotalValue: 100,
             commercialMarginTotalPercent: 50,
@@ -546,7 +546,7 @@ describe("buildMonthlyCommercialMarginRows", () => {
           },
         },
         {
-          issueDate: new Date(2026, 0, 20),
+          issueDate: "2026-01-20",
           commercialMargin: {
             commercialMarginTotalValue: 50,
             commercialMarginTotalPercent: 25,
@@ -561,7 +561,7 @@ describe("buildMonthlyCommercialMarginRows", () => {
           },
         },
         {
-          issueDate: new Date(2026, 1, 5),
+          issueDate: "2026-02-05",
           commercialMargin: {
             commercialMarginTotalValue: 80,
             commercialMarginTotalPercent: 40,
