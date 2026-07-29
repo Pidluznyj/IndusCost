@@ -58,6 +58,10 @@ import {
 } from "@/src/lib/proposalCommercialMarginDisplay";
 import { parseProposalCommercialPricingSnapshot } from "@/src/lib/proposalCommercialMarginSnapshot";
 import { ProposalCommercialMarginTooltip } from "@/src/components/proposal/ProposalCommercialMarginTooltip";
+import {
+  ProposalListSummaryCards,
+  type ProposalListSummary,
+} from "@/src/components/proposal/ProposalListSummaryCards";
 import "@/src/components/proposal/proposal-commercial-margin.css";
 import { GuidedTour } from "@/src/components/tour/GuidedTour";
 import { TourHelpButton } from "@/src/components/tour/TourHelpButton";
@@ -101,7 +105,39 @@ type ProposalListResponse = {
   pageSize: number;
   total: number;
   totalPages: number;
+  summary?: ProposalListSummary;
 };
+
+function buildProposalSummaryFromRows(rows: Proposal[]): ProposalListSummary {
+  const totalProposals = rows.length;
+  let totalNetAmount = 0;
+  let totalGrossAmount = 0;
+  let totalTaxAmount = 0;
+  let totalCostAmount = 0;
+  let totalMarginAmount = 0;
+
+  for (const p of rows) {
+    totalNetAmount += Number.isFinite(Number(p.totalNetValue)) ? Number(p.totalNetValue) : 0;
+    totalGrossAmount += Number.isFinite(Number(p.totalGrossValue)) ? Number(p.totalGrossValue) : 0;
+    totalTaxAmount += Number.isFinite(Number(p.totalTaxes)) ? Number(p.totalTaxes) : 0;
+    totalCostAmount += Number.isFinite(Number(p.totalCost)) ? Number(p.totalCost) : 0;
+    totalMarginAmount += Number.isFinite(Number(p.totalMarginValue)) ? Number(p.totalMarginValue) : 0;
+  }
+
+  const averageNetValue = totalProposals > 0 ? totalNetAmount / totalProposals : 0;
+  const totalMarginPercent = totalNetAmount > 0 ? (totalMarginAmount / totalNetAmount) * 100 : null;
+
+  return {
+    totalProposals,
+    totalNetAmount,
+    totalGrossAmount,
+    totalTaxAmount,
+    totalCostAmount,
+    totalMarginAmount,
+    averageNetValue,
+    totalMarginPercent,
+  };
+}
 
 function isPaginatedProposalResponse(value: unknown): value is ProposalListResponse {
   if (!value || typeof value !== "object") return false;
@@ -602,6 +638,7 @@ export const ProposalModule = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalProposals, setTotalProposals] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [summary, setSummary] = useState<ProposalListSummary | null>(null);
   const [editingProposal, setEditingProposal] = useState<Proposal | null>(null);
   const [analysisProposalId, setAnalysisProposalId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -907,17 +944,20 @@ export const ProposalModule = () => {
           setCurrentPage(safePage);
           setTotalPages(Math.max(1, Math.ceil(fallbackTotal / PAGE_SIZE)));
           setTotalProposals(fallbackTotal);
+          setSummary(buildProposalSummaryFromRows(response));
         } else if (isPaginatedProposalResponse(response)) {
           const raw = response.data;
           setProposals(raw.slice(0, PAGE_SIZE));
           setCurrentPage(Number.isFinite(Number(response.page)) ? Number(response.page) : 1);
           setTotalPages(Number.isFinite(Number(response.totalPages)) ? Math.max(1, Number(response.totalPages)) : 1);
           setTotalProposals(Number.isFinite(Number(response.total)) ? Number(response.total) : 0);
+          setSummary(response.summary ?? buildProposalSummaryFromRows(response.data));
         } else {
           setProposals([]);
           setCurrentPage(1);
           setTotalPages(1);
           setTotalProposals(0);
+          setSummary(null);
         }
       } catch (error) {
         if (signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
@@ -2780,6 +2820,8 @@ export const ProposalModule = () => {
           ) : null}
         </div>
       </div>
+
+      <ProposalListSummaryCards summary={summary} loading={loading} />
 
       {/* Proposals List */}
       <div

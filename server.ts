@@ -14854,7 +14854,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const pageSize = Math.min(parsePositiveIntQuery(pageSizeRaw, 50), 200);
     const skip = (page - 1) * pageSize;
 
-    const [rowsRaw, total] = await Promise.all([
+    const [rowsRaw, total, aggregate] = await Promise.all([
       prisma.proposal.findMany({
         where,
         include: {
@@ -14866,7 +14866,38 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         take: pageSize,
       }),
       prisma.proposal.count({ where }),
+      prisma.proposal.aggregate({
+        where,
+        _count: { id: true },
+        _sum: {
+          totalNetValue: true,
+          totalGrossValue: true,
+          totalTaxes: true,
+          totalCost: true,
+          totalMarginValue: true,
+        },
+      }),
     ]);
+
+    const totalProposals = aggregate._count.id;
+    const totalNetAmount = Number(aggregate._sum.totalNetValue ?? 0);
+    const totalGrossAmount = Number(aggregate._sum.totalGrossValue ?? 0);
+    const totalTaxAmount = Number(aggregate._sum.totalTaxes ?? 0);
+    const totalCostAmount = Number(aggregate._sum.totalCost ?? 0);
+    const totalMarginAmount = Number(aggregate._sum.totalMarginValue ?? 0);
+    const averageNetValue = totalProposals > 0 ? totalNetAmount / totalProposals : 0;
+    const totalMarginPercent = totalNetAmount > 0 ? (totalMarginAmount / totalNetAmount) * 100 : null;
+
+    const summary = {
+      totalProposals,
+      totalNetAmount,
+      totalGrossAmount,
+      totalTaxAmount,
+      totalCostAmount,
+      totalMarginAmount,
+      averageNetValue,
+      totalMarginPercent,
+    };
 
     const rows = await withOfficialProposalListMargin(
       rowsRaw.slice(0, pageSize) as Array<Record<string, unknown>>
@@ -14878,6 +14909,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      summary,
     });
   });
 
