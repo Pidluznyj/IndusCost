@@ -95,6 +95,12 @@ export function createTreasuryAccountControllers(
         res.status(200).json({ ...payload, requestId });
       }),
 
+    listNomusBankAccounts: (req: Request, res: Response) =>
+      withAuth(req, res, async (actor, requestId) => {
+        const accounts = await service.listNomusBankAccounts(actor);
+        res.status(200).json({ ok: true, accounts, requestId });
+      }),
+
     getAccount: (req: Request, res: Response) =>
       withAuth(req, res, async (actor, requestId) => {
         const id = String(req.params.id ?? "").trim();

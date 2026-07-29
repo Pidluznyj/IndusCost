@@ -112,7 +112,29 @@ export function TreasuryTodayPanel(props: TreasuryTodayPanelProps) {
     );
   }
 
-  const c = data.consolidated;
+  const [selectedAccountId, setSelectedAccountId] = React.useState<string>("all");
+
+  const selectedAccount = React.useMemo(() => {
+    if (selectedAccountId === "all" || !data?.accounts) return null;
+    return data.accounts.find((a) => a.accountId === selectedAccountId) ?? null;
+  }, [selectedAccountId, data]);
+
+  const c = React.useMemo(() => {
+    if (selectedAccount) {
+      return {
+        openingBalance: selectedAccount.openingBalance,
+        plannedInflows: "0.00",
+        realizedInflows: "0.00",
+        plannedOutflows: "0.00",
+        realizedOutflows: "0.00",
+        predictedClosingBalance: selectedAccount.predictedClosingBalance,
+        realizedClosingBalance: selectedAccount.realizedClosingBalance,
+        informedClosingBalance: selectedAccount.informedClosingBalance,
+        divergence: selectedAccount.divergence,
+      };
+    }
+    return data.consolidated;
+  }, [selectedAccount, data]);
 
   return (
     <div className="space-y-6" data-testid="treasury-today-ready">
@@ -131,15 +153,30 @@ export function TreasuryTodayPanel(props: TreasuryTodayPanelProps) {
             {formatTreasuryTodayCivilDate(data.civilDate)}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent"
-          data-testid="treasury-today-refresh"
-        >
-          <RefreshCw className="h-4 w-4" aria-hidden />
-          Atualizar
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground shadow-sm"
+            value={selectedAccountId}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
+            data-testid="treasury-today-account-selector"
+          >
+            <option value="all">Todas as Contas (Consolidado)</option>
+            {data.accounts.map((acc) => (
+              <option key={acc.accountId} value={acc.accountId}>
+                {acc.name} {acc.bank ? `(${acc.bank})` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground hover:bg-accent"
+            data-testid="treasury-today-refresh"
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            Atualizar
+          </button>
+        </div>
       </div>
 
       <section aria-label="Resumo consolidado do dia" className="space-y-3">

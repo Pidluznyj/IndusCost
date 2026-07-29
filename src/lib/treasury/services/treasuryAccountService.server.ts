@@ -786,6 +786,44 @@ export function createTreasuryAccountService(deps: {
       });
       return toTreasuryFinancialAccountAccessDto(revoked);
     },
+
+    async listNomusBankAccounts(
+      actor: TreasuryAccountActor
+    ): Promise<Array<{ id: string; name: string }>> {
+      if (!prisma || !("nomusAccountsReceivable" in prisma)) {
+        return [];
+      }
+      try {
+        const [arAccounts, apAccounts] = await Promise.all([
+          prisma.nomusAccountsReceivable.findMany({
+            where: { bankAccountId: { not: null } },
+            select: { bankAccountId: true, bankAccountName: true },
+            distinct: ["bankAccountId"],
+          }),
+          prisma.nomusAccountsPayable.findMany({
+            where: { bankAccountId: { not: null } },
+            select: { bankAccountId: true, bankAccountName: true },
+            distinct: ["bankAccountId"],
+          }),
+        ]);
+
+        const map = new Map<string, string>();
+        for (const acc of [...arAccounts, ...apAccounts]) {
+          if (acc.bankAccountId != null) {
+            const idStr = String(acc.bankAccountId);
+            const nameStr = acc.bankAccountName
+              ? `${acc.bankAccountName} (#${idStr})`
+              : `Conta Nomus #${idStr}`;
+            if (!map.has(idStr) || (acc.bankAccountName && !map.get(idStr)?.includes("("))) {
+              map.set(idStr, nameStr);
+            }
+          }
+        }
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+      } catch {
+        return [];
+      }
+    },
   };
 }
 

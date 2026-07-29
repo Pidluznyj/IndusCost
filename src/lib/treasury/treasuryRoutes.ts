@@ -760,6 +760,15 @@ export function registerTreasuryRoutes(
   );
 
   app.get(
+    "/api/finance/treasury/nomus-bank-accounts",
+    requireAppAuth,
+    moduleEnabled,
+    accountsEnabled,
+    viewAccounts,
+    accounts.listNomusBankAccounts
+  );
+
+  app.get(
     `${TREASURY_ACCOUNTS_PATH}/:id/balances/latest`,
     requireAppAuth,
     moduleEnabled,

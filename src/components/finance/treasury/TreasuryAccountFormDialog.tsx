@@ -35,6 +35,25 @@ export function TreasuryAccountFormDialog({
   onClose,
   onSave,
 }: Props) {
+  const [nomusAccounts, setNomusAccounts] = React.useState<
+    Array<{ id: string; name: string }>
+  >([]);
+
+  React.useEffect(() => {
+    let active = true;
+    fetch("/api/finance/treasury/nomus-bank-accounts")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.accounts && Array.isArray(data.accounts)) {
+          setNomusAccounts(data.accounts);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const set = <K extends keyof TreasuryAccountFormState>(
     key: K,
     value: TreasuryAccountFormState[K]
@@ -244,13 +263,21 @@ export function TreasuryAccountFormDialog({
           </label>
           <label className="space-y-1 text-sm">
             <span className={financeModuleFilterLabelClass()}>
-              ID conta Nomus (opcional)
+              Conta Origem Nomus (Vínculo CR/CP)
             </span>
-            <input
+            <select
               className={financeModuleFilterFieldClass()}
-              value={form.nomusBankAccountId}
+              value={form.nomusBankAccountId || ""}
               onChange={(e) => set("nomusBankAccountId", e.target.value)}
-            />
+              data-testid="treasury-account-field-nomus-id"
+            >
+              <option value="">Nenhum vínculo (Conta exclusiva local)</option>
+              {nomusAccounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="flex items-center gap-2 text-sm sm:col-span-2">

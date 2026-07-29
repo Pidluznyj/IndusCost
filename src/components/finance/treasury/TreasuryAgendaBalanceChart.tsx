@@ -57,9 +57,11 @@ function AgendaBalanceTooltip({
 function ChartBody({
   points,
   height,
+  minimumBalance,
 }: {
   points: TreasuryAgendaBalanceChartPoint[];
   height: number;
+  minimumBalance?: number;
 }) {
   return (
     <div style={{ width: "100%", height }}>
@@ -67,6 +69,20 @@ function ChartBody({
         <LineChart data={points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={FINANCE_BI_COLORS.border} />
           <ReferenceLine y={0} stroke={FINANCE_BI_COLORS.textSecondary} strokeWidth={1} />
+          {typeof minimumBalance === "number" && minimumBalance !== 0 ? (
+            <ReferenceLine
+              y={minimumBalance}
+              stroke="#EF4444"
+              strokeDasharray="4 4"
+              strokeWidth={1.5}
+              label={{
+                value: `Limite: ${formatFinanceCurrencyCompact(minimumBalance)}`,
+                fill: "#EF4444",
+                fontSize: 10,
+                position: "insideTopRight",
+              }}
+            />
+          ) : null}
           <XAxis
             dataKey="label"
             tick={{ fontSize: 9, fill: FINANCE_BI_COLORS.textSecondary }}
@@ -98,13 +114,19 @@ function ChartBody({
 
 export type TreasuryAgendaBalanceChartProps = {
   points: TreasuryAgendaBalanceChartPoint[];
+  minimumBalance?: number;
 };
 
 export function TreasuryAgendaBalanceChart({
   points,
+  minimumBalance = 0,
 }: TreasuryAgendaBalanceChartProps) {
   const [expanded, setExpanded] = useState(false);
   const expandedHeight = useFinanceBiExpandedChartHeight(420);
+
+  const breaches = points.filter(
+    (p) => p.closingBalance < (minimumBalance ?? 0) || p.closingBalance < 0
+  );
 
   if (points.length === 0) {
     return (
@@ -127,11 +149,10 @@ export function TreasuryAgendaBalanceChart({
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-foreground">
-            Evolução do saldo final
+            Evolução do Saldo Final & Linha do Tempo
           </h3>
           <p className="text-xs text-muted-foreground">
-            Linha do saldo de fechamento por dia. Status e risco também em texto no
-            tooltip e na tabela.
+            Projeção diária por conta. Linha tracejada em vermelho marca o limite/saldo mínimo configurado.
           </p>
         </div>
         <FinanceBiChartExpandButton
@@ -139,13 +160,25 @@ export function TreasuryAgendaBalanceChart({
           label="Expandir gráfico"
         />
       </div>
-      <ChartBody points={points} height={260} />
+
+      {breaches.length > 0 ? (
+        <div
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          data-testid="treasury-agenda-limit-warning"
+        >
+          ⚠️ <strong>Alerta de Limite:</strong> O saldo projetado fica abaixo do limite/negativo em{" "}
+          <strong>{breaches.length} dia(s)</strong> no período (primeiro registro em{" "}
+          <span className="underline">{breaches[0]?.label}</span>).
+        </div>
+      ) : null}
+
+      <ChartBody points={points} height={260} minimumBalance={minimumBalance} />
       <FinanceBiChartExpandModal
         open={expanded}
         onClose={() => setExpanded(false)}
-        title="Evolução do saldo final — agenda"
+        title="Evolução do Saldo Final — Agenda & Linha do Tempo"
       >
-        <ChartBody points={points} height={expandedHeight} />
+        <ChartBody points={points} height={expandedHeight} minimumBalance={minimumBalance} />
       </FinanceBiChartExpandModal>
     </div>
   );
