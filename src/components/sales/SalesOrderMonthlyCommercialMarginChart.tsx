@@ -79,7 +79,7 @@ export function SalesOrderMonthlyCommercialMarginChart({
   return (
     <FinanceBillingChartShell
       title={`Margem % por mês — ${selectedYear}`}
-      subtitle="Margem comercial mensal (mesmo motor do card): Σ margem ÷ Σ líquido coberto por mês de emissão. Independente dos filtros da tela — população anual canônica."
+      subtitle="Margem comercial mensal (mesmo motor do card): Σ margem ÷ Σ líquido coberto por mês de emissão. Só o filtro Ano afeta este gráfico — população anual canônica."
       empty={empty}
       emptyDescription="Sem margem comercial calculável para o período."
       testId="sales-orders-monthly-margin-percent-chart"

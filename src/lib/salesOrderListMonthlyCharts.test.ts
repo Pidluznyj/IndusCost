@@ -23,20 +23,21 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.ok(summaryIdx > 0 && chartsIdx > summaryIdx && tableIdx > chartsIdx);
   });
 
-  it("cenário C — filtros da tela não entram nos gráficos", () => {
+  it("cenário C — só o Ano da listagem entra nos gráficos", () => {
     const module = read("src/components/SalesOrdersModule.tsx");
     const charts = read("src/components/sales/SalesOrderListMonthlyCharts.tsx");
     const chartsBlock = module.slice(
       module.indexOf("const monthlyChartsFilters"),
       module.indexOf("listFilterDraftRef")
     );
-    assert.match(chartsBlock, /year:\s*currentYear/);
-    assert.doesNotMatch(chartsBlock, /appliedFilters/);
+    assert.match(chartsBlock, /appliedFilters\.year/);
+    assert.doesNotMatch(chartsBlock, /appliedFilters\.(?!year\b)/);
     assert.doesNotMatch(chartsBlock, /status:/);
     assert.doesNotMatch(chartsBlock, /customerId/);
     assert.doesNotMatch(chartsBlock, /sellerKey/);
     assert.doesNotMatch(chartsBlock, /minNetValue/);
     assert.doesNotMatch(chartsBlock, /startDate/);
+    assert.doesNotMatch(chartsBlock, /month:/);
 
     assert.match(charts, /getSalesOrderResultApiPath/);
     assert.doesNotMatch(charts, /filters\.status/);
@@ -81,11 +82,16 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.match(loader, /listFilters:\s*\{\s*year,\s*month:\s*null\s*\}/);
   });
 
-  it("cenário H — ano dos gráficos é o civil corrente", () => {
+  it("cenário H — ano dos gráficos segue o Ano aplicado (fallback civil)", () => {
     const fixed = new Date(2026, 6, 29);
     assert.equal(resolveSalesOrderListChartsCalendarYear(fixed), 2026);
     const module = read("src/components/SalesOrdersModule.tsx");
-    assert.match(module, /year:\s*currentYear/);
+    const chartsBlock = module.slice(
+      module.indexOf("const monthlyChartsFilters"),
+      module.indexOf("listFilterDraftRef")
+    );
+    assert.match(chartsBlock, /appliedFilters\.year/);
+    assert.match(chartsBlock, /currentYear/);
   });
 
   it("engine de results expõe monthlySalesComparison YoY", () => {

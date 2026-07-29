@@ -320,13 +320,17 @@ function SalesOrderList() {
 
   const selectedOrderId = summaryDrawerOpen ? summaryRow?.id ?? null : null;
 
-  const monthlyChartsFilters = useMemo(
-    () => ({
-      // Gráficos ignoram filtros da tela — sempre o ano civil corrente.
-      year: currentYear,
-    }),
-    [currentYear]
-  );
+  const monthlyChartsFilters = useMemo(() => {
+    // Só o Ano da listagem influencia os gráficos; demais filtros (mês, cliente,
+    // vendedor, status, valor, …) são ignorados. Sem ano → ano civil corrente.
+    const selectedYear = Number.parseInt(appliedFilters.year, 10);
+    return {
+      year:
+        Number.isFinite(selectedYear) && selectedYear > 0
+          ? selectedYear
+          : currentYear,
+    };
+  }, [appliedFilters.year, currentYear]);
 
   // Ref dos drafts: evita stale closure no Pesquisar / atalhos de valor líquido.
   const listFilterDraftRef = useRef({

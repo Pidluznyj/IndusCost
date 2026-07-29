@@ -11,14 +11,14 @@ import type { FinanceSalesOrdersMonthlyComparisonRow } from "@/src/lib/financeSa
 import { useSectionVisible } from "@/src/hooks/useSectionVisible";
 
 export type SalesOrderListMonthlyChartsFilters = {
-  /** Ano civil dos gráficos — independente dos filtros da listagem. */
+  /** Ano dos gráficos — único filtro da listagem que os afeta. */
   year: number;
 };
 
 /**
  * Gráficos acima do grid: valor vendido YoY + margem % mês a mês.
- * Ignoram filtros da tela; usam população anual canônica do ano corrente.
- * Margem: preferir série do marginSummary (card API, população year-only).
+ * Só o Ano da listagem entra; mês/cliente/vendedor/status/valor são ignorados.
+ * População anual canônica do ano selecionado (e ano anterior no YoY).
  */
 export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCharts({
   filters,

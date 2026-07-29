@@ -71,7 +71,7 @@ test("Pedidos de Venda tem filtro Valor De/Até com atalhos", () => {
   assert.ok(page.includes("maxNetValue: preset.max"));
 });
 
-test("filtro de valor e demais filtros não entram nos gráficos mensais", () => {
+test("só o Ano entra nos gráficos mensais; valor e demais filtros não", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
     "utf8"
@@ -85,11 +85,13 @@ test("filtro de valor e demais filtros não entram nos gráficos mensais", () =>
     page.indexOf("const monthlyChartsFilters"),
     page.indexOf("listFilterDraftRef")
   );
-  assert.ok(chartsBlock.includes("year: currentYear"));
+  assert.ok(chartsBlock.includes("appliedFilters.year"));
   assert.ok(!chartsBlock.includes("minNetValue"));
   assert.ok(!chartsBlock.includes("maxNetValue"));
   assert.ok(!chartsBlock.includes("customerId"));
-  assert.ok(!chartsBlock.includes("appliedFilters"));
+  assert.ok(!chartsBlock.includes("sellerKey"));
+  assert.ok(!chartsBlock.includes("status:"));
+  assert.ok(!chartsBlock.includes("appliedFilters.status"));
   assert.ok(!charts.includes("filters.minNetValue"));
   assert.ok(!charts.includes("filters.customerId"));
   assert.ok(!charts.includes("filters.status"));
