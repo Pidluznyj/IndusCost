@@ -7,7 +7,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
-import { formatCurrency, formatNumber } from "@/src/lib/utils";
+import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { CustomerAutocompleteFilter } from "@/src/components/common/CustomerAutocompleteFilter";
 import type { EntityAutocompleteSelection } from "@/src/lib/customerSearch";
@@ -75,6 +75,14 @@ const SALES_FILTER_CONTROL_CLASS =
  */
 const SALES_FILTER_ACTION_BUTTON_CLASS =
   "inline-flex h-8 items-center gap-1.5 rounded-md border border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Atalhos de faixa de valor líquido — preenchem os campos livres (customizáveis). */
+const SALES_ORDER_NET_VALUE_PRESETS = [
+  { id: "upto-1k", label: "Até 1 mil", min: "", max: "1000" },
+  { id: "1k-5k", label: "1–5 mil", min: "1000", max: "5000" },
+  { id: "5k-20k", label: "5–20 mil", min: "5000", max: "20000" },
+  { id: "above-20k", label: "Acima 20 mil", min: "20000", max: "" },
+] as const;
 
 function FilterLabel({
   htmlFor,
@@ -197,6 +205,8 @@ function SalesOrderList() {
   const [sellerOptionsLoading, setSellerOptionsLoading] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [minNetValue, setMinNetValue] = useState("");
+  const [maxNetValue, setMaxNetValue] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
   const [month, setMonth] = useState<string>(() => String(currentMonth));
   // Busca inteligente: searchDraft é o input imediato; search é o valor com debounce.
@@ -281,6 +291,8 @@ function SalesOrderList() {
       sellerKey: sellerKey || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
+      minNetValue: minNetValue.trim() || undefined,
+      maxNetValue: maxNetValue.trim() || undefined,
       q: search || undefined,
     }),
     [
@@ -293,6 +305,8 @@ function SalesOrderList() {
       sellerKey,
       startDate,
       endDate,
+      minNetValue,
+      maxNetValue,
       search,
     ]
   );
@@ -312,6 +326,8 @@ function SalesOrderList() {
         sellerKey,
         startDate,
         endDate,
+        minNetValue,
+        maxNetValue,
         year,
         month,
         search,
@@ -324,6 +340,8 @@ function SalesOrderList() {
       sellerKey,
       startDate,
       endDate,
+      minNetValue,
+      maxNetValue,
       year,
       month,
       search,
@@ -338,6 +356,8 @@ function SalesOrderList() {
         customerId,
         startDate,
         endDate,
+        minNetValue,
+        maxNetValue,
         year,
         month,
         search,
@@ -349,6 +369,8 @@ function SalesOrderList() {
       customerId,
       startDate,
       endDate,
+      minNetValue,
+      maxNetValue,
       year,
       month,
       search,
@@ -365,6 +387,8 @@ function SalesOrderList() {
     if (sellerKey) params.set("sellerKey", sellerKey);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
+    if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
+    if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
     if (year) params.set("year", year);
     if (month) params.set("month", month);
     if (search) params.set("q", search);
@@ -377,6 +401,8 @@ function SalesOrderList() {
     sellerKey,
     startDate,
     endDate,
+    minNetValue,
+    maxNetValue,
     year,
     month,
     search,
@@ -528,12 +554,27 @@ function SalesOrderList() {
       if (sellerKey) params.set("sellerKey", sellerKey);
       if (startDate) params.set("startDate", startDate);
       if (endDate) params.set("endDate", endDate);
+      if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
+      if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
       if (year) params.set("year", year);
       if (month) params.set("month", month);
       if (search) params.set("q", search);
       return params.toString();
     },
-    [status, hasInvoice, receivableStatus, customerId, sellerKey, startDate, endDate, year, month, search]
+    [
+      status,
+      hasInvoice,
+      receivableStatus,
+      customerId,
+      sellerKey,
+      startDate,
+      endDate,
+      minNetValue,
+      maxNetValue,
+      year,
+      month,
+      search,
+    ]
   );
 
   const load = useCallback(
@@ -642,6 +683,8 @@ function SalesOrderList() {
     if (customerId) params.set("customerId", customerId);
     if (startDate) params.set("startDate", startDate);
     if (endDate) params.set("endDate", endDate);
+    if (minNetValue.trim()) params.set("minNetValue", minNetValue.trim());
+    if (maxNetValue.trim()) params.set("maxNetValue", maxNetValue.trim());
     if (year) params.set("year", year);
     if (month) params.set("month", month);
     if (search) params.set("q", search);
@@ -856,6 +899,69 @@ function SalesOrderList() {
               ))}
             </select>
           </div>
+
+          <div className="col-span-12 lg:col-span-4" data-testid="sales-orders-filter-net-value">
+            <FilterLabel htmlFor="sales-orders-filter-min-net-value">Valor líquido</FilterLabel>
+            <div className="flex h-9 items-stretch overflow-hidden rounded-lg border border-border bg-background transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+              <span
+                className="flex shrink-0 items-center border-r border-border bg-muted/40 px-2.5 text-[11px] font-semibold tracking-wide text-muted-foreground"
+                aria-hidden="true"
+              >
+                R$
+              </span>
+              <input
+                id="sales-orders-filter-min-net-value"
+                type="text"
+                inputMode="decimal"
+                className="min-w-0 flex-1 border-0 bg-transparent px-2.5 text-sm tabular-nums text-foreground outline-none placeholder:text-muted-foreground/70"
+                placeholder="De"
+                value={minNetValue}
+                onChange={(e) => setMinNetValue(e.target.value)}
+                aria-label="Valor líquido mínimo"
+                data-testid="sales-orders-filter-min-net-value"
+              />
+              <span className="flex shrink-0 items-center px-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                até
+              </span>
+              <input
+                id="sales-orders-filter-max-net-value"
+                type="text"
+                inputMode="decimal"
+                className="min-w-0 flex-1 border-0 bg-transparent px-2.5 text-sm tabular-nums text-foreground outline-none placeholder:text-muted-foreground/70"
+                placeholder="Até"
+                value={maxNetValue}
+                onChange={(e) => setMaxNetValue(e.target.value)}
+                aria-label="Valor líquido máximo"
+                data-testid="sales-orders-filter-max-net-value"
+              />
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-1" role="group" aria-label="Faixas rápidas de valor">
+              {SALES_ORDER_NET_VALUE_PRESETS.map((preset) => {
+                const active =
+                  minNetValue.trim() === preset.min && maxNetValue.trim() === preset.max;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      setMinNetValue(preset.min);
+                      setMaxNetValue(preset.max);
+                    }}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors",
+                      active
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : "border-transparent bg-muted/50 text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground"
+                    )}
+                    data-testid={`sales-orders-net-value-preset-${preset.id}`}
+                    aria-pressed={active}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Barra de ações — separada por divisor, alinhada à direita, botões
@@ -874,6 +980,8 @@ function SalesOrderList() {
               setSellerKey("");
               setStartDate("");
               setEndDate("");
+              setMinNetValue("");
+              setMaxNetValue("");
               setYear("");
               setMonth("");
               setSearchDraft("");

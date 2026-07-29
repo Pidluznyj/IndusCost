@@ -18,6 +18,8 @@ export function getSalesOrderResultApiPath(query: Partial<SalesOrderResultFilter
   if (query.q) params.set("q", query.q);
   if (query.startDate) params.set("startDate", query.startDate);
   if (query.endDate) params.set("endDate", query.endDate);
+  if (query.minNetValue) params.set("minNetValue", query.minNetValue);
+  if (query.maxNetValue) params.set("maxNetValue", query.maxNetValue);
   if (query.companyId) params.set("company", query.companyId);
   if (query.asOfDate) params.set("asOfDate", query.asOfDate);
   return `/api/sales-orders/results?${params.toString()}`;

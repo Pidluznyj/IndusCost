@@ -17,6 +17,8 @@ export type SalesOrderResultFilters = {
   q?: string;
   startDate?: string;
   endDate?: string;
+  minNetValue?: string;
+  maxNetValue?: string;
 };
 
 export type SalesOrderResultTotals = {

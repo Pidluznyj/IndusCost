@@ -49,6 +49,10 @@ export type SalesOrderListFilters = {
    * e status diferente de cancelada (7). Cancelada sozinha = Sem NF.
    */
   hasInvoice?: boolean | null;
+  /** Valor líquido mínimo (SalesOrder.totalNetValue). */
+  minNetValue?: number | null;
+  /** Valor líquido máximo (SalesOrder.totalNetValue). */
+  maxNetValue?: number | null;
 };
 
 /**
@@ -207,6 +211,23 @@ export function buildSalesOrderListWhere(
     and.push({ nfeLinks: { some: buildSalesOrderValidNfeLinkWhere() } });
   } else if (filters.hasInvoice === false) {
     and.push({ nfeLinks: { none: buildSalesOrderValidNfeLinkWhere() } });
+  }
+
+  const minNet =
+    filters.minNetValue != null && Number.isFinite(filters.minNetValue)
+      ? filters.minNetValue
+      : null;
+  const maxNet =
+    filters.maxNetValue != null && Number.isFinite(filters.maxNetValue)
+      ? filters.maxNetValue
+      : null;
+  if (minNet != null || maxNet != null) {
+    and.push({
+      totalNetValue: {
+        ...(minNet != null ? { gte: minNet } : {}),
+        ...(maxNet != null ? { lte: maxNet } : {}),
+      },
+    });
   }
 
   if (options?.excludeEconomicGroupCustomers === true) {

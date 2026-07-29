@@ -231,6 +231,18 @@ describe("salesOrdersListSummary", () => {
     assert.match(json, /"dataProcessamento"/);
   });
 
+  it("buildSalesOrderListWhere filtra valor líquido De/Até", () => {
+    const where = buildSalesOrderListWhere(
+      { minNetValue: 1000, maxNetValue: 5000 },
+      noPresence
+    );
+    const and = Array.isArray((where as { AND?: unknown[] }).AND)
+      ? ((where as { AND: unknown[] }).AND as Array<Record<string, unknown>>)
+      : [where as Record<string, unknown>];
+    const netFilter = and.find((part) => part.totalNetValue != null);
+    assert.deepEqual(netFilter?.totalNetValue, { gte: 1000, lte: 5000 });
+  });
+
   it("UI da lista usa select de vendedor com sellerKey", () => {
     const page = readFileSync(
       join(process.cwd(), "src/components/SalesOrdersModule.tsx"),

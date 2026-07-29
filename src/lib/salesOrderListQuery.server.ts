@@ -42,6 +42,10 @@ export type SalesOrderListQuery = {
   hasInvoice: boolean | null;
   /** Status de CR oficial via NF: open | settled | none. */
   receivableStatus: SalesOrderListReceivableStatus | null;
+  /** Valor líquido mínimo (totalNetValue). */
+  minNetValue: number | null;
+  /** Valor líquido máximo (totalNetValue). */
+  maxNetValue: number | null;
   page: number;
   pageSize: number;
 };
@@ -62,6 +66,21 @@ function parsePositiveIntQuery(value: unknown, fallback: number): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 1) return fallback;
   return Math.trunc(n);
+}
+
+/** Aceita número livre (inclui vírgula decimal BR). Negativo/ inválido → null. */
+export function parseSalesOrderListNetValueParam(value: unknown): number | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number") {
+    return Number.isFinite(raw) && raw >= 0 ? raw : null;
+  }
+  const text = String(raw).trim();
+  if (!text) return null;
+  const normalized = text.replace(/\s/g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return parsed;
 }
 
 /** Aceita `true`/`false` (e 1/0) da query string; vazio = todos. */
@@ -93,6 +112,8 @@ export function parseSalesOrderListQuery(query: Record<string, unknown>): SalesO
     receivableStatus: parseSalesOrderListReceivableStatusParam(
       query.receivableStatus
     ),
+    minNetValue: parseSalesOrderListNetValueParam(query.minNetValue),
+    maxNetValue: parseSalesOrderListNetValueParam(query.maxNetValue),
     page: parsePositiveIntQuery(query.page, 1),
     pageSize: Math.min(parsePositiveIntQuery(query.pageSize, 20), 100),
   };
@@ -132,6 +153,8 @@ export function buildSalesOrderListWhereForQuery(
       month: query.month,
       q: query.q || undefined,
       hasInvoice: query.hasInvoice,
+      minNetValue: query.minNetValue,
+      maxNetValue: query.maxNetValue,
     },
     options
   );
@@ -179,6 +202,8 @@ export function buildSalesOrderListWhereExcludingSeller(
       month: query.month,
       q: query.q || undefined,
       hasInvoice: query.hasInvoice,
+      minNetValue: query.minNetValue,
+      maxNetValue: query.maxNetValue,
     },
     options
   );
@@ -262,6 +287,24 @@ export function buildSalesOrderListFilterLabels(
     rows.push({ label: "Status CR", value: "CR quitado" });
   } else if (query.receivableStatus === "none") {
     rows.push({ label: "Status CR", value: "Sem CR" });
+  }
+  if (query.minNetValue != null) {
+    rows.push({
+      label: "Valor de",
+      value: query.minNetValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      }),
+    });
+  }
+  if (query.maxNetValue != null) {
+    rows.push({
+      label: "Valor até",
+      value: query.maxNetValue.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+      }),
+    });
   }
   return rows;
 }

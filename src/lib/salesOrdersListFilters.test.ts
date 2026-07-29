@@ -41,6 +41,19 @@ test("Resultado tem filtro Vínculo NF (Com NF / Sem NF)", () => {
   assert.ok(page.includes("setHasInvoice(\"\")"));
 });
 
+test("Pedidos de Venda tem filtro Valor De/Até com atalhos", () => {
+  const page = readFileSync(
+    join(process.cwd(), "src", "components", "SalesOrdersModule.tsx"),
+    "utf8"
+  );
+  assert.ok(page.includes('params.set("minNetValue", minNetValue.trim())'));
+  assert.ok(page.includes('params.set("maxNetValue", maxNetValue.trim())'));
+  assert.ok(page.includes("sales-orders-filter-net-value"));
+  assert.ok(page.includes("SALES_ORDER_NET_VALUE_PRESETS"));
+  assert.ok(page.includes('setMinNetValue("")'));
+  assert.ok(page.includes('setMaxNetValue("")'));
+});
+
 test("Produtos Vendidos usa autocomplete no filtro de cliente", () => {
   const page = readFileSync(
     join(process.cwd(), "src", "components", "commercial", "SoldProductsReportPage.tsx"),
