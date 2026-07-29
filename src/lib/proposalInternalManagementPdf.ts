@@ -227,8 +227,16 @@ export function buildProposalInternalManagementPdfDocument(
     const totalPrice = quantity * unitPrice;
     const totalCost = quantity * unitCost;
     const commercial = resolveProposalItemCommercialMarginDisplay(item);
-    const itemMargin = commercial.marginValue;
-    const itemMarginPerc = commercial.marginPerc;
+    let itemMargin = commercial.marginValue;
+    let itemMarginPerc = commercial.marginPerc;
+
+    // Fallback: se o item não tem snapshot comercial congelado, calcula a margem comercial
+    // a partir da receita líquida do item (quantidade * preço negociado) e do custo de produção.
+    if ((itemMargin == null || itemMarginPerc == null) && totalPrice > 0 && totalCost > 0) {
+      itemMargin = totalPrice - totalCost;
+      itemMarginPerc = (itemMargin / totalPrice) * 100;
+    }
+
     const storedCommissionValue = n(item.commissionValue);
     const storedCommissionPerc = n(item.commissionPerc);
     const taxesValue = n(item.taxesValue);
@@ -280,8 +288,8 @@ export function buildProposalInternalManagementPdfDocument(
 
     const costIncomplete = !(unitCost > 0);
     const marginMissing =
-      commercial.marginPerc == null &&
-      commercial.marginValue == null &&
+      itemMarginPerc == null &&
+      itemMargin == null &&
       totalPrice > 0;
     const itemMarkup = totalCost > 0 ? totalPrice / totalCost : null;
     const commissionLabel = formatProposalEstimatedCommissionLabel({
@@ -346,6 +354,40 @@ export function buildProposalInternalManagementPdfDocument(
       ? (commission / revenueForCommission) * 100
       : rows.find((row) => row.commissionPerc > 0 || row.commissionPerc === 0)?.commissionPerc ??
         null;
+
+  // Soma ponderada das margens comerciais calculadas nos itens
+  let calculatedMarginSum = 0;
+  let revenueForMarginSum = 0;
+  let hasItemCommercialMargin = false;
+
+  for (const row of rows) {
+    if (row.marginValue != null && row.marginPerc != null && row.totalPrice > 0) {
+      calculatedMarginSum += row.marginValue;
+      revenueForMarginSum += row.totalPrice;
+      hasItemCommercialMargin = true;
+    }
+  }
+
+  let finalMarginValue: number = 0;
+  let finalMarginPerc: number = 0;
+
+  if (hasItemCommercialMargin && Math.abs(revenueForMarginSum - net) < 0.01) {
+    finalMarginValue = calculatedMarginSum;
+    finalMarginPerc = revenueForMarginSum > 0 ? (calculatedMarginSum / revenueForMarginSum) * 100 : 0;
+  } else if (net > 0 && cost > 0) {
+    finalMarginValue = net - cost;
+    finalMarginPerc = (finalMarginValue / net) * 100;
+  } else if (input.totalMarginValue != null && input.totalMarginPerc != null) {
+    const rawVal = n(input.totalMarginValue);
+    const rawPct = n(input.totalMarginPerc);
+    if (cost > 0 && Math.abs(rawVal - net) < 0.01) {
+      finalMarginValue = net - cost;
+      finalMarginPerc = (finalMarginValue / net) * 100;
+    } else {
+      finalMarginValue = rawVal;
+      finalMarginPerc = rawPct;
+    }
+  }
 
   const pendencies: string[] = [];
   const incompleteCostItems = rows.filter((row) => row.costIncomplete);
@@ -421,8 +463,8 @@ export function buildProposalInternalManagementPdfDocument(
       cost,
       materialCost: hasMaterial ? materialSum : null,
       fabricationCost: hasFabrication ? fabricationSum : null,
-      marginValue,
-      marginPerc,
+      marginValue: finalMarginValue,
+      marginPerc: finalMarginPerc,
       markup,
       taxes: n(input.totalTaxes),
       commission,
