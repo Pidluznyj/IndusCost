@@ -3055,6 +3055,7 @@ export const ProposalModule = () => {
         proposalId={analysisProposalId}
         onClose={() => setAnalysisProposalId(null)}
         onEdit={handleEdit}
+        onGenerateSalesOrder={(proposal) => void handleSalesOrderFromProposal(proposal)}
       />
     </div>
   );

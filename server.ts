@@ -15120,16 +15120,44 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
       where: { id },
       include: {
         Customer: true,
-        items: { include: { Product: true } }
+        salesOrder: { select: { id: true, orderCode: true, status: true, issueDate: true } },
+        items: { include: { Product: true } },
       },
     });
     if (!proposal) {
       return res.status(404).json({ error: "NOT_FOUND", message: "Proposta não encontrada." });
     }
-    // Margem oficial: custo de produção vigente na data (paridade Pedido).
-    // Tabela comercial continua só para precificação no formulário.
     const enriched = await applyProductionCostsToProposalDetail(prisma, proposal);
-    res.json(enriched);
+
+    let customerHistory = null;
+    if (proposal.customerId) {
+      const [orderStats, lastOrder] = await Promise.all([
+        prisma.salesOrder.aggregate({
+          where: { customerId: proposal.customerId, status: { not: "CANCELLED" } },
+          _count: { id: true },
+          _sum: { totalNetValue: true },
+        }),
+        prisma.salesOrder.findFirst({
+          where: { customerId: proposal.customerId, status: { not: "CANCELLED" } },
+          orderBy: { issueDate: "desc" },
+          select: { issueDate: true, totalNetValue: true },
+        }),
+      ]);
+      const totalOrdersCount = orderStats._count.id;
+      const totalOrdersValue = Number(orderStats._sum.totalNetValue ?? 0);
+      const averageOrderTicket = totalOrdersCount > 0 ? totalOrdersValue / totalOrdersCount : null;
+      customerHistory = {
+        totalOrdersCount,
+        totalOrdersValue,
+        averageOrderTicket,
+        lastOrderDate: lastOrder?.issueDate ? lastOrder.issueDate.toISOString() : null,
+      };
+    }
+
+    res.json({
+      ...enriched,
+      customerHistory,
+    });
   });
 
   app.post("/api/proposals", requireAppAuth, requireResource("commercial.proposals", "create"), async (req, res) => {
