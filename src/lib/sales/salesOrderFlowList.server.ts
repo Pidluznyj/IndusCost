@@ -222,6 +222,7 @@ async function loadStageColumn(
     select: {
       salesOrderId: true,
       currentStage: true,
+      bottleneckStage: true,
       nextAction: true,
       responsibleArea: true,
       bottleneckReason: true,

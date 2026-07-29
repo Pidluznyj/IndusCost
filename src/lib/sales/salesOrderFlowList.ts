@@ -8,6 +8,7 @@ import {
   SALES_ORDER_FLOW_STAGES,
   isSalesOrderFlowStage,
   maxSalesOrderFlowInconsistencySeverity,
+  resolveSalesOrderFlowOfficialStage,
   type SalesOrderFlowInconsistencyCode,
   type SalesOrderFlowStage,
 } from "./salesOrderFlowCatalog.js";
@@ -430,6 +431,7 @@ function dateIso(value: Date | string | null | undefined): string | null {
 export type SalesOrderFlowCardSource = {
   salesOrderId: string;
   currentStage: string;
+  bottleneckStage?: string | null;
   nextAction: string | null;
   responsibleArea: string | null;
   bottleneckReason?: string | null;
@@ -481,9 +483,11 @@ export function mapSalesOrderFlowListCard(
     now?: Date;
   }
 ): SalesOrderFlowListCard {
-  const stage = isSalesOrderFlowStage(row.currentStage)
-    ? row.currentStage
-    : "WAITING_RELEASE";
+  const stage =
+    resolveSalesOrderFlowOfficialStage({
+      currentStage: row.currentStage,
+      bottleneckStage: row.bottleneckStage,
+    }) ?? "WAITING_RELEASE";
   const management = row.salesOrder.flowManagement;
   const customer = row.salesOrder.Customer;
   const customerName =

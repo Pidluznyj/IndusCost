@@ -56,8 +56,10 @@ export const stagePriority = SALES_ORDER_FLOW_STAGE_PRIORITY;
 
 export const SALES_ORDER_FLOW_STAGE_LABELS = {
   WAITING_RELEASE: "Aguardando liberação",
-  WAITING_PRODUCTION_ORDER: "Aguardando OP",
-  IN_PRODUCTION: "Em produção",
+  /** Coluna visual de produção do Kanban (pedidos oficiais com OP pendente/aberta). */
+  WAITING_PRODUCTION_ORDER: "Em produção",
+  /** Produção com apontamento parcial normalizado (distinct de WAITING_PRODUCTION_ORDER). */
+  IN_PRODUCTION: "Em apontamento",
   WAITING_OUTPUT_DOCUMENT: "Aguardando documento de saída",
   WAITING_NFE: "Aguardando NF-e",
   SHIPPED_COMPLETED: "Enviado / concluído",
@@ -236,6 +238,24 @@ export function getSalesOrderFlowStagePriority(stage: SalesOrderFlowStage): numb
 
 export function getSalesOrderFlowStageLabel(stage: SalesOrderFlowStage): string {
   return SALES_ORDER_FLOW_STAGE_LABELS[stage];
+}
+
+/**
+ * Estágio oficial do pedido para Kanban/diagnóstico:
+ * COALESCE(bottleneckStage, currentStage).
+ * Única função compartilhada — não replicar a regra em outros módulos.
+ */
+export function resolveSalesOrderFlowOfficialStage(input: {
+  currentStage: unknown;
+  bottleneckStage?: unknown;
+}): SalesOrderFlowStage | null {
+  if (isSalesOrderFlowStage(input.bottleneckStage)) {
+    return input.bottleneckStage;
+  }
+  if (isSalesOrderFlowStage(input.currentStage)) {
+    return input.currentStage;
+  }
+  return null;
 }
 
 export function compareSalesOrderFlowStagePriority(

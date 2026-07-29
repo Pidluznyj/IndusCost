@@ -139,14 +139,14 @@ function detailFixture(
       },
     ],
     columnExplanation: {
-      stage: "IN_PRODUCTION",
+      stage: "WAITING_PRODUCTION_ORDER",
       label: "Em produção",
       reason: "Há itens ativos aguardando produção.",
       responsibleArea: "Produção",
       nextAction: "Finalizar produção",
     },
     bottleneck: {
-      stage: "IN_PRODUCTION",
+      stage: "WAITING_PRODUCTION_ORDER",
       salesOrderItemId: "item-1",
       reason: "Item gargalo em produção",
     },

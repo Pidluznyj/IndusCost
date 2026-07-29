@@ -608,7 +608,7 @@ export function SalesOrderFlowModule() {
     );
   }
 
-  const defaultFilterYear = String(new Date().getFullYear());
+  const defaultFilterYear = createDefaultSalesOrderFlowFilters().year;
   const filtersActive = hasActiveSalesOrderFlowFilters(filters, {
     defaultYear: defaultFilterYear,
   });
@@ -645,7 +645,7 @@ export function SalesOrderFlowModule() {
     filtersActive;
   const initialLoading = loading && !hasLoadedOnce;
   const draftFiltersActive = hasActiveSalesOrderFlowFilters(draftFilters, {
-    defaultYear: defaultFilterYear,
+    defaultYear: defaultFilterYear || "",
   });
   const indicators =
     summary != null

@@ -148,6 +148,51 @@ describe("salesOrderFlowList (OP-60)", () => {
     );
   });
 
+  it("card usa COALESCE(bottleneckStage, currentStage) como estágio oficial", () => {
+    const card = mapSalesOrderFlowListCard(
+      {
+        salesOrderId: "prod-1",
+        currentStage: "WAITING_RELEASE",
+        bottleneckStage: "WAITING_PRODUCTION_ORDER",
+        nextAction: "Abrir OP",
+        responsibleArea: "PCP_PRODUCAO",
+        totalItems: 1,
+        activeItems: 1,
+        completedItems: 0,
+        pendingItems: 1,
+        inconsistentItems: 0,
+        canceledItems: 0,
+        progressProductionOrder: 0,
+        progressProduced: 0,
+        progressDocumented: 0,
+        progressInvoiced: 0,
+        progressShipped: 0,
+        orderValue: 100,
+        fulfilledValue: 0,
+        activeResidualValue: 100,
+        cutValue: 0,
+        canceledValue: 0,
+        promisedDeliveryAt: null,
+        isOverdue: false,
+        inconsistenciesJson: [],
+        badgesJson: [],
+        stageEnteredAt: null,
+        salesOrder: {
+          orderCode: "PD 02050",
+          issueDate: new Date("2025-06-01T12:00:00.000Z"),
+          nomusSellerName: null,
+          responsible: null,
+          companyIssuer: null,
+          Customer: null,
+          flowManagement: null,
+        },
+      },
+      { canViewValues: true }
+    );
+    assert.equal(card.stage, "WAITING_PRODUCTION_ORDER");
+    assert.equal(card.orderCode, "PD 02050");
+  });
+
   it("detecta inconsistência crítica e mascara valores no card", () => {
     assert.equal(
       hasCriticalSalesOrderFlowInconsistency([

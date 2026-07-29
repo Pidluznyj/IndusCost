@@ -41,8 +41,8 @@ Formalmente:
 | Ordem | Código | Label oficial | Prioridade | Área responsável |
 |------:|--------|---------------|----------:|------------------|
 | 1 | `WAITING_RELEASE` | Aguardando liberação | 10 | COMERCIAL |
-| 2 | `WAITING_PRODUCTION_ORDER` | Aguardando OP | 20 | PCP_PRODUCAO |
-| 3 | `IN_PRODUCTION` | Em produção | 30 | PCP_PRODUCAO |
+| 2 | `WAITING_PRODUCTION_ORDER` | Em produção | 20 | PCP_PRODUCAO |
+| 3 | `IN_PRODUCTION` | Em apontamento | 30 | PCP_PRODUCAO |
 | 4 | `WAITING_OUTPUT_DOCUMENT` | Aguardando documento de saída | 40 | EXPEDICAO_FATURAMENTO |
 | 5 | `WAITING_NFE` | Aguardando NF-e | 50 | FISCAL |
 | 6 | `SHIPPED_COMPLETED` | Enviado / concluído | 60 | NENHUMA |

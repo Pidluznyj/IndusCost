@@ -287,19 +287,19 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(mod, /filterGenerationRef/);
   });
 
-  it("abre com ano corrente por padrão e mantém campo Ano dedicado", () => {
+  it("abre sem restrição de ano por padrão (Kanban não corta produção)", () => {
     const now = new Date(2026, 6, 23);
     const defaults = createDefaultSalesOrderFlowFilters(now);
-    assert.equal(defaults.year, "2026");
+    assert.equal(defaults.year, "");
     assert.equal(defaults.month, "");
-    assert.equal(defaults.issueFrom, "2026-01-01");
-    assert.equal(defaults.issueTo, "2026-12-31");
+    assert.equal(defaults.issueFrom, "");
+    assert.equal(defaults.issueTo, "");
     const fromEmptyUrl = parseSalesOrderFlowFiltersFromSearchParams(
       new URLSearchParams(""),
       now
     );
-    assert.equal(fromEmptyUrl.year, "2026");
-    assert.equal(fromEmptyUrl.issueFrom, "2026-01-01");
+    assert.equal(fromEmptyUrl.year, "");
+    assert.equal(fromEmptyUrl.issueFrom, "");
     const allYears = parseSalesOrderFlowFiltersFromSearchParams(
       new URLSearchParams("year=all"),
       now
@@ -307,11 +307,14 @@ describe("sales order flow filters (OP-65)", () => {
     assert.equal(allYears.year, "");
     assert.equal(allYears.issueFrom, "");
     assert.equal(
-      hasActiveSalesOrderFlowFilters(defaults, { defaultYear: "2026" }),
+      hasActiveSalesOrderFlowFilters(defaults, { defaultYear: "" }),
       false
     );
     assert.equal(
-      hasActiveSalesOrderFlowFilters(allYears, { defaultYear: "2026" }),
+      hasActiveSalesOrderFlowFilters(
+        { ...defaults, year: "2026", issueFrom: "2026-01-01", issueTo: "2026-12-31" },
+        { defaultYear: "" }
+      ),
       true
     );
   });
@@ -380,15 +383,15 @@ describe("sales order flow filters (OP-65)", () => {
       buildSalesOrderFlowSearchParams(EMPTY_SALES_ORDER_FLOW_FILTERS).toString(),
       ""
     );
-    const defaults2026 = createDefaultSalesOrderFlowFilters(new Date(2026, 0, 1));
+    const defaultsKanban = createDefaultSalesOrderFlowFilters(new Date(2026, 0, 1));
     assert.equal(
-      hasActiveSalesOrderFlowFilters(defaults2026, { defaultYear: "2026" }),
+      hasActiveSalesOrderFlowFilters(defaultsKanban, { defaultYear: "" }),
       false
     );
     assert.equal(
       hasActiveSalesOrderFlowFilters(
         { ...EMPTY_SALES_ORDER_FLOW_FILTERS, overdue: true },
-        { defaultYear: "2026" }
+        { defaultYear: "" }
       ),
       true
     );
@@ -499,7 +502,7 @@ describe("sales order flow indicators (OP-66)", () => {
         activeResidualValue: 600,
       },
       {
-        stage: "IN_PRODUCTION" as const,
+        stage: "WAITING_PRODUCTION_ORDER" as const,
         label: "Em produção",
         isCanceledColumn: false,
         orderCount: 2,
@@ -540,7 +543,7 @@ describe("sales order flow indicators (OP-66)", () => {
         },
       },
       {
-        stage: "IN_PRODUCTION" as const,
+        stage: "WAITING_PRODUCTION_ORDER" as const,
         total: 2,
         totals: {
           overdueCount: 1,
@@ -595,7 +598,7 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.equal(result.activeOrderCount, 2);
     assert.equal(result.processValue, 2_000);
     assert.equal(result.activeResidualValue, 800);
-    assert.equal(result.columns[0]?.stage, "IN_PRODUCTION");
+    assert.equal(result.columns[0]?.stage, "WAITING_PRODUCTION_ORDER");
   });
 
   it("oculta valores e inconsistências sem permissão", () => {
@@ -710,7 +713,7 @@ describe("sales order flow operational kanban (OP-67)", () => {
     customerName: "Cliente Industrial",
     sellerName: "Ana Comercial",
     companyIssuer: "Koppetel",
-    stage: "IN_PRODUCTION",
+    stage: "WAITING_PRODUCTION_ORDER",
     stageEnteredAt: "2026-07-10T12:00:00.000Z",
     daysInStage: 7,
     issueDate: "2026-07-01T12:00:00.000Z",
@@ -838,7 +841,7 @@ describe("sales order flow operational kanban (OP-67)", () => {
       React.createElement(SalesOrderFlowKanbanBoard, {
         columns: [
           {
-            stage: "IN_PRODUCTION",
+            stage: "WAITING_PRODUCTION_ORDER",
             status: "ready",
             cards: [card],
             total: 1,
@@ -866,11 +869,11 @@ describe("sales order flow operational kanban (OP-67)", () => {
         onRetryColumn: () => {},
       })
     );
-    assert.match(html, /sales-order-flow-kanban-column-IN_PRODUCTION/);
+    assert.match(html, /sales-order-flow-kanban-column-WAITING_PRODUCTION_ORDER/);
     assert.doesNotMatch(html, /sales-order-flow-kanban-column-CANCELED/);
     assert.match(html, /max-h-\[min\(70vh,640px\)\]/);
     assert.match(html, /overflow-y-auto/);
-    assert.match(html, /sales-order-flow-kanban-column-scroll-IN_PRODUCTION/);
+    assert.match(html, /sales-order-flow-kanban-column-scroll-WAITING_PRODUCTION_ORDER/);
     assert.doesNotMatch(html, /draggable/);
   });
 
@@ -900,7 +903,7 @@ describe("sales order flow operational kanban (OP-67)", () => {
             },
           },
           {
-            stage: "IN_PRODUCTION",
+            stage: "WAITING_PRODUCTION_ORDER",
             status: "ready",
             cards: [card],
             total: 8,
@@ -950,7 +953,7 @@ describe("sales order flow operational kanban (OP-67)", () => {
       })
     );
     assert.match(html, /sales-order-flow-kanban-column-loading-WAITING_RELEASE/);
-    assert.match(html, /sales-order-flow-kanban-load-more-IN_PRODUCTION/);
+    assert.match(html, /sales-order-flow-kanban-load-more-WAITING_PRODUCTION_ORDER/);
     assert.match(html, /Carregar mais \(1\/8\)/);
     assert.match(html, /sales-order-flow-kanban-column-error-WAITING_NFE/);
     assert.match(html, /Falha isolada/);
