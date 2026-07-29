@@ -40,6 +40,7 @@ const AP_SELECT_BASE = {
   amountScheduled: true,
   settlementDate: true,
   paymentDate: true,
+  bankAccountId: true,
   sourceInvoiceId: true,
   sourceInvoiceNumber: true,
   sourcePresenceStatus: true,
@@ -184,9 +185,48 @@ export function createTreasuryPayableQueryRepository(
     return rows.map((r) => r.accountsPayableId);
   }
 
+  async function resolveAccountLinkedTitleIds(
+    plannedAccountId: string
+  ): Promise<string[]> {
+    const account = await prisma.treasuryFinancialAccount.findUnique({
+      where: { id: plannedAccountId },
+      select: { nomusBankAccountId: true },
+    });
+    const complementRows =
+      await prisma.treasuryTitleOperationalComplement.findMany({
+        where: {
+          titleType: "PAYABLE",
+          plannedAccountId,
+        },
+        select: { officialTitleId: true },
+      });
+    const ids = new Set(complementRows.map((r) => r.officialTitleId));
+    if (account?.nomusBankAccountId != null) {
+      const nomusRows = await prisma.nomusAccountsPayable.findMany({
+        where: { bankAccountId: account.nomusBankAccountId },
+        select: { id: true },
+        take: 20_000,
+      });
+      for (const row of nomusRows) ids.add(row.id);
+    }
+    return [...ids];
+  }
+
   async function resolveComplementTitleIds(
     query: TreasuryPayablesListQuery
   ): Promise<string[] | null> {
+    const otherComplementFilters = Boolean(
+      query.scheduledFrom ||
+        query.scheduledTo ||
+        query.responsibleUserId ||
+        query.priority ||
+        query.complementStatus
+    );
+
+    if (query.plannedAccountId && !otherComplementFilters) {
+      return resolveAccountLinkedTitleIds(query.plannedAccountId);
+    }
+
     if (!hasComplementFilter(query)) return null;
     const where: Prisma.TreasuryTitleOperationalComplementWhereInput = {
       titleType: "PAYABLE",
@@ -210,7 +250,13 @@ export function createTreasuryPayableQueryRepository(
       where,
       select: { officialTitleId: true },
     });
-    return rows.map((r) => r.officialTitleId);
+    let ids = rows.map((r) => r.officialTitleId);
+    if (query.plannedAccountId) {
+      const linked = await resolveAccountLinkedTitleIds(query.plannedAccountId);
+      const linkedSet = new Set(linked);
+      ids = ids.filter((id) => linkedSet.has(id));
+    }
+    return ids;
   }
 
   function buildApWhere(
@@ -260,13 +306,22 @@ export function createTreasuryPayableQueryRepository(
         ],
       });
     }
-    if (and.length) where.AND = and;
     if (query.dueFrom || query.dueTo) {
-      where.dueDate = {};
       const from = civilToUtcDate(query.dueFrom);
       const to = civilToUtcDate(query.dueTo);
-      if (from) where.dueDate.gte = from;
-      if (to) where.dueDate.lte = to;
+      const dueRange: Prisma.DateTimeNullableFilter = {};
+      if (from) dueRange.gte = from;
+      if (to) dueRange.lte = to;
+      if (query.includeSettledInDueRange) {
+        and.push({
+          OR: [{ dueDate: dueRange }, { settlementDate: dueRange }],
+        });
+      } else {
+        where.dueDate = dueRange;
+      }
+    }
+    if (and.length) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), ...and];
     }
     if (query.openAmountMin != null || query.openAmountMax != null) {
       where.balancePayable = {};
@@ -341,7 +396,11 @@ export function createTreasuryPayableQueryRepository(
         costCenters,
         referenceDate
       );
-      const page = paginateTreasuryPayables(assembled, query);
+      const pageQuery =
+        query.plannedAccountId != null
+          ? { ...query, plannedAccountId: null }
+          : query;
+      const page = paginateTreasuryPayables(assembled, pageQuery);
       if (page.rows.length === 0) return page;
 
       const pageIds = page.rows.map((r) => r.titleId);

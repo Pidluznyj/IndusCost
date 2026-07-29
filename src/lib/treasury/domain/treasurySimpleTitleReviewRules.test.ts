@@ -220,6 +220,20 @@ describe("treasurySimpleTitleReviewRules", () => {
     );
 
     assert.equal(
+      deriveTreasurySimpleReceivableReviewCategory(
+        receivable({
+          complement: {
+            ...receivable().complement!,
+            plannedAccountId: null,
+          },
+        }),
+        CIVIL,
+        { linkedAccountId: "acc-1" }
+      ),
+      "PLANNED_TODAY"
+    );
+
+    assert.equal(
       TREASURY_SIMPLE_RECEIVABLE_CATEGORY_LABELS.RECEIVED,
       "Recebido"
     );

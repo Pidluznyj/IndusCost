@@ -70,7 +70,7 @@ export const TREASURY_UI_SECTION_FEATURE_FLAG: Record<
   transfers: "treasury.transfers.enabled",
   "manual-entries": "treasury.accounts.enabled",
   "bank-movements": "treasury.reconciliation.enabled",
-  bank: "treasury.reconciliation.enabled",
+  bank: "treasury.ofxImport.enabled",
   ofx: "treasury.ofxImport.enabled",
   reconcile: "treasury.reconciliation.enabled",
   exceptions: "treasury.exceptions.enabled",

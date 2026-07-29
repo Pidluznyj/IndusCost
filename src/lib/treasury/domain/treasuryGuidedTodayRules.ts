@@ -14,6 +14,7 @@ import type {
   TreasuryGuidedTodayStepStatus,
 } from "../contracts/treasuryDto.js";
 import {
+  addTreasuryMoney,
   compareTreasuryMoney,
   normalizeTreasuryMoneyString,
   sumTreasuryMoney,
@@ -108,17 +109,32 @@ function buildAccounts(
           formalClosingStatus: null,
         });
 
+    // Previsto por conta: nunca reutilizar o consolidado do dashboard.
+    // Com preview, usa fechamento calculado da conta (+ pendências abertas).
+    const predictedClosingBalance =
+      preview != null
+        ? addTreasuryMoney(
+            money(preview.closingBalance),
+            money(preview.pendenciesAmount)
+          )
+        : openingBalance;
+
+    const openHref =
+      openingBalance == null
+        ? `${TREASURY_GUIDED_TODAY_UI_BASE}/today/opening`
+        : `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`;
+
     return {
       accountId: acc.accountId,
       name: info?.name ?? acc.accountName,
       bank: info?.institutionName ?? null,
       openingBalance,
-      predictedClosingBalance: dashboard.projectedClosingBalance,
+      predictedClosingBalance,
       realizedClosingBalance,
       informedClosingBalance,
       divergence,
       status,
-      openHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/accounts/${acc.accountId}/balances`,
+      openHref,
     };
   });
 }

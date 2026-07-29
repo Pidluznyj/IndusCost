@@ -7,7 +7,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
 import type { TreasuryGuidedDailyClosingWorkspaceDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   fetchTreasuryTodayClosing,
@@ -21,6 +20,10 @@ import {
 } from "@/src/lib/treasury/treasuryDailyClosingPermissions.js";
 import { canViewTreasuryToday } from "@/src/lib/treasury/treasuryTodayPermissions.js";
 import { canManageTreasuryBalances } from "@/src/lib/treasury/treasuryBalancesPermissions.js";
+import {
+  buildTreasurySimpleRefreshHeaderAction,
+  resolveTreasurySimpleCompanyCode,
+} from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import {
   TREASURY_TODAY_CLOSING_PAGE_SUBTITLE,
   TREASURY_TODAY_CLOSING_PAGE_TITLE,
@@ -182,8 +185,17 @@ export function TreasuryTodayClosingPage() {
         ) {
           // allow default message but prefer filled
         }
+        const companyCode = resolveTreasurySimpleCompanyCode({
+          preferred: data.companyCode,
+        });
+        if (!companyCode) {
+          setError(
+            "Não foi possível fechar o dia: nenhuma conta ativa tem companyCode configurado."
+          );
+          return;
+        }
         await closeTreasuryDailyClosing({
-          companyCode: data.companyCode?.trim() || "DEFAULT",
+          companyCode,
           date: civilDate,
           sourceHash: data.closeGates.sourceHash,
           caveats,
@@ -218,11 +230,10 @@ export function TreasuryTodayClosingPage() {
           subtitle={TREASURY_TODAY_CLOSING_PAGE_SUBTITLE}
           updatedAt={headerUpdatedAt}
           actions={[
-            {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+            buildTreasurySimpleRefreshHeaderAction({
               onClick: () => void load(),
               disabled: loading || !canView,
-            },
+            }),
           ]}
         />
       }

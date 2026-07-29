@@ -417,16 +417,37 @@ export function createTreasuryGuidedDailyClosingService(deps: {
     }));
   }
 
+  async function resolveClosingCompanyCode(
+    preferred?: string | null
+  ): Promise<string | null> {
+    const fromPreferred = preferred?.trim() || "";
+    if (fromPreferred) return fromPreferred;
+    const row = await prisma.treasuryFinancialAccount.findFirst({
+      where: {
+        isActive: true,
+        companyCode: { not: null },
+      },
+      select: { companyCode: true },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+    return row?.companyCode?.trim() || null;
+  }
+
   async function loadPreview(
     actor: TreasuryGuidedDailyClosingActor,
-    civilDate: TreasuryCivilDate
+    civilDate: TreasuryCivilDate,
+    companyCode: string | null
   ): Promise<TreasuryDailyClosingPreviewDto | null> {
     if (!closingPreviewService) return null;
     if (!actor.canViewClosing && !actor.isSuperAdmin) return null;
     try {
       return await closingPreviewService.getPreview(
         buildTreasuryDailyClosingPreviewActor(actor.rawUser),
-        { date: civilDate, companyCode: null, accountIds: null }
+        {
+          date: civilDate,
+          companyCode,
+          accountIds: null,
+        }
       );
     } catch {
       return null;
@@ -446,10 +467,11 @@ export function createTreasuryGuidedDailyClosingService(deps: {
           ? todayTreasuryCivilDateInSaoPaulo()
           : parseTreasuryCivilDate(query.date, "date");
 
-      const [seeds, preview] = await Promise.all([
-        buildSeeds(actor, civilDate),
-        loadPreview(actor, civilDate),
-      ]);
+      const seeds = await buildSeeds(actor, civilDate);
+      const companyCode = await resolveClosingCompanyCode(
+        seeds.find((s) => s.companyCode)?.companyCode
+      );
+      const preview = await loadPreview(actor, civilDate, companyCode);
 
       return buildTreasuryGuidedDailyClosingWorkspace({
         civilDate,

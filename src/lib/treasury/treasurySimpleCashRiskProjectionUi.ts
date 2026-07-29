@@ -105,11 +105,11 @@ export function resolveTreasurySimpleCashRiskViewKind(input: {
 export function resolveTreasurySimpleCashRiskCompanyCode(
   filters: TreasurySimpleCashRiskFilterState,
   accounts: TreasuryFinancialAccountDto[]
-): string {
+): string | null {
   const fromFilter = filters.companyCode.trim();
   if (fromFilter) return fromFilter;
   const first = accounts.find((a) => a.companyCode?.trim())?.companyCode?.trim();
-  return first || "LAZARIOS";
+  return first || null;
 }
 
 export function resolveTreasurySimpleCashRiskRange(

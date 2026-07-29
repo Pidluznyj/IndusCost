@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
+import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import type { TreasuryGuidedDailyOpeningWorkspaceDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   fetchTreasuryTodayOpening,
@@ -228,11 +228,10 @@ export function TreasuryTodayOpeningPage() {
           subtitle={TREASURY_TODAY_OPENING_PAGE_SUBTITLE}
           updatedAt={headerUpdatedAt}
           actions={[
-            {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+            buildTreasurySimpleRefreshHeaderAction({
               onClick: () => void load(),
               disabled: loading || !canView,
-            },
+            }),
           ]}
         />
       }

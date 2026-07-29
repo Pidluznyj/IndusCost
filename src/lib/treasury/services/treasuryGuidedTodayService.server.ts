@@ -82,6 +82,24 @@ async function loadAccountMeta(
   }));
 }
 
+async function resolveGuidedCompanyCode(
+  prisma: PrismaClient | undefined,
+  accountIds: string[] | null | undefined
+): Promise<string | null> {
+  if (!prisma) return null;
+  const row = await prisma.treasuryFinancialAccount.findFirst({
+    where: {
+      isActive: true,
+      companyCode: { not: null },
+      ...(accountIds?.length ? { id: { in: accountIds } } : {}),
+    },
+    select: { companyCode: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
+  const code = row?.companyCode?.trim();
+  return code || null;
+}
+
 export function createTreasuryGuidedTodayService(deps: {
   prisma?: PrismaClient;
   dashboardService?: TreasuryDashboardService;
@@ -121,7 +139,10 @@ export function createTreasuryGuidedTodayService(deps: {
           }
           return await closingPreviewService.getPreview(closingActor, {
             date: query.date,
-            companyCode: null,
+            companyCode: await resolveGuidedCompanyCode(
+              deps.prisma,
+              query.accountIds
+            ),
             accountIds: query.accountIds,
           });
         } catch {

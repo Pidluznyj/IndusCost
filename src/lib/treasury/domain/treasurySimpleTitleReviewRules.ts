@@ -104,9 +104,14 @@ function plannedAccountIdFromPayable(
  */
 export function deriveTreasurySimpleReceivableReviewCategory(
   row: TreasuryReceivableListItemDto,
-  civilDate: string
+  civilDate: string,
+  options?: { linkedAccountId?: string | null }
 ): TreasurySimpleReceivableReviewCategory {
-  if (!plannedAccountIdFromReceivable(row)) return "UNLINKED_ACCOUNT";
+  const planned = plannedAccountIdFromReceivable(row);
+  const linked =
+    planned ||
+    (options?.linkedAccountId?.trim() ? options.linkedAccountId.trim() : null);
+  if (!linked) return "UNLINKED_ACCOUNT";
 
   const settled = Boolean(row.official.officialStatus.isSettled);
   const received = money(row.receivedAmount ?? row.official.settlements.settledAmount);
@@ -122,7 +127,13 @@ export function deriveTreasurySimpleReceivableReviewCategory(
   }
 
   const due = row.official.dueDate;
-  if (due === civilDate) return "PLANNED_TODAY";
+  const expected = row.complement?.expectedDate ?? null;
+  const settledAt = row.official.settlements.settledAt ?? null;
+  if (due === civilDate || expected === civilDate || settledAt === civilDate) {
+    return due === civilDate || expected === civilDate
+      ? "PLANNED_TODAY"
+      : "RECEIVED";
+  }
   return "NOT_RECEIVED";
 }
 
@@ -131,9 +142,14 @@ export function deriveTreasurySimpleReceivableReviewCategory(
  */
 export function deriveTreasurySimplePayableReviewCategory(
   row: TreasuryPayableListItemDto,
-  civilDate: string
+  civilDate: string,
+  options?: { linkedAccountId?: string | null }
 ): TreasurySimplePayableReviewCategory {
-  if (!plannedAccountIdFromPayable(row)) return "UNLINKED_ACCOUNT";
+  const planned = plannedAccountIdFromPayable(row);
+  const linked =
+    planned ||
+    (options?.linkedAccountId?.trim() ? options.linkedAccountId.trim() : null);
+  if (!linked) return "UNLINKED_ACCOUNT";
 
   const settled = Boolean(row.official.officialStatus.isSettled);
   const paid = money(row.paidAmount ?? row.official.settlements.settledAmount);
@@ -149,7 +165,17 @@ export function deriveTreasurySimplePayableReviewCategory(
   }
 
   const due = row.official.dueDate;
-  if (due === civilDate) return "PLANNED_TODAY";
+  const expected =
+    row.complement?.expectedDate ?? row.complement?.scheduledDate ?? null;
+  const settledAt =
+    row.official.settlements.paidAt ??
+    row.official.settlements.settledAt ??
+    null;
+  if (due === civilDate || expected === civilDate || settledAt === civilDate) {
+    return due === civilDate || expected === civilDate
+      ? "PLANNED_TODAY"
+      : "PAID";
+  }
   return "PENDING";
 }
 
@@ -204,6 +230,8 @@ export function filterTreasurySimpleReceivableRows(input: {
   civilDate: string;
   category: TreasurySimpleReceivableReviewCategory | "ALL";
   bucket: TreasurySimpleReviewBucket;
+  /** Conta do filtro diário — títulos vinculados via Nomus bank não ficam “sem vínculo”. */
+  linkedAccountId?: string | null;
 }): Array<{
   row: TreasuryReceivableListItemDto;
   category: TreasurySimpleReceivableReviewCategory;
@@ -215,7 +243,8 @@ export function filterTreasurySimpleReceivableRows(input: {
   for (const row of input.rows) {
     const category = deriveTreasurySimpleReceivableReviewCategory(
       row,
-      input.civilDate
+      input.civilDate,
+      { linkedAccountId: input.linkedAccountId }
     );
     if (input.category !== "ALL" && category !== input.category) continue;
     if (!receivableCategoryMatchesBucket(category, input.bucket)) continue;
@@ -229,6 +258,7 @@ export function filterTreasurySimplePayableRows(input: {
   civilDate: string;
   category: TreasurySimplePayableReviewCategory | "ALL";
   bucket: TreasurySimpleReviewBucket;
+  linkedAccountId?: string | null;
 }): Array<{
   row: TreasuryPayableListItemDto;
   category: TreasurySimplePayableReviewCategory;
@@ -240,7 +270,8 @@ export function filterTreasurySimplePayableRows(input: {
   for (const row of input.rows) {
     const category = deriveTreasurySimplePayableReviewCategory(
       row,
-      input.civilDate
+      input.civilDate,
+      { linkedAccountId: input.linkedAccountId }
     );
     if (input.category !== "ALL" && category !== input.category) continue;
     if (!payableCategoryMatchesBucket(category, input.bucket)) continue;

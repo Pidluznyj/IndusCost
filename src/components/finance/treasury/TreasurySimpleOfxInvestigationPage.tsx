@@ -8,7 +8,10 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
+import {
+  buildTreasurySimpleRefreshHeaderAction,
+  resolveTreasurySimpleCompanyCode,
+} from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import type {
   TreasuryBankMovementDto,
   TreasuryFinancialAccountDto,
@@ -212,8 +215,17 @@ export function TreasurySimpleOfxInvestigationPage() {
             m.reconciliationStatus === "PARTIAL" ||
             m.reconciliationStatus === "UNMATCHED"
         );
-        const companyCode =
-          accountRows.find((a) => a.id === selected)?.companyCode ?? "DEFAULT";
+        const companyCode = resolveTreasurySimpleCompanyCode({
+          preferred: accountRows.find((a) => a.id === selected)?.companyCode,
+          accounts: accountRows,
+        });
+        if (!companyCode) {
+          setSuggestionsByMovement({});
+          setError(
+            "Selecione uma conta com companyCode configurado para sugerir correspondências."
+          );
+          return;
+        }
         const engine = runTreasuryReconciliationSuggestionEngine({
           companyCode,
           asOfCivilDate: civilDate,
@@ -471,11 +483,10 @@ export function TreasurySimpleOfxInvestigationPage() {
           subtitle={TREASURY_SIMPLE_OFX_PAGE_SUBTITLE}
           updatedAt={headerUpdatedAt}
           actions={[
-            {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+            buildTreasurySimpleRefreshHeaderAction({
               onClick: () => void load(),
               disabled: loading || !canView,
-            },
+            }),
           ]}
         />
       }

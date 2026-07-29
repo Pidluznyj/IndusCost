@@ -32,6 +32,7 @@ export type OfficialNomusReceivableRow = {
   balanceReceivable: OfficialTitleMoneyLike;
   amountReceived: OfficialTitleMoneyLike;
   settlementDate: Date | null;
+  bankAccountId?: number | null;
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
   sourcePresenceStatus: string;
@@ -60,6 +61,7 @@ export type OfficialNomusPayableRow = {
   amountScheduled?: OfficialTitleMoneyLike;
   settlementDate: Date | null;
   paymentDate: Date | null;
+  bankAccountId?: number | null;
   sourceInvoiceId: number | null;
   sourceInvoiceNumber: string | null;
   sourcePresenceStatus: string;

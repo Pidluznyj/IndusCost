@@ -33,6 +33,7 @@ const AR_SELECT_BASE = {
   balanceReceivable: true,
   amountReceived: true,
   settlementDate: true,
+  bankAccountId: true,
   sourceInvoiceId: true,
   sourceInvoiceNumber: true,
   sourcePresenceStatus: true,
@@ -137,10 +138,53 @@ export function createTreasuryReceivableQueryRepository(
     return map;
   }
 
+  async function resolveAccountLinkedTitleIds(
+    plannedAccountId: string
+  ): Promise<string[]> {
+    const account = await prisma.treasuryFinancialAccount.findUnique({
+      where: { id: plannedAccountId },
+      select: { nomusBankAccountId: true },
+    });
+    const complementRows =
+      await prisma.treasuryTitleOperationalComplement.findMany({
+        where: {
+          titleType: "RECEIVABLE",
+          plannedAccountId,
+        },
+        select: { officialTitleId: true },
+      });
+    const ids = new Set(complementRows.map((r) => r.officialTitleId));
+    if (account?.nomusBankAccountId != null) {
+      const nomusRows = await prisma.nomusAccountsReceivable.findMany({
+        where: { bankAccountId: account.nomusBankAccountId },
+        select: { id: true },
+        take: 20_000,
+      });
+      for (const row of nomusRows) ids.add(row.id);
+    }
+    return [...ids];
+  }
+
   async function resolveComplementTitleIds(
     query: TreasuryReceivablesListQuery
   ): Promise<string[] | null> {
+    const otherComplementFilters = Boolean(
+      query.expectedFrom ||
+        query.expectedTo ||
+        query.hasPromise != null ||
+        query.collectionOwnerUserId ||
+        query.priority ||
+        query.complementStatus ||
+        query.nextAction
+    );
+
+    // Conta: overlay planejada ∪ vínculo Nomus (bankAccountId).
+    if (query.plannedAccountId && !otherComplementFilters) {
+      return resolveAccountLinkedTitleIds(query.plannedAccountId);
+    }
+
     if (!hasComplementFilter(query)) return null;
+
     const where: Prisma.TreasuryTitleOperationalComplementWhereInput = {
       titleType: "RECEIVABLE",
     };
@@ -205,6 +249,14 @@ export function createTreasuryReceivableQueryRepository(
       });
       ids = [...new Set([...ids, ...actionIds.map((a) => a.officialTitleId)])];
     }
+
+    // Com outros filtros de complemento: une títulos só-Nomus e intersecta.
+    if (query.plannedAccountId) {
+      const linked = await resolveAccountLinkedTitleIds(query.plannedAccountId);
+      const linkedSet = new Set(linked);
+      ids = ids.filter((id) => linkedSet.has(id));
+      // Títulos só-Nomus sem complemento não entram nos outros filtros — ok.
+    }
     return ids;
   }
 
@@ -244,13 +296,22 @@ export function createTreasuryReceivableQueryRepository(
         description: { contains: query.document, mode: "insensitive" },
       });
     }
-    if (and.length) where.AND = and;
     if (query.dueFrom || query.dueTo) {
-      where.dueDate = {};
       const from = civilToUtcDate(query.dueFrom);
       const to = civilToUtcDate(query.dueTo);
-      if (from) where.dueDate.gte = from;
-      if (to) where.dueDate.lte = to;
+      const dueRange: Prisma.DateTimeNullableFilter = {};
+      if (from) dueRange.gte = from;
+      if (to) dueRange.lte = to;
+      if (query.includeSettledInDueRange) {
+        and.push({
+          OR: [{ dueDate: dueRange }, { settlementDate: dueRange }],
+        });
+      } else {
+        where.dueDate = dueRange;
+      }
+    }
+    if (and.length) {
+      where.AND = [...(Array.isArray(where.AND) ? where.AND : []), ...and];
     }
     if (query.openAmountMin != null || query.openAmountMax != null) {
       where.balanceReceivable = {};
@@ -332,7 +393,12 @@ export function createTreasuryReceivableQueryRepository(
         activePromiseTitleIds,
         referenceDate
       );
-      const page = paginateTreasuryReceivables(assembled, query);
+      // Conta já filtrada no repositório (overlay ∪ Nomus); evita excluir só-Nomus no engine.
+      const pageQuery =
+        query.plannedAccountId != null
+          ? { ...query, plannedAccountId: null }
+          : query;
+      const page = paginateTreasuryReceivables(assembled, pageQuery);
       if (loadRawEarly || page.rows.length === 0) return page;
 
       const pageIds = page.rows.map((r) => r.titleId);

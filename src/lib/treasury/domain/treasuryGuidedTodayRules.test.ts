@@ -184,6 +184,11 @@ describe("treasuryGuidedTodayRules", () => {
     assert.equal(dto.accounts[0]?.name, "Caixa Matriz");
     assert.equal(dto.accounts[0]?.bank, "Itaú");
     assert.equal(dto.accounts[0]?.status, "NOT_STARTED");
+    assert.equal(
+      dto.accounts[0]?.openHref,
+      "/finance/treasury/today/opening"
+    );
+    assert.equal(dto.accounts[0]?.predictedClosingBalance, null);
     assert.ok(
       dto.attention.some((a) => a.code === "MISSING_OPENING_BALANCE")
     );
@@ -283,6 +288,14 @@ describe("treasuryGuidedTodayRules", () => {
     assert.equal(dto.consolidated.informedClosingBalance, "1100.00");
     assert.equal(dto.consolidated.divergence, "70.00");
     assert.equal(dto.accounts[0]?.status, "NEEDS_REVIEW");
+    assert.equal(
+      dto.accounts[0]?.predictedClosingBalance,
+      "1030.00"
+    );
+    assert.equal(
+      dto.accounts[0]?.openHref,
+      "/finance/treasury/today/closing"
+    );
     assert.ok(dto.attention.some((a) => a.code === "BALANCE_DIVERGENCE"));
     assert.equal(
       dto.steps.find((s) => s.id === "RESOLVE_DIVERGENCES")?.status,

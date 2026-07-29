@@ -54,6 +54,7 @@ export type TreasuryReceivablesListParams = {
   priority?: string | null;
   nextAction?: string | null;
   includeCancelled?: boolean;
+  includeSettledInDueRange?: boolean;
   signal?: AbortSignal;
 };
 
@@ -100,6 +101,7 @@ function buildListUrl(params: TreasuryReceivablesListParams): string {
   setIf(qs, "priority", params.priority);
   setIf(qs, "nextAction", params.nextAction?.trim());
   if (params.includeCancelled) qs.set("includeCancelled", "true");
+  if (params.includeSettledInDueRange) qs.set("includeSettledInDueRange", "true");
   const query = qs.toString();
   return query
     ? `${TREASURY_RECEIVABLES_PATH}?${query}`

@@ -8,13 +8,13 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
 import type {
   TreasuryFinancialAccountDto,
   TreasuryReceivableListItemDto,
 } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js";
 import { fetchTreasuryReceivables } from "@/src/lib/treasury/treasuryReceivablesApi.js";
+import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import {
   canCollectTreasuryReceivables,
   canManageTreasuryReceivables,
@@ -122,6 +122,7 @@ export function TreasurySimpleReceivablesReviewPage() {
           dueFrom: filters.date,
           dueTo: filters.date,
           plannedAccountId: filters.accountId || null,
+          includeSettledInDueRange: true,
           includeCancelled: false,
           sortBy: "dueDate",
           sortDirection: "asc",
@@ -175,8 +176,9 @@ export function TreasurySimpleReceivablesReviewPage() {
             ? "ALL"
             : (filters.category as TreasurySimpleReceivableReviewCategory),
         bucket: filters.bucket,
+        linkedAccountId: filters.accountId || null,
       }),
-    [filters.bucket, filters.category, filters.date, rows]
+    [filters.accountId, filters.bucket, filters.category, filters.date, rows]
   );
 
   const viewKind = resolveTreasurySimpleReviewViewKind({
@@ -211,11 +213,10 @@ export function TreasurySimpleReceivablesReviewPage() {
           subtitle={TREASURY_SIMPLE_RECEIVABLES_REVIEW_SUBTITLE}
           updatedAt={headerUpdatedAt}
           actions={[
-            {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+            buildTreasurySimpleRefreshHeaderAction({
               onClick: () => void load(),
               disabled: loading || !canView,
-            },
+            }),
           ]}
         />
       }

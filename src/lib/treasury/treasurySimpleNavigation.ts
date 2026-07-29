@@ -171,6 +171,6 @@ export const TREASURY_PRIMARY_SECTION_FEATURE_FLAG: Record<
 > = {
   today: "treasury.dashboard.enabled",
   accounts: "treasury.accounts.enabled",
-  bank: "treasury.reconciliation.enabled",
+  bank: "treasury.ofxImport.enabled",
   projection: "treasury.projection.enabled",
 };

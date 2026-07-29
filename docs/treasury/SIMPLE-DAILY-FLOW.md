@@ -85,14 +85,20 @@ Implementação: `treasuryDailyAccountRoutineRules.ts`, `treasuryDailyCashEngine
 
 ## 5. Anti-duplicidade
 
-1. OFX conciliado com título **não** soma de novo.  
-2. OFX conciliado com ledger **não** soma de novo.  
+1. OFX conciliado com título **não soma novamente**.  
+2. OFX conciliado com ledger **não soma novamente**.  
 3. OFX sem correspondência **não** altera saldo até ação explícita (manual/tarifa/juros).  
 4. Transferência interna é **neutra no consolidado**.  
 5. Baixa parcial usa só o liquidado; aberto segue no previsto futuro.  
 6. Precedência: conciliado > baixa oficial > previsão (`treasuryFinancialIdentityRules`).
 
 Fingerprint OFX / apply idempotente: `fileSha256` + fingerprint por conta.
+
+---
+
+## 5.1. Preservação dos recursos avançados
+
+A UX simples **não remove** agenda, comparação de cenários, CR/CP avançados, programação, transferências, lançamentos manuais, movimentos bancários, importação OFX técnica, conciliação avançada, exceções, alertas, fechamento formal (`/closing`), relatórios nem auditoria. Eles permanecem em rotas/deep-links e no hub **Recursos avançados** (ADMIN / SUPER_ADMIN).
 
 ---
 

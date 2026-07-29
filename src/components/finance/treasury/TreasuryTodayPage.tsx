@@ -7,10 +7,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { FINANCE_HEADER_ACTION_REFRESH } from "@/src/lib/financeModuleUiStandards";
 import type { TreasuryGuidedTodayDto } from "@/src/lib/treasury/contracts/index.js";
 import { fetchTreasuryToday } from "@/src/lib/treasury/treasuryTodayApi.js";
 import { canViewTreasuryToday } from "@/src/lib/treasury/treasuryTodayPermissions.js";
+import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import {
   TREASURY_TODAY_PAGE_SUBTITLE,
   TREASURY_TODAY_PAGE_TITLE,
@@ -87,11 +87,10 @@ export function TreasuryTodayPage() {
           subtitle={TREASURY_TODAY_PAGE_SUBTITLE}
           updatedAt={headerUpdatedAt}
           actions={[
-            {
-              ...FINANCE_HEADER_ACTION_REFRESH,
+            buildTreasurySimpleRefreshHeaderAction({
               onClick: () => void load(),
               disabled: loading || !canView,
-            },
+            }),
           ]}
         />
       }

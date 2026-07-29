@@ -62,9 +62,11 @@ function TreasuryFlagGate(props: {
   sectionId: TreasuryRolloutUiSectionId;
   flags: TreasuryFeatureFlagsMap | null;
   landingPath: string;
+  /** Flags extras que também precisam estar ON (ex.: abertura exige balances). */
+  alsoRequire?: readonly TreasuryFeatureFlagId[];
   children: React.ReactNode;
 }) {
-  const { sectionId, flags, landingPath, children } = props;
+  const { sectionId, flags, landingPath, alsoRequire, children } = props;
   if (!flags) {
     return (
       <div
@@ -78,7 +80,8 @@ function TreasuryFlagGate(props: {
   const required = TREASURY_UI_SECTION_FEATURE_FLAG[sectionId];
   const enabled =
     flags["treasury.enabled"] === true &&
-    (required == null || flags[required] === true);
+    (required == null || flags[required] === true) &&
+    (alsoRequire ?? []).every((id) => flags[id] === true);
   if (!enabled) {
     return <Navigate to={landingPath} replace />;
   }
@@ -120,11 +123,16 @@ export function TreasuryModule() {
   );
   const advancedActive = isTreasuryAdvancedPath(location.pathname);
 
-  const gate = (sectionId: TreasuryRolloutUiSectionId, node: React.ReactNode) => (
+  const gate = (
+    sectionId: TreasuryRolloutUiSectionId,
+    node: React.ReactNode,
+    alsoRequire?: readonly TreasuryFeatureFlagId[]
+  ) => (
     <TreasuryFlagGate
       sectionId={sectionId}
       flags={flags}
       landingPath={landingPath}
+      alsoRequire={alsoRequire}
     >
       {node}
     </TreasuryFlagGate>
@@ -207,11 +215,15 @@ export function TreasuryModule() {
         />
         <Route
           path="today/opening"
-          element={gate("today", <TreasuryTodayOpeningPage />)}
+          element={gate("today", <TreasuryTodayOpeningPage />, [
+            "treasury.balances.enabled",
+          ])}
         />
         <Route
           path="today/closing"
-          element={gate("today", <TreasuryTodayClosingPage />)}
+          element={gate("today", <TreasuryTodayClosingPage />, [
+            "treasury.balances.enabled",
+          ])}
         />
         <Route
           path="today/receivables"
@@ -239,11 +251,15 @@ export function TreasuryModule() {
         />
         <Route
           path="bank"
-          element={gate("bank", <TreasurySimpleOfxInvestigationPage />)}
+          element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
+            "treasury.reconciliation.enabled",
+          ])}
         />
         <Route
           path="today/bank"
-          element={gate("bank", <TreasurySimpleOfxInvestigationPage />)}
+          element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
+            "treasury.reconciliation.enabled",
+          ])}
         />
         <Route
           path="projection"

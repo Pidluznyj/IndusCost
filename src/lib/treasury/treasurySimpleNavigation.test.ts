@@ -63,7 +63,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
 
   it("subflags ocultam abas primárias sem remover catálogo avançado", () => {
     const flags = allFlagsOn();
-    flags["treasury.reconciliation.enabled"] = false;
+    flags["treasury.ofxImport.enabled"] = false;
     flags["treasury.projection.enabled"] = false;
     const visible = filterTreasuryUiSections(TREASURY_UI_PRIMARY_SECTIONS, flags);
     assert.deepEqual(
@@ -177,7 +177,7 @@ describe("treasurySimpleNavigation — shell e preservação", () => {
     );
     assert.equal(
       TREASURY_UI_SECTION_FEATURE_FLAG.bank,
-      "treasury.reconciliation.enabled"
+      "treasury.ofxImport.enabled"
     );
     assert.equal(
       TREASURY_UI_SECTION_FEATURE_FLAG.projection,

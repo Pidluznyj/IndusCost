@@ -1561,6 +1561,8 @@ export type TreasuryReceivablesListQuery = TreasuryPaginationInput &
     priority: TreasuryTitleOperationalPriority | null;
     nextAction: string | null;
     includeCancelled: boolean;
+    /** Quando true com dueFrom/dueTo: inclui títulos baixados no intervalo (além do vencimento). */
+    includeSettledInDueRange: boolean;
   };
 
 export function parseTreasuryReceivablesListQuery(
@@ -1662,6 +1664,11 @@ export function parseTreasuryReceivablesListQuery(
       { required: false }
     ),
     includeCancelled: parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
+    includeSettledInDueRange:
+      parseOptionalBool(
+        query.includeSettledInDueRange ?? query.incluirBaixadosNoPeriodo,
+        "includeSettledInDueRange"
+      ) === true,
   };
 }
 
@@ -1685,6 +1692,7 @@ export type TreasuryPayablesListQuery = TreasuryPaginationInput &
     priority: TreasuryTitleOperationalPriority | null;
     responsibleUserId: string | null;
     includeCancelled: boolean;
+    includeSettledInDueRange: boolean;
   };
 
 export function parseTreasuryPayablesListQuery(
@@ -1784,6 +1792,11 @@ export function parseTreasuryPayablesListQuery(
     ),
     includeCancelled:
       parseOptionalBool(query.includeCancelled, "includeCancelled") === true,
+    includeSettledInDueRange:
+      parseOptionalBool(
+        query.includeSettledInDueRange ?? query.incluirBaixadosNoPeriodo,
+        "includeSettledInDueRange"
+      ) === true,
   };
 }
 

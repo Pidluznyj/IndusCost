@@ -39,6 +39,7 @@ export type TreasuryPayablesListParams = {
   priority?: string | null;
   responsibleUserId?: string | null;
   includeCancelled?: boolean;
+  includeSettledInDueRange?: boolean;
   signal?: AbortSignal;
 };
 
@@ -91,6 +92,7 @@ function buildListUrl(params: TreasuryPayablesListParams): string {
   setIf(qs, "priority", params.priority);
   setIf(qs, "responsibleUserId", params.responsibleUserId?.trim());
   if (params.includeCancelled) qs.set("includeCancelled", "true");
+  if (params.includeSettledInDueRange) qs.set("includeSettledInDueRange", "true");
   const query = qs.toString();
   return query
     ? `${TREASURY_PAYABLES_PATH}?${query}`
