@@ -14587,11 +14587,99 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     "priceSource",
   ] as const;
 
+  function sanitizeProposalUuid(val: unknown): string | null {
+    if (typeof val !== "string") return null;
+    const trimmed = val.trim();
+    return isUuid(trimmed) ? trimmed : null;
+  }
+
+  function sanitizeProposalInt(val: unknown, fallback: number | null = null): number | null {
+    if (val == null || val === "") return fallback;
+    const n = Number(val);
+    return Number.isInteger(n) ? n : fallback;
+  }
+
+  function sanitizeProposalDecimal(val: unknown, fallback: number = 0): number {
+    if (val == null || val === "") return fallback;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function sanitizeProposalDate(val: unknown): Date | null {
+    if (val == null || val === "") return null;
+    if (val instanceof Date) return Number.isFinite(val.getTime()) ? val : null;
+    const d = new Date(String(val));
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+
+  const PROPOSAL_WRITE_UUID_KEYS = new Set([
+    "customerId",
+    "priceTableId",
+    "priceTableVersionId",
+  ]);
+
+  const PROPOSAL_WRITE_DATE_KEYS = new Set([
+    "expectedCloseDate",
+    "nextActionAt",
+    "externalOpenedAt",
+  ]);
+
+  const PROPOSAL_WRITE_INT_KEYS = new Set([
+    "validityDays",
+    "deliveryTimeDays",
+    "priority",
+    "priceTableVersionNumber",
+    "totalItems",
+    "externalProposalId",
+    "externalCustomerId",
+    "externalSellerId",
+    "externalCompanyId",
+    "externalMovementTypeId",
+  ]);
+
+  const PROPOSAL_WRITE_DECIMAL_KEYS = new Set([
+    "totalGrossValue",
+    "totalDiscount",
+    "totalNetValue",
+    "totalCost",
+    "totalMarginValue",
+    "totalMarginPerc",
+    "totalTaxes",
+    "totalCommission",
+    "totalFreight",
+    "probabilityPerc",
+  ]);
+
   function pickProposalWriteScalars(body: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const key of PROPOSAL_WRITE_SCALAR_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(body, key)) {
-        out[key] = body[key];
+      if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+      const raw = body[key];
+      if (PROPOSAL_WRITE_UUID_KEYS.has(key)) {
+        const cleanedUuid = sanitizeProposalUuid(raw);
+        if (key === "customerId") {
+          out[key] = cleanedUuid ?? (typeof raw === "string" ? raw.trim() : raw);
+        } else {
+          out[key] = cleanedUuid;
+        }
+      } else if (PROPOSAL_WRITE_DATE_KEYS.has(key)) {
+        out[key] = sanitizeProposalDate(raw);
+      } else if (PROPOSAL_WRITE_INT_KEYS.has(key)) {
+        if (key === "validityDays") {
+          out[key] = sanitizeProposalInt(raw, 15) ?? 15;
+        } else if (key === "totalItems") {
+          out[key] = sanitizeProposalInt(raw, 0) ?? 0;
+        } else {
+          out[key] = sanitizeProposalInt(raw, null);
+        }
+      } else if (PROPOSAL_WRITE_DECIMAL_KEYS.has(key)) {
+        if (key === "probabilityPerc") {
+          out[key] = raw == null || raw === "" ? null : sanitizeProposalDecimal(raw, 0);
+        } else {
+          out[key] = sanitizeProposalDecimal(raw, 0);
+        }
+      } else {
+        out[key] = typeof raw === "string" ? raw.trim() || null : (raw ?? null);
       }
     }
     return out;
@@ -14599,46 +14687,46 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
 
   function buildProposalItemCreateInput(item: Record<string, unknown>) {
     const row: Record<string, unknown> = {
-      productId: item.productId,
-      quantity: item.quantity,
-      unit: item.unit,
-      unitCost: item.unitCost,
-      suggestedPrice: item.suggestedPrice,
-      negotiatedPrice: item.negotiatedPrice,
-      discountPerc: item.discountPerc,
-      discountValue: item.discountValue,
-      marginValue: item.marginValue,
-      marginPerc: item.marginPerc,
-      taxesPerc: item.taxesPerc,
-      taxesValue: item.taxesValue,
-      commissionPerc: item.commissionPerc,
-      commissionValue: item.commissionValue,
-      freightValue: item.freightValue,
-      notes: item.notes,
+      productId: sanitizeProposalUuid(item.productId) ?? (typeof item.productId === "string" ? item.productId.trim() : item.productId),
+      quantity: sanitizeProposalDecimal(item.quantity, 0),
+      unit: typeof item.unit === "string" && item.unit.trim() ? item.unit.trim() : null,
+      unitCost: sanitizeProposalDecimal(item.unitCost, 0),
+      suggestedPrice: sanitizeProposalDecimal(item.suggestedPrice, 0),
+      negotiatedPrice: sanitizeProposalDecimal(item.negotiatedPrice, 0),
+      discountPerc: sanitizeProposalDecimal(item.discountPerc, 0),
+      discountValue: sanitizeProposalDecimal(item.discountValue, 0),
+      marginValue: sanitizeProposalDecimal(item.marginValue, 0),
+      marginPerc: sanitizeProposalDecimal(item.marginPerc, 0),
+      taxesPerc: sanitizeProposalDecimal(item.taxesPerc, 0),
+      taxesValue: sanitizeProposalDecimal(item.taxesValue, 0),
+      commissionPerc: sanitizeProposalDecimal(item.commissionPerc, 0),
+      commissionValue: sanitizeProposalDecimal(item.commissionValue, 0),
+      freightValue: sanitizeProposalDecimal(item.freightValue, 0),
+      notes: typeof item.notes === "string" && item.notes.trim() ? item.notes.trim() : null,
     };
     if (Object.prototype.hasOwnProperty.call(item, "priceTableItemId")) {
-      row.priceTableItemId = item.priceTableItemId;
+      row.priceTableItemId = sanitizeProposalUuid(item.priceTableItemId);
     }
     if (Object.prototype.hasOwnProperty.call(item, "priceSource")) {
-      row.priceSource = item.priceSource;
+      row.priceSource = typeof item.priceSource === "string" && item.priceSource.trim() ? item.priceSource.trim() : null;
     }
     if (Object.prototype.hasOwnProperty.call(item, "pricingSnapshotJson")) {
-      row.pricingSnapshotJson = item.pricingSnapshotJson;
+      row.pricingSnapshotJson = item.pricingSnapshotJson ?? null;
     }
     if (Object.prototype.hasOwnProperty.call(item, "commercialPricingSnapshotJson")) {
-      row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson;
+      row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson ?? null;
     }
     if (Object.prototype.hasOwnProperty.call(item, "priceTableId")) {
-      row.priceTableId = item.priceTableId;
+      row.priceTableId = sanitizeProposalUuid(item.priceTableId);
     }
     if (Object.prototype.hasOwnProperty.call(item, "priceTableVersionId")) {
-      row.priceTableVersionId = item.priceTableVersionId;
+      row.priceTableVersionId = sanitizeProposalUuid(item.priceTableVersionId);
     }
     if (Object.prototype.hasOwnProperty.call(item, "priceTableCode")) {
-      row.priceTableCode = item.priceTableCode;
+      row.priceTableCode = typeof item.priceTableCode === "string" && item.priceTableCode.trim() ? item.priceTableCode.trim() : null;
     }
     if (Object.prototype.hasOwnProperty.call(item, "priceTableVersionNumber")) {
-      row.priceTableVersionNumber = item.priceTableVersionNumber;
+      row.priceTableVersionNumber = sanitizeProposalInt(item.priceTableVersionNumber, null);
     }
     return row;
   }

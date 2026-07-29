@@ -1059,18 +1059,18 @@ export const ProposalModule = () => {
         freightValue: safeNum(item.freightValue),
         notes: item.notes ?? null,
       };
-      if (item.priceTableItemId !== undefined) row.priceTableItemId = item.priceTableItemId;
-      if (item.priceSource !== undefined) row.priceSource = item.priceSource;
+      if (item.priceTableItemId !== undefined) row.priceTableItemId = typeof item.priceTableItemId === "string" ? item.priceTableItemId.trim() || null : (item.priceTableItemId ?? null);
+      if (item.priceSource !== undefined) row.priceSource = typeof item.priceSource === "string" ? item.priceSource.trim() || null : (item.priceSource ?? null);
       if (item.pricingSnapshotJson !== undefined) row.pricingSnapshotJson = item.pricingSnapshotJson;
       // Snapshot comercial: envia prévia só como hint; backend recalcula e sobrescreve.
       if (item.commercialPricingSnapshotJson !== undefined) {
         row.commercialPricingSnapshotJson = item.commercialPricingSnapshotJson;
       }
       // Nunca enviar formação em sessão / margem calculada no cliente como autoridade.
-      if (item.priceTableId !== undefined) row.priceTableId = item.priceTableId;
-      if (item.priceTableVersionId !== undefined) row.priceTableVersionId = item.priceTableVersionId;
-      if (item.priceTableCode !== undefined) row.priceTableCode = item.priceTableCode;
-      if (item.priceTableVersionNumber !== undefined) row.priceTableVersionNumber = item.priceTableVersionNumber;
+      if (item.priceTableId !== undefined) row.priceTableId = typeof item.priceTableId === "string" ? item.priceTableId.trim() || null : (item.priceTableId ?? null);
+      if (item.priceTableVersionId !== undefined) row.priceTableVersionId = typeof item.priceTableVersionId === "string" ? item.priceTableVersionId.trim() || null : (item.priceTableVersionId ?? null);
+      if (item.priceTableCode !== undefined) row.priceTableCode = typeof item.priceTableCode === "string" ? item.priceTableCode.trim() || null : (item.priceTableCode ?? null);
+      if (item.priceTableVersionNumber !== undefined) row.priceTableVersionNumber = item.priceTableVersionNumber ?? null;
       return row;
     });
 
@@ -1104,11 +1104,11 @@ export const ProposalModule = () => {
       totalFreight: safeNum(formData.totalFreight),
       items,
     };
-    if (formData.priceTableId !== undefined) payload.priceTableId = formData.priceTableId;
-    if (formData.priceTableVersionId !== undefined) payload.priceTableVersionId = formData.priceTableVersionId;
-    if (formData.priceTableCode !== undefined) payload.priceTableCode = formData.priceTableCode;
-    if (formData.priceTableVersionNumber !== undefined) payload.priceTableVersionNumber = formData.priceTableVersionNumber;
-    if (formData.priceSource !== undefined) payload.priceSource = formData.priceSource;
+    if (formData.priceTableId !== undefined) payload.priceTableId = typeof formData.priceTableId === "string" ? formData.priceTableId.trim() || null : (formData.priceTableId ?? null);
+    if (formData.priceTableVersionId !== undefined) payload.priceTableVersionId = typeof formData.priceTableVersionId === "string" ? formData.priceTableVersionId.trim() || null : (formData.priceTableVersionId ?? null);
+    if (formData.priceTableCode !== undefined) payload.priceTableCode = typeof formData.priceTableCode === "string" ? formData.priceTableCode.trim() || null : (formData.priceTableCode ?? null);
+    if (formData.priceTableVersionNumber !== undefined) payload.priceTableVersionNumber = formData.priceTableVersionNumber ?? null;
+    if (formData.priceSource !== undefined) payload.priceSource = typeof formData.priceSource === "string" ? formData.priceSource.trim() || null : (formData.priceSource ?? null);
     return payload;
   }, [formData]);
 
