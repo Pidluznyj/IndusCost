@@ -201,13 +201,16 @@ export function createTreasuryPayableQueryRepository(
         select: { officialTitleId: true },
       });
     const ids = new Set(complementRows.map((r) => r.officialTitleId));
-    if (account?.nomusBankAccountId != null) {
-      const nomusRows = await prisma.nomusAccountsPayable.findMany({
-        where: { bankAccountId: account.nomusBankAccountId },
-        select: { id: true },
-        take: 20_000,
-      });
-      for (const row of nomusRows) ids.add(row.id);
+    if (account?.nomusBankAccountId != null && account.nomusBankAccountId !== "") {
+      const parsedId = Number.parseInt(String(account.nomusBankAccountId).trim(), 10);
+      if (Number.isFinite(parsedId)) {
+        const nomusRows = await prisma.nomusAccountsPayable.findMany({
+          where: { bankAccountId: parsedId },
+          select: { id: true },
+          take: 20_000,
+        });
+        for (const row of nomusRows) ids.add(row.id);
+      }
     }
     return [...ids];
   }

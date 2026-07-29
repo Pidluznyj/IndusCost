@@ -160,7 +160,7 @@ async function loadFormalClosingStatus(
 
 async function loadDayFlowByAccount(
   prisma: PrismaClient,
-  accounts: Array<{ id: string; nomusBankAccountId: number | null }>,
+  accounts: Array<{ id: string; nomusBankAccountId: string | number | null }>,
   civilDate: TreasuryCivilDate
 ): Promise<Map<string, TreasuryDailyAccountRoutineDayFlow>> {
   const map = new Map<string, TreasuryDailyAccountRoutineDayFlow>();
@@ -170,10 +170,15 @@ async function loadDayFlowByAccount(
   if (accounts.length === 0) return map;
 
   const accountIds = accounts.map((a) => a.id);
-  const nomusToAccount = new Map<number, string>();
+  const nomusToAccount = new Map<number | string, string>();
   for (const acc of accounts) {
-    if (acc.nomusBankAccountId != null) {
-      nomusToAccount.set(acc.nomusBankAccountId, acc.id);
+    if (acc.nomusBankAccountId != null && acc.nomusBankAccountId !== "") {
+      const strVal = String(acc.nomusBankAccountId).trim();
+      nomusToAccount.set(strVal, acc.id);
+      const parsedId = Number.parseInt(strVal, 10);
+      if (Number.isFinite(parsedId)) {
+        nomusToAccount.set(parsedId, acc.id);
+      }
     }
   }
 
