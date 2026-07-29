@@ -19,6 +19,8 @@ export type SalesOrderListMonthlyChartsFilters = {
   sellerKey?: string;
   startDate?: string;
   endDate?: string;
+  minNetValue?: string;
+  maxNetValue?: string;
   q?: string;
 };
 
@@ -62,6 +64,8 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
       sellerKey: filters.sellerKey || undefined,
       startDate: filters.startDate || undefined,
       endDate: filters.endDate || undefined,
+      minNetValue: filters.minNetValue || undefined,
+      maxNetValue: filters.maxNetValue || undefined,
       q: filters.q || undefined,
     });
 

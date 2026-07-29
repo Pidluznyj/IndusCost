@@ -100,6 +100,23 @@ describe("salesOrderListMarginSummary", () => {
     );
   });
 
+  it("série mensal do gráfico é year-wide quando há filtro de mês no card", () => {
+    const loader = read("src/lib/salesOrderListMarginSummary.server.ts");
+    assert.match(loader, /ordersForMonthlySeries/);
+    assert.match(loader, /month:\s*null/);
+    const adapter = read("src/lib/salesMarginRulesAdapter.ts");
+    assert.match(adapter, /ordersForMonthlySeries/);
+  });
+
+  it("lista inicia sem mês forçado (ano YTD)", () => {
+    const module = read("src/components/SalesOrdersModule.tsx");
+    assert.match(
+      module,
+      /buildInitialSalesOrderListAppliedFilters\(String\(currentYear\),\s*""\)/
+    );
+    assert.match(module, /useState<string>\(""\)/);
+  });
+
   it("select da margem geral não carrega nomusRawResponse em massa", () => {
     const marginService = read("src/lib/salesOrderMarginService.server.ts");
     assert.match(marginService, /SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT/);

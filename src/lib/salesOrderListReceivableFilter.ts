@@ -2,6 +2,9 @@
  * Filtro de status de CR oficial (Contas a Receber) na listagem de Pedidos.
  * Cadeia canônica: SalesOrder → SalesOrderNfeLink.nfeExternalId →
  * NomusAccountsReceivable.sourceInvoiceId.
+ *
+ * Aceita um ou vários status (OR): `open`, `settled`, `none`
+ * via CSV (`open,settled`) ou valor único.
  */
 
 import type { Prisma, PrismaClient } from "@prisma/client";
@@ -20,7 +23,7 @@ export type SalesOrderListReceivableStatus =
   (typeof SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES)[number];
 
 export const RECEIVABLE_STATUS_FILTER_OPTIONS: Array<{
-  value: string;
+  value: SalesOrderListReceivableStatus | "";
   label: string;
 }> = [
   { value: "", label: "Todos" },
@@ -29,19 +32,74 @@ export const RECEIVABLE_STATUS_FILTER_OPTIONS: Array<{
   { value: "none", label: "Sem CR" },
 ];
 
+const STATUS_SET = new Set<string>(SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES);
+
+/** Um token; compatível com callers legados. */
 export function parseSalesOrderListReceivableStatusParam(
   value: unknown
 ): SalesOrderListReceivableStatus | null {
   if (typeof value !== "string") return null;
   const token = value.trim().toLowerCase();
-  if (
-    (SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES as readonly string[]).includes(
-      token
-    )
-  ) {
+  if (STATUS_SET.has(token)) {
     return token as SalesOrderListReceivableStatus;
   }
   return null;
+}
+
+/**
+ * Um ou vários status (CSV `open,settled` ou array).
+ * Dedupe + ordem canônica. Os 3 valores ≡ sem filtro (array vazio).
+ */
+export function parseSalesOrderListReceivableStatusParams(
+  value: unknown
+): SalesOrderListReceivableStatus[] {
+  const rawParts: string[] = [];
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      if (item == null) continue;
+      rawParts.push(...String(item).split(","));
+    }
+  } else if (typeof value === "string") {
+    rawParts.push(...value.split(","));
+  } else if (value != null && value !== "") {
+    rawParts.push(String(value));
+  }
+
+  const selected = new Set<SalesOrderListReceivableStatus>();
+  for (const part of rawParts) {
+    const token = part.trim().toLowerCase();
+    if (STATUS_SET.has(token)) {
+      selected.add(token as SalesOrderListReceivableStatus);
+    }
+  }
+
+  if (selected.size === 0) return [];
+  if (selected.size >= SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES.length) {
+    return [];
+  }
+
+  return SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES.filter((s) => selected.has(s));
+}
+
+/** Serializa para query string (CSV). Vazio = sem filtro. */
+export function formatSalesOrderListReceivableStatusParam(
+  statuses: ReadonlyArray<SalesOrderListReceivableStatus>
+): string {
+  if (!statuses.length) return "";
+  if (statuses.length >= SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES.length) return "";
+  return SALES_ORDER_LIST_RECEIVABLE_STATUS_VALUES.filter((s) =>
+    statuses.includes(s)
+  ).join(",");
+}
+
+export function receivableStatusFilterLabel(
+  statuses: ReadonlyArray<SalesOrderListReceivableStatus>
+): string | null {
+  if (!statuses.length) return null;
+  const labels = RECEIVABLE_STATUS_FILTER_OPTIONS.filter(
+    (o) => o.value && statuses.includes(o.value)
+  ).map((o) => o.label);
+  return labels.length ? labels.join(", ") : null;
 }
 
 export function andSalesOrderListWhere(
@@ -53,6 +111,18 @@ export function andSalesOrderListWhere(
   return { AND: [base, extra] };
 }
 
+function settledIdsFromSets(sets: {
+  withAnyCr: ReadonlySet<string>;
+  withOpenCr: ReadonlySet<string>;
+}): string[] {
+  const settledIds: string[] = [];
+  for (const id of sets.withAnyCr) {
+    if (!sets.withOpenCr.has(id)) settledIds.push(id);
+  }
+  return settledIds;
+}
+
+/** Where para um único status (comportamento legado). */
 export function buildSalesOrderListReceivableStatusWhereFromSets(
   status: SalesOrderListReceivableStatus,
   sets: { withAnyCr: ReadonlySet<string>; withOpenCr: ReadonlySet<string> }
@@ -61,15 +131,55 @@ export function buildSalesOrderListReceivableStatusWhereFromSets(
     return { id: { in: [...sets.withOpenCr] } };
   }
   if (status === "settled") {
-    const settledIds: string[] = [];
-    for (const id of sets.withAnyCr) {
-      if (!sets.withOpenCr.has(id)) settledIds.push(id);
-    }
-    return { id: { in: settledIds } };
+    return { id: { in: settledIdsFromSets(sets) } };
   }
   // none: pedidos sem CR oficial vinculado via NF
   if (sets.withAnyCr.size === 0) return {};
   return { id: { notIn: [...sets.withAnyCr] } };
+}
+
+/**
+ * Where para 0..N status (OR).
+ * 0 ou os 3 → null (sem filtro).
+ */
+export function buildSalesOrderListReceivableStatusesWhereFromSets(
+  statuses: ReadonlyArray<SalesOrderListReceivableStatus>,
+  sets: { withAnyCr: ReadonlySet<string>; withOpenCr: ReadonlySet<string> }
+): Prisma.SalesOrderWhereInput | null {
+  const unique = parseSalesOrderListReceivableStatusParams(statuses.join(","));
+  if (unique.length === 0) return null;
+  if (unique.length === 1) {
+    return buildSalesOrderListReceivableStatusWhereFromSets(unique[0]!, sets);
+  }
+
+  const hasOpen = unique.includes("open");
+  const hasSettled = unique.includes("settled");
+  const hasNone = unique.includes("none");
+
+  // open ∪ settled = quem tem qualquer CR
+  if (hasOpen && hasSettled && !hasNone) {
+    return { id: { in: [...sets.withAnyCr] } };
+  }
+
+  const clauses: Prisma.SalesOrderWhereInput[] = [];
+  if (hasOpen) {
+    clauses.push({ id: { in: [...sets.withOpenCr] } });
+  }
+  if (hasSettled) {
+    clauses.push({ id: { in: settledIdsFromSets(sets) } });
+  }
+  if (hasNone) {
+    if (sets.withAnyCr.size === 0) {
+      // Sem CR no sistema: "none" cobre todo mundo → filtro nulo junto com outros
+      // já cobertos por open/settled vazios; tratar como sem restrição extra.
+      return null;
+    }
+    clauses.push({ id: { notIn: [...sets.withAnyCr] } });
+  }
+
+  if (clauses.length === 0) return null;
+  if (clauses.length === 1) return clauses[0]!;
+  return { OR: clauses };
 }
 
 /**
@@ -139,9 +249,18 @@ export async function loadSalesOrderOfficialCrOrderIdSets(
 
 export async function resolveSalesOrderListReceivableStatusWhere(
   prisma: PrismaClient,
-  status: SalesOrderListReceivableStatus | null
+  statuses:
+    | SalesOrderListReceivableStatus
+    | ReadonlyArray<SalesOrderListReceivableStatus>
+    | null
+    | undefined
 ): Promise<Prisma.SalesOrderWhereInput | null> {
-  if (!status) return null;
+  const list = Array.isArray(statuses)
+    ? parseSalesOrderListReceivableStatusParams(statuses.join(","))
+    : statuses
+      ? parseSalesOrderListReceivableStatusParams(statuses)
+      : [];
+  if (list.length === 0) return null;
   const sets = await loadSalesOrderOfficialCrOrderIdSets(prisma);
-  return buildSalesOrderListReceivableStatusWhereFromSets(status, sets);
+  return buildSalesOrderListReceivableStatusesWhereFromSets(list, sets);
 }

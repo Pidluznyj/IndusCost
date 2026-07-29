@@ -42,16 +42,22 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.match(charts, /commercial-margin-v2/);
     // Preferência: série do card (mesmo motor) sobre /results.
     assert.match(charts, /monthlyCommercialMargin != null/);
+    assert.match(charts, /minNetValue/);
+    assert.match(charts, /maxNetValue/);
     const module = read("src/components/SalesOrdersModule.tsx");
     assert.match(module, /marginSummary\.monthlyCommercialMargin/);
+    assert.match(module, /minNetValue: appliedFilters\.minNetValue/);
     const adapter = read("src/lib/salesMarginRulesAdapter.ts");
     assert.match(adapter, /buildMonthlyCommercialMarginRows/);
     assert.match(adapter, /monthlyCommercialMargin/);
+    assert.match(adapter, /ordersForMonthlySeries/);
     const types = read("src/lib/salesOrderListMarginSummary.ts");
     assert.match(types, /monthlyCommercialMargin/);
     const engine = read("src/lib/salesOrderResultEngine.server.ts");
     assert.match(engine, /buildMonthlyCommercialMarginRows/);
     assert.match(engine, /monthlyCommercialMargin/);
+    const loader = read("src/lib/salesOrderListMarginSummary.server.ts");
+    assert.match(loader, /ordersForMonthlySeries/);
   });
 
   it("engine de results expõe monthlySalesComparison YoY", () => {

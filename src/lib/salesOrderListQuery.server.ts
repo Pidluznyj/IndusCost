@@ -22,7 +22,8 @@ import {
 } from "./salesOrderPeriodFilter.js";
 import {
   andSalesOrderListWhere,
-  parseSalesOrderListReceivableStatusParam,
+  parseSalesOrderListReceivableStatusParams,
+  receivableStatusFilterLabel,
   resolveSalesOrderListReceivableStatusWhere,
   type SalesOrderListReceivableStatus,
 } from "./salesOrderListReceivableFilter.js";
@@ -40,8 +41,11 @@ export type SalesOrderListQuery = {
   q: string;
   /** `true` = Com NF; `false` = Sem NF; `null` = Todos. */
   hasInvoice: boolean | null;
-  /** Status de CR oficial via NF: open | settled | none. */
-  receivableStatus: SalesOrderListReceivableStatus | null;
+  /**
+   * Status de CR oficial via NF (OR): open | settled | none.
+   * Vazio = todos. Compat: query `receivableStatus=open` ou `open,settled`.
+   */
+  receivableStatuses: SalesOrderListReceivableStatus[];
   /** Valor líquido mínimo (totalNetValue). */
   minNetValue: number | null;
   /** Valor líquido máximo (totalNetValue). */
@@ -119,7 +123,7 @@ export function parseSalesOrderListQuery(query: Record<string, unknown>): SalesO
     month: parseSalesOrderMonthParam(query.month),
     q: String(query.q ?? "").trim(),
     hasInvoice: parseSalesOrderListHasInvoiceParam(query.hasInvoice),
-    receivableStatus: parseSalesOrderListReceivableStatusParam(
+    receivableStatuses: parseSalesOrderListReceivableStatusParams(
       query.receivableStatus
     ),
     minNetValue: parseSalesOrderListNetValueParam(query.minNetValue),
@@ -187,7 +191,7 @@ export async function resolveSalesOrderListWhere(
   const base = buildSalesOrderListWhereForQuery(query, sellerWhere, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
     prisma,
-    query.receivableStatus
+    query.receivableStatuses
   );
   return andSalesOrderListWhere(base, receivableWhere);
 }
@@ -231,7 +235,7 @@ export async function resolveSalesOrderListWhereExcludingSeller(
   const base = buildSalesOrderListWhereExcludingSeller(query, options);
   const receivableWhere = await resolveSalesOrderListReceivableStatusWhere(
     prisma,
-    query.receivableStatus
+    query.receivableStatuses
   );
   return andSalesOrderListWhere(base, receivableWhere);
 }
@@ -291,12 +295,9 @@ export function buildSalesOrderListFilterLabels(
   if (query.q) rows.push({ label: "Busca", value: query.q });
   if (query.hasInvoice === true) rows.push({ label: "Vínculo NF", value: "Com NF" });
   if (query.hasInvoice === false) rows.push({ label: "Vínculo NF", value: "Sem NF" });
-  if (query.receivableStatus === "open") {
-    rows.push({ label: "Status CR", value: "CR em aberto" });
-  } else if (query.receivableStatus === "settled") {
-    rows.push({ label: "Status CR", value: "CR quitado" });
-  } else if (query.receivableStatus === "none") {
-    rows.push({ label: "Status CR", value: "Sem CR" });
+  {
+    const crLabel = receivableStatusFilterLabel(query.receivableStatuses);
+    if (crLabel) rows.push({ label: "Status CR", value: crLabel });
   }
   if (query.minNetValue != null) {
     rows.push({

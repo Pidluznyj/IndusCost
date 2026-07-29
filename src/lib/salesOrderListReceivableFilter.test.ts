@@ -5,7 +5,10 @@ import { join } from "node:path";
 import {
   andSalesOrderListWhere,
   buildSalesOrderListReceivableStatusWhereFromSets,
+  buildSalesOrderListReceivableStatusesWhereFromSets,
+  formatSalesOrderListReceivableStatusParam,
   parseSalesOrderListReceivableStatusParam,
+  parseSalesOrderListReceivableStatusParams,
 } from "./salesOrderListReceivableFilter.js";
 import { parseSalesOrderListQuery } from "./salesOrderListQuery.server.js";
 
@@ -20,6 +23,37 @@ describe("parseSalesOrderListReceivableStatusParam", () => {
     assert.equal(parseSalesOrderListReceivableStatusParam("none"), "none");
     assert.equal(parseSalesOrderListReceivableStatusParam(""), null);
     assert.equal(parseSalesOrderListReceivableStatusParam("aberto"), null);
+  });
+});
+
+describe("parseSalesOrderListReceivableStatusParams", () => {
+  it("aceita valor único e CSV", () => {
+    assert.deepEqual(parseSalesOrderListReceivableStatusParams("open"), ["open"]);
+    assert.deepEqual(parseSalesOrderListReceivableStatusParams("open,settled"), [
+      "open",
+      "settled",
+    ]);
+    assert.deepEqual(parseSalesOrderListReceivableStatusParams("settled,open"), [
+      "open",
+      "settled",
+    ]);
+  });
+
+  it("ignora lixo e trata os 3 como Todos", () => {
+    assert.deepEqual(parseSalesOrderListReceivableStatusParams("open,foo,settled"), [
+      "open",
+      "settled",
+    ]);
+    assert.deepEqual(
+      parseSalesOrderListReceivableStatusParams("open,settled,none"),
+      []
+    );
+    assert.deepEqual(parseSalesOrderListReceivableStatusParams(""), []);
+  });
+
+  it("format round-trip", () => {
+    assert.equal(formatSalesOrderListReceivableStatusParam(["settled", "open"]), "open,settled");
+    assert.equal(formatSalesOrderListReceivableStatusParam([]), "");
   });
 });
 
@@ -53,6 +87,36 @@ describe("buildSalesOrderListReceivableStatusWhereFromSets", () => {
   });
 });
 
+describe("buildSalesOrderListReceivableStatusesWhereFromSets — OR", () => {
+  const sets = {
+    withAnyCr: new Set(["a", "b", "c"]),
+    withOpenCr: new Set(["a", "b"]),
+  };
+
+  it("vazio ou os 3 → null", () => {
+    assert.equal(buildSalesOrderListReceivableStatusesWhereFromSets([], sets), null);
+    assert.equal(
+      buildSalesOrderListReceivableStatusesWhereFromSets(["open", "settled", "none"], sets),
+      null
+    );
+  });
+
+  it("open+settled → qualquer CR", () => {
+    const where = buildSalesOrderListReceivableStatusesWhereFromSets(
+      ["open", "settled"],
+      sets
+    );
+    assert.deepEqual(where, { id: { in: ["a", "b", "c"] } });
+  });
+
+  it("open+none → OR", () => {
+    const where = buildSalesOrderListReceivableStatusesWhereFromSets(["open", "none"], sets);
+    assert.deepEqual(where, {
+      OR: [{ id: { in: ["a", "b"] } }, { id: { notIn: ["a", "b", "c"] } }],
+    });
+  });
+});
+
 describe("andSalesOrderListWhere", () => {
   it("combina base + extra", () => {
     const merged = andSalesOrderListWhere(
@@ -65,19 +129,24 @@ describe("andSalesOrderListWhere", () => {
   });
 });
 
-describe("parseSalesOrderListQuery — receivableStatus", () => {
+describe("parseSalesOrderListQuery — receivableStatuses", () => {
   it("propaga receivableStatus=open", () => {
     const parsed = parseSalesOrderListQuery({ receivableStatus: "open" });
-    assert.equal(parsed.receivableStatus, "open");
+    assert.deepEqual(parsed.receivableStatuses, ["open"]);
+  });
+
+  it("propaga CSV multi", () => {
+    const parsed = parseSalesOrderListQuery({ receivableStatus: "open,none" });
+    assert.deepEqual(parsed.receivableStatuses, ["open", "none"]);
   });
 });
 
 describe("SalesOrdersModule — filtro Status CR", () => {
-  it("expõe select e envia receivableStatus na query/export", () => {
+  it("expõe multi-select e envia receivableStatus na query/export", () => {
     const module = read("src/components/SalesOrdersModule.tsx");
-    assert.match(module, /RECEIVABLE_STATUS_FILTER_OPTIONS/);
+    assert.match(module, /SalesOrderReceivableStatusMultiSelect/);
     assert.match(module, /sales-orders-filter-receivable-status/);
-    assert.match(module, /params\.set\("receivableStatus", receivableStatus\)/);
+    assert.match(module, /params\.set\("receivableStatus"/);
     assert.match(module, /setReceivableStatus\(""\)/);
   });
 });

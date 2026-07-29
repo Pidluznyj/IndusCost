@@ -23,6 +23,7 @@ import { SalesOrderMarginAnalysisSection } from "@/src/components/sales/SalesOrd
 import { SalesOrderReportPrintDocument } from "@/src/components/sales/SalesOrderReportPrintDocument";
 import { SalesOrderIndustrialResultReportPrintDocument } from "@/src/components/sales/SalesOrderIndustrialResultReportPrintDocument";
 import { SalesOrderDetailDialog } from "@/src/components/sales/SalesOrderDetailDialog";
+import { SalesOrderReceivableStatusMultiSelect } from "@/src/components/sales/SalesOrderReceivableStatusMultiSelect";
 import type { SalesOrderListSummary } from "@/src/lib/salesOrdersListSummary.js";
 import type { SalesOrderListMarginSummary } from "@/src/lib/salesOrderListMarginSummary";
 import type { SalesOrderItemMarginPayload } from "@/src/lib/salesOrderMarginTypes";
@@ -37,7 +38,6 @@ import {
   buildSalesOrderYearOptions,
 } from "@/src/lib/salesOrderPeriodFilter";
 import { INVOICE_FILTER_OPTIONS } from "@/src/lib/salesOrderManagementUi";
-import { RECEIVABLE_STATUS_FILTER_OPTIONS } from "@/src/lib/salesOrderListReceivableFilter";
 import {
   downloadInternalMarginExport,
   getSalesOrderListInternalMarginExportUrl,
@@ -230,7 +230,6 @@ function SalesOrderList() {
   const [summary, setSummary] = useState<SalesOrderListSummary>(EMPTY_SALES_ORDER_LIST_SUMMARY);
   const [marginSummary, setMarginSummary] = useState<SalesOrderListMarginSummary | null>(null);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
-  const currentMonth = useMemo(() => new Date().getMonth() + 1, []);
   const yearOptions = useMemo(() => buildSalesOrderYearOptions(currentYear, 5), [currentYear]);
   const [status, setStatus] = useState("");
   const [hasInvoice, setHasInvoice] = useState("");
@@ -245,10 +244,10 @@ function SalesOrderList() {
   const [minNetValue, setMinNetValue] = useState("");
   const [maxNetValue, setMaxNetValue] = useState("");
   const [year, setYear] = useState<string>(() => String(currentYear));
-  const [month, setMonth] = useState<string>(() => String(currentMonth));
+  const [month, setMonth] = useState<string>("");
   const [searchDraft, setSearchDraft] = useState("");
   const [appliedFilters, setAppliedFilters] = useState<SalesOrderListAppliedFilters>(() =>
-    buildInitialSalesOrderListAppliedFilters(String(currentYear), String(currentMonth))
+    buildInitialSalesOrderListAppliedFilters(String(currentYear), "")
   );
   const [exportingInternal, setExportingInternal] = useState(false);
   const [exportingReportXlsx, setExportingReportXlsx] = useState(false);
@@ -329,7 +328,8 @@ function SalesOrderList() {
       sellerKey: appliedFilters.sellerKey || undefined,
       startDate: appliedFilters.startDate || undefined,
       endDate: appliedFilters.endDate || undefined,
-      // Valor líquido De/Até filtra só o grid/export — não os gráficos.
+      minNetValue: appliedFilters.minNetValue || undefined,
+      maxNetValue: appliedFilters.maxNetValue || undefined,
       q: appliedFilters.search || undefined,
     }),
     [appliedFilters, currentYear]
@@ -930,20 +930,11 @@ function SalesOrderList() {
           </div>
           <div className="col-span-12 sm:col-span-6 lg:col-span-2">
             <FilterLabel htmlFor="sales-orders-filter-receivable-status">Status CR</FilterLabel>
-            <select
-              id="sales-orders-filter-receivable-status"
-              className={SALES_FILTER_CONTROL_CLASS}
+            <SalesOrderReceivableStatusMultiSelect
               value={receivableStatus}
-              onChange={(e) => setReceivableStatus(e.target.value)}
-              aria-label="Filtrar por status de Contas a Receber"
-              data-testid="sales-orders-filter-receivable-status"
-            >
-              {RECEIVABLE_STATUS_FILTER_OPTIONS.map((o) => (
-                <option key={o.value || "all"} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setReceivableStatus}
+              controlClassName={SALES_FILTER_CONTROL_CLASS}
+            />
           </div>
 
           <div className="col-span-12 lg:col-span-4" data-testid="sales-orders-filter-net-value">

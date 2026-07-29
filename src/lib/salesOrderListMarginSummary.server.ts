@@ -1,6 +1,9 @@
 /**
  * Margem geral ponderada da listagem — mesma população filtrada do GET /api/sales-orders,
  * mas fora do caminho crítico da página (evita travar a tela).
+ *
+ * Card: filtros completos (inclui mês).
+ * Série mensal do gráfico: mesmos filtros sem `month` (ano YTD).
  */
 import type { PrismaClient } from "@prisma/client";
 import {
@@ -27,7 +30,25 @@ export async function loadSalesOrderListMarginSummary(
     where,
     select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
   });
+
+  const year = listQuery.year ?? new Date().getFullYear();
+
+  let ordersForMonthlySeries = marginOrders;
+  if (listQuery.month != null) {
+    const yearWideQuery = { ...listQuery, month: null };
+    const yearWideWhere = await resolveSalesOrderListWhere(
+      db,
+      yearWideQuery,
+      sellerWhere
+    );
+    ordersForMonthlySeries = await db.salesOrder.findMany({
+      where: yearWideWhere,
+      select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
+    });
+  }
+
   return buildOfficialSalesOrderListMarginSummary(db, marginOrders, {
-    year: listQuery.year ?? new Date().getFullYear(),
+    year,
+    ordersForMonthlySeries,
   });
 }

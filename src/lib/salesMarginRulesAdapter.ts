@@ -953,13 +953,22 @@ export function buildOfficialSalesOrderResultMarginPayload(input: {
 export async function buildOfficialSalesOrderListMarginSummary(
   db: PrismaClient,
   orders: SalesOrderForMargin[],
-  options?: { year?: number }
+  options?: {
+    year?: number;
+    /** População year-wide (sem mês) para a série do gráfico; default = `orders`. */
+    ordersForMonthlySeries?: SalesOrderForMargin[];
+  }
 ): Promise<SalesOrderListMarginSummary> {
-  if (orders.length === 0) {
+  const year =
+    options?.year != null && Number.isFinite(options.year)
+      ? options.year
+      : new Date().getFullYear();
+  const monthlyOrders = options?.ordersForMonthlySeries ?? orders;
+
+  if (orders.length === 0 && monthlyOrders.length === 0) {
     return { ...EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY };
   }
 
-  const { rules, marginByOrder } = await buildOfficialSalesMarginRulesForOrders(db, orders);
   const { summarizeSalesOrderCommercialMargins } = await import(
     "./salesOrderCommercialMargin.js"
   );
@@ -967,77 +976,118 @@ export async function buildOfficialSalesOrderListMarginSummary(
     "./salesOrderCommercialMarginReadModel.js"
   );
   let commercialAggregate = summarizeSalesOrderCommercialMargins([]);
-  let monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
-    [],
-    options?.year ?? new Date().getFullYear()
-  );
+  let monthlyCommercialMargin = buildMonthlyCommercialMarginRows([], year);
+
+  // Card: regras + comercial na população filtrada (pode ser vazia).
+  let rules: Awaited<ReturnType<typeof buildOfficialSalesMarginRulesForOrders>>["rules"] | null =
+    null;
+  let marginByOrder: Awaited<
+    ReturnType<typeof buildOfficialSalesMarginRulesForOrders>
+  >["marginByOrder"] = new Map();
+
+  if (orders.length > 0) {
+    const built = await buildOfficialSalesMarginRulesForOrders(db, orders);
+    rules = built.rules;
+    marginByOrder = built.marginByOrder;
+  }
+
   try {
-    // Fonte única: read model canônico (batch).
     const { buildSalesOrderCommercialMarginReadModels } = await import(
       "./salesOrderCommercialMarginReadService.server.js"
     );
     const { loadSalesOrderItemsForMargin } = await import(
       "./salesOrderMarginService.server.js"
     );
-    const needsItemLoad = orders.some((order) => !order.items?.length);
-    const loadedItems = needsItemLoad
-      ? await loadSalesOrderItemsForMargin(
-          db,
-          orders.map((order) => order.id)
-        )
-      : null;
-    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
-      db,
-      orders.map((order) => ({
-        id: order.id,
-        issueDate:
-          order.issueDate instanceof Date
-            ? order.issueDate
-            : order.issueDate
-              ? new Date(order.issueDate)
-              : null,
-        items: order.items?.length
-          ? order.items
-          : (loadedItems?.get(order.id) ?? []),
-      }))
-    );
-    const commercialPayloads = [];
-    const monthlyInputs: Array<{
-      issueDate: Date | string | null;
-      commercialMargin: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSummaryPayload;
-    }> = [];
-    for (const order of orders) {
-      const result = marginByOrder.get(order.id);
-      const commercial = commercialByOrder.get(order.id);
-      if (!result?.marginSummary || !commercial) continue;
-      result.marginSummary = {
-        ...result.marginSummary,
-        commercialMargin: commercial.commercialMargin,
-      };
-      commercialPayloads.push(commercial.commercialMargin);
-      monthlyInputs.push({
-        issueDate:
-          order.issueDate instanceof Date
-            ? order.issueDate
-            : order.issueDate
-              ? new Date(order.issueDate)
-              : null,
-        commercialMargin: commercial.commercialMargin,
+
+    const loadCommercialFor = async (batch: SalesOrderForMargin[]) => {
+      if (batch.length === 0) return new Map();
+      const needsItemLoad = batch.some((order) => !order.items?.length);
+      const loadedItems = needsItemLoad
+        ? await loadSalesOrderItemsForMargin(
+            db,
+            batch.map((order) => order.id)
+          )
+        : null;
+      return buildSalesOrderCommercialMarginReadModels(
+        db,
+        batch.map((order) => ({
+          id: order.id,
+          issueDate:
+            order.issueDate instanceof Date
+              ? order.issueDate
+              : order.issueDate
+                ? new Date(order.issueDate)
+                : null,
+          items: order.items?.length
+            ? order.items
+            : (loadedItems?.get(order.id) ?? []),
+        }))
+      );
+    };
+
+    if (orders.length > 0) {
+      const commercialByOrder = await loadCommercialFor(orders);
+      const commercialPayloads = [];
+      for (const order of orders) {
+        const result = marginByOrder.get(order.id);
+        const commercial = commercialByOrder.get(order.id);
+        if (!result?.marginSummary || !commercial) continue;
+        result.marginSummary = {
+          ...result.marginSummary,
+          commercialMargin: commercial.commercialMargin,
+        };
+        commercialPayloads.push(commercial.commercialMargin);
+      }
+      if (commercialPayloads.length > 0) {
+        commercialAggregate = aggregateCommercialMarginPayloads(commercialPayloads);
+      }
+    }
+
+    const monthlySameAsCard =
+      monthlyOrders === orders ||
+      (monthlyOrders.length === orders.length &&
+        monthlyOrders.every((o, i) => o.id === orders[i]?.id));
+
+    if (monthlySameAsCard && orders.length > 0) {
+      const monthlyInputs = orders.map((order) => {
+        const commercial = marginByOrder.get(order.id)?.marginSummary?.commercialMargin;
+        return {
+          issueDate:
+            order.issueDate instanceof Date
+              ? order.issueDate
+              : order.issueDate
+                ? new Date(order.issueDate)
+                : null,
+          commercialMargin: commercial ?? null,
+        };
       });
+      monthlyCommercialMargin = buildMonthlyCommercialMarginRows(monthlyInputs, year);
+    } else if (monthlyOrders.length > 0) {
+      const commercialByMonthly = await loadCommercialFor(monthlyOrders);
+      const monthlyInputs = monthlyOrders.map((order) => ({
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        commercialMargin:
+          commercialByMonthly.get(order.id)?.commercialMargin ?? null,
+      }));
+      monthlyCommercialMargin = buildMonthlyCommercialMarginRows(monthlyInputs, year);
     }
-    if (commercialPayloads.length > 0) {
-      commercialAggregate = aggregateCommercialMarginPayloads(commercialPayloads);
-    }
-    const year =
-      options?.year != null && Number.isFinite(options.year)
-        ? options.year
-        : new Date().getFullYear();
-    monthlyCommercialMargin = buildMonthlyCommercialMarginRows(monthlyInputs, year);
   } catch (err) {
     console.warn(
       "[buildOfficialSalesOrderListMarginSummary] falha na margem comercial; usando gerencial.",
       err
     );
+  }
+
+  if (orders.length === 0 || !rules) {
+    return {
+      ...EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY,
+      monthlyCommercialMargin,
+    };
   }
 
   const scoped = resolveOfficialScopedMarginMetrics(rules);

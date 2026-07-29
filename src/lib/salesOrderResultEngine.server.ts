@@ -30,6 +30,7 @@ import {
   resolveSalesOrderListSellerWhere,
   resolveSalesOrderListWhere,
 } from "./salesOrderListQuery.server.js";
+import { formatSalesOrderListReceivableStatusParam } from "./salesOrderListReceivableFilter.js";
 import { decimalToNumber } from "./executiveDashboardHelpers.js";
 import { FINANCE_SALES_ORDERS_MONTH_LABELS } from "./financeSalesOrdersDashboardTypes.js";
 import type {
@@ -94,7 +95,9 @@ export function parseSalesOrderResultFilters(
         : listQuery.hasInvoice
           ? "true"
           : "false",
-    receivableStatus: listQuery.receivableStatus ?? undefined,
+    receivableStatus:
+      formatSalesOrderListReceivableStatusParam(listQuery.receivableStatuses) ||
+      undefined,
     q: listQuery.q || undefined,
     startDate: listQuery.startDate
       ? listQuery.startDate.toISOString().slice(0, 10)
@@ -102,6 +105,10 @@ export function parseSalesOrderResultFilters(
     endDate: listQuery.endDate
       ? listQuery.endDate.toISOString().slice(0, 10)
       : undefined,
+    minNetValue:
+      listQuery.minNetValue != null ? String(listQuery.minNetValue) : undefined,
+    maxNetValue:
+      listQuery.maxNetValue != null ? String(listQuery.maxNetValue) : undefined,
   };
 }
 
