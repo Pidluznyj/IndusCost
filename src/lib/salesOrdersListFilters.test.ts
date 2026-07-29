@@ -55,6 +55,10 @@ test("Pedidos de Venda tem filtro Valor De/Até com atalhos", () => {
   assert.ok(page.includes("sales-orders-apply-filters"));
   assert.ok(page.includes("applyListFilters"));
   assert.ok(page.includes("appliedFilters"));
+  assert.ok(page.includes("moneyAmountToFilterParam"));
+  assert.ok(page.includes("listFilterDraftRef"));
+  assert.ok(page.includes("minNetValue: preset.min"));
+  assert.ok(page.includes("maxNetValue: preset.max"));
 });
 
 test("filtro de valor não entra nos gráficos mensais", () => {
@@ -69,7 +73,7 @@ test("filtro de valor não entra nos gráficos mensais", () => {
   assert.ok(page.includes("Valor líquido De/Até filtra só o grid"));
   const chartsBlock = page.slice(
     page.indexOf("const monthlyChartsFilters"),
-    page.indexOf("const applyListFilters")
+    page.indexOf("listFilterDraftRef")
   );
   assert.ok(!chartsBlock.includes("minNetValue"));
   assert.ok(!chartsBlock.includes("maxNetValue"));

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronRight, Download, FileText, Loader2, Package, Printer, Receipt, Search, ShoppingBag, Ticket } from "lucide-react";
 import { fetchJsonOk } from "@/src/lib/http";
+import { moneyAmountToFilterParam } from "@/src/lib/moneyRangeFilter";
 import { fetchUiSessionCachedJson } from "@/src/lib/uiSessionGetCache";
 import { formatCurrency, formatNumber, cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
@@ -334,23 +335,8 @@ function SalesOrderList() {
     [appliedFilters, currentYear]
   );
 
-  const applyListFilters = useCallback(() => {
-    setAppliedFilters({
-      status,
-      hasInvoice,
-      receivableStatus,
-      customerId,
-      sellerKey,
-      startDate,
-      endDate,
-      minNetValue: minNetValue.trim(),
-      maxNetValue: maxNetValue.trim(),
-      year,
-      month,
-      search: searchDraft.trim(),
-    });
-    setCurrentPage(1);
-  }, [
+  // Ref dos drafts: evita stale closure no Pesquisar / atalhos de valor líquido.
+  const listFilterDraftRef = useRef({
     status,
     hasInvoice,
     receivableStatus,
@@ -363,7 +349,51 @@ function SalesOrderList() {
     year,
     month,
     searchDraft,
-  ]);
+  });
+  listFilterDraftRef.current = {
+    status,
+    hasInvoice,
+    receivableStatus,
+    customerId,
+    sellerKey,
+    startDate,
+    endDate,
+    minNetValue,
+    maxNetValue,
+    year,
+    month,
+    searchDraft,
+  };
+
+  const applyListFilters = useCallback(
+    (overrides?: { minNetValue?: string; maxNetValue?: string }) => {
+      const draft = listFilterDraftRef.current;
+      const nextMin = moneyAmountToFilterParam(
+        overrides?.minNetValue ?? draft.minNetValue
+      );
+      const nextMax = moneyAmountToFilterParam(
+        overrides?.maxNetValue ?? draft.maxNetValue
+      );
+      setMinNetValue(nextMin);
+      setMaxNetValue(nextMax);
+      setAppliedFilters({
+        status: draft.status,
+        hasInvoice: draft.hasInvoice,
+        receivableStatus: draft.receivableStatus,
+        customerId: draft.customerId,
+        sellerKey: draft.sellerKey,
+        startDate: draft.startDate,
+        endDate: draft.endDate,
+        minNetValue: nextMin,
+        maxNetValue: nextMax,
+        year: draft.year,
+        month: draft.month,
+        search: draft.searchDraft.trim(),
+      });
+      setCurrentPage(1);
+    },
+    []
+  );
 
   const clearListFilters = useCallback(() => {
     setStatus("");
@@ -960,8 +990,10 @@ function SalesOrderList() {
                     key={preset.id}
                     type="button"
                     onClick={() => {
-                      setMinNetValue(preset.min);
-                      setMaxNetValue(preset.max);
+                      applyListFilters({
+                        minNetValue: preset.min,
+                        maxNetValue: preset.max,
+                      });
                     }}
                     className={cn(
                       "rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors",
