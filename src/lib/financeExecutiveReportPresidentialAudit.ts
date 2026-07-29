@@ -164,9 +164,11 @@ export const PRESIDENTIAL_EXECUTIVE_REPORT_AUDIT_MATRIX: PresidentialAuditRow[] 
     indicator: "Margem por produto/cliente",
     componentOrBuilder: "—",
     currentSource: "Não renderizado no relatório presidencial",
-    officialMotor: "Motor de margem IndusCost (telas de produto/preço)",
+    officialMotor:
+      "Read model canônico da margem comercial do Pedido (quando/se a seção for adicionada)",
     status: "NAO_APLICAVEL",
-    notes: "Seção ausente por design; não há cálculo paralelo oculto.",
+    notes:
+      "Seção ausente por design; não há cálculo paralelo oculto. Indicadores contábeis (DRE/EBITDA/lucro líquido) permanecem fora deste relatório e não devem ser substituídos por margem comercial de Pedido.",
   },
   {
     section: "Metas",

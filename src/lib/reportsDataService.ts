@@ -271,11 +271,14 @@ export async function buildReportsDataPayload(
   const rulesOrders = orders.map((order) => {
     const base = mapReportsOrderToRulesInput(order);
     const marginResult = marginByOrder.get(order.id);
-    const itemOfficialById = new Map(
-      (marginResult?.itemResults ?? [])
-        .filter((row) => row.salesOrderItemId)
-        .map((row) => [row.salesOrderItemId!, row.marginValue])
-    );
+    // Mix por produto: margem comercial do Pedido (não gerencial).
+    const itemOfficialById = new Map<string, number>();
+    for (const [itemId, payload] of marginResult?.itemMargins ?? []) {
+      const commercialValue = payload.commercialMargin?.commercialMarginValue;
+      if (commercialValue != null && Number.isFinite(commercialValue)) {
+        itemOfficialById.set(itemId, commercialValue);
+      }
+    }
     return {
       ...base,
       items: base.items.map((item) => ({

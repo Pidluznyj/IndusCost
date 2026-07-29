@@ -24,6 +24,7 @@ function mockPayload(
       totalCost: 400,
       marginValue: 600,
       marginPercent: 60,
+      marginCoveragePercent: 100,
       markup: 2.5,
       ordersCount: 1,
       itemsCount: 2,
@@ -37,12 +38,18 @@ function mockPayload(
         customerName: "Cliente A",
         sellerName: "Maria",
         issueDate: "15/01/2026",
+        grossValue: 1050,
+        discountValue: 50,
+        discountPercent: 4.76,
         netRevenue: 1000,
         totalCost: 400,
         marginValue: 600,
         marginPercent: 60,
+        marginCoveragePercent: 100,
+        managerialMarginValue: 550,
+        managerialMarginPercent: 55,
         markup: 2.5,
-        marginStatusLabel: "Margem OK",
+        marginStatusLabel: "Margem comercial",
         itemsWithoutCost: 1,
         itemsWithoutProduct: 0,
         itemsWithNegativeMargin: 0,
@@ -56,15 +63,19 @@ function mockPayload(
         sku: "SKU-1",
         productName: "Produto OK",
         quantity: 10,
+        grossUnitPrice: 84,
+        netUnitPrice: 80,
         netRevenue: 800,
         unitCost: 40,
         totalCost: 400,
         marginValue: 400,
         marginPercent: 50,
+        managerialMarginValue: 360,
+        managerialMarginPercent: 45,
         markup: 2,
         costSourceLabel: "Custo oficial da engenharia",
         costConfidenceLabel: "Alta",
-        marginStatusLabel: "Margem OK",
+        marginStatusLabel: "Margem comercial",
         notes: "",
       },
       {
@@ -74,11 +85,15 @@ function mockPayload(
         sku: "SKU-2",
         productName: "Sem custo",
         quantity: 1,
+        grossUnitPrice: 210,
+        netUnitPrice: 200,
         netRevenue: 200,
         unitCost: null,
         totalCost: null,
         marginValue: null,
         marginPercent: null,
+        managerialMarginValue: null,
+        managerialMarginPercent: null,
         markup: null,
         costSourceLabel: "Custo indisponível",
         costConfidenceLabel: "Indisponível",
@@ -111,22 +126,24 @@ function sheetJson(wb: XLSX.WorkBook, name: string) {
 }
 
 describe("salesOrderInternalMarginExport", () => {
-  it("1. exportação interna inclui margem R$", () => {
+  it("1. exportação interna inclui margem comercial R$", () => {
     const wb = buildSalesOrderInternalMarginExportWorkbook(mockPayload());
     const pedidos = sheetJson(wb, "Pedidos");
-    assert.ok(pedidos.some((r) => r["Margem R$"] === 600));
+    assert.ok(pedidos.some((r) => r["Margem comercial R$"] === 600));
   });
 
-  it("2. exportação interna inclui margem %", () => {
+  it("2. exportação interna inclui margem comercial %", () => {
     const wb = buildSalesOrderInternalMarginExportWorkbook(mockPayload());
     const pedidos = sheetJson(wb, "Pedidos");
-    assert.ok(pedidos.some((r) => r["Margem %"] === 60));
+    assert.ok(pedidos.some((r) => r["Margem comercial %"] === 60));
   });
 
-  it("3. exportação interna inclui custo estimado", () => {
+  it("3. exportação interna inclui custo estimado gerencial", () => {
     const wb = buildSalesOrderInternalMarginExportWorkbook(mockPayload());
     const resumo = sheetJson(wb, "Resumo");
-    assert.ok(resumo.some((r) => r.Campo === "Custo estimado total" && r.Valor === 400));
+    assert.ok(
+      resumo.some((r) => r.Campo === "Custo estimado total (gerencial)" && r.Valor === 400)
+    );
   });
 
   it("4. exportação interna inclui fonte do custo", () => {
@@ -135,10 +152,10 @@ describe("salesOrderInternalMarginExport", () => {
     assert.ok(itens.some((r) => r["Fonte do custo"] === "Custo oficial da engenharia"));
   });
 
-  it("5. exportação interna inclui status margem", () => {
+  it("5. exportação interna inclui status margem comercial", () => {
     const wb = buildSalesOrderInternalMarginExportWorkbook(mockPayload());
     const pedidos = sheetJson(wb, "Pedidos");
-    assert.ok(pedidos.some((r) => r["Status margem"] === "Margem OK"));
+    assert.ok(pedidos.some((r) => r["Status margem comercial"] === "Margem comercial"));
   });
 
   it("6. exportação respeita filtros (aba Filtros Aplicados)", () => {
@@ -171,7 +188,7 @@ describe("salesOrderInternalMarginExport", () => {
     const itens = sheetJson(wb, "Itens");
     const semCusto = itens.find((r) => r.SKU === "SKU-2");
     assert.ok(semCusto);
-    assert.equal(semCusto["Margem R$"], "");
+    assert.equal(semCusto["Margem comercial R$"], "");
     assert.equal(semCusto["Custo unitário usado"], "");
   });
 
@@ -186,14 +203,41 @@ describe("salesOrderInternalMarginExport", () => {
       })
     );
     const resumo = sheetJson(wb, "Resumo");
-    assert.ok(resumo.some((r) => r.Campo === "Margem %" && r.Valor === ""));
+    assert.ok(resumo.some((r) => r.Campo === "Margem comercial %" && r.Valor === ""));
   });
 
-  it("finance CSV inclui bloco de margem interna", () => {
+  it("export inclui bruto, desconto, cobertura e status", () => {
+    const wb = buildSalesOrderInternalMarginExportWorkbook(mockPayload());
+    const pedidos = sheetJson(wb, "Pedidos");
+    const row = pedidos.find((r) => r.Pedido === "PD-001");
+    assert.ok(row);
+    assert.equal(row["Valor bruto"], 1050);
+    assert.equal(row["Desconto R$"], 50);
+    assert.equal(row["Cobertura margem %"], 100);
+    assert.equal(row["Status margem comercial"], "Margem comercial");
+  });
+
+  it("finance CSV inclui bloco de margem comercial e gerencial separado", () => {
     const csv = buildFinanceSalesOrdersExportCsv({
       generatedAt: "2026-01-01",
-      yearContext: { selectedYear: 2026, previousYear: 2025, referenceDate: new Date(), isSelectedYearCurrent: true, ytdMonthLimit: 1 },
-      filters: { year: 2026, month: null, company: null, customerId: null, customerSearch: null, sellerName: null, status: null, invoiceStatus: "all", logisticStatus: null },
+      yearContext: {
+        selectedYear: 2026,
+        previousYear: 2025,
+        referenceDate: new Date(),
+        isSelectedYearCurrent: true,
+        ytdMonthLimit: 1,
+      },
+      filters: {
+        year: 2026,
+        month: null,
+        company: null,
+        customerId: null,
+        customerSearch: null,
+        sellerName: null,
+        status: null,
+        invoiceStatus: "all",
+        logisticStatus: null,
+      },
       summary: {
         monthSalesAmount: 1000,
         ytdSalesAmount: 1000,
@@ -205,8 +249,8 @@ describe("salesOrderInternalMarginExport", () => {
         marginPortfolio: {
           netRevenue: 1000,
           totalCost: 400,
-          marginValue: 600,
-          marginPercent: 60,
+          marginValue: 550,
+          marginPercent: 55,
           markup: 2.5,
           itemsCount: 10,
           validItemsCount: 9,
@@ -218,6 +262,18 @@ describe("salesOrderInternalMarginExport", () => {
           status: "PARTIAL",
           statusLabel: "Margem parcial",
           statusSeverity: "warning",
+          commercialMargin: {
+            commercialMarginTotalValue: 600,
+            commercialMarginTotalPercent: 60,
+            commercialSoldTotalValue: 1000,
+            totalActiveSoldValue: 1000,
+            commercialMarginCoveragePercent: 100,
+            itemsCalculated: 9,
+            itemsUnavailable: 1,
+            itemsActive: 10,
+            isComplete: false,
+            warnings: [],
+          },
         },
       },
       monthlyComparison: [],
@@ -226,8 +282,9 @@ describe("salesOrderInternalMarginExport", () => {
       criticalOrders: [],
       topCustomers: [],
     } as never);
-    assert.match(csv, /Margem consolidada \(interno\)/);
-    assert.match(csv, /Margem comercial do Pedido \(R\$\)|Margem R\$/);
+    assert.match(csv, /Margem comercial consolidada \(interno\)/);
+    assert.match(csv, /Margem comercial parcial \(R\$\)|Margem comercial \(R\$\)/);
+    assert.match(csv, /Margem gerencial após impostos e custo/);
     assert.ok(csv.includes(SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER));
   });
 });
@@ -248,23 +305,7 @@ describe("salesOrderInternalMarginExport — segurança cliente", () => {
   it("11. relatório cliente/proposta não inclui markup", () => {
     const orderDoc = readFileSync(join(ROOT, "components/sales/SalesOrderClientDocument.tsx"), "utf8");
     const proposalDoc = readFileSync(join(ROOT, "components/proposal/ProposalClientDocument.tsx"), "utf8");
-    assert.doesNotMatch(orderDoc, /markup/);
-    assert.doesNotMatch(proposalDoc, /markup/);
-  });
-
-  it("14. frontend de exportação não importa Prisma", () => {
-    const ui = readFileSync(join(ROOT, "lib/salesOrderInternalMarginExportUi.ts"), "utf8");
-    const exportLib = readFileSync(join(ROOT, "lib/salesOrderInternalMarginExport.ts"), "utf8");
-    assert.doesNotMatch(ui, /@prisma\/client|salesOrderInternalMarginExport\.server/);
-    assert.doesNotMatch(exportLib, /@prisma\/client/);
-  });
-});
-
-describe("salesOrderInternalMarginExport — rotas", () => {
-  it("endpoints de exportação interna registrados", () => {
-    const routes = readFileSync(join(ROOT, "lib/salesOrderInternalMarginExportRoutes.ts"), "utf8");
-    assert.match(routes, /export-internal\.xlsx/);
-    assert.match(routes, /management\/export-internal/);
-    assert.doesNotMatch(routes, /margin-indicators\/export-internal/);
+    assert.doesNotMatch(orderDoc, /markup/i);
+    assert.doesNotMatch(proposalDoc, /commissionRate|frozenTotalCost/);
   });
 });

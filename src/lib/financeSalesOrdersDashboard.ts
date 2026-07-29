@@ -650,29 +650,10 @@ export async function buildFinanceSalesOrdersDashboard(
     commercialPayloads.length > 0
       ? aggregateCommercialMarginPayloads(commercialPayloads)
       : null;
-  // Portfolio exportado/exibido como margem comercial usa o agregado canônico.
+  // Preserva gerencial nos campos base; comercial fica em commercialMargin (canônico).
   const marginPortfolio = managerialPortfolio
     ? {
         ...managerialPortfolio,
-        marginValue:
-          commercialPortfolio?.commercialMarginTotalValue ??
-          managerialPortfolio.marginValue,
-        marginPercent:
-          commercialPortfolio?.commercialMarginTotalPercent ??
-          managerialPortfolio.marginPercent,
-        marginRevenueCovered:
-          commercialPortfolio?.commercialSoldTotalValue ??
-          managerialPortfolio.marginRevenueCovered,
-        marginCoveragePercent:
-          commercialPortfolio?.commercialMarginCoveragePercent ??
-          managerialPortfolio.marginCoveragePercent,
-        costCoverageStatus: commercialPortfolio
-          ? commercialPortfolio.isComplete
-            ? ("FULL" as const)
-            : commercialPortfolio.itemsCalculated > 0
-              ? ("PARTIAL" as const)
-              : ("NONE" as const)
-          : managerialPortfolio.costCoverageStatus,
         commercialMargin: commercialPortfolio,
       }
     : undefined;

@@ -74,16 +74,28 @@ function weightedSummary(
   orders: SalesOrderInternalMarginExportOrderRow[],
   items: SalesOrderInternalMarginExportItemRow[]
 ): SalesOrderInternalMarginExportPayload["summary"] {
+  // Agregação comercial ponderada: Σ margem R$ / Σ valor líquido coberto.
   const netRevenue = orders.reduce((s, r) => s + r.netRevenue, 0);
   const totalCost = orders.reduce((s, r) => s + r.totalCost, 0);
   const marginValue = orders.reduce((s, r) => s + r.marginValue, 0);
   const marginPercent = netRevenue > 0 ? (marginValue / netRevenue) * 100 : null;
+  const coverageWeights = orders
+    .map((r) => r.marginCoveragePercent)
+    .filter((v): v is number => v != null && Number.isFinite(v));
+  const marginCoveragePercent =
+    coverageWeights.length > 0 && netRevenue > 0
+      ? orders.reduce((s, r) => {
+          if (r.marginCoveragePercent == null) return s;
+          return s + r.marginCoveragePercent * r.netRevenue;
+        }, 0) / netRevenue
+      : null;
   const markup = totalCost > 0 ? netRevenue / totalCost : null;
   return {
     netRevenue,
     totalCost,
     marginValue,
     marginPercent,
+    marginCoveragePercent,
     markup,
     ordersCount: orders.length,
     itemsCount: items.length,
@@ -154,6 +166,7 @@ function buildPayloadFromMarginContext(input: {
     if (!marginResult) continue;
 
     const summary = marginResult.marginSummary;
+    const commercial = summary.commercialMargin ?? null;
     const itemCounts = countMarginItemStatuses(marginResult.itemResults);
     const itemResultsById = new Map(
       marginResult.itemResults
@@ -162,17 +175,48 @@ function buildPayloadFromMarginContext(input: {
     );
     const itemMarginsById = marginResult.itemMargins;
 
+    let grossValue = 0;
+    for (const dbItem of order.items) {
+      const qty = decimalToNumber(dbItem.quantity) ?? 0;
+      const price = decimalToNumber(
+        (dbItem as { negotiatedPrice?: unknown }).negotiatedPrice
+      ) ?? 0;
+      if (qty > 0 && price > 0) grossValue += qty * price;
+    }
+    const commercialNet =
+      commercial?.commercialSoldTotalValue ?? summary.netRevenue;
+    const discountValue =
+      grossValue > 0 ? Math.max(0, grossValue - commercialNet) : null;
+    const discountPercent =
+      grossValue > 0 && discountValue != null
+        ? (discountValue / grossValue) * 100
+        : null;
+    const commercialStatusLabel = commercial
+      ? commercial.isComplete
+        ? "Margem comercial"
+        : commercial.itemsCalculated > 0
+          ? "Margem comercial parcial"
+          : "Margem não calculada"
+      : summary.statusLabel;
+
     orderRows.push({
       orderCode: order.orderCode,
       customerName: order.customerName,
       sellerName: order.responsible?.trim() || "—",
       issueDate: formatIssueDate(order.issueDate),
-      netRevenue: summary.netRevenue,
+      grossValue: grossValue > 0 ? grossValue : null,
+      discountValue,
+      discountPercent,
+      netRevenue: commercialNet,
       totalCost: summary.totalCost,
-      marginValue: summary.marginValue,
-      marginPercent: summary.marginPercent,
+      marginValue: commercial?.commercialMarginTotalValue ?? summary.marginValue ?? 0,
+      marginPercent:
+        commercial?.commercialMarginTotalPercent ?? summary.marginPercent,
+      marginCoveragePercent: commercial?.commercialMarginCoveragePercent ?? null,
+      managerialMarginValue: summary.marginValue,
+      managerialMarginPercent: summary.marginPercent,
       markup: summary.markup,
-      marginStatusLabel: summary.statusLabel,
+      marginStatusLabel: commercialStatusLabel,
       logisticStatusLabel: order.logisticStatusLabel,
       itemsWithoutCost: itemCounts.itemsWithoutCost,
       itemsWithoutProduct: itemCounts.itemsWithoutProduct,
@@ -198,7 +242,16 @@ function buildPayloadFromMarginContext(input: {
         costConfidence: itemResult!.costConfidence,
         statusLabel: itemResult!.statusLabel,
         notes: itemResult!.notes,
+        commercialMargin: null,
       };
+      const itemCommercial = payload.commercialMargin ?? null;
+      const qty = decimalToNumber(dbItem.quantity) ?? 0;
+      const grossUnit =
+        decimalToNumber((dbItem as { negotiatedPrice?: unknown }).negotiatedPrice) ??
+        null;
+      const netUnit =
+        itemCommercial?.negotiatedUnitPrice ??
+        (qty > 0 ? payload.netRevenue / qty : null);
 
       itemRows.push({
         orderCode: order.orderCode,
@@ -206,16 +259,26 @@ function buildPayloadFromMarginContext(input: {
         sellerName: order.responsible?.trim() || "—",
         sku: dbItem.skuSnapshot?.trim() || "—",
         productName: dbItem.productNameSnapshot?.trim() || "Produto não informado",
-        quantity: decimalToNumber(dbItem.quantity) ?? 0,
-        netRevenue: payload.netRevenue,
+        quantity: qty,
+        grossUnitPrice: grossUnit,
+        netUnitPrice: netUnit,
+        netRevenue: itemCommercial?.soldValue ?? payload.netRevenue,
         unitCost: payload.unitCost,
         totalCost: payload.totalCost,
-        marginValue: payload.marginValue,
-        marginPercent: payload.marginPercent,
+        marginValue:
+          itemCommercial?.commercialMarginValue ?? payload.marginValue,
+        marginPercent:
+          itemCommercial?.commercialMarginPercent ?? payload.marginPercent,
+        managerialMarginValue: payload.marginValue,
+        managerialMarginPercent: payload.marginPercent,
         markup: payload.markup,
         costSourceLabel: formatInternalMarginExportCostSource(payload.costSource),
         costConfidenceLabel: formatInternalMarginExportCostConfidence(payload.costConfidence),
-        marginStatusLabel: payload.statusLabel ?? itemResult?.statusLabel ?? "—",
+        marginStatusLabel: itemCommercial
+          ? itemCommercial.isComplete
+            ? "Margem comercial"
+            : "Margem não calculada"
+          : payload.statusLabel ?? itemResult?.statusLabel ?? "—",
         notes: (payload.notes ?? itemResult?.notes ?? []).join(" · "),
       });
     }

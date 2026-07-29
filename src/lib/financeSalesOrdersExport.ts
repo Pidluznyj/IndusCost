@@ -4,10 +4,11 @@ import { formatExecutivePercent } from "./executiveDashboardFormatters.js";
 import { SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER } from "./salesOrderInternalMarginExport.js";
 import {
   buildOfficialSalesOrderMarginTooltipText,
-  resolveSalesOrderMarginMoneyLabel,
-  resolveSalesOrderMarginPercentLabel,
   resolveSalesOrderMarginRevenueLabel,
 } from "./salesOrderMarginDisplay.js";
+import {
+  resolveCommercialMarginDisplayLabel,
+} from "./salesOrderCommercialMarginReadModel.js";
 
 function formatMoney(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "";
@@ -51,34 +52,61 @@ export function buildFinanceSalesOrdersExportCsv(
   ];
 
   const margin = payload.summary.marginPortfolio;
+  const commercial = margin?.commercialMargin ?? null;
+  const commercialLabel = resolveCommercialMarginDisplayLabel(commercial);
   const marginRows = margin
     ? [
         [],
-        ["Margem consolidada (interno)"],
+        ["Margem comercial consolidada (interno)"],
         [SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER],
         ...buildOfficialSalesOrderMarginTooltipText({ summary: margin })
           .split("\n")
           .map((line) => [line]),
         [],
+        [
+          "Valor líquido coberto (comercial)",
+          formatMoney(commercial?.commercialSoldTotalValue ?? margin.marginRevenueCovered),
+        ],
+        [
+          `${commercialLabel} (R$)`,
+          formatMoney(commercial?.commercialMarginTotalValue ?? margin.marginValue),
+        ],
+        [
+          `${commercialLabel} (%)`,
+          (commercial?.commercialMarginTotalPercent ?? margin.marginPercent) != null
+            ? formatExecutivePercent(
+                commercial?.commercialMarginTotalPercent ?? margin.marginPercent!,
+                2
+              )
+            : "",
+        ],
+        [
+          "Cobertura margem %",
+          (commercial?.commercialMarginCoveragePercent ?? margin.marginCoveragePercent) !=
+          null
+            ? formatExecutivePercent(
+                commercial?.commercialMarginCoveragePercent ??
+                  margin.marginCoveragePercent!,
+                2
+              )
+            : "",
+        ],
+        ["Status margem comercial", commercialLabel],
+        [],
+        ["— Separador: indicadores gerenciais (não substituem a comercial) —"],
         [resolveSalesOrderMarginRevenueLabel(margin), formatMoney(margin.netRevenue)],
-        ["Custo", formatMoney(margin.totalCost)],
-        [resolveSalesOrderMarginMoneyLabel(margin), formatMoney(margin.marginValue)],
+        ["Custo estimado (gerencial)", formatMoney(margin.totalCost)],
         [
-          resolveSalesOrderMarginPercentLabel(margin),
-          margin.marginPercent != null ? formatExecutivePercent(margin.marginPercent, 2) : "",
+          "Margem gerencial após impostos e custo (R$)",
+          formatMoney(margin.marginValue),
         ],
-        ["Cobertura receita", margin.costCoverageStatus ?? ""],
         [
-          "Valor vendido (escopo)",
-          formatMoney(margin.grossSalesAmount ?? margin.totalSalesRevenueInScope),
+          "Margem gerencial após impostos e custo (%)",
+          margin.marginPercent != null
+            ? formatExecutivePercent(margin.marginPercent, 2)
+            : "",
         ],
-        ["Receita coberta", formatMoney(margin.marginRevenueCovered)],
-        ["Receita sem custo", formatMoney(margin.marginRevenueUncovered)],
-        ["Markup", margin.markup != null ? String(margin.markup) : ""],
-        ["Status margem", margin.statusLabel],
-        ["Itens sem custo", margin.hasMissingCost ? "Sim" : "Não"],
-        ["Itens sem produto", margin.hasMissingProduct ? "Sim" : "Não"],
-        ["Margem negativa", margin.hasNegativeMargin ? "Sim" : "Não"],
+        ["Markup (gerencial)", margin.markup != null ? String(margin.markup) : ""],
       ]
     : [];
 

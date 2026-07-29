@@ -136,8 +136,8 @@ export async function loadSalesOrderListReportExportPayload(
 
   let totalNetAmount = 0;
   let totalItems = 0;
-  let marginPercentSum = 0;
-  let marginPercentWeight = 0;
+  let commercialMarginValueSum = 0;
+  let commercialSoldWeight = 0;
   let invoicedCount = 0;
   let notInvoicedCount = 0;
   const paymentSummaries = [];
@@ -158,11 +158,39 @@ export async function loadSalesOrderListReportExportPayload(
       sellerIdentityCtx
     );
     const marginResult = marginByOrder.get(order.id);
-    const marginPercent = marginResult?.marginSummary.marginPercent ?? null;
-    const marginValue = marginResult?.marginSummary.marginValue ?? null;
-    if (marginPercent != null && netValue > 0) {
-      marginPercentSum += marginPercent * netValue;
-      marginPercentWeight += netValue;
+    const commercial = marginResult?.marginSummary?.commercialMargin ?? null;
+    const marginPercent = commercial?.commercialMarginTotalPercent ?? null;
+    const marginValue = commercial?.commercialMarginTotalValue ?? null;
+    const marginCoveragePercent = commercial?.commercialMarginCoveragePercent ?? null;
+    const marginStatusLabel = commercial
+      ? commercial.isComplete
+        ? "Margem comercial"
+        : commercial.itemsCalculated > 0
+          ? "Margem comercial parcial"
+          : "Margem não calculada"
+      : "Margem não calculada";
+    // Composição bruto/desconto a partir dos itens do Pedido (quantidade × preço − líquido).
+    let grossValue = 0;
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    for (const item of orderItems) {
+      const qty = decimalToNumber(item.quantity) ?? 0;
+      const price = decimalToNumber(item.negotiatedPrice) ?? 0;
+      if (qty > 0 && price > 0) grossValue += qty * price;
+    }
+    const discountValue =
+      grossValue > 0 ? Math.max(0, grossValue - netValue) : null;
+    const discountPercent =
+      grossValue > 0 && discountValue != null
+        ? (discountValue / grossValue) * 100
+        : null;
+    if (
+      marginValue != null &&
+      Number.isFinite(marginValue) &&
+      commercial &&
+      commercial.commercialSoldTotalValue > 0
+    ) {
+      commercialMarginValueSum += marginValue;
+      commercialSoldWeight += commercial.commercialSoldTotalValue;
     }
 
     const nfeDocument = formatSalesOrderListReportNfeDocument(linked?.nfeNumbers);
@@ -196,9 +224,14 @@ export async function loadSalesOrderListReportExportPayload(
       status: order.status,
       statusLabel: SALES_ORDER_LIST_STATUS_LABELS[order.status] ?? order.status,
       hasInvoice,
+      grossValue: grossValue > 0 ? grossValue : null,
+      discountValue,
+      discountPercent,
       netValue,
       marginPercent,
       marginValue,
+      marginCoveragePercent,
+      marginStatusLabel,
       itemsCount,
       nfeDocument,
       externalSalesOrderCode: order.externalSalesOrderCode?.trim() ?? "",
@@ -214,7 +247,9 @@ export async function loadSalesOrderListReportExportPayload(
   });
 
   const averageMarginPercent =
-    marginPercentWeight > 0 ? marginPercentSum / marginPercentWeight : null;
+    commercialSoldWeight > 0
+      ? (commercialMarginValueSum / commercialSoldWeight) * 100
+      : null;
   const paymentReportSummary = buildSalesOrderListPaymentReportSummary({
     payments: paymentSummaries,
   });
