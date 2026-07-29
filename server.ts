@@ -53,6 +53,10 @@ import {
   resolveProposalCommercialMarginFromItems,
 } from "./src/lib/proposalListMargin.js";
 import {
+  buildProposalListNetValueWhere,
+  parseProposalListNetValueParam,
+} from "./src/lib/proposalListQuery.js";
+import {
   applyProductionCostsToProposalDetail,
   enrichProposalsWithOfficialProductionMargins,
   stampProposalItemsWithProductionCostsForWrite,
@@ -14660,15 +14664,6 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  function parseDecimalQuery(value: unknown): Prisma.Decimal | null {
-    const raw = String(value ?? "").trim();
-    if (!raw) return null;
-    const normalized = raw.replace(",", ".");
-    const parsed = Number(normalized);
-    if (!Number.isFinite(parsed)) return null;
-    return new Prisma.Decimal(parsed);
-  }
-
   async function withOfficialProposalListMargin(
     rows: Array<Record<string, unknown>>
   ): Promise<
@@ -14712,8 +14707,8 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const customerId = String(req.query.customerId ?? "").trim();
     const startDate = parseDateQueryStart(req.query.startDate);
     const endDate = parseDateQueryEnd(req.query.endDate);
-    const minNet = parseDecimalQuery(req.query.minNetValue);
-    const maxNet = parseDecimalQuery(req.query.maxNetValue);
+    const minNet = parseProposalListNetValueParam(req.query.minNetValue);
+    const maxNet = parseProposalListNetValueParam(req.query.maxNetValue);
 
     const hasPagination = pageRaw !== undefined || pageSizeRaw !== undefined;
     const hasAnyFilter =
@@ -14738,14 +14733,7 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
             },
           }
         : {}),
-      ...((minNet || maxNet)
-        ? {
-            totalNetValue: {
-              ...(minNet ? { gte: minNet } : {}),
-              ...(maxNet ? { lte: maxNet } : {}),
-            },
-          }
-        : {}),
+      ...buildProposalListNetValueWhere(minNet, maxNet),
       ...(search
         ? {
             OR: [

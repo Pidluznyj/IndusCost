@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/src/lib/utils";
 import { fetchJsonOk, fetchOk, HttpError } from "@/src/lib/http";
+import { moneyAmountToFilterParam } from "@/src/lib/moneyRangeFilter";
 import { SearchableSelect, type SelectOption } from "./shared/SearchableSelect";
 import { Proposal, Customer, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import { Product } from "@/src/types/product";
@@ -882,8 +883,14 @@ export const ProposalModule = () => {
         if (listCustomerIdFilter) params.set("customerId", listCustomerIdFilter);
         if (listStartDate) params.set("startDate", listStartDate);
         if (listEndDate) params.set("endDate", listEndDate);
-        if (listMinValue.trim()) params.set("minNetValue", listMinValue.trim());
-        if (listMaxValue.trim()) params.set("maxNetValue", listMaxValue.trim());
+        if (listMinValue.trim()) {
+          const minParam = moneyAmountToFilterParam(listMinValue);
+          if (minParam) params.set("minNetValue", minParam);
+        }
+        if (listMaxValue.trim()) {
+          const maxParam = moneyAmountToFilterParam(listMaxValue);
+          if (maxParam) params.set("maxNetValue", maxParam);
+        }
 
         const response = await fetchJsonOk<ProposalListResponse | Proposal[]>(
           `/api/proposals?${params.toString()}`,
@@ -2682,25 +2689,47 @@ export const ProposalModule = () => {
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2" data-testid="proposals-filter-net-value">
               <label className="text-[10px] font-bold uppercase text-muted-foreground">Valor líquido</label>
-              <input
-                type="number"
-                inputMode="decimal"
-                className="w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-                placeholder="mín."
-                value={listMinValue}
-                onChange={(e) => setListMinValue(e.target.value)}
-              />
-              <span className="text-xs text-muted-foreground">até</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                className="w-[150px] rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none"
-                placeholder="máx."
-                value={listMaxValue}
-                onChange={(e) => setListMaxValue(e.target.value)}
-              />
+              <div className="flex h-9 items-stretch overflow-hidden rounded-lg border border-border bg-card transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+                <span
+                  className="flex shrink-0 items-center border-r border-border bg-muted/40 px-2.5 text-[11px] font-semibold tracking-wide text-muted-foreground"
+                  aria-hidden="true"
+                >
+                  R$
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="w-[120px] border-0 bg-transparent px-2.5 text-sm tabular-nums outline-none placeholder:text-muted-foreground/70"
+                  placeholder="De"
+                  value={listMinValue}
+                  onChange={(e) => setListMinValue(e.target.value)}
+                  onBlur={() =>
+                    setListMinValue((prev) => moneyAmountToFilterParam(prev) || prev.trim())
+                  }
+                  aria-label="Valor líquido mínimo"
+                  data-testid="proposals-filter-min-net-value"
+                />
+                <span className="flex shrink-0 items-center px-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  até
+                </span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  className="w-[120px] border-0 bg-transparent px-2.5 text-sm tabular-nums outline-none placeholder:text-muted-foreground/70"
+                  placeholder="Até"
+                  value={listMaxValue}
+                  onChange={(e) => setListMaxValue(e.target.value)}
+                  onBlur={() =>
+                    setListMaxValue((prev) => moneyAmountToFilterParam(prev) || prev.trim())
+                  }
+                  aria-label="Valor líquido máximo"
+                  data-testid="proposals-filter-max-net-value"
+                />
+              </div>
             </div>
           </div>
 
