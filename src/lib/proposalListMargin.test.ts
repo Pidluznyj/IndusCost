@@ -199,6 +199,92 @@ describe("proposalListMargin", () => {
     assert.equal((enriched as { items?: unknown }).items, undefined);
   });
 
+  it("comercial: Entre faixas (snapshot) aparece na listagem", () => {
+    const p33 = formPrice(33, 6);
+    const p48 = formPrice(48, 4.5);
+    const mid = (p33 + p48) / 2;
+    const formation = {
+      formationContextId: "v1|v2",
+      referenceDate: "2024-06-15",
+      frozenCostUnit: COST,
+      taxRate: TAX,
+      freightRate: FREIGHT_RATE,
+      freightAbsoluteUnit: 0,
+      otherVariablesRate: OTHER,
+      tiers: [
+        { id: "band-33", marginRate: 0.33, salePrice: p33, commissionRate: 0.06 },
+        { id: "band-48", marginRate: 0.48, salePrice: p48, commissionRate: 0.045 },
+      ],
+    };
+
+    const formPreview = previewProposalCommercialMargins([
+      {
+        quantity: 1,
+        suggestedPrice: p48,
+        negotiatedPrice: mid,
+        discountPerc: 0,
+        priceTableId: "pt",
+        commercialFormation: formation,
+      },
+    ]);
+    assert.equal(formPreview.byIndex[0]!.tierPosition, "BETWEEN_TIERS");
+    assert.equal(formPreview.byIndex[0]!.isComplete, true);
+    const snap = formPreview.snapshots[0];
+    assert.ok(snap);
+
+    const listResolved = resolveProposalCommercialMarginFromItems([
+      {
+        quantity: 1,
+        suggestedPrice: p48,
+        negotiatedPrice: mid,
+        discountPerc: 0,
+        commercialPricingSnapshotJson:
+          serializeProposalCommercialPricingSnapshot(snap),
+      },
+    ]);
+    assert.equal(
+      listResolved.totalMarginPerc,
+      formPreview.summary.proposalCommercialMarginTotalPercent
+    );
+  });
+
+  it("comercial: snapshot com margem já calculada (sem faixas) ainda exibe na lista", () => {
+    const snap = {
+      schemaVersion: 1 as const,
+      formationContextId: "ctx",
+      priceTableId: null,
+      priceTableVersionId: null,
+      referenceDate: "2026-07-29",
+      referenceTableUnitPrice: 100,
+      negotiatedGrossUnitPrice: 100,
+      informedDiscountRate: 0,
+      informedDiscountValue: 0,
+      finalNetUnitPrice: 100,
+      finalNetLineValue: 509.2,
+      frozenCostUnit: null,
+      taxRate: null,
+      freightRate: null,
+      freightAbsoluteUnit: null,
+      otherVariablesRate: null,
+      tiers: [] as [],
+      calculatedCommissionRate: 0.05,
+      commercialMarginRate: 0.4309,
+      commercialMarginValue: 219.4,
+      calculationSource: "PROPOSAL_PRICE_FORMATION" as const,
+      warnings: [],
+    };
+    const listResolved = resolveProposalCommercialMarginFromItems([
+      {
+        quantity: 4,
+        negotiatedPrice: 100,
+        commercialPricingSnapshotJson:
+          serializeProposalCommercialPricingSnapshot(snap),
+      },
+    ]);
+    assert.equal(listResolved.totalMarginPerc, 43.09);
+    assert.equal(listResolved.totalMarginValue, 219.4);
+  });
+
   it("enrich preserva cabeçalho quando não há itens", () => {
     const enriched = enrichProposalListRowMargin({
       id: "p2",

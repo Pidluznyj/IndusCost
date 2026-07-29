@@ -5,6 +5,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { getEffectiveProductProductionCostsForPairs } from "./productionCostTables.server.js";
 import { effectiveProductionCostLookupKey } from "./productionCostVersioning.js";
+import { stampProposalItemsWithCommercialMarginsForWrite } from "./proposalCommercialMargin.server.js";
 import { calculateProposalLineMargin } from "./proposalLineMargin.js";
 import {
   enrichProposalListRowMargin,
@@ -108,10 +109,11 @@ export async function attachProposalProductionCostsForMargin(
 
 /**
  * Listagem: margem comercial (paridade com o formulário).
- * Não usa custo de produção — o grid exibe a mesma % da “Margem comercial” total.
+ * Reconstrói o snapshot a partir da formação (mesmo motor do save/edição),
+ * inclusive itens “Entre faixas”, para não depender só do JSON persistido.
  */
 export async function enrichProposalsWithOfficialProductionMargins(
-  _prisma: PrismaClient,
+  prisma: PrismaClient,
   proposals: Array<Record<string, unknown>>
 ): Promise<
   Array<
@@ -122,7 +124,40 @@ export async function enrichProposalsWithOfficialProductionMargins(
     }
   >
 > {
-  return proposals.map((row) => enrichProposalListRowMargin(row));
+  const withCommercial = await attachProposalCommercialSnapshotsForList(
+    prisma,
+    proposals
+  );
+  return withCommercial.map((row) => enrichProposalListRowMargin(row));
+}
+
+/**
+ * Em memória (não grava): garante commercialPricingSnapshotJson calculável
+ * como no formulário — formação do produto + preço negociado.
+ */
+export async function attachProposalCommercialSnapshotsForList(
+  prisma: PrismaClient,
+  proposals: ReadonlyArray<Record<string, unknown>>
+): Promise<Array<Record<string, unknown>>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const proposal of proposals) {
+    const items = Array.isArray(proposal.items)
+      ? (proposal.items as Array<Record<string, unknown>>)
+      : [];
+    if (items.length === 0) {
+      out.push(proposal);
+      continue;
+    }
+    // Sem freeze: mesma data do hydrate do formulário (hoje).
+    // Com freeze.referenceDate no item, o stamp preserva a data congelada.
+    const stamped = await stampProposalItemsWithCommercialMarginsForWrite(
+      prisma,
+      items,
+      { referenceDate: new Date() }
+    );
+    out.push({ ...proposal, items: stamped });
+  }
+  return out;
 }
 
 /** Aplica custos de produção nos itens de uma proposta (GET detalhe / formulário). */

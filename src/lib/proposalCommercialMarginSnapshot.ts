@@ -472,22 +472,33 @@ export function serializeProposalCommercialPricingSnapshot(
 export function parseProposalCommercialPricingSnapshot(
   value: unknown
 ): ProposalCommercialPricingSnapshot | null {
-  if (value == null) return null;
-  if (!isPlainObject(value)) return null;
+  let raw: unknown = value;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    try {
+      raw = JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (raw == null) return null;
+  if (!isPlainObject(raw)) return null;
   if (
-    !Object.prototype.hasOwnProperty.call(value, "schemaVersion") ||
-    value.schemaVersion !== PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION
+    !Object.prototype.hasOwnProperty.call(raw, "schemaVersion") ||
+    raw.schemaVersion !== PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION
   ) {
     return null;
   }
 
+  const valueObj = raw;
   const readNum = (key: string): number | null => {
-    const p = readExplicitNumberField(value, key);
+    const p = readExplicitNumberField(valueObj, key);
     if (p.presence === "value") return p.value;
     return null;
   };
 
-  const tiersRaw = Array.isArray(value.tiers) ? value.tiers : [];
+  const tiersRaw = Array.isArray(valueObj.tiers) ? valueObj.tiers : [];
   const tiers: ProposalCommercialMarginFreezeTier[] = [];
   for (const t of tiersRaw) {
     const n = normalizeTier(t);
@@ -495,19 +506,25 @@ export function parseProposalCommercialPricingSnapshot(
   }
 
   const calculationSource =
-    value.calculationSource === "PROPOSAL_PRICE_FORMATION" ||
-    value.calculationSource === "UNAVAILABLE"
-      ? value.calculationSource
+    valueObj.calculationSource === "PROPOSAL_PRICE_FORMATION" ||
+    valueObj.calculationSource === "UNAVAILABLE"
+      ? valueObj.calculationSource
       : "UNAVAILABLE";
 
   return {
     schemaVersion: PROPOSAL_COMMERCIAL_PRICING_SNAPSHOT_SCHEMA_VERSION,
     formationContextId:
-      typeof value.formationContextId === "string" ? value.formationContextId : null,
-    priceTableId: typeof value.priceTableId === "string" ? value.priceTableId : null,
+      typeof valueObj.formationContextId === "string"
+        ? valueObj.formationContextId
+        : null,
+    priceTableId:
+      typeof valueObj.priceTableId === "string" ? valueObj.priceTableId : null,
     priceTableVersionId:
-      typeof value.priceTableVersionId === "string" ? value.priceTableVersionId : null,
-    referenceDate: typeof value.referenceDate === "string" ? value.referenceDate : null,
+      typeof valueObj.priceTableVersionId === "string"
+        ? valueObj.priceTableVersionId
+        : null,
+    referenceDate:
+      typeof valueObj.referenceDate === "string" ? valueObj.referenceDate : null,
     referenceTableUnitPrice: readNum("referenceTableUnitPrice"),
     negotiatedGrossUnitPrice: readNum("negotiatedGrossUnitPrice"),
     informedDiscountRate: readNum("informedDiscountRate"),
@@ -524,8 +541,8 @@ export function parseProposalCommercialPricingSnapshot(
     commercialMarginRate: readNum("commercialMarginRate"),
     commercialMarginValue: readNum("commercialMarginValue"),
     calculationSource,
-    warnings: Array.isArray(value.warnings)
-      ? value.warnings.filter((w): w is string => typeof w === "string")
+    warnings: Array.isArray(valueObj.warnings)
+      ? valueObj.warnings.filter((w): w is string => typeof w === "string")
       : [],
   };
 }

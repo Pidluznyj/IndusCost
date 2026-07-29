@@ -10,6 +10,7 @@ import {
   type ProposalCommercialMarginItemPayload,
   type ProposalCommercialMarginSummaryPayload,
 } from "./proposalCommercialMargin.js";
+import { roundPricingPercent } from "./pricingCalculations.js";
 import {
   buildProposalCommercialMarginFreeze,
   recalculateProposalCommercialMarginFromFrozenFormation,
@@ -80,6 +81,61 @@ function snapshotToFreeze(
   };
 }
 
+function commercialMarginItemFromStoredSnapshot(
+  snapshot: ProposalCommercialPricingSnapshot | null,
+  quantity: number
+): ProposalCommercialMarginItemPayload | null {
+  if (!snapshot) return null;
+  if (
+    snapshot.calculationSource !== "PROPOSAL_PRICE_FORMATION" ||
+    snapshot.commercialMarginValue == null ||
+    snapshot.commercialMarginRate == null ||
+    snapshot.finalNetLineValue == null ||
+    !(snapshot.finalNetLineValue > 0)
+  ) {
+    return null;
+  }
+  const commercialMarginPercent = roundPricingPercent(
+    snapshot.commercialMarginRate * 100
+  );
+  return {
+    quantity,
+    referenceTableUnitPrice: snapshot.referenceTableUnitPrice,
+    negotiatedGrossUnitPrice: snapshot.negotiatedGrossUnitPrice,
+    finalNetUnitPrice: snapshot.finalNetUnitPrice,
+    finalNetLineValue: snapshot.finalNetLineValue,
+    manualPriceReduction: null,
+    explicitDiscount: null,
+    totalCommercialConcession: null,
+    costUnit: snapshot.frozenCostUnit,
+    costValue: null,
+    taxRate: snapshot.taxRate,
+    taxValue: null,
+    freightRate: snapshot.freightRate,
+    freightRateValue: null,
+    freightAbsoluteUnit: snapshot.freightAbsoluteUnit,
+    freightAbsoluteValue: null,
+    otherVariablesRate: snapshot.otherVariablesRate,
+    otherVariablesValue: null,
+    commissionRate: snapshot.calculatedCommissionRate,
+    commissionValue: null,
+    lowerTier: null,
+    upperTier: null,
+    exactTier: null,
+    tierPosition: null,
+    commercialMarginRate: snapshot.commercialMarginRate,
+    commercialMarginPercent,
+    commercialMarginUnitValue: null,
+    commercialMarginValue: snapshot.commercialMarginValue,
+    calculationSource: "PROPOSAL_PRICE_FORMATION",
+    formationContextId: snapshot.formationContextId,
+    referenceDate: snapshot.referenceDate,
+    reasonCode: null,
+    warnings: snapshot.warnings,
+    isComplete: true,
+  };
+}
+
 /**
  * Calcula prévia de um item: prioriza formação congelada; senão formação em sessão.
  */
@@ -119,6 +175,12 @@ export function previewProposalItemCommercialMargin(
       marginItem,
       snapshot: toProposalCommercialPricingSnapshot(freeze),
     };
+  }
+
+  // Snapshot já tem margem calculada (ex.: Entre faixas persistida) — exibe sem exigir faixas completas.
+  const fromStored = commercialMarginItemFromStoredSnapshot(stored, qty);
+  if (fromStored) {
+    return { marginItem: fromStored, snapshot: stored };
   }
 
   const formation = item.commercialFormation;
