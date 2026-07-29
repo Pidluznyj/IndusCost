@@ -27,5 +27,7 @@ export async function loadSalesOrderListMarginSummary(
     where,
     select: SALES_ORDER_LIST_MARGIN_SUMMARY_PRISMA_SELECT,
   });
-  return buildOfficialSalesOrderListMarginSummary(db, marginOrders);
+  return buildOfficialSalesOrderListMarginSummary(db, marginOrders, {
+    year: listQuery.year ?? new Date().getFullYear(),
+  });
 }

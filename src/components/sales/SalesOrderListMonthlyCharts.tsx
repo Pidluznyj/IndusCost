@@ -29,9 +29,12 @@ export type SalesOrderListMonthlyChartsFilters = {
 export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCharts({
   filters,
   showMarginChart,
+  monthlyCommercialMargin,
 }: {
   filters: SalesOrderListMonthlyChartsFilters;
   showMarginChart: boolean;
+  /** Preferir série do card (mesmo motor); fallback = /results. */
+  monthlyCommercialMargin?: SalesOrderResultDashboardPayload["monthlyCommercialMargin"] | null;
 }) {
   noteDevPerfRender("SalesOrderListMonthlyCharts");
   const { ref: sectionRef, visible } = useSectionVisible<HTMLDivElement>();
@@ -161,7 +164,11 @@ export const SalesOrderListMonthlyCharts = memo(function SalesOrderListMonthlyCh
       />
       {showMarginChart ? (
         <SalesOrderListMonthlyMarginPercentChart
-          rows={payload.monthlyCommercialMargin ?? []}
+          rows={
+            monthlyCommercialMargin != null
+              ? monthlyCommercialMargin
+              : (payload.monthlyCommercialMargin ?? [])
+          }
           selectedYear={filters.year}
         />
       ) : null}

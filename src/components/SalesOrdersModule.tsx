@@ -1154,6 +1154,9 @@ function SalesOrderList() {
       <SalesOrderListMonthlyCharts
         filters={monthlyChartsFilters}
         showMarginChart={showMarginEconomics}
+        monthlyCommercialMargin={
+          marginSummary ? marginSummary.monthlyCommercialMargin : null
+        }
       />
 
       <SalesOrderListTable

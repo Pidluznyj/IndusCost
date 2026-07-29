@@ -11,6 +11,19 @@ import {
   type SalesOrderListCostBreakdown,
 } from "./salesOrderListCostBreakdown.js";
 
+/** Série mensal da margem comercial (mesmo motor/ponderação do card). */
+export type SalesOrderListMonthlyCommercialMarginRow = {
+  month: number;
+  monthLabel: string;
+  salesAmount: number;
+  taxAmount: number;
+  netSalesAmount: number;
+  costAmount: number;
+  marginAmount: number;
+  marginPercent: number | null;
+  ordersCount: number;
+};
+
 export type SalesOrderListMarginSummary = {
   totalOrdersCount: number;
   totalMarginValue: number;
@@ -30,6 +43,11 @@ export type SalesOrderListMarginSummary = {
   /** false quando cobertura NONE — card exibe indisponível */
   available: boolean;
   tooltipSummary: SalesOrderMarginSummaryPayload;
+  /**
+   * Margem comercial % mês a mês — mesma população e motor do card
+   * (Σ margem ÷ Σ líquido coberto por mês de emissão).
+   */
+  monthlyCommercialMargin: SalesOrderListMonthlyCommercialMarginRow[];
 };
 
 export const EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY: SalesOrderListMarginSummary = {
@@ -48,6 +66,7 @@ export const EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY: SalesOrderListMarginSummary 
   taxRuleName: null,
   taxRate: null,
   available: false,
+  monthlyCommercialMargin: [],
   tooltipSummary: {
     netRevenue: 0,
     totalCost: 0,

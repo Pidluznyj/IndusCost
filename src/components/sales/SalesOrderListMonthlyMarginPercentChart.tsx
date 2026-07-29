@@ -69,7 +69,7 @@ export function SalesOrderListMonthlyMarginPercentChart({
     };
   });
 
-  const empty = data.every((row) => !row.hasMargin || row.marginPercent === 0);
+  const empty = data.every((row) => !row.hasMargin);
 
   return (
     <FinanceBillingChartShell

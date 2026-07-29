@@ -952,7 +952,8 @@ export function buildOfficialSalesOrderResultMarginPayload(input: {
 /** Margem geral ponderada de todos os pedidos filtrados na listagem (não paginados). */
 export async function buildOfficialSalesOrderListMarginSummary(
   db: PrismaClient,
-  orders: SalesOrderForMargin[]
+  orders: SalesOrderForMargin[],
+  options?: { year?: number }
 ): Promise<SalesOrderListMarginSummary> {
   if (orders.length === 0) {
     return { ...EMPTY_SALES_ORDER_LIST_MARGIN_SUMMARY };
@@ -962,10 +963,14 @@ export async function buildOfficialSalesOrderListMarginSummary(
   const { summarizeSalesOrderCommercialMargins } = await import(
     "./salesOrderCommercialMargin.js"
   );
-  const { aggregateCommercialMarginPayloads } = await import(
+  const { aggregateCommercialMarginPayloads, buildMonthlyCommercialMarginRows } = await import(
     "./salesOrderCommercialMarginReadModel.js"
   );
   let commercialAggregate = summarizeSalesOrderCommercialMargins([]);
+  let monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
+    [],
+    options?.year ?? new Date().getFullYear()
+  );
   try {
     // Fonte única: read model canônico (batch).
     const { buildSalesOrderCommercialMarginReadModels } = await import(
@@ -997,6 +1002,10 @@ export async function buildOfficialSalesOrderListMarginSummary(
       }))
     );
     const commercialPayloads = [];
+    const monthlyInputs: Array<{
+      issueDate: Date | string | null;
+      commercialMargin: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSummaryPayload;
+    }> = [];
     for (const order of orders) {
       const result = marginByOrder.get(order.id);
       const commercial = commercialByOrder.get(order.id);
@@ -1006,10 +1015,24 @@ export async function buildOfficialSalesOrderListMarginSummary(
         commercialMargin: commercial.commercialMargin,
       };
       commercialPayloads.push(commercial.commercialMargin);
+      monthlyInputs.push({
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        commercialMargin: commercial.commercialMargin,
+      });
     }
     if (commercialPayloads.length > 0) {
       commercialAggregate = aggregateCommercialMarginPayloads(commercialPayloads);
     }
+    const year =
+      options?.year != null && Number.isFinite(options.year)
+        ? options.year
+        : new Date().getFullYear();
+    monthlyCommercialMargin = buildMonthlyCommercialMarginRows(monthlyInputs, year);
   } catch (err) {
     console.warn(
       "[buildOfficialSalesOrderListMarginSummary] falha na margem comercial; usando gerencial.",
@@ -1092,6 +1115,7 @@ export async function buildOfficialSalesOrderListMarginSummary(
     taxRuleName: tooltipSummary.taxRuleName ?? scoped.taxSourceLabel,
     taxRate: tooltipSummary.taxRulePercent ?? scoped.taxPercentApplied,
     available,
+    monthlyCommercialMargin,
     tooltipSummary,
   };
 }
