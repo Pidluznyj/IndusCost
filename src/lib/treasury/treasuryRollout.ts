@@ -113,3 +113,51 @@ export function resolveTreasuryUiLandingPath(
   const visible = filterTreasuryUiSections(sections, flags);
   return visible[0]?.path ?? fallbackPath;
 }
+
+/**
+ * Landing apenas entre seções realmente liberadas.
+ * `null` = nenhuma aba habilitada — o shell NÃO deve Navigate para um fallback
+ * desabilitado (evita loop Navigate→mesma rota no FlagGate).
+ */
+export function resolveTreasuryUiEnabledLandingPath(
+  sections: readonly { id: string; path: string }[],
+  flags: Partial<TreasuryFeatureFlagsMap> | null | undefined
+): string | null {
+  const visible = filterTreasuryUiSections(sections, flags);
+  return visible[0]?.path ?? null;
+}
+
+export type TreasuryFlagGateDecision =
+  | { action: "loading" }
+  | { action: "render" }
+  | { action: "redirect"; to: string }
+  | { action: "blocked" };
+
+/**
+ * Decisão pura do gate de seção (sem React Router).
+ * Redirect só quando há landing habilitada distinta do path atual (sem loop).
+ */
+export function resolveTreasuryFlagGateDecision(input: {
+  flags: Partial<TreasuryFeatureFlagsMap> | null | undefined;
+  sectionId: TreasuryRolloutUiSectionId;
+  alsoRequire?: readonly TreasuryFeatureFlagId[];
+  landingPath: string | null;
+  currentPath?: string | null;
+}): TreasuryFlagGateDecision {
+  const { flags, sectionId, alsoRequire, landingPath, currentPath } = input;
+  if (!flags) return { action: "loading" };
+
+  const required = TREASURY_UI_SECTION_FEATURE_FLAG[sectionId];
+  const enabled =
+    flags["treasury.enabled"] === true &&
+    (required == null || flags[required] === true) &&
+    (alsoRequire ?? []).every((id) => flags[id] === true);
+
+  if (enabled) return { action: "render" };
+
+  if (landingPath && landingPath !== currentPath) {
+    return { action: "redirect", to: landingPath };
+  }
+
+  return { action: "blocked" };
+}

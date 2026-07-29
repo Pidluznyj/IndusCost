@@ -2,17 +2,15 @@ import React, { useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { cn } from "@/src/lib/utils";
 import { useAuth } from "@/src/contexts/AuthContext";
+import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
 import { fetchTreasuryAvailability } from "@/src/lib/treasury/treasuryAvailabilityApi.js";
-import {
-  TREASURY_FEATURE_FLAG_IDS,
-  type TreasuryFeatureFlagId,
-} from "@/src/lib/treasury/treasuryFeatureFlags.js";
+import type { TreasuryFeatureFlagId } from "@/src/lib/treasury/treasuryFeatureFlags.js";
 import {
   filterTreasuryUiSections,
-  resolveTreasuryUiLandingPath,
+  resolveTreasuryFlagGateDecision,
+  resolveTreasuryUiEnabledLandingPath,
   type TreasuryFeatureFlagsMap,
   type TreasuryRolloutUiSectionId,
-  TREASURY_UI_SECTION_FEATURE_FLAG,
 } from "@/src/lib/treasury/treasuryRollout.js";
 import {
   canAccessTreasuryAdvancedNavigation,
@@ -20,7 +18,6 @@ import {
 } from "@/src/lib/treasury/treasurySimpleNavigation.js";
 import {
   TREASURY_UI_ADVANCED_HUB_PATH,
-  TREASURY_UI_BASE_PATH,
   TREASURY_UI_LABEL,
   TREASURY_UI_PRIMARY_SECTIONS,
 } from "./treasuryFeatureUi.js";
@@ -50,24 +47,25 @@ import { TreasuryReconcileWorkspacePage } from "./TreasuryReconcileWorkspacePage
 import { TreasuryAuditPage } from "./TreasuryAuditPage.js";
 import { TreasuryAlertSettingsPage } from "./TreasuryAlertSettingsPage.js";
 
-function closedTreasuryFlagsMap(): TreasuryFeatureFlagsMap {
-  const out = {} as TreasuryFeatureFlagsMap;
-  for (const id of TREASURY_FEATURE_FLAG_IDS) {
-    out[id] = false;
-  }
-  return out;
-}
-
 function TreasuryFlagGate(props: {
   sectionId: TreasuryRolloutUiSectionId;
   flags: TreasuryFeatureFlagsMap | null;
-  landingPath: string;
+  landingPath: string | null;
+  currentPath: string;
   /** Flags extras que também precisam estar ON (ex.: abertura exige balances). */
   alsoRequire?: readonly TreasuryFeatureFlagId[];
   children: React.ReactNode;
 }) {
-  const { sectionId, flags, landingPath, alsoRequire, children } = props;
-  if (!flags) {
+  const { sectionId, flags, landingPath, currentPath, alsoRequire, children } =
+    props;
+  const decision = resolveTreasuryFlagGateDecision({
+    flags,
+    sectionId,
+    alsoRequire,
+    landingPath,
+    currentPath,
+  });
+  if (decision.action === "loading") {
     return (
       <div
         className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
@@ -77,13 +75,11 @@ function TreasuryFlagGate(props: {
       </div>
     );
   }
-  const required = TREASURY_UI_SECTION_FEATURE_FLAG[sectionId];
-  const enabled =
-    flags["treasury.enabled"] === true &&
-    (required == null || flags[required] === true) &&
-    (alsoRequire ?? []).every((id) => flags[id] === true);
-  if (!enabled) {
-    return <Navigate to={landingPath} replace />;
+  if (decision.action === "redirect") {
+    return <Navigate to={decision.to} replace />;
+  }
+  if (decision.action === "blocked") {
+    return null;
   }
   return <>{children}</>;
 }
@@ -96,15 +92,39 @@ export function TreasuryModule() {
   const location = useLocation();
   const auth = useAuth();
   const [flags, setFlags] = useState<TreasuryFeatureFlagsMap | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     const ac = new AbortController();
+    setAvailabilityError(null);
     void fetchTreasuryAvailability({ signal: ac.signal })
       .then((payload) => {
+        if (ac.signal.aborted) return;
         setFlags(payload.flags as TreasuryFeatureFlagsMap);
+        setAvailabilityError(null);
       })
-      .catch(() => {
-        setFlags(closedTreasuryFlagsMap());
+      .catch((err: unknown) => {
+        // StrictMode (dev) abort no unmount NÃO pode fechar todas as flags —
+        // isso gerava Navigate em loop para /today desabilitado.
+        if (ac.signal.aborted) return;
+        if (
+          err instanceof DOMException &&
+          err.name === "AbortError"
+        ) {
+          return;
+        }
+        if (err instanceof Error && err.name === "AbortError") {
+          return;
+        }
+        setFlags(null);
+        setAvailabilityError(
+          buildFinanceTabLoadError(
+            "Não foi possível carregar a disponibilidade da Tesouraria.",
+            err
+          )
+        );
       });
     return () => ac.abort();
   }, []);
@@ -113,10 +133,9 @@ export function TreasuryModule() {
     TREASURY_UI_PRIMARY_SECTIONS,
     flags
   );
-  const landingPath = resolveTreasuryUiLandingPath(
+  const landingPath = resolveTreasuryUiEnabledLandingPath(
     TREASURY_UI_PRIMARY_SECTIONS,
-    flags,
-    `${TREASURY_UI_BASE_PATH}/today`
+    flags
   );
   const showAdvancedEntry = canAccessTreasuryAdvancedNavigation(
     auth.authUser?.role
@@ -132,6 +151,7 @@ export function TreasuryModule() {
       sectionId={sectionId}
       flags={flags}
       landingPath={landingPath}
+      currentPath={location.pathname}
       alsoRequire={alsoRequire}
     >
       {node}
@@ -189,7 +209,17 @@ export function TreasuryModule() {
         ))}
       </nav>
 
-      {!flags ? (
+      {availabilityError ? (
+        <div
+          className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-8 text-sm text-destructive"
+          data-testid="treasury-module-availability-error"
+          role="alert"
+        >
+          {availabilityError}
+        </div>
+      ) : null}
+
+      {!flags && !availabilityError ? (
         <div
           className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
           data-testid="treasury-module-loading"
@@ -198,149 +228,181 @@ export function TreasuryModule() {
         </div>
       ) : null}
 
-      {flags && primarySections.length === 0 && !showAdvancedEntry ? (
+      {flags && primarySections.length === 0 ? (
         <div
           className="rounded-lg border border-border px-4 py-8 text-sm text-muted-foreground"
           data-testid="treasury-module-no-flags"
         >
           Nenhum submódulo liberado neste ambiente. Os dados permanecem
           preservados até a ativação das flags.
+          {showAdvancedEntry ? (
+            <>
+              {" "}
+              Administradores podem abrir{" "}
+              <NavLink
+                to={TREASURY_UI_ADVANCED_HUB_PATH}
+                className="font-semibold underline underline-offset-4"
+              >
+                Recursos avançados
+              </NavLink>{" "}
+              quando a mestra estiver ligada.
+            </>
+          ) : null}
         </div>
       ) : null}
 
-      <Routes>
-        <Route
-          index
-          element={<Navigate to={landingPath} replace />}
-        />
-        <Route
-          path="today/opening"
-          element={gate("today", <TreasuryTodayOpeningPage />, [
-            "treasury.balances.enabled",
-          ])}
-        />
-        <Route
-          path="today/closing"
-          element={gate("today", <TreasuryTodayClosingPage />, [
-            "treasury.balances.enabled",
-          ])}
-        />
-        <Route
-          path="today/receivables"
-          element={gate("receivables", <TreasurySimpleReceivablesReviewPage />)}
-        />
-        <Route
-          path="today/payables"
-          element={gate("payables", <TreasurySimplePayablesReviewPage />)}
-        />
-        <Route
-          path="today"
-          element={gate("today", <TreasuryTodayPage />)}
-        />
-        <Route
-          path="dashboard"
-          element={gate("today", <TreasuryDashboardPage />)}
-        />
-        <Route
-          path="accounts"
-          element={gate("accounts", <TreasuryAccountsPage />)}
-        />
-        <Route
-          path="accounts/:accountId/balances"
-          element={gate("balances", <TreasuryAccountBalancePage />)}
-        />
-        <Route
-          path="bank"
-          element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
-            "treasury.reconciliation.enabled",
-          ])}
-        />
-        <Route
-          path="today/bank"
-          element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
-            "treasury.reconciliation.enabled",
-          ])}
-        />
-        <Route
-          path="projection"
-          element={gate("projection", <TreasurySimpleCashRiskProjectionPage />)}
-        />
-        <Route
-          path="advanced"
-          element={
-            showAdvancedEntry ? (
-              gate("advanced", <TreasuryAdvancedHubPage flags={flags} />)
-            ) : (
-              <Navigate to={landingPath} replace />
-            )
-          }
-        />
-        {/* Deep-links e ferramentas avançadas — preservados */}
-        <Route
-          path="receivables"
-          element={gate("receivables", <TreasuryReceivablesPage />)}
-        />
-        <Route
-          path="payables"
-          element={gate("payables", <TreasuryPayablesPage />)}
-        />
-        <Route
-          path="payment-schedule"
-          element={gate("payment-schedule", <TreasuryPaymentSchedulePage />)}
-        />
-        <Route path="agenda" element={gate("agenda", <TreasuryAgendaPage />)} />
-        <Route
-          path="projections"
-          element={gate("projections", <TreasuryProjectionComparisonPage />)}
-        />
-        <Route
-          path="transfers"
-          element={gate("transfers", <TreasuryTransfersPage />)}
-        />
-        <Route
-          path="manual-entries"
-          element={gate("manual-entries", <TreasuryManualEntriesPage />)}
-        />
-        <Route
-          path="bank-movements"
-          element={gate("bank-movements", <TreasuryBankMovementsPage />)}
-        />
-        <Route
-          path="ofx"
-          element={gate("ofx", <TreasuryBankMovementsPage />)}
-        />
-        <Route
-          path="reconcile"
-          element={gate("reconcile", <TreasuryReconcileWorkspacePage />)}
-        />
-        <Route
-          path="exceptions"
-          element={gate("exceptions", <TreasuryExceptionsPage />)}
-        />
-        <Route
-          path="alert-settings"
-          element={gate("alert-settings", <TreasuryAlertSettingsPage />)}
-        />
-        <Route
-          path="closing"
-          element={gate("closing", <TreasuryDailyClosingPage />)}
-        />
-        <Route
-          path="reports"
-          element={gate("reports", <TreasuryReportsPage />)}
-        />
-        <Route path="audit" element={gate("audit", <TreasuryAuditPage />)} />
-        <Route
-          path="*"
-          element={
-            <Navigate
-              to={landingPath}
-              replace
-              state={{ from: location.pathname }}
-            />
-          }
-        />
-      </Routes>
+      {flags && !availabilityError ? (
+        <Routes>
+          <Route
+            index
+            element={
+              landingPath ? (
+                <Navigate to={landingPath} replace />
+              ) : (
+                <div
+                  className="sr-only"
+                  data-testid="treasury-index-no-landing"
+                />
+              )
+            }
+          />
+          <Route
+            path="today/opening"
+            element={gate("today", <TreasuryTodayOpeningPage />, [
+              "treasury.balances.enabled",
+            ])}
+          />
+          <Route
+            path="today/closing"
+            element={gate("today", <TreasuryTodayClosingPage />, [
+              "treasury.balances.enabled",
+            ])}
+          />
+          <Route
+            path="today/receivables"
+            element={gate("receivables", <TreasurySimpleReceivablesReviewPage />)}
+          />
+          <Route
+            path="today/payables"
+            element={gate("payables", <TreasurySimplePayablesReviewPage />)}
+          />
+          <Route path="today" element={gate("today", <TreasuryTodayPage />)} />
+          <Route
+            path="dashboard"
+            element={gate("today", <TreasuryDashboardPage />)}
+          />
+          <Route
+            path="accounts"
+            element={gate("accounts", <TreasuryAccountsPage />)}
+          />
+          <Route
+            path="accounts/:accountId/balances"
+            element={gate("balances", <TreasuryAccountBalancePage />)}
+          />
+          <Route
+            path="bank"
+            element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
+              "treasury.reconciliation.enabled",
+            ])}
+          />
+          <Route
+            path="today/bank"
+            element={gate("bank", <TreasurySimpleOfxInvestigationPage />, [
+              "treasury.reconciliation.enabled",
+            ])}
+          />
+          <Route
+            path="projection"
+            element={gate("projection", <TreasurySimpleCashRiskProjectionPage />)}
+          />
+          <Route
+            path="advanced"
+            element={
+              showAdvancedEntry ? (
+                gate("advanced", <TreasuryAdvancedHubPage flags={flags} />)
+              ) : landingPath ? (
+                <Navigate to={landingPath} replace />
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  Recursos avançados indisponíveis para este perfil.
+                </div>
+              )
+            }
+          />
+          {/* Deep-links e ferramentas avançadas — preservados */}
+          <Route
+            path="receivables"
+            element={gate("receivables", <TreasuryReceivablesPage />)}
+          />
+          <Route
+            path="payables"
+            element={gate("payables", <TreasuryPayablesPage />)}
+          />
+          <Route
+            path="payment-schedule"
+            element={gate("payment-schedule", <TreasuryPaymentSchedulePage />)}
+          />
+          <Route path="agenda" element={gate("agenda", <TreasuryAgendaPage />)} />
+          <Route
+            path="projections"
+            element={gate("projections", <TreasuryProjectionComparisonPage />)}
+          />
+          <Route
+            path="transfers"
+            element={gate("transfers", <TreasuryTransfersPage />)}
+          />
+          <Route
+            path="manual-entries"
+            element={gate("manual-entries", <TreasuryManualEntriesPage />)}
+          />
+          <Route
+            path="bank-movements"
+            element={gate("bank-movements", <TreasuryBankMovementsPage />)}
+          />
+          <Route
+            path="ofx"
+            element={gate("ofx", <TreasuryBankMovementsPage />)}
+          />
+          <Route
+            path="reconcile"
+            element={gate("reconcile", <TreasuryReconcileWorkspacePage />)}
+          />
+          <Route
+            path="exceptions"
+            element={gate("exceptions", <TreasuryExceptionsPage />)}
+          />
+          <Route
+            path="alert-settings"
+            element={gate("alert-settings", <TreasuryAlertSettingsPage />)}
+          />
+          <Route
+            path="closing"
+            element={gate("closing", <TreasuryDailyClosingPage />)}
+          />
+          <Route
+            path="reports"
+            element={gate("reports", <TreasuryReportsPage />)}
+          />
+          <Route path="audit" element={gate("audit", <TreasuryAuditPage />)} />
+          <Route
+            path="*"
+            element={
+              landingPath ? (
+                <Navigate
+                  to={landingPath}
+                  replace
+                  state={{ from: location.pathname }}
+                />
+              ) : (
+                <div
+                  className="sr-only"
+                  data-testid="treasury-wildcard-no-landing"
+                />
+              )
+            }
+          />
+        </Routes>
+      ) : null}
     </div>
   );
 }

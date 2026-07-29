@@ -9,6 +9,8 @@ import {
   TREASURY_UI_SECTION_FEATURE_FLAG,
   filterTreasuryUiSections,
   isTreasuryUiSectionEnabled,
+  resolveTreasuryFlagGateDecision,
+  resolveTreasuryUiEnabledLandingPath,
   resolveTreasuryUiLandingPath,
 } from "./treasuryRollout.js";
 
@@ -73,6 +75,67 @@ describe("treasuryRollout", () => {
       resolveTreasuryUiLandingPath(baseSections, flags, "/finance/treasury"),
       "/finance/treasury/receivables"
     );
+    assert.equal(
+      resolveTreasuryUiEnabledLandingPath(baseSections, flags),
+      "/finance/treasury/receivables"
+    );
+  });
+
+  it("enabled landing é null quando nenhuma seção está liberada (anti-loop)", () => {
+    const flags = Object.fromEntries(
+      TREASURY_FEATURE_FLAG_IDS.map((id) => [id, false])
+    ) as Record<(typeof TREASURY_FEATURE_FLAG_IDS)[number], boolean>;
+    assert.equal(resolveTreasuryUiEnabledLandingPath(baseSections, flags), null);
+    assert.equal(
+      resolveTreasuryUiEnabledLandingPath(baseSections, {
+        "treasury.enabled": true,
+      }),
+      "/finance/treasury/audit"
+    );
+  });
+
+  it("FlagGate não redireciona para o mesmo path (anti-loop)", () => {
+    const flags = Object.fromEntries(
+      TREASURY_FEATURE_FLAG_IDS.map((id) => [id, false])
+    ) as Record<(typeof TREASURY_FEATURE_FLAG_IDS)[number], boolean>;
+    assert.deepEqual(
+      resolveTreasuryFlagGateDecision({
+        flags,
+        sectionId: "today",
+        landingPath: null,
+        currentPath: "/finance/treasury/today",
+      }),
+      { action: "blocked" }
+    );
+    assert.deepEqual(
+      resolveTreasuryFlagGateDecision({
+        flags,
+        sectionId: "today",
+        landingPath: "/finance/treasury/today",
+        currentPath: "/finance/treasury/today",
+      }),
+      { action: "blocked" }
+    );
+    flags["treasury.enabled"] = true;
+    flags["treasury.accounts.enabled"] = true;
+    assert.deepEqual(
+      resolveTreasuryFlagGateDecision({
+        flags,
+        sectionId: "today",
+        landingPath: "/finance/treasury/accounts",
+        currentPath: "/finance/treasury/today",
+      }),
+      { action: "redirect", to: "/finance/treasury/accounts" }
+    );
+    assert.deepEqual(
+      resolveTreasuryFlagGateDecision({
+        flags,
+        sectionId: "accounts",
+        landingPath: "/finance/treasury/accounts",
+        currentPath: "/finance/treasury/accounts",
+      }),
+      { action: "render" }
+    );
   });
 
   it("mapeamento UI cobre submódulos do Prompt 65", () => {
@@ -121,5 +184,10 @@ describe("treasuryRollout", () => {
     assert.match(mod, /filterTreasuryUiSections/);
     assert.match(mod, /TreasuryFlagGate/);
     assert.match(mod, /treasury-module-no-flags/);
+    assert.match(mod, /treasury-module-availability-error/);
+    assert.match(mod, /resolveTreasuryUiEnabledLandingPath/);
+    assert.match(mod, /resolveTreasuryFlagGateDecision/);
+    assert.match(mod, /if \(ac\.signal\.aborted\) return/);
+    assert.doesNotMatch(mod, /closedTreasuryFlagsMap/);
   });
 });

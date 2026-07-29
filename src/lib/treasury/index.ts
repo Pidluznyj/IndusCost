@@ -38,6 +38,8 @@ export {
   TREASURY_UI_SECTION_FEATURE_FLAG,
   filterTreasuryUiSections,
   isTreasuryUiSectionEnabled,
+  resolveTreasuryFlagGateDecision,
+  resolveTreasuryUiEnabledLandingPath,
   resolveTreasuryUiLandingPath,
 } from "./treasuryRollout.js";
 export {
