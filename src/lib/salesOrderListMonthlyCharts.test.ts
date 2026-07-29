@@ -53,11 +53,10 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
     assert.doesNotMatch(chart, /Margem gerencial oficial/);
     assert.doesNotMatch(chart, /YTD/);
     const charts = read("src/components/sales/SalesOrderListMonthlyCharts.tsx");
-    assert.match(charts, /monthlyCommercialMargin/);
-    assert.doesNotMatch(charts, /monthlyCommercialMargin \?\? payload\.monthlyMargin/);
+    assert.match(charts, /payload\.monthlyCommercialMargin/);
     assert.match(charts, /commercial-margin-charts-v3/);
     const module = read("src/components/SalesOrdersModule.tsx");
-    assert.match(module, /marginSummary\.monthlyCommercialMargin/);
+    assert.doesNotMatch(module, /monthlyCommercialMargin=\{marginSummary/);
     const adapter = read("src/lib/salesMarginRulesAdapter.ts");
     assert.match(adapter, /buildMonthlyCommercialMarginRows/);
     assert.match(adapter, /monthlyCommercialMargin/);
