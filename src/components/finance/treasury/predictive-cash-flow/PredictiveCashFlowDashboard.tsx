@@ -18,9 +18,7 @@ import {
   financeModuleFilterFieldClass,
   financeModuleFilterLabelClass,
 } from "@/src/lib/financeModuleUiStandards.js";
-import {
-  FinanceModuleErrorBanner,
-} from "@/src/components/finance/shared/FinanceModuleStates";
+import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { PredictiveCashFlowTimelineChart } from "./PredictiveCashFlowTimelineChart.js";
 import { PredictiveCashFlowAccountsPanel } from "./PredictiveCashFlowAccountsPanel.js";
 import { PredictiveCashFlowReconciliationPanel } from "./PredictiveCashFlowReconciliationPanel.js";
@@ -36,6 +34,7 @@ export type PredictiveCashFlowDashboardProps = {
   loading: boolean;
   error: string | null;
   staleMessage: string | null;
+  isSuperAdmin?: boolean;
   onFiltersChange: (next: TreasurySimpleCashRiskFilterState) => void;
   onRefresh: () => void;
   onDismissError?: () => void;
@@ -45,21 +44,20 @@ function KpiCard({
   label,
   value,
   tone,
+  testId,
 }: {
   label: string;
   value: string;
-  tone: "neutral" | "in" | "out" | "final";
+  tone: "neutral" | "final";
+  testId?: string;
 }) {
   const valueClass =
-    tone === "in"
-      ? "text-emerald-700"
-      : tone === "out"
-        ? "text-rose-700"
-        : tone === "final"
-          ? "text-sky-800"
-          : "text-foreground";
+    tone === "final" ? "text-sky-800" : "text-foreground";
   return (
-    <div className="rounded-xl border border-border bg-card px-4 py-4 shadow-sm">
+    <div
+      className="rounded-xl border border-border bg-card px-4 py-4 shadow-sm"
+      data-testid={testId}
+    >
       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         {label}
       </p>
@@ -80,6 +78,7 @@ export function PredictiveCashFlowDashboard({
   loading,
   error,
   staleMessage,
+  isSuperAdmin = false,
   onFiltersChange,
   onRefresh,
   onDismissError,
@@ -169,26 +168,28 @@ export function PredictiveCashFlowDashboard({
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Saldo atual por conta (topo) — substitui Total a receber / a pagar */}
+      <PredictiveCashFlowAccountsPanel
+        accounts={accounts}
+        companyCode={companyCode}
+        disabled={loading}
+        isSuperAdmin={isSuperAdmin}
+        onChanged={onRefresh}
+        variant="hero"
+      />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <KpiCard
           label="Saldo Base Atual"
           value={formatPredictiveCashFlowMoney(kpis.baseBalance)}
           tone="neutral"
-        />
-        <KpiCard
-          label="Total A Receber"
-          value={formatPredictiveCashFlowMoney(kpis.totalReceivables)}
-          tone="in"
-        />
-        <KpiCard
-          label="Total A Pagar"
-          value={formatPredictiveCashFlowMoney(kpis.totalPayables)}
-          tone="out"
+          testId="predictive-cf-kpi-base"
         />
         <KpiCard
           label="Projeção Final"
           value={formatPredictiveCashFlowMoney(kpis.finalProjection)}
           tone="final"
+          testId="predictive-cf-kpi-final"
         />
       </div>
 
@@ -206,29 +207,20 @@ export function PredictiveCashFlowDashboard({
         <PredictiveCashFlowTimelineChart timeline={timeline} />
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="flex flex-col gap-6 xl:col-span-4">
-          <PredictiveCashFlowAccountsPanel
-            accounts={accounts}
-            companyCode={companyCode}
-            disabled={loading}
-            onChanged={onRefresh}
-          />
-          <PredictiveCashFlowReconciliationPanel
-            timeline={timeline}
-            baseBalance={kpis.baseBalance}
-            defaultDate={filters.selectedCivilDate || timeline[0]?.date || ""}
-          />
-        </div>
-        <div className="xl:col-span-8">
-          <PredictiveCashFlowTransactionsPanel
-            transactions={transactions}
-            accounts={accounts}
-            disabled={loading}
-            onChanged={onRefresh}
-          />
-        </div>
-      </div>
+      <PredictiveCashFlowReconciliationPanel
+        accounts={accounts}
+        transactions={transactions}
+        defaultDate={
+          filters.selectedCivilDate || timeline[0]?.date || ""
+        }
+      />
+
+      <PredictiveCashFlowTransactionsPanel
+        transactions={transactions}
+        accounts={accounts}
+        disabled={loading}
+        onChanged={onRefresh}
+      />
     </div>
   );
 }

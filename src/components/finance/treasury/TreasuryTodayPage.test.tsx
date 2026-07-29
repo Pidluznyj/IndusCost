@@ -75,8 +75,8 @@ function sampleToday(): TreasuryGuidedTodayDto {
         order: 5,
         title: "Resolver divergências",
         status: "PENDING",
-        continueHref: "/finance/treasury/today/closing?step=divergences",
-        continueLabel: "Continuar",
+        continueHref: "/finance/treasury/bank",
+        continueLabel: "Conferir banco",
       },
       {
         id: "CLOSE_DAY",
@@ -157,7 +157,7 @@ describe("TreasuryTodayPage — painel e estados", () => {
     assert.match(html, /Falha de rede/);
   });
 
-  it("exibe vazio", () => {
+  it("exibe vazio com CTA para Contas", () => {
     const html = renderPanel(
       <TreasuryTodayPanel
         viewKind="empty"
@@ -167,9 +167,11 @@ describe("TreasuryTodayPage — painel e estados", () => {
       />
     );
     assert.match(html, new RegExp(TREASURY_TODAY_EMPTY_TITLE));
+    assert.match(html, /treasury-today-empty-cta/);
+    assert.match(html, /Ir para Contas/);
   });
 
-  it("exibe cards, rotina, contas, pendências e status textual", () => {
+  it("exibe KPIs, próximo passo, rotina, contas e atenção", () => {
     const html = renderPanel(
       <TreasuryTodayPanel
         viewKind="ready"
@@ -178,19 +180,24 @@ describe("TreasuryTodayPage — painel e estados", () => {
         onRefresh={noop}
       />
     );
-    assert.match(html, /Tesouraria de hoje/);
     assert.match(html, /28\/07\/2026/);
+    assert.match(html, /treasury-today-next-action/);
+    assert.match(html, /Revisar recebimentos/);
     assert.match(html, /treasury-today-metric-opening/);
     assert.match(html, /Saldo inicial/);
     assert.match(html, /Entradas previstas/);
-    assert.match(html, /Divergência total/);
-    assert.match(html, /Status: Concluída/);
-    assert.match(html, /Status: Precisa de atenção/);
-    assert.match(html, /Status: Pendente/);
+    assert.match(html, /Divergência/);
+    assert.match(html, /Concluída/);
+    assert.match(html, /Precisa de atenção/);
+    assert.match(html, /Pendente/);
     assert.match(html, /Caixa Matriz/);
-    assert.match(html, /Abrir conta/);
+    assert.match(html, /Continuar/);
     assert.match(html, /recebimento\(s\) previsto/);
+    assert.match(html, /treasury-today-flow-kpis/);
+    assert.match(html, /treasury-today-closing-kpis/);
+    assert.match(html, /treasury-today-metric-divergence/);
     assert.doesNotMatch(html, /overlay|ledger|allocation|snapshot/i);
+    assert.doesNotMatch(html, /treasury-today-account-selector/);
   });
 
   it("página e módulo apontam para a experiência guiada", () => {
@@ -202,9 +209,17 @@ describe("TreasuryTodayPage — painel e estados", () => {
       join(repoRoot, "src/components/finance/treasury/TreasuryModule.tsx"),
       "utf8"
     );
+    const panel = readFileSync(
+      join(repoRoot, "src/components/finance/treasury/TreasuryTodayPanel.tsx"),
+      "utf8"
+    );
     assert.match(page, /fetchTreasuryToday/);
+    assert.match(page, /buildTreasuryTodayPageSubtitle/);
     assert.match(mod, /TreasuryTodayPage/);
     assert.match(mod, /path="today"/);
     assert.match(mod, /path="dashboard"/);
+    assert.match(panel, /financeBiCardClass/);
+    assert.match(panel, /financeBiKpiValueClass/);
+    assert.match(panel, /resolveTreasuryTodayPrimaryStep/);
   });
 });

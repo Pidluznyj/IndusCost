@@ -12,8 +12,8 @@ import { fetchTreasuryToday } from "@/src/lib/treasury/treasuryTodayApi.js";
 import { canViewTreasuryToday } from "@/src/lib/treasury/treasuryTodayPermissions.js";
 import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import {
-  TREASURY_TODAY_PAGE_SUBTITLE,
   TREASURY_TODAY_PAGE_TITLE,
+  buildTreasuryTodayPageSubtitle,
   buildTreasuryTodayQuery,
   resolveTreasuryTodayViewKind,
   todayCivilDateLocal,
@@ -56,7 +56,7 @@ export function TreasuryTodayPage() {
       });
       if (ac.signal.aborted) return;
       setData(payload);
-      setHeaderUpdatedAt(new Date().toISOString());
+      setHeaderUpdatedAt(payload.asOf ?? new Date().toISOString());
     } catch (err) {
       if (ac.signal.aborted) return;
       setError(
@@ -79,12 +79,21 @@ export function TreasuryTodayPage() {
     data,
   });
 
+  const subtitle = useMemo(
+    () =>
+      buildTreasuryTodayPageSubtitle({
+        civilDate: data?.civilDate ?? query.date,
+        asOf: data?.asOf ?? null,
+      }),
+    [data?.asOf, data?.civilDate, query.date]
+  );
+
   return (
     <FinanceBiDashboardShell
       header={
         <FinanceExecutivePageHeader
           title={TREASURY_TODAY_PAGE_TITLE}
-          subtitle={TREASURY_TODAY_PAGE_SUBTITLE}
+          subtitle={subtitle}
           updatedAt={headerUpdatedAt}
           actions={[
             buildTreasurySimpleRefreshHeaderAction({

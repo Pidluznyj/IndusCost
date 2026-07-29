@@ -277,6 +277,7 @@ export function TreasurySimpleCashRiskProjectionPage() {
           loading={loading}
           error={error}
           staleMessage={staleMessage}
+          isSuperAdmin={auth.isSuperAdmin()}
           onFiltersChange={applyFilters}
           onRefresh={() => void load()}
           onDismissError={() => setError(null)}

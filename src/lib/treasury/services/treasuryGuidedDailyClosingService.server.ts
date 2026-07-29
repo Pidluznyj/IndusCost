@@ -507,6 +507,22 @@ export function createTreasuryGuidedDailyClosingService(deps: {
           ? todayTreasuryCivilDateInSaoPaulo()
           : parseTreasuryCivilDate(input.civilDate, "civilDate");
 
+      const todayCivil = todayTreasuryCivilDateInSaoPaulo();
+      if (civilDate > todayCivil) {
+        throw new TreasuryDomainError(
+          "VALIDATION_ERROR",
+          "Não é possível informar saldo de dias futuros.",
+          "civilDate"
+        );
+      }
+      if (civilDate < todayCivil && !actor.isSuperAdmin) {
+        throw new TreasuryDomainError(
+          "FORBIDDEN",
+          "Somente SUPER_ADMIN pode alterar saldos de dias passados. A alteração fica no log.",
+          "civilDate"
+        );
+      }
+
       const seeds = await buildSeeds(actor, civilDate);
       const seedById = new Map(seeds.map((s) => [s.accountId, s]));
       const recordedAt = new Date();

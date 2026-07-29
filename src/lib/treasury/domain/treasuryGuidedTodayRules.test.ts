@@ -294,12 +294,20 @@ describe("treasuryGuidedTodayRules", () => {
     );
     assert.equal(
       dto.accounts[0]?.openHref,
-      "/finance/treasury/today/closing"
+      "/finance/treasury/bank"
     );
     assert.ok(dto.attention.some((a) => a.code === "BALANCE_DIVERGENCE"));
     assert.equal(
+      dto.attention.find((a) => a.code === "BALANCE_DIVERGENCE")?.href,
+      "/finance/treasury/bank"
+    );
+    assert.equal(
       dto.steps.find((s) => s.id === "RESOLVE_DIVERGENCES")?.status,
       "NEEDS_ATTENTION"
+    );
+    assert.equal(
+      dto.steps.find((s) => s.id === "RESOLVE_DIVERGENCES")?.continueHref,
+      "/finance/treasury/bank"
     );
   });
 });

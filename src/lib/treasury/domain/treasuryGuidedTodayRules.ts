@@ -122,7 +122,11 @@ function buildAccounts(
     const openHref =
       openingBalance == null
         ? `${TREASURY_GUIDED_TODAY_UI_BASE}/today/opening`
-        : `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`;
+        : informedClosingBalance == null
+          ? `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`
+          : divergence != null && isNonZero(divergence)
+            ? `${TREASURY_GUIDED_TODAY_UI_BASE}/bank`
+            : `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing`;
 
     return {
       accountId: acc.accountId,
@@ -172,7 +176,7 @@ function buildAttention(
         message: `Há diferença entre o saldo do banco e o calculado em ${acc.name}.`,
         amount: acc.divergence,
         accountId: acc.accountId,
-        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing?step=divergences`,
+        href: `${TREASURY_GUIDED_TODAY_UI_BASE}/bank`,
       });
     }
   }
@@ -357,8 +361,8 @@ function buildSteps(
       status: !allClosingsDone
         ? "PENDING"
         : stepStatus(!hasDivergence && !unidentifiedOfx, hasDivergence || unidentifiedOfx),
-      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/today/closing?step=divergences`,
-      continueLabel: "Continuar",
+      continueHref: `${TREASURY_GUIDED_TODAY_UI_BASE}/bank`,
+      continueLabel: "Conferir banco",
     },
     {
       id: "CLOSE_DAY",

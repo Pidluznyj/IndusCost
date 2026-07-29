@@ -1,191 +1,133 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
-import { Building2, Plus } from "lucide-react";
+import { Building2, Pencil } from "lucide-react";
 import type { PredictiveCashFlowAccount } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import {
   formatPredictiveCashFlowMoney,
   sumPredictiveAccountBalances,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
-import { createTreasuryAccount } from "@/src/lib/treasury/treasuryAccountsApi.js";
-import { createTreasuryBalanceSnapshot } from "@/src/lib/treasury/treasuryBalancesApi.js";
-import {
-  financeModuleFilterFieldClass,
-  financeModuleFilterLabelClass,
-} from "@/src/lib/financeModuleUiStandards.js";
+import { cn } from "@/src/lib/utils";
+import { PredictiveCashFlowBalanceCorrectDialog } from "./PredictiveCashFlowBalanceCorrectDialog.js";
 
 export type PredictiveCashFlowAccountsPanelProps = {
   accounts: readonly PredictiveCashFlowAccount[];
   companyCode: string | null;
   disabled?: boolean;
+  isSuperAdmin?: boolean;
   onChanged: () => void;
+  variant?: "full" | "hero";
 };
 
 export function PredictiveCashFlowAccountsPanel({
   accounts,
-  companyCode,
+  companyCode: _companyCode,
   disabled,
+  isSuperAdmin = false,
   onChanged,
+  variant = "full",
 }: PredictiveCashFlowAccountsPanelProps) {
-  const [name, setName] = useState("");
-  const [initialBalance, setInitialBalance] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
+  const [editing, setEditing] = useState<PredictiveCashFlowAccount | null>(null);
   const consolidated = sumPredictiveAccountBalances(accounts);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!companyCode?.trim()) {
-      setError("Informe/selecione a empresa (companyCode) antes de criar conta.");
-      return;
-    }
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Informe o nome da conta.");
-      return;
-    }
-    const balanceNum = Number(
-      String(initialBalance).replace(/\./g, "").replace(",", ".")
-    );
-    const balance =
-      Number.isFinite(balanceNum) && initialBalance.trim()
-        ? balanceNum.toFixed(2)
-        : "0.00";
-    const code = `CX${Date.now().toString(36).slice(-6).toUpperCase()}`;
-    setBusy(true);
-    setError(null);
-    try {
-      const account = await createTreasuryAccount({
-        companyCode: companyCode.trim(),
-        companyName: null,
-        code,
-        name: trimmed,
-        institutionName: trimmed,
-        institutionCode: null,
-        accountType: "CHECKING",
-        currency: "BRL",
-        agencyMasked: "****",
-        accountNumberMasked: "****",
-        includeInConsolidated: true,
-        minimumBalance: "0.00",
-        allowNegativeBalance: false,
-        liquidity: "IMMEDIATE",
-        defaultBalanceOrigin: "MANUAL",
-        sortOrder: accounts.length,
-        nomusBankAccountId: null,
-      });
-      await createTreasuryBalanceSnapshot(
-        account.id,
-        {
-          referenceAt: new Date().toISOString(),
-          availableBalance: balance,
-          blockedBalance: "0.00",
-          investmentsBalance: "0.00",
-          usedLimit: "0.00",
-          origin: "MANUAL",
-          notes: "Saldo inicial — Fluxo Gerencial",
-          justification: "Abertura via Fluxo Gerencial",
-        },
-        `pcf-open:${account.id}:${balance}`
-      );
-      setName("");
-      setInitialBalance("");
-      onChanged();
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível criar a conta na Tesouraria."
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
+  const isHero = variant === "hero";
 
   return (
     <section
-      className="rounded-xl border border-border bg-card p-5 shadow-sm"
+      className={cn(
+        "rounded-xl border border-[#E5E7EB] bg-white p-5 shadow-none",
+        isHero && "border-[#BFDBFE] bg-[#F8FAFC]"
+      )}
       data-testid="predictive-cf-accounts"
+      data-variant={variant}
     >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-foreground">Contas</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h3 className="text-base font-extrabold tracking-tight text-[#111827]">
+            Contas
+          </h3>
+          <p className="mt-1 text-sm text-[#6B7280]">
             Saldos canônicos · consolidado{" "}
-            <span className="font-semibold tabular-nums text-emerald-700">
+            <span
+              className="font-semibold tabular-nums text-[#059669]"
+              data-testid="predictive-cf-accounts-consolidated"
+            >
               {formatPredictiveCashFlowMoney(consolidated)}
             </span>
           </p>
+          {isHero ? (
+            <p className="mt-1 text-xs text-[#6B7280]">
+              Clique na conta para informar saldo inicial e final do dia. Dias
+              passados: somente SUPER_ADMIN (com log).
+            </p>
+          ) : null}
         </div>
         <Link
           to="/finance/treasury/accounts"
-          className="text-sm font-medium text-sky-700 hover:underline"
+          className="text-sm font-semibold text-[#2563EB] hover:underline"
         >
           Gerenciar
         </Link>
       </div>
 
-      <ul className="mb-5 space-y-2">
+      <ul className="space-y-2" data-testid="predictive-cf-accounts-list">
         {accounts.length === 0 ? (
-          <li className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-            Nenhuma conta ativa.
+          <li className="rounded-lg border border-dashed border-[#E5E7EB] px-3 py-6 text-center text-sm text-[#6B7280]">
+            Nenhuma conta ativa.{" "}
+            <Link
+              to="/finance/treasury/accounts"
+              className="font-semibold text-[#2563EB] hover:underline"
+            >
+              Cadastrar em Contas
+            </Link>
           </li>
         ) : (
           accounts.map((a) => (
-            <li
-              key={a.id}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-3"
-            >
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {a.name}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {a.institutionName}
-                  </p>
+            <li key={a.id}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setEditing(a)}
+                className={cn(
+                  "flex w-full items-center justify-between gap-3 rounded-lg border border-[#E5E7EB] bg-white px-3 py-3 text-left transition",
+                  "hover:border-[#93C5FD] hover:bg-[#EFF6FF]",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]/40"
+                )}
+                data-testid={`predictive-cf-account-${a.id}`}
+                aria-label={`Informar saldos do dia — ${a.name}`}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <Building2 className="h-4 w-4 shrink-0 text-[#6B7280]" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[#111827]">
+                      {a.name}
+                    </p>
+                    <p className="truncate text-xs text-[#6B7280]">
+                      {a.institutionName}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
-                {formatPredictiveCashFlowMoney(a.initialBalance)}
-              </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <p className="text-sm font-semibold tabular-nums text-[#111827]">
+                    {formatPredictiveCashFlowMoney(a.initialBalance)}
+                  </p>
+                  <Pencil className="h-3.5 w-3.5 text-[#2563EB]" aria-hidden />
+                </div>
+              </button>
             </li>
           ))
         )}
       </ul>
 
-      <form
-        onSubmit={onSubmit}
-        className="space-y-3 border-t border-border pt-4"
-      >
-        <p className={financeModuleFilterLabelClass()}>
-          Nova conta (grava na Tesouraria)
-        </p>
-        <input
-          className={financeModuleFilterFieldClass()}
-          placeholder="Nome / banco"
-          value={name}
-          disabled={disabled || busy}
-          onChange={(e) => setName(e.target.value)}
+      {editing ? (
+        <PredictiveCashFlowBalanceCorrectDialog
+          account={editing}
+          open
+          disabled={disabled}
+          isSuperAdmin={isSuperAdmin}
+          onClose={() => setEditing(null)}
+          onSaved={onChanged}
         />
-        <input
-          className={financeModuleFilterFieldClass()}
-          placeholder="Saldo inicial (ex: 10000,00)"
-          value={initialBalance}
-          disabled={disabled || busy}
-          onChange={(e) => setInitialBalance(e.target.value)}
-        />
-        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={disabled || busy}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          Adicionar conta
-        </button>
-      </form>
+      ) : null}
     </section>
   );
 }
