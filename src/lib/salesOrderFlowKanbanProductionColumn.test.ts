@@ -116,24 +116,25 @@ describe("Kanban — coluna Em produção / WAITING_PRODUCTION_ORDER", () => {
     );
   });
 
-  it("filtros padrão (URL vazia) não aplicam faixa de emissão que exclui produção", () => {
+  it("filtros padrão (URL vazia) aplicam ano corrente; usuário pode abrir todos os anos", () => {
     const now = new Date(2026, 6, 29);
     const defaults = createDefaultSalesOrderFlowFilters(now);
-    assert.equal(defaults.year, "");
+    assert.equal(defaults.year, "2026");
     assert.equal(defaults.month, "");
-    assert.equal(defaults.issueFrom, "");
-    assert.equal(defaults.issueTo, "");
+    assert.equal(defaults.issueFrom, "2026-01-01");
+    assert.equal(defaults.issueTo, "2026-12-31");
 
     const fromUrl = parseSalesOrderFlowFiltersFromSearchParams(
       new URLSearchParams(""),
       now
     );
-    assert.equal(fromUrl.issueFrom, "");
-    assert.equal(fromUrl.issueTo, "");
+    assert.equal(fromUrl.year, "2026");
+    assert.equal(fromUrl.issueFrom, "2026-01-01");
+    assert.equal(fromUrl.issueTo, "2026-12-31");
 
     const clientQuery = salesOrderFlowFiltersToClientQuery(fromUrl);
-    assert.equal(clientQuery.issueFrom, null);
-    assert.equal(clientQuery.issueTo, null);
+    assert.equal(clientQuery.issueFrom, "2026-01-01");
+    assert.equal(clientQuery.issueTo, "2026-12-31");
 
     const where = buildSalesOrderFlowSummarySnapshotWhere({
       filters: parseSalesOrderFlowSummaryQuery(
@@ -144,8 +145,27 @@ describe("Kanban — coluna Em produção / WAITING_PRODUCTION_ORDER", () => {
     });
     assert.equal(
       JSON.stringify(where).includes("issueDate"),
+      true,
+      "where padrão restringe issueDate ao ano corrente"
+    );
+
+    const allYears = parseSalesOrderFlowFiltersFromSearchParams(
+      new URLSearchParams("year=all"),
+      now
+    );
+    assert.equal(allYears.year, "");
+    assert.equal(allYears.issueFrom, "");
+    const allYearsWhere = buildSalesOrderFlowSummarySnapshotWhere({
+      filters: parseSalesOrderFlowSummaryQuery(
+        salesOrderFlowFiltersToClientQuery(allYears) as Record<string, unknown>
+      ),
+      sellerWhere: null,
+      scopeCustomerIds: null,
+    });
+    assert.equal(
+      JSON.stringify(allYearsWhere).includes("issueDate"),
       false,
-      "where não deve restringir issueDate nos filtros padrão"
+      "year=all não restringe issueDate"
     );
   });
 

@@ -175,18 +175,20 @@ export const EMPTY_SALES_ORDER_FLOW_FILTERS: SalesOrderFlowUiFilters = {
 
 /**
  * Filtros iniciais / limpar do Kanban (Fluxo de Pedidos):
- * sem restrição de ano/mês — a população operacional (ex.: WAITING_PRODUCTION_ORDER)
- * não pode ser cortada por emissão do ano corrente.
+ * ano corrente preenchido, mês em branco (todo o ano) — alivia o carregamento.
+ * O usuário pode mudar para outro ano ou “todos”.
  */
 export function createDefaultSalesOrderFlowFilters(
-  _now: Date = new Date()
+  now: Date = new Date()
 ): SalesOrderFlowUiFilters {
+  const year = String(now.getFullYear());
+  const dates = applySalesOrderFlowYearMonthToIssueDates(year, "");
   return {
     ...EMPTY_SALES_ORDER_FLOW_FILTERS,
-    year: "",
+    year,
     month: "",
-    issueFrom: "",
-    issueTo: "",
+    issueFrom: dates.issueFrom,
+    issueTo: dates.issueTo,
   };
 }
 
@@ -509,7 +511,7 @@ export function parseSalesOrderFlowFiltersFromSearchParams(
   let issueFrom = normalizeSalesOrderFlowDateParam(params.get("issueFrom"));
   let issueTo = normalizeSalesOrderFlowDateParam(params.get("issueTo"));
 
-  // Sem ano e sem emissão na URL → padrão Kanban (todos os anos).
+  // Sem ano e sem emissão na URL → ano corrente (padrão Kanban / carregamento).
   // year=all|todos → todos os anos. Só issueFrom/issueTo → faixa manual (ano vazio).
   if (!yearIsAll && !year && !issueFrom && !issueTo) {
     const defaults = createDefaultSalesOrderFlowFilters(now);
@@ -744,11 +746,10 @@ export function hasActiveSalesOrderFlowFilters(
     filters.issueFrom === defaultDates?.issueFrom &&
     filters.issueTo === defaultDates?.issueTo;
 
-  // Default Kanban = ano vazio (todos). Ano preenchido conta como filtro ativo.
-  // Se defaultYear for um ano concreto (legado), ano vazio vs default também conta.
+  // Ano corrente sem mês/outros filtros = estado padrão (não conta como “ativo”).
+  // Ano vazio (todos) ou outro ano conta como filtro ativo para habilitar Limpar.
   const yearIsExtra = Boolean(year) && !yearIsDefault;
-  const yearMissingVsDefault =
-    Boolean(defaultYear) && !year && year !== defaultYear;
+  const yearMissingVsDefault = !year && Boolean(defaultYear);
   const issueIsExtra =
     Boolean(filters.issueFrom || filters.issueTo) && !issueIsDefaultYearWindow;
 

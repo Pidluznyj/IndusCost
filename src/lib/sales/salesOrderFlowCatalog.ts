@@ -216,6 +216,171 @@ export const SALES_ORDER_FLOW_INCONSISTENCY_LABELS = {
     "Pedido concluído sem data de conclusão segura (envio/documento/NF-e)",
 } as const satisfies Record<SalesOrderFlowInconsistencyCode, string>;
 
+export type SalesOrderFlowInconsistencyGuidance = {
+  meaning: string;
+  howToFix: string;
+  responsibleAreaHint: string;
+};
+
+const SALES_ORDER_FLOW_INCONSISTENCY_GUIDANCE_FALLBACK: SalesOrderFlowInconsistencyGuidance =
+  {
+    meaning:
+      "O motor do Fluxo de Pedidos registrou uma condição auxiliar que merece revisão operacional.",
+    howToFix:
+      "Confira as abas Itens, Produção, Documentos e NF-e/Envio deste pedido; ajuste a origem no Nomus e aguarde nova sincronização/reprocessamento.",
+    responsibleAreaHint: "Operacional",
+  };
+
+/**
+ * Orientação humana por código — o que significa e como agir.
+ * Não marca resolução; só guia a conferência na origem.
+ */
+export const SALES_ORDER_FLOW_INCONSISTENCY_GUIDANCE = {
+  ITEM_STATUS_UNKNOWN: {
+    meaning:
+      "O status comercial do item no Nomus não foi reconhecido pelo motor.",
+    howToFix:
+      "No Nomus, revise o status do item do pedido e sincronize novamente o pedido de venda.",
+    responsibleAreaHint: "Comercial",
+  },
+  REQUIRES_PRODUCTION_UNKNOWN: {
+    meaning:
+      "Não foi possível saber se o item precisa de Ordem de Produção ou sai de estoque.",
+    howToFix:
+      "Confirme no cadastro/pedido se o item é fabricação própria ou estoque e reprocessar o fluxo.",
+    responsibleAreaHint: "PCP / Produção",
+  },
+  PRODUCTION_QTY_NOT_NORMALIZED: {
+    meaning:
+      "Há indício de produção, mas a quantidade produzida ainda não está normalizada no stage.",
+    howToFix:
+      "Verifique apontamentos da OP no Nomus e aguarde a sincronização de produção.",
+    responsibleAreaHint: "PCP / Produção",
+  },
+  OP_LINK_WITHOUT_QUANTITY: {
+    meaning: "Existe vínculo com OP, porém sem quantidade vinculada utilizável.",
+    howToFix:
+      "Abra a OP no Nomus e confira se o item do pedido aparece em itensPedido com quantidade.",
+    responsibleAreaHint: "PCP / Produção",
+  },
+  DOCUMENT_QUANTITY_NOT_NORMALIZED: {
+    meaning:
+      "Há Documento de Saída ligado, mas a quantidade alocada (O2C) ainda não está clara.",
+    howToFix:
+      "Confira o Documento de Saída e a alocação ao item no Nomus; reprocessar O2C se necessário.",
+    responsibleAreaHint: "Expedição",
+  },
+  DOCUMENT_WITHOUT_NFE: {
+    meaning: "Há Documento de Saída, mas ainda não há NF-e válida correspondente.",
+    howToFix:
+      "Emita/autorize a NF-e no fiscal e confirme o vínculo com o documento de saída.",
+    responsibleAreaHint: "Fiscal",
+  },
+  NFE_WITHOUT_DOCUMENT: {
+    meaning: "Há NF-e do pedido sem Documento de Saída alocado ao item.",
+    howToFix:
+      "Vincule ou emita o Documento de Saída correspondente à NF-e no Nomus.",
+    responsibleAreaHint: "Expedição / Fiscal",
+  },
+  NFE_ITEM_ALLOCATION_AMBIGUOUS: {
+    meaning:
+      "A NF-e está no pedido, mas a distribuição por item ficou ambígua (pedido multi-item).",
+    howToFix:
+      "Revise a alocação O2C/itens da NF-e e garanta referência clara ao item do pedido.",
+    responsibleAreaHint: "Fiscal / TI",
+  },
+  NFE_CANCELED_WITH_ACTIVE_ITEMS: {
+    meaning: "Existe NF-e cancelada enquanto itens do pedido ainda estão ativos no fluxo.",
+    howToFix:
+      "Confirme o cancelamento fiscal e o impacto nos itens; regularize NF-e/documentos ativos.",
+    responsibleAreaHint: "Fiscal",
+  },
+  NFE_SHIP_DATE_MISSING: {
+    meaning:
+      "A NF-e é válida, mas não há data de envio/saída normalizada; o sistema usa a data de faturamento como referência de envio.",
+    howToFix:
+      "No Nomus/fiscal, preencha a data de saída/envio da NF-e (quando existir) e sincronize novamente.",
+    responsibleAreaHint: "Fiscal",
+  },
+  PARTIAL_WITHOUT_REMAINING_QTY: {
+    meaning: "O atendimento está parcial, mas o saldo residual não está coerente.",
+    howToFix:
+      "Conferir quantidades pedidas, cortadas, faturadas e restantes no item do pedido.",
+    responsibleAreaHint: "Comercial / Expedição",
+  },
+  CUT_WITHOUT_OFFICIAL_STATUS: {
+    meaning: "Há corte aparente sem o status oficial de atendimento com corte.",
+    howToFix:
+      "Ajuste o status/classificação de atendimento no Nomus para refletir o corte oficial.",
+    responsibleAreaHint: "Comercial",
+  },
+  FULFILLED_WITHOUT_COVERAGE: {
+    meaning: "O item aparece atendido sem cobertura documental/fiscal suficiente.",
+    howToFix:
+      "Verifique Documento de Saída e NF-e vinculados às quantidades do item.",
+    responsibleAreaHint: "Fiscal / Expedição",
+  },
+  FULFILLED_WITHOUT_PRODUCTION: {
+    meaning:
+      "O item foi atendido sem Ordem de Produção — típico de saída de estoque ou compra/terceiro.",
+    howToFix:
+      "Se for estoque, nenhuma OP é necessária. Se deveria fabricar, abra/vincule a OP no Nomus.",
+    responsibleAreaHint: "PCP / Estoque",
+  },
+  EXCESS_COVERAGE: {
+    meaning:
+      "Documentos, NF-e ou OP cobrem mais do que a obrigação ativa do item.",
+    howToFix:
+      "Revise vínculos e quantidades de OP/DS/NF-e para não ultrapassar o saldo do pedido.",
+    responsibleAreaHint: "Expedição / Fiscal",
+  },
+  STALE_ITEM_PRESENT: {
+    meaning: "Há item defasado (stale) ainda presente no pedido.",
+    howToFix:
+      "Revisar sincronização do pedido e itens inativos/cancelados no Nomus.",
+    responsibleAreaHint: "TI / Comercial",
+  },
+  MIXED_ACTIVE_ITEM_STAGES: {
+    meaning:
+      "Itens ativos do mesmo pedido estão em etapas diferentes do Kanban (ex.: um enviado e outro aguardando NF-e).",
+    howToFix:
+      "Trate o gargalo do item mais atrasado; a coluna do pedido segue a primeira obrigação pendente.",
+    responsibleAreaHint: "Comercial / Operações",
+  },
+  O2C_ALLOCATION_STALE: {
+    meaning: "A alocação Order-to-Cash pode estar desatualizada em relação às evidências atuais.",
+    howToFix:
+      "Reprocesse/recompute o fluxo do pedido após sincronizar DS e NF-e.",
+    responsibleAreaHint: "TI",
+  },
+  DUPLICATE_TRUTH_RISK: {
+    meaning:
+      "Há risco de duas fontes conflitantes para a mesma verdade operacional (dados duplicados ou divergentes).",
+    howToFix:
+      "Audite vínculos OP/DS/NF-e e remova duplicidades antes de confiar na conclusão do fluxo.",
+    responsibleAreaHint: "TI",
+  },
+  ORDER_COMPLETED_AT_MISSING: {
+    meaning:
+      "O pedido parece concluído, mas falta uma data segura de conclusão (envio, documento ou NF-e).",
+    howToFix:
+      "Garanta data de envio/saída ou evidência fiscal completa e reprocessar o fluxo.",
+    responsibleAreaHint: "Fiscal / Expedição",
+  },
+} as const satisfies Record<
+  SalesOrderFlowInconsistencyCode,
+  SalesOrderFlowInconsistencyGuidance
+>;
+
+export function getSalesOrderFlowInconsistencyGuidance(
+  code: string
+): SalesOrderFlowInconsistencyGuidance {
+  if (isSalesOrderFlowInconsistencyCode(code)) {
+    return SALES_ORDER_FLOW_INCONSISTENCY_GUIDANCE[code];
+  }
+  return SALES_ORDER_FLOW_INCONSISTENCY_GUIDANCE_FALLBACK;
+}
+
 export function isSalesOrderFlowStage(value: unknown): value is SalesOrderFlowStage {
   return (
     typeof value === "string" &&

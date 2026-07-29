@@ -287,19 +287,19 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(mod, /filterGenerationRef/);
   });
 
-  it("abre sem restrição de ano por padrão (Kanban não corta produção)", () => {
+  it("abre com ano corrente por padrão (usuário pode mudar)", () => {
     const now = new Date(2026, 6, 23);
     const defaults = createDefaultSalesOrderFlowFilters(now);
-    assert.equal(defaults.year, "");
+    assert.equal(defaults.year, "2026");
     assert.equal(defaults.month, "");
-    assert.equal(defaults.issueFrom, "");
-    assert.equal(defaults.issueTo, "");
+    assert.equal(defaults.issueFrom, "2026-01-01");
+    assert.equal(defaults.issueTo, "2026-12-31");
     const fromEmptyUrl = parseSalesOrderFlowFiltersFromSearchParams(
       new URLSearchParams(""),
       now
     );
-    assert.equal(fromEmptyUrl.year, "");
-    assert.equal(fromEmptyUrl.issueFrom, "");
+    assert.equal(fromEmptyUrl.year, "2026");
+    assert.equal(fromEmptyUrl.issueFrom, "2026-01-01");
     const allYears = parseSalesOrderFlowFiltersFromSearchParams(
       new URLSearchParams("year=all"),
       now
@@ -307,13 +307,13 @@ describe("sales order flow filters (OP-65)", () => {
     assert.equal(allYears.year, "");
     assert.equal(allYears.issueFrom, "");
     assert.equal(
-      hasActiveSalesOrderFlowFilters(defaults, { defaultYear: "" }),
+      hasActiveSalesOrderFlowFilters(defaults, { defaultYear: "2026" }),
       false
     );
     assert.equal(
       hasActiveSalesOrderFlowFilters(
-        { ...defaults, year: "2026", issueFrom: "2026-01-01", issueTo: "2026-12-31" },
-        { defaultYear: "" }
+        { ...EMPTY_SALES_ORDER_FLOW_FILTERS, year: "", issueFrom: "", issueTo: "" },
+        { defaultYear: "2026" }
       ),
       true
     );
@@ -385,13 +385,13 @@ describe("sales order flow filters (OP-65)", () => {
     );
     const defaultsKanban = createDefaultSalesOrderFlowFilters(new Date(2026, 0, 1));
     assert.equal(
-      hasActiveSalesOrderFlowFilters(defaultsKanban, { defaultYear: "" }),
+      hasActiveSalesOrderFlowFilters(defaultsKanban, { defaultYear: "2026" }),
       false
     );
     assert.equal(
       hasActiveSalesOrderFlowFilters(
         { ...EMPTY_SALES_ORDER_FLOW_FILTERS, overdue: true },
-        { defaultYear: "" }
+        { defaultYear: "2026" }
       ),
       true
     );

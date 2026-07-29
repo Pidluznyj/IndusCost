@@ -645,7 +645,7 @@ export function SalesOrderFlowModule() {
     filtersActive;
   const initialLoading = loading && !hasLoadedOnce;
   const draftFiltersActive = hasActiveSalesOrderFlowFilters(draftFilters, {
-    defaultYear: defaultFilterYear || "",
+    defaultYear: defaultFilterYear,
   });
   const indicators =
     summary != null

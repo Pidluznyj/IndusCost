@@ -11,6 +11,7 @@ import {
   SALES_ORDER_FLOW_STAGE_PRIORITY,
   SALES_ORDER_FLOW_STAGE_RESPONSIBLE_AREA,
   compareSalesOrderFlowStagePriority,
+  getSalesOrderFlowInconsistencyGuidance,
   getSalesOrderFlowStageLabel,
   getSalesOrderFlowStagePriority,
   isSalesOrderFlowInconsistencyCode,
@@ -90,6 +91,10 @@ describe("salesOrderFlowCatalog", () => {
     for (const code of SALES_ORDER_FLOW_INCONSISTENCY_CODES) {
       assert.ok(SALES_ORDER_FLOW_INCONSISTENCY_SEVERITY_BY_CODE[code]);
       assert.ok(SALES_ORDER_FLOW_INCONSISTENCY_LABELS[code].length > 0);
+      const guidance = getSalesOrderFlowInconsistencyGuidance(code);
+      assert.ok(guidance.meaning.length > 0);
+      assert.ok(guidance.howToFix.length > 0);
+      assert.ok(guidance.responsibleAreaHint.length > 0);
     }
   });
 

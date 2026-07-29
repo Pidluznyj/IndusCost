@@ -9,6 +9,7 @@ import type { SalesOrderFlowDetailPayload } from "@/src/lib/sales/salesOrderFlow
 import {
   classifySalesOrderFlowDetailError,
   dedupeSalesOrderFlowDetailEventsByKey,
+  extractSalesOrderItemIdFromInconsistencyDetail,
   filterSalesOrderFlowDetailInconsistencyRows,
   filterSalesOrderFlowManagementAreaOptions,
   formatSalesOrderFlowFulfillmentClassification,
@@ -22,9 +23,12 @@ import {
   resolveSalesOrderFlowDetailNavigationCapabilities,
   resolveSalesOrderFlowDetailShipmentViews,
   resolveSalesOrderFlowManagementUiCapabilities,
+  sanitizeSalesOrderFlowInconsistencyEvidence,
   salesOrderFlowInconsistencySeverityClassName,
   salesOrderFlowManagementToFormState,
+  summarizeSalesOrderFlowInconsistencyRows,
 } from "@/src/lib/salesOrderFlowDetailUi.js";
+import { getSalesOrderFlowInconsistencyGuidance } from "@/src/lib/sales/salesOrderFlowCatalog.js";
 import { SalesOrderFlowDetailContent } from "@/src/components/commercial/SalesOrderFlowDetailDrawer.js";
 import {
   getSalesOrderFlowDetailApiPath,
@@ -848,6 +852,8 @@ describe("sales order flow timeline and inconsistencies (OP-71)", () => {
     assert.equal(info?.severity, "INFO");
     assert.match(critical?.conclusionEffect ?? "", /evidência/i);
     assert.doesNotMatch(critical?.conclusionEffect ?? "", /resolvid/i);
+    assert.ok(critical?.meaning);
+    assert.ok(critical?.howToFix);
     assert.match(
       salesOrderFlowInconsistencySeverityClassName("CRITICAL"),
       /rose-50/
@@ -873,6 +879,88 @@ describe("sales order flow timeline and inconsistencies (OP-71)", () => {
     assert.ok(byItem.every((row) => row.salesOrderItemId === "item-1"));
   });
 
+  it("orienta, sanitiza UUID e deduplica inconsistência pedido/item", () => {
+    const guidance = getSalesOrderFlowInconsistencyGuidance(
+      "NFE_SHIP_DATE_MISSING"
+    );
+    assert.match(guidance.meaning, /NF-e/i);
+    assert.match(guidance.howToFix, /data/i);
+    assert.match(guidance.responsibleAreaHint, /Fiscal/i);
+
+    const itemId = "01d99818-a633-44cf-abe2-850e2c2f513a";
+    assert.equal(
+      extractSalesOrderItemIdFromInconsistencyDetail(
+        `[item ${itemId}] NF-e válida sem data de envio`
+      ),
+      itemId
+    );
+    const cleaned = sanitizeSalesOrderFlowInconsistencyEvidence(
+      `[item ${itemId}] NF-e válida sem data; WAITING_NFE restante`,
+      new Map([[itemId, "611.01AA · Torneira"]])
+    );
+    assert.match(cleaned ?? "", /611\.01AA/);
+    assert.doesNotMatch(cleaned ?? "", /01d99818/);
+    assert.match(cleaned ?? "", /Aguardando NF-e/);
+
+    const payload = detailFixture({
+      inconsistencies: [
+        {
+          code: "NFE_SHIP_DATE_MISSING",
+          severity: "INFO",
+          detail: `[item ${itemId}] NF-e válida sem data de envio registrada`,
+        },
+        {
+          code: "MIXED_ACTIVE_ITEM_STAGES",
+          severity: "INFO",
+          detail: "Itens ativos em estágios distintos: SHIPPED_COMPLETED, WAITING_NFE.",
+        },
+      ],
+      itemSnapshots: [
+        {
+          salesOrderItemId: itemId,
+          productCode: "611.01AA",
+          productName: "Torneira Extra Longa",
+          orderedQuantity: 1,
+          progressProductionOrder: 0,
+          progressProduced: null,
+          progressDocumented: 100,
+          progressInvoiced: 100,
+          progressShipped: 100,
+          activeRemainingQuantity: 0,
+          cutQuantity: 0,
+          currentStage: "WAITING_NFE",
+          nextAction: "Emitir NF",
+          fulfillmentClassification: "FULFILLED",
+          inconsistencies: [
+            {
+              code: "NFE_SHIP_DATE_MISSING",
+              severity: "INFO",
+              detail: "NF-e válida sem data de envio registrada",
+            },
+          ],
+        },
+      ],
+    });
+    const items = resolveSalesOrderFlowDetailItems(payload);
+    const rows = resolveSalesOrderFlowDetailInconsistencyRows(payload, items);
+    const nfeRows = rows.filter((row) => row.code === "NFE_SHIP_DATE_MISSING");
+    assert.equal(nfeRows.length, 1, "dedupe remove cópia do pedido quando item existe");
+    assert.equal(nfeRows[0]?.salesOrderItemId, itemId);
+    assert.match(nfeRows[0]?.entityLabel ?? "", /611\.01AA|Torneira/);
+    assert.doesNotMatch(nfeRows[0]?.evidence ?? "", /01d99818/);
+    assert.match(nfeRows[0]?.howToFix ?? "", /Nomus|data/i);
+    assert.match(nfeRows[0]?.responsibleArea ?? "", /Fiscal/);
+
+    const mixed = rows.find((row) => row.code === "MIXED_ACTIVE_ITEM_STAGES");
+    assert.ok(mixed);
+    assert.match(mixed?.evidence ?? "", /Enviado \/ concluído/);
+    assert.match(mixed?.evidence ?? "", /Aguardando NF-e/);
+
+    const summary = summarizeSalesOrderFlowInconsistencyRows(rows);
+    assert.equal(summary.total, rows.length);
+    assert.ok(summary.info >= 1);
+  });
+
   it("respeita permissões de Timeline e Inconsistências nas abas", () => {
     const all = resolveSalesOrderFlowDetailAvailableTabs(detailFixture());
     assert.ok(all.some((tab) => tab.id === "timeline"));
@@ -893,13 +981,36 @@ describe("sales order flow timeline and inconsistencies (OP-71)", () => {
     );
   });
 
-  it("renderiza Inconsistências com severidade e filtros", () => {
-    const html = renderDetailTab(detailFixture(), "inconsistencias");
+  it("renderiza Inconsistências com cards amigáveis e filtros", () => {
+    const html = renderDetailTab(
+      detailFixture({
+        inconsistencies: [
+          {
+            code: "DUPLICATE_TRUTH_RISK",
+            severity: "CRITICAL",
+            detail: "Duas fontes",
+          },
+          {
+            code: "NFE_SHIP_DATE_MISSING",
+            severity: "INFO",
+            detail: "NF-e sem data de envio",
+          },
+        ],
+      }),
+      "inconsistencias"
+    );
     assert.match(html, /sales-order-flow-detail-inconsistencies/);
-    assert.match(html, /MISSING_PRODUCTION_ORDER|Inconsistente|Produção/i);
+    assert.match(html, /sales-order-flow-inconsistency-cards/);
+    assert.match(html, /sales-order-flow-inconsistency-summary/);
+    assert.match(html, /O que significa/);
+    assert.match(html, /Como corrigir/);
+    assert.match(html, /Risco de segunda fonte da verdade/);
+    assert.match(html, /Data de envio\/saída da NF-e não normalizada/);
+    assert.match(html, /rose-50/);
     assert.match(html, /sales-order-flow-inconsistency-item-filter/);
     assert.match(html, /sales-order-flow-inconsistency-severity-filter/);
     assert.doesNotMatch(html, /rawJson/);
+    assert.doesNotMatch(html, /<th>Código<\/th>/);
   });
 
   it("renderiza Timeline (estado vazio inicial sem fetch no SSR)", () => {

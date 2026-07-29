@@ -7,6 +7,7 @@ import {
   SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
   SALES_ORDER_FLOW_INCONSISTENCY_SEVERITY_BY_CODE,
   SALES_ORDER_FLOW_STAGE_LABELS,
+  getSalesOrderFlowInconsistencyGuidance,
   isSalesOrderFlowInconsistencyCode,
   isSalesOrderFlowStage,
   type SalesOrderFlowInconsistencyCode,
@@ -549,11 +550,155 @@ export type SalesOrderFlowDetailInconsistencyRow = {
   explanation: string | null;
   entityLabel: string;
   evidence: string | null;
+  meaning: string;
+  howToFix: string;
   responsibleArea: string | null;
   conclusionEffect: string;
   detectedAt: string | null;
   salesOrderItemId: string | null;
 };
+
+const SEVERITY_SORT_RANK: Record<SalesOrderFlowInconsistencySeverity, number> = {
+  CRITICAL: 0,
+  ERROR: 1,
+  WARNING: 2,
+  INFO: 3,
+};
+
+export function extractSalesOrderItemIdFromInconsistencyDetail(
+  detail: string | null | undefined
+): string | null {
+  if (!detail) return null;
+  const match = detail.match(
+    /\[item\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/i
+  );
+  return match?.[1] ?? null;
+}
+
+export function sanitizeSalesOrderFlowInconsistencyEvidence(
+  detail: string | null | undefined,
+  itemLookup: Map<string, string> = new Map()
+): string | null {
+  if (detail == null) return null;
+  let text = detail.trim();
+  if (!text) return null;
+
+  text = text.replace(
+    /\[item\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]/gi,
+    (_full, id: string) => {
+      const label = itemLookup.get(id);
+      return label ? `(${label})` : "";
+    }
+  );
+  text = text
+    .replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+      ""
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  for (const stage of Object.keys(
+    SALES_ORDER_FLOW_STAGE_LABELS
+  ) as SalesOrderFlowStage[]) {
+    const label = SALES_ORDER_FLOW_STAGE_LABELS[stage];
+    text = text.replace(new RegExp(`\\b${stage}\\b`, "g"), label);
+  }
+
+  return text || null;
+}
+
+function buildInconsistencyRow(input: {
+  key: string;
+  code: string;
+  severityRaw: string | null | undefined;
+  detail: string | null | undefined;
+  entityLabel: string;
+  salesOrderItemId: string | null;
+  detectedAt: string | null;
+  fallbackArea: string | null;
+  itemLookup?: Map<string, string>;
+}): SalesOrderFlowDetailInconsistencyRow {
+  const severity = normalizeInconsistencySeverity(input.code, input.severityRaw);
+  const guidance = getSalesOrderFlowInconsistencyGuidance(input.code);
+  const evidence = sanitizeSalesOrderFlowInconsistencyEvidence(
+    input.detail,
+    input.itemLookup
+  );
+  return {
+    key: input.key,
+    code: input.code,
+    label: formatSalesOrderFlowInconsistencyLabel(input.code),
+    severity,
+    explanation: evidence,
+    entityLabel: input.entityLabel,
+    evidence,
+    meaning: guidance.meaning,
+    howToFix: guidance.howToFix,
+    responsibleArea: guidance.responsibleAreaHint || input.fallbackArea,
+    conclusionEffect: conclusionEffectForSeverity(severity),
+    detectedAt: input.detectedAt,
+    salesOrderItemId: input.salesOrderItemId,
+  };
+}
+
+function dedupeAndSortInconsistencyRows(
+  rows: SalesOrderFlowDetailInconsistencyRow[]
+): SalesOrderFlowDetailInconsistencyRow[] {
+  const fromItem = new Set(
+    rows
+      .filter((row) => row.key.startsWith("item:") && row.salesOrderItemId)
+      .map((row) => `${row.code}::${row.salesOrderItemId}`)
+  );
+
+  const deduped = rows.filter((row) => {
+    if (row.key.startsWith("item:")) return true;
+    if (
+      row.salesOrderItemId &&
+      fromItem.has(`${row.code}::${row.salesOrderItemId}`)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return deduped.sort((a, b) => {
+    const sev = SEVERITY_SORT_RANK[a.severity] - SEVERITY_SORT_RANK[b.severity];
+    if (sev !== 0) return sev;
+    if (a.entityLabel !== b.entityLabel) {
+      return a.entityLabel.localeCompare(b.entityLabel, "pt-BR");
+    }
+    return a.label.localeCompare(b.label, "pt-BR");
+  });
+}
+
+export function summarizeSalesOrderFlowInconsistencyRows(
+  rows: ReadonlyArray<SalesOrderFlowDetailInconsistencyRow>
+): {
+  critical: number;
+  error: number;
+  warning: number;
+  info: number;
+  total: number;
+} {
+  let critical = 0;
+  let error = 0;
+  let warning = 0;
+  let info = 0;
+  for (const row of rows) {
+    if (row.severity === "CRITICAL") critical += 1;
+    else if (row.severity === "ERROR") error += 1;
+    else if (row.severity === "WARNING") warning += 1;
+    else info += 1;
+  }
+  return {
+    critical,
+    error,
+    warning,
+    info,
+    total: rows.length,
+  };
+}
 
 export function formatSalesOrderFlowEventTypeLabel(eventType: string): string {
   if (
@@ -723,45 +868,57 @@ export function resolveSalesOrderFlowDetailInconsistencyRows(
   const orderArea =
     asString(payload.responsibleArea) ??
     asString(payload.columnExplanation.responsibleArea);
+  const itemById = new Map(
+    items.map((item) => [item.salesOrderItemId, item] as const)
+  );
+  const itemLabelById = new Map(
+    items.map((item) => [item.salesOrderItemId, item.productLabel] as const)
+  );
   const rows: SalesOrderFlowDetailInconsistencyRow[] = [];
 
   for (const [index, row] of payload.inconsistencies.entries()) {
-    const severity = normalizeInconsistencySeverity(row.code, row.severity);
-    rows.push({
-      key: `order:${row.code}:${index}`,
-      code: row.code,
-      label: formatSalesOrderFlowInconsistencyLabel(row.code),
-      severity,
-      explanation: row.detail,
-      entityLabel: "Pedido",
-      evidence: row.detail,
-      responsibleArea: orderArea,
-      conclusionEffect: conclusionEffectForSeverity(severity),
-      detectedAt,
-      salesOrderItemId: null,
-    });
+    const fromDetailId = extractSalesOrderItemIdFromInconsistencyDetail(
+      row.detail
+    );
+    const matchedItem = fromDetailId ? itemById.get(fromDetailId) : null;
+    const salesOrderItemId = matchedItem?.salesOrderItemId ?? null;
+    const entityLabel = matchedItem
+      ? `Item · ${matchedItem.productLabel}`
+      : "Pedido";
+    rows.push(
+      buildInconsistencyRow({
+        key: `order:${row.code}:${index}`,
+        code: row.code,
+        severityRaw: row.severity,
+        detail: row.detail,
+        entityLabel,
+        salesOrderItemId,
+        detectedAt,
+        fallbackArea: orderArea,
+        itemLookup: itemLabelById,
+      })
+    );
   }
 
   for (const item of items) {
     for (const [index, row] of item.inconsistencies.entries()) {
-      const severity = normalizeInconsistencySeverity(row.code, row.severity);
-      rows.push({
-        key: `item:${item.salesOrderItemId}:${row.code}:${index}`,
-        code: row.code,
-        label: formatSalesOrderFlowInconsistencyLabel(row.code),
-        severity,
-        explanation: row.detail,
-        entityLabel: `Item · ${item.productLabel}`,
-        evidence: row.detail,
-        responsibleArea: orderArea,
-        conclusionEffect: conclusionEffectForSeverity(severity),
-        detectedAt,
-        salesOrderItemId: item.salesOrderItemId,
-      });
+      rows.push(
+        buildInconsistencyRow({
+          key: `item:${item.salesOrderItemId}:${row.code}:${index}`,
+          code: row.code,
+          severityRaw: row.severity,
+          detail: row.detail,
+          entityLabel: `Item · ${item.productLabel}`,
+          salesOrderItemId: item.salesOrderItemId,
+          detectedAt,
+          fallbackArea: orderArea,
+          itemLookup: itemLabelById,
+        })
+      );
     }
   }
 
-  return rows;
+  return dedupeAndSortInconsistencyRows(rows);
 }
 
 export function filterSalesOrderFlowDetailInconsistencyRows(

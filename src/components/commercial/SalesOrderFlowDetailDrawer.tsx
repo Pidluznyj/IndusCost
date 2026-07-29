@@ -44,6 +44,7 @@ import {
   resolveSalesOrderFlowDetailShipmentViews,
   resolveSalesOrderFlowManagementUiCapabilities,
   salesOrderFlowInconsistencySeverityClassName,
+  summarizeSalesOrderFlowInconsistencyRows,
   SALES_ORDER_FLOW_INCONSISTENCY_SEVERITIES,
   SALES_ORDER_FLOW_MANAGEMENT_AREA_OPTIONS,
   type SalesOrderFlowDetailTab,
@@ -1467,6 +1468,10 @@ function InconsistenciesTab({
     safePage * pageSize,
     safePage * pageSize + pageSize
   );
+  const summary = useMemo(
+    () => summarizeSalesOrderFlowInconsistencyRows(filtered),
+    [filtered]
+  );
 
   if (!detail.inconsistenciesVisible) {
     return (
@@ -1489,8 +1494,37 @@ function InconsistenciesTab({
     >
       <OverlaySection
         title="Inconsistências detectadas"
-        description="Não marcamos resolução sem evidência do motor. Críticas em vermelho claro; alertas em âmbar suave."
+        description="Sinais do motor para revisão operacional. Não marcamos resolução sem evidência nova. Críticas em vermelho claro; alertas em âmbar suave."
       >
+        <div
+          className="mb-3 flex flex-wrap gap-2"
+          data-testid="sales-order-flow-inconsistency-summary"
+        >
+          {summary.critical > 0 ? (
+            <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-900">
+              {summary.critical} crítica{summary.critical === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {summary.error > 0 ? (
+            <span className="rounded-full border border-rose-100 bg-rose-50/60 px-2.5 py-1 text-xs font-medium text-rose-900">
+              {summary.error} erro{summary.error === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {summary.warning > 0 ? (
+            <span className="rounded-full border border-amber-200/80 bg-amber-50/70 px-2.5 py-1 text-xs font-medium text-amber-950">
+              {summary.warning} alerta{summary.warning === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {summary.info > 0 ? (
+            <span className="rounded-full border border-border bg-muted/50 px-2.5 py-1 text-xs font-medium text-foreground">
+              {summary.info} informação{summary.info === 1 ? "" : "ões"}
+            </span>
+          ) : null}
+          <span className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground">
+            {summary.total} no filtro
+          </span>
+        </div>
+
         <div className="mb-3 flex flex-wrap gap-2">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Item
@@ -1530,49 +1564,90 @@ function InconsistenciesTab({
           <EmptyPanel text="Nenhuma inconsistência no filtro atual." />
         ) : (
           <>
-            <OverlayTable>
-              <thead>
-                <tr>
-                  <th>Código</th>
-                  <th>Severidade</th>
-                  <th>Explicação</th>
-                  <th>Entidade</th>
-                  <th>Evidência</th>
-                  <th>Área responsável</th>
-                  <th>Efeito na conclusão</th>
-                  <th>Detecção</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pageRows.map((row) => (
-                  <tr
+            <ul className="space-y-3" data-testid="sales-order-flow-inconsistency-cards">
+              {pageRows.map((row) => {
+                const evidenceDistinct =
+                  Boolean(row.evidence?.trim()) &&
+                  row.evidence!.trim() !== row.meaning.trim() &&
+                  row.evidence!.trim() !== row.label.trim();
+                return (
+                  <li
                     key={row.key}
                     data-testid={`sales-order-flow-detail-inconsistency-${row.code}`}
-                    className={salesOrderFlowInconsistencySeverityClassName(
+                    className={`rounded-xl border p-4 ${salesOrderFlowInconsistencySeverityClassName(
                       row.severity
-                    )}
+                    )}`}
                   >
-                    <td>
-                      <div className="font-medium">{row.code}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {row.label}
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <OverlayBadge
+                            tone={
+                              row.severity === "CRITICAL" ||
+                              row.severity === "ERROR"
+                                ? "rose"
+                                : row.severity === "WARNING"
+                                  ? "amber"
+                                  : "slate"
+                            }
+                          >
+                            {formatSalesOrderFlowInconsistencySeverityLabel(
+                              row.severity
+                            )}
+                          </OverlayBadge>
+                          <h3 className="text-sm font-semibold text-foreground">
+                            {row.label}
+                          </h3>
+                        </div>
+                        <p className="text-[11px] font-mono text-muted-foreground">
+                          {row.code}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Onde: {row.entityLabel}
+                        </p>
                       </div>
-                    </td>
-                    <td>
-                      {formatSalesOrderFlowInconsistencySeverityLabel(
-                        row.severity
-                      )}
-                    </td>
-                    <td>{row.explanation?.trim() || row.label}</td>
-                    <td>{row.entityLabel}</td>
-                    <td>{row.evidence?.trim() || "—"}</td>
-                    <td>{row.responsibleArea?.trim() || "—"}</td>
-                    <td>{row.conclusionEffect}</td>
-                    <td>{formatSalesOrderFlowDetailDate(row.detectedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </OverlayTable>
+                      <p className="text-[11px] text-muted-foreground">
+                        Detectado em{" "}
+                        {formatSalesOrderFlowDetailDate(row.detectedAt)}
+                      </p>
+                    </div>
+
+                    <div className="mt-3 space-y-2 text-sm">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          O que significa
+                        </p>
+                        <p className="mt-0.5 text-foreground">{row.meaning}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Como corrigir
+                        </p>
+                        <p className="mt-0.5 text-foreground">{row.howToFix}</p>
+                      </div>
+                      {evidenceDistinct ? (
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Evidência do motor
+                          </p>
+                          <p className="mt-0.5 text-foreground">{row.evidence}</p>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+                      <span>
+                        Área sugerida:{" "}
+                        <span className="text-foreground">
+                          {row.responsibleArea?.trim() || "—"}
+                        </span>
+                      </span>
+                      <span>{row.conclusionEffect}</span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
             {pageCount > 1 ? (
               <div className="mt-3 flex items-center gap-2 text-sm">
                 <button
