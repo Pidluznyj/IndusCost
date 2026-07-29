@@ -36,7 +36,7 @@ describe("treasurySimpleNavigation — navegação principal", () => {
     assert.equal(TREASURY_UI_PRIMARY_SECTIONS.length, 4);
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.label),
-      ["Hoje", "Contas", "Conferir banco", "Próximos dias"]
+      ["Hoje", "Contas", "Conferir banco", "Fluxo Gerencial"]
     );
     assert.deepEqual(
       TREASURY_UI_PRIMARY_SECTIONS.map((s) => s.path),

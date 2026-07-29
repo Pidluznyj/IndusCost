@@ -1,6 +1,6 @@
 /**
- * Página — Próximos dias (projeção simples de risco de caixa).
- * Reusa GET /agenda (motor de projeção existente). Sem segundo motor.
+ * Página — Fluxo Gerencial (projeção preditiva).
+ * Dados canônicos: GET /agenda + contas/saldos (sem persistência no browser).
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +8,6 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { usePermissions } from "@/src/hooks/usePermissions";
 import { buildFinanceTabLoadError } from "@/src/lib/financeTabLoadError";
-import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import type {
   TreasuryAgendaDto,
   TreasuryFinancialAccountDto,
@@ -16,27 +15,29 @@ import type {
 import { fetchTreasuryAccounts } from "@/src/lib/treasury/treasuryAccountsApi.js";
 import { fetchTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaApi.js";
 import { canViewTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaPermissions.js";
+import { fetchTreasuryAccountLatestBalance } from "@/src/lib/treasury/treasuryBalancesApi.js";
 import {
-  buildTreasurySimpleCashRiskDayDetail,
-  buildTreasurySimpleCashRiskSummary,
-  resolveTreasurySimpleCashRiskReserve,
-} from "@/src/lib/treasury/domain/treasurySimpleCashRiskProjectionRules.js";
-import {
-  TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE,
-  TREASURY_SIMPLE_CASH_RISK_TITLE,
+  TREASURY_SIMPLE_CASH_RISK_DENIED,
   createEmptyTreasurySimpleCashRiskFilters,
   isTreasurySimpleCashRiskPeriod,
   isTreasurySimpleCashRiskScenario,
   resolveTreasurySimpleCashRiskCompanyCode,
   resolveTreasurySimpleCashRiskRange,
   resolveTreasurySimpleCashRiskStaleMessage,
-  resolveTreasurySimpleCashRiskViewKind,
   type TreasurySimpleCashRiskFilterState,
 } from "@/src/lib/treasury/treasurySimpleCashRiskProjectionUi.js";
 import { todayCivilDateLocal } from "@/src/lib/treasury/treasuryAgendaUi.js";
+import {
+  buildPredictiveCashFlowKpis,
+  extractPredictiveTransactionsFromAgendaDays,
+  mapAgendaDaysToPredictiveTimeline,
+  mapTreasuryAccountToPredictiveAccount,
+  treasuryMoneyToNumber,
+  type PredictiveCashFlowAccount,
+} from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
-import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
-import { TreasurySimpleCashRiskProjectionPanel } from "./TreasurySimpleCashRiskProjectionPanel.js";
+import { PermissionDenied } from "@/src/components/security/PermissionDenied";
+import { PredictiveCashFlowDashboard } from "./predictive-cash-flow/PredictiveCashFlowDashboard.js";
 
 function readFilters(params: URLSearchParams): TreasurySimpleCashRiskFilterState {
   const base = createEmptyTreasurySimpleCashRiskFilters();
@@ -68,6 +69,30 @@ function filtersToParams(
   return qs;
 }
 
+async function loadPredictiveAccounts(
+  raw: TreasuryFinancialAccountDto[],
+  signal: AbortSignal
+): Promise<PredictiveCashFlowAccount[]> {
+  const active = raw.filter((a) => a.isActive !== false);
+  const balances = await Promise.all(
+    active.map(async (account) => {
+      try {
+        const snap = await fetchTreasuryAccountLatestBalance(account.id, signal);
+        return {
+          account,
+          balance: snap?.availableBalance ?? "0.00",
+        };
+      } catch {
+        return { account, balance: "0.00" };
+      }
+    })
+  );
+  if (signal.aborted) return [];
+  return balances.map(({ account, balance }) =>
+    mapTreasuryAccountToPredictiveAccount(account, balance)
+  );
+}
+
 export function TreasurySimpleCashRiskProjectionPage() {
   const auth = useAuth();
   const permissions = usePermissions();
@@ -82,10 +107,12 @@ export function TreasurySimpleCashRiskProjectionPage() {
 
   const abortRef = useRef<AbortController | null>(null);
   const [agenda, setAgenda] = useState<TreasuryAgendaDto | null>(null);
-  const [accounts, setAccounts] = useState<TreasuryFinancialAccountDto[]>([]);
+  const [rawAccounts, setRawAccounts] = useState<TreasuryFinancialAccountDto[]>(
+    []
+  );
+  const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [headerUpdatedAt, setHeaderUpdatedAt] = useState<string | null>(null);
 
   const sortedDays = useMemo(() => {
     if (!agenda?.days?.length) return [];
@@ -94,19 +121,34 @@ export function TreasurySimpleCashRiskProjectionPage() {
     );
   }, [agenda]);
 
-  const minimumReserve = useMemo(
-    () => resolveTreasurySimpleCashRiskReserve(accounts),
-    [accounts]
+  const timeline = useMemo(
+    () => mapAgendaDaysToPredictiveTimeline(sortedDays),
+    [sortedDays]
   );
 
-  const summary = useMemo(() => {
-    if (!sortedDays.length) return null;
-    return buildTreasurySimpleCashRiskSummary({
-      days: sortedDays,
-      minimumReserve,
-      scenario: filters.scenario,
-    });
-  }, [sortedDays, minimumReserve, filters.scenario]);
+  const transactions = useMemo(
+    () => extractPredictiveTransactionsFromAgendaDays(sortedDays),
+    [sortedDays]
+  );
+
+  const companyCode = useMemo(
+    () => resolveTreasurySimpleCashRiskCompanyCode(filters, rawAccounts),
+    [filters, rawAccounts]
+  );
+
+  const kpis = useMemo(
+    () =>
+      buildPredictiveCashFlowKpis({
+        accounts,
+        timeline,
+        agendaOpeningBalance: sortedDays[0]
+          ? treasuryMoneyToNumber(sortedDays[0].openingBalance)
+          : null,
+      }),
+    [accounts, timeline, sortedDays]
+  );
+
+  const staleMessage = resolveTreasurySimpleCashRiskStaleMessage(agenda);
 
   const selectedCivilDate = useMemo(() => {
     if (
@@ -115,27 +157,8 @@ export function TreasurySimpleCashRiskProjectionPage() {
     ) {
       return filters.selectedCivilDate;
     }
-    return sortedDays[0]?.civilDate ?? "";
+    return sortedDays[0]?.civilDate ?? todayCivilDateLocal();
   }, [filters.selectedCivilDate, sortedDays]);
-
-  const dayDetail = useMemo(() => {
-    const day = sortedDays.find((d) => d.civilDate === selectedCivilDate);
-    if (!day) return null;
-    return buildTreasurySimpleCashRiskDayDetail({
-      day,
-      scenario: filters.scenario,
-    });
-  }, [sortedDays, selectedCivilDate, filters.scenario]);
-
-  const hasData = sortedDays.length > 0;
-  const viewKind = resolveTreasurySimpleCashRiskViewKind({
-    canView,
-    loading,
-    error,
-    hasData,
-  });
-  const staleMessage = resolveTreasurySimpleCashRiskStaleMessage(agenda);
-  const pendingAlertCount = agenda?.alerts?.length ?? 0;
 
   const load = useCallback(async () => {
     if (!canView) return;
@@ -154,16 +177,19 @@ export function TreasurySimpleCashRiskProjectionPage() {
         signal: controller.signal,
       }).catch(() => null);
       if (controller.signal.aborted) return;
-      const nextAccounts = acc?.rows ?? [];
-      setAccounts(nextAccounts);
+      const nextRaw = acc?.rows ?? [];
+      setRawAccounts(nextRaw);
+      const mapped = await loadPredictiveAccounts(nextRaw, controller.signal);
+      if (controller.signal.aborted) return;
+      setAccounts(mapped);
 
       const today = todayCivilDateLocal();
       const range = resolveTreasurySimpleCashRiskRange(filters.period, today);
-      const companyCode = resolveTreasurySimpleCashRiskCompanyCode(
+      const resolvedCompany = resolveTreasurySimpleCashRiskCompanyCode(
         filters,
-        nextAccounts
+        nextRaw
       );
-      if (!companyCode) {
+      if (!resolvedCompany) {
         setAgenda(null);
         setError(
           "Configure o companyCode em ao menos uma conta ativa (ou filtre por empresa) para carregar a projeção."
@@ -172,7 +198,7 @@ export function TreasurySimpleCashRiskProjectionPage() {
       }
 
       const payload = await fetchTreasuryAgenda({
-        companyCode,
+        companyCode: resolvedCompany,
         baseDate: range.baseDate,
         endDate: range.endDate,
         scenario: filters.scenario,
@@ -183,12 +209,11 @@ export function TreasurySimpleCashRiskProjectionPage() {
       });
       if (controller.signal.aborted) return;
       setAgenda(payload);
-      setHeaderUpdatedAt(payload.freshness?.asOf ?? new Date().toISOString());
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(
         buildFinanceTabLoadError(
-          "Não foi possível carregar a projeção dos próximos dias.",
+          "Não foi possível carregar o Fluxo Gerencial.",
           err
         )
       );
@@ -209,12 +234,13 @@ export function TreasurySimpleCashRiskProjectionPage() {
     [setSearchParams]
   );
 
-  const onSelectDay = useCallback(
-    (civilDate: string) => {
-      applyFilters({ ...filters, selectedCivilDate: civilDate });
-    },
-    [applyFilters, filters]
-  );
+  if (!canView) {
+    return (
+      <FinanceBiDashboardShell>
+        <PermissionDenied message={TREASURY_SIMPLE_CASH_RISK_DENIED} />
+      </FinanceBiDashboardShell>
+    );
+  }
 
   return (
     <FinanceBiDashboardShell>
@@ -222,32 +248,17 @@ export function TreasurySimpleCashRiskProjectionPage() {
         data-testid="treasury-simple-cash-risk-page"
         className="contents"
       >
-        <FinanceExecutivePageHeader
-          eyebrow="FINANCEIRO · CENTRAL DE TESOURARIA"
-          title={TREASURY_SIMPLE_CASH_RISK_TITLE}
-          subtitle={TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE}
-          updatedAt={headerUpdatedAt}
-          updatedAtLabel="Última atualização em"
-          actions={[
-            buildTreasurySimpleRefreshHeaderAction({
-              onClick: () => void load(),
-              disabled: loading || !canView,
-            }),
-          ]}
-        />
-
-        <TreasurySimpleCashRiskProjectionPanel
-          viewKind={viewKind}
-          agenda={agenda}
-          days={sortedDays}
-          summary={summary}
-          dayDetail={dayDetail}
+        <PredictiveCashFlowDashboard
+          kpis={kpis}
+          timeline={timeline}
+          accounts={accounts}
+          transactions={transactions}
           filters={{ ...filters, selectedCivilDate }}
+          companyCode={companyCode}
+          loading={loading}
           error={error}
           staleMessage={staleMessage}
-          pendingAlertCount={pendingAlertCount}
           onFiltersChange={applyFilters}
-          onSelectDay={onSelectDay}
           onRefresh={() => void load()}
           onDismissError={() => setError(null)}
         />

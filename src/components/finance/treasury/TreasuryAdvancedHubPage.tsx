@@ -25,7 +25,7 @@ export function TreasuryAdvancedHubPage(props: {
         </h2>
         <p className="text-sm text-muted-foreground">
           Ferramentas técnicas preservadas. A rotina diária continua em Hoje,
-          Contas, Conferir banco e Próximos dias.
+          Contas, Conferir banco e Fluxo Gerencial.
         </p>
       </div>
 

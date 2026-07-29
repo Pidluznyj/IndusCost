@@ -1,6 +1,6 @@
 /**
  * Navegação simples da Tesouraria — client-safe.
- * Primária: Hoje / Contas / Conferir banco / Próximos dias.
+ * Primária: Hoje / Contas / Conferir banco / Fluxo Gerencial.
  * Avançada: catálogo técnico preservado (ADMIN / SUPER_ADMIN).
  */
 
@@ -42,7 +42,7 @@ export const TREASURY_UI_PRIMARY_SECTIONS = [
   {
     id: "projection",
     path: `${TREASURY_SIMPLE_UI_BASE_PATH}/projection`,
-    label: "Próximos dias",
+    label: "Fluxo Gerencial",
   },
 ] as const satisfies readonly TreasurySimpleNavSection[];
 

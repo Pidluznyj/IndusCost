@@ -36,7 +36,7 @@ export {
 };
 
 export const TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE =
-  "Projeção do saldo nos próximos dias, com reserva mínima e cenários contratual e provável." as const;
+  "Fluxo Gerencial: projeção do saldo com contas, títulos e lançamentos canônicos da Tesouraria." as const;
 
 export const TREASURY_SIMPLE_CASH_RISK_DENIED =
   "Você não tem permissão para visualizar a projeção de caixa da Tesouraria." as const;

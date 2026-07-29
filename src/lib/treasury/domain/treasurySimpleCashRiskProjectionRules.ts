@@ -21,7 +21,7 @@ import {
   findMinimumClosingBalance,
 } from "./treasuryProjectionComparisonRules.js";
 
-export const TREASURY_SIMPLE_CASH_RISK_TITLE = "Próximos dias" as const;
+export const TREASURY_SIMPLE_CASH_RISK_TITLE = "Fluxo Gerencial" as const;
 
 export const TREASURY_SIMPLE_CASH_RISK_UI_PATH =
   "/finance/treasury/projection" as const;

@@ -186,8 +186,10 @@ describe("TreasurySimpleCashRiskProjection — UI", () => {
     );
     assert.match(page, /fetchTreasuryAgenda/);
     assert.match(page, /includeDayDetail:\s*true/);
+    assert.match(page, /PredictiveCashFlowDashboard/);
     assert.doesNotMatch(page, /runTreasuryProjectionEngine/);
     assert.doesNotMatch(page, /dailyCashEngine/i);
+    assert.doesNotMatch(page, /useLocalStorage/);
 
     const mod = readFileSync(join(here, "TreasuryModule.tsx"), "utf8");
     assert.match(mod, /TreasurySimpleCashRiskProjectionPage/);
@@ -197,7 +199,7 @@ describe("TreasurySimpleCashRiskProjection — UI", () => {
     );
     assert.match(mod, /path="agenda"[\s\S]*TreasuryAgendaPage/);
 
-    assert.equal(TREASURY_SIMPLE_CASH_RISK_TITLE, "Próximos dias");
+    assert.equal(TREASURY_SIMPLE_CASH_RISK_TITLE, "Fluxo Gerencial");
 
     const engineStillExists = readFileSync(
       join(
