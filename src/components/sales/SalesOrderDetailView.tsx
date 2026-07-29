@@ -14,6 +14,11 @@ import type {
   SalesOrderDetailItem,
   SalesOrderDetailAlert,
 } from "@/src/lib/sales-orders/salesOrderDetailClient";
+import {
+  formatCommercialDiscountCompact,
+  formatDiscountRatePercentPtBr,
+  SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS,
+} from "@/src/lib/salesOrderCommercialCompositionDisplay";
 import { cn } from "@/src/lib/utils";
 
 type Props = {
@@ -113,16 +118,95 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
       <section className="so-detail-section" data-testid="sales-order-detail-summary">
         <h3 className="so-detail-section-title">Resumo executivo</h3>
         <div className="so-detail-kpi-grid">
-          <Kpi label="Valor pedido" value={formatFinanceCurrency(summary.originalValue)} />
           <Kpi
-            label="Valor ativo"
-            value={formatFinanceCurrency(summary.activeValue)}
-            tone="positive"
+            label={SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.grossItems}
+            value={formatFinanceCurrency(
+              summary.grossItemsValue ?? summary.originalValue
+            )}
+            testId="so-detail-kpi-gross"
           />
           <Kpi
-            label="Valor cancelado"
-            value={formatFinanceCurrency(summary.canceledValue)}
-            tone={summary.canceledValue > 0.009 ? "risk" : "muted"}
+            label={`${SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.discountValue} (R$)`}
+            value={formatFinanceCurrency(summary.discountValue ?? 0)}
+            tone={(summary.discountValue ?? 0) > 0.009 ? "info" : "muted"}
+            testId="so-detail-kpi-discount-value"
+          />
+          <Kpi
+            label={`${SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.discountPercent} (%)`}
+            value={
+              summary.discountRate != null
+                ? formatDiscountRatePercentPtBr(summary.discountRate)
+                : "0,00%"
+            }
+            testId="so-detail-kpi-discount-rate"
+          />
+          {(summary.additionValue ?? 0) > 0.009 ? (
+            <>
+              <Kpi
+                label={`${SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.additionValue} (R$)`}
+                value={formatFinanceCurrency(summary.additionValue ?? 0)}
+                tone="warning"
+              />
+              <Kpi
+                label={`${SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.additionPercent} (%)`}
+                value={
+                  summary.additionRate != null
+                    ? formatDiscountRatePercentPtBr(summary.additionRate)
+                    : "—"
+                }
+              />
+            </>
+          ) : null}
+          <Kpi
+            label={SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.netSold}
+            value={formatFinanceCurrency(
+              summary.netSoldValue ?? summary.activeValue
+            )}
+            tone="positive"
+            testId="so-detail-kpi-net"
+          />
+          <Kpi
+            label="Margem comercial R$"
+            value={
+              summary.marginValue != null
+                ? formatFinanceCurrency(summary.marginValue)
+                : SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.unavailable
+            }
+            tone={
+              summary.marginValue == null
+                ? "muted"
+                : summary.marginValue < 0
+                  ? "risk"
+                  : "positive"
+            }
+            hint={
+              summary.commercialMarginComplete === false &&
+              (summary.commercialMarginItemsCalculated ?? 0) > 0
+                ? `${summary.commercialMarginItemsCalculated} de ${summary.commercialMarginItemsActive} itens · cobertura ${
+                    summary.commercialMarginCoveragePercent != null
+                      ? `${summary.commercialMarginCoveragePercent.toLocaleString("pt-BR", {
+                          maximumFractionDigits: 2,
+                        })}%`
+                      : "—"
+                  }`
+                : undefined
+            }
+            testId="so-detail-kpi-margin-value"
+          />
+          <Kpi
+            label="Margem comercial %"
+            value={
+              summary.marginPercent != null
+                ? `${summary.marginPercent.toLocaleString("pt-BR", {
+                    maximumFractionDigits: 2,
+                    minimumFractionDigits: 2,
+                  })}%`
+                : summary.commercialMarginComplete === false &&
+                    (summary.commercialMarginItemsCalculated ?? 0) > 0
+                  ? "Parcial"
+                  : SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.unavailable
+            }
+            testId="so-detail-kpi-margin-percent"
           />
           <Kpi
             label="Valor faturado"
@@ -133,31 +217,6 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
             label="Saldo pendente"
             value={formatFinanceCurrency(summary.pendingBalance)}
             tone={summary.pendingBalance > 0.009 ? "warning" : "muted"}
-          />
-          <Kpi
-            label="Itens (ativos/canc.)"
-            value={`${formatFinanceInteger(summary.activeItemsCount)} / ${formatFinanceInteger(summary.canceledItemsCount)}`}
-          />
-          <Kpi
-            label="Margem comercial R$"
-            value={
-              summary.marginValue != null
-                ? formatFinanceCurrency(summary.marginValue)
-                : "—"
-            }
-            tone={(summary.marginValue ?? 0) < 0 ? "risk" : "positive"}
-          />
-          <Kpi
-            label="Margem comercial %"
-            value={
-              summary.marginPercent != null
-                ? `${summary.marginPercent.toLocaleString("pt-BR", {
-                    maximumFractionDigits: 2,
-                  })}%`
-                : summary.commercialMarginComplete === false
-                  ? "Parcial"
-                  : "—"
-            }
           />
           <Kpi
             label="Status faturamento"
@@ -198,12 +257,23 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                   <th>Un.</th>
                   <th className="so-detail-num">Qtd pedida</th>
                   <th className="so-detail-num">Qtd atendida</th>
-                  <th className="so-detail-num">Qtd pendente</th>
                   <th className="so-detail-num">Qtd cancelada</th>
                   <th>Status</th>
-                  <th className="so-detail-num">Preço unit.</th>
-                  <th className="so-detail-num">Valor total</th>
-                  <th className="so-detail-num">Valor ativo</th>
+                  <th className="so-detail-num" title="Preço unitário bruto">
+                    Preço unit. bruto
+                  </th>
+                  <th className="so-detail-num">
+                    {SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.totalValueColumn}
+                  </th>
+                  <th className="so-detail-num">
+                    {SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.discountColumn}
+                  </th>
+                  <th className="so-detail-num" title="Preço unitário líquido">
+                    Preço unit. líq.
+                  </th>
+                  <th className="so-detail-num">
+                    {SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.netActiveValue}
+                  </th>
                   <th className="so-detail-num">Custo unit.</th>
                   <th className="so-detail-num">Margem comercial R$</th>
                   <th className="so-detail-num">Margem comercial %</th>
@@ -217,22 +287,42 @@ export function SalesOrderDetailView({ payload, className }: Props): JSX.Element
                 ))}
               </tbody>
               <tfoot>
-                <tr>
+                <tr data-testid="sales-order-detail-items-total">
                   <td colSpan={4}>Total</td>
                   <td className="so-detail-num">
                     {formatFinanceInteger(summary.itemsCount)}
                   </td>
-                  <td colSpan={5} />
-                  <td className="so-detail-money">
-                    {formatFinanceCurrency(summary.originalValue)}
+                  <td colSpan={3} />
+                  <td className="so-detail-money" />
+                  <td className="so-detail-money" data-testid="so-detail-total-gross">
+                    {formatFinanceCurrency(
+                      summary.grossItemsValue ?? summary.originalValue
+                    )}
                   </td>
-                  <td className="so-detail-money">
-                    {formatFinanceCurrency(summary.originalValue)}
+                  <td className="so-detail-money" data-testid="so-detail-total-discount">
+                    {formatFinanceCurrency(summary.discountValue ?? 0)}
                   </td>
-                  <td className="so-detail-money">
-                    {formatFinanceCurrency(summary.activeValue)}
+                  <td className="so-detail-money" />
+                  <td className="so-detail-money" data-testid="so-detail-total-net">
+                    {formatFinanceCurrency(
+                      summary.netSoldValue ?? summary.activeValue
+                    )}
                   </td>
-                  <td colSpan={4} />
+                  <td className="so-detail-money" />
+                  <td className="so-detail-money" data-testid="so-detail-total-margin">
+                    {summary.marginValue != null
+                      ? formatFinanceCurrency(summary.marginValue)
+                      : "—"}
+                  </td>
+                  <td className="so-detail-num">
+                    {summary.marginPercent != null
+                      ? `${summary.marginPercent.toLocaleString("pt-BR", {
+                          maximumFractionDigits: 2,
+                          minimumFractionDigits: 2,
+                        })}%`
+                      : "—"}
+                  </td>
+                  <td colSpan={2} />
                 </tr>
               </tfoot>
             </table>
@@ -808,11 +898,13 @@ function Kpi({
   value,
   hint,
   tone = "muted",
+  testId,
 }: {
   label: string;
   value: string | null | undefined;
   hint?: string | null;
   tone?: KpiTone;
+  testId?: string;
 }) {
   const cls =
     tone === "positive"
@@ -825,7 +917,7 @@ function Kpi({
             ? "so-detail-kpi--info"
             : "";
   return (
-    <div className={cn("so-detail-kpi", cls)}>
+    <div className={cn("so-detail-kpi", cls)} data-testid={testId}>
       <p className="so-detail-kpi-label">{label}</p>
       <p className="so-detail-kpi-value">{value ?? "—"}</p>
       {hint ? <p className="so-detail-kpi-hint">{hint}</p> : null}
@@ -850,11 +942,37 @@ function ItemRow({
           ? "so-detail-badge--invoiced"
           : "so-detail-badge--info";
   const marginTone = (item.marginValue ?? 0) < 0 ? "so-detail-money--risk" : "";
+  const activeQty =
+    item.activeQuantity ?? Math.max(0, item.quantityOrdered - item.quantityCanceled);
+  const discountLabel = formatCommercialDiscountCompact({
+    discountRate: item.discountRate ?? 0,
+    discountValue: item.discountValue ?? 0,
+    additionRate: item.additionRate ?? 0,
+    additionValue: item.additionValue ?? 0,
+    discountStatus:
+      (item.additionValue ?? 0) > 0
+        ? "ADDITION"
+        : (item.discountValue ?? 0) > 0
+          ? "DISCOUNT"
+          : "NO_DISCOUNT",
+  });
+  const discountTitle =
+    (item.additionValue ?? 0) > 0
+      ? `Acréscimo ${formatDiscountRatePercentPtBr(item.additionRate ?? 0)} (${formatFinanceCurrency(item.additionValue ?? 0)})`
+      : (item.discountValue ?? 0) > 0
+        ? `${formatDiscountRatePercentPtBr(item.discountRate ?? 0)} (${formatFinanceCurrency(item.discountValue ?? 0)})`
+        : "Sem desconto";
+  const marginUnavailable =
+    item.marginValue == null && activeQty > 0 && !item.isCanceled;
+  const marginTitle = marginUnavailable
+    ? `${SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.unavailable}\n${item.commercialMarginReasonLabel ?? "Motivo não informado."}`
+    : undefined;
+
   return (
-    <tr>
+    <tr data-testid={`so-detail-item-row-${item.salesOrderItemId}`}>
       <td className="so-detail-num">{item.itemSequence ?? index}</td>
       <td className="font-mono text-[10px]">{item.sku}</td>
-      <td className="max-w-[220px] truncate" title={item.productName}>
+      <td className="max-w-[180px] truncate" title={item.productName}>
         {item.productName}
       </td>
       <td>{item.unit ?? "—"}</td>
@@ -865,26 +983,38 @@ function ItemRow({
         {item.quantityFulfilled.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
       </td>
       <td className="so-detail-num">
-        {item.quantityPending.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
-      </td>
-      <td className="so-detail-num">
         {item.quantityCanceled.toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
       </td>
       <td>
         <span className={cn("so-detail-badge", statusBadge)}>{item.statusLabel}</span>
       </td>
       <td className="so-detail-money">{formatFinanceCurrency(item.unitPrice)}</td>
-      <td className="so-detail-money">{formatFinanceCurrency(item.totalValue)}</td>
+      <td className="so-detail-money">
+        {formatFinanceCurrency(item.grossActiveValue ?? item.totalValue)}
+      </td>
+      <td className="so-detail-num" title={discountTitle}>
+        {discountLabel}
+      </td>
+      <td className="so-detail-money">
+        {item.netUnitPrice != null ? formatFinanceCurrency(item.netUnitPrice) : "—"}
+      </td>
       <td className="so-detail-money">{formatFinanceCurrency(item.activeValue)}</td>
       <td className="so-detail-money">
         {item.unitCost != null ? formatFinanceCurrency(item.unitCost) : "—"}
       </td>
-      <td className={cn("so-detail-money", marginTone)}>
-        {item.marginValue != null ? formatFinanceCurrency(item.marginValue) : "—"}
+      <td className={cn("so-detail-money", marginTone)} title={marginTitle}>
+        {item.marginValue != null
+          ? formatFinanceCurrency(item.marginValue)
+          : marginUnavailable
+            ? SALES_ORDER_COMMERCIAL_COMPOSITION_LABELS.unavailable
+            : "—"}
       </td>
-      <td className="so-detail-num">
+      <td className="so-detail-num" title={marginTitle}>
         {item.marginPercent != null
-          ? `${item.marginPercent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
+          ? `${item.marginPercent.toLocaleString("pt-BR", {
+              maximumFractionDigits: 2,
+              minimumFractionDigits: 2,
+            })}%`
           : "—"}
       </td>
       <td>

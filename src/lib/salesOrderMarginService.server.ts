@@ -493,13 +493,47 @@ async function mergeCommercialMarginsIntoOrderResults(
       }))
     );
 
+    const {
+      resolveItemCommercialCompositionForDisplay,
+      summarizeCommercialCompositionForDisplay,
+    } = await import("./salesOrderCommercialCompositionDisplay.js");
+
     for (const order of orders) {
       const result = marginByOrder.get(order.id);
       const commercial = commercialByOrder.get(order.id);
       if (!result || !commercial) continue;
+
+      const composition = summarizeCommercialCompositionForDisplay(
+        (order.items ?? []).map((item) =>
+          resolveItemCommercialCompositionForDisplay({
+            orderedQuantity: Number(item.quantity) || 0,
+            canceledQuantity:
+              item.canceledQuantity != null ? Number(item.canceledQuantity) : 0,
+            isFullyCanceled:
+              item.nomusIsCanceled === true ||
+              item.nomusIsCut === true ||
+              (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED" ||
+              (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELADO",
+            grossUnitPrice: Number(item.negotiatedPrice) || 0,
+            netTotalValue:
+              item.totalNetValue != null ? Number(item.totalNetValue) : null,
+          })
+        )
+      );
+
       result.marginSummary = {
         ...(result.marginSummary as SalesOrderMarginSummaryPayload),
-        commercialMargin: commercial.summary,
+        commercialMargin: {
+          ...commercial.summary,
+          commercialComposition: {
+            grossActiveTotalValue: composition.grossActiveTotalValue,
+            discountTotalValue: composition.discountTotalValue,
+            discountRate: composition.discountRate,
+            additionTotalValue: composition.additionTotalValue,
+            additionRate: composition.additionRate,
+            netActiveTotalValue: composition.netActiveTotalValue,
+          },
+        },
       };
       for (const [itemId, payload] of result.itemMargins) {
         result.itemMargins.set(itemId, {

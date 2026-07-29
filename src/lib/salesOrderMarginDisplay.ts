@@ -12,7 +12,14 @@ import type {
 } from "./salesOrderMarginTypes.js";
 import { resolveSalesOrderMarginSummaryStatusMeta } from "./salesOrderMarginStatus.js";
 import { mergeSalesOrderMarginCoveragePayloads } from "./salesOrderMarginCoverage.js";
-import { SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL } from "./salesOrderCommercialMargin.js";
+import {
+  buildOrderCommercialCompositionTooltipLines,
+  buildSalesOrderItemCommercialMarginCompositionTooltipText,
+  formatListCommercialMarginPercentLabel,
+  formatListCommercialMarginValueLabel,
+  formatPartialCommercialMarginHint,
+  type SalesOrderCommercialCompositionTotals,
+} from "./salesOrderCommercialCompositionDisplay.js";
 
 const marginMoneyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -213,24 +220,13 @@ export function buildSalesOrderMarginAlerts(
 export function pickSalesOrderListMarginPercent(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  const commercial = summary?.commercialMargin;
-  if (commercial?.commercialMarginTotalPercent != null) {
-    return formatSalesOrderMarginPercent(commercial.commercialMarginTotalPercent);
-  }
-  if (commercial && commercial.itemsActive > 0 && commercial.itemsCalculated === 0) {
-    return "Não calculada";
-  }
-  return "—";
+  return formatListCommercialMarginPercentLabel(summary?.commercialMargin);
 }
 
 export function pickSalesOrderListMarginValue(
   summary?: SalesOrderMarginSummaryPayload | null
 ): string {
-  const commercial = summary?.commercialMargin;
-  if (commercial?.commercialMarginTotalValue != null) {
-    return formatSalesOrderMarginMoney(commercial.commercialMarginTotalValue);
-  }
-  return "—";
+  return formatListCommercialMarginValueLabel(summary?.commercialMargin);
 }
 
 export const SALES_ORDER_MARGIN_DISPLAY_LABELS = {
@@ -267,6 +263,8 @@ export type SalesOrderMarginTooltipInput = {
   orderIssueDate?: string | null;
   /** Substitui o título padrão do tooltip (ex.: margem geral da listagem). */
   titleOverride?: string | null;
+  /** Composição bruto/desconto/líquido para o tooltip do pedido. */
+  commercialComposition?: SalesOrderCommercialCompositionTotals | null;
 };
 
 function formatCivilDatePtBr(iso: string | null | undefined): string {
@@ -472,81 +470,70 @@ function buildSalesOrderMarginUnavailableTooltip(
   return lines.join("\n");
 }
 
-const COMMERCIAL_MARGIN_SOURCE_LABEL: Record<
-  import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginSource,
-  string
-> = {
-  HISTORICAL_PRICE_FORMATION: "Formação de preço histórica na data do Pedido",
-  UNAVAILABLE: "Margem não calculada",
-};
-
-/** Tooltip por item — detalha a margem comercial da formação. */
+/** Tooltip por item — detalha composição comercial + formação. */
 export function buildSalesOrderItemCommercialMarginTooltipText(
-  commercial?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginItemPayload | null
+  commercial?: import("./salesOrderCommercialMargin.js").SalesOrderCommercialMarginItemPayload | null,
+  composition?: import("./salesOrderItemCommercialValues.js").SalesOrderItemCommercialValues | null
 ): string {
-  if (!commercial || !commercial.isComplete) {
-    const reasonText =
-      commercial?.reasonCode != null
-        ? SALES_ORDER_COMMERCIAL_MARGIN_REASON_LABEL[commercial.reasonCode]
-        : commercial?.warnings?.[0] ??
-          "A formação de preço está incompleta ou ausente para este item.";
-    return [
-      SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle,
-      "",
-      reasonText,
-      ...(commercial?.warnings ?? [])
-        .filter((w) => w !== reasonText)
-        .map((w) => `Aviso: ${w}`),
-    ].join("\n");
-  }
-
-  return [
-    SALES_ORDER_MARGIN_DISPLAY_LABELS.itemCommercialTitle,
-    "",
-    `Preço praticado: ${formatSalesOrderMarginMoney(commercial.negotiatedUnitPrice)}`,
-    `Quantidade ativa: ${commercial.soldQuantity}`,
-    `Valor vendido: ${formatSalesOrderMarginMoney(commercial.soldValue)}`,
-    `Custo histórico: ${formatSalesOrderMarginMoney(commercial.costValue)}`,
-    `Impostos: ${formatSalesOrderMarginPercent((commercial.taxRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.taxValue)})`,
-    `Frete percentual: ${formatSalesOrderMarginPercent((commercial.freightRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.freightRateValue)})`,
-    `Frete absoluto: ${formatSalesOrderMarginMoney(commercial.freightAbsoluteValue)}`,
-    `Comissão: ${formatSalesOrderMarginPercent((commercial.commissionRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.commissionValue)})`,
-    `Outras variáveis: ${formatSalesOrderMarginPercent((commercial.otherVariablesRate ?? 0) * 100)} (${formatSalesOrderMarginMoney(commercial.otherVariablesValue)})`,
-    `Margem comercial R$: ${formatSalesOrderMarginMoney(commercial.commercialMarginValue)}`,
-    `Margem comercial %: ${formatSalesOrderMarginPercent(commercial.commercialMarginPercent)}`,
-    `Faixa inferior: ${commercial.lowerMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.lowerBandPrice)})`,
-    `Faixa superior: ${commercial.upperMarginBand ?? "—"} (${formatSalesOrderMarginMoney(commercial.upperBandPrice)})`,
-    `Data da formação: ${formatCivilDatePtBr(commercial.referenceDate)}`,
-    `Conjunto histórico: ${commercial.historicalContextId ?? commercial.priceTableVersionId ?? "—"}`,
-    `Origem: ${COMMERCIAL_MARGIN_SOURCE_LABEL[commercial.calculationSource]}`,
-    ...(commercial.warnings.length
-      ? commercial.warnings.map((w) => `Aviso: ${w}`)
-      : []),
-  ].join("\n");
+  return buildSalesOrderItemCommercialMarginCompositionTooltipText({
+    commercial,
+    composition,
+  });
 }
 
 /** Tooltip oficial — prioriza margem comercial da venda; gerencial fica secundária. */
 export function buildOfficialSalesOrderMarginTooltipText(
   input: SalesOrderMarginTooltipInput
 ): string {
-  const { summary, itemMargins, orderIssueDate, titleOverride } = input;
+  const { summary, itemMargins, orderIssueDate, titleOverride, commercialComposition } = input;
   const commercial = summary?.commercialMargin;
   if (commercial) {
+    const attachedComposition =
+      commercialComposition ??
+      (commercial.commercialComposition
+        ? {
+            ...commercial.commercialComposition,
+            discountStatus:
+              commercial.commercialComposition.additionTotalValue >
+              commercial.commercialComposition.discountTotalValue
+                ? ("ADDITION" as const)
+                : commercial.commercialComposition.discountTotalValue > 0
+                  ? ("DISCOUNT" as const)
+                  : ("NO_DISCOUNT" as const),
+            itemsWithDiscount: 0,
+            itemsWithAddition: 0,
+            itemsActive: commercial.itemsActive,
+          }
+        : null);
+    const compositionLines =
+      buildOrderCommercialCompositionTooltipLines(attachedComposition);
     const lines: string[] = [
       titleOverride?.trim() || SALES_ORDER_MARGIN_DISPLAY_LABELS.commercialTitle,
       "",
-      "Margem calculada sobre o preço efetivamente vendido, usando custo, impostos, frete, comissão e demais variáveis da formação de preço.",
+      "Margem calculada sobre o valor líquido vendido, usando custo, impostos, frete, comissão e demais variáveis da formação de preço.",
       "",
-      `Valor vendido (itens calculados): ${formatSalesOrderMarginMoney(commercial.commercialSoldTotalValue)}`,
+      ...compositionLines,
+      ...(compositionLines.length ? [""] : []),
+      `Valor líquido (itens calculados): ${formatSalesOrderMarginMoney(commercial.commercialSoldTotalValue)}`,
       `Margem comercial R$: ${formatSalesOrderMarginMoney(commercial.commercialMarginTotalValue)}`,
       `Margem comercial %: ${formatSalesOrderMarginPercent(commercial.commercialMarginTotalPercent)}`,
-      `Cobertura: ${formatSalesOrderMarginPercent(commercial.commercialMarginCoveragePercent)} do valor ativo`,
+      `Cobertura: ${formatSalesOrderMarginPercent(commercial.commercialMarginCoveragePercent)} do valor líquido`,
       `Itens calculados: ${commercial.itemsCalculated} de ${commercial.itemsActive}`,
     ];
     if (!commercial.isComplete) {
-      lines.push(
-        `Status: parcial — ${commercial.itemsCalculated} de ${commercial.itemsActive} itens calculados; ${commercial.itemsUnavailable} com margem não calculada.`
-      );
+      const partial = formatPartialCommercialMarginHint(commercial);
+      if (partial) {
+        lines.push("", partial);
+      } else {
+        lines.push(
+          `Status: parcial — ${commercial.itemsCalculated} de ${commercial.itemsActive} itens calculados; ${commercial.itemsUnavailable} com margem não calculada.`
+        );
+      }
+    }
+    if (commercial.itemsCalculated === 0 && commercial.itemsActive > 0) {
+      lines.unshift(SALES_ORDER_MARGIN_DISPLAY_LABELS.unavailableTitle);
+      const firstWarning = commercial.warnings[0];
+      if (firstWarning) lines.push("", firstWarning);
     }
     for (const warning of commercial.warnings.slice(0, 4)) {
       lines.push(`Aviso: ${warning}`);

@@ -43,6 +43,11 @@ import {
 } from "../sales/salesOrderListBillingStatus.js";
 import { formatNomusItemStatusNormalized } from "../finance/orderToCashAuditLabels.js";
 import { getOrderFullAudit } from "../finance/orderFullAuditService.js";
+import {
+  formatCommercialMarginUnavailableReason,
+  resolveItemCommercialCompositionForDisplay,
+  summarizeCommercialCompositionForDisplay,
+} from "../salesOrderCommercialCompositionDisplay.js";
 import type {
   OrderFullAuditPayload,
   OrderFullAuditItem,
@@ -172,9 +177,21 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
     commercial != null &&
     commercial.itemsCalculated > 0 &&
     commercial.commercialMarginTotalPercent != null;
+
+  const compositionRows = (audit.items ?? []).map((item) =>
+    resolveItemCommercialCompositionForDisplay({
+      orderedQuantity: item.quantity ?? 0,
+      canceledQuantity: item.canceledQuantity ?? 0,
+      isFullyCanceled: Boolean(item.nomusIsCanceled),
+      grossUnitPrice: item.unitPrice ?? 0,
+      netTotalValue: item.totalNetValue,
+    })
+  );
+  const composition = summarizeCommercialCompositionForDisplay(compositionRows);
+
   return {
     originalValue: round2(s.originalOrderValue),
-    activeValue,
+    activeValue: composition.netActiveTotalValue > 0 ? composition.netActiveTotalValue : activeValue,
     canceledValue: round2(s.canceledOrderValue),
     cutValue: round2(s.cutOrderValue),
     invoicedValue,
@@ -187,16 +204,24 @@ function mapSummary(audit: OrderFullAuditPayload): SalesOrderDetailSummary {
     hasInvoice: audit.nfes.length > 0,
     nfeCount: audit.nfes.length,
     lastNfeDate,
+    grossItemsValue: composition.grossActiveTotalValue,
+    discountValue: composition.discountTotalValue,
+    discountRate: composition.discountRate,
+    additionValue: composition.additionTotalValue,
+    additionRate: composition.additionRate,
+    netSoldValue: composition.netActiveTotalValue,
     marginValue: commercialReady
       ? commercial.commercialMarginTotalValue
-      : marginTotals.marginValue,
+      : null,
     marginPercent: commercialReady
       ? commercial.commercialMarginTotalPercent
-      : marginTotals.marginPerc,
+      : null,
     managerialMarginValue: marginTotals.managerialMarginValue ?? marginTotals.marginValue,
     managerialMarginPercent: marginTotals.managerialMarginPerc ?? marginTotals.marginPerc,
     commercialMarginComplete: commercial?.isComplete ?? null,
     commercialMarginCoveragePercent: commercial?.commercialMarginCoveragePercent ?? null,
+    commercialMarginItemsCalculated: commercial?.itemsCalculated ?? null,
+    commercialMarginItemsActive: commercial?.itemsActive ?? null,
     invoiceCoveragePercent:
       s.activeOrderValue > 0 ? round2((invoicedValue / s.activeOrderValue) * 100) : null,
   };
@@ -213,6 +238,7 @@ function mapItem(
       managerialMarginValue?: number | null;
       managerialMarginPerc?: number | null;
       commercialMarginSource?: string | null;
+      commercialMarginReasonCode?: string | null;
       status: string | null;
       totalCost: number | null;
       costSource: string | null;
@@ -242,10 +268,30 @@ function mapItem(
     item.unitPrice ??
       (quantityOrdered > 0 ? totalValue / quantityOrdered : 0)
   );
+  const composition = resolveItemCommercialCompositionForDisplay({
+    orderedQuantity: quantityOrdered,
+    canceledQuantity: item.canceledQuantity ?? 0,
+    isFullyCanceled: isCanceled,
+    grossUnitPrice: unitPrice,
+    netTotalValue: item.totalNetValue,
+  });
+  const activeQuantity = composition.activeQuantity;
   const unitCost =
-    margin?.totalCost != null && quantityOrdered > 0
-      ? round2(margin.totalCost / quantityOrdered)
-      : null;
+    margin?.totalCost != null && activeQuantity > 0
+      ? round2(margin.totalCost / activeQuantity)
+      : margin?.totalCost != null && quantityOrdered > 0
+        ? round2(margin.totalCost / quantityOrdered)
+        : null;
+
+  const reasonCode =
+    margin?.commercialMarginReasonCode ??
+    (composition.reasonCode === "NET_SOLD_VALUE_NOT_FOUND"
+      ? "NET_SOLD_VALUE_NOT_FOUND"
+      : null);
+  const marginValue =
+    margin?.marginValue != null ? round2(margin.marginValue) : null;
+  const marginPercent =
+    margin?.marginPerc != null ? round2(margin.marginPerc) : null;
 
   return {
     salesOrderItemId: item.salesOrderItemId,
@@ -265,12 +311,22 @@ function mapItem(
     isCut,
     isStale,
     unitPrice,
-    totalValue,
-    activeValue: round2(item.activeValue ?? 0),
+    activeQuantity,
+    totalValue: composition.grossActiveValue > 0 ? composition.grossActiveValue : totalValue,
+    grossActiveValue: composition.grossActiveValue,
+    discountRate: composition.effectiveDiscountRate,
+    discountValue: composition.effectiveDiscountValue,
+    additionRate: composition.commercialAdditionRate,
+    additionValue: composition.commercialAdditionValue,
+    netUnitPrice: composition.effectiveNetUnitPrice,
+    activeValue:
+      composition.netActiveValue != null
+        ? composition.netActiveValue
+        : round2(item.activeValue ?? 0),
     canceledValue: round2(item.canceledValue ?? 0),
     unitCost,
-    marginValue: margin?.marginValue != null ? round2(margin.marginValue) : null,
-    marginPercent: margin?.marginPerc != null ? round2(margin.marginPerc) : null,
+    marginValue,
+    marginPercent,
     managerialMarginValue:
       margin?.managerialMarginValue != null
         ? round2(margin.managerialMarginValue)
@@ -280,6 +336,11 @@ function mapItem(
         ? round2(margin.managerialMarginPerc)
         : null,
     commercialMarginSource: margin?.commercialMarginSource ?? null,
+    commercialMarginReasonCode: reasonCode,
+    commercialMarginReasonLabel:
+      marginValue == null && activeQuantity > 0
+        ? formatCommercialMarginUnavailableReason(reasonCode)
+        : null,
     marginStatus: margin?.status ?? null,
     expectedDeliveryDate: item.expectedDeliveryDate ?? null,
     linkedNfes,
@@ -451,6 +512,7 @@ export async function getSalesOrderDetail(
       managerialMarginValue?: number | null;
       managerialMarginPerc?: number | null;
       commercialMarginSource?: string | null;
+      commercialMarginReasonCode?: string | null;
       status: string | null;
       totalCost: number | null;
       costSource: string | null;
@@ -462,7 +524,8 @@ export async function getSalesOrderDetail(
       marginPerc: m.marginPercent,
       managerialMarginValue: null,
       managerialMarginPerc: null,
-      commercialMarginSource: null,
+      commercialMarginSource: m.commercialMarginSource ?? null,
+      commercialMarginReasonCode: m.commercialMarginReasonCode ?? null,
       status: m.marginStatus ?? null,
       totalCost: m.totalCost ?? null,
       costSource: null,
