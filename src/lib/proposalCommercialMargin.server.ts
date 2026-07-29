@@ -190,21 +190,11 @@ export async function loadProposalCommercialFormationsBatch(
           { OR: [{ effectiveTo: null }, { effectiveTo: { gt: referenceDate } }] },
         ],
       },
-      orderBy: [{ effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
-      take: 2,
+      orderBy: [{ status: "desc" }, { effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
+      take: 1,
       select: { id: true },
     });
     if (overlapping.length === 0) continue;
-    if (overlapping.length > 1) {
-      for (const id of unique) {
-        result.set(id, {
-          ok: false,
-          reasonCode: "HISTORICAL_FORMATION_AMBIGUOUS",
-          message: `Formação ambígua em ${code} para a data.`,
-        });
-      }
-      return result;
-    }
     versionIdsByCode.set(code, overlapping[0]!.id);
     versionIdToCode.set(overlapping[0]!.id, code);
   }

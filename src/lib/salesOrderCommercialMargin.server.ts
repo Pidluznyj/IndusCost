@@ -225,7 +225,6 @@ export async function loadHistoricalCommercialFormationsBatch(
 
   for (const code of COMMERCIAL_PRICE_TIER_CODES) {
     const table = tableByCode.get(code)!;
-    // Até 2 versões sobrepostas: detecta ambiguidade sem inventar qual usar.
     const overlapping = await db.priceTableVersion.findMany({
       where: {
         priceTableId: table.id,
@@ -235,8 +234,8 @@ export async function loadHistoricalCommercialFormationsBatch(
           { OR: [{ effectiveTo: null }, { effectiveTo: { gt: referenceDate } }] },
         ],
       },
-      orderBy: [{ effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
-      take: 2,
+      orderBy: [{ status: "desc" }, { effectiveFrom: "desc" }, { publishedAt: "desc" }, { versionNumber: "desc" }],
+      take: 1,
       select: { id: true },
     });
     if (overlapping.length === 0) {
@@ -245,16 +244,6 @@ export async function loadHistoricalCommercialFormationsBatch(
           ok: false,
           reasonCode: "HISTORICAL_FORMATION_NOT_FOUND",
           message: `Sem versão publicada de ${code} na data do Pedido.`,
-        });
-      }
-      return result;
-    }
-    if (overlapping.length > 1) {
-      for (const id of uniqueProductIds) {
-        result.set(id, {
-          ok: false,
-          reasonCode: "HISTORICAL_FORMATION_AMBIGUOUS",
-          message: `Existem duas formações possíveis de ${code} para essa data.`,
         });
       }
       return result;
