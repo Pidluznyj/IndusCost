@@ -419,6 +419,7 @@ import { registerSalesOrderListReportExportRoutes } from "./src/lib/salesOrderLi
 import { registerSalesOrderReportRoutes } from "./src/lib/salesOrderReportRoutes.js";
 import { registerSalesOrderIndustrialResultReportRoutes } from "./src/lib/salesOrderIndustrialResultReportRoutes.js";
 import { registerSalesOrderMonthlyReceivablesReportRoutes } from "./src/lib/salesOrderMonthlyReceivablesReportRoutes.js";
+import { registerSalesOrderCommercialDiscountReportRoutes } from "./src/lib/salesOrderCommercialDiscountReportRoutes.js";
 import { registerSalesOrderDetailRoutes } from "./src/lib/salesOrderDetailRoutes.js";
 import {
   parseSalesOrderListQuery,
@@ -15282,6 +15283,27 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     resolveEmitterName: async (req) => {
       const user = await getCurrentAppUser(req);
       return user?.name?.trim() || null;
+    },
+  });
+
+  registerSalesOrderCommercialDiscountReportRoutes(app, {
+    requireAppAuth,
+    requireResource,
+    resolveEmitterName: async (req) => {
+      const user = await getCurrentAppUser(req);
+      return user?.name?.trim() || null;
+    },
+    resolvePermissionBag: async (req) => {
+      const user = await getCurrentAppUser(req);
+      if (!user) return null;
+      const bag = new Set<string>([
+        ...(user.permissions ?? []),
+        ...(user.effectivePermissions ?? []),
+      ]);
+      return {
+        hasPermission: (key: string) =>
+          user.role === "SUPER_ADMIN" || bag.has(key),
+      };
     },
   });
 

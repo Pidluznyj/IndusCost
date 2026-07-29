@@ -45,6 +45,7 @@ export type NestedBreadcrumbSegment = {
 const SALES_ORDERS_STATIC_LEAVES: Record<string, string> = {
   result: "Resultado",
   "monthly-receivables": "Recebíveis mensais",
+  "commercial-discounts": "Descontos comerciais",
   management: "Gestão de Pedidos",
   "sold-products": "Produtos Vendidos",
   "material-demand": "Inteligência de Matéria-Prima",

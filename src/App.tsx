@@ -29,6 +29,7 @@ import { SalesOrdersPageLastUpdateSubtitle } from "./components/sales-orders/Sal
 import { SalesOrderManagementPage } from "./components/sales/SalesOrderManagementPage";
 import { SalesOrderResultPage } from "./components/sales/SalesOrderResultPage";
 import { SalesOrderMonthlyReceivablesReportPage } from "./components/sales/SalesOrderMonthlyReceivablesReportPage";
+import { SalesOrderCommercialDiscountReportPage } from "./components/sales/SalesOrderCommercialDiscountReportPage";
 import { PurchaseModule } from "./components/PurchaseModule";
 import { PurchaseQuotationModule } from "./components/PurchaseQuotationModule";
 import { PurchaseQuotationComparisonModule } from "./components/PurchaseQuotationComparisonModule";
@@ -88,7 +89,7 @@ import { AccessDenied } from "@/src/components/AccessDenied";
 import { useAuth } from "@/src/contexts/AuthContext";
 import { fetchJsonOk } from "@/src/lib/http";
 import { CostToCashTracePage } from "./components/audit/CostToCashTracePage";
-import { AlertCircle, BarChart3, CalendarRange, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
+import { AlertCircle, BarChart3, CalendarRange, ClipboardList, Factory, GitBranch, Layers, Loader2, Package, Percent, ShieldCheck, ShieldOff, TrendingUp } from "lucide-react";
 
 type BootstrapAdminStatus = {
   enabled: boolean;
@@ -1061,6 +1062,25 @@ export default function App() {
           }
         />
         <Route
+          path="sales-orders/commercial-discounts"
+          element={
+            <ModulePageShell
+              title="Relatório de descontos comerciais"
+              description="Valor bruto, valor concedido em descontos, líquido e margem comercial dos Pedidos de Venda."
+              headerActions={
+                <Link
+                  to="/sales-orders"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                >
+                  Lista de pedidos
+                </Link>
+              }
+            >
+              <SalesOrderCommercialDiscountReportPage />
+            </ModulePageShell>
+          }
+        />
+        <Route
           path="sales-orders/:id"
           element={
             <ModulePageShell
@@ -1092,6 +1112,13 @@ export default function App() {
                   >
                     <CalendarRange className="h-4 w-4 text-primary" />
                     Recebíveis mensais
+                  </Link>
+                  <Link
+                    to="/sales-orders/commercial-discounts"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition-colors hover:bg-accent"
+                  >
+                    <Percent className="h-4 w-4 text-primary" />
+                    Descontos comerciais
                   </Link>
                   <Link
                     to="/sales-orders/management"
