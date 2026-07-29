@@ -775,4 +775,35 @@ describe("buildMonthlyCommercialMarginRows", () => {
     assert.equal(rows[0]!.month, 1);
     assert.equal(rows[11]!.month, 12);
   });
+
+  it("fallback de margem oficial calcula barra nos meses sem tabela de preço histórica", () => {
+    const rows = buildMonthlyCommercialMarginRows(
+      [
+        {
+          issueDate: "2026-01-15",
+          commercialMargin: {
+            commercialMarginTotalValue: null,
+            commercialMarginTotalPercent: null,
+            commercialSoldTotalValue: 0,
+            totalActiveSoldValue: 500,
+            commercialMarginCoveragePercent: 0,
+            itemsCalculated: 0,
+            itemsUnavailable: 1,
+            itemsActive: 1,
+            isComplete: false,
+            warnings: [],
+          },
+          officialMargin: {
+            marginValue: 150,
+            netRevenue: 500,
+          },
+        },
+      ],
+      2026
+    );
+    assert.equal(rows[0]!.marginPercent, 30);
+    assert.equal(rows[0]!.marginAmount, 150);
+    assert.equal(rows[0]!.coveredNetValue, 500);
+    assert.equal(rows[0]!.isPartial, true);
+  });
 });

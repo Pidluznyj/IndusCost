@@ -47,7 +47,7 @@ describe("SalesOrdersModule — gráficos mensais antes do grid", () => {
 
   it("gráfico de margem usa margem comercial (não gerencial)", () => {
     const chart = read(
-      "src/components/sales/SalesOrderListMonthlyMarginPercentChart.tsx"
+      "src/components/sales/SalesOrderMonthlyCommercialMarginChart.tsx"
     );
     assert.match(chart, /Margem comercial/);
     assert.doesNotMatch(chart, /Margem gerencial oficial/);

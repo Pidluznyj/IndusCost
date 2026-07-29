@@ -369,6 +369,10 @@ const MONTH_LABELS_PT = [
 export type CommercialMarginMonthlyOrderInput = {
   issueDate: Date | string | null | undefined;
   commercialMargin: SalesOrderCommercialMarginSummaryPayload | null | undefined;
+  officialMargin?: {
+    marginValue: number | null;
+    netRevenue: number | null;
+  } | null;
 };
 
 export type CommercialMarginMonthlyRow = {
@@ -432,23 +436,38 @@ export function buildMonthlyCommercialMarginRows(
     bucket.ordersCount += 1;
 
     const cm = order.commercialMargin;
+    const om = order.officialMargin;
     const activeSold =
-      cm && Number.isFinite(cm.totalActiveSoldValue) ? cm.totalActiveSoldValue : 0;
+      cm && Number.isFinite(cm.totalActiveSoldValue)
+        ? cm.totalActiveSoldValue
+        : (om?.netRevenue ?? 0);
     bucket.totalActiveSoldSum += activeSold;
 
-    if (
-      !cm ||
-      cm.itemsCalculated <= 0 ||
-      cm.commercialMarginTotalValue == null ||
-      !Number.isFinite(cm.commercialMarginTotalValue)
+    const hasCommercial =
+      cm &&
+      cm.itemsCalculated > 0 &&
+      cm.commercialMarginTotalValue != null &&
+      Number.isFinite(cm.commercialMarginTotalValue);
+
+    if (hasCommercial) {
+      bucket.hasCalculated = true;
+      bucket.coveredOrders += 1;
+      if (!cm.isComplete) bucket.hasPartial = true;
+      bucket.marginSum += cm.commercialMarginTotalValue!;
+      bucket.coveredSoldSum += cm.commercialSoldTotalValue ?? 0;
+    } else if (
+      om &&
+      om.marginValue != null &&
+      Number.isFinite(om.marginValue) &&
+      om.netRevenue != null &&
+      om.netRevenue > 0
     ) {
-      continue;
+      bucket.hasCalculated = true;
+      bucket.coveredOrders += 1;
+      bucket.hasPartial = true;
+      bucket.marginSum += om.marginValue;
+      bucket.coveredSoldSum += om.netRevenue;
     }
-    bucket.hasCalculated = true;
-    bucket.coveredOrders += 1;
-    if (!cm.isComplete) bucket.hasPartial = true;
-    bucket.marginSum += cm.commercialMarginTotalValue;
-    bucket.coveredSoldSum += cm.commercialSoldTotalValue ?? 0;
   }
 
   return Array.from({ length: 12 }, (_, index) => {

@@ -227,6 +227,9 @@ export async function buildSalesOrderResultDashboard(
         chartOrders.map((order) => order.id)
       );
     }
+    const { calculateOfficialSalesOrderMarginsForOrders } = await import(
+      "./salesMarginRulesAdapter.js"
+    );
     const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
       db,
       chartOrders.map((order) => ({
@@ -242,11 +245,23 @@ export async function buildSalesOrderResultDashboard(
           : (itemsByOrder.get(order.id) ?? []),
       }))
     );
+    const officialByOrder = await calculateOfficialSalesOrderMarginsForOrders(
+      db,
+      chartOrders
+    );
+
     monthlyCommercialMargin = buildMonthlyCommercialMarginRows(
-      chartOrders.map((order) => ({
-        issueDate: order.issueDate,
-        commercialMargin: commercialByOrder.get(order.id)?.commercialMargin,
-      })),
+      chartOrders.map((order) => {
+        const comm = commercialByOrder.get(order.id)?.commercialMargin;
+        const off = officialByOrder.get(order.id)?.marginSummary;
+        return {
+          issueDate: order.issueDate,
+          commercialMargin: comm,
+          officialMargin: off
+            ? { marginValue: off.marginValue, netRevenue: off.netRevenue }
+            : null,
+        };
+      }),
       filters.year
     );
   } catch (err) {
