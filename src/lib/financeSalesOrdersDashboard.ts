@@ -637,9 +637,26 @@ export async function buildFinanceSalesOrdersDashboard(
       nomusRawResponse: order.nomusRawResponse,
     }))
   );
-  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+  const managerialPortfolio = aggregateSalesOrderMarginSummaries(
     [...marginByOrder.values()].map((row) => row.marginSummary)
   );
+  const { aggregateCommercialMarginPayloads } = await import(
+    "./salesOrderCommercialMarginReadModel.js"
+  );
+  const commercialPayloads = [...marginByOrder.values()]
+    .map((row) => row.marginSummary?.commercialMargin)
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const commercialPortfolio =
+    commercialPayloads.length > 0
+      ? aggregateCommercialMarginPayloads(commercialPayloads)
+      : null;
+  // Preserva gerencial nos campos base; comercial fica em commercialMargin (canônico).
+  const marginPortfolio = managerialPortfolio
+    ? {
+        ...managerialPortfolio,
+        commercialMargin: commercialPortfolio,
+      }
+    : undefined;
 
   const extended = buildExtendedMetricsFromOrders({
     orders: periodOrders,

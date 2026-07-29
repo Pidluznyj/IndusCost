@@ -481,64 +481,50 @@ async function mergeCommercialMarginsIntoOrderResults(
   >
 ): Promise<void> {
   try {
-    const { calculateCommercialMarginsForSalesOrders } = await import(
-      "./salesOrderCommercialMargin.server.js"
+    // Fonte única: read model canônico (mesmo motor, sem fórmula paralela).
+    const { buildSalesOrderCommercialMarginReadModels } = await import(
+      "./salesOrderCommercialMarginReadService.server.js"
     );
-    const commercialByOrder = await calculateCommercialMarginsForSalesOrders(
+    const { toCommercialMarginItemPayload } = await import(
+      "./salesOrderCommercialMarginReadModel.js"
+    );
+    const needsItemLoad = orders.some((order) => !order.items?.length);
+    const loadedItems = needsItemLoad
+      ? await loadSalesOrderItemsForMargin(
+          prisma,
+          orders.map((order) => order.id)
+        )
+      : null;
+    const commercialByOrder = await buildSalesOrderCommercialMarginReadModels(
       prisma,
       orders.map((order) => ({
         id: order.id,
-        issueDate: order.issueDate,
-        items: order.items,
+        issueDate:
+          order.issueDate instanceof Date
+            ? order.issueDate
+            : order.issueDate
+              ? new Date(order.issueDate)
+              : null,
+        items: order.items?.length
+          ? order.items
+          : (loadedItems?.get(order.id) ?? []),
       }))
     );
-
-    const {
-      resolveItemCommercialCompositionForDisplay,
-      summarizeCommercialCompositionForDisplay,
-    } = await import("./salesOrderCommercialCompositionDisplay.js");
 
     for (const order of orders) {
       const result = marginByOrder.get(order.id);
       const commercial = commercialByOrder.get(order.id);
       if (!result || !commercial) continue;
-
-      const composition = summarizeCommercialCompositionForDisplay(
-        (order.items ?? []).map((item) =>
-          resolveItemCommercialCompositionForDisplay({
-            orderedQuantity: Number(item.quantity) || 0,
-            canceledQuantity:
-              item.canceledQuantity != null ? Number(item.canceledQuantity) : 0,
-            isFullyCanceled:
-              item.nomusIsCanceled === true ||
-              item.nomusIsCut === true ||
-              (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELED" ||
-              (item.nomusItemStatusNormalized ?? "").toUpperCase() === "CANCELADO",
-            grossUnitPrice: Number(item.negotiatedPrice) || 0,
-            netTotalValue:
-              item.totalNetValue != null ? Number(item.totalNetValue) : null,
-          })
-        )
-      );
-
       result.marginSummary = {
         ...(result.marginSummary as SalesOrderMarginSummaryPayload),
-        commercialMargin: {
-          ...commercial.summary,
-          commercialComposition: {
-            grossActiveTotalValue: composition.grossActiveTotalValue,
-            discountTotalValue: composition.discountTotalValue,
-            discountRate: composition.discountRate,
-            additionTotalValue: composition.additionTotalValue,
-            additionRate: composition.additionRate,
-            netActiveTotalValue: composition.netActiveTotalValue,
-          },
-        },
+        commercialMargin: commercial.commercialMargin,
       };
+      const itemById = new Map(commercial.items.map((item) => [item.itemId, item]));
       for (const [itemId, payload] of result.itemMargins) {
+        const itemDto = itemById.get(itemId);
         result.itemMargins.set(itemId, {
           ...payload,
-          commercialMargin: commercial.byItemId.get(itemId) ?? null,
+          commercialMargin: itemDto ? toCommercialMarginItemPayload(itemDto) : null,
         });
       }
     }

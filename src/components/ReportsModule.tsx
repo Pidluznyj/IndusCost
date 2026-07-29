@@ -31,6 +31,7 @@ import {
   buildSalesOrderMarginCoverageHint,
   resolveSalesOrderMarginMoneyLabel,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { resolveCommercialMarginDisplayLabel } from "@/src/lib/salesOrderCommercialMarginReadModel";
 import type { SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { fetchJsonOk } from "@/src/lib/http";
 import { ExecutiveSummarySection } from "@/src/components/ui/ExecutiveSummarySection";
@@ -277,10 +278,13 @@ export const ReportsModule = () => {
     }));
   }, [data]);
 
-  const reportsMarginColumnLabel = useMemo(
-    () => resolveSalesOrderMarginMoneyLabel(data?.marginPortfolio ?? null),
-    [data?.marginPortfolio]
-  );
+  const reportsMarginColumnLabel = useMemo(() => {
+    const commercial = data?.marginPortfolio?.commercialMargin;
+    if (commercial) {
+      return `${resolveCommercialMarginDisplayLabel(commercial)} (R$)`;
+    }
+    return resolveSalesOrderMarginMoneyLabel(data?.marginPortfolio ?? null);
+  }, [data?.marginPortfolio]);
 
   const reportsMarginCoverageHint = useMemo(() => {
     if (!data?.marginPortfolio) return null;

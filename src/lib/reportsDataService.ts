@@ -12,7 +12,7 @@ import {
   OFFICIAL_SO_RULES_SOURCE,
   type OfficialReportsProductMixRow,
 } from "./salesOrderRulesAdapter.js";
-import { calculateOfficialSalesOrderMarginsForOrders } from "./salesMarginRulesAdapter.js";
+import { calculateSalesOrderMarginsForOrders } from "./salesOrderMarginService.server.js";
 import type { SalesOrderMarginSummaryPayload } from "./salesOrderMarginTypes.js";
 import type { SalesOrderListFilters } from "./salesOrdersListSummary.js";
 import {
@@ -20,6 +20,7 @@ import {
 } from "./productOfficialFinalCost.js";
 import { isCostAnalysisFailure } from "./productCostSnapshot.js";
 import { aggregateSalesOrderMarginSummaries } from "./salesOrderMarginDisplay.js";
+import { aggregateCommercialMarginPayloads } from "./salesOrderCommercialMarginReadModel.js";
 
 export type ReportsDataQuery = {
   dateFrom: string | null;
@@ -257,7 +258,7 @@ export async function buildReportsDataPayload(
     orderBy: { issueDate: "desc" },
   })) as ReportsOrderRow[];
 
-  const marginByOrder = await calculateOfficialSalesOrderMarginsForOrders(
+  const marginByOrder = await calculateSalesOrderMarginsForOrders(
     db as PrismaClient,
     orders.map((order) => ({
       id: order.id,
@@ -270,11 +271,14 @@ export async function buildReportsDataPayload(
   const rulesOrders = orders.map((order) => {
     const base = mapReportsOrderToRulesInput(order);
     const marginResult = marginByOrder.get(order.id);
-    const itemOfficialById = new Map(
-      (marginResult?.itemResults ?? [])
-        .filter((row) => row.salesOrderItemId)
-        .map((row) => [row.salesOrderItemId!, row.marginValue])
-    );
+    // Mix por produto: margem comercial do Pedido (não gerencial).
+    const itemOfficialById = new Map<string, number>();
+    for (const [itemId, payload] of marginResult?.itemMargins ?? []) {
+      const commercialValue = payload.commercialMargin?.commercialMarginValue;
+      if (commercialValue != null && Number.isFinite(commercialValue)) {
+        itemOfficialById.set(itemId, commercialValue);
+      }
+    }
     return {
       ...base,
       items: base.items.map((item) => ({
@@ -331,9 +335,41 @@ export async function buildReportsDataPayload(
 
   const mixByProduct = buildOfficialReportsProductMixFromOrders(rulesOrders, listFilters);
 
-  const marginPortfolio = aggregateSalesOrderMarginSummaries(
+  const managerialPortfolio = aggregateSalesOrderMarginSummaries(
     [...marginByOrder.values()].map((row) => row.marginSummary)
   ) ?? null;
+  const commercialPayloads = [...marginByOrder.values()]
+    .map((row) => row.marginSummary?.commercialMargin)
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  const commercialPortfolio =
+    commercialPayloads.length > 0
+      ? aggregateCommercialMarginPayloads(commercialPayloads)
+      : null;
+  const marginPortfolio = managerialPortfolio
+    ? {
+        ...managerialPortfolio,
+        marginValue:
+          commercialPortfolio?.commercialMarginTotalValue ??
+          managerialPortfolio.marginValue,
+        marginPercent:
+          commercialPortfolio?.commercialMarginTotalPercent ??
+          managerialPortfolio.marginPercent,
+        marginRevenueCovered:
+          commercialPortfolio?.commercialSoldTotalValue ??
+          managerialPortfolio.marginRevenueCovered,
+        marginCoveragePercent:
+          commercialPortfolio?.commercialMarginCoveragePercent ??
+          managerialPortfolio.marginCoveragePercent,
+        costCoverageStatus: commercialPortfolio
+          ? commercialPortfolio.isComplete
+            ? ("FULL" as const)
+            : commercialPortfolio.itemsCalculated > 0
+              ? ("PARTIAL" as const)
+              : ("NONE" as const)
+          : managerialPortfolio.costCoverageStatus,
+        commercialMargin: commercialPortfolio,
+      }
+    : null;
 
   const allOrdersForRepurchase = await db.salesOrder.findMany({
     where: { status: { not: "CANCELLED" } },

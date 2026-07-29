@@ -28,10 +28,17 @@ export type SalesOrderInternalMarginExportOrderRow = {
   customerName: string;
   sellerName: string;
   issueDate: string;
+  grossValue: number | null;
+  discountValue: number | null;
+  discountPercent: number | null;
   netRevenue: number;
   totalCost: number;
+  /** Margem comercial do Pedido (canônica). */
   marginValue: number;
   marginPercent: number | null;
+  marginCoveragePercent: number | null;
+  managerialMarginValue: number | null;
+  managerialMarginPercent: number | null;
   markup: number | null;
   marginStatusLabel: string;
   logisticStatusLabel?: string;
@@ -47,11 +54,16 @@ export type SalesOrderInternalMarginExportItemRow = {
   sku: string;
   productName: string;
   quantity: number;
+  grossUnitPrice: number | null;
+  netUnitPrice: number | null;
   netRevenue: number;
   unitCost: number | null;
   totalCost: number | null;
+  /** Margem comercial do item (canônica). */
   marginValue: number | null;
   marginPercent: number | null;
+  managerialMarginValue: number | null;
+  managerialMarginPercent: number | null;
   markup: number | null;
   costSourceLabel: string;
   costConfidenceLabel: string;
@@ -81,6 +93,7 @@ export type SalesOrderInternalMarginExportPayload = {
     totalCost: number;
     marginValue: number;
     marginPercent: number | null;
+    marginCoveragePercent: number | null;
     markup: number | null;
     ordersCount: number;
     itemsCount: number;
@@ -115,11 +128,12 @@ export function buildSalesOrderInternalMarginExportWorkbook(
     { Campo: "Aviso", Valor: SALES_ORDER_INTERNAL_MARGIN_REPORT_DISCLAIMER },
     { Campo: "Gerado em", Valor: payload.generatedAt },
     { Campo: "Origem", Valor: payload.scopeLabel },
-    { Campo: "Valor vendido total", Valor: summary.netRevenue },
-    { Campo: "Custo estimado total", Valor: summary.totalCost },
-    { Campo: "Margem R$", Valor: summary.marginValue },
-    { Campo: "Margem %", Valor: numOrBlank(summary.marginPercent) },
-    { Campo: "Markup", Valor: numOrBlank(summary.markup) },
+    { Campo: "Valor líquido coberto (comercial)", Valor: summary.netRevenue },
+    { Campo: "Custo estimado total (gerencial)", Valor: summary.totalCost },
+    { Campo: "Margem comercial R$", Valor: summary.marginValue },
+    { Campo: "Margem comercial %", Valor: numOrBlank(summary.marginPercent) },
+    { Campo: "Cobertura margem %", Valor: numOrBlank(summary.marginCoveragePercent) },
+    { Campo: "Markup (gerencial)", Valor: numOrBlank(summary.markup) },
     { Campo: "Pedidos", Valor: summary.ordersCount },
     { Campo: "Itens", Valor: summary.itemsCount },
     { Campo: "Pedidos com margem negativa", Valor: summary.ordersWithNegativeMargin },
@@ -136,12 +150,18 @@ export function buildSalesOrderInternalMarginExportWorkbook(
         Cliente: row.customerName,
         Vendedor: row.sellerName,
         "Data emissão": row.issueDate,
-        "Valor líquido vendido": row.netRevenue,
-        "Custo estimado": row.totalCost,
-        "Margem R$": row.marginValue,
-        "Margem %": numOrBlank(row.marginPercent),
+        "Valor bruto": numOrBlank(row.grossValue),
+        "Desconto R$": numOrBlank(row.discountValue),
+        "Desconto %": numOrBlank(row.discountPercent),
+        "Valor líquido": row.netRevenue,
+        "Custo estimado (gerencial)": row.totalCost,
+        "Margem comercial R$": row.marginValue,
+        "Margem comercial %": numOrBlank(row.marginPercent),
+        "Cobertura margem %": numOrBlank(row.marginCoveragePercent),
+        "Margem gerencial R$": numOrBlank(row.managerialMarginValue),
+        "Margem gerencial %": numOrBlank(row.managerialMarginPercent),
         Markup: numOrBlank(row.markup),
-        "Status margem": row.marginStatusLabel,
+        "Status margem comercial": row.marginStatusLabel,
         "Status logístico": row.logisticStatusLabel ?? "",
         "Itens sem custo": row.itemsWithoutCost,
         "Itens sem produto": row.itemsWithoutProduct,
@@ -161,15 +181,19 @@ export function buildSalesOrderInternalMarginExportWorkbook(
         SKU: row.sku,
         Produto: row.productName,
         Quantidade: row.quantity,
+        "Preço bruto unitário": numOrBlank(row.grossUnitPrice),
+        "Preço líquido unitário": numOrBlank(row.netUnitPrice),
         "Valor líquido item": row.netRevenue,
         "Custo unitário usado": numOrBlank(row.unitCost),
         "Custo total": numOrBlank(row.totalCost),
-        "Margem R$": numOrBlank(row.marginValue),
-        "Margem %": numOrBlank(row.marginPercent),
+        "Margem comercial R$": numOrBlank(row.marginValue),
+        "Margem comercial %": numOrBlank(row.marginPercent),
+        "Margem gerencial R$": numOrBlank(row.managerialMarginValue),
+        "Margem gerencial %": numOrBlank(row.managerialMarginPercent),
         Markup: numOrBlank(row.markup),
         "Fonte do custo": row.costSourceLabel,
         "Confiança do custo": row.costConfidenceLabel,
-        "Status margem": row.marginStatusLabel,
+        "Status margem comercial": row.marginStatusLabel,
         Observações: row.notes,
       }))
     ),
@@ -187,9 +211,9 @@ export function buildSalesOrderInternalMarginExportWorkbook(
         SKU: row.sku,
         Produto: row.productName,
         "Valor líquido": row.netRevenue,
-        "Margem R$": numOrBlank(row.marginValue),
-        "Margem %": numOrBlank(row.marginPercent),
-        "Status margem": row.marginStatusLabel,
+        "Margem comercial R$": numOrBlank(row.marginValue),
+        "Margem comercial %": numOrBlank(row.marginPercent),
+        "Status margem comercial": row.marginStatusLabel,
       }))
     ),
     "Alertas"

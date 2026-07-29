@@ -1,4 +1,4 @@
-src/lib/canonicalPersonBackfill.test.ts
+﻿src/lib/canonicalPersonBackfill.test.ts
 src/lib/canonicalPersonHardening.integration.test.ts
 src/lib/employeesPermissions.test.ts
 src/lib/employeeHrAudit.test.ts
@@ -160,6 +160,9 @@ src/lib/salesOrderCommercialCompositionDisplay.test.ts
 src/lib/salesOrderCommercialMargin.test.ts
 src/lib/salesOrderCommercialMarginHistory.test.ts
 src/lib/salesOrderCommercialMarginQueryBudget.test.ts
+src/lib/salesOrderCommercialMarginReadModel.test.ts
+src/lib/salesOrderCommercialMarginCrossScreen.test.ts
+src/lib/salesOrderCommercialMarginReportsExport.test.ts
 src/lib/finance/salesOrderEffectiveFinancialSchedule.test.ts
 src/lib/finance/salesOrderStagedDeliverySchedule.test.ts
 src/lib/finance/stagedDeliveryScheduleRepair.test.ts

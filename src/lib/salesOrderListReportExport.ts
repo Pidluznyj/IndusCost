@@ -17,9 +17,14 @@ export type SalesOrderListReportExportRow = {
   status: string;
   statusLabel: string;
   hasInvoice: boolean;
+  grossValue: number | null;
+  discountValue: number | null;
+  discountPercent: number | null;
   netValue: number;
   marginPercent: number | null;
   marginValue: number | null;
+  marginCoveragePercent: number | null;
+  marginStatusLabel: string;
   itemsCount: number;
   nfeDocument: string;
   externalSalesOrderCode: string;
@@ -118,9 +123,14 @@ function mapOrderRow(row: SalesOrderListReportExportRow): Record<string, string 
     "Cronograma de pagamento": row.scheduleText,
     "Valor total dos títulos": row.totalTitlesAmount,
     "Status financeiro dos títulos": row.financialStatusLabel,
+    "Valor bruto": numOrBlank(row.grossValue),
+    "Desconto R$": numOrBlank(row.discountValue),
+    "Desconto %": numOrBlank(row.discountPercent),
     "Valor líquido": row.netValue,
-    "Margem %": numOrBlank(row.marginPercent),
-    "Margem valor": numOrBlank(row.marginValue),
+    "Margem comercial %": numOrBlank(row.marginPercent),
+    "Margem comercial R$": numOrBlank(row.marginValue),
+    "Cobertura margem %": numOrBlank(row.marginCoveragePercent),
+    "Status margem comercial": row.marginStatusLabel,
     Itens: row.itemsCount,
     "NF/documento": row.nfeDocument,
     "Código Nomus": row.externalSalesOrderCode,
@@ -196,7 +206,7 @@ export function buildSalesOrderListReportExportWorkbook(
     { Campo: "Valor vendido", Valor: summary.totalNetAmount },
     { Campo: "Itens", Valor: summary.totalItems },
     { Campo: "Ticket médio", Valor: summary.averageTicket },
-    { Campo: "Margem média %", Valor: numOrBlank(summary.averageMarginPercent) },
+    { Campo: "Margem comercial ponderada %", Valor: numOrBlank(summary.averageMarginPercent) },
     { Campo: "Qtd faturada", Valor: summary.invoicedCount },
     { Campo: "Qtd não faturada", Valor: summary.notInvoicedCount },
     { Campo: "Pedidos à vista", Valor: summary.cashOrdersCount },
@@ -285,7 +295,7 @@ export function buildSalesOrderListReportExportPdf(
   lines.push(`Itens: ${summary.totalItems}`);
   lines.push(`Ticket médio: ${summary.averageTicket.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
   lines.push(
-    `Margem média: ${
+    `Margem comercial ponderada: ${
       summary.averageMarginPercent != null
         ? `${summary.averageMarginPercent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`
         : "—"
