@@ -158,7 +158,8 @@ export function SalesOrderFlowKanbanFullscreen({
           exit={reduceMotion ? undefined : emilOverlayExit}
           transition={{ duration, ease: EMIL_EASE_OUT }}
         >
-          <header className="flex shrink-0 flex-col gap-2 border-b border-border bg-card/95 px-3 py-2.5 backdrop-blur-sm sm:px-4">
+          {/* z-40: autocomplete/filtros acima das colunas do kanban (motion cria stacking). */}
+          <header className="relative z-40 flex shrink-0 flex-col gap-2 border-b border-border bg-card/95 px-3 py-2.5 backdrop-blur-sm sm:px-4">
             <div className="flex flex-wrap items-center gap-3">
               <div
                 className="flex shrink-0 items-center"

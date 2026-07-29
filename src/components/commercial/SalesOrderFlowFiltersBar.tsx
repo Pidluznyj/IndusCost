@@ -114,7 +114,7 @@ export function SalesOrderFlowFiltersBar({
 
   return (
     <section
-      className="space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
+      className="relative z-40 space-y-3 rounded-xl border border-border bg-card/60 p-3 shadow-sm"
       data-testid="sales-order-flow-filters"
       aria-label="Filtros do Fluxo de Pedidos"
     >

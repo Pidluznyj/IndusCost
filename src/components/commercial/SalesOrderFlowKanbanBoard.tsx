@@ -138,7 +138,7 @@ export function SalesOrderFlowKanbanBoard({
           >
             <header
               className={cn(
-                "z-10 shrink-0 rounded-t-xl border-b px-3 py-2.5",
+                "relative z-0 shrink-0 rounded-t-xl border-b px-3 py-2.5",
                 salesOrderFlowKanbanHeaderClass(column.stage)
               )}
             >

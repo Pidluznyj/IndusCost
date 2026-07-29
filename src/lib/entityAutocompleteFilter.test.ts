@@ -26,6 +26,7 @@ test("EntityAutocompleteFilter — estados loading e empty", () => {
   assert.ok(src.includes("Nenhum resultado encontrado"));
   assert.ok(src.includes(`Digite ao menos`));
   assert.ok(src.includes("Erro ao buscar"));
+  assert.ok(src.includes("absolute z-50"));
 });
 
 test("EntityAutocompleteFilter — seleção e limpar", () => {

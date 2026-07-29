@@ -273,6 +273,7 @@ describe("sales order flow filters (OP-65)", () => {
     assert.match(filtersBar, /SALES_ORDER_FLOW_COMPANY_OPTIONS/);
     assert.match(filtersBar, /grid-cols-12/);
     assert.match(filtersBar, /bg-card\/60/);
+    assert.match(filtersBar, /relative z-40/);
     assert.match(mod, /createDefaultSalesOrderFlowFilters/);
     assert.match(mod, /draftFilters/);
     assert.match(mod, /applyFilters/);
@@ -684,6 +685,8 @@ describe("sales order flow indicators (OP-66)", () => {
     assert.match(fullscreen, /resolvePrintLogoSrc/);
     assert.match(fullscreen, /sales-order-flow-kanban-logo/);
     assert.match(fullscreen, /\/api\/branding-settings/);
+    // Filtros/autocomplete acima dos headers/cards do board.
+    assert.match(fullscreen, /relative z-40/);
   });
 
   it("Overlay canônico fica acima do Kanban fullscreen (modal DS/detalhe)", () => {
