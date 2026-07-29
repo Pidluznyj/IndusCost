@@ -7,7 +7,11 @@
  * - freteR$ (`freight`): legado absoluto no numerador (ProductPricing.freightOut)
  * - frete% (`freightRate`): percentual no denominador (geração comercial moderna)
  * Em gerações com frete%, o frete absoluto deve ser 0 para não duplicar.
+ *
+ * A inversa de margem comercial delega ao núcleo neutro (`commercialMarginCore`).
  */
+import { calculateCommercialMarginFromNetUnitPrice } from "./commercialMarginCore.js";
+
 export type PriceTableItemRates = {
   taxRate: number;
   commissionRate: number;
@@ -72,66 +76,37 @@ export function calculateCommercialMarginRateFromNegotiatedPrice(input: {
       commercialMarginUnitValue: number;
     }
   | { ok: false; code: string; message: string } {
-  const price = Number(input.negotiatedUnitPrice);
-  const cost = Number(input.frozenTotalCost);
-  if (!Number.isFinite(price) || price <= 0) {
-    return { ok: false, code: "INVALID_PRICE", message: "Preço negociado inválido." };
-  }
-  if (!Number.isFinite(cost) || cost < 0) {
-    return { ok: false, code: "INVALID_COST", message: "Custo de formação inválido." };
-  }
-
-  const taxRate = Number(input.rates.taxRate);
-  const commissionRate = Number(input.rates.commissionRate);
-  const otherRate = Number(input.rates.otherRate);
   const freightAbs = Number.isFinite(input.rates.freight) ? Number(input.rates.freight) : 0;
   const freightRate =
     input.rates.freightRate != null && Number.isFinite(input.rates.freightRate)
       ? Number(input.rates.freightRate)
       : 0;
 
-  if (
-    ![taxRate, commissionRate, otherRate, freightAbs, freightRate].every((n) => Number.isFinite(n)) ||
-    taxRate < 0 ||
-    commissionRate < 0 ||
-    otherRate < 0 ||
-    freightAbs < 0 ||
-    freightRate < 0
-  ) {
-    return {
-      ok: false,
-      code: "INVALID_PRICING_RATE",
-      message: "Percentuais/valores de formação inválidos.",
-    };
+  const core = calculateCommercialMarginFromNetUnitPrice({
+    netUnitPrice: Number(input.negotiatedUnitPrice),
+    quantity: 1,
+    frozenCostUnit: Number(input.frozenTotalCost),
+    taxRate: Number(input.rates.taxRate),
+    commissionRate: Number(input.rates.commissionRate),
+    freightRate,
+    freightAbsoluteUnit: freightAbs,
+    otherVariablesRate: Number(input.rates.otherRate),
+  });
+  if (!core.ok) {
+    return { ok: false, code: core.code, message: core.message };
   }
-
-  const marginRate =
-    1 - taxRate - commissionRate - otherRate - freightRate - (cost + freightAbs) / price;
-  if (!Number.isFinite(marginRate)) {
-    return {
-      ok: false,
-      code: "INVALID_MARGIN_RESULT",
-      message: "Margem comercial calculada inválida.",
-    };
-  }
-
-  const taxValueUnit = price * taxRate;
-  const commissionValueUnit = price * commissionRate;
-  const otherValueUnit = price * otherRate;
-  const freightRateValueUnit = price * freightRate;
-  const commercialMarginUnitValue = price * marginRate;
 
   return {
     ok: true,
-    marginRate,
-    marginPercent: marginRate * 100,
-    taxValueUnit,
-    commissionValueUnit,
-    otherValueUnit,
-    freightRateValueUnit,
-    freightAbsoluteUnit: freightAbs,
-    costUnit: cost,
-    commercialMarginUnitValue,
+    marginRate: core.commercialMarginRate,
+    marginPercent: core.commercialMarginPercent,
+    taxValueUnit: core.taxValueUnit,
+    commissionValueUnit: core.commissionValueUnit,
+    otherValueUnit: core.otherValueUnit,
+    freightRateValueUnit: core.freightRateValueUnit,
+    freightAbsoluteUnit: core.freightAbsoluteUnit,
+    costUnit: core.costUnit,
+    commercialMarginUnitValue: core.commercialMarginUnitValue,
   };
 }
 

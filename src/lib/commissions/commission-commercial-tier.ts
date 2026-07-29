@@ -1,7 +1,11 @@
 /**
  * Enquadramento de comissão por faixa da Formação de Preço (Atacado / Varejo 1–3).
  * Percentual interpolado linearmente entre faixas adjacentes (não degrau seco).
+ *
+ * A matemática de interpolação usa o núcleo neutro (`commercialMarginCore`);
+ * este adapter permanece específico do Pedido (códigos ATACADO/VAREJO_*).
  */
+import { interpolateCommercialCommissionRate } from "../commercialMarginCore.js";
 import { roundMoney } from "./commission-money.js";
 import {
   OUT_OF_TABLE_COMMISSION_PERCENT,
@@ -127,29 +131,34 @@ export function validateCommercialTierPriceOrder(
  * Interpola percentual entre duas faixas adjacentes.
  * progress = (sold - fromPrice) / (toPrice - fromPrice)
  * rate = fromRate + progress * (toRate - fromRate)
+ *
+ * Delega a matemática ao núcleo neutro (frações) e devolve % arredondado
+ * com a regra oficial do adapter do Pedido.
  */
 export function interpolateCommercialTierRate(input: {
   soldUnitPrice: number;
   fromTier: CommercialPriceTierRow;
   toTier: CommercialPriceTierRow;
 }): { progress: number; ratePercent: number } {
-  const fromPrice = input.fromTier.salePrice;
-  const toPrice = input.toTier.salePrice;
-  const fromRate = input.fromTier.commissionPercent;
-  const toRate = input.toTier.commissionPercent;
-
-  if (toPrice <= fromPrice) {
-    return { progress: 0, ratePercent: roundRatePercent(fromRate) };
-  }
-
-  const rawProgress = (input.soldUnitPrice - fromPrice) / (toPrice - fromPrice);
-  const progress = Math.max(0, Math.min(1, rawProgress));
-  const rawRate = fromRate + progress * (toRate - fromRate);
-  const clampedRate = Math.max(Math.min(fromRate, toRate), Math.min(Math.max(fromRate, toRate), rawRate));
+  const { progress, commissionRate } = interpolateCommercialCommissionRate({
+    netUnitPrice: input.soldUnitPrice,
+    lowerTier: {
+      id: input.fromTier.code,
+      marginRate: 0,
+      salePrice: input.fromTier.salePrice,
+      commissionRate: input.fromTier.commissionPercent / 100,
+    },
+    upperTier: {
+      id: input.toTier.code,
+      marginRate: 0,
+      salePrice: input.toTier.salePrice,
+      commissionRate: input.toTier.commissionPercent / 100,
+    },
+  });
 
   return {
-    progress: Math.round(progress * 1000000) / 1000000,
-    ratePercent: roundRatePercent(clampedRate),
+    progress,
+    ratePercent: roundRatePercent(commissionRate * 100),
   };
 }
 
