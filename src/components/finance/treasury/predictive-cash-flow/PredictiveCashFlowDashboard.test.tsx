@@ -93,6 +93,14 @@ describe("PredictiveCashFlowDashboard — saldo atual no topo", () => {
     assert.match(recon, /Fechamento final \(todas as contas\)/);
     assert.match(recon, /fetchTreasuryTodayClosing/);
     assert.match(dash, /PredictiveCashFlowReconciliationPanel/);
+    const chart = readFileSync(
+      join(here, "PredictiveCashFlowTimelineChart.tsx"),
+      "utf8"
+    );
+    assert.match(chart, /Consolidado/);
+    assert.match(chart, /Por banco/);
+    assert.match(chart, /Abertura informada/);
+    assert.match(chart, /Limite \(R\$ 0\)/);
   });
 
   it("lista Contas como botões clicáveis", () => {
