@@ -109,33 +109,64 @@ type ProposalListResponse = {
 };
 
 function buildProposalSummaryFromRows(rows: Proposal[]): ProposalListSummary {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
   const totalProposals = rows.length;
   let totalNetAmount = 0;
   let totalGrossAmount = 0;
-  let totalTaxAmount = 0;
-  let totalCostAmount = 0;
-  let totalMarginAmount = 0;
+  let yearToDateCount = 0;
+  let monthToDateCount = 0;
+  let openProposalsCount = 0;
+  let openProposalsAmount = 0;
+  let convertedProposalsCount = 0;
+  let convertedProposalsAmount = 0;
 
   for (const p of rows) {
-    totalNetAmount += Number.isFinite(Number(p.totalNetValue)) ? Number(p.totalNetValue) : 0;
-    totalGrossAmount += Number.isFinite(Number(p.totalGrossValue)) ? Number(p.totalGrossValue) : 0;
-    totalTaxAmount += Number.isFinite(Number(p.totalTaxes)) ? Number(p.totalTaxes) : 0;
-    totalCostAmount += Number.isFinite(Number(p.totalCost)) ? Number(p.totalCost) : 0;
-    totalMarginAmount += Number.isFinite(Number(p.totalMarginValue)) ? Number(p.totalMarginValue) : 0;
+    const net = Number.isFinite(Number(p.totalNetValue)) ? Number(p.totalNetValue) : 0;
+    const gross = Number.isFinite(Number(p.totalGrossValue)) ? Number(p.totalGrossValue) : 0;
+    totalNetAmount += net;
+    totalGrossAmount += gross;
+
+    const created = p.createdAt ? new Date(p.createdAt) : null;
+    if (created && Number.isFinite(created.getTime())) {
+      if (created.getFullYear() === currentYear) {
+        yearToDateCount += 1;
+        if (created.getMonth() === currentMonth) {
+          monthToDateCount += 1;
+        }
+      }
+    }
+
+    const hasSalesOrder = Boolean(p.salesOrder?.id);
+    const isApproved = p.status === "APPROVED";
+    const isOpen = !hasSalesOrder && (p.status === "DRAFT" || p.status === "ANALYSIS" || p.status === "SENT");
+
+    if (hasSalesOrder || isApproved) {
+      convertedProposalsCount += 1;
+      convertedProposalsAmount += net;
+    } else if (isOpen) {
+      openProposalsCount += 1;
+      openProposalsAmount += net;
+    }
   }
 
   const averageNetValue = totalProposals > 0 ? totalNetAmount / totalProposals : 0;
-  const totalMarginPercent = totalNetAmount > 0 ? (totalMarginAmount / totalNetAmount) * 100 : null;
+  const conversionRate = totalProposals > 0 ? (convertedProposalsCount / totalProposals) * 100 : null;
 
   return {
     totalProposals,
     totalNetAmount,
     totalGrossAmount,
-    totalTaxAmount,
-    totalCostAmount,
-    totalMarginAmount,
     averageNetValue,
-    totalMarginPercent,
+    yearToDateCount,
+    monthToDateCount,
+    openProposalsCount,
+    openProposalsAmount,
+    convertedProposalsCount,
+    convertedProposalsAmount,
+    conversionRate,
   };
 }
 

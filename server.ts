@@ -14854,7 +14854,19 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
     const pageSize = Math.min(parsePositiveIntQuery(pageSizeRaw, 50), 200);
     const skip = (page - 1) * pageSize;
 
-    const [rowsRaw, total, aggregate] = await Promise.all([
+    const now = new Date();
+    const currentYearStart = new Date(now.getFullYear(), 0, 1);
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [
+      rowsRaw,
+      total,
+      aggregate,
+      yearToDateCount,
+      monthToDateCount,
+      openAggregate,
+      convertedAggregate,
+    ] = await Promise.all([
       prisma.proposal.findMany({
         where,
         include: {
@@ -14872,31 +14884,57 @@ app.delete("/api/employees/:id", requireAppAuth, requireResource(EMPLOYEES_RESOU
         _sum: {
           totalNetValue: true,
           totalGrossValue: true,
-          totalTaxes: true,
-          totalCost: true,
-          totalMarginValue: true,
         },
+      }),
+      prisma.proposal.count({
+        where: { createdAt: { gte: currentYearStart } },
+      }),
+      prisma.proposal.count({
+        where: { createdAt: { gte: currentMonthStart } },
+      }),
+      prisma.proposal.aggregate({
+        where: {
+          ...where,
+          salesOrder: { is: null },
+          status: { in: ["DRAFT", "ANALYSIS", "SENT"] },
+        },
+        _count: { id: true },
+        _sum: { totalNetValue: true },
+      }),
+      prisma.proposal.aggregate({
+        where: {
+          ...where,
+          OR: [{ salesOrder: { isNot: null } }, { status: "APPROVED" }],
+        },
+        _count: { id: true },
+        _sum: { totalNetValue: true },
       }),
     ]);
 
     const totalProposals = aggregate._count.id;
     const totalNetAmount = Number(aggregate._sum.totalNetValue ?? 0);
     const totalGrossAmount = Number(aggregate._sum.totalGrossValue ?? 0);
-    const totalTaxAmount = Number(aggregate._sum.totalTaxes ?? 0);
-    const totalCostAmount = Number(aggregate._sum.totalCost ?? 0);
-    const totalMarginAmount = Number(aggregate._sum.totalMarginValue ?? 0);
     const averageNetValue = totalProposals > 0 ? totalNetAmount / totalProposals : 0;
-    const totalMarginPercent = totalNetAmount > 0 ? (totalMarginAmount / totalNetAmount) * 100 : null;
+
+    const openProposalsCount = openAggregate._count.id;
+    const openProposalsAmount = Number(openAggregate._sum.totalNetValue ?? 0);
+
+    const convertedProposalsCount = convertedAggregate._count.id;
+    const convertedProposalsAmount = Number(convertedAggregate._sum.totalNetValue ?? 0);
+    const conversionRate = totalProposals > 0 ? (convertedProposalsCount / totalProposals) * 100 : null;
 
     const summary = {
       totalProposals,
       totalNetAmount,
       totalGrossAmount,
-      totalTaxAmount,
-      totalCostAmount,
-      totalMarginAmount,
       averageNetValue,
-      totalMarginPercent,
+      yearToDateCount,
+      monthToDateCount,
+      openProposalsCount,
+      openProposalsAmount,
+      convertedProposalsCount,
+      convertedProposalsAmount,
+      conversionRate,
     };
 
     const rows = await withOfficialProposalListMargin(
