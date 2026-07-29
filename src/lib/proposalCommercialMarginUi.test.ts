@@ -247,7 +247,12 @@ describe("proposalCommercialMargin — PDF cliente e independência", () => {
       "utf8"
     );
     assert.match(analysis, /resolveProposalItemCommercialMarginDisplay/);
+    assert.match(analysis, /resolveProposalCommercialMarginFromItems/);
+    assert.match(analysis, /commercialMarginPerc/);
     assert.doesNotMatch(analysis, /formatNumber\(safeNum\(row\.marginPerc\)/);
+    assert.doesNotMatch(analysis, /Gerar Pedido de Venda/);
+    assert.doesNotMatch(analysis, /onGenerateSalesOrder/);
+    assert.doesNotMatch(analysis, /formatProposalCommercialPercent\(safeNum\(data\.totalMarginPerc\)\)/);
 
     const indicators = readFileSync(
       join(process.cwd(), "src/components/proposal/ProposalIndicatorsTab.tsx"),

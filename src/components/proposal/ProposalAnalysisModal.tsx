@@ -15,7 +15,6 @@ import {
   Receipt,
   Edit2,
   Sparkles,
-  Zap,
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
@@ -31,9 +30,11 @@ import { cn, formatCurrency, formatNumber } from "@/src/lib/utils";
 import { fetchJsonOk } from "@/src/lib/http";
 import type { Proposal, ProposalItem, ProposalStatus } from "@/src/types/commercial";
 import {
+  formatProposalCommercialMoney,
   formatProposalCommercialPercent,
   resolveProposalItemCommercialMarginDisplay,
 } from "@/src/lib/proposalCommercialMarginDisplay";
+import { resolveProposalCommercialMarginFromItems } from "@/src/lib/proposalListMargin";
 
 export type CustomerHistoryData = {
   totalOrdersCount: number;
@@ -68,8 +69,6 @@ type Props = {
   onClose: () => void;
   /** Abre o fluxo de edição da proposta */
   onEdit?: (id: string) => void;
-  /** Converte a proposta diretamente em Pedido de Venda */
-  onGenerateSalesOrder?: (proposal: Proposal) => void;
 };
 
 export type DealInsightItem = {
@@ -83,7 +82,20 @@ export type DealInsightItem = {
 
 export function buildDealIntelligence(proposal: ProposalDetailWithAnalysis) {
   const netValue = safeNum(proposal.totalNetValue);
-  const marginPerc = safeNum(proposal.totalMarginPerc);
+  const commercial = resolveProposalCommercialMarginFromItems(proposal.items);
+  const commercialMarginPerc =
+    commercial.totalMarginPerc != null
+      ? commercial.totalMarginPerc
+      : proposal.totalMarginPerc != null
+        ? safeNum(proposal.totalMarginPerc)
+        : null;
+  const commercialMarginValue =
+    commercial.totalMarginValue != null
+      ? commercial.totalMarginValue
+      : proposal.totalMarginValue != null
+        ? safeNum(proposal.totalMarginValue)
+        : null;
+  const marginPerc = commercialMarginPerc ?? 0;
   const status = proposal.status;
   const hasSalesOrder = Boolean(proposal.salesOrder?.id);
   const customerHistory = proposal.customerHistory;
@@ -136,35 +148,37 @@ export function buildDealIntelligence(proposal: ProposalDetailWithAnalysis) {
   // Geração de Insights Dinâmicos
   const insights: DealInsightItem[] = [];
 
-  // Insight 1: Margem e Margem de Manobra
-  if (marginPerc >= 30) {
-    const headroomMoney = netValue * 0.05;
-    insights.push({
-      id: "margin-headroom",
-      type: "margin",
-      title: `Margem Confortável (${formatNumber(marginPerc, 1)}%)`,
-      description: `Esta proposta possui margem comercial alta. Você dispõe de até R$ ${formatNumber(headroomMoney, 2)} (~5%) de margem de manobra para oferecer como concessão rápida se o cliente pedir contraproposta.`,
-      badgeText: "Margem de Manobra",
-      tone: "success",
-    });
-  } else if (marginPerc >= 18) {
-    insights.push({
-      id: "margin-healthy",
-      type: "margin",
-      title: `Margem Comercial Dentro da Meta (${formatNumber(marginPerc, 1)}%)`,
-      description: "Margem comercial saudável. Recomendado manter os preços propostos e negociar frete cortesia ou prazo como diferencial em vez de desconto direto.",
-      badgeText: "Margem Saudável",
-      tone: "info",
-    });
-  } else {
-    insights.push({
-      id: "margin-tight",
-      type: "warning",
-      title: `Margem Apertada (${formatNumber(marginPerc, 1)}%)`,
-      description: "A margem desta proposta está reduzida. Evite dar descontos adicionais sem aprovação da gestão comercial.",
-      badgeText: "Atenção à Margem",
-      tone: "warning",
-    });
+  // Insight 1: Margem e Margem de Manobra (só com margem comercial conhecida)
+  if (commercialMarginPerc != null) {
+    if (commercialMarginPerc >= 30) {
+      const headroomMoney = netValue * 0.05;
+      insights.push({
+        id: "margin-headroom",
+        type: "margin",
+        title: `Margem Confortável (${formatNumber(commercialMarginPerc, 1)}%)`,
+        description: `Esta proposta possui margem comercial alta. Você dispõe de até R$ ${formatNumber(headroomMoney, 2)} (~5%) de margem de manobra para oferecer como concessão rápida se o cliente pedir contraproposta.`,
+        badgeText: "Margem de Manobra",
+        tone: "success",
+      });
+    } else if (commercialMarginPerc >= 18) {
+      insights.push({
+        id: "margin-healthy",
+        type: "margin",
+        title: `Margem Comercial Dentro da Meta (${formatNumber(commercialMarginPerc, 1)}%)`,
+        description: "Margem comercial saudável. Recomendado manter os preços propostos e negociar frete cortesia ou prazo como diferencial em vez de desconto direto.",
+        badgeText: "Margem Saudável",
+        tone: "info",
+      });
+    } else {
+      insights.push({
+        id: "margin-tight",
+        type: "warning",
+        title: `Margem Apertada (${formatNumber(commercialMarginPerc, 1)}%)`,
+        description: "A margem desta proposta está reduzida. Evite dar descontos adicionais sem aprovação da gestão comercial.",
+        badgeText: "Atenção à Margem",
+        tone: "warning",
+      });
+    }
   }
 
   // Insight 2: Histórico e Perfil do Cliente
@@ -239,6 +253,8 @@ export function buildDealIntelligence(proposal: ProposalDetailWithAnalysis) {
     isExpired,
     hasSalesOrder,
     insights,
+    commercialMarginPerc,
+    commercialMarginValue,
   };
 }
 
@@ -247,7 +263,6 @@ export function ProposalAnalysisModal({
   proposalId,
   onClose,
   onEdit,
-  onGenerateSalesOrder,
 }: Props) {
   const [data, setData] = useState<ProposalDetailWithAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -332,21 +347,6 @@ export function ProposalAnalysisModal({
 
               {/* Botões de Ação na Barra Superior */}
               <div className="flex items-center gap-2 shrink-0">
-                {data && !data.salesOrder?.id && onGenerateSalesOrder && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onGenerateSalesOrder(data);
-                      onClose();
-                    }}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-95"
-                    data-testid="analysis-modal-generate-order-btn"
-                  >
-                    <Zap className="h-4 w-4 fill-white" />
-                    Gerar Pedido de Venda
-                  </button>
-                )}
-
                 {proposalId && onEdit && data && (
                   <button
                     type="button"
@@ -476,12 +476,17 @@ export function ProposalAnalysisModal({
                         <TrendingUp className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                       </div>
                       <p className="text-lg font-extrabold text-foreground tracking-tight">
-                        {formatProposalCommercialPercent(safeNum(data.totalMarginPerc))}
+                        {formatProposalCommercialPercent(
+                          intelligence.commercialMarginPerc
+                        )}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        {safeNum(data.totalMarginValue) > 0
-                          ? `R$ ${formatCurrency(safeNum(data.totalMarginValue))}`
-                          : "Calculada via formação"}
+                        {intelligence.commercialMarginValue != null &&
+                        Number.isFinite(intelligence.commercialMarginValue)
+                          ? formatProposalCommercialMoney(
+                              intelligence.commercialMarginValue
+                            )
+                          : "Sem margem comercial nos itens"}
                       </p>
                     </div>
 
@@ -710,32 +715,6 @@ export function ProposalAnalysisModal({
                       </table>
                     </div>
                   </div>
-
-                  {/* Rodapé Chamada de Ação Final */}
-                  {!data.salesOrder?.id && onGenerateSalesOrder && (
-                    <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-teal-500/5 to-emerald-500/10 p-5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-bold text-emerald-900 dark:text-emerald-200 flex items-center gap-2">
-                          <Zap className="h-4 w-4 fill-emerald-600 text-emerald-600" /> Pronto para converter em Venda?
-                        </h4>
-                        <p className="text-xs text-muted-foreground">
-                          Transforme esta proposta diretamente em um Pedido de Venda e inicie a execução comercial.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onGenerateSalesOrder(data);
-                          onClose();
-                        }}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-95"
-                        data-testid="analysis-modal-footer-generate-order-btn"
-                      >
-                        <Zap className="h-4 w-4 fill-white" />
-                        Gerar Pedido de Venda Agora
-                      </button>
-                    </div>
-                  )}
                 </>
               )}
             </div>
