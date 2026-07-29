@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Plus, RefreshCw } from "lucide-react";
+import { Building2, Plus, RefreshCw } from "lucide-react";
 import type { TreasuryFinancialAccountDto } from "@/src/lib/treasury/contracts/index.js";
 import {
   TREASURY_ACCOUNT_TYPE_LABELS,
@@ -214,9 +214,17 @@ export function TreasuryAccountsPanel({
                     <td className="px-3 py-2">
                       <p className="font-semibold">{row.code}</p>
                       <p className="text-xs text-muted-foreground">{row.name}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {TREASURY_ACCOUNT_TYPE_LABELS[row.accountType]}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                        <span className="text-[11px] text-muted-foreground">
+                          {TREASURY_ACCOUNT_TYPE_LABELS[row.accountType]}
+                        </span>
+                        {row.nomusBankAccountId ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-blue-500/10 text-blue-700 px-1.5 py-0.5 text-[10px] font-semibold dark:bg-blue-500/20 dark:text-blue-300">
+                            <Building2 className="h-3 w-3" />
+                            Nomus: {row.nomusBankAccountId}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-2">{row.institutionName}</td>
                     <td className="px-3 py-2 font-mono text-xs">

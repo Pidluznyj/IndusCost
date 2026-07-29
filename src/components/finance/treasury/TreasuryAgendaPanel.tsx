@@ -171,6 +171,17 @@ export function TreasuryAgendaPanel({
     [displayRows]
   );
 
+  const activeMinimumBalance = useMemo(() => {
+    if (!accounts || accounts.length === 0) return 0;
+    if (!filters.groupKey) {
+      return accounts.reduce((sum, a) => sum + (Number(a.minimumBalance) || 0), 0);
+    }
+    const match = accounts.find(
+      (a) => a.id === filters.groupKey || a.code === filters.groupKey
+    );
+    return match ? Number(match.minimumBalance) || 0 : 0;
+  }, [accounts, filters.groupKey]);
+
   const groupOptions = useMemo(
     () => listTreasuryAgendaGroupOptions(accounts),
     [accounts]
@@ -445,7 +456,7 @@ export function TreasuryAgendaPanel({
             ) : null}
           </div>
 
-          <TreasuryAgendaBalanceChart points={chartPoints} />
+          <TreasuryAgendaBalanceChart points={chartPoints} minimumBalance={activeMinimumBalance} />
 
           <div
             className="overflow-x-auto rounded-xl border border-border bg-card"
