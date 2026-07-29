@@ -8,6 +8,10 @@ import {
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { createTreasuryAccount } from "@/src/lib/treasury/treasuryAccountsApi.js";
 import { createTreasuryBalanceSnapshot } from "@/src/lib/treasury/treasuryBalancesApi.js";
+import {
+  financeModuleFilterFieldClass,
+  financeModuleFilterLabelClass,
+} from "@/src/lib/financeModuleUiStandards.js";
 
 export type PredictiveCashFlowAccountsPanelProps = {
   accounts: readonly PredictiveCashFlowAccount[];
@@ -15,10 +19,6 @@ export type PredictiveCashFlowAccountsPanelProps = {
   disabled?: boolean;
   onChanged: () => void;
 };
-
-function glassInputClass() {
-  return "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-sky-400/40";
-}
 
 export function PredictiveCashFlowAccountsPanel({
   accounts,
@@ -104,46 +104,50 @@ export function PredictiveCashFlowAccountsPanel({
 
   return (
     <section
-      className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl"
+      className="rounded-xl border border-border bg-card p-5 shadow-sm"
       data-testid="predictive-cf-accounts"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-slate-100">Contas</h3>
-          <p className="text-xs text-slate-400">
+          <h3 className="text-base font-semibold text-foreground">Contas</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             Saldos canônicos · consolidado{" "}
-            <span className="tabular-nums text-emerald-400">
+            <span className="font-semibold tabular-nums text-emerald-700">
               {formatPredictiveCashFlowMoney(consolidated)}
             </span>
           </p>
         </div>
         <Link
           to="/finance/treasury/accounts"
-          className="text-xs text-sky-300 hover:text-sky-200"
+          className="text-sm font-medium text-sky-700 hover:underline"
         >
           Gerenciar
         </Link>
       </div>
 
-      <ul className="mb-3 max-h-40 space-y-2 overflow-y-auto pr-1">
+      <ul className="mb-5 space-y-2">
         {accounts.length === 0 ? (
-          <li className="text-xs text-slate-500">Nenhuma conta ativa.</li>
+          <li className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+            Nenhuma conta ativa.
+          </li>
         ) : (
           accounts.map((a) => (
             <li
               key={a.id}
-              className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-black/20 px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-3"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm text-slate-100">{a.name}</p>
-                  <p className="truncate text-[11px] text-slate-500">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {a.name}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
                     {a.institutionName}
                   </p>
                 </div>
               </div>
-              <p className="shrink-0 text-sm tabular-nums text-slate-200">
+              <p className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
                 {formatPredictiveCashFlowMoney(a.initialBalance)}
               </p>
             </li>
@@ -151,31 +155,34 @@ export function PredictiveCashFlowAccountsPanel({
         )}
       </ul>
 
-      <form onSubmit={onSubmit} className="space-y-2 border-t border-white/10 pt-3">
-        <p className="text-[11px] uppercase tracking-wide text-slate-500">
+      <form
+        onSubmit={onSubmit}
+        className="space-y-3 border-t border-border pt-4"
+      >
+        <p className={financeModuleFilterLabelClass()}>
           Nova conta (grava na Tesouraria)
         </p>
         <input
-          className={glassInputClass()}
+          className={financeModuleFilterFieldClass()}
           placeholder="Nome / banco"
           value={name}
           disabled={disabled || busy}
           onChange={(e) => setName(e.target.value)}
         />
         <input
-          className={glassInputClass()}
+          className={financeModuleFilterFieldClass()}
           placeholder="Saldo inicial (ex: 10000,00)"
           value={initialBalance}
           disabled={disabled || busy}
           onChange={(e) => setInitialBalance(e.target.value)}
         />
-        {error ? <p className="text-xs text-rose-400">{error}</p> : null}
+        {error ? <p className="text-sm text-rose-700">{error}</p> : null}
         <button
           type="submit"
           disabled={disabled || busy}
-          className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-sky-500/20 px-3 py-2 text-sm font-medium text-sky-100 hover:bg-sky-500/30 disabled:opacity-50"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm font-semibold text-sky-900 hover:bg-sky-100 disabled:opacity-50"
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-4 w-4" />
           Adicionar conta
         </button>
       </form>

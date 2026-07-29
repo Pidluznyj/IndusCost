@@ -32,36 +32,32 @@ export function PredictiveCashFlowTimelineChart({
 
   if (data.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center text-sm text-slate-400">
+      <div className="flex h-56 items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 text-sm text-muted-foreground">
         Sem dados de projeção para o período.
       </div>
     );
   }
 
   return (
-    <div className="h-56 w-full min-h-[14rem]" data-testid="predictive-cf-chart">
+    <div className="h-64 w-full min-h-[16rem]" data-testid="predictive-cf-chart">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+        <AreaChart data={data} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="pcfBalancePos" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.45} />
-              <stop offset="100%" stopColor="#60a5fa" stopOpacity={0.02} />
-            </linearGradient>
-            <linearGradient id="pcfBalanceNeg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#fb7185" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#fb7185" stopOpacity={0.02} />
+              <stop offset="0%" stopColor="#0284c7" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#0284c7" stopOpacity={0.02} />
             </linearGradient>
           </defs>
-          <CartesianGrid stroke="rgba(148,163,184,0.15)" vertical={false} />
+          <CartesianGrid stroke="hsl(var(--border))" vertical={false} />
           <XAxis
             dataKey="label"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
+            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             minTickGap={28}
           />
           <YAxis
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
+            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             width={72}
@@ -74,10 +70,11 @@ export function PredictiveCashFlowTimelineChart({
           />
           <Tooltip
             contentStyle={{
-              background: "rgba(15,23,42,0.92)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 12,
-              color: "#e2e8f0",
+              background: "hsl(var(--card))",
+              border: "1px solid hsl(var(--border))",
+              borderRadius: 10,
+              color: "hsl(var(--foreground))",
+              boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
             }}
             formatter={(value: number | string) => [
               formatPredictiveCashFlowMoney(Number(value)),
@@ -88,7 +85,7 @@ export function PredictiveCashFlowTimelineChart({
           <Area
             type="monotone"
             dataKey="balance"
-            stroke="#38bdf8"
+            stroke="#0369a1"
             strokeWidth={2}
             fill="url(#pcfBalancePos)"
             isAnimationActive={false}

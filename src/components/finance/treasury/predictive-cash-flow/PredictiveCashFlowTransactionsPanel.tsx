@@ -10,6 +10,10 @@ import {
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { createTreasuryManualLedgerEntry } from "@/src/lib/treasury/treasuryManualLedgerApi.js";
 import { todayCivilDateLocal } from "@/src/lib/treasury/treasuryAgendaUi.js";
+import {
+  financeModuleFilterFieldClass,
+  financeModuleFilterLabelClass,
+} from "@/src/lib/financeModuleUiStandards.js";
 
 export type PredictiveCashFlowTransactionsPanelProps = {
   transactions: readonly PredictiveCashFlowTransaction[];
@@ -17,10 +21,6 @@ export type PredictiveCashFlowTransactionsPanelProps = {
   disabled?: boolean;
   onChanged: () => void;
 };
-
-function glassInputClass() {
-  return "w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-sky-400/40";
-}
 
 function normalizeAmountInput(raw: string): string | null {
   const n = Number(String(raw).replace(/\./g, "").replace(",", "."));
@@ -78,7 +78,6 @@ export function PredictiveCashFlowTransactionsPanel({
         accountId,
         civilDate: date.trim(),
         amount: amt,
-        // CREDIT = entrada (a receber); DEBIT = saída (a pagar)
         direction: type === "receivable" ? "CREDIT" : "DEBIT",
         nature: "MANUAL",
         memo: description.trim() || null,
@@ -99,86 +98,103 @@ export function PredictiveCashFlowTransactionsPanel({
 
   return (
     <section
-      className="flex h-full min-h-[22rem] flex-col rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl"
+      className="rounded-xl border border-border bg-card p-5 shadow-sm"
       data-testid="predictive-cf-transactions"
     >
-      <div className="mb-3">
-        <h3 className="text-sm font-semibold text-slate-100">Lançamentos</h3>
-        <p className="text-xs text-slate-400">
+      <div className="mb-5">
+        <h3 className="text-base font-semibold text-foreground">Lançamentos</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
           Títulos e movimentos da projeção canônica · novos manuais vão ao ledger
         </p>
       </div>
 
       <form
         onSubmit={onSubmit}
-        className="mb-3 grid grid-cols-1 gap-2 border-b border-white/10 pb-3 sm:grid-cols-2 lg:grid-cols-6"
+        className="mb-5 grid grid-cols-1 gap-3 border-b border-border pb-5 sm:grid-cols-2 lg:grid-cols-3"
       >
-        <input
-          className={`${glassInputClass()} lg:col-span-2`}
-          placeholder="Descrição"
-          value={description}
-          disabled={disabled || busy}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <input
-          className={glassInputClass()}
-          placeholder="Valor"
-          value={amount}
-          disabled={disabled || busy}
-          onChange={(e) => setAmount(e.target.value)}
-        />
-        <input
-          type="date"
-          className={glassInputClass()}
-          value={date}
-          disabled={disabled || busy}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <select
-          className={glassInputClass()}
-          value={type}
-          disabled={disabled || busy}
-          onChange={(e) =>
-            setType(e.target.value === "payable" ? "payable" : "receivable")
-          }
-        >
-          <option value="receivable">A receber</option>
-          <option value="payable">A pagar</option>
-        </select>
-        <select
-          className={glassInputClass()}
-          value={accountId}
-          disabled={disabled || busy || accounts.length === 0}
-          onChange={(e) => setAccountId(e.target.value)}
-        >
-          {accounts.length === 0 ? (
-            <option value="">Sem contas</option>
-          ) : (
-            accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))
-          )}
-        </select>
-        <button
-          type="submit"
-          disabled={disabled || busy || accounts.length === 0}
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-emerald-500/20 px-3 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-500/30 disabled:opacity-50 sm:col-span-2 lg:col-span-6"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Adicionar lançamento
-        </button>
+        <label className="space-y-1.5 sm:col-span-2 lg:col-span-3">
+          <span className={financeModuleFilterLabelClass()}>Descrição</span>
+          <input
+            className={financeModuleFilterFieldClass()}
+            placeholder="Descrição"
+            value={description}
+            disabled={disabled || busy}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className={financeModuleFilterLabelClass()}>Valor</span>
+          <input
+            className={financeModuleFilterFieldClass()}
+            placeholder="0,00"
+            value={amount}
+            disabled={disabled || busy}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className={financeModuleFilterLabelClass()}>Data</span>
+          <input
+            type="date"
+            className={financeModuleFilterFieldClass()}
+            value={date}
+            disabled={disabled || busy}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <label className="space-y-1.5">
+          <span className={financeModuleFilterLabelClass()}>Tipo</span>
+          <select
+            className={financeModuleFilterFieldClass()}
+            value={type}
+            disabled={disabled || busy}
+            onChange={(e) =>
+              setType(e.target.value === "payable" ? "payable" : "receivable")
+            }
+          >
+            <option value="receivable">A receber</option>
+            <option value="payable">A pagar</option>
+          </select>
+        </label>
+        <label className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+          <span className={financeModuleFilterLabelClass()}>Conta</span>
+          <select
+            className={financeModuleFilterFieldClass()}
+            value={accountId}
+            disabled={disabled || busy || accounts.length === 0}
+            onChange={(e) => setAccountId(e.target.value)}
+          >
+            {accounts.length === 0 ? (
+              <option value="">Sem contas</option>
+            ) : (
+              accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <div className="flex items-end sm:col-span-2 lg:col-span-1">
+          <button
+            type="submit"
+            disabled={disabled || busy || accounts.length === 0}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            Adicionar lançamento
+          </button>
+        </div>
         {error ? (
-          <p className="text-xs text-rose-400 sm:col-span-2 lg:col-span-6">
+          <p className="text-sm text-rose-700 sm:col-span-2 lg:col-span-3">
             {error}
           </p>
         ) : null}
       </form>
 
-      <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+      <ul className="space-y-2">
         {sorted.length === 0 ? (
-          <li className="py-8 text-center text-sm text-slate-500">
+          <li className="rounded-lg border border-dashed border-border px-3 py-10 text-center text-sm text-muted-foreground">
             Nenhum lançamento no horizonte selecionado.
           </li>
         ) : (
@@ -187,20 +203,20 @@ export function PredictiveCashFlowTransactionsPanel({
             return (
               <li
                 key={tx.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 px-3 py-2"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-3"
               >
-                <div className="flex min-w-0 items-center gap-2.5">
+                <div className="flex min-w-0 items-center gap-3">
                   <span
                     className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                      receivable ? "bg-emerald-400" : "bg-rose-400"
+                      receivable ? "bg-emerald-600" : "bg-rose-600"
                     }`}
                     aria-hidden
                   />
                   <div className="min-w-0">
-                    <p className="truncate text-sm text-slate-100">
+                    <p className="truncate text-sm font-medium text-foreground">
                       {tx.description}
                     </p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-xs text-muted-foreground">
                       {formatPredictiveCashFlowDate(tx.date)}
                       {tx.isPaid ? " · realizado" : ""}
                     </p>
@@ -208,13 +224,13 @@ export function PredictiveCashFlowTransactionsPanel({
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   {receivable ? (
-                    <ArrowDownLeft className="h-3.5 w-3.5 text-emerald-400" />
+                    <ArrowDownLeft className="h-4 w-4 text-emerald-700" />
                   ) : (
-                    <ArrowUpRight className="h-3.5 w-3.5 text-rose-400" />
+                    <ArrowUpRight className="h-4 w-4 text-rose-700" />
                   )}
                   <span
-                    className={`text-sm tabular-nums ${
-                      receivable ? "text-emerald-400" : "text-rose-400"
+                    className={`text-sm font-semibold tabular-nums ${
+                      receivable ? "text-emerald-700" : "text-rose-700"
                     }`}
                   >
                     {formatPredictiveCashFlowMoney(tx.amount)}

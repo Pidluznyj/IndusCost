@@ -18,6 +18,8 @@ import { canViewTreasuryAgenda } from "@/src/lib/treasury/treasuryAgendaPermissi
 import { fetchTreasuryAccountLatestBalance } from "@/src/lib/treasury/treasuryBalancesApi.js";
 import {
   TREASURY_SIMPLE_CASH_RISK_DENIED,
+  TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE,
+  TREASURY_SIMPLE_CASH_RISK_TITLE,
   createEmptyTreasurySimpleCashRiskFilters,
   isTreasurySimpleCashRiskPeriod,
   isTreasurySimpleCashRiskScenario,
@@ -26,6 +28,7 @@ import {
   resolveTreasurySimpleCashRiskStaleMessage,
   type TreasurySimpleCashRiskFilterState,
 } from "@/src/lib/treasury/treasurySimpleCashRiskProjectionUi.js";
+import { buildTreasurySimpleRefreshHeaderAction } from "@/src/lib/treasury/treasurySimpleUiShared.js";
 import { todayCivilDateLocal } from "@/src/lib/treasury/treasuryAgendaUi.js";
 import {
   buildPredictiveCashFlowKpis,
@@ -36,6 +39,7 @@ import {
   type PredictiveCashFlowAccount,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { FinanceBiDashboardShell } from "@/src/components/finance/bi/FinanceBiDashboardShell";
+import { FinanceExecutivePageHeader } from "@/src/components/finance/shared/FinanceExecutivePageHeader";
 import { PermissionDenied } from "@/src/components/security/PermissionDenied";
 import { PredictiveCashFlowDashboard } from "./predictive-cash-flow/PredictiveCashFlowDashboard.js";
 
@@ -113,6 +117,7 @@ export function TreasurySimpleCashRiskProjectionPage() {
   const [accounts, setAccounts] = useState<PredictiveCashFlowAccount[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [headerUpdatedAt, setHeaderUpdatedAt] = useState<string | null>(null);
 
   const sortedDays = useMemo(() => {
     if (!agenda?.days?.length) return [];
@@ -209,6 +214,7 @@ export function TreasurySimpleCashRiskProjectionPage() {
       });
       if (controller.signal.aborted) return;
       setAgenda(payload);
+      setHeaderUpdatedAt(payload.freshness?.asOf ?? new Date().toISOString());
     } catch (err) {
       if (controller.signal.aborted) return;
       setError(
@@ -246,8 +252,21 @@ export function TreasurySimpleCashRiskProjectionPage() {
     <FinanceBiDashboardShell>
       <div
         data-testid="treasury-simple-cash-risk-page"
-        className="contents"
+        className="flex flex-col gap-6"
       >
+        <FinanceExecutivePageHeader
+          eyebrow="FINANCEIRO · CENTRAL DE TESOURARIA"
+          title={TREASURY_SIMPLE_CASH_RISK_TITLE}
+          subtitle={TREASURY_SIMPLE_CASH_RISK_PAGE_SUBTITLE}
+          updatedAt={headerUpdatedAt}
+          updatedAtLabel="Última atualização em"
+          actions={[
+            buildTreasurySimpleRefreshHeaderAction({
+              onClick: () => void load(),
+              disabled: loading || !canView,
+            }),
+          ]}
+        />
         <PredictiveCashFlowDashboard
           kpis={kpis}
           timeline={timeline}
