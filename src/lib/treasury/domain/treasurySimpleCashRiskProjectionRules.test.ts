@@ -66,10 +66,11 @@ describe("treasurySimpleCashRiskProjectionRules", () => {
   });
 
   it("timezone civil: períodos usam dias inclusivos via addCivilDays UTC", () => {
-    assert.equal(periodDaysForTreasurySimpleCashRisk("7d"), 7);
+    assert.equal(periodDaysForTreasurySimpleCashRisk("15d"), 15);
     assert.equal(periodDaysForTreasurySimpleCashRisk("30d"), 30);
-    assert.equal(periodDaysForTreasurySimpleCashRisk("60d"), 60);
+    assert.equal(periodDaysForTreasurySimpleCashRisk("45d"), 45);
     assert.equal(periodDaysForTreasurySimpleCashRisk("90d"), 90);
+    assert.equal(periodDaysForTreasurySimpleCashRisk("360d"), 360);
     // 7 dias inclusivos: base + 6
     assert.equal(addCivilDays("2026-07-28", 6), "2026-08-03");
     assert.equal(addCivilDays("2026-12-31", 1), "2027-01-01");

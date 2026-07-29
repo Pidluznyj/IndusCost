@@ -1,19 +1,25 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { RefreshCw } from "lucide-react";
 import type {
   PredictiveCashFlowAccount,
   PredictiveCashFlowDailyBalance,
-  PredictiveCashFlowKpis,
   PredictiveCashFlowTransaction,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
-import { formatPredictiveCashFlowMoney } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
+import type { TreasurySimpleCashRiskSummaryDto } from "@/src/lib/treasury/domain/treasurySimpleCashRiskProjectionRules.js";
 import type { TreasurySimpleCashRiskFilterState } from "@/src/lib/treasury/treasurySimpleCashRiskProjectionUi.js";
 import {
+  TREASURY_SIMPLE_CASH_RISK_MONTH_OPTIONS,
   TREASURY_SIMPLE_CASH_RISK_PERIODS,
   TREASURY_SIMPLE_CASH_RISK_PERIOD_LABELS,
   TREASURY_SIMPLE_CASH_RISK_SCENARIOS,
   TREASURY_SIMPLE_CASH_RISK_SCENARIO_LABELS,
+  daysInTreasuryCivilMonth,
+  joinTreasurySimpleCashRiskCivilDate,
+  listTreasurySimpleCashRiskYearOptions,
+  resolveTreasurySimpleCashRiskRange,
+  splitTreasurySimpleCashRiskCivilDate,
 } from "@/src/lib/treasury/treasurySimpleCashRiskProjectionUi.js";
+import { todayCivilDateLocal } from "@/src/lib/treasury/treasuryAgendaUi.js";
 import {
   financeModuleFilterFieldClass,
   financeModuleFilterLabelClass,
@@ -21,16 +27,20 @@ import {
 import { FinanceModuleErrorBanner } from "@/src/components/finance/shared/FinanceModuleStates";
 import { PredictiveCashFlowTimelineChart } from "./PredictiveCashFlowTimelineChart.js";
 import { PredictiveCashFlowAccountsPanel } from "./PredictiveCashFlowAccountsPanel.js";
+import { PredictiveCashFlowBalanceKpis } from "./PredictiveCashFlowBalanceKpis.js";
+import { PredictiveCashFlowAccountCrCpPanel } from "./PredictiveCashFlowAccountCrCpPanel.js";
+import { PredictiveCashFlowRiskStrip } from "./PredictiveCashFlowRiskStrip.js";
 import { PredictiveCashFlowReconciliationPanel } from "./PredictiveCashFlowReconciliationPanel.js";
 import { PredictiveCashFlowTransactionsPanel } from "./PredictiveCashFlowTransactionsPanel.js";
 
 export type PredictiveCashFlowDashboardProps = {
-  kpis: PredictiveCashFlowKpis;
   timeline: readonly PredictiveCashFlowDailyBalance[];
   accounts: readonly PredictiveCashFlowAccount[];
   transactions: readonly PredictiveCashFlowTransaction[];
   filters: TreasurySimpleCashRiskFilterState;
   companyCode: string | null;
+  companyCodes?: readonly string[];
+  riskSummary: TreasurySimpleCashRiskSummaryDto | null;
   loading: boolean;
   error: string | null;
   staleMessage: string | null;
@@ -40,41 +50,14 @@ export type PredictiveCashFlowDashboardProps = {
   onDismissError?: () => void;
 };
 
-function KpiCard({
-  label,
-  value,
-  tone,
-  testId,
-}: {
-  label: string;
-  value: string;
-  tone: "neutral" | "final";
-  testId?: string;
-}) {
-  const valueClass =
-    tone === "final" ? "text-sky-800" : "text-foreground";
-  return (
-    <div
-      className="rounded-xl border border-border bg-card px-4 py-4 shadow-sm"
-      data-testid={testId}
-    >
-      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <p className={`mt-2 text-xl font-semibold tabular-nums ${valueClass}`}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
 export function PredictiveCashFlowDashboard({
-  kpis,
   timeline,
   accounts,
   transactions,
   filters,
   companyCode,
+  companyCodes = [],
+  riskSummary,
   loading,
   error,
   staleMessage,
@@ -83,6 +66,55 @@ export function PredictiveCashFlowDashboard({
   onRefresh,
   onDismissError,
 }: PredictiveCashFlowDashboardProps) {
+  const kpiCivilDate =
+    filters.selectedCivilDate || timeline[0]?.date || todayCivilDateLocal();
+
+  const dateParts = useMemo(
+    () => splitTreasurySimpleCashRiskCivilDate(kpiCivilDate),
+    [kpiCivilDate]
+  );
+
+  const horizon = useMemo(
+    () =>
+      resolveTreasurySimpleCashRiskRange(
+        filters.period,
+        todayCivilDateLocal(),
+        kpiCivilDate
+      ),
+    [filters.period, kpiCivilDate]
+  );
+
+  const yearOptions = useMemo(
+    () => listTreasurySimpleCashRiskYearOptions(Number(dateParts.year)),
+    [dateParts.year]
+  );
+
+  const dayOptions = useMemo(() => {
+    const max = daysInTreasuryCivilMonth(
+      Number(dateParts.year),
+      Number(dateParts.month)
+    );
+    return Array.from({ length: max }, (_, i) =>
+      String(i + 1).padStart(2, "0")
+    );
+  }, [dateParts.year, dateParts.month]);
+
+  const showCompanyFilter = companyCodes.length >= 2;
+
+  function patchCivilDate(next: {
+    year?: string;
+    month?: string;
+    day?: string;
+  }) {
+    const joined = joinTreasurySimpleCashRiskCivilDate({
+      year: next.year ?? dateParts.year,
+      month: next.month ?? dateParts.month,
+      day: next.day ?? dateParts.day,
+    });
+    if (!joined) return;
+    onFiltersChange({ ...filters, selectedCivilDate: joined });
+  }
+
   return (
     <div
       className="flex flex-col gap-6"
@@ -105,11 +137,61 @@ export function PredictiveCashFlowDashboard({
         </div>
       ) : null}
 
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <section
+        className="rounded-xl border border-border bg-card p-5 shadow-sm"
+        data-testid="predictive-cf-filters"
+      >
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid flex-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
             <label className="space-y-1.5">
-              <span className={financeModuleFilterLabelClass()}>Período</span>
+              <span className={financeModuleFilterLabelClass()}>Ano</span>
+              <select
+                className={financeModuleFilterFieldClass()}
+                value={dateParts.year}
+                onChange={(e) => patchCivilDate({ year: e.target.value })}
+                data-testid="predictive-cf-filter-year"
+              >
+                {yearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className={financeModuleFilterLabelClass()}>Mês</span>
+              <select
+                className={financeModuleFilterFieldClass()}
+                value={dateParts.month}
+                onChange={(e) => patchCivilDate({ month: e.target.value })}
+                data-testid="predictive-cf-filter-month"
+              >
+                {TREASURY_SIMPLE_CASH_RISK_MONTH_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className={financeModuleFilterLabelClass()}>Dia</span>
+              <select
+                className={financeModuleFilterFieldClass()}
+                value={dateParts.day}
+                onChange={(e) => patchCivilDate({ day: e.target.value })}
+                data-testid="predictive-cf-filter-day"
+              >
+                {dayOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+              <span className={financeModuleFilterLabelClass()}>
+                Horizonte (15 em 15 até 360)
+              </span>
               <select
                 className={financeModuleFilterFieldClass()}
                 value={filters.period}
@@ -119,6 +201,7 @@ export function PredictiveCashFlowDashboard({
                     period: e.target.value as typeof filters.period,
                   })
                 }
+                data-testid="predictive-cf-filter-period"
               >
                 {TREASURY_SIMPLE_CASH_RISK_PERIODS.map((p) => (
                   <option key={p} value={p}>
@@ -127,7 +210,33 @@ export function PredictiveCashFlowDashboard({
                 ))}
               </select>
             </label>
-            <label className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+            {showCompanyFilter ? (
+              <label className="space-y-1.5 sm:col-span-2 lg:col-span-2">
+                <span className={financeModuleFilterLabelClass()}>Empresa</span>
+                <select
+                  className={financeModuleFilterFieldClass()}
+                  value={filters.companyCode || companyCodes[0] || ""}
+                  onChange={(e) =>
+                    onFiltersChange({
+                      ...filters,
+                      companyCode: e.target.value,
+                    })
+                  }
+                  data-testid="predictive-cf-filter-company"
+                >
+                  {companyCodes.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <label
+              className={`space-y-1.5 sm:col-span-2 ${
+                showCompanyFilter ? "lg:col-span-6" : "lg:col-span-6"
+              }`}
+            >
               <span className={financeModuleFilterLabelClass()}>Cenário</span>
               <div className="flex flex-wrap gap-2">
                 {TREASURY_SIMPLE_CASH_RISK_SCENARIOS.map((s) => {
@@ -166,9 +275,18 @@ export function PredictiveCashFlowDashboard({
             Atualizar
           </button>
         </div>
+        <p className="mt-3 text-xs text-[#6B7280]">
+          Base do horizonte:{" "}
+          <span className="font-semibold tabular-nums text-[#111827]">
+            {horizon.baseDate}
+          </span>
+          {" → "}
+          <span className="font-semibold tabular-nums text-[#111827]">
+            {horizon.endDate}
+          </span>
+        </p>
       </section>
 
-      {/* Saldo atual por conta (topo) — substitui Total a receber / a pagar */}
       <PredictiveCashFlowAccountsPanel
         accounts={accounts}
         companyCode={companyCode}
@@ -178,20 +296,20 @@ export function PredictiveCashFlowDashboard({
         variant="hero"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <KpiCard
-          label="Saldo Base Atual"
-          value={formatPredictiveCashFlowMoney(kpis.baseBalance)}
-          tone="neutral"
-          testId="predictive-cf-kpi-base"
-        />
-        <KpiCard
-          label="Projeção Final"
-          value={formatPredictiveCashFlowMoney(kpis.finalProjection)}
-          tone="final"
-          testId="predictive-cf-kpi-final"
-        />
-      </div>
+      <PredictiveCashFlowBalanceKpis
+        accounts={accounts}
+        transactions={transactions}
+        civilDate={kpiCivilDate}
+      />
+
+      <PredictiveCashFlowRiskStrip summary={riskSummary} />
+
+      <PredictiveCashFlowAccountCrCpPanel
+        accounts={accounts}
+        transactions={transactions}
+        fromDate={horizon.baseDate}
+        toDate={horizon.endDate}
+      />
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
@@ -209,16 +327,15 @@ export function PredictiveCashFlowDashboard({
           timeline={timeline}
           accounts={accounts}
           transactions={transactions}
-          period={filters.period}
+          fromDate={horizon.baseDate}
+          toDate={horizon.endDate}
         />
       </section>
 
       <PredictiveCashFlowReconciliationPanel
         accounts={accounts}
         transactions={transactions}
-        defaultDate={
-          filters.selectedCivilDate || timeline[0]?.date || ""
-        }
+        defaultDate={kpiCivilDate}
       />
 
       <PredictiveCashFlowTransactionsPanel

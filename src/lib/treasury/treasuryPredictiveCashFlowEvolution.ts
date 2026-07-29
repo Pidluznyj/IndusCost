@@ -33,8 +33,12 @@ export type PredictiveEvolutionSeriesPoint = {
   payables: number;
   /** Abaixo de zero = cruzou o limite operacional (caixa negativo). */
   belowLimit: boolean;
-  /** Valores por conta (só modo by_account no ponto consolidado da grade). */
+  /** Saldos de fechamento por conta. */
   byAccount?: Record<string, number>;
+  /** CR do dia por conta. */
+  byAccountReceivables?: Record<string, number>;
+  /** CP do dia por conta. */
+  byAccountPayables?: Record<string, number>;
 };
 
 export type PredictiveEvolutionAccountStart = {
@@ -213,6 +217,8 @@ export function buildPredictiveEvolutionBoard(input: {
     const dayTx = input.transactions.filter((t) => t.date === date);
     const byAccountOpening: Record<string, number> = {};
     const byAccountClosing: Record<string, number> = {};
+    const byAccountReceivables: Record<string, number> = {};
+    const byAccountPayables: Record<string, number> = {};
     let recv = 0;
     let pay = 0;
 
@@ -228,6 +234,8 @@ export function buildPredictiveEvolutionBoard(input: {
         .reduce((s, t) => s + t.amount, 0);
       recv += r;
       pay += p;
+      byAccountReceivables[a.id] = r;
+      byAccountPayables[a.id] = p;
       const closing = opening + r - p;
       byAccountClosing[a.id] = closing;
       balances.set(a.id, closing);
@@ -252,6 +260,8 @@ export function buildPredictiveEvolutionBoard(input: {
       payables: pay,
       belowLimit: closingSum < 0,
       byAccount: { ...byAccountClosing },
+      byAccountReceivables: { ...byAccountReceivables },
+      byAccountPayables: { ...byAccountPayables },
     });
   }
 

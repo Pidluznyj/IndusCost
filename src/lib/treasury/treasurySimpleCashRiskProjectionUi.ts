@@ -13,6 +13,7 @@ import {
   TREASURY_SIMPLE_CASH_RISK_SCENARIO_LABELS,
   TREASURY_SIMPLE_CASH_RISK_TITLE,
   TREASURY_SIMPLE_CASH_RISK_UI_PATH,
+  periodDaysForTreasurySimpleCashRisk,
   type TreasurySimpleCashRiskPeriod,
   type TreasurySimpleCashRiskScenario,
   type TreasurySimpleCashRiskSummaryDto,
@@ -21,7 +22,6 @@ import {
   addCivilDays,
   formatTreasuryAgendaCivilDate,
   formatTreasuryAgendaMoney,
-  resolveTreasuryAgendaPeriodRange,
   todayCivilDateLocal,
 } from "./treasuryAgendaUi.js";
 import { formatTreasuryApiMoneyToPtBr } from "./treasuryBalancesUi.js";
@@ -33,6 +33,7 @@ export {
   TREASURY_SIMPLE_CASH_RISK_SCENARIO_LABELS,
   TREASURY_SIMPLE_CASH_RISK_TITLE,
   TREASURY_SIMPLE_CASH_RISK_UI_PATH,
+  periodDaysForTreasurySimpleCashRisk,
 };
 export type {
   TreasurySimpleCashRiskPeriod,
@@ -86,7 +87,7 @@ export function createEmptyTreasurySimpleCashRiskFilters(
   today = todayCivilDateLocal()
 ): TreasurySimpleCashRiskFilterState {
   return {
-    period: "7d",
+    period: "30d",
     scenario: "PROBABLE",
     companyCode: "",
     selectedCivilDate: today,
@@ -116,15 +117,100 @@ export function resolveTreasurySimpleCashRiskCompanyCode(
   return first || null;
 }
 
+/** Códigos de empresa distintos nas contas (ordenados), para filtro opcional na UI. */
+export function listTreasurySimpleCashRiskCompanyCodes(
+  accounts: ReadonlyArray<Pick<TreasuryFinancialAccountDto, "companyCode">>
+): string[] {
+  const set = new Set<string>();
+  for (const a of accounts) {
+    const code = a.companyCode?.trim();
+    if (code) set.add(code);
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
 export function resolveTreasurySimpleCashRiskRange(
   period: TreasurySimpleCashRiskPeriod,
-  today = todayCivilDateLocal()
+  today = todayCivilDateLocal(),
+  baseCivilDate?: string | null
 ): { baseDate: string; endDate: string } {
-  return resolveTreasuryAgendaPeriodRange(
-    { period, baseDate: today, endDate: addCivilDays(today, 6) },
-    today
-  );
+  const base =
+    baseCivilDate && /^\d{4}-\d{2}-\d{2}$/.test(baseCivilDate.trim())
+      ? baseCivilDate.trim()
+      : today;
+  const days = periodDaysForTreasurySimpleCashRisk(period);
+  return {
+    baseDate: base,
+    endDate: addCivilDays(base, Math.max(0, days - 1)),
+  };
 }
+
+export function splitTreasurySimpleCashRiskCivilDate(civilDate: string): {
+  year: string;
+  month: string;
+  day: string;
+} {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(civilDate.trim());
+  if (!m) {
+    const today = todayCivilDateLocal();
+    return splitTreasurySimpleCashRiskCivilDate(today);
+  }
+  return { year: m[1]!, month: m[2]!, day: m[3]! };
+}
+
+export function daysInTreasuryCivilMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+export function joinTreasurySimpleCashRiskCivilDate(input: {
+  year: string;
+  month: string;
+  day: string;
+}): string | null {
+  const y = Number(input.year);
+  const mo = Number(input.month);
+  const d = Number(input.day);
+  if (
+    !Number.isInteger(y) ||
+    !Number.isInteger(mo) ||
+    !Number.isInteger(d) ||
+    mo < 1 ||
+    mo > 12 ||
+    d < 1
+  ) {
+    return null;
+  }
+  const maxDay = daysInTreasuryCivilMonth(y, mo);
+  const day = Math.min(d, maxDay);
+  return `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+export function listTreasurySimpleCashRiskYearOptions(
+  aroundYear = Number(todayCivilDateLocal().slice(0, 4))
+): string[] {
+  const y = Number.isFinite(aroundYear) ? aroundYear : new Date().getUTCFullYear();
+  const out: string[] = [];
+  for (let i = y - 2; i <= y + 2; i += 1) out.push(String(i));
+  return out;
+}
+
+export const TREASURY_SIMPLE_CASH_RISK_MONTH_OPTIONS: readonly {
+  value: string;
+  label: string;
+}[] = [
+  { value: "01", label: "Janeiro" },
+  { value: "02", label: "Fevereiro" },
+  { value: "03", label: "Março" },
+  { value: "04", label: "Abril" },
+  { value: "05", label: "Maio" },
+  { value: "06", label: "Junho" },
+  { value: "07", label: "Julho" },
+  { value: "08", label: "Agosto" },
+  { value: "09", label: "Setembro" },
+  { value: "10", label: "Outubro" },
+  { value: "11", label: "Novembro" },
+  { value: "12", label: "Dezembro" },
+] as const;
 
 export function formatTreasurySimpleCashRiskMoney(
   value: string | null | undefined

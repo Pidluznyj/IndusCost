@@ -27,10 +27,30 @@ export const TREASURY_SIMPLE_CASH_RISK_UI_PATH =
   "/finance/treasury/projection" as const;
 
 export const TREASURY_SIMPLE_CASH_RISK_PERIODS = [
-  "7d",
+  "15d",
   "30d",
+  "45d",
   "60d",
+  "75d",
   "90d",
+  "105d",
+  "120d",
+  "135d",
+  "150d",
+  "165d",
+  "180d",
+  "195d",
+  "210d",
+  "225d",
+  "240d",
+  "255d",
+  "270d",
+  "285d",
+  "300d",
+  "315d",
+  "330d",
+  "345d",
+  "360d",
 ] as const;
 export type TreasurySimpleCashRiskPeriod =
   (typeof TREASURY_SIMPLE_CASH_RISK_PERIODS)[number];
@@ -38,12 +58,12 @@ export type TreasurySimpleCashRiskPeriod =
 export const TREASURY_SIMPLE_CASH_RISK_PERIOD_LABELS: Record<
   TreasurySimpleCashRiskPeriod,
   string
-> = {
-  "7d": "7 dias",
-  "30d": "30 dias",
-  "60d": "60 dias",
-  "90d": "90 dias",
-};
+> = Object.fromEntries(
+  TREASURY_SIMPLE_CASH_RISK_PERIODS.map((p) => [
+    p,
+    `${Number(p.replace("d", ""))} dias`,
+  ])
+) as Record<TreasurySimpleCashRiskPeriod, string>;
 
 export const TREASURY_SIMPLE_CASH_RISK_SCENARIOS = [
   "CONTRACTUAL",
@@ -367,10 +387,11 @@ function resolveCompositionOrigin(
 }
 
 export function periodDaysForTreasurySimpleCashRisk(
-  period: TreasurySimpleCashRiskPeriod
+  period: TreasurySimpleCashRiskPeriod | string
 ): number {
-  if (period === "7d") return 7;
-  if (period === "30d") return 30;
-  if (period === "60d") return 60;
-  return 90;
+  const m = /^(\d+)d$/.exec(String(period).trim());
+  if (!m) return 15;
+  const n = Number(m[1]);
+  if (!Number.isFinite(n) || n < 1) return 15;
+  return Math.min(360, Math.max(1, Math.floor(n)));
 }
