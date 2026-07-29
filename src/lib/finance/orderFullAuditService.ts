@@ -956,6 +956,9 @@ export type OrderFullAuditMarginPricingItem = {
   marginStatus: string;
   marginStatusLabel: string;
   reason: string | null;
+  /** ReasonCode da margem comercial quando não calculada. */
+  commercialMarginReasonCode?: string | null;
+  commercialMarginSource?: string | null;
   alerts: string[];
 };
 
@@ -5042,6 +5045,8 @@ async function buildMarginPricingBlock(input: {
             : isCut
               ? "Item com corte — considera apenas parte ativa/atendida"
               : null),
+      commercialMarginReasonCode: marginItem?.commercialMargin?.reasonCode ?? null,
+      commercialMarginSource: marginItem?.commercialMargin?.calculationSource ?? null,
       alerts,
     };
   });

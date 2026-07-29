@@ -96,6 +96,18 @@ export type SalesOrderCommercialMarginSummaryPayload = {
   itemsActive: number;
   isComplete: boolean;
   warnings: string[];
+  /**
+   * Composição bruto/desconto/líquido para exibição (tooltip/listagem).
+   * Não altera a fórmula da margem.
+   */
+  commercialComposition?: {
+    grossActiveTotalValue: number;
+    discountTotalValue: number;
+    discountRate: number;
+    additionTotalValue: number;
+    additionRate: number;
+    netActiveTotalValue: number;
+  } | null;
 };
 
 export type CommercialMarginFormationRates = {

@@ -79,6 +79,18 @@ export type SalesOrderDetailSummary = {
   hasInvoice: boolean;
   nfeCount: number;
   lastNfeDate: string | null;
+  /** Valor bruto ativo dos itens (qtd ativa × unitário bruto). */
+  grossItemsValue?: number | null;
+  /** Desconto comercial efetivo em R$ (bruto − líquido). */
+  discountValue?: number | null;
+  /** Desconto comercial efetivo em fração (0–1). */
+  discountRate?: number | null;
+  /** Acréscimo comercial em R$ (quando líquido > bruto). */
+  additionValue?: number | null;
+  /** Acréscimo comercial em fração (0–1). */
+  additionRate?: number | null;
+  /** Valor líquido vendido ativo. */
+  netSoldValue?: number | null;
   /** Margem comercial da venda (métrica principal). */
   marginValue: number | null;
   marginPercent: number | null;
@@ -87,6 +99,8 @@ export type SalesOrderDetailSummary = {
   managerialMarginPercent?: number | null;
   commercialMarginComplete?: boolean | null;
   commercialMarginCoveragePercent?: number | null;
+  commercialMarginItemsCalculated?: number | null;
+  commercialMarginItemsActive?: number | null;
   invoiceCoveragePercent: number | null;
 };
 
@@ -117,8 +131,28 @@ export type SalesOrderDetailItem = {
   isCanceled: boolean;
   isCut: boolean;
   isStale: boolean;
+  /** Preço unitário bruto (Nomus valorUnitario / negotiatedPrice). */
   unitPrice: number;
+  /** Quantidade ativa (pedida − cancelada). */
+  activeQuantity?: number;
+  /** Valor bruto da linha na qtd pedida (legado: total líquido persistido). */
   totalValue: number;
+  /** Valor bruto ativo (qtd ativa × unitário bruto). */
+  grossActiveValue?: number;
+  /** Desconto efetivo % (fração 0–1). */
+  discountRate?: number;
+  /** Desconto efetivo R$. */
+  discountValue?: number;
+  /** Acréscimo comercial % (fração). */
+  additionRate?: number;
+  /** Acréscimo comercial R$. */
+  additionValue?: number;
+  /** Preço unitário líquido efetivo. */
+  netUnitPrice?: number | null;
+  /**
+   * Valor líquido ativo.
+   * Semântica canônica do antigo “Valor ativo”.
+   */
   activeValue: number;
   canceledValue: number;
   unitCost: number | null;
@@ -128,6 +162,10 @@ export type SalesOrderDetailItem = {
   managerialMarginValue?: number | null;
   managerialMarginPercent?: number | null;
   commercialMarginSource?: string | null;
+  /** ReasonCode da margem comercial quando não calculada. */
+  commercialMarginReasonCode?: string | null;
+  /** Label traduzido do motivo. */
+  commercialMarginReasonLabel?: string | null;
   marginStatus: string | null;
   expectedDeliveryDate: string | null;
   linkedNfes: SalesOrderDetailItemNfeLink[];

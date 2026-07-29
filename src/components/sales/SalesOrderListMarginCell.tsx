@@ -5,6 +5,7 @@ import {
   pickSalesOrderListMarginPercent,
   pickSalesOrderListMarginValue,
 } from "@/src/lib/salesOrderMarginDisplay";
+import { formatPartialCommercialMarginHint } from "@/src/lib/salesOrderCommercialCompositionDisplay";
 import type { SalesOrderItemMarginPayload, SalesOrderMarginSummaryPayload } from "@/src/lib/salesOrderMarginTypes";
 import { SalesOrderMarginStatusBadge } from "@/src/components/sales/SalesOrderMarginStatusBadge";
 import { SalesOrderMarginInfoTooltip } from "@/src/components/sales/SalesOrderMarginInfoTooltip";
@@ -30,6 +31,10 @@ export const SalesOrderListMarginCell = memo(function SalesOrderListMarginCell({
     () => resolveSalesOrderListMarginTextClass(marginSummary),
     [marginSummary]
   );
+  const partialHint = useMemo(
+    () => formatPartialCommercialMarginHint(marginSummary?.commercialMargin),
+    [marginSummary]
+  );
 
   if (!marginSummary) {
     return (
@@ -49,6 +54,14 @@ export const SalesOrderListMarginCell = memo(function SalesOrderListMarginCell({
         <div className="min-w-0">
           <p className={cn("text-sm tabular-nums leading-tight", toneClass)}>{percentLabel}</p>
           <p className="text-[11px] tabular-nums text-muted-foreground mt-0.5">{valueLabel}</p>
+          {partialHint ? (
+            <p
+              className="mt-0.5 text-[9px] leading-snug text-amber-700 whitespace-pre-line"
+              data-testid="sales-order-list-margin-partial-hint"
+            >
+              {partialHint}
+            </p>
+          ) : null}
           <SalesOrderMarginStatusBadge
             label={marginSummary.statusLabel}
             status={marginSummary.status}

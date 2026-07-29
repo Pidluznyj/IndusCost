@@ -151,6 +151,7 @@ src/lib/finance/orderToCashAuditItemsUi.test.ts
 src/lib/finance/salesOrderItemFinancialFulfillmentClassifier.test.ts
 src/lib/finance/salesOrderItemFinancialAmounts.test.ts
 src/lib/salesOrderItemCommercialValues.test.ts
+src/lib/salesOrderCommercialCompositionDisplay.test.ts
 src/lib/salesOrderCommercialMargin.test.ts
 src/lib/salesOrderCommercialMarginHistory.test.ts
 src/lib/salesOrderCommercialMarginQueryBudget.test.ts

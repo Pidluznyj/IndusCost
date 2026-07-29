@@ -20,6 +20,7 @@ export const SalesOrderMarginInfoTooltip = memo(function SalesOrderMarginInfoToo
   itemMargins,
   orderIssueDate,
   titleOverride,
+  commercialComposition,
   className,
   testId = "sales-order-margin-tooltip",
   panelClassName,
@@ -31,8 +32,25 @@ export const SalesOrderMarginInfoTooltip = memo(function SalesOrderMarginInfoToo
         itemMargins,
         orderIssueDate,
         titleOverride,
+        commercialComposition:
+          commercialComposition ??
+          (summary?.commercialMargin?.commercialComposition
+            ? {
+                ...summary.commercialMargin.commercialComposition,
+                discountStatus:
+                  summary.commercialMargin.commercialComposition.additionTotalValue >
+                  summary.commercialMargin.commercialComposition.discountTotalValue
+                    ? "ADDITION"
+                    : summary.commercialMargin.commercialComposition.discountTotalValue > 0
+                      ? "DISCOUNT"
+                      : "NO_DISCOUNT",
+                itemsWithDiscount: 0,
+                itemsWithAddition: 0,
+                itemsActive: summary.commercialMargin.itemsActive,
+              }
+            : null),
       }),
-    [summary, itemMargins, orderIssueDate, titleOverride]
+    [summary, itemMargins, orderIssueDate, titleOverride, commercialComposition]
   );
 
   return (
