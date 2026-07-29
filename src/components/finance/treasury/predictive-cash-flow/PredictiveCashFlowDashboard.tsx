@@ -200,11 +200,17 @@ export function PredictiveCashFlowDashboard({
               Evolução do saldo
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Saldo projetado no horizonte · entradas em verde · saídas em vermelho
+              Comportamento do caixa no horizonte · consolidado ou por banco ·
+              limite em R$ 0
             </p>
           </div>
         </div>
-        <PredictiveCashFlowTimelineChart timeline={timeline} />
+        <PredictiveCashFlowTimelineChart
+          timeline={timeline}
+          accounts={accounts}
+          transactions={transactions}
+          period={filters.period}
+        />
       </section>
 
       <PredictiveCashFlowReconciliationPanel

@@ -21,6 +21,7 @@ import type {
   PredictiveCashFlowTransaction,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import {
+  formatPredictiveCashFlowDate,
   formatPredictiveCashFlowMoney,
 } from "@/src/lib/treasury/treasuryPredictiveCashFlow.js";
 import { fetchTreasuryTodayOpening } from "@/src/lib/treasury/treasuryTodayOpeningApi.js";
@@ -162,18 +163,46 @@ export function PredictiveCashFlowTimelineChart({
     [accounts, openingAccounts]
   );
 
-  const board = useMemo(
-    () =>
-      buildPredictiveEvolutionBoard({
+  const board = useMemo(() => {
+    if (accounts.some((a) => a.isActive && a.includeInConsolidated)) {
+      return buildPredictiveEvolutionBoard({
         mode,
         fromDate: range.baseDate,
         toDate: range.endDate,
         accounts,
         transactions,
         starts,
-      }),
-    [mode, range.baseDate, range.endDate, accounts, transactions, starts]
-  );
+      });
+    }
+    // Fallback: só agenda consolidada (sem contas mapeadas).
+    const points = timeline.map((d) => ({
+      date: d.date,
+      label: formatPredictiveCashFlowDate(d.date),
+      opening: d.openingBalance,
+      balance: d.balance,
+      balanceText: formatPredictiveCashFlowMoney(d.balance),
+      receivables: d.receivables,
+      payables: d.payables,
+      belowLimit: d.balance < 0,
+    }));
+    return {
+      mode,
+      fromDate: range.baseDate,
+      toDate: range.endDate,
+      points,
+      starts: [],
+      startSourceSummary: "automatic" as const,
+      accounts: [],
+    };
+  }, [
+    mode,
+    range.baseDate,
+    range.endDate,
+    accounts,
+    transactions,
+    starts,
+    timeline,
+  ]);
 
   const chartData = useMemo(() => {
     return board.points.map((p) => {
